@@ -237,6 +237,17 @@ En développement, les builds signés ad hoc ne satisfont pas l'exigence. Une ex
 
 Le serveur web est un client signé du socket. Il authentifie le navigateur par un jeton aléatoire, propre à la session, et il est le seul client à utiliser un jeton. Pour le socket lui-même, un jeton ne servirait à rien : il serait stocké dans un fichier `0600` que le code malveillant visé peut lire aussi.
 
+### Sécurité du serveur web : à traiter
+
+La sécurité du serveur web reste à spécifier. Les points connus sont :
+
+- le transport du jeton : passé dans l'URL, il finit dans l'historique du navigateur ;
+- la protection contre le DNS rebinding (vérification de l'en-tête `Host`) ;
+- la vérification de l'`Origin` des connexions WebSocket ;
+- les droits accordés au navigateur.
+
+`nm-server` n'est pas prioritaire. Les décisions d'implémentation seront prises quand on commencera à coder ce module, pas avant. D'ici là, les droits du tableau ci-dessus et le jeton aléatoire ne sont que des orientations.
+
 ### Confirmation des envois demandés par un agent
 
 Un mail entrant est un contenu hostile, lu par un LLM qui dispose d'outils. Sans confirmation, une instruction cachée dans un mail suffirait à exfiltrer des données par un envoi. Le noyau applique donc la règle suivante à toute commande `send_message` venant du client MCP :
@@ -291,7 +302,7 @@ Un cask Homebrew (`brew install --cask nicemailer`) pointant vers la même relea
 | Latence du socket       | Perception de fluidité de l'app via IPC       | Pagination par curseurs, mesures dès le squelette             |
 | Signature des helpers   | Erreurs de notarisation découvertes tard      | Valider la chaîne complète avec le squelette « Hello World »  |
 | Cycle de vie de l'agent | Agent obsolète après mise à jour              | Poignée de main de version, redémarrage de l'agent par l'app  |
-| Accès web local         | Exposition du serveur HTTP                    | Écoute sur `127.0.0.1`, jeton aléatoire, désactivé par défaut |
+| Accès web local         | Exposition du serveur HTTP                    | Écoute sur `127.0.0.1`, désactivé par défaut ; le reste est à décider quand on codera `nm-server`, module non prioritaire (section 9) |
 | Accès au socket         | Un processus quelconque pilote le noyau       | Vérification de la signature du client, droits par client (section 9) |
 | Envoi par un agent      | Exfiltration par injection de prompt          | Confirmation obligatoire dans l'app (section 9)                |
 | Chiffrement au repos    | Lecture directe de la base et du brut par un code du même utilisateur | Non couvert en v1 ; SQLCipher et brut chiffré, clé dans le Keychain réservée au noyau, à évaluer |
