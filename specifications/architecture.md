@@ -105,7 +105,7 @@ Le contrat tient en trois familles de messages, transportés en JSON-RPC 2.0 sur
 | ---------- | --------------------------------- | ---------------------------------------------------------------------- |
 | Commandes  | client vers noyau, écriture       | `send_message`, `move_to_folder`, `mark_read`, `add_account`, `delete` |
 | Requêtes   | client vers noyau, lecture        | `list_threads(folder, cursor)`, `get_message(id)`, `search(query)`     |
-| Événements | noyau vers clients, notifications | `MessageArrived`, `SyncProgress`, `FlagsChanged`, `AccountError`, `ActionReverted` |
+| Événements | noyau vers clients, notifications | `MessageArrived`, `SyncProgress`, `FlagsChanged`, `AccountError`, `ActionReverted`, `SendConfirmationRequested` |
 
 ### Règles du contrat
 
@@ -147,7 +147,7 @@ Le noyau est un LaunchAgent embarqué dans le bundle, enregistré par l'app via 
 ```
 NiceMailer.app/Contents/
 ├── MacOS/NiceMailer                                  ← app SwiftUI (client)
-├── Library/LaunchAgents/fr.nicemailer.core.plist     ← déclare le noyau et le socket
+├── Library/LaunchAgents/eu.nicemailer.core.plist     ← déclare le noyau et le socket
 └── Helpers/
     ├── nicemailer-core                               ← noyau Rust (nm-daemon)
     ├── nicemailer                                    ← CLI
@@ -159,7 +159,7 @@ NiceMailer.app/Contents/
 
 - **LaunchAgent plutôt que LoginItem.** Un exécutable Rust nu s'enregistre mal comme LoginItem, qui attend un mini-bundle d'app.
 - **Démarrage et relance.** Le plist déclare `RunAtLoad` et `KeepAlive` : le noyau démarre à l'ouverture de session et est relancé après un arrêt ou un plantage. Il déclare aussi le socket Unix (clé `Sockets`), qui relance le noyau si une connexion arrive alors qu'il est arrêté. Un `nicemailer list` fonctionne donc même si l'app est fermée.
-- **Emplacement du socket.** `~/Library/Application Support/NiceMailer/`, droits `0600`, chemin court (les sockets Unix sont limités à environ 104 caractères).
+- **Emplacement du socket.** `~/Library/Application Support/NiceMailer/`, droits `0600`, chemin court (les sockets Unix sont limités à environ 104 caractères). Les clients sont authentifiés par leur signature (section 9).
 - **Versions alignées.** App, noyau et helpers sont livrés ensemble dans un seul bundle, ce qui évite les incompatibilités ; la poignée de main de version couvre les cas résiduels (ancien CLI installé, par exemple).
 
 ---
@@ -191,7 +191,73 @@ Le noyau est l'unique propriétaire de la base SQLite ; aucun client n'y accède
 
 ---
 
-## 9. Distribution directe via GitHub
+## 9. Sécurité du socket et des clients
+
+Le noyau vérifie la signature de code de chaque client qui se connecte au socket et lui accorde des droits selon cette signature ; l'envoi d'un mail par un agent exige toujours une confirmation de l'utilisateur.
+
+### Menaces couvertes et non couvertes
+
+Un processus de l'utilisateur qui peut se connecter au socket peut aussi lire directement la base et les fichiers bruts (TCC ne protège pas les données d'une app hors bac à sable), ou exécuter le CLI signé de NiceMailer. Sans bac à sable, macOS n'offre pas de frontière solide entre deux processus du même utilisateur. Authentifier le socket ne protège donc pas la lecture des mails contre un code malveillant qui tourne sous le compte de l'utilisateur.
+
+| Menace                                               | Protection                                                                                       |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| Autres comptes de la machine                         | Socket en `0600`, dossier de données (base, brut, socket) en `0700`                              |
+| Apps en bac à sable (App Store)                      | Déjà bloquées : elles n'ont pas accès au chemin du socket                                        |
+| Processus quelconque qui parle directement au socket | Vérification de la signature du client                                                           |
+| Agent IA qui abuse d'un client légitime              | Droits par client, confirmation des envois, journal, limite de débit                             |
+| Code malveillant du même utilisateur, déterminé      | **Non couvert.** Seul un chiffrement au repos le limiterait (décision reportée, voir section 11) |
+
+### Vérification de la signature
+
+À chaque connexion, le noyau :
+
+1. récupère le jeton d'audit du client par `getsockopt(LOCAL_PEERTOKEN)`. Le jeton d'audit est préféré au PID (`LOCAL_PEERPID`), qui peut être réattribué entre la connexion et la vérification ;
+2. obtient la signature du processus par `SecCodeCopyGuestWithAttributes` (attribut `kSecGuestAttributeAudit`) et la valide par `SecCodeCheckValidity` contre l'exigence :
+   ```
+   anchor apple generic and certificate leaf[subject.OU] = "<TEAM_ID>"
+     and identifier in ("eu.nicemailer.app", "eu.nicemailer.cli", "eu.nicemailer.tui",
+                        "eu.nicemailer.mcp", "eu.nicemailer.server")
+   ```
+3. ferme la connexion si la vérification échoue, et l'inscrit au journal.
+
+**L'identité du client est celle de sa signature**, jamais ce qu'il annonce dans la poignée de main. Chaque binaire a un identifiant de signature distinct, qui détermine ses droits.
+
+Tous les binaires sont signés avec le *hardened runtime* (qui bloque l'injection par `DYLD_*`) et la validation des bibliothèques, pour qu'un binaire signé ne charge pas de code étranger.
+
+En développement, les builds signés ad hoc ne satisfont pas l'exigence. Une exigence assouplie est activée **à la compilation** (`cfg(debug_assertions)`), jamais par une variable d'environnement, qui deviendrait une porte dérobée en production.
+
+### Droits par client
+
+| Client      | Lecture | Modification (flags, déplacements, suppression)            | Envoi                              | Comptes et réglages |
+| ----------- | ------- | ---------------------------------------------------------- | ---------------------------------- | ------------------- |
+| App         | oui     | oui                                                        | oui                                | oui                 |
+| CLI, TUI    | oui     | oui                                                        | oui                                | oui                 |
+| Serveur web | oui     | oui                                                        | oui                                | non                 |
+| MCP (agent) | oui     | désactivé par défaut, activable dans les réglages de l'app | **toujours soumis à confirmation** | non                 |
+
+Le serveur web est un client signé du socket. Il authentifie le navigateur par un jeton aléatoire, propre à la session, et il est le seul client à utiliser un jeton. Pour le socket lui-même, un jeton ne servirait à rien : il serait stocké dans un fichier `0600` que le code malveillant visé peut lire aussi.
+
+### Confirmation des envois demandés par un agent
+
+Un mail entrant est un contenu hostile, lu par un LLM qui dispose d'outils. Sans confirmation, une instruction cachée dans un mail suffirait à exfiltrer des données par un envoi. Le noyau applique donc la règle suivante à toute commande `send_message` venant du client MCP :
+
+1. Le message est mis en attente de confirmation. Il n'entre pas dans la file d'envoi.
+2. Le noyau émet l'événement `SendConfirmationRequested`. Si l'app est fermée, le noyau la lance.
+3. L'app affiche le message complet (destinataires, objet, corps, pièces jointes) avec « Envoyer » et « Refuser ».
+4. Seule l'app peut confirmer : la commande `confirm_send` est refusée à tout autre client, MCP compris.
+5. Sans réponse après un délai (paramètre à fixer), la demande expire et vaut refus.
+6. L'agent reçoit le résultat (`sent`, `refused` ou `expired`) en réponse à sa commande.
+
+**Limite assumée** : un agent qui dispose aussi d'un accès au terminal peut appeler `nicemailer send` et contourner cette confirmation, puisque le CLI a le droit d'envoyer. La confirmation protège le canal MCP, pas l'utilisateur contre un agent auquel il a confié son terminal.
+
+### Journal et limites
+
+- Les actions des clients autres que l'app (CLI, TUI, web, MCP) sont journalisées et consultables dans l'app : client, action, message concerné, date.
+- Les suppressions et les demandes d'envoi des clients autres que l'app sont soumises à une limite de débit.
+
+---
+
+## 10. Distribution directe via GitHub
 
 La distribution hors App Store lève les contraintes de sandbox : socket local, lien symbolique du CLI et écriture dans la config de Claude Desktop restent possibles.
 
@@ -217,7 +283,7 @@ Un cask Homebrew (`brew install --cask nicemailer`) pointant vers la même relea
 
 ---
 
-## 10. Risques et décisions ouvertes
+## 11. Risques et décisions ouvertes
 
 | Sujet                   | Risque ou question                            | Piste                                                         |
 | ----------------------- | --------------------------------------------- | ------------------------------------------------------------- |
@@ -226,11 +292,14 @@ Un cask Homebrew (`brew install --cask nicemailer`) pointant vers la même relea
 | Signature des helpers   | Erreurs de notarisation découvertes tard      | Valider la chaîne complète avec le squelette « Hello World »  |
 | Cycle de vie de l'agent | Agent obsolète après mise à jour              | Poignée de main de version, redémarrage de l'agent par l'app  |
 | Accès web local         | Exposition du serveur HTTP                    | Écoute sur `127.0.0.1`, jeton aléatoire, désactivé par défaut |
+| Accès au socket         | Un processus quelconque pilote le noyau       | Vérification de la signature du client, droits par client (section 9) |
+| Envoi par un agent      | Exfiltration par injection de prompt          | Confirmation obligatoire dans l'app (section 9)                |
+| Chiffrement au repos    | Lecture directe de la base et du brut par un code du même utilisateur | Non couvert en v1 ; SQLCipher et brut chiffré, clé dans le Keychain réservée au noyau, à évaluer |
 | Architecture Intel      | Coût des binaires universels                  | Décider du support Intel avant le premier release             |
 
 ---
 
-## 11. Feuille de route
+## 12. Feuille de route
 
 La première étape est un squelette complet de bout en bout, car la signature, l'enregistrement de l'agent et la socket activation sont les parties les plus pénibles à découvrir tard.
 
