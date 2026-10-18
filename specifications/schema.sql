@@ -124,8 +124,11 @@ CREATE TABLE message (
     id               INTEGER PRIMARY KEY,
     account_id       INTEGER NOT NULL REFERENCES account(id) ON DELETE CASCADE,
     folder_id       INTEGER NOT NULL REFERENCES folder(id) ON DELETE CASCADE,
-    uid              INTEGER NOT NULL,
-    thread_id        INTEGER REFERENCES thread(id) ON DELETE SET NULL,
+    -- Adresse du message sur le serveur, utilisée par la synchro et le spool,
+    -- jamais exposée dans le contrat. L'identité stable est id.
+    -- NULL : déplacement en cours, UID dans le dossier cible pas encore connu.
+    uid              INTEGER,
+    thread_id       INTEGER REFERENCES thread(id) ON DELETE SET NULL,
 
     message_id_hdr   TEXT,                -- en-tête Message-ID, sans chevrons
     in_reply_to      TEXT,
@@ -148,19 +151,23 @@ CREATE TABLE message (
     body_state       INTEGER NOT NULL DEFAULT 0
                      CHECK (body_state IN (0,1)),  -- 0 en-têtes seuls, 1 message complet
 
-    UNIQUE (folder_id, uid)
+    UNIQUE (folder_id, uid)               -- synchro ; plusieurs NULL autorisés
 ) STRICT;
 
 -- Liste d'un dossier avec pagination par curseur (clé : date, id).
+-- SQLite ajoute le rowid (= id) à la fin de chaque index : le tiebreaker est
+-- implicite. L'index est déclaré croissant et parcouru à l'envers pour
+-- ORDER BY date_received DESC, id DESC ; un DESC sur date_received casserait
+-- la correspondance avec le rowid, qui reste croissant.
 CREATE INDEX idx_message_list
-    ON message (folder_id, date_received DESC, id DESC);
+    ON message (folder_id, date_received);
 
 -- Filtre "non lus" : index partiel, minuscule et très rapide.
 CREATE INDEX idx_message_unread
-    ON message (folder_id, date_received DESC, id DESC) WHERE is_seen = 0;
+    ON message (folder_id, date_received) WHERE is_seen = 0;
 
 CREATE INDEX idx_message_flagged
-    ON message (folder_id, date_received DESC, id DESC) WHERE is_flagged = 1;
+    ON message (folder_id, date_received) WHERE is_flagged = 1;
 
 -- Messages d'une conversation, dans l'ordre chronologique.
 CREATE INDEX idx_message_thread
@@ -300,7 +307,12 @@ BEFORE UPDATE OF text_plain, html_sanitized ON message_body BEGIN
 END;
 
 -- ------------------------------------------------------------
--- File d'actions locales à rejouer vers le serveur (hors-ligne)
+-- Spool : file d'actions locales à rejouer vers le serveur (hors-ligne).
+-- L'action est déjà appliquée localement à l'insertion (affichage immédiat).
+-- Erreur temporaire : reste 'queued', run_after repoussé.
+-- Erreur définitive : 'reverted', l'état local est restauré depuis undo.
+-- 'cancelled' : annulée sans exécution (fusion, ou annulation en série).
+-- Voir modele de donnees.md, section 6.
 -- ------------------------------------------------------------
 CREATE TABLE pending_action (
     id          INTEGER PRIMARY KEY,
@@ -308,9 +320,10 @@ CREATE TABLE pending_action (
     kind        TEXT NOT NULL CHECK (kind IN
                 ('set_flags','move','copy','delete','append_draft','send')),
     message_id  INTEGER REFERENCES message(id) ON DELETE SET NULL,
-    payload     TEXT NOT NULL,            -- JSON : flags, dossier cible, etc.
+    payload     TEXT NOT NULL,            -- JSON : move = {from_folder_id, from_uid, to_folder_id}
+    undo        TEXT,                     -- JSON : état local à restaurer en cas d'échec définitif
     state       TEXT NOT NULL DEFAULT 'queued'
-                CHECK (state IN ('queued','running','failed','done')),
+                CHECK (state IN ('queued','running','done','reverted','cancelled')),
     attempts    INTEGER NOT NULL DEFAULT 0,
     last_error  TEXT,
     created_at  INTEGER NOT NULL DEFAULT (unixepoch()),
@@ -319,6 +332,11 @@ CREATE TABLE pending_action (
 
 CREATE INDEX idx_pending_action_queue
     ON pending_action (account_id, state, run_after, id);
+
+-- Actions en attente sur un message : fusion, exécution en série par message,
+-- et consultation par la synchro (UID à ignorer, lignes à rattacher).
+CREATE INDEX idx_pending_action_message
+    ON pending_action (message_id, id) WHERE state IN ('queued','running');
 
 -- ------------------------------------------------------------
 -- Requêtes de référence (pour la couche Rust)

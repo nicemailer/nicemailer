@@ -105,7 +105,7 @@ Le contrat tient en trois familles de messages, transportés en JSON-RPC 2.0 sur
 | ---------- | --------------------------------- | ---------------------------------------------------------------------- |
 | Commandes  | client vers noyau, écriture       | `send_message`, `move_to_folder`, `mark_read`, `add_account`, `delete` |
 | Requêtes   | client vers noyau, lecture        | `list_threads(folder, cursor)`, `get_message(id)`, `search(query)`     |
-| Événements | noyau vers clients, notifications | `MessageArrived`, `SyncProgress`, `FlagsChanged`, `AccountError`       |
+| Événements | noyau vers clients, notifications | `MessageArrived`, `SyncProgress`, `FlagsChanged`, `AccountError`, `ActionReverted` |
 
 ### Règles du contrat
 
