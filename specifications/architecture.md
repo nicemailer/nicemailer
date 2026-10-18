@@ -105,13 +105,13 @@ Le contrat tient en trois familles de messages, transportés en JSON-RPC 2.0 sur
 | ---------- | --------------------------------- | ---------------------------------------------------------------------- |
 | Commandes  | client vers noyau, écriture       | `send_message`, `move_to_folder`, `mark_read`, `add_account`, `delete` |
 | Requêtes   | client vers noyau, lecture        | `list_threads(folder, cursor)`, `get_message(id)`, `search(query)`     |
-| Événements | noyau vers clients, notifications | `MessageArrived`, `SyncProgress`, `FlagsChanged`, `AccountError`, `ActionReverted`, `SendConfirmationRequested` |
+| Événements | noyau vers clients, notifications | `ThreadChanged`, `MessageArrived`, `AccountError`, `ActionReverted`, `ResyncRequired` (catalogue complet dans `evenements.md`) |
 
 ### Règles du contrat
 
 - **Pagination par curseurs.** Toute liste retourne une fenêtre et un curseur ; aucune requête ne renvoie une boîte entière.
 - **Vues de présentation.** Les réponses sont des structures prêtes à afficher, indépendantes du schéma SQLite.
-- **Événements en notifications JSON-RPC.** Les clients s'abonnent après la connexion ; l'app Swift les consomme via un `AsyncStream`.
+- **Événements en notifications JSON-RPC.** Les clients s'abonnent après la connexion ; l'app Swift les consomme via un `AsyncStream`. Les événements signalent ce qui a changé sans porter l'état ; ils sont numérotés (époque et séquence) pour qu'un client détecte une perte et se rattrape, par rejeu ou par rechargement complet. Le mécanisme est spécifié dans `evenements.md`.
 - **Poignée de main de version.** À la connexion, le client annonce sa version de protocole ; si elle est trop ancienne, le noyau répond par une erreur explicite plutôt que de planter.
 - **Erreurs typées.** Les codes d'erreur JSON-RPC sont stables et documentés, pour que le CLI et le MCP produisent des messages utiles.
 - **Fichiers par chemin.** Le contenu d'une pièce jointe ne transite jamais dans le JSON : le noyau et les clients échangent des chemins de fichiers locaux (voir ci-dessous).
@@ -146,8 +146,8 @@ Le format est lisible et débogable à la main, le serveur MCP en est presque un
 
 ```json
 → {"jsonrpc":"2.0","id":1,"method":"list_threads","params":{"folder":"inbox","limit":50,"cursor":null}}
-← {"jsonrpc":"2.0","id":1,"result":{"items":[ /* ThreadSummary… */ ],"next_cursor":"c_8f2a"}}
-← {"jsonrpc":"2.0","method":"MessageArrived","params":{"thread_id":"t_913","folder":"inbox"}}
+← {"jsonrpc":"2.0","id":1,"result":{"items":[ /* ThreadSummary… */ ],"next_cursor":"c_8f2a","as_of":{"epoch":"e_7c1","seq":4218}}}
+← {"jsonrpc":"2.0","method":"MessageArrived","params":{"epoch":"e_7c1","seq":4219,"message_id":"m_5521","folder_id":"f_1"}}
 ```
 
 ---
