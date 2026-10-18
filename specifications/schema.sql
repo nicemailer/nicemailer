@@ -287,7 +287,8 @@ CREATE TABLE attachment (
     size         INTEGER,
     content_id   TEXT,                    -- pour les images inline (cid:)
     is_inline    INTEGER NOT NULL DEFAULT 0 CHECK (is_inline IN (0,1)),
-    disk_path    TEXT,                    -- NULL tant que non téléchargée
+    disk_path    TEXT,                    -- fichier extrait du brut, transmis aux clients
+                                          -- par chemin ; NULL si non extrait ou purgé
     UNIQUE (message_id, part_id)
 ) STRICT;
 

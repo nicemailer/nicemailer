@@ -114,6 +114,29 @@ Le contrat tient en trois familles de messages, transportés en JSON-RPC 2.0 sur
 - **Événements en notifications JSON-RPC.** Les clients s'abonnent après la connexion ; l'app Swift les consomme via un `AsyncStream`.
 - **Poignée de main de version.** À la connexion, le client annonce sa version de protocole ; si elle est trop ancienne, le noyau répond par une erreur explicite plutôt que de planter.
 - **Erreurs typées.** Les codes d'erreur JSON-RPC sont stables et documentés, pour que le CLI et le MCP produisent des messages utiles.
+- **Fichiers par chemin.** Le contenu d'une pièce jointe ne transite jamais dans le JSON : le noyau et les clients échangent des chemins de fichiers locaux (voir ci-dessous).
+
+### Pièces jointes : transfert par chemin
+
+Tous les clients tournent sur la même machine et sous le même utilisateur que le noyau. Échanger un chemin évite d'encoder en base64 des fichiers de plusieurs dizaines de mégaoctets dans le JSON, et permet à l'app de les passer directement à Quick Look, au Finder ou à l'app par défaut.
+
+**Lecture d'une pièce jointe.** La requête `get_attachment(attachment_id)` :
+
+1. extrait la pièce jointe du message brut si elle ne l'est pas déjà (`stockage-brut.md`, section 6) ;
+2. renvoie `{path, filename, mime_type, size}`, où `path` est un chemin absolu dans `<data_dir>/attachments.noindex/`.
+
+Le fichier appartient au noyau. Les clients le lisent, le copient ou l'ouvrent, mais ne le modifient ni ne le déplacent (droits `0400`). Le chemin est valable tant que le message existe ; les fichiers extraits peuvent toutefois être purgés et réextraits à tout moment. Un client ne conserve donc pas le chemin : il le redemande avant chaque usage.
+
+- **Enregistrer sous / glisser vers le Finder** : le client copie le fichier vers la destination choisie par l'utilisateur.
+- **Images inline (`cid:`)** : l'app résout les URL `cid:` du HTML par un gestionnaire de schéma d'URL de `WKWebView`, qui demande le chemin au noyau et lit le fichier.
+- **Serveur web et MCP** : `nm-server` lit le fichier et le transmet au navigateur. Pour le MCP, le proxy renvoie le chemin ; s'il faut aussi renvoyer le contenu à l'agent, la décision sera prise en codant `nm-mcp`.
+
+**Sécurité des fichiers extraits.**
+
+- Le nom du fichier vient de l'expéditeur, donc il n'est pas fiable. Il est assaini avant d'écrire sur le disque : pas de séparateur de chemin, pas de `..`, pas de caractère de contrôle, longueur bornée. Le nom d'origine n'est conservé que dans `attachment.filename`, pour l'affichage.
+- Le noyau pose l'attribut étendu `com.apple.quarantine` sur chaque fichier extrait, comme le fait Mail. À l'ouverture d'un exécutable ou d'une archive, Gatekeeper avertit l'utilisateur.
+
+**Envoi d'une pièce jointe.** Dans `send_message`, le client donne les chemins des fichiers à joindre. Le noyau les lit **au moment de la commande** et les intègre au message, qui est alors mis en file d'envoi. Un fichier déplacé ou supprimé avant l'envoi effectif, par exemple hors ligne, ne pose donc pas de problème. Le noyau n'a pas plus de droits que le client, puisqu'il tourne sous le même utilisateur : lire un chemin fourni par le client ne lui donne accès à rien de nouveau. Pour un envoi demandé par un agent, la confirmation dans l'app affiche la liste des pièces jointes avec leur chemin d'origine (section 9).
 
 ### Pourquoi JSON-RPC
 

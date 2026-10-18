@@ -70,7 +70,7 @@ Table des contacts : adresses et domaines connus de l'application. Adresses et d
 Une règle favorable (`inbox`, `newsletter`, `paperwork`) n'est appliquée que si l'expéditeur est suffisamment authentifié ; une règle `banned` s'applique toujours. `address.auth_seen` mémorise qu'un mail authentifié a déjà été reçu de l'adresse, et `address.auth_policy` (`auto`, `required`, `not_required`) fixe l'exigence pour cette adresse. `domain` n'a pas de politique : une règle de domaine favorable exige toujours un mail authentifié. Le détail est dans `authentification-expediteur.md`.
 
 ### `attachment`
-Métadonnées seulement. Les fichiers vivent sur disque et `disk_path` reste `NULL` tant que la pièce jointe n'est pas téléchargée. `part_id` est le numéro de partie MIME, `content_id` sert aux images inline (`cid:`).
+Métadonnées seulement. Les fichiers sont extraits du message brut à la demande et rangés sur disque ; `disk_path` reste `NULL` tant que la pièce jointe n'est pas extraite, et redevient `NULL` si le fichier est purgé. Les clients reçoivent ce chemin, jamais le contenu (`architecture.md`, section 5). `filename` est le nom d'origine, affiché tel quel ; le fichier sur disque porte un nom assaini. `part_id` est le numéro de partie MIME, `content_id` sert aux images inline (`cid:`).
 
 ### `message_fts`
 Index plein texte FTS5 sur objet, expéditeur, destinataires et corps, avec `unicode61 remove_diacritics 2` (« eleve » trouve « élève ») et des index de préfixes 2 et 3 pour la saisie progressive. Des triggers le maintiennent à jour (section 7).

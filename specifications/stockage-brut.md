@@ -41,6 +41,11 @@ Tout ce qui sert à l'affichage (en-têtes, destinataires, corps texte et HTML a
     .corrupt/               ← blobs corrompus (section 6)
     ab/                     ← 2 premiers caractères hexadécimaux du hash
       abcdef…0123.eml.zst   ← hash SHA-256 en hexadécimal minuscule (64 caractères)
+  attachments.noindex/      ← pièces jointes extraites (section 6), purgeables
+    ab/                     ← 2 premiers caractères hexadécimaux du hash du brut
+      abcdef…0123/          ← hash du brut dont la pièce jointe est extraite
+        1.2/                ← part_id
+          facture-mars.pdf  ← nom assaini, extension conservée
   lock                      ← verrou d'instance unique
   core.sock                 ← socket du noyau, créé par lui (architecture.md, section 6)
 ```
@@ -115,7 +120,9 @@ Le brut n'est lu que par :
    2. ouvrir le fichier, décompresser en flux, vérifier le SHA-256 pendant la lecture ;
    3. repérer la partie MIME (la correspondance entre `part_id` IMAP et l'analyseur doit être couverte par des tests) ;
    4. décoder le transfert (base64, quoted-printable) et écrire dans un fichier temporaire ;
-   5. renommer vers la destination et renseigner `attachment.disk_path`.
+   5. poser l'attribut `com.apple.quarantine`, renommer vers `attachments.noindex/<hash>/<part_id>/<nom assaini>` et renseigner `attachment.disk_path`.
+
+   Les fichiers extraits sont rangés par hash du brut et non par message : deux copies d'un même message (deux dossiers) partagent la même extraction. Ils sont dérivés du brut et peuvent être purgés à tout moment ; `attachment.disk_path` est alors remis à NULL et la prochaine demande réextrait le fichier. La politique de purge automatique reste à définir. Le transfert aux clients par chemin est décrit dans `architecture.md`, section 5.
 2. **`reindex`** (section 8).
 3. **`export`** (section 9).
 
@@ -130,7 +137,7 @@ Si le fichier est absent alors que la base le référence, le comportement est l
 **GC des blobs sans référence**, déclenché périodiquement et après de grosses suppressions :
 
 1. Dans une transaction, supprimer de `raw_blob` les lignes où `NOT EXISTS (SELECT 1 FROM message WHERE raw_hash = raw_blob.hash)`. Conserver la liste des hashes supprimés.
-2. Après validation, supprimer les fichiers correspondants.
+2. Après validation, supprimer les fichiers correspondants, ainsi que les dossiers `attachments.noindex/<hash>/` des pièces jointes extraites de ces blobs.
 
 **Balayage des orphelins**, au démarrage et périodiquement : parcourir `raw.noindex/`, supprimer
 - tout fichier de `.tmp/` de plus de 24 heures ;
