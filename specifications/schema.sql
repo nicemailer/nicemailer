@@ -235,18 +235,23 @@ CREATE TABLE tag (
 ) STRICT;
 
 -- ------------------------------------------------------------
--- Corps : écrit une seule fois à la réception du message complet, IMMUABLE.
--- Ce n'est pas un cache : il n'est ni évincé ni régénéré, seule la suppression
--- du message l'efface (cascade).
+-- Corps : interprétation du message brut (seul le brut sur disque est immuable).
+-- Écrit à la réception du message complet, puis réécrit par reindex quand
+-- l'analyseur ou l'assainissement évoluent. Ce n'est pas un cache : il n'est
+-- jamais évincé, seule la suppression du message l'efface (cascade).
 -- ------------------------------------------------------------
 CREATE TABLE message_body (
     message_id      INTEGER PRIMARY KEY REFERENCES message(id) ON DELETE CASCADE,
     text_plain      TEXT,
     html_sanitized  TEXT,                 -- déjà passé par ammonia, images distantes retirées
     has_remote_content INTEGER NOT NULL DEFAULT 0 CHECK (has_remote_content IN (0,1)),
+    parser_version  INTEGER NOT NULL,     -- version de l'analyseur et de l'assainissement ;
+                                          -- reindex cible les lignes de version inférieure
     raw_path        TEXT,                 -- .eml brut sur disque, si conservé
     fetched_at      INTEGER NOT NULL DEFAULT (unixepoch())
 ) STRICT;
+
+CREATE INDEX idx_message_body_parser ON message_body (parser_version);
 
 -- ------------------------------------------------------------
 -- Pièces jointes (métadonnées ; les fichiers vivent sur disque)
@@ -300,10 +305,11 @@ CREATE TRIGGER message_body_fts_ai AFTER INSERT ON message_body BEGIN
     UPDATE message_fts SET body = coalesce(new.text_plain, '') WHERE rowid = new.message_id;
 END;
 
--- Le corps est immuable : toute modification du texte est refusée.
-CREATE TRIGGER message_body_immutable
-BEFORE UPDATE OF text_plain, html_sanitized ON message_body BEGIN
-    SELECT RAISE(ABORT, 'message_body est immuable');
+-- Quand le corps est réinterprété (reindex) : mettre l'index à jour.
+-- reindex procède par UPDATE, jamais par INSERT OR REPLACE (qui supprimerait
+-- puis réinsérerait la ligne sans passer par ce trigger).
+CREATE TRIGGER message_body_fts_au AFTER UPDATE OF text_plain ON message_body BEGIN
+    UPDATE message_fts SET body = coalesce(new.text_plain, '') WHERE rowid = new.message_id;
 END;
 
 -- ------------------------------------------------------------

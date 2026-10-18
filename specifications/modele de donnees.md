@@ -16,7 +16,7 @@ Ce document justifie le schéma de `schema.sql` (version 1) et reprend les point
 | **Table de liste étroite** | `message` ne contient que des en-têtes et des champs dénormalisés (expéditeur, aperçu). Le corps vit dans `message_body`. |
 | **Pas d'`OFFSET`** | Pagination par curseur `(date_received, id)`, avec l'index `idx_message_list`. Le coût reste constant à toute profondeur de défilement. |
 | **Index partiels pour les filtres fréquents** | `idx_message_unread` et `idx_message_flagged` ne contiennent que les lignes concernées. |
-| **Corps séparés de la table de liste** | Les corps (`message_body`), volumineux et immuables, vivent à part pour que la liste reste légère. |
+| **Corps séparés de la table de liste** | Les corps (`message_body`), volumineux, vivent à part pour que la liste reste légère. |
 | **Hors-ligne d'abord** | Toute action est appliquée localement tout de suite et enregistrée dans le spool `pending_action`, qui la rejoue vers le serveur et l'annule en cas d'échec définitif (section 6). |
 | **Aucun secret en base** | `account.keychain_ref` référence le Keychain, jamais le mot de passe ou le jeton. |
 | **Typage strict** | Tables `STRICT`, contraintes `CHECK` sur les booléens et les énumérations, `WITHOUT ROWID` sur les tables de liaison. |
@@ -40,7 +40,7 @@ Le cœur du modèle. Une ligne par copie d'un message sur le serveur.
 - **`body_state`** distingue les états 0 (en-têtes seuls) et 1 (message complet téléchargé), pour savoir s'il faut récupérer le message à l'ouverture.
 
 ### `message_body`
-Texte brut et HTML déjà assaini (ammonia), plus un indicateur `has_remote_content` pour proposer « charger les images distantes ». Écrit une seule fois, à la réception du message complet, et immuable : ce n'est ni un cache évictable ni une donnée régénérable. `raw_path` pointe vers le `.eml` brut s'il est conservé sur disque.
+Texte brut et HTML déjà assaini (ammonia), plus un indicateur `has_remote_content` pour proposer « charger les images distantes ». C'est une **interprétation** du message brut : seul le brut enregistré sur disque est immuable (voir `stockage-brut.md`). Le corps est écrit à la réception du message complet, puis réécrit par `reindex` quand l'analyseur MIME ou l'assainissement évoluent : correction d'une faille dans l'assainissement, nouvelle détection des pixels de suivi, meilleur décodage. `parser_version` indique avec quelle version il a été produit, et `reindex` cible les lignes dont la version est inférieure à la version courante. Ce n'est pas un cache : il n'est jamais évincé, et seule la suppression du message l'efface. `raw_path` pointe vers le `.eml` brut s'il est conservé sur disque.
 
 ### `thread` et `thread_folder`
 Les conversations (algorithme JWZ). Une conversation peut couvrir plusieurs dossiers (par exemple Reçus et Envoyés), d'où `thread_folder`, qui est une **vue matérialisée par dossier** : la liste de conversations d'un dossier devient un simple parcours d'index (`idx_thread_folder_list`), sans agrégation à chaque défilement.
@@ -155,8 +155,8 @@ Cycle de synchronisation à l'ouverture d'un dossier :
 - **Insertion** : le trigger `message_fts_ai` indexe l'objet et l'expéditeur dès la synchronisation des en-têtes, avec un corps vide. La recherche fonctionne donc avant tout téléchargement de corps.
 - **Arrivée du corps** : les triggers de `message_body` ajoutent le texte à l'index.
 - **Mise à jour et suppression** : `message_fts_au` suit les changements d'objet ou d'expéditeur, `message_fts_ad` retire la ligne à la suppression du message.
-- **Corps immuable** : le corps n'étant ni évincé ni modifié, l'index plein texte n'a pas de trigger de mise à jour du corps. Il est ajouté à l'arrivée du message et retiré avec lui.
-- **Coût** : la table FTS5 est autonome (elle stocke sa propre copie du texte). C'est le choix le plus simple, au prix d'un espace disque supplémentaire. Une table à contenu externe économiserait cet espace, mais ne peut pas indexer un corps qui a été évincé.
+- **Réinterprétation du corps** : quand `reindex` réécrit `message_body.text_plain`, le trigger `message_body_fts_au` met l'index à jour. `reindex` procède par `UPDATE` : un `INSERT OR REPLACE` supprimerait puis réinsérerait la ligne sans déclencher ce trigger.
+- **Coût** : la table FTS5 est autonome (elle stocke sa propre copie du texte). C'est le choix le plus simple, au prix d'un espace disque supplémentaire. Une table à contenu externe, ou sans contenu (`contentless_delete`, SQLite 3.43 ou plus, mais sans `snippet()`), économiserait cet espace ; à évaluer selon la taille réelle des bases.
 
 ## 8. Remarques déjà traitées
 
@@ -168,7 +168,7 @@ Cycle de synchronisation à l'ouverture d'un dossier :
 | **À quoi servent `uidvalidity`, `uidnext`, `highestmodseq` ?** | Voir section 5. |
 | **La recherche trouve-t-elle les accents ?** | Oui, grâce à `remove_diacritics 2`. Le test « eleve » retrouve « Élève facture ». |
 | **La liste est-elle rapide à grande profondeur ?** | Oui, grâce à la pagination par curseur et à l'index `idx_message_list`. Plan vérifié en section 4. |
-| **Peut-on libérer de la place sans perdre de mails ?** | Non : corps et brut sont immuables. On libère de la place en supprimant des messages (le ramasse-miettes retire alors les blobs sans référence). |
+| **Peut-on libérer de la place sans perdre de mails ?** | Non : le brut est immuable et conservé intégralement, et le corps en est une interprétation qui n'est jamais évincée. On libère de la place en supprimant des messages (le ramasse-miettes retire alors les blobs sans référence). |
 
 ## 9. Limites connues et points d'attention
 

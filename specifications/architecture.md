@@ -184,7 +184,7 @@ L'utilisateur n'installe qu'une chose, l'app ; tout le reste s'active depuis les
 Le noyau est l'unique propriétaire de la base SQLite ; aucun client n'y accède directement.
 
 - **SQLite en mode WAL** : lectures concurrentes fluides pendant les écritures de synchro.
-- **Corps de messages** : table séparée, immuable, lue à la demande pour garder les listes légères.
+- **Corps de messages** : table séparée, lue à la demande pour garder les listes légères. C'est une interprétation du message brut, réécrite quand l'analyseur évolue ; seul le brut sur disque est immuable.
 - **Recherche plein texte** : index FTS dans `nm-store`, interrogé via la requête `search`.
 - **Runtime async unique** (tokio) côté noyau : les clients ne gèrent aucun thread réseau.
 - **Pas d'accès partagé à la base** : l'app Swift, le CLI et le MCP passent tous par le noyau, ce qui supprime les conflits de verrouillage.

@@ -72,7 +72,7 @@ CREATE INDEX idx_message_raw_hash ON message (raw_hash) WHERE raw_hash IS NOT NU
 Changements par rapport au schéma actuel :
 
 - `message_body.raw_path` est **supprimé**. Le brut n'est plus rattaché au corps.
-- `message_body` est **immuable** : écrit une seule fois à l'ingestion, ni évincé ni régénéré. Ce n'est pas un cache.
+- `message_body` est une **interprétation** du brut : écrit à l'ingestion, réécrit par `reindex` (section 8), jamais évincé. Seul le brut est immuable.
 - `message.body_state` : 0 = en-têtes seuls (pas de brut), 1 = message complet. Le passage à 1 suppose que `raw_hash` est renseigné.
 - Le nombre de références à un blob n'est pas stocké (risque de dérive). Il est calculé à la demande : `SELECT 1 FROM message WHERE raw_hash = ?`.
 
@@ -139,9 +139,11 @@ Une suppression de fichier ne garantit pas l'effacement sécurisé des données 
 
 ## 8. Reconstruction (`reindex`)
 
-Commande qui relit les blobs et régénère, pour tout ou partie des messages : `snippet`, `attachment`, `message_address`, `message_reference`, entrées FTS. `message_body` n'est jamais modifié : `reindex` ne le crée que s'il est absent (échec d'analyse initial).
+Commande qui relit les blobs et régénère, pour tout ou partie des messages : `message_body`, `snippet`, `attachment`, `message_address`, `message_reference`, entrées FTS. `message_body` est créé s'il est absent (échec d'analyse initial) et réécrit par `UPDATE` s'il existe.
 
-- Sert après une amélioration de l'analyseur (parsing des en-têtes, destinataires, pièces jointes).
+- Sert après une amélioration de l'analyseur (parsing des en-têtes, destinataires, pièces jointes) ou de l'assainissement HTML (correction de faille, détection des pixels de suivi).
+- Cible par défaut les messages dont `message_body.parser_version` est inférieur à la version courante ; une montée de version de l'analyseur déclenche donc la réinterprétation en tâche de fond, hors du chemin d'affichage.
+- Une correction de sécurité de l'assainissement doit être appliquée en priorité : tant qu'un corps n'a pas été réinterprété, il est réassaini à la lecture.
 - Ne touche jamais au brut.
 - Ne reconstitue pas dossiers, UID ni flags : ceux-ci viennent d'une resynchronisation IMAP. En cas de perte de la base, le brut seul ne suffit donc pas à tout restaurer, mais il conserve le contenu des messages.
 
@@ -174,7 +176,7 @@ C'est le seul endroit où l'on respecte un format de stockage externe. Le stocka
 - Correspondance `part_id` IMAP / analyseur MIME sur un corpus varié (multipart imbriqué, messages transférés, pièces jointes sans nom).
 - Messages volumineux (> 100 Mo) : mémoire constante.
 - Disque plein pendant l'écriture : aucune ligne en base, aucun fichier partiel.
-- `reindex` complet : résultat identique à l'ingestion initiale, `message_body` existant inchangé.
+- `reindex` complet : résultat identique à une ingestion initiale avec l'analyseur courant, `parser_version` à jour, index plein texte cohérent avec `message_body`.
 
 ## 12. Questions ouvertes
 
