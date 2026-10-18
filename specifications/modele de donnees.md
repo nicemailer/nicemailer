@@ -24,7 +24,7 @@ Ce document justifie le schéma de `schema.sql` (version 1) et reprend les point
 ## 3. Les tables et leur justification
 
 ### `account`
-Paramètres IMAP/SMTP et mode d'authentification (`password` ou `oauth2`). Les secrets sont dans le Keychain. Chaque compte a ses propres dossiers, messages et conversations (suppression en cascade).
+Paramètres IMAP/SMTP et mode d'authentification (`password` ou `oauth2`). Les secrets sont dans le Keychain. `authserv_id` est l'identifiant de serveur reconnu dans les en-têtes `Authentication-Results`, détecté à l'ajout du compte (voir `authentification-expediteur.md`). Chaque compte a ses propres dossiers, messages et conversations (suppression en cascade).
 
 ### `folder`
 Un dossier IMAP, identifié par son chemin complet. Les colonnes `uidvalidity`, `uidnext` et `highestmodseq` pilotent la synchronisation incrémentale (voir section 5). `role` associe un dossier serveur à l'un des dossiers du workflow défini dans `dossiers.md` (inbox, todo, waiting, archive, sent, newsletter, paperwork, quarantine, deleted, junk, banned, drafts), quelle que soit sa langue ou son nom côté serveur. Les dossiers sans rôle ne sont pas gérés. `total_count` et `unread_count` sont des compteurs dénormalisés, pour afficher la barre latérale sans `COUNT(*)`.
@@ -36,6 +36,7 @@ Le cœur du modèle. Une ligne par copie d'un message sur le serveur.
 - **Dénormalisation volontaire** de `from_name`, `from_addr` et `snippet` : la liste n'a jamais de jointure à faire pour dessiner une ligne.
 - **`date_received`** (INTERNALDATE) sert de clé de tri, car l'en-tête `Date` est librement falsifiable ou absent. `date_sent` est conservé pour l'affichage.
 - **Flags** en colonnes séparées (`is_seen`, `is_flagged`...), plus rapides à filtrer et à indexer qu'une chaîne de flags. Les mots-clés personnalisés vont dans `message_keyword`.
+- **`auth_result`**, **`auth_source`** et **`auth_suspect`** : verdict d'authentification de l'expéditeur, sa source, et le fait qu'une règle favorable a été refusée faute d'authentification. Calculés à la réception, avant le screening, et jamais recalculés (voir `authentification-expediteur.md`).
 - **`modseq`** permet de détecter les changements de flags (CONDSTORE).
 - **`body_state`** distingue les états 0 (en-têtes seuls) et 1 (message complet téléchargé), pour savoir s'il faut récupérer le message à l'ouverture.
 
@@ -65,6 +66,8 @@ Limites de cette équivalence :
 
 ### `address` et `domain`
 Table des contacts : adresses et domaines connus de l'application. Adresses et domaines existent indépendamment des comptes (pas de `account_id`, `addr` et `domain` sont uniques). Leur premier attribut est la décision de screening (`screening_target`, `screening_decided_at`), d'autres attributs pourront s'ajouter ; sans décision, ces colonnes sont NULL. `address` porte aussi le nom d'affichage du contact (`name`) : un seul par adresse, ce qui compacte la base et permet à l'utilisateur de le corriger une fois pour tous les messages. Il est renseigné à la première rencontre de l'adresse et n'est jamais écrasé ensuite par l'ingestion. `address` associe une adresse à un dossier cible, `domain` un domaine. Les adresses des destinataires (`message_address`) pointent vers `address`. Cible possible : `inbox`, `newsletter`, `paperwork` ou `banned`, jamais `quarantine`. À l'arrivée d'un mail, la règle d'adresse l'emporte sur la règle de domaine, et sans règle le mail va en Quarantine. Déplacer un mail de Quarantine vers un dossier crée ou met à jour la règle d'adresse. La correspondance de domaine est exacte (pas de sous-domaine) dans cette version.
+
+Une règle favorable (`inbox`, `newsletter`, `paperwork`) n'est appliquée que si l'expéditeur est suffisamment authentifié ; une règle `banned` s'applique toujours. `address.auth_seen` mémorise qu'un mail authentifié a déjà été reçu de l'adresse, et `address.auth_policy` (`auto`, `required`, `not_required`) fixe l'exigence pour cette adresse. `domain` n'a pas de politique : une règle de domaine favorable exige toujours un mail authentifié. Le détail est dans `authentification-expediteur.md`.
 
 ### `attachment`
 Métadonnées seulement. Les fichiers vivent sur disque et `disk_path` reste `NULL` tant que la pièce jointe n'est pas téléchargée. `part_id` est le numéro de partie MIME, `content_id` sert aux images inline (`cid:`).

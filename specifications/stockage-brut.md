@@ -145,6 +145,7 @@ Commande qui relit les blobs et régénère, pour tout ou partie des messages : 
 - Cible par défaut les messages dont `message_body.parser_version` est inférieur à la version courante ; une montée de version de l'analyseur déclenche donc la réinterprétation en tâche de fond, hors du chemin d'affichage.
 - Une correction de sécurité de l'assainissement doit être appliquée en priorité : tant qu'un corps n'a pas été réinterprété, il est réassaini à la lecture.
 - Ne touche jamais au brut.
+- Ne recalcule pas le verdict d'authentification (`auth_result`, `auth_suspect`) : il a servi à une décision de screening déjà prise (voir `authentification-expediteur.md`).
 - Ne reconstitue pas dossiers, UID ni flags : ceux-ci viennent d'une resynchronisation IMAP. En cas de perte de la base, le brut seul ne suffit donc pas à tout restaurer, mais il conserve le contenu des messages.
 
 ## 9. Export et interopérabilité

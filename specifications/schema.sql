@@ -32,6 +32,9 @@ CREATE TABLE account (
                   CHECK (smtp_security IN ('tls','starttls','none')),
     auth_kind     TEXT NOT NULL CHECK (auth_kind IN ('password','oauth2')),
     keychain_ref  TEXT NOT NULL,          -- référence Keychain, jamais le secret
+    -- authserv-id de confiance des en-têtes Authentication-Results du serveur.
+    -- NULL = aucun détecté : verdicts 'unknown' (voir authentification-expediteur.md).
+    authserv_id   TEXT,
     created_at    INTEGER NOT NULL DEFAULT (unixepoch())
 ) STRICT;
 
@@ -67,6 +70,9 @@ CREATE TABLE folder (
 -- attributs pourront s'ajouter ; une ligne sans décision (NULL) est valide.
 -- Un expéditeur sans décision (adresse, puis domaine) va en Quarantine.
 -- Priorité : décision de l'adresse > décision du domaine > Quarantine.
+-- Une règle favorable n'est appliquée que si l'expéditeur est suffisamment
+-- authentifié ; une règle de domaine favorable exige toujours 'pass'
+-- (voir authentification-expediteur.md).
 -- screening_target : jamais 'quarantine' (un mail sorti de Quarantine n'y retourne pas).
 -- Adresses et domaines sont stockés en minuscules.
 -- ------------------------------------------------------------
@@ -78,9 +84,17 @@ CREATE TABLE address (
     screening_target     TEXT           -- NULL = pas de décision
                          CHECK (screening_target IN ('inbox','newsletter','paperwork','banned')),
     screening_decided_at INTEGER,
+    -- Confiance au premier usage : 1 dès qu'un mail 'pass' a été reçu de cette
+    -- adresse ; jamais remis à 0 par l'ingestion.
+    auth_seen   INTEGER NOT NULL DEFAULT 0 CHECK (auth_seen IN (0,1)),
+    -- auto : 'pass' exigé si auth_seen = 1 ; required : toujours 'pass' ;
+    -- not_required : tout verdict accepté (outil d'envoi mal configuré).
+    auth_policy TEXT NOT NULL DEFAULT 'auto'
+                CHECK (auth_policy IN ('auto','required','not_required')),
     UNIQUE (addr)
 ) STRICT;
 
+-- Pas de politique d'authentification : une règle de domaine favorable exige 'pass'.
 CREATE TABLE domain (
     id          INTEGER PRIMARY KEY,
     domain      TEXT NOT NULL COLLATE NOCASE,   -- ex. "example.com", sans sous-domaine
@@ -146,6 +160,14 @@ CREATE TABLE message (
     is_draft         INTEGER NOT NULL DEFAULT 0 CHECK (is_draft    IN (0,1)),
     is_deleted       INTEGER NOT NULL DEFAULT 0 CHECK (is_deleted  IN (0,1)),
     has_attachments  INTEGER NOT NULL DEFAULT 0 CHECK (has_attachments IN (0,1)),
+
+    -- Authentification de l'expéditeur, calculée à la réception et jamais
+    -- recalculée (voir authentification-expediteur.md).
+    auth_result      TEXT NOT NULL DEFAULT 'unknown'
+                     CHECK (auth_result IN ('pass','fail','none','unknown')),
+    auth_source      TEXT CHECK (auth_source IN ('server','local')),  -- NULL : pas de source
+    auth_suspect     INTEGER NOT NULL DEFAULT 0  -- règle favorable refusée faute d'authentification
+                     CHECK (auth_suspect IN (0,1)),
 
     modseq           INTEGER,             -- CONDSTORE, pour détecter les changements de flags
     body_state       INTEGER NOT NULL DEFAULT 0

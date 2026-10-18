@@ -82,6 +82,12 @@ Seule l'Inbox est surveillée en IDLE : c'est par elle que les nouveaux mails ar
 L'application intègre une table d'adresses (`address`) afin de mémoriser les décisions de screening.
 Elle intègre également une table de domaines (`domain`) : l'utilisateur pourra décider pour tous les mails d'un domaine de les classer dans un dossier spécifique. La règle d'adresse l'emporte sur la règle de domaine, et un expéditeur sans règle va en Quarantine.
 
+### Authentification de l'expéditeur
+
+L'en-tête `From` est falsifiable : un mail qui se réclame d'un expéditeur approuvé ne doit pas arriver dans l'Inbox s'il n'est pas de lui. Chaque mail reçu porte donc un verdict d'authentification, tiré de l'en-tête `Authentication-Results` du serveur. Une règle Banned s'applique toujours ; une règle favorable (Inbox, Newsletter, Paperwork) n'est appliquée que si le verdict est suffisant, sinon le mail va en Quarantine avec un avertissement. Une règle de domaine favorable exige toujours un mail authentifié.
+
+Le détail (verdicts, confiance au premier usage, politique par adresse, interface) est dans `authentification-expediteur.md`.
+
 ### Tags
 
 Les tags correspondent aux mots-clés IMAP du serveur et sont décrits par la table `tag` (voir `modele de donnees.md`).
