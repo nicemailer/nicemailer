@@ -37,6 +37,7 @@ Le noyau ne connaît aucune interface : il expose un contrat unique, et chaque f
 5. **Vues prêtes à afficher.** Le contrat expose des structures de présentation (`ThreadSummary`, `MessageView`) plutôt que des lignes brutes de la base.
 6. **Pagination partout.** Jamais de « charge tout » : une fenêtre et un curseur, pour tenir la promesse de fluidité.
 7. **Complexité cachée.** Tout ce qui est technique (socket, CLI, MCP) s'active depuis l'interface, sans terminal.
+8. **Le noyau n'interagit jamais avec l'utilisateur.** Il n'affiche rien et ne pose aucune question : notifications macOS, fenêtres et dialogues sont l'affaire des clients, et en pratique de l'app Swift.
 
 ---
 
@@ -46,7 +47,7 @@ Un seul processus noyau héberge le moteur ; l'app et toutes les autres interfac
 
 ```
  ┌───────────────┐ ┌─────────┐ ┌─────────┐ ┌──────────────┐ ┌─────────────┐
- │ App SwiftUI   │ │   CLI   │ │   TUI   │ │ nm-server    │ │  nm-mcp     │
+ │ App SwiftUI   │ │   CLI   │ │   TUI   │ │ nm-web       │ │  nm-mcp     │
  │ (client)      │ │         │ │         │ │ HTTP/WS      │ │ stdio→socket│
  └───────┬───────┘ └────┬────┘ └────┬────┘ └──────┬───────┘ └──────┬──────┘
          │              │           │             │                │
@@ -81,14 +82,14 @@ Le dépôt est un workspace Cargo de dix crates plus l'app SwiftUI ; chaque crat
 | `nm-daemon` | Processus noyau : serveur JSON-RPC sur socket Unix, hébergeant le moteur | `nm-engine`, `nm-api`             |
 | `nm-cli`    | Binaire en ligne de commande, client du socket                           | `nm-api`                          |
 | `nm-tui`    | Interface terminal (ratatui), client du socket                           | `nm-api`                          |
-| `nm-server` | Passerelle HTTP/WebSocket locale pour l'interface web                    | `nm-api`                          |
+| `nm-web` | Passerelle HTTP/WebSocket locale pour l'interface web                    | `nm-api`                          |
 | `nm-mcp`    | Serveur MCP, proxy stdio vers le socket                                  | `nm-api`                          |
 
 ```
 nicemailer/
 ├── crates/
 │   ├── nm-core/  nm-proto/  nm-store/  nm-engine/  nm-api/
-│   └── nm-daemon/  nm-cli/  nm-tui/  nm-server/  nm-mcp/
+│   └── nm-daemon/  nm-cli/  nm-tui/  nm-web/  nm-mcp/
 └── apps/
     └── NiceMailer/        # app macOS SwiftUI
 ```
@@ -129,7 +130,7 @@ Le fichier appartient au noyau. Les clients le lisent, le copient ou l'ouvrent, 
 
 - **Enregistrer sous / glisser vers le Finder** : le client copie le fichier vers la destination choisie par l'utilisateur.
 - **Images inline (`cid:`)** : l'app résout les URL `cid:` du HTML par un gestionnaire de schéma d'URL de `WKWebView`, qui demande le chemin au noyau et lit le fichier.
-- **Serveur web et MCP** : `nm-server` lit le fichier et le transmet au navigateur. Pour le MCP, le proxy renvoie le chemin ; s'il faut aussi renvoyer le contenu à l'agent, la décision sera prise en codant `nm-mcp`.
+- **Serveur web et MCP** : `nm-web` lit le fichier et le transmet au navigateur. Pour le MCP, le proxy renvoie le chemin ; s'il faut aussi renvoyer le contenu à l'agent, la décision sera prise en codant `nm-mcp`.
 
 **Sécurité des fichiers extraits.**
 
@@ -175,8 +176,11 @@ NiceMailer.app/Contents/
     ├── nicemailer-core                               ← noyau Rust (nm-daemon)
     ├── nicemailer                                    ← CLI
     ├── nicemailer-tui                                ← TUI
-    └── nicemailer-mcp                                ← serveur MCP (proxy stdio)
+    ├── nicemailer-mcp                                ← serveur MCP (proxy stdio)
+    └── nicemailer-web                                ← passerelle web (nm-web), second temps
 ```
+
+`nicemailer-web` fait partie de la structure cible, mais ne sera développé que dans un second temps (section 12).
 
 ### Contraintes de launchd
 
@@ -217,7 +221,8 @@ Tous les clients (app, CLI, TUI, MCP) suivent la même procédure :
 1. se connecter au socket ;
 2. en cas d'échec (socket absent ou personne à l'écoute), exécuter `launchctl kickstart gui/<uid>/eu.nicemailer.core` ;
 3. réessayer avec un délai croissant, pendant 3 s au plus ;
-4. si l'agent n'est pas enregistré ou a été désactivé par l'utilisateur, afficher une erreur explicite avec la marche à suivre (voir « Cas limites »).
+4. si le noyau répond par l'erreur `Maintenance` (mise à jour ou migration en cours), attendre sans lancer de `kickstart` (`mise-a-jour.md`) ;
+5. si l'agent n'est pas enregistré ou a été désactivé par l'utilisateur, afficher une erreur explicite avec la marche à suivre (voir « Cas limites »).
 
 Deux clients qui démarrent en même temps ne posent pas de problème : launchd ne lance qu'une instance par label, et le verrou d'instance couvre le reste.
 
@@ -227,7 +232,9 @@ Deux clients qui démarrent en même temps ne posent pas de problème : launchd 
 - **Emplacement du socket.** `~/Library/Application Support/NiceMailer/core.sock`, créé par le noyau, droits `0600` (environ 60 caractères, sous la limite de 104 des sockets Unix). Les clients sont authentifiés par leur signature (section 9).
 - **Emplacement de l'app.** Lancée depuis le DMG ou le dossier Téléchargements, l'app est exécutée depuis un chemin temporaire aléatoire (App Translocation) et l'agent pointerait vers ce chemin. Au premier lancement, l'app propose donc de se déplacer dans `/Applications` avant d'enregistrer l'agent.
 - **Versions alignées.** App, noyau et helpers sont livrés ensemble dans un seul bundle, ce qui évite les incompatibilités ; la poignée de main de version couvre les cas résiduels (ancien CLI installé, par exemple).
-- **Mise à jour.** Après une mise à jour Sparkle, l'app détecte à la poignée de main que le noyau en cours n'a pas sa version et exécute `launchctl kickstart -k` : le noyau s'arrête proprement (SIGTERM) et le nouveau binaire démarre.
+- **Mise à jour.** Pendant une mise à jour Sparkle et la migration éventuelle de la base, le noyau est en mode maintenance et ne sert aucun client. Le déroulement est spécifié dans `mise-a-jour.md`.
+- **Notifications.** Seule l'app peut afficher des notifications macOS, à partir des événements du noyau (`MessageArrived`). App fermée, il n'y a donc pas de notification de nouveau mail : c'est voulu, le noyau n'interagit pas avec l'utilisateur (principe 8).
+- **Secrets et Keychain.** Toute la logique des secrets est dans le noyau. Il crée, lit, met à jour et supprime lui-même les entrées du Keychain ; les clients ne les touchent jamais. Pour ajouter un compte, le client transmet le mot de passe au noyau dans la commande `add_account`, sur le socket authentifié (section 9). Pour OAuth2, le noyau prépare la requête d'autorisation et écoute la redirection sur `127.0.0.1` ; il renvoie au client l'URL d'autorisation, et c'est le client qui ouvre le navigateur. Le noyau est un exécutable sans bundle ni profil de provisionnement : il utilise le trousseau de session classique (« login »), et non le trousseau à protection de données, qui exige des droits liés à un profil. À valider dans le squelette (section 11).
 - **Pilotage avancé.** `nicemailer core status | start | stop | restart` donne la main sur le noyau. `nicemailer setup` lance l'app en arrière-plan (`open -g`) pour enregistrer l'agent s'il ne l'est pas, par exemple après une installation par Homebrew sans ouverture de l'app.
 
 ### Cas limites
@@ -252,7 +259,7 @@ L'utilisateur n'installe qu'une chose, l'app ; tout le reste s'active depuis les
 | Désinstallation | Menu « Désinstaller NiceMailer… » | Retrait de l'agent, des liens du CLI et de l'entrée MCP ; suppression des données sur demande |
 | MCP | Bouton « Connecter à Claude » | Écriture de l'entrée dans la config de Claude Desktop, ou bloc JSON à copier |
 | Web | Bouton « Ouvrir dans le navigateur » | Serveur sur `127.0.0.1` avec jeton aléatoire, désactivé par défaut |
-| Mises à jour | Notification Sparkle | Remplacement de tout le bundle, noyau compris |
+| Mises à jour | Fenêtre Sparkle, puis un bandeau « Mise à jour de NiceMailer… » pendant l'installation et la migration | Remplacement de tout le bundle, noyau compris ; noyau en mode maintenance (`mise-a-jour.md`) |
 
 ---
 
@@ -293,7 +300,7 @@ Un processus de l'utilisateur qui peut se connecter au socket peut aussi lire di
    ```
    anchor apple generic and certificate leaf[subject.OU] = "<TEAM_ID>"
      and identifier in ("eu.nicemailer.app", "eu.nicemailer.cli", "eu.nicemailer.tui",
-                        "eu.nicemailer.mcp", "eu.nicemailer.server")
+                        "eu.nicemailer.mcp", "eu.nicemailer.web")
    ```
 3. ferme la connexion si la vérification échoue, et l'inscrit au journal.
 
@@ -323,14 +330,14 @@ La sécurité du serveur web reste à spécifier. Les points connus sont :
 - la vérification de l'`Origin` des connexions WebSocket ;
 - les droits accordés au navigateur.
 
-`nm-server` n'est pas prioritaire. Les décisions d'implémentation seront prises quand on commencera à coder ce module, pas avant. D'ici là, les droits du tableau ci-dessus et le jeton aléatoire ne sont que des orientations.
+`nm-web` n'est pas prioritaire. Les décisions d'implémentation seront prises quand on commencera à coder ce module, pas avant. D'ici là, les droits du tableau ci-dessus et le jeton aléatoire ne sont que des orientations.
 
 ### Confirmation des envois demandés par un agent
 
 Un mail entrant est un contenu hostile, lu par un LLM qui dispose d'outils. Sans confirmation, une instruction cachée dans un mail suffirait à exfiltrer des données par un envoi. Le noyau applique donc la règle suivante à toute commande `send_message` venant du client MCP :
 
 1. Le message est mis en attente de confirmation. Il n'entre pas dans la file d'envoi.
-2. Le noyau émet l'événement `SendConfirmationRequested`. Si l'app est fermée, le noyau la lance.
+2. Le noyau émet l'événement `SendConfirmationRequested`. Le noyau ne lance pas l'app (principe 8) : c'est le proxy MCP qui, recevant la demande de confirmation, ouvre l'app si elle est fermée (`open -b eu.nicemailer.app`). À son ouverture, l'app récupère les demandes en attente par `list_pending_confirmations`.
 3. L'app affiche le message complet (destinataires, objet, corps, pièces jointes) avec « Envoyer » et « Refuser ».
 4. Seule l'app peut confirmer : la commande `confirm_send` est refusée à tout autre client, MCP compris.
 5. Sans réponse après un délai (paramètre à fixer), la demande expire et vaut refus.
@@ -381,8 +388,9 @@ Un cask Homebrew (`brew install --cask nicemailer`) pointant vers la même relea
 | Cycle de vie de l'agent | Agent obsolète après mise à jour              | Poignée de main de version, `launchctl kickstart -k` par l'app |
 | Démarrage à la demande  | `launchctl kickstart` sur un agent enregistré par `SMAppService` non vérifié | À valider dans le squelette ; repli : `MachServices` et démarrage par recherche du service |
 | App mise à la corbeille | macOS nettoie-t-il l'enregistrement de l'agent ? | À vérifier dans le squelette ; sinon, inoffensif et documenté |
+| Keychain du noyau       | Accès au trousseau par un exécutable sans bundle ; invite d'autorisation après une mise à jour si l'exigence de signature n'est pas reconnue | À valider dans le squelette : création par le noyau, lecture après mise à jour sans invite |
 | Priorité du noyau       | `ProcessType` `Background` limite CPU et entrées-sorties, au risque de ralentir l'app | À mesurer dans le squelette |
-| Accès web local         | Exposition du serveur HTTP                    | Écoute sur `127.0.0.1`, désactivé par défaut ; le reste est à décider quand on codera `nm-server`, module non prioritaire (section 9) |
+| Accès web local         | Exposition du serveur HTTP                    | Écoute sur `127.0.0.1`, désactivé par défaut ; le reste est à décider quand on codera `nm-web`, module non prioritaire (section 9) |
 | Accès au socket         | Un processus quelconque pilote le noyau       | Vérification de la signature du client, droits par client (section 9) |
 | Envoi par un agent      | Exfiltration par injection de prompt          | Confirmation obligatoire dans l'app (section 9)                |
 | Chiffrement au repos    | Lecture directe de la base et du brut par un code du même utilisateur | Non couvert en v1 ; SQLCipher et brut chiffré, clé dans le Keychain réservée au noyau, à évaluer |
@@ -399,5 +407,6 @@ La première étape est un squelette complet de bout en bout, car la signature, 
 3. **`nm-proto` (IMAP) + `nm-engine`** : une synchro de bout en bout pilotée par tests.
 4. **`nm-api` + CLI** : le CLI sert de banc d'essai du contrat ; une opération pénible à exposer en CLI signale un contrat mal posé.
 5. **App Swift** : interface fluide au-dessus du contrat stabilisé.
-6. **TUI, serveur web, MCP** : adaptateurs rapides une fois le contrat stable.
-7. **Réglages utilisateur** : boutons d'installation du CLI et de la TUI, connexion MCP, accès web, tri en arrière-plan, désinstallation.
+6. **TUI, MCP** : adaptateurs rapides une fois le contrat stable.
+7. **Réglages utilisateur** : boutons d'installation du CLI et de la TUI, connexion MCP, tri en arrière-plan, désinstallation.
+8. **Second temps : serveur web (`nm-web`)** et son bouton d'accès dans les réglages ; sa sécurité sera décidée à ce moment (section 9).
