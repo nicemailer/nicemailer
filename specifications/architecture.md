@@ -42,7 +42,7 @@ Le noyau ne connaît aucune interface : il expose un contrat unique, et chaque f
 
 ## 3. Vue d'ensemble
 
-Un seul processus noyau, démarré par launchd à l'ouverture de session et actif en continu, héberge le moteur ; l'app et toutes les autres interfaces sont des clients du même socket Unix.
+Un seul processus noyau héberge le moteur ; l'app et toutes les autres interfaces sont des clients du même socket Unix. Le noyau démarre à la première connexion d'un client, ou dès l'ouverture de session si l'option de tri en arrière-plan est activée, ce qui est le cas par défaut (section 6).
 
 ```
  ┌───────────────┐ ┌─────────┐ ┌─────────┐ ┌──────────────┐ ┌─────────────┐
@@ -131,7 +131,7 @@ Le format est lisible et débogable à la main, le serveur MCP en est presque un
 
 ## 6. Processus et packaging macOS
 
-Le noyau est un LaunchAgent embarqué dans le bundle, enregistré par l'app via `SMAppService.agent(plistName:)` ; launchd le démarre à l'ouverture de session et le relance s'il s'arrête. Il tourne en tâche de fond, que l'app soit ouverte ou non : l'app, le CLI et le TUI en sont de simples clients.
+Le noyau est un LaunchAgent embarqué dans le bundle, enregistré par l'app via `SMAppService.agent(plistName:)`. Il démarre à la demande, dès qu'un client (app, CLI, TUI, MCP) en a besoin. Une seule option, « Continuer à trier mes mails quand NiceMailer est fermé », activée par défaut, le fait tourner en permanence depuis l'ouverture de session. L'app, le CLI, la TUI et le MCP en sont de simples clients, utilisables en même temps.
 
 ### Options étudiées
 
@@ -147,7 +147,7 @@ Le noyau est un LaunchAgent embarqué dans le bundle, enregistré par l'app via 
 ```
 NiceMailer.app/Contents/
 ├── MacOS/NiceMailer                                  ← app SwiftUI (client)
-├── Library/LaunchAgents/eu.nicemailer.core.plist     ← déclare le noyau et le socket
+├── Library/LaunchAgents/eu.nicemailer.core.plist     ← déclare le noyau
 └── Helpers/
     ├── nicemailer-core                               ← noyau Rust (nm-daemon)
     ├── nicemailer                                    ← CLI
@@ -155,12 +155,63 @@ NiceMailer.app/Contents/
     └── nicemailer-mcp                                ← serveur MCP (proxy stdio)
 ```
 
+### Contraintes de launchd
+
+Vérifiées sur macOS 27 (page de manuel `launchd.plist` et agent de test) :
+
+- **`~` n'est pas développé dans `SockPathName`** : le chemin reste littéral. Un plist embarqué dans le bundle ne connaît pas le répertoire personnel de l'utilisateur et ne peut donc pas déclarer un socket dans `~/Library`.
+- **`SecureSocketWithKey`** publie le chemin du socket dans une variable d'environnement, comme `ssh-agent` avec `SSH_AUTH_SOCK`. Elle n'est transmise qu'aux processus lancés après le chargement de l'agent : un terminal déjà ouvert ou une session SSH ne l'ont pas. Trop fragile pour le CLI.
+- **`KeepAlive` implique `RunAtLoad`**, y compris sous la forme `SuccessfulExit` : on ne peut pas avoir « relancé après un plantage » sans « démarré à l'ouverture de session ».
+- **Le plist d'un agent `SMAppService` est figé** dans le bundle signé : `RunAtLoad` ne peut pas dépendre d'une option à l'exécution.
+
+En conséquence, l'activation du noyau par son socket (clé `Sockets`) est écartée : le noyau crée lui-même son socket, et c'est lui qui applique l'option de tri en arrière-plan.
+
+### Déclaration de l'agent
+
+Un seul agent, `eu.nicemailer.core`, enregistré par l'app à chaque lancement s'il ne l'est pas déjà :
+
+```xml
+<key>Label</key>                       <string>eu.nicemailer.core</string>
+<key>BundleProgram</key>               <string>Contents/Helpers/nicemailer-core</string>
+<key>RunAtLoad</key>                   <true/>
+<key>KeepAlive</key>                   <dict><key>SuccessfulExit</key><false/></dict>
+<key>AssociatedBundleIdentifiers</key> <string>eu.nicemailer.app</string>
+```
+
+### Cycle de vie du noyau
+
+- **Démarrage.** launchd lance le noyau à l'ouverture de session (`RunAtLoad`) et chaque fois qu'un client le demande (voir ci-dessous). Le noyau prend le verrou d'instance unique (`lock`, voir `stockage-brut.md`), supprime un socket laissé par un plantage, puis écoute sur son socket.
+- **Option de tri en arrière-plan activée** (défaut) : le noyau reste actif en permanence. Un plantage (code de sortie non nul) est relancé par launchd.
+- **Option désactivée** : le noyau s'arrête de lui-même, avec le code 0, après `core.idle_exit_secs` sans client connecté (60 s par défaut), y compris juste après son démarrage. À l'ouverture de session, il s'arrête donc au bout de ce délai. Une sortie avec le code 0 n'est pas relancée par launchd.
+- **Arrêt propre.** Sur SIGTERM, le noyau termine les transactions en cours et ferme les connexions IMAP avant de sortir.
+
+L'option est stockée dans les réglages du noyau et modifiable depuis l'app ou le CLI ; elle prend effet sans redémarrage.
+
+### Démarrage à la demande par les clients
+
+Tous les clients (app, CLI, TUI, MCP) suivent la même procédure :
+
+1. se connecter au socket ;
+2. en cas d'échec (socket absent ou personne à l'écoute), exécuter `launchctl kickstart gui/<uid>/eu.nicemailer.core` ;
+3. réessayer avec un délai croissant, pendant 3 s au plus ;
+4. si l'agent n'est pas enregistré ou a été désactivé par l'utilisateur, afficher une erreur explicite avec la marche à suivre (voir « Cas limites »).
+
+Deux clients qui démarrent en même temps ne posent pas de problème : launchd ne lance qu'une instance par label, et le verrou d'instance couvre le reste.
+
 ### Points techniques
 
 - **LaunchAgent plutôt que LoginItem.** Un exécutable Rust nu s'enregistre mal comme LoginItem, qui attend un mini-bundle d'app.
-- **Démarrage et relance.** Le plist déclare `RunAtLoad` et `KeepAlive` : le noyau démarre à l'ouverture de session et est relancé après un arrêt ou un plantage. Il déclare aussi le socket Unix (clé `Sockets`), qui relance le noyau si une connexion arrive alors qu'il est arrêté. Un `nicemailer list` fonctionne donc même si l'app est fermée.
-- **Emplacement du socket.** `~/Library/Application Support/NiceMailer/`, droits `0600`, chemin court (les sockets Unix sont limités à environ 104 caractères). Les clients sont authentifiés par leur signature (section 9).
+- **Emplacement du socket.** `~/Library/Application Support/NiceMailer/core.sock`, créé par le noyau, droits `0600` (environ 60 caractères, sous la limite de 104 des sockets Unix). Les clients sont authentifiés par leur signature (section 9).
+- **Emplacement de l'app.** Lancée depuis le DMG ou le dossier Téléchargements, l'app est exécutée depuis un chemin temporaire aléatoire (App Translocation) et l'agent pointerait vers ce chemin. Au premier lancement, l'app propose donc de se déplacer dans `/Applications` avant d'enregistrer l'agent.
 - **Versions alignées.** App, noyau et helpers sont livrés ensemble dans un seul bundle, ce qui évite les incompatibilités ; la poignée de main de version couvre les cas résiduels (ancien CLI installé, par exemple).
+- **Mise à jour.** Après une mise à jour Sparkle, l'app détecte à la poignée de main que le noyau en cours n'a pas sa version et exécute `launchctl kickstart -k` : le noyau s'arrête proprement (SIGTERM) et le nouveau binaire démarre.
+- **Pilotage avancé.** `nicemailer core status | start | stop | restart` donne la main sur le noyau. `nicemailer setup` lance l'app en arrière-plan (`open -g`) pour enregistrer l'agent s'il ne l'est pas, par exemple après une installation par Homebrew sans ouverture de l'app.
+
+### Cas limites
+
+- **NiceMailer désactivé dans Réglages Système > Général > Ouverture.** L'agent est alors entièrement désactivé : macOS n'a pas de position « autorisé, mais pas à l'ouverture de session », et le démarrage à la demande échoue aussi. L'app affiche un bandeau avec un bouton qui ouvre ce panneau (`SMAppService.openSystemSettingsLoginItems()`) ; le CLI indique le chemin du réglage. C'est pourquoi l'option de tri en arrière-plan est dans l'app : elle permet d'éviter le démarrage à l'ouverture de session sans tout désactiver.
+- **App déplacée.** À chaque lancement, l'app vérifie l'état de l'agent et le réenregistre si besoin. Elle répare aussi les liens du CLI et l'entrée MCP de Claude Desktop, qui pointent vers des binaires du bundle.
+- **Désinstallation.** Le menu « Désinstaller NiceMailer… » retire l'agent, les liens du CLI et l'entrée MCP, et propose de supprimer les données. Si l'app est simplement mise à la corbeille, l'agent reste enregistré mais ne peut plus rien lancer, et les liens du CLI sont cassés : c'est inoffensif, et documenté dans l'aide.
 
 ---
 
@@ -170,9 +221,12 @@ L'utilisateur n'installe qu'une chose, l'app ; tout le reste s'active depuis les
 
 | Fonction | Ce que voit l'utilisateur | Ce qui se passe |
 | --- | --- | --- |
-| Premier lancement | Une seule autorisation système | L'app enregistre l'agent via `SMAppService` |
-| Synchro en fond | Rien à configurer : les mails sont reçus app fermée | Le noyau tourne en permanence ; seul l'utilisateur peut le désactiver dans les réglages système (éléments d'ouverture) |
-| CLI | Bouton « Installer la commande `nicemailer` » | Lien symbolique dans le PATH |
+| Premier lancement hors de `/Applications` | Proposition de déplacer l'app dans `/Applications` | Évite l'App Translocation, qui fausserait l'enregistrement de l'agent |
+| Premier lancement | La notification macOS « Élément d'arrière-plan ajouté », puis un écran de bienvenue avec l'option « Continuer à trier mes mails quand NiceMailer est fermé », cochée | L'app enregistre l'agent via `SMAppService` |
+| Tri en arrière-plan | Rien à faire : les mails sont reçus et triés app fermée, y compris après un redémarrage | Le noyau démarre à l'ouverture de session et reste actif. Option désactivée : il ne tourne que tant qu'un client est connecté |
+| NiceMailer désactivé dans les réglages système | Un bandeau dans l'app avec un bouton vers le bon panneau | Le démarrage à la demande est impossible tant que l'agent est désactivé |
+| CLI et TUI | Bouton « Installer les commandes `nicemailer` et `nicemailer-tui` » | Liens dans `/usr/local/bin` après demande du mot de passe administrateur ; le cask Homebrew les crée aussi |
+| Désinstallation | Menu « Désinstaller NiceMailer… » | Retrait de l'agent, des liens du CLI et de l'entrée MCP ; suppression des données sur demande |
 | MCP | Bouton « Connecter à Claude » | Écriture de l'entrée dans la config de Claude Desktop, ou bloc JSON à copier |
 | Web | Bouton « Ouvrir dans le navigateur » | Serveur sur `127.0.0.1` avec jeton aléatoire, désactivé par défaut |
 | Mises à jour | Notification Sparkle | Remplacement de tout le bundle, noyau compris |
@@ -301,7 +355,10 @@ Un cask Homebrew (`brew install --cask nicemailer`) pointant vers la même relea
 | Protocoles              | IMAP seul au départ, ou JMAP/Exchange aussi ? | Commencer par IMAP ; garder `nm-proto` extensible             |
 | Latence du socket       | Perception de fluidité de l'app via IPC       | Pagination par curseurs, mesures dès le squelette             |
 | Signature des helpers   | Erreurs de notarisation découvertes tard      | Valider la chaîne complète avec le squelette « Hello World »  |
-| Cycle de vie de l'agent | Agent obsolète après mise à jour              | Poignée de main de version, redémarrage de l'agent par l'app  |
+| Cycle de vie de l'agent | Agent obsolète après mise à jour              | Poignée de main de version, `launchctl kickstart -k` par l'app |
+| Démarrage à la demande  | `launchctl kickstart` sur un agent enregistré par `SMAppService` non vérifié | À valider dans le squelette ; repli : `MachServices` et démarrage par recherche du service |
+| App mise à la corbeille | macOS nettoie-t-il l'enregistrement de l'agent ? | À vérifier dans le squelette ; sinon, inoffensif et documenté |
+| Priorité du noyau       | `ProcessType` `Background` limite CPU et entrées-sorties, au risque de ralentir l'app | À mesurer dans le squelette |
 | Accès web local         | Exposition du serveur HTTP                    | Écoute sur `127.0.0.1`, désactivé par défaut ; le reste est à décider quand on codera `nm-server`, module non prioritaire (section 9) |
 | Accès au socket         | Un processus quelconque pilote le noyau       | Vérification de la signature du client, droits par client (section 9) |
 | Envoi par un agent      | Exfiltration par injection de prompt          | Confirmation obligatoire dans l'app (section 9)                |
@@ -312,12 +369,12 @@ Un cask Homebrew (`brew install --cask nicemailer`) pointant vers la même relea
 
 ## 12. Feuille de route
 
-La première étape est un squelette complet de bout en bout, car la signature, l'enregistrement de l'agent et la socket activation sont les parties les plus pénibles à découvrir tard.
+La première étape est un squelette complet de bout en bout, car la signature, l'enregistrement de l'agent et le démarrage à la demande sont les parties les plus pénibles à découvrir tard.
 
-1. **Squelette « Hello World »** : un noyau qui répond `ping` sur le socket, un CLI qui l'appelle, une app SwiftUI qui l'appelle aussi, le tout signé, notarisé et publié par la CI.
+1. **Squelette « Hello World »** : un noyau qui répond `ping` sur le socket, un CLI qui l'appelle, une app SwiftUI qui l'appelle aussi, le tout signé, notarisé et publié par la CI. Le squelette valide aussi le démarrage à la demande par `launchctl kickstart`, l'arrêt après inactivité et le comportement quand l'app est mise à la corbeille.
 2. **`nm-core` + `nm-store`** : modèles et persistance, testés sans réseau.
 3. **`nm-proto` (IMAP) + `nm-engine`** : une synchro de bout en bout pilotée par tests.
 4. **`nm-api` + CLI** : le CLI sert de banc d'essai du contrat ; une opération pénible à exposer en CLI signale un contrat mal posé.
 5. **App Swift** : interface fluide au-dessus du contrat stabilisé.
 6. **TUI, serveur web, MCP** : adaptateurs rapides une fois le contrat stable.
-7. **Réglages utilisateur** : boutons d'installation du CLI, connexion MCP, accès web, synchro en fond.
+7. **Réglages utilisateur** : boutons d'installation du CLI et de la TUI, connexion MCP, accès web, tri en arrière-plan, désinstallation.

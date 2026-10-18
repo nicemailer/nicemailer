@@ -42,7 +42,10 @@ Tout ce qui sert à l'affichage (en-têtes, destinataires, corps texte et HTML a
     ab/                     ← 2 premiers caractères hexadécimaux du hash
       abcdef…0123.eml.zst   ← hash SHA-256 en hexadécimal minuscule (64 caractères)
   lock                      ← verrou d'instance unique
+  core.sock                 ← socket du noyau, créé par lui (architecture.md, section 6)
 ```
+
+`<data_dir>` est `~/Library/Application Support/NiceMailer/`.
 
 - Le dossier `.tmp` est sur le **même volume** que le reste, pour que le `rename` soit atomique.
 - Fichiers en `0400`, dossiers en `0700`.

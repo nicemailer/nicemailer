@@ -15,7 +15,7 @@ Pour une classification plus fine des mails, l'application propose un système d
 
 Les dossiers de niceMailer restent cependant de "vrais" dossiers IMAP, afin qu'en mobilité, l'utilisateur puisse accéder à son compte IMAP (par exemple sur l'application de son téléphone) en bénéficiant du workflow de niceMailer. 
 
-Souvent, lorsqu'on est en mobilité, son ordinateur principal reste allumé à la maison ou au bureau, et niceMailer pourra donc continuer à nettoyer l’inbox, offrant ainsi une expérience de consultation confortable à tout moment.
+Souvent, lorsqu'on est en mobilité, son ordinateur principal reste allumé à la maison ou au bureau, et niceMailer pourra donc continuer à nettoyer l’inbox, offrant ainsi une expérience de consultation confortable à tout moment. C'est le comportement par défaut : l'option « Continuer à trier mes mails quand NiceMailer est fermé » est activée, et le noyau tourne dès l'ouverture de session, même si l'app n'a pas été ouverte (voir `architecture.md`, section 6).
 
 ## Les dossiers de niceMailer
 
