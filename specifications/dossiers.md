@@ -55,7 +55,7 @@ B Banned
 
 NiceMailer classifie les mails entrants en fonction de l'expéditeur.
 
-Les mails d'expéditeurs inconnus vont dans le dossier Quarantine où l'utilisateur pourra décider de bannir cet expéditeur (Banned) ou de déplacer le mail vers une cible légitime : Inbox, Newsletter, Paperwork. Le fait de déplacer un mail de Quarantine vers une cible légitime est mémorisé par l’application et les prochains mails de cet expéditeur seront automatiquement livrés dans le dossier approprié. Les autres mails déjà reçus de cet expéditeur sont rangés en même temps (voir « Décision sur un expéditeur »).
+Les mails d'expéditeurs inconnus vont dans le dossier Quarantine où l'utilisateur pourra décider de bannir cet expéditeur (Banned), de mettre le mail dans Junk s'il s'agit de spam, ou de le déplacer vers une cible légitime : Inbox, Newsletter, Paperwork (voir « Déplacer un mail »). Le fait de déplacer un mail de Quarantine vers une cible légitime est mémorisé par l’application et les prochains mails de cet expéditeur seront automatiquement livrés dans le dossier approprié. Les autres mails déjà reçus de cet expéditeur sont rangés en même temps (voir « Décision sur un expéditeur »).
 
 Cela reprend le workflow popularisé par Hey de 37signals.
 
@@ -64,6 +64,56 @@ Les autres dossiers correspondent à des commandes de l'utilisateur sur un mail 
 Pendant la rédaction, le brouillon est enregistré en continu en local (SQLite). Il n'est envoyé au serveur IMAP qu'à la fermeture de la fenêtre de rédaction ou après 20 secondes d'inactivité. IMAP ne permet pas de modifier un message : chaque envoi au serveur est un `APPEND` de la nouvelle version suivi de la suppression de l'ancienne, ce qui change l'UID. Ce délai limite donc le trafic et le nombre de lignes `message` éphémères. Si l'envoi échoue, il est repris via `pending_action` (`append_draft`).
 
 Un mail sorti de Quarantine ne peut pas y retourner.
+
+## Déplacer un mail
+
+### Catégories de dossiers
+
+| Catégorie | Dossiers | Rôle |
+| --- | --- | --- |
+| Travail | Inbox, Todo, Waiting | Mails à traiter |
+| Rangement | Archive, Newsletter, Paperwork | Mails classés |
+| Rejet | Junk, Banned | Spam et expéditeurs bloqués |
+| Techniques | Sent, Drafts, Quarantine, Deleted | Statuts techniques : on n'y déplace pas un mail, sauf Deleted (voir ci-dessous) |
+
+### Cibles proposées
+
+La commande de déplacement propose, selon le dossier courant :
+
+| Dossier courant | Cibles proposées |
+| --- | --- |
+| Quarantine | Inbox, Newsletter, Paperwork, Junk, Banned, Deleted |
+| Travail et rangement | Todo, Waiting, Inbox, Archive, Newsletter, Paperwork, Junk, Banned, Deleted, sauf le dossier courant |
+| Junk, Banned | Mêmes cibles que les dossiers de travail et de rangement, pour rattraper une erreur |
+| Deleted | Mêmes cibles, pour restaurer un mail supprimé |
+| Sent, Drafts | Aucune : Sent est alimenté par l'envoi, Drafts par la rédaction |
+
+**Deleted** est un dossier technique, mais il est proposé comme cible pour fluidifier la commande : déplacer un mail dans Deleted et le supprimer (touche Suppr) sont la même action.
+
+### Déplacement et décision sur l'expéditeur
+
+Certains déplacements mémorisent une décision sur l'adresse de l'expéditeur ; les autres ne concernent que le mail déplacé.
+
+| Déplacement | Effet |
+| --- | --- |
+| Vers Newsletter, Paperwork ou Banned, depuis n'importe quel dossier | Décision sur l'adresse, avec rangement des autres mails (« Décision sur un expéditeur ») |
+| Vers Inbox, depuis Quarantine ou Banned | Décision `inbox` sur l'adresse, avec rangement |
+| Vers Inbox depuis un autre dossier, vers Todo, Waiting, Archive ou Deleted | Ce mail seulement |
+| Vers Junk | Ce mail seulement, même depuis Quarantine |
+
+- **Pourquoi une décision depuis tous les dossiers.** Si ranger une newsletter de l'Inbox dans Newsletter ne créait pas de décision, la suivante reviendrait dans l'Inbox.
+- **Junk ne crée jamais de décision.** Le spam change d'adresse d'expédition à chaque envoi : une règle sur l'adresse ne servirait à rien. L'expéditeur reste sans décision, et un nouveau mail de sa part repasse par la Quarantine. Banned, à l'inverse, vise un expéditeur réel et identifié que l'utilisateur ne veut plus lire.
+- **Mail suspect** (`auth_suspect = 1`, usurpation probable) : aucun déplacement ne crée de décision sans confirmation explicite (`authentification-expediteur.md`, section 5). Le mettre dans Junk ou Banned ne concerne que ce mail : bannir l'adresse réelle à cause d'un usurpateur serait une erreur.
+
+### Depuis la Quarantine
+
+Le plus souvent, la Quarantine contient les premiers mails d'un expéditeur inconnu : la décision s'applique alors à ce mail et aux autres mails du même expéditeur encore en Quarantine. Mais des mails de cet expéditeur peuvent aussi exister ailleurs :
+
+- un expéditeur de l'historique importé, sans décision, dont les anciens mails sont dans l'Inbox ou l'Archive (`import-initial.md`) ;
+- un expéditeur connu dont un mail a été mis en Quarantine parce que son authentification a échoué ;
+- un expéditeur dont la décision a été retirée.
+
+La règle de rangement s'applique donc aussi depuis la Quarantine : c'est elle qui range l'historique importé au fil des décisions.
 
 ## Implémentation technique
 
