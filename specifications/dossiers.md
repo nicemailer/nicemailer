@@ -44,12 +44,14 @@ Q Quarantine
 D Deleted
 	Mails supprimés par l'utilisateur
 
-J Junk
+X Junk
 	Spam
 B Banned
 	Mails d'expéditeur bloqué par l'utilisateur
 
 
+
+La lettre de chaque dossier sert de raccourci clavier pour y déplacer un mail. Les lettres H, J, K et L sont réservées à la navigation à la manière de Vim, d'où X pour Junk.
 
 ## Le fonctionnement des dossiers
 
