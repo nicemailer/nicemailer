@@ -13,7 +13,7 @@ L'application est découpée en deux parties : le front en Swift pour l'interfac
 ### Objectifs
 
 - Une seule logique métier (synchro, threading, recherche, envoi), partagée par toutes les interfaces.
-- Cinq interfaces dès la conception : app macOS, CLI, TUI, web local et serveur MCP.
+- Une architecture compatible avec cinq interfaces : app macOS, CLI, TUI, web local et serveur MCP.
 - Une interface fluide, même sur de grosses boîtes aux lettres.
 - Une expérience grand public : téléchargement d'un DMG, double-clic, aucun terminal requis.
 - Une distribution directe (GitHub Releases), sans passer par le Mac App Store.
