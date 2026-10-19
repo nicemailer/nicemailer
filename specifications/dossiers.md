@@ -69,6 +69,25 @@ Un mail sorti de Quarantine ne peut pas y retourner.
 
 ## Déplacer un mail
 
+### Une conversation, pas un mail
+
+Les commandes s'appliquent à la **conversation** : tous ses mails sont traités de la même façon. Une conversation n'occupe donc normalement qu'un seul dossier de travail ou de rangement, en plus de Sent.
+
+Une commande sur une conversation (déplacer, supprimer, marquer comme spam) s'applique à ses mails rangés dans Inbox, Todo, Waiting, Archive, Newsletter et Paperwork. Elle ne touche jamais :
+
+- **Sent et Drafts** : les mails envoyés restent dans Sent, où le téléphone les retrouve ; un brouillon en cours n'est pas déplacé ;
+- **Deleted, Junk et Banned** : un mail que l'utilisateur a supprimé ou rejeté n'est pas ressuscité par une action sur le reste de la conversation ;
+- **Quarantine** : un mail en Quarantine attend une décision sur son expéditeur, que la commande ne prend pas à sa place.
+
+Autres règles :
+
+- **Lu, non lu** : s'applique à tous les mails de la conversation. **Drapeau** : posé sur le dernier mail reçu ; la conversation est marquée si l'un de ses mails l'est.
+- **Décision sur l'expéditeur** (déplacement vers Newsletter, Paperwork ou Banned) : si les mails de la conversation, hors ceux de l'utilisateur, viennent d'un seul expéditeur, la décision porte sur lui. S'ils viennent de plusieurs, l'app demande lesquels sont concernés, pour ne pas bannir un collègue en copie.
+- **Nouveau mail dans une conversation déjà rangée** : il arrive là où le screening le place, en général l'Inbox. La conversation apparaît alors dans l'Inbox ; la commande suivante regroupe tous ses mails. Une réponse à une conversation en Waiting la fait ainsi réapparaître dans l'Inbox.
+- **Mail isolé** : dans la vue de lecture, un mail seul d'une conversation peut être supprimé. C'est la seule commande au niveau du mail.
+
+Les commandes du contrat prennent donc un identifiant de conversation (`thread_id`) ; seule la suppression accepte aussi un identifiant de message.
+
 ### Catégories de dossiers
 
 | Catégorie | Dossiers | Rôle |
