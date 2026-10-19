@@ -35,6 +35,9 @@ CREATE TABLE account (
     -- authserv-id de confiance des en-têtes Authentication-Results du serveur.
     -- NULL = aucun détecté : verdicts 'unknown' (voir authentification-expediteur.md).
     authserv_id   TEXT,
+    -- Synchronisation de la configuration par le dossier nicemailer-sync du serveur
+    -- (voir synchronisation-configuration.md). Désactivée par défaut.
+    config_sync   INTEGER NOT NULL DEFAULT 0 CHECK (config_sync IN (0,1)),
     created_at    INTEGER NOT NULL DEFAULT (unixepoch())
 ) STRICT;
 
@@ -48,11 +51,14 @@ CREATE TABLE folder (
     delimiter      TEXT,
     -- Dossiers du workflow (voir dossiers.md). NULL = dossier serveur non géré.
     -- 'drafts' : brouillons, synchronisés avec le téléphone (is_draft = flag \Draft).
+    -- 'config' : dossier nicemailer-sync de la configuration synchronisée, exclu de
+    -- tout le reste (aucune ligne message, ni screening, ni recherche).
     -- Favoris et "tous les messages" ne sont pas des dossiers :
     -- is_flagged et une recherche.
     role           TEXT CHECK (role IN
                    ('inbox','todo','waiting','archive','sent','newsletter','paperwork',
-                    'quarantine','deleted','junk','banned','drafts')),
+                    'quarantine','deleted','junk','banned','drafts','config')),
+    role_changed_at INTEGER,              -- dernière attribution du rôle (synchro de la config)
     uidvalidity    INTEGER,               -- si change : purger le dossier et resynchroniser
     uidnext        INTEGER,
     highestmodseq  INTEGER,               -- CONDSTORE/QRESYNC
@@ -74,6 +80,8 @@ CREATE TABLE folder (
 -- authentifié ; une règle de domaine favorable exige toujours 'pass'
 -- (voir authentification-expediteur.md).
 -- screening_target : jamais 'quarantine' (un mail sorti de Quarantine n'y retourne pas).
+-- screening_target NULL avec screening_decided_at renseigné = décision retirée
+-- (pierre tombale, voir synchronisation-configuration.md).
 -- Adresses et domaines sont stockés en minuscules.
 -- ------------------------------------------------------------
 CREATE TABLE address (
@@ -91,6 +99,7 @@ CREATE TABLE address (
     -- not_required : tout verdict accepté (outil d'envoi mal configuré).
     auth_policy TEXT NOT NULL DEFAULT 'auto'
                 CHECK (auth_policy IN ('auto','required','not_required')),
+    auth_policy_changed_at INTEGER,     -- NULL = jamais modifiée par l'utilisateur
     UNIQUE (addr)
 ) STRICT;
 
@@ -252,6 +261,8 @@ CREATE TABLE tag (
     name        TEXT NOT NULL,                  -- nom affiché, libre
     keyword     TEXT NOT NULL COLLATE NOCASE,   -- mot-clé IMAP (insensible à la casse)
     color       TEXT,
+    changed_at  INTEGER NOT NULL DEFAULT (unixepoch()),  -- synchro de la config
+    deleted_at  INTEGER,                -- pierre tombale : tag supprimé, masqué partout
     UNIQUE (account_id, name),
     UNIQUE (account_id, keyword)
 ) STRICT;
@@ -347,7 +358,9 @@ CREATE TABLE pending_action (
     id          INTEGER PRIMARY KEY,
     account_id  INTEGER NOT NULL REFERENCES account(id) ON DELETE CASCADE,
     kind        TEXT NOT NULL CHECK (kind IN
-                ('set_flags','move','copy','delete','append_draft','send')),
+                ('set_flags','move','copy','delete','append_draft','send','push_config')),
+    -- push_config : écriture de la configuration synchronisée, sans message ;
+    -- contenu calculé à l'exécution (voir synchronisation-configuration.md).
     message_id  INTEGER REFERENCES message(id) ON DELETE SET NULL,
     payload     TEXT NOT NULL,            -- JSON : move = {from_folder_id, from_uid, to_folder_id}
     undo        TEXT,                     -- JSON : état local à restaurer en cas d'échec définitif

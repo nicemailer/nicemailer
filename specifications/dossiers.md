@@ -88,6 +88,12 @@ L'en-tête `From` est falsifiable : un mail qui se réclame d'un expéditeur app
 
 Le détail (verdicts, confiance au premier usage, politique par adresse, interface) est dans `authentification-expediteur.md`.
 
+### Plusieurs Mac sur une même boîte
+
+Le screening n'a lieu que si NiceMailer tourne sur au moins un Mac : Mac éteint, les mails restent dans l'Inbox du serveur et sont triés au prochain démarrage. Les règles Sieve côté serveur sont écartées.
+
+Quand plusieurs Mac traitent la même boîte (un utilisateur au bureau et à la maison, ou une boîte partagée comme support@), ils partagent les décisions de screening et la configuration de la boîte par un message déposé dans un dossier `nicemailer-sync` du serveur. Cette synchronisation s'active par compte ; la dernière modification l'emporte. Une boîte ne reçoit que les décisions sur des adresses qu'elle a déjà vues. Le détail est dans `synchronisation-configuration.md`.
+
 ### Tags
 
 Les tags correspondent aux mots-clés IMAP du serveur et sont décrits par la table `tag` (voir `modele de donnees.md`).
