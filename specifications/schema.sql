@@ -86,6 +86,10 @@ CREATE TABLE folder (
     unread_count   INTEGER NOT NULL DEFAULT 0,
     subscribed     INTEGER NOT NULL DEFAULT 1 CHECK (subscribed IN (0,1)),
     date_last_sync INTEGER,
+    -- Inbox : UID à partir duquel les mails sont triés ; les UID inférieurs ont
+    -- été importés sans screening. NULL = compte en création, screening suspendu
+    -- (voir import-initial.md).
+    uid_screening_start INTEGER,
     -- created_by : 'imap' (dossier trouvé sur le serveur) ou le client qui l'a fait créer.
     -- date_modified : changement de rôle ou d'abonnement, pas les compteurs ni la synchro.
     date_created   INTEGER NOT NULL DEFAULT (unixepoch()),
@@ -126,6 +130,8 @@ CREATE TABLE address (
     auth_policy TEXT NOT NULL DEFAULT 'auto'
                 CHECK (auth_policy IN ('auto','required','not_required')),
     date_auth_policy_modified INTEGER,  -- NULL = jamais modifiée par l'utilisateur
+    -- Découverte par un import ; NULL = réception normale. Jamais effacé.
+    imported_from TEXT CHECK (imported_from IN ('imap_initial','mbox')),
     -- date_modified : nom, décision de screening ou auth_policy ; pas auth_seen.
     date_created INTEGER NOT NULL DEFAULT (unixepoch()),
     date_modified INTEGER NOT NULL DEFAULT (unixepoch()),
@@ -412,9 +418,11 @@ CREATE TABLE pending_action (
     id          INTEGER PRIMARY KEY,
     account_id  INTEGER NOT NULL REFERENCES account(id) ON DELETE CASCADE,
     kind        TEXT NOT NULL CHECK (kind IN
-                ('set_flags','move','copy','delete','append_draft','send','push_config')),
+                ('set_flags','move','copy','delete','append_draft','send','push_config','initial_archive')),
     -- push_config : écriture de la configuration synchronisée, sans message ;
     -- contenu calculé à l'exécution (voir synchronisation-configuration.md).
+    -- initial_archive : archivage groupé côté serveur à la création du compte,
+    -- sans message ; critères dans payload (voir import-initial.md).
     message_id  INTEGER REFERENCES message(id) ON DELETE SET NULL,
     payload     TEXT NOT NULL,            -- JSON : move = {from_folder_id, from_uid, to_folder_id}
     undo        TEXT,                     -- JSON : état local à restaurer en cas d'échec définitif

@@ -55,7 +55,7 @@ B Banned
 
 NiceMailer classifie les mails entrants en fonction de l'expéditeur.
 
-Les mails d'expéditeurs inconnus vont dans le dossier Quarantine où l'utilisateur pourra décider de bannir cet expéditeur (Banned) ou de déplacer le mail vers une cible légitime : Inbox, Newsletter, Paperwork. Le fait de déplacer un mail de Quarantine vers une cible légitime est mémorisé par l’application et les prochains mails de cet expéditeur seront automatiquement livrés dans le dossier approprié.
+Les mails d'expéditeurs inconnus vont dans le dossier Quarantine où l'utilisateur pourra décider de bannir cet expéditeur (Banned) ou de déplacer le mail vers une cible légitime : Inbox, Newsletter, Paperwork. Le fait de déplacer un mail de Quarantine vers une cible légitime est mémorisé par l’application et les prochains mails de cet expéditeur seront automatiquement livrés dans le dossier approprié. Les autres mails déjà reçus de cet expéditeur sont rangés en même temps (voir « Décision sur un expéditeur »).
 
 Cela reprend le workflow popularisé par Hey de 37signals.
 
@@ -77,10 +77,32 @@ Le panneau propose par défaut les dossiers que le serveur déclare avec un attr
 
 Seule l'Inbox est surveillée en IDLE : c'est par elle que les nouveaux mails arrivent sur le serveur, et c'est là que le screening doit réagir sans délai. IDLE ne surveille qu'un dossier par connexion, et multiplier les connexions est coûteux et limité par les serveurs. Les autres dossiers du workflow sont interrogés de temps à autre, toutes les cinq minutes (paramètre `sync.poll_interval_secs`, 300 par défaut), pour récupérer les changements faits ailleurs, par exemple depuis le téléphone. Les actions faites dans NiceMailer sont appliquées localement tout de suite, sans attendre l'interrogation.
 
+### Import initial
+
+À la création du compte, les mails déjà présents sur le serveur ne passent pas par le screening : aucun ne part en Quarantine. L'utilisateur peut archiver les plus anciens, et les personnes à qui il a déjà écrit arrivent directement dans l'Inbox. Les autres expéditeurs passent par la Quarantine à leur prochain mail. Le détail est dans `import-initial.md`.
+
 ### Données de screening
 
 L'application intègre une table d'adresses (`address`) afin de mémoriser les décisions de screening.
 Elle intègre également une table de domaines (`domain`) : l'utilisateur pourra décider pour tous les mails d'un domaine de les classer dans un dossier spécifique. La règle d'adresse l'emporte sur la règle de domaine, et un expéditeur sans règle va en Quarantine.
+
+### Décision sur un expéditeur : rangement des autres mails
+
+Quand l'utilisateur prend ou change une décision sur une adresse, les autres mails déjà reçus de cette adresse sont **systématiquement** rangés selon cette décision. C'est ainsi que l'historique importé se range au fil des décisions.
+
+| Décision | Mails rangés | Depuis |
+| --- | --- | --- |
+| Inbox | vers l'Inbox | Quarantine seulement |
+| Newsletter, Paperwork, Banned | vers le dossier de la décision | Quarantine, Inbox, Archive, et les deux autres dossiers parmi Newsletter, Paperwork et Banned |
+
+- **Une décision Inbox ne vide que la Quarantine.** Les mails déjà archivés ont été traités : les remettre dans l'Inbox (des années d'échanges avec un collègue) serait un retour en arrière.
+- **Jamais déplacés** : Todo, Waiting, Sent, Drafts, Deleted et Junk, qui résultent d'une commande explicite de l'utilisateur, ainsi que les mails de l'Inbox marqués d'un drapeau.
+- **Décision de domaine** : même règle, pour les mails des adresses du domaine qui n'ont pas de décision propre.
+- **Authentification** : une décision favorable ne déplace que les mails dont le verdict est accepté, selon l'algorithme de `authentification-expediteur.md`. Un mail usurpé reste en Quarantine.
+- **Retrait d'une décision** : aucun mail n'est déplacé.
+- **Sources** : seules les décisions prises par un client (app, CLI, TUI, web, agent MCP) déclenchent le rangement. Une décision reçue d'un autre Mac (`config_sync`) n'en déclenche pas : cet autre Mac a déjà rangé les mails, et la synchronisation IMAP rapporte ces déplacements. Les décisions prises par le noyau à l'import ne trouvent rien à ranger.
+- **Exécution** : un déplacement ordinaire par mail, dans le spool, que l'exécuteur regroupe en `UID MOVE` sur plusieurs UID (`modele de donnees.md`, section 6). Chaque mail déplacé porte la source de la décision (`modified_by`) et une ligne `move` dans `audit_log`.
+- **Annulation** : l'app affiche « 342 mails rangés dans Newsletter — Annuler ». Annuler rétablit la décision précédente et remet chaque mail dans son dossier d'origine.
 
 ### Authentification de l'expéditeur
 

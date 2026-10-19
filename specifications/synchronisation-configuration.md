@@ -136,7 +136,7 @@ Sinon, le moteur lit **tous** les messages portant `X-NiceMailer-Config`, fusion
 - le rôle d'un dossier n'est appliqué que si ce chemin existe dans la liste des dossiers du compte ; sinon il est réessayé après la prochaine synchronisation de la liste ;
 - un `AccountChanged` est émis pour le compte si ses rôles, tags ou réglages ont changé.
 
-Une décision de screening reçue ne s'applique qu'aux mails suivants. Les mails déjà triés, y compris ceux en Quarantine, ne sont pas reclassés.
+Une décision de screening reçue ne déclenche pas le rangement des anciens mails de l'expéditeur (`dossiers.md`, « Décision sur un expéditeur ») : le Mac qui a pris la décision les a déjà rangés sur le serveur, et la synchronisation IMAP rapporte ces déplacements. Sur une adresse vue uniquement localement, les mails restent où ils sont.
 
 ### Écriture
 
