@@ -94,7 +94,10 @@ Pour un mail entrant dans l'INBOX, dont l'expéditeur est l'adresse `A`, de doma
 3. Sinon, si `D` a une règle favorable :
    - si le verdict est `pass` : **cible de la règle** ;
    - sinon : **Quarantine**, avec `message.auth_suspect = 1`.
-4. Sinon : **Quarantine** (expéditeur inconnu).
+4. Sinon, si le mail répond à une conversation connue (`dossiers.md`, « Réponse dans une conversation connue ») :
+   - si le verdict n'est pas `fail` : **Inbox**, sans décision sur l'adresse ;
+   - sinon : **Quarantine**, avec `message.auth_suspect = 1`.
+5. Sinon : **Quarantine** (expéditeur inconnu).
 
 Dans la même transaction, si le verdict est `pass`, `A.auth_seen` passe à 1.
 
@@ -157,6 +160,9 @@ auth_policy  TEXT NOT NULL DEFAULT 'auto'
 - `From` absent, `From` multiple : `unknown`, Quarantine.
 - Détection de `authserv_id` : seuil de 90 % atteint, non atteint, aucun en-tête.
 - `reindex` complet : `auth_result` et `auth_suspect` inchangés.
+- Réponse d'un expéditeur sans décision dans une conversation connue : Inbox, aucune décision enregistrée ; avec un verdict `fail` : Quarantine, `auth_suspect = 1`.
+- Réponse à une conversation qui n'existe qu'en Newsletter ou en Quarantine : Quarantine.
+- Expéditeur banni répondant dans une conversation connue : Banned.
 
 ## 9. Questions ouvertes
 

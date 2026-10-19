@@ -51,6 +51,7 @@ Les destinataires (To, Cc, Bcc) des mails du dossier Sent sont des correspondant
 - Le noyau synchronise d'abord les en-têtes de Sent, puis compte les adresses distinctes parmi les destinataires, en excluant les adresses du compte lui-même.
 - Si la case est cochée, chacune de ces adresses **sans décision** reçoit la décision `inbox` (`auth_policy` reste `auto`). Une adresse qui a déjà une décision, par exemple venue d'un autre compte ou de la synchronisation entre Mac, la garde.
 - Ces décisions sont prises par le noyau (`created_by = 'core'`) et journalisées une par une dans `audit_log`, avec la raison `sent_correspondent`.
+- Après l'import, la même règle s'applique au fil de l'eau, sans option : écrire à quelqu'un vaut décision Inbox (`dossiers.md`).
 
 ## 5. Frontière entre l'existant et le nouveau
 

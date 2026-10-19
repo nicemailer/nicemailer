@@ -136,7 +136,37 @@ Seule l'Inbox est surveillée en IDLE : c'est par elle que les nouveaux mails ar
 ### Données de screening
 
 L'application intègre une table d'adresses (`address`) afin de mémoriser les décisions de screening.
-Elle intègre également une table de domaines (`domain`) : l'utilisateur pourra décider pour tous les mails d'un domaine de les classer dans un dossier spécifique. La règle d'adresse l'emporte sur la règle de domaine, et un expéditeur sans règle va en Quarantine.
+Elle intègre également une table de domaines (`domain`) : l'utilisateur pourra décider pour tous les mails d'un domaine de les classer dans un dossier spécifique. La règle d'adresse l'emporte sur la règle de domaine, et un expéditeur sans règle va en Quarantine, sauf s'il répond dans une conversation connue (ci-dessous).
+
+### Écrire à quelqu'un vaut décision Inbox
+
+Écrire à une personne, c'est l'accepter comme correspondant. Quand un mail est envoyé, chaque destinataire (To, Cc, Bcc) **sans décision** reçoit la décision `inbox`.
+
+- **Une décision existante est conservée.** Écrire à l'adresse de désabonnement d'une newsletter, ou répondre une fois à un expéditeur banni, ne change pas sa décision.
+- **Les adresses du compte lui-même** sont exclues.
+- **Envois faits ailleurs.** Un mail envoyé depuis le téléphone ou le webmail, découvert dans Sent par la synchronisation, produit le même effet.
+- **Rangement.** La décision range les mails de ce destinataire encore en Quarantine vers l'Inbox, comme toute décision `inbox` (« Décision sur un expéditeur »). Si plusieurs Mac font ce rangement en même temps, le déplacement concurrent est traité comme un succès.
+- **Traçabilité.** La décision porte la source du client qui a envoyé le mail, ou `imap` pour un envoi découvert dans Sent, et une ligne `screening` dans `audit_log` avec la raison `sent_to`.
+
+C'est la même règle que celle des correspondants à l'import initial, appliquée au fil de l'eau (`import-initial.md`, section 4).
+
+### Réponse dans une conversation connue
+
+Un collègue inconnu mis en copie d'un échange en cours ne doit pas partir en Quarantine : la conversation serait cassée. Un mail d'un expéditeur sans décision est donc livré dans l'Inbox s'il répond à une conversation connue.
+
+**Conversation connue.** Un des identifiants de `In-Reply-To` ou de `References` correspond au `Message-ID` d'un message du même compte rangé dans Inbox, Todo, Waiting, Archive ou Sent. Une conversation qui n'existe qu'en Newsletter, Paperwork, Quarantine, Junk, Banned ou Deleted ne compte pas : une « réponse » d'un inconnu à une newsletter est suspecte. Le contrôle se fait à la synchronisation des en-têtes, par l'index sur `message_id_hdr`, sans attendre le message complet.
+
+**Le mail est accepté, pas l'expéditeur.** Aucune décision n'est enregistrée sur l'adresse. Son prochain mail hors de cette conversation passera par la Quarantine, sauf si l'utilisateur lui répond entre-temps : écrire à quelqu'un vaut décision Inbox (ci-dessus). Dans l'Inbox, le mail porte l'indication « nouveau participant », avec deux actions : accepter l'expéditeur (décision `inbox`) ou l'envoyer en Quarantine. L'indication se déduit des données : un mail de l'Inbox dont l'expéditeur n'a pas de décision.
+
+**Pourquoi pas une décision automatique.** Le détournement de conversation est une attaque connue : un attaquant qui a volé un échange (boîte d'un correspondant compromise) y répond depuis sa propre adresse, avec les bons `References`. Accepter le mail sans accepter l'adresse limite le risque à ce seul mail, signalé comme venant d'un nouveau participant.
+
+**Limites de la règle :**
+- une décision Banned (adresse ou domaine) l'emporte toujours ;
+- une décision d'adresse ou de domaine existante s'applique normalement : la règle ne concerne que les expéditeurs sans décision ;
+- un mail dont le verdict d'authentification est `fail` va en Quarantine avec l'avertissement d'usurpation ;
+- les `Message-ID` cités sont faciles à connaître (ils circulent dans les mails transférés et les listes). La règle est un confort, pas une preuve : c'est pourquoi elle n'accepte que le mail.
+
+L'ordre complet des règles est dans `authentification-expediteur.md`, section 4.
 
 ### Décision sur un expéditeur : rangement des autres mails
 
