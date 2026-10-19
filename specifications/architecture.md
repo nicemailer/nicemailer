@@ -272,6 +272,7 @@ Le noyau est l'unique propriétaire de la base SQLite ; aucun client n'y accède
 - **Recherche plein texte** : index FTS dans `nm-store`, interrogé via la requête `search`.
 - **Runtime async unique** (tokio) côté noyau : les clients ne gèrent aucun thread réseau.
 - **Pas d'accès partagé à la base** : l'app Swift, le CLI et le MCP passent tous par le noyau, ce qui supprime les conflits de verrouillage.
+- **Traçabilité** : les entités portent leurs dates et sources de création et de modification, et un journal en ajout seul garde l'historique des décisions et des actions (`tracabilite.md`).
 - **Plusieurs Mac** : chaque Mac a sa propre base. Les décisions de screening et la configuration d'une boîte se partagent entre Mac par le serveur IMAP de cette boîte, sans service tiers (`synchronisation-configuration.md`).
 
 ---
@@ -320,6 +321,8 @@ En développement, les builds signés ad hoc ne satisfont pas l'exigence. Une ex
 | Serveur web | oui     | oui                                                        | oui                                | non                 |
 | MCP (agent) | oui     | désactivé par défaut, activable dans les réglages de l'app | **toujours soumis à confirmation** | non                 |
 
+L'identité vérifiée du client sert aussi à la traçabilité : le noyau inscrit lui-même la source de chaque création et modification (`created_by`, `modified_by`, `audit_log`), sans jamais la demander au client. Seuls l'app, la TUI et le serveur web peuvent marquer un message comme consulté (`mark_viewed`). Voir `tracabilite.md`.
+
 Le serveur web est un client signé du socket. Il authentifie le navigateur par un jeton aléatoire, propre à la session, et il est le seul client à utiliser un jeton. Pour le socket lui-même, un jeton ne servirait à rien : il serait stocké dans un fichier `0600` que le code malveillant visé peut lire aussi.
 
 ### Sécurité du serveur web : à traiter
@@ -348,7 +351,7 @@ Un mail entrant est un contenu hostile, lu par un LLM qui dispose d'outils. Sans
 
 ### Journal et limites
 
-- Les actions des clients autres que l'app (CLI, TUI, web, MCP) sont journalisées et consultables dans l'app : client, action, message concerné, date.
+- Les actions de tous les clients, app comprise, sont journalisées dans `audit_log` et consultables dans l'app : source, action, entité concernée, date (`tracabilite.md`).
 - Les suppressions et les demandes d'envoi des clients autres que l'app sont soumises à une limite de débit.
 
 ---

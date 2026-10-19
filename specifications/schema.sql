@@ -3,6 +3,23 @@
 -- Dates : INTEGER, secondes Unix UTC. Booléens : 0/1.
 -- Nécessite SQLite >= 3.38 (STRICT, unixepoch) avec FTS5.
 -- Analyse et justification : modele de donnees.md
+-- Toutes les colonnes de date sont préfixées par date_.
+--
+-- Traçabilité (voir tracabilite.md) : les entités (account, folder, address,
+-- domain, tag, message) portent date_created, date_modified, created_by et
+-- modified_by. date_modified ne suit que les attributs visibles de
+-- l'utilisateur, jamais les colonnes techniques. Les sources sont renseignées
+-- par le noyau, d'après l'identité vérifiée du client, jamais déclarées par lui :
+--   core        noyau (réception, screening automatique)
+--   app         application SwiftUI
+--   cli         CLI
+--   tui         TUI
+--   web         serveur web
+--   mcp         agent MCP
+--   config_sync synchronisation de la configuration entre Mac
+--   imap        changement vu sur le serveur (téléphone, webmail, autre Mac)
+-- Les tables de liaison et les agrégats n'en portent pas. L'historique
+-- complet est dans audit_log.
 -- ============================================================
 
 -- journal_mode = WAL est persistant dans le fichier de base.
@@ -38,7 +55,10 @@ CREATE TABLE account (
     -- Synchronisation de la configuration par le dossier nicemailer-sync du serveur
     -- (voir synchronisation-configuration.md). Désactivée par défaut.
     config_sync   INTEGER NOT NULL DEFAULT 0 CHECK (config_sync IN (0,1)),
-    created_at    INTEGER NOT NULL DEFAULT (unixepoch())
+    date_created  INTEGER NOT NULL DEFAULT (unixepoch()),
+    date_modified INTEGER NOT NULL DEFAULT (unixepoch()),
+    created_by    TEXT NOT NULL CHECK (created_by  IN ('core','app','cli','tui','web','mcp','config_sync','imap')),
+    modified_by   TEXT NOT NULL CHECK (modified_by IN ('core','app','cli','tui','web','mcp','config_sync','imap'))
 ) STRICT;
 
 -- ------------------------------------------------------------
@@ -58,14 +78,20 @@ CREATE TABLE folder (
     role           TEXT CHECK (role IN
                    ('inbox','todo','waiting','archive','sent','newsletter','paperwork',
                     'quarantine','deleted','junk','banned','drafts','config')),
-    role_changed_at INTEGER,              -- dernière attribution du rôle (synchro de la config)
+    date_role_modified INTEGER,           -- dernière attribution du rôle (synchro de la config)
     uidvalidity    INTEGER,               -- si change : purger le dossier et resynchroniser
     uidnext        INTEGER,
     highestmodseq  INTEGER,               -- CONDSTORE/QRESYNC
     total_count    INTEGER NOT NULL DEFAULT 0,
     unread_count   INTEGER NOT NULL DEFAULT 0,
     subscribed     INTEGER NOT NULL DEFAULT 1 CHECK (subscribed IN (0,1)),
-    last_sync_at   INTEGER,
+    date_last_sync INTEGER,
+    -- created_by : 'imap' (dossier trouvé sur le serveur) ou le client qui l'a fait créer.
+    -- date_modified : changement de rôle ou d'abonnement, pas les compteurs ni la synchro.
+    date_created   INTEGER NOT NULL DEFAULT (unixepoch()),
+    date_modified  INTEGER NOT NULL DEFAULT (unixepoch()),
+    created_by     TEXT NOT NULL CHECK (created_by  IN ('core','app','cli','tui','web','mcp','config_sync','imap')),
+    modified_by    TEXT NOT NULL CHECK (modified_by IN ('core','app','cli','tui','web','mcp','config_sync','imap')),
     UNIQUE (account_id, path)
 ) STRICT;
 
@@ -80,7 +106,7 @@ CREATE TABLE folder (
 -- authentifié ; une règle de domaine favorable exige toujours 'pass'
 -- (voir authentification-expediteur.md).
 -- screening_target : jamais 'quarantine' (un mail sorti de Quarantine n'y retourne pas).
--- screening_target NULL avec screening_decided_at renseigné = décision retirée
+-- screening_target NULL avec date_screening_modified renseigné = décision retirée
 -- (pierre tombale, voir synchronisation-configuration.md).
 -- Adresses et domaines sont stockés en minuscules.
 -- ------------------------------------------------------------
@@ -91,7 +117,7 @@ CREATE TABLE address (
                          -- écrasé ensuite par l'ingestion, modifiable par l'utilisateur
     screening_target     TEXT           -- NULL = pas de décision
                          CHECK (screening_target IN ('inbox','newsletter','paperwork','banned')),
-    screening_decided_at INTEGER,
+    date_screening_modified INTEGER,
     -- Confiance au premier usage : 1 dès qu'un mail 'pass' a été reçu de cette
     -- adresse ; jamais remis à 0 par l'ingestion.
     auth_seen   INTEGER NOT NULL DEFAULT 0 CHECK (auth_seen IN (0,1)),
@@ -99,7 +125,12 @@ CREATE TABLE address (
     -- not_required : tout verdict accepté (outil d'envoi mal configuré).
     auth_policy TEXT NOT NULL DEFAULT 'auto'
                 CHECK (auth_policy IN ('auto','required','not_required')),
-    auth_policy_changed_at INTEGER,     -- NULL = jamais modifiée par l'utilisateur
+    date_auth_policy_modified INTEGER,  -- NULL = jamais modifiée par l'utilisateur
+    -- date_modified : nom, décision de screening ou auth_policy ; pas auth_seen.
+    date_created INTEGER NOT NULL DEFAULT (unixepoch()),
+    date_modified INTEGER NOT NULL DEFAULT (unixepoch()),
+    created_by  TEXT NOT NULL CHECK (created_by  IN ('core','app','cli','tui','web','mcp','config_sync','imap')),
+    modified_by TEXT NOT NULL CHECK (modified_by IN ('core','app','cli','tui','web','mcp','config_sync','imap')),
     UNIQUE (addr)
 ) STRICT;
 
@@ -109,7 +140,11 @@ CREATE TABLE domain (
     domain      TEXT NOT NULL COLLATE NOCASE,   -- ex. "example.com", sans sous-domaine
     screening_target     TEXT           -- NULL = pas de décision
                          CHECK (screening_target IN ('inbox','newsletter','paperwork','banned')),
-    screening_decided_at INTEGER,
+    date_screening_modified INTEGER,
+    date_created INTEGER NOT NULL DEFAULT (unixepoch()),
+    date_modified INTEGER NOT NULL DEFAULT (unixepoch()),
+    created_by  TEXT NOT NULL CHECK (created_by  IN ('core','app','cli','tui','web','mcp','config_sync','imap')),
+    modified_by TEXT NOT NULL CHECK (modified_by IN ('core','app','cli','tui','web','mcp','config_sync','imap')),
     UNIQUE (domain)
 ) STRICT;
 
@@ -120,7 +155,7 @@ CREATE TABLE thread (
     id             INTEGER PRIMARY KEY,
     account_id     INTEGER NOT NULL REFERENCES account(id) ON DELETE CASCADE,
     subject        TEXT NOT NULL DEFAULT '',
-    last_date      INTEGER NOT NULL DEFAULT 0,
+    date_last_received INTEGER NOT NULL DEFAULT 0,
     message_count  INTEGER NOT NULL DEFAULT 0,
     unread_count   INTEGER NOT NULL DEFAULT 0
 ) STRICT;
@@ -130,14 +165,14 @@ CREATE TABLE thread (
 CREATE TABLE thread_folder (
     thread_id      INTEGER NOT NULL REFERENCES thread(id)  ON DELETE CASCADE,
     folder_id     INTEGER NOT NULL REFERENCES folder(id) ON DELETE CASCADE,
-    last_date      INTEGER NOT NULL,
+    date_last_received INTEGER NOT NULL,
     message_count  INTEGER NOT NULL,
     unread_count   INTEGER NOT NULL,
     PRIMARY KEY (thread_id, folder_id)
 ) STRICT, WITHOUT ROWID;
 
 CREATE INDEX idx_thread_folder_list
-    ON thread_folder (folder_id, last_date DESC, thread_id DESC);
+    ON thread_folder (folder_id, date_last_received DESC, thread_id DESC);
 
 -- ------------------------------------------------------------
 -- Messages : en-têtes seulement (table étroite = liste rapide).
@@ -182,6 +217,16 @@ CREATE TABLE message (
     body_state       INTEGER NOT NULL DEFAULT 0
                      CHECK (body_state IN (0,1)),  -- 0 en-têtes seuls, 1 message complet
 
+    -- Traçabilité. date_modified ne suit que dossier, flags, tags et brouillon ;
+    -- uid, modseq, body_state, snippet n'y touchent pas.
+    -- date_last_viewed : dernière consultation dans un client humain (app, TUI,
+    -- web) d'au moins 2 s ; ce n'est pas une modification, et elle reste locale.
+    date_created     INTEGER NOT NULL DEFAULT (unixepoch()),
+    date_modified    INTEGER NOT NULL DEFAULT (unixepoch()),
+    created_by       TEXT NOT NULL CHECK (created_by  IN ('core','app','cli','tui','web','mcp','config_sync','imap')),
+    modified_by      TEXT NOT NULL CHECK (modified_by IN ('core','app','cli','tui','web','mcp','config_sync','imap')),
+    date_last_viewed INTEGER,
+
     UNIQUE (folder_id, uid)               -- synchro ; plusieurs NULL autorisés
 ) STRICT;
 
@@ -199,6 +244,12 @@ CREATE INDEX idx_message_unread
 
 CREATE INDEX idx_message_flagged
     ON message (folder_id, date_received) WHERE is_flagged = 1;
+
+-- Vues "derniers mails traités" et "derniers mails consultés", tous dossiers
+-- confondus (voir tracabilite.md).
+CREATE INDEX idx_message_modified ON message (date_modified);
+CREATE INDEX idx_message_viewed
+    ON message (date_last_viewed) WHERE date_last_viewed IS NOT NULL;
 
 -- Messages d'une conversation, dans l'ordre chronologique.
 CREATE INDEX idx_message_thread
@@ -261,8 +312,11 @@ CREATE TABLE tag (
     name        TEXT NOT NULL,                  -- nom affiché, libre
     keyword     TEXT NOT NULL COLLATE NOCASE,   -- mot-clé IMAP (insensible à la casse)
     color       TEXT,
-    changed_at  INTEGER NOT NULL DEFAULT (unixepoch()),  -- synchro de la config
-    deleted_at  INTEGER,                -- pierre tombale : tag supprimé, masqué partout
+    date_deleted INTEGER,               -- pierre tombale : tag supprimé, masqué partout
+    date_created INTEGER NOT NULL DEFAULT (unixepoch()),
+    date_modified INTEGER NOT NULL DEFAULT (unixepoch()),
+    created_by  TEXT NOT NULL CHECK (created_by  IN ('core','app','cli','tui','web','mcp','config_sync','imap')),
+    modified_by TEXT NOT NULL CHECK (modified_by IN ('core','app','cli','tui','web','mcp','config_sync','imap')),
     UNIQUE (account_id, name),
     UNIQUE (account_id, keyword)
 ) STRICT;
@@ -281,7 +335,7 @@ CREATE TABLE message_body (
     parser_version  INTEGER NOT NULL,     -- version de l'analyseur et de l'assainissement ;
                                           -- reindex cible les lignes de version inférieure
     raw_path        TEXT,                 -- .eml brut sur disque, si conservé
-    fetched_at      INTEGER NOT NULL DEFAULT (unixepoch())
+    date_fetched    INTEGER NOT NULL DEFAULT (unixepoch())
 ) STRICT;
 
 CREATE INDEX idx_message_body_parser ON message_body (parser_version);
@@ -349,7 +403,7 @@ END;
 -- ------------------------------------------------------------
 -- Spool : file d'actions locales à rejouer vers le serveur (hors-ligne).
 -- L'action est déjà appliquée localement à l'insertion (affichage immédiat).
--- Erreur temporaire : reste 'queued', run_after repoussé.
+-- Erreur temporaire : reste 'queued', date_run_after repoussé.
 -- Erreur définitive : 'reverted', l'état local est restauré depuis undo.
 -- 'cancelled' : annulée sans exécution (fusion, ou annulation en série).
 -- Voir modele de donnees.md, section 6.
@@ -368,17 +422,39 @@ CREATE TABLE pending_action (
                 CHECK (state IN ('queued','running','done','reverted','cancelled')),
     attempts    INTEGER NOT NULL DEFAULT 0,
     last_error  TEXT,
-    created_at  INTEGER NOT NULL DEFAULT (unixepoch()),
-    run_after   INTEGER NOT NULL DEFAULT 0  -- backoff
+    date_created   INTEGER NOT NULL DEFAULT (unixepoch()),
+    date_modified  INTEGER NOT NULL DEFAULT (unixepoch()),  -- dernier changement d'état
+    created_by     TEXT NOT NULL CHECK (created_by IN ('core','app','cli','tui','web','mcp','config_sync','imap')),
+    date_run_after INTEGER NOT NULL DEFAULT 0  -- backoff
 ) STRICT;
 
 CREATE INDEX idx_pending_action_queue
-    ON pending_action (account_id, state, run_after, id);
+    ON pending_action (account_id, state, date_run_after, id);
 
 -- Actions en attente sur un message : fusion, exécution en série par message,
 -- et consultation par la synchro (UID à ignorer, lignes à rattacher).
 CREATE INDEX idx_pending_action_message
     ON pending_action (message_id, id) WHERE state IN ('queued','running');
+
+-- ------------------------------------------------------------
+-- Journal de traçabilité : historique des décisions et des actions, en ajout
+-- seul, jamais modifié. Pas de clé étrangère : l'historique survit à la
+-- suppression de l'entité. Les changements de source 'imap' n'y figurent pas.
+-- Purgé après audit.retention_days. Voir tracabilite.md.
+-- ------------------------------------------------------------
+CREATE TABLE audit_log (
+    id           INTEGER PRIMARY KEY,
+    date_created INTEGER NOT NULL DEFAULT (unixepoch()),
+    created_by   TEXT NOT NULL CHECK (created_by IN ('core','app','cli','tui','web','mcp','config_sync','imap')),
+    entity       TEXT NOT NULL CHECK (entity IN
+                 ('account','folder','address','domain','tag','message')),
+    entity_id    INTEGER NOT NULL,
+    action       TEXT NOT NULL,           -- ex. screening, auth_policy, role, move, set_flags
+    detail       TEXT                     -- JSON : {"before": …, "after": …, …}
+) STRICT;
+
+CREATE INDEX idx_audit_log_entity ON audit_log (entity, entity_id, date_created);
+CREATE INDEX idx_audit_log_date   ON audit_log (date_created);
 
 -- ------------------------------------------------------------
 -- Requêtes de référence (pour la couche Rust)
@@ -401,10 +477,10 @@ CREATE INDEX idx_pending_action_message
 --    LIMIT 50;
 --
 -- Liste de conversations d'un dossier :
---   SELECT t.id, t.subject, tm.last_date, tm.message_count, tm.unread_count
+--   SELECT t.id, t.subject, tm.date_last_received, tm.message_count, tm.unread_count
 --     FROM thread_folder tm
 --     JOIN thread t ON t.id = tm.thread_id
 --    WHERE tm.folder_id = :mb
---      AND (tm.last_date, tm.thread_id) < (:cursor_date, :cursor_id)
---    ORDER BY tm.last_date DESC, tm.thread_id DESC
+--      AND (tm.date_last_received, tm.thread_id) < (:cursor_date, :cursor_id)
+--    ORDER BY tm.date_last_received DESC, tm.thread_id DESC
 --    LIMIT 50;

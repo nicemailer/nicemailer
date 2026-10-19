@@ -82,7 +82,7 @@ Les événements **séquencés** passent par le tampon et sont rejoués. Les év
 | --- | --- | --- | --- |
 | `FolderChanged` | `folder_id` | séquencé | Contenu ou compteurs du dossier modifiés |
 | `ThreadChanged` | `thread_id`, `folder_ids` | séquencé | Conversation créée, modifiée ou supprimée, dans les dossiers indiqués |
-| `MessageChanged` | `message_id`, `thread_id` | séquencé | Message modifié (flags, dossier, corps réinterprété) ou supprimé |
+| `MessageChanged` | `message_id`, `thread_id` | séquencé | Message modifié (flags, dossier, corps réinterprété, consultation) ou supprimé |
 | `MessageArrived` | `message_id`, `folder_id` | séquencé | Nouveau mail, trié dans le dossier indiqué ; sert aussi aux notifications |
 | `AccountChanged` | `account_id` | séquencé | Compte ajouté, modifié ou supprimé |
 | `AccountError` | `account_id`, `error` | séquencé | Erreur de connexion ou d'authentification d'un compte |

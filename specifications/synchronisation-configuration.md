@@ -182,17 +182,18 @@ config_sync  INTEGER NOT NULL DEFAULT 0 CHECK (config_sync IN (0,1)),
 
 -- folder : nouveau rôle 'config' (dossier nicemailer-sync) ;
 -- horodatage de l'attribution du rôle
-role_changed_at INTEGER,
+date_role_modified INTEGER,
 
--- address : screening_decided_at existe déjà ; target NULL avec une date = décision retirée
-auth_policy_changed_at INTEGER,
+-- address : date_screening_modified existe déjà ; target NULL avec une date = décision retirée
+date_auth_policy_modified INTEGER,
 
--- tag
-changed_at  INTEGER NOT NULL DEFAULT (unixepoch()),
-deleted_at  INTEGER,        -- pierre tombale : tag supprimé, masqué partout
+-- tag : date_modified (colonne commune de traçabilité) sert d'horodatage d'entrée
+date_deleted INTEGER,         -- pierre tombale : tag supprimé, masqué partout
 
 -- pending_action : nouveau kind 'push_config' (message_id NULL)
 ```
+
+Une modification reçue par la synchronisation est enregistrée avec `modified_by = 'config_sync'` (ou `created_by` pour une entrée créée), et les dates prennent l'horodatage de l'entrée reçue, pas l'heure locale : sinon, la fusion suivante considérerait à tort la copie locale comme plus récente. Elle est aussi inscrite dans `audit_log` (`tracabilite.md`).
 
 ## 11. Paramètres
 
