@@ -1,0 +1,125 @@
+# Domaines publics ajoutés à la main.
+#
+# Un domaine est public quand n'importe qui peut y ouvrir une adresse :
+# webmail gratuit, fournisseur d'accès, ou messagerie payante ouverte à tous.
+# Ces domaines sont toujours présents dans la liste générée, même si les
+# sources amont les retirent. Ils servent aussi de témoins : la liste amont
+# doit déjà contenir les grands noms ci-dessous.
+#
+# Un domaine par ligne, en minuscules. Les lignes commençant par # sont ignorées.
+
+# Internationaux
+aol.com
+fastmail.com
+gmail.com
+googlemail.com
+gmx.com
+hey.com
+hotmail.com
+icloud.com
+live.com
+mac.com
+me.com
+msn.com
+outlook.com
+proton.me
+protonmail.ch
+protonmail.com
+pm.me
+tuta.com
+tuta.io
+tutamail.com
+tutanota.com
+tutanota.de
+yahoo.com
+yandex.com
+zoho.com
+
+# France
+aliceadsl.fr
+aol.fr
+bbox.fr
+caramail.com
+cegetel.net
+club-internet.fr
+free.fr
+gmx.fr
+hotmail.fr
+laposte.net
+libertysurf.fr
+live.fr
+mailo.com
+neuf.fr
+netcourrier.com
+noos.fr
+numericable.fr
+online.fr
+orange.fr
+outlook.fr
+sfr.fr
+voila.fr
+wanadoo.fr
+yahoo.fr
+
+# Belgique, Suisse
+belgacom.net
+bluewin.ch
+gmx.ch
+hispeed.ch
+scarlet.be
+skynet.be
+telenet.be
+voo.be
+
+# Allemagne, Autriche
+aon.at
+arcor.de
+freenet.de
+gmx.at
+gmx.de
+gmx.net
+mailbox.org
+posteo.de
+posteo.net
+t-online.de
+web.de
+
+# Italie, Espagne, Portugal
+alice.it
+email.it
+fastwebnet.it
+libero.it
+movistar.es
+sapo.pt
+telefonica.net
+terra.es
+tin.it
+tiscali.it
+virgilio.it
+
+# Royaume-Uni, Pays-Bas
+blueyonder.co.uk
+btinternet.com
+casema.nl
+hetnet.nl
+home.nl
+kpnmail.nl
+ntlworld.com
+planet.nl
+sky.com
+talktalk.net
+virginmedia.com
+xs4all.nl
+ziggo.nl
+
+# Europe centrale et de l'Est
+centrum.cz
+email.cz
+interia.pl
+mail.ru
+o2.pl
+onet.pl
+op.pl
+seznam.cz
+wp.pl
+yandex.ru

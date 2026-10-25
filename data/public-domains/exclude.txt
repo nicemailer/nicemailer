@@ -1,0 +1,7 @@
+# Domaines à retirer de la liste générée.
+#
+# Les sources amont contiennent quelques domaines qui ne sont pas des
+# messageries publiques (sites éditoriaux, entreprises). Une entrée ici
+# l'emporte sur les sources et sur extra.txt.
+#
+# Un domaine par ligne, en minuscules. Les lignes commençant par # sont ignorées.
