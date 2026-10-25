@@ -46,6 +46,9 @@ Tout ce qui sert à l'affichage (en-têtes, destinataires, corps texte et HTML a
       abcdef…0123/          ← hash du brut dont la pièce jointe est extraite
         1.2/                ← part_id
           facture-mars.pdf  ← nom assaini, extension conservée
+  outgoing.noindex/         ← pièces jointes des brouillons, copiées à l'ajout (brouillons.md)
+    ab/
+      abcdef…0123           ← hash SHA-256 du contenu, sans compression
   lock                      ← verrou d'instance unique
   core.sock                 ← socket du noyau, créé par lui (architecture.md, section 6)
 ```
@@ -138,6 +141,8 @@ Si le fichier est absent alors que la base le référence, le comportement est l
 
 1. Dans une transaction, supprimer de `raw_blob` les lignes où `NOT EXISTS (SELECT 1 FROM message WHERE raw_hash = raw_blob.hash)`. Conserver la liste des hashes supprimés.
 2. Après validation, supprimer les fichiers correspondants, ainsi que les dossiers `attachments.noindex/<hash>/` des pièces jointes extraites de ces blobs.
+
+Les pièces jointes des brouillons (`outgoing.noindex/`, table `outgoing_blob`) suivent la même règle : une ligne `outgoing_blob` sans `draft_attachment` qui la référence est supprimée, puis son fichier, sous le même verrou.
 
 **Balayage des orphelins**, au démarrage et périodiquement : parcourir `raw.noindex/`, supprimer
 - tout fichier de `.tmp/` de plus de 24 heures ;

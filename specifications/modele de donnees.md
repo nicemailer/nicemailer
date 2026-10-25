@@ -77,6 +77,9 @@ Une règle favorable (`inbox`, `newsletter`, `paperwork`) n'est appliquée que s
 ### `attachment`
 Métadonnées seulement. Les fichiers sont extraits du message brut à la demande et rangés sur disque ; `disk_path` reste `NULL` tant que la pièce jointe n'est pas extraite, et redevient `NULL` si le fichier est purgé. Les clients reçoivent ce chemin, jamais le contenu (`architecture.md`, section 5). `filename` est le nom d'origine, affiché tel quel ; le fichier sur disque porte un nom assaini. `part_id` est le numéro de partie MIME, `content_id` sert aux images inline (`cid:`).
 
+### `draft`, `draft_attachment` et `outgoing_blob`
+Les brouillons en cours de rédaction, sous une forme éditable et non en MIME. La ligne `draft` est la source pendant la rédaction ; la copie dans le dossier Drafts du serveur n'est écrite qu'à la fermeture de la fenêtre, et elle est représentée par une seule ligne `message` (`draft.message_id`), mise à jour à chaque nouvelle copie. `revision` et `server_revision` permettent de savoir si le brouillon a été modifié depuis la dernière copie, ce qui décide du traitement d'une modification faite sur un autre appareil. `message_id_hdr` est le `Message-ID`, stable de la création à l'envoi. Les pièces jointes sont copiées à l'ajout dans `outgoing.noindex/`, adressées par leur contenu (`outgoing_blob`), et supprimées quand plus aucun brouillon ne les référence. Le détail est dans `brouillons.md`.
+
 ### `message_fts`
 Index plein texte FTS5 sur objet, expéditeur, destinataires et corps, avec `unicode61 remove_diacritics 2` (« eleve » trouve « élève ») et des index de préfixes 2 et 3 pour la saisie progressive. Des triggers le maintiennent à jour (section 7).
 

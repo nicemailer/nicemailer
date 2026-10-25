@@ -369,6 +369,63 @@ CREATE TABLE attachment (
 CREATE INDEX idx_attachment_cid ON attachment (message_id, content_id);
 
 -- ------------------------------------------------------------
+-- Brouillons en cours de rédaction (voir brouillons.md).
+-- La ligne draft est la source pendant la rédaction ; la copie dans le dossier
+-- Drafts du serveur n'est écrite qu'à la fermeture de la fenêtre.
+-- Modifié localement : revision <> server_revision (ou server_revision NULL).
+-- message_id : la ligne message (une seule par brouillon) qui représente la
+-- copie sur le serveur ; NULL tant qu'aucune copie n'existe.
+-- Pas de journal des modifications dans audit_log, seulement l'envoi.
+-- ------------------------------------------------------------
+CREATE TABLE draft (
+    id                  INTEGER PRIMARY KEY,
+    account_id          INTEGER NOT NULL REFERENCES account(id) ON DELETE CASCADE,
+    from_addr           TEXT NOT NULL,
+    from_name           TEXT,
+    recipients          TEXT NOT NULL DEFAULT '[]',  -- JSON : [{kind, addr, name}], kind to|cc|bcc
+    subject             TEXT NOT NULL DEFAULT '',
+    body                TEXT NOT NULL DEFAULT '',
+    body_format         TEXT NOT NULL DEFAULT 'text' CHECK (body_format IN ('text','html')),
+    reply_to_message_id INTEGER REFERENCES message(id) ON DELETE SET NULL,
+    -- Rangement de la conversation après l'envoi (dossiers.md) ; NULL = présélection.
+    after_send          TEXT CHECK (after_send IN ('archive','waiting','todo')),
+    message_id_hdr      TEXT NOT NULL,    -- Message-ID stable, généré à la création
+    message_id          INTEGER REFERENCES message(id) ON DELETE SET NULL,
+    revision            INTEGER NOT NULL DEFAULT 1,
+    server_revision     INTEGER,          -- révision de la dernière copie sur le serveur
+    state               TEXT NOT NULL DEFAULT 'editing' CHECK (state IN ('editing','sending')),
+    date_created        INTEGER NOT NULL DEFAULT (unixepoch()),
+    date_modified       INTEGER NOT NULL DEFAULT (unixepoch()),
+    created_by          TEXT NOT NULL CHECK (created_by  IN ('core','app','cli','tui','web','mcp','config_sync','imap')),
+    modified_by         TEXT NOT NULL CHECK (modified_by IN ('core','app','cli','tui','web','mcp','config_sync','imap')),
+    UNIQUE (message_id_hdr)
+) STRICT;
+
+CREATE INDEX idx_draft_message ON draft (message_id) WHERE message_id IS NOT NULL;
+
+-- Fichiers joints aux brouillons, copiés dans outgoing.noindex/ à l'ajout,
+-- adressés par le SHA-256 de leur contenu (voir brouillons.md, section 7).
+CREATE TABLE outgoing_blob (
+    hash        BLOB PRIMARY KEY,         -- SHA-256, 32 octets
+    size        INTEGER NOT NULL,
+    stored_at   INTEGER NOT NULL DEFAULT (unixepoch())
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE draft_attachment (
+    id          INTEGER PRIMARY KEY,
+    draft_id    INTEGER NOT NULL REFERENCES draft(id) ON DELETE CASCADE,
+    hash        BLOB NOT NULL REFERENCES outgoing_blob(hash) ON DELETE RESTRICT,
+    filename    TEXT NOT NULL,            -- nom affiché et envoyé
+    mime_type   TEXT NOT NULL,
+    position    INTEGER NOT NULL,         -- ordre d'affichage et d'envoi
+    content_id  TEXT,                     -- image insérée dans le corps HTML (cid:)
+    is_inline   INTEGER NOT NULL DEFAULT 0 CHECK (is_inline IN (0,1))
+) STRICT;
+
+CREATE INDEX idx_draft_attachment_draft ON draft_attachment (draft_id, position);
+CREATE INDEX idx_draft_attachment_hash  ON draft_attachment (hash);
+
+-- ------------------------------------------------------------
 -- Recherche plein texte. rowid = message.id.
 -- remove_diacritics 2 : "eleve" trouve "élève".
 -- ------------------------------------------------------------
@@ -426,6 +483,8 @@ CREATE TABLE pending_action (
     -- contenu calculé à l'exécution (voir synchronisation-configuration.md).
     -- initial_archive : archivage groupé côté serveur à la création du compte,
     -- sans message ; critères dans payload (voir import-initial.md).
+    -- append_draft : copie d'un brouillon dans Drafts, payload = {draft_id, revision}
+    -- (voir brouillons.md, section 5).
     message_id  INTEGER REFERENCES message(id) ON DELETE SET NULL,
     payload     TEXT NOT NULL,            -- JSON : move = {from_folder_id, from_uid, to_folder_id}
     undo        TEXT,                     -- JSON : état local à restaurer en cas d'échec définitif

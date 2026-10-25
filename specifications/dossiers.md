@@ -63,7 +63,7 @@ Cela reprend le workflow popularisé par Hey de 37signals.
 
 Les autres dossiers correspondent à des commandes de l'utilisateur sur un mail : Todo, Waiting, Archive, Deleted, Junk. Drafts est alimenté par la rédaction d'un message, et Sent par son envoi.
 
-Pendant la rédaction, le brouillon est enregistré en continu en local (SQLite). Il n'est envoyé au serveur IMAP qu'à la fermeture de la fenêtre de rédaction ou après 20 secondes d'inactivité. IMAP ne permet pas de modifier un message : chaque envoi au serveur est un `APPEND` de la nouvelle version suivi de la suppression de l'ancienne, ce qui change l'UID. Ce délai limite donc le trafic et le nombre de lignes `message` éphémères. Si l'envoi échoue, il est repris via `pending_action` (`append_draft`).
+Pendant la rédaction, le brouillon est enregistré en continu en local (table `draft`). Il n'est envoyé au serveur IMAP, dans Drafts, qu'à la fermeture de la fenêtre de rédaction. Un brouillon modifié à la fois sur le Mac et sur un autre appareil est conservé en deux exemplaires, pour ne jamais perdre de texte. Les pièces jointes sont copiées dans la zone de stockage privée dès qu'on les attache. Le détail est dans `brouillons.md`.
 
 Un mail sorti de Quarantine ne peut pas y retourner.
 
@@ -160,7 +160,7 @@ Règles :
 - **Conversation, pas mail** : comme une commande, le rangement s'applique aux mails de la conversation rangés dans Inbox, Todo et Waiting (« Une conversation, pas un mail »). Si la cible est le dossier actuel (relance depuis Waiting), rien n'est déplacé.
 - **Moment** : quand le serveur SMTP a accepté le mail, pas à l'ouverture de la fenêtre de rédaction. Un envoi qui échoue ne range rien.
 - **Marque de retour** : le rangement est une commande, il retire donc `$NmWasTodo` et `$NmWasWaiting` (« Nouveau mail dans une conversation en Todo ou en Waiting »), y compris quand la conversation ne change pas de dossier.
-- **Présélection calculée par le noyau** : la règle du tableau vit dans le noyau, pas dans chaque client. Le contrat expose la cible présélectionnée avec la conversation (`ThreadSummary.reply_target`, absent pour les dossiers sans choix), et `send_message` reçoit la cible choisie (`after_send` : `archive`, `waiting` ou `todo`). Si `after_send` est omis, le noyau applique la présélection : c'est le cas du CLI et de l'agent MCP quand ils ne précisent rien.
+- **Présélection calculée par le noyau** : la règle du tableau vit dans le noyau, pas dans chaque client. Le contrat expose la cible présélectionnée avec la conversation (`ThreadSummary.reply_target`, absent pour les dossiers sans choix), et la commande d'envoi (`send_draft` ou `send_message`, voir `brouillons.md`) reçoit la cible choisie (`after_send` : `archive`, `waiting` ou `todo`). Si `after_send` est omis, le noyau applique la présélection : c'est le cas du CLI et de l'agent MCP quand ils ne précisent rien.
 - **Réponse envoyée ailleurs** : une réponse envoyée depuis le téléphone ou le webmail, découverte dans Sent par la synchronisation, est rangée selon la présélection, avec la source `core`. Elle n'est vue qu'au prochain passage de la synchronisation sur Sent.
 - **Traçabilité** : déplacement ordinaire par mail, dans le spool, avec la source du client qui a envoyé la réponse et une ligne `move` dans `audit_log` qui cite le mail envoyé.
 
