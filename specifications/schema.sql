@@ -294,6 +294,8 @@ CREATE INDEX idx_message_address_address ON message_address (address_id);
 
 -- ------------------------------------------------------------
 -- Mots-clés IMAP d'un message (tags compris, voir la table tag)
+-- Préfixe $Nm réservé au noyau : $NmWasTodo, $NmWasWaiting marquent une
+-- conversation revenue dans l'Inbox (dossiers.md). Comparaison sans casse.
 -- ------------------------------------------------------------
 CREATE TABLE message_keyword (
     message_id  INTEGER NOT NULL REFERENCES message(id) ON DELETE CASCADE,
@@ -309,6 +311,7 @@ CREATE INDEX idx_message_keyword_kw ON message_keyword (keyword, message_id);
 -- Correspondance : message_keyword.keyword = tag.keyword (même compte).
 -- Les mots-clés sans ligne dans tag ($Forwarded, $MDNSent...) restent de
 -- simples mots-clés techniques, non affichés comme tags.
+-- Un tag ne peut pas utiliser un mot-clé du préfixe réservé $Nm.
 -- Un mot-clé IMAP est un atome ASCII (ni espace, ni parenthèses, ni accents) :
 -- `name` est le nom affiché, `keyword` sa forme encodée envoyée au serveur.
 -- ------------------------------------------------------------

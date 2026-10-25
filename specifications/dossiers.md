@@ -28,7 +28,7 @@ W Waiting
 	Mails en attente d'une réponse/information complémentaire. Les mails arrivent dans cette boite par une commande de l’utilisateur
 
 A Archive
-	Tout mails qui a été dans inbox après son traitement : soit une réponse, soit une commande de l'utilisateur
+	Mails traités : par une commande de l'utilisateur, ou par le rangement choisi à l'envoi d'une réponse (voir « Répondre à une conversation »)
 S Sent
 	Mails envoyés par l'utilisateur
 R Drafts
@@ -83,7 +83,7 @@ Autres règles :
 
 - **Lu, non lu** : s'applique à tous les mails de la conversation. **Drapeau** : posé sur le dernier mail reçu ; la conversation est marquée si l'un de ses mails l'est.
 - **Décision sur l'expéditeur** (déplacement vers Newsletter, Paperwork ou Banned) : si les mails de la conversation, hors ceux de l'utilisateur, viennent d'un seul expéditeur, la décision porte sur lui. S'ils viennent de plusieurs, l'app demande lesquels sont concernés, pour ne pas bannir un collègue en copie.
-- **Nouveau mail dans une conversation déjà rangée** : il arrive là où le screening le place, en général l'Inbox. La conversation apparaît alors dans l'Inbox ; la commande suivante regroupe tous ses mails. Une réponse à une conversation en Waiting la fait ainsi réapparaître dans l'Inbox.
+- **Nouveau mail dans une conversation déjà rangée** : il arrive là où le screening le place, en général l'Inbox. La conversation apparaît alors dans l'Inbox ; la commande suivante regroupe tous ses mails. Exception : une conversation en Todo ou en Waiting qui reçoit un mail revient entièrement dans l'Inbox (« Nouveau mail dans une conversation en Todo ou en Waiting »).
 - **Mail isolé** : dans la vue de lecture, un mail seul d'une conversation peut être supprimé. C'est la seule commande au niveau du mail.
 
 Les commandes du contrat prennent donc un identifiant de conversation (`thread_id`) ; seule la suppression accepte aussi un identifiant de message.
@@ -136,6 +136,34 @@ Le plus souvent, la Quarantine contient les premiers mails d'un expéditeur inco
 
 La règle de rangement s'applique donc aussi depuis la Quarantine : c'est elle qui range l'historique importé au fil des décisions.
 
+### Répondre à une conversation
+
+Répondre fait souvent avancer le traitement d'une conversation, mais le noyau ne peut pas deviner vers quoi : une réponse peut clore l'échange (« merci, c'est noté »), relancer l'attente (une nouvelle question) ou laisser un travail à faire. L'écran de réponse demande donc **où ranger la conversation après l'envoi**, parmi trois cibles : **Archive**, **Waiting** ou **Todo**. La cible la plus probable est présélectionnée, et l'utilisateur n'a rien à faire dans le cas courant.
+
+| Dossier de la conversation | Cible présélectionnée | Raison |
+| --- | --- | --- |
+| Inbox | Archive | Répondre est le plus souvent la dernière étape du traitement |
+| Inbox, revenue de Waiting (`$NmWasWaiting`) | Waiting | La réponse attendue est arrivée, mais l'échange continue souvent ; une conversation archivée à tort sort du suivi sans que l'utilisateur s'en aperçoive |
+| Inbox, revenue de Todo (`$NmWasTodo`) | Todo | Le travail existait avant le nouveau mail ; une réponse le termine rarement |
+| Todo | Archive | Répondre depuis Todo, c'est en général faire ce qui était à faire |
+| Waiting | Waiting | Répondre depuis Waiting est une relance : on attend toujours |
+
+Le choix n'est pas proposé pour les autres dossiers, où la conversation reste en place :
+
+- **Newsletter, Paperwork** : le classement reste valable ;
+- **Archive** : la conversation est déjà traitée ;
+- **Quarantine** : écrire à l'expéditeur lui donne la décision `inbox` (« Écrire à quelqu'un vaut décision Inbox »), qui remet ses mails dans l'Inbox.
+
+Règles :
+
+- **Réponse** : réponse ou réponse à tous, c'est-à-dire un mail dont `In-Reply-To` désigne un mail de la conversation. La conversation concernée est celle du mail auquel on répond. Un transfert n'est pas une réponse et ne range rien.
+- **Conversation, pas mail** : comme une commande, le rangement s'applique aux mails de la conversation rangés dans Inbox, Todo et Waiting (« Une conversation, pas un mail »). Si la cible est le dossier actuel (relance depuis Waiting), rien n'est déplacé.
+- **Moment** : quand le serveur SMTP a accepté le mail, pas à l'ouverture de la fenêtre de rédaction. Un envoi qui échoue ne range rien.
+- **Marque de retour** : le rangement est une commande, il retire donc `$NmWasTodo` et `$NmWasWaiting` (« Nouveau mail dans une conversation en Todo ou en Waiting »), y compris quand la conversation ne change pas de dossier.
+- **Présélection calculée par le noyau** : la règle du tableau vit dans le noyau, pas dans chaque client. Le contrat expose la cible présélectionnée avec la conversation (`ThreadSummary.reply_target`, absent pour les dossiers sans choix), et `send_message` reçoit la cible choisie (`after_send` : `archive`, `waiting` ou `todo`). Si `after_send` est omis, le noyau applique la présélection : c'est le cas du CLI et de l'agent MCP quand ils ne précisent rien.
+- **Réponse envoyée ailleurs** : une réponse envoyée depuis le téléphone ou le webmail, découverte dans Sent par la synchronisation, est rangée selon la présélection, avec la source `core`. Elle n'est vue qu'au prochain passage de la synchronisation sur Sent.
+- **Traçabilité** : déplacement ordinaire par mail, dans le spool, avec la source du client qui a envoyé la réponse et une ligne `move` dans `audit_log` qui cite le mail envoyé.
+
 ## Implémentation technique
 
 ### A la création du compte IMAP dans niceMailer
@@ -186,6 +214,29 @@ Un collègue inconnu mis en copie d'un échange en cours ne doit pas partir en Q
 - les `Message-ID` cités sont faciles à connaître (ils circulent dans les mails transférés et les listes). La règle est un confort, pas une preuve : c'est pourquoi elle n'accepte que le mail.
 
 L'ordre complet des règles est dans `authentification-expediteur.md`, section 4.
+
+### Nouveau mail dans une conversation en Todo ou en Waiting
+
+Ce qui est nouveau et à lire est dans l'Inbox. Quand une conversation rangée dans Todo ou Waiting reçoit un mail, ses mails rangés dans ces dossiers passent dans l'Inbox, avec le nouveau mail. La conversation ne reste pas à moitié dans Todo ou Waiting. Pour Waiting, c'est la fin de l'attente ; pour Todo, l'information nouvelle peut changer ce qu'il y a à faire. Après lecture, l'utilisateur la remet dans Todo ou Waiting s'il y a lieu.
+
+**Déclencheur.** Un mail reçu, livré dans l'Inbox par le screening, qui appartient à une conversation dont des mails sont dans Todo ou Waiting. Cela inclut la réponse d'un nouveau participant acceptée par la règle de la conversation connue (ci-dessus).
+
+**Pas de retour dans l'Inbox :**
+- **Mail placé ailleurs par le screening** (Quarantine, notamment après un échec d'authentification, Newsletter, Paperwork, Junk, Banned) : ce mail n'est pas la réponse attendue, ou il est suspect. La conversation reste où elle est.
+- **Mail de l'utilisateur lui-même** : il va dans Sent et ne fait pas revenir la conversation dans l'Inbox. Ce que devient la conversation est choisi dans l'écran de réponse (« Répondre à une conversation »).
+- **Mail déplacé dans l'Inbox depuis le téléphone ou un autre client** : ce n'est pas une réception, la conversation n'est pas touchée.
+- **Import initial** : les mails déjà présents ne passent pas par le screening (`import-initial.md`) et ne déclenchent rien.
+
+**Exécution.** Un déplacement ordinaire par mail, dans le spool, de source `core`, avec une ligne `move` dans `audit_log` qui cite le mail reçu. Lu, non lu et drapeaux sont conservés. Si plusieurs Mac font ce déplacement en même temps, le déplacement concurrent est traité comme un succès. Mac éteint, le nouveau mail attend dans l'Inbox du serveur et la conversation revient au prochain screening.
+
+**Marque de retour.** Dans l'Inbox, l'utilisateur doit savoir qu'une conversation y est revenue et d'où elle vient, pour décider s'il la remet dans Todo ou Waiting. Les mails déplacés reçoivent, dans la même action, un mot-clé IMAP selon leur dossier d'origine : `$NmWasTodo` ou `$NmWasWaiting`. Le nouveau mail, lui, n'en reçoit pas.
+
+- **Pourquoi un mot-clé IMAP.** La marque est sur le serveur : les autres Mac la reçoivent par la synchronisation ordinaire, sans mécanisme dédié. Elle survit à une perte de la base locale, et le téléphone la montre s'il affiche les mots-clés (Thunderbird oui, Mail sur iOS non). Une colonne locale serait ignorée des autres Mac, et `audit_log` sert à la traçabilité, pas à l'état affiché.
+- **Affichage dans la liste.** La liste des conversations de l'Inbox affiche la marque sur chaque conversation revenue, par exemple « ↩ Todo » ou « ↩ Waiting ». C'est une exigence de l'interface, pas une option : sans elle, une conversation revenue ressemble à une conversation nouvelle. Dans les autres dossiers, la marque n'est pas affichée. Le contrat l'expose dans `ThreadSummary` par le champ `returned_from` (`todo`, `waiting` ou absent). Une conversation est marquée si l'un de ses mails rangés dans l'Inbox porte un de ces mots-clés, comme pour le drapeau. Si ses mails portent les deux, ce qui suppose une conversation déjà répartie entre Todo et Waiting, `todo` l'emporte : il reste quelque chose à faire.
+- **Retrait.** Par la prochaine commande sur la conversation, quelle qu'elle soit (déplacer, supprimer, marquer comme spam), dans la même action et avec la même source. Une fois que l'utilisateur a décidé, savoir d'où venait la conversation n'a plus d'intérêt. Lire la conversation, changer son drapeau ou ses tags ne retire pas la marque : c'est en lisant que l'utilisateur en a besoin.
+- **Mail sorti de l'Inbox ailleurs.** Si la synchronisation constate qu'un mail marqué a quitté l'Inbox par un autre client (téléphone, webmail), le noyau retire le mot-clé (source `core`). Sinon, la marque réapparaîtrait à tort si le mail revenait un jour dans l'Inbox.
+- **Retours successifs.** Une conversation ne porte que la marque de son dernier retour : la commande qui l'a remise dans Todo ou Waiting a retiré la précédente.
+- **Serveur sans mots-clés personnalisés** (`PERMANENTFLAGS` sans `\*`) : la marque reste locale, dans `message_keyword`, comme les tags. Elle n'est alors ni partagée entre Mac ni visible sur le téléphone.
 
 ### Décision sur un expéditeur : rangement des autres mails
 

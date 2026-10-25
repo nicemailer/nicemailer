@@ -126,7 +126,7 @@ CREATE TABLE audit_log (
 | `account` | `create`, `update`, `delete` | Champs modifiés, jamais de secret |
 | `account` | `initial_archive` | Critères et nombre de mails archivés à l'import initial (`import-initial.md`) |
 | `message` | `screen` | Dossier cible, règle appliquée (adresse, domaine, conversation connue, aucune), verdict d'authentification |
-| `message` | `move`, `set_flags`, `set_tags`, `delete`, `send` | Avant, après ; pour un rangement déclenché par une décision, l'adresse ou le domaine concerné |
+| `message` | `move`, `set_flags`, `set_tags`, `delete`, `send` | Avant, après ; pour un rangement déclenché par une décision, l'adresse ou le domaine concerné ; pour un retour de Todo ou de Waiting dans l'Inbox, le mail reçu qui l'a déclenché ; pour un rangement dans Archive après une réponse, le mail envoyé |
 | `message` | `revert` | Action annulée après un échec définitif du serveur, et sa raison |
 
 ### Ce qui n'est pas journalisé
