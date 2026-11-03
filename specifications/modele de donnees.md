@@ -79,6 +79,9 @@ Table des contacts : adresses et domaines connus de l'application. Adresses et d
 
 Une règle favorable (`inbox`, `newsletter`, `paperwork`) n'est appliquée que si l'expéditeur est suffisamment authentifié ; une règle `banned` s'applique toujours. `address.auth_seen` mémorise qu'un mail authentifié a déjà été reçu de l'adresse, et `address.auth_policy` (`auto`, `required`, `not_required`) fixe l'exigence pour cette adresse. `domain` n'a pas de politique : une règle de domaine favorable exige toujours un mail authentifié. Le détail est dans `authentification-expediteur.md`.
 
+### `contact_group` et `contact_group_member`
+Groupes de contacts nommés par l'utilisateur (VIP, Famille, Équipe…), communs à tous les comptes comme `address`. Un membre est une adresse ; une adresse peut appartenir à plusieurs groupes. La table s'appelle `contact_group` car `GROUP` est un mot réservé de SQL. `sync_key`, identifiant tiré au hasard, sert de clé pour la synchronisation entre Mac, l'`id` local et le nom n'étant pas stables. Suppression d'un groupe et retrait d'un membre sont des pierres tombales (`date_deleted`, `date_removed`), comme pour les tags. Les groupes n'ont aucun effet sur le screening. Le détail est dans `groupes.md`.
+
 ### `attachment`
 Métadonnées seulement. Les fichiers sont extraits du message brut à la demande et rangés sur disque ; `disk_path` reste `NULL` tant que la pièce jointe n'est pas extraite, et redevient `NULL` si le fichier est purgé. Les clients reçoivent ce chemin, jamais le contenu (`architecture.md`, section 5). `filename` est le nom d'origine, affiché tel quel ; le fichier sur disque porte un nom assaini. `part_id` est le numéro de partie MIME, `content_id` sert aux images inline (`cid:`).
 

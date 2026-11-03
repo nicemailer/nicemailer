@@ -36,6 +36,8 @@ Le produit s'adresse à des individus et à de petites structures. La synchronis
 | `auth_policy` d'une adresse | adresse | Choix de l'utilisateur, comme le screening ; même filtre |
 | Rôle des dossiers (Archive → « Archives », Junk → « Spam »…), dont les dossiers du workflow créés par NiceMailer | rôle | Propre à la boîte |
 | Tags : nom et couleur associés à un mot-clé IMAP | mot-clé | Propre à la boîte (`tag.account_id`) |
+| Groupes de contacts : nom, couleur, position | `sync_key` du groupe | Commun à tous les comptes ; écrit seulement s'il a une appartenance écrite (section 6, `groupes.md`) |
+| Appartenance d'une adresse à un groupe | `sync_key` et adresse | Soumis au filtre de confidentialité |
 
 | Non synchronisé | Raison |
 | --- | --- |
@@ -90,6 +92,14 @@ Taille indicative : une centaine d'octets par entrée, soit environ 1 Mo pour 10
     "client":   {"name": "Client",  "color": "#3b82f6", "at": 1758500000},
     "urgent":   {"name": null,      "at": 1759500000}
   },
+  "groups": {
+    "g_3fa9c2d41b0e7a55": {"name": "VIP", "color": "#f59e0b", "position": 0, "at": 1760000000}
+  },
+  "group_members": {
+    "g_3fa9c2d41b0e7a55": {
+      "patron@entreprise.fr": {"member": true, "at": 1760000100}
+    }
+  },
   "settings": {}
 }
 ```
@@ -124,6 +134,8 @@ Conséquences assumées de la portée globale :
 
 Les rôles de dossiers et les tags sont propres à la boîte et ne sont pas filtrés.
 
+Une appartenance à un groupe n'est écrite que si l'adresse a été vue dans la boîte, et un groupe que s'il a au moins une appartenance écrite dans ce document ou s'il y figure déjà : les collègues d'une boîte partagée ne voient pas un groupe « Famille » sans rapport avec elle (`groupes.md`, section 4).
+
 ## 7. Déroulement
 
 ### Lecture
@@ -142,7 +154,7 @@ Une décision de screening reçue ne déclenche pas le rangement des anciens mai
 
 Une écriture est nécessaire quand une entrée locale (après filtre de confidentialité) est plus récente que celle du serveur, ou quand le dossier contient plusieurs messages de configuration.
 
-Toute modification locale d'un élément synchronisé (décision, `auth_policy`, rôle, tag) programme une écriture, regroupée pendant `config_sync.push_delay_secs` (5 s). L'écriture passe par le spool, comme tout ordre envoyé au serveur : action `push_config`, sans message, dont le contenu est calculé **au moment de l'exécution** et non à l'insertion. Une seule action `push_config` en attente par compte : une nouvelle demande est fusionnée avec elle.
+Toute modification locale d'un élément synchronisé (décision, `auth_policy`, rôle, tag, groupe, appartenance) programme une écriture, regroupée pendant `config_sync.push_delay_secs` (5 s). L'écriture passe par le spool, comme tout ordre envoyé au serveur : action `push_config`, sans message, dont le contenu est calculé **au moment de l'exécution** et non à l'insertion. Une seule action `push_config` en attente par compte : une nouvelle demande est fusionnée avec elle.
 
 Exécution :
 
@@ -189,6 +201,10 @@ date_auth_policy_modified INTEGER,
 
 -- tag : date_modified (colonne commune de traçabilité) sert d'horodatage d'entrée
 date_deleted INTEGER,         -- pierre tombale : tag supprimé, masqué partout
+
+-- contact_group : sync_key (clé d'entrée), date_modified comme horodatage,
+-- date_deleted (pierre tombale) ; contact_group_member : date_modified,
+-- date_removed (pierre tombale). Voir groupes.md.
 
 -- pending_action : nouveau kind 'push_config' (message_id NULL)
 ```

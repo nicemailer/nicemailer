@@ -33,7 +33,8 @@ Trois mécanismes y répondent :
 
 | Table | Colonnes de traçabilité | Raison |
 | --- | --- | --- |
-| `account`, `folder`, `address`, `domain`, `tag`, `message` | Les quatre | Entités que l'utilisateur crée et modifie |
+| `account`, `folder`, `address`, `domain`, `contact_group`, `tag`, `message` | Les quatre | Entités que l'utilisateur crée et modifie |
+| `contact_group_member` | Les quatre | Appartenance ajoutée ou retirée par l'utilisateur, synchronisée entre Mac : il faut sa date et sa source |
 | `pending_action` | `date_created`, `date_modified` (changement d'état), `created_by` (client qui a donné l'ordre) | Journal technique du spool ; la modification vient toujours du noyau |
 | `audit_log` | `date_created`, `created_by` | Lignes jamais modifiées |
 | `message_reference`, `message_address`, `message_keyword` | Aucune | Lignes de liaison créées avec le message ; ajouter un tag modifie le **message** |
@@ -52,6 +53,8 @@ Trois mécanismes y répondent :
 | `domain` | Décision de screening | |
 | `folder` | Rôle, abonnement | Compteurs, `uidvalidity`, `uidnext`, `highestmodseq`, `date_last_sync` |
 | `tag` | Nom, couleur, suppression | |
+| `contact_group` | Nom, couleur, position, suppression | |
+| `contact_group_member` | Ajout, retrait | |
 | `account` | Renommage de la clé (`config_key`) | `authserv_id` détecté automatiquement ; les paramètres du compte sont dans `config.toml` (`configuration.md`) |
 
 C'est le code Rust qui renseigne la date et la source, dans la même requête que la modification. Un trigger ne conviendrait pas : il ne connaît pas la source et se déclencherait aussi sur les colonnes techniques.
@@ -123,6 +126,7 @@ CREATE TABLE audit_log (
 | `address`, `domain` | `screening`, `auth_policy`, `rename` | Avant, après ; pour `screening`, le message qui a déclenché la décision (sortie de Quarantine) |
 | `folder` | `role` | Avant, après |
 | `tag` | `create`, `update`, `delete` | Avant, après |
+| `contact_group` | `create`, `update`, `delete`, `add_member`, `remove_member` | Avant, après ; pour les membres, l'adresse (`groupes.md`) |
 | `account` | `create`, `rename`, `disable`, `remove` | Clé du compte ; pour `disable`, compte absent de `config.toml` ; jamais de secret |
 | `config` | `update` | Modification par une commande du contrat : clé, avant, après (`configuration.md`, section 10) |
 | `config` | `reload` | Édition directe de `config.toml` constatée au rechargement, source `core` : clés changées |

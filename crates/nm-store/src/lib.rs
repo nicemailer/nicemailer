@@ -169,6 +169,7 @@ impl Store {
                     ("SELECT kind, address FROM account", "account.kind"),
                     ("SELECT raw_hash FROM message", "message.raw_hash"),
                     ("SELECT hash FROM raw_blob", "raw_blob"),
+                    ("SELECT sync_key FROM contact_group", "contact_group"),
                 ] {
                     if conn.prepare(sql).is_err() {
                         return Err(StoreError::OutdatedSchema(what));

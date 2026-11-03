@@ -153,6 +153,56 @@ CREATE TABLE domain (
 ) STRICT;
 
 -- ------------------------------------------------------------
+-- Groupes de contacts (voir groupes.md) : ensembles nommés d'adresses
+-- (VIP, famille, équipe, club…), communs à tous les comptes comme address.
+-- Une adresse peut appartenir à plusieurs groupes. Les groupes n'ont pour
+-- l'instant aucun effet sur le screening ni sur le classement.
+-- Nommée contact_group car GROUP est un mot réservé de SQL.
+-- Pierres tombales pour la synchronisation entre Mac
+-- (synchronisation-configuration.md) : un groupe supprimé garde sa ligne avec
+-- date_deleted ; un membre retiré garde sa ligne avec date_removed.
+-- ------------------------------------------------------------
+CREATE TABLE contact_group (
+    id           INTEGER PRIMARY KEY,
+    -- Identifiant stable entre Mac, tiré au hasard à la création ("g_" + 16
+    -- caractères hexadécimaux) : l'id local diffère d'un Mac à l'autre, et le
+    -- nom peut changer.
+    sync_key     TEXT NOT NULL UNIQUE,
+    name         TEXT NOT NULL,             -- nom affiché, libre
+    color        TEXT,                      -- ex. "#f59e0b" ; NULL = couleur par défaut
+    position     INTEGER NOT NULL DEFAULT 0,  -- ordre d'affichage, croissant
+    date_deleted INTEGER,                   -- pierre tombale : groupe supprimé, masqué partout
+    -- date_modified : nom, couleur, position, suppression ; sert aussi
+    -- d'horodatage d'entrée pour la synchronisation.
+    date_created  INTEGER NOT NULL DEFAULT (unixepoch()),
+    date_modified INTEGER NOT NULL DEFAULT (unixepoch()),
+    created_by  TEXT NOT NULL CHECK (created_by  IN ('core','app','cli','tui','web','mcp','config_sync','imap')),
+    modified_by TEXT NOT NULL CHECK (modified_by IN ('core','app','cli','tui','web','mcp','config_sync','imap'))
+) STRICT;
+
+-- Deux groupes actifs ne peuvent pas porter le même nom (sans casse) ; un nom
+-- d'un groupe supprimé peut être repris (la ligne supprimée est alors réutilisée).
+CREATE UNIQUE INDEX idx_contact_group_name
+    ON contact_group (name COLLATE NOCASE) WHERE date_deleted IS NULL;
+
+CREATE TABLE contact_group_member (
+    group_id     INTEGER NOT NULL REFERENCES contact_group(id) ON DELETE CASCADE,
+    address_id   INTEGER NOT NULL REFERENCES address(id) ON DELETE CASCADE,
+    date_removed INTEGER,                   -- pierre tombale : adresse retirée du groupe
+    -- date_modified : ajout ou retrait ; horodatage d'entrée pour la synchronisation.
+    date_created  INTEGER NOT NULL DEFAULT (unixepoch()),
+    date_modified INTEGER NOT NULL DEFAULT (unixepoch()),
+    created_by  TEXT NOT NULL CHECK (created_by  IN ('core','app','cli','tui','web','mcp','config_sync','imap')),
+    modified_by TEXT NOT NULL CHECK (modified_by IN ('core','app','cli','tui','web','mcp','config_sync','imap')),
+    PRIMARY KEY (group_id, address_id)
+) STRICT, WITHOUT ROWID;
+
+-- Groupes d'une adresse (fiche du contact, badges dans la liste).
+-- Les membres d'un groupe passent par la clé primaire.
+CREATE INDEX idx_contact_group_member_address
+    ON contact_group_member (address_id, group_id) WHERE date_removed IS NULL;
+
+-- ------------------------------------------------------------
 -- Conversations (JWZ). Une conversation peut couvrir plusieurs dossiers.
 -- ------------------------------------------------------------
 CREATE TABLE thread (
@@ -541,7 +591,7 @@ CREATE TABLE audit_log (
     date_created INTEGER NOT NULL DEFAULT (unixepoch()),
     created_by   TEXT NOT NULL CHECK (created_by IN ('core','app','cli','tui','web','mcp','config_sync','imap')),
     entity       TEXT NOT NULL CHECK (entity IN
-                 ('account','folder','address','domain','tag','message','config')),
+                 ('account','folder','address','domain','contact_group','tag','message','config')),
     entity_id    INTEGER NOT NULL,        -- 'config' : 0 ; la clé est dans detail
     action       TEXT NOT NULL,           -- ex. screening, auth_policy, role, move, set_flags
     detail       TEXT                     -- JSON : {"before": …, "after": …, …}
