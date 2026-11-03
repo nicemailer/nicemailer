@@ -94,7 +94,15 @@ final class GeekController {
 
     let model: AppModel
     var screen: Screen = .mail
-    var overlay: Overlay = .none
+    var overlay: Overlay = .none {
+        didSet {
+            // A menu opens with no row highlighted: its keys act at once.
+            if case .menu = overlay, overlay != oldValue { menuIndex = nil }
+        }
+    }
+    /// Row of the open prefix menu highlighted with the arrows (`nil`: none
+    /// yet); Return goes to it.
+    var menuIndex: Int?
     /// Text typed in the open picker, and the highlighted row.
     var pickerQuery = ""
     var pickerIndex = 0
@@ -297,6 +305,23 @@ final class GeekController {
 
         switch overlay {
         case .menu(let prefix):
+            // The arrows highlight a row without closing the menu: down
+            // starts on the first row, up on the last, and both turn around
+            // (`stepDown`, `stepUp`); Return chooses it (`ui.md`).
+            let count = menuEntries(prefix).count
+            switch code {
+            case KeyCode.down:
+                menuIndex = menuIndex.map { Self.stepDown($0, count: count) } ?? 0
+                return true
+            case KeyCode.up:
+                menuIndex = menuIndex.map { Self.stepUp($0, count: count) } ?? max(0, count - 1)
+                return true
+            case KeyCode.returnKey:
+                if let i = menuIndex { chooseMenuEntry(i) } else { overlay = .none }
+                return true
+            default:
+                break
+            }
             overlay = .none
             if code == KeyCode.escape { return true }
             if let entry = menuEntries(prefix).first(where: { $0.key == key }) {

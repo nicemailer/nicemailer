@@ -94,6 +94,7 @@ private struct GeekWindow: View {
                                entries: controller.menuEntries(prefix).map {
                                    .init(key: $0.key, label: $0.label, muted: $0.disabled, gapBefore: $0.gapBefore, detail: $0.detail)
                                },
+                               highlighted: controller.menuIndex,
                                onSelect: { controller.chooseMenuEntry($0) })
             if controller.statusPosition != .hidden, let x = controller.menuBlockX[prefix] {
                 // Each menu drops down from its block of the status bar:
@@ -834,6 +835,8 @@ private struct HTMLReader: NSViewRepresentable {
 private struct KeyMenu: View {
     let title: String
     let entries: [Row]
+    /// Row highlighted with the arrows, if any.
+    var highlighted: Int? = nil
 
     /// One line: the key, the label, grayed out or not, a gap above (start
     /// of a block), and a detail aligned on the right (unread count).
@@ -867,6 +870,7 @@ private struct KeyMenu: View {
                 // Every row takes the menu's width (that of its widest
                 // row), so the details line up on the right edge.
                 .frame(maxWidth: .infinity)
+                .background(i == highlighted ? Palette.cursor : Color.clear)
                 .contentShape(Rectangle())
                 .onTapGesture { onSelect?(i) }
                 .uiTarget("menu-\(i)")

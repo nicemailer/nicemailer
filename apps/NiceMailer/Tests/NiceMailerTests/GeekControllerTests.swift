@@ -247,6 +247,34 @@ struct GeekControllerTests {
         #expect(controller.overlay == .none && model.flash != nil)
     }
 
+    @Test func theArrowsHighlightAMenuRowAndReturnGoesThere() {
+        press(";")
+        #expect(controller.menuIndex == nil)
+        press("down")
+        #expect(controller.menuIndex == 0 && controller.overlay == .menu(.goto))
+        press("down")
+        #expect(controller.menuIndex == 1)  // Todo
+        press("ret")
+        #expect(controller.overlay == .none && model.selectedFolderId == 2)
+    }
+
+    @Test func menuArrowsTurnAroundAndKeysStillAct() {
+        press(";")
+        let count = controller.menuEntries(.goto).count
+        press("up")
+        #expect(controller.menuIndex == count - 1)  // History, the last row
+        press("down")
+        #expect(controller.menuIndex == 0)
+        // A key still acts at once, whatever is highlighted.
+        press("a")
+        #expect(controller.overlay == .none && model.selectedFolderId == 3)
+        // A new menu starts without a highlight; Return alone closes it.
+        press(";")
+        #expect(controller.menuIndex == nil)
+        press("ret")
+        #expect(controller.overlay == .none && model.selectedFolderId == 3)
+    }
+
     @Test func foldersAreSortedInBlocksWhateverTheCoresOrder() {
         // Every role, shuffled, plus a folder of the user (no role).
         let roles: [String?] = ["junk", "sent", nil, "archive", "banned", "inbox", "drafts", "paperwork",

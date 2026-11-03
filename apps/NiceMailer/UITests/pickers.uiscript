@@ -8,6 +8,27 @@ snap goto-menu
 key a
 expect account = all
 expect folder = Archive
+# The arrows highlight a row of the menu (down: Inbox first, then Todo;
+# up from nothing: the last row), Return goes there.
+key ;
+expect menu_index =
+key down
+expect menu_index = 0
+key down
+expect menu_index = 1
+snap goto-menu-highlight
+key ret
+expect overlay = none
+expect folder = Todo
+key ;
+key up
+expect overlay ~ menu
+expect menu_index > 5
+key esc
+expect overlay = none
+key ;
+key a
+expect folder = Archive
 # The account is chosen with @.
 key @
 type fixture

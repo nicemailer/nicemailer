@@ -394,6 +394,7 @@ private final class Runner {
             "filters": m.attributes.chips.map(\.label).joined(separator: ", "),
             // Position of the first row of the open menu, in window
             // coordinates (origin bottom-left): where the menu is drawn.
+            "menu_index": c.menuIndex.map(String.init) ?? "",
             "menu_x": "\(Int(UIScript.frames["menu-0"]?.minX ?? -1))",
             "menu_y": "\(Int(UIScript.frames["menu-0"]?.minY ?? -1))",
             // Height of the selected row, as laid out.
