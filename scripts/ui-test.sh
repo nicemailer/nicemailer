@@ -29,6 +29,15 @@ if [ ${#scripts[@]} -eq 0 ]; then scripts=("$APP"/UITests/*.uiscript); fi
 failed=0
 for script in "${scripts[@]}"; do
     name=$(basename "$script" .uiscript)
+    # A bare name ("pickers.uiscript") is looked up in UITests/. A scenario
+    # that does not exist fails: the app would play nothing and pass.
+    if [ ! -f "$script" ] && [ -f "$APP/UITests/$script" ]; then script="$APP/UITests/$script"; fi
+    if [ ! -f "$script" ]; then
+        echo "FAIL $name: no scenario at $script"
+        failed=1
+        continue
+    fi
+    script=$(cd "$(dirname "$script")" && pwd)/$(basename "$script")
     # Short path: the core's socket path must stay under 104 characters.
     dir=$(mktemp -d /tmp/nmuit.XXXXXX)
     NICEMAILER_DATA_DIR="$dir" "$CLI" seed --threads 300 --seed 1 >/dev/null

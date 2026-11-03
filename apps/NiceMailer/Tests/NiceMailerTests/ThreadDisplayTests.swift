@@ -11,13 +11,14 @@ struct ThreadDisplayTests {
     }
 
     func message(_ id: Int, from: String, segments: [SegmentView], expanded: Bool, onlyQuotes: Bool = false,
-                 recipients: Bool = false) -> MessageView {
+                 recipients: Bool = false, files: [AttachmentView] = []) -> MessageView {
         MessageView(
             id: id, folderId: 1, folderRole: "archive", subject: "S", fromName: from, fromAddr: "\(from)@x.org",
             to: [AddressView(addr: "me@x.org", name: nil)], cc: [], dateSent: nil, dateReceived: 1_700_000_000,
             bodyText: segments.map(\.text).joined(separator: "\n"), isSeen: true, isFlagged: false, isAnswered: false,
             hasAttachments: false, authResult: "unknown", bodyHtml: nil, hasRemoteContent: false, fromBodyFormat: nil,
-            segments: segments, onlyQuotes: onlyQuotes, expanded: expanded, showRecipients: recipients)
+            segments: segments, onlyQuotes: onlyQuotes, expanded: expanded, showRecipients: recipients,
+            attachments: files)
     }
 
     var thread: ThreadView {
@@ -40,12 +41,12 @@ struct ThreadDisplayTests {
     @Test func foldedMessagesAreOneLineWithASnippet() {
         let blocks = ThreadDisplay.blocks(thread, .init())
         #expect(ThreadDisplay.foldedCount(blocks) == 2)
-        guard case .header(1, true, let title, let detail) = blocks[0] else { Issue.record("\(blocks[0])"); return }
+        guard case .header(1, true, let title, let detail, _) = blocks[0] else { Issue.record("\(blocks[0])"); return }
         #expect(title.hasPrefix("▸ Alice"))
         #expect(detail == "Peux-tu passer jeudi ?")
         // A message that only quotes says so instead of a snippet.
-        let last = blocks.last { if case .header(3, _, _, _) = $0 { return true } else { return false } }
-        if case .header(_, true, _, let d) = last { #expect(d == L("only quotes earlier messages")) }
+        let last = blocks.last { if case .header(3, _, _, _, _) = $0 { return true } else { return false } }
+        if case .header(_, true, _, let d, _) = last { #expect(d == L("only quotes earlier messages")) }
     }
 
     @Test func unfoldedMessagesShowVisibleSegmentsAndHiddenLines() {
@@ -54,7 +55,7 @@ struct ThreadDisplayTests {
         #expect(blocks.contains(.segment(messageId: 2, index: 1, kind: "text", text: "Oui, 10 h.", depth: 0)))
         #expect(blocks.contains(.hidden(messageId: 2, index: 2, label: L("··· %lld quoted lines", 2))))
         // Recipients only when the core says they changed.
-        #expect(blocks.contains { if case .header(2, false, _, let d?) = $0 { return d.contains("me@x.org") } else { return false } })
+        #expect(blocks.contains { if case .header(2, false, _, let d?, _) = $0 { return d.contains("me@x.org") } else { return false } })
     }
 
     @Test func showAllUnfoldsAndRevealsEverything() {

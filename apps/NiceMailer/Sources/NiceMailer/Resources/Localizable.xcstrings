@@ -1,6 +1,16 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "%@ saved to %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ enregistré dans %2$@"
+          }
+        }
+      }
+    },
     "%@ shown as %@": {
       "localizations": {
         "fr": {
@@ -381,12 +391,12 @@
         }
       }
     },
-    "No link in this mail": {
+    "No link or attachment in this mail": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Aucun lien dans ce mail"
+            "value": "Aucun lien ni pièce jointe dans ce mail"
           }
         }
       }
@@ -437,6 +447,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Pas encore disponible : écrire un mail demande SMTP"
+          }
+        }
+      }
+    },
+    "Opened: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ouvert : %@"
           }
         }
       }
@@ -627,6 +647,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Tapez des mots : sujet, expéditeur, destinataires ou texte"
+          }
+        }
+      }
+    },
+    "Unnamed attachment": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pièce jointe sans nom"
           }
         }
       }

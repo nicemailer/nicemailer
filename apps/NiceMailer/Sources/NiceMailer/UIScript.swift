@@ -37,6 +37,12 @@ enum UIScript {
     /// Text shown by the text reader, and its number of `nm:` links.
     static var readerText = ""
     static var readerLinks = 0
+    /// Attachment tiles drawn by the text reader.
+    static var readerAttachments = 0
+    /// Name of the last attachment the app would have opened: in UI script
+    /// mode nothing is opened, so as not to launch Preview or Word on the
+    /// user's screen.
+    static var openedFile = ""
 
     private static var started = false
     /// The test window and its model, kept alive while the script runs.
@@ -119,7 +125,7 @@ extension View {
 /// | `expect FIELD OP VALUE` | check the state (`=`, `!=`, `~` contains, `!~` does not contain, `>`, `<`), waiting up to 5 s |
 ///
 /// Targets: `thread:N` (N-th row of the list), `picker:N`,
-/// `screen:N`, `folder:NAME` (folder of the current view), `reader-link:N` (N-th header or
+/// `screen:N`, `folder:NAME` (folder of the current view), `attachment:N` (N-th attachment tile of the text reader), `reader-link:N` (N-th header or
 /// "···" line of the reader).
 @MainActor
 private final class Runner {
@@ -380,6 +386,8 @@ private final class Runner {
             "sort": m.sort,
             "body_format": m.bodyFormat,
             "reader_subject": m.openThread?.subject ?? "",
+            "reader_attachments": "\(UIScript.readerAttachments)",
+            "opened_file": UIScript.openedFile,
             "sticky": m.stickyThreadId.map(String.init) ?? "",
             "reader_folder": m.selectedThreadFolderLabel ?? "",
             "list_rows": "\(c.listVisibleRows)",

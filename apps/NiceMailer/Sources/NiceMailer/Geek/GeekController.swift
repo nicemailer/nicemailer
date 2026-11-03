@@ -81,6 +81,8 @@ final class GeekController {
         var gapBefore = false
         /// Shown at the right end of the row (a folder's unread count).
         var detail: String? = nil
+        /// SF Symbol drawn before the label (pickers: link, file type).
+        var icon: String? = nil
         let action: @MainActor () -> Void
         var id: String { key + label }
     }
@@ -223,6 +225,14 @@ final class GeekController {
             }
         case "reveal":
             if parts.count == 2 { s.revealed.insert("\(parts[0]):\(parts[1])") }
+        case "attachment":
+            // A tile: saved to Downloads, or opened with ⌘ (the click's own
+            // modifiers, read from the event being handled; no app, hence
+            // no event, in unit tests).
+            if let id = parts.first.flatMap(Int.init) {
+                model.saveAttachment(id, open: NSApp?.currentEvent?.modifierFlags.contains(.command) == true)
+            }
+            return true
         default:
             return false
         }
@@ -839,8 +849,18 @@ final class GeekController {
             guard !typed.isEmpty else { return [] }
             return [Entry(key: "+", label: typed) { [weak self] in self?.searchEverywhere(typed) }]
         case .links:
-            all = model.links.enumerated().map { i, url in
-                Entry(key: "\(i + 1)", label: url.absoluteString) { NSWorkspace.shared.open(url) }
+            // The links of the text, then one row per attached file
+            // (`ui.md`): Return opens a link, saves a file (⌘ not needed
+            // here: the tiles open with ⌘-click).
+            let links = model.links
+            all = links.enumerated().map { i, url in
+                Entry(key: "\(i + 1)", label: url.absoluteString, icon: "link") { NSWorkspace.shared.open(url) }
+            } + model.attachments.enumerated().map { i, a in
+                Entry(key: "\(links.count + i + 1)",
+                      label: AttachmentDisplay.name(a) + "  " + AttachmentDisplay.size(a.size),
+                      icon: AttachmentDisplay.symbol(mimeType: a.mimeType, filename: a.filename)) { [model] in
+                    model.saveAttachment(a.id, open: false)
+                }
             }
         case .tag:
             let accountId = model.folders.first { $0.id == model.selectedThread?.folderId }?.accountId

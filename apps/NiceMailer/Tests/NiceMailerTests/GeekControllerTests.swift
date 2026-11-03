@@ -353,6 +353,56 @@ struct GeekControllerTests {
         #expect(GeekController.stepUp(9, count: 5) == 4)
     }
 
+    // MARK: Attachments
+
+    /// Opens thread 4, whose message has three attachments (`Fixture`).
+    func openThreadWithFiles() async {
+        model.selectedThreadId = 4
+        _ = await eventually { model.openThread?.id == 4 }
+    }
+
+    @Test func theLinkPickerListsTheLinksThenTheFiles() async {
+        await openThreadWithFiles()
+        press("l")
+        let entries = controller.pickerEntries(.links)
+        // One link in the text, then the three files with their icons.
+        #expect(entries.count == 4)
+        #expect(entries[0].icon == "link")
+        #expect(entries[1].label.hasPrefix("devis.pdf") && entries[1].icon == "doc.richtext")
+        #expect(entries[2].icon == "photo")
+        #expect(entries[3].label.hasPrefix(L("Unnamed attachment")) && entries[3].icon == "doc.zipper")
+        #expect(entries.map(\.key) == ["1", "2", "3", "4"])
+        // Typing filters the files too.
+        type("photo")
+        #expect(controller.pickerEntries(.links).count == 1)
+    }
+
+    @Test func choosingAFileSavesItWithoutOverwriting() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("nicemailer-save-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        model.exportDirectory = dir.path
+        await openThreadWithFiles()
+        press("l"); type("devis"); press("ret")
+        #expect(await eventually { FileManager.default.fileExists(atPath: dir.appendingPathComponent("devis.pdf").path) })
+        #expect(core.calls("get_attachment").first?["attachment_id"] as? Int == 41)
+        // The user's copy is writable, unlike the core's.
+        let mode = try FileManager.default.attributesOfItem(atPath: dir.appendingPathComponent("devis.pdf").path)[.posixPermissions] as? Int
+        #expect(mode == 0o644)
+        #expect(model.flash?.contains("devis.pdf") == true)
+        // A second save: "devis (2).pdf".
+        press("l"); type("devis"); press("ret")
+        #expect(await eventually { FileManager.default.fileExists(atPath: dir.appendingPathComponent("devis (2).pdf").path) })
+    }
+
+    @Test func aTileLinkSavesTheFile() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("nicemailer-tile-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        model.exportDirectory = dir.path
+        await openThreadWithFiles()
+        #expect(controller.readerLink(URL(string: "nm://attachment/42")!))
+        #expect(await eventually { FileManager.default.fileExists(atPath: dir.appendingPathComponent("photo.jpg").path) })
+    }
+
     // MARK: Search (/)
 
     @Test func slashSearchesEverythingWithTheContainsAttribute() async {

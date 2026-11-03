@@ -145,6 +145,9 @@ struct MessageView: Decodable, Identifiable, Hashable {
     let expanded: Bool
     /// Recipients worth showing (they changed since the previous message).
     let showRecipients: Bool
+    /// Files attached, in MIME order; images shown by the HTML are left
+    /// out by the core (`attachments.rs`).
+    let attachments: [AttachmentView]
 }
 
 /// A piece of a message's text, typed by the core: "text", "quote",
@@ -240,6 +243,27 @@ struct ContactView: Decodable, Identifiable, Hashable {
 
 struct ExportResult: Decodable {
     let path: String
+}
+
+/// An attachment listed under a message. Its content is fetched on demand
+/// (`get_attachment`).
+struct AttachmentView: Decodable, Identifiable, Hashable {
+    let id: Int
+    /// Name given by the sender, if any.
+    let filename: String?
+    let mimeType: String
+    /// Size in bytes.
+    let size: Int
+}
+
+/// Result of `get_attachment`: the file extracted by the core. It belongs
+/// to the core (read-only): the app copies or opens it, and asks again
+/// before each use (it may be purged and extracted again).
+struct AttachmentFileView: Decodable {
+    let path: String
+    let filename: String
+    let mimeType: String
+    let size: Int
 }
 
 struct GroupMemberResult: Decodable {

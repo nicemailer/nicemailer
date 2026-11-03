@@ -29,9 +29,43 @@ From: Lettre <news@example.net>
 To: me@example.com
 Subject: La lettre de novembre
 Message-ID: <n1@example.net>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="N"
+
+--N
+Content-Type: multipart/related; boundary="R"
+
+--R
 Content-Type: text/html; charset=utf-8
 
-<h1>Novembre</h1><p>Les nouveautés du mois.</p>
+<h1>Novembre</h1><p>Les nouveautés du mois.</p><p><img src="cid:logo@example.net"></p>
+--R
+Content-Type: image/png; name="logo.png"
+Content-Disposition: inline; filename="logo.png"
+Content-ID: <logo@example.net>
+Content-Transfer-Encoding: base64
+
+iVBORw0KGgo=
+--R--
+--N
+Content-Type: application/pdf; name="devis.pdf"
+Content-Disposition: attachment; filename="devis.pdf"
+Content-Transfer-Encoding: base64
+
+JVBERi0xLjQK
+--N
+Content-Type: image/png; name="photo.png"
+Content-Disposition: attachment; filename="photo.png"
+Content-Transfer-Encoding: base64
+
+iVBORw0KGgo=
+--N
+Content-Type: application/octet-stream; name="budget.xlsx"
+Content-Disposition: attachment; filename="budget.xlsx"
+Content-Transfer-Encoding: base64
+
+UEsDBA==
+--N--
 
 From x Mon Nov  2 09:00:00 2026
 From: Bob <bob@example.org>

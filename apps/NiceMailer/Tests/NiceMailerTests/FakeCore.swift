@@ -70,6 +70,13 @@ enum Fixture {
         ]
     }
 
+    /// Files attached to the message of thread 4.
+    static let attachments: [[String: Any]] = [
+        ["id": 41, "filename": "devis.pdf", "mime_type": "application/pdf", "size": 245_000],
+        ["id": 42, "filename": "photo.jpg", "mime_type": "image/jpeg", "size": 1_200_000],
+        ["id": 43, "filename": NSNull(), "mime_type": "application/zip", "size": 512],
+    ]
+
     static func threadView(_ id: Int) -> [String: Any] {
         let message: [String: Any] = [
             "id": id * 10, "folder_id": 1, "folder_role": "inbox", "subject": "Subject \(id)",
@@ -80,6 +87,7 @@ enum Fixture {
             "has_remote_content": false, "from_body_format": NSNull(),
             "segments": [["kind": "text", "text": "Hello, see https://example.org/\(id)", "depth": 0, "hidden": false, "in_thread": false]],
             "only_quotes": false, "expanded": true, "show_recipients": false,
+            "attachments": id == 4 ? Fixture.attachments : [],
         ]
         return ["id": id, "subject": "Subject \(id)", "messages": [message], "as_of": position]
     }
@@ -111,6 +119,16 @@ enum Fixture {
             return ["group_id": 1, "addr": "sender1@example.org", "changed": true]
         case "export_message":
             return ["path": "/tmp/x.eml"]
+        case "get_attachment":
+            // A real file, as the core extracts one, read-only.
+            let id = params["attachment_id"] as? Int ?? 0
+            let name = attachments.first { $0["id"] as? Int == id }?["filename"] as? String ?? "attachment-\(id)"
+            let dir = FileManager.default.temporaryDirectory.appendingPathComponent("nicemailer-fake-\(UUID().uuidString)")
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let path = dir.appendingPathComponent(name)
+            FileManager.default.createFile(atPath: path.path, contents: Data("content \(id)".utf8),
+                                           attributes: [.posixPermissions: 0o400])
+            return ["path": path.path, "filename": name, "mime_type": "application/pdf", "size": 9]
         default:
             return ["changed": 1]
         }

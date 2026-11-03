@@ -180,6 +180,49 @@ extension AppModel {
         }
     }
 
+    /// Attachments of the open thread, message by message (`l`, tiles).
+    var attachments: [AttachmentView] { openThread?.messages.flatMap(\.attachments) ?? [] }
+
+    /// Saves the attachment `id` of the open thread to `exportDirectory`
+    /// (~/Downloads by default), never overwriting a file ("devis (2).pdf"),
+    /// or opens it with its default app (`open`, ⌘-click). The core extracts
+    /// the file from the raw message and gives its path
+    /// (`architecture.md`, section 5); the app copies or opens it.
+    func saveAttachment(_ id: Int, open: Bool) {
+        guard let client = core, let a = attachments.first(where: { $0.id == id }) else { return }
+        let name = AttachmentDisplay.name(a)
+        let exportDirectory = exportDirectory
+        Task {
+            do {
+                let file: AttachmentFileView = try await client.call("get_attachment", ["attachment_id": id])
+                if open {
+                    if UIScript.isActive {
+                        UIScript.openedFile = file.filename
+                    } else {
+                        NSWorkspace.shared.open(URL(fileURLWithPath: file.path))
+                    }
+                    flash = L("Opened: %@", name)
+                    return
+                }
+                let dir = exportDirectory.map { URL(fileURLWithPath: $0) }
+                    ?? FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
+                // Copied off the main thread: a file can weigh tens of MB.
+                // Swift note: `Task.detached` runs the closure on a
+                // background thread; `.value` waits for its result.
+                let dest = try await Task.detached {
+                    let fm = FileManager.default
+                    let dest = AttachmentDisplay.freeURL(in: dir, name: file.filename) { fm.fileExists(atPath: $0.path) }
+                    try fm.copyItem(at: URL(fileURLWithPath: file.path), to: dest)
+                    // The core's copy is read-only; the user's is not. The
+                    // quarantine attribute is kept by the copy.
+                    try fm.setAttributes([.posixPermissions: 0o644], ofItemAtPath: dest.path)
+                    return dest
+                }.value
+                flash = L("%@ saved to %@", dest.lastPathComponent, FileManager.default.displayName(atPath: dir.path))
+            } catch { report(error) }
+        }
+    }
+
     /// Links of the open thread's text, in order, without duplicates (`l`).
     var links: [URL] {
         guard let thread = openThread else { return [] }

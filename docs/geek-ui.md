@@ -49,6 +49,18 @@ Choosing an active value again removes it; choosing the opposite value replaces 
 
 The whole theme (lists, status bar, menus, mails, including the HTML view) uses **iA Writer Mono V**, a font bundled with the app (SIL Open Font License). List columns have fixed widths counted in characters of this monospaced font, computed from the list width, so they stay aligned when the window is resized. Mails are shown as plain text, simplified: each message shows what it brings, the history it repeats is hidden, older read messages are folded (see `thread-display.md`). The `text | html` switch at the top of the mail, or `vh`, shows the sanitized HTML version instead (scripts and remote images are removed by the core). The choice is remembered **for the sender**: the next mails from the same address open the same way.
 
+### Attachments
+
+At the foot of each unfolded mail, its attachments are tiles: the icon of the file type (an SF Symbol in the theme's colours: image, PDF, text, spreadsheet, slides, archive, audio, video, code, calendar, contact, mail, other file), the name cut in the middle to keep its extension, and the size. A row holds 3 to 5 tiles, depending on the width of the reading pane. A folded mail shows a paperclip and the number of its attachments.
+
+- A click saves the file to `~/Downloads`, never overwriting a file (`devis (2).pdf`); the status bar says where it went.
+- ⌘-click opens it with its default app.
+- `l` lists the links of the mail, then one row per attached file, with its icon; Return saves the file.
+
+Images the HTML of the mail shows (`cid:`) are part of the body, not tiles. An image marked inline that no HTML shows (Apple Mail puts photos in a plain text mail this way) is a tile. The tiles follow the body in the HTML view too.
+
+Files are extracted by the core from the raw message on first use (`docs/core-library.md`, "Attachments"). Generated mail (`make seed`) has no raw message: its tiles show, but saving one reports that the content is not available.
+
 ### When a mail becomes read
 
 - A mail you select (`j` `k`, a click, the next mail after a move) is marked read once shown for one second. Browsing quickly with `j` / `k` marks nothing.
@@ -66,7 +78,7 @@ Actions apply to the **marked** mails if any (`J` / `K`), otherwise to the mail 
 | `J` `K`, shift-↓ shift-↑ | mark the mail and move (multiple selection) |
 | `F` | attribute selector (filters on the current list) |
 | `@` | account picker: **all** (unified view) or one account, keeping the folder role (Archive to Archive), or its Inbox |
-| `l` | links of the mail; Return opens one in the browser |
+| `l` | links of the mail, then its attached files; Return opens a link in the browser, or saves a file to Downloads |
 | `d` | done: move to Archive |
 | `m` + letter | move to a folder (`mt` Todo, `md` Deleted…); only allowed targets are offered |
 | Delete | move to Deleted |

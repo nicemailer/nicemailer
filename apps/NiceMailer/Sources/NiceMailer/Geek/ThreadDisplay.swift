@@ -27,13 +27,18 @@ enum ThreadDisplay {
     enum Block: Hashable {
         /// A message header. `folded`: one line with a snippet; otherwise
         /// the sender and date, then the recipients if worth showing.
-        case header(messageId: Int, folded: Bool, title: String, detail: String?)
+        /// `files`: attachments of a folded message, shown as a paperclip
+        /// and their number.
+        case header(messageId: Int, folded: Bool, title: String, detail: String?, files: Int = 0)
         /// A visible segment.
         case segment(messageId: Int, index: Int, kind: String, text: String, depth: Int)
         /// A hidden segment, replaced by a "···" line that opens it.
         case hidden(messageId: Int, index: Int, label: String)
         /// A remark on an unfolded message (it only quotes earlier ones).
         case note(messageId: Int, text: String)
+        /// The attachments of an unfolded message, as tiles at its foot
+        /// (`AttachmentDisplay`).
+        case attachments(messageId: Int, files: [AttachmentView])
         /// Separation between two messages.
         case separator
     }
@@ -46,7 +51,8 @@ enum ThreadDisplay {
             let who = m.fromName ?? m.fromAddr ?? ""
             let date = Format.geekMessageDate(m.dateReceived)
             if !unfolded {
-                out.append(.header(messageId: m.id, folded: true, title: "▸ \(who) · \(date)", detail: snippet(m)))
+                out.append(.header(messageId: m.id, folded: true, title: "▸ \(who) · \(date)", detail: snippet(m),
+                                   files: m.attachments.count))
                 continue
             }
             var recipients: String?
@@ -64,7 +70,6 @@ enum ThreadDisplay {
                 // Body not downloaded, or an empty message.
                 let text = m.bodyText ?? L("(body not downloaded)")
                 out.append(.segment(messageId: m.id, index: 0, kind: "text", text: text, depth: 0))
-                continue
             }
             for (j, s) in m.segments.enumerated() {
                 if !s.hidden || state.showAll || state.revealed.contains("\(m.id):\(j)") {
@@ -72,6 +77,9 @@ enum ThreadDisplay {
                 } else {
                     out.append(.hidden(messageId: m.id, index: j, label: label(s)))
                 }
+            }
+            if !m.attachments.isEmpty {
+                out.append(.attachments(messageId: m.id, files: m.attachments))
             }
         }
         return out
@@ -102,7 +110,7 @@ enum ThreadDisplay {
 
     /// Number of folded messages (UI script state, tests).
     static func foldedCount(_ blocks: [Block]) -> Int {
-        blocks.filter { if case .header(_, true, _, _) = $0 { return true } else { return false } }.count
+        blocks.filter { if case .header(_, true, _, _, _) = $0 { return true } else { return false } }.count
     }
 
     /// `S` (like mutt's "skip quoted"): from the scroll position `y`, the

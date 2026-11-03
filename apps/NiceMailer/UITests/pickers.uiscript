@@ -35,10 +35,11 @@ type fixture
 key ret
 expect account = fixture
 expect folder = Archive
-# Links: the newsletter has none, the report one.
+# Links: the newsletter has no link but three attached files (listed
+# after the links), the report one link.
 expect selected_subject = La lettre de novembre
 key l
-expect picker_count = 0
+expect picker_count = 3
 key esc
 key j
 expect selected_subject = Rapport mensuel

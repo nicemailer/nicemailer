@@ -586,6 +586,14 @@ private struct GeekReaderColumn: View {
         img { max-width: 100%; height: auto; }
         /* Remote images were removed by the core: hide the empty boxes. */
         img:not([src]), img[src^="cid:"] { display: none; }
+        /* Attachment tiles: 3 to 5 per row, as in the text reader. */
+        .att { display: grid; gap: 6px; margin: 12px 0;
+               grid-template-columns: repeat(auto-fill, minmax(clamp(18%, 24ch, 31%), 1fr)); }
+        .att a { display: block; border: 1px solid #8884; padding: 8px; text-decoration: none; color: inherit;
+                 font-size: \(Int(scaled(12)))px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+        .att a img { width: \(Int(scaled(13)))px; height: \(Int(scaled(13)))px; vertical-align: -2px; margin-right: 6px; }
+        .att a span { display: block; color: #888; font-size: \(Int(scaled(11)))px; }
+        summary img { width: \(Int(scaled(11)))px; height: \(Int(scaled(11)))px; vertical-align: -1px; }
         \(hideQuotes)
         /* No scroll bar in the geek theme (ui.md). */
         html { scrollbar-width: none; }
@@ -597,7 +605,10 @@ private struct GeekReaderColumn: View {
             let unfolded = state.showAll || (state.folding[m.id] ?? m.expanded)
             let who = esc(m.fromName ?? m.fromAddr ?? "")
             let date = esc(Format.geekMessageDate(m.dateReceived))
-            let summary = unfolded ? "\(who) · \(date)" : "\(who) · \(date) — \(esc(ThreadDisplay.snippet(m)))"
+            var summary = unfolded ? "\(who) · \(date)" : "\(who) · \(date) — \(esc(ThreadDisplay.snippet(m)))"
+            if !unfolded && !m.attachments.isEmpty {
+                summary += " &nbsp;<img src=\"\(Self.symbolDataURI("paperclip"))\">\(m.attachments.count)"
+            }
             html += "<details\(unfolded ? " open" : "")><summary>\(summary)</summary>"
             if let body = m.bodyHtml {
                 html += body
@@ -611,9 +622,37 @@ private struct GeekReaderColumn: View {
                     }
                 }
             }
+            if !m.attachments.isEmpty {
+                // The tiles link to nm://attachment/<id>, caught by the
+                // web view's navigation delegate (`HTMLReader`).
+                html += "<div class=\"att\">"
+                for a in m.attachments {
+                    let icon = Self.symbolDataURI(AttachmentDisplay.symbol(mimeType: a.mimeType, filename: a.filename))
+                    let name = esc(AttachmentDisplay.name(a))
+                    html += "<a href=\"nm://attachment/\(a.id)\" title=\"\(name)\"><img src=\"\(icon)\">\(name)"
+                        + "<span>\(esc(AttachmentDisplay.size(a.size)))</span></a>"
+                }
+                html += "</div>"
+            }
             html += "</details>"
         }
         return html + "</body></html>"
+    }
+
+    /// An SF Symbol as a PNG `data:` URL for the HTML reader (a web page
+    /// cannot draw SF Symbols), gray like the page's muted text. Rendered
+    /// once per symbol.
+    private static var symbolURIs: [String: String] = [:]
+    private static func symbolDataURI(_ name: String) -> String {
+        if let uri = symbolURIs[name] { return uri }
+        let config = NSImage.SymbolConfiguration(pointSize: 32, weight: .regular)
+            .applying(NSImage.SymbolConfiguration(paletteColors: [NSColor(white: 0.53, alpha: 1)]))
+        guard let image = NSImage(systemSymbolName: name, accessibilityDescription: nil)?.withSymbolConfiguration(config),
+              let tiff = image.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff),
+              let png = rep.representation(using: .png, properties: [:]) else { return "" }
+        let uri = "data:image/png;base64," + png.base64EncodedString()
+        symbolURIs[name] = uri
+        return uri
     }
 }
 
@@ -644,21 +683,43 @@ private struct TextReader: NSViewRepresentable {
             // Links keep the colors given below: no blue, no underline.
             text.linkTextAttributes = [.cursor: NSCursor.pointingHand]
         }
+        // The tiles depend on the width (columns, names): lay the text out
+        // again when the reader is resized (window, columns, list width).
+        scroll.contentView.postsFrameChangedNotifications = true
+        context.coordinator.observe(scroll.contentView)
         return scroll
     }
 
     func updateNSView(_ scroll: NSScrollView, context: Context) {
         controller.readerScroll = scroll
         context.coordinator.controller = controller
+        // Swift note: the closure keeps a copy of this view (a struct) and a
+        // weak reference to the scroll view, to rebuild on resize.
+        context.coordinator.rebuild = { [weak scroll] in
+            if let scroll { refresh(scroll, context.coordinator) }
+        }
+        refresh(scroll, context.coordinator)
+    }
+
+    /// Rebuilds the text if the blocks, the text size or the layout of the
+    /// tiles changed.
+    private func refresh(_ scroll: NSScrollView, _ coordinator: Coordinator) {
         guard let text = scroll.documentView as? NSTextView else { return }
+        // Attachment tiles per row, from the reader's width (3 to 5).
+        let charWidth = Double(Fonts.charWidth(12 * TextSize.shared.scale))
+        let width = Double(scroll.contentSize.width) - 24
+        let columns = AttachmentDisplay.columns(width: width, charWidth: charWidth)
+        // Characters of a name in a tile: its share of the width, minus the
+        // icon and the padding.
+        let nameChars = max(8, Int(width / Double(columns) / charWidth) - 6)
         // Rebuild only when the content changes, so a redraw does not reset
         // the scroll position; a new thread starts at the top.
-        let key = "\(blocks.hashValue)-\(TextSize.shared.size)"
-        if context.coordinator.key == key { return }
-        let sameThread = context.coordinator.threadId == threadId
-        context.coordinator.key = key
-        context.coordinator.threadId = threadId
-        let (string, kinds) = attributed(blocks)
+        let key = "\(blocks.hashValue)-\(TextSize.shared.size)-\(columns)-\(nameChars)"
+        if coordinator.key == key { return }
+        let sameThread = coordinator.threadId == threadId
+        coordinator.key = key
+        coordinator.threadId = threadId
+        let (string, kinds) = attributed(blocks, columns: columns, nameChars: nameChars)
         text.textStorage?.setAttributedString(string)
         if !sameThread { text.scrollToBeginningOfDocument(nil) }
         measure(text, kinds: kinds)
@@ -670,6 +731,21 @@ private struct TextReader: NSViewRepresentable {
         var key = ""
         var threadId = -1
         weak var controller: GeekController?
+        /// Rebuilds the text for the current width (set by `updateNSView`).
+        var rebuild: (() -> Void)?
+        private var observer: NSObjectProtocol?
+
+        func observe(_ view: NSView) {
+            observer = NotificationCenter.default.addObserver(
+                forName: NSView.frameDidChangeNotification, object: view, queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated { self?.rebuild?() }
+            }
+        }
+
+        deinit {
+            if let observer { NotificationCenter.default.removeObserver(observer) }
+        }
 
         /// Header and "···" links go to the controller; other links (URLs
         /// in the mail) open normally.
@@ -682,7 +758,9 @@ private struct TextReader: NSViewRepresentable {
     /// Kind of each block, with its character range, for `S` and tests.
     enum Region { case quote, text }
 
-    private func attributed(_ blocks: [ThreadDisplay.Block]) -> (NSAttributedString, [(Region, NSRange)]) {
+    private func attributed(_ blocks: [ThreadDisplay.Block], columns: Int, nameChars: Int)
+        -> (NSAttributedString, [(Region, NSRange)])
+    {
         let out = NSMutableAttributedString()
         var regions: [(Region, NSRange)] = []
         let paragraph = NSMutableParagraphStyle()
@@ -702,12 +780,18 @@ private struct TextReader: NSViewRepresentable {
             switch b {
             case .separator:
                 add("\n", small)
-            case .header(let id, let folded, let title, let detail):
+            case .header(let id, let folded, let title, let detail, let files):
                 let titleAttrs: [NSAttributedString.Key: Any] = [
                     .font: Fonts.scaled(12, weight: folded ? .regular : .semibold),
                     .foregroundColor: folded ? muted : NSColor(Palette.text),
                 ]
                 add(title, titleAttrs, link: "nm://fold/\(id)", region: .text)
+                if folded && files > 0 {
+                    // A paperclip and the number of files of the folded mail.
+                    add("  ", small)
+                    out.append(Self.symbol("paperclip", size: scaled(11), color: muted, link: "nm://fold/\(id)"))
+                    add("\(files)", small, link: "nm://fold/\(id)")
+                }
                 if folded, let detail, !detail.isEmpty { add("  " + detail, small, link: "nm://fold/\(id)") }
                 add("\n", small)
                 if !folded, let detail { add(detail + "\n", small) }
@@ -730,9 +814,73 @@ private struct TextReader: NSViewRepresentable {
                 add("\n\n", small)
             case .note(_, let text):
                 add(text + "\n\n", small)
+            case .attachments(_, let files):
+                out.append(Self.tiles(files, columns: columns, nameChars: nameChars))
+                add("\n", small)
             }
         }
         return (out, regions)
+    }
+
+    /// An SF Symbol as a character of the text, in `color`, aligned on the
+    /// text around it.
+    static func symbol(_ name: String, size: CGFloat, color: NSColor, link: String? = nil) -> NSAttributedString {
+        let config = NSImage.SymbolConfiguration(pointSize: size, weight: .regular)
+            .applying(NSImage.SymbolConfiguration(paletteColors: [color]))
+        guard let image = NSImage(systemSymbolName: name, accessibilityDescription: nil)?.withSymbolConfiguration(config)
+        else { return NSAttributedString() }
+        let attachment = NSTextAttachment()
+        attachment.image = image
+        attachment.bounds = CGRect(x: 0, y: -size * 0.2, width: image.size.width, height: image.size.height)
+        let s = NSMutableAttributedString(attachment: attachment)
+        if let link, let url = URL(string: link) {
+            s.addAttribute(.link, value: url, range: NSRange(location: 0, length: s.length))
+        }
+        return s
+    }
+
+    /// The attachments of a message as a grid of tiles (`ui.md`, "Pièces
+    /// jointes"): a text table of `columns` cells per row, each cell with
+    /// the type's icon, the name (cut in the middle) and the size. The
+    /// whole cell is a link to `nm://attachment/<id>`, handled by the
+    /// controller: a click saves the file, ⌘-click opens it.
+    ///
+    /// AppKit note: `NSTextTable` lays out paragraphs as table cells; each
+    /// paragraph says which cell it belongs to through its paragraph style
+    /// (`textBlocks`).
+    static func tiles(_ files: [AttachmentView], columns: Int, nameChars: Int) -> NSAttributedString {
+        let out = NSMutableAttributedString()
+        let table = NSTextTable()
+        table.numberOfColumns = columns
+        table.layoutAlgorithm = .fixedLayoutAlgorithm
+        table.hidesEmptyCells = true
+        let muted = NSColor(Palette.muted)
+        for (i, a) in files.enumerated() {
+            let cell = NSTextTableBlock(table: table, startingRow: i / columns, rowSpan: 1,
+                                        startingColumn: i % columns, columnSpan: 1)
+            cell.setValue(100 / CGFloat(columns), type: .percentageValueType, for: .width)
+            cell.setWidth(1, type: .absoluteValueType, for: .border)
+            cell.setBorderColor(NSColor(Palette.separator))
+            cell.setWidth(scaled(8), type: .absoluteValueType, for: .padding)
+            cell.setWidth(scaled(3), type: .absoluteValueType, for: .margin)
+            let style = NSMutableParagraphStyle()
+            style.textBlocks = [cell]
+            style.lineBreakMode = .byClipping
+            let url = URL(string: "nm://attachment/\(a.id)")!
+            let name = AttachmentDisplay.middleTruncated(AttachmentDisplay.name(a), max: nameChars)
+            let start = out.length
+            out.append(symbol(AttachmentDisplay.symbol(mimeType: a.mimeType, filename: a.filename),
+                              size: scaled(13), color: muted))
+            out.append(NSAttributedString(string: "  " + name + "\n", attributes: [
+                .font: Fonts.scaled(12), .foregroundColor: NSColor(Palette.text),
+            ]))
+            out.append(NSAttributedString(string: AttachmentDisplay.size(a.size) + "\n", attributes: [
+                .font: Fonts.scaled(11), .foregroundColor: muted,
+            ]))
+            let range = NSRange(location: start, length: out.length - start)
+            out.addAttributes([.paragraphStyle: style, .link: url], range: range)
+        }
+        return out
     }
 
     /// After layout: positions of the blocks for `S`, and, in UI script
@@ -757,13 +905,21 @@ private struct TextReader: NSViewRepresentable {
         controller.readerSkip = (quotes, texts)
         guard UIScript.isActive, let storage = text.textStorage else { return }
         UIScript.readerText = storage.string
-        var n = 0
+        var n = 0, files = 0
         storage.enumerateAttribute(.link, in: NSRange(location: 0, length: storage.length)) { value, range, _ in
             guard let url = value as? URL, url.scheme == "nm" else { return }
+            if url.host == "attachment" {
+                // The first line of the tile (icon and name).
+                let line = (storage.string as NSString).lineRange(for: NSRange(location: range.location, length: 0))
+                UIScript.frames["attachment-\(files)"] = text.convert(rect(NSIntersectionRange(line, range)), to: nil)
+                files += 1
+                return
+            }
             UIScript.frames["reader-link-\(n)"] = text.convert(rect(range), to: nil)
             n += 1
         }
         UIScript.readerLinks = n
+        UIScript.readerAttachments = files
     }
 }
 
@@ -791,10 +947,15 @@ private struct HTMLReader: NSViewRepresentable {
         view.loadHTMLString(html, baseURL: nil)
     }
 
-    func makeCoordinator() -> Coordinator { Coordinator() }
+    func makeCoordinator() -> Coordinator {
+        let c = Coordinator()
+        c.controller = controller
+        return c
+    }
 
     final class Coordinator: NSObject, WKNavigationDelegate {
         var html = ""
+        weak var controller: GeekController?
 
         /// In UI script mode, reports what the page shows, since a snapshot
         /// of the window cannot see a web view (it draws in another
@@ -817,6 +978,14 @@ private struct HTMLReader: NSViewRepresentable {
         }
         func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
                      decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void) {
+            // An attachment tile: saved, or opened with ⌘.
+            if let url = action.request.url, url.scheme == "nm", url.host == "attachment",
+               let id = Int(url.lastPathComponent) {
+                let open = action.modifierFlags.contains(.command)
+                MainActor.assumeIsolated { controller?.model.saveAttachment(id, open: open) }
+                decisionHandler(.cancel)
+                return
+            }
             // Only the document itself loads here; a clicked link opens in
             // the default browser.
             if action.navigationType == .linkActivated, let url = action.request.url {
@@ -912,6 +1081,9 @@ private struct PickerPopup: View {
                         ForEach(Array(entries.enumerated()), id: \.offset) { i, e in
                             HStack(spacing: 8) {
                                 Text(e.key).foregroundStyle(Palette.muted).frame(width: scaled(22), alignment: .leading)
+                                if let icon = e.icon {
+                                    Image(systemName: icon).foregroundStyle(Palette.muted).frame(width: scaled(16))
+                                }
                                 Text(e.label).lineLimit(1).truncationMode(.middle)
                                 Spacer()
                             }
@@ -960,7 +1132,7 @@ private struct PickerPopup: View {
 
     private var emptyText: String {
         switch kind {
-        case .links: L("No link in this mail")
+        case .links: L("No link or attachment in this mail")
         case .tag, .group: L("Type a name")
         case .accounts: L("No account")
         case .attributes: L("No attribute")
