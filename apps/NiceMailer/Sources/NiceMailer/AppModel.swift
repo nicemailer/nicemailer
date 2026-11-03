@@ -153,6 +153,47 @@ final class AppModel {
     /// Role of the folder shown (Inbox, Archive…), in either view; `nil`
     /// for "Everything".
     var currentRole: String? { everything != nil ? nil : unifiedRole ?? selectedFolder?.role }
+    /// In "Everything" only, the folder of each listed thread, by folder
+    /// id: the list and the reader show it, since the list mixes every
+    /// folder (`ui.md`, "Sélecteur d'attributs"). `nil` elsewhere: the
+    /// folder is the one in the status bar. Built once per list redraw (a
+    /// dictionary) rather than looked up row by row.
+    var everythingFolderLabels: [Int: FolderLabel]? {
+        guard let e = everything else { return nil }
+        return Self.folderLabels(folders, withAccount: e == .all)
+    }
+
+    /// Folder of the selected thread, in "Everything" only (the reader
+    /// shows it next to the subject).
+    var selectedThreadFolderLabel: String? {
+        guard let e = everything, let t = selectedThread else { return nil }
+        return folders.first { $0.id == t.folderId }.map { Self.folderLabel($0, withAccount: e == .all).text }
+    }
+
+    /// Folder of a mail in "Everything": its name, and its account in the
+    /// unified view (each account has its own Inbox, Archive…). Kept apart
+    /// so that a narrow list can show the folder alone.
+    struct FolderLabel: Equatable {
+        let folder: String
+        let account: String?
+        /// "Todo", or "Todo · perso".
+        var text: String { account.map { "\(folder) · \($0)" } ?? folder }
+    }
+
+    /// Label of `f`, with its account when `withAccount` ("all").
+    static func folderLabel(_ f: FolderView, withAccount: Bool) -> FolderLabel {
+        FolderLabel(folder: f.name, account: withAccount ? f.accountName : nil)
+    }
+
+    /// `folderLabel` of every folder, by folder id.
+    static func folderLabels(_ folders: [FolderView], withAccount: Bool) -> [Int: FolderLabel] {
+        // Swift note: `uniquingKeysWith` keeps the first value if two
+        // folders had the same id (they cannot, but the initializer without
+        // it would crash on a duplicate key).
+        Dictionary(folders.map { ($0.id, folderLabel($0, withAccount: withAccount)) },
+                   uniquingKeysWith: { first, _ in first })
+    }
+
     /// Name of the folder shown.
     var currentFolderName: String {
         if everything != nil { return Self.everythingName }

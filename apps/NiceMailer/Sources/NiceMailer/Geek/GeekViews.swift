@@ -365,6 +365,8 @@ private struct GeekThreadRows: View {
     var body: some View {
         let cursor = model.selectedThreadId
         let marked = model.marked
+        // In "Everything", the folder of each row (nil elsewhere).
+        let folderLabels = model.everythingFolderLabels
         // The column widths depend on the list width only, never on a row's
         // content: every row gets the same layout and the columns line up.
         GeometryReader { geo in
@@ -373,7 +375,9 @@ private struct GeekThreadRows: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(model.threads) { t in
-                            GeekThreadRow(thread: t, cursor: t.id == cursor, marked: marked.contains(t.id), layout: layout)
+                            GeekThreadRow(
+                                thread: t, cursor: t.id == cursor, marked: marked.contains(t.id), layout: layout,
+                                folder: folderLabels.map { $0[t.folderId] ?? .init(folder: "", account: nil) })
                                 .contentShape(Rectangle())
                                 // Click, ⌘-click, ⇧-click (`clickThread`).
                                 .onClick { controller.clickThread(t.id, $0) }
@@ -421,8 +425,29 @@ struct RowLayout: Equatable {
     /// Message count: 3 characters, right-aligned.
     let count: CGFloat
 
+    /// Width of the list, to know what room the subject has.
+    let width: CGFloat
+
+    /// Folder column of "Everything": 10 characters, the longest folder
+    /// names ("Newsletter", "Quarantine"); 18 with the account.
+    func folder(withAccount: Bool) -> CGFloat { (withAccount ? 18 : 10) * char }
+
+    /// Width left to the subject (and tags) in a row with a folder column
+    /// of `folderWidth`: the list minus the fixed columns (mark bar, unread
+    /// dot, date, sender, folder, count, flag), the 7 gaps between the 8
+    /// columns and the trailing padding.
+    func subjectWidth(folderWidth: CGFloat) -> CGFloat {
+        width - 2 - char - date - sender - folderWidth - count - char - 7 * char - 6
+    }
+
+    /// The account fits after the folder ("Inbox · perso") only if the
+    /// subject keeps 30 characters: in a narrow list the subject matters
+    /// more, and the reader shows the account anyway.
+    var showsAccount: Bool { subjectWidth(folderWidth: folder(withAccount: true)) >= 30 * char }
+
     /// `scale`: the text size factor (`TextSize.scale`).
     init(width: CGFloat, scale: CGFloat? = nil) {
+        self.width = width
         char = Fonts.charWidth(Self.fontSize * (scale ?? TextSize.shared.scale))
         date = 8 * char
         let chars = (width / char * 0.26).rounded(.down)
@@ -432,12 +457,15 @@ struct RowLayout: Equatable {
 }
 
 /// One list row: mark bar, unread dot, date, sender, subject and tags,
-/// count, flag. Every column but the subject has a fixed width.
+/// (in "Everything") folder, count, flag. Every column but the subject has
+/// a fixed width.
 private struct GeekThreadRow: View {
     let thread: ThreadSummary
     let cursor: Bool
     let marked: Bool
     let layout: RowLayout
+    /// Folder of the row, shown in "Everything" only (`nil` elsewhere).
+    var folder: AppModel.FolderLabel? = nil
 
     var body: some View {
         HStack(spacing: layout.char) {
@@ -456,6 +484,14 @@ private struct GeekThreadRow: View {
                 Spacer(minLength: 0)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            // Like the folder of the search results: muted, fixed width. The
+            // account follows only when the subject keeps enough room
+            // (`RowLayout.showsAccount`); the reader always shows it.
+            if let folder {
+                let withAccount = folder.account != nil && layout.showsAccount
+                Text(withAccount ? folder.text : folder.folder).foregroundStyle(Palette.muted)
+                    .frame(width: layout.folder(withAccount: withAccount), alignment: .leading)
+            }
             Text(thread.messageCount > 1 ? "\(thread.messageCount)" : "").foregroundStyle(Palette.muted)
                 .frame(width: layout.count, alignment: .trailing)
             Text(thread.isFlagged ? "*" : " ").foregroundStyle(Palette.unread).frame(width: layout.char)
@@ -582,6 +618,12 @@ private struct GeekReaderColumn: View {
                         .foregroundStyle(Palette.muted)
                         .contentShape(Rectangle())
                         .onTapGesture { model.toggleBodyFormat() }
+                    }
+                    // In "Everything", the folder of the mail (and its
+                    // account in "all"), at the right end of the subject line
+                    // (`ui.md`): the list mixes every folder.
+                    if let label = model.selectedThreadFolderLabel {
+                        Text(label).foregroundStyle(Palette.muted).lineLimit(1)
                     }
                 }
                 .padding(.horizontal, 12)

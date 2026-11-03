@@ -29,6 +29,19 @@ struct FormatTests {
         #expect(RowLayout(width: 900) == RowLayout(width: 900))
     }
 
+    @Test func theAccountFollowsTheFolderOnlyIfTheSubjectKeepsRoom() {
+        // A narrow list (2 columns in a 1400 pt window) shows the folder
+        // alone; a wide one (1 column) adds the account.
+        let narrow = RowLayout(width: 450, scale: 1)
+        let wide = RowLayout(width: 1400, scale: 1)
+        #expect(!narrow.showsAccount)
+        #expect(wide.showsAccount)
+        #expect(wide.subjectWidth(folderWidth: wide.folder(withAccount: true)) >= 30 * wide.char)
+        // The folder column is 10 characters, 18 with the account.
+        #expect(abs(narrow.folder(withAccount: false) - 10 * narrow.char) < 0.001)
+        #expect(abs(narrow.folder(withAccount: true) - 18 * narrow.char) < 0.001)
+    }
+
     @Test func theBundledFontIsAvailable() {
         Fonts.register()
         #expect(Fonts.reading(12).fontName.hasPrefix("iAWriterMonoV"))

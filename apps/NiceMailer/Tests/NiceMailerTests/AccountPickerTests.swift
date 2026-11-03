@@ -146,6 +146,37 @@ struct AccountPickerTests {
         #expect(model.everything == nil && model.selectedFolderId == 11)
     }
 
+    @Test func everythingOfAllShowsTheFolderAndAccountOfEachMail() async {
+        // A plain folder: no folder label, the status bar names it.
+        #expect(model.everythingFolderLabels == nil && model.selectedThreadFolderLabel == nil)
+        controller.goToAccount(nil)
+        controller.open(controller.scopeFolders.last!)
+        #expect(model.everythingFolderLabels?[1]?.text == "Inbox · perso")
+        #expect(model.everythingFolderLabels?[13]?.text == "Archive · archive")
+        // The fake core puts every thread in the first folder listed.
+        #expect(await eventually { model.selectedThread != nil })
+        let folder = try! #require(model.selectedThread?.folderId)
+        #expect(model.selectedThreadFolderLabel == model.everythingFolderLabels?[folder]?.text)
+        #expect(model.selectedThreadFolderLabel?.contains(" · ") == true)
+    }
+
+    @Test func everythingOfAnAccountShowsTheFolderOnly() async {
+        press(";"); press("e")
+        #expect(model.everythingFolderLabels?[2] == .init(folder: "Todo", account: nil))
+        #expect(await eventually { model.selectedThread != nil })
+        #expect(model.selectedThreadFolderLabel == "Inbox")
+        // Leaving "Everything" hides the labels again.
+        press(";"); press("a")
+        #expect(model.everythingFolderLabels == nil && model.selectedThreadFolderLabel == nil)
+    }
+
+    @Test func folderLabelsCarryTheAccountOnlyWhenAsked() {
+        let f = model.folders.first { $0.id == 11 }!
+        #expect(AppModel.folderLabel(f, withAccount: false).text == "Inbox")
+        #expect(AppModel.folderLabel(f, withAccount: true).text == "Inbox · archive")
+        #expect(AppModel.folderLabels(model.folders, withAccount: false).count == model.folders.count)
+    }
+
     @Test func semicolonEGoesToEverything() {
         press(";"); press("e")
         #expect(model.everything == .account(1))

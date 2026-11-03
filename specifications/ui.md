@@ -54,7 +54,7 @@ L'affichage est simplifié au maximum : chaque message montre ce qu'il apporte. 
 
 Les attributs avec « … » agrandissent aussitôt le panneau pour choisir la valeur. Choisir de nouveau un attribut actif le retire. Les attributs actifs s'affichent en pastilles dans la barre de statut ; un clic sur une pastille la retire, échap les retire toutes ; ils restent quand on change de dossier ou de compte. `/` reste la recherche dans tous les dossiers.
 
-Au pied de la liste des dossiers, un dossier virtuel **Everything** (`;e`) réunit tous les dossiers de la vue (de tous les comptes dans « all ») pour chercher partout avec les attributs. Une conversation présente dans plusieurs dossiers (Inbox et Sent) n'y figure qu'une fois, dans le dossier de son dernier mail.
+Au pied de la liste des dossiers, un dossier virtuel **Everything** (`;e`) réunit tous les dossiers de la vue (de tous les comptes dans « all ») pour chercher partout avec les attributs. Une conversation présente dans plusieurs dossiers (Inbox et Sent) n'y figure qu'une fois, dans le dossier de son dernier mail. Comme la liste mélange tous les dossiers, chaque ligne affiche son dossier (colonne discrète avant le nombre de messages), et le lecteur l'affiche à l'extrémité droite de la ligne du sujet. Dans « all », le compte suit le dossier (« Archive · perso ») : toujours dans le lecteur, et dans la liste seulement si le sujet garde au moins 30 caractères ; sinon le dossier seul.
 
 Il y a deux contextes totalement différents dans l'application : 
 - "navigation" : la gestion du stock de mail d'une part. lecture, recherche, screening, déplacement, etc

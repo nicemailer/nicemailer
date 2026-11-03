@@ -52,7 +52,23 @@ key e
 expect folder = Everything
 expect account = all
 expect thread_count > 0
+# Each mail shows its folder and, in "all", its account: in the list and
+# at the right end of the subject line in the reader.
+expect reader_folder ~ ·
 snap everything
 # Escape clears them (after the marks).
 key esc
 expect filters =
+# Everything of one account: the folder only, without the account.
+key @
+type perso
+key ret
+expect account = perso
+expect folder = Everything
+expect reader_folder != 
+expect reader_folder !~ ·
+# A plain folder: no folder label (the status bar names it).
+key ;
+key i
+expect folder = Inbox
+expect reader_folder = 
