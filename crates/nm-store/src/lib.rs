@@ -12,6 +12,7 @@
 //! - `raw.rs`: immutable raw message files (`stockage-brut.md`),
 //! - `mbox.rs`: streaming reader of mbox files,
 //! - `ingest.rs`: interpretation of a raw message (headers, bodies, attachments),
+//! - `html_text.rs`: HTML to plain text, keeping blocks apart,
 //! - `import.rs`: import of an mbox file into an archive account,
 //! - `library.rs`: history, export, tags, groups, contacts, display preference,
 //! - `seed.rs`: generator of fake mail for development.
@@ -22,6 +23,7 @@
 
 mod commands;
 pub mod clean;
+pub mod html_text;
 pub mod import;
 pub mod ingest;
 pub mod library;

@@ -40,6 +40,10 @@ key ;
 key a
 expect selected_subject = La lettre de novembre
 expect body_format = text
+# The HTML-only newsletter converted to text by the core keeps its blocks
+# apart (title, then paragraph).
+expect reader_text ~ Les nouveautés du mois
+expect reader_text !~ NovembreLes
 key v
 key h
 expect body_format = html

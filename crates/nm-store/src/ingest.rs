@@ -23,7 +23,9 @@ use mail_parser::{MessageParser, MessagePart, PartKind};
 ///
 /// 2: the sanitized HTML keeps the markers of quoted history (see
 /// `sanitize_html`).
-pub const PARSER_VERSION: i64 = 2;
+/// 3: HTML-only messages are converted to text by `html_text.rs`, which
+/// keeps blocks apart.
+pub const PARSER_VERSION: i64 = 3;
 
 /// Length of `message.snippet`, in characters.
 const SNIPPET_CHARS: usize = 200;
@@ -120,7 +122,12 @@ pub fn parse(raw: &[u8]) -> ParsedMessage {
         references.drain(..references.len() - MAX_REFERENCES);
     }
 
-    let text = m.body_text(0).map(Cow::into_owned);
+    // The text part, or the HTML part converted to text by the core's own
+    // conversion, which keeps blocks apart (`html_text.rs`).
+    let text = m.text_body().next().and_then(|part| match part.kind() {
+        PartKind::Html => part.text().map(|h| crate::html_text::html_to_text(&h)),
+        _ => m.body_text(0).map(Cow::into_owned),
+    });
     // Only a real HTML part is kept: mail-parser also offers a text part
     // converted to HTML, which would only duplicate `text`.
     let (html, has_remote_content) = match m.html_body().next() {
