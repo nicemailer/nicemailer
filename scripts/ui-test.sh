@@ -41,7 +41,8 @@ for script in "${scripts[@]}"; do
     # Short path: the core's socket path must stay under 104 characters.
     dir=$(mktemp -d /tmp/nmuit.XXXXXX)
     NICEMAILER_DATA_DIR="$dir" "$CLI" seed --threads 300 --seed 1 >/dev/null
-    NICEMAILER_DATA_DIR="$dir" "$CORE" 2>"$dir/core.log" &
+    # No request leaves the machine (one-click unsubscribe).
+    NICEMAILER_DATA_DIR="$dir" NICEMAILER_FAKE_NETWORK=1 "$CORE" 2>"$dir/core.log" &
     core=$!
     for _ in $(seq 50); do [ -S "$dir/core.sock" ] && break; sleep 0.1; done
     NICEMAILER_DATA_DIR="$dir" "$CLI" import-mbox "$APP/UITests/fixtures/sample.mbox" \

@@ -522,6 +522,26 @@ private struct GeekReaderColumn: View {
                     if state.showAll {
                         Text("T").foregroundStyle(Palette.accent)
                     }
+                    // Unsubscribe, left of text | html (`ui.md`,
+                    // "Désabonnement"); "unsubscribed on …" once done.
+                    if let offer = model.unsubscribeOffer {
+                        if let at = offer.senderUnsubscribedAt {
+                            Text(UnsubscribeDisplay.done(at)).foregroundStyle(Palette.muted)
+                        } else {
+                            let label = UnsubscribeDisplay.label(offer)
+                            HStack(spacing: scaled(4)) {
+                                Text(label.text)
+                                if let symbol = label.symbol { Image(systemName: symbol) }
+                            }
+                            .foregroundStyle(offer.source == "body" ? Palette.muted : Palette.accent)
+                            .padding(.horizontal, scaled(4))
+                            .overlay(Rectangle().stroke(Palette.separator, lineWidth: 1))
+                            .contentShape(Rectangle())
+                            .help(label.help)
+                            .onTapGesture { model.unsubscribe() }
+                            .uiTarget("reader-unsubscribe")
+                        }
+                    }
                     if model.latestReceived?.bodyHtml != nil {
                         // The text / HTML switch (`ui.md`); also `vh`.
                         HStack(spacing: 0) {

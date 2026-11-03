@@ -72,6 +72,14 @@ key cmd-ret
 expect export_files = 4
 expect opened_file = devis (2).pdf
 expect flash ~ opened
+# Unsubscribe: the newsletter's List-Unsubscribe header allows one click;
+# the core does it (no request in UI tests) and the button gives way to
+# "unsubscribed".
+expect unsubscribe = header:one_click
+snap unsubscribe
+click reader:unsubscribe
+expect flash ~ Unsubscribed from Lettre
+expect unsubscribe = done
 key v
 key h
 expect body_format = html
@@ -88,6 +96,11 @@ expect body_format = text
 key j
 key j
 expect selected_subject = Un long mail
+# Its unsubscribe link is in its text: ⌘U opens it in the browser.
+expect unsubscribe = body:browser
+snap unsubscribe-body
+key cmd-u
+expect opened_file = https://example.org/desabonnement
 expect reader_offset = 0
 key space
 expect reader_offset > 0

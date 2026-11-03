@@ -83,6 +83,16 @@ enum Fixture {
         ["id": 62, "filename": "logo.png", "mime_type": "image/png", "size": 2_000],
     ]
 
+    /// How to unsubscribe, by thread: 5 one click, 3 one click that fails,
+    /// 7 a page of the list, 8 an address, 2 a link of the body.
+    static let unsubscribe: [Int: [String: Any]] = [
+        5: ["method": "one_click", "source": "header", "url": "https://x.org/u5", "mailto": NSNull(), "sender_unsubscribed_at": NSNull()],
+        3: ["method": "one_click", "source": "header", "url": "https://x.org/u3", "mailto": NSNull(), "sender_unsubscribed_at": NSNull()],
+        7: ["method": "browser", "source": "header", "url": "https://x.org/u7", "mailto": NSNull(), "sender_unsubscribed_at": NSNull()],
+        8: ["method": "mail", "source": "header", "url": NSNull(), "mailto": "mailto:leave@x.org", "sender_unsubscribed_at": NSNull()],
+        2: ["method": "browser", "source": "body", "url": "https://x.org/b2", "mailto": NSNull(), "sender_unsubscribed_at": NSNull()],
+    ]
+
     static func threadView(_ id: Int) -> [String: Any] {
         let message: [String: Any] = [
             "id": id * 10, "folder_id": 1, "folder_role": "inbox", "subject": "Subject \(id)",
@@ -94,6 +104,7 @@ enum Fixture {
             "segments": [["kind": "text", "text": "Hello, see https://example.org/\(id)", "depth": 0, "hidden": false, "in_thread": false]],
             "only_quotes": false, "expanded": true, "show_recipients": false,
             "attachments": id == 4 ? Fixture.attachments : id == 6 ? Fixture.otherAttachments : [],
+            "unsubscribe": Fixture.unsubscribe[id] ?? NSNull(),
         ]
         return ["id": id, "subject": "Subject \(id)", "messages": [message], "as_of": position]
     }
@@ -125,6 +136,16 @@ enum Fixture {
             return ["group_id": 1, "addr": "sender1@example.org", "changed": true]
         case "export_message":
             return ["path": "/tmp/x.eml"]
+        case "unsubscribe":
+            // Message ids are thread ids × 10 in the fixture.
+            let thread = (params["message_id"] as? Int ?? 0) / 10
+            let u = unsubscribe[thread] ?? [:]
+            switch thread {
+            case 5: return ["method": "one_click", "done": true, "open": NSNull(), "error": NSNull()]
+            case 3: return ["method": "browser", "done": false, "open": u["url"]!, "error": "le serveur a répondu 500"]
+            case 8: return ["method": "mail", "done": false, "open": u["mailto"]!, "error": NSNull()]
+            default: return ["method": "browser", "done": false, "open": u["url"] ?? NSNull(), "error": NSNull()]
+            }
         case "get_attachment":
             // A real file, as the core extracts one, read-only.
             let id = params["attachment_id"] as? Int ?? 0

@@ -215,6 +215,40 @@ extension AppModel {
     /// Attachments of the open thread, message by message (`l`, tiles).
     var attachments: [AttachmentView] { openThread?.messages.flatMap(\.attachments) ?? [] }
 
+    /// The unsubscribe offered for the open thread: that of its latest
+    /// received message, outside the spam folders (`UnsubscribeDisplay`).
+    var unsubscribeOffer: UnsubscribeView? { UnsubscribeDisplay.offer(latestReceived) }
+
+    /// Unsubscribes from the list of the latest received message (`ui.md`,
+    /// "Désabonnement"): the core does it with one click, or gives the page
+    /// or address to open, which `openFile` opens (browser, Mail). A failed
+    /// one-click attempt falls back to the page.
+    func unsubscribe() {
+        guard let client = core, let m = latestReceived, unsubscribeOffer != nil else {
+            flash = L("No unsubscribe link in this mail")
+            return
+        }
+        let sender = m.fromName ?? m.fromAddr ?? ""
+        Task {
+            do {
+                let r: UnsubscribeResult = try await client.call("unsubscribe", ["message_id": m.id])
+                if r.done {
+                    flash = L("Unsubscribed from %@", sender)
+                    // Shows "unsubscribed on …" instead of the button.
+                    await reloadOpenThread()
+                    return
+                }
+                guard let s = r.open, let url = URL(string: s) else { return }
+                openFile(url)
+                if let error = r.error {
+                    flash = L("One-click unsubscribe failed (%@): page opened", error)
+                } else {
+                    flash = r.method == "mail" ? L("Unsubscribe mail opened") : L("Unsubscribe page opened")
+                }
+            } catch { report(error) }
+        }
+    }
+
     /// What to do with an attachment.
     enum AttachmentAction {
         /// Copy it to Downloads (a click on a tile, Return in `l`).

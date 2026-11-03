@@ -62,6 +62,19 @@ Images the HTML of the mail shows (`cid:`) are part of the body, not tiles. An i
 
 Files are extracted by the core from the raw message on first use (`docs/core-library.md`, "Attachments"). Generated mail (`make seed`) has no raw message: its tiles show, but saving one reports that the content is not available.
 
+### Unsubscribing
+
+When the latest received mail of the conversation says how to unsubscribe from its list, a button appears on the title line, left of `text | html` (never in Junk, Quarantine or Banned: unsubscribing from a spam confirms the address to the spammer). Its look says where the link comes from and what a click does:
+
+| Button | Link | A click (or ⌘U) |
+| --- | --- | --- |
+| `unsubscribe`, accent colour | `List-Unsubscribe` header, one click (RFC 8058) | the core unsubscribes at once; the status bar confirms, and the button gives way to "unsubscribed <date>" |
+| `unsubscribe` with ↗, accent colour | header, a page of the list | opens the page in the browser |
+| `unsubscribe` with an envelope, accent colour | header, an address only | opens the unsubscribe mail in Mail (until NiceMailer sends mail) |
+| `unsubscribe` with a link symbol, muted | a link found in the text of the mail | opens it in the browser |
+
+A one-click attempt the server refuses opens the page instead, and says why. The tooltip of the button tells the same. Only a one-click unsubscribe is recorded ("unsubscribed <date>"): after a page or a mail, the app cannot know whether you finished. The sender's decision and its mails are not changed. The links are found by the core when the mail arrives (`docs/core-library.md`, "Unsubscribing from a list").
+
 ### When a mail becomes read
 
 - A mail you select (`j` `k`, a click, the next mail after a move) is marked read once shown for one second. Browsing quickly with `j` / `k` marks nothing.
@@ -88,6 +101,7 @@ Actions apply to the **marked** mails if any (`J` / `K`), otherwise to the mail 
 | `T` | show everything in the thread (folded mails, quotes, signatures) or go back to the simplified view |
 | `S` | skip to the text after the next quoted block |
 | `u` | read / unread |
+| ⌘U | unsubscribe from the list of the mail (see "Unsubscribing") |
 | `*` | flag |
 | `/` | search everywhere: Contains… in Everything (see [Search](#search-)); Escape goes back |
 | `;` + key | go to a folder or a screen (see below) |

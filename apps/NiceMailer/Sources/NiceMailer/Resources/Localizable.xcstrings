@@ -481,6 +481,16 @@
         }
       }
     },
+    "No unsubscribe link in this mail": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucun lien de désabonnement dans ce mail"
+          }
+        }
+      }
+    },
     "Not a target from this folder: %@": {
       "localizations": {
         "fr": {
@@ -507,6 +517,46 @@
           "stringUnit": {
             "state": "translated",
             "value": "Pas encore disponible : écrire un mail demande SMTP"
+          }
+        }
+      }
+    },
+    "One-click unsubscribe failed (%@): page opened": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le désabonnement direct a échoué (%@) : page ouverte"
+          }
+        }
+      }
+    },
+    "Opens the unsubscribe link found in the text of the mail, in the browser (⌘U)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ouvre dans le navigateur le lien de désabonnement trouvé dans le texte du mail (⌘U)"
+          }
+        }
+      }
+    },
+    "Opens the unsubscribe mail of the list in Mail (⌘U)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ouvre dans Mail le mail de désabonnement de la liste (⌘U)"
+          }
+        }
+      }
+    },
+    "Opens the unsubscribe page of the list in the browser (⌘U)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ouvre dans le navigateur la page de désabonnement de la liste (⌘U)"
           }
         }
       }
@@ -707,6 +757,46 @@
           "stringUnit": {
             "state": "translated",
             "value": "Pièce jointe sans nom"
+          }
+        }
+      }
+    },
+    "Unsubscribe mail opened": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mail de désabonnement ouvert"
+          }
+        }
+      }
+    },
+    "Unsubscribe page opened": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Page de désabonnement ouverte"
+          }
+        }
+      }
+    },
+    "Unsubscribed from %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Désabonné de %@"
+          }
+        }
+      }
+    },
+    "Unsubscribes at once, without opening anything (⌘U)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Désabonne aussitôt, sans rien ouvrir (⌘U)"
           }
         }
       }
@@ -1337,6 +1427,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "non lu"
+          }
+        }
+      }
+    },
+    "unsubscribe": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "se désabonner"
+          }
+        }
+      }
+    },
+    "unsubscribe from the list": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "se désabonner de la liste"
+          }
+        }
+      }
+    },
+    "unsubscribed %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "désabonné le %@"
           }
         }
       }

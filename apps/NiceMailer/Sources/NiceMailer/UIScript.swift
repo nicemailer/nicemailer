@@ -77,7 +77,7 @@ enum UIScript {
         started = true
         // Opening a file would launch an app on the user's screen: only
         // record its name.
-        model.openFile = { openedFile = $0.lastPathComponent }
+        model.openFile = { openedFile = $0.isFileURL ? $0.lastPathComponent : $0.absoluteString }
         Task { @MainActor in
             let runner = Runner(model: model, controller: controller)
             let failures = await runner.run(path: path)
@@ -390,6 +390,9 @@ private final class Runner {
             "sort": m.sort,
             "body_format": m.bodyFormat,
             "reader_subject": m.openThread?.subject ?? "",
+            "unsubscribe": m.unsubscribeOffer.map {
+                $0.senderUnsubscribedAt != nil ? "done" : "\($0.source):\($0.method)"
+            } ?? "",
             "reader_attachments": "\(UIScript.readerAttachments)",
             "opened_file": UIScript.openedFile,
             "sticky": m.stickyThreadId.map(String.init) ?? "",

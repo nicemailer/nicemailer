@@ -29,6 +29,9 @@ From: Lettre <news@example.net>
 To: me@example.com
 Subject: La lettre de novembre
 Message-ID: <n1@example.net>
+List-Unsubscribe: <mailto:leave@example.net?subject=unsubscribe>,
+ <https://example.net/unsubscribe?id=1>
+List-Unsubscribe-Post: List-Unsubscribe=One-Click
 MIME-Version: 1.0
 Content-Type: multipart/mixed; boundary="N"
 
@@ -378,6 +381,8 @@ Ligne 297 du long mail, pour tester le défilement du panneau de lecture.
 Ligne 298 du long mail, pour tester le défilement du panneau de lecture.
 Ligne 299 du long mail, pour tester le défilement du panneau de lecture.
 Ligne 300 du long mail, pour tester le défilement du panneau de lecture.
+
+Se désabonner : https://example.org/desabonnement
 
 --L
 Content-Type: text/html; charset=utf-8

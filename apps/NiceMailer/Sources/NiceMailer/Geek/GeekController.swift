@@ -306,6 +306,15 @@ final class GeekController {
             }
             return true
         }
+        // ⌘U: unsubscribe from the list of the open mail (`ui.md`,
+        // "Désabonnement"), with ⌘ because it cannot be undone and `u` alone
+        // toggles read / unread. Only on the mail screen, without a panel.
+        if mods.contains(.command), event.charactersIgnoringModifiers?.lowercased() == "u" {
+            guard screen == .mail, overlay == .none else { return false }
+            model.flash = nil
+            model.unsubscribe()
+            return true
+        }
         if mods.contains(.command) {
             // Text size (`TextSize`): handled here so that ⌘= works too (on
             // AZERTY, `+` needs Shift) and in every keyboard layout. The
@@ -726,6 +735,7 @@ final class GeekController {
             ("t", L("tag")),
             ("g", L("add the sender to a group")),
             ("u  *", L("read / unread, flag")),
+            ("⌘U", L("unsubscribe from the list")),
             ("T", L("show / hide quotes, signatures, folded mails")),
             ("S", L("skip to the text after the next quote")),
             ("/", L("search everywhere (Contains… in Everything)")),

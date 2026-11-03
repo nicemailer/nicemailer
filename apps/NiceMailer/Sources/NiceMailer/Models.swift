@@ -148,6 +148,10 @@ struct MessageView: Decodable, Identifiable, Hashable {
     /// Files attached, in MIME order; images shown by the HTML are left
     /// out by the core (`attachments.rs`).
     let attachments: [AttachmentView]
+    /// How to unsubscribe from the list the message comes from, if it
+    /// says (`ui.md`, "Désabonnement"). A `var` with a default so that the
+    /// tests can build messages without it.
+    var unsubscribe: UnsubscribeView? = nil
 }
 
 /// A piece of a message's text, typed by the core: "text", "quote",
@@ -243,6 +247,28 @@ struct ContactView: Decodable, Identifiable, Hashable {
 
 struct ExportResult: Decodable {
     let path: String
+}
+
+/// How to unsubscribe from a mailing list, as found by the core at
+/// reception.
+struct UnsubscribeView: Decodable, Hashable {
+    /// "one_click" (the core does it), "browser" (a page to open) or
+    /// "mail" (an address to write to).
+    let method: String
+    /// "header" (List-Unsubscribe, reliable) or "body" (a link of the text).
+    let source: String
+    let url: String?
+    let mailto: String?
+    /// When the user unsubscribed from this sender with one click.
+    let senderUnsubscribedAt: Int?
+}
+
+/// Result of `unsubscribe`: done by the core, or a page / address to open.
+struct UnsubscribeResult: Decodable {
+    let method: String
+    let done: Bool
+    let open: String?
+    let error: String?
 }
 
 /// An attachment listed under a message. Its content is fetched on demand
