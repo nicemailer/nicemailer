@@ -70,8 +70,8 @@ struct AccountPickerTests {
     }
 
     @Test func statusBarClicksOpenThePickers() {
-        controller.openPickerFromStatusBar(.folders)
-        #expect(controller.overlay == .picker(.folders))
+        controller.openMenuFromStatusBar(.goto)
+        #expect(controller.overlay == .menu(.goto))
         controller.overlay = .none
         controller.openPickerFromStatusBar(.accounts)
         #expect(controller.overlay == .picker(.accounts))
@@ -88,12 +88,12 @@ struct AccountPickerTests {
         #expect(await eventually { core.calls("list_threads").last?["folder_ids"] as? [Int] == [3, 13] })
     }
 
-    @Test func theFolderPickerOfAllListsRolesWithoutAccounts() {
+    @Test func theSemicolonMenuOfAllListsRolesWithoutAccounts() {
         controller.goToAccount(nil)
-        let labels = controller.pickerEntries(.folders).map(\.label)
+        let labels = controller.menuEntries(.goto).map(\.label).filter { ![L("Contacts"), L("History"), L("Tags"), L("Groups")].contains($0) }
         // Inbox: 2 (perso) + 5 (archive); Archive: 2 + 2; Todo and Deleted
         // exist in one account only.
-        #expect(labels == ["Inbox  7", "Todo  2", "Archive  4", "Deleted  2"])
+        #expect(labels == ["Inbox  7", "Todo  2", "Archive  4", "Deleted  2", "Everything"])
         #expect(!labels.contains { $0.contains("perso") || $0.contains("archive ·") })
     }
 
@@ -103,6 +103,34 @@ struct AccountPickerTests {
         #expect(model.unifiedRole == "archive")
         controller.goToAccount(2)
         #expect(model.selectedFolderId == 13 && model.unifiedRole == nil)
+    }
+
+    // MARK: Everything
+
+    @Test func everythingOfAllListsEveryFolderOfEveryAccount() async {
+        controller.goToAccount(nil)
+        let everything = try! #require(controller.scopeFolders.last)
+        #expect(everything.everything && everything.name == "Everything")
+        controller.open(everything)
+        #expect(model.everything == .all && model.currentFolderName == "Everything" && model.scopeName == "all")
+        #expect(model.listedFolderIds.sorted() == [1, 2, 3, 4, 11, 13])
+        #expect(await eventually { (core.calls("list_threads").last?["folder_ids"] as? [Int])?.sorted() == [1, 2, 3, 4, 11, 13] })
+        #expect(controller.isCurrent(everything))
+    }
+
+    @Test func everythingStaysEverythingWhenChangingAccount() {
+        controller.open(controller.scopeFolders.last!)
+        controller.goToAccount(2)
+        #expect(model.everything == .account(2) && model.listedFolderIds.sorted() == [11, 13])
+        #expect(model.scopeName == "archive")
+        // A real folder leaves "Everything".
+        press(";"); press("i")
+        #expect(model.everything == nil && model.selectedFolderId == 11)
+    }
+
+    @Test func semicolonEGoesToEverything() {
+        press(";"); press("e")
+        #expect(model.everything == .account(1))
     }
 }
 

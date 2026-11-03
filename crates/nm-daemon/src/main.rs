@@ -418,7 +418,7 @@ async fn dispatch(core: &Arc<Core>, session: &mut Session, req: Request) -> Resu
                 _ => return Err(RpcError::new(error_code::INVALID_PARAMS, "folder_id ou folder_ids attendu")),
             };
             let (items, next_cursor) = with_store(core, move |s| {
-                s.list_threads_in(&folders, p.cursor.as_deref(), limit(p.limit), p.sort)
+                s.list_threads_in(&folders, p.cursor.as_deref(), limit(p.limit), p.sort, &p.filter)
             })
             .await?;
             to_value(Page { items, next_cursor, as_of })

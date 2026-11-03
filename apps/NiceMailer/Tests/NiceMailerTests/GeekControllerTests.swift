@@ -178,15 +178,32 @@ struct GeekControllerTests {
 
     // MARK: Pickers and search
 
-    @Test func theFolderPickerFiltersOnEveryWordTyped() {
+    @Test func semicolonListsTheFoldersAndEverythingAndHIsFree() {
+        let keys = controller.menuEntries(.goto).map(\.key)
+        // Four folders, then "Everything", then the screens.
+        #expect(keys == ["i", "t", "a", "d", "e", "c", "h", "T", "g"])
         press("h")
-        #expect(controller.overlay == .picker(.folders))
-        #expect(controller.pickerEntries(.folders).count == 4)
-        type("arc")
-        // One folder left; its label ends with its unread count.
-        #expect(controller.pickerEntries(.folders).map(\.label) == ["Archive  2"])
-        press("ret")
-        #expect(model.selectedFolderId == 3)
+        #expect(controller.overlay == .none && model.flash != nil)
+    }
+
+    @Test func theMoveSaveAndDisplayBlocksOpenTheirMenus() {
+        for p in [GeekController.Prefix.move, .save, .view] {
+            controller.openMenuFromStatusBar(p)
+            #expect(controller.overlay == .menu(p))
+            #expect(!p.icon.isEmpty)
+        }
+        // A click on a row of the display menu: two columns.
+        controller.openMenuFromStatusBar(.view)
+        let two = controller.menuEntries(.view).firstIndex { $0.key == "2" }!
+        controller.chooseMenuEntry(two)
+        #expect(controller.overlay == .none)
+    }
+
+    @Test func aClickOnAMenuRowActsLikeItsKey() {
+        controller.openMenuFromStatusBar(.goto)
+        #expect(controller.overlay == .menu(.goto))
+        controller.chooseMenuEntry(2)
+        #expect(controller.overlay == .none && model.selectedFolderId == 3)
     }
 
     @Test func theTagPickerCreatesATypedTag() async {
@@ -296,5 +313,71 @@ struct GeekControllerTests {
         #expect(controller.readerState.revealed.contains("10:2"))
         // Other links are left to the text view (opened in the browser).
         #expect(!controller.readerLink(URL(string: "https://example.org")!))
+    }
+
+    // MARK: Attributes
+
+    @Test func capitalFOpensTheAttributeSelectorAndAToggleNarrowsTheList() async {
+        press("F")
+        #expect(controller.overlay == .picker(.attributes))
+        let labels = controller.pickerEntries(.attributes).map(\.label)
+        // Compared with the translations: tests run in the machine's language.
+        #expect(Array(labels.prefix(2)) == [L("unread"), L("read")])
+        #expect(labels.contains(L("From…")) && labels.contains(L("Date…")))
+        type(L("unread")); press("ret")
+        #expect(model.attributes.seen == false)
+        #expect(await eventually { (core.calls("list_threads").last?["filter"] as? [String: Any])?["seen"] as? Bool == false })
+        // Choosing it again removes it.
+        press("F"); type(L("unread")); press("ret")
+        #expect(model.attributes.isEmpty)
+    }
+
+    @Test func attributesWithAValueExpandThePanel() async {
+        press("F"); type(L("From…")); press("ret")
+        #expect(controller.overlay == .picker(.attributeValue(.from)))
+        type("alice")
+        #expect(controller.pickerEntries(.attributeValue(.from)).first?.label == "alice")
+        #expect(await eventually { core.calls("list_contacts").last?["query"] as? String == "alice" })
+        press("ret")
+        #expect(model.attributes.from == ["alice"])
+        #expect(controller.overlay == .none)
+    }
+
+    @Test func theDatePanelOffersPresetsAndTypedDates() {
+        press("F"); type(L("Date…")); press("ret")
+        #expect(controller.pickerEntries(.attributeValue(.date)).count == 5)
+        type("2026-10-01")
+        let labels = controller.pickerEntries(.attributeValue(.date)).map(\.label)
+        #expect(labels.first == L("after %@", "2026-10-01"))
+        press("ret")
+        #expect(model.attributes.after != nil && model.attributes.dateLabel == L("after %@", "2026-10-01"))
+    }
+
+    @Test func escapeClearsTheAttributesLast() {
+        model.attributes.toggle(.flagged, true)
+        press("J")
+        press("esc")
+        // First the marks…
+        #expect(!model.attributes.isEmpty && model.marked.isEmpty)
+        press("esc")
+        // …then the attributes.
+        #expect(model.attributes.isEmpty)
+    }
+
+    @Test func whenAttributesEmptyTheListTheReaderIsEmptyToo() async {
+        // The fake core answers no thread when a filter is given.
+        core.handler = { method, params in
+            if method == "list_threads", params["filter"] != nil {
+                return ["items": [], "next_cursor": NSNull(), "as_of": Fixture.position]
+            }
+            return Fixture.answer(method, params)
+        }
+        model.attributes.toggle(.flagged, true)
+        #expect(await eventually { model.threads.isEmpty })
+        #expect(model.selectedThreadId == nil)
+        #expect(await eventually { model.openThread == nil })
+        // Back without attributes: the first mail is selected again.
+        model.attributes = ThreadFilter()
+        #expect(await eventually { model.selectedThreadId == 1 })
     }
 }

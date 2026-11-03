@@ -15,12 +15,15 @@ key ret
 expect account = fixture
 # Same role (Inbox) in the other account.
 expect folder = Inbox
-# The folder picker: a click on the folder; folders of this account only.
+# The ; menu: a click on the folder; folders of this account only. It drops
+# down on the left, from the folder block: just above the bar at the
+# bottom (window height 900, origin at the bottom).
 click status:folder
-expect overlay = picker(NiceMailer.GeekController.PickerKind.folders)
-expect picker_count = 12
-type arc
-key ret
+expect overlay = menu(NiceMailer.GeekController.Prefix.goto)
+expect menu_x < 400
+expect menu_y < 500
+snap folder-menu-bottom
+key a
 expect folder = Archive
 # Back to "all", still in Archive: the archives of every account.
 key @
@@ -41,3 +44,26 @@ key @
 click picker:0
 expect account = all
 snap status-bar
+# With the status bar at the top, the menu drops down under it, top left.
+key v
+key s
+expect status_position = top
+key ;
+expect menu_x < 400
+expect menu_y > 500
+snap folder-menu-top
+key esc
+# The m, s and v menus have their block (icon and key) and drop down from
+# it, like the folder menu.
+click status:v
+expect overlay = menu(NiceMailer.GeekController.Prefix.view)
+expect menu_x > 100
+expect menu_y > 500
+snap view-menu-top
+key esc
+click status:m
+expect overlay = menu(NiceMailer.GeekController.Prefix.move)
+key esc
+click status:s
+expect overlay = menu(NiceMailer.GeekController.Prefix.save)
+key esc

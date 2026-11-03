@@ -1,13 +1,11 @@
 # Pickers (folders, links, tags, groups) and search.
-# The folder picker lists the folders of the current view only (here the
-# unified view "all": one entry per role).
+# The ; menu lists the folders of the current view only (here the unified
+# view "all": one entry per role); h is not a command any more.
 key h
-expect overlay = picker(NiceMailer.GeekController.PickerKind.folders)
-expect picker_count = 12
-type arc
-expect picker_count = 1
-snap folder-picker
-key ret
+expect overlay = none
+key ;
+snap goto-menu
+key a
 expect account = all
 expect folder = Archive
 # The account is chosen with @.
@@ -45,9 +43,11 @@ key ;
 key g
 expect groups_count = 1
 key esc
-# Folder picker with the mouse.
-key h
-click picker:0
+# The ; menu with the mouse: a click on the folder of the status bar, then
+# on a row (the first one is the Inbox).
+click status:folder
+expect overlay = menu(NiceMailer.GeekController.Prefix.goto)
+click menu:0
 expect account = fixture
 expect folder = Inbox
 # Search: type, keep the results, click, double-click opens.

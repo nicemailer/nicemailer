@@ -90,10 +90,25 @@ private struct GeekWindow: View {
     @ViewBuilder private var overlay: some View {
         switch controller.overlay {
         case .menu(let prefix):
-            KeyMenu(title: menuTitle(prefix), entries: controller.menuEntries(prefix).map { ($0.key, $0.label, $0.disabled) })
-                .padding(12)
+            let menu = KeyMenu(title: menuTitle(prefix),
+                               entries: controller.menuEntries(prefix).map { ($0.key, $0.label, $0.disabled) },
+                               onSelect: { controller.chooseMenuEntry($0) })
+            if controller.statusPosition != .hidden, let x = controller.menuBlockX[prefix] {
+                // Each menu drops down from its block of the status bar:
+                // under it when the bar is at the top, above it when the
+                // bar is at the bottom (`ui.md`).
+                menu
+                    .padding(.leading, max(0, x - 6))
+                    .padding(.vertical, 2)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity,
+                           alignment: controller.statusPosition == .bottom ? .bottomLeading : .topLeading)
+            } else {
+                // No block to drop from (status bar hidden, or another
+                // screen): bottom-right corner, as in Helix.
+                menu.padding(12)
+            }
         case .help:
-            KeyMenu(title: L("Keys"), entries: controller.helpLines.map { ($0.0, $0.1, false) })
+            KeyMenu(title: L("Keys"), entries: controller.helpLines.map { ($0.0, $0.1, false) }, onSelect: nil)
                 .padding(12)
         case .picker(let kind):
             PickerPopup(controller: controller, kind: kind)
@@ -159,12 +174,42 @@ struct GeekStatusBar: View {
                 StatusBlock(icon: "at", text: model.scopeName, key: "@")
                     .onTapGesture { controller.openPickerFromStatusBar(.accounts) }
                     .uiTarget("status-account")
-                StatusBlock(icon: "folder", text: model.currentFolderName, key: "h")
-                    .onTapGesture { controller.openPickerFromStatusBar(.folders) }
+                StatusBlock(icon: GeekController.Prefix.goto.icon, text: model.currentFolderName, key: ";")
+                    .menuAnchor(.goto, controller)
+                    .onTapGesture { controller.openMenuFromStatusBar(.goto) }
                     .uiTarget("status-folder")
+                // Attributes narrowing the list: the magnifier opens the
+                // selector (`F`); each active attribute is a chip, removed
+                // by a click.
+                StatusBlock(icon: "magnifyingglass", text: "", key: "F")
+                    .onTapGesture { controller.openPickerFromStatusBar(.attributes) }
+                    .uiTarget("status-attributes")
+                ForEach(model.attributes.chips) { chip in
+                    Text(chip.label + " ×")
+                        .lineLimit(1)
+                        .foregroundStyle(Palette.accent)
+                        .padding(.horizontal, scaled(4))
+                        .overlay(Rectangle().stroke(Palette.accent.opacity(0.5), lineWidth: 1))
+                        .contentShape(Rectangle())
+                        .onTapGesture { model.attributes.remove(chip.id) }
+                        .uiTarget("chip-\(chip.id)")
+                }
             } else {
                 Text(controller.locationLabel)
                     .lineLimit(1)
+            }
+            if controller.screen == .mail {
+                // The other prefix menus, an icon and the key; the menu drops
+                // down from the block. Three groups, set apart by a wide gap:
+                // what the list shows (@ ; F, above), the display preference
+                // (v), and actions on the current mail (m s).
+                ForEach([GeekController.Prefix.view, .move, .save], id: \.self) { p in
+                    StatusBlock(icon: p.icon, text: "", key: p.rawValue)
+                        .menuAnchor(p, controller)
+                        .onTapGesture { controller.openMenuFromStatusBar(p) }
+                        .uiTarget("status-\(p.rawValue)")
+                        .padding(.leading, p == .save ? 0 : scaled(28))
+                }
             }
             if case .search = controller.overlay {
                 Text("/" + controller.searchQuery + "▏").foregroundStyle(Palette.accent)
@@ -194,6 +239,18 @@ struct GeekStatusBar: View {
 
 /// One element of the status bar: an SF Symbol, a name, and a reminder of
 /// the key that opens it (`ui.md`, status bar).
+extension View {
+    /// Records the left edge of a status bar block, where the menu of
+    /// `prefix` drops down from.
+    fileprivate func menuAnchor(_ prefix: GeekController.Prefix, _ controller: GeekController) -> some View {
+        background(GeometryReader { geo in
+            Color.clear
+                .onAppear { controller.menuBlockX[prefix] = geo.frame(in: .global).minX }
+                .onChange(of: geo.frame(in: .global).minX) { _, x in controller.menuBlockX[prefix] = x }
+        })
+    }
+}
+
 private struct StatusBlock: View {
     let icon: String
     let text: String
@@ -204,7 +261,7 @@ private struct StatusBlock: View {
             Image(systemName: icon)
                 .font(.system(size: scaled(10), weight: .semibold))
                 .foregroundStyle(Palette.muted)
-            Text(text).lineLimit(1)
+            if !text.isEmpty { Text(text).lineLimit(1) }
             Text(key)
                 .font(.geek(9))
                 .foregroundStyle(Palette.muted)
@@ -807,19 +864,29 @@ private struct HTMLReader: NSViewRepresentable {
 private struct KeyMenu: View {
     let title: String
     let entries: [(String, String, Bool)]
+    /// Called with the row clicked; `nil` for a menu that only informs
+    /// (the help).
+    let onSelect: ((Int) -> Void)?
 
     var body: some View {
         // Width of the key column: the longest key, in monospace characters.
         let keyWidth = CGFloat(entries.map(\.0.count).max() ?? 1) * Fonts.charWidth(12 * TextSize.shared.scale) + 4
         VStack(alignment: .leading, spacing: 2) {
             Text(title).foregroundStyle(Palette.accent).padding(.bottom, 2)
-            ForEach(Array(entries.enumerated()), id: \.offset) { _, e in
+            ForEach(Array(entries.enumerated()), id: \.offset) { i, e in
                 HStack(spacing: 10) {
                     Text(e.0).foregroundStyle(Palette.accent).frame(width: keyWidth, alignment: .leading)
                     Text(e.1).foregroundStyle(e.2 ? Palette.muted : Palette.text)
+                    Spacer(minLength: 0)
                 }
+                .contentShape(Rectangle())
+                .onTapGesture { onSelect?(i) }
+                .uiTarget("menu-\(i)")
             }
         }
+        // As wide as its longest row, not as the window: the rows' spacers
+        // (which make the whole row clickable) would stretch it otherwise.
+        .fixedSize(horizontal: true, vertical: false)
         .padding(10)
         .background(Palette.popup)
         .overlay(Rectangle().stroke(Palette.separator, lineWidth: 1))
@@ -870,15 +937,22 @@ private struct PickerPopup: View {
                 if entries.isEmpty { Text(emptyText).foregroundStyle(Palette.muted) }
             }
         }
-        .frame(width: scaled(520), height: scaled(320))
+        // An attribute with a value gets a bigger panel at once (`ui.md`).
+        .frame(width: scaled(expanded ? 680 : 520), height: scaled(expanded ? 440 : 320))
         .background(Palette.popup)
         .overlay(Rectangle().stroke(Palette.separator, lineWidth: 1))
     }
 
+    private var expanded: Bool {
+        if case .attributeValue = kind { return true }
+        return false
+    }
+
     private var title: String {
         switch kind {
-        case .folders: L("Folder")
         case .accounts: L("Account")
+        case .attributes: L("Attributes")
+        case .attributeValue(let field): field.title
         case .links: L("Links")
         case .tag: L("Tag")
         case .group: L("Group")
@@ -889,8 +963,10 @@ private struct PickerPopup: View {
         switch kind {
         case .links: L("No link in this mail")
         case .tag, .group: L("Type a name")
-        case .folders: L("No folder")
         case .accounts: L("No account")
+        case .attributes: L("No attribute")
+        case .attributeValue(.date): L("Type a date: 2026-10-01 or 1/10/2026")
+        case .attributeValue: L("Type a name, an address or words")
         }
     }
 }

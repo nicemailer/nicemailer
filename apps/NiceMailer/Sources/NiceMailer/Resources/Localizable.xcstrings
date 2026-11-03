@@ -121,6 +121,16 @@
         }
       }
     },
+    "Attributes": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Attributs"
+          }
+        }
+      }
+    },
     "Bigger Text": {
       "localizations": {
         "fr": {
@@ -161,12 +171,32 @@
         }
       }
     },
+    "Contains…": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Contient…"
+          }
+        }
+      }
+    },
     "Date: %@": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "Date : %@"
+          }
+        }
+      }
+    },
+    "Date…": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Date…"
           }
         }
       }
@@ -207,6 +237,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "De : %@"
+          }
+        }
+      }
+    },
+    "From…": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "De…"
           }
         }
       }
@@ -307,6 +347,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Aucun compte"
+          }
+        }
+      }
+    },
+    "No attribute": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucun attribut"
           }
         }
       }
@@ -541,12 +591,42 @@
         }
       }
     },
+    "To…": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Destinataire…"
+          }
+        }
+      }
+    },
+    "Type a date: 2026-10-01 or 1/10/2026": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tapez une date : 2026-10-01 ou 1/10/2026"
+          }
+        }
+      }
+    },
     "Type a name": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "Tapez un nom"
+          }
+        }
+      }
+    },
+    "Type a name, an address or words": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tapez un nom, une adresse ou des mots"
           }
         }
       }
@@ -571,12 +651,32 @@
         }
       }
     },
+    "after %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "après le %@"
+          }
+        }
+      }
+    },
     "all attachments": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "toutes les pièces jointes"
+          }
+        }
+      }
+    },
+    "answered": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "répondu"
           }
         }
       }
@@ -631,6 +731,16 @@
         }
       }
     },
+    "before %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "avant le %@"
+          }
+        }
+      }
+    },
     "by modification": {
       "localizations": {
         "fr": {
@@ -651,12 +761,52 @@
         }
       }
     },
+    "clear all attributes": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "retirer tous les attributs"
+          }
+        }
+      }
+    },
     "contact: %@": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "contact : %@"
+          }
+        }
+      }
+    },
+    "contains: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "contient : %@"
+          }
+        }
+      }
+    },
+    "conversation": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "conversation"
+          }
+        }
+      }
+    },
+    "date": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "date"
           }
         }
       }
@@ -687,6 +837,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "fait (archiver)"
+          }
+        }
+      }
+    },
+    "filter by attributes": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "filtrer par attributs"
+          }
+        }
+      }
+    },
+    "flagged": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "avec drapeau"
+          }
+        }
+      }
+    },
+    "from: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "de : %@"
           }
         }
       }
@@ -727,6 +907,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "groupe : %@"
+          }
+        }
+      }
+    },
+    "last 30 days": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "30 derniers jours"
+          }
+        }
+      }
+    },
+    "last 7 days": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "7 derniers jours"
           }
         }
       }
@@ -781,6 +981,36 @@
         }
       }
     },
+    "not answered": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "non répondu"
+          }
+        }
+      }
+    },
+    "not flagged": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "sans drapeau"
+          }
+        }
+      }
+    },
+    "older than a year": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "plus d'un an"
+          }
+        }
+      }
+    },
     "one column": {
       "localizations": {
         "fr": {
@@ -797,6 +1027,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "cite seulement les messages précédents"
+          }
+        }
+      }
+    },
+    "read": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "lu"
           }
         }
       }
@@ -881,6 +1121,16 @@
         }
       }
     },
+    "single mail": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "mail seul"
+          }
+        }
+      }
+    },
     "skip to the text after the next quote": {
       "localizations": {
         "fr": {
@@ -951,6 +1201,16 @@
         }
       }
     },
+    "this year": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "cette année"
+          }
+        }
+      }
+    },
     "three columns": {
       "localizations": {
         "fr": {
@@ -961,12 +1221,62 @@
         }
       }
     },
+    "to: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "à : %@"
+          }
+        }
+      }
+    },
+    "today": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "aujourd'hui"
+          }
+        }
+      }
+    },
     "two columns": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "deux colonnes"
+          }
+        }
+      }
+    },
+    "unread": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "non lu"
+          }
+        }
+      }
+    },
+    "with attachments": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "avec pièce jointe"
+          }
+        }
+      }
+    },
+    "without attachments": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "sans pièce jointe"
           }
         }
       }

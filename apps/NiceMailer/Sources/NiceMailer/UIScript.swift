@@ -385,6 +385,11 @@ private final class Runner {
             "reader_links": "\(UIScript.readerLinks)",
             "reader_folded": "\(m.openThread.map { ThreadDisplay.foldedCount(ThreadDisplay.blocks($0, c.readerState)) } ?? 0)",
             "show_all": "\(c.readerState.showAll)",
+            "filters": m.attributes.chips.map(\.label).joined(separator: ", "),
+            // Position of the first row of the open menu, in window
+            // coordinates (origin bottom-left): where the menu is drawn.
+            "menu_x": "\(Int(UIScript.frames["menu-0"]?.minX ?? -1))",
+            "menu_y": "\(Int(UIScript.frames["menu-0"]?.minY ?? -1))",
             // Height of the selected row, as laid out.
             "row_height": "\(Int((UIScript.frames["thread-\(m.selectedThreadId ?? -1)"]?.height ?? 0).rounded()))",
             "html_text": UIScript.html["text"] ?? "",

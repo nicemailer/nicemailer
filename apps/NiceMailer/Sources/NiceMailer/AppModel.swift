@@ -53,8 +53,11 @@ final class AppModel {
     var selectedFolderId: Int? {
         didSet {
             guard selectedFolderId != oldValue else { return }
-            // Choosing a folder leaves the unified view.
-            if selectedFolderId != nil { unifiedRole = nil }
+            // Choosing a folder leaves the unified view and "Everything".
+            if selectedFolderId != nil {
+                unifiedRole = nil
+                everything = nil
+            }
             selectedThreadId = nil
             marked = []
             // Choosing a folder leaves a tag, group or contact list.
@@ -69,6 +72,35 @@ final class AppModel {
     /// account is shown (`selectedFolderId`).
     private(set) var unifiedRole: String?
 
+    /// The virtual folder "Everything": every folder of the unified view
+    /// (`.all`) or of one account, listed together to search everywhere
+    /// with the attributes.
+    enum Everything: Equatable {
+        case all
+        case account(Int)
+    }
+    private(set) var everything: Everything?
+
+    /// Name of the virtual folder (a name, like the folder names, not
+    /// translated).
+    static let everythingName = "Everything"
+
+    /// Shows "Everything" of the unified view or of an account.
+    func selectEverything(_ e: Everything) {
+        let changed = everything != e || selectedFolderId != nil || unifiedRole != nil || listFilter != nil
+        everything = e
+        unifiedRole = nil
+        guard changed else { return }
+        if selectedFolderId != nil {
+            selectedFolderId = nil
+        } else {
+            selectedThreadId = nil
+            marked = []
+            listFilter = nil
+            Task { await reloadThreads() }
+        }
+    }
+
     /// Start in the unified view when there are several accounts (the geek
     /// theme does; the classic one keeps its folder sidebar).
     var startUnified = false
@@ -78,8 +110,9 @@ final class AppModel {
 
     /// Shows the unified view of `role` (Inbox, Archive…).
     func selectUnified(_ role: String) {
-        let changed = unifiedRole != role || selectedFolderId != nil || listFilter != nil
+        let changed = unifiedRole != role || selectedFolderId != nil || listFilter != nil || everything != nil
         unifiedRole = role
+        everything = nil
         guard changed else { return }
         if selectedFolderId != nil {
             // `didSet` clears the selection and reloads the list.
@@ -95,18 +128,36 @@ final class AppModel {
     /// The folders whose threads the list shows: one folder, or every
     /// folder of the unified role.
     var listedFolderIds: [Int] {
+        switch everything {
+        case .all: return folders.map(\.id)
+        case .account(let a): return folders.filter { $0.accountId == a }.map(\.id)
+        case nil: break
+        }
         if let role = unifiedRole { return folders.filter { $0.role == role }.map(\.id) }
         return selectedFolderId.map { [$0] } ?? []
     }
 
     /// Account of the view: `nil` for the unified one.
-    var scopeAccountId: Int? { unifiedRole == nil ? selectedFolder?.accountId : nil }
+    var scopeAccountId: Int? {
+        switch everything {
+        case .all: return nil
+        case .account(let a): return a
+        case nil: return unifiedRole == nil ? selectedFolder?.accountId : nil
+        }
+    }
     /// "all", or the name of the account.
-    var scopeName: String { unifiedRole == nil ? (selectedFolder?.accountName ?? "") : Self.unifiedName }
-    /// Role of the folder shown (Inbox, Archive…), in either view.
-    var currentRole: String? { unifiedRole ?? selectedFolder?.role }
+    var scopeName: String {
+        guard let a = scopeAccountId else { return Self.unifiedName }
+        return folders.first { $0.accountId == a }?.accountName ?? ""
+    }
+    /// Role of the folder shown (Inbox, Archive…), in either view; `nil`
+    /// for "Everything".
+    var currentRole: String? { everything != nil ? nil : unifiedRole ?? selectedFolder?.role }
     /// Name of the folder shown.
-    var currentFolderName: String { unifiedRole.map { Role.name($0) } ?? selectedFolder?.name ?? "" }
+    var currentFolderName: String {
+        if everything != nil { return Self.everythingName }
+        return unifiedRole.map { Role.name($0) } ?? selectedFolder?.name ?? ""
+    }
     /// Whether there are several accounts (the unified view is offered).
     var hasSeveralAccounts: Bool { Set(folders.map(\.accountId)).count > 1 }
 
@@ -125,6 +176,15 @@ final class AppModel {
     var sort: String = "received" {
         didSet {
             guard sort != oldValue else { return }
+            Task { await reloadThreads() }
+        }
+    }
+
+    /// Attributes narrowing the list (`F`, `ThreadFilter`), kept when the
+    /// folder or the account changes.
+    var attributes = ThreadFilter() {
+        didSet {
+            guard attributes != oldValue else { return }
             Task { await reloadThreads() }
         }
     }
@@ -261,7 +321,7 @@ final class AppModel {
     /// first time).
     func reloadAll() async {
         await reloadFolders()
-        if selectedFolderId == nil && unifiedRole == nil {
+        if selectedFolderId == nil && unifiedRole == nil && everything == nil {
             if startUnified && hasSeveralAccounts {
                 selectUnified("inbox")
             } else {
@@ -292,6 +352,7 @@ final class AppModel {
         let folderIds = listedFolderIds
         guard let client, !folderIds.isEmpty else { threads = []; return }
         let sort = self.sort
+        let filter = attributes
         let wanted = keepDepth ? max(threads.count, Self.pageSize) : Self.pageSize
         var items: [ThreadSummary] = []
         var cursor: String?
@@ -299,6 +360,7 @@ final class AppModel {
             // `repeat { } while` runs the body at least once.
             repeat {
                 var params: [String: Any] = ["folder_ids": folderIds, "limit": min(200, wanted - items.count), "sort": sort]
+                if !filter.isEmpty { params["filter"] = filter.parameters }
                 if let cursor { params["cursor"] = cursor }
                 let page: Page<ThreadSummary> = try await client.call("list_threads", params)
                 items += page.items
@@ -306,7 +368,7 @@ final class AppModel {
             } while cursor != nil && items.count < wanted
             // The user may have changed folder while we were loading: then
             // this result is stale and must not replace the new list.
-            guard folderIds == listedFolderIds, sort == self.sort, listFilter == nil else { return }
+            guard folderIds == listedFolderIds, sort == self.sort, filter == attributes, listFilter == nil else { return }
             threads = items
             nextCursor = cursor
             selectFirstIfNeeded()
@@ -314,15 +376,26 @@ final class AppModel {
     }
 
     /// `ui.md`: a list always has a selected mail, so the reading pane
-    /// shows something. A selection is kept even when the thread is not in
-    /// the pages loaded so far (a search result opened in an old part of
-    /// the folder): only an empty selection is replaced.
+    /// shows something. A selection no longer in the list (moved, or left
+    /// out by the attributes) goes to the first mail, or to nothing when the
+    /// list is empty, so the reading pane never shows a mail the list does
+    /// not. The one exception is a search result opened in an old part of
+    /// a folder, not in the pages loaded yet (`keepSelection`).
     private func selectFirstIfNeeded() {
         marked = marked.filter { id in threads.contains { $0.id == id } }
-        if selectedThreadId == nil {
+        if let keep = keepSelection {
+            keepSelection = nil
+            selectedThreadId = keep
+            return
+        }
+        if selectedThreadId == nil || !threads.contains(where: { $0.id == selectedThreadId }) {
             selectedThreadId = threads.first?.id
         }
     }
+
+    /// Thread to keep selected after the next reload, even if it is not in
+    /// the loaded pages (set by `openSearchHit`).
+    private var keepSelection: Int?
 
     /// Leaves a tag, group or contact list for the folder (or unified view)
     /// shown before.
@@ -366,14 +439,16 @@ final class AppModel {
         guard let client, !folderIds.isEmpty, let cursor = nextCursor, listFilter == nil,
               !loadingMore, thread.id == threads.last?.id else { return }
         let sort = self.sort
+        let filter = attributes
         loadingMore = true
         // `defer` runs when the function exits, whatever the path.
         defer { loadingMore = false }
         do {
-            let page: Page<ThreadSummary> = try await client.call(
-                "list_threads", ["folder_ids": folderIds, "cursor": cursor, "limit": Self.pageSize, "sort": sort])
+            var params: [String: Any] = ["folder_ids": folderIds, "cursor": cursor, "limit": Self.pageSize, "sort": sort]
+            if !filter.isEmpty { params["filter"] = filter.parameters }
+            let page: Page<ThreadSummary> = try await client.call("list_threads", params)
             // Drop the page if the folder or the list changed meanwhile.
-            guard folderIds == listedFolderIds, cursor == nextCursor, sort == self.sort else { return }
+            guard folderIds == listedFolderIds, cursor == nextCursor, sort == self.sort, filter == attributes else { return }
             threads += page.items
             nextCursor = page.nextCursor
         } catch { report(error) }
@@ -421,10 +496,14 @@ final class AppModel {
     func openSearchHit(_ hit: SearchHit) {
         guard let threadId = hit.threadId else { return }
         // In the unified view, stay unified: show the hit's role for all
-        // accounts. Otherwise, go to the hit's folder.
+        // accounts. Otherwise, go to the hit's folder. When the list is
+        // reloaded, the hit stays selected even if it is not in the first
+        // pages (`keepSelection`).
         if unifiedRole != nil, let role = folders.first(where: { $0.id == hit.folderId })?.role {
+            if role != unifiedRole || listFilter != nil { keepSelection = threadId }
             selectUnified(role)
         } else if selectedFolderId != hit.folderId {
+            keepSelection = threadId
             selectedFolderId = hit.folderId
         }
         // Set after the folder, because changing folder clears the selection.

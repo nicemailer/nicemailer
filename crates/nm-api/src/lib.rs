@@ -283,6 +283,54 @@ pub struct ListThreadsParams {
     /// Sort key, newest first. Default: reception date.
     #[serde(default)]
     pub sort: ThreadSort,
+    /// Attributes narrowing the list (`ui.md`, attribute selector).
+    #[serde(default)]
+    pub filter: ThreadFilter,
+}
+
+/// Attributes that narrow a thread list, combined with AND. A thread
+/// qualifies when its messages in the listed folder match (flag and
+/// "answered": any message of the thread, as the list shows them).
+/// Empty by default: no filtering.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ThreadFilter {
+    /// Read (true: no unread message) or unread (false: at least one).
+    #[serde(default)]
+    pub seen: Option<bool>,
+    /// Flagged or not.
+    #[serde(default)]
+    pub flagged: Option<bool>,
+    /// With or without attachments.
+    #[serde(default)]
+    pub attachments: Option<bool>,
+    /// The user replied (a message is marked answered) or not.
+    #[serde(default)]
+    pub answered: Option<bool>,
+    /// A conversation (several messages) or a single mail.
+    #[serde(default)]
+    pub conversation: Option<bool>,
+    /// From one of these (part of the address or of the name), OR-ed.
+    #[serde(default)]
+    pub from: Vec<String>,
+    /// To or Cc one of these (part of the address or of the name), OR-ed.
+    #[serde(default)]
+    pub to: Vec<String>,
+    /// Words in the subject, sender, recipients or body (full text, every
+    /// word as a prefix, like `search`).
+    #[serde(default)]
+    pub contains: Option<String>,
+    /// Latest message received at or after this Unix time.
+    #[serde(default)]
+    pub after: Option<i64>,
+    /// Latest message received before this Unix time.
+    #[serde(default)]
+    pub before: Option<i64>,
+}
+
+impl ThreadFilter {
+    pub fn is_empty(&self) -> bool {
+        *self == ThreadFilter::default()
+    }
 }
 
 /// Order of a thread list (`ui.md`, display menu `vc` / `vm`).

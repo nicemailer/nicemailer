@@ -24,8 +24,8 @@ Pendant le développement, il y a un menu thème qui permet de basculer d'un th�
 - Palette inspirée de Helix, en variante claire et sombre selon l'apparence de macOS.
 - Corps des mails en texte par défaut. Un bouton `text | html` en haut du mail, et `vh`, basculent en HTML assaini ; le choix est mémorisé **par adresse d'expéditeur** (`address.body_format`, `schema.sql`).
 - Compte unifié **all** : avec plusieurs comptes, l'app s'ouvre sur « all », qui regroupe tous les comptes. Chaque dossier (Inbox, Archive…) y réunit les dossiers de même rôle de tous les comptes, avec leurs compteurs additionnés. La colonne des dossiers n'a qu'un bloc, intitulé « all » ou le nom du compte choisi ; le sélecteur de dossiers et le menu `;` ne montrent que les dossiers de cette vue, sans notion de compte.
-- Barre de statut : le mode (`NOR`, ou le préfixe en attente, comme dans Helix), puis le compte (icône @, « all » pour la vue unifiée) et le dossier (icône de dossier), chacun suivi du rappel de sa touche. Chaque élément s'ouvre d'une touche ou d'un clic : le mode avec `?` (liste des touches), le compte avec `@` (sélecteur de comptes, « all » en tête : on arrive dans le dossier de même rôle, sinon l'Inbox), le dossier avec `h` (sélecteur de dossiers). Pendant qu'un tag, un groupe, un contact ou une recherche est listé, la barre l'affiche à la place. Les messages (résultat d'une action, erreur) s'affichent à droite et disparaissent à la touche suivante.
-- Les sélecteurs (`h`, `l`, `t`, `g`) sont des listes filtrables à la manière de Helix : on tape pour filtrer (chaque mot tapé doit apparaître), `ctrl-n` / `ctrl-p` ou les flèches pour se déplacer, entrée pour choisir, échap pour fermer. Pour `t` et `g`, taper un nom absent propose de le créer.
+- Barre de statut : le mode (`NOR`, ou le préfixe en attente, comme dans Helix), puis le compte (icône @, « all » pour la vue unifiée) et le dossier (icône de dossier), chacun suivi du rappel de sa touche. Chaque élément s'ouvre d'une touche ou d'un clic : le mode avec `?` (liste des touches), le compte avec `@` (sélecteur de comptes, « all » en tête : on arrive dans le dossier de même rôle, sinon l'Inbox), le dossier avec `;` (menu des dossiers de la vue, d'« Everything » et des écrans, qui se déroule à gauche depuis le bloc dossier de la barre de statut : en dessous si la barre est en haut, au-dessus si elle est en bas ; ses lignes se cliquent aussi). Les menus `m` (déplacer), `s` (enregistrer) et `v` (affichage) ont aussi leur bloc dans la barre de statut, une icône suivie de la touche. Un large espace sépare trois groupes : ce que la liste affiche (`@`, `;`, `F` et les pastilles), la préférence d'affichage (`v`), les actions sur le mail courant (`m`, `s`). Leur menu se déroule depuis ce bloc de la même façon. Barre masquée : les menus s'affichent en bas à droite. `h` ne fait plus rien : il faisait double emploi avec `;`. Pendant qu'un tag, un groupe, un contact ou une recherche est listé, la barre l'affiche à la place. Les messages (résultat d'une action, erreur) s'affichent à droite et disparaissent à la touche suivante.
+- Les sélecteurs (`@`, `l`, `t`, `g`, `F`) sont des listes filtrables à la manière de Helix : on tape pour filtrer (chaque mot tapé doit apparaître), `ctrl-n` / `ctrl-p` ou les flèches pour se déplacer, entrée pour choisir, échap pour fermer. Pour `t` et `g`, taper un nom absent propose de le créer.
 
 L'interface utilisateur de NiceMailer est, quel que soit le thème choisi, minimaliste et sobre. 
 
@@ -45,6 +45,17 @@ L'affichage est simplifié au maximum : chaque message montre ce qu'il apporte. 
 - En-têtes allégés : expéditeur et date ; les destinataires seulement s'ils changent d'un message à l'autre.
 - `T` (comme dans mutt) affiche ou masque tout ce que la vue simplifiée cache, pour la conversation ouverte ; `S` va au texte qui suit la citation suivante. Un clic sur un en-tête plie ou déplie le message, un clic sur « ··· » affiche cette partie.
 
+### Sélecteur d'attributs
+
+À droite du compte et du dossier, dans la barre de statut, une loupe (touche `F`, ou un clic) ouvre le sélecteur d'attributs, qui affine la liste courante (dossier d'un compte, ou de « all ») ; les attributs se combinent par « et ».
+
+- lu / non lu, avec drapeau / sans drapeau, avec pièce jointe / sans pièce jointe, répondu / non répondu, conversation / mail seul ;
+- De…, Destinataire… (une partie d'un nom ou d'une adresse, contacts suggérés pendant la frappe ; plusieurs valeurs combinées par « ou »), Contient… (mots du texte intégral), Date… (aujourd'hui, 7 derniers jours, 30 derniers jours, cette année, plus d'un an, ou après / avant une date tapée).
+
+Les attributs avec « … » agrandissent aussitôt le panneau pour choisir la valeur. Choisir de nouveau un attribut actif le retire. Les attributs actifs s'affichent en pastilles dans la barre de statut ; un clic sur une pastille la retire, échap les retire toutes ; ils restent quand on change de dossier ou de compte. `/` reste la recherche dans tous les dossiers.
+
+Au pied de la liste des dossiers, un dossier virtuel **Everything** (`;e`) réunit tous les dossiers de la vue (de tous les comptes dans « all ») pour chercher partout avec les attributs. Une conversation présente dans plusieurs dossiers (Inbox et Sent) n'y figure qu'une fois, dans le dossier de son dernier mail.
+
 Il y a deux contextes totalement différents dans l'application : 
 - "navigation" : la gestion du stock de mail d'une part. lecture, recherche, screening, déplacement, etc
 - "edition" : L'écriture d'un nouveau mail (from scratch ou en réponse) d'autre part. 
@@ -57,7 +68,7 @@ Voici la liste des principaux raccourcis clavier dans le contexte "navigation"
 hjkl : naviguer dans les mails
 j et k : mail suivant et précédent
 h et l : change de "colonne"
-	Si on est focus sur la liste des mails, h déclenche l'écran pour passer à un autre dossier. Dans l'interface classique, c'est la barre à gauche. Dans l'interface geek, c'est un panneau. 
+	Si on est focus sur la liste des mails, h déclenche l'écran pour passer à un autre dossier. Dans l'interface classique, c'est la barre à gauche. Dans l'interface geek, ce rôle est tenu par `;` : `h` n'y fait rien. 
 	Et depuis la liste des mails, l déclenche l'écran de "link".
 
 Avec une majuscule(JK) on passe au mail suivant et précédent en conservant le mail actuel sélectionné. On peut en effet faire des sélections multiples pour déplacer ou taguer plusieurs mails en même temps.  

@@ -3,7 +3,8 @@
 //! These methods take `&self` (shared access): they never modify the
 //! database.
 
-use nm_api::{AddressView, FolderView, MessageView, SearchHit, SegmentView, ThreadSort, ThreadSummary};
+use nm_api::{AddressView, FolderView, MessageView, SearchHit, SegmentView, ThreadFilter, ThreadSort, ThreadSummary};
+use rusqlite::types::Value;
 
 /// A row of `thread_folder` joined with its thread: (thread id, subject,
 /// last received, last modified, message count, unread count).
@@ -121,12 +122,13 @@ impl Store {
         limit: u32,
         sort: ThreadSort,
     ) -> Result<(Vec<ThreadSummary>, Option<String>)> {
-        self.list_threads_in(&[folder_id], cursor, limit, sort)
+        self.list_threads_in(&[folder_id], cursor, limit, sort, &ThreadFilter::default())
     }
 
     /// One page of the threads of several folders together, newest first:
     /// the unified view ("all") lists the folders of the same role in every
-    /// account. A thread belongs to one account, so it is never listed twice.
+    /// account, the virtual folder "Everything" every folder. A thread in
+    /// several of the folders is listed once (see `once` below).
     ///
     /// Each folder is read with its own index, `limit + 1` rows at most,
     /// then the pages are merged: the cost depends on the page size, not on
@@ -138,6 +140,7 @@ impl Store {
         cursor: Option<&str>,
         limit: u32,
         sort: ThreadSort,
+        filter: &ThreadFilter,
     ) -> Result<(Vec<ThreadSummary>, Option<String>)> {
         if folder_ids.is_empty() {
             return Ok((vec![], None));
@@ -161,31 +164,59 @@ impl Store {
         let mut rows: Vec<(i64, ListRow)> = Vec::new();
         // Closure that converts a row into a tuple, shared by both queries.
         let map = |r: &Row| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?));
-        let select = "SELECT tf.thread_id, t.subject, tf.date_last_received, tf.date_last_modified,
-                             tf.message_count, tf.unread_count
-                        FROM thread_folder tf JOIN thread t ON t.id = tf.thread_id
-                       WHERE tf.folder_id = ?1";
+        // Attribute filters: extra conditions, with their values bound after
+        // the fixed parameters (`?1`… are folder, cursor and limit).
+        let (filter_sql, filter_values) = filter_clause(filter);
+        // Several folders: a thread present in more than one of them (Inbox
+        // and Sent, in the virtual folder "Everything") is listed once, in
+        // the folder of its latest message among them (ties: the smallest
+        // folder id). Its rows in the other folders are skipped, on every
+        // page, so pagination stays consistent. Folder ids are integers
+        // from the store, written into the SQL text.
+        let once = if folder_ids.len() > 1 {
+            let set = folder_ids.iter().map(|f| f.to_string()).collect::<Vec<_>>().join(",");
+            let col = key.trim_start_matches("tf.");
+            format!(
+                " AND NOT EXISTS (SELECT 1 FROM thread_folder tf2
+                                   WHERE tf2.thread_id = tf.thread_id AND tf2.folder_id IN ({set})
+                                     AND (tf2.{col} > tf.{col} OR (tf2.{col} = tf.{col} AND tf2.folder_id < tf.folder_id)))"
+            )
+        } else {
+            String::new()
+        };
+        let select = format!(
+            "SELECT tf.thread_id, t.subject, tf.date_last_received, tf.date_last_modified,
+                    tf.message_count, tf.unread_count
+               FROM thread_folder tf JOIN thread t ON t.id = tf.thread_id
+              WHERE tf.folder_id = ?1{once}{filter_sql}"
+        );
         for &folder_id in folder_ids {
             // Two separate queries rather than one with `?2 IS NULL OR ...`:
             // such a condition would prevent SQLite from using the index for
             // the row-value comparison, and every page would scan the folder.
-            let page: Vec<ListRow> = match after {
-                None => {
-                    let sql = format!("{select} ORDER BY {key} DESC, tf.thread_id DESC LIMIT ?2");
-                    let mut stmt = self.conn.prepare_cached(&sql)?;
-                    stmt.query_map(params![folder_id, fetch], map)?.collect::<std::result::Result<_, _>>()?
-                }
-                Some((d, id)) => {
-                    // `(a, b) < (x, y)` is a row-value comparison: true when
-                    // a < x, or a = x and b < y. It matches the sort order.
-                    let sql = format!(
-                        "{select} AND ({key}, tf.thread_id) < (?2, ?3) ORDER BY {key} DESC, tf.thread_id DESC LIMIT ?4"
-                    );
-                    let mut stmt = self.conn.prepare_cached(&sql)?;
-                    stmt.query_map(params![folder_id, d, id, fetch], map)?
-                        .collect::<std::result::Result<_, _>>()?
-                }
+            // Fixed parameters first, then the filter values (numbered from
+            // `?10`, see `filter_clause`).
+            let (sql, mut values): (String, Vec<Value>) = match after {
+                None => (
+                    format!("{select} ORDER BY {key} DESC, tf.thread_id DESC LIMIT ?2"),
+                    vec![Value::Integer(folder_id), Value::Integer(fetch)],
+                ),
+                // `(a, b) < (x, y)` is a row-value comparison: true when
+                // a < x, or a = x and b < y. It matches the sort order.
+                Some((d, id)) => (
+                    format!("{select} AND ({key}, tf.thread_id) < (?3, ?4) ORDER BY {key} DESC, tf.thread_id DESC LIMIT ?2"),
+                    vec![Value::Integer(folder_id), Value::Integer(fetch), Value::Integer(d), Value::Integer(id)],
+                ),
             };
+            // SQLite counts parameters up to the highest number used: pad
+            // the unused numbers (up to `?9`) only when filters follow.
+            if !filter_values.is_empty() {
+                values.resize(9, Value::Null);
+                values.extend(filter_values.iter().cloned());
+            }
+            let mut stmt = self.conn.prepare_cached(&sql)?;
+            let page: Vec<ListRow> =
+                stmt.query_map(rusqlite::params_from_iter(values), map)?.collect::<std::result::Result<_, _>>()?;
             rows.extend(page.into_iter().map(|r| (folder_id, r)));
         }
         // Merge: newest first on the sort key, then the thread id, like the
@@ -419,13 +450,7 @@ impl Store {
         // operators) and followed by `*` (prefix match). Double quotes typed
         // by the user are removed, as they would break the syntax.
         // Words separated by spaces are implicitly ANDed by FTS5.
-        let fts_query = query
-            .split_whitespace()
-            .map(|w| w.replace('"', ""))
-            .filter(|w| !w.is_empty())
-            .map(|w| format!("\"{w}\"*"))
-            .collect::<Vec<_>>()
-            .join(" ");
+        let fts_query = fts_query(query);
         if fts_query.is_empty() {
             return Ok(vec![]);
         }
@@ -498,4 +523,97 @@ fn present_thread(messages: &mut [MessageView]) {
         };
         previous = Some(recipients);
     }
+}
+
+/// An FTS5 query from words typed by the user: each word wrapped in double
+/// quotes (so characters like `-` or `:` are taken literally instead of as
+/// FTS operators) and followed by `*` (prefix match). Double quotes typed by
+/// the user are removed, as they would break the syntax. Words separated by
+/// spaces are implicitly ANDed by FTS5.
+fn fts_query(query: &str) -> String {
+    query
+        .split_whitespace()
+        .map(|w| w.replace('"', ""))
+        .filter(|w| !w.is_empty())
+        .map(|w| format!("\"{w}\"*"))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// SQL conditions (each starting with " AND ") for the attribute filters,
+/// and their values, numbered from `?10` (the first nine numbers are kept
+/// for the fixed parameters of the list query). Every condition uses an
+/// index or a small correlated lookup on the thread's messages
+/// (`idx_message_thread`); "contains" runs the full-text query once.
+fn filter_clause(f: &ThreadFilter) -> (String, Vec<Value>) {
+    let mut sql = String::new();
+    let mut values: Vec<Value> = Vec::new();
+    let bind = |v: Value, values: &mut Vec<Value>| -> String {
+        values.push(v);
+        format!("?{}", 9 + values.len())
+    };
+    let exists = |yes: bool, cond: &str| format!(" AND {}EXISTS ({cond})", if yes { "" } else { "NOT " });
+    if let Some(seen) = f.seen {
+        sql.push_str(if seen { " AND tf.unread_count = 0" } else { " AND tf.unread_count > 0" });
+    }
+    if let Some(yes) = f.flagged {
+        sql.push_str(&exists(yes, "SELECT 1 FROM message mf WHERE mf.thread_id = tf.thread_id AND mf.is_flagged = 1"));
+    }
+    if let Some(yes) = f.attachments {
+        sql.push_str(&exists(
+            yes,
+            "SELECT 1 FROM message mf WHERE mf.thread_id = tf.thread_id AND mf.folder_id = tf.folder_id AND mf.has_attachments = 1",
+        ));
+    }
+    if let Some(yes) = f.answered {
+        sql.push_str(&exists(yes, "SELECT 1 FROM message mf WHERE mf.thread_id = tf.thread_id AND mf.is_answered = 1"));
+    }
+    if let Some(yes) = f.conversation {
+        sql.push_str(if yes { " AND t.message_count > 1" } else { " AND t.message_count = 1" });
+    }
+    // `%` and `_` are LIKE wildcards: escape them in the user's text.
+    let like = |s: &str| format!("%{}%", s.trim().replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_"));
+    let from: Vec<&String> = f.from.iter().filter(|s| !s.trim().is_empty()).collect();
+    if !from.is_empty() {
+        let mut ors = Vec::new();
+        for v in from {
+            let p = bind(Value::Text(like(v)), &mut values);
+            ors.push(format!("mf.from_addr LIKE {p} ESCAPE '\\' OR mf.from_name LIKE {p} ESCAPE '\\'"));
+        }
+        sql.push_str(&format!(
+            " AND EXISTS (SELECT 1 FROM message mf WHERE mf.thread_id = tf.thread_id AND mf.folder_id = tf.folder_id AND ({}))",
+            ors.join(" OR ")
+        ));
+    }
+    let to: Vec<&String> = f.to.iter().filter(|s| !s.trim().is_empty()).collect();
+    if !to.is_empty() {
+        let mut ors = Vec::new();
+        for v in to {
+            let p = bind(Value::Text(like(v)), &mut values);
+            ors.push(format!("a.addr LIKE {p} ESCAPE '\\' OR a.name LIKE {p} ESCAPE '\\'"));
+        }
+        sql.push_str(&format!(
+            " AND EXISTS (SELECT 1 FROM message mt JOIN message_address ma ON ma.message_id = mt.id AND ma.role IN ('to', 'cc')
+                           JOIN address a ON a.id = ma.address_id
+                          WHERE mt.thread_id = tf.thread_id AND mt.folder_id = tf.folder_id AND ({}))",
+            ors.join(" OR ")
+        ));
+    }
+    if let Some(words) = f.contains.as_deref().map(fts_query).filter(|q| !q.is_empty()) {
+        let p = bind(Value::Text(words), &mut values);
+        // Not correlated: SQLite runs the full-text query once per page.
+        sql.push_str(&format!(
+            " AND tf.thread_id IN (SELECT mc.thread_id FROM message_fts JOIN message mc ON mc.id = message_fts.rowid
+                                    WHERE message_fts MATCH {p})"
+        ));
+    }
+    if let Some(after) = f.after {
+        let p = bind(Value::Integer(after), &mut values);
+        sql.push_str(&format!(" AND tf.date_last_received >= {p}"));
+    }
+    if let Some(before) = f.before {
+        let p = bind(Value::Integer(before), &mut values);
+        sql.push_str(&format!(" AND tf.date_last_received < {p}"));
+    }
+    (sql, values)
 }

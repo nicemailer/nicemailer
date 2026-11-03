@@ -19,8 +19,18 @@ final class GeekController {
     // MARK: - Types
 
     /// A prefix key and the menu it opens.
-    enum Prefix: String {
+    enum Prefix: String, CaseIterable {
         case move = "m", goto = ";", save = "s", view = "v"
+
+        /// Icon of its block in the status bar (SF Symbols).
+        var icon: String {
+            switch self {
+            case .move: "arrowshape.turn.up.right"
+            case .goto: "folder"
+            case .save: "square.and.arrow.down"
+            case .view: "eye"
+            }
+        }
     }
 
     /// Full-window screens reached with `;` (`ui.md`, "changer d'écran").
@@ -29,11 +39,14 @@ final class GeekController {
     }
 
     /// Filterable lists in a popup (Helix's "pickers").
-    enum PickerKind {
-        /// `h`: go to a folder.
-        case folders
+    enum PickerKind: Equatable {
         /// `@`: go to another account.
         case accounts
+        /// `F`: attributes narrowing the list.
+        case attributes
+        /// The expanded panel of an attribute with a value (From…, To…,
+        /// Contains…, Date…).
+        case attributeValue(AttributeField)
         /// `l`: open a link of the mail.
         case links
         /// `t`: tag the threads (existing tag, or a new one typed).
@@ -115,6 +128,10 @@ final class GeekController {
 
     /// The reading pane's scroll view, to scroll it from the keyboard.
     weak var readerScroll: NSScrollView?
+
+    /// Left edge of each prefix block of the status bar (folder `;`, `m`,
+    /// `s`, `v`), where its menu drops down from.
+    var menuBlockX: [Prefix: CGFloat] = [:]
 
     /// Display choices per thread (`ThreadDisplay.State`), for the session.
     var readerStates: [Int: ThreadDisplay.State] = [:]
@@ -329,6 +346,9 @@ final class GeekController {
             } else if model.listFilter != nil {
                 // Back from a tag, group or contact list to the folder.
                 model.leaveFilter()
+            } else if !model.attributes.isEmpty {
+                // Then the attributes go.
+                model.attributes = ThreadFilter()
             }
             return
         case KeyCode.returnKey:
@@ -353,8 +373,8 @@ final class GeekController {
         case "k": moveCursor(-1)
         case "J": if !searching { model.markAndMove(1) }
         case "K": if !searching { model.markAndMove(-1) }
-        case "h": openPicker(.folders)
         case "@": openPicker(.accounts)
+        case "F": openPicker(.attributes)
         case "l": openPicker(.links)
         case " ": scrollReader(pages: 1)
         case "d": model.moveTargets(to: "archive")
@@ -413,7 +433,9 @@ final class GeekController {
             // Folders of the current view ("all" or one account), then the
             // other screens.
             var entries = scopeFolders.filter { !$0.letter.isEmpty }.map { f in
-                Entry(key: f.letter.lowercased(), label: f.name) { [weak self] in self?.open(f) }
+                Entry(key: f.letter.lowercased(), label: f.name + (f.unread > 0 ? "  \(f.unread)" : "")) {
+                    [weak self] in self?.open(f)
+                }
             }
             entries += [
                 Entry(key: "c", label: L("Contacts")) { [weak self] in self?.open(.contacts) },
@@ -458,14 +480,24 @@ final class GeekController {
         let name: String
         let letter: String
         let unread: Int
-        var id: String { folderId.map { "f\($0)" } ?? "r\(role ?? "")" }
+        /// The virtual folder "Everything".
+        var everything = false
+        var id: String { everything ? "everything" : folderId.map { "f\($0)" } ?? "r\(role ?? "")" }
     }
 
     /// Folders of the current view, in display order. In the unified view,
     /// one entry per role, with the unread counts of every account added up;
     /// folders without a role (user folders) stay per account and are not
     /// listed there.
-    var scopeFolders: [ScopeFolder] {
+    var scopeFolders: [ScopeFolder] { realScopeFolders + [everythingFolder] }
+
+    /// "Everything", at the foot of the list: every folder of the view, to
+    /// search everywhere with the attributes (`ui.md`).
+    private var everythingFolder: ScopeFolder {
+        ScopeFolder(folderId: nil, role: nil, name: AppModel.everythingName, letter: "E", unread: 0, everything: true)
+    }
+
+    private var realScopeFolders: [ScopeFolder] {
         if let account = model.scopeAccountId {
             return model.folders.filter { $0.accountId == account }.map {
                 ScopeFolder(folderId: $0.id, role: $0.role, name: $0.name, letter: $0.letter ?? "", unread: $0.unreadCount)
@@ -487,13 +519,19 @@ final class GeekController {
     /// Whether `f` is the folder shown.
     func isCurrent(_ f: ScopeFolder) -> Bool {
         guard model.listFilter == nil else { return false }
+        if f.everything { return model.everything != nil }
+        if model.everything != nil { return false }
         if let id = f.folderId { return id == model.selectedFolderId }
         return f.role == model.unifiedRole
     }
 
     /// Opens a folder of the current view.
     func open(_ f: ScopeFolder) {
-        if let id = f.folderId {
+        if f.everything {
+            screen = .mail
+            model.searchText = ""
+            model.selectEverything(model.scopeAccountId.map { .account($0) } ?? .all)
+        } else if let id = f.folderId {
             goToFolder(id)
         } else if let role = f.role {
             screen = .mail
@@ -516,8 +554,8 @@ final class GeekController {
         [
             ("j k", L("next / previous mail")),
             ("J K", L("mark and move (multiple selection)")),
-            ("h", L("go to a folder")),
             ("@", L("go to an account")),
+            ("F", L("filter by attributes")),
             ("l", L("links of the mail")),
             ("d", L("done (archive)")),
             ("m…", L("move to a folder")),
@@ -548,12 +586,50 @@ final class GeekController {
             Task { await loadTags() }
         case .group:
             Task { await loadGroups() }
-        case .folders, .links, .accounts:
+        case .links, .accounts, .attributes:
             break
+        case .attributeValue:
+            valueSuggestions = []
         }
     }
 
-    /// Opens a picker from a click in the status bar (`h` and `@`).
+    /// Contacts suggested in the From… and To… panels, for the text typed.
+    var valueSuggestions: [ContactView] = []
+
+    /// Loads the contacts matching the text typed in a From… or To… panel.
+    private func loadSuggestions() {
+        let query = pickerQuery.trimmingCharacters(in: .whitespaces)
+        guard query.count >= 2, let client = model.core else { valueSuggestions = []; return }
+        Task {
+            do {
+                let page: Page<ContactView> = try await client.call("list_contacts", ["query": query, "limit": 20])
+                if query == pickerQuery.trimmingCharacters(in: .whitespaces) { valueSuggestions = page.items }
+            } catch { model.report(error) }
+        }
+    }
+
+    /// Opens a prefix menu from a click on its block in the status bar:
+    /// the folder (`;`: folders of the view, "Everything", screens), or the
+    /// `m`, `s`, `v` icons.
+    func openMenuFromStatusBar(_ prefix: Prefix) {
+        model.flash = nil
+        overlay = .menu(prefix)
+    }
+
+    /// A click on a row of the open prefix menu: same as its key.
+    func chooseMenuEntry(_ index: Int) {
+        guard case .menu(let prefix) = overlay else { return }
+        overlay = .none
+        let entries = menuEntries(prefix)
+        guard entries.indices.contains(index) else { return }
+        if entries[index].disabled {
+            model.flash = L("Not available yet: %@", entries[index].label)
+        } else {
+            entries[index].action()
+        }
+    }
+
+    /// Opens a picker from a click in the status bar (`@`, `F`).
     func openPickerFromStatusBar(_ kind: PickerKind) {
         model.flash = nil
         if screen != .mail { screen = .mail }
@@ -579,6 +655,13 @@ final class GeekController {
     /// its Inbox, or its first folder.
     func goToAccount(_ accountId: Int?) {
         let role = model.currentRole
+        // From "Everything", stay in "Everything" of the chosen view.
+        if model.everything != nil {
+            screen = .mail
+            model.searchText = ""
+            model.selectEverything(accountId.map { .account($0) } ?? .all)
+            return
+        }
         guard let accountId else {
             screen = .mail
             model.searchText = ""
@@ -598,13 +681,6 @@ final class GeekController {
     func pickerEntries(_ kind: PickerKind) -> [Entry] {
         let all: [Entry]
         switch kind {
-        case .folders:
-            // The folders of the current view only: the account is chosen
-            // with `@`.
-            all = scopeFolders.map { f in
-                let unread = f.unread > 0 ? "  \(f.unread)" : ""
-                return Entry(key: f.letter.isEmpty ? " " : f.letter, label: f.name + unread) { [weak self] in self?.open(f) }
-            }
         case .accounts:
             // "all" first (the unified view), then each account; the current
             // one is marked.
@@ -621,6 +697,10 @@ final class GeekController {
                 }
             }
             all = entries
+        case .attributes:
+            all = attributeEntries
+        case .attributeValue(let field):
+            return valueEntries(field)
         case .links:
             all = model.links.enumerated().map { i, url in
                 Entry(key: "\(i + 1)", label: url.absoluteString) { NSWorkspace.shared.open(url) }
@@ -637,6 +717,73 @@ final class GeekController {
         return all.filter { entry in
             entry.key == "+"
                 || words.allSatisfy { entry.label.range(of: $0, options: [.caseInsensitive, .diacriticInsensitive]) != nil }
+        }
+    }
+
+    /// The attribute selector: each yes / no attribute with its two values
+    /// (an active one is marked "•", choosing it again removes it), then the
+    /// attributes with a value, which expand the panel, then "clear".
+    private var attributeEntries: [Entry] {
+        let a = model.attributes
+        var entries: [Entry] = []
+        for flag in ThreadFilter.Flag.allCases {
+            // Unread before read, then "with" before "without".
+            for value in flag == .seen ? [false, true] : [true, false] {
+                entries.append(Entry(key: a.value(flag) == value ? "•" : " ", label: ThreadFilter.label(flag, value)) {
+                    [model] in model.attributes.toggle(flag, value)
+                })
+            }
+        }
+        for field in AttributeField.allCases {
+            let active: Bool = switch field {
+            case .from: !a.from.isEmpty
+            case .to: !a.to.isEmpty
+            case .contains: a.contains != nil
+            case .date: a.after != nil || a.before != nil
+            }
+            entries.append(Entry(key: active ? "•" : " ", label: field.title) { [weak self] in
+                // The panel grows at once to choose the value (`ui.md`).
+                self?.pickerQuery = ""
+                self?.pickerIndex = 0
+                self?.valueSuggestions = []
+                self?.overlay = .picker(.attributeValue(field))
+            })
+        }
+        if !a.isEmpty {
+            entries.append(Entry(key: "×", label: L("clear all attributes")) { [model] in model.attributes = ThreadFilter() })
+        }
+        return entries
+    }
+
+    /// Rows of the expanded panel of `field`.
+    private func valueEntries(_ field: AttributeField) -> [Entry] {
+        let typed = pickerQuery.trimmingCharacters(in: .whitespaces)
+        switch field {
+        case .from, .to:
+            var entries: [Entry] = []
+            if !typed.isEmpty {
+                entries.append(Entry(key: "+", label: typed) { [model] in model.attributes.add(field, typed) })
+            }
+            entries += valueSuggestions.map { c in
+                let label = c.name.map { "\($0) <\(c.addr)>" } ?? c.addr
+                return Entry(key: " ", label: label) { [model] in model.attributes.add(field, c.addr) }
+            }
+            return entries
+        case .contains:
+            guard !typed.isEmpty else { return [] }
+            return [Entry(key: "+", label: typed) { [model] in model.attributes.add(.contains, typed) }]
+        case .date:
+            let presets = DateChoice.typed(typed) + DateChoice.presets().filter {
+                typed.isEmpty || DateChoice.parse(typed) != nil
+                    || $0.label.range(of: typed, options: [.caseInsensitive, .diacriticInsensitive]) != nil
+            }
+            return presets.map { p in
+                Entry(key: " ", label: p.label) { [model] in
+                    model.attributes.after = p.after
+                    model.attributes.before = p.before
+                    model.attributes.dateLabel = p.label
+                }
+            }
         }
     }
 
@@ -670,6 +817,7 @@ final class GeekController {
         case KeyCode.delete:
             if !pickerQuery.isEmpty { pickerQuery.removeLast() }
             pickerIndex = 0
+            if kind == .attributeValue(.from) || kind == .attributeValue(.to) { loadSuggestions() }
             return
         default:
             break
@@ -684,6 +832,7 @@ final class GeekController {
             pickerQuery += key
             pickerIndex = 0
         }
+        if kind == .attributeValue(.from) || kind == .attributeValue(.to) { loadSuggestions() }
     }
 
     // MARK: - Search

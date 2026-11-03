@@ -1,0 +1,58 @@
+# Attribute selector (F, or a click on the magnifier in the status bar).
+expect filters =
+expect thread_count > 10
+key F
+expect overlay = picker(NiceMailer.GeekController.PickerKind.attributes)
+snap attribute-selector
+type unread
+key ret
+expect filters = unread
+expect thread_count > 0
+# Several attributes are combined; a value attribute expands the panel.
+click status:attributes
+type From
+key ret
+expect overlay = picker(NiceMailer.GeekController.PickerKind.attributeValue(NiceMailer.AttributeField.from))
+type moreau
+snap from-panel
+key ret
+expect filters = unread, from: moreau
+# The owner's mails are in Sent: none left in the Inbox, and the reading
+# pane shows nothing either.
+expect thread_count = 0
+expect reader_subject =
+# Date: a preset.
+key F
+type Date
+key ret
+type last 30
+key ret
+expect filters ~ last 30 days
+# Contains: words of the full text.
+key F
+type Contains
+key ret
+type facture
+key ret
+expect filters ~ contains: facture
+snap chips
+# A click on a chip removes it.
+click chip:contains
+expect filters !~ contains
+# The attributes stay when changing folder.
+key ;
+key a
+expect folder = Archive
+expect filters ~ unread
+# "Everything" (;e, at the foot of the folders) searches every folder
+# (without "from: moreau": the owner's own mails are all read).
+click chip:from:0
+key ;
+key e
+expect folder = Everything
+expect account = all
+expect thread_count > 0
+snap everything
+# Escape clears them (after the marks).
+key esc
+expect filters =
