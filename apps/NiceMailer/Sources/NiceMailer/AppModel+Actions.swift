@@ -183,27 +183,26 @@ extension AppModel {
     /// Attachments of the open thread, message by message (`l`, tiles).
     var attachments: [AttachmentView] { openThread?.messages.flatMap(\.attachments) ?? [] }
 
+    /// What to do with an attachment.
+    enum AttachmentAction {
+        /// Copy it to Downloads (a click on a tile, Return in `l`).
+        case save
+        /// Copy it to Downloads, then open that copy, which comes to the
+        /// front (⌘-click on a tile, ⌘-Return in `l`).
+        case saveAndOpen
+    }
+
     /// Saves the attachment `id` of the open thread to `exportDirectory`
     /// (~/Downloads by default), never overwriting a file ("devis (2).pdf"),
-    /// or opens it with its default app (`open`, ⌘-click). The core extracts
+    /// then opens the saved copy with its default app if `action` says so. The core extracts
     /// the file from the raw message and gives its path
     /// (`architecture.md`, section 5); the app copies or opens it.
-    func saveAttachment(_ id: Int, open: Bool) {
-        guard let client = core, let a = attachments.first(where: { $0.id == id }) else { return }
-        let name = AttachmentDisplay.name(a)
+    func saveAttachment(_ id: Int, _ action: AttachmentAction) {
+        guard let client = core, attachments.contains(where: { $0.id == id }) else { return }
         let exportDirectory = exportDirectory
         Task {
             do {
                 let file: AttachmentFileView = try await client.call("get_attachment", ["attachment_id": id])
-                if open {
-                    if UIScript.isActive {
-                        UIScript.openedFile = file.filename
-                    } else {
-                        NSWorkspace.shared.open(URL(fileURLWithPath: file.path))
-                    }
-                    flash = L("Opened: %@", name)
-                    return
-                }
                 let dir = exportDirectory.map { URL(fileURLWithPath: $0) }
                     ?? FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
                 // Copied off the main thread: a file can weigh tens of MB.
@@ -218,7 +217,15 @@ extension AppModel {
                     try fm.setAttributes([.posixPermissions: 0o644], ofItemAtPath: dest.path)
                     return dest
                 }.value
-                flash = L("%@ saved to %@", dest.lastPathComponent, FileManager.default.displayName(atPath: dir.path))
+                let place = FileManager.default.displayName(atPath: dir.path)
+                if action == .saveAndOpen {
+                    // The saved copy, so that changes made in the app that
+                    // opens it are kept.
+                    openFile(dest)
+                    flash = L("%@ saved to %@ and opened", dest.lastPathComponent, place)
+                } else {
+                    flash = L("%@ saved to %@", dest.lastPathComponent, place)
+                }
             } catch { report(error) }
         }
     }

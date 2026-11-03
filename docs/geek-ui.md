@@ -54,8 +54,8 @@ The whole theme (lists, status bar, menus, mails, including the HTML view) uses 
 At the foot of each unfolded mail, its attachments are tiles: the icon of the file type (an SF Symbol in the theme's colours: image, PDF, text, spreadsheet, slides, archive, audio, video, code, calendar, contact, mail, other file), the name cut in the middle to keep its extension, and the size. A row holds 3 to 5 tiles, depending on the width of the reading pane. A folded mail shows a paperclip and the number of its attachments.
 
 - A click saves the file to `~/Downloads`, never overwriting a file (`devis (2).pdf`); the status bar says where it went.
-- ⌘-click opens it with its default app.
-- `l` lists the links of the mail, then one row per attached file, with its icon; Return saves the file.
+- ⌘-click saves it the same way, then opens the saved copy with its default app, in front.
+- `l` lists the links of the mail, then one row per attached file, with its icon; Return saves the file, ⌘-Return saves it and opens the saved copy at once, in front.
 
 Images the HTML of the mail shows (`cid:`) are part of the body, not tiles. An image marked inline that no HTML shows (Apple Mail puts photos in a plain text mail this way) is a tile. The tiles follow the body in the HTML view too.
 
@@ -78,7 +78,7 @@ Actions apply to the **marked** mails if any (`J` / `K`), otherwise to the mail 
 | `J` `K`, shift-↓ shift-↑ | mark the mail and move (multiple selection) |
 | `F` | attribute selector (filters on the current list) |
 | `@` | account picker: **all** (unified view) or one account, keeping the folder role (Archive to Archive), or its Inbox |
-| `l` | links of the mail, then its attached files; Return opens a link in the browser, or saves a file to Downloads |
+| `l` | links of the mail, then its attached files; Return opens a link in the browser, or saves a file to Downloads; ⌘-Return saves the file and opens it |
 | `d` | done: move to Archive |
 | `m` + letter | move to a folder (`mt` Todo, `md` Deleted…); only allowed targets are offered |
 | Delete | move to Deleted |

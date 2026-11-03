@@ -11,6 +11,16 @@
         }
       }
     },
+    "%@ saved to %@ and opened": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ enregistré dans %2$@ et ouvert"
+          }
+        }
+      }
+    },
     "%@ shown as %@": {
       "localizations": {
         "fr": {
@@ -447,16 +457,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Pas encore disponible : écrire un mail demande SMTP"
-          }
-        }
-      }
-    },
-    "Opened: %@": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Ouvert : %@"
           }
         }
       }

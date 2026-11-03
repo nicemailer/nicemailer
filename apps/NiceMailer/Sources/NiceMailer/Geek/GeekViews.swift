@@ -843,7 +843,7 @@ private struct TextReader: NSViewRepresentable {
     /// jointes"): a text table of `columns` cells per row, each cell with
     /// the type's icon, the name (cut in the middle) and the size. The
     /// whole cell is a link to `nm://attachment/<id>`, handled by the
-    /// controller: a click saves the file, ⌘-click opens it.
+    /// controller: a click saves the file, ⌘-click saves and opens it.
     ///
     /// AppKit note: `NSTextTable` lays out paragraphs as table cells; each
     /// paragraph says which cell it belongs to through its paragraph style
@@ -978,11 +978,11 @@ private struct HTMLReader: NSViewRepresentable {
         }
         func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
                      decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void) {
-            // An attachment tile: saved, or opened with ⌘.
+            // An attachment tile: saved, and opened too with ⌘.
             if let url = action.request.url, url.scheme == "nm", url.host == "attachment",
                let id = Int(url.lastPathComponent) {
                 let open = action.modifierFlags.contains(.command)
-                MainActor.assumeIsolated { controller?.model.saveAttachment(id, open: open) }
+                MainActor.assumeIsolated { controller?.model.saveAttachment(id, open ? .saveAndOpen : .save) }
                 decisionHandler(.cancel)
                 return
             }

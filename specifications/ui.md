@@ -48,9 +48,9 @@ L'affichage est simplifié au maximum : chaque message montre ce qu'il apporte. 
 ### Pièces jointes
 
 - Au pied de chaque mail déplié, une dalle par pièce jointe : l'icône de son type (SF Symbol, aux couleurs du thème : image, PDF, texte, tableur, présentation, archive, audio, vidéo, code, agenda, contact, mail, fichier), le nom coupé au milieu pour garder l'extension, la taille. 3 à 5 dalles par ligne selon la largeur du panneau. Un mail plié montre un trombone et le nombre de pièces jointes.
-- Un clic enregistre le fichier dans Téléchargements, sans jamais écraser un fichier existant (« devis (2).pdf ») ; la barre de statut le confirme. ⌘-clic l'ouvre avec l'app par défaut.
+- Un clic enregistre le fichier dans Téléchargements, sans jamais écraser un fichier existant (« devis (2).pdf ») ; la barre de statut le confirme. ⌘-clic l'enregistre de même, puis ouvre la copie enregistrée avec l'app par défaut, au premier plan.
 - Les images affichées par le HTML du mail (`cid:`) ne sont pas des dalles. Une image marquée « intégrée » qu'aucun HTML n'affiche (photo d'Apple Mail dans un mail texte) en est une.
-- Au clavier, `l` liste les liens du mail puis une ligne par fichier joint, avec son icône ; entrée enregistre le fichier.
+- Au clavier, `l` liste les liens du mail puis une ligne par fichier joint, avec son icône ; entrée enregistre le fichier, ⌘-entrée l'enregistre puis ouvre aussitôt la copie enregistrée, au premier plan.
 - En HTML, les mêmes dalles suivent le corps du mail.
 
 ### Lecture

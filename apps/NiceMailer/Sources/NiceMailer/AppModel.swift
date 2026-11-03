@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Observation
 
@@ -43,6 +44,10 @@ final class AppModel {
     /// core choose ~/Downloads. Set by `NICEMAILER_EXPORT_DIR` (tests must
     /// never write into the user's Downloads).
     var exportDirectory: String? = ProcessInfo.processInfo.environment["NICEMAILER_EXPORT_DIR"]
+    /// Opens a file with its default app, which comes to the front. Replaced
+    /// in UI script mode and in unit tests, which must never launch Preview
+    /// or Word on the user's screen.
+    @ObservationIgnored var openFile: (URL) -> Void = { NSWorkspace.shared.open($0) }
     /// Short message shown in the geek status bar (result of an action,
     /// "not available yet"…); cleared by the next key.
     var flash: String?

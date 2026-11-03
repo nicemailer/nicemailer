@@ -46,7 +46,7 @@ expect reader_text ~ Les nouveautés du mois
 expect reader_text !~ NovembreLes
 # Its three attachments are tiles at its foot (the logo shown by its HTML
 # is not one). A click saves the file to the export directory; ⌘-click
-# opens it (recorded only, in UI script mode).
+# saves it and opens the saved copy (recorded only, in UI script mode).
 expect reader_attachments = 3
 expect reader_text ~ devis.pdf
 expect reader_text ~ budget.xlsx
@@ -56,15 +56,22 @@ click attachment:0
 expect export_files = 1
 expect flash ~ devis.pdf
 click attachment:1 cmd
+expect export_files = 2
 expect opened_file = photo.png
-expect export_files = 1
 # The l picker lists them after the links.
 key l
 expect picker_count = 3
 type budget
 key ret
-expect export_files = 2
+expect export_files = 3
 expect flash ~ budget.xlsx
+# ⌘-Return saves the file, then opens the saved copy (devis.pdf is taken).
+key l
+type devis
+key cmd-ret
+expect export_files = 4
+expect opened_file = devis (2).pdf
+expect flash ~ opened
 key v
 key h
 expect body_format = html
@@ -115,13 +122,13 @@ expect selected_subject != Un long mail
 # Saving the mail (to the test export directory).
 key s
 key e
-expect export_files = 3
+expect export_files = 5
 key s
 key t
-expect export_files = 4
+expect export_files = 6
 key s
 key m
-expect export_files = 5
+expect export_files = 7
 key s
 key a
 expect flash ~ attachments

@@ -19,6 +19,8 @@ struct GeekControllerTests {
         textSize = TextSize(defaults: defaults)
         controller = GeekController(model: model, defaults: defaults, textSize: textSize)
         model.exportDirectory = "/tmp/nicemailer-tests"
+        // Never launch an app from the tests.
+        model.openFile = { _ in }
         await model.attach(core)
         _ = await eventually { model.threads.count == 8 && model.openThread != nil }
     }
@@ -36,6 +38,7 @@ struct GeekControllerTests {
         case "down": chars = "\u{F701}"; code = KeyCode.down
         case "up": chars = "\u{F700}"; code = KeyCode.up
         case "shift-down": chars = "\u{F701}"; code = KeyCode.down; mods = .shift
+        case "cmd-ret": chars = "\r"; code = KeyCode.returnKey; mods = .command
         case "shift-up": chars = "\u{F700}"; code = KeyCode.up; mods = .shift
         default:
             if name.hasPrefix("ctrl-") { mods = .control; chars = String(name.dropFirst(5)) }
@@ -392,6 +395,27 @@ struct GeekControllerTests {
         // A second save: "devis (2).pdf".
         press("l"); type("devis"); press("ret")
         #expect(await eventually { FileManager.default.fileExists(atPath: dir.appendingPathComponent("devis (2).pdf").path) })
+    }
+
+    @Test func commandReturnOnAFileSavesItThenOpensTheSavedCopy() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("nicemailer-open-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        model.exportDirectory = dir.path
+        // Records what would be opened (no app is launched by the tests).
+        var opened: [URL] = []
+        model.openFile = { opened.append($0) }
+        await openThreadWithFiles()
+        press("l"); type("devis"); press("cmd-ret")
+        #expect(controller.overlay == .none)
+        let saved = dir.appendingPathComponent("devis.pdf")
+        #expect(await eventually { opened.count == 1 })
+        // The copy in Downloads is opened, not the core's own file.
+        #expect(opened.first?.path == saved.path)
+        #expect(FileManager.default.fileExists(atPath: saved.path))
+        // Return alone saves without opening.
+        press("l"); type("devis"); press("ret")
+        #expect(await eventually { FileManager.default.fileExists(atPath: dir.appendingPathComponent("devis (2).pdf").path) })
+        #expect(opened.count == 1)
     }
 
     @Test func aTileLinkSavesTheFile() async throws {
