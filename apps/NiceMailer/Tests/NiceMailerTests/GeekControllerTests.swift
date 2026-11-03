@@ -253,6 +253,58 @@ struct GeekControllerTests {
         #expect(controller.overlay == .none)
     }
 
+    @Test func theSearchResultsTurnAroundAtBothEnds() async {
+        // A core that finds three mails, whatever the query.
+        let hits: [[String: Any]] = (1...3).map {
+            ["message_id": $0, "thread_id": $0, "folder_id": 1, "folder_role": "inbox", "subject": "Hit \($0)",
+             "from_name": NSNull(), "from_addr": "a@example.org", "date_received": 0, "highlight": "[devis]"]
+        }
+        let finder = FakeCore { method, params in
+            method == "search" ? ["items": hits, "as_of": Fixture.position] : Fixture.answer(method, params)
+        }
+        await model.attach(finder)
+        press("/"); type("devis")
+        #expect(await eventually { model.searchResults.count == 3 })
+        #expect(controller.searchIndex == 0)
+        // While typing: the arrows move in the results and turn around.
+        press("up")
+        #expect(controller.searchIndex == 2 && model.searchText == "devis")
+        press("down")
+        #expect(controller.searchIndex == 0)
+        press("up"); press("up")
+        #expect(controller.searchIndex == 1)
+        // Return keeps the row chosen with the arrows.
+        press("ret")
+        #expect(controller.overlay == .none && controller.searchIndex == 1)
+        // In the kept results, k / up wrap the same way from the first row.
+        press("k")
+        #expect(controller.searchIndex == 0)
+        press("up")
+        #expect(controller.searchIndex == 2)
+        press("j")
+        #expect(controller.searchIndex == 0)  // and j from the last to the first
+        press("down")
+        #expect(controller.searchIndex == 1)
+    }
+
+    @Test func stepDownTurnsAroundFromTheLastRowOnly() {
+        #expect(GeekController.stepDown(4, count: 5) == 0)
+        #expect(GeekController.stepDown(1, count: 5) == 2)
+        #expect(GeekController.stepDown(0, count: 1) == 0)
+        #expect(GeekController.stepDown(0, count: 0) == 0)
+        // An index left past the end (the list shrank) starts again on top.
+        #expect(GeekController.stepDown(9, count: 5) == 0)
+    }
+
+    @Test func stepUpWrapsFromTheFirstRowOnly() {
+        #expect(GeekController.stepUp(0, count: 5) == 4)
+        #expect(GeekController.stepUp(3, count: 5) == 2)
+        #expect(GeekController.stepUp(0, count: 1) == 0)
+        #expect(GeekController.stepUp(0, count: 0) == 0)
+        // An index left past the end (the list shrank) comes back inside.
+        #expect(GeekController.stepUp(9, count: 5) == 4)
+    }
+
     @Test func searchTextIsTypedAndEscapeClearsIt() {
         press("/"); type("devis")
         #expect(model.searchText == "devis")

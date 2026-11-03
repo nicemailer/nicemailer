@@ -35,10 +35,15 @@ struct AccountPickerTests {
         _ = await eventually { model.threads.count == 8 }
     }
 
-    func press(_ chars: String) {
+    /// Sends one key: a character, `\r`, or `up` / `down` (arrows).
+    func press(_ name: String) {
+        var chars = name
+        var code: UInt16 = name == "\r" ? KeyCode.returnKey : 0
+        if name == "up" { chars = "\u{F700}"; code = KeyCode.up }
+        if name == "down" { chars = "\u{F701}"; code = KeyCode.down }
         let e = NSEvent.keyEvent(
             with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
-            characters: chars, charactersIgnoringModifiers: chars, isARepeat: false, keyCode: chars == "\r" ? KeyCode.returnKey : 0)!
+            characters: chars, charactersIgnoringModifiers: chars, isARepeat: false, keyCode: code)!
         _ = controller.handle(e)
     }
 
@@ -50,6 +55,19 @@ struct AccountPickerTests {
         // "all" first (the unified view), with the total.
         #expect(entries.map(\.label) == ["all  15", "perso  8", "archive  7"])
         #expect(entries.map(\.key) == [" ", "•", " "])
+    }
+
+    @Test func theAccountPickerTurnsAroundAtBothEnds() {
+        press("@")
+        #expect(controller.pickerIndex == 0)
+        press("up")
+        #expect(controller.pickerIndex == 2)  // "archive", the last row
+        press("down")
+        #expect(controller.pickerIndex == 0)  // back to the first row
+        press("down"); press("down")
+        #expect(controller.pickerIndex == 2)
+        press("\r")
+        #expect(model.scopeName == "archive")
     }
 
     @Test func choosingAnAccountKeepsTheFolderRole() {

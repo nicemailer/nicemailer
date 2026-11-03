@@ -66,7 +66,7 @@ Actions apply to the **marked** mails if any (`J` / `K`), otherwise to the mail 
 | `S` | skip to the text after the next quoted block |
 | `u` | read / unread |
 | `*` | flag |
-| `/` | search: type, Return keeps the results, `j` `k` move in them, Return opens a mail, Escape clears |
+| `/` | search: type, the arrows move in the results, Return keeps them (and the row chosen), `j` `k` move in them, Return opens a mail, Escape clears. The list turns around: up from the first result selects the last one, down from the last comes back to the first |
 | `;` + key | go to a folder or a screen (see below) |
 | `s` + key | save the latest mail of the conversation to `~/Downloads`: `se` .eml, `st` text, `sm` Markdown |
 | `v` + key | display: `v1` `v2` `v3` columns, `vc` sort by reception, `vm` sort by modification, `vh` text / HTML, `vs` status bar |
@@ -107,7 +107,7 @@ On a screen, `j` `k` move and Escape goes back to the mails.
 
 ### Pickers
 
-Pickers (`@`, `l`, `t`, `g`, `F`) are filterable lists: type to filter (every word typed must appear, in any order, ignoring case and accents), `ctrl-n` / `ctrl-p` or the arrows to move, Return to choose, Escape to close.
+Pickers (`@`, `l`, `t`, `g`, `F`) are filterable lists: type to filter (every word typed must appear, in any order, ignoring case and accents), `ctrl-n` / `ctrl-p` or the arrows to move, Return to choose, Escape to close. A picker opens on its first row and turns around: up (or `ctrl-p`) from the first row selects the last one, so the end of the list is one key away, and down (or `ctrl-n`) from the last row comes back to the first.
 
 ## Not available yet
 

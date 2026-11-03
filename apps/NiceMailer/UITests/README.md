@@ -42,8 +42,8 @@ State fields (see `Runner.state()` in `Sources/NiceMailer/UIScript.swift`): `scr
 | `navigation.uiscript` | `j` `k` arrows, `ctrl-d` `ctrl-u` half pages, `J` `K` marks, Escape, click, ⌘-click, ⇧-click |
 | `actions.uiscript` | `m` menu and moves, `d`, Delete, grouped actions, flag, unknown keys, reply not available, help |
 | `screens.uiscript` | `;` folders, contacts (keys, filter, click, double-click, mails of a contact), history, tags, groups |
-| `pickers.uiscript` | `;` menu (keys, and mouse from the status bar), link, tag and group pickers (keys and mouse), search (keys, click, double-click) |
-| `statusbar.uiscript` | account and folder blocks of the status bar, unified view "all", account picker keeping the folder role, single-block folder column |
+| `pickers.uiscript` | `;` menu (keys, and mouse from the status bar), link, tag and group pickers (keys and mouse), search (keys, results turning around at both ends, `ctrl-u`, click, double-click) |
+| `statusbar.uiscript` | account and folder blocks of the status bar, unified view "all", account picker keeping the folder role, turning around at both ends, single-block folder column |
 | `textsize.uiscript` | ⌘+ ⌘= ⌘− ⌘0, bounds, row height, keys and clicks after the rebuild |
 | `thread.uiscript` | simplified thread: folded messages, hidden quotes and signatures, `T`, clicks on headers and "···" lines |
 | `view.uiscript` | 1 / 2 / 3 columns, folder column clicks, status bar, sort, text / HTML with the bundled font, scrolling (Space, shift-Space, `ctrl-f` `ctrl-b`), saving |

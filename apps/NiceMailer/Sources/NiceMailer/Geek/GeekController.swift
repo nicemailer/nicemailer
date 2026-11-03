@@ -409,6 +409,22 @@ final class GeekController {
         }
     }
 
+    /// One row up in a picker or in the search results. The list turns
+    /// around, as in Helix: from the first row (where a list opens) it goes
+    /// to the last one, so the end of a short list is one key away. Not for
+    /// the mail list: it is loaded page by page, its last row is not known.
+    static func stepUp(_ index: Int, count: Int) -> Int {
+        guard count > 0 else { return 0 }
+        return index <= 0 ? count - 1 : min(count - 1, index - 1)
+    }
+
+    /// One row down, the other way round: from the last row it goes back to
+    /// the first one.
+    static func stepDown(_ index: Int, count: Int) -> Int {
+        guard count > 0 else { return 0 }
+        return index >= count - 1 ? 0 : max(0, index + 1)
+    }
+
     /// Half of the visible rows of the current list (mails or search
     /// results), at least one row.
     private var halfPage: Int {
@@ -428,7 +444,14 @@ final class GeekController {
 
     private func moveCursor(_ delta: Int) {
         if !model.searchText.isEmpty {
-            searchIndex = max(0, min(model.searchResults.count - 1, searchIndex + delta))
+            // One row at a time wraps around (`stepUp`, `stepDown`); half
+            // pages (ctrl-d / ctrl-u) stop at the ends.
+            let count = model.searchResults.count
+            switch delta {
+            case -1: searchIndex = Self.stepUp(searchIndex, count: count)
+            case 1: searchIndex = Self.stepDown(searchIndex, count: count)
+            default: searchIndex = max(0, min(count - 1, searchIndex + delta))
+            }
         } else {
             model.selectNext(delta)
         }
@@ -840,10 +863,10 @@ final class GeekController {
             if entries.indices.contains(pickerIndex) { entries[pickerIndex].action() }
             return
         case KeyCode.down:
-            pickerIndex = min(entries.count - 1, pickerIndex + 1)
+            pickerIndex = Self.stepDown(pickerIndex, count: entries.count)
             return
         case KeyCode.up:
-            pickerIndex = max(0, pickerIndex - 1)
+            pickerIndex = Self.stepUp(pickerIndex, count: entries.count)
             return
         case KeyCode.delete:
             if !pickerQuery.isEmpty { pickerQuery.removeLast() }
@@ -855,8 +878,8 @@ final class GeekController {
         }
         // Helix's picker keys: ctrl-n / ctrl-p (and ctrl-j / ctrl-k).
         if control {
-            if key == "n" || key == "j" { pickerIndex = min(entries.count - 1, pickerIndex + 1) }
-            if key == "p" || key == "k" { pickerIndex = max(0, pickerIndex - 1) }
+            if key == "n" || key == "j" { pickerIndex = Self.stepDown(pickerIndex, count: entries.count) }
+            if key == "p" || key == "k" { pickerIndex = Self.stepUp(pickerIndex, count: entries.count) }
             return
         }
         if let c = key.first, !c.isNewline, key.unicodeScalars.allSatisfy({ !CharacterSet.controlCharacters.contains($0) }) {
@@ -869,14 +892,23 @@ final class GeekController {
     // MARK: - Search
 
     private func handleSearchInput(key: String, code: UInt16) {
+        let count = model.searchResults.count
         switch code {
         case KeyCode.escape:
             overlay = .none
             model.searchText = ""
         case KeyCode.returnKey:
-            // Keep the results; j/k then move in them, Return opens one.
+            // Keep the results and the row chosen with the arrows; j/k then
+            // move in them, Return opens one. (Typing puts the cursor back
+            // on the first result.)
             overlay = .none
-            searchIndex = 0
+            searchIndex = max(0, min(count - 1, searchIndex))
+        // The arrows move in the results while typing; the arrow keys carry
+        // private-use characters (U+F700…) that must not reach the query.
+        case KeyCode.down:
+            searchIndex = Self.stepDown(searchIndex, count: count)
+        case KeyCode.up:
+            searchIndex = Self.stepUp(searchIndex, count: count)
         case KeyCode.delete:
             if !searchQuery.isEmpty { searchQuery.removeLast() }
             model.searchText = searchQuery

@@ -7,6 +7,15 @@ key @
 expect overlay = picker(NiceMailer.GeekController.PickerKind.accounts)
 expect picker_count = 3
 snap account-picker
+# The picker turns around: up from the first row (where it opens) selects
+# the last one, down from the last one comes back to the first.
+expect picker_index = 0
+key up
+expect picker_index = 2
+key down
+expect picker_index = 0
+key down
+expect picker_index = 1
 key esc
 click status:account
 expect overlay = picker(NiceMailer.GeekController.PickerKind.accounts)
