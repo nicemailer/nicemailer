@@ -15,22 +15,27 @@ struct NiceMailerApp: App {
     @State private var model = AppModel()
     /// Current theme (`ui.md`). Swift note: `@AppStorage` is a property
     /// stored in UserDefaults; changing it redraws the views that read it.
-    @AppStorage(UITheme.defaultsKey) private var theme: UITheme = .geek
+    @AppStorage(UITheme.defaultsKey, store: AppDefaults.store) private var theme: UITheme = .geek
 
     /// A `Scene` describes the app's windows and menus.
     var body: some Scene {
         WindowGroup("NiceMailer") {
             Group {
-                switch theme {
-                case .geek: GeekRootView()
-                // Design does not exist yet: it shows the classic interface.
-                case .classic, .design: ContentView()
+                if UIScript.isActive {
+                    // UI script mode builds its own window (see AppDelegate).
+                    EmptyView()
+                } else {
+                    switch theme {
+                    case .geek: GeekRootView()
+                    // Design does not exist yet: it shows the classic interface.
+                    case .classic, .design: ContentView()
+                    }
                 }
             }
             .environment(model)
             .frame(minWidth: 700, minHeight: 420)
             // `.task` starts async work when the view appears.
-            .task { await model.connect() }
+            .task { if !UIScript.isActive { await model.connect() } }
         }
         .commands {
             // Adds a "Reload" item (⌘R) to the View menu.
@@ -53,6 +58,13 @@ struct NiceMailerApp: App {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         Fonts.register()
+        // UI script mode (automated tests): never take the keyboard or the
+        // screen from the user. `.accessory` = no Dock icon, not activated.
+        if UIScript.isActive {
+            NSApp.setActivationPolicy(.accessory)
+            UIScript.openWindow()
+            return
+        }
         // Launched by `swift run`, the app is a bare executable without an
         // .app bundle, so macOS treats it as a background tool. It must be
         // declared a regular app to get a Dock icon and a menu bar, and

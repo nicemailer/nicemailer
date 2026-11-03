@@ -1,0 +1,54 @@
+# Folders and screens reached with `;`, and their mouse use.
+key ;
+key a
+expect folder = Archive
+key ;
+key i
+expect folder = Inbox
+# Contacts: list, keyboard, filter, mails of a contact.
+key ;
+key c
+expect screen = contacts
+expect contacts_count > 10
+key j
+expect screen_index = 1
+click screen:3
+expect screen_index = 3
+key /
+type gazette
+expect contacts_count > 0
+key ret
+snap contacts
+key ret
+expect screen = mail
+expect list_filter ~ contact
+expect thread_count > 0
+key esc
+expect list_filter =
+expect folder = Inbox
+# Double-click on a contact.
+key ;
+key c
+dblclick screen:0
+expect screen = mail
+expect list_filter ~ contact
+key esc
+# History.
+key ;
+key h
+expect screen = history
+expect history_count > 0
+snap history
+key esc
+expect screen = mail
+# Tags and groups (empty at first).
+key ;
+key T
+expect screen = tags
+expect tags_count = 0
+key esc
+key ;
+key g
+expect screen = groups
+key esc
+expect screen = mail

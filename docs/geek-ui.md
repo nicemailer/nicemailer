@@ -86,3 +86,5 @@ Pickers (`h`, `l`, `t`, `g`) are filterable lists: type to filter (every word ty
 - Keys are read by an AppKit event monitor (`GeekController.handle`) before any view, so a key is never lost to a focused field: picker and search text is edited by the controller itself.
 - All user-facing strings go through `L(...)` and the String Catalog `Resources/Localizable.xcstrings` (English and French). The language is chosen explicitly from the user's preferences, because an app launched with `swift run` has no main bundle declaring its languages.
 - Rows of lazy lists receive plain values (cursor, marks) as parameters: reading the observable model only inside a `ScrollView` closure did not always refresh them.
+- Clicks use tap gestures filtered by modifier (`View.onClick`): SwiftUI runs tap actions after the click was processed, when `NSApp.currentEvent` no longer describes it.
+- Tested by `Tests/NiceMailerTests` (unit) and `UITests/*.uiscript` (scripted UI); see `docs/testing.md`.

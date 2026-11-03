@@ -85,18 +85,20 @@ final class GeekController {
 
     /// Number of columns (`ui.md`, display menu): 1 = list only,
     /// 2 = list and mail, 3 = folders, list and mail.
-    var columns: Int = UserDefaults.standard.object(forKey: "geek.columns") as? Int ?? 2 {
-        didSet { UserDefaults.standard.set(columns, forKey: "geek.columns") }
+    var columns: Int {
+        didSet { defaults.set(columns, forKey: "geek.columns") }
     }
-    var statusPosition: StatusPosition =
-        StatusPosition(rawValue: UserDefaults.standard.string(forKey: "geek.status") ?? "") ?? .bottom {
-        didSet { UserDefaults.standard.set(statusPosition.rawValue, forKey: "geek.status") }
+    var statusPosition: StatusPosition {
+        didSet { defaults.set(statusPosition.rawValue, forKey: "geek.status") }
     }
     /// Width of the mail list, as a fraction of the window ("un petit
     /// tiers", resizable by dragging the separator).
-    var listFraction: Double = UserDefaults.standard.object(forKey: "geek.listFraction") as? Double ?? 0.32 {
-        didSet { UserDefaults.standard.set(listFraction, forKey: "geek.listFraction") }
+    var listFraction: Double {
+        didSet { defaults.set(listFraction, forKey: "geek.listFraction") }
     }
+    /// Where the layout choices are remembered (`AppDefaults.store`, or a
+    /// throwaway domain in tests).
+    @ObservationIgnored private let defaults: UserDefaults
 
     // Data of the screens, loaded when a screen opens.
     var contacts: [ContactView] = []
@@ -115,8 +117,12 @@ final class GeekController {
     /// Last row clicked and when, to detect double-clicks (see `clickSearch`).
     @ObservationIgnored var lastClick: (tag: String, time: TimeInterval) = ("", 0)
 
-    init(model: AppModel) {
+    init(model: AppModel, defaults: UserDefaults = AppDefaults.store) {
         self.model = model
+        self.defaults = defaults
+        columns = defaults.object(forKey: "geek.columns") as? Int ?? 2
+        statusPosition = StatusPosition(rawValue: defaults.string(forKey: "geek.status") ?? "") ?? .bottom
+        listFraction = defaults.object(forKey: "geek.listFraction") as? Double ?? 0.32
     }
 
     // MARK: - Labels
@@ -658,21 +664,15 @@ extension GeekController {
     /// - ⌘-click: mark or unmark it (the mail under the cursor joins the
     ///   selection first, as when building a selection in the Finder);
     /// - ⇧-click: mark every mail from the cursor to it.
-    func clickThread(_ id: Int) {
+    ///
+    /// The modifiers come from the click gesture itself (`View.onClick`).
+    func clickThread(_ id: Int, _ mods: ClickModifiers) {
         model.flash = nil
-        let mods = NSEvent.modifierFlags
-        let threads = model.threads
-        if mods.contains(.shift), let anchor = model.selectedThreadId,
-           let a = threads.firstIndex(where: { $0.id == anchor }),
-           let b = threads.firstIndex(where: { $0.id == id }) {
-            model.marked.formUnion(threads[min(a, b)...max(a, b)].map(\.id))
-        } else if mods.contains(.command) {
-            if model.marked.isEmpty, let c = model.selectedThreadId, c != id { model.marked.insert(c) }
-            if model.marked.contains(id) { model.marked.remove(id) } else { model.marked.insert(id) }
-        } else {
-            model.marked = []
-        }
-        model.selectedThreadId = id
+        let result = Selection.click(
+            on: id, in: model.threads.map(\.id), cursor: model.selectedThreadId, marked: model.marked,
+            command: mods == .command, shift: mods == .shift)
+        model.marked = result.marked
+        model.selectedThreadId = result.cursor
     }
 
     /// Click on a search result; a double-click opens it in its folder.

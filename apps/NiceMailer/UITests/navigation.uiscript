@@ -1,0 +1,33 @@
+# Keyboard navigation and selection in the mail list.
+expect folder = Inbox
+expect selected = 0
+key j
+key j
+expect selected = 2
+key k
+expect selected = 1
+key down
+expect selected = 2
+key up
+expect selected = 1
+# J / K mark and move.
+key J
+key J
+expect marked = 1,2,3
+expect selected = 3
+key esc
+expect marked =
+# Mouse: click, cmd-click, shift-click.
+click thread:5
+expect selected = 5
+expect marked =
+click thread:7 cmd
+expect marked = 5,7
+click thread:7 cmd
+expect marked = 5
+click thread:2
+expect marked =
+click thread:6 shift
+expect marked = 2,3,4,5,6
+expect selected = 6
+snap navigation

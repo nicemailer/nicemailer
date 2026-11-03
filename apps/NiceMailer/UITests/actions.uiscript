@@ -1,0 +1,50 @@
+# Prefix menus and actions on the mails of the Inbox (perso account).
+expect folder = Inbox
+# The move menu opens, Escape closes it.
+key m
+expect overlay = menu(NiceMailer.GeekController.Prefix.move)
+expect mode = m
+snap move-menu
+key esc
+expect overlay = none
+# m t: move to Todo.
+key m
+key t
+expect flash ~ Todo
+# d: done (archive); Delete: move to Deleted.
+key d
+expect flash ~ Archive
+key del
+expect flash ~ Deleted
+# Several mails at once.
+key J
+key J
+expect marked_count = 3
+key d
+expect flash ~ 3
+expect marked_count = 0
+# Flag toggles.
+key *
+expect selected_flagged = true
+key *
+expect selected_flagged = false
+# Unknown keys and commands are reported, not executed.
+key y
+expect flash ~ y
+key m
+key z
+expect flash ~ mz
+# Reply is not available yet.
+key r
+expect flash ~ SMTP
+# Help.
+key ?
+expect overlay = help
+snap help
+key j
+expect overlay = none
+# The moved mails are in their folders.
+key ;
+key t
+expect folder = Todo
+expect thread_count > 0

@@ -28,5 +28,14 @@ let package = Package(
             // is not enabled yet, to keep this first version simple.
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
+        // Unit tests (`swift test`): selection rules, keyboard handling of the
+        // geek theme against a fake core, formatting and localization. The
+        // scripted UI tests are in `UITests/` (`make ui-test`).
+        .testTarget(
+            name: "NiceMailerTests",
+            dependencies: ["NiceMailer"],
+            path: "Tests/NiceMailerTests",
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
     ]
 )

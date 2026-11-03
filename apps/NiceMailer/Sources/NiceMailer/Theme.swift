@@ -29,6 +29,19 @@ enum UITheme: String, CaseIterable {
     static let defaultsKey = "theme"
 }
 
+/// Where the app keeps its preferences (theme, columns, status bar…).
+///
+/// In UI script mode (`UIScript`), a separate, emptied domain is used, so
+/// automated tests always start from the defaults and never change the
+/// user's own settings. Unit tests pass their own `UserDefaults` too.
+enum AppDefaults {
+    static let store: UserDefaults = {
+        guard UIScript.isActive, let d = UserDefaults(suiteName: "NiceMailer.uitest") else { return .standard }
+        d.removePersistentDomain(forName: "NiceMailer.uitest")
+        return d
+    }()
+}
+
 /// Localized string from the app's String Catalog.
 ///
 /// Swift note: in a Swift Package, resources live in `Bundle.module`, not in

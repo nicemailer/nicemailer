@@ -31,6 +31,8 @@ struct GeekRootView: View {
             monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
                 c.handle(event) ? nil : event
             }
+            // Automated UI test, when `NICEMAILER_UI_SCRIPT` is set.
+            UIScript.start(model: model, controller: c)
         }
         .onDisappear {
             if let monitor { NSEvent.removeMonitor(monitor) }
@@ -103,6 +105,30 @@ private struct GeekWindow: View {
         case .save: L("Save")
         case .view: L("Display")
         }
+    }
+}
+
+// MARK: - Clicks
+
+/// Modifier held during a click.
+enum ClickModifiers {
+    case none, command, shift
+}
+
+extension View {
+    /// A click that tells which modifier was held.
+    ///
+    /// Why not `onTapGesture` and the keyboard state: SwiftUI runs the tap
+    /// action after the click was processed, when `NSApp.currentEvent` no
+    /// longer describes it. Taps filtered by modifier (`.modifiers(.command)`)
+    /// read the modifiers of the click itself. `exclusively(before:)` tries
+    /// them in order, so a ⌘-click is not also seen as a plain click.
+    func onClick(_ action: @escaping (ClickModifiers) -> Void) -> some View {
+        gesture(
+            TapGesture().modifiers(.command).onEnded { action(.command) }
+                .exclusively(before: TapGesture().modifiers(.shift).onEnded { action(.shift) })
+                .exclusively(before: TapGesture().onEnded { action(.none) })
+        )
     }
 }
 
@@ -209,6 +235,7 @@ private struct GeekFolderColumn: View {
                     // The whole row is clickable, not only its text.
                     .contentShape(Rectangle())
                     .onTapGesture { controller.goToFolder(f.id) }
+                    .uiTarget("folder-\(f.id)")
                 }
             }
         }
@@ -248,7 +275,8 @@ private struct GeekThreadRows: View {
                             GeekThreadRow(thread: t, cursor: t.id == cursor, marked: marked.contains(t.id), layout: layout)
                                 .contentShape(Rectangle())
                                 // Click, ⌘-click, ⇧-click (`clickThread`).
-                                .onTapGesture { controller.clickThread(t.id) }
+                                .onClick { controller.clickThread(t.id, $0) }
+                                .uiTarget("thread-\(t.id)")
                                 .id(t.id)
                                 .task { await model.loadMoreIfNeeded(after: t) }
                         }
@@ -272,7 +300,7 @@ private struct GeekThreadRows: View {
 
 /// Fixed column widths of the list rows, computed from the list width in
 /// whole characters of the (monospaced) font.
-private struct RowLayout: Equatable {
+struct RowLayout: Equatable {
     static let fontSize: CGFloat = 12
     let char: CGFloat
     /// Date: 8 characters ("14/09/21", "16 sept.").
@@ -360,6 +388,7 @@ private struct GeekSearchList: View {
                         GeekSearchRow(hit: hit, cursor: i == current, layout: layout)
                             .contentShape(Rectangle())
                             .onTapGesture { onClick(i) }
+                            .uiTarget("search-\(i)")
                             .id(i)
                     }
                 }
@@ -577,6 +606,26 @@ private struct HTMLReader: NSViewRepresentable {
 
     final class Coordinator: NSObject, WKNavigationDelegate {
         var html = ""
+
+        /// In UI script mode, reports what the page shows, since a snapshot
+        /// of the window cannot see a web view (it draws in another
+        /// process): its text, whether the bundled font loaded, and the font
+        /// family applied to the body.
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            guard UIScript.isActive else { return }
+            let js = """
+            JSON.stringify({text: document.body.innerText.slice(0, 300),
+                            font: document.fonts.check('14px "NM Mono"'),
+                            family: getComputedStyle(document.body).fontFamily})
+            """
+            webView.evaluateJavaScript(js) { result, _ in
+                guard let json = result as? String, let data = json.data(using: .utf8),
+                      let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+                MainActor.assumeIsolated {
+                    UIScript.html = obj.mapValues { "\($0)" }
+                }
+            }
+        }
         func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
                      decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void) {
             // Only the document itself loads here; a clicked link opens in
@@ -648,6 +697,7 @@ private struct PickerPopup: View {
                             .background(i == current ? Palette.cursor : Color.clear)
                             .contentShape(Rectangle())
                             .onTapGesture { controller.clickPicker(kind, i) }
+                            .uiTarget("picker-\(i)")
                             .id(i)
                         }
                     }
@@ -715,6 +765,7 @@ private struct ScreenList<Row: View>: View {
                                 .background(i == index ? Palette.cursor : Color.clear)
                                 .contentShape(Rectangle())
                                 .onTapGesture { onClick(i) }
+                                .uiTarget("screen-\(i)")
                                 .id(i)
                         }
                     }

@@ -162,13 +162,16 @@ extension AppModel {
         }
     }
 
-    /// Saves the latest message of the open thread to ~/Downloads (`se`,
-    /// `st`, `sm`), then reveals the file in the Finder status line.
+    /// Saves the latest message of the open thread (`se`, `st`, `sm`) to
+    /// `exportDirectory`, by default ~/Downloads (chosen by the core), and
+    /// shows the path in the status bar.
     func export(_ format: String) {
         guard let client = core, let m = latestMessage else { return }
+        var params: [String: Any] = ["message_id": m.id, "format": format]
+        if let dir = exportDirectory { params["dir"] = dir }
         Task {
             do {
-                let r: ExportResult = try await client.call("export_message", ["message_id": m.id, "format": format])
+                let r: ExportResult = try await client.call("export_message", params)
                 flash = L("Saved: %@", r.path)
             } catch { report(error) }
         }
@@ -193,12 +196,46 @@ extension AppModel {
         return out
     }
 
-    /// Marks or unmarks the cursor's thread, then moves the cursor (J / K):
-    /// marked threads build a selection for grouped actions.
+    /// Marks the cursor's thread, then moves the cursor and marks the next
+    /// one too (J / K): marked threads build a selection for grouped actions.
     func markAndMove(_ delta: Int) {
-        guard let id = selectedThreadId else { return }
-        marked.insert(id)
-        selectNext(delta)
-        if let next = selectedThreadId { marked.insert(next) }
+        guard let cursor = selectedThreadId else { return }
+        let result = Selection.markAndMove(delta, in: threads.map(\.id), cursor: cursor, marked: marked)
+        marked = result.marked
+        selectedThreadId = result.cursor
+    }
+}
+
+/// Selection rules of the mail list, as pure functions of the list, the
+/// cursor and the marks, so they can be tested without any view
+/// (`Tests/NiceMailerTests/SelectionTests.swift`).
+enum Selection {
+    struct Result: Equatable {
+        let cursor: Int
+        let marked: Set<Int>
+    }
+
+    /// A click on `id`, Finder-style: plain click selects and unmarks
+    /// everything; ⌘-click marks or unmarks `id` (the current mail joins the
+    /// selection first); ⇧-click marks every mail from the cursor to `id`.
+    static func click(on id: Int, in ids: [Int], cursor: Int?, marked: Set<Int>, command: Bool, shift: Bool) -> Result {
+        if shift, let anchor = cursor, let a = ids.firstIndex(of: anchor), let b = ids.firstIndex(of: id) {
+            return Result(cursor: id, marked: marked.union(ids[min(a, b)...max(a, b)]))
+        }
+        if command {
+            var m = marked
+            if m.isEmpty, let c = cursor, c != id { m.insert(c) }
+            if m.contains(id) { m.remove(id) } else { m.insert(id) }
+            return Result(cursor: id, marked: m)
+        }
+        return Result(cursor: id, marked: [])
+    }
+
+    /// J / K: marks the cursor's mail, moves by `delta` (staying in the
+    /// list) and marks the mail reached.
+    static func markAndMove(_ delta: Int, in ids: [Int], cursor: Int, marked: Set<Int>) -> Result {
+        guard let i = ids.firstIndex(of: cursor) else { return Result(cursor: cursor, marked: marked) }
+        let next = ids[max(0, min(ids.count - 1, i + delta))]
+        return Result(cursor: next, marked: marked.union([cursor, next]))
     }
 }

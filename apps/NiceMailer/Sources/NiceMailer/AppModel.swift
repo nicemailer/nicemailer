@@ -39,6 +39,10 @@ final class AppModel {
     private(set) var searchResults: [SearchHit] = []
     /// Error shown in an alert; the view sets it back to nil when dismissed.
     var lastError: String?
+    /// Directory where `export` writes, passed to the core; `nil` lets the
+    /// core choose ~/Downloads. Set by `NICEMAILER_EXPORT_DIR` (tests must
+    /// never write into the user's Downloads).
+    var exportDirectory: String? = ProcessInfo.processInfo.environment["NICEMAILER_EXPORT_DIR"]
     /// Short message shown in the geek status bar (result of an action,
     /// "not available yet"…); cleared by the next key.
     var flash: String?
@@ -98,7 +102,10 @@ final class AppModel {
     var selectedFolder: FolderView? { folders.first { $0.id == selectedFolderId } }
     var selectedThread: ThreadSummary? { threads.first { $0.id == selectedThreadId } }
 
-    private var client: CoreClient?
+    /// Where requests go: the socket connection, or a fake in tests.
+    private var client: (any CoreCalling)?
+    /// The socket connection itself, for its event stream and to close it.
+    private var connection: CoreClient?
     /// Position of the last event received, to detect missed events.
     private var lastEvent: Position?
     private var loadingMore = false
@@ -118,9 +125,10 @@ final class AppModel {
     func connect() async {
         status = .connecting
         // `?.` calls the method only if `client` is not nil.
-        client?.disconnect()
+        connection?.disconnect()
         do {
             let c = try CoreClient()
+            connection = c
             client = c
             let hello: HelloResult = try await c.call("hello", ["protocol_version": CoreClient.protocolVersion, "client": "app"])
             // Subscribe *before* loading data (`evenements.md`, section 7):
@@ -147,7 +155,7 @@ final class AppModel {
         // The stream ended: the connection is lost, unless the user already
         // reconnected (then `client` is a newer object; `===` compares
         // object identity).
-        if client === c { status = .failed("Connexion au noyau perdue.") }
+        if connection === c { status = .failed("Connexion au noyau perdue.") }
     }
 
     /// Records what an event invalidates and schedules a refresh. If an
@@ -419,7 +427,17 @@ final class AppModel {
 
     /// The connected client, for the actions defined in other files
     /// (`AppModel+Actions.swift`).
-    var core: CoreClient? { client }
+    var core: (any CoreCalling)? { client }
+
+    /// Uses `core` instead of the socket and loads the data: used by the
+    /// unit tests, with a fake core. No event stream in that case.
+    func attach(_ core: any CoreCalling) async {
+        connection?.disconnect()
+        connection = nil
+        client = core
+        status = .connected(coreVersion: "test")
+        await reloadAll()
+    }
 
     /// Reloads the open thread (after a change of display preference).
     func reloadOpenThread() async { await loadOpenThread(markSeen: false) }

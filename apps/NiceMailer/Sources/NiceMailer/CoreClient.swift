@@ -158,7 +158,7 @@ final class CoreClient: @unchecked Sendable {
     /// `let list: FolderList = try await client.call("list_folders")`.
     /// `async throws`: the call suspends (without blocking the thread) and
     /// may throw; callers write `try await`.
-    func call<R: Decodable>(_ method: String, _ params: [String: Any] = [:], as: R.Type = R.self) async throws -> R {
+    func call<R: Decodable>(_ method: String, _ params: [String: Any]) async throws -> R {
         let data = try await raw(method, params)
         return try Self.decoder.decode(R.self, from: data)
     }

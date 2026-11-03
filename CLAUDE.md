@@ -22,3 +22,10 @@ This is the owner's first Rust and Swift project. Comments should be detailed en
 
 ## Documentation
 - The application documentation lives in `docs/`, is written in English, and is produced together with the code: a change that adds or modifies a feature updates `docs/` in the same change.
+
+## Testing the app
+Every UI feature of the Swift app is tested twice, in the same change as the feature:
+- a unit test in `apps/NiceMailer/Tests/NiceMailerTests` (Swift Testing, `make swift-test`): logic as pure functions where possible, keys and actions through `GeekController` against `FakeCore`;
+- a scripted UI scenario in `apps/NiceMailer/UITests/*.uiscript` (`make ui-test`), which plays real keys and clicks in the app: add `.uiTarget(...)` to new clickable views and expose new state in `Runner.state()` (`UIScript.swift`).
+Run `make test` and `make ui-test` before saying a UI change works, and look at the snapshots of the scenarios when the change is visual. Never test the app by sending events to a window the user may be using: UI script mode keeps the app in the background, off screen and away from the keyboard.
+

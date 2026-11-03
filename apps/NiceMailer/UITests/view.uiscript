@@ -1,0 +1,74 @@
+# Display menu (v), text / HTML, scrolling and saving.
+key v
+key 1
+expect columns = 1
+key v
+key 3
+expect columns = 3
+snap three-columns
+click folder:perso/Todo
+expect folder = Todo
+click folder:perso/Inbox
+expect folder = Inbox
+key v
+key 2
+expect columns = 2
+# Status bar position.
+key v
+key s
+expect status_position = top
+key v
+key s
+expect status_position = hidden
+key v
+key s
+expect status_position = bottom
+# Sort.
+key v
+key m
+expect sort = modified
+key v
+key c
+expect sort = received
+# Text / HTML on the HTML newsletter of the archive account.
+key h
+type fixture arc
+key ret
+expect selected_subject = La lettre de novembre
+expect body_format = text
+key v
+key h
+expect body_format = html
+# The page shows the mail, in the bundled font.
+expect html_text ~ Les nouveautés du mois
+expect html_font_loaded = 1
+expect html_font_family ~ NM Mono
+snap html
+key v
+key h
+expect body_format = text
+# Scrolling a long mail.
+key j
+key j
+expect selected_subject = Un long mail
+expect reader_offset = 0
+key space
+expect reader_offset > 0
+key ctrl-u
+key ctrl-u
+expect reader_offset = 0
+key ctrl-d
+expect reader_offset > 0
+# Saving the mail (to the test export directory).
+key s
+key e
+expect export_files = 1
+key s
+key t
+expect export_files = 2
+key s
+key m
+expect export_files = 3
+key s
+key a
+expect flash ~ attachments

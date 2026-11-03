@@ -11,14 +11,25 @@ XCODE ?= /Applications/Xcode.app/Contents/Developer
 THREADS ?= 2500
 
 # These targets are commands, not files to produce.
-.PHONY: build test seed core app
+.PHONY: build test swift-test ui-test seed core app
 
 build:
 	cargo build --release
 	cd apps/NiceMailer && DEVELOPER_DIR=$(XCODE) swift build
 
+# Every test that runs without a window: Rust (core) and Swift unit tests.
 test:
 	cargo test
+	cd apps/NiceMailer && DEVELOPER_DIR=$(XCODE) swift test
+
+swift-test:
+	cd apps/NiceMailer && DEVELOPER_DIR=$(XCODE) swift test
+
+# Scripted UI tests of the app (apps/NiceMailer/UITests). Each scenario runs
+# on a fresh database; the app stays in the background, off screen, and never
+# takes the keyboard, so this can run while you work.
+ui-test:
+	scripts/ui-test.sh
 
 # Recreate the database with fake mail (the core must be stopped first,
 # since it holds the database lock).
