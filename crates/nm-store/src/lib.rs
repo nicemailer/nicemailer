@@ -12,6 +12,7 @@
 //! - `raw.rs`: immutable raw message files (`stockage-brut.md`),
 //! - `mbox.rs`: streaming reader of mbox files,
 //! - `ingest.rs`: interpretation of a raw message (headers, bodies, attachments),
+//! - `attachments.rs`: attachments of a thread, extraction of their files,
 //! - `html_text.rs`: HTML to plain text, keeping blocks apart,
 //! - `import.rs`: import of an mbox file into an archive account,
 //! - `library.rs`: history, export, tags, groups, contacts, display preference,
@@ -21,6 +22,7 @@
 //! as a module. Without `pub`, the module is private to this crate; its
 //! `impl Store` blocks still add public methods to `Store`.
 
+pub mod attachments;
 mod commands;
 pub mod clean;
 pub mod html_text;

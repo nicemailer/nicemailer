@@ -1,6 +1,6 @@
 # NiceMailer : stockage des messages bruts
 
-Statut : validé. Sections 3 à 5 implémentées pour l'import mbox (`import-initial.md`, section 9) : écriture, dédoublonnage, table `raw_blob`, `message.raw_hash`. Les sections 6 à 9 (lecture des pièces jointes, ramasse-miettes, `reindex`, `export`) restent à implémenter. Complète `schema.sql` et `modele de donnees.md`.
+Statut : validé. Sections 3 à 5 implémentées pour l'import mbox (`import-initial.md`, section 9) : écriture, dédoublonnage, table `raw_blob`, `message.raw_hash`. Section 6, téléchargement d'une pièce jointe, implémentée (`attachments.rs`, `get_attachment`), sans le retéléchargement depuis le serveur, qui attend la synchronisation IMAP. Les sections 7 à 9 (ramasse-miettes, `reindex`, `export`) restent à implémenter. Complète `schema.sql` et `modele de donnees.md`.
 
 ## 1. Objet et principe
 

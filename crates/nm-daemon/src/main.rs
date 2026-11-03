@@ -45,7 +45,8 @@ use std::sync::{Arc, Mutex};
 use anyhow::{Context, bail};
 use clap::Parser;
 use nm_api::{
-    CommandResult, DEFAULT_LIMIT, Event, ExportMessageParams, ExportResult, FolderList, GetThreadParams,
+    AttachmentFileView, CommandResult, DEFAULT_LIMIT, Event, ExportMessageParams, ExportResult, FolderList,
+    GetAttachmentParams, GetThreadParams,
     GroupMemberResult, HelloParams, HelloResult, ImportMboxParams, ImportStatus, Items, ListContactsParams,
     ListHistoryParams, ListTagsParams, ListThreadsByParams, ListThreadsParams, MAX_LIMIT, MoveThreadParams,
     PROTOCOL_VERSION, Page, Request, Response, RpcError, SearchParams, SearchResult, SetBodyFormatParams,
@@ -54,6 +55,7 @@ use nm_api::{
 };
 use nm_core::Source;
 use nm_store::import::{BATCH_SIZE, ImportOptions, ImportProgress, import_mbox};
+use nm_store::attachments::AttachmentFiles;
 use nm_store::raw::RawStore;
 use nm_store::{ChangeSet, Store, StoreError};
 use serde::de::DeserializeOwned;
@@ -92,6 +94,8 @@ struct Core {
     events: Mutex<EventLog>,
     /// Immutable raw message files (`stockage-brut.md`).
     raw: RawStore,
+    /// Attachments extracted from them on demand (`attachments.rs`).
+    attachments: AttachmentFiles,
     /// The running mbox import, or the last one.
     import: Mutex<ImportState>,
 }
@@ -133,10 +137,13 @@ async fn main() -> anyhow::Result<()> {
     // state. Replay buffer of 10 000 events; a client may lag 1 000 events
     // behind before being told to resync.
     let raw = RawStore::open(&data_dir).with_context(|| format!("stockage brut dans {}", data_dir.display()))?;
+    let attachments = AttachmentFiles::open(&data_dir)
+        .with_context(|| format!("pièces jointes dans {}", data_dir.display()))?;
     let core = Arc::new(Core {
         store: Mutex::new(store),
         events: Mutex::new(EventLog::new(10_000, 1_000)),
         raw,
+        attachments,
         import: Mutex::new(ImportState::default()),
     });
 
@@ -469,6 +476,19 @@ async fn dispatch(core: &Arc<Core>, session: &mut Session, req: Request) -> Resu
             let raw = core.raw.clone();
             let path = with_store(core, move |s| s.export_message(&raw, p.message_id, p.format, &dir)).await?;
             to_value(ExportResult { path: path.display().to_string() })
+        }
+        method::GET_ATTACHMENT => {
+            // The file is extracted from the raw message on first use; the
+            // client receives its path, never its bytes.
+            let p: GetAttachmentParams = params(req.params)?;
+            let (raw, files) = (core.raw.clone(), core.attachments.clone());
+            let f = with_store(core, move |s| s.get_attachment(&raw, &files, p.attachment_id)).await?;
+            to_value(AttachmentFileView {
+                path: f.path.display().to_string(),
+                filename: f.filename,
+                mime_type: f.mime_type,
+                size: f.size,
+            })
         }
         method::LIST_HISTORY => {
             let p: ListHistoryParams = params(req.params)?;

@@ -415,6 +415,7 @@ impl Store {
                     only_quotes: false,
                     expanded: false,
                     show_recipients: false,
+                    attachments: vec![],
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -434,6 +435,13 @@ impl Store {
                 let role: String = r.get(0)?;
                 let view = AddressView { addr: r.get(1)?, name: r.get(2)? };
                 if role == "to" { m.to.push(view) } else { m.cc.push(view) }
+            }
+        }
+        // Attachments of the whole thread in one query, then dealt out to
+        // their messages (`attachments.rs`).
+        for (message_id, a) in self.thread_attachments(thread_id)? {
+            if let Some(m) = messages.iter_mut().find(|m| m.id == message_id) {
+                m.attachments.push(a);
             }
         }
         present_thread(&mut messages);

@@ -56,6 +56,7 @@ pub mod method {
     pub const SET_BODY_FORMAT: &str = "set_body_format";
     /// Writes one message to a file (.eml, .txt, .md).
     pub const EXPORT_MESSAGE: &str = "export_message";
+    pub const GET_ATTACHMENT: &str = "get_attachment";
     /// Audit log, newest first (`tracabilite.md`).
     pub const LIST_HISTORY: &str = "list_history";
     /// Tags of an account, or of every account.
@@ -524,6 +525,23 @@ pub struct MessageView {
     /// Whether to show the recipients: only when they differ from the
     /// previous message's (the first message: when there are several).
     pub show_recipients: bool,
+    /// Files attached to the message, in MIME order. Images embedded in the
+    /// HTML body (`cid:`) are left out, unless no HTML shows them.
+    #[serde(default)]
+    pub attachments: Vec<AttachmentView>,
+}
+
+/// An attachment of a message (`MessageView.attachments`). The content is
+/// fetched on demand with `get_attachment`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AttachmentView {
+    pub id: i64,
+    /// Name given by the sender; `None` when it gave none.
+    pub filename: Option<String>,
+    /// Lowercase MIME type, `application/octet-stream` when unknown.
+    pub mime_type: String,
+    /// Decoded size in bytes.
+    pub size: i64,
 }
 
 /// A piece of a message's text (`MessageView.segments`).
@@ -666,6 +684,26 @@ pub struct ExportMessageParams {
     /// Absolute directory to write into; default `~/Downloads`.
     #[serde(default)]
     pub dir: Option<String>,
+}
+
+/// Parameters of `get_attachment`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GetAttachmentParams {
+    pub attachment_id: i64,
+}
+
+/// Result of `get_attachment`: the file, extracted from the raw message on
+/// first use (`architecture.md`, section 5). It belongs to the core
+/// (read-only, quarantined): clients copy or open it, never change it, and
+/// ask again before each use since it may be purged and re-extracted.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AttachmentFileView {
+    /// Absolute path under `<data_dir>/attachments.noindex/`.
+    pub path: String,
+    /// Safe file name, to copy the file under.
+    pub filename: String,
+    pub mime_type: String,
+    pub size: i64,
 }
 
 /// Result of `export_message`: where the file was written. An existing

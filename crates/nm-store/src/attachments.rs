@@ -1,0 +1,321 @@
+//! Attachments: the list shown under each message, and the extraction of a
+//! file from the raw message when the user wants it (`stockage-brut.md`,
+//! section 6; `architecture.md`, section 5, "Pièces jointes : transfert par
+//! chemin").
+//!
+//! The metadata (name, type, size) is extracted once, when the message
+//! arrives (`ingest.rs`). The content stays in the raw file: it is decoded
+//! and written to `attachments.noindex/<raw hash>/<part id>/<safe name>`
+//! only on demand, then reused. Clients receive the path, never the bytes.
+//! Extracted files are read-only (mode 0400) and carry macOS's quarantine
+//! attribute, so that Gatekeeper warns before running a received program.
+
+use std::fs::{self, OpenOptions};
+use std::io::{self, Write};
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+use std::path::{Path, PathBuf};
+
+use mail_parser::{MessageParser, MessagePart};
+use nm_api::AttachmentView;
+use rusqlite::OptionalExtension;
+
+use crate::raw::{Hash, RawStore, hex};
+use crate::{Result, Store, StoreError};
+
+/// Directory of the extracted files, under the data directory.
+pub const ATTACHMENTS_DIR: &str = "attachments.noindex";
+
+/// Longest file name written, in bytes (APFS allows 255; some room is left
+/// for the " (2)" a client may add when copying).
+const MAX_NAME_BYTES: usize = 200;
+
+/// Where extracted attachments live.
+#[derive(Clone)]
+pub struct AttachmentFiles {
+    root: PathBuf,
+}
+
+/// An attachment ready to be read by a client.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AttachmentFile {
+    pub path: PathBuf,
+    /// Name to show and to copy under: the sender's name, made safe.
+    pub filename: String,
+    pub mime_type: String,
+    pub size: i64,
+}
+
+impl AttachmentFiles {
+    /// Opens (and creates if needed) the directory under `data_dir`, mode
+    /// 0700 like the raw storage.
+    pub fn open(data_dir: &Path) -> io::Result<AttachmentFiles> {
+        let root = data_dir.join(ATTACHMENTS_DIR);
+        for dir in [root.clone(), root.join(".tmp")] {
+            fs::create_dir_all(&dir)?;
+            fs::set_permissions(&dir, fs::Permissions::from_mode(0o700))?;
+        }
+        Ok(AttachmentFiles { root })
+    }
+
+    /// Final path of an attachment: by raw hash (two copies of a message,
+    /// in two folders, share one extraction), then part number.
+    pub fn path(&self, hash: &Hash, part_id: &str, name: &str) -> PathBuf {
+        self.root.join(hex(hash)).join(part_id).join(name)
+    }
+
+    /// Writes `bytes` to `path`: into `.tmp` first, read-only, quarantined,
+    /// then renamed, so that a client never sees a half-written file.
+    fn write(&self, path: &Path, bytes: &[u8]) -> io::Result<()> {
+        let tmp = self.root.join(".tmp").join(format!("{:016x}", rand::random::<u64>()));
+        // The `{ }` block closes the file before the rename.
+        {
+            // Writable while it is being written: macOS refuses an extended
+            // attribute on a read-only file, even through an open handle.
+            let mut f = OpenOptions::new().write(true).create_new(true).mode(0o600).open(&tmp)?;
+            f.write_all(bytes)?;
+            quarantine(&f);
+            f.set_permissions(fs::Permissions::from_mode(0o400))?;
+        }
+        let parent = path.parent().expect("path has a parent");
+        if let Err(e) = fs::create_dir_all(parent).and_then(|_| fs::rename(&tmp, path)) {
+            let _ = fs::remove_file(&tmp);
+            return Err(e);
+        }
+        Ok(())
+    }
+}
+
+impl Store {
+    /// The attachment `attachment_id` as a file: extracted from the raw
+    /// message the first time, reused afterwards (`disk_path`). A file
+    /// purged meanwhile is extracted again.
+    pub fn get_attachment(&self, raw: &RawStore, files: &AttachmentFiles, attachment_id: i64) -> Result<AttachmentFile> {
+        type Row = (i64, String, Option<String>, String, Option<i64>, Option<String>, Option<Vec<u8>>);
+        let (message_id, part_id, filename, mime_type, size, disk_path, hash): Row = self
+            .conn
+            .query_row(
+                "SELECT a.message_id, a.part_id, a.filename, a.mime_type, a.size, a.disk_path, m.raw_hash
+                   FROM attachment a JOIN message m ON m.id = a.message_id WHERE a.id = ?1",
+                [attachment_id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?)),
+            )
+            .optional()?
+            .ok_or_else(|| StoreError::NotFound(format!("pièce jointe {attachment_id}")))?;
+        let name = safe_name(filename.as_deref(), &mime_type, &part_id);
+        let file = |path: PathBuf, size: i64| AttachmentFile { path, filename: name.clone(), mime_type: mime_type.clone(), size };
+        if let Some(p) = disk_path.map(PathBuf::from)
+            && p.is_file()
+        {
+            return Ok(file(p, size.unwrap_or(0)));
+        }
+        // Messages without a raw file (generated by `seed`, or not
+        // downloaded yet) have nothing to extract.
+        let hash = hash.ok_or_else(|| StoreError::NotFound(format!("contenu de la pièce jointe (message {message_id})")))?;
+        let hash: Hash = hash.try_into().map_err(|_| StoreError::Io("hash de brut invalide".into()))?;
+        let bytes = raw.read(&hash).map_err(|e| StoreError::Io(e.to_string()))?;
+        let content = part_content(&bytes, &part_id)
+            .ok_or_else(|| StoreError::NotFound(format!("partie {part_id} du message {message_id}")))?;
+        let path = files.path(&hash, &part_id, &name);
+        if !path.is_file() {
+            files.write(&path, &content).map_err(|e| StoreError::Io(e.to_string()))?;
+        }
+        self.conn.execute(
+            "UPDATE attachment SET disk_path = ?1 WHERE id = ?2",
+            rusqlite::params![path.display().to_string(), attachment_id],
+        )?;
+        Ok(file(path, content.len() as i64))
+    }
+
+    /// The attachments shown under each message of a thread, by message id,
+    /// in MIME order. An image embedded in the HTML (`cid:`) belongs to the
+    /// body and is not listed, unless the message has no HTML referencing
+    /// it: some clients (Apple Mail) mark photos attached to a plain text
+    /// mail as inline, and they would be invisible otherwise.
+    pub(crate) fn thread_attachments(&self, thread_id: i64) -> Result<Vec<(i64, AttachmentView)>> {
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT a.message_id, a.id, a.filename, a.mime_type, coalesce(a.size, 0), a.content_id, a.is_inline,
+                    b.html_sanitized
+               FROM attachment a
+               JOIN message m ON m.id = a.message_id
+               LEFT JOIN message_body b ON b.message_id = m.id
+              WHERE m.thread_id = ?1
+              ORDER BY a.message_id, a.id",
+        )?;
+        let rows = stmt.query_map([thread_id], |r| {
+            let cid: Option<String> = r.get(5)?;
+            let inline: bool = r.get(6)?;
+            let html: Option<String> = r.get(7)?;
+            let in_body = inline
+                && matches!((&cid, &html), (Some(c), Some(h)) if h.contains(&format!("cid:{c}")));
+            Ok((r.get::<_, i64>(0)?, in_body, AttachmentView {
+                id: r.get(1)?,
+                filename: r.get(2)?,
+                mime_type: r.get(3)?,
+                size: r.get(4)?,
+            }))
+        })?;
+        let mut out = Vec::new();
+        for row in rows {
+            let (message_id, in_body, view) = row?;
+            if !in_body {
+                out.push((message_id, view));
+            }
+        }
+        Ok(out)
+    }
+}
+
+/// The transfer-decoded content of the part `part_id` (IMAP numbering, as
+/// recorded by `ingest::collect_attachments`), or `None` if the message has
+/// no such part.
+pub fn part_content(raw: &[u8], part_id: &str) -> Option<Vec<u8>> {
+    let message = MessageParser::default().parse(raw)?;
+    let root = message.root().root_part();
+    let mut part: MessagePart<'_> = root;
+    // Rust note: `split('.')` yields the numbers of the path ("2.1" → 2, 1);
+    // each one picks a child of the current multipart, counted from 1.
+    for n in part_id.split('.') {
+        let n: usize = n.parse().ok()?;
+        if part.is_multipart() {
+            part = part.children().nth(n.checked_sub(1)?)?;
+        } else if n != 1 {
+            // A single-part message has one part, "1".
+            return None;
+        }
+    }
+    if part.is_multipart() {
+        return None;
+    }
+    Some(part.decoded().into_owned())
+}
+
+/// A file name that is safe to create: the sender chose it, so it may hold
+/// a path (`../../.zshrc`), control characters, or be empty. Separators and
+/// control characters are dropped, leading dots removed (no hidden file, no
+/// `..`), the length bounded while keeping the extension. Without a usable
+/// name, "attachment-<part>" with an extension guessed from the type.
+pub fn safe_name(name: Option<&str>, mime_type: &str, part_id: &str) -> String {
+    let cleaned: String = name
+        .unwrap_or("")
+        .chars()
+        .filter(|c| !c.is_control() && *c != '/' && *c != '\\' && *c != ':')
+        .collect();
+    let cleaned = cleaned.trim().trim_start_matches('.').trim().to_string();
+    let name = if cleaned.is_empty() {
+        format!("attachment-{}{}", part_id.replace('.', "-"), extension_for(mime_type))
+    } else {
+        cleaned
+    };
+    truncate_keeping_extension(&name, MAX_NAME_BYTES)
+}
+
+/// Cuts `name` to at most `max` bytes, on a character boundary, keeping its
+/// extension (".pdf") when it is short.
+fn truncate_keeping_extension(name: &str, max: usize) -> String {
+    if name.len() <= max {
+        return name.to_string();
+    }
+    let (stem, ext) = match name.rfind('.') {
+        Some(i) if name.len() - i <= 16 && i > 0 => (&name[..i], &name[i..]),
+        _ => (name, ""),
+    };
+    let mut cut = max.saturating_sub(ext.len());
+    // A UTF-8 character takes 1 to 4 bytes: step back to its first byte.
+    while !stem.is_char_boundary(cut.min(stem.len())) {
+        cut -= 1;
+    }
+    format!("{}{ext}", &stem[..cut.min(stem.len())])
+}
+
+/// Extension for an unnamed attachment, from its MIME type.
+fn extension_for(mime_type: &str) -> &'static str {
+    match mime_type {
+        "application/pdf" => ".pdf",
+        "image/jpeg" => ".jpg",
+        "image/png" => ".png",
+        "image/gif" => ".gif",
+        "image/heic" => ".heic",
+        "text/plain" => ".txt",
+        "text/html" => ".html",
+        "text/calendar" => ".ics",
+        "text/vcard" | "text/x-vcard" => ".vcf",
+        "message/rfc822" => ".eml",
+        "application/zip" => ".zip",
+        _ => "",
+    }
+}
+
+/// Sets macOS's quarantine attribute, as Mail does: opening the file then
+/// goes through Gatekeeper. Best effort: a failure (other system, other
+/// file system) does not prevent reading the file.
+#[cfg(target_os = "macos")]
+fn quarantine(f: &std::fs::File) {
+    use std::os::fd::AsRawFd;
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    // Flags 0081 ("downloaded, not yet opened"), date in hex, agent name.
+    let value = format!("0081;{now:08x};NiceMailer;");
+    // Rust note: `unsafe` calls a C function; the file descriptor and the
+    // buffers stay valid during the call.
+    unsafe {
+        libc::fsetxattr(f.as_raw_fd(), c"com.apple.quarantine".as_ptr(), value.as_ptr().cast(), value.len(), 0, 0);
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn quarantine(_f: &std::fs::File) {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const MULTIPART: &[u8] = b"From: a@example.org\r\nSubject: Pieces\r\nMIME-Version: 1.0\r\n\
+Content-Type: multipart/mixed; boundary=\"X\"\r\n\r\n\
+--X\r\nContent-Type: text/plain\r\n\r\nBonjour\r\n\
+--X\r\nContent-Type: application/pdf; name=\"devis.pdf\"\r\nContent-Disposition: attachment; filename=\"devis.pdf\"\r\n\
+Content-Transfer-Encoding: base64\r\n\r\nJVBERi0xLjQK\r\n\
+--X\r\nContent-Type: multipart/alternative; boundary=\"Y\"\r\n\r\n\
+--Y\r\nContent-Type: text/plain\r\n\r\ninner\r\n\
+--Y\r\nContent-Type: text/plain; name=\"notes.txt\"\r\nContent-Disposition: attachment; filename=\"notes.txt\"\r\n\
+Content-Transfer-Encoding: quoted-printable\r\n\r\ncaf=C3=A9\r\n\
+--Y--\r\n--X--\r\n";
+
+    #[test]
+    fn parts_are_found_by_their_imap_number_and_decoded() {
+        // Base64 and quoted-printable are decoded.
+        assert_eq!(part_content(MULTIPART, "2").unwrap(), b"%PDF-1.4\n");
+        assert_eq!(String::from_utf8(part_content(MULTIPART, "3.2").unwrap()).unwrap().trim_end(), "café");
+        // The numbers match the ones recorded at ingestion.
+        let ids: Vec<String> = crate::ingest::parse(MULTIPART).attachments.into_iter().map(|a| a.part_id).collect();
+        assert_eq!(ids, ["2", "3.2"]);
+        // Missing or multipart parts: nothing.
+        assert!(part_content(MULTIPART, "9").is_none());
+        assert!(part_content(MULTIPART, "3").is_none());
+        assert!(part_content(MULTIPART, "x").is_none());
+        assert!(part_content(MULTIPART, "0").is_none());
+    }
+
+    #[test]
+    fn a_single_part_message_has_part_one() {
+        let raw = b"From: a@example.org\r\nContent-Type: application/pdf\r\nContent-Transfer-Encoding: base64\r\n\r\nJVBERi0xLjQK\r\n";
+        assert_eq!(part_content(raw, "1").unwrap(), b"%PDF-1.4\n");
+        assert!(part_content(raw, "2").is_none());
+    }
+
+    #[test]
+    fn names_from_the_sender_are_made_safe() {
+        assert_eq!(safe_name(Some("devis.pdf"), "application/pdf", "2"), "devis.pdf");
+        // No path, no hidden file, no control character.
+        assert_eq!(safe_name(Some("../../.zshrc"), "text/plain", "2"), "zshrc");
+        assert_eq!(safe_name(Some("a/b\\c:d.txt"), "text/plain", "2"), "abcd.txt");
+        assert_eq!(safe_name(Some("x\u{0}y\ny.txt"), "text/plain", "2"), "xyy.txt");
+        // Nothing usable: a name from the part and the type.
+        assert_eq!(safe_name(None, "application/pdf", "3.2"), "attachment-3-2.pdf");
+        assert_eq!(safe_name(Some(" .. "), "image/png", "2"), "attachment-2.png");
+        assert_eq!(safe_name(None, "application/x-unknown", "4"), "attachment-4");
+        // Long names are cut, keeping the extension and whole characters.
+        let long = format!("{}.pdf", "é".repeat(300));
+        let cut = safe_name(Some(&long), "application/pdf", "2");
+        assert!(cut.len() <= MAX_NAME_BYTES && cut.ends_with(".pdf") && cut.starts_with("éé"));
+    }
+}
+

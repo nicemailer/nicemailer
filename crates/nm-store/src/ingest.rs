@@ -25,7 +25,9 @@ use mail_parser::{MessageParser, MessagePart, PartKind};
 /// `sanitize_html`).
 /// 3: HTML-only messages are converted to text by `html_text.rs`, which
 /// keeps blocks apart.
-pub const PARSER_VERSION: i64 = 3;
+/// 4: images shown inline in a mail without HTML (Apple Mail) are recorded
+/// as attachments, and "inline" means "referenced by the HTML" (`cid:`).
+pub const PARSER_VERSION: i64 = 4;
 
 /// Length of `message.snippet`, in characters.
 const SNIPPET_CHARS: usize = 200;
@@ -143,7 +145,7 @@ pub fn parse(raw: &[u8]) -> ParsedMessage {
     let snippet = text.as_deref().map(snippet).filter(|s| !s.is_empty());
 
     let mut attachments = Vec::new();
-    collect_attachments(m.root_part(), "", true, &mut attachments);
+    collect_attachments(m.root_part(), "", true, html.as_deref(), &mut attachments);
 
     ParsedMessage {
         message_id: message_id.filter(|s| !s.is_empty()),
@@ -232,18 +234,28 @@ pub fn snippet(text: &str) -> String {
 ///
 /// `is_root` distinguishes the top-level part, which has no number of its
 /// own when it is a multipart.
-fn collect_attachments(part: MessagePart<'_>, prefix: &str, is_root: bool, out: &mut Vec<ParsedAttachment>) {
+fn collect_attachments(
+    part: MessagePart<'_>,
+    prefix: &str,
+    is_root: bool,
+    html: Option<&str>,
+    out: &mut Vec<ParsedAttachment>,
+) {
     if part.is_multipart() {
         for (i, child) in part.children().enumerate() {
             let id = if prefix.is_empty() { format!("{}", i + 1) } else { format!("{prefix}.{}", i + 1) };
-            collect_attachments(child, &id, false, out);
+            collect_attachments(child, &id, false, html, out);
         }
         return;
     }
     let part_id = if is_root { "1".to_string() } else { prefix.to_string() };
     // A part is an attachment if mail-parser lists it as one (by
-    // disposition, type and position in the tree) and it is not a body.
-    if !part.is_attachment() || part.in_text_body() || part.in_html_body() {
+    // disposition, type and position in the tree), or if it sits among the
+    // body parts without being text: an image shown inline in a mail
+    // without HTML (Apple Mail), which mail-parser counts as body.
+    let in_body = part.in_text_body() || part.in_html_body();
+    let is_text = matches!(part.kind(), PartKind::Text | PartKind::Html);
+    if in_body && is_text || !in_body && !part.is_attachment() {
         return;
     }
     let mime_type = part
@@ -255,9 +267,13 @@ fn collect_attachments(part: MessagePart<'_>, prefix: &str, is_root: bool, out: 
         .unwrap_or_else(|| "application/octet-stream".to_string())
         .to_lowercase();
     let content_id = part.content_id().map(clean_id).filter(|s| !s.is_empty());
-    // An inline part referenced by the HTML (`cid:`) is part of the body
-    // rather than a file the user downloads.
-    let is_inline = part.is_inline() && content_id.is_some();
+    // A part the HTML shows (`cid:`) is part of the body rather than a file
+    // the user downloads. Marked inline but shown by no HTML, it stays a
+    // file: otherwise nobody would see it.
+    let is_inline = match (&content_id, html) {
+        (Some(cid), Some(h)) => h.contains(&format!("cid:{cid}")),
+        _ => false,
+    };
     out.push(ParsedAttachment {
         part_id,
         filename: part.attachment_name().map(|n| n.trim().to_string()).filter(|n| !n.is_empty()),
@@ -373,12 +389,33 @@ Subject:  Bonjour =?utf-8?Q?=C3=A0_tous?= \r\nDate: Tue, 23 Jun 2020 21:20:56 +0
         assert_eq!(pdf.filename.as_deref(), Some("facture.pdf"));
         assert_eq!(pdf.size, 9);
         assert!(!pdf.is_inline);
-        if let Some(png) = p.attachments.iter().find(|a| a.mime_type == "image/png") {
-            assert_eq!(png.part_id, "3");
-            assert!(png.is_inline);
-            assert_eq!(png.content_id.as_deref(), Some("logo@x"));
-        }
+        // Marked inline, but the HTML does not show it: a file to list.
+        let png = p.attachments.iter().find(|a| a.mime_type == "image/png").expect("png");
+        assert_eq!(png.part_id, "3");
+        assert!(!png.is_inline);
+        assert_eq!(png.content_id.as_deref(), Some("logo@x"));
         assert!(p.has_attachments());
+        // Shown by the HTML (`cid:`): part of the body.
+        let with_img = String::from_utf8_lossy(raw).replace("<p>html</p>", "<p><img src=\"cid:logo@x\"></p>");
+        let shown = parse(with_img.as_bytes());
+        let png = shown.attachments.iter().find(|a| a.mime_type == "image/png").expect("png");
+        assert!(png.is_inline);
+    }
+
+    #[test]
+    fn an_image_shown_inline_in_a_plain_text_mail_is_an_attachment() {
+        // Apple Mail: a photo in a mail without HTML, marked inline.
+        let raw = b"Subject: s\r\nMIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=\"C\"\r\n\r\n\
+--C\r\nContent-Type: text/plain\r\n\r\nRegarde.\r\n\
+--C\r\nContent-Type: image/jpeg; name=\"IMG_1.jpg\"\r\nContent-Disposition: inline; filename=\"IMG_1.jpg\"\r\nContent-ID: <img1@x>\r\n\
+Content-Transfer-Encoding: base64\r\n\r\n/9j/4AAQ\r\n--C--\r\n";
+        let p = parse(raw);
+        assert_eq!(p.attachments.len(), 1);
+        assert_eq!(p.attachments[0].filename.as_deref(), Some("IMG_1.jpg"));
+        assert_eq!(p.attachments[0].part_id, "2");
+        assert!(!p.attachments[0].is_inline);
+        assert!(p.has_attachments());
+        assert_eq!(p.text.as_deref().map(str::trim), Some("Regarde."));
     }
 
     #[test]
