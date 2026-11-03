@@ -238,9 +238,32 @@ struct GeekControllerTests {
     @Test func semicolonListsTheFoldersAndEverythingAndHIsFree() {
         let keys = controller.menuEntries(.goto).map(\.key)
         // Four folders, then "Everything", then the screens.
-        #expect(keys == ["i", "t", "a", "d", "e", "c", "h", "T", "g"])
+        #expect(keys == ["i", "t", "a", "d", "e", "c", "T", "g", "h"])
+        // A gap before each new block: Archive, Deleted, Everything,
+        // Contacts, History.
+        let gaps = controller.menuEntries(.goto).filter(\.gapBefore).map(\.key)
+        #expect(gaps == ["a", "d", "e", "c", "h"])
         press("h")
         #expect(controller.overlay == .none && model.flash != nil)
+    }
+
+    @Test func foldersAreSortedInBlocksWhateverTheCoresOrder() {
+        // Every role, shuffled, plus a folder of the user (no role).
+        let roles: [String?] = ["junk", "sent", nil, "archive", "banned", "inbox", "drafts", "paperwork",
+                                "deleted", "quarantine", "newsletter", "waiting", "todo"]
+        let folders = roles.enumerated().map { i, r in
+            GeekController.ScopeFolder(folderId: i, role: r, name: r ?? "Projets", letter: "", unread: 0)
+        }
+        let sorted = GeekController.ordered(folders)
+        #expect(sorted.map(\.name) == [
+            "inbox", "todo", "waiting", "quarantine",
+            "archive", "newsletter", "paperwork",
+            "Projets",
+            "sent", "drafts",
+            "deleted", "junk", "banned",
+        ])
+        // Blocks: 0 to deal with, 2 filed, 3 the user's, 4 sent, 6 thrown away.
+        #expect(sorted.map(\.group) == [0, 0, 0, 0, 2, 2, 2, 3, 4, 4, 6, 6, 6])
     }
 
     @Test func theMoveSaveAndDisplayBlocksOpenTheirMenus() {

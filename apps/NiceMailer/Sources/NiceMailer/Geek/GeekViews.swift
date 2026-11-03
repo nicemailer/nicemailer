@@ -91,7 +91,7 @@ private struct GeekWindow: View {
         switch controller.overlay {
         case .menu(let prefix):
             let menu = KeyMenu(title: menuTitle(prefix),
-                               entries: controller.menuEntries(prefix).map { ($0.key, $0.label, $0.disabled) },
+                               entries: controller.menuEntries(prefix).map { ($0.key, $0.label, $0.disabled, $0.gapBefore) },
                                onSelect: { controller.chooseMenuEntry($0) })
             if controller.statusPosition != .hidden, let x = controller.menuBlockX[prefix] {
                 // Each menu drops down from its block of the status bar:
@@ -108,7 +108,7 @@ private struct GeekWindow: View {
                 menu.padding(12)
             }
         case .help:
-            KeyMenu(title: L("Keys"), entries: controller.helpLines.map { ($0.0, $0.1, false) }, onSelect: nil)
+            KeyMenu(title: L("Keys"), entries: controller.helpLines.map { ($0.0, $0.1, false, false) }, onSelect: nil)
                 .padding(12)
         case .picker(let kind):
             PickerPopup(controller: controller, kind: kind)
@@ -320,7 +320,8 @@ private struct GeekFolderColumn: View {
                     .padding(.top, scaled(4)).padding(.bottom, scaled(2)).padding(.horizontal, 8)
                     .contentShape(Rectangle())
                     .onTapGesture { controller.openPickerFromStatusBar(.accounts) }
-                ForEach(controller.scopeFolders) { f in
+                let folders = controller.scopeFolders
+                ForEach(Array(folders.enumerated()), id: \.element.id) { i, f in
                     HStack(spacing: 6) {
                         Text(f.letter.lowercased()).foregroundStyle(Palette.muted)
                         Text(f.name)
@@ -334,6 +335,8 @@ private struct GeekFolderColumn: View {
                     .contentShape(Rectangle())
                     .onTapGesture { controller.open(f) }
                     .uiTarget("folder-\(f.name)")
+                    // The same blocks as the ; menu.
+                    .padding(.top, i > 0 && folders[i - 1].group != f.group ? scaled(10) : 0)
                 }
             }
         }
@@ -828,7 +831,8 @@ private struct HTMLReader: NSViewRepresentable {
 /// Helix-style key menu, in the bottom-right corner: one line per key.
 private struct KeyMenu: View {
     let title: String
-    let entries: [(String, String, Bool)]
+    /// Key, label, grayed out, gap above (start of a block).
+    let entries: [(String, String, Bool, Bool)]
     /// Called with the row clicked; `nil` for a menu that only informs
     /// (the help).
     let onSelect: ((Int) -> Void)?
@@ -847,6 +851,9 @@ private struct KeyMenu: View {
                 .contentShape(Rectangle())
                 .onTapGesture { onSelect?(i) }
                 .uiTarget("menu-\(i)")
+                // A blank line between blocks (folders to deal with, filed,
+                // sent, thrown away; screens).
+                .padding(.top, e.3 ? scaled(10) : 0)
             }
         }
         // As wide as its longest row, not as the window: the rows' spacers

@@ -77,6 +77,8 @@ final class GeekController {
         let label: String
         /// Grayed out: shown for discoverability, not available yet.
         var disabled = false
+        /// Starts a new block: the menu leaves a gap above the row.
+        var gapBefore = false
         let action: @MainActor () -> Void
         var id: String { key + label }
     }
@@ -490,18 +492,23 @@ final class GeekController {
                 }
             }
         case .goto:
-            // Folders of the current view ("all" or one account), then the
-            // other screens.
-            var entries = scopeFolders.filter { !$0.letter.isEmpty }.map { f in
-                Entry(key: f.letter.lowercased(), label: f.name + (f.unread > 0 ? "  \(f.unread)" : "")) {
-                    [weak self] in self?.open(f)
-                }
+            // Folders of the current view ("all" or one account) in blocks
+            // (`ui.md`, `folderGroups`), Everything, then the screens:
+            // Contacts, Tags, Groups, and History on its own.
+            var entries: [Entry] = []
+            var group: Int?
+            for f in scopeFolders where !f.letter.isEmpty {
+                entries.append(Entry(
+                    key: f.letter.lowercased(), label: f.name + (f.unread > 0 ? "  \(f.unread)" : ""),
+                    gapBefore: group != nil && group != f.group
+                ) { [weak self] in self?.open(f) })
+                group = f.group
             }
             entries += [
-                Entry(key: "c", label: L("Contacts")) { [weak self] in self?.open(.contacts) },
-                Entry(key: "h", label: L("History")) { [weak self] in self?.open(.history) },
+                Entry(key: "c", label: L("Contacts"), gapBefore: true) { [weak self] in self?.open(.contacts) },
                 Entry(key: "T", label: L("Tags")) { [weak self] in self?.open(.tags) },
                 Entry(key: "g", label: L("Groups")) { [weak self] in self?.open(.groups) },
+                Entry(key: "h", label: L("History"), gapBefore: true) { [weak self] in self?.open(.history) },
             ]
             return entries
         case .save:
@@ -542,6 +549,8 @@ final class GeekController {
         let unread: Int
         /// The virtual folder "Everything".
         var everything = false
+        /// Block of the folder in the lists (`folderGroup`).
+        var group: Int { everything ? GeekController.folderGroups.count + 1 : GeekController.folderGroup(role) }
         var id: String { everything ? "everything" : folderId.map { "f\($0)" } ?? "r\(role ?? "")" }
     }
 
@@ -549,7 +558,42 @@ final class GeekController {
     /// one entry per role, with the unread counts of every account added up;
     /// folders without a role (user folders) stay per account and are not
     /// listed there.
-    var scopeFolders: [ScopeFolder] { realScopeFolders + [everythingFolder] }
+    var scopeFolders: [ScopeFolder] { Self.ordered(realScopeFolders) + [everythingFolder] }
+
+    /// Blocks of the folder lists (`ui.md`, "Thème geek"), in order: what
+    /// is to deal with, what is filed, what was written, what was thrown
+    /// away. Folders of other roles, and the user's own folders, form a
+    /// block of their own after the filed ones.
+    ///
+    /// Swift note: `nonisolated` lets code outside the main actor (here the
+    /// `group` property of `ScopeFolder`) use these constant rules.
+    nonisolated static let folderGroups: [[String]] = [
+        ["inbox", "todo", "waiting", "quarantine"],
+        ["archive", "newsletter", "paperwork"],
+        ["sent", "drafts"],
+        ["deleted", "junk", "banned"],
+    ]
+
+    /// Block number of a role: its index in `folderGroups` × 2, so that
+    /// the other folders (1 + 2 = 3) fall between the filed folders (2)
+    /// and the sent ones (4).
+    nonisolated static func folderGroup(_ role: String?) -> Int {
+        guard let role, let i = folderGroups.firstIndex(where: { $0.contains(role) }) else { return 3 }
+        return i * 2
+    }
+
+    /// Folders sorted by block, then by their place in the block; folders
+    /// outside the blocks keep the core's order.
+    static func ordered(_ folders: [ScopeFolder]) -> [ScopeFolder] {
+        func rank(_ f: ScopeFolder) -> Int {
+            f.role.flatMap { r in folderGroups.lazy.compactMap { $0.firstIndex(of: r) }.first } ?? 0
+        }
+        // Swift note: `enumerated()` pairs each element with its index; the
+        // index breaks ties, which makes the sort stable.
+        return folders.enumerated().sorted { a, b in
+            (a.element.group, rank(a.element), a.offset) < (b.element.group, rank(b.element), b.offset)
+        }.map(\.element)
+    }
 
     /// "Everything", at the foot of the list: every folder of the view, to
     /// search everywhere with the attributes (`ui.md`).

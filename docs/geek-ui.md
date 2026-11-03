@@ -104,13 +104,19 @@ A click acts at once: double-clicks are detected without delaying single clicks.
 
 ### Folders and screens (`;`)
 
+The menu lists the folders in blocks separated by a blank line, the folder column too: to deal with (Inbox, Todo, Waiting, Quarantine), filed (Archive, Newsletter, Paperwork), the user's own folders, written (Sent, Drafts), thrown away (Deleted, Junk, Banned); then Everything, the screens Contacts, Tags, Groups, and History on its own.
+
 | Key | Goes to |
 | --- | --- |
-| `;i` `;t` `;w` `;a` `;s` `;r` `;n` `;p` `;q` `;d` `;x` `;b` | Inbox, Todo, Waiting, Archive, Sent, Drafts, Newsletter, Paperwork, Quarantine, Deleted, Junk, Banned of the current account |
+| `;i` `;t` `;w` `;q` | Inbox, Todo, Waiting, Quarantine of the current view |
+| `;a` `;n` `;p` | Archive, Newsletter, Paperwork |
+| `;s` `;r` | Sent, Drafts |
+| `;d` `;x` `;b` | Deleted, Junk, Banned |
+| `;e` | Everything: every folder of the view |
 | `;c` | Contacts: every known address, with its decision, groups and number of mails; `/` filters; Return lists the contact's mails |
-| `;h` | History: the audit log, newest first |
 | `;T` | Tags; Return lists the mails of the tag (uppercase: `;t` is Todo) |
 | `;g` | Groups; Return lists the mails of the group's members |
+| `;h` | History: the audit log, newest first |
 
 On a screen, `j` `k` move and Escape goes back to the mails.
 

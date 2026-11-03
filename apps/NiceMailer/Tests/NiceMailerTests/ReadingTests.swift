@@ -117,6 +117,9 @@ struct ReadingTests {
     }
 
     @Test func leavingTheAutomaticMailAtOnceDoesNotMarkIt() async {
+        // A delay well above the time the test takes to press j (50 ms
+        // could pass on a busy machine, making the test flaky).
+        model.seenDelay = 0.5
         press("j")
         #expect(await eventually { seenCalls.contains(2) })
         #expect(!seenCalls.contains(1))
