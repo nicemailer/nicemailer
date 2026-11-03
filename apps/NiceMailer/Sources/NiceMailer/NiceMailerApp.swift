@@ -13,21 +13,37 @@ import SwiftUI
 struct NiceMailerApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @State private var model = AppModel()
+    /// Current theme (`ui.md`). Swift note: `@AppStorage` is a property
+    /// stored in UserDefaults; changing it redraws the views that read it.
+    @AppStorage(UITheme.defaultsKey) private var theme: UITheme = .geek
 
     /// A `Scene` describes the app's windows and menus.
     var body: some Scene {
         WindowGroup("NiceMailer") {
-            ContentView()
-                .environment(model)
-                .frame(minWidth: 900, minHeight: 560)
-                // `.task` starts async work when the view appears.
-                .task { await model.connect() }
+            Group {
+                switch theme {
+                case .geek: GeekRootView()
+                // Design does not exist yet: it shows the classic interface.
+                case .classic, .design: ContentView()
+                }
+            }
+            .environment(model)
+            .frame(minWidth: 700, minHeight: 420)
+            // `.task` starts async work when the view appears.
+            .task { await model.connect() }
         }
-        // Adds a "Recharger" item (⌘R) to the View menu.
         .commands {
+            // Adds a "Reload" item (⌘R) to the View menu.
             CommandGroup(after: .toolbar) {
-                Button("Recharger") { Task { await model.reloadAll() } }
+                Button(L("Reload")) { Task { await model.reloadAll() } }
                     .keyboardShortcut("r", modifiers: .command)
+            }
+            // Theme menu, during development; it will become a setting.
+            CommandMenu(L("Theme")) {
+                Picker(L("Theme"), selection: $theme) {
+                    ForEach(UITheme.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.inline)
             }
         }
     }
@@ -36,6 +52,7 @@ struct NiceMailerApp: App {
 /// AppKit delegate, for launch-time setup.
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
+        Fonts.register()
         // Launched by `swift run`, the app is a bare executable without an
         // .app bundle, so macOS treats it as a background tool. It must be
         // declared a regular app to get a Dock icon and a menu bar, and

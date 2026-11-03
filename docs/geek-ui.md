@@ -1,0 +1,74 @@
+# The geek theme
+
+The geek theme is a keyboard-first interface designed like a code editor: no rounded zones, no scroll bars, no animations, a compact status bar, and menus in the style of [Helix](https://helix-editor.com). The specification (in French) is `specifications/ui.md`.
+
+Switch themes with the **Theme** menu (Classic, Design, Geek). Design does not exist yet and shows the classic interface. The choice is remembered.
+
+## Layout
+
+- **Mail list** on the left (about a third of the window; drag the separator to resize), **reading pane** on the right.
+- `v1` shows the list only, `v2` the list and the mail, `v3` adds the folders on the left.
+- The **status bar** shows the mode (`NOR`, or the prefix waiting for its second key, such as `m`) and the location (`account · folder`, or the tag, group, contact or search being listed). Messages (result of an action, errors) appear on the right and disappear at the next key. `vs` moves it to the top, hides it, or brings it back to the bottom.
+- When a list opens, its first mail is selected, so the reading pane always shows something.
+
+Layout choices (columns, status bar position, list width) are remembered.
+
+## Reading a mail
+
+Mails are shown as plain text in **iA Writer Mono V**, a font bundled with the app (SIL Open Font License). The `text | html` switch at the top of the mail, or `vh`, shows the sanitized HTML version instead (scripts and remote images are removed by the core). The choice is remembered **for the sender**: the next mails from the same address open the same way.
+
+## Keys
+
+Actions apply to the **marked** mails if any (`J` / `K`), otherwise to the mail under the cursor.
+
+| Key | Action |
+| --- | --- |
+| `j` `k` (or arrows) | next / previous mail |
+| `J` `K` | mark the mail and move (multiple selection) |
+| `h` | folder picker |
+| `l` | links of the mail; Return opens one in the browser |
+| `d` | done: move to Archive |
+| `m` + letter | move to a folder (`mt` Todo, `md` Deleted…); only allowed targets are offered |
+| Delete | move to Deleted |
+| `t` | tag picker: choose a tag, or type a new name; the same tag again removes it |
+| `g` | group picker: adds the sender to a group (new name: the group is created) |
+| `u` | read / unread |
+| `*` | flag |
+| `/` | search: type, Return keeps the results, `j` `k` move in them, Return opens a mail, Escape clears |
+| `;` + key | go to a folder or a screen (see below) |
+| `s` + key | save the latest mail of the conversation to `~/Downloads`: `se` .eml, `st` text, `sm` Markdown |
+| `v` + key | display: `v1` `v2` `v3` columns, `vc` sort by reception, `vm` sort by modification, `vh` text / HTML, `vs` status bar |
+| Space, `ctrl-d` `ctrl-u` `ctrl-f` `ctrl-b` | scroll the mail |
+| `?` | list of keys |
+| Escape | cancel a prefix, close a panel, unmark, then go back from a tag, group or contact list to the folder |
+| `r` `R` `f` | reply, reply all, forward: not available yet (writing mail needs SMTP) |
+
+After a prefix (`m`, `;`, `s`, `v`), a menu in the bottom-right corner lists the possible second keys, as in Helix.
+
+### Folders and screens (`;`)
+
+| Key | Goes to |
+| --- | --- |
+| `;i` `;t` `;w` `;a` `;s` `;r` `;n` `;p` `;q` `;d` `;x` `;b` | Inbox, Todo, Waiting, Archive, Sent, Drafts, Newsletter, Paperwork, Quarantine, Deleted, Junk, Banned of the current account |
+| `;c` | Contacts: every known address, with its decision, groups and number of mails; `/` filters; Return lists the contact's mails |
+| `;h` | History: the audit log, newest first |
+| `;T` | Tags; Return lists the mails of the tag (uppercase: `;t` is Todo) |
+| `;g` | Groups; Return lists the mails of the group's members |
+
+On a screen, `j` `k` move and Escape goes back to the mails.
+
+### Pickers
+
+Pickers (`h`, `l`, `t`, `g`) are filterable lists: type to filter (every word typed must appear, in any order, ignoring case and accents), `ctrl-n` / `ctrl-p` or the arrows to move, Return to choose, Escape to close.
+
+## Not available yet
+
+- The "edition" context: replying, forwarding, writing a new mail.
+- Saving attachments (`sa`, `sg`) and saving as PDF (`sp`).
+- A dark/light override independent of macOS (the palette follows the system appearance).
+
+## Implementation notes
+
+- Keys are read by an AppKit event monitor (`GeekController.handle`) before any view, so a key is never lost to a focused field: picker and search text is edited by the controller itself.
+- All user-facing strings go through `L(...)` and the String Catalog `Resources/Localizable.xcstrings` (English and French). The language is chosen explicitly from the user's preferences, because an app launched with `swift run` has no main bundle declaring its languages.
+- Rows of lazy lists receive plain values (cursor, marks) as parameters: reading the observable model only inside a `ScrollView` closure did not always refresh them.

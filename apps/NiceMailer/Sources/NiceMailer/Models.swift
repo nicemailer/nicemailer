@@ -69,6 +69,13 @@ struct ThreadSummary: Decodable, Identifiable, Hashable {
     let returnedFrom: String?
     /// Folder preselected if the user replies.
     let replyTarget: String?
+    /// Folder this row describes (the listed folder, or for a list across
+    /// folders the folder of the latest message). Moves start from it.
+    let folderId: Int
+    /// Unix timestamp of the latest change by the user (sort "modified").
+    let dateLastModified: Int
+    /// Names of the thread's tags.
+    let tags: [String]
 }
 
 /// A page of a paginated list. `<T: Decodable>` makes it generic: it can
@@ -108,6 +115,12 @@ struct MessageView: Decodable, Identifiable, Hashable {
     let hasAttachments: Bool
     /// "pass", "fail" or "none".
     let authResult: String
+    /// Sanitized HTML body, if the message has an HTML part.
+    let bodyHtml: String?
+    /// Remote images were removed from `bodyHtml`.
+    let hasRemoteContent: Bool
+    /// Display remembered for the sender: "text", "html" or nil (default).
+    let fromBodyFormat: String?
 }
 
 /// A whole thread, all folders included.
@@ -143,6 +156,60 @@ struct SearchResult: Decodable {
 /// Result of a write command: number of messages changed.
 struct CommandResult: Decodable {
     let changed: Int
+}
+
+/// A plain list (`list_tags`, `list_groups`, `list_threads_by`).
+struct Items<T: Decodable>: Decodable {
+    let items: [T]
+    let asOf: Position
+}
+
+/// One line of the history (audit log).
+struct HistoryEntry: Decodable, Identifiable, Hashable {
+    let id: Int
+    let date: Int
+    /// Who did it: "app", "cli", "core"...
+    let source: String
+    let entity: String
+    let entityId: Int
+    let action: String
+    /// Readable description built by the core. (The raw `detail` JSON is
+    /// not decoded: the app does not need it.)
+    let summary: String
+}
+
+struct TagView: Decodable, Identifiable, Hashable {
+    let id: Int
+    let accountId: Int
+    let name: String
+    let color: String?
+    let messageCount: Int
+}
+
+struct GroupView: Decodable, Identifiable, Hashable {
+    let id: Int
+    let name: String
+    let color: String?
+    let memberCount: Int
+}
+
+struct ContactView: Decodable, Identifiable, Hashable {
+    let id: Int
+    let addr: String
+    let name: String?
+    let screeningTarget: String?
+    let groups: [String]
+    let messageCount: Int
+}
+
+struct ExportResult: Decodable {
+    let path: String
+}
+
+struct GroupMemberResult: Decodable {
+    let groupId: Int
+    let addr: String
+    let changed: Bool
 }
 
 struct HelloResult: Decodable {

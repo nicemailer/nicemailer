@@ -6,12 +6,24 @@ import PackageDescription
 // `swift run` read it; no Xcode project is needed.
 let package = Package(
     name: "NiceMailer",
+    // Source language of the user-facing strings. Translations live in the
+    // String Catalog `Resources/Localizable.xcstrings` (see CLAUDE.md,
+    // "Languages": English and French, English as fallback).
+    defaultLocalization: "en",
     // `@Observable` and `.onKeyPress` need macOS 14.
     platforms: [.macOS(.v14)],
     targets: [
         .executableTarget(
             name: "NiceMailer",
             path: "Sources/NiceMailer",
+            // Files bundled with the app, reachable through `Bundle.module`.
+            // `.copy` keeps the Fonts folder as is (fonts are registered at
+            // launch, see `Fonts.register`); `.process` compiles the String
+            // Catalog into per-language `.strings` files.
+            resources: [
+                .copy("Resources/Fonts"),
+                .process("Resources/Localizable.xcstrings"),
+            ],
             // Swift 5 language mode: Swift 6's strict concurrency checking
             // is not enabled yet, to keep this first version simple.
             swiftSettings: [.swiftLanguageMode(.v5)]

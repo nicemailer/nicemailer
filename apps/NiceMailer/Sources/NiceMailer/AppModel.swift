@@ -29,7 +29,9 @@ final class AppModel {
     private(set) var folders: [FolderView] = []
     /// Threads of the selected folder, as far as loaded (pages are appended
     /// as the user scrolls).
-    private(set) var threads: [ThreadSummary] = []
+    // Settable from `AppModel+Actions.swift` (optimistic updates); a
+    // `private(set)` setter would only be reachable from this file.
+    var threads: [ThreadSummary] = []
     /// Cursor of the next page of `threads`; nil when everything is loaded.
     private(set) var nextCursor: String?
     /// Thread shown in the reading pane.
@@ -37,6 +39,9 @@ final class AppModel {
     private(set) var searchResults: [SearchHit] = []
     /// Error shown in an alert; the view sets it back to nil when dismissed.
     var lastError: String?
+    /// Short message shown in the geek status bar (result of an action,
+    /// "not available yet"…); cleared by the next key.
+    var flash: String?
 
     /// Selected folder. `didSet` is a property observer: it runs after each
     /// assignment, with the previous value in `oldValue`. Changing folder
@@ -45,10 +50,36 @@ final class AppModel {
         didSet {
             guard selectedFolderId != oldValue else { return }
             selectedThreadId = nil
+            marked = []
+            // Choosing a folder leaves a tag, group or contact list.
+            listFilter = nil
             // `Task { ... }` starts asynchronous work from synchronous code.
             Task { await reloadThreads() }
         }
     }
+
+    /// A list across folders shown instead of the selected folder: the
+    /// threads of a tag, of a group's members, or of a contact.
+    enum ListFilter: Equatable {
+        case tag(TagView)
+        case group(GroupView)
+        case contact(ContactView)
+    }
+
+    /// Set by `showThreads(of:)`; `nil` shows the selected folder.
+    private(set) var listFilter: ListFilter?
+
+    /// Sort of the folder lists: "received" or "modified" (`ui.md`, vc/vm).
+    var sort: String = "received" {
+        didSet {
+            guard sort != oldValue else { return }
+            Task { await reloadThreads() }
+        }
+    }
+
+    /// Threads marked for a grouped action (J/K in the geek theme). The
+    /// thread under the cursor is `selectedThreadId`.
+    var marked = Set<Int>()
 
     /// Selected thread: selecting one opens it in the reading pane.
     var selectedThreadId: Int? {
@@ -194,14 +225,19 @@ final class AppModel {
     /// (in several pages if needed), so the list does not jump back to the
     /// top on every invalidation.
     func reloadThreads(keepDepth: Bool = false) async {
+        if let filter = listFilter {
+            await reloadFiltered(filter)
+            return
+        }
         guard let client, let folderId = selectedFolderId else { threads = []; return }
+        let sort = self.sort
         let wanted = keepDepth ? max(threads.count, Self.pageSize) : Self.pageSize
         var items: [ThreadSummary] = []
         var cursor: String?
         do {
             // `repeat { } while` runs the body at least once.
             repeat {
-                var params: [String: Any] = ["folder_id": folderId, "limit": min(200, wanted - items.count)]
+                var params: [String: Any] = ["folder_id": folderId, "limit": min(200, wanted - items.count), "sort": sort]
                 if let cursor { params["cursor"] = cursor }
                 let page: Page<ThreadSummary> = try await client.call("list_threads", params)
                 items += page.items
@@ -209,25 +245,63 @@ final class AppModel {
             } while cursor != nil && items.count < wanted
             // The user may have changed folder while we were loading: then
             // this result is stale and must not replace the new list.
-            guard folderId == selectedFolderId else { return }
+            guard folderId == selectedFolderId, sort == self.sort, listFilter == nil else { return }
             threads = items
             nextCursor = cursor
+            selectFirstIfNeeded()
+        } catch { report(error) }
+    }
+
+    /// `ui.md`: a list always has a selected mail, so the reading pane
+    /// shows something. A selection is kept even when the thread is not in
+    /// the pages loaded so far (a search result opened in an old part of
+    /// the folder): only an empty selection is replaced.
+    private func selectFirstIfNeeded() {
+        marked = marked.filter { id in threads.contains { $0.id == id } }
+        if selectedThreadId == nil {
+            selectedThreadId = threads.first?.id
+        }
+    }
+
+    /// Shows the threads of a tag, a group or a contact (across folders).
+    func showThreads(of filter: ListFilter) {
+        listFilter = filter
+        selectedThreadId = nil
+        marked = []
+        Task { await reloadThreads() }
+    }
+
+    private func reloadFiltered(_ filter: ListFilter) async {
+        guard let client else { return }
+        var params: [String: Any] = ["limit": 200]
+        switch filter {
+        case .tag(let t): params["tag_id"] = t.id
+        case .group(let g): params["group_id"] = g.id
+        case .contact(let c): params["address_id"] = c.id
+        }
+        do {
+            let list: Items<ThreadSummary> = try await client.call("list_threads_by", params)
+            guard filter == listFilter else { return }
+            threads = list.items
+            nextCursor = nil
+            selectFirstIfNeeded()
         } catch { report(error) }
     }
 
     /// Loads the next page when the last row appears on screen (called by
     /// each row's `.task` in `ThreadList`).
     func loadMoreIfNeeded(after thread: ThreadSummary) async {
-        guard let client, let folderId = selectedFolderId, let cursor = nextCursor,
+        guard let client, let folderId = selectedFolderId, let cursor = nextCursor, listFilter == nil,
               !loadingMore, thread.id == threads.last?.id else { return }
+        let sort = self.sort
         loadingMore = true
         // `defer` runs when the function exits, whatever the path.
         defer { loadingMore = false }
         do {
             let page: Page<ThreadSummary> = try await client.call(
-                "list_threads", ["folder_id": folderId, "cursor": cursor, "limit": Self.pageSize])
+                "list_threads", ["folder_id": folderId, "cursor": cursor, "limit": Self.pageSize, "sort": sort])
             // Drop the page if the folder or the list changed meanwhile.
-            guard folderId == selectedFolderId, cursor == nextCursor else { return }
+            guard folderId == selectedFolderId, cursor == nextCursor, sort == self.sort else { return }
             threads += page.items
             nextCursor = page.nextCursor
         } catch { report(error) }
@@ -339,7 +413,14 @@ final class AppModel {
         selectedThreadId = threads[next].id
     }
 
-    private func report(_ error: Error) {
+    func report(_ error: Error) {
         lastError = error.localizedDescription
     }
+
+    /// The connected client, for the actions defined in other files
+    /// (`AppModel+Actions.swift`).
+    var core: CoreClient? { client }
+
+    /// Reloads the open thread (after a change of display preference).
+    func reloadOpenThread() async { await loadOpenThread(markSeen: false) }
 }

@@ -1,0 +1,846 @@
+{
+  "sourceLanguage": "en",
+  "strings": {
+    "(body not downloaded)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "(corps non téléchargé)"
+          }
+        }
+      }
+    },
+    "(no subject)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "(sans objet)"
+          }
+        }
+      }
+    },
+    "/ filter · return: their mails · esc: back": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "/ filtrer · entrée : ses mails · échap : retour"
+          }
+        }
+      }
+    },
+    "%@ shown as %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ affiché en %2$@"
+          }
+        }
+      }
+    },
+    "%lld mails": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld mails"
+          }
+        }
+      }
+    },
+    "%lld marked": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld marqués"
+          }
+        }
+      }
+    },
+    "%lld members": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld membres"
+          }
+        }
+      }
+    },
+    "%lld threads moved to %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld conversations déplacées dans %2$@"
+          }
+        }
+      }
+    },
+    "add the sender to a group": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ajouter l'expéditeur à un groupe"
+          }
+        }
+      }
+    },
+    "Added to %@: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ajouté à %1$@ : %2$@"
+          }
+        }
+      }
+    },
+    "all attachments": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "toutes les pièces jointes"
+          }
+        }
+      }
+    },
+    "Already in %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Déjà dans %@"
+          }
+        }
+      }
+    },
+    "as .eml file": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "en fichier .eml"
+          }
+        }
+      }
+    },
+    "as Markdown file": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "en fichier Markdown"
+          }
+        }
+      }
+    },
+    "as PDF": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "en PDF"
+          }
+        }
+      }
+    },
+    "as text file": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "en fichier texte"
+          }
+        }
+      }
+    },
+    "attachments but graphics": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "pièces jointes sauf images"
+          }
+        }
+      }
+    },
+    "by modification": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "par modification"
+          }
+        }
+      }
+    },
+    "cancel, unmark, back": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "annuler, démarquer, revenir"
+          }
+        }
+      }
+    },
+    "Cc: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cc : %@"
+          }
+        }
+      }
+    },
+    "Classic": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Classique"
+          }
+        }
+      }
+    },
+    "contact: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "contact : %@"
+          }
+        }
+      }
+    },
+    "Contacts": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Contacts"
+          }
+        }
+      }
+    },
+    "Date: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Date : %@"
+          }
+        }
+      }
+    },
+    "delete": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "supprimer"
+          }
+        }
+      }
+    },
+    "Design (not yet: same as Classic)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Design (pas encore : identique à Classique)"
+          }
+        }
+      }
+    },
+    "display": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "affichage"
+          }
+        }
+      }
+    },
+    "Display": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Affichage"
+          }
+        }
+      }
+    },
+    "done (archive)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "fait (archiver)"
+          }
+        }
+      }
+    },
+    "Folder": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dossier"
+          }
+        }
+      }
+    },
+    "From: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "De : %@"
+          }
+        }
+      }
+    },
+    "Geek": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Geek"
+          }
+        }
+      }
+    },
+    "Go to": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aller à"
+          }
+        }
+      }
+    },
+    "go to a folder": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "aller à un dossier"
+          }
+        }
+      }
+    },
+    "go to a folder or a screen": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "aller à un dossier ou un écran"
+          }
+        }
+      }
+    },
+    "Group": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Groupe"
+          }
+        }
+      }
+    },
+    "group: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "groupe : %@"
+          }
+        }
+      }
+    },
+    "Groups": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Groupes"
+          }
+        }
+      }
+    },
+    "History": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Historique"
+          }
+        }
+      }
+    },
+    "Keys": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Touches"
+          }
+        }
+      }
+    },
+    "Links": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Liens"
+          }
+        }
+      }
+    },
+    "links of the mail": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "liens du mail"
+          }
+        }
+      }
+    },
+    "mark and move (multiple selection)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "marquer et avancer (sélection multiple)"
+          }
+        }
+      }
+    },
+    "Move": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Déplacer"
+          }
+        }
+      }
+    },
+    "move to a folder": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "déplacer dans un dossier"
+          }
+        }
+      }
+    },
+    "Moved to %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Déplacé dans %@"
+          }
+        }
+      }
+    },
+    "newest first · esc: back": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "plus récent d'abord · échap : retour"
+          }
+        }
+      }
+    },
+    "next / previous mail": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "mail suivant / précédent"
+          }
+        }
+      }
+    },
+    "No command %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pas de commande %@"
+          }
+        }
+      }
+    },
+    "No command %@%@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pas de commande %1$@%2$@"
+          }
+        }
+      }
+    },
+    "No folder": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucun dossier"
+          }
+        }
+      }
+    },
+    "No link in this mail": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucun lien dans ce mail"
+          }
+        }
+      }
+    },
+    "No mail": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucun mail"
+          }
+        }
+      }
+    },
+    "No result": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucun résultat"
+          }
+        }
+      }
+    },
+    "Not a target from this folder: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pas une cible depuis ce dossier : %@"
+          }
+        }
+      }
+    },
+    "Not available yet: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pas encore disponible : %@"
+          }
+        }
+      }
+    },
+    "Not available yet: writing mail needs SMTP": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pas encore disponible : écrire un mail demande SMTP"
+          }
+        }
+      }
+    },
+    "one column": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "une colonne"
+          }
+        }
+      }
+    },
+    "read / unread, flag": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "lu / non lu, drapeau"
+          }
+        }
+      }
+    },
+    "Reload": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recharger"
+          }
+        }
+      }
+    },
+    "reply, reply all, forward (not yet)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "répondre, répondre à tous, transférer (pas encore)"
+          }
+        }
+      }
+    },
+    "return: their mails · esc: back": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "entrée : leurs mails · échap : retour"
+          }
+        }
+      }
+    },
+    "save": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "enregistrer"
+          }
+        }
+      }
+    },
+    "Save": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enregistrer"
+          }
+        }
+      }
+    },
+    "Saved: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enregistré : %@"
+          }
+        }
+      }
+    },
+    "scroll the mail": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "faire défiler le mail"
+          }
+        }
+      }
+    },
+    "search": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "rechercher"
+          }
+        }
+      }
+    },
+    "search: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "recherche : %@"
+          }
+        }
+      }
+    },
+    "sort by modification date": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "trier par date de modification"
+          }
+        }
+      }
+    },
+    "sort by reception date": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "trier par date de réception"
+          }
+        }
+      }
+    },
+    "status bar: bottom, top, hidden": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "barre de statut : bas, haut, masquée"
+          }
+        }
+      }
+    },
+    "tag": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "tag"
+          }
+        }
+      }
+    },
+    "Tag": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tag"
+          }
+        }
+      }
+    },
+    "Tag removed: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tag retiré : %@"
+          }
+        }
+      }
+    },
+    "tag: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "tag : %@"
+          }
+        }
+      }
+    },
+    "Tagged: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tag ajouté : %@"
+          }
+        }
+      }
+    },
+    "Tags": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tags"
+          }
+        }
+      }
+    },
+    "text / HTML": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "texte / HTML"
+          }
+        }
+      }
+    },
+    "Theme": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Thème"
+          }
+        }
+      }
+    },
+    "This mail has no HTML version": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce mail n'a pas de version HTML"
+          }
+        }
+      }
+    },
+    "three columns": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "trois colonnes"
+          }
+        }
+      }
+    },
+    "To: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "À : %@"
+          }
+        }
+      }
+    },
+    "two columns": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "deux colonnes"
+          }
+        }
+      }
+    },
+    "Type a name": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tapez un nom"
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}

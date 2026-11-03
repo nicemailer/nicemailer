@@ -40,7 +40,11 @@ With the core running, an mbox export (HEY, Gmail, Thunderbird…) can be import
 nicemailer import-mbox ~/Downloads/mailbox.mbox --account hey --address me@hey.com
 ```
 
-## App shortcuts
+## App themes and shortcuts
+
+The app has a **Theme** menu. The default **geek** theme is driven by the keyboard, like an editor: `j`/`k` to move, `d` to archive, `m` + a folder letter to move, `;` + a letter to go to a folder or a screen, `?` for the list of keys. See `docs/geek-ui.md`.
+
+In the **classic** theme (the first interface):
 
 | Key | Action |
 | --- | --- |

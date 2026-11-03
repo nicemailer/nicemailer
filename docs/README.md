@@ -5,5 +5,7 @@ User and developer documentation, in English. It is written together with the co
 | Page | Content |
 | --- | --- |
 | [import-mbox.md](import-mbox.md) | Importing a whole mailbox from an mbox file into an archive account |
+| [geek-ui.md](geek-ui.md) | The geek theme of the app: layout, keys, menus and pickers |
+| [core-library.md](core-library.md) | Core methods behind the screens: sort by modification, text/HTML per sender, export, history, tags, groups, contacts |
 
 Features of the first working version that predate this folder (fake-mail seed, folders and moves, search, events) are described in the main `README.md` and still need their own pages.
