@@ -47,6 +47,8 @@ final class GeekController {
         /// The expanded panel of an attribute with a value (From…, To…,
         /// Contains…, Date…).
         case attributeValue(AttributeField)
+        /// `/`: the Contains… panel, applied to "Everything" (`ui.md`).
+        case search
         /// `l`: open a link of the mail.
         case links
         /// `t`: tag the threads (existing tag, or a new one typed).
@@ -64,8 +66,6 @@ final class GeekController {
         case help
         /// A picker, with the text typed and the highlighted row.
         case picker(PickerKind)
-        /// `/`: the search query is being typed.
-        case search
         /// `/` on the contacts screen: the filter is being typed.
         case contactFilter
     }
@@ -93,10 +93,18 @@ final class GeekController {
     /// Text typed in the open picker, and the highlighted row.
     var pickerQuery = ""
     var pickerIndex = 0
-    /// Text of the search being typed; results are in `model.searchResults`.
-    var searchQuery = ""
-    /// Row of the search results under the cursor.
-    var searchIndex = 0
+    /// Where `/` was pressed from, to come back there with Escape (`ui.md`):
+    /// set when `/` leaves a folder for "Everything", forgotten as soon as
+    /// the user goes elsewhere (`;`, `@`, a click on a folder).
+    var searchOrigin: SearchOrigin?
+
+    /// The list shown before a `/` search: a folder, a unified role of
+    /// "all", or "Everything" itself (then nothing changes on return).
+    struct SearchOrigin: Equatable {
+        var folderId: Int?
+        var unifiedRole: String?
+        var everything: AppModel.Everything?
+    }
 
     /// Number of columns (`ui.md`, display menu): 1 = list only,
     /// 2 = list and mail, 3 = folders, list and mail.
@@ -129,12 +137,11 @@ final class GeekController {
     /// The reading pane's scroll view, to scroll it from the keyboard.
     weak var readerScroll: NSScrollView?
 
-    /// Rows of the mail list (and of the search results) that fit in their
-    /// pane, set by the views when their height changes; used by `ctrl-d` /
-    /// `ctrl-u`. `@ObservationIgnored`: no view reads it, so writing it
-    /// during layout must not trigger a redraw (it would loop).
+    /// Rows of the mail list that fit in its pane, set by the view when its
+    /// height changes; used by `ctrl-d` / `ctrl-u`. `@ObservationIgnored`:
+    /// no view reads it, so writing it during layout must not trigger a
+    /// redraw (it would loop).
     @ObservationIgnored var listVisibleRows = 20
-    @ObservationIgnored var searchVisibleRows = 10
 
     /// Left edge of each prefix block of the status bar (folder `;`, `m`,
     /// `s`, `v`), where its menu drops down from.
@@ -226,7 +233,7 @@ final class GeekController {
         case .none, .help: "NOR"
         case .menu(let p): p.rawValue
         case .picker: "PCK"
-        case .search, .contactFilter: "/"
+        case .contactFilter: "/"
         }
     }
 
@@ -239,7 +246,6 @@ final class GeekController {
         case .groups: return L("Groups")
         case .mail: break
         }
-        if !model.searchText.isEmpty { return L("search: %@", model.searchText) }
         switch model.listFilter {
         case .tag(let t): return L("tag: %@", t.name)
         case .group(let g): return L("group: %@", g.name)
@@ -297,9 +303,6 @@ final class GeekController {
         case .picker(let kind):
             handlePickerKey(kind, key: key, code: code, control: control)
             return true
-        case .search:
-            handleSearchInput(key: key, code: code)
-            return true
         case .contactFilter:
             handleContactFilterInput(key: key, code: code)
             return true
@@ -349,24 +352,18 @@ final class GeekController {
     /// Normal mode on the mail screen. `shift`: Shift is held, read only
     /// for Space (its character does not change with Shift).
     private func handleMailKey(key: String, code: UInt16, shift: Bool = false) {
-        let searching = !model.searchText.isEmpty
         switch code {
         case KeyCode.escape:
-            if searching {
-                model.searchText = ""
-            } else if !model.marked.isEmpty {
+            if !model.marked.isEmpty {
                 model.marked = []
             } else if model.listFilter != nil {
                 // Back from a tag, group or contact list to the folder.
                 model.leaveFilter()
-            } else if !model.attributes.isEmpty {
-                // Then the attributes go.
+            } else if !model.attributes.isEmpty || searchOrigin != nil {
+                // Then the attributes go, and after a `/` search, the list
+                // goes back to where `/` was pressed.
                 model.attributes = ThreadFilter()
-            }
-            return
-        case KeyCode.returnKey:
-            if searching, model.searchResults.indices.contains(searchIndex) {
-                model.openSearchHit(model.searchResults[searchIndex])
+                returnFromSearch()
             }
             return
         case KeyCode.delete, KeyCode.forwardDelete:
@@ -384,8 +381,8 @@ final class GeekController {
         switch key {
         case "j": moveCursor(1)
         case "k": moveCursor(-1)
-        case "J": if !searching { model.markAndMove(1) }
-        case "K": if !searching { model.markAndMove(-1) }
+        case "J": model.markAndMove(1)
+        case "K": model.markAndMove(-1)
         case "@": openPicker(.accounts)
         case "F": openPicker(.attributes)
         case "l": openPicker(.links)
@@ -397,9 +394,7 @@ final class GeekController {
         case "T": toggleShowAll()
         case "S": skipQuoted()
         case "g": openPicker(.group)
-        case "/":
-            searchQuery = model.searchText
-            overlay = .search
+        case "/": openPicker(.search)
         case "r", "R", "f":
             model.flash = L("Not available yet: writing mail needs SMTP")
         case "m", "s", "v":
@@ -425,11 +420,8 @@ final class GeekController {
         return index >= count - 1 ? 0 : max(0, index + 1)
     }
 
-    /// Half of the visible rows of the current list (mails or search
-    /// results), at least one row.
-    private var halfPage: Int {
-        Self.halfPage(model.searchText.isEmpty ? listVisibleRows : searchVisibleRows)
-    }
+    /// Half of the visible rows of the mail list, at least one row.
+    private var halfPage: Int { Self.halfPage(listVisibleRows) }
 
     /// Rows moved by `ctrl-d` / `ctrl-u` for a list showing `visibleRows`
     /// rows: half of them, as in Zed, and never zero (a tiny window still
@@ -442,20 +434,7 @@ final class GeekController {
         return max(1, Int(height / rowHeight))
     }
 
-    private func moveCursor(_ delta: Int) {
-        if !model.searchText.isEmpty {
-            // One row at a time wraps around (`stepUp`, `stepDown`); half
-            // pages (ctrl-d / ctrl-u) stop at the ends.
-            let count = model.searchResults.count
-            switch delta {
-            case -1: searchIndex = Self.stepUp(searchIndex, count: count)
-            case 1: searchIndex = Self.stepDown(searchIndex, count: count)
-            default: searchIndex = max(0, min(count - 1, searchIndex + delta))
-            }
-        } else {
-            model.selectNext(delta)
-        }
-    }
+    private func moveCursor(_ delta: Int) { model.selectNext(delta) }
 
     /// Scrolls the reading pane by a fraction of its height.
     private func scrollReader(pages: CGFloat) {
@@ -582,20 +561,20 @@ final class GeekController {
     func open(_ f: ScopeFolder) {
         if f.everything {
             screen = .mail
-            model.searchText = ""
+            searchOrigin = nil
             model.selectEverything(model.scopeAccountId.map { .account($0) } ?? .all)
         } else if let id = f.folderId {
             goToFolder(id)
         } else if let role = f.role {
             screen = .mail
-            model.searchText = ""
+            searchOrigin = nil
             model.selectUnified(role)
         }
     }
 
     func goToFolder(_ id: Int) {
         screen = .mail
-        model.searchText = ""
+        searchOrigin = nil
         if model.selectedFolderId == id, model.listFilter != nil {
             model.selectedFolderId = nil
         }
@@ -619,7 +598,7 @@ final class GeekController {
             ("u  *", L("read / unread, flag")),
             ("T", L("show / hide quotes, signatures, folded mails")),
             ("S", L("skip to the text after the next quote")),
-            ("/", L("search")),
+            ("/", L("search everywhere (Contains… in Everything)")),
             (";…", L("go to a folder or a screen")),
             ("s…", L("save")),
             ("v…", L("display")),
@@ -642,7 +621,7 @@ final class GeekController {
             Task { await loadGroups() }
         case .links, .accounts, .attributes:
             break
-        case .attributeValue:
+        case .attributeValue, .search:
             valueSuggestions = []
         }
     }
@@ -712,13 +691,13 @@ final class GeekController {
         // From "Everything", stay in "Everything" of the chosen view.
         if model.everything != nil {
             screen = .mail
-            model.searchText = ""
+            searchOrigin = nil
             model.selectEverything(accountId.map { .account($0) } ?? .all)
             return
         }
         guard let accountId else {
             screen = .mail
-            model.searchText = ""
+            searchOrigin = nil
             model.selectUnified(role ?? "inbox")
             return
         }
@@ -755,6 +734,11 @@ final class GeekController {
             all = attributeEntries
         case .attributeValue(let field):
             return valueEntries(field)
+        case .search:
+            // The rows of Contains…, applied to "Everything".
+            let typed = pickerQuery.trimmingCharacters(in: .whitespaces)
+            guard !typed.isEmpty else { return [] }
+            return [Entry(key: "+", label: typed) { [weak self] in self?.searchEverywhere(typed) }]
         case .links:
             all = model.links.enumerated().map { i, url in
                 Entry(key: "\(i + 1)", label: url.absoluteString) { NSWorkspace.shared.open(url) }
@@ -891,34 +875,32 @@ final class GeekController {
 
     // MARK: - Search
 
-    private func handleSearchInput(key: String, code: UInt16) {
-        let count = model.searchResults.count
-        switch code {
-        case KeyCode.escape:
-            overlay = .none
-            model.searchText = ""
-        case KeyCode.returnKey:
-            // Keep the results and the row chosen with the arrows; j/k then
-            // move in them, Return opens one. (Typing puts the cursor back
-            // on the first result.)
-            overlay = .none
-            searchIndex = max(0, min(count - 1, searchIndex))
-        // The arrows move in the results while typing; the arrow keys carry
-        // private-use characters (U+F700…) that must not reach the query.
-        case KeyCode.down:
-            searchIndex = Self.stepDown(searchIndex, count: count)
-        case KeyCode.up:
-            searchIndex = Self.stepUp(searchIndex, count: count)
-        case KeyCode.delete:
-            if !searchQuery.isEmpty { searchQuery.removeLast() }
-            model.searchText = searchQuery
-        default:
-            if !key.isEmpty, key.unicodeScalars.allSatisfy({ !CharacterSet.controlCharacters.contains($0) }) {
-                searchQuery += key
-                model.searchText = searchQuery
-                searchIndex = 0
-            }
+    /// `/` then Return: the words become the Contains… attribute of
+    /// "Everything" of the current view (every folder, every account in
+    /// "all"), shown like any filtered list (`ui.md`). The place `/` was
+    /// pressed from is kept for Escape; a second `/` keeps the first one.
+    func searchEverywhere(_ words: String) {
+        if searchOrigin == nil {
+            searchOrigin = SearchOrigin(
+                folderId: model.selectedFolderId, unifiedRole: model.unifiedRole, everything: model.everything)
         }
+        screen = .mail
+        model.attributes.add(.contains, words)
+        model.selectEverything(model.scopeAccountId.map { .account($0) } ?? .all)
+    }
+
+    /// Escape after a `/` search: back to the folder `/` was pressed from.
+    private func returnFromSearch() {
+        guard let origin = searchOrigin else { return }
+        // Navigating clears `searchOrigin` (`goToFolder`…), already done.
+        if let id = origin.folderId {
+            goToFolder(id)
+        } else if let role = origin.unifiedRole {
+            model.selectUnified(role)
+        } else if let e = origin.everything {
+            model.selectEverything(e)
+        }
+        searchOrigin = nil
     }
 
     // MARK: - Screens
@@ -1075,14 +1057,6 @@ extension GeekController {
             command: mods == .command, shift: mods == .shift)
         model.marked = result.marked
         model.selectedThreadId = result.cursor
-    }
-
-    /// Click on a search result; a double-click opens it in its folder.
-    func clickSearch(_ index: Int) {
-        searchIndex = index
-        if isDoubleClick("search-\(index)"), model.searchResults.indices.contains(index) {
-            model.openSearchHit(model.searchResults[index])
-        }
     }
 
     /// Click on a row of the contacts, tags or groups screen; a

@@ -113,7 +113,7 @@ private struct GeekWindow: View {
         case .picker(let kind):
             PickerPopup(controller: controller, kind: kind)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-        case .none, .search, .contactFilter:
+        case .none, .contactFilter:
             EmptyView()
         }
     }
@@ -166,7 +166,7 @@ struct GeekStatusBar: View {
                 .font(.geek(11, weight: .bold))
                 .foregroundStyle(Palette.background)
                 .background(Palette.accent)
-            if controller.screen == .mail, model.searchText.isEmpty, model.listFilter == nil,
+            if controller.screen == .mail, model.listFilter == nil,
                !model.listedFolderIds.isEmpty {
                 // Account ("all" for the unified view) and folder, each with
                 // its icon and the key that opens its picker; a click opens
@@ -210,9 +210,6 @@ struct GeekStatusBar: View {
                         .uiTarget("status-\(p.rawValue)")
                         .padding(.leading, p == .save ? 0 : scaled(28))
                 }
-            }
-            if case .search = controller.overlay {
-                Text("/" + controller.searchQuery + "▏").foregroundStyle(Palette.accent)
             }
             if case .contactFilter = controller.overlay {
                 Text("/" + controller.contactsQuery + "▏").foregroundStyle(Palette.accent)
@@ -344,17 +341,13 @@ private struct GeekFolderColumn: View {
     }
 }
 
-/// The mail list, or the search results while a search is active.
+/// The mail list. (`/` used to show its own results view; it now filters
+/// this same list, `ui.md`.)
 private struct GeekThreadColumn: View {
-    @Environment(AppModel.self) private var model
     let controller: GeekController
 
     var body: some View {
-        if model.searchText.isEmpty {
-            GeekThreadRows(controller: controller)
-        } else {
-            GeekSearchRows(controller: controller)
-        }
+        GeekThreadRows(controller: controller)
     }
 }
 
@@ -484,9 +477,9 @@ private struct GeekThreadRow: View {
                 Spacer(minLength: 0)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            // Like the folder of the search results: muted, fixed width. The
-            // account follows only when the subject keeps enough room
-            // (`RowLayout.showsAccount`); the reader always shows it.
+            // Muted, fixed width. The account follows only when the
+            // subject keeps enough room (`RowLayout.showsAccount`); the
+            // reader always shows it.
             if let folder {
                 let withAccount = folder.account != nil && layout.showsAccount
                 Text(withAccount ? folder.text : folder.folder).foregroundStyle(Palette.muted)
@@ -501,92 +494,6 @@ private struct GeekThreadRow: View {
         .padding(.trailing, 6)
         .frame(height: scaled(20))
         .background(cursor ? Palette.cursor : marked ? Palette.marked : Color.clear)
-    }
-}
-
-private struct GeekSearchRows: View {
-    @Environment(AppModel.self) private var model
-    let controller: GeekController
-
-    var body: some View {
-        GeekSearchList(
-            hits: model.searchResults, current: controller.searchIndex,
-            onVisibleRows: { controller.searchVisibleRows = $0 }
-        ) { controller.clickSearch($0) }
-    }
-}
-
-/// The search results as plain values: when the results or the cursor
-/// change, the parameters differ and SwiftUI rebuilds the rows. (Reading
-/// the observable model inside the scroll view's closure was not enough:
-/// the rows stayed those of the first query.)
-private struct GeekSearchList: View {
-    let hits: [SearchHit]
-    let current: Int
-    /// Called with the number of rows that fit, for ctrl-d / ctrl-u.
-    let onVisibleRows: (Int) -> Void
-    /// Called with the row's position when it is clicked.
-    let onClick: (Int) -> Void
-
-    var body: some View {
-        GeometryReader { geo in
-        let layout = RowLayout(width: geo.size.width)
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    // Identified by position, like `.id(i)` used to scroll: a
-                    // ForEach identity (message id) different from the `.id`
-                    // left the lazy stack showing the rows of an older query.
-                    ForEach(Array(hits.enumerated()), id: \.offset) { i, hit in
-                        GeekSearchRow(hit: hit, cursor: i == current, layout: layout)
-                            .contentShape(Rectangle())
-                            .onTapGesture { onClick(i) }
-                            .uiTarget("search-\(i)")
-                            .id(i)
-                    }
-                }
-            }
-            .scrollIndicators(.never)
-            .onChange(of: geo.size.height, initial: true) { _, h in
-                onVisibleRows(GeekController.visibleRows(height: h, rowHeight: scaled(36)))
-            }
-            .onChange(of: current) { _, i in proxy.scrollTo(i) }
-            .overlay {
-                if hits.isEmpty { Text(L("No result")).foregroundStyle(Palette.muted) }
-            }
-        }
-        }
-    }
-}
-
-/// One search result: date, sender, subject, folder, and the matched
-/// excerpt. A separate view with plain parameters, so SwiftUI redraws it
-/// when the cursor moves (inline row content in a lazy stack was not
-/// always refreshed).
-private struct GeekSearchRow: View {
-    let hit: SearchHit
-    let cursor: Bool
-    let layout: RowLayout
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: layout.char) {
-                Text(Format.geekListDate(hit.dateReceived)).foregroundStyle(Palette.muted)
-                    .frame(width: layout.date, alignment: .leading)
-                Text(hit.fromName ?? hit.fromAddr ?? "").frame(width: layout.sender, alignment: .leading)
-                Text(hit.subject).frame(maxWidth: .infinity, alignment: .leading)
-                Text(Role.name(hit.folderRole)).foregroundStyle(Palette.muted)
-                    .frame(width: 10 * layout.char, alignment: .trailing)
-            }
-            // The excerpt starts under the sender column.
-            Text(hit.highlight).foregroundStyle(Palette.muted)
-                .padding(.leading, layout.date + layout.char)
-        }
-        .font(.geek(RowLayout.fontSize))
-        .lineLimit(1)
-        .padding(.horizontal, 6)
-        .frame(height: scaled(36))
-        .background(cursor ? Palette.cursor : Color.clear)
     }
 }
 
@@ -999,8 +906,10 @@ private struct PickerPopup: View {
     }
 
     private var expanded: Bool {
-        if case .attributeValue = kind { return true }
-        return false
+        switch kind {
+        case .attributeValue, .search: return true
+        default: return false
+        }
     }
 
     private var title: String {
@@ -1008,6 +917,8 @@ private struct PickerPopup: View {
         case .accounts: L("Account")
         case .attributes: L("Attributes")
         case .attributeValue(let field): field.title
+        // Same panel as Contains…, named after what it does.
+        case .search: L("Search everywhere")
         case .links: L("Links")
         case .tag: L("Tag")
         case .group: L("Group")
@@ -1021,6 +932,7 @@ private struct PickerPopup: View {
         case .accounts: L("No account")
         case .attributes: L("No attribute")
         case .attributeValue(.date): L("Type a date: 2026-10-01 or 1/10/2026")
+        case .attributeValue(.contains), .search: L("Type words: subject, sender, recipients or body")
         case .attributeValue: L("Type a name, an address or words")
         }
     }

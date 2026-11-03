@@ -35,12 +35,13 @@ struct AccountPickerTests {
         _ = await eventually { model.threads.count == 8 }
     }
 
-    /// Sends one key: a character, `\r`, or `up` / `down` (arrows).
+    /// Sends one key: a character, `\r`, `esc`, or `up` / `down` (arrows).
     func press(_ name: String) {
         var chars = name
         var code: UInt16 = name == "\r" ? KeyCode.returnKey : 0
         if name == "up" { chars = "\u{F700}"; code = KeyCode.up }
         if name == "down" { chars = "\u{F701}"; code = KeyCode.down }
+        if name == "esc" { chars = "\u{1b}"; code = KeyCode.escape }
         let e = NSEvent.keyEvent(
             with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
             characters: chars, charactersIgnoringModifiers: chars, isARepeat: false, keyCode: code)!
@@ -175,6 +176,15 @@ struct AccountPickerTests {
         #expect(AppModel.folderLabel(f, withAccount: false).text == "Inbox")
         #expect(AppModel.folderLabel(f, withAccount: true).text == "Inbox · archive")
         #expect(AppModel.folderLabels(model.folders, withAccount: false).count == model.folders.count)
+    }
+
+    @Test func aSearchInAllCoversEveryAccountAndEscapeGoesBack() {
+        controller.goToAccount(nil)
+        #expect(model.unifiedRole == "inbox")
+        press("/"); press("d"); press("\r")
+        #expect(model.everything == .all && model.attributes.contains == "d")
+        press("esc")
+        #expect(model.unifiedRole == "inbox" && model.everything == nil && model.attributes.isEmpty)
     }
 
     @Test func semicolonEGoesToEverything() {

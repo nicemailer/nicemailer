@@ -14,7 +14,7 @@ Switch themes with the **Theme** menu (Classic, Design, Geek). Design does not e
 With several accounts, the app opens on **all**, the unified view: each folder (Inbox, Archive, Todo…) gathers the folders of the same role in every account, with their unread counts added up, and lists their mails together, newest first. Choose another view with `@` (or a click on the account in the status bar or on the title of the folder column): **all** comes first, then each account. Changing view keeps the folder role (Archive to Archive), or falls back to the Inbox.
 
 The `;` menu and the folder column only show the folders of the current view: the account is chosen with `@`. At the foot of the list, the virtual folder **Everything** (`;e`) lists every folder of the view together (all accounts in "all"), to search everywhere with the attributes; a conversation present in several folders (Inbox and Sent) appears once, in the folder of its latest mail. Since the list mixes every folder, each row shows its folder in a muted column before the message count, and the reader shows it at the right end of the subject line. In "all", the account follows the folder ("Archive · perso"): always in the reader, and in the list only when the subject keeps at least 30 characters (a wide list, one column), otherwise the folder alone. Moves and other actions apply to each mail in its own account.
-- The **status bar** shows the mode (`NOR`, or the prefix waiting for its second key, such as `m`), then the account (`@` icon) and the folder (folder icon), each followed by the key that opens it: `@` for the account picker, `;` for the menu of folders and screens. A click on either opens the same; the rows of a menu can be clicked too. While a tag, group, contact or search is listed, it shows that instead. Messages (result of an action, errors) appear on the right and disappear at the next key. A move names the mail and the folder: “Devis toiture” moved to Archive (the subject is cut at 50 characters); several mails give their number instead: 3 threads moved to Archive. `vs` moves it to the top, hides it, or brings it back to the bottom.
+- The **status bar** shows the mode (`NOR`, or the prefix waiting for its second key, such as `m`), then the account (`@` icon) and the folder (folder icon), each followed by the key that opens it: `@` for the account picker, `;` for the menu of folders and screens. A click on either opens the same; the rows of a menu can be clicked too. While a tag, group or contact is listed, it shows that instead. Messages (result of an action, errors) appear on the right and disappear at the next key. A move names the mail and the folder: “Devis toiture” moved to Archive (the subject is cut at 50 characters); several mails give their number instead: 3 threads moved to Archive. `vs` moves it to the top, hides it, or brings it back to the bottom.
 - When a list opens, its first mail is selected, so the reading pane always shows something.
 
 Layout choices (columns, status bar position, list width) are remembered.
@@ -39,7 +39,11 @@ The magnifier after the folder in the status bar (key **F**, or a click) opens t
 | Contains… | words of the full text (subject, sender, recipients, body), as a prefix, accents ignored |
 | Date… | today, last 7 days, last 30 days, this year, older than a year, or "after" / "before" a typed date (2026-10-01, 1/10/2026) |
 
-Choosing an active value again removes it; choosing the opposite value replaces it. An attribute with "…" expands the panel at once to choose its value. Active attributes are chips in the status bar: a click on a chip removes it; Escape clears them all (after the marks); they stay when changing folder or account. `/` stays the search across every folder.
+Choosing an active value again removes it; choosing the opposite value replaces it. An attribute with "…" expands the panel at once to choose its value. Active attributes are chips in the status bar: a click on a chip removes it; Escape clears them all (after the marks); they stay when changing folder or account.
+
+## Search (`/`)
+
+`/` is the quick way to search everywhere: it opens the same panel as `F` → Contains… (titled "Search everywhere"); Return goes to **Everything** of the current view (every folder, every account in "all") with the words as the Contains… attribute. The result is the ordinary list: one row per conversation, with its folder, the `contains:` chip, and `F` to narrow it further (unread, From…). Escape clears the attributes and goes back to the folder `/` was pressed from; going elsewhere first (`;`, `@`, a click on a folder) forgets that folder, and Escape then only clears the attributes. A second `/` replaces the words and keeps the folder to go back to.
 
 ## Reading a mail
 
@@ -52,7 +56,7 @@ Actions apply to the **marked** mails if any (`J` / `K`), otherwise to the mail 
 | Key | Action |
 | --- | --- |
 | `j` `k` (or arrows) | next / previous mail |
-| `ctrl-d` `ctrl-u` | half a page down / up in the list (or in the search results), as in Zed: the cursor moves by half the rows that fit in the list, and stops on the first or last mail |
+| `ctrl-d` `ctrl-u` | half a page down / up in the list, as in Zed: the cursor moves by half the rows that fit in the list, and stops on the first or last mail |
 | `J` `K` | mark the mail and move (multiple selection) |
 | `F` | attribute selector (filters on the current list) |
 | `@` | account picker: **all** (unified view) or one account, keeping the folder role (Archive to Archive), or its Inbox |
@@ -66,7 +70,7 @@ Actions apply to the **marked** mails if any (`J` / `K`), otherwise to the mail 
 | `S` | skip to the text after the next quoted block |
 | `u` | read / unread |
 | `*` | flag |
-| `/` | search: type, the arrows move in the results, Return keeps them (and the row chosen), `j` `k` move in them, Return opens a mail, Escape clears. The list turns around: up from the first result selects the last one, down from the last comes back to the first |
+| `/` | search everywhere: Contains… in Everything (see [Search](#search-)); Escape goes back |
 | `;` + key | go to a folder or a screen (see below) |
 | `s` + key | save the latest mail of the conversation to `~/Downloads`: `se` .eml, `st` text, `sm` Markdown |
 | `v` + key | display: `v1` `v2` `v3` columns, `vc` sort by reception, `vm` sort by modification, `vh` text / HTML, `vs` status bar |
@@ -85,7 +89,6 @@ The keyboard comes first, but every list can also be used with the mouse:
 | Where | Click | Other |
 | --- | --- | --- |
 | Mail list | select the mail, unmark the others | ⌘-click marks or unmarks a mail (the current one joins the selection); ⇧-click marks every mail from the current one to the clicked one |
-| Search results | select the result | double-click opens it in its folder |
 | Folders (3 columns) | go to the folder | |
 | Account or folder in the status bar | open the account or folder picker | |
 | Pickers and menus | choose the row | |
@@ -117,7 +120,7 @@ Pickers (`@`, `l`, `t`, `g`, `F`) are filterable lists: type to filter (every wo
 
 ## Implementation notes
 
-- Keys are read by an AppKit event monitor (`GeekController.handle`) before any view, so a key is never lost to a focused field: picker and search text is edited by the controller itself.
+- Keys are read by an AppKit event monitor (`GeekController.handle`) before any view, so a key is never lost to a focused field: picker text is edited by the controller itself.
 - All user-facing strings go through `L(...)` and the String Catalog `Resources/Localizable.xcstrings` (English and French). The language is chosen explicitly from the user's preferences, because an app launched with `swift run` has no main bundle declaring its languages.
 - Rows of lazy lists receive plain values (cursor, marks) as parameters: reading the observable model only inside a `ScrollView` closure did not always refresh them.
 - Clicks use tap gestures filtered by modifier (`View.onClick`): SwiftUI runs tap actions after the click was processed, when `NSApp.currentEvent` no longer describes it.

@@ -118,7 +118,7 @@ extension View {
 /// | `wait MS` | pause |
 /// | `expect FIELD OP VALUE` | check the state (`=`, `!=`, `~` contains, `!~` does not contain, `>`, `<`), waiting up to 5 s |
 ///
-/// Targets: `thread:N` (N-th row of the list), `search:N`, `picker:N`,
+/// Targets: `thread:N` (N-th row of the list), `picker:N`,
 /// `screen:N`, `folder:NAME` (folder of the current view), `reader-link:N` (N-th header or
 /// "···" line of the reader).
 @MainActor
@@ -362,9 +362,9 @@ private final class Runner {
             "marked_count": "\(m.marked.count)",
             "folder": m.currentFolderName,
             "account": m.scopeName,
-            "search_text": m.searchText,
-            "search_count": "\(m.searchResults.count)",
-            "search_index": "\(c.searchIndex)",
+            "search_origin": c.searchOrigin.map { o in
+                o.folderId.map { "folder:\($0)" } ?? o.unifiedRole.map { "all:\($0)" } ?? "everything"
+            } ?? "",
             "picker_query": c.pickerQuery,
             "picker_index": "\(c.pickerIndex)",
             "picker_count": "\(pickerCount)",

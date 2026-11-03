@@ -411,16 +411,6 @@
         }
       }
     },
-    "No result": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Aucun résultat"
-          }
-        }
-      }
-    },
     "Not a target from this folder: %@": {
       "localizations": {
         "fr": {
@@ -477,6 +467,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Enregistré : %@"
+          }
+        }
+      }
+    },
+    "Search everywhere": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chercher partout"
           }
         }
       }
@@ -617,6 +617,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Tapez un nom, une adresse ou des mots"
+          }
+        }
+      }
+    },
+    "Type words: subject, sender, recipients or body": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tapez des mots : sujet, expéditeur, destinataires ou texte"
           }
         }
       }
@@ -1091,22 +1101,12 @@
         }
       }
     },
-    "search": {
+    "search everywhere (Contains… in Everything)": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "rechercher"
-          }
-        }
-      }
-    },
-    "search: %@": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "recherche : %@"
+            "value": "chercher partout (Contient… dans Everything)"
           }
         }
       }

@@ -260,40 +260,6 @@ struct GeekControllerTests {
         #expect(controller.overlay == .none)
     }
 
-    @Test func theSearchResultsTurnAroundAtBothEnds() async {
-        // A core that finds three mails, whatever the query.
-        let hits: [[String: Any]] = (1...3).map {
-            ["message_id": $0, "thread_id": $0, "folder_id": 1, "folder_role": "inbox", "subject": "Hit \($0)",
-             "from_name": NSNull(), "from_addr": "a@example.org", "date_received": 0, "highlight": "[devis]"]
-        }
-        let finder = FakeCore { method, params in
-            method == "search" ? ["items": hits, "as_of": Fixture.position] : Fixture.answer(method, params)
-        }
-        await model.attach(finder)
-        press("/"); type("devis")
-        #expect(await eventually { model.searchResults.count == 3 })
-        #expect(controller.searchIndex == 0)
-        // While typing: the arrows move in the results and turn around.
-        press("up")
-        #expect(controller.searchIndex == 2 && model.searchText == "devis")
-        press("down")
-        #expect(controller.searchIndex == 0)
-        press("up"); press("up")
-        #expect(controller.searchIndex == 1)
-        // Return keeps the row chosen with the arrows.
-        press("ret")
-        #expect(controller.overlay == .none && controller.searchIndex == 1)
-        // In the kept results, k / up wrap the same way from the first row.
-        press("k")
-        #expect(controller.searchIndex == 0)
-        press("up")
-        #expect(controller.searchIndex == 2)
-        press("j")
-        #expect(controller.searchIndex == 0)  // and j from the last to the first
-        press("down")
-        #expect(controller.searchIndex == 1)
-    }
-
     @Test func stepDownTurnsAroundFromTheLastRowOnly() {
         #expect(GeekController.stepDown(4, count: 5) == 0)
         #expect(GeekController.stepDown(1, count: 5) == 2)
@@ -312,11 +278,56 @@ struct GeekControllerTests {
         #expect(GeekController.stepUp(9, count: 5) == 4)
     }
 
-    @Test func searchTextIsTypedAndEscapeClearsIt() {
-        press("/"); type("devis")
-        #expect(model.searchText == "devis")
+    // MARK: Search (/)
+
+    @Test func slashSearchesEverythingWithTheContainsAttribute() async {
+        press("/")
+        #expect(controller.overlay == .picker(.search))
+        type("devis")
+        #expect(controller.pickerEntries(.search).map(\.label) == ["devis"])
+        press("ret")
+        // The same list as F → Contains…, over every folder of the account.
+        #expect(controller.overlay == .none)
+        #expect(model.attributes.contains == "devis" && model.everything == .account(1))
+        #expect(await eventually {
+            let call = core.calls("list_threads").last
+            return (call?["folder_ids"] as? [Int])?.sorted() == [1, 2, 3, 4]
+                && (call?["filter"] as? [String: Any])?["contains"] as? String == "devis"
+        })
+    }
+
+    @Test func escapeAfterASearchGoesBackToTheFolder() {
+        press(";"); press("a")
+        #expect(model.selectedFolderId == 3)
+        press("/"); type("devis"); press("ret")
+        #expect(model.everything != nil && controller.searchOrigin?.folderId == 3)
         press("esc")
-        #expect(model.searchText.isEmpty && controller.overlay == .none)
+        #expect(model.attributes.isEmpty && model.everything == nil && model.selectedFolderId == 3)
+        #expect(controller.searchOrigin == nil)
+    }
+
+    @Test func aSecondSearchKeepsTheFirstOrigin() {
+        press("/"); type("devis"); press("ret")
+        press("/"); type("facture"); press("ret")
+        #expect(model.attributes.contains == "facture")
+        press("esc")
+        #expect(model.everything == nil && model.selectedFolderId == 1)
+    }
+
+    @Test func goingElsewhereForgetsWhereTheSearchStarted() {
+        press("/"); type("devis"); press("ret")
+        press(";"); press("t")
+        #expect(model.selectedFolderId == 2 && controller.searchOrigin == nil)
+        // Escape then only clears the attributes: the list stays in Todo.
+        press("esc")
+        #expect(model.attributes.isEmpty && model.selectedFolderId == 2)
+    }
+
+    @Test func anEmptySearchDoesNothing() {
+        press("/"); press("ret")
+        #expect(controller.overlay == .none && model.attributes.isEmpty && model.everything == nil)
+        press("/"); type("devis"); press("esc")
+        #expect(model.attributes.isEmpty && model.everything == nil)
     }
 
     // MARK: Display and saving

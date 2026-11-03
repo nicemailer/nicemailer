@@ -1,4 +1,4 @@
-# Pickers (folders, links, tags, groups) and search.
+# Pickers (folders, links, tags, groups) and search (/).
 # The ; menu lists the folders of the current view only (here the unified
 # view "all": one entry per role); h is not a command any more.
 key h
@@ -50,38 +50,25 @@ expect overlay = menu(NiceMailer.GeekController.Prefix.goto)
 click menu:0
 expect account = fixture
 expect folder = Inbox
-# Search: type, keep the results, click, double-click opens.
+# Search (/): the panel of F → Contains…, applied to "Everything" of the
+# view; the list is the ordinary one, with the chip and the folder column.
+# Escape comes back to the folder / was pressed from.
 key /
+expect overlay = picker(NiceMailer.GeekController.PickerKind.search)
 type rapport
-expect search_count > 1
-# The results turn around: up from the first selects the last, down from
-# the last comes back to the first, while typing and after Return, which
-# keeps the row chosen with the arrows.
-expect search_index = 0
-key up
-expect search_index > 0
-expect search_text = rapport
-key down
-expect search_index = 0
-key up
+expect picker_count = 1
+snap search-panel
 key ret
 expect overlay = none
-expect search_index > 0
-click search:1
-expect search_index = 1
-key k
-expect search_index = 0
-key up
-expect search_index > 1
-key j
-expect search_index = 0
-key up
-# ctrl-u goes back up by half pages, without wrapping.
-key ctrl-u
-key ctrl-u
-key ctrl-u
-expect search_index = 0
+expect folder = Everything
+expect account = fixture
+expect filters ~ rapport
+expect search_origin ~ folder:
+expect thread_count > 0
+expect reader_folder != 
 snap search
-dblclick search:0
-expect search_text =
-expect reader_subject != 
+key esc
+expect folder = Inbox
+expect account = fixture
+expect filters =
+expect search_origin =
