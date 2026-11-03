@@ -358,7 +358,8 @@ final class GeekController {
     }
 
     /// Normal mode on the mail screen. `shift`: Shift is held, read only
-    /// for Space (its character does not change with Shift).
+    /// for Space and the arrows (their character does not change with
+    /// Shift).
     private func handleMailKey(key: String, code: UInt16, shift: Bool = false) {
         switch code {
         case KeyCode.escape:
@@ -377,11 +378,13 @@ final class GeekController {
         case KeyCode.delete, KeyCode.forwardDelete:
             model.moveTargets(to: "deleted")
             return
+        // Shift with an arrow marks the mail and moves, like J / K (the
+        // arrow's character does not change with Shift, so it is read here).
         case KeyCode.down:
-            moveCursor(1)
+            if shift { model.markAndMove(1) } else { moveCursor(1) }
             return
         case KeyCode.up:
-            moveCursor(-1)
+            if shift { model.markAndMove(-1) } else { moveCursor(-1) }
             return
         default:
             break

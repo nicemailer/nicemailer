@@ -17,6 +17,16 @@ expect marked = 1,2,3
 expect selected = 3
 key esc
 expect marked =
+# Shift with the arrows does the same as J / K.
+key shift-down
+key shift-down
+expect marked = 3,4,5
+expect selected = 5
+key shift-up
+expect selected = 4
+expect marked = 3,4,5
+key esc
+expect marked =
 # Mouse: click, cmd-click, shift-click.
 click thread:5
 expect selected = 5

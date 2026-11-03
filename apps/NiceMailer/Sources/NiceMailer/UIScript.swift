@@ -109,7 +109,7 @@ extension View {
 ///
 /// | Command | Effect |
 /// | --- | --- |
-/// | `key K` | one key: a character, or `esc` `ret` `del` `up` `down` `space` `shift-space`, or `ctrl-X` / `cmd-X` |
+/// | `key K` | one key: a character, or `esc` `ret` `del` `up` `down` `space` `shift-space` `shift-up` `shift-down`, or `ctrl-X` / `cmd-X` |
 /// | `type TEXT` | each character of TEXT as a key |
 /// | `click TARGET [cmd] [shift]` | a mouse click on a row |
 /// | `dblclick TARGET` | two clicks |
@@ -211,6 +211,8 @@ private final class Runner {
         case "down": chars = "\u{F701}"; code = KeyCode.down
         case "space": chars = " "
         case "shift-space": chars = " "; mods = .shift
+        case "shift-up": chars = "\u{F700}"; code = KeyCode.up; mods = .shift
+        case "shift-down": chars = "\u{F701}"; code = KeyCode.down; mods = .shift
         default:
             if name.hasPrefix("ctrl-") {
                 mods = .control

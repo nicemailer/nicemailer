@@ -35,6 +35,8 @@ struct GeekControllerTests {
         case "del": chars = "\u{7f}"; code = KeyCode.delete
         case "down": chars = "\u{F701}"; code = KeyCode.down
         case "up": chars = "\u{F700}"; code = KeyCode.up
+        case "shift-down": chars = "\u{F701}"; code = KeyCode.down; mods = .shift
+        case "shift-up": chars = "\u{F700}"; code = KeyCode.up; mods = .shift
         default:
             if name.hasPrefix("ctrl-") { mods = .control; chars = String(name.dropFirst(5)) }
             if name.hasPrefix("cmd-") { mods = .command; chars = String(name.dropFirst(4)) }
@@ -98,6 +100,21 @@ struct GeekControllerTests {
         #expect(GeekController.visibleRows(height: 39, rowHeight: 20) == 1)
         #expect(GeekController.visibleRows(height: 0, rowHeight: 20) == 1)
         #expect(GeekController.visibleRows(height: 100, rowHeight: 0) == 1)
+    }
+
+    @Test func shiftArrowsMarkAndMoveLikeJK() {
+        press("shift-down"); press("shift-down")
+        // Ids 1, 2, 3 marked; the cursor on the third row.
+        #expect(model.marked == [1, 2, 3] && selectedIndex == 2)
+        press("shift-up")
+        #expect(selectedIndex == 1 && model.marked == [1, 2, 3])
+        // Same result as K from there.
+        press("esc")
+        press("K")
+        let viaK = model.marked
+        press("esc"); press("j")
+        press("shift-up")
+        #expect(model.marked == viaK)
     }
 
     @Test func shiftJKMarkAndEscapeUnmarks() {

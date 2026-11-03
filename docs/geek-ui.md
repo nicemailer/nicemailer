@@ -63,7 +63,7 @@ Actions apply to the **marked** mails if any (`J` / `K`), otherwise to the mail 
 | --- | --- |
 | `j` `k` (or arrows) | next / previous mail |
 | `ctrl-d` `ctrl-u` | half a page down / up in the list, as in Zed: the cursor moves by half the rows that fit in the list, and stops on the first or last mail |
-| `J` `K` | mark the mail and move (multiple selection) |
+| `J` `K`, shift-↓ shift-↑ | mark the mail and move (multiple selection) |
 | `F` | attribute selector (filters on the current list) |
 | `@` | account picker: **all** (unified view) or one account, keeping the folder role (Archive to Archive), or its Inbox |
 | `l` | links of the mail; Return opens one in the browser |

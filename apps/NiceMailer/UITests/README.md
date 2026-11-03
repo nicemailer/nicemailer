@@ -21,7 +21,7 @@ One command per line; `#` starts a comment.
 
 | Command | Effect |
 | --- | --- |
-| `key K` | one key: a character (`j`, `J`, `;`, `*`…), `esc`, `ret`, `del`, `up`, `down`, `space`, `shift-space`, `ctrl-X` or `cmd-X` |
+| `key K` | one key: a character (`j`, `J`, `;`, `*`…), `esc`, `ret`, `del`, `up`, `down`, `space`, `shift-space`, `shift-up`, `shift-down`, `ctrl-X` or `cmd-X` |
 | `type TEXT` | each character of TEXT as a key |
 | `click TARGET [cmd] [shift]` | a click on a row, with modifiers |
 | `dblclick TARGET` | a double-click |
@@ -39,7 +39,7 @@ State fields (see `Runner.state()` in `Sources/NiceMailer/UIScript.swift`): `scr
 | File | Covers |
 | --- | --- |
 | `filters.uiscript` | attribute selector: toggles, reading in a list of unread mails (no automatic marking, the read mail kept until left), From… panel with suggestions, Date… preset, Contains…, chips, kept across folders, Escape; folder (and account in "all") of each mail in Everything |
-| `navigation.uiscript` | `j` `k` arrows, `ctrl-d` `ctrl-u` half pages, `J` `K` marks, Escape, click, ⌘-click, ⇧-click |
+| `navigation.uiscript` | `j` `k` arrows, `ctrl-d` `ctrl-u` half pages, `J` `K` and shift-arrows marks, Escape, click, ⌘-click, ⇧-click |
 | `actions.uiscript` | `m` menu and moves, `d`, Delete, grouped actions, flag, unknown keys, reply not available, help |
 | `screens.uiscript` | `;` folders, contacts (keys, filter, click, double-click, mails of a contact), history, tags, groups |
 | `pickers.uiscript` | `;` menu (keys, and mouse from the status bar), link, tag and group pickers (keys and mouse), search `/` (Contains… panel, Everything with the chip, Escape back to the folder) |
