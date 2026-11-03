@@ -33,28 +33,18 @@ PRAGMA temp_store = MEMORY;
 PRAGMA user_version = 1;   -- migrations : comparer à la version attendue au démarrage
 
 -- ------------------------------------------------------------
--- Comptes
+-- Comptes : état seulement. Les paramètres (adresse, serveurs, identifiants,
+-- identités, config_sync) sont dans config.toml, table [accounts.<config_key>] ;
+-- les secrets dans le Keychain (voir configuration.md).
+-- Un compte absent du fichier est désactivé, jamais supprimé par ce seul fait.
 -- ------------------------------------------------------------
 CREATE TABLE account (
     id            INTEGER PRIMARY KEY,
-    email         TEXT NOT NULL UNIQUE,
-    display_name  TEXT,
-    imap_host     TEXT NOT NULL,
-    imap_port     INTEGER NOT NULL DEFAULT 993,
-    imap_security TEXT NOT NULL DEFAULT 'tls'
-                  CHECK (imap_security IN ('tls','starttls','none')),
-    smtp_host     TEXT NOT NULL,
-    smtp_port     INTEGER NOT NULL DEFAULT 465,
-    smtp_security TEXT NOT NULL DEFAULT 'tls'
-                  CHECK (smtp_security IN ('tls','starttls','none')),
-    auth_kind     TEXT NOT NULL CHECK (auth_kind IN ('password','oauth2')),
-    keychain_ref  TEXT NOT NULL,          -- référence Keychain, jamais le secret
-    -- authserv-id de confiance des en-têtes Authentication-Results du serveur.
+    config_key    TEXT NOT NULL UNIQUE,   -- clé du compte dans config.toml
+    -- authserv-id de confiance des en-têtes Authentication-Results, détecté.
     -- NULL = aucun détecté : verdicts 'unknown' (voir authentification-expediteur.md).
+    -- La clé authserv_id du compte dans config.toml, si présente, le remplace.
     authserv_id   TEXT,
-    -- Synchronisation de la configuration par le dossier nicemailer-sync du serveur
-    -- (voir synchronisation-configuration.md). Désactivée par défaut.
-    config_sync   INTEGER NOT NULL DEFAULT 0 CHECK (config_sync IN (0,1)),
     date_created  INTEGER NOT NULL DEFAULT (unixepoch()),
     date_modified INTEGER NOT NULL DEFAULT (unixepoch()),
     created_by    TEXT NOT NULL CHECK (created_by  IN ('core','app','cli','tui','web','mcp','config_sync','imap')),
@@ -197,7 +187,12 @@ CREATE TABLE message (
     message_id_hdr   TEXT,                -- en-tête Message-ID, sans chevrons
     in_reply_to      TEXT,
     subject          TEXT NOT NULL DEFAULT '',
-    from_name        TEXT,                -- dénormalisés : affichés dans chaque ligne
+    -- Expéditeur. from_address_id sert aux recherches par expéditeur (rangement
+    -- après une décision, filtre de confidentialité de la synchronisation) ;
+    -- from_name et from_addr, tels que dans l'en-tête, sont dénormalisés pour
+    -- afficher la liste sans jointure. NULL : en-tête From absent ou illisible.
+    from_address_id  INTEGER REFERENCES address(id),
+    from_name        TEXT,
     from_addr        TEXT,
     date_sent        INTEGER,             -- en-tête Date
     date_received    INTEGER NOT NULL,    -- INTERNALDATE : clé de tri fiable
@@ -260,6 +255,11 @@ CREATE INDEX idx_message_viewed
 -- Messages d'une conversation, dans l'ordre chronologique.
 CREATE INDEX idx_message_thread
     ON message (thread_id, date_received, id);
+
+-- Mails d'un expéditeur, par dossier : rangement après une décision d'adresse
+-- ou de domaine, « adresse vue dans cette boîte » (synchronisation-configuration.md).
+CREATE INDEX idx_message_from
+    ON message (from_address_id, folder_id) WHERE from_address_id IS NOT NULL;
 
 -- Retrouver un message par Message-ID (threading, déduplication).
 CREATE INDEX idx_message_msgid
@@ -517,14 +517,26 @@ CREATE TABLE audit_log (
     date_created INTEGER NOT NULL DEFAULT (unixepoch()),
     created_by   TEXT NOT NULL CHECK (created_by IN ('core','app','cli','tui','web','mcp','config_sync','imap')),
     entity       TEXT NOT NULL CHECK (entity IN
-                 ('account','folder','address','domain','tag','message')),
-    entity_id    INTEGER NOT NULL,
+                 ('account','folder','address','domain','tag','message','config')),
+    entity_id    INTEGER NOT NULL,        -- 'config' : 0 ; la clé est dans detail
     action       TEXT NOT NULL,           -- ex. screening, auth_policy, role, move, set_flags
     detail       TEXT                     -- JSON : {"before": …, "after": …, …}
 ) STRICT;
 
 CREATE INDEX idx_audit_log_entity ON audit_log (entity, entity_id, date_created);
 CREATE INDEX idx_audit_log_date   ON audit_log (date_created);
+
+-- ------------------------------------------------------------
+-- Réglages protégés : hors de config.toml, modifiables seulement par l'app
+-- (client vérifié par sa signature). Voir configuration.md, section 7.
+-- Clés : 'mcp.allow_modify', 'web.enabled'. Valeur JSON.
+-- ------------------------------------------------------------
+CREATE TABLE protected_setting (
+    key           TEXT PRIMARY KEY,
+    value         TEXT NOT NULL,
+    date_modified INTEGER NOT NULL DEFAULT (unixepoch()),
+    modified_by   TEXT NOT NULL CHECK (modified_by = 'app')
+) STRICT, WITHOUT ROWID;
 
 -- ------------------------------------------------------------
 -- Requêtes de référence (pour la couche Rust)

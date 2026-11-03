@@ -88,6 +88,9 @@ Les événements **séquencés** passent par le tampon et sont rejoués. Les év
 | `AccountError` | `account_id`, `error` | séquencé | Erreur de connexion ou d'authentification d'un compte |
 | `ActionReverted` | `message_id`, `kind`, `reason` | séquencé | Action locale annulée après un échec définitif (`modele de donnees.md`, section 6) |
 | `SendConfirmationRequested` | `request_id` | séquencé | Un agent demande un envoi (`architecture.md`, section 9) |
+| `DraftChanged` | `draft_id` | séquencé | Brouillon remplacé par une version modifiée ailleurs, ou dédoublé après un conflit (`brouillons.md`, section 6) |
+| `ConfigChanged` | `keys` | séquencé | Réglages de `config.toml` modifiés, par une commande ou une édition directe (`configuration.md`) |
+| `ConfigError` | `line`, `message` | séquencé | `config.toml` invalide : la configuration précédente reste appliquée |
 | `ResyncRequired` | `epoch`, `seq` | séquencé | Le client doit recharger toutes ses vues |
 | `SyncProgress` | `account_id`, `folder_id`, `done`, `total` | transitoire | Avancement d'une synchronisation |
 
@@ -96,6 +99,8 @@ Les événements **séquencés** passent par le tampon et sont rejoués. Les év
 Après un `ResyncRequired`, les `MessageArrived` perdus ne produisent pas de notification macOS : c'est une limite assumée.
 
 ## 9. Paramètres
+
+Ces paramètres sont des clés de `config.toml` ; le catalogue complet est dans `configuration.md`, section 11.
 
 | Paramètre | Rôle | Valeur initiale |
 | --- | --- | --- |

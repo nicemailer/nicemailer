@@ -21,7 +21,7 @@ Le produit s'adresse à des individus et à de petites structures. La synchronis
 ## 2. Principes
 
 - **La configuration est stockée sur le serveur IMAP de chaque boîte**, dans un dossier dédié. Aucun service tiers, aucun compte Apple ou NiceMailer n'est nécessaire.
-- **Activation explicite par compte**, désactivée par défaut : on écrit sur le serveur une donnée que lisent tous ceux qui ont accès à la boîte, administrateur compris.
+- **Activation explicite par compte** (clé `config_sync` du compte dans `config.toml`), désactivée par défaut : on écrit sur le serveur une donnée que lisent tous ceux qui ont accès à la boîte, administrateur compris.
 - **La dernière modification l'emporte, entrée par entrée.** Chaque entrée (une adresse, un domaine, un rôle de dossier, un tag…) porte la date de sa dernière modification. Il n'y a ni poste principal, ni mode lecture seule, ni résolution manuelle des conflits.
 - **Les décisions de screening ont une portée globale.** Une adresse a la même décision sur toutes les boîtes (`address` et `domain` restent communes à tous les comptes). Une décision prise sur une boîte partagée s'applique donc aussi aux boîtes personnelles, et inversement. Une adresse classée différemment selon la boîte est un cas jugé marginal pour la cible du produit.
 - **Confidentialité : une boîte ne reçoit que les décisions sur des adresses qu'elle a déjà vues** (section 6). Le carnet d'adresses complet n'est jamais divulgué à une boîte où l'on collabore ponctuellement.
@@ -36,11 +36,11 @@ Le produit s'adresse à des individus et à de petites structures. La synchronis
 | `auth_policy` d'une adresse | adresse | Choix de l'utilisateur, comme le screening ; même filtre |
 | Rôle des dossiers (Archive → « Archives », Junk → « Spam »…), dont les dossiers du workflow créés par NiceMailer | rôle | Propre à la boîte |
 | Tags : nom et couleur associés à un mot-clé IMAP | mot-clé | Propre à la boîte (`tag.account_id`) |
-| Réglages métier du compte (délais de Waiting, etc.) | nom du réglage | Le stockage des réglages reste à spécifier ; ils suivront le même modèle d'entrée horodatée |
 
 | Non synchronisé | Raison |
 | --- | --- |
 | Identifiants, serveurs, références Keychain | Secrets et paramètres propres au poste |
+| Réglages de `config.toml` (généraux et par compte) | Le noyau n'écrit jamais ce fichier de lui-même : un fichier que l'utilisateur versionne dans Git ne doit pas changer sans lui. Les mêmes réglages sur plusieurs Mac s'obtiennent en versionnant le fichier (`configuration.md`, section 8) |
 | `auth_seen` | Se recalcule à partir des messages, qui sont les mêmes sur tous les Mac |
 | Signature, nom d'affichage de l'expéditeur | Propres à chaque personne sur une boîte partagée |
 | Option « continuer à trier mes mails quand NiceMailer est fermé », préférences d'affichage | Propres au poste |
@@ -111,7 +111,7 @@ La fusion donne le même résultat quel que soit l'ordre dans lequel on fusionne
 
 ## 6. Confidentialité
 
-Une entrée d'adresse n'est écrite dans le document d'une boîte que si **l'adresse a été vue dans cette boîte** : elle figure en base comme expéditeur (`message.from_addr`) ou destinataire (`message_address`) d'au moins un message du compte.
+Une entrée d'adresse n'est écrite dans le document d'une boîte que si **l'adresse a été vue dans cette boîte** : elle figure en base comme expéditeur (`message.from_address_id`, index `idx_message_from`) ou destinataire (`message_address`) d'au moins un message du compte.
 
 Une entrée de domaine n'est écrite que si au moins une adresse de ce domaine a été vue dans la boîte.
 
@@ -122,7 +122,7 @@ Conséquences assumées de la portée globale :
 - sur une boîte partagée, les collègues voient la décision que j'ai prise pour une adresse qui y a écrit (par exemple que `releve@mabanque.fr` va dans Paperwork) ;
 - une décision reçue d'une boîte partagée s'applique à mes autres boîtes. Elle n'est republiée vers mes autres boîtes synchronisées que si l'adresse y a été vue.
 
-Les rôles de dossiers, les tags et les réglages sont propres à la boîte et ne sont pas filtrés.
+Les rôles de dossiers et les tags sont propres à la boîte et ne sont pas filtrés.
 
 ## 7. Déroulement
 
@@ -134,7 +134,7 @@ Sinon, le moteur lit **tous** les messages portant `X-NiceMailer-Config`, fusion
 
 - une entrée distante plus récente que l'entrée locale la remplace (une adresse ou un domaine inconnu est créé) ;
 - le rôle d'un dossier n'est appliqué que si ce chemin existe dans la liste des dossiers du compte ; sinon il est réessayé après la prochaine synchronisation de la liste ;
-- un `AccountChanged` est émis pour le compte si ses rôles, tags ou réglages ont changé.
+- un `AccountChanged` est émis pour le compte si ses rôles ou ses tags ont changé.
 
 Une décision de screening reçue ne déclenche pas le rangement des anciens mails de l'expéditeur (`dossiers.md`, « Décision sur un expéditeur ») : le Mac qui a pris la décision les a déjà rangés sur le serveur, et la synchronisation IMAP rapporte ces déplacements. Sur une adresse vue uniquement localement, les mails restent où ils sont.
 
@@ -142,7 +142,7 @@ Une décision de screening reçue ne déclenche pas le rangement des anciens mai
 
 Une écriture est nécessaire quand une entrée locale (après filtre de confidentialité) est plus récente que celle du serveur, ou quand le dossier contient plusieurs messages de configuration.
 
-Toute modification locale d'un élément synchronisé (décision, `auth_policy`, rôle, tag, réglage) programme une écriture, regroupée pendant `config_sync.push_delay_secs` (5 s). L'écriture passe par le spool, comme tout ordre envoyé au serveur : action `push_config`, sans message, dont le contenu est calculé **au moment de l'exécution** et non à l'insertion. Une seule action `push_config` en attente par compte : une nouvelle demande est fusionnée avec elle.
+Toute modification locale d'un élément synchronisé (décision, `auth_policy`, rôle, tag) programme une écriture, regroupée pendant `config_sync.push_delay_secs` (5 s). L'écriture passe par le spool, comme tout ordre envoyé au serveur : action `push_config`, sans message, dont le contenu est calculé **au moment de l'exécution** et non à l'insertion. Une seule action `push_config` en attente par compte : une nouvelle demande est fusionnée avec elle.
 
 Exécution :
 
@@ -177,8 +177,8 @@ Plusieurs Mac peuvent trier la même Inbox en même temps.
 ## 10. Données
 
 ```sql
--- account
-config_sync  INTEGER NOT NULL DEFAULT 0 CHECK (config_sync IN (0,1)),
+-- account : l'activation est la clé config_sync du compte dans config.toml
+-- (faux par défaut), pas une colonne (configuration.md).
 
 -- folder : nouveau rôle 'config' (dossier nicemailer-sync) ;
 -- horodatage de l'attribution du rôle
@@ -196,6 +196,8 @@ date_deleted INTEGER,         -- pierre tombale : tag supprimé, masqué partout
 Une modification reçue par la synchronisation est enregistrée avec `modified_by = 'config_sync'` (ou `created_by` pour une entrée créée), et les dates prennent l'horodatage de l'entrée reçue, pas l'heure locale : sinon, la fusion suivante considérerait à tort la copie locale comme plus récente. Elle est aussi inscrite dans `audit_log` (`tracabilite.md`).
 
 ## 11. Paramètres
+
+Ces paramètres sont des clés de `config.toml` ; le catalogue complet est dans `configuration.md`, section 11.
 
 | Paramètre | Rôle | Valeur initiale |
 | --- | --- | --- |

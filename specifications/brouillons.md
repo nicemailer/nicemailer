@@ -23,7 +23,7 @@ Une ligne par brouillon en cours.
 
 | Colonne | Rôle |
 | --- | --- |
-| `account_id`, `from_addr`, `from_name` | Compte et identité d'envoi |
+| `account_id`, `from_addr`, `from_name` | Compte et identité d'envoi. `from_addr` est l'adresse principale du compte ou l'une de ses identités (`configuration.md`, section 6) ; toute autre adresse est refusée |
 | `recipients` | JSON : liste de `{kind, addr, name}`, `kind` parmi `to`, `cc`, `bcc` |
 | `subject`, `body`, `body_format` | Contenu en cours d'édition |
 | `reply_to_message_id` | Le mail auquel on répond ; NULL pour un nouveau mail. `In-Reply-To` et `References` en sont déduits à l'envoi |

@@ -52,7 +52,7 @@ Trois mécanismes y répondent :
 | `domain` | Décision de screening | |
 | `folder` | Rôle, abonnement | Compteurs, `uidvalidity`, `uidnext`, `highestmodseq`, `date_last_sync` |
 | `tag` | Nom, couleur, suppression | |
-| `account` | Tout paramètre modifié par l'utilisateur | `authserv_id` détecté automatiquement |
+| `account` | Renommage de la clé (`config_key`) | `authserv_id` détecté automatiquement ; les paramètres du compte sont dans `config.toml` (`configuration.md`) |
 
 C'est le code Rust qui renseigne la date et la source, dans la même requête que la modification. Un trigger ne conviendrait pas : il ne connaît pas la source et se déclencherait aussi sur les colonnes techniques.
 
@@ -123,7 +123,9 @@ CREATE TABLE audit_log (
 | `address`, `domain` | `screening`, `auth_policy`, `rename` | Avant, après ; pour `screening`, le message qui a déclenché la décision (sortie de Quarantine) |
 | `folder` | `role` | Avant, après |
 | `tag` | `create`, `update`, `delete` | Avant, après |
-| `account` | `create`, `update`, `delete` | Champs modifiés, jamais de secret |
+| `account` | `create`, `rename`, `disable`, `remove` | Clé du compte ; pour `disable`, compte absent de `config.toml` ; jamais de secret |
+| `config` | `update` | Modification par une commande du contrat : clé, avant, après (`configuration.md`, section 10) |
+| `config` | `reload` | Édition directe de `config.toml` constatée au rechargement, source `core` : clés changées |
 | `account` | `initial_archive` | Critères et nombre de mails archivés à l'import initial (`import-initial.md`) |
 | `message` | `screen` | Dossier cible, règle appliquée (adresse, domaine, conversation connue, aucune), verdict d'authentification |
 | `message` | `move`, `set_flags`, `set_tags`, `delete`, `send` | Avant, après ; pour un rangement déclenché par une décision, l'adresse ou le domaine concerné ; pour un retour de Todo ou de Waiting dans l'Inbox, le mail reçu qui l'a déclenché ; pour un rangement dans Archive après une réponse, le mail envoyé |
@@ -173,6 +175,8 @@ Le filtre de la première vue est modifiable : ajouter `core` pour voir aussi le
 - **Horloges.** Les dates sont celles du Mac. Un Mac mal réglé produit des dates fausses, que la synchronisation propage.
 
 ## 8. Paramètres
+
+Ces paramètres sont des clés de `config.toml` ; le catalogue complet est dans `configuration.md`, section 11.
 
 | Paramètre | Rôle | Valeur initiale |
 | --- | --- | --- |

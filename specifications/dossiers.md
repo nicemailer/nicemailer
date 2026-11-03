@@ -190,7 +190,7 @@ Elle intègre également une table de domaines (`domain`) : l'utilisateur pourra
 Écrire à une personne, c'est l'accepter comme correspondant. Quand un mail est envoyé, chaque destinataire (To, Cc, Bcc) **sans décision** reçoit la décision `inbox`.
 
 - **Une décision existante est conservée.** Écrire à l'adresse de désabonnement d'une newsletter, ou répondre une fois à un expéditeur banni, ne change pas sa décision.
-- **Les adresses du compte lui-même** sont exclues.
+- **Les adresses du compte lui-même** sont exclues : son adresse principale et ses identités (`configuration.md`, section 6).
 - **Envois faits ailleurs.** Un mail envoyé depuis le téléphone ou le webmail, découvert dans Sent par la synchronisation, produit le même effet.
 - **Rangement.** La décision range les mails de ce destinataire encore en Quarantine vers l'Inbox, comme toute décision `inbox` (« Décision sur un expéditeur »). Si plusieurs Mac font ce rangement en même temps, le déplacement concurrent est traité comme un succès.
 - **Traçabilité.** La décision porte la source du client qui a envoyé le mail, ou `imap` pour un envoi découvert dans Sent, et une ligne `screening` dans `audit_log` avec la raison `sent_to`.

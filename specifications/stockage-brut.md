@@ -175,6 +175,8 @@ C'est le seul endroit où l'on respecte un format de stockage externe. Le stocka
 
 ## 10. Paramètres
 
+Ces paramètres sont des clés de `config.toml` ; le catalogue complet est dans `configuration.md`, section 11.
+
 | Paramètre | Rôle | Valeur initiale |
 |---|---|---|
 | `raw.dir` | Racine du stockage brut | `<data_dir>/raw.noindex` |

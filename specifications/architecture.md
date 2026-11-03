@@ -212,7 +212,7 @@ Un seul agent, `eu.nicemailer.core`, enregistré par l'app à chaque lancement s
 - **Option désactivée** : le noyau s'arrête de lui-même, avec le code 0, après `core.idle_exit_secs` sans client connecté (60 s par défaut), y compris juste après son démarrage. À l'ouverture de session, il s'arrête donc au bout de ce délai. Une sortie avec le code 0 n'est pas relancée par launchd.
 - **Arrêt propre.** Sur SIGTERM, le noyau termine les transactions en cours et ferme les connexions IMAP avant de sortir.
 
-L'option est stockée dans les réglages du noyau et modifiable depuis l'app ou le CLI ; elle prend effet sans redémarrage.
+L'option est la clé `core.background_sorting` de `config.toml` (`configuration.md`), modifiable depuis l'app, le CLI ou à la main ; elle prend effet sans redémarrage.
 
 ### Démarrage à la demande par les clients
 
@@ -319,7 +319,9 @@ En développement, les builds signés ad hoc ne satisfont pas l'exigence. Une ex
 | App         | oui     | oui                                                        | oui                                | oui                 |
 | CLI, TUI    | oui     | oui                                                        | oui                                | oui                 |
 | Serveur web | oui     | oui                                                        | oui                                | non                 |
-| MCP (agent) | oui     | désactivé par défaut, activable dans les réglages de l'app | **toujours soumis à confirmation** | non                 |
+| MCP (agent) | oui     | désactivé par défaut, activable dans l'app seulement (réglage protégé) | **toujours soumis à confirmation** | non                 |
+
+Les réglages qui étendent les droits d'un client (modification par l'agent MCP, activation du serveur web) sont des **réglages protégés** : ils ne sont pas dans `config.toml`, que n'importe quel programme peut modifier, mais en base, et seule l'app peut les changer (`configuration.md`, section 7). Les autres réglages et les comptes sont dans `config.toml` ; la colonne « Comptes et réglages » désigne leur modification par le contrat.
 
 L'identité vérifiée du client sert aussi à la traçabilité : le noyau inscrit lui-même la source de chaque création et modification (`created_by`, `modified_by`, `audit_log`), sans jamais la demander au client. Seuls l'app, la TUI et le serveur web peuvent marquer un message comme consulté (`mark_viewed`). Voir `tracabilite.md`.
 

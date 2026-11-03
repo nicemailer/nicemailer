@@ -62,6 +62,8 @@ Une migration longue (grosse base) publie son avancement dans la réponse `Maint
 
 ## 6. Paramètres
 
+Ces paramètres sont des clés de `config.toml` ; le catalogue complet est dans `configuration.md`, section 11.
+
 | Paramètre | Rôle | Valeur initiale |
 | --- | --- | --- |
 | `core.update_timeout_secs` | Durée maximale du mode maintenance pour une mise à jour sans suite | 900 |
