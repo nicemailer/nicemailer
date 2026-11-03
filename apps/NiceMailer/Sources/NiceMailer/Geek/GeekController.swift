@@ -112,6 +112,9 @@ final class GeekController {
     /// The reading pane's scroll view, to scroll it from the keyboard.
     weak var readerScroll: NSScrollView?
 
+    /// Last row clicked and when, to detect double-clicks (see `clickSearch`).
+    @ObservationIgnored var lastClick: (tag: String, time: TimeInterval) = ("", 0)
+
     init(model: AppModel) {
         self.model = model
     }
@@ -360,7 +363,7 @@ final class GeekController {
         statusPosition = all[(all.firstIndex(of: statusPosition)! + 1) % all.count]
     }
 
-    private func goToFolder(_ id: Int) {
+    func goToFolder(_ id: Int) {
         screen = .mail
         model.searchText = ""
         if model.selectedFolderId == id, model.listFilter != nil {
@@ -545,23 +548,29 @@ final class GeekController {
             return
         }
         if code == KeyCode.returnKey || key == "l" {
-            switch screen {
-            case .contacts where contacts.indices.contains(screenIndex):
-                screen = .mail
-                model.showThreads(of: .contact(contacts[screenIndex]))
-            case .tags where tags.indices.contains(screenIndex):
-                screen = .mail
-                model.showThreads(of: .tag(tags[screenIndex]))
-            case .groups where groups.indices.contains(screenIndex):
-                screen = .mail
-                model.showThreads(of: .group(groups[screenIndex]))
-            default:
-                break
-            }
+            activateScreenRow()
             return
         }
         if key == "/", screen == .contacts {
             overlay = .contactFilter
+        }
+    }
+
+    /// Return (or a double-click) on a screen row: lists the mails of the
+    /// contact, tag or group under the cursor.
+    private func activateScreenRow() {
+        switch screen {
+        case .contacts where contacts.indices.contains(screenIndex):
+            screen = .mail
+            model.showThreads(of: .contact(contacts[screenIndex]))
+        case .tags where tags.indices.contains(screenIndex):
+            screen = .mail
+            model.showThreads(of: .tag(tags[screenIndex]))
+        case .groups where groups.indices.contains(screenIndex):
+            screen = .mail
+            model.showThreads(of: .group(groups[screenIndex]))
+        default:
+            break
         }
     }
 
@@ -628,6 +637,64 @@ final class GeekController {
             let list: Items<GroupView> = try await client.call("list_groups", [:])
             groups = list.items
         } catch { model.report(error) }
+    }
+}
+
+// MARK: - Mouse
+
+extension GeekController {
+    /// Clicks on rows. A click acts at once; a second click on the same row
+    /// within the system's double-click interval also "opens" it. Detecting
+    /// the double-click by hand avoids SwiftUI's `onTapGesture(count: 2)`,
+    /// which delays every single click until it knows no second one follows.
+    private func isDoubleClick(_ tag: String) -> Bool {
+        let now = ProcessInfo.processInfo.systemUptime
+        defer { lastClick = (tag, now) }
+        return lastClick.tag == tag && now - lastClick.time < NSEvent.doubleClickInterval
+    }
+
+    /// Click on a mail of the list, Finder-style:
+    /// - click: select it, unmark everything;
+    /// - ⌘-click: mark or unmark it (the mail under the cursor joins the
+    ///   selection first, as when building a selection in the Finder);
+    /// - ⇧-click: mark every mail from the cursor to it.
+    func clickThread(_ id: Int) {
+        model.flash = nil
+        let mods = NSEvent.modifierFlags
+        let threads = model.threads
+        if mods.contains(.shift), let anchor = model.selectedThreadId,
+           let a = threads.firstIndex(where: { $0.id == anchor }),
+           let b = threads.firstIndex(where: { $0.id == id }) {
+            model.marked.formUnion(threads[min(a, b)...max(a, b)].map(\.id))
+        } else if mods.contains(.command) {
+            if model.marked.isEmpty, let c = model.selectedThreadId, c != id { model.marked.insert(c) }
+            if model.marked.contains(id) { model.marked.remove(id) } else { model.marked.insert(id) }
+        } else {
+            model.marked = []
+        }
+        model.selectedThreadId = id
+    }
+
+    /// Click on a search result; a double-click opens it in its folder.
+    func clickSearch(_ index: Int) {
+        searchIndex = index
+        if isDoubleClick("search-\(index)"), model.searchResults.indices.contains(index) {
+            model.openSearchHit(model.searchResults[index])
+        }
+    }
+
+    /// Click on a row of the contacts, tags or groups screen; a
+    /// double-click lists its mails, like Return.
+    func clickScreenRow(_ index: Int) {
+        screenIndex = index
+        if isDoubleClick("screen-\(screen)-\(index)") { activateScreenRow() }
+    }
+
+    /// Click on a picker row: chooses it, like Return.
+    func clickPicker(_ kind: PickerKind, _ index: Int) {
+        let entries = pickerEntries(kind)
+        overlay = .none
+        if entries.indices.contains(index) { entries[index].action() }
     }
 }
 

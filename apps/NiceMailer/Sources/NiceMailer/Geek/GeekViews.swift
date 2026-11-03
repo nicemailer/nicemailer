@@ -206,6 +206,9 @@ private struct GeekFolderColumn: View {
                     .padding(.horizontal, 8)
                     .frame(height: 20)
                     .background(f.id == model.selectedFolderId && model.listFilter == nil ? Palette.cursor : Color.clear)
+                    // The whole row is clickable, not only its text.
+                    .contentShape(Rectangle())
+                    .onTapGesture { controller.goToFolder(f.id) }
                 }
             }
         }
@@ -243,6 +246,9 @@ private struct GeekThreadRows: View {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(model.threads) { t in
                             GeekThreadRow(thread: t, cursor: t.id == cursor, marked: marked.contains(t.id), layout: layout)
+                                .contentShape(Rectangle())
+                                // Click, ⌘-click, ⇧-click (`clickThread`).
+                                .onTapGesture { controller.clickThread(t.id) }
                                 .id(t.id)
                                 .task { await model.loadMoreIfNeeded(after: t) }
                         }
@@ -327,7 +333,7 @@ private struct GeekSearchRows: View {
     let controller: GeekController
 
     var body: some View {
-        GeekSearchList(hits: model.searchResults, current: controller.searchIndex)
+        GeekSearchList(hits: model.searchResults, current: controller.searchIndex) { controller.clickSearch($0) }
     }
 }
 
@@ -338,6 +344,8 @@ private struct GeekSearchRows: View {
 private struct GeekSearchList: View {
     let hits: [SearchHit]
     let current: Int
+    /// Called with the row's position when it is clicked.
+    let onClick: (Int) -> Void
 
     var body: some View {
         GeometryReader { geo in
@@ -349,7 +357,10 @@ private struct GeekSearchList: View {
                     // ForEach identity (message id) different from the `.id`
                     // left the lazy stack showing the rows of an older query.
                     ForEach(Array(hits.enumerated()), id: \.offset) { i, hit in
-                        GeekSearchRow(hit: hit, cursor: i == current, layout: layout).id(i)
+                        GeekSearchRow(hit: hit, cursor: i == current, layout: layout)
+                            .contentShape(Rectangle())
+                            .onTapGesture { onClick(i) }
+                            .id(i)
                     }
                 }
             }
@@ -635,6 +646,8 @@ private struct PickerPopup: View {
                             .padding(.horizontal, 8)
                             .frame(height: 20)
                             .background(i == current ? Palette.cursor : Color.clear)
+                            .contentShape(Rectangle())
+                            .onTapGesture { controller.clickPicker(kind, i) }
                             .id(i)
                         }
                     }
@@ -677,6 +690,8 @@ private struct ScreenList<Row: View>: View {
     let hint: String
     let count: Int
     let index: Int
+    /// Called with the row's position when it is clicked.
+    let onClick: (Int) -> Void
     @ViewBuilder let row: (Int) -> Row
 
     var body: some View {
@@ -698,6 +713,8 @@ private struct ScreenList<Row: View>: View {
                                 .frame(height: 20)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .background(i == index ? Palette.cursor : Color.clear)
+                                .contentShape(Rectangle())
+                                .onTapGesture { onClick(i) }
                                 .id(i)
                         }
                     }
@@ -715,7 +732,8 @@ private struct ContactsScreen: View {
     var body: some View {
         ScreenList(
             title: L("Contacts"), hint: L("/ filter · return: their mails · esc: back"),
-            count: controller.contacts.count, index: controller.screenIndex
+            count: controller.contacts.count, index: controller.screenIndex,
+            onClick: { controller.clickScreenRow($0) }
         ) { i in
             let c = controller.contacts[i]
             HStack(spacing: 8) {
@@ -736,7 +754,8 @@ private struct HistoryScreen: View {
     var body: some View {
         ScreenList(
             title: L("History"), hint: L("newest first · esc: back"),
-            count: controller.history.count, index: controller.screenIndex
+            count: controller.history.count, index: controller.screenIndex,
+            onClick: { controller.clickScreenRow($0) }
         ) { i in
             let e = controller.history[i]
             HStack(spacing: 8) {
@@ -756,7 +775,10 @@ private struct NamesScreen: View {
     let rows: [(String, String)]
 
     var body: some View {
-        ScreenList(title: title, hint: L("return: their mails · esc: back"), count: rows.count, index: controller.screenIndex) { i in
+        ScreenList(
+            title: title, hint: L("return: their mails · esc: back"), count: rows.count, index: controller.screenIndex,
+            onClick: { controller.clickScreenRow($0) }
+        ) { i in
             HStack(spacing: 8) {
                 Text(rows[i].0).frame(width: 260, alignment: .leading)
                 Text(rows[i].1).foregroundStyle(Palette.muted)

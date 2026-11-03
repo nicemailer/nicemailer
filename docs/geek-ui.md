@@ -45,6 +45,20 @@ Actions apply to the **marked** mails if any (`J` / `K`), otherwise to the mail 
 
 After a prefix (`m`, `;`, `s`, `v`), a menu in the bottom-right corner lists the possible second keys, as in Helix.
 
+### Mouse
+
+The keyboard comes first, but every list can also be used with the mouse:
+
+| Where | Click | Other |
+| --- | --- | --- |
+| Mail list | select the mail, unmark the others | ⌘-click marks or unmarks a mail (the current one joins the selection); ⇧-click marks every mail from the current one to the clicked one |
+| Search results | select the result | double-click opens it in its folder |
+| Folders (3 columns) | go to the folder | |
+| Pickers | choose the row | |
+| Contacts, tags, groups | select the row | double-click lists its mails |
+
+A click acts at once: double-clicks are detected without delaying single clicks.
+
 ### Folders and screens (`;`)
 
 | Key | Goes to |
