@@ -53,6 +53,15 @@ L'affichage est simplifié au maximum : chaque message montre ce qu'il apporte. 
 - Au clavier, `l` liste les liens du mail puis une ligne par fichier joint, avec son icône ; entrée enregistre le fichier, ⌘-entrée l'enregistre puis ouvre aussitôt la copie enregistrée, au premier plan.
 - En HTML, les mêmes dalles suivent le corps du mail.
 
+### Désabonnement
+
+À gauche des boutons `text | html` de la ligne de titre, un bouton de désabonnement apparaît quand le dernier mail reçu de la conversation donne un moyen de se désabonner. Il est masqué dans Junk, Quarantine et Banned : se désabonner d'un spam confirme au spammeur que l'adresse est lue (le noyau refuse aussi).
+
+- **Identification, par le noyau à la réception** : d'abord l'en-tête `List-Unsubscribe` (RFC 2369), fiable ; à défaut, un lien du corps dont le texte annonce un désabonnement (plusieurs langues). Le bouton distingue les deux : lien de l'en-tête, « propre », ou lien du corps, qui ouvre une page de l'expéditeur dans le navigateur.
+- **Action** : avec `List-Unsubscribe-Post: List-Unsubscribe=One-Click` (RFC 8058), le noyau envoie lui-même la requête et la barre de statut confirme. Sinon la page s'ouvre dans le navigateur ; une adresse `mailto:` seule s'ouvre dans Mail en attendant l'envoi SMTP. Un échec du désabonnement en un clic ouvre la page.
+- **Ensuite** : l'expéditeur est noté « désabonné le … » (affiché à la place du bouton, et journalisé), sans changer sa décision ni ses mails.
+- **Clavier** : ⌘U, comme dans Superhuman ; le modificateur évite de déclencher par erreur une action irréversible (`u` seul bascule lu / non lu).
+
 ### Lecture
 
 - Un mail choisi par l'utilisateur (`j` `k`, un clic, le mail suivant après un déplacement) est marqué lu après une seconde d'affichage. Parcourir vite la liste ne marque rien.

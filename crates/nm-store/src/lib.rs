@@ -13,6 +13,7 @@
 //! - `mbox.rs`: streaming reader of mbox files,
 //! - `ingest.rs`: interpretation of a raw message (headers, bodies, attachments),
 //! - `attachments.rs`: attachments of a thread, extraction of their files,
+//! - `unsubscribe.rs`: how to unsubscribe from a mailing list,
 //! - `html_text.rs`: HTML to plain text, keeping blocks apart,
 //! - `import.rs`: import of an mbox file into an archive account,
 //! - `library.rs`: history, export, tags, groups, contacts, display preference,
@@ -32,6 +33,7 @@ pub mod library;
 pub mod mbox;
 mod queries;
 pub mod raw;
+pub mod unsubscribe;
 pub mod seed;
 
 // `BTreeSet` is a sorted set without duplicates. It is used instead of
@@ -180,6 +182,8 @@ impl Store {
                     ("SELECT sync_key FROM contact_group", "contact_group"),
                     ("SELECT date_last_modified FROM thread_folder", "thread_folder.date_last_modified"),
                     ("SELECT body_format FROM address", "address.body_format"),
+                    ("SELECT unsubscribed_at FROM address", "address.unsubscribed_at"),
+                    ("SELECT one_click FROM message_unsubscribe", "message_unsubscribe"),
                 ] {
                     if conn.prepare(sql).is_err() {
                         return Err(StoreError::OutdatedSchema(what));

@@ -1,0 +1,10 @@
+[package]
+name = "nm-proto"
+description = "Network adapters: for now the one-click unsubscribe (RFC 8058); IMAP and SMTP will come here"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+ureq.workspace = true
+thiserror.workspace = true

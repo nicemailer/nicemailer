@@ -46,7 +46,7 @@ use anyhow::{Context, bail};
 use clap::Parser;
 use nm_api::{
     AttachmentFileView, CommandResult, DEFAULT_LIMIT, Event, ExportMessageParams, ExportResult, FolderList,
-    GetAttachmentParams, GetThreadParams,
+    GetAttachmentParams, GetThreadParams, UnsubscribeParams, UnsubscribeResult,
     GroupMemberResult, HelloParams, HelloResult, ImportMboxParams, ImportStatus, Items, ListContactsParams,
     ListHistoryParams, ListTagsParams, ListThreadsByParams, ListThreadsParams, MAX_LIMIT, MoveThreadParams,
     PROTOCOL_VERSION, Page, Request, Response, RpcError, SearchParams, SearchResult, SetBodyFormatParams,
@@ -476,6 +476,52 @@ async fn dispatch(core: &Arc<Core>, session: &mut Session, req: Request) -> Resu
             let raw = core.raw.clone();
             let path = with_store(core, move |s| s.export_message(&raw, p.message_id, p.format, &dir)).await?;
             to_value(ExportResult { path: path.display().to_string() })
+        }
+        method::UNSUBSCRIBE => {
+            // `ui.md`, "Désabonnement". With one click (RFC 8058), the core
+            // sends the request itself and records it; otherwise the client
+            // opens the page or the address. A failed one-click attempt
+            // falls back to opening the page.
+            let p: UnsubscribeParams = params(req.params)?;
+            let id = p.message_id;
+            let target = with_store(core, move |s| s.unsubscribe_target(id)).await?;
+            let browser = |error: Option<String>| UnsubscribeResult {
+                method: "browser".into(),
+                done: false,
+                open: target.url.clone(),
+                error,
+            };
+            if target.one_click
+                && let Some(url) = target.url.clone()
+            {
+                // The request is blocking and may take seconds: off the
+                // runtime, so other clients are not kept waiting.
+                // `NICEMAILER_FAKE_NETWORK` (UI tests): no request leaves the
+                // machine, the server is taken to have accepted.
+                let fake = std::env::var_os("NICEMAILER_FAKE_NETWORK").is_some();
+                let sent = tokio::task::spawn_blocking(move || {
+                    if fake { Ok(()) } else { nm_proto::unsubscribe::one_click(&url, true) }
+                })
+                .await
+                .map_err(|e| RpcError::new(error_code::INTERNAL_ERROR, e.to_string()))?;
+                return match sent {
+                    Ok(()) => {
+                        let core2 = core.clone();
+                        with_store(core, move |s| {
+                            let changes = s.mark_unsubscribed(id, source)?;
+                            core2.events.lock().unwrap().emit(&changes);
+                            Ok(())
+                        })
+                        .await?;
+                        to_value(UnsubscribeResult { method: "one_click".into(), done: true, open: None, error: None })
+                    }
+                    Err(e) => to_value(browser(Some(e.to_string()))),
+                };
+            }
+            if target.url.is_some() {
+                return to_value(browser(None));
+            }
+            to_value(UnsubscribeResult { method: "mail".into(), done: false, open: target.mailto.clone(), error: None })
         }
         method::GET_ATTACHMENT => {
             // The file is extracted from the raw message on first use; the

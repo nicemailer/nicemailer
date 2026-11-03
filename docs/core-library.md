@@ -40,6 +40,24 @@ The file goes to `dir` (absolute), by default `~/Downloads`, named `<date> <subj
 nicemailer call get_attachment '{"attachment_id": 12}'
 ```
 
+## Unsubscribing from a list
+
+When a message arrives, the core looks for a way to unsubscribe from the list it comes from (`crates/nm-store/src/unsubscribe.rs`) and stores it in `message_unsubscribe`:
+
+1. the `List-Unsubscribe` header (RFC 2369): the first web URL and the first `mailto:` in angle brackets, whitespace of a folded header removed. With `List-Unsubscribe-Post: List-Unsubscribe=One-Click` (RFC 8058) and an https URL, the unsubscribe takes one click;
+2. otherwise a link of the HTML body whose text (or address) announces an unsubscription, in English, French, German, Spanish, Italian or Dutch ("unsubscribe", "se désabonner", "désinscription", "abmelden", "darse de baja", "disiscriviti", "uitschrijven", "opt out"…);
+3. otherwise, in a plain text body, a URL on such a line or on the next one.
+
+`get_thread` shows it in `unsubscribe`: `method` (`one_click`, `browser` or `mail`), `source` (`header`, reliable, or `body`, a page of the sender to open), `url`, `mailto`, and `sender_unsubscribed_at`.
+
+`unsubscribe {message_id}` acts on it. With one click, the core sends the POST itself (crate `nm-proto`: https only, 15 s at most, no cookie, no credential, user agent "NiceMailer"), then records `address.unsubscribed_at` and an `unsubscribe` line in the audit log; the sender's screening decision and its mails are left alone. It answers `{method, done, open, error}`: `done` when it unsubscribed, otherwise `open` is the page or the `mailto:` for the client to open, with `error` when a one-click attempt failed and fell back to the page. It refuses a message in Junk, Quarantine or Banned: unsubscribing from a spam tells the spammer the address is read.
+
+The environment variable `NICEMAILER_FAKE_NETWORK`, set by the UI tests, makes the core take a one-click request as accepted without sending it.
+
+```sh
+nicemailer call unsubscribe '{"message_id": 42}'
+```
+
 ## History
 
 `list_history {cursor?, limit?}` returns the audit log (`tracabilite.md`), newest first. Each entry has `date`, `source` (who: `app`, `cli`, `core`…), `entity`, `entity_id`, `action`, the raw JSON `detail`, and a readable `summary` built by the core, such as `Devis → todo` or `alice@example.com → inbox`.
@@ -70,4 +88,4 @@ Rules (`specifications/groupes.md`): an address can be in several groups; removi
 
 ## Tests
 
-`crates/nm-store/tests/library.rs` covers each of these features: pagination of both sorts, the per-sender display choice, history pagination and summaries, tag creation, idempotence, Unicode case and keyword collisions, group rules (sender of a thread, tombstones, revived group), contact filter and pagination, threads by contact, and export in the three formats without overwriting. `crates/nm-store/tests/attachments.rs` covers the attachments: listed per message, images of the HTML left out, inline photos of a text mail kept, extraction (content, read-only, quarantine, reuse, re-extraction after a purge), names that try to leave the directory, and the errors; `attachments.rs` itself covers the IMAP part numbers and the decoding.
+`crates/nm-store/tests/library.rs` covers each of these features: pagination of both sorts, the per-sender display choice, history pagination and summaries, tag creation, idempotence, Unicode case and keyword collisions, group rules (sender of a thread, tombstones, revived group), contact filter and pagination, threads by contact, and export in the three formats without overwriting. `crates/nm-store/tests/attachments.rs` covers the attachments: listed per message, images of the HTML left out, inline photos of a text mail kept, extraction (content, read-only, quarantine, reuse, re-extraction after a purge), names that try to leave the directory, and the errors; `attachments.rs` itself covers the IMAP part numbers and the decoding. `crates/nm-store/tests/unsubscribe.rs` covers what reception stores for each kind of list mail, the view, the record of a one-click unsubscribe and the refusals; `unsubscribe.rs` the header and body formats; `crates/nm-proto` the POST, against a local HTTP server (no request leaves the machine).

@@ -57,6 +57,7 @@ pub mod method {
     /// Writes one message to a file (.eml, .txt, .md).
     pub const EXPORT_MESSAGE: &str = "export_message";
     pub const GET_ATTACHMENT: &str = "get_attachment";
+    pub const UNSUBSCRIBE: &str = "unsubscribe";
     /// Audit log, newest first (`tracabilite.md`).
     pub const LIST_HISTORY: &str = "list_history";
     /// Tags of an account, or of every account.
@@ -529,6 +530,25 @@ pub struct MessageView {
     /// HTML body (`cid:`) are left out, unless no HTML shows them.
     #[serde(default)]
     pub attachments: Vec<AttachmentView>,
+    /// How to unsubscribe from the list the message comes from, when it
+    /// says (`ui.md`, "Désabonnement").
+    #[serde(default)]
+    pub unsubscribe: Option<UnsubscribeView>,
+}
+
+/// How to unsubscribe from a mailing list (`MessageView.unsubscribe`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct UnsubscribeView {
+    /// `one_click`: the core unsubscribes by itself (RFC 8058); `browser`:
+    /// a web page to open; `mail`: an address to write to.
+    pub method: String,
+    /// `header` (List-Unsubscribe, reliable) or `body` (a link of the
+    /// text, opened in the browser).
+    pub source: String,
+    pub url: Option<String>,
+    pub mailto: Option<String>,
+    /// When the user unsubscribed from this sender with one click.
+    pub sender_unsubscribed_at: Option<i64>,
 }
 
 /// An attachment of a message (`MessageView.attachments`). The content is
@@ -684,6 +704,23 @@ pub struct ExportMessageParams {
     /// Absolute directory to write into; default `~/Downloads`.
     #[serde(default)]
     pub dir: Option<String>,
+}
+
+/// Parameters of `unsubscribe`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UnsubscribeParams {
+    pub message_id: i64,
+}
+
+/// Result of `unsubscribe`. With `done`, the core unsubscribed by itself
+/// (one click) and recorded it; otherwise the client opens `open` (a web
+/// page or a `mailto:`), and `error` says why a one-click attempt failed.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UnsubscribeResult {
+    pub method: String,
+    pub done: bool,
+    pub open: Option<String>,
+    pub error: Option<String>,
 }
 
 /// Parameters of `get_attachment`.

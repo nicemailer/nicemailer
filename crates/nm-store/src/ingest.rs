@@ -27,7 +27,8 @@ use mail_parser::{MessageParser, MessagePart, PartKind};
 /// keeps blocks apart.
 /// 4: images shown inline in a mail without HTML (Apple Mail) are recorded
 /// as attachments, and "inline" means "referenced by the HTML" (`cid:`).
-pub const PARSER_VERSION: i64 = 4;
+/// 5: how to unsubscribe from a mailing list (`unsubscribe.rs`).
+pub const PARSER_VERSION: i64 = 5;
 
 /// Length of `message.snippet`, in characters.
 const SNIPPET_CHARS: usize = 200;
@@ -84,6 +85,8 @@ pub struct ParsedMessage {
     pub has_remote_content: bool,
     pub snippet: Option<String>,
     pub attachments: Vec<ParsedAttachment>,
+    /// How to unsubscribe from the list the message comes from, if it says.
+    pub unsubscribe: Option<crate::unsubscribe::Unsubscribe>,
     /// `false` when `mail-parser` could not make sense of the bytes at all.
     /// The raw file is kept anyway, and `reindex` can retry later
     /// (`stockage-brut.md`, section 5, "Échec de l'analyse MIME").
@@ -147,6 +150,17 @@ pub fn parse(raw: &[u8]) -> ParsedMessage {
     let mut attachments = Vec::new();
     collect_attachments(m.root_part(), "", true, html.as_deref(), &mut attachments);
 
+    // The raw values of the list headers: `unsubscribe.rs` reads the URLs
+    // in them itself (mail-parser's address reading would drop `mailto:`
+    // parameters such as `?subject=`).
+    let header = |name: &str| m.headers().get(name).map(|h| String::from_utf8_lossy(h.raw_value()).into_owned());
+    let unsubscribe = crate::unsubscribe::find(
+        header("List-Unsubscribe").as_deref(),
+        header("List-Unsubscribe-Post").as_deref(),
+        html.as_deref(),
+        text.as_deref(),
+    );
+
     ParsedMessage {
         message_id: message_id.filter(|s| !s.is_empty()),
         in_reply_to: in_reply_to.filter(|s| !s.is_empty()),
@@ -165,6 +179,7 @@ pub fn parse(raw: &[u8]) -> ParsedMessage {
         has_remote_content,
         snippet,
         attachments,
+        unsubscribe,
         parsed: true,
     }
 }

@@ -518,6 +518,12 @@ impl Writer {
             )?
             .execute(params![message_id, a.part_id, a.filename, a.mime_type, a.size, a.content_id, a.is_inline])?;
         }
+        if let Some(u) = &m.unsubscribe {
+            tx.prepare_cached(
+                "INSERT INTO message_unsubscribe (message_id, url, mailto, one_click, source) VALUES (?1, ?2, ?3, ?4, ?5)",
+            )?
+            .execute(params![message_id, u.url, u.mailto, u.one_click, u.source.as_str()])?;
+        }
 
         if sent {
             self.report.sent += 1;

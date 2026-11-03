@@ -14,6 +14,17 @@ use rusqlite::{OptionalExtension, Transaction, TransactionBehavior, params};
 use serde_json::Value;
 
 use crate::raw::RawStore;
+
+/// What `unsubscribe_target` finds for a message.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnsubscribeTarget {
+    pub url: Option<String>,
+    pub mailto: Option<String>,
+    /// RFC 8058: one POST to `url` unsubscribes.
+    pub one_click: bool,
+    /// `header` or `body`.
+    pub source: String,
+}
 use crate::{ChangeSet, Result, Store, StoreError, refresh_thread};
 
 /// Splits a `<number>:<number>` cursor (date and id of the last row).
@@ -124,6 +135,73 @@ impl Store {
         };
         let base = format!("{} {}", &when[..10], file_safe(&subject));
         write_new_file(dir, &base, ext, &bytes)
+    }
+
+    // ----------------------------------------------------------------
+    // Unsubscribing (`ui.md`, "Désabonnement")
+    // ----------------------------------------------------------------
+
+    /// How to unsubscribe from the list of `message_id`, as found at
+    /// reception (`unsubscribe.rs`). Refused for a message in Junk,
+    /// Quarantine or Banned: unsubscribing from a spam only tells the
+    /// spammer that the address is read.
+    pub fn unsubscribe_target(&self, message_id: i64) -> Result<UnsubscribeTarget> {
+        type Row = (Option<String>, Option<String>, bool, String, Option<String>);
+        let (url, mailto, one_click, source, role): Row = self
+            .conn
+            .query_row(
+                "SELECT u.url, u.mailto, u.one_click, u.source, f.role
+                   FROM message m JOIN folder f ON f.id = m.folder_id
+                   JOIN message_unsubscribe u ON u.message_id = m.id
+                  WHERE m.id = ?1",
+                [message_id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+            )
+            .optional()?
+            .ok_or_else(|| StoreError::NotFound(format!("désabonnement du message {message_id}")))?;
+        if matches!(role.as_deref(), Some("junk" | "quarantine" | "banned")) {
+            return Err(StoreError::InvalidParams(
+                "pas de désabonnement depuis Junk, Quarantine ou Banned : il confirmerait l'adresse au spammeur".into(),
+            ));
+        }
+        Ok(UnsubscribeTarget { url, mailto, one_click, source })
+    }
+
+    /// Records that the user unsubscribed with one click from the sender of
+    /// `message_id`: `address.unsubscribed_at`, and a line in the audit
+    /// log. The sender's screening decision and its mails stay as they are.
+    pub fn mark_unsubscribed(&mut self, message_id: i64, source: Source) -> Result<ChangeSet> {
+        let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let (address, thread, folder, url): (Option<i64>, Option<i64>, i64, Option<String>) = tx
+            .query_row(
+                "SELECT m.from_address_id, m.thread_id, m.folder_id, u.url
+                   FROM message m LEFT JOIN message_unsubscribe u ON u.message_id = m.id WHERE m.id = ?1",
+                [message_id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            )
+            .optional()?
+            .ok_or_else(|| StoreError::NotFound(format!("message {message_id}")))?;
+        let (entity, entity_id) = match address {
+            Some(a) => {
+                tx.execute("UPDATE address SET unsubscribed_at = unixepoch() WHERE id = ?1", [a])?;
+                ("address", a)
+            }
+            // No readable sender: the log still keeps a trace, on the message.
+            None => ("message", message_id),
+        };
+        tx.execute(
+            "INSERT INTO audit_log (created_by, entity, entity_id, action, detail)
+             VALUES (?1, ?2, ?3, 'unsubscribe', json_object('message_id', ?4, 'method', 'one_click', 'url', ?5))",
+            params![source.as_str(), entity, entity_id, message_id, url],
+        )?;
+        tx.commit()?;
+        // The thread is shown again by clients, with "unsubscribed on".
+        let mut changes = ChangeSet::default();
+        changes.messages.insert((message_id, thread));
+        if let Some(t) = thread {
+            changes.threads.push((t, vec![folder]));
+        }
+        Ok(changes)
     }
 
     // ----------------------------------------------------------------

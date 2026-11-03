@@ -134,6 +134,9 @@ CREATE TABLE address (
     -- choix par défaut du thème (ui.md). Préférence d'affichage locale : ni
     -- synchronisée, ni journalisée, sans effet sur date_modified.
     body_format TEXT CHECK (body_format IN ('text','html')),
+    -- Désabonnement en un clic réussi depuis l'app (ui.md, « Désabonnement ») ;
+    -- NULL = jamais. Sans effet sur la décision de screening.
+    unsubscribed_at INTEGER,
     -- date_modified : nom, décision de screening ou auth_policy ; pas auth_seen.
     date_created INTEGER NOT NULL DEFAULT (unixepoch()),
     date_modified INTEGER NOT NULL DEFAULT (unixepoch()),
@@ -455,6 +458,25 @@ CREATE TABLE attachment (
 ) STRICT;
 
 CREATE INDEX idx_attachment_cid ON attachment (message_id, content_id);
+
+-- ------------------------------------------------------------
+-- Désabonnement d'une liste (ui.md, « Désabonnement »), extrait à la
+-- réception. Table séparée : peu de messages en ont un, et la table message,
+-- lue par chaque liste, reste étroite.
+--   source 'header' : en-tête List-Unsubscribe (RFC 2369), fiable ;
+--   source 'body'   : lien du corps dont le texte annonce un désabonnement,
+--                     ouvert dans le navigateur seulement.
+--   one_click       : List-Unsubscribe-Post (RFC 8058) avec une URL https :
+--                     le noyau envoie lui-même la requête.
+-- ------------------------------------------------------------
+CREATE TABLE message_unsubscribe (
+    message_id  INTEGER PRIMARY KEY REFERENCES message(id) ON DELETE CASCADE,
+    url         TEXT,                     -- https ou http ; NULL si mailto seul
+    mailto      TEXT,                     -- adresse mailto: complète, en-tête seulement
+    one_click   INTEGER NOT NULL DEFAULT 0 CHECK (one_click IN (0,1)),
+    source      TEXT NOT NULL CHECK (source IN ('header','body')),
+    CHECK (url IS NOT NULL OR mailto IS NOT NULL)
+) STRICT;
 
 -- ------------------------------------------------------------
 -- Brouillons en cours de rédaction (voir brouillons.md).

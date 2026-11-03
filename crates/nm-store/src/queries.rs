@@ -379,11 +379,13 @@ impl Store {
             "SELECT m.id, m.folder_id, f.role, m.subject, m.from_name, m.from_addr,
                     m.date_sent, m.date_received, b.text_plain,
                     m.is_seen, m.is_flagged, m.is_answered, m.has_attachments, m.auth_result,
-                    b.html_sanitized, coalesce(b.has_remote_content, 0), a.body_format
+                    b.html_sanitized, coalesce(b.has_remote_content, 0), a.body_format,
+                    u.url, u.mailto, u.one_click, u.source, a.unsubscribed_at
                FROM message m
                JOIN folder f ON f.id = m.folder_id
                LEFT JOIN message_body b ON b.message_id = m.id
                LEFT JOIN address a ON a.id = m.from_address_id
+               LEFT JOIN message_unsubscribe u ON u.message_id = m.id
               WHERE m.thread_id = ?1
               ORDER BY m.date_received, m.id",
         )?;
@@ -416,6 +418,7 @@ impl Store {
                     expanded: false,
                     show_recipients: false,
                     attachments: vec![],
+                    unsubscribe: unsubscribe_view(r.get(17)?, r.get(18)?, r.get(19)?, r.get(20)?, r.get(21)?),
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -624,4 +627,30 @@ fn filter_clause(f: &ThreadFilter) -> (String, Vec<Value>) {
         sql.push_str(&format!(" AND tf.date_last_received < {p}"));
     }
     (sql, values)
+}
+
+/// The view of a `message_unsubscribe` row (all `None` when the message has
+/// none): the method follows from what the row holds.
+fn unsubscribe_view(
+    url: Option<String>,
+    mailto: Option<String>,
+    one_click: Option<bool>,
+    source: Option<String>,
+    unsubscribed_at: Option<i64>,
+) -> Option<nm_api::UnsubscribeView> {
+    let source = source?;
+    let method = if one_click == Some(true) {
+        "one_click"
+    } else if url.is_some() {
+        "browser"
+    } else {
+        "mail"
+    };
+    Some(nm_api::UnsubscribeView {
+        method: method.into(),
+        source,
+        url,
+        mailto,
+        sender_unsubscribed_at: unsubscribed_at,
+    })
 }
