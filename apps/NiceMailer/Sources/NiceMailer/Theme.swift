@@ -83,11 +83,39 @@ enum Fonts {
         }
     }
 
-    /// The reading font at `size`, or the system monospaced font if the
-    /// bundled one could not be loaded.
-    static func reading(_ size: CGFloat) -> NSFont {
-        NSFont(name: readingName, size: size) ?? .monospacedSystemFont(ofSize: size, weight: .regular)
+    /// The geek font at `size` and `weight`, or the system monospaced font
+    /// if the bundled one could not be loaded. The family has Regular,
+    /// Semibold and Bold instances, chosen by PostScript name.
+    static func reading(_ size: CGFloat, weight: NSFont.Weight = .regular) -> NSFont {
+        let name: String
+        switch weight {
+        case .bold, .heavy, .black: name = "iAWriterMonoV-Bold"
+        case .semibold: name = "iAWriterMonoV-Semibold"
+        default: name = readingName
+        }
+        return NSFont(name: name, size: size) ?? .monospacedSystemFont(ofSize: size, weight: weight)
     }
+
+    /// Width of one character of the geek font at `size`. The font is
+    /// monospaced, so a column of `n` characters is `n * charWidth` wide:
+    /// list columns are sized this way, and stay aligned row after row.
+    static func charWidth(_ size: CGFloat) -> CGFloat {
+        ("0" as NSString).size(withAttributes: [.font: reading(size)]).width
+    }
+
+    /// `@font-face` rules embedding the bundled fonts as data URLs, for the
+    /// HTML reader: the web view runs in another process, which does not see
+    /// the fonts registered by the app, and does not reliably read local
+    /// files. Built once (about 370 KB of text), then reused.
+    static let cssFontFaces: String = {
+        guard let dir = Bundle.module.url(forResource: "Fonts", withExtension: nil) else { return "" }
+        func face(_ file: String, _ style: String) -> String {
+            guard let data = try? Data(contentsOf: dir.appendingPathComponent(file)) else { return "" }
+            return "@font-face { font-family: \"NM Mono\"; font-style: \(style); "
+                + "src: url(data:font/ttf;base64,\(data.base64EncodedString())) format(\"truetype\"); }\n"
+        }
+        return face("iAWriterMonoV.ttf", "normal") + face("iAWriterMonoV-Italic.ttf", "italic")
+    }()
 }
 
 /// Colors of the geek theme, inspired by Helix's default themes: a dark
@@ -134,8 +162,14 @@ extension NSColor {
 }
 
 extension Font {
-    /// Monospaced font of the geek chrome (lists, status bar, menus).
+    /// Font of the whole geek theme: iA Writer Mono V (`ui.md`).
     static func geek(_ size: CGFloat = 12, weight: Font.Weight = .regular) -> Font {
-        .system(size: size, weight: weight, design: .monospaced)
+        let nsWeight: NSFont.Weight
+        switch weight {
+        case .bold, .heavy, .black: nsWeight = .bold
+        case .semibold: nsWeight = .semibold
+        default: nsWeight = .regular
+        }
+        return Font(Fonts.reading(size, weight: nsWeight))
     }
 }

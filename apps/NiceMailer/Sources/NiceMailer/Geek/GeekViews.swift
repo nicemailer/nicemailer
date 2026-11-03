@@ -234,53 +234,87 @@ private struct GeekThreadRows: View {
     var body: some View {
         let cursor = model.selectedThreadId
         let marked = model.marked
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(model.threads) { t in
-                        GeekThreadRow(thread: t, cursor: t.id == cursor, marked: marked.contains(t.id))
-                            .id(t.id)
-                            .task { await model.loadMoreIfNeeded(after: t) }
+        // The column widths depend on the list width only, never on a row's
+        // content: every row gets the same layout and the columns line up.
+        GeometryReader { geo in
+            let layout = RowLayout(width: geo.size.width)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(model.threads) { t in
+                            GeekThreadRow(thread: t, cursor: t.id == cursor, marked: marked.contains(t.id), layout: layout)
+                                .id(t.id)
+                                .task { await model.loadMoreIfNeeded(after: t) }
+                        }
                     }
                 }
-            }
-            .scrollIndicators(.never)
-            // Keep the cursor visible, without animation: `scrollTo` with no
-            // anchor scrolls only as much as needed.
-            .onChange(of: model.selectedThreadId) { _, id in
-                if let id { proxy.scrollTo(id) }
-            }
-            .overlay {
-                if model.threads.isEmpty {
-                    Text(L("No mail")).foregroundStyle(Palette.muted)
+                .scrollIndicators(.never)
+                // Keep the cursor visible, without animation: `scrollTo`
+                // with no anchor scrolls only as much as needed.
+                .onChange(of: model.selectedThreadId) { _, id in
+                    if let id { proxy.scrollTo(id) }
+                }
+                .overlay {
+                    if model.threads.isEmpty {
+                        Text(L("No mail")).foregroundStyle(Palette.muted)
+                    }
                 }
             }
         }
     }
 }
 
-/// One list row: mark bar, unread dot, date, sender, subject, tags.
+/// Fixed column widths of the list rows, computed from the list width in
+/// whole characters of the (monospaced) font.
+private struct RowLayout: Equatable {
+    static let fontSize: CGFloat = 12
+    let char: CGFloat
+    /// Date: 8 characters ("14/09/21", "16 sept.").
+    let date: CGFloat
+    /// Sender: about a quarter of the list, between 8 and 24 characters.
+    let sender: CGFloat
+    /// Message count: 3 characters, right-aligned.
+    let count: CGFloat
+
+    init(width: CGFloat) {
+        char = Fonts.charWidth(Self.fontSize)
+        date = 8 * char
+        let chars = (width / char * 0.26).rounded(.down)
+        sender = min(24, max(8, chars)) * char
+        count = 3 * char
+    }
+}
+
+/// One list row: mark bar, unread dot, date, sender, subject and tags,
+/// count, flag. Every column but the subject has a fixed width.
 private struct GeekThreadRow: View {
     let thread: ThreadSummary
     let cursor: Bool
     let marked: Bool
+    let layout: RowLayout
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: layout.char) {
             (marked ? Palette.markedBar : Color.clear).frame(width: 2)
-            Text(thread.unreadCount > 0 ? "●" : " ").foregroundStyle(Palette.unread).frame(width: 10)
-            Text(Format.listDate(thread.dateLastReceived)).foregroundStyle(Palette.muted).frame(width: 52, alignment: .leading)
+            Text(thread.unreadCount > 0 ? "●" : " ").foregroundStyle(Palette.unread).frame(width: layout.char)
+            Text(Format.geekListDate(thread.dateLastReceived)).foregroundStyle(Palette.muted)
+                .frame(width: layout.date, alignment: .leading)
             Text(thread.participants.last ?? "")
                 .fontWeight(thread.unreadCount > 0 ? .bold : .regular)
-                .frame(minWidth: 60, idealWidth: 130, maxWidth: 130, alignment: .leading)
-            // The subject gets the remaining width first; the sender is cut
-            // before it.
-            Text(thread.subject.isEmpty ? L("(no subject)") : thread.subject).lineLimit(1).layoutPriority(1)
-            if thread.messageCount > 1 { Text("\(thread.messageCount)").foregroundStyle(Palette.muted) }
-            Spacer(minLength: 4)
-            if thread.isFlagged { Text("*").foregroundStyle(Palette.unread) }
-            ForEach(thread.tags, id: \.self) { Text("#\($0)").foregroundStyle(Palette.accent) }
+                .frame(width: layout.sender, alignment: .leading)
+            // The subject takes the remaining width; tags follow it and are
+            // cut first.
+            HStack(spacing: layout.char) {
+                Text(thread.subject.isEmpty ? L("(no subject)") : thread.subject).layoutPriority(1)
+                ForEach(thread.tags, id: \.self) { Text("#\($0)").foregroundStyle(Palette.accent) }
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Text(thread.messageCount > 1 ? "\(thread.messageCount)" : "").foregroundStyle(Palette.muted)
+                .frame(width: layout.count, alignment: .trailing)
+            Text(thread.isFlagged ? "*" : " ").foregroundStyle(Palette.unread).frame(width: layout.char)
         }
+        .font(.geek(RowLayout.fontSize, weight: .regular))
         .lineLimit(1)
         .padding(.trailing, 6)
         .frame(height: 20)
@@ -306,6 +340,8 @@ private struct GeekSearchList: View {
     let current: Int
 
     var body: some View {
+        GeometryReader { geo in
+        let layout = RowLayout(width: geo.size.width)
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
@@ -313,7 +349,7 @@ private struct GeekSearchList: View {
                     // ForEach identity (message id) different from the `.id`
                     // left the lazy stack showing the rows of an older query.
                     ForEach(Array(hits.enumerated()), id: \.offset) { i, hit in
-                        GeekSearchRow(hit: hit, cursor: i == current).id(i)
+                        GeekSearchRow(hit: hit, cursor: i == current, layout: layout).id(i)
                     }
                 }
             }
@@ -322,6 +358,7 @@ private struct GeekSearchList: View {
             .overlay {
                 if hits.isEmpty { Text(L("No result")).foregroundStyle(Palette.muted) }
             }
+        }
         }
     }
 }
@@ -333,18 +370,23 @@ private struct GeekSearchList: View {
 private struct GeekSearchRow: View {
     let hit: SearchHit
     let cursor: Bool
+    let layout: RowLayout
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 6) {
-                Text(Format.listDate(hit.dateReceived)).foregroundStyle(Palette.muted).frame(width: 52, alignment: .leading)
-                Text(hit.fromName ?? hit.fromAddr ?? "").frame(minWidth: 60, idealWidth: 130, maxWidth: 130, alignment: .leading)
-                Text(hit.subject).lineLimit(1).layoutPriority(1)
-                Spacer()
+            HStack(spacing: layout.char) {
+                Text(Format.geekListDate(hit.dateReceived)).foregroundStyle(Palette.muted)
+                    .frame(width: layout.date, alignment: .leading)
+                Text(hit.fromName ?? hit.fromAddr ?? "").frame(width: layout.sender, alignment: .leading)
+                Text(hit.subject).frame(maxWidth: .infinity, alignment: .leading)
                 Text(Role.name(hit.folderRole)).foregroundStyle(Palette.muted)
+                    .frame(width: 10 * layout.char, alignment: .trailing)
             }
-            Text(hit.highlight).foregroundStyle(Palette.muted).lineLimit(1).padding(.leading, 64)
+            // The excerpt starts under the sender column.
+            Text(hit.highlight).foregroundStyle(Palette.muted)
+                .padding(.leading, layout.date + layout.char)
         }
+        .font(.geek(RowLayout.fontSize))
         .lineLimit(1)
         .padding(.horizontal, 6)
         .frame(height: 36)
@@ -400,10 +442,14 @@ private struct GeekReaderColumn: View {
         }
         var html = """
         <html><head><meta charset="utf-8"><style>
+        \(Fonts.cssFontFaces)
         :root { color-scheme: light dark; }
-        body { margin: 16px; font: 14px -apple-system, sans-serif; }
-        .h { font: 11px ui-monospace, monospace; color: #888; margin: 0 0 12px; white-space: pre-wrap; }
-        pre { font: 14px "iA Writer Mono V", ui-monospace, monospace; white-space: pre-wrap; }
+        /* The mail's own styles are removed by the sanitizer: everything is
+           shown in the theme font, like the text reader. */
+        body, table, td, p, div, span, a, li { font-family: "NM Mono", ui-monospace, monospace; }
+        body { margin: 16px; font-size: 14px; }
+        .h { font-size: 11px; color: #888; margin: 0 0 12px; white-space: pre-wrap; }
+        pre { font: 14px "NM Mono", ui-monospace, monospace; white-space: pre-wrap; }
         hr { border: 0; border-top: 1px solid #8884; margin: 24px 0; }
         img { max-width: 100%; height: auto; }
         /* Remote images were removed by the core: hide the empty boxes. */
@@ -475,7 +521,7 @@ private struct TextReader: NSViewRepresentable {
     private func attributed(_ thread: ThreadView) -> NSAttributedString {
         let out = NSMutableAttributedString()
         let headerAttrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .regular),
+            .font: Fonts.reading(11),
             .foregroundColor: NSColor(Palette.muted),
         ]
         let paragraph = NSMutableParagraphStyle()

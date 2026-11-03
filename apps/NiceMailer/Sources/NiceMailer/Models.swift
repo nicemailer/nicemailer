@@ -283,6 +283,24 @@ enum Format {
         return full.string(from: d)
     }
 
+    private static let geekShort: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "dd/MM/yy"; return f
+    }()
+    private static let geekDayMonth: DateFormatter = {
+        let f = DateFormatter(); f.locale = .autoupdatingCurrent; f.setLocalizedDateFormatFromTemplate("dMMM"); return f
+    }()
+
+    /// Date of the geek lists, at most 8 characters so that the column has
+    /// a fixed width: "14:05" today, "16 oct." this year, "14/09/21" before.
+    /// Follows the user's language, unlike the classic theme.
+    static func geekListDate(_ ts: Int) -> String {
+        let d = Date(timeIntervalSince1970: TimeInterval(ts))
+        let cal = Calendar.current
+        if cal.isDateInToday(d) { return time.string(from: d) }
+        if cal.isDate(d, equalTo: Date(), toGranularity: .year) { return geekDayMonth.string(from: d) }
+        return geekShort.string(from: d)
+    }
+
     /// Full date and time, for the message header.
     static func longDate(_ ts: Int) -> String {
         long.string(from: Date(timeIntervalSince1970: TimeInterval(ts)))
