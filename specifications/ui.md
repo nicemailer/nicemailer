@@ -100,7 +100,7 @@ u lu / non lu
 / chercher partout : Contient… dans Everything (voir le sélecteur d'attributs) ; échap revient au dossier de départ
 ? liste des touches
 échap annule un préfixe, ferme un panneau, démarque, puis revient du tag, groupe ou contact listé au dossier
-espace et ctrl-f font défiler le mail d'une page vers le bas, maj-espace et ctrl-b vers le haut
+espace et ctrl-f font défiler le mail d'une page vers le bas, maj-espace et ctrl-b vers le haut, en texte comme en HTML
 
 Le prefix ";" permet de changer d’écran
 ; aller à un dossier

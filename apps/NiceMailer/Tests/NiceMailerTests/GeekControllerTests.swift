@@ -82,6 +82,13 @@ struct GeekControllerTests {
         #expect(selectedIndex == 0)  // and on the first
     }
 
+    @Test func theHTMLReaderScrollsByAFractionOfThePage() {
+        // Space: a page down, and the new position comes back to the app.
+        #expect(GeekController.htmlScrollScript(pages: 1)
+            == "window.scrollBy(0, Math.round(window.innerHeight * 1.0)); window.scrollY")
+        #expect(GeekController.htmlScrollScript(pages: -0.5).contains("innerHeight * -0.5"))
+    }
+
     @Test func halfAPageIsHalfTheVisibleRowsAndNeverZero() {
         #expect(GeekController.halfPage(40) == 20)
         #expect(GeekController.halfPage(7) == 3)

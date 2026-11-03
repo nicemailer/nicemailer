@@ -399,6 +399,7 @@ private final class Runner {
             "html_text": UIScript.html["text"] ?? "",
             "html_font_loaded": UIScript.html["font"] ?? "",
             "html_font_family": UIScript.html["family"] ?? "",
+            "html_offset": "\(c.htmlOffset)",
         ]
     }
 }

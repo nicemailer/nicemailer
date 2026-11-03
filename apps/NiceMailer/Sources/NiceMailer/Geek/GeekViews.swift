@@ -537,7 +537,7 @@ private struct GeekReaderColumn: View {
                 .frame(height: scaled(26))
                 Palette.separator.frame(height: 1)
                 if model.bodyFormat == "html" {
-                    HTMLReader(html: threadHTML(thread, state))
+                    HTMLReader(html: threadHTML(thread, state), controller: controller)
                 } else {
                     TextReader(blocks: blocks, threadId: thread.id, controller: controller)
                 }
@@ -764,6 +764,8 @@ private struct TextReader: NSViewRepresentable {
 /// HTML reader: a web view without JavaScript; links open in the browser.
 private struct HTMLReader: NSViewRepresentable {
     let html: String
+    /// Keeps the web view, to scroll it from the keyboard (Space, ctrl-f…).
+    let controller: GeekController
 
     func makeNSView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
@@ -773,6 +775,7 @@ private struct HTMLReader: NSViewRepresentable {
         let view = WKWebView(frame: .zero, configuration: config)
         view.navigationDelegate = context.coordinator
         view.setValue(false, forKey: "drawsBackground")
+        controller.readerWeb = view
         return view
     }
 

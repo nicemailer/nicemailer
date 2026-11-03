@@ -80,7 +80,7 @@ Actions apply to the **marked** mails if any (`J` / `K`), otherwise to the mail 
 | `;` + key | go to a folder or a screen (see below) |
 | `s` + key | save the latest mail of the conversation to `~/Downloads`: `se` .eml, `st` text, `sm` Markdown |
 | `v` + key | display: `v1` `v2` `v3` columns, `vc` sort by reception, `vm` sort by modification, `vh` text / HTML, `vs` status bar |
-| Space, shift-Space | scroll the mail a page down / up |
+| Space, shift-Space | scroll the mail a page down / up, as text or as HTML |
 | `ctrl-f` `ctrl-b` | same, a page down / up in the mail |
 | `?` | list of keys |
 | Escape | cancel a prefix, close a panel, unmark, then go back from a tag, group or contact list to the folder |

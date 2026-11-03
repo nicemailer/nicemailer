@@ -1,4 +1,5 @@
 import AppKit
+import WebKit
 import Foundation
 import Observation
 
@@ -136,6 +137,13 @@ final class GeekController {
 
     /// The reading pane's scroll view, to scroll it from the keyboard.
     weak var readerScroll: NSScrollView?
+    /// The HTML reader (`vh`), scrolled the same way. It draws in another
+    /// process: its scroll position is not an AppKit scroll view but the
+    /// page's own, moved with a line of JavaScript.
+    weak var readerWeb: WKWebView?
+    /// Scroll position of the HTML page after the last keyboard scroll, for
+    /// the UI tests (the page reports it asynchronously).
+    @ObservationIgnored var htmlOffset = 0
 
     /// Rows of the mail list that fit in its pane, set by the view when its
     /// height changes; used by `ctrl-d` / `ctrl-u`. `@ObservationIgnored`:
@@ -436,14 +444,31 @@ final class GeekController {
 
     private func moveCursor(_ delta: Int) { model.selectNext(delta) }
 
-    /// Scrolls the reading pane by a fraction of its height.
+    /// Scrolls the reading pane by a fraction of its height: the text
+    /// reader, or the HTML page when the mail is shown as HTML.
     private func scrollReader(pages: CGFloat) {
+        if model.bodyFormat == "html", let web = readerWeb, web.window != nil {
+            // Scripts of the page are off (`HTMLReader`), but the app's own
+            // calls still run: `evaluateJavaScript` is not page content.
+            web.evaluateJavaScript(Self.htmlScrollScript(pages: pages)) { [weak self] result, _ in
+                // Swift note: the completion is called on the main thread;
+                // `assumeIsolated` tells the compiler so.
+                MainActor.assumeIsolated { self?.htmlOffset = (result as? NSNumber)?.intValue ?? 0 }
+            }
+            return
+        }
         guard let scroll = readerScroll, let doc = scroll.documentView else { return }
         let clip = scroll.contentView
         let maxY = max(0, doc.frame.height - clip.bounds.height)
         let y = min(maxY, max(0, clip.bounds.origin.y + pages * clip.bounds.height))
         clip.scroll(to: NSPoint(x: 0, y: y))
         scroll.reflectScrolledClipView(clip)
+    }
+
+    /// JavaScript that scrolls the page by `pages` of its height (negative:
+    /// up) and returns the new position. The browser stops at both ends.
+    static func htmlScrollScript(pages: CGFloat) -> String {
+        "window.scrollBy(0, Math.round(window.innerHeight * \(Double(pages)))); window.scrollY"
     }
 
     // MARK: - Menus
