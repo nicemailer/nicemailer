@@ -165,18 +165,50 @@ extension AppModel {
         }
     }
 
-    /// Saves the latest message of the open thread (`se`, `st`, `sm`) to
-    /// `exportDirectory`, by default ~/Downloads (chosen by the core), and
-    /// shows the path in the status bar.
-    func export(_ format: String) {
-        guard let client = core, let m = latestMessage else { return }
-        var params: [String: Any] = ["message_id": m.id, "format": format]
-        if let dir = exportDirectory { params["dir"] = dir }
-        Task {
+    /// The target threads (marked, or the one under the cursor) as read by
+    /// the core: the open one as it is, the others asked for.
+    private func targetThreadViews(client: any CoreCalling) async -> [ThreadView] {
+        let open = openThread
+        var out: [ThreadView] = []
+        for t in targetThreads {
+            if let open, open.id == t.id {
+                out.append(open)
+                continue
+            }
             do {
-                let r: ExportResult = try await client.call("export_message", params)
-                flash = L("Saved: %@", r.path)
+                out.append(try await client.call("get_thread", ["thread_id": t.id]))
             } catch { report(error) }
+        }
+        return out
+    }
+
+    /// `se`, `st`, `sm`: saves the latest message of each target thread
+    /// (the marked ones, or the one under the cursor) to `exportDirectory`,
+    /// by default ~/Downloads (chosen by the core). One file: its path in
+    /// the status bar; several: how many.
+    func export(_ format: String) {
+        guard let client = core, !targetThreads.isEmpty else { return }
+        let dir = exportDirectory
+        Task {
+            var paths: [String] = []
+            var firstError: Error?
+            for thread in await targetThreadViews(client: client) {
+                guard let m = thread.messages.last else { continue }
+                var params: [String: Any] = ["message_id": m.id, "format": format]
+                if let dir { params["dir"] = dir }
+                do {
+                    let r: ExportResult = try await client.call("export_message", params)
+                    paths.append(r.path)
+                } catch { firstError = firstError ?? error }
+            }
+            if paths.count == 1 {
+                flash = L("Saved: %@", paths[0])
+            } else if let first = paths.first {
+                let place = FileManager.default.displayName(atPath: (first as NSString).deletingLastPathComponent)
+                flash = L("%lld mails saved to %@", paths.count, place)
+            } else if let firstError {
+                report(firstError)
+            }
         }
     }
 
@@ -199,25 +231,10 @@ extension AppModel {
     /// (`architecture.md`, section 5); the app copies or opens it.
     func saveAttachment(_ id: Int, _ action: AttachmentAction) {
         guard let client = core, attachments.contains(where: { $0.id == id }) else { return }
-        let exportDirectory = exportDirectory
         Task {
             do {
-                let file: AttachmentFileView = try await client.call("get_attachment", ["attachment_id": id])
-                let dir = exportDirectory.map { URL(fileURLWithPath: $0) }
-                    ?? FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
-                // Copied off the main thread: a file can weigh tens of MB.
-                // Swift note: `Task.detached` runs the closure on a
-                // background thread; `.value` waits for its result.
-                let dest = try await Task.detached {
-                    let fm = FileManager.default
-                    let dest = AttachmentDisplay.freeURL(in: dir, name: file.filename) { fm.fileExists(atPath: $0.path) }
-                    try fm.copyItem(at: URL(fileURLWithPath: file.path), to: dest)
-                    // The core's copy is read-only; the user's is not. The
-                    // quarantine attribute is kept by the copy.
-                    try fm.setAttributes([.posixPermissions: 0o644], ofItemAtPath: dest.path)
-                    return dest
-                }.value
-                let place = FileManager.default.displayName(atPath: dir.path)
+                let dest = try await copyAttachment(id, client: client)
+                let place = FileManager.default.displayName(atPath: saveDirectory.path)
                 if action == .saveAndOpen {
                     // The saved copy, so that changes made in the app that
                     // opens it are kept.
@@ -227,6 +244,74 @@ extension AppModel {
                     flash = L("%@ saved to %@", dest.lastPathComponent, place)
                 }
             } catch { report(error) }
+        }
+    }
+
+    /// Where attachments are saved: `exportDirectory`, by default
+    /// ~/Downloads.
+    var saveDirectory: URL {
+        exportDirectory.map { URL(fileURLWithPath: $0) }
+            ?? FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
+    }
+
+    /// Asks the core for the file of attachment `id` and copies it to
+    /// `saveDirectory`, under a name no file has yet. Returns the copy.
+    private func copyAttachment(_ id: Int, client: any CoreCalling) async throws -> URL {
+        let file: AttachmentFileView = try await client.call("get_attachment", ["attachment_id": id])
+        let dir = saveDirectory
+        // Copied off the main thread: a file can weigh tens of MB.
+        // Swift note: `Task.detached` runs the closure on a background
+        // thread; `.value` waits for its result.
+        return try await Task.detached {
+            let fm = FileManager.default
+            let dest = AttachmentDisplay.freeURL(in: dir, name: file.filename) { fm.fileExists(atPath: $0.path) }
+            try fm.copyItem(at: URL(fileURLWithPath: file.path), to: dest)
+            // The core's copy is read-only; the user's is not. The quarantine
+            // attribute is kept by the copy.
+            try fm.setAttributes([.posixPermissions: 0o644], ofItemAtPath: dest.path)
+            return dest
+        }.value
+    }
+
+    /// `sa` / `sg` (`ui.md`, menu `s`): saves the attachments of the target
+    /// threads, the marked ones or the one under the cursor, every message
+    /// of each thread; `sg` leaves the graphics out (logos, signature
+    /// images, photos: `AttachmentDisplay.isGraphic`). The threads that are
+    /// not open are read from the core. Files the core cannot give (no raw
+    /// message) are counted, not fatal.
+    func saveAttachmentsOfTargets(includingGraphics: Bool) {
+        guard let client = core, !targetThreads.isEmpty else { return }
+        Task {
+            var files: [AttachmentView] = []
+            for thread in await targetThreadViews(client: client) {
+                files += AttachmentDisplay.toSave(thread.messages.flatMap(\.attachments),
+                                                  includingGraphics: includingGraphics)
+            }
+            guard !files.isEmpty else {
+                flash = includingGraphics ? L("No attachment to save") : L("No attachment to save but graphics")
+                return
+            }
+            var saved: [URL] = []
+            var failed = 0
+            var firstError: Error?
+            // One after the other: names are chosen against the files
+            // already there ("devis (2).pdf"), so two copies cannot race.
+            for f in files {
+                do { saved.append(try await copyAttachment(f.id, client: client)) } catch {
+                    failed += 1
+                    firstError = firstError ?? error
+                }
+            }
+            let place = FileManager.default.displayName(atPath: saveDirectory.path)
+            if saved.isEmpty, let firstError {
+                report(firstError)
+            } else if failed > 0 {
+                flash = L("%lld attachments saved to %@, %lld not available", saved.count, place, failed)
+            } else if saved.count == 1 {
+                flash = L("%@ saved to %@", saved[0].lastPathComponent, place)
+            } else {
+                flash = L("%lld attachments saved to %@", saved.count, place)
+            }
         }
     }
 

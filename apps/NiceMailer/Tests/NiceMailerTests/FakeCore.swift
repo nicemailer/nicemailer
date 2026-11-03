@@ -77,6 +77,12 @@ enum Fixture {
         ["id": 43, "filename": NSNull(), "mime_type": "application/zip", "size": 512],
     ]
 
+    /// Files attached to the message of thread 6: a text file and a logo.
+    static let otherAttachments: [[String: Any]] = [
+        ["id": 61, "filename": "notes.txt", "mime_type": "text/plain", "size": 120],
+        ["id": 62, "filename": "logo.png", "mime_type": "image/png", "size": 2_000],
+    ]
+
     static func threadView(_ id: Int) -> [String: Any] {
         let message: [String: Any] = [
             "id": id * 10, "folder_id": 1, "folder_role": "inbox", "subject": "Subject \(id)",
@@ -87,7 +93,7 @@ enum Fixture {
             "has_remote_content": false, "from_body_format": NSNull(),
             "segments": [["kind": "text", "text": "Hello, see https://example.org/\(id)", "depth": 0, "hidden": false, "in_thread": false]],
             "only_quotes": false, "expanded": true, "show_recipients": false,
-            "attachments": id == 4 ? Fixture.attachments : [],
+            "attachments": id == 4 ? Fixture.attachments : id == 6 ? Fixture.otherAttachments : [],
         ]
         return ["id": id, "subject": "Subject \(id)", "messages": [message], "as_of": position]
     }
@@ -122,7 +128,8 @@ enum Fixture {
         case "get_attachment":
             // A real file, as the core extracts one, read-only.
             let id = params["attachment_id"] as? Int ?? 0
-            let name = attachments.first { $0["id"] as? Int == id }?["filename"] as? String ?? "attachment-\(id)"
+            let name = (attachments + otherAttachments).first { $0["id"] as? Int == id }?["filename"] as? String
+                ?? "attachment-\(id)"
             let dir = FileManager.default.temporaryDirectory.appendingPathComponent("nicemailer-fake-\(UUID().uuidString)")
             try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             let path = dir.appendingPathComponent(name)

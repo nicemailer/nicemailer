@@ -41,6 +41,25 @@ enum AttachmentDisplay {
         return "doc"
     }
 
+    /// Whether a file is a graphic, left out by `sg` ("attachments but
+    /// graphics": logos and signature images first of all, photos too).
+    static func isGraphic(mimeType: String, filename: String?) -> Bool {
+        if mimeType.lowercased().hasPrefix("image/") { return true }
+        let ext = filename.map { ($0 as NSString).pathExtension.lowercased() } ?? ""
+        return ["gif", "png", "jpg", "jpeg", "webp", "bmp", "svg", "heic", "heif", "tif", "tiff", "ico"].contains(ext)
+    }
+
+    /// The files `sa` / `sg` save from one thread: graphics left out unless
+    /// `includingGraphics`, and a file attached again to a later message
+    /// (same name, type and size) saved once.
+    static func toSave(_ files: [AttachmentView], includingGraphics: Bool) -> [AttachmentView] {
+        var seen = Set<String>()
+        return files.filter { a in
+            if !includingGraphics && isGraphic(mimeType: a.mimeType, filename: a.filename) { return false }
+            return seen.insert("\(a.filename ?? "")|\(a.mimeType)|\(a.size)").inserted
+        }
+    }
+
     /// Name shown: the sender's, or a neutral one when it gave none.
     static func name(_ a: AttachmentView) -> String {
         let n = a.filename?.trimmingCharacters(in: .whitespaces) ?? ""

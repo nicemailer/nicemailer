@@ -568,8 +568,14 @@ final class GeekController {
                 Entry(key: "e", label: L("as .eml file")) { [model] in model.export("eml") },
                 Entry(key: "t", label: L("as text file")) { [model] in model.export("txt") },
                 Entry(key: "m", label: L("as Markdown file")) { [model] in model.export("md") },
-                Entry(key: "a", label: L("all attachments"), disabled: true) {},
-                Entry(key: "g", label: L("attachments but graphics"), disabled: true) {},
+                // Every attachment of the marked threads (or of the one
+                // under the cursor), with or without the graphics.
+                Entry(key: "a", label: L("all attachments")) { [model] in
+                    model.saveAttachmentsOfTargets(includingGraphics: true)
+                },
+                Entry(key: "g", label: L("attachments but graphics")) { [model] in
+                    model.saveAttachmentsOfTargets(includingGraphics: false)
+                },
                 Entry(key: "p", label: L("as PDF"), disabled: true) {},
             ]
         case .view:

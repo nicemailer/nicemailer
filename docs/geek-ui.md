@@ -56,6 +56,7 @@ At the foot of each unfolded mail, its attachments are tiles: the icon of the fi
 - A click saves the file to `~/Downloads`, never overwriting a file (`devis (2).pdf`); the status bar says where it went.
 - ⌘-click saves it the same way, then opens the saved copy with its default app, in front.
 - `l` lists the links of the mail, then one row per attached file, with its icon; Return saves the file, ⌘-Return saves it and opens the saved copy at once, in front.
+- `sa` saves every attachment of the marked mails (or of the one under the cursor), `sg` all but the graphics.
 
 Images the HTML of the mail shows (`cid:`) are part of the body, not tiles. An image marked inline that no HTML shows (Apple Mail puts photos in a plain text mail this way) is a tile. The tiles follow the body in the HTML view too.
 
@@ -90,7 +91,7 @@ Actions apply to the **marked** mails if any (`J` / `K`), otherwise to the mail 
 | `*` | flag |
 | `/` | search everywhere: Contains… in Everything (see [Search](#search-)); Escape goes back |
 | `;` + key | go to a folder or a screen (see below) |
-| `s` + key | save the latest mail of the conversation to `~/Downloads`: `se` .eml, `st` text, `sm` Markdown |
+| `s` + key | save to `~/Downloads`, for every marked conversation (or the one under the cursor): its latest mail with `se` .eml, `st` text, `sm` Markdown; its attachments with `sa` all of them, `sg` all but the graphics (images: logos, signatures, photos). For attachments every message counts, and a file attached again to a reply is saved once. No file is overwritten |
 | `v` + key | display: `v1` `v2` `v3` columns, `vc` sort by reception, `vm` sort by modification, `vh` text / HTML, `vs` status bar |
 | Space, shift-Space | scroll the mail a page down / up, as text or as HTML |
 | `ctrl-f` `ctrl-b` | same, a page down / up in the mail |

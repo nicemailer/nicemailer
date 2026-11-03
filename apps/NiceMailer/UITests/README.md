@@ -46,7 +46,7 @@ State fields (see `Runner.state()` in `Sources/NiceMailer/UIScript.swift`): `scr
 | `statusbar.uiscript` | account and folder blocks of the status bar, unified view "all", account picker keeping the folder role, turning around at both ends, single-block folder column |
 | `textsize.uiscript` | ⌘+ ⌘= ⌘− ⌘0, bounds, row height, keys and clicks after the rebuild |
 | `thread.uiscript` | simplified thread: folded messages, hidden quotes and signatures, `T`, clicks on headers and "···" lines |
-| `view.uiscript` | 1 / 2 / 3 columns, folder column clicks, status bar, sort, text / HTML with the bundled font, scrolling in text and HTML (Space, shift-Space, `ctrl-f` `ctrl-b`), attachment tiles (click saves, ⌘-click saves and opens, `l` with Return and ⌘-Return), saving |
+| `view.uiscript` | 1 / 2 / 3 columns, folder column clicks, status bar, sort, text / HTML with the bundled font, scrolling in text and HTML (Space, shift-Space, `ctrl-f` `ctrl-b`), attachment tiles (click saves, ⌘-click saves and opens, `l` with Return and ⌘-Return), saving (`se` `st` `sm` `sa` `sg`, on the cursor's mail and on marked mails) |
 
 ## Writing a new scenario
 

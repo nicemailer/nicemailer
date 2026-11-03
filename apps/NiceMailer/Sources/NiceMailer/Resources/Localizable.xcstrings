@@ -31,12 +31,42 @@
         }
       }
     },
+    "%lld attachments saved to %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld pièces jointes enregistrées dans %2$@"
+          }
+        }
+      }
+    },
+    "%lld attachments saved to %@, %lld not available": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld pièces jointes enregistrées dans %2$@, %3$lld non disponibles"
+          }
+        }
+      }
+    },
     "%lld mails": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "%lld mails"
+          }
+        }
+      }
+    },
+    "%lld mails saved to %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld mails enregistrés dans %2$@"
           }
         }
       }
@@ -357,6 +387,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Aucun compte"
+          }
+        }
+      }
+    },
+    "No attachment to save": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucune pièce jointe à enregistrer"
+          }
+        }
+      }
+    },
+    "No attachment to save but graphics": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucune pièce jointe à enregistrer hors images"
           }
         }
       }

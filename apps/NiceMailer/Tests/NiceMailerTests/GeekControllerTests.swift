@@ -516,8 +516,77 @@ struct GeekControllerTests {
         #expect(await eventually { core.calls("export_message").count == 1 })
         #expect(core.calls("export_message")[0]["format"] as? String == "eml")
         #expect(core.calls("export_message")[0]["dir"] as? String == "/tmp/nicemailer-tests")
-        press("s"); press("a")
+        // Not available yet: a message, no call.
+        press("s"); press("p")
         #expect(core.calls("export_message").count == 1 && model.flash != nil)
+    }
+
+    // MARK: Saving attachments (sa, sg)
+
+    /// A fresh export directory, and the names of the files saved into it.
+    func exportDir() throws -> URL {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("nicemailer-sa-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        model.exportDirectory = dir.path
+        return dir
+    }
+
+    func saved(_ dir: URL) -> [String] {
+        ((try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []).sorted()
+    }
+
+    @Test func saSavesEveryAttachmentOfTheMailUnderTheCursor() async throws {
+        let dir = try exportDir()
+        model.selectedThreadId = 4
+        _ = await eventually { model.openThread?.id == 4 }
+        press("s"); press("a")
+        #expect(await eventually { saved(dir) == ["attachment-43", "devis.pdf", "photo.jpg"] })
+        #expect(await eventually { model.flash == L("%lld attachments saved to %@", 3, dir.lastPathComponent) })
+    }
+
+    @Test func sgLeavesTheGraphicsOut() async throws {
+        let dir = try exportDir()
+        model.selectedThreadId = 4
+        _ = await eventually { model.openThread?.id == 4 }
+        press("s"); press("g")
+        #expect(await eventually { saved(dir) == ["attachment-43", "devis.pdf"] })
+    }
+
+    @Test func saActsOnEveryMarkedMail() async throws {
+        let dir = try exportDir()
+        // Mark threads 4, 5 and 6 (J from the fourth row); 4 and 6 have
+        // files, 5 none. Thread 6 is not open: the model reads it.
+        model.selectedThreadId = 4
+        _ = await eventually { model.openThread?.id == 4 }
+        press("J"); press("J")
+        #expect(model.marked == [4, 5, 6])
+        press("s"); press("a")
+        #expect(await eventually { saved(dir) == ["attachment-43", "devis.pdf", "logo.png", "notes.txt", "photo.jpg"] })
+        #expect(core.calls("get_thread").contains { $0["thread_id"] as? Int == 6 })
+        // sg on the same marks: no graphics, and nothing overwritten.
+        press("s"); press("g")
+        #expect(await eventually { saved(dir).contains("notes (2).txt") && saved(dir).contains("devis (2).pdf") })
+        #expect(!saved(dir).contains("logo (2).png") && !saved(dir).contains("photo (2).jpg"))
+    }
+
+    @Test func seStSmSaveTheLatestMailOfEveryMarkedThread() async {
+        press("J"); press("J")
+        #expect(model.marked == [1, 2, 3])
+        press("s"); press("t")
+        #expect(await eventually { core.calls("export_message").count == 3 })
+        // The latest message of each thread (the fake core gives one
+        // message per thread, id × 10), as text.
+        let ids = Set(core.calls("export_message").compactMap { $0["message_id"] as? Int })
+        #expect(ids == [10, 20, 30])
+        #expect(core.calls("export_message").allSatisfy { $0["format"] as? String == "txt" })
+        #expect(await eventually { model.flash?.contains("3") == true })
+    }
+
+    @Test func saWithoutAttachmentsSaysSo() async throws {
+        let dir = try exportDir()
+        press("s"); press("a")
+        #expect(await eventually { model.flash == L("No attachment to save") })
+        #expect(saved(dir).isEmpty)
     }
 
     // MARK: Text size
@@ -582,7 +651,10 @@ struct GeekControllerTests {
         #expect(controller.overlay == .picker(.attributeValue(.from)))
         type("alice")
         #expect(controller.pickerEntries(.attributeValue(.from)).first?.label == "alice")
-        #expect(await eventually { core.calls("list_contacts").last?["query"] as? String == "alice" })
+        // Each key sends its own request, in a task of its own: they may run
+        // in any order (the app ignores stale answers), so look for "alice"
+        // among them rather than last.
+        #expect(await eventually { core.calls("list_contacts").contains { $0["query"] as? String == "alice" } })
         press("ret")
         #expect(model.attributes.from == ["alice"])
         #expect(controller.overlay == .none)

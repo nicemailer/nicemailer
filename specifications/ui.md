@@ -151,11 +151,11 @@ Sur ces écrans, j/k se déplacent et échap revient aux mails.
 
 
 Il y a deux autres préfixes : s et v. (`d` était prévu pour display, mais `d` seul archive : une touche ne peut pas être à la fois une action et un préfixe.)
-s save (dernier mail de la conversation, dans ~/Downloads ; un fichier existant n'est jamais écrasé)
-	a all attachments (pas encore)
-	g attachments but graphics (gif, png, ...) (pas encore)
+s save (dans ~/Downloads ; un fichier existant n'est jamais écrasé ; s'applique aux mails marqués, ou à défaut au mail sous le curseur)
+	a all attachments : les pièces jointes des mails marqués, ou à défaut du mail sous le curseur ; tous les messages de chaque conversation ; un fichier joint de nouveau à une réponse (même nom, type et taille) n'est enregistré qu'une fois
+	g attachments but graphics (gif, png, ...) : de même, sans les images (logos, signatures, photos)
 	p as pdf (pas encore)
-	e as eml file
+	e as eml file (dernier mail de chaque conversation, comme t et m)
 	t as text file
 	m as markdown file
 v display (view)

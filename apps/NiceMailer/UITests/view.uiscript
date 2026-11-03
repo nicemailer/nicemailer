@@ -129,6 +129,26 @@ expect export_files = 6
 key s
 key m
 expect export_files = 7
+# sa / sg: the attachments of the mail under the cursor (the newsletter:
+# three files, one of them a graphic), then of every marked mail.
+click thread:0
+expect selected_subject = La lettre de novembre
 key s
 key a
-expect flash ~ attachments
+expect export_files = 10
+expect flash ~ 3 attachments saved
+key s
+key g
+expect export_files = 12
+key J
+expect marked_count = 2
+key s
+key a
+expect export_files = 15
+# se also saves the latest mail of every marked conversation.
+key s
+key e
+expect export_files = 17
+expect flash ~ 2 mails saved
+key esc
+expect marked_count = 0

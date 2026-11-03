@@ -42,6 +42,26 @@ struct AttachmentDisplayTests {
         #expect(AttachmentDisplay.middleTruncated("court.pdf", max: 20) == "court.pdf")
     }
 
+    @Test func graphicsAreImagesByTypeOrExtension() {
+        #expect(AttachmentDisplay.isGraphic(mimeType: "image/png", filename: "logo.png"))
+        #expect(AttachmentDisplay.isGraphic(mimeType: "application/octet-stream", filename: "photo.HEIC"))
+        #expect(!AttachmentDisplay.isGraphic(mimeType: "application/pdf", filename: "devis.pdf"))
+        #expect(!AttachmentDisplay.isGraphic(mimeType: "application/octet-stream", filename: nil))
+    }
+
+    @Test func aThreadsFilesAreSavedOnceEach() {
+        let files = [
+            file("devis.pdf", "application/pdf", size: 9, id: 1),
+            file("logo.png", "image/png", size: 8, id: 2),
+            // Attached again to a reply: same name, type and size.
+            file("devis.pdf", "application/pdf", size: 9, id: 3),
+            // Same name, another size: another file.
+            file("devis.pdf", "application/pdf", size: 10, id: 4),
+        ]
+        #expect(AttachmentDisplay.toSave(files, includingGraphics: true).map(\.id) == [1, 2, 4])
+        #expect(AttachmentDisplay.toSave(files, includingGraphics: false).map(\.id) == [1, 4])
+    }
+
     @Test func threeToFiveTilesPerRow() {
         // 24-character tiles of 7-point characters (168 points each).
         #expect(AttachmentDisplay.columns(width: 300, charWidth: 7) == 3)
