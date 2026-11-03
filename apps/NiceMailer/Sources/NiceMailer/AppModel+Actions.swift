@@ -43,8 +43,11 @@ extension AppModel {
         } else {
             marked.subtract(ids)
         }
+        // Name the mail, not only the folder: after the move the cursor is
+        // already on another mail, so "Moved to Archive" alone does not say
+        // which one left.
         flash = allowed.count == 1
-            ? L("Moved to %@", Role.name(role))
+            ? L("“%@” moved to %@", Format.flashSubject(allowed[0].subject), Role.name(role))
             : L("%lld threads moved to %@", allowed.count, Role.name(role))
         Task {
             for t in allowed {

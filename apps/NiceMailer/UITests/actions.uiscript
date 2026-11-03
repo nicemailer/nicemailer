@@ -13,7 +13,8 @@ key t
 expect flash ~ Todo
 # d: done (archive); Delete: move to Deleted.
 key d
-expect flash ~ Archive
+# The message names the mail (quoted subject) and the folder.
+expect flash ~ ” moved to Archive
 key del
 expect flash ~ Deleted
 # Several mails at once.

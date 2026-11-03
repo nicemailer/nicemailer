@@ -294,6 +294,17 @@ enum Format {
         f.dateStyle = .full; f.timeStyle = .short; return f
     }()
 
+    /// Subject of a mail quoted in a status message ("“Devis toiture” moved
+    /// to Archive"): "(no subject)" when empty, whitespace (line breaks of
+    /// folded headers included) collapsed, and cut to `limit` characters
+    /// with "…" so that the end of the message (the folder) stays visible.
+    static func flashSubject(_ subject: String, limit: Int = 50) -> String {
+        let words = subject.split(whereSeparator: \.isWhitespace)
+        let s = words.joined(separator: " ")
+        if s.isEmpty { return L("(no subject)") }
+        return s.count > limit ? String(s.prefix(limit - 1)) + "…" : s
+    }
+
     /// Compact date for the lists: the time if today, day and month if this
     /// year, the short date otherwise.
     static func listDate(_ ts: Int) -> String {

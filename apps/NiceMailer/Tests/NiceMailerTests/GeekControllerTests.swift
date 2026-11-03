@@ -138,6 +138,13 @@ struct GeekControllerTests {
         #expect(model.marked.isEmpty)
     }
 
+    @Test func theMoveMessageNamesTheMailAndTheFolder() {
+        press("d")
+        // Whatever the language: the subject and the folder are both in it.
+        let flash = model.flash ?? ""
+        #expect(flash.contains("Subject 1") && flash.contains("Archive"))
+    }
+
     @Test func deleteMovesToDeleted() async {
         press("del")
         #expect(await eventually { core.calls("move_thread").first?["target"] as? String == "deleted" })

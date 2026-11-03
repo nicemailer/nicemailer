@@ -42,6 +42,17 @@ struct FormatTests {
         #expect(abs(narrow.folder(withAccount: true) - 18 * narrow.char) < 0.001)
     }
 
+    @Test func aSubjectInAStatusMessageIsTidiedAndCut() {
+        #expect(Format.flashSubject("Devis toiture") == "Devis toiture")
+        // Folded header lines and repeated spaces become one space.
+        #expect(Format.flashSubject("  Re: devis\r\n\t toiture ") == "Re: devis toiture")
+        #expect(Format.flashSubject("   ") == L("(no subject)"))
+        let long = String(repeating: "a", count: 80)
+        let cut = Format.flashSubject(long)
+        #expect(cut.count == 50 && cut.hasSuffix("…"))
+        #expect(Format.flashSubject(String(repeating: "b", count: 50)).count == 50)  // fits: not cut
+    }
+
     @Test func theBundledFontIsAvailable() {
         Fonts.register()
         #expect(Fonts.reading(12).fontName.hasPrefix("iAWriterMonoV"))

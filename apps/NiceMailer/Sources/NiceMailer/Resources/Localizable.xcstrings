@@ -331,16 +331,6 @@
         }
       }
     },
-    "Moved to %@": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Déplacé dans %@"
-          }
-        }
-      }
-    },
     "No account": {
       "localizations": {
         "fr": {
@@ -1337,6 +1327,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "··· signature"
+          }
+        }
+      }
+    },
+    "“%@” moved to %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "« %1$@ » déplacé dans %2$@"
           }
         }
       }
