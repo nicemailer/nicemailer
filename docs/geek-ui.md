@@ -49,6 +49,12 @@ Choosing an active value again removes it; choosing the opposite value replaces 
 
 The whole theme (lists, status bar, menus, mails, including the HTML view) uses **iA Writer Mono V**, a font bundled with the app (SIL Open Font License). List columns have fixed widths counted in characters of this monospaced font, computed from the list width, so they stay aligned when the window is resized. Mails are shown as plain text, simplified: each message shows what it brings, the history it repeats is hidden, older read messages are folded (see `thread-display.md`). The `text | html` switch at the top of the mail, or `vh`, shows the sanitized HTML version instead (scripts and remote images are removed by the core). The choice is remembered **for the sender**: the next mails from the same address open the same way.
 
+### When a mail becomes read
+
+- A mail you select (`j` `k`, a click, the next mail after a move) is marked read once shown for one second. Browsing quickly with `j` / `k` marks nothing.
+- The mail selected for you, the first one when a list opens or the one that replaces a mail that left the list, is not marked read by itself. It is marked read when you move from it to another mail of the list after at least one second. Moving it (`d`, `m`) or changing folder does not mark it.
+- In a filtered list (unread, flagged…), the selected mail that stops matching (read after one second, `u`, `*`) stays under the cursor, shown with its new state, until you leave it; it then leaves the list. As in Gmail's unread view: without this, a list of unread mails would empty itself, one mail per second.
+
 ## Keys
 
 Actions apply to the **marked** mails if any (`J` / `K`), otherwise to the mail under the cursor.

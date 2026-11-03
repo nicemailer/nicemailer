@@ -235,12 +235,52 @@ final class AppModel {
     var marked = Set<Int>()
 
     /// Selected thread: selecting one opens it in the reading pane.
+    ///
+    /// Reading rules (`ui.md`, "Lecture"):
+    /// - a mail the user selects (keys, click, the next one after a move)
+    ///   is marked read once shown for `seenDelay`;
+    /// - a mail selected automatically (first mail of a list, replacement
+    ///   of a mail that left the list) is not: it is marked read only when
+    ///   the user moves from it to another mail of the list after
+    ///   `seenDelay`. Otherwise a list filtered on "unread" emptied itself:
+    ///   the mail marked read left the list, the next one was selected
+    ///   automatically, marked read a second later, and so on;
+    /// - leaving a mail kept in the list although it no longer matches
+    ///   (`stickyThreadId`) removes it from the list.
     var selectedThreadId: Int? {
         didSet {
             guard selectedThreadId != oldValue else { return }
-            Task { await loadOpenThread(markSeen: true) }
+            let auto = selectingAutomatically
+            if let old = oldValue {
+                // Moving by hand from an automatically selected mail (still
+                // in the list: a moved mail is not marked) to another one.
+                if !auto, selectedThreadId != nil, let shown = autoShown, shown.id == old,
+                   Date().timeIntervalSince(shown.since) >= seenDelay,
+                   threads.first(where: { $0.id == old }).map({ $0.unreadCount > 0 }) == true {
+                    markSeen(old)
+                }
+                if old == stickyThreadId {
+                    threads.removeAll { $0.id == old }
+                    stickyThreadId = nil
+                }
+            }
+            autoShown = auto ? selectedThreadId.map { ($0, Date()) } : nil
+            Task { await loadOpenThread(markSeen: !auto) }
         }
     }
+
+    /// Delay after which a mail shown is considered read (seconds). A
+    /// variable so that the tests can shorten it.
+    @ObservationIgnored var seenDelay: TimeInterval = 1
+    /// Set while the model itself chooses the selection (`selectFirstIfNeeded`).
+    @ObservationIgnored private var selectingAutomatically = false
+    /// The automatically selected mail, and since when it is shown.
+    @ObservationIgnored private var autoShown: (id: Int, since: Date)?
+    /// The selected mail kept in the list after a refresh although it no
+    /// longer matches it (read in a list of unread mails, unflagged in a
+    /// list of flagged ones…): it stays under the cursor, shown with its new
+    /// state, until the user leaves it. As in Gmail's "unread" view.
+    private(set) var stickyThreadId: Int?
 
     /// Text of the search field; each change schedules a search.
     var searchText: String = "" {
@@ -347,11 +387,13 @@ final class AppModel {
             dirtyFolders = []; dirtyThreads = []
             // Counters are cheap to reload: always refresh the sidebar.
             await reloadFolders()
-            if !listedFolderIds.isEmpty, full || !folders.isDisjoint(with: listedFolderIds) {
-                await reloadThreads(keepDepth: true)
-            }
+            // The open thread first: the list refresh reads its new state to
+            // keep it in place if it no longer matches (`keepingSelected`).
             if let open = openThread?.id, full || threads.contains(open) {
                 await loadOpenThread(markSeen: false)
+            }
+            if !listedFolderIds.isEmpty, full || !folders.isDisjoint(with: listedFolderIds) {
+                await reloadThreads(keepDepth: true)
             }
         }
     }
@@ -410,7 +452,15 @@ final class AppModel {
             // The user may have changed folder while we were loading: then
             // this result is stale and must not replace the new list.
             guard folderIds == listedFolderIds, sort == self.sort, filter == attributes, listFilter == nil else { return }
-            threads = items
+            // A refresh (`keepDepth`) keeps the selected mail if it only
+            // stopped matching the attributes; a new list (other folder,
+            // other attributes) starts afresh.
+            let kept = keepDepth
+                ? Self.keepingSelected(items, previous: threads, selected: selectedThreadId,
+                                       open: openThread, listed: Set(folderIds))
+                : (threads: items, sticky: nil)
+            threads = kept.threads
+            stickyThreadId = kept.sticky
             nextCursor = cursor
             selectFirstIfNeeded()
         } catch { report(error) }
@@ -430,6 +480,10 @@ final class AppModel {
             return
         }
         if selectedThreadId == nil || !threads.contains(where: { $0.id == selectedThreadId }) {
+            // Chosen by the model, not the user: not marked read (see
+            // `selectedThreadId`).
+            selectingAutomatically = true
+            defer { selectingAutomatically = false }
             selectedThreadId = threads.first?.id
         }
     }
@@ -495,6 +549,42 @@ final class AppModel {
         } catch { report(error) }
     }
 
+    /// `items` (a refreshed list), plus the selected thread if it left the
+    /// list while it still has messages in the listed folders: it changed
+    /// state (read, unflagged…) rather than moved. It goes back to its place
+    /// (after the row that preceded it), with its unread count and flag
+    /// recomputed from `open`, the thread as just reloaded. A thread that
+    /// moved away (no message left in `listed`) is dropped as usual.
+    static func keepingSelected(
+        _ items: [ThreadSummary], previous: [ThreadSummary], selected: Int?, open: ThreadView?, listed: Set<Int>
+    ) -> (threads: [ThreadSummary], sticky: Int?) {
+        guard let selected, !items.contains(where: { $0.id == selected }),
+              let index = previous.firstIndex(where: { $0.id == selected }),
+              let open, open.id == selected else { return (items, nil) }
+        let here = open.messages.filter { listed.contains($0.folderId) }
+        guard !here.isEmpty else { return (items, nil) }
+        let row = previous[index].with(unreadCount: here.filter { !$0.isSeen }.count,
+                                       isFlagged: here.contains { $0.isFlagged })
+        // After the nearest earlier row still listed, or first.
+        let ids = Set(items.map(\.id))
+        let before = previous[..<index].last { ids.contains($0.id) }
+        let at = before.flatMap { b in items.firstIndex { $0.id == b.id } }.map { $0 + 1 } ?? 0
+        var out = items
+        out.insert(row, at: at)
+        return (out, selected)
+    }
+
+    /// Marks a thread read (no change to the list here: the core's events
+    /// refresh it).
+    private func markSeen(_ id: Int) {
+        guard let client else { return }
+        Task {
+            do {
+                let _: CommandResult = try await client.call("set_thread_seen", ["thread_id": id, "seen": true])
+            } catch { report(error) }
+        }
+    }
+
     /// Loads the selected thread into the reading pane.
     private func loadOpenThread(markSeen: Bool) async {
         guard let client, let id = selectedThreadId else { openThread = nil; return }
@@ -502,11 +592,11 @@ final class AppModel {
             let view: ThreadView = try await client.call("get_thread", ["thread_id": id])
             guard id == selectedThreadId else { return }
             openThread = view
-            // UX hypothesis to validate: a thread displayed for 1 s is marked
-            // as read. The delay avoids marking everything while browsing the
-            // list with j/k.
+            // A thread the user selected and kept on screen for `seenDelay`
+            // is marked read. The delay avoids marking everything while
+            // browsing the list with j/k.
             if markSeen, view.messages.contains(where: { !$0.isSeen }) {
-                try await Task.sleep(for: .seconds(1))
+                try await Task.sleep(for: .seconds(seenDelay))
                 guard id == selectedThreadId else { return }
                 // `let _: CommandResult` decodes the result only to check it;
                 // the value itself is not needed.

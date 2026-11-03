@@ -8,6 +8,23 @@ type unread
 key ret
 expect filters = unread
 expect thread_count > 0
+# Reading in a list of unread mails. The mail selected when the list opens
+# is not marked read by itself: the list no longer empties itself.
+expect selected = 0
+expect selected_unread > 0
+wait 1500
+expect selected = 0
+expect selected_unread > 0
+# A mail chosen by hand is marked read after a second (the core's events
+# refresh the list) but stays under the cursor until the user leaves it.
+key j
+wait 1500
+expect selected_unread = 0
+expect sticky != 
+snap kept-read-mail
+key j
+expect sticky =
+expect selected_unread > 0
 # Several attributes are combined; a value attribute expands the panel.
 click status:attributes
 type From

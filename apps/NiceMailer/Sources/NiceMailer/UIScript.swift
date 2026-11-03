@@ -378,6 +378,7 @@ private final class Runner {
             "sort": m.sort,
             "body_format": m.bodyFormat,
             "reader_subject": m.openThread?.subject ?? "",
+            "sticky": m.stickyThreadId.map(String.init) ?? "",
             "reader_folder": m.selectedThreadFolderLabel ?? "",
             "list_rows": "\(c.listVisibleRows)",
             "reader_offset": "\(Int(c.readerScroll?.contentView.bounds.origin.y ?? 0))",

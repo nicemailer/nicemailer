@@ -78,6 +78,21 @@ struct ThreadSummary: Decodable, Identifiable, Hashable {
     let tags: [String]
 }
 
+extension ThreadSummary {
+    /// A copy with another unread count and flag (a row kept in a filtered
+    /// list after its state changed, `AppModel.keepingSelected`).
+    ///
+    /// Swift note: a struct gets a "memberwise" initializer taking every
+    /// stored property in order; it is used here to copy the row.
+    func with(unreadCount: Int, isFlagged: Bool) -> ThreadSummary {
+        ThreadSummary(
+            id: id, subject: subject, participants: participants, snippet: snippet,
+            dateLastReceived: dateLastReceived, messageCount: messageCount, unreadCount: unreadCount,
+            isFlagged: isFlagged, hasAttachments: hasAttachments, returnedFrom: returnedFrom,
+            replyTarget: replyTarget, folderId: folderId, dateLastModified: dateLastModified, tags: tags)
+    }
+}
+
 /// A page of a paginated list. `<T: Decodable>` makes it generic: it can
 /// hold any decodable item type.
 struct Page<T: Decodable>: Decodable {

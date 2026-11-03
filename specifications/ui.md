@@ -45,6 +45,12 @@ L'affichage est simplifié au maximum : chaque message montre ce qu'il apporte. 
 - En-têtes allégés : expéditeur et date ; les destinataires seulement s'ils changent d'un message à l'autre.
 - `T` (comme dans mutt) affiche ou masque tout ce que la vue simplifiée cache, pour la conversation ouverte ; `S` va au texte qui suit la citation suivante. Un clic sur un en-tête plie ou déplie le message, un clic sur « ··· » affiche cette partie.
 
+### Lecture
+
+- Un mail choisi par l'utilisateur (`j` `k`, un clic, le mail suivant après un déplacement) est marqué lu après une seconde d'affichage. Parcourir vite la liste ne marque rien.
+- Un mail sélectionné par l'app (le premier à l'ouverture d'une liste, ou celui qui remplace un mail sorti de la liste) n'est pas marqué lu tout seul. Il l'est quand l'utilisateur le quitte pour un autre mail de la liste après au moins une seconde. Le déplacer ou changer de dossier ne le marque pas.
+- Dans une liste filtrée (non lus, avec drapeau…), le mail sélectionné qui ne correspond plus (lu après une seconde, `u`, `*`) reste sous le curseur, affiché avec son nouvel état, jusqu'à ce qu'on le quitte ; il sort alors de la liste. Sans cela, une liste de mails non lus se vidait toute seule, un mail par seconde.
+
 ### Sélecteur d'attributs
 
 À droite du compte et du dossier, dans la barre de statut, une loupe (touche `F`, ou un clic) ouvre le sélecteur d'attributs, qui affine la liste courante (dossier d'un compte, ou de « all ») ; les attributs se combinent par « et ».
