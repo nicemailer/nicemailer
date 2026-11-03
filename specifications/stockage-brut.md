@@ -1,6 +1,6 @@
 # NiceMailer : stockage des messages bruts
 
-Statut : proposition, à valider. Complète `schema.sql` et `modele de donnees.md`.
+Statut : validé. Sections 3 à 5 implémentées pour l'import mbox (`import-initial.md`, section 9) : écriture, dédoublonnage, table `raw_blob`, `message.raw_hash`. Les sections 6 à 9 (lecture des pièces jointes, ramasse-miettes, `reindex`, `export`) restent à implémenter. Complète `schema.sql` et `modele de donnees.md`.
 
 ## 1. Objet et principe
 
@@ -95,7 +95,7 @@ Déclencheur : le message complet est entièrement reçu. Un message dont la ré
 
 1. Recevoir le littéral IMAP en flux. Écrire en continu dans `.tmp/<aléatoire>` en calculant le SHA-256 sur les octets bruts et en les compressant au vol. Rien n'est conservé entièrement en mémoire.
 2. À la fin, vérifier que le nombre d'octets reçus égale la taille annoncée par le serveur. Sinon, supprimer le temporaire et signaler l'erreur.
-3. `fsync` du fichier temporaire.
+3. `fsync` du fichier temporaire. Sur macOS, `fsync` confie les données au disque sans vider son cache ; seul `F_FULLFSYNC` le vide, pour environ 10 ms que le disque sérialise. Le noyau fait donc un `fsync` simple par fichier, puis un seul `F_FULLFSYNC` par lot, avant de valider la transaction qui référence les fichiers du lot : la garantie est la même (aucune ligne `raw_blob` sans fichier sur support stable), pour un vidage par lot au lieu de deux par message. Avec deux `F_FULLFSYNC` par message, l'import d'un mbox plafonnait à 22 Mo/s.
 4. Si `<hash>.eml.zst` existe déjà : supprimer le temporaire (dédoublonnage). Sinon : `rename` vers le chemin final, puis `fsync` du dossier parent.
 5. Analyser le message (en-têtes, corps, pièces jointes) et ouvrir **une transaction SQLite** qui :
    - fait `INSERT OR IGNORE` dans `raw_blob` ;
@@ -112,7 +112,7 @@ Cas particuliers :
 | Fichier présent mais ligne absente | Insérer la ligne (le fichier est adopté). |
 | Échec de l'analyse MIME | Le brut est quand même conservé et lié ; le message est marqué en erreur d'analyse pour pouvoir être retraité par `reindex`. |
 
-**Niveau de compression** : paramètre (`raw.zstd_level`), valeur par défaut à fixer par mesure sur un corpus réel. La compression s'exécute hors du chemin d'affichage et la lecture est rare : on peut viser un niveau élevé, tant que le débit d'ingestion reste supérieur à celui du réseau.
+**Niveau de compression** : paramètre (`raw.zstd_level`), fixé à 9 par mesure sur 300 Mo d'un export réel, sur un cœur : niveau 3, 640 Mo/s pour 60 % de la taille d'origine ; niveau 9, 120 Mo/s pour 55 % ; niveau 15, 18 Mo/s pour un gain négligeable. Sur l'export mbox complet (9,7 Go), les blobs occupent 5,7 Go. La compression s'exécute hors du chemin d'affichage et la lecture est rare : on peut viser un niveau élevé, tant que le débit d'ingestion reste supérieur à celui du réseau.
 
 ## 6. Lecture
 
@@ -180,7 +180,7 @@ Ces paramètres sont des clés de `config.toml` ; le catalogue complet est dans 
 | Paramètre | Rôle | Valeur initiale |
 |---|---|---|
 | `raw.dir` | Racine du stockage brut | `<data_dir>/raw.noindex` |
-| `raw.zstd_level` | Niveau de compression | à mesurer |
+| `raw.zstd_level` | Niveau de compression | 9 (constante du code pour l'instant) |
 | `raw.fanout` | Niveaux de sous-dossiers | 1 |
 | `raw.gc_grace_secs` | Délai de grâce des orphelins | 86400 |
 | `raw.verify_on_read` | Vérifier le hash à la lecture | vrai |

@@ -37,10 +37,18 @@ PRAGMA user_version = 1;   -- migrations : comparer à la version attendue au d�
 -- identités, config_sync) sont dans config.toml, table [accounts.<config_key>] ;
 -- les secrets dans le Keychain (voir configuration.md).
 -- Un compte absent du fichier est désactivé, jamais supprimé par ce seul fait.
+-- Exception : un compte d'archives (kind = 'archive') n'a ni serveur IMAP ni
+-- SMTP et n'est pas dans config.toml. Il est créé par un import mbox
+-- (import-initial.md, section 9) ; config_key est le nom donné à l'import et
+-- address l'adresse de la boîte archivée.
 -- ------------------------------------------------------------
 CREATE TABLE account (
     id            INTEGER PRIMARY KEY,
-    config_key    TEXT NOT NULL UNIQUE,   -- clé du compte dans config.toml
+    config_key    TEXT NOT NULL UNIQUE,   -- clé du compte dans config.toml, ou nom du compte d'archives
+    kind          TEXT NOT NULL DEFAULT 'imap' CHECK (kind IN ('imap','archive')),
+    -- Adresse de la boîte, pour un compte d'archives seulement (en minuscules) ;
+    -- NULL pour un compte IMAP, dont l'adresse est dans config.toml.
+    address       TEXT,
     -- authserv-id de confiance des en-têtes Authentication-Results, détecté.
     -- NULL = aucun détecté : verdicts 'unknown' (voir authentification-expediteur.md).
     -- La clé authserv_id du compte dans config.toml, si présente, le remplace.
@@ -171,6 +179,18 @@ CREATE INDEX idx_thread_folder_list
     ON thread_folder (folder_id, date_last_received DESC, thread_id DESC);
 
 -- ------------------------------------------------------------
+-- Messages bruts (stockage-brut.md) : fichiers immuables adressés par leur
+-- contenu, dans <data_dir>/raw.noindex/. Une ligne par fichier, partagée par
+-- tous les messages qui ont exactement les mêmes octets.
+-- ------------------------------------------------------------
+CREATE TABLE raw_blob (
+    hash         BLOB PRIMARY KEY,          -- SHA-256 des octets bruts, 32 octets
+    size         INTEGER NOT NULL,          -- taille d'origine (octets)
+    stored_size  INTEGER NOT NULL,          -- taille sur disque (compressée zstd)
+    stored_at    INTEGER NOT NULL DEFAULT (unixepoch())
+) STRICT, WITHOUT ROWID;
+
+-- ------------------------------------------------------------
 -- Messages : en-têtes seulement (table étroite = liste rapide).
 -- Le corps vit dans message_body.
 -- ------------------------------------------------------------
@@ -180,7 +200,8 @@ CREATE TABLE message (
     folder_id       INTEGER NOT NULL REFERENCES folder(id) ON DELETE CASCADE,
     -- Adresse du message sur le serveur, utilisée par la synchro et le spool,
     -- jamais exposée dans le contrat. L'identité stable est id.
-    -- NULL : déplacement en cours, UID dans le dossier cible pas encore connu.
+    -- NULL : déplacement en cours, UID dans le dossier cible pas encore connu ;
+    -- toujours NULL dans un compte d'archives, qui n'a pas de serveur.
     uid              INTEGER,
     thread_id       INTEGER REFERENCES thread(id) ON DELETE SET NULL,
 
@@ -217,6 +238,9 @@ CREATE TABLE message (
     modseq           INTEGER,             -- CONDSTORE, pour détecter les changements de flags
     body_state       INTEGER NOT NULL DEFAULT 0
                      CHECK (body_state IN (0,1)),  -- 0 en-têtes seuls, 1 message complet
+    -- Message brut (stockage-brut.md) ; NULL tant que le message complet n'a
+    -- pas été reçu. body_state = 1 suppose raw_hash renseigné.
+    raw_hash         BLOB REFERENCES raw_blob(hash) ON DELETE RESTRICT,
 
     -- Traçabilité. date_modified ne suit que dossier, flags, tags et brouillon ;
     -- uid, modseq, body_state, snippet n'y touchent pas.
@@ -264,6 +288,10 @@ CREATE INDEX idx_message_from
 -- Retrouver un message par Message-ID (threading, déduplication).
 CREATE INDEX idx_message_msgid
     ON message (account_id, message_id_hdr);
+
+-- Messages qui partagent un brut (ramasse-miettes, déduplication de l'import).
+CREATE INDEX idx_message_raw_hash
+    ON message (raw_hash, account_id) WHERE raw_hash IS NOT NULL;
 
 -- ------------------------------------------------------------
 -- Références (en-tête References) pour le threading JWZ
@@ -343,7 +371,6 @@ CREATE TABLE message_body (
     has_remote_content INTEGER NOT NULL DEFAULT 0 CHECK (has_remote_content IN (0,1)),
     parser_version  INTEGER NOT NULL,     -- version de l'analyseur et de l'assainissement ;
                                           -- reindex cible les lignes de version inférieure
-    raw_path        TEXT,                 -- .eml brut sur disque, si conservé
     date_fetched    INTEGER NOT NULL DEFAULT (unixepoch())
 ) STRICT;
 
@@ -435,13 +462,15 @@ CREATE VIRTUAL TABLE message_fts USING fts5 (
     prefix   = '2 3'
 );
 
--- À l'insertion d'un message : indexer l'objet et l'expéditeur tout de suite
--- (corps vide), pour que la recherche marche dès la synchro des en-têtes.
-CREATE TRIGGER message_fts_ai AFTER INSERT ON message BEGIN
-    INSERT INTO message_fts (rowid, subject, sender, recipients, body)
-    VALUES (new.id, new.subject,
-            coalesce(new.from_name,'') || ' ' || coalesce(new.from_addr,''), '', '');
-END;
+-- Insertion : pas de trigger. Le noyau insère la ligne de message_fts lui-même,
+-- en une seule instruction par message, avec l'objet, l'expéditeur, les
+-- destinataires et le corps s'il est déjà connu (sinon vide, complété à
+-- l'arrivée du corps). Raison : dans une transaction, chaque instruction qui
+-- déclenche un trigger sur une table FTS5 ouvre un point de sauvegarde, et
+-- FTS5 vide alors son tampon et fusionne ses segments ; avec les triggers
+-- d'insertion, l'import d'un mbox de 46 000 mails passait plus de la moitié
+-- de son temps d'écriture dans ces fusions. Une insertion directe est deux
+-- fois plus rapide (mesure du 3 novembre 2026).
 
 CREATE TRIGGER message_fts_au AFTER UPDATE OF subject, from_name, from_addr ON message BEGIN
     UPDATE message_fts
@@ -452,11 +481,6 @@ END;
 
 CREATE TRIGGER message_fts_ad AFTER DELETE ON message BEGIN
     DELETE FROM message_fts WHERE rowid = old.id;
-END;
-
--- Quand le corps arrive : l'ajouter à l'index.
-CREATE TRIGGER message_body_fts_ai AFTER INSERT ON message_body BEGIN
-    UPDATE message_fts SET body = coalesce(new.text_plain, '') WHERE rowid = new.message_id;
 END;
 
 -- Quand le corps est réinterprété (reindex) : mettre l'index à jour.

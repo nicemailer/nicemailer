@@ -46,8 +46,9 @@ impl Store {
         // (`synchronisation-configuration.md`); it is technical and hidden.
         let mut stmt = self.conn.prepare_cached(
             "SELECT f.id, f.role, f.path, f.total_count, f.unread_count,
-                    (SELECT count(*) FROM thread_folder tf WHERE tf.folder_id = f.id)
-               FROM folder f
+                    (SELECT count(*) FROM thread_folder tf WHERE tf.folder_id = f.id),
+                    a.id, a.config_key, a.kind
+               FROM folder f JOIN account a ON a.id = f.account_id
               WHERE f.subscribed = 1 AND (f.role IS NULL OR f.role <> 'config')",
         )?;
         let mut items = stmt
@@ -67,15 +68,20 @@ impl Store {
                     thread_count: r.get(5)?,
                     // `unwrap_or_default` gives an empty `Vec` when there is no role.
                     move_targets: role.map(|r| r.move_targets()).unwrap_or_default(),
+                    account_id: r.get(6)?,
+                    account_name: r.get(7)?,
+                    account_kind: r.get(8)?,
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
-        // Workflow folders in the order of the spec, then the others by name.
-        // `sort_by_key` sorts on a computed key; tuples compare element by
-        // element, so the position decides first and the name breaks ties.
-        // Folders without a role get `usize::MAX` and end up last.
+        // Grouped by account (oldest account first), then workflow folders in
+        // the order of the spec, then the others by name. `sort_by_key`
+        // sorts on a computed key; tuples compare element by element, so the
+        // account decides first, then the position, and the name breaks
+        // ties. Folders without a role get `usize::MAX` and end up last.
         items.sort_by_key(|f| {
             (
+                f.account_id,
                 f.role
                     .and_then(|r| FolderRole::ALL.iter().position(|x| *x == r))
                     .unwrap_or(usize::MAX),

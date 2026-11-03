@@ -93,6 +93,10 @@ Les événements **séquencés** passent par le tampon et sont rejoués. Les év
 | `ConfigError` | `line`, `message` | séquencé | `config.toml` invalide : la configuration précédente reste appliquée |
 | `ResyncRequired` | `epoch`, `seq` | séquencé | Le client doit recharger toutes ses vues |
 | `SyncProgress` | `account_id`, `folder_id`, `done`, `total` | transitoire | Avancement d'une synchronisation |
+| `ImportProgress` | `job_id`, `path`, `account_id`, `running`, `bytes_read`, `total_bytes`, `imported`, `skipped`, `parse_errors` | séquencé | Avancement d'un import mbox, un par lot de mails écrits (`import-initial.md`, section 9) |
+| `ImportFinished` | mêmes paramètres, plus `sent`, `archived`, `correspondents`, `seconds`, et `error` en cas d'échec | séquencé | Fin d'un import mbox, réussi ou non ; l'état reste disponible par `import_status` |
+
+`ImportProgress` est séquencé, contrairement à `SyncProgress` : il n'en part qu'un par lot de 500 mails (quelques-uns par seconde), et un événement transitoire ne porte pas de numéro de séquence, ce qui ferait croire à un trou aux clients qui vérifient la continuité. Pendant un import, chaque lot émet aussi `FolderChanged` pour les dossiers remplis, mais pas de `ThreadChanged` par conversation : des milliers d'événements par seconde satureraient le tampon de rejeu pour une information que `FolderChanged` suffit à transmettre (recharger la liste).
 
 **Un état ne repose jamais sur un événement seul.** Ce qu'un événement signale doit aussi pouvoir être obtenu par une requête, pour qu'un rechargement complet le retrouve. Par exemple, les demandes d'envoi en attente de confirmation sont listées par `list_pending_confirmations`, et l'état des comptes par `list_accounts`.
 

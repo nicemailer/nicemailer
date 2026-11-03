@@ -80,7 +80,7 @@ Les paramètres d'un compte sont dans le fichier : adresse, nom affiché, serveu
 
 ### Identité d'un compte
 
-Un compte est identifié par sa clé, `perso` dans `[accounts.perso]`. La table `account` de la base associe cette clé (`config_key`) à l'identifiant interne référencé par les dossiers, messages et conversations.
+Un compte est identifié par sa clé, `perso` dans `[accounts.perso]`. La table `account` de la base associe cette clé (`config_key`) à l'identifiant interne référencé par les dossiers, messages et conversations. Les comptes d'archives, créés par un import mbox, sont l'exception : ils n'ont pas de serveur et ne figurent pas dans `config.toml` (`import-initial.md`, section 9).
 
 - **Renommer la clé à la main crée un nouveau compte**, et l'ancien est désactivé (ci-dessous). Pour renommer un compte en gardant ses données, il faut passer par l'app ou par `nicemailer account rename`, qui modifie le fichier et la base ensemble.
 - **Changer l'adresse ou les serveurs** sous la même clé garde le compte. Si la boîte n'est plus la même, la synchronisation le constate par le changement d'`uidvalidity` des dossiers et les retélécharge (`modele de donnees.md`, section 5).

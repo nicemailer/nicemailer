@@ -46,6 +46,12 @@ pub mod method {
     pub const MOVE_THREAD: &str = "move_thread";
     pub const SET_THREAD_SEEN: &str = "set_thread_seen";
     pub const SET_THREAD_FLAGGED: &str = "set_thread_flagged";
+    /// Starts the import of an mbox file into an archive account; the work
+    /// continues in the background and reports through `ImportProgress` and
+    /// `ImportFinished` events.
+    pub const IMPORT_MBOX: &str = "import_mbox";
+    /// State of the running import, or of the last one.
+    pub const IMPORT_STATUS: &str = "import_status";
 }
 
 /// Stable error codes. Negative codes are the ones defined by the JSON-RPC
@@ -69,6 +75,8 @@ pub mod error_code {
     pub const INVALID_MOVE: i64 = 1002;
     /// The core is busy with maintenance (migration, rebuild). Not used yet.
     pub const MAINTENANCE: i64 = 1003;
+    /// An import is already running: only one at a time.
+    pub const BUSY: i64 = 1004;
 }
 
 // ---------------------------------------------------------------------------
@@ -189,6 +197,11 @@ pub enum Event {
     MessageChanged { message_id: i64, thread_id: Option<i64> },
     /// The client missed events and must reload everything it displays.
     ResyncRequired {},
+    /// An mbox import progressed (one event per batch of messages). The
+    /// folders it fills also get `FolderChanged` events.
+    ImportProgress(ImportStatus),
+    /// An mbox import ended, successfully (`error` is `None`) or not.
+    ImportFinished(ImportStatus),
 }
 
 // ---------------------------------------------------------------------------
@@ -307,6 +320,14 @@ pub struct FolderView {
     /// Targets offered by the move command from this folder. Computed by
     /// the core so that clients never reimplement workflow rules.
     pub move_targets: Vec<FolderRole>,
+    /// Account of the folder: a client lists one group of folders per
+    /// account.
+    pub account_id: i64,
+    /// Account name (`account.config_key`).
+    pub account_name: String,
+    /// `"imap"`, or `"archive"` for an account created by an mbox import,
+    /// which never has a server.
+    pub account_kind: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -425,6 +446,57 @@ pub struct CommandResult {
 }
 
 /// File locations shared by the core and its clients (`stockage-brut.md`).
+/// Parameters of `import_mbox`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImportMboxParams {
+    /// Absolute path of the mbox file, readable by the core.
+    pub path: String,
+    /// Name of the archive account, created if it does not exist.
+    pub account: String,
+    /// Address of the archived mailbox: its messages go to Sent.
+    pub address: String,
+    /// Give the screening decision `inbox` to the recipients of sent
+    /// messages that have none (`import-initial.md`, section 4). Default:
+    /// true, like the checked box of the import screen.
+    #[serde(default = "default_true")]
+    pub mark_correspondents: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+/// State of an mbox import: result of `import_mbox` and `import_status`,
+/// and payload of the import events.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ImportStatus {
+    /// Identifier of the import, unique while the core runs.
+    pub job_id: u64,
+    pub path: String,
+    pub account_id: i64,
+    pub running: bool,
+    pub bytes_read: u64,
+    pub total_bytes: u64,
+    /// Messages added.
+    pub imported: u64,
+    /// Messages already present in the account, not added again.
+    pub skipped: u64,
+    /// Messages kept but that the MIME parser could not interpret.
+    pub parse_errors: u64,
+    /// Final figures, set by `ImportFinished`.
+    #[serde(default)]
+    pub sent: u64,
+    #[serde(default)]
+    pub archived: u64,
+    #[serde(default)]
+    pub correspondents: u64,
+    #[serde(default)]
+    pub seconds: f64,
+    /// Why the import failed, if it did.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
 pub mod paths {
     // `PathBuf` is an owned file system path (like `String` for text).
     use std::path::PathBuf;

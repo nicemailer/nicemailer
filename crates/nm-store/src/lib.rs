@@ -8,6 +8,10 @@
 //! The crate is split into modules (one file each):
 //! - `queries.rs`: read-only queries returning API views,
 //! - `commands.rs`: write commands (move, read/unread, flag),
+//! - `raw.rs`: immutable raw message files (`stockage-brut.md`),
+//! - `mbox.rs`: streaming reader of mbox files,
+//! - `ingest.rs`: interpretation of a raw message (headers, bodies, attachments),
+//! - `import.rs`: import of an mbox file into an archive account,
 //! - `seed.rs`: generator of fake mail for development.
 //!
 //! Rust note: `mod queries;` tells the compiler to include `src/queries.rs`
@@ -15,7 +19,11 @@
 //! `impl Store` blocks still add public methods to `Store`.
 
 mod commands;
+pub mod import;
+pub mod ingest;
+pub mod mbox;
 mod queries;
+pub mod raw;
 pub mod seed;
 
 // `BTreeSet` is a sorted set without duplicates. It is used instead of
@@ -68,6 +76,14 @@ pub enum StoreError {
     /// it anyway could corrupt it, so the store refuses.
     #[error("version du schéma {found} plus récente que celle du code ({expected})")]
     SchemaTooNew { found: i64, expected: i64 },
+    /// The database was created by an earlier development build whose
+    /// version-1 schema lacked tables added since (version 1 is not released
+    /// yet, so it is still edited in place). It has to be recreated.
+    #[error("base créée par une version de développement antérieure ({0} absent) : recréez-la (make seed)")]
+    OutdatedSchema(&'static str),
+    /// A file operation failed (raw message storage, mbox file).
+    #[error("fichier : {0}")]
+    Io(String),
 }
 
 /// Shorthand used throughout the crate: `Result<T>` means
@@ -128,11 +144,15 @@ impl Store {
         // - synchronous = NORMAL: with WAL mode, safe and much faster than FULL.
         // - temp_store = MEMORY: temporary tables and indexes stay in RAM.
         // - busy_timeout: wait up to 5 s for a lock instead of failing at once.
+        // - cache_size = -65536: keep up to 64 MiB of database pages in
+        //   memory (negative means KiB). The default, 2 MiB, is far smaller
+        //   than the indexes of a real mailbox, and every miss is a read.
         conn.execute_batch(
             "PRAGMA foreign_keys = ON;
              PRAGMA synchronous = NORMAL;
              PRAGMA temp_store = MEMORY;
-             PRAGMA busy_timeout = 5000;",
+             PRAGMA busy_timeout = 5000;
+             PRAGMA cache_size = -65536;",
         )?;
         // `query_row` runs a query expected to return one row and passes it to
         // the closure `|r| r.get(0)`, which reads column 0.
@@ -141,8 +161,30 @@ impl Store {
             // Fresh database: create everything. schema.sql ends by setting
             // `user_version` to 1.
             0 => conn.execute_batch(SCHEMA_V1)?,
-            // Already up to date.
-            SCHEMA_VERSION => {}
+            // Same version number: check that the schema really is the
+            // current one (see `OutdatedSchema`). `prepare` fails if a
+            // column or table is missing, without running anything.
+            SCHEMA_VERSION => {
+                for (sql, what) in [
+                    ("SELECT kind, address FROM account", "account.kind"),
+                    ("SELECT raw_hash FROM message", "message.raw_hash"),
+                    ("SELECT hash FROM raw_blob", "raw_blob"),
+                ] {
+                    if conn.prepare(sql).is_err() {
+                        return Err(StoreError::OutdatedSchema(what));
+                    }
+                }
+                // Older builds indexed new messages with a trigger; the code
+                // now does it, and the two together would index twice.
+                let old_trigger: i64 = conn.query_row(
+                    "SELECT count(*) FROM sqlite_master WHERE type = 'trigger' AND name = 'message_fts_ai'",
+                    [],
+                    |r| r.get(0),
+                )?;
+                if old_trigger > 0 {
+                    return Err(StoreError::OutdatedSchema("trigger message_fts_ai encore présent"));
+                }
+            }
             // `v if ...` is a *match guard*: the arm matches only if the
             // condition holds.
             v if v > SCHEMA_VERSION => {

@@ -11,3 +11,11 @@ nm-api.workspace = true
 rusqlite.workspace = true
 thiserror.workspace = true
 rand.workspace = true
+mail-parser.workspace = true
+ammonia.workspace = true
+sha2.workspace = true
+zstd.workspace = true
+libc.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

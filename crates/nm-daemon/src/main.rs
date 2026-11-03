@@ -45,12 +45,14 @@ use std::sync::{Arc, Mutex};
 use anyhow::{Context, bail};
 use clap::Parser;
 use nm_api::{
-    CommandResult, DEFAULT_LIMIT, FolderList, GetThreadParams, HelloParams, HelloResult,
-    ListThreadsParams, MAX_LIMIT, MoveThreadParams, PROTOCOL_VERSION, Page, Request, Response,
-    RpcError, SearchParams, SearchResult, SetThreadFlaggedParams, SetThreadSeenParams,
-    SubscribeParams, SubscribeResult, ThreadView, error_code, method,
+    CommandResult, DEFAULT_LIMIT, Event, FolderList, GetThreadParams, HelloParams, HelloResult,
+    ImportMboxParams, ImportStatus, ListThreadsParams, MAX_LIMIT, MoveThreadParams, PROTOCOL_VERSION,
+    Page, Request, Response, RpcError, SearchParams, SearchResult, SetThreadFlaggedParams,
+    SetThreadSeenParams, SubscribeParams, SubscribeResult, ThreadView, error_code, method,
 };
 use nm_core::Source;
+use nm_store::import::{BATCH_SIZE, ImportOptions, ImportProgress, import_mbox};
+use nm_store::raw::RawStore;
 use nm_store::{ChangeSet, Store, StoreError};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
@@ -79,9 +81,26 @@ struct Args {
 /// the value inside. `lock()` returns a guard; the lock is released when the
 /// guard goes out of scope. The store and the event log have separate locks
 /// so that reading the event position never waits for a slow query.
+///
+/// Lock order, to avoid deadlocks: `store`, then `import`, then `events`.
+/// A thread holding one of them never waits for one that comes earlier in
+/// this list.
 struct Core {
     store: Mutex<Store>,
     events: Mutex<EventLog>,
+    /// Immutable raw message files (`stockage-brut.md`).
+    raw: RawStore,
+    /// The running mbox import, or the last one.
+    import: Mutex<ImportState>,
+}
+
+/// Imports run one at a time, on a dedicated thread (see `start_import`).
+#[derive(Default)]
+struct ImportState {
+    /// Id of the last import started.
+    last_job: u64,
+    /// Running import, or the last one, finished.
+    status: Option<ImportStatus>,
 }
 
 /// Entry point. `#[tokio::main]` wraps `main` so that it runs inside the
@@ -111,9 +130,12 @@ async fn main() -> anyhow::Result<()> {
     // `Arc` so that every connection task can hold a pointer to the shared
     // state. Replay buffer of 10 000 events; a client may lag 1 000 events
     // behind before being told to resync.
+    let raw = RawStore::open(&data_dir).with_context(|| format!("stockage brut dans {}", data_dir.display()))?;
     let core = Arc::new(Core {
         store: Mutex::new(store),
         events: Mutex::new(EventLog::new(10_000, 1_000)),
+        raw,
+        import: Mutex::new(ImportState::default()),
     });
 
     let socket_path = data_dir.join(nm_api::paths::SOCKET);
@@ -416,6 +438,11 @@ async fn dispatch(core: &Arc<Core>, session: &mut Session, req: Request) -> Resu
             let p: SetThreadFlaggedParams = params(req.params)?;
             command(core, move |s| s.set_thread_flagged(p.thread_id, p.flagged, source)).await
         }
+        method::IMPORT_MBOX => {
+            let p: ImportMboxParams = params(req.params)?;
+            to_value(start_import(core, p, source).await?)
+        }
+        method::IMPORT_STATUS => to_value(core.import.lock().unwrap().status.clone()),
         other => Err(RpcError::new(error_code::METHOD_NOT_FOUND, format!("méthode inconnue : {other}"))),
     }
 }
@@ -465,4 +492,127 @@ async fn forward(
             return;
         }
     }
+}
+
+/// `import_mbox`: checks the request, creates the archive account, then
+/// starts the import on a dedicated thread and answers at once with the
+/// initial status. Progress and the end are reported by events.
+///
+/// Why a plain thread rather than `spawn_blocking`: an import of a large
+/// mailbox runs for minutes, and tokio's blocking pool is meant for short
+/// tasks. The import thread takes the store lock one batch at a time, so
+/// requests from the app keep being answered meanwhile.
+async fn start_import(core: &Arc<Core>, p: ImportMboxParams, source: Source) -> Result<ImportStatus, RpcError> {
+    let invalid = |m: String| RpcError::new(error_code::INVALID_PARAMS, m);
+    let path = PathBuf::from(&p.path);
+    if !path.is_absolute() {
+        return Err(invalid(format!("chemin absolu attendu : {}", p.path)));
+    }
+    let meta = fs::metadata(&path).map_err(|e| invalid(format!("{} : {e}", p.path)))?;
+    if !meta.is_file() {
+        return Err(invalid(format!("{} n'est pas un fichier", p.path)));
+    }
+
+    // Reserve the import slot before doing anything slow, so two requests
+    // cannot both start an import.
+    let job_id = {
+        let mut st = core.import.lock().unwrap();
+        if st.status.as_ref().is_some_and(|s| s.running) {
+            return Err(RpcError::new(error_code::BUSY, "un import est déjà en cours"));
+        }
+        st.last_job += 1;
+        st.status = Some(ImportStatus {
+            job_id: st.last_job,
+            path: p.path.clone(),
+            running: true,
+            total_bytes: meta.len(),
+            ..Default::default()
+        });
+        st.last_job
+    };
+    // Created here rather than in the thread, so that a refused name or
+    // address is reported as the error of this request.
+    let (name, address) = (p.account.clone(), p.address.clone());
+    let account = with_store(core, move |s| s.prepare_archive_account(&name, &address, source)).await;
+    let account = match account {
+        Ok(a) => a,
+        Err(e) => {
+            if let Some(s) = core.import.lock().unwrap().status.as_mut() {
+                s.running = false;
+                s.error = Some(e.message.clone());
+            }
+            return Err(e);
+        }
+    };
+    let status = {
+        let mut st = core.import.lock().unwrap();
+        let s = st.status.as_mut().expect("status set above");
+        s.account_id = account.id;
+        s.clone()
+    };
+
+    let opts = ImportOptions {
+        path,
+        account: p.account,
+        address: p.address,
+        mark_correspondents: p.mark_correspondents,
+        source,
+        batch_size: BATCH_SIZE,
+    };
+    let core = core.clone();
+    std::thread::Builder::new()
+        .name("nicemailer-import".into())
+        .spawn(move || run_import(core, job_id, opts))
+        .map_err(|e| RpcError::new(error_code::INTERNAL_ERROR, e.to_string()))?;
+    Ok(status)
+}
+
+/// Body of the import thread.
+fn run_import(core: Arc<Core>, job_id: u64, opts: ImportOptions) {
+    // Called after each batch, with the store lock held: the events are
+    // therefore ordered exactly like the writes.
+    let mut on_batch = |_: &Store, changes: &ChangeSet, p: &ImportProgress| {
+        let status = {
+            let mut st = core.import.lock().unwrap();
+            let s = st.status.as_mut().expect("import status");
+            s.bytes_read = p.bytes_read;
+            s.total_bytes = p.total_bytes;
+            s.imported = p.imported;
+            s.skipped = p.skipped;
+            s.parse_errors = p.parse_errors;
+            s.clone()
+        };
+        let mut events = core.events.lock().unwrap();
+        events.emit(changes);
+        events.push(Event::ImportProgress(status));
+    };
+    let result = import_mbox(&core.store, &core.raw, &opts, &mut on_batch);
+
+    let status = {
+        let mut st = core.import.lock().unwrap();
+        let s = st.status.as_mut().expect("import status");
+        s.running = false;
+        match &result {
+            Ok(r) => {
+                s.bytes_read = r.progress.bytes_read;
+                s.imported = r.progress.imported;
+                s.skipped = r.progress.skipped;
+                s.parse_errors = r.progress.parse_errors;
+                s.sent = r.sent;
+                s.archived = r.archived;
+                s.correspondents = r.correspondents;
+                s.seconds = r.seconds;
+            }
+            Err(e) => s.error = Some(e.to_string()),
+        }
+        s.clone()
+    };
+    match &result {
+        Ok(r) => eprintln!(
+            "import {job_id} terminé : {} mails importés, {} déjà présents, en {:.1} s",
+            r.progress.imported, r.progress.skipped, r.seconds
+        ),
+        Err(e) => eprintln!("import {job_id} échoué : {e}"),
+    }
+    core.events.lock().unwrap().push(Event::ImportFinished(status));
 }

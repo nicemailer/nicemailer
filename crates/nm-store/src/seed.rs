@@ -335,8 +335,9 @@ impl Generator<'_> {
     }
 
     /// Inserts a whole thread: the `thread` row, then for each message its
-    /// row in `message`, its body (the FTS triggers of schema.sql index it
-    /// automatically), its references, recipients, attachment and keywords.
+    /// row in `message`, its body, its references, recipients, attachment
+    /// and keywords. The search index is filled at the end, in one pass
+    /// (see `seed`).
     ///
     /// `mails` must be sorted from oldest to newest. `targets` maps each
     /// known address to its screening decision.
@@ -556,6 +557,14 @@ pub fn seed(store: &mut Store, opts: &SeedOptions) -> Result<SeedReport> {
     // Denormalized aggregates, in one pass over all messages, plus the IMAP
     // sync state the future sync engine expects (`uidnext`, last sync date,
     // start of screening in the Inbox).
+    // Search index, in one statement for the whole mailbox (the schema has
+    // no insert trigger on message_fts: the code writes the rows itself).
+    tx.execute_batch(
+        "INSERT INTO message_fts (rowid, subject, sender, recipients, body)
+         SELECT m.id, m.subject, coalesce(m.from_name, '') || ' ' || coalesce(m.from_addr, ''), '',
+                coalesce(b.text_plain, '')
+           FROM message m LEFT JOIN message_body b ON b.message_id = m.id;",
+    )?;
     tx.execute_batch(
         "INSERT INTO thread_folder (thread_id, folder_id, date_last_received, message_count, unread_count)
          SELECT thread_id, folder_id, max(date_received), count(*), sum(is_seen = 0)

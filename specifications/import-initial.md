@@ -97,10 +97,80 @@ Le routage n'a pas besoin de cet attribut : une adresse sans décision va déjà
 | Messages ingérés par la synchronisation initiale | `created_by = 'imap'` : ils existaient sur le serveur |
 | Décisions des correspondants | `created_by = 'core'`, une ligne `screening` par adresse dans `audit_log` |
 | Archivage initial | Une ligne `initial_archive` sur le compte, avec la source du client qui a validé l'écran |
+| Messages importés d'un mbox | `created_by` = client qui a lancé l'import (`cli`) |
+| Import mbox | Une ligne `create` (compte d'archives créé) puis une ligne `import_mbox` par import, sur le compte (section 9) |
 
-## 9. Import d'une archive mbox (plus tard)
+## 9. Import d'une archive mbox
 
-L'import d'une archive mbox réutilisera les mêmes mécanismes : les mails importés ne passent pas par le screening, et les adresses créées reçoivent `imported_from = 'mbox'`. Le dossier de destination, le dépôt éventuel sur le serveur (`APPEND`) et la déduplication restent à spécifier.
+Statut : implémenté (CLI seulement). Un fichier mbox (export de Apple Mail, de Gmail, de Thunderbird…) est importé dans un **compte d'archives**.
+
+### Compte d'archives
+
+- Un compte d'archives (`account.kind = 'archive'`) n'a **jamais** de serveur IMAP ni SMTP. Il n'est pas dans `config.toml` : son nom (`account.config_key`) et l'adresse de la boîte archivée (`account.address`) sont donnés à l'import.
+- Il reçoit tous les dossiers du workflow. Les mails importés peuvent être rangés comme les autres (Todo, Paperwork, Deleted…) ; les déplacements ne modifient que la base locale et ne créent aucune action de spool.
+- Un nom déjà pris par un compte IMAP est refusé. Un compte d'archives existant est réutilisé si l'adresse est la même, refusé sinon : l'adresse décide de ce qui va dans Sent et ne peut pas changer d'un import à l'autre.
+
+### Classement
+
+| Mail | Dossier | Lu |
+| --- | --- | --- |
+| Expéditeur (`From`) égal à l'adresse du compte, sans casse | Sent | oui |
+| Tous les autres | Archive | oui |
+
+Un mbox ne porte ni dossier ni flag fiable : tout est archivé, comme les mails anciens de l'import initial (section 1). Aucun mail ne passe par le screening ni n'arrive en Quarantine.
+
+Autres attributs :
+
+- `date_received` : date de la ligne de séparation `From ` du mbox (date de réception par le serveur exportateur, équivalent de l'INTERNALDATE), à défaut l'en-tête `Date`.
+- `is_answered` : posé sur un mail reçu auquel un mail de Sent du même compte répond (`In-Reply-To`).
+- `uid` : NULL (pas de serveur).
+- `auth_result` : `unknown`, `auth_source` NULL. Un export ne garantit pas que les en-têtes `Authentication-Results` viennent d'un serveur de confiance ; dans l'export HEY, ils viennent de plusieurs serveurs (`haystack-mail-inbound-postfix-1` à `-8`), et la détection de `authserv_id` (`authentification-expediteur.md`) échouerait.
+- `created_by` : le client qui a lancé l'import (`cli`).
+
+### Conversations
+
+Un mail rejoint la conversation de tout mail du même compte qu'il référence (`References`, `In-Reply-To`), qui le référence, ou qui a le même `Message-ID`. Les mails d'un export ne sont pas dans l'ordre des conversations : une réponse peut précéder le mail auquel elle répond, et un mail peut relier deux conversations existantes, qui sont alors fusionnées. Les mails sans référence ne sont pas regroupés par objet : cela fusionnerait à tort des mails sans rapport, comme des factures mensuelles de même objet. L'objet de la conversation est celui de son mail le plus ancien.
+
+### Stockage
+
+Chaque mail est conservé tel quel (`stockage-brut.md`), après retrait de l'échappement mbox (`>From `). Les fins de ligne du fichier sont conservées sans normalisation. Le corps texte, le HTML assaini et les pièces jointes sont extraits comme pour un mail reçu.
+
+### Déduplication et reprise
+
+- Un mail dont les octets bruts (même SHA-256) sont déjà dans le compte est ignoré. Relancer l'import du même fichier n'ajoute donc rien, et un import interrompu se reprend en le relançant.
+- Deux copies d'un même `Message-ID` qui diffèrent d'un octet sont deux mails : c'est la règle du stockage brut. Elles rejoignent la même conversation.
+- L'écriture se fait par lots de `import.mbox_batch_size` mails, chacun dans une transaction : une interruption perd au plus le lot en cours, sans état intermédiaire visible.
+
+### Adresses et correspondants
+
+- Les adresses créées par l'import reçoivent `imported_from = 'mbox'` (section 7) ; le nom d'affichage est celui du premier mail du fichier qui cite l'adresse.
+- Les destinataires (To, Cc, Bcc) des mails de Sent sont des correspondants : comme à la section 4, ceux qui n'ont pas de décision reçoivent `inbox` (`created_by = 'core'`, une ligne `screening` dans `audit_log` avec la raison `sent_correspondent`). L'adresse du compte est exclue. Une adresse dont la décision a été retirée (pierre tombale) n'est pas modifiée : l'import ne revient pas sur un choix de l'utilisateur. L'option est active par défaut ; `--no-correspondents` la désactive.
+
+### Rangement par les décisions futures
+
+Les adresses de l'archive seront revues : par le prochain mail de l'expéditeur sur un compte IMAP, ou dans la Quarantine. La règle « Décision sur un expéditeur » (`dossiers.md`) s'applique aussi aux comptes d'archives : classer en Paperwork le prochain mail de `invoice@amazon.fr` range aussi dans Paperwork ses mails importés qui sont dans le dossier Archive du compte d'archives. Les mails de Sent ne bougent pas.
+
+**Exception à la condition d'authentification.** Une décision favorable ne déplace d'ordinaire que les mails dont le verdict est accepté (`dossiers.md`). Les mails d'un compte d'archives ont tous le verdict `unknown`, qui n'est plus accepté dès que l'adresse a été vue authentifiée (`auth_seen = 1`). Ils sont donc rangés **sans condition d'authentification** : ce sont des mails anciens, déjà lus, que l'utilisateur a jugés en les gardant, et le pire cas (un ancien mail usurpé rangé dans Paperwork plutôt qu'Archive) est sans gravité. *À implémenter avec les décisions de screening, qui ne sont pas encore codées.*
+
+### Exécution
+
+- L'import est exécuté par le noyau (`import_mbox`), qui seul écrit dans la base ; le CLI ne fait que le demander et suivre son avancement : `nicemailer import-mbox FICHIER --account gmail --address bob@gmail`.
+- Un seul import à la fois (erreur `BUSY` sinon). L'avancement est publié par les événements `ImportProgress`, un par lot, et la fin par `ImportFinished` (`evenements.md`). `import_status` renvoie l'état de l'import en cours ou du dernier.
+- Interrompre le CLI n'interrompt pas l'import. Arrêter le noyau l'interrompt ; il se reprend en le relançant.
+- Le fichier est lu en flux : la mémoire utilisée dépend du plus gros mail, pas de la taille du fichier.
+- Mesure (MacBook, 10 cœurs, fichier de 9,7 Go et 46 539 mails) : 36 s, dont environ 6 s de lecture et d'analyse, 9 s de compression et le reste d'écriture SQLite. Le relancer sur le même fichier prend 6 s.
+
+### Journal
+
+- Une ligne `create` sur l'entité `account` à la création du compte d'archives.
+- Une ligne `import_mbox` sur l'entité `account` à chaque import, avec le fichier et les nombres de mails importés, ignorés, non analysés, envoyés, archivés, et de correspondants. Pas de ligne par mail.
+
+### Hors périmètre pour l'instant
+
+- Import depuis l'app (écran d'import) : le CLI seulement.
+- Dépôt des mails sur un serveur (`APPEND`) : un compte d'archives n'a pas de serveur.
+- Lecture des flags d'un mbox (`Status:`, `X-Status:`, `X-Gmail-Labels`) : tout est marqué lu et classé selon l'expéditeur.
+- Plusieurs adresses (identités) pour un compte d'archives.
 
 ## 10. Paramètres
 
@@ -112,6 +182,7 @@ Ces paramètres sont des clés de `config.toml` ; le catalogue complet est dans 
 | `import.threshold_unseen` | Nombre de non-lus au-delà duquel l'archivage est proposé | 50 |
 | `import.unseen_default_age_days` | Âge par défaut au-delà duquel les non-lus sont archivés | 30 |
 | `import.batch_size` | Nombre d'UID par `UID MOVE` | 1 000 |
+| `import.mbox_batch_size` | Nombre de mails écrits par transaction lors d'un import mbox (section 9) ; constante du code pour l'instant | 500 |
 
 ## 11. Tests exigés
 
@@ -124,3 +195,15 @@ Ces paramètres sont des clés de `config.toml` ; le catalogue complet est dans 
 - Correspondants : décision `inbox` pour les adresses sans décision ; une décision existante est conservée ; les adresses du compte sont exclues.
 - `imported_from` renseigné pour les adresses créées par l'import, inchangé pour les adresses déjà connues.
 - Après l'import, premier mail d'un expéditeur importé sans décision : Quarantine, présenté avec son historique.
+
+Import mbox (section 9) :
+
+- Lecture du mbox : séparation sur les lignes `From ` précédées d'une ligne vide et portant une date, déséchappement mboxrd, fins de ligne CRLF conservées, fichier qui n'est pas un mbox refusé sans rien importer.
+- Classement Sent / Archive selon l'expéditeur, sans casse ; tous les mails lus.
+- Réponse importée avant le mail auquel elle répond : même conversation ; mail qui relie deux conversations : fusion.
+- Réimport du même fichier : aucun mail ajouté, tous comptés comme déjà présents.
+- Brut conservé octet pour octet (après déséchappement), relu et vérifié par son hash.
+- Correspondants : `inbox` pour les destinataires des mails envoyés sans décision ; décision existante conservée ; adresse du compte exclue ; option désactivable.
+- `imported_from = 'mbox'` pour les adresses créées, inchangé pour les adresses connues.
+- Nom de compte déjà pris par un compte IMAP, ou compte d'archives existant avec une autre adresse : refusé.
+- Import par le socket : chemin relatif refusé, événements `ImportProgress` et `ImportFinished`, état disponible par `import_status`.

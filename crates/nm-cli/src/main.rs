@@ -5,15 +5,16 @@
 //! library is enough, no async runtime needed.
 //!
 //! The `///` comments on the `Cli` and `Command` items below are turned into
-//! `--help` text by clap, which is why they stay in French (user-facing).
+//! `--help` text by clap. Like everything the CLI prints, they are in English
+//! (see CLAUDE.md, "Languages").
 
 use std::fs::{self, File};
 // `BufRead` and `Write` are traits: importing them makes `read_line` and
 // `writeln!` available on the reader and the stream.
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
-use std::path::PathBuf;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::path::{Path, PathBuf};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, bail};
 use clap::{Parser, Subcommand};
@@ -26,9 +27,9 @@ use serde_json::{Value, json};
 /// Top-level arguments. `global = true` makes `--data-dir` accepted after
 /// any subcommand too.
 #[derive(Parser)]
-#[command(name = "nicemailer", version, about = "Client en ligne de commande de NiceMailer")]
+#[command(name = "nicemailer", version, about = "NiceMailer command-line client")]
 struct Cli {
-    /// Dossier de données (base, socket).
+    /// Data directory (database, socket).
     #[arg(long, global = true, env = "NICEMAILER_DATA_DIR")]
     data_dir: Option<PathBuf>,
     #[command(subcommand)]
@@ -39,27 +40,47 @@ struct Cli {
 /// `nicemailer call`...), and its fields become its options.
 #[derive(Subcommand)]
 enum Command {
-    /// Remplit la base de faux mails (développement). Le noyau doit être arrêté.
+    /// Fill the database with fake mail (development). The core must be stopped.
     Seed {
-        /// Nombre de conversations (environ deux mails chacune).
+        /// Number of conversations (about two mails each).
         #[arg(long, default_value_t = 2500)]
         threads: usize,
-        /// Graine du générateur : la même graine produit la même base.
+        /// Generator seed: the same seed produces the same database.
         #[arg(long, default_value_t = 1)]
         seed: u64,
-        /// Supprime la base existante avant de la remplir.
+        /// Delete the existing database before filling it.
         #[arg(long)]
         reset: bool,
     },
-    /// Envoie une requête JSON-RPC au noyau et affiche le résultat.
+    /// Import a whole mailbox from an mbox file into an archive account.
+    ///
+    /// The core does the work and must be running. Messages sent from
+    /// --address go to Sent, all others to Archive, all marked as read.
+    /// Running the same import again only adds the messages that are missing.
+    ImportMbox {
+        /// The mbox file.
+        file: PathBuf,
+        /// Name of the archive account, created if needed (letters, digits, - _ .).
+        #[arg(long)]
+        account: String,
+        /// Address of the archived mailbox.
+        #[arg(long)]
+        address: String,
+        /// Do not give the "inbox" screening decision to the people you wrote to.
+        #[arg(long)]
+        no_correspondents: bool,
+    },
+    /// Show the running mbox import, or the last one.
+    ImportStatus,
+    /// Send a JSON-RPC request to the core and print the result.
     Call {
         method: String,
-        /// Paramètres JSON, par exemple '{"folder_id": 1}'.
+        /// JSON parameters, e.g. '{"folder_id": 1}'.
         params: Option<String>,
     },
-    /// Liste les dossiers.
+    /// List the folders.
     Folders,
-    /// Affiche les événements du noyau au fil de l'eau.
+    /// Print the core's events as they happen.
     Watch,
 }
 
@@ -70,9 +91,22 @@ fn main() -> anyhow::Result<()> {
     // renames the `seed` field to `s`, to avoid shadowing the `seed` function.
     match cli.command {
         Command::Seed { threads, seed: s, reset } => run_seed(&data_dir, threads, s, reset),
+        Command::ImportMbox { file, account, address, no_correspondents } => {
+            run_import(&data_dir, &file, &account, &address, !no_correspondents)
+        }
+        Command::ImportStatus => {
+            let mut client = Client::connect(&data_dir)?;
+            let status = client.call("import_status", Value::Null)?;
+            if status.is_null() {
+                println!("No import since the core started.");
+            } else {
+                print_status(&status);
+            }
+            Ok(())
+        }
         Command::Call { method, params } => {
             let params: Value = match params {
-                Some(p) => serde_json::from_str(&p).context("paramètres JSON invalides")?,
+                Some(p) => serde_json::from_str(&p).context("invalid JSON parameters")?,
                 None => Value::Null,
             };
             let mut client = Client::connect(&data_dir)?;
@@ -88,8 +122,9 @@ fn main() -> anyhow::Result<()> {
             // `{:>3}` right-aligns on 3 characters, `{:<12}` left-aligns on 12.
             for f in result["items"].as_array().into_iter().flatten() {
                 println!(
-                    "{:>3}  {}  {:<12} {:>6} mails {:>6} non lus {:>6} conversations",
+                    "{:>3}  {:<8} {}  {:<12} {:>6} mails {:>6} unread {:>6} threads",
                     f["id"],
+                    f["account_name"].as_str().unwrap_or(""),
                     f["letter"].as_str().unwrap_or(" "),
                     f["name"].as_str().unwrap_or(""),
                     f["total_count"],
@@ -102,7 +137,7 @@ fn main() -> anyhow::Result<()> {
         Command::Watch => {
             let mut client = Client::connect(&data_dir)?;
             let pos = client.call("subscribe", json!({}))?;
-            eprintln!("abonné à partir de {pos}");
+            eprintln!("subscribed from {pos}");
             // Print every line pushed by the core, until it closes the
             // connection (then `read_line` returns an error and `?` exits).
             loop {
@@ -115,14 +150,14 @@ fn main() -> anyhow::Result<()> {
 
 /// `nicemailer seed`: fills the database with fake mail, directly through
 /// the store (not through the core).
-fn run_seed(data_dir: &PathBuf, threads: usize, s: u64, reset: bool) -> anyhow::Result<()> {
+fn run_seed(data_dir: &Path, threads: usize, s: u64, reset: bool) -> anyhow::Result<()> {
     fs::create_dir_all(data_dir)?;
     // The core is the only owner of the database: take its lock, so seeding
     // is impossible while the core runs (it would not see the new data, and
     // deleting the file under it would break it).
     let lock = File::create(data_dir.join("lock"))?;
     if lock.try_lock().is_err() {
-        bail!("le noyau tourne et tient la base. Arrêtez-le (Ctrl-C dans son terminal, ou `pkill nicemailer-core`) puis relancez seed");
+        bail!("the core is running and holds the database. Stop it (Ctrl-C in its terminal, or `pkill nicemailer-core`), then run seed again");
     }
     let db = data_dir.join(paths::DATABASE);
     if reset {
@@ -140,9 +175,9 @@ fn run_seed(data_dir: &PathBuf, threads: usize, s: u64, reset: bool) -> anyhow::
     let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs() as i64;
     let started = std::time::Instant::now();
     let report = seed(&mut store, &SeedOptions { threads, seed: s, now })
-        .context("utilisez --reset pour remplacer la base existante")?;
+        .context("use --reset to replace the existing database")?;
     println!(
-        "{} : {} conversations, {} mails, {} adresses en {:.1} s",
+        "{}: {} threads, {} mails, {} addresses in {:.1} s",
         db.display(),
         report.threads,
         report.messages,
@@ -151,6 +186,93 @@ fn run_seed(data_dir: &PathBuf, threads: usize, s: u64, reset: bool) -> anyhow::
     );
     // `lock` is dropped here, at the end of the function, which releases it.
     Ok(())
+}
+
+/// `nicemailer import-mbox`: asks the core to import the file, then follows
+/// the import's events and prints its progress until it ends.
+///
+/// The import runs in the core: interrupting this command (Ctrl-C) does not
+/// stop it. `nicemailer import-status` shows where it is.
+fn run_import(data_dir: &Path, file: &Path, account: &str, address: &str, correspondents: bool) -> anyhow::Result<()> {
+    // The core has its own working directory, so it needs an absolute path.
+    let path = fs::canonicalize(file).with_context(|| format!("{}", file.display()))?;
+    let mut client = Client::connect(data_dir)?;
+    // Subscribe *before* starting, so no event of this import can be missed.
+    client.call("subscribe", json!({}))?;
+    let started = client.call(
+        "import_mbox",
+        json!({
+            "path": path.to_string_lossy(),
+            "account": account,
+            "address": address,
+            "mark_correspondents": correspondents,
+        }),
+    )?;
+    let job_id = started["job_id"].as_u64().unwrap_or_default();
+    eprintln!("Importing {} into the archive account \"{account}\" (Ctrl-C stops following, not the import)", path.display());
+    let clock = Instant::now();
+    loop {
+        let line = client.read_line()?;
+        let v: Value = serde_json::from_str(&line)?;
+        let params = &v["params"];
+        match v["method"].as_str() {
+            Some("ImportProgress") if params["job_id"].as_u64() == Some(job_id) => {
+                let read = params["bytes_read"].as_u64().unwrap_or(0) as f64;
+                let total = params["total_bytes"].as_u64().unwrap_or(0).max(1) as f64;
+                let secs = clock.elapsed().as_secs_f64().max(0.001);
+                // `\r` returns to the start of the line, so the progress line
+                // is rewritten in place instead of scrolling.
+                eprint!(
+                    "\r{:5.1} %  {:.2} / {:.2} GB  {} imported  {} already present  {:.0} MB/s   ",
+                    100.0 * read / total,
+                    read / 1e9,
+                    total / 1e9,
+                    params["imported"],
+                    params["skipped"],
+                    read / 1e6 / secs
+                );
+            }
+            Some("ImportFinished") if params["job_id"].as_u64() == Some(job_id) => {
+                eprintln!();
+                print_status(params);
+                if let Some(e) = params["error"].as_str() {
+                    bail!("import failed: {e}");
+                }
+                return Ok(());
+            }
+            // Missed events (this client fell behind): ask for the state.
+            Some("ResyncRequired") => {
+                let status = client.call("import_status", Value::Null)?;
+                if status["job_id"].as_u64() == Some(job_id) && status["running"] == false {
+                    print_status(&status);
+                    return Ok(());
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Prints an import status (`ImportStatus` in nm-api).
+fn print_status(s: &Value) {
+    let state = if s["running"] == true {
+        "running"
+    } else if s["error"].is_string() {
+        "failed"
+    } else {
+        "finished"
+    };
+    println!("Import {} ({state}): {}", s["job_id"], s["path"].as_str().unwrap_or(""));
+    println!(
+        "  {} imported ({} to Sent, {} to Archive), {} already present, {} not parsed",
+        s["imported"], s["sent"], s["archived"], s["skipped"], s["parse_errors"]
+    );
+    if s["running"] == false && s["error"].is_null() {
+        println!("  {} correspondents now go straight to the Inbox; {:.1} s", s["correspondents"], s["seconds"].as_f64().unwrap_or(0.0));
+    }
+    if let Some(e) = s["error"].as_str() {
+        println!("  error: {e}");
+    }
 }
 
 /// Minimal synchronous JSON-RPC client.
@@ -169,7 +291,7 @@ impl Client {
     fn connect(data_dir: &std::path::Path) -> anyhow::Result<Client> {
         let path = data_dir.join(paths::SOCKET);
         let stream = UnixStream::connect(&path)
-            .with_context(|| format!("connexion à {} : le noyau est-il lancé ?", path.display()))?;
+            .with_context(|| format!("cannot connect to {}: is the core running? (make core)", path.display()))?;
         let reader = BufReader::new(stream.try_clone()?);
         let mut client = Client { stream, reader, next_id: 1 };
         client.call("hello", json!({"protocol_version": PROTOCOL_VERSION, "client": "cli"}))?;
@@ -181,7 +303,7 @@ impl Client {
         let mut line = String::new();
         // `read_line` returns the number of bytes read; 0 means end of stream.
         if self.reader.read_line(&mut line)? == 0 {
-            bail!("connexion fermée par le noyau");
+            bail!("connection closed by the core");
         }
         Ok(line.trim_end().to_string())
     }
@@ -206,7 +328,7 @@ impl Client {
             }
             let r: Response = serde_json::from_value(v)?;
             if let Some(e) = r.error {
-                bail!("erreur {} : {}", e.code, e.message);
+                bail!("error {}: {}", e.code, e.message);
             }
             return Ok(r.result.unwrap_or(Value::Null));
         }

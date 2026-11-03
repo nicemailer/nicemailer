@@ -40,6 +40,12 @@ struct FolderView: Decodable, Identifiable, Hashable {
     /// Targets offered by the move command from this folder, computed by
     /// the core: the app never decides on its own what is allowed.
     let moveTargets: [String]
+    /// Account of the folder. The sidebar shows one group per account when
+    /// there are several (an IMAP account and an mbox archive, say).
+    let accountId: Int
+    let accountName: String
+    /// "imap", or "archive" for an account created by an mbox import.
+    let accountKind: String
 }
 
 struct FolderList: Decodable {

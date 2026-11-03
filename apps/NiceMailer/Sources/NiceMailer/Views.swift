@@ -111,23 +111,39 @@ struct ConnectionErrorView: View {
 // MARK: - Folders
 // (`// MARK: -` comments create sections in Xcode's jump bar.)
 
-/// Sidebar: folders grouped by category (Travail, Rangement...).
+/// Sidebar: folders grouped by category (Travail, Rangement...), and by
+/// account when there are several.
 struct FolderSidebar: View {
     @Environment(AppModel.self) private var model
 
+    /// Accounts in the order of the folder list (the core sorts folders by
+    /// account), each once: (id, name).
+    private var accounts: [(Int, String)] {
+        var seen = Set<Int>()
+        return model.folders.compactMap { f in
+            // `insert` returns whether the element was new; `.inserted` is
+            // false for an account already listed.
+            seen.insert(f.accountId).inserted ? (f.accountId, f.accountName) : nil
+        }
+    }
+
     var body: some View {
         @Bindable var model = model
+        let accounts = self.accounts
         // Binding the selection to `selectedFolderId`: clicking a row writes
         // the row's `.tag` there, and the model's `didSet` loads the folder.
         List(selection: $model.selectedFolderId) {
-            // `id: \.0` tells `ForEach` to identify each tuple by its first
-            // element (the category key). `\.0` is a *key path*.
-            ForEach(Role.categoryTitles, id: \.0) { category, title in
-                let items = model.folders.filter { $0.category == category }
-                if !items.isEmpty {
-                    Section(title) {
-                        ForEach(items) { folder in
-                            FolderRow(folder: folder).tag(folder.id)
+            ForEach(accounts, id: \.0) { accountId, accountName in
+                // `id: \.0` tells `ForEach` to identify each tuple by its
+                // first element (the category key). `\.0` is a *key path*.
+                ForEach(Role.categoryTitles, id: \.0) { category, title in
+                    let items = model.folders.filter { $0.accountId == accountId && $0.category == category }
+                    if !items.isEmpty {
+                        // With a single account, its name would only add noise.
+                        Section(accounts.count > 1 ? "\(accountName) · \(title)" : title) {
+                            ForEach(items) { folder in
+                                FolderRow(folder: folder).tag(folder.id)
+                            }
                         }
                     }
                 }

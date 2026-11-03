@@ -1,3 +1,5 @@
 /target/
 /apps/NiceMailer/.build/
 /apps/NiceMailer/.swiftpm/
+# Mailbox exports used for testing the mbox import: personal data, never committed.
+*.mbox

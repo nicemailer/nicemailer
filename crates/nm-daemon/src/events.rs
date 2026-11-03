@@ -99,8 +99,9 @@ impl EventLog {
         Arc::new(Self::encode(&Event::ResyncRequired {}, &self.epoch, self.seq))
     }
 
-    /// Numbers, stores and broadcasts one event.
-    fn push(&mut self, event: Event) {
+    /// Numbers, stores and broadcasts one event. Public for events that do
+    /// not come from a `ChangeSet`, such as import progress.
+    pub fn push(&mut self, event: Event) {
         self.seq += 1;
         let line = Arc::new(Self::encode(&event, &self.epoch, self.seq));
         // Drop the oldest event when the buffer is full.
@@ -210,5 +211,21 @@ mod tests {
         assert_eq!(v["method"], "FolderChanged");
         assert_eq!(v["params"]["folder_id"], 3);
         assert_eq!(v["params"]["seq"], 7);
+    }
+
+    /// Import events carry the status fields directly in `params`, next to
+    /// the position, like every other notification.
+    #[test]
+    fn import_progress_is_a_flat_notification() {
+        let status = nm_api::ImportStatus { job_id: 2, imported: 500, total_bytes: 9, running: true, ..Default::default() };
+        let line = EventLog::encode(&Event::ImportProgress(status), "e_1", 8);
+        let v: serde_json::Value = serde_json::from_str(&line).unwrap();
+        assert_eq!(v["method"], "ImportProgress");
+        assert_eq!(v["params"]["job_id"], 2);
+        assert_eq!(v["params"]["imported"], 500);
+        assert_eq!(v["params"]["running"], true);
+        assert_eq!(v["params"]["seq"], 8);
+        // `error` is omitted while there is none.
+        assert!(v["params"].get("error").is_none());
     }
 }

@@ -250,7 +250,8 @@ Quand l'utilisateur prend ou change une décision sur une adresse, les autres ma
 - **Une décision Inbox ne vide que la Quarantine.** Les mails déjà archivés ont été traités : les remettre dans l'Inbox (des années d'échanges avec un collègue) serait un retour en arrière.
 - **Jamais déplacés** : Todo, Waiting, Sent, Drafts, Deleted et Junk, qui résultent d'une commande explicite de l'utilisateur, ainsi que les mails de l'Inbox marqués d'un drapeau.
 - **Décision de domaine** : même règle, pour les mails des adresses du domaine qui n'ont pas de décision propre.
-- **Authentification** : une décision favorable ne déplace que les mails dont le verdict est accepté, selon l'algorithme de `authentification-expediteur.md`. Un mail usurpé reste en Quarantine.
+- **Authentification** : une décision favorable ne déplace que les mails dont le verdict est accepté, selon l'algorithme de `authentification-expediteur.md`. Un mail usurpé reste en Quarantine. Exception : les mails d'un compte d'archives (import mbox) sont rangés sans condition d'authentification (`import-initial.md`, section 9).
+- **Comptes concernés** : tous les comptes, y compris les comptes d'archives, où le déplacement ne modifie que la base locale.
 - **Retrait d'une décision** : aucun mail n'est déplacé.
 - **Sources** : seules les décisions prises par un client (app, CLI, TUI, web, agent MCP) déclenchent le rangement. Une décision reçue d'un autre Mac (`config_sync`) n'en déclenche pas : cet autre Mac a déjà rangé les mails, et la synchronisation IMAP rapporte ces déplacements. Les décisions prises par le noyau à l'import ne trouvent rien à ranger.
 - **Exécution** : un déplacement ordinaire par mail, dans le spool, que l'exécuteur regroupe en `UID MOVE` sur plusieurs UID (`modele de donnees.md`, section 6). Chaque mail déplacé porte la source de la décision (`modified_by`) et une ligne `move` dans `audit_log`.

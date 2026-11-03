@@ -4,15 +4,18 @@ Mail client for macOS: a Rust core owns the database and the logic, and a SwiftU
 
 ## Status: first working version
 
-This version is for testing user-experience hypotheses on a database of fake mails. It has no IMAP, no SMTP, no LaunchAgent and no code signing.
+This version is for testing user-experience hypotheses on a database of fake mails, or on a real mailbox imported from an mbox file. It has no IMAP, no SMTP, no LaunchAgent and no code signing.
+
+Documentation of the features is in `docs/`.
 
 ```
 crates/
   nm-core/     pure domain: folder roles, move targets, preselection after a reply
-  nm-store/    SQLite: schema (loaded from specifications/schema.sql), paginated queries, commands, seed
+  nm-store/    SQLite: schema (loaded from specifications/schema.sql), paginated queries, commands,
+               raw message files, mbox import, seed
   nm-api/      JSON-RPC contract: methods, views, events, error codes
   nm-daemon/   nicemailer-core binary: JSON-RPC server on a Unix socket
-  nm-cli/      nicemailer binary: socket client, and the seed command
+  nm-cli/      nicemailer binary: socket client, seed and import-mbox commands
 apps/
   NiceMailer/  SwiftUI app (Swift Package)
 ```
@@ -28,6 +31,14 @@ make app      # in another terminal
 ```
 
 `NICEMAILER_DATA_DIR=/other/directory` changes the data directory for the core, the CLI and the app. The socket path must stay under 104 characters.
+
+## Importing a real mailbox
+
+With the core running, an mbox export (HEY, Gmail, Thunderbird…) can be imported into an archive account: sent mails go to Sent, the rest to Archive. See `docs/import-mbox.md`.
+
+```sh
+nicemailer import-mbox ~/Downloads/mailbox.mbox --account hey --address me@hey.com
+```
 
 ## App shortcuts
 
@@ -49,6 +60,7 @@ nicemailer call list_threads '{"folder_id": 1, "limit": 5}'
 nicemailer call get_thread '{"thread_id": 42}'
 nicemailer call search '{"query": "facture"}'
 nicemailer call move_thread '{"thread_id": 42, "target": "todo", "from_folder_id": 1}'
+nicemailer import-status  # running or last mbox import
 nicemailer watch          # live event stream
 ```
 
