@@ -114,6 +114,69 @@ final class GeekController {
     /// The reading pane's scroll view, to scroll it from the keyboard.
     weak var readerScroll: NSScrollView?
 
+    /// Display choices per thread (`ThreadDisplay.State`), for the session.
+    var readerStates: [Int: ThreadDisplay.State] = [:]
+    /// Positions of the quoted blocks and of the other blocks in the reader,
+    /// set by the reader after layout, for `S`.
+    @ObservationIgnored var readerSkip: (quotes: [(Double, Double)], texts: [Double]) = ([], [])
+
+    /// Display choices of the open thread.
+    var readerState: ThreadDisplay.State {
+        get { model.openThread.flatMap { readerStates[$0.id] } ?? ThreadDisplay.State() }
+        set { if let id = model.openThread?.id { readerStates[id] = newValue } }
+    }
+
+    /// `T` (like mutt's toggle-quoted): shows everything the simplified
+    /// display hides in this thread (folded messages, quotes, signatures…),
+    /// or goes back to the simplified display.
+    func toggleShowAll() {
+        var s = readerState
+        s.showAll.toggle()
+        if !s.showAll {
+            s.folding = [:]
+            s.revealed = []
+        }
+        readerState = s
+        model.flash = s.showAll ? L("Whole conversation shown (T)") : L("Simplified conversation (T)")
+    }
+
+    /// `S` (like mutt's skip-quoted): scrolls to the text after the next
+    /// quoted block.
+    func skipQuoted() {
+        guard let scroll = readerScroll, let doc = scroll.documentView else { return }
+        let clip = scroll.contentView
+        let y = Double(clip.bounds.origin.y)
+        guard let target = ThreadDisplay.skipTarget(from: y, quotes: readerSkip.quotes, texts: readerSkip.texts) else {
+            model.flash = L("No more quoted text")
+            return
+        }
+        let maxY = max(0, doc.frame.height - clip.bounds.height)
+        clip.scroll(to: NSPoint(x: 0, y: min(maxY, CGFloat(target))))
+        scroll.reflectScrolledClipView(clip)
+    }
+
+    /// A click in the reader on a header (fold / unfold the message) or on
+    /// a "···" line (show that hidden part). Links use the `nm:` scheme.
+    func readerLink(_ url: URL) -> Bool {
+        guard url.scheme == "nm" else { return false }
+        let parts = url.pathComponents.filter { $0 != "/" }
+        var s = readerState
+        switch url.host {
+        case "fold":
+            if let id = parts.first.flatMap(Int.init),
+               let m = model.openThread?.messages.first(where: { $0.id == id }) {
+                let unfolded = s.folding[id] ?? m.expanded
+                s.folding[id] = !unfolded
+            }
+        case "reveal":
+            if parts.count == 2 { s.revealed.insert("\(parts[0]):\(parts[1])") }
+        default:
+            return false
+        }
+        readerState = s
+        return true
+    }
+
     /// Last row clicked and when, to detect double-clicks (see `clickSearch`).
     @ObservationIgnored var lastClick: (tag: String, time: TimeInterval) = ("", 0)
 
@@ -297,6 +360,8 @@ final class GeekController {
         case "u": model.toggleSeenTargets()
         case "*": model.toggleFlagTargets()
         case "t": openPicker(.tag)
+        case "T": toggleShowAll()
+        case "S": skipQuoted()
         case "g": openPicker(.group)
         case "/":
             searchQuery = model.searchText
@@ -407,6 +472,8 @@ final class GeekController {
             ("t", L("tag")),
             ("g", L("add the sender to a group")),
             ("u  *", L("read / unread, flag")),
+            ("T", L("show / hide quotes, signatures, folded mails")),
+            ("S", L("skip to the text after the next quote")),
             ("/", L("search")),
             (";…", L("go to a folder or a screen")),
             ("s…", L("save")),

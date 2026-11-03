@@ -121,6 +121,27 @@ struct MessageView: Decodable, Identifiable, Hashable {
     let hasRemoteContent: Bool
     /// Display remembered for the sender: "text", "html" or nil (default).
     let fromBodyFormat: String?
+    /// The text cut into segments by the core, for the simplified display
+    /// (`docs/thread-display.md`).
+    let segments: [SegmentView]
+    /// Brings nothing new: only quotes earlier messages.
+    let onlyQuotes: Bool
+    /// Unfolded by default (latest message, unread ones).
+    let expanded: Bool
+    /// Recipients worth showing (they changed since the previous message).
+    let showRecipients: Bool
+}
+
+/// A piece of a message's text, typed by the core: "text", "quote",
+/// "quote_tail", "signature", "boilerplate", "forward" or "copy".
+struct SegmentView: Decodable, Hashable {
+    let kind: String
+    let text: String
+    let depth: Int
+    /// Hidden by default.
+    let hidden: Bool
+    /// For a quote tail: its content is in an earlier message.
+    let inThread: Bool
 }
 
 /// A whole thread, all folders included.
@@ -300,6 +321,23 @@ enum Format {
         if cal.isDate(d, equalTo: Date(), toGranularity: .year) { return geekDayMonth.string(from: d) }
         return geekShort.string(from: d)
     }
+
+    /// Date of a message header in the geek reader: "14:05" today,
+    /// "yesterday 14:05", "3 Nov 14:05" this year, "3 Nov 2021" before.
+    static func geekMessageDate(_ ts: Int) -> String {
+        let d = Date(timeIntervalSince1970: TimeInterval(ts))
+        let cal = Calendar.current
+        if cal.isDateInToday(d) { return time.string(from: d) }
+        if cal.isDateInYesterday(d) { return L("yesterday %@", time.string(from: d)) }
+        if cal.isDate(d, equalTo: Date(), toGranularity: .year) {
+            return geekDayMonth.string(from: d) + " " + time.string(from: d)
+        }
+        return geekDayMonthYear.string(from: d)
+    }
+
+    private static let geekDayMonthYear: DateFormatter = {
+        let f = DateFormatter(); f.locale = .autoupdatingCurrent; f.setLocalizedDateFormatFromTemplate("dMMMyyyy"); return f
+    }()
 
     /// Full date and time, for the message header.
     static func longDate(_ ts: Int) -> String {

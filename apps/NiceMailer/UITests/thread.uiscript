@@ -1,0 +1,41 @@
+# Simplified display of a thread: folded messages, hidden quotes and
+# signatures, T (show all), clicks on headers and on "···" lines.
+key h
+type fixture arc
+key ret
+key j
+key j
+key j
+expect selected_subject = Chantier
+# Only the latest message (Bob, who only quotes) is open.
+expect reader_folded = 3
+expect reader_text ~ only quotes earlier messages
+expect reader_text ~ quoted lines
+expect reader_text !~ not in this conversation
+expect reader_text !~ Atelier Dupuis
+snap simplified
+# T shows everything, T again simplifies.
+key T
+expect show_all = true
+expect reader_folded = 0
+expect reader_text ~ Atelier Dupuis
+expect reader_text ~ Envoyé de mon iPhone
+expect reader_text ~ Parfait, à jeudi
+snap show-all
+key T
+expect show_all = false
+expect reader_folded = 3
+# A click on the first header unfolds that message: its text shows, its
+# signature stays hidden behind a "···" line.
+click reader-link:0
+expect reader_folded = 2
+expect reader_text ~ Peux-tu passer jeudi
+expect reader_text ~ ··· signature
+expect reader_text !~ Atelier Dupuis
+# The second link is now that signature line: a click shows it.
+click reader-link:1
+expect reader_text ~ Atelier Dupuis
+snap revealed
+# Folding the message again with a click on its header.
+click reader-link:0
+expect reader_folded = 3

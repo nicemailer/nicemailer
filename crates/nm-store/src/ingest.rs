@@ -20,7 +20,10 @@ use mail_parser::{MessageParser, MessagePart, PartKind};
 /// `message_body.parser_version`. Bump it when the extraction or the
 /// sanitization changes: `reindex` will reinterpret older rows
 /// (`stockage-brut.md`, section 8).
-pub const PARSER_VERSION: i64 = 1;
+///
+/// 2: the sanitized HTML keeps the markers of quoted history (see
+/// `sanitize_html`).
+pub const PARSER_VERSION: i64 = 2;
 
 /// Length of `message.snippet`, in characters.
 const SNIPPET_CHARS: usize = 200;
@@ -263,7 +266,14 @@ fn collect_attachments(part: MessagePart<'_>, prefix: &str, is_root: bool, out: 
 /// images (tracking pixels, `modele de donnees.md`). Returns the clean HTML
 /// and whether remote content was removed.
 ///
-/// Images embedded in the message (`cid:` URLs) are kept.
+/// Images embedded in the message (`cid:` URLs) are kept, and so are the
+/// markers mail apps put on quoted history and signatures, so that clients
+/// can fold them (`docs/thread-display.md`): Gmail's `gmail_quote`,
+/// `gmail_attr` and `gmail_signature` classes, Thunderbird's
+/// `moz-cite-prefix` and `moz-signature`, Apple Mail's
+/// `<blockquote type="cite">`, Outlook's `divRplyFwdMsg` and `appendonsend`
+/// ids. Ids are prefixed with `nm-` so a mail cannot clash with the app's
+/// own ids.
 pub fn sanitize_html(html: &str) -> (String, bool) {
     // The filter closure must be `'static`, so the flag is shared through an
     // `Arc` (a reference-counted pointer) rather than borrowed.
@@ -275,6 +285,11 @@ pub fn sanitize_html(html: &str) -> (String, bool) {
     let flag = remote.clone();
     let clean = ammonia::Builder::default()
         .add_url_schemes(["cid"])
+        .add_allowed_classes("div", ["gmail_quote", "gmail_attr", "gmail_signature", "moz-cite-prefix", "moz-signature"])
+        .add_allowed_classes("blockquote", ["gmail_quote"])
+        .add_tag_attributes("blockquote", ["type"])
+        .add_tag_attributes("div", ["id"])
+        .id_prefix(Some("nm-"))
         .attribute_filter(move |element, attribute, value| {
             if element == "img" && attribute == "src" {
                 let v = value.trim_start().to_ascii_lowercase();
@@ -379,5 +394,16 @@ Subject:  Bonjour =?utf-8?Q?=C3=A0_tous?= \r\nDate: Tue, 23 Jun 2020 21:20:56 +0
         // mail-parser is lenient: arbitrary bytes are parsed as a body.
         let p = parse(b"\x00\x01\x02 not a mail");
         assert!(p.subject.is_empty());
+    }
+
+    #[test]
+    fn quote_markers_survive_sanitization() {
+        let html = r#"<div>OK</div><div class="gmail_quote evil"><div class="gmail_attr">On Mon, A wrote:</div><blockquote class="gmail_quote" type="cite" onclick="x()">old</blockquote></div><div id="divRplyFwdMsg">From: A</div>"#;
+        let (clean, _) = sanitize_html(html);
+        assert!(clean.contains(r#"class="gmail_quote""#), "{clean}");
+        assert!(clean.contains(r#"class="gmail_attr""#));
+        assert!(clean.contains(r#"type="cite""#));
+        assert!(clean.contains(r#"id="nm-divRplyFwdMsg""#));
+        assert!(!clean.contains("evil") && !clean.contains("onclick"));
     }
 }

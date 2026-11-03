@@ -34,6 +34,9 @@ enum UIScript {
     /// What the HTML reader shows (text, font loaded, font family), set
     /// when a page finishes loading.
     static var html: [String: String] = [:]
+    /// Text shown by the text reader, and its number of `nm:` links.
+    static var readerText = ""
+    static var readerLinks = 0
 
     private static var started = false
     /// The test window and its model, kept alive while the script runs.
@@ -112,10 +115,11 @@ extension View {
 /// | `resize WxH` | window size |
 /// | `snap NAME` | PNG of the window in the output directory |
 /// | `wait MS` | pause |
-/// | `expect FIELD OP VALUE` | check the state (`=`, `!=`, `~` contains, `>`, `<`), waiting up to 5 s |
+/// | `expect FIELD OP VALUE` | check the state (`=`, `!=`, `~` contains, `!~` does not contain, `>`, `<`), waiting up to 5 s |
 ///
 /// Targets: `thread:N` (N-th row of the list), `search:N`, `picker:N`,
-/// `screen:N`, `folder:ACCOUNT/NAME`.
+/// `screen:N`, `folder:ACCOUNT/NAME`, `reader-link:N` (N-th header or
+/// "···" line of the reader).
 @MainActor
 private final class Runner {
     let model: AppModel
@@ -232,6 +236,22 @@ private final class Runner {
     func click(at point: CGPoint, modifiers: NSEvent.ModifierFlags, count: Int) {
         guard let w = window, let content = w.contentView else { return }
         let target = content.hitTest(point) ?? content
+        if target is NSTextView {
+            // A text view follows a click in a tracking loop that waits for
+            // the mouse up: queue it first, then send the mouse down.
+            guard let down = NSEvent.mouseEvent(
+                with: .leftMouseDown, location: point, modifierFlags: modifiers,
+                timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: w.windowNumber, context: nil,
+                eventNumber: 0, clickCount: count, pressure: 1),
+                let up = NSEvent.mouseEvent(
+                    with: .leftMouseUp, location: point, modifierFlags: modifiers,
+                    timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: w.windowNumber, context: nil,
+                    eventNumber: 0, clickCount: count, pressure: 0)
+            else { return }
+            NSApp.postEvent(up, atStart: false)
+            target.mouseDown(with: down)
+            return
+        }
         for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
             guard let e = NSEvent.mouseEvent(
                 with: type, location: point, modifierFlags: modifiers, timestamp: ProcessInfo.processInfo.systemUptime,
@@ -289,6 +309,7 @@ private final class Runner {
         case "=": return got == wanted
         case "!=": return got != wanted
         case "~": return got.contains(wanted)
+        case "!~": return !got.contains(wanted)
         case ">": return (Double(got) ?? .nan) > (Double(wanted) ?? .nan)
         case "<": return (Double(got) ?? .nan) < (Double(wanted) ?? .nan)
         default: return false
@@ -361,6 +382,10 @@ private final class Runner {
             "list_filter": m.listFilter.map { "\($0)" } ?? "",
             "export_files": exports,
             "font_size": "\(Int(TextSize.shared.size))",
+            "reader_text": UIScript.readerText,
+            "reader_links": "\(UIScript.readerLinks)",
+            "reader_folded": "\(m.openThread.map { ThreadDisplay.foldedCount(ThreadDisplay.blocks($0, c.readerState)) } ?? 0)",
+            "show_all": "\(c.readerState.showAll)",
             // Height of the selected row, as laid out.
             "row_height": "\(Int((UIScript.frames["thread-\(m.selectedThreadId ?? -1)"]?.height ?? 0).rounded()))",
             "html_text": UIScript.html["text"] ?? "",

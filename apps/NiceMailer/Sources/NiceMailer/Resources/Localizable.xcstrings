@@ -341,6 +341,16 @@
         }
       }
     },
+    "No more quoted text": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Plus de texte cité"
+          }
+        }
+      }
+    },
     "No result": {
       "localizations": {
         "fr": {
@@ -407,6 +417,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Enregistré : %@"
+          }
+        }
+      }
+    },
+    "Simplified conversation (T)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conversation simplifiée (T)"
           }
         }
       }
@@ -507,6 +527,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Tapez un nom"
+          }
+        }
+      }
+    },
+    "Whole conversation shown (T)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conversation complète (T)"
           }
         }
       }
@@ -731,6 +761,16 @@
         }
       }
     },
+    "only quotes earlier messages": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "cite seulement les messages précédents"
+          }
+        }
+      }
+    },
     "read / unread, flag": {
       "localizations": {
         "fr": {
@@ -797,6 +837,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "recherche : %@"
+          }
+        }
+      }
+    },
+    "show / hide quotes, signatures, folded mails": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "afficher / masquer citations, signatures, mails repliés"
+          }
+        }
+      }
+    },
+    "skip to the text after the next quote": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "aller au texte après la citation suivante"
           }
         }
       }
@@ -877,6 +937,56 @@
           "stringUnit": {
             "state": "translated",
             "value": "deux colonnes"
+          }
+        }
+      }
+    },
+    "yesterday %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "hier %@"
+          }
+        }
+      }
+    },
+    "··· %lld quoted lines": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "··· %lld lignes citées"
+          }
+        }
+      }
+    },
+    "··· %lld quoted lines, not in this conversation": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "··· %lld lignes citées, absentes de cette conversation"
+          }
+        }
+      }
+    },
+    "··· copy of an earlier message": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "··· copie d'un message précédent"
+          }
+        }
+      }
+    },
+    "··· signature": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "··· signature"
           }
         }
       }

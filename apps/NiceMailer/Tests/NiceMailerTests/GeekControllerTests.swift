@@ -278,4 +278,23 @@ struct GeekControllerTests {
             characters: "q", charactersIgnoringModifiers: "q", isARepeat: false, keyCode: 12)!
         #expect(!controller.handle(event))
     }
+
+    // MARK: Thread display
+
+    @Test func capitalTTogglesTheWholeConversationForThisThread() {
+        #expect(!controller.readerState.showAll)
+        press("T")
+        #expect(controller.readerState.showAll)
+        press("T")
+        #expect(!controller.readerState.showAll)
+    }
+
+    @Test func readerLinksFoldMessagesAndRevealParts() {
+        #expect(controller.readerLink(URL(string: "nm://fold/10")!))
+        #expect(controller.readerState.folding[10] == false)
+        #expect(controller.readerLink(URL(string: "nm://reveal/10/2")!))
+        #expect(controller.readerState.revealed.contains("10:2"))
+        // Other links are left to the text view (opened in the browser).
+        #expect(!controller.readerLink(URL(string: "https://example.org")!))
+    }
 }

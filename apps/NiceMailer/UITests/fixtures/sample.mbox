@@ -1,0 +1,399 @@
+From x Mon Nov  2 10:00:00 2026
+From: Alice <alice@example.org>
+To: me@example.com
+Subject: Rapport mensuel
+Message-ID: <r1@example.org>
+Content-Type: multipart/alternative; boundary="B"
+
+--B
+Content-Type: text/plain; charset=utf-8
+
+Bonjour, le rapport est ici : https://example.org/rapport
+--B
+Content-Type: text/html; charset=utf-8
+
+<p>Bonjour, le <b>rapport</b> est <a href="https://example.org/rapport">ici</a>.</p>
+--B--
+
+From x Mon Nov  2 11:00:00 2026
+From: me@example.com
+To: alice@example.org
+Subject: Re: Rapport mensuel
+Message-ID: <r2@example.com>
+In-Reply-To: <r1@example.org>
+
+Merci Alice.
+
+From x Tue Nov  3 08:00:00 2026
+From: Lettre <news@example.net>
+To: me@example.com
+Subject: La lettre de novembre
+Message-ID: <n1@example.net>
+Content-Type: text/html; charset=utf-8
+
+<h1>Novembre</h1><p>Les nouveautés du mois.</p>
+
+From x Mon Nov  2 09:00:00 2026
+From: Bob <bob@example.org>
+To: me@example.com
+Subject: Un long mail
+Message-ID: <l1@example.org>
+
+Ligne 1 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 2 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 3 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 4 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 5 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 6 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 7 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 8 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 9 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 10 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 11 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 12 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 13 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 14 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 15 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 16 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 17 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 18 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 19 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 20 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 21 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 22 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 23 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 24 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 25 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 26 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 27 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 28 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 29 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 30 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 31 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 32 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 33 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 34 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 35 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 36 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 37 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 38 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 39 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 40 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 41 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 42 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 43 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 44 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 45 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 46 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 47 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 48 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 49 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 50 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 51 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 52 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 53 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 54 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 55 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 56 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 57 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 58 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 59 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 60 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 61 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 62 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 63 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 64 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 65 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 66 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 67 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 68 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 69 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 70 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 71 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 72 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 73 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 74 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 75 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 76 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 77 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 78 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 79 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 80 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 81 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 82 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 83 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 84 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 85 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 86 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 87 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 88 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 89 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 90 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 91 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 92 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 93 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 94 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 95 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 96 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 97 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 98 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 99 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 100 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 101 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 102 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 103 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 104 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 105 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 106 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 107 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 108 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 109 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 110 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 111 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 112 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 113 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 114 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 115 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 116 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 117 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 118 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 119 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 120 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 121 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 122 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 123 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 124 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 125 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 126 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 127 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 128 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 129 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 130 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 131 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 132 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 133 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 134 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 135 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 136 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 137 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 138 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 139 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 140 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 141 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 142 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 143 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 144 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 145 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 146 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 147 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 148 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 149 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 150 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 151 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 152 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 153 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 154 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 155 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 156 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 157 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 158 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 159 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 160 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 161 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 162 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 163 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 164 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 165 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 166 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 167 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 168 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 169 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 170 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 171 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 172 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 173 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 174 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 175 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 176 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 177 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 178 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 179 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 180 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 181 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 182 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 183 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 184 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 185 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 186 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 187 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 188 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 189 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 190 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 191 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 192 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 193 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 194 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 195 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 196 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 197 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 198 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 199 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 200 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 201 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 202 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 203 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 204 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 205 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 206 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 207 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 208 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 209 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 210 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 211 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 212 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 213 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 214 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 215 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 216 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 217 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 218 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 219 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 220 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 221 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 222 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 223 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 224 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 225 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 226 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 227 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 228 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 229 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 230 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 231 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 232 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 233 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 234 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 235 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 236 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 237 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 238 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 239 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 240 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 241 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 242 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 243 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 244 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 245 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 246 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 247 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 248 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 249 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 250 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 251 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 252 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 253 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 254 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 255 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 256 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 257 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 258 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 259 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 260 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 261 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 262 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 263 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 264 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 265 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 266 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 267 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 268 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 269 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 270 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 271 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 272 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 273 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 274 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 275 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 276 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 277 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 278 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 279 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 280 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 281 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 282 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 283 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 284 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 285 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 286 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 287 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 288 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 289 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 290 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 291 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 292 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 293 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 294 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 295 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 296 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 297 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 298 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 299 du long mail, pour tester le défilement du panneau de lecture.
+Ligne 300 du long mail, pour tester le défilement du panneau de lecture.
+
+From x Fri Oct 30 10:00:00 2026
+From: Alice <alice@example.org>
+To: me@example.com
+Subject: Chantier
+Message-ID: <c1@example.org>
+
+Peux-tu passer jeudi sur le chantier pour valider les plans du rez-de-chaussée ?
+
+-- 
+Alice Martin
+Atelier Dupuis
+
+From x Fri Oct 30 11:00:00 2026
+From: me@example.com
+To: alice@example.org
+Cc: bob@example.org
+Subject: Re: Chantier
+Message-ID: <c2@example.com>
+In-Reply-To: <c1@example.org>
+
+Oui, jeudi 10 h.
+
+Envoyé de mon iPhone
+
+Le 30 oct. 2026 à 10:00, Alice <alice@example.org> a écrit :
+> Peux-tu passer jeudi sur le chantier pour valider les plans du rez-de-chaussée ?
+>
+> -- 
+> Alice Martin
+> Atelier Dupuis
+
+From x Fri Oct 30 12:00:00 2026
+From: Alice <alice@example.org>
+To: me@example.com
+Cc: bob@example.org
+Subject: Re: Chantier
+Message-ID: <c3@example.org>
+In-Reply-To: <c2@example.com>
+
+> Oui, jeudi 10 h.
+Parfait, à jeudi. J'apporte les plans imprimés.
+
+-- 
+Alice Martin
+Atelier Dupuis
+
+From x Fri Oct 30 13:00:00 2026
+From: Bob <bob@example.org>
+To: alice@example.org
+Cc: me@example.com
+Subject: Re: Chantier
+Message-ID: <c4@example.org>
+In-Reply-To: <c3@example.org>
+
+Le 30 oct. 2026 à 12:00, Alice <alice@example.org> a écrit :
+> Parfait, à jeudi. J'apporte les plans imprimés.
+

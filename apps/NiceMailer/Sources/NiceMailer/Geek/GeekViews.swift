@@ -455,10 +455,15 @@ private struct GeekReaderColumn: View {
 
     var body: some View {
         if let thread = model.openThread, thread.id == model.selectedThreadId {
+            let state = controller.readerState
+            let blocks = ThreadDisplay.blocks(thread, state)
             VStack(spacing: 0) {
                 HStack {
                     Text(thread.subject).font(.geek(13, weight: .bold)).lineLimit(1)
                     Spacer()
+                    if state.showAll {
+                        Text("T").foregroundStyle(Palette.accent)
+                    }
                     if model.latestReceived?.bodyHtml != nil {
                         // The text / HTML switch (`ui.md`); also `vh`.
                         HStack(spacing: 0) {
@@ -474,9 +479,9 @@ private struct GeekReaderColumn: View {
                 .frame(height: scaled(26))
                 Palette.separator.frame(height: 1)
                 if model.bodyFormat == "html" {
-                    HTMLReader(html: threadHTML(thread))
+                    HTMLReader(html: threadHTML(thread, state))
                 } else {
-                    TextReader(thread: thread, controller: controller)
+                    TextReader(blocks: blocks, threadId: thread.id, controller: controller)
                 }
             }
         } else {
@@ -484,27 +489,40 @@ private struct GeekReaderColumn: View {
         }
     }
 
-    /// The thread as one HTML document: headers in monospace, then each
-    /// message's sanitized HTML, or its text when it has none.
-    private func threadHTML(_ thread: ThreadView) -> String {
+    /// The thread as one HTML document. Each message is a `<details>`
+    /// element (it folds without JavaScript), open when unfolded; its body
+    /// is the sanitized HTML, or the visible segments of its text. Quoted
+    /// history and signatures marked by the sender's mail app are hidden
+    /// unless `T` shows everything.
+    private func threadHTML(_ thread: ThreadView, _ state: ThreadDisplay.State) -> String {
         func esc(_ s: String) -> String {
             s.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;")
                 .replacingOccurrences(of: ">", with: "&gt;")
         }
+        // Markers kept by the core's sanitizer (`ingest.rs`, `sanitize_html`).
+        let hideQuotes = state.showAll ? "" : """
+        .gmail_quote, .gmail_signature, .moz-cite-prefix, .moz-signature, blockquote[type=cite],
+        #nm-divRplyFwdMsg, #nm-divRplyFwdMsg ~ *, hr:has(+ #nm-divRplyFwdMsg), #nm-appendonsend ~ * { display: none; }
+        """
         var html = """
         <html><head><meta charset="utf-8"><style>
         \(Fonts.cssFontFaces)
         :root { color-scheme: light dark; }
         /* The mail's own styles are removed by the sanitizer: everything is
            shown in the theme font, like the text reader. */
-        body, table, td, p, div, span, a, li { font-family: "NM Mono", ui-monospace, monospace; }
+        body, table, td, p, div, span, a, li, summary { font-family: "NM Mono", ui-monospace, monospace; }
         body { margin: 16px; font-size: \(Int(scaled(14)))px; }
-        .h { font-size: \(Int(scaled(11)))px; color: #888; margin: 0 0 12px; white-space: pre-wrap; }
-        pre { font: \(Int(scaled(14)))px "NM Mono", ui-monospace, monospace; white-space: pre-wrap; }
-        hr { border: 0; border-top: 1px solid #8884; margin: 24px 0; }
+        summary { font-size: \(Int(scaled(12)))px; color: #888; cursor: pointer; list-style: none; margin: 4px 0; }
+        summary::-webkit-details-marker { display: none; }
+        details[open] summary { margin-bottom: 12px; }
+        .q { color: #888; border-left: 2px solid #8886; padding-left: 8px; }
+        .m { color: #888; font-size: \(Int(scaled(12)))px; }
+        pre { font: \(Int(scaled(14)))px "NM Mono", ui-monospace, monospace; white-space: pre-wrap; margin: 0 0 8px; }
+        hr { border: 0; border-top: 1px solid #8884; margin: 16px 0; }
         img { max-width: 100%; height: auto; }
         /* Remote images were removed by the core: hide the empty boxes. */
         img:not([src]), img[src^="cid:"] { display: none; }
+        \(hideQuotes)
         /* No scroll bar in the geek theme (ui.md). */
         html { scrollbar-width: none; }
         ::-webkit-scrollbar { display: none; }
@@ -512,32 +530,41 @@ private struct GeekReaderColumn: View {
         """
         for (i, m) in thread.messages.enumerated() {
             if i > 0 { html += "<hr>" }
-            html += "<div class=\"h\">\(esc(header(m)))</div>"
-            if let body = m.bodyHtml { html += body } else { html += "<pre>\(esc(m.bodyText ?? ""))</pre>" }
+            let unfolded = state.showAll || (state.folding[m.id] ?? m.expanded)
+            let who = esc(m.fromName ?? m.fromAddr ?? "")
+            let date = esc(Format.geekMessageDate(m.dateReceived))
+            let summary = unfolded ? "\(who) · \(date)" : "\(who) · \(date) — \(esc(ThreadDisplay.snippet(m)))"
+            html += "<details\(unfolded ? " open" : "")><summary>\(summary)</summary>"
+            if let body = m.bodyHtml {
+                html += body
+            } else {
+                for (j, seg) in m.segments.enumerated() {
+                    if !seg.hidden || state.showAll || state.revealed.contains("\(m.id):\(j)") {
+                        let cls = seg.kind == "text" || seg.kind == "forward" ? "" : " class=\"q\""
+                        html += "<pre\(cls)>\(esc(seg.text))</pre>"
+                    } else {
+                        html += "<div class=\"m\">\(esc(ThreadDisplay.label(seg)))</div>"
+                    }
+                }
+            }
+            html += "</details>"
         }
         return html + "</body></html>"
     }
 }
 
-/// Header lines of a message, shared by the text and HTML readers.
-private func header(_ m: MessageView) -> String {
-    let from = m.fromName.map { "\($0) <\(m.fromAddr ?? "")>" } ?? m.fromAddr ?? ""
-    var lines = [L("From: %@", from)]
-    if !m.to.isEmpty { lines.append(L("To: %@", m.to.map(\.addr).joined(separator: ", "))) }
-    if !m.cc.isEmpty { lines.append(L("Cc: %@", m.cc.map(\.addr).joined(separator: ", "))) }
-    lines.append(L("Date: %@", Format.longDate(m.dateReceived)) + "   [\(Role.name(m.folderRole))]")
-    return lines.joined(separator: "\n")
-}
-
 /// Text reader: an AppKit text view, fast with long mails and selectable,
-/// without scroll bars. The controller keeps its scroll view to scroll it
-/// from the keyboard (space, ctrl-d, ctrl-u).
+/// without scroll bars. It draws the blocks of `ThreadDisplay`: headers and
+/// "···" lines are links (`nm:` scheme) handled by the controller. The
+/// controller keeps the scroll view to scroll it from the keyboard (space,
+/// ctrl-d, ctrl-u, S).
 ///
 /// Swift note: `NSViewRepresentable` wraps an AppKit view for SwiftUI;
 /// `makeNSView` builds it once, `updateNSView` refreshes it when the data
 /// changes.
 private struct TextReader: NSViewRepresentable {
-    let thread: ThreadView
+    let blocks: [ThreadDisplay.Block]
+    let threadId: Int
     let controller: GeekController
 
     func makeNSView(context: Context) -> NSScrollView {
@@ -549,46 +576,130 @@ private struct TextReader: NSViewRepresentable {
             text.isEditable = false
             text.drawsBackground = false
             text.textContainerInset = NSSize(width: 12, height: 12)
-            text.isAutomaticLinkDetectionEnabled = true
+            text.delegate = context.coordinator
+            // Links keep the colors given below: no blue, no underline.
+            text.linkTextAttributes = [.cursor: NSCursor.pointingHand]
         }
         return scroll
     }
 
     func updateNSView(_ scroll: NSScrollView, context: Context) {
         controller.readerScroll = scroll
+        context.coordinator.controller = controller
         guard let text = scroll.documentView as? NSTextView else { return }
-        // Rebuild only when the thread changes, so a redraw does not reset
-        // the scroll position.
-        let key = "\(thread.id)-\(thread.messages.count)-\(thread.messages.last?.id ?? 0)-\(TextSize.shared.size)"
+        // Rebuild only when the content changes, so a redraw does not reset
+        // the scroll position; a new thread starts at the top.
+        let key = "\(blocks.hashValue)-\(TextSize.shared.size)"
         if context.coordinator.key == key { return }
+        let sameThread = context.coordinator.threadId == threadId
         context.coordinator.key = key
-        text.textStorage?.setAttributedString(attributed(thread))
-        text.scrollToBeginningOfDocument(nil)
+        context.coordinator.threadId = threadId
+        let (string, kinds) = attributed(blocks)
+        text.textStorage?.setAttributedString(string)
+        if !sameThread { text.scrollToBeginningOfDocument(nil) }
+        measure(text, kinds: kinds)
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
-    final class Coordinator { var key = "" }
 
-    private func attributed(_ thread: ThreadView) -> NSAttributedString {
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        var key = ""
+        var threadId = -1
+        weak var controller: GeekController?
+
+        /// Header and "···" links go to the controller; other links (URLs
+        /// in the mail) open normally.
+        func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {
+            guard let url = link as? URL ?? (link as? String).flatMap(URL.init(string:)) else { return false }
+            return MainActor.assumeIsolated { controller?.readerLink(url) ?? false }
+        }
+    }
+
+    /// Kind of each block, with its character range, for `S` and tests.
+    enum Region { case quote, text }
+
+    private func attributed(_ blocks: [ThreadDisplay.Block]) -> (NSAttributedString, [(Region, NSRange)]) {
         let out = NSMutableAttributedString()
-        let headerAttrs: [NSAttributedString.Key: Any] = [
-            .font: Fonts.scaled(11),
-            .foregroundColor: NSColor(Palette.muted),
-        ]
+        var regions: [(Region, NSRange)] = []
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineSpacing = 3
-        let bodyAttrs: [NSAttributedString.Key: Any] = [
-            .font: Fonts.scaled(14),
-            .foregroundColor: NSColor(Palette.text),
-            .paragraphStyle: paragraph,
-        ]
-        for (i, m) in thread.messages.enumerated() {
-            if i > 0 { out.append(NSAttributedString(string: "\n\n" + String(repeating: "─", count: 40) + "\n\n", attributes: headerAttrs)) }
-            out.append(NSAttributedString(string: header(m) + "\n\n", attributes: headerAttrs))
-            let body = (m.bodyText ?? L("(body not downloaded)")).trimmingCharacters(in: .whitespacesAndNewlines)
-            out.append(NSAttributedString(string: body, attributes: bodyAttrs))
+        let muted = NSColor(Palette.muted)
+        let body: [NSAttributedString.Key: Any] = [.font: Fonts.scaled(14), .foregroundColor: NSColor(Palette.text), .paragraphStyle: paragraph]
+        let dim: [NSAttributedString.Key: Any] = [.font: Fonts.scaled(14), .foregroundColor: muted, .paragraphStyle: paragraph]
+        let small: [NSAttributedString.Key: Any] = [.font: Fonts.scaled(12), .foregroundColor: muted]
+        func add(_ s: String, _ attrs: [NSAttributedString.Key: Any], link: String? = nil, region: Region? = nil) {
+            var a = attrs
+            if let link, let url = URL(string: link) { a[.link] = url }
+            let start = out.length
+            out.append(NSAttributedString(string: s, attributes: a))
+            if let region { regions.append((region, NSRange(location: start, length: out.length - start))) }
         }
-        return out
+        for b in blocks {
+            switch b {
+            case .separator:
+                add("\n", small)
+            case .header(let id, let folded, let title, let detail):
+                let titleAttrs: [NSAttributedString.Key: Any] = [
+                    .font: Fonts.scaled(12, weight: folded ? .regular : .semibold),
+                    .foregroundColor: folded ? muted : NSColor(Palette.text),
+                ]
+                add(title, titleAttrs, link: "nm://fold/\(id)", region: .text)
+                if folded, let detail, !detail.isEmpty { add("  " + detail, small, link: "nm://fold/\(id)") }
+                add("\n", small)
+                if !folded, let detail { add(detail + "\n", small) }
+                if !folded { add("\n", small) }
+            case .segment(_, _, let kind, let text, let depth):
+                switch kind {
+                case "text", "forward":
+                    add(text + "\n\n", body, region: .text)
+                default:
+                    // Quotes (and revealed hidden parts) dimmed, with one bar
+                    // per quote level, as in Apple Mail.
+                    let bars = String(repeating: "│ ", count: max(1, depth))
+                    let lines = text.split(separator: "\n", omittingEmptySubsequences: false).map { bars + $0 }
+                    add(lines.joined(separator: "\n") + "\n\n", dim, region: .quote)
+                }
+            case .hidden(let id, let index, let label):
+                // The link covers the label only, not the line breaks: a
+                // click in the empty space after the line does nothing.
+                add(label, small, link: "nm://reveal/\(id)/\(index)", region: .quote)
+                add("\n\n", small)
+            case .note(_, let text):
+                add(text + "\n\n", small)
+            }
+        }
+        return (out, regions)
+    }
+
+    /// After layout: positions of the blocks for `S`, and, in UI script
+    /// mode, the frames of the links and the displayed text.
+    private func measure(_ text: NSTextView, kinds: [(Region, NSRange)]) {
+        guard let lm = text.layoutManager, let tc = text.textContainer else { return }
+        lm.ensureLayout(for: tc)
+        let origin = text.textContainerOrigin
+        func rect(_ r: NSRange) -> NSRect {
+            let g = lm.glyphRange(forCharacterRange: r, actualCharacterRange: nil)
+            return lm.boundingRect(forGlyphRange: g, in: tc).offsetBy(dx: origin.x, dy: origin.y)
+        }
+        var quotes: [(Double, Double)] = []
+        var texts: [Double] = []
+        for (region, range) in kinds where range.length > 0 {
+            let r = rect(range)
+            switch region {
+            case .quote: quotes.append((Double(r.minY), Double(r.maxY)))
+            case .text: texts.append(Double(r.minY))
+            }
+        }
+        controller.readerSkip = (quotes, texts)
+        guard UIScript.isActive, let storage = text.textStorage else { return }
+        UIScript.readerText = storage.string
+        var n = 0
+        storage.enumerateAttribute(.link, in: NSRange(location: 0, length: storage.length)) { value, range, _ in
+            guard let url = value as? URL, url.scheme == "nm" else { return }
+            UIScript.frames["reader-link-\(n)"] = text.convert(rect(range), to: nil)
+            n += 1
+        }
+        UIScript.readerLinks = n
     }
 }
 

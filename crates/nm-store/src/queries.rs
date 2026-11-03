@@ -3,7 +3,7 @@
 //! These methods take `&self` (shared access): they never modify the
 //! database.
 
-use nm_api::{AddressView, FolderView, MessageView, SearchHit, ThreadSort, ThreadSummary};
+use nm_api::{AddressView, FolderView, MessageView, SearchHit, SegmentView, ThreadSort, ThreadSummary};
 
 /// A row of `thread_folder` joined with its thread: (thread id, subject,
 /// last received, last modified, message count, unread count).
@@ -343,6 +343,11 @@ impl Store {
                     body_html: r.get(14)?,
                     has_remote_content: r.get(15)?,
                     from_body_format: r.get(16)?,
+                    // Filled below, once the whole thread is known.
+                    segments: vec![],
+                    only_quotes: false,
+                    expanded: false,
+                    show_recipients: false,
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -364,6 +369,7 @@ impl Store {
                 if role == "to" { m.to.push(view) } else { m.cc.push(view) }
             }
         }
+        present_thread(&mut messages);
         Ok((subject, messages))
     }
 
@@ -417,5 +423,43 @@ impl Store {
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
         Ok(hits)
+    }
+}
+
+/// Simplified presentation of a thread, computed by the core so every
+/// client shows the same thing (`clean.rs`, `docs/thread-display.md`):
+/// segments of each message, messages folded by default, recipients only
+/// when they change.
+fn present_thread(messages: &mut [MessageView]) {
+    let inputs: Vec<(Option<&str>, &str)> =
+        messages.iter().map(|m| (m.from_addr.as_deref(), m.body_text.as_deref().unwrap_or(""))).collect();
+    let cleaned = crate::clean::clean_thread(&inputs);
+    let last = messages.len().saturating_sub(1);
+    let mut previous: Option<Vec<String>> = None;
+    for (i, (m, c)) in messages.iter_mut().zip(cleaned).enumerate() {
+        if m.body_text.is_some() {
+            m.segments = c
+                .segments
+                .into_iter()
+                .map(|s| SegmentView {
+                    kind: s.segment.kind.as_str().to_string(),
+                    text: s.segment.text,
+                    depth: s.segment.depth,
+                    hidden: s.hidden,
+                    in_thread: s.in_thread,
+                })
+                .collect();
+            m.only_quotes = c.only_quotes;
+        }
+        // Gmail's rule: the latest message and the unread ones are open; a
+        // message that only quotes stays folded unless it is the latest.
+        m.expanded = i == last || (!m.is_seen && !m.only_quotes);
+        let mut recipients: Vec<String> = m.to.iter().chain(m.cc.iter()).map(|a| a.addr.to_lowercase()).collect();
+        recipients.sort();
+        m.show_recipients = match &previous {
+            None => recipients.len() > 1,
+            Some(p) => *p != recipients,
+        };
+        previous = Some(recipients);
     }
 }

@@ -6,6 +6,7 @@ User and developer documentation, in English. It is written together with the co
 | --- | --- |
 | [import-mbox.md](import-mbox.md) | Importing a whole mailbox from an mbox file into an archive account |
 | [geek-ui.md](geek-ui.md) | The geek theme of the app: layout, keys, menus and pickers |
+| [thread-display.md](thread-display.md) | Simplified display of a thread: hidden quotes, signatures and copies, folded messages, light headers, `T` and `S` |
 | [testing.md](testing.md) | How the core and the app are tested: Rust tests, Swift unit tests, scripted UI tests |
 | [core-library.md](core-library.md) | Core methods behind the screens: sort by modification, text/HTML per sender, export, history, tags, groups, contacts |
 

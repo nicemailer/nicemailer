@@ -3,3 +3,5 @@
 /apps/NiceMailer/.swiftpm/
 # Mailbox exports used for testing the mbox import: personal data, never committed.
 *.mbox
+# …except the small test fixture of the UI scenarios, which must be committed.
+!apps/NiceMailer/UITests/fixtures/*.mbox

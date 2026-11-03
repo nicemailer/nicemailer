@@ -34,6 +34,16 @@ La fenêtre principale permet de lister les mails en deux colonnes :
 
 Lors de l'ouverture d'une fenêtre, le premier mail est systématiquement sélectionné dans la liste, de sorte que la partie de droite affiche quelque chose. 
 
+### Affichage d'une conversation
+
+L'affichage est simplifié au maximum : chaque message montre ce qu'il apporte. Le noyau découpe chaque message et l'app n'affiche que le résultat (détail : `docs/thread-display.md`).
+
+- Masqués par défaut : la citation finale (historique cité, avec sa ligne « … a écrit : » ou le bloc d'en-têtes d'Outlook), le texte qui recopie un message précédent, les signatures (après `-- `, ou lignes finales répétées par un expéditeur), les mentions (« Envoyé de mon iPhone », avis de confidentialité). Chaque partie masquée est remplacée par une ligne « ··· » cliquable.
+- Les citations intercalées entre les réponses restent visibles, atténuées, avec une barre par niveau. Un message transféré n'est jamais masqué.
+- Comme dans Gmail, le dernier message et les non-lus sont dépliés ; les autres tiennent sur une ligne (expéditeur, date, début du texte). Un message qui ne fait que citer l'indique.
+- En-têtes allégés : expéditeur et date ; les destinataires seulement s'ils changent d'un message à l'autre.
+- `T` (comme dans mutt) affiche ou masque tout ce que la vue simplifiée cache, pour la conversation ouverte ; `S` va au texte qui suit la citation suivante. Un clic sur un en-tête plie ou déplie le message, un clic sur « ··· » affiche cette partie.
+
 Il y a deux contextes totalement différents dans l'application : 
 - "navigation" : la gestion du stock de mail d'une part. lecture, recherche, screening, déplacement, etc
 - "edition" : L'écriture d'un nouveau mail (from scratch ou en réponse) d'autre part. 

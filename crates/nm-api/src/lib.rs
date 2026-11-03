@@ -458,6 +458,37 @@ pub struct MessageView {
     /// Display preferred for the sender's mails: `"text"`, `"html"`, or
     /// `None` for the client's default (`set_body_format`).
     pub from_body_format: Option<String>,
+    /// The text body cut into segments, for a simplified display: what the
+    /// message brings is visible, the history it repeats is `hidden`
+    /// (`docs/thread-display.md`). Empty when the body is not downloaded.
+    pub segments: Vec<SegmentView>,
+    /// The message brings nothing new: it only quotes earlier ones.
+    pub only_quotes: bool,
+    /// Shown unfolded by default: the latest message and the unread ones,
+    /// as in Gmail; the others are folded on one line.
+    pub expanded: bool,
+    /// Whether to show the recipients: only when they differ from the
+    /// previous message's (the first message: when there are several).
+    pub show_recipients: bool,
+}
+
+/// A piece of a message's text (`MessageView.segments`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SegmentView {
+    /// `text` (written by the sender), `quote` (interleaved quote, shown
+    /// dimmed), `quote_tail` (quoted history at the end), `signature`,
+    /// `boilerplate` ("Sent from my iPhone", confidentiality notice),
+    /// `forward` (forwarded message), `copy` (copies an earlier message).
+    pub kind: String,
+    /// The text, without quote markers.
+    pub text: String,
+    /// Quote depth, 0 outside quotes.
+    pub depth: u8,
+    /// Hidden by default; the client shows it on demand.
+    pub hidden: bool,
+    /// For a hidden `quote_tail`: its content is in an earlier message of
+    /// the thread. If not, the history it holds is missing from the thread.
+    pub in_thread: bool,
 }
 
 /// A whole thread, as displayed in the reading pane.

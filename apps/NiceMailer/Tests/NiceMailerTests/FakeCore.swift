@@ -6,16 +6,30 @@ import Foundation
 /// `handler` returns the JSON result (dictionaries, arrays, strings,
 /// numbers) of a request; it is turned into bytes and decoded with the real
 /// decoder, so the app's models are exercised as with the real core.
+///
+/// Requests can arrive from several tasks at once (the model starts them in
+/// parallel), so the record is protected by a lock: unprotected appends
+/// from two threads corrupted the array and crashed the test process now
+/// and then.
 final class FakeCore: CoreCalling, @unchecked Sendable {
-    var calls: [(method: String, params: [String: Any])] = []
+    private let lock = NSLock()
+    private var recorded: [(method: String, params: [String: Any])] = []
     var handler: (String, [String: Any]) -> Any
+
+    var calls: [(method: String, params: [String: Any])] {
+        lock.lock()
+        defer { lock.unlock() }
+        return recorded
+    }
 
     init(handler: @escaping (String, [String: Any]) -> Any) {
         self.handler = handler
     }
 
     func call<R: Decodable>(_ method: String, _ params: [String: Any]) async throws -> R {
-        calls.append((method, params))
+        lock.lock()
+        recorded.append((method, params))
+        lock.unlock()
         let result = handler(method, params)
         let data = try JSONSerialization.data(withJSONObject: result, options: .fragmentsAllowed)
         return try CoreClient.decoder.decode(R.self, from: data)
@@ -64,6 +78,8 @@ enum Fixture {
             "is_seen": true, "is_flagged": false, "is_answered": false, "has_attachments": false,
             "auth_result": "unknown", "body_html": id == 3 ? "<p>Hello</p>" : NSNull(),
             "has_remote_content": false, "from_body_format": NSNull(),
+            "segments": [["kind": "text", "text": "Hello, see https://example.org/\(id)", "depth": 0, "hidden": false, "in_thread": false]],
+            "only_quotes": false, "expanded": true, "show_recipients": false,
         ]
         return ["id": id, "subject": "Subject \(id)", "messages": [message], "as_of": position]
     }

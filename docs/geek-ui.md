@@ -19,7 +19,7 @@ As in Zed, **⌘+** (or **⌘=**, which needs no Shift on AZERTY keyboards) make
 
 ## Reading a mail
 
-The whole theme (lists, status bar, menus, mails, including the HTML view) uses **iA Writer Mono V**, a font bundled with the app (SIL Open Font License). List columns have fixed widths counted in characters of this monospaced font, computed from the list width, so they stay aligned when the window is resized. Mails are shown as plain text. The `text | html` switch at the top of the mail, or `vh`, shows the sanitized HTML version instead (scripts and remote images are removed by the core). The choice is remembered **for the sender**: the next mails from the same address open the same way.
+The whole theme (lists, status bar, menus, mails, including the HTML view) uses **iA Writer Mono V**, a font bundled with the app (SIL Open Font License). List columns have fixed widths counted in characters of this monospaced font, computed from the list width, so they stay aligned when the window is resized. Mails are shown as plain text, simplified: each message shows what it brings, the history it repeats is hidden, older read messages are folded (see `thread-display.md`). The `text | html` switch at the top of the mail, or `vh`, shows the sanitized HTML version instead (scripts and remote images are removed by the core). The choice is remembered **for the sender**: the next mails from the same address open the same way.
 
 ## Keys
 
@@ -36,6 +36,8 @@ Actions apply to the **marked** mails if any (`J` / `K`), otherwise to the mail 
 | Delete | move to Deleted |
 | `t` | tag picker: choose a tag, or type a new name; the same tag again removes it |
 | `g` | group picker: adds the sender to a group (new name: the group is created) |
+| `T` | show everything in the thread (folded mails, quotes, signatures) or go back to the simplified view |
+| `S` | skip to the text after the next quoted block |
 | `u` | read / unread |
 | `*` | flag |
 | `/` | search: type, Return keeps the results, `j` `k` move in them, Return opens a mail, Escape clears |

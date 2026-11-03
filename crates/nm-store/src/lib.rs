@@ -7,6 +7,7 @@
 //!
 //! The crate is split into modules (one file each):
 //! - `queries.rs`: read-only queries returning API views,
+//! - `clean.rs`: simplified display of a thread (quotes, signatures, copies),
 //! - `commands.rs`: write commands (move, read/unread, flag),
 //! - `raw.rs`: immutable raw message files (`stockage-brut.md`),
 //! - `mbox.rs`: streaming reader of mbox files,
@@ -20,6 +21,7 @@
 //! `impl Store` blocks still add public methods to `Store`.
 
 mod commands;
+pub mod clean;
 pub mod import;
 pub mod ingest;
 pub mod library;
