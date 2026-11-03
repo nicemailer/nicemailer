@@ -1,0 +1,21 @@
+[package]
+name = "nm-daemon"
+description = "Core process: JSON-RPC server over a Unix socket"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "nicemailer-core"
+path = "src/main.rs"
+
+[dependencies]
+nm-core.workspace = true
+nm-api.workspace = true
+nm-store.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+rand.workspace = true

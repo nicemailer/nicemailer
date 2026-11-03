@@ -1,0 +1,22 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "UNLICENSED"
+publish = false
+
+[workspace.dependencies]
+nm-core = { path = "crates/nm-core" }
+nm-store = { path = "crates/nm-store" }
+nm-api = { path = "crates/nm-api" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rusqlite = { version = "0.37", features = ["bundled"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util", "sync", "signal"] }
+rand = "0.9"
+thiserror = "2"
+anyhow = "1"
+clap = { version = "4", features = ["derive", "env"] }

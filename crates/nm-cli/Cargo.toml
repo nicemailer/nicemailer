@@ -1,0 +1,17 @@
+[package]
+name = "nm-cli"
+description = "CLI: socket client and development tools (seed)"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "nicemailer"
+path = "src/main.rs"
+
+[dependencies]
+nm-api.workspace = true
+nm-store.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+clap.workspace = true

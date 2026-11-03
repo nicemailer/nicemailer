@@ -1,0 +1,13 @@
+[package]
+name = "nm-store"
+description = "Local SQLite storage: schema, paginated queries, mutations"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+nm-core.workspace = true
+nm-api.workspace = true
+rusqlite.workspace = true
+thiserror.workspace = true
+rand.workspace = true

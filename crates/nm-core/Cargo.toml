@@ -1,0 +1,9 @@
+[package]
+name = "nm-core"
+description = "Pure domain: folder roles and workflow rules, no I/O"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde.workspace = true
