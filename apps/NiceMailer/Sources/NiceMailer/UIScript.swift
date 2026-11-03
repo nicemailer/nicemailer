@@ -109,7 +109,7 @@ extension View {
 ///
 /// | Command | Effect |
 /// | --- | --- |
-/// | `key K` | one key: a character, or `esc` `ret` `del` `up` `down` `space`, or `ctrl-X` / `cmd-X` |
+/// | `key K` | one key: a character, or `esc` `ret` `del` `up` `down` `space` `shift-space`, or `ctrl-X` / `cmd-X` |
 /// | `type TEXT` | each character of TEXT as a key |
 /// | `click TARGET [cmd] [shift]` | a mouse click on a row |
 /// | `dblclick TARGET` | two clicks |
@@ -210,6 +210,7 @@ private final class Runner {
         case "up": chars = "\u{F700}"; code = KeyCode.up
         case "down": chars = "\u{F701}"; code = KeyCode.down
         case "space": chars = " "
+        case "shift-space": chars = " "; mods = .shift
         default:
             if name.hasPrefix("ctrl-") {
                 mods = .control
@@ -377,6 +378,7 @@ private final class Runner {
             "sort": m.sort,
             "body_format": m.bodyFormat,
             "reader_subject": m.openThread?.subject ?? "",
+            "list_rows": "\(c.listVisibleRows)",
             "reader_offset": "\(Int(c.readerScroll?.contentView.bounds.origin.y ?? 0))",
             "list_filter": m.listFilter.map { "\($0)" } ?? "",
             "export_files": exports,

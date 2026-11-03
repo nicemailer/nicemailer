@@ -52,6 +52,7 @@ Actions apply to the **marked** mails if any (`J` / `K`), otherwise to the mail 
 | Key | Action |
 | --- | --- |
 | `j` `k` (or arrows) | next / previous mail |
+| `ctrl-d` `ctrl-u` | half a page down / up in the list (or in the search results), as in Zed: the cursor moves by half the rows that fit in the list, and stops on the first or last mail |
 | `J` `K` | mark the mail and move (multiple selection) |
 | `F` | attribute selector (filters on the current list) |
 | `@` | account picker: **all** (unified view) or one account, keeping the folder role (Archive to Archive), or its Inbox |
@@ -69,7 +70,8 @@ Actions apply to the **marked** mails if any (`J` / `K`), otherwise to the mail 
 | `;` + key | go to a folder or a screen (see below) |
 | `s` + key | save the latest mail of the conversation to `~/Downloads`: `se` .eml, `st` text, `sm` Markdown |
 | `v` + key | display: `v1` `v2` `v3` columns, `vc` sort by reception, `vm` sort by modification, `vh` text / HTML, `vs` status bar |
-| Space, `ctrl-d` `ctrl-u` `ctrl-f` `ctrl-b` | scroll the mail |
+| Space, shift-Space | scroll the mail a page down / up |
+| `ctrl-f` `ctrl-b` | same, a page down / up in the mail |
 | `?` | list of keys |
 | Escape | cancel a prefix, close a panel, unmark, then go back from a tag, group or contact list to the folder |
 | `r` `R` `f` | reply, reply all, forward: not available yet (writing mail needs SMTP) |

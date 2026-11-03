@@ -21,7 +21,7 @@ One command per line; `#` starts a comment.
 
 | Command | Effect |
 | --- | --- |
-| `key K` | one key: a character (`j`, `J`, `;`, `*`…), `esc`, `ret`, `del`, `up`, `down`, `space`, `ctrl-X` or `cmd-X` |
+| `key K` | one key: a character (`j`, `J`, `;`, `*`…), `esc`, `ret`, `del`, `up`, `down`, `space`, `shift-space`, `ctrl-X` or `cmd-X` |
 | `type TEXT` | each character of TEXT as a key |
 | `click TARGET [cmd] [shift]` | a click on a row, with modifiers |
 | `dblclick TARGET` | a double-click |
@@ -32,21 +32,21 @@ One command per line; `#` starts a comment.
 
 Targets: `thread:N` (N-th row of the mail list, from 0), `search:N`, `picker:N`, `screen:N` (row of the contacts, history, tags or groups screen), `folder:NAME` (folder column of the current view, 3-column layout), `reader-link:N` (N-th header or "···" line of the text reader), `status:account`, `status:folder`, `status:attributes`, `status:m`, `status:s` and `status:v` (the blocks of the status bar), `menu:N` (N-th row of the open prefix menu), `chip:ID` (an attribute chip: `seen`, `from:0`, `contains`, `date`…).
 
-State fields (see `Runner.state()` in `Sources/NiceMailer/UIScript.swift`): `screen`, `overlay`, `mode`, `location`, `flash`, `error`, `folder`, `account`, `thread_count`, `selected` (index), `selected_subject`, `selected_unread`, `selected_flagged`, `selected_tags`, `marked` (indices, comma-separated), `marked_count`, `search_text`, `search_count`, `search_index`, `picker_query`, `picker_index`, `picker_count`, `screen_index`, `contacts_count`, `history_count`, `tags_count`, `groups_count`, `columns`, `status_position`, `sort`, `body_format`, `reader_subject`, `reader_offset`, `list_filter`, `export_files`, `html_text`, `html_font_loaded`, `html_font_family`, `font_size`, `row_height` (height of the selected row, as laid out), `reader_text` (text shown by the text reader), `reader_links` (its header and "···" links), `reader_folded` (folded messages), `show_all` (`T`), `filters` (labels of the attribute chips, comma-separated), `menu_x` and `menu_y` (position of the first row of the open menu, window coordinates).
+State fields (see `Runner.state()` in `Sources/NiceMailer/UIScript.swift`): `screen`, `overlay`, `mode`, `location`, `flash`, `error`, `folder`, `account`, `thread_count`, `selected` (index), `selected_subject`, `selected_unread`, `selected_flagged`, `selected_tags`, `marked` (indices, comma-separated), `marked_count`, `search_text`, `search_count`, `search_index`, `picker_query`, `picker_index`, `picker_count`, `screen_index`, `contacts_count`, `history_count`, `tags_count`, `groups_count`, `columns`, `status_position`, `sort`, `body_format`, `reader_subject`, `reader_offset`, `list_rows` (rows of the mail list that fit, for `ctrl-d` / `ctrl-u`), `list_filter`, `export_files`, `html_text`, `html_font_loaded`, `html_font_family`, `font_size`, `row_height` (height of the selected row, as laid out), `reader_text` (text shown by the text reader), `reader_links` (its header and "···" links), `reader_folded` (folded messages), `show_all` (`T`), `filters` (labels of the attribute chips, comma-separated), `menu_x` and `menu_y` (position of the first row of the open menu, window coordinates).
 
 ## Scenarios
 
 | File | Covers |
 | --- | --- |
 | `filters.uiscript` | attribute selector: toggles, From… panel with suggestions, Date… preset, Contains…, chips, kept across folders, Escape |
-| `navigation.uiscript` | `j` `k` arrows, `J` `K` marks, Escape, click, ⌘-click, ⇧-click |
+| `navigation.uiscript` | `j` `k` arrows, `ctrl-d` `ctrl-u` half pages, `J` `K` marks, Escape, click, ⌘-click, ⇧-click |
 | `actions.uiscript` | `m` menu and moves, `d`, Delete, grouped actions, flag, unknown keys, reply not available, help |
 | `screens.uiscript` | `;` folders, contacts (keys, filter, click, double-click, mails of a contact), history, tags, groups |
 | `pickers.uiscript` | `;` menu (keys, and mouse from the status bar), link, tag and group pickers (keys and mouse), search (keys, click, double-click) |
 | `statusbar.uiscript` | account and folder blocks of the status bar, unified view "all", account picker keeping the folder role, single-block folder column |
 | `textsize.uiscript` | ⌘+ ⌘= ⌘− ⌘0, bounds, row height, keys and clicks after the rebuild |
 | `thread.uiscript` | simplified thread: folded messages, hidden quotes and signatures, `T`, clicks on headers and "···" lines |
-| `view.uiscript` | 1 / 2 / 3 columns, folder column clicks, status bar, sort, text / HTML with the bundled font, scrolling, saving |
+| `view.uiscript` | 1 / 2 / 3 columns, folder column clicks, status bar, sort, text / HTML with the bundled font, scrolling (Space, shift-Space, `ctrl-f` `ctrl-b`), saving |
 
 ## Writing a new scenario
 

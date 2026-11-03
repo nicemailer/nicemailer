@@ -911,6 +911,16 @@
         }
       }
     },
+    "half a page down / up in the list": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "une demi-page plus bas / plus haut dans la liste"
+          }
+        }
+      }
+    },
     "last 30 days": {
       "localizations": {
         "fr": {

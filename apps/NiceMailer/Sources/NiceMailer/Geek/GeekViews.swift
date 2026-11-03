@@ -384,6 +384,11 @@ private struct GeekThreadRows: View {
                     }
                 }
                 .scrollIndicators(.never)
+                // How many rows fit, for ctrl-d / ctrl-u (half a page). Read
+                // again when the window or the text size changes.
+                .onChange(of: geo.size.height, initial: true) { _, h in
+                    controller.listVisibleRows = GeekController.visibleRows(height: h, rowHeight: scaled(20))
+                }
                 // Keep the cursor visible, without animation: `scrollTo`
                 // with no anchor scrolls only as much as needed.
                 .onChange(of: model.selectedThreadId) { _, id in
@@ -468,7 +473,10 @@ private struct GeekSearchRows: View {
     let controller: GeekController
 
     var body: some View {
-        GeekSearchList(hits: model.searchResults, current: controller.searchIndex) { controller.clickSearch($0) }
+        GeekSearchList(
+            hits: model.searchResults, current: controller.searchIndex,
+            onVisibleRows: { controller.searchVisibleRows = $0 }
+        ) { controller.clickSearch($0) }
     }
 }
 
@@ -479,6 +487,8 @@ private struct GeekSearchRows: View {
 private struct GeekSearchList: View {
     let hits: [SearchHit]
     let current: Int
+    /// Called with the number of rows that fit, for ctrl-d / ctrl-u.
+    let onVisibleRows: (Int) -> Void
     /// Called with the row's position when it is clicked.
     let onClick: (Int) -> Void
 
@@ -501,6 +511,9 @@ private struct GeekSearchList: View {
                 }
             }
             .scrollIndicators(.never)
+            .onChange(of: geo.size.height, initial: true) { _, h in
+                onVisibleRows(GeekController.visibleRows(height: h, rowHeight: scaled(36)))
+            }
             .onChange(of: current) { _, i in proxy.scrollTo(i) }
             .overlay {
                 if hits.isEmpty { Text(L("No result")).foregroundStyle(Palette.muted) }
@@ -653,7 +666,7 @@ private struct GeekReaderColumn: View {
 /// without scroll bars. It draws the blocks of `ThreadDisplay`: headers and
 /// "···" lines are links (`nm:` scheme) handled by the controller. The
 /// controller keeps the scroll view to scroll it from the keyboard (space,
-/// ctrl-d, ctrl-u, S).
+/// shift-space, ctrl-f, ctrl-b, S).
 ///
 /// Swift note: `NSViewRepresentable` wraps an AppKit view for SwiftUI;
 /// `makeNSView` builds it once, `updateNSView` refreshes it when the data

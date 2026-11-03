@@ -129,6 +129,13 @@ final class GeekController {
     /// The reading pane's scroll view, to scroll it from the keyboard.
     weak var readerScroll: NSScrollView?
 
+    /// Rows of the mail list (and of the search results) that fit in their
+    /// pane, set by the views when their height changes; used by `ctrl-d` /
+    /// `ctrl-u`. `@ObservationIgnored`: no view reads it, so writing it
+    /// during layout must not trigger a redraw (it would loop).
+    @ObservationIgnored var listVisibleRows = 20
+    @ObservationIgnored var searchVisibleRows = 10
+
     /// Left edge of each prefix block of the status bar (folder `;`, `m`,
     /// `s`, `v`), where its menu drops down from.
     var menuBlockX: [Prefix: CGFloat] = [:]
@@ -302,8 +309,13 @@ final class GeekController {
 
         if control {
             switch key {
-            case "d": scrollReader(pages: 0.5)
-            case "u": scrollReader(pages: -0.5)
+            // As in Zed and vim, ctrl-d / ctrl-u move by half a page in the
+            // list the cursor belongs to (j / k move it too); the mail keeps
+            // Space, shift-Space, ctrl-f and ctrl-b (`ui.md`).
+            case "d" where screen == .mail: moveCursor(halfPage)
+            case "u" where screen == .mail: moveCursor(-halfPage)
+            // Other screens: used, but nothing to do (no beep).
+            case "d", "u": break
             case "f": scrollReader(pages: 1)
             case "b": scrollReader(pages: -1)
             default: return false
@@ -330,12 +342,13 @@ final class GeekController {
             handleScreenKey(key: key, code: code)
             return true
         }
-        handleMailKey(key: key, code: code)
+        handleMailKey(key: key, code: code, shift: mods.contains(.shift))
         return true
     }
 
-    /// Normal mode on the mail screen.
-    private func handleMailKey(key: String, code: UInt16) {
+    /// Normal mode on the mail screen. `shift`: Shift is held, read only
+    /// for Space (its character does not change with Shift).
+    private func handleMailKey(key: String, code: UInt16, shift: Bool = false) {
         let searching = !model.searchText.isEmpty
         switch code {
         case KeyCode.escape:
@@ -376,7 +389,7 @@ final class GeekController {
         case "@": openPicker(.accounts)
         case "F": openPicker(.attributes)
         case "l": openPicker(.links)
-        case " ": scrollReader(pages: 1)
+        case " ": scrollReader(pages: shift ? -1 : 1)
         case "d": model.moveTargets(to: "archive")
         case "u": model.toggleSeenTargets()
         case "*": model.toggleFlagTargets()
@@ -394,6 +407,23 @@ final class GeekController {
         default:
             if !key.isEmpty { model.flash = L("No command %@", key) }
         }
+    }
+
+    /// Half of the visible rows of the current list (mails or search
+    /// results), at least one row.
+    private var halfPage: Int {
+        Self.halfPage(model.searchText.isEmpty ? listVisibleRows : searchVisibleRows)
+    }
+
+    /// Rows moved by `ctrl-d` / `ctrl-u` for a list showing `visibleRows`
+    /// rows: half of them, as in Zed, and never zero (a tiny window still
+    /// moves).
+    static func halfPage(_ visibleRows: Int) -> Int { max(1, visibleRows / 2) }
+
+    /// Rows of height `rowHeight` that fit entirely in `height`.
+    static func visibleRows(height: CGFloat, rowHeight: CGFloat) -> Int {
+        guard rowHeight > 0, height.isFinite else { return 1 }
+        return max(1, Int(height / rowHeight))
     }
 
     private func moveCursor(_ delta: Int) {
@@ -553,6 +583,7 @@ final class GeekController {
     var helpLines: [(String, String)] {
         [
             ("j k", L("next / previous mail")),
+            ("^d ^u", L("half a page down / up in the list")),
             ("J K", L("mark and move (multiple selection)")),
             ("@", L("go to an account")),
             ("F", L("filter by attributes")),
@@ -569,7 +600,7 @@ final class GeekController {
             (";…", L("go to a folder or a screen")),
             ("s…", L("save")),
             ("v…", L("display")),
-            ("^d ^u  space", L("scroll the mail")),
+            ("space ⇧space  ^f ^b", L("scroll the mail")),
             ("r R f", L("reply, reply all, forward (not yet)")),
             ("esc", L("cancel, unmark, back")),
         ]

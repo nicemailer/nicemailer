@@ -67,6 +67,7 @@ Voici la liste des principaux raccourcis clavier dans le contexte "navigation"
 
 hjkl : naviguer dans les mails
 j et k : mail suivant et précédent
+ctrl-d et ctrl-u : une demi-page plus bas ou plus haut dans la liste des mails (ou des résultats de recherche), comme dans Zed ; le curseur avance de la moitié des lignes visibles et s'arrête au premier ou au dernier mail
 h et l : change de "colonne"
 	Si on est focus sur la liste des mails, h déclenche l'écran pour passer à un autre dossier. Dans l'interface classique, c'est la barre à gauche. Dans l'interface geek, ce rôle est tenu par `;` : `h` n'y fait rien. 
 	Et depuis la liste des mails, l déclenche l'écran de "link".
@@ -91,7 +92,7 @@ u lu / non lu
 / rechercher ; entrée garde les résultats, j/k s'y déplacent, entrée ouvre le mail, échap efface la recherche
 ? liste des touches
 échap annule un préfixe, ferme un panneau, démarque, puis revient du tag, groupe ou contact listé au dossier
-espace, ctrl-d, ctrl-u, ctrl-f, ctrl-b font défiler le mail
+espace et ctrl-f font défiler le mail d'une page vers le bas, maj-espace et ctrl-b vers le haut
 
 Le prefix ";" permet de changer d’écran
 ; aller à un dossier

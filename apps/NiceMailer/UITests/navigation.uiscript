@@ -31,3 +31,15 @@ click thread:6 shift
 expect marked = 2,3,4,5,6
 expect selected = 6
 snap navigation
+# ctrl-d / ctrl-u: half a page of the list (Zed), clamped at the top.
+click thread:0
+expect list_rows > 10
+key ctrl-d
+expect selected > 4
+key ctrl-d
+expect selected > 9
+key ctrl-u
+key ctrl-u
+expect selected = 0
+key ctrl-u
+expect selected = 0

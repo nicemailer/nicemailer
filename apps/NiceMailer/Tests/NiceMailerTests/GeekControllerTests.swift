@@ -67,6 +67,32 @@ struct GeekControllerTests {
         #expect(selectedIndex == 0)
     }
 
+    @Test func ctrlDAndCtrlUMoveByHalfAPageWithinTheList() {
+        // 6 rows fit: half a page is 3 rows. The fixture lists 8 mails.
+        controller.listVisibleRows = 6
+        press("ctrl-d")
+        #expect(selectedIndex == 3)
+        press("ctrl-d")
+        #expect(selectedIndex == 6)
+        press("ctrl-d")
+        #expect(selectedIndex == 7)  // stops on the last mail
+        press("ctrl-u")
+        #expect(selectedIndex == 4)
+        press("ctrl-u"); press("ctrl-u")
+        #expect(selectedIndex == 0)  // and on the first
+    }
+
+    @Test func halfAPageIsHalfTheVisibleRowsAndNeverZero() {
+        #expect(GeekController.halfPage(40) == 20)
+        #expect(GeekController.halfPage(7) == 3)
+        #expect(GeekController.halfPage(1) == 1)
+        #expect(GeekController.halfPage(0) == 1)
+        #expect(GeekController.visibleRows(height: 900, rowHeight: 20) == 45)
+        #expect(GeekController.visibleRows(height: 39, rowHeight: 20) == 1)
+        #expect(GeekController.visibleRows(height: 0, rowHeight: 20) == 1)
+        #expect(GeekController.visibleRows(height: 100, rowHeight: 0) == 1)
+    }
+
     @Test func shiftJKMarkAndEscapeUnmarks() {
         press("J"); press("J")
         #expect(model.marked == [1, 2, 3])

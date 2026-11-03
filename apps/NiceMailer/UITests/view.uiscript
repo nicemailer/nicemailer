@@ -62,11 +62,16 @@ expect selected_subject = Un long mail
 expect reader_offset = 0
 key space
 expect reader_offset > 0
-key ctrl-u
-key ctrl-u
+key shift-space
 expect reader_offset = 0
-key ctrl-d
+key ctrl-f
 expect reader_offset > 0
+key ctrl-b
+expect reader_offset = 0
+# ctrl-d moves the list, not the mail.
+key ctrl-d
+expect reader_offset = 0
+expect selected_subject != Un long mail
 # Saving the mail (to the test export directory).
 key s
 key e
