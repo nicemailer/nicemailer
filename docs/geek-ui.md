@@ -104,7 +104,7 @@ A click acts at once: double-clicks are detected without delaying single clicks.
 
 ### Folders and screens (`;`)
 
-The menu lists the folders in blocks separated by a blank line, the folder column too: to deal with (Inbox, Todo, Waiting, Quarantine), filed (Archive, Newsletter, Paperwork), the user's own folders, written (Sent, Drafts), thrown away (Deleted, Junk, Banned); then Everything, the screens Contacts, Tags, Groups, and History on its own.
+The menu lists the folders in blocks separated by a blank line, the folder column too: to deal with (Inbox, Todo, Waiting, Quarantine), filed (Archive, Newsletter, Paperwork), the user's own folders, written (Sent, Drafts), thrown away (Deleted, Junk, Banned); then Everything, the screens Contacts, Tags, Groups, and History on its own. The unread count of each folder is aligned at the right end of its row.
 
 | Key | Goes to |
 | --- | --- |

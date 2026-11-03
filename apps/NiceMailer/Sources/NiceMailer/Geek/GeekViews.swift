@@ -91,7 +91,9 @@ private struct GeekWindow: View {
         switch controller.overlay {
         case .menu(let prefix):
             let menu = KeyMenu(title: menuTitle(prefix),
-                               entries: controller.menuEntries(prefix).map { ($0.key, $0.label, $0.disabled, $0.gapBefore) },
+                               entries: controller.menuEntries(prefix).map {
+                                   .init(key: $0.key, label: $0.label, muted: $0.disabled, gapBefore: $0.gapBefore, detail: $0.detail)
+                               },
                                onSelect: { controller.chooseMenuEntry($0) })
             if controller.statusPosition != .hidden, let x = controller.menuBlockX[prefix] {
                 // Each menu drops down from its block of the status bar:
@@ -108,7 +110,7 @@ private struct GeekWindow: View {
                 menu.padding(12)
             }
         case .help:
-            KeyMenu(title: L("Keys"), entries: controller.helpLines.map { ($0.0, $0.1, false, false) }, onSelect: nil)
+            KeyMenu(title: L("Keys"), entries: controller.helpLines.map { .init(key: $0.0, label: $0.1) }, onSelect: nil)
                 .padding(12)
         case .picker(let kind):
             PickerPopup(controller: controller, kind: kind)
@@ -831,29 +833,46 @@ private struct HTMLReader: NSViewRepresentable {
 /// Helix-style key menu, in the bottom-right corner: one line per key.
 private struct KeyMenu: View {
     let title: String
-    /// Key, label, grayed out, gap above (start of a block).
-    let entries: [(String, String, Bool, Bool)]
+    let entries: [Row]
+
+    /// One line: the key, the label, grayed out or not, a gap above (start
+    /// of a block), and a detail aligned on the right (unread count).
+    struct Row {
+        let key: String
+        let label: String
+        var muted = false
+        var gapBefore = false
+        var detail: String? = nil
+    }
     /// Called with the row clicked; `nil` for a menu that only informs
     /// (the help).
     let onSelect: ((Int) -> Void)?
 
     var body: some View {
         // Width of the key column: the longest key, in monospace characters.
-        let keyWidth = CGFloat(entries.map(\.0.count).max() ?? 1) * Fonts.charWidth(12 * TextSize.shared.scale) + 4
+        let keyWidth = CGFloat(entries.map(\.key.count).max() ?? 1) * Fonts.charWidth(12 * TextSize.shared.scale) + 4
         VStack(alignment: .leading, spacing: 2) {
             Text(title).foregroundStyle(Palette.accent).padding(.bottom, 2)
             ForEach(Array(entries.enumerated()), id: \.offset) { i, e in
                 HStack(spacing: 10) {
-                    Text(e.0).foregroundStyle(Palette.accent).frame(width: keyWidth, alignment: .leading)
-                    Text(e.1).foregroundStyle(e.2 ? Palette.muted : Palette.text)
-                    Spacer(minLength: 0)
+                    Text(e.key).foregroundStyle(Palette.accent).frame(width: keyWidth, alignment: .leading)
+                    Text(e.label).foregroundStyle(e.muted ? Palette.muted : Palette.text)
+                    // Pushes the detail to the right end; at least a gap
+                    // of two characters after the longest label.
+                    Spacer(minLength: scaled(16))
+                    if let detail = e.detail {
+                        Text(detail).foregroundStyle(Palette.unread)
+                    }
                 }
+                // Every row takes the menu's width (that of its widest
+                // row), so the details line up on the right edge.
+                .frame(maxWidth: .infinity)
                 .contentShape(Rectangle())
                 .onTapGesture { onSelect?(i) }
                 .uiTarget("menu-\(i)")
                 // A blank line between blocks (folders to deal with, filed,
                 // sent, thrown away; screens).
-                .padding(.top, e.3 ? scaled(10) : 0)
+                .padding(.top, e.gapBefore ? scaled(10) : 0)
             }
         }
         // As wide as its longest row, not as the window: the rows' spacers

@@ -103,7 +103,7 @@ u lu / non lu
 espace et ctrl-f font défiler le mail d'une page vers le bas, maj-espace et ctrl-b vers le haut, en texte comme en HTML
 
 Le prefix ";" permet de changer d’écran
-; aller à un dossier. Le menu (et la colonne des dossiers) les range en blocs cohérents, séparés par une ligne vide : ce qui est à traiter, ce qui est classé, ce qui a été écrit, ce qui a été jeté ; puis Everything, les écrans Contacts, Tags, Groups, et History à part. Les dossiers propres à l'utilisateur forment un bloc après les dossiers classés.
+; aller à un dossier. Le menu (et la colonne des dossiers) les range en blocs cohérents, séparés par une ligne vide : ce qui est à traiter, ce qui est classé, ce qui a été écrit, ce qui a été jeté ; puis Everything, les écrans Contacts, Tags, Groups, et History à part. Les dossiers propres à l'utilisateur forment un bloc après les dossiers classés. Le nombre de mails non lus de chaque dossier est aligné à l'extrémité droite de sa ligne.
 
 i Inbox
 t Todo

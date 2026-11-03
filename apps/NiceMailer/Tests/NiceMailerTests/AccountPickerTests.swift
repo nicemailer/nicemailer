@@ -109,10 +109,13 @@ struct AccountPickerTests {
 
     @Test func theSemicolonMenuOfAllListsRolesWithoutAccounts() {
         controller.goToAccount(nil)
-        let labels = controller.menuEntries(.goto).map(\.label).filter { ![L("Contacts"), L("History"), L("Tags"), L("Groups")].contains($0) }
+        let entries = controller.menuEntries(.goto).filter { ![L("Contacts"), L("History"), L("Tags"), L("Groups")].contains($0.label) }
+        let labels = entries.map(\.label)
         // Inbox: 2 (perso) + 5 (archive); Archive: 2 + 2; Todo and Deleted
-        // exist in one account only.
-        #expect(labels == ["Inbox  7", "Todo  2", "Archive  4", "Deleted  2", "Everything"])
+        // exist in one account only. The unread count is a separate detail,
+        // shown at the right end of the row; none for Everything.
+        #expect(labels == ["Inbox", "Todo", "Archive", "Deleted", "Everything"])
+        #expect(entries.map(\.detail) == ["7", "2", "4", "2", nil])
         #expect(!labels.contains { $0.contains("perso") || $0.contains("archive ·") })
     }
 

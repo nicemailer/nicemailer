@@ -79,6 +79,8 @@ final class GeekController {
         var disabled = false
         /// Starts a new block: the menu leaves a gap above the row.
         var gapBefore = false
+        /// Shown at the right end of the row (a folder's unread count).
+        var detail: String? = nil
         let action: @MainActor () -> Void
         var id: String { key + label }
     }
@@ -499,8 +501,8 @@ final class GeekController {
             var group: Int?
             for f in scopeFolders where !f.letter.isEmpty {
                 entries.append(Entry(
-                    key: f.letter.lowercased(), label: f.name + (f.unread > 0 ? "  \(f.unread)" : ""),
-                    gapBefore: group != nil && group != f.group
+                    key: f.letter.lowercased(), label: f.name,
+                    gapBefore: group != nil && group != f.group, detail: f.unread > 0 ? "\(f.unread)" : nil
                 ) { [weak self] in self?.open(f) })
                 group = f.group
             }
