@@ -42,6 +42,16 @@ struct NiceMailerApp: App {
             CommandGroup(after: .toolbar) {
                 Button(L("Reload")) { Task { await model.reloadAll() } }
                     .keyboardShortcut("r", modifiers: .command)
+                Divider()
+                // Text size of the geek theme, like Zed (`TextSize`). In the
+                // geek theme the keys are handled by its key monitor first,
+                // which also accepts ⌘= for keyboards where `+` needs Shift.
+                Button(L("Bigger Text")) { TextSize.shared.bigger() }
+                    .keyboardShortcut("+", modifiers: .command)
+                Button(L("Smaller Text")) { TextSize.shared.smaller() }
+                    .keyboardShortcut("-", modifiers: .command)
+                Button(L("Actual Size")) { TextSize.shared.reset() }
+                    .keyboardShortcut("0", modifiers: .command)
             }
             // Theme menu, during development; it will become a setting.
             CommandMenu(L("Theme")) {

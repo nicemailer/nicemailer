@@ -105,7 +105,7 @@ extension View {
 ///
 /// | Command | Effect |
 /// | --- | --- |
-/// | `key K` | one key: a character, or `esc` `ret` `del` `up` `down` `space`, or `ctrl-X` |
+/// | `key K` | one key: a character, or `esc` `ret` `del` `up` `down` `space`, or `ctrl-X` / `cmd-X` |
 /// | `type TEXT` | each character of TEXT as a key |
 /// | `click TARGET [cmd] [shift]` | a mouse click on a row |
 /// | `dblclick TARGET` | two clicks |
@@ -209,6 +209,9 @@ private final class Runner {
             if name.hasPrefix("ctrl-") {
                 mods = .control
                 chars = String(name.dropFirst(5))
+            } else if name.hasPrefix("cmd-") {
+                mods = .command
+                chars = String(name.dropFirst(4))
             }
         }
         guard let e = NSEvent.keyEvent(
@@ -357,6 +360,9 @@ private final class Runner {
             "reader_offset": "\(Int(c.readerScroll?.contentView.bounds.origin.y ?? 0))",
             "list_filter": m.listFilter.map { "\($0)" } ?? "",
             "export_files": exports,
+            "font_size": "\(Int(TextSize.shared.size))",
+            // Height of the selected row, as laid out.
+            "row_height": "\(Int((UIScript.frames["thread-\(m.selectedThreadId ?? -1)"]?.height ?? 0).rounded()))",
             "html_text": UIScript.html["text"] ?? "",
             "html_font_loaded": UIScript.html["font"] ?? "",
             "html_font_family": UIScript.html["family"] ?? "",

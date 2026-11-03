@@ -1,36 +1,6 @@
 {
   "sourceLanguage": "en",
   "strings": {
-    "(body not downloaded)": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "(corps non téléchargé)"
-          }
-        }
-      }
-    },
-    "(no subject)": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "(sans objet)"
-          }
-        }
-      }
-    },
-    "/ filter · return: their mails · esc: back": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "/ filtrer · entrée : ses mails · échap : retour"
-          }
-        }
-      }
-    },
     "%@ shown as %@": {
       "localizations": {
         "fr": {
@@ -81,12 +51,42 @@
         }
       }
     },
-    "add the sender to a group": {
+    "(body not downloaded)": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "ajouter l'expéditeur à un groupe"
+            "value": "(corps non téléchargé)"
+          }
+        }
+      }
+    },
+    "(no subject)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "(sans objet)"
+          }
+        }
+      }
+    },
+    "/ filter · return: their mails · esc: back": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "/ filtrer · entrée : ses mails · échap : retour"
+          }
+        }
+      }
+    },
+    "Actual Size": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Taille réelle"
           }
         }
       }
@@ -101,16 +101,6 @@
         }
       }
     },
-    "all attachments": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "toutes les pièces jointes"
-          }
-        }
-      }
-    },
     "Already in %@": {
       "localizations": {
         "fr": {
@@ -121,72 +111,12 @@
         }
       }
     },
-    "as .eml file": {
+    "Bigger Text": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "en fichier .eml"
-          }
-        }
-      }
-    },
-    "as Markdown file": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "en fichier Markdown"
-          }
-        }
-      }
-    },
-    "as PDF": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "en PDF"
-          }
-        }
-      }
-    },
-    "as text file": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "en fichier texte"
-          }
-        }
-      }
-    },
-    "attachments but graphics": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "pièces jointes sauf images"
-          }
-        }
-      }
-    },
-    "by modification": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "par modification"
-          }
-        }
-      }
-    },
-    "cancel, unmark, back": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "annuler, démarquer, revenir"
+            "value": "Texte plus grand"
           }
         }
       }
@@ -211,16 +141,6 @@
         }
       }
     },
-    "contact: %@": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "contact : %@"
-          }
-        }
-      }
-    },
     "Contacts": {
       "localizations": {
         "fr": {
@@ -241,16 +161,6 @@
         }
       }
     },
-    "delete": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "supprimer"
-          }
-        }
-      }
-    },
     "Design (not yet: same as Classic)": {
       "localizations": {
         "fr": {
@@ -261,32 +171,12 @@
         }
       }
     },
-    "display": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "affichage"
-          }
-        }
-      }
-    },
     "Display": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "Affichage"
-          }
-        }
-      }
-    },
-    "done (archive)": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "fait (archiver)"
           }
         }
       }
@@ -331,42 +221,12 @@
         }
       }
     },
-    "go to a folder": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "aller à un dossier"
-          }
-        }
-      }
-    },
-    "go to a folder or a screen": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "aller à un dossier ou un écran"
-          }
-        }
-      }
-    },
     "Group": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "Groupe"
-          }
-        }
-      }
-    },
-    "group: %@": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "groupe : %@"
           }
         }
       }
@@ -411,26 +271,6 @@
         }
       }
     },
-    "links of the mail": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "liens du mail"
-          }
-        }
-      }
-    },
-    "mark and move (multiple selection)": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "marquer et avancer (sélection multiple)"
-          }
-        }
-      }
-    },
     "Move": {
       "localizations": {
         "fr": {
@@ -441,42 +281,12 @@
         }
       }
     },
-    "move to a folder": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "déplacer dans un dossier"
-          }
-        }
-      }
-    },
     "Moved to %@": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "Déplacé dans %@"
-          }
-        }
-      }
-    },
-    "newest first · esc: back": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "plus récent d'abord · échap : retour"
-          }
-        }
-      }
-    },
-    "next / previous mail": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "mail suivant / précédent"
           }
         }
       }
@@ -571,6 +381,346 @@
         }
       }
     },
+    "Reload": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recharger"
+          }
+        }
+      }
+    },
+    "Save": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enregistrer"
+          }
+        }
+      }
+    },
+    "Saved: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enregistré : %@"
+          }
+        }
+      }
+    },
+    "Smaller Text": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Texte plus petit"
+          }
+        }
+      }
+    },
+    "Tag": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tag"
+          }
+        }
+      }
+    },
+    "Tag removed: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tag retiré : %@"
+          }
+        }
+      }
+    },
+    "Tagged: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tag ajouté : %@"
+          }
+        }
+      }
+    },
+    "Tags": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tags"
+          }
+        }
+      }
+    },
+    "Text size: %lld pt": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Taille du texte : %lld pt"
+          }
+        }
+      }
+    },
+    "Theme": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Thème"
+          }
+        }
+      }
+    },
+    "This mail has no HTML version": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce mail n'a pas de version HTML"
+          }
+        }
+      }
+    },
+    "To: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "À : %@"
+          }
+        }
+      }
+    },
+    "Type a name": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tapez un nom"
+          }
+        }
+      }
+    },
+    "add the sender to a group": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ajouter l'expéditeur à un groupe"
+          }
+        }
+      }
+    },
+    "all attachments": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "toutes les pièces jointes"
+          }
+        }
+      }
+    },
+    "as .eml file": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "en fichier .eml"
+          }
+        }
+      }
+    },
+    "as Markdown file": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "en fichier Markdown"
+          }
+        }
+      }
+    },
+    "as PDF": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "en PDF"
+          }
+        }
+      }
+    },
+    "as text file": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "en fichier texte"
+          }
+        }
+      }
+    },
+    "attachments but graphics": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "pièces jointes sauf images"
+          }
+        }
+      }
+    },
+    "by modification": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "par modification"
+          }
+        }
+      }
+    },
+    "cancel, unmark, back": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "annuler, démarquer, revenir"
+          }
+        }
+      }
+    },
+    "contact: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "contact : %@"
+          }
+        }
+      }
+    },
+    "delete": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "supprimer"
+          }
+        }
+      }
+    },
+    "display": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "affichage"
+          }
+        }
+      }
+    },
+    "done (archive)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "fait (archiver)"
+          }
+        }
+      }
+    },
+    "go to a folder": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "aller à un dossier"
+          }
+        }
+      }
+    },
+    "go to a folder or a screen": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "aller à un dossier ou un écran"
+          }
+        }
+      }
+    },
+    "group: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "groupe : %@"
+          }
+        }
+      }
+    },
+    "links of the mail": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "liens du mail"
+          }
+        }
+      }
+    },
+    "mark and move (multiple selection)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "marquer et avancer (sélection multiple)"
+          }
+        }
+      }
+    },
+    "move to a folder": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "déplacer dans un dossier"
+          }
+        }
+      }
+    },
+    "newest first · esc: back": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "plus récent d'abord · échap : retour"
+          }
+        }
+      }
+    },
+    "next / previous mail": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "mail suivant / précédent"
+          }
+        }
+      }
+    },
     "one column": {
       "localizations": {
         "fr": {
@@ -587,16 +737,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "lu / non lu, drapeau"
-          }
-        }
-      }
-    },
-    "Reload": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Recharger"
           }
         }
       }
@@ -627,26 +767,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "enregistrer"
-          }
-        }
-      }
-    },
-    "Save": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Enregistrer"
-          }
-        }
-      }
-    },
-    "Saved: %@": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Enregistré : %@"
           }
         }
       }
@@ -721,52 +841,12 @@
         }
       }
     },
-    "Tag": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tag"
-          }
-        }
-      }
-    },
-    "Tag removed: %@": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tag retiré : %@"
-          }
-        }
-      }
-    },
     "tag: %@": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "tag : %@"
-          }
-        }
-      }
-    },
-    "Tagged: %@": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tag ajouté : %@"
-          }
-        }
-      }
-    },
-    "Tags": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tags"
           }
         }
       }
@@ -781,26 +861,6 @@
         }
       }
     },
-    "Theme": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Thème"
-          }
-        }
-      }
-    },
-    "This mail has no HTML version": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Ce mail n'a pas de version HTML"
-          }
-        }
-      }
-    },
     "three columns": {
       "localizations": {
         "fr": {
@@ -811,32 +871,12 @@
         }
       }
     },
-    "To: %@": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "À : %@"
-          }
-        }
-      }
-    },
     "two columns": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "deux colonnes"
-          }
-        }
-      }
-    },
-    "Type a name": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tapez un nom"
           }
         }
       }

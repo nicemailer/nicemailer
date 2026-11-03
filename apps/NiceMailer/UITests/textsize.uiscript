@@ -1,0 +1,31 @@
+# Text size: cmd + / cmd = / cmd - / cmd 0, like Zed.
+expect font_size = 12
+expect row_height = 20
+key cmd-=
+expect font_size = 13
+expect flash ~ 13
+expect row_height > 20
+key cmd-+
+key cmd-+
+expect font_size = 15
+snap bigger
+# The list still works after the rebuild: keys and clicks.
+key j
+expect selected = 1
+click thread:3
+expect selected = 3
+key cmd--
+expect font_size = 14
+key cmd-0
+expect font_size = 12
+expect row_height = 20
+# Bounds.
+key cmd--
+key cmd--
+key cmd--
+key cmd--
+expect font_size = 9
+snap smallest
+key cmd--
+expect font_size = 9
+key cmd-0

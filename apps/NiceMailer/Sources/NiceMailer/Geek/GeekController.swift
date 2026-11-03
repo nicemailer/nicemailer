@@ -117,9 +117,13 @@ final class GeekController {
     /// Last row clicked and when, to detect double-clicks (see `clickSearch`).
     @ObservationIgnored var lastClick: (tag: String, time: TimeInterval) = ("", 0)
 
-    init(model: AppModel, defaults: UserDefaults = AppDefaults.store) {
+    /// The text size it changes on ⌘+ / ⌘− / ⌘0 (a separate one in tests).
+    @ObservationIgnored let textSize: TextSize
+
+    init(model: AppModel, defaults: UserDefaults = AppDefaults.store, textSize: TextSize? = nil) {
         self.model = model
         self.defaults = defaults
+        self.textSize = textSize ?? .shared
         columns = defaults.object(forKey: "geek.columns") as? Int ?? 2
         statusPosition = StatusPosition(rawValue: defaults.string(forKey: "geek.status") ?? "") ?? .bottom
         listFraction = defaults.object(forKey: "geek.listFraction") as? Double ?? 0.32
@@ -163,8 +167,20 @@ final class GeekController {
     /// goes no further), `false` to let AppKit process it (⌘ shortcuts).
     func handle(_ event: NSEvent) -> Bool {
         let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        // ⌘ shortcuts belong to the menus (⌘Q, ⌘R…).
-        if mods.contains(.command) { return false }
+        if mods.contains(.command) {
+            // Text size (`TextSize`): handled here so that ⌘= works too (on
+            // AZERTY, `+` needs Shift) and in every keyboard layout. The
+            // View menu has the same commands.
+            switch event.characters ?? "" {
+            case "+", "=": textSize.bigger()
+            case "-": textSize.smaller()
+            case "0": textSize.reset()
+            // Other ⌘ shortcuts belong to the menus (⌘Q, ⌘R…).
+            default: return false
+            }
+            model.flash = L("Text size: %lld pt", Int(textSize.size))
+            return true
+        }
         let control = mods.contains(.control)
         let key = (control ? event.charactersIgnoringModifiers : event.characters) ?? ""
         let code = event.keyCode

@@ -11,11 +11,13 @@ struct GeekControllerTests {
     let core = FakeCore(handler: Fixture.answer)
     let model = AppModel()
     let defaults: UserDefaults
+    let textSize: TextSize
     let controller: GeekController
 
     init() async {
         defaults = UserDefaults(suiteName: "NiceMailerTests-\(UUID().uuidString)")!
-        controller = GeekController(model: model, defaults: defaults)
+        textSize = TextSize(defaults: defaults)
+        controller = GeekController(model: model, defaults: defaults, textSize: textSize)
         model.exportDirectory = "/tmp/nicemailer-tests"
         await model.attach(core)
         _ = await eventually { model.threads.count == 8 && model.openThread != nil }
@@ -35,6 +37,7 @@ struct GeekControllerTests {
         case "up": chars = "\u{F700}"; code = KeyCode.up
         default:
             if name.hasPrefix("ctrl-") { mods = .control; chars = String(name.dropFirst(5)) }
+            if name.hasPrefix("cmd-") { mods = .command; chars = String(name.dropFirst(4)) }
         }
         let event = NSEvent.keyEvent(
             with: .keyDown, location: .zero, modifierFlags: mods, timestamp: 0, windowNumber: 0, context: nil,
@@ -253,5 +256,26 @@ struct GeekControllerTests {
         #expect(core.calls("export_message")[0]["dir"] as? String == "/tmp/nicemailer-tests")
         press("s"); press("a")
         #expect(core.calls("export_message").count == 1 && model.flash != nil)
+    }
+
+    // MARK: Text size
+
+    @Test func commandPlusMinusAndZeroChangeTheTextSize() {
+        #expect(textSize.size == 12)
+        press("cmd-=")
+        press("cmd-+")
+        #expect(textSize.size == 14)
+        #expect(model.flash?.contains("14") == true)
+        press("cmd--")
+        #expect(textSize.size == 13)
+        press("cmd-0")
+        #expect(textSize.size == 12)
+    }
+
+    @Test func otherCommandShortcutsAreLeftToTheMenus() {
+        let event = NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: .command, timestamp: 0, windowNumber: 0, context: nil,
+            characters: "q", charactersIgnoringModifiers: "q", isARepeat: false, keyCode: 12)!
+        #expect(!controller.handle(event))
     }
 }

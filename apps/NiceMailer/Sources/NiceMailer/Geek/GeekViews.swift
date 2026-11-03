@@ -47,6 +47,10 @@ private struct GeekWindow: View {
     let controller: GeekController
 
     var body: some View {
+        // Rebuilt from scratch when the text size changes (`.id`): every
+        // size and width of the theme derives from it, and rebuilding is
+        // more reliable than counting on lazy rows to notice the change.
+        let textSize = TextSize.shared.size
         VStack(spacing: 0) {
             if controller.statusPosition == .top { GeekStatusBar(controller: controller) }
             ZStack(alignment: .bottomTrailing) {
@@ -61,6 +65,7 @@ private struct GeekWindow: View {
         // `ui.md`: no millisecond lost. Turning animations off for the
         // whole tree also removes SwiftUI's default fades.
         .transaction { $0.animation = nil; $0.disablesAnimations = true }
+        .id(textSize)
     }
 
     @ViewBuilder private var content: some View {
@@ -169,7 +174,7 @@ struct GeekStatusBar: View {
         }
         .font(.geek(11))
         .padding(.horizontal, 6)
-        .frame(height: 20)
+        .frame(height: scaled(20))
         .background(Palette.statusBar)
     }
 }
@@ -230,7 +235,7 @@ private struct GeekFolderColumn: View {
                         if f.unreadCount > 0 { Text("\(f.unreadCount)").foregroundStyle(Palette.unread) }
                     }
                     .padding(.horizontal, 8)
-                    .frame(height: 20)
+                    .frame(height: scaled(20))
                     .background(f.id == model.selectedFolderId && model.listFilter == nil ? Palette.cursor : Color.clear)
                     // The whole row is clickable, not only its text.
                     .contentShape(Rectangle())
@@ -288,6 +293,9 @@ private struct GeekThreadRows: View {
                 .onChange(of: model.selectedThreadId) { _, id in
                     if let id { proxy.scrollTo(id) }
                 }
+                // After a rebuild (new text size, new layout), bring the
+                // cursor back into view.
+                .onAppear { if let id = model.selectedThreadId { proxy.scrollTo(id) } }
                 .overlay {
                     if model.threads.isEmpty {
                         Text(L("No mail")).foregroundStyle(Palette.muted)
@@ -300,7 +308,9 @@ private struct GeekThreadRows: View {
 
 /// Fixed column widths of the list rows, computed from the list width in
 /// whole characters of the (monospaced) font.
+@MainActor
 struct RowLayout: Equatable {
+    /// Font size of the rows, written for the default text size.
     static let fontSize: CGFloat = 12
     let char: CGFloat
     /// Date: 8 characters ("14/09/21", "16 sept.").
@@ -310,8 +320,9 @@ struct RowLayout: Equatable {
     /// Message count: 3 characters, right-aligned.
     let count: CGFloat
 
-    init(width: CGFloat) {
-        char = Fonts.charWidth(Self.fontSize)
+    /// `scale`: the text size factor (`TextSize.scale`).
+    init(width: CGFloat, scale: CGFloat? = nil) {
+        char = Fonts.charWidth(Self.fontSize * (scale ?? TextSize.shared.scale))
         date = 8 * char
         let chars = (width / char * 0.26).rounded(.down)
         sender = min(24, max(8, chars)) * char
@@ -351,7 +362,7 @@ private struct GeekThreadRow: View {
         .font(.geek(RowLayout.fontSize, weight: .regular))
         .lineLimit(1)
         .padding(.trailing, 6)
-        .frame(height: 20)
+        .frame(height: scaled(20))
         .background(cursor ? Palette.cursor : marked ? Palette.marked : Color.clear)
     }
 }
@@ -429,7 +440,7 @@ private struct GeekSearchRow: View {
         .font(.geek(RowLayout.fontSize))
         .lineLimit(1)
         .padding(.horizontal, 6)
-        .frame(height: 36)
+        .frame(height: scaled(36))
         .background(cursor ? Palette.cursor : Color.clear)
     }
 }
@@ -460,7 +471,7 @@ private struct GeekReaderColumn: View {
                     }
                 }
                 .padding(.horizontal, 12)
-                .frame(height: 26)
+                .frame(height: scaled(26))
                 Palette.separator.frame(height: 1)
                 if model.bodyFormat == "html" {
                     HTMLReader(html: threadHTML(thread))
@@ -487,9 +498,9 @@ private struct GeekReaderColumn: View {
         /* The mail's own styles are removed by the sanitizer: everything is
            shown in the theme font, like the text reader. */
         body, table, td, p, div, span, a, li { font-family: "NM Mono", ui-monospace, monospace; }
-        body { margin: 16px; font-size: 14px; }
-        .h { font-size: 11px; color: #888; margin: 0 0 12px; white-space: pre-wrap; }
-        pre { font: 14px "NM Mono", ui-monospace, monospace; white-space: pre-wrap; }
+        body { margin: 16px; font-size: \(Int(scaled(14)))px; }
+        .h { font-size: \(Int(scaled(11)))px; color: #888; margin: 0 0 12px; white-space: pre-wrap; }
+        pre { font: \(Int(scaled(14)))px "NM Mono", ui-monospace, monospace; white-space: pre-wrap; }
         hr { border: 0; border-top: 1px solid #8884; margin: 24px 0; }
         img { max-width: 100%; height: auto; }
         /* Remote images were removed by the core: hide the empty boxes. */
@@ -548,7 +559,7 @@ private struct TextReader: NSViewRepresentable {
         guard let text = scroll.documentView as? NSTextView else { return }
         // Rebuild only when the thread changes, so a redraw does not reset
         // the scroll position.
-        let key = "\(thread.id)-\(thread.messages.count)-\(thread.messages.last?.id ?? 0)"
+        let key = "\(thread.id)-\(thread.messages.count)-\(thread.messages.last?.id ?? 0)-\(TextSize.shared.size)"
         if context.coordinator.key == key { return }
         context.coordinator.key = key
         text.textStorage?.setAttributedString(attributed(thread))
@@ -561,13 +572,13 @@ private struct TextReader: NSViewRepresentable {
     private func attributed(_ thread: ThreadView) -> NSAttributedString {
         let out = NSMutableAttributedString()
         let headerAttrs: [NSAttributedString.Key: Any] = [
-            .font: Fonts.reading(11),
+            .font: Fonts.scaled(11),
             .foregroundColor: NSColor(Palette.muted),
         ]
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineSpacing = 3
         let bodyAttrs: [NSAttributedString.Key: Any] = [
-            .font: Fonts.reading(14),
+            .font: Fonts.scaled(14),
             .foregroundColor: NSColor(Palette.text),
             .paragraphStyle: paragraph,
         ]
@@ -649,7 +660,7 @@ private struct KeyMenu: View {
 
     var body: some View {
         // Width of the key column: the longest key, in monospace characters.
-        let keyWidth = CGFloat(entries.map(\.0.count).max() ?? 1) * 7.5 + 4
+        let keyWidth = CGFloat(entries.map(\.0.count).max() ?? 1) * Fonts.charWidth(12 * TextSize.shared.scale) + 4
         VStack(alignment: .leading, spacing: 2) {
             Text(title).foregroundStyle(Palette.accent).padding(.bottom, 2)
             ForEach(Array(entries.enumerated()), id: \.offset) { _, e in
@@ -681,19 +692,19 @@ private struct PickerPopup: View {
                 Text("\(entries.count)").foregroundStyle(Palette.muted)
             }
             .padding(.horizontal, 8)
-            .frame(height: 24)
+            .frame(height: scaled(24))
             Palette.separator.frame(height: 1)
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(Array(entries.enumerated()), id: \.offset) { i, e in
                             HStack(spacing: 8) {
-                                Text(e.key).foregroundStyle(Palette.muted).frame(width: 22, alignment: .leading)
+                                Text(e.key).foregroundStyle(Palette.muted).frame(width: scaled(22), alignment: .leading)
                                 Text(e.label).lineLimit(1).truncationMode(.middle)
                                 Spacer()
                             }
                             .padding(.horizontal, 8)
-                            .frame(height: 20)
+                            .frame(height: scaled(20))
                             .background(i == current ? Palette.cursor : Color.clear)
                             .contentShape(Rectangle())
                             .onTapGesture { controller.clickPicker(kind, i) }
@@ -709,7 +720,7 @@ private struct PickerPopup: View {
                 if entries.isEmpty { Text(emptyText).foregroundStyle(Palette.muted) }
             }
         }
-        .frame(width: 520, height: 320)
+        .frame(width: scaled(520), height: scaled(320))
         .background(Palette.popup)
         .overlay(Rectangle().stroke(Palette.separator, lineWidth: 1))
     }
@@ -752,7 +763,7 @@ private struct ScreenList<Row: View>: View {
                 Spacer()
             }
             .padding(.horizontal, 10)
-            .frame(height: 26)
+            .frame(height: scaled(26))
             Palette.separator.frame(height: 1)
             ScrollViewReader { proxy in
                 ScrollView {
@@ -760,7 +771,7 @@ private struct ScreenList<Row: View>: View {
                         ForEach(0..<count, id: \.self) { i in
                             row(i)
                                 .padding(.horizontal, 10)
-                                .frame(height: 20)
+                                .frame(height: scaled(20))
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .background(i == index ? Palette.cursor : Color.clear)
                                 .contentShape(Rectangle())
@@ -788,10 +799,10 @@ private struct ContactsScreen: View {
         ) { i in
             let c = controller.contacts[i]
             HStack(spacing: 8) {
-                Text(c.addr).frame(width: 300, alignment: .leading)
-                Text(c.name ?? "").foregroundStyle(Palette.muted).frame(width: 200, alignment: .leading)
-                Text(c.screeningTarget.map { Role.name($0) } ?? "").frame(width: 90, alignment: .leading)
-                Text("\(c.messageCount)").foregroundStyle(Palette.muted).frame(width: 60, alignment: .trailing)
+                Text(c.addr).frame(width: scaled(300), alignment: .leading)
+                Text(c.name ?? "").foregroundStyle(Palette.muted).frame(width: scaled(200), alignment: .leading)
+                Text(c.screeningTarget.map { Role.name($0) } ?? "").frame(width: scaled(90), alignment: .leading)
+                Text("\(c.messageCount)").foregroundStyle(Palette.muted).frame(width: scaled(60), alignment: .trailing)
                 Text(c.groups.map { "@" + $0 }.joined(separator: " ")).foregroundStyle(Palette.accent)
             }
             .lineLimit(1)
@@ -810,9 +821,9 @@ private struct HistoryScreen: View {
         ) { i in
             let e = controller.history[i]
             HStack(spacing: 8) {
-                Text(Format.longDate(e.date)).foregroundStyle(Palette.muted).frame(width: 230, alignment: .leading)
-                Text(e.source).foregroundStyle(Palette.accent).frame(width: 50, alignment: .leading)
-                Text(e.action).frame(width: 110, alignment: .leading)
+                Text(Format.longDate(e.date)).foregroundStyle(Palette.muted).frame(width: scaled(230), alignment: .leading)
+                Text(e.source).foregroundStyle(Palette.accent).frame(width: scaled(50), alignment: .leading)
+                Text(e.action).frame(width: scaled(110), alignment: .leading)
                 Text(e.summary).lineLimit(1)
             }
         }
@@ -831,7 +842,7 @@ private struct NamesScreen: View {
             onClick: { controller.clickScreenRow($0) }
         ) { i in
             HStack(spacing: 8) {
-                Text(rows[i].0).frame(width: 260, alignment: .leading)
+                Text(rows[i].0).frame(width: scaled(260), alignment: .leading)
                 Text(rows[i].1).foregroundStyle(Palette.muted)
             }
         }

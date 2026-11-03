@@ -3,6 +3,7 @@ import Testing
 @testable import NiceMailer
 
 /// Formatting, column layout and translations of the geek theme.
+@MainActor
 struct FormatTests {
     @Test func listDatesFitTheirEightCharacterColumn() {
         let now = Int(Date().timeIntervalSince1970)

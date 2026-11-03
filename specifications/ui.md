@@ -117,3 +117,5 @@ v display (view)
 	s barre de statut : en bas, en haut, masquée
 
 Le nombre de colonnes, la position de la barre de statut et la largeur de la liste sont mémorisés.
+
+Taille du texte, comme dans Zed : ⌘+ (ou ⌘=, sans Maj sur un clavier AZERTY) agrandit toute l'interface, ⌘− la réduit, ⌘0 revient à la taille par défaut, d'un point à la fois entre 9 et 24 points (12 par défaut). Une seule taille de base : polices, hauteur des lignes, largeur des colonnes, menus, sélecteurs et vue HTML en découlent. Elle est mémorisée.

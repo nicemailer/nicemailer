@@ -174,8 +174,61 @@ extension NSColor {
     }
 }
 
+/// The text size of the geek theme, like Zed's ⌘+ / ⌘− (`ui.md`).
+///
+/// One base size (12 pt by default) from which every size of the theme
+/// derives: fonts, row heights, column widths, menus, the HTML view. It is
+/// remembered in the preferences.
+@MainActor
+@Observable
+final class TextSize {
+    static let shared = TextSize(defaults: AppDefaults.store)
+    static let defaultSize: Double = 12
+    static let range: ClosedRange<Double> = 9...24
+    static let key = "geek.fontSize"
+
+    @ObservationIgnored private let defaults: UserDefaults
+
+    /// Base size in points.
+    private(set) var size: Double {
+        didSet { defaults.set(size, forKey: Self.key) }
+    }
+
+    /// Factor applied to the sizes written for the default base size.
+    var scale: CGFloat { CGFloat(size / Self.defaultSize) }
+
+    init(defaults: UserDefaults) {
+        self.defaults = defaults
+        let stored = defaults.object(forKey: Self.key) as? Double ?? Self.defaultSize
+        size = min(Self.range.upperBound, max(Self.range.lowerBound, stored))
+    }
+
+    /// One point bigger (⌘+), within `range`.
+    func bigger() { size = min(Self.range.upperBound, size + 1) }
+    /// One point smaller (⌘−), within `range`.
+    func smaller() { size = max(Self.range.lowerBound, size - 1) }
+    /// Back to the default size (⌘0).
+    func reset() { size = Self.defaultSize }
+}
+
+/// A length of the geek layout, written for the default text size, scaled
+/// to the current one (row heights, column widths, popup sizes).
+@MainActor
+func scaled(_ value: CGFloat) -> CGFloat { value * TextSize.shared.scale }
+
+extension Fonts {
+    /// The geek font at a size written for the default text size, scaled
+    /// to the current one.
+    @MainActor
+    static func scaled(_ size: CGFloat, weight: NSFont.Weight = .regular) -> NSFont {
+        reading(size * TextSize.shared.scale, weight: weight)
+    }
+}
+
 extension Font {
-    /// Font of the whole geek theme: iA Writer Mono V (`ui.md`).
+    /// Font of the whole geek theme: iA Writer Mono V (`ui.md`), at a size
+    /// written for the default text size and scaled to the current one.
+    @MainActor
     static func geek(_ size: CGFloat = 12, weight: Font.Weight = .regular) -> Font {
         let nsWeight: NSFont.Weight
         switch weight {
@@ -183,6 +236,6 @@ extension Font {
         case .semibold: nsWeight = .semibold
         default: nsWeight = .regular
         }
-        return Font(Fonts.reading(size, weight: nsWeight))
+        return Font(Fonts.scaled(size, weight: nsWeight))
     }
 }
