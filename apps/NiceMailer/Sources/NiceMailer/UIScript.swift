@@ -50,6 +50,7 @@ enum UIScript {
         // The SwiftUI WindowGroup still opens an (empty) window: close it.
         for w in NSApp.windows { w.close() }
         let model = AppModel()
+        model.startUnified = true
         let host = NSHostingView(rootView: GeekRootView().environment(model))
         // Borderless: the content fills the window (no title bar to offset
         // coordinates), and macOS lets it sit entirely off screen.
@@ -118,7 +119,7 @@ extension View {
 /// | `expect FIELD OP VALUE` | check the state (`=`, `!=`, `~` contains, `!~` does not contain, `>`, `<`), waiting up to 5 s |
 ///
 /// Targets: `thread:N` (N-th row of the list), `search:N`, `picker:N`,
-/// `screen:N`, `folder:ACCOUNT/NAME`, `reader-link:N` (N-th header or
+/// `screen:N`, `folder:NAME` (folder of the current view), `reader-link:N` (N-th header or
 /// "···" line of the reader).
 @MainActor
 private final class Runner {
@@ -271,10 +272,8 @@ private final class Runner {
             guard let i = Int(parts[1]), model.threads.indices.contains(i) else { return nil }
             id = "thread-\(model.threads[i].id)"
         case "folder":
-            let an = parts[1].split(separator: "/", maxSplits: 1).map(String.init)
-            guard an.count == 2,
-                  let f = model.folders.first(where: { $0.accountName == an[0] && $0.name == an[1] }) else { return nil }
-            id = "folder-\(f.id)"
+            // A folder of the current view, by name.
+            id = "folder-\(parts[1])"
         default:
             id = "\(parts[0])-\(parts[1])"
         }
@@ -360,8 +359,8 @@ private final class Runner {
             "selected_tags": sel?.tags.joined(separator: ",") ?? "",
             "marked": markedIdx.map(String.init).joined(separator: ","),
             "marked_count": "\(m.marked.count)",
-            "folder": m.selectedFolder?.name ?? "",
-            "account": m.selectedFolder?.accountName ?? "",
+            "folder": m.currentFolderName,
+            "account": m.scopeName,
             "search_text": m.searchText,
             "search_count": "\(m.searchResults.count)",
             "search_index": "\(c.searchIndex)",

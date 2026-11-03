@@ -412,8 +412,15 @@ async fn dispatch(core: &Arc<Core>, session: &mut Session, req: Request) -> Resu
         method::LIST_THREADS => {
             let p: ListThreadsParams = params(req.params)?;
             let as_of = as_of();
-            let (items, next_cursor) =
-                with_store(core, move |s| s.list_threads(p.folder_id, p.cursor.as_deref(), limit(p.limit), p.sort)).await?;
+            let folders = match (p.folder_id, p.folder_ids) {
+                (Some(f), None) => vec![f],
+                (None, Some(fs)) if !fs.is_empty() => fs,
+                _ => return Err(RpcError::new(error_code::INVALID_PARAMS, "folder_id ou folder_ids attendu")),
+            };
+            let (items, next_cursor) = with_store(core, move |s| {
+                s.list_threads_in(&folders, p.cursor.as_deref(), limit(p.limit), p.sort)
+            })
+            .await?;
             to_value(Page { items, next_cursor, as_of })
         }
         method::GET_THREAD => {

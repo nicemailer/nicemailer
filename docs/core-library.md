@@ -4,7 +4,7 @@ JSON-RPC methods added for the geek theme (`docs/geek-ui.md`). They can be calle
 
 ## Sorting a folder by modification
 
-`list_threads` takes `"sort": "received"` (default) or `"sort": "modified"`. With `modified`, threads are ordered by the latest change the user made to one of their messages in the folder (move, flag, read, tag): "what did I just do". Each thread row also carries `folder_id`, `date_last_modified` and its `tags`.
+`list_threads` takes `folder_id`, or `folder_ids` to list several folders together (the unified view "all" of the app lists the folders of one role in every account). Each folder is read with its own index, one page at most, and the pages are merged, so a page costs the same whatever the size of the folders. It also takes `"sort": "received"` (default) or `"sort": "modified"`. With `modified`, threads are ordered by the latest change the user made to one of their messages in the folder (move, flag, read, tag): "what did I just do". Each thread row also carries `folder_id`, `date_last_modified` and its `tags`.
 
 Backed by the column `thread_folder.date_last_modified` and its index `idx_thread_folder_modified`, kept up to date with the other thread aggregates.
 

@@ -32,6 +32,8 @@ final class GeekController {
     enum PickerKind {
         /// `h`: go to a folder.
         case folders
+        /// `@`: go to another account.
+        case accounts
         /// `l`: open a link of the mail.
         case links
         /// `t`: tag the threads (existing tag, or a new one typed).
@@ -219,8 +221,7 @@ final class GeekController {
         case .group(let g): return L("group: %@", g.name)
         case .contact(let c): return L("contact: %@", c.addr)
         case nil:
-            guard let f = model.selectedFolder else { return "" }
-            return "\(f.accountName) · \(f.name)"
+            return "\(model.scopeName) · \(model.currentFolderName)"
         }
     }
 
@@ -325,10 +326,9 @@ final class GeekController {
                 model.searchText = ""
             } else if !model.marked.isEmpty {
                 model.marked = []
-            } else if model.listFilter != nil, let f = model.selectedFolderId {
+            } else if model.listFilter != nil {
                 // Back from a tag, group or contact list to the folder.
-                model.selectedFolderId = nil
-                model.selectedFolderId = f
+                model.leaveFilter()
             }
             return
         case KeyCode.returnKey:
@@ -354,6 +354,7 @@ final class GeekController {
         case "J": if !searching { model.markAndMove(1) }
         case "K": if !searching { model.markAndMove(-1) }
         case "h": openPicker(.folders)
+        case "@": openPicker(.accounts)
         case "l": openPicker(.links)
         case " ": scrollReader(pages: 1)
         case "d": model.moveTargets(to: "archive")
@@ -409,12 +410,10 @@ final class GeekController {
                 }
             }
         case .goto:
-            // Folders of the current account, then the other screens.
-            let accountId = model.selectedFolder?.accountId ?? model.folders.first?.accountId
-            var entries = model.folders.filter { $0.accountId == accountId && $0.letter != nil }.map { f in
-                Entry(key: (f.letter ?? "").lowercased(), label: f.name) { [weak self] in
-                    self?.goToFolder(f.id)
-                }
+            // Folders of the current view ("all" or one account), then the
+            // other screens.
+            var entries = scopeFolders.filter { !$0.letter.isEmpty }.map { f in
+                Entry(key: f.letter.lowercased(), label: f.name) { [weak self] in self?.open(f) }
             }
             entries += [
                 Entry(key: "c", label: L("Contacts")) { [weak self] in self?.open(.contacts) },
@@ -450,6 +449,59 @@ final class GeekController {
         statusPosition = all[(all.firstIndex(of: statusPosition)! + 1) % all.count]
     }
 
+    /// A folder of the current view: a real folder of the account, or in
+    /// the unified view a role gathering the folders of every account.
+    struct ScopeFolder: Identifiable {
+        /// Folder id, or nil for a unified role.
+        let folderId: Int?
+        let role: String?
+        let name: String
+        let letter: String
+        let unread: Int
+        var id: String { folderId.map { "f\($0)" } ?? "r\(role ?? "")" }
+    }
+
+    /// Folders of the current view, in display order. In the unified view,
+    /// one entry per role, with the unread counts of every account added up;
+    /// folders without a role (user folders) stay per account and are not
+    /// listed there.
+    var scopeFolders: [ScopeFolder] {
+        if let account = model.scopeAccountId {
+            return model.folders.filter { $0.accountId == account }.map {
+                ScopeFolder(folderId: $0.id, role: $0.role, name: $0.name, letter: $0.letter ?? "", unread: $0.unreadCount)
+            }
+        }
+        var out: [ScopeFolder] = []
+        for f in model.folders {
+            guard let role = f.role else { continue }
+            if let i = out.firstIndex(where: { $0.role == role }) {
+                let o = out[i]
+                out[i] = ScopeFolder(folderId: nil, role: role, name: o.name, letter: o.letter, unread: o.unread + f.unreadCount)
+            } else {
+                out.append(ScopeFolder(folderId: nil, role: role, name: f.name, letter: f.letter ?? "", unread: f.unreadCount))
+            }
+        }
+        return out
+    }
+
+    /// Whether `f` is the folder shown.
+    func isCurrent(_ f: ScopeFolder) -> Bool {
+        guard model.listFilter == nil else { return false }
+        if let id = f.folderId { return id == model.selectedFolderId }
+        return f.role == model.unifiedRole
+    }
+
+    /// Opens a folder of the current view.
+    func open(_ f: ScopeFolder) {
+        if let id = f.folderId {
+            goToFolder(id)
+        } else if let role = f.role {
+            screen = .mail
+            model.searchText = ""
+            model.selectUnified(role)
+        }
+    }
+
     func goToFolder(_ id: Int) {
         screen = .mail
         model.searchText = ""
@@ -465,6 +517,7 @@ final class GeekController {
             ("j k", L("next / previous mail")),
             ("J K", L("mark and move (multiple selection)")),
             ("h", L("go to a folder")),
+            ("@", L("go to an account")),
             ("l", L("links of the mail")),
             ("d", L("done (archive)")),
             ("m…", L("move to a folder")),
@@ -495,9 +548,48 @@ final class GeekController {
             Task { await loadTags() }
         case .group:
             Task { await loadGroups() }
-        case .folders, .links:
+        case .folders, .links, .accounts:
             break
         }
+    }
+
+    /// Opens a picker from a click in the status bar (`h` and `@`).
+    func openPickerFromStatusBar(_ kind: PickerKind) {
+        model.flash = nil
+        if screen != .mail { screen = .mail }
+        openPicker(kind)
+    }
+
+    /// Accounts, in the order of the folder list: (id, name, unread mails
+    /// in their workflow folders).
+    var accounts: [(id: Int, name: String, unread: Int)] {
+        var out: [(id: Int, name: String, unread: Int)] = []
+        for f in model.folders {
+            if let i = out.firstIndex(where: { $0.id == f.accountId }) {
+                out[i].unread += f.unreadCount
+            } else {
+                out.append((f.accountId, f.accountName, f.unreadCount))
+            }
+        }
+        return out
+    }
+
+    /// Goes to another account (`nil`: the unified view "all"), in the
+    /// folder of the same role as the current one (Archive to Archive), or
+    /// its Inbox, or its first folder.
+    func goToAccount(_ accountId: Int?) {
+        let role = model.currentRole
+        guard let accountId else {
+            screen = .mail
+            model.searchText = ""
+            model.selectUnified(role ?? "inbox")
+            return
+        }
+        let folders = model.folders.filter { $0.accountId == accountId }
+        let target = folders.first { $0.role == role && role != nil }
+            ?? folders.first { $0.role == "inbox" }
+            ?? folders.first
+        if let target { goToFolder(target.id) }
     }
 
     /// Rows of a picker, filtered by the text typed: every word typed must
@@ -507,13 +599,28 @@ final class GeekController {
         let all: [Entry]
         switch kind {
         case .folders:
-            let several = Set(model.folders.map(\.accountId)).count > 1
-            all = model.folders.map { f in
-                let unread = f.unreadCount > 0 ? "  \(f.unreadCount)" : ""
-                return Entry(key: f.letter ?? " ", label: (several ? "\(f.accountName) · " : "") + f.name + unread) {
-                    [weak self] in self?.goToFolder(f.id)
+            // The folders of the current view only: the account is chosen
+            // with `@`.
+            all = scopeFolders.map { f in
+                let unread = f.unread > 0 ? "  \(f.unread)" : ""
+                return Entry(key: f.letter.isEmpty ? " " : f.letter, label: f.name + unread) { [weak self] in self?.open(f) }
+            }
+        case .accounts:
+            // "all" first (the unified view), then each account; the current
+            // one is marked.
+            let unified = model.unifiedRole != nil
+            let total = accounts.reduce(0) { $0 + $1.unread }
+            var entries = [Entry(key: unified ? "•" : " ", label: AppModel.unifiedName + (total > 0 ? "  \(total)" : "")) {
+                [weak self] in self?.goToAccount(nil)
+            }]
+            let current = model.scopeAccountId
+            entries += accounts.map { a in
+                let unread = a.unread > 0 ? "  \(a.unread)" : ""
+                return Entry(key: !unified && a.id == current ? "•" : " ", label: a.name + unread) { [weak self] in
+                    self?.goToAccount(a.id)
                 }
             }
+            all = entries
         case .links:
             all = model.links.enumerated().map { i, url in
                 Entry(key: "\(i + 1)", label: url.absoluteString) { NSWorkspace.shared.open(url) }

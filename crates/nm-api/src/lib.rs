@@ -266,7 +266,13 @@ pub struct SubscribeResult {
 /// Params of `list_threads`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ListThreadsParams {
-    pub folder_id: i64,
+    /// The folder to list…
+    #[serde(default)]
+    pub folder_id: Option<i64>,
+    /// …or several folders listed together (the unified view lists the
+    /// folders of the same role in every account). Exactly one of the two.
+    #[serde(default)]
+    pub folder_ids: Option<Vec<i64>>,
     /// Opaque cursor returned as `next_cursor` by the previous page. Absent
     /// for the first page. Clients must not build or parse it. A cursor is
     /// only valid with the `sort` it was produced with.

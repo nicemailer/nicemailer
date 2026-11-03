@@ -121,7 +121,31 @@ impl Store {
         limit: u32,
         sort: ThreadSort,
     ) -> Result<(Vec<ThreadSummary>, Option<String>)> {
-        let role = self.folder_role(folder_id)?;
+        self.list_threads_in(&[folder_id], cursor, limit, sort)
+    }
+
+    /// One page of the threads of several folders together, newest first:
+    /// the unified view ("all") lists the folders of the same role in every
+    /// account. A thread belongs to one account, so it is never listed twice.
+    ///
+    /// Each folder is read with its own index, `limit + 1` rows at most,
+    /// then the pages are merged: the cost depends on the page size, not on
+    /// the size of the folders (sorting the union of two folders of 40 000
+    /// threads on every page would not).
+    pub fn list_threads_in(
+        &self,
+        folder_ids: &[i64],
+        cursor: Option<&str>,
+        limit: u32,
+        sort: ThreadSort,
+    ) -> Result<(Vec<ThreadSummary>, Option<String>)> {
+        if folder_ids.is_empty() {
+            return Ok((vec![], None));
+        }
+        let mut roles = Vec::with_capacity(folder_ids.len());
+        for f in folder_ids {
+            roles.push((*f, self.folder_role(*f)?));
+        }
         // Fetch one extra row: if it exists, there is a next page. This
         // avoids a separate `count(*)` query.
         let fetch = i64::from(limit) + 1;
@@ -133,24 +157,25 @@ impl Store {
             ThreadSort::Received => "tf.date_last_received",
             ThreadSort::Modified => "tf.date_last_modified",
         };
-        // Two separate queries rather than one with `?2 IS NULL OR ...`: such
-        // a condition would prevent SQLite from using the index for the
-        // row-value comparison, and every page would scan the folder.
-        let rows: Vec<ListRow> = {
-            // Closure that converts a row into a tuple, shared by both queries.
-            let map = |r: &Row| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?));
-            let select = "SELECT tf.thread_id, t.subject, tf.date_last_received, tf.date_last_modified,
-                                 tf.message_count, tf.unread_count
-                            FROM thread_folder tf JOIN thread t ON t.id = tf.thread_id
-                           WHERE tf.folder_id = ?1";
-            match cursor {
+        let after = cursor.map(parse_cursor).transpose()?;
+        let mut rows: Vec<(i64, ListRow)> = Vec::new();
+        // Closure that converts a row into a tuple, shared by both queries.
+        let map = |r: &Row| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?));
+        let select = "SELECT tf.thread_id, t.subject, tf.date_last_received, tf.date_last_modified,
+                             tf.message_count, tf.unread_count
+                        FROM thread_folder tf JOIN thread t ON t.id = tf.thread_id
+                       WHERE tf.folder_id = ?1";
+        for &folder_id in folder_ids {
+            // Two separate queries rather than one with `?2 IS NULL OR ...`:
+            // such a condition would prevent SQLite from using the index for
+            // the row-value comparison, and every page would scan the folder.
+            let page: Vec<ListRow> = match after {
                 None => {
                     let sql = format!("{select} ORDER BY {key} DESC, tf.thread_id DESC LIMIT ?2");
                     let mut stmt = self.conn.prepare_cached(&sql)?;
                     stmt.query_map(params![folder_id, fetch], map)?.collect::<std::result::Result<_, _>>()?
                 }
-                Some(c) => {
-                    let (d, id) = parse_cursor(c)?;
+                Some((d, id)) => {
                     // `(a, b) < (x, y)` is a row-value comparison: true when
                     // a < x, or a = x and b < y. It matches the sort order.
                     let sql = format!(
@@ -160,16 +185,27 @@ impl Store {
                     stmt.query_map(params![folder_id, d, id, fetch], map)?
                         .collect::<std::result::Result<_, _>>()?
                 }
-            }
-        };
+            };
+            rows.extend(page.into_iter().map(|r| (folder_id, r)));
+        }
+        // Merge: newest first on the sort key, then the thread id, like the
+        // index order. A single folder is already in that order.
+        if folder_ids.len() > 1 {
+            let sort_key = |r: &(i64, ListRow)| {
+                let (_, (id, _, received, modified, _, _)) = r;
+                (if sort == ThreadSort::Modified { *modified } else { *received }, *id)
+            };
+            rows.sort_by_key(|r| std::cmp::Reverse(sort_key(r)));
+        }
 
         // `as i64` is an explicit numeric conversion; Rust never converts
         // between integer types implicitly.
         let has_more = rows.len() as i64 > i64::from(limit);
         let mut items = Vec::with_capacity(rows.len().min(limit as usize));
-        // `into_iter` consumes `rows`; `take(limit)` drops the extra row.
+        // `into_iter` consumes `rows`; `take(limit)` drops the extra rows.
         // The tuple is destructured directly in the `for` pattern.
-        for (thread_id, subject, received, modified, count, unread) in rows.into_iter().take(limit as usize) {
+        for (folder_id, (thread_id, subject, received, modified, count, unread)) in rows.into_iter().take(limit as usize) {
+            let role = roles.iter().find(|(f, _)| *f == folder_id).and_then(|(_, r)| *r);
             items.push(self.thread_summary(thread_id, folder_id, role, subject, (received, modified), count, unread)?);
         }
         let next_cursor = if has_more {

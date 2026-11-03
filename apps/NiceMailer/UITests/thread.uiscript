@@ -1,8 +1,10 @@
 # Simplified display of a thread: folded messages, hidden quotes and
 # signatures, T (show all), clicks on headers and on "···" lines.
-key h
-type fixture arc
+key @
+type fixture
 key ret
+key ;
+key a
 key j
 key j
 key j

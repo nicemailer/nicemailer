@@ -1,10 +1,18 @@
 # Pickers (folders, links, tags, groups) and search.
+# The folder picker lists the folders of the current view only (here the
+# unified view "all": one entry per role).
 key h
 expect overlay = picker(NiceMailer.GeekController.PickerKind.folders)
-expect picker_count = 24
-type fixture arc
+expect picker_count = 12
+type arc
 expect picker_count = 1
 snap folder-picker
+key ret
+expect account = all
+expect folder = Archive
+# The account is chosen with @.
+key @
+type fixture
 key ret
 expect account = fixture
 expect folder = Archive
@@ -40,7 +48,7 @@ key esc
 # Folder picker with the mouse.
 key h
 click picker:0
-expect account = perso
+expect account = fixture
 expect folder = Inbox
 # Search: type, keep the results, click, double-click opens.
 key /

@@ -1,0 +1,43 @@
+# Account and folder in the status bar: icons, key reminders, pickers by
+# key and by click, and the unified account "all".
+expect account = all
+expect folder = Inbox
+# The account picker: @, or a click on the account. "all" comes first.
+key @
+expect overlay = picker(NiceMailer.GeekController.PickerKind.accounts)
+expect picker_count = 3
+snap account-picker
+key esc
+click status:account
+expect overlay = picker(NiceMailer.GeekController.PickerKind.accounts)
+type fixture
+key ret
+expect account = fixture
+# Same role (Inbox) in the other account.
+expect folder = Inbox
+# The folder picker: a click on the folder; folders of this account only.
+click status:folder
+expect overlay = picker(NiceMailer.GeekController.PickerKind.folders)
+expect picker_count = 12
+type arc
+key ret
+expect folder = Archive
+# Back to "all", still in Archive: the archives of every account.
+key @
+click picker:0
+expect account = all
+expect folder = Archive
+expect thread_count > 4
+# Then the first account, still in Archive.
+key @
+click picker:1
+expect account = perso
+expect folder = Archive
+# The folder column shows one block, titled with the current view.
+key v
+key 3
+snap folder-column
+key @
+click picker:0
+expect account = all
+snap status-bar

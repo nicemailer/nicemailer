@@ -7,8 +7,14 @@ Switch themes with the **Theme** menu (Classic, Design, Geek). Design does not e
 ## Layout
 
 - **Mail list** on the left (about a third of the window; drag the separator to resize), **reading pane** on the right.
-- `v1` shows the list only, `v2` the list and the mail, `v3` adds the folders on the left.
-- The **status bar** shows the mode (`NOR`, or the prefix waiting for its second key, such as `m`) and the location (`account · folder`, or the tag, group, contact or search being listed). Messages (result of an action, errors) appear on the right and disappear at the next key. `vs` moves it to the top, hides it, or brings it back to the bottom.
+- `v1` shows the list only, `v2` the list and the mail, `v3` adds the folders on the left, in a single block titled with the current view: **all** or the account's name.
+
+## Accounts and the unified view "all"
+
+With several accounts, the app opens on **all**, the unified view: each folder (Inbox, Archive, Todo…) gathers the folders of the same role in every account, with their unread counts added up, and lists their mails together, newest first. Choose another view with `@` (or a click on the account in the status bar or on the title of the folder column): **all** comes first, then each account. Changing view keeps the folder role (Archive to Archive), or falls back to the Inbox.
+
+The folder picker (`h`), the `;` menu and the folder column only show the folders of the current view: the account is chosen with `@`. Moves and other actions apply to each mail in its own account.
+- The **status bar** shows the mode (`NOR`, or the prefix waiting for its second key, such as `m`), then the account (`@` icon) and the folder (folder icon), each followed by the key that opens its picker (`@` for accounts, `h` for folders). A click on either opens the same picker. While a tag, group, contact or search is listed, it shows that instead. Messages (result of an action, errors) appear on the right and disappear at the next key. `vs` moves it to the top, hides it, or brings it back to the bottom.
 - When a list opens, its first mail is selected, so the reading pane always shows something.
 
 Layout choices (columns, status bar position, list width) are remembered.
@@ -30,6 +36,7 @@ Actions apply to the **marked** mails if any (`J` / `K`), otherwise to the mail 
 | `j` `k` (or arrows) | next / previous mail |
 | `J` `K` | mark the mail and move (multiple selection) |
 | `h` | folder picker |
+| `@` | account picker: **all** (unified view) or one account, keeping the folder role (Archive to Archive), or its Inbox |
 | `l` | links of the mail; Return opens one in the browser |
 | `d` | done: move to Archive |
 | `m` + letter | move to a folder (`mt` Todo, `md` Deleted…); only allowed targets are offered |
@@ -60,6 +67,7 @@ The keyboard comes first, but every list can also be used with the mouse:
 | Mail list | select the mail, unmark the others | ⌘-click marks or unmarks a mail (the current one joins the selection); ⇧-click marks every mail from the current one to the clicked one |
 | Search results | select the result | double-click opens it in its folder |
 | Folders (3 columns) | go to the folder | |
+| Account or folder in the status bar | open the account or folder picker | |
 | Pickers | choose the row | |
 | Contacts, tags, groups | select the row | double-click lists its mails |
 

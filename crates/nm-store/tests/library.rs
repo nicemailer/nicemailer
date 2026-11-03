@@ -265,3 +265,30 @@ fn exports_a_message_as_eml_txt_and_md_without_overwriting() {
     assert!(matches!(store.export_message(&raw, 999, ExportFormat::Txt, &out), Err(StoreError::NotFound(_))));
     assert!(matches!(store.export_message(&raw, id, ExportFormat::Txt, &out.join("absent")), Err(StoreError::InvalidParams(_))));
 }
+
+#[test]
+fn several_folders_are_listed_together_newest_first_without_duplicates() {
+    let store = seeded();
+    let inbox = folder_id(&store, FolderRole::Inbox);
+    let archive = folder_id(&store, FolderRole::Archive);
+    let (one, _) = store.list_threads(inbox, None, 500, ThreadSort::Received).unwrap();
+    let (two, _) = store.list_threads(archive, None, 500, ThreadSort::Received).unwrap();
+    // Paginate the union with small pages.
+    let mut all = vec![];
+    let mut cursor: Option<String> = None;
+    loop {
+        let (items, next) = store.list_threads_in(&[inbox, archive], cursor.as_deref(), 7, ThreadSort::Received).unwrap();
+        all.extend(items);
+        match next {
+            Some(c) => cursor = Some(c),
+            None => break,
+        }
+    }
+    assert_eq!(all.len(), one.len() + two.len());
+    let ids: std::collections::HashSet<i64> = all.iter().map(|t| t.id).collect();
+    assert_eq!(ids.len(), all.len());
+    assert!(all.windows(2).all(|w| (w[0].date_last_received, w[0].id) > (w[1].date_last_received, w[1].id)));
+    // Each row keeps its own folder, for moves.
+    assert!(all.iter().all(|t| t.folder_id == inbox || t.folder_id == archive));
+    assert!(store.list_threads_in(&[], None, 10, ThreadSort::Received).unwrap().0.is_empty());
+}

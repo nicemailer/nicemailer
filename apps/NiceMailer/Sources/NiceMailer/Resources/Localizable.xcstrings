@@ -81,6 +81,16 @@
         }
       }
     },
+    "Account": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Compte"
+          }
+        }
+      }
+    },
     "Actual Size": {
       "localizations": {
         "fr": {
@@ -287,6 +297,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Déplacé dans %@"
+          }
+        }
+      }
+    },
+    "No account": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucun compte"
           }
         }
       }
@@ -687,6 +707,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "aller à un dossier ou un écran"
+          }
+        }
+      }
+    },
+    "go to an account": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "aller à un compte"
           }
         }
       }

@@ -90,7 +90,7 @@ enum Fixture {
         case "list_folders":
             return ["items": folders, "as_of": position]
         case "list_threads":
-            let folder = params["folder_id"] as? Int ?? 1
+            let folder = (params["folder_ids"] as? [Int])?.first ?? params["folder_id"] as? Int ?? 1
             let items = folder == 1 ? (1...8).map { thread($0) } : [thread(100 + folder, folder: folder)]
             return ["items": items, "next_cursor": NSNull(), "as_of": position]
         case "get_thread":

@@ -35,7 +35,12 @@ struct NiceMailerApp: App {
             .environment(model)
             .frame(minWidth: 700, minHeight: 420)
             // `.task` starts async work when the view appears.
-            .task { if !UIScript.isActive { await model.connect() } }
+            .task {
+                guard !UIScript.isActive else { return }
+                // The geek theme opens on the unified view "all".
+                model.startUnified = theme == .geek
+                await model.connect()
+            }
         }
         .commands {
             // Adds a "Reload" item (⌘R) to the View menu.

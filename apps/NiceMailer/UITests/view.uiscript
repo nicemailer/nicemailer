@@ -6,9 +6,11 @@ key v
 key 3
 expect columns = 3
 snap three-columns
-click folder:perso/Todo
+# The folder column of the unified view: one block, titled "all".
+expect account = all
+click folder:Todo
 expect folder = Todo
-click folder:perso/Inbox
+click folder:Inbox
 expect folder = Inbox
 key v
 key 2
@@ -31,9 +33,11 @@ key v
 key c
 expect sort = received
 # Text / HTML on the HTML newsletter of the archive account.
-key h
-type fixture arc
+key @
+type fixture
 key ret
+key ;
+key a
 expect selected_subject = La lettre de novembre
 expect body_format = text
 key v

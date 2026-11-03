@@ -151,8 +151,21 @@ struct GeekStatusBar: View {
                 .font(.geek(11, weight: .bold))
                 .foregroundStyle(Palette.background)
                 .background(Palette.accent)
-            Text(controller.locationLabel)
-                .lineLimit(1)
+            if controller.screen == .mail, model.searchText.isEmpty, model.listFilter == nil,
+               !model.listedFolderIds.isEmpty {
+                // Account ("all" for the unified view) and folder, each with
+                // its icon and the key that opens its picker; a click opens
+                // it too.
+                StatusBlock(icon: "at", text: model.scopeName, key: "@")
+                    .onTapGesture { controller.openPickerFromStatusBar(.accounts) }
+                    .uiTarget("status-account")
+                StatusBlock(icon: "folder", text: model.currentFolderName, key: "h")
+                    .onTapGesture { controller.openPickerFromStatusBar(.folders) }
+                    .uiTarget("status-folder")
+            } else {
+                Text(controller.locationLabel)
+                    .lineLimit(1)
+            }
             if case .search = controller.overlay {
                 Text("/" + controller.searchQuery + "▏").foregroundStyle(Palette.accent)
             }
@@ -176,6 +189,30 @@ struct GeekStatusBar: View {
         .padding(.horizontal, 6)
         .frame(height: scaled(20))
         .background(Palette.statusBar)
+    }
+}
+
+/// One element of the status bar: an SF Symbol, a name, and a reminder of
+/// the key that opens it (`ui.md`, status bar).
+private struct StatusBlock: View {
+    let icon: String
+    let text: String
+    let key: String
+
+    var body: some View {
+        HStack(spacing: scaled(4)) {
+            Image(systemName: icon)
+                .font(.system(size: scaled(10), weight: .semibold))
+                .foregroundStyle(Palette.muted)
+            Text(text).lineLimit(1)
+            Text(key)
+                .font(.geek(9))
+                .foregroundStyle(Palette.muted)
+                .padding(.horizontal, scaled(3))
+                // Square corners: the geek theme has no rounded shapes (`ui.md`).
+                .overlay(Rectangle().stroke(Palette.separator, lineWidth: 1))
+        }
+        .contentShape(Rectangle())
     }
 }
 
@@ -215,7 +252,8 @@ private struct MailColumns: View {
     }
 }
 
-/// Third column: the folders, grouped by account.
+/// Third column: the folders of the current view, under a single title:
+/// "all" (the unified view) or the account's name (`ui.md`).
 private struct GeekFolderColumn: View {
     @Environment(AppModel.self) private var model
     let controller: GeekController
@@ -223,24 +261,25 @@ private struct GeekFolderColumn: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                let several = Set(model.folders.map(\.accountId)).count > 1
-                ForEach(Array(model.folders.enumerated()), id: \.element.id) { index, f in
-                    if several, index == 0 || model.folders[index - 1].accountId != f.accountId {
-                        Text(f.accountName).foregroundStyle(Palette.muted).padding(.top, index == 0 ? 4 : 10).padding(.horizontal, 8)
-                    }
+                Text(model.scopeName)
+                    .foregroundStyle(Palette.muted)
+                    .padding(.top, scaled(4)).padding(.bottom, scaled(2)).padding(.horizontal, 8)
+                    .contentShape(Rectangle())
+                    .onTapGesture { controller.openPickerFromStatusBar(.accounts) }
+                ForEach(controller.scopeFolders) { f in
                     HStack(spacing: 6) {
-                        Text(f.letter?.lowercased() ?? " ").foregroundStyle(Palette.muted)
+                        Text(f.letter.lowercased()).foregroundStyle(Palette.muted)
                         Text(f.name)
                         Spacer()
-                        if f.unreadCount > 0 { Text("\(f.unreadCount)").foregroundStyle(Palette.unread) }
+                        if f.unread > 0 { Text("\(f.unread)").foregroundStyle(Palette.unread) }
                     }
                     .padding(.horizontal, 8)
                     .frame(height: scaled(20))
-                    .background(f.id == model.selectedFolderId && model.listFilter == nil ? Palette.cursor : Color.clear)
+                    .background(controller.isCurrent(f) ? Palette.cursor : Color.clear)
                     // The whole row is clickable, not only its text.
                     .contentShape(Rectangle())
-                    .onTapGesture { controller.goToFolder(f.id) }
-                    .uiTarget("folder-\(f.id)")
+                    .onTapGesture { controller.open(f) }
+                    .uiTarget("folder-\(f.name)")
                 }
             }
         }
@@ -839,6 +878,7 @@ private struct PickerPopup: View {
     private var title: String {
         switch kind {
         case .folders: L("Folder")
+        case .accounts: L("Account")
         case .links: L("Links")
         case .tag: L("Tag")
         case .group: L("Group")
@@ -850,6 +890,7 @@ private struct PickerPopup: View {
         case .links: L("No link in this mail")
         case .tag, .group: L("Type a name")
         case .folders: L("No folder")
+        case .accounts: L("No account")
         }
     }
 }
