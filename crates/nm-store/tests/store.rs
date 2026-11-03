@@ -11,6 +11,7 @@
 use std::collections::HashSet;
 
 use nm_core::{FolderRole, Source};
+use nm_api::ThreadSort;
 use nm_store::Store;
 use nm_store::seed::{SeedOptions, seed};
 
@@ -40,7 +41,7 @@ fn pagination_covers_every_thread_once_in_order() {
     let mut last = (i64::MAX, i64::MAX);
     loop {
         // `as_deref` turns `Option<String>` into `Option<&str>`.
-        let (items, next) = store.list_threads(archive, cursor.as_deref(), 17).unwrap();
+        let (items, next) = store.list_threads(archive, cursor.as_deref(), 17, ThreadSort::Received).unwrap();
         for t in &items {
             assert!((t.date_last_received, t.id) < last, "order must be decreasing");
             last = (t.date_last_received, t.id);
@@ -62,16 +63,16 @@ fn move_thread_updates_lists_and_counters() {
     let mut store = seeded();
     let inbox = folder_id(&store, FolderRole::Inbox);
     let todo = folder_id(&store, FolderRole::Todo);
-    let (items, _) = store.list_threads(inbox, None, 1).unwrap();
+    let (items, _) = store.list_threads(inbox, None, 1, ThreadSort::Received).unwrap();
     let thread = &items[0];
 
     let before = store.list_folders().unwrap();
     let changes = store.move_thread(thread.id, FolderRole::Todo, Some(inbox), Source::App).unwrap();
     assert!(changes.changed_messages() > 0);
 
-    let (inbox_items, _) = store.list_threads(inbox, None, 500).unwrap();
+    let (inbox_items, _) = store.list_threads(inbox, None, 500, ThreadSort::Received).unwrap();
     assert!(!inbox_items.iter().any(|t| t.id == thread.id));
-    let (todo_items, _) = store.list_threads(todo, None, 500).unwrap();
+    let (todo_items, _) = store.list_threads(todo, None, 500, ThreadSort::Received).unwrap();
     assert!(todo_items.iter().any(|t| t.id == thread.id));
 
     let after = store.list_folders().unwrap();
@@ -92,7 +93,7 @@ fn move_thread_updates_lists_and_counters() {
 fn quarantine_is_never_a_target() {
     let mut store = seeded();
     let inbox = folder_id(&store, FolderRole::Inbox);
-    let (items, _) = store.list_threads(inbox, None, 1).unwrap();
+    let (items, _) = store.list_threads(inbox, None, 1, ThreadSort::Received).unwrap();
     assert!(store.move_thread(items[0].id, FolderRole::Quarantine, Some(inbox), Source::App).is_err());
     assert!(store.move_thread(items[0].id, FolderRole::Sent, None, Source::App).is_err());
 }
@@ -103,7 +104,7 @@ fn quarantine_is_never_a_target() {
 fn restore_from_deleted_uses_command_folder() {
     let mut store = seeded();
     let deleted = folder_id(&store, FolderRole::Deleted);
-    let (items, _) = store.list_threads(deleted, None, 1).unwrap();
+    let (items, _) = store.list_threads(deleted, None, 1, ThreadSort::Received).unwrap();
     store.move_thread(items[0].id, FolderRole::Inbox, Some(deleted), Source::App).unwrap();
     let (_, messages) = store.get_thread(items[0].id).unwrap();
     assert!(!messages.iter().any(|m| m.folder_role == Some(FolderRole::Deleted)));
@@ -114,18 +115,18 @@ fn restore_from_deleted_uses_command_folder() {
 fn seen_and_flag_commands() {
     let mut store = seeded();
     let inbox = folder_id(&store, FolderRole::Inbox);
-    let (items, _) = store.list_threads(inbox, None, 200).unwrap();
+    let (items, _) = store.list_threads(inbox, None, 200, ThreadSort::Received).unwrap();
     // `expect` is like `unwrap` with a message shown if it fails.
     let unread = items.iter().find(|t| t.unread_count > 0).expect("an unread thread");
     store.set_thread_seen(unread.id, true, Source::App).unwrap();
-    let (items, _) = store.list_threads(inbox, None, 200).unwrap();
+    let (items, _) = store.list_threads(inbox, None, 200, ThreadSort::Received).unwrap();
     assert_eq!(items.iter().find(|t| t.id == unread.id).unwrap().unread_count, 0);
 
     store.set_thread_flagged(unread.id, true, Source::App).unwrap();
-    let (items, _) = store.list_threads(inbox, None, 200).unwrap();
+    let (items, _) = store.list_threads(inbox, None, 200, ThreadSort::Received).unwrap();
     assert!(items.iter().find(|t| t.id == unread.id).unwrap().is_flagged);
     store.set_thread_flagged(unread.id, false, Source::App).unwrap();
-    let (items, _) = store.list_threads(inbox, None, 200).unwrap();
+    let (items, _) = store.list_threads(inbox, None, 200, ThreadSort::Received).unwrap();
     assert!(!items.iter().find(|t| t.id == unread.id).unwrap().is_flagged);
 }
 
@@ -135,13 +136,13 @@ fn seen_and_flag_commands() {
 fn returned_mark_is_shown_then_removed_by_a_command() {
     let mut store = seeded();
     let inbox = folder_id(&store, FolderRole::Inbox);
-    let (items, _) = store.list_threads(inbox, None, 500).unwrap();
+    let (items, _) = store.list_threads(inbox, None, 500, ThreadSort::Received).unwrap();
     let returned = items.iter().find(|t| t.returned_from.is_some()).expect("a returned thread");
     assert_eq!(returned.reply_target, returned.returned_from);
     // Archive it, then bring it back: the mark must be gone.
     store.move_thread(returned.id, FolderRole::Archive, Some(inbox), Source::App).unwrap();
     store.move_thread(returned.id, FolderRole::Inbox, None, Source::App).unwrap();
-    let (items, _) = store.list_threads(inbox, None, 500).unwrap();
+    let (items, _) = store.list_threads(inbox, None, 500, ThreadSort::Received).unwrap();
     assert_eq!(items.iter().find(|t| t.id == returned.id).unwrap().returned_from, None);
 }
 

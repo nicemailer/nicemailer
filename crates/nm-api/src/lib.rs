@@ -52,6 +52,24 @@ pub mod method {
     pub const IMPORT_MBOX: &str = "import_mbox";
     /// State of the running import, or of the last one.
     pub const IMPORT_STATUS: &str = "import_status";
+    /// Remembers whether the mails of an address are shown as text or HTML.
+    pub const SET_BODY_FORMAT: &str = "set_body_format";
+    /// Writes one message to a file (.eml, .txt, .md).
+    pub const EXPORT_MESSAGE: &str = "export_message";
+    /// Audit log, newest first (`tracabilite.md`).
+    pub const LIST_HISTORY: &str = "list_history";
+    /// Tags of an account, or of every account.
+    pub const LIST_TAGS: &str = "list_tags";
+    /// Adds (or removes) a tag on every message of a thread.
+    pub const TAG_THREAD: &str = "tag_thread";
+    /// Contact groups (`groupes.md`).
+    pub const LIST_GROUPS: &str = "list_groups";
+    /// Adds (or removes) an address, or the sender of a thread, to a group.
+    pub const SET_GROUP_MEMBER: &str = "set_group_member";
+    /// Known addresses, with their decision and groups.
+    pub const LIST_CONTACTS: &str = "list_contacts";
+    /// Threads of a tag, a group or a contact, across folders.
+    pub const LIST_THREADS_BY: &str = "list_threads_by";
 }
 
 /// Stable error codes. Negative codes are the ones defined by the JSON-RPC
@@ -250,11 +268,31 @@ pub struct SubscribeResult {
 pub struct ListThreadsParams {
     pub folder_id: i64,
     /// Opaque cursor returned as `next_cursor` by the previous page. Absent
-    /// for the first page. Clients must not build or parse it.
+    /// for the first page. Clients must not build or parse it. A cursor is
+    /// only valid with the `sort` it was produced with.
     #[serde(default)]
     pub cursor: Option<String>,
     #[serde(default)]
     pub limit: Option<u32>,
+    /// Sort key, newest first. Default: reception date.
+    #[serde(default)]
+    pub sort: ThreadSort,
+}
+
+/// Order of a thread list (`ui.md`, display menu `vc` / `vm`).
+///
+/// Rust note: `#[serde(rename_all = "lowercase")]` maps the variants to
+/// the JSON strings `"received"` and `"modified"`; `#[default]` marks the
+/// value used by `Default::default()`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ThreadSort {
+    /// Latest message received in the folder.
+    #[default]
+    Received,
+    /// Latest change by the user (move, flag, read…) to a message of the
+    /// thread in the folder: "what did I just do".
+    Modified,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -360,6 +398,15 @@ pub struct ThreadSummary {
     pub returned_from: Option<FolderRole>,
     /// Folder preselected if the user replies (see `FolderRole::reply_target`).
     pub reply_target: Option<FolderRole>,
+    /// Folder this row describes: the listed folder, or for a list across
+    /// folders (`list_threads_by`) the folder of the latest message. Moves
+    /// pass it as `from_folder_id`.
+    pub folder_id: i64,
+    /// Unix timestamp of the latest change to a message of the thread in
+    /// this folder (sort `modified`).
+    pub date_last_modified: i64,
+    /// Names of the tags on the thread's messages, sorted.
+    pub tags: Vec<String>,
 }
 
 /// One page of a paginated list.
@@ -404,6 +451,13 @@ pub struct MessageView {
     pub has_attachments: bool,
     /// Sender authentication result (SPF/DKIM/DMARC): `"pass"`, `"fail"`, ...
     pub auth_result: String,
+    /// Sanitized HTML body, when the message has an HTML part.
+    pub body_html: Option<String>,
+    /// Remote images were removed from `body_html`.
+    pub has_remote_content: bool,
+    /// Display preferred for the sender's mails: `"text"`, `"html"`, or
+    /// `None` for the client's default (`set_body_format`).
+    pub from_body_format: Option<String>,
 }
 
 /// A whole thread, as displayed in the reading pane.
@@ -495,6 +549,178 @@ pub struct ImportStatus {
     /// Why the import failed, if it did.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+}
+
+/// Parameters of `set_body_format`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SetBodyFormatParams {
+    /// Address whose mails are concerned (usually the sender's).
+    pub addr: String,
+    /// `"text"`, `"html"`, or `null` to go back to the default.
+    #[serde(default)]
+    pub format: Option<String>,
+}
+
+/// File format of `export_message`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ExportFormat {
+    /// The raw message, byte for byte (RFC 5322), openable by any mail app.
+    Eml,
+    /// Headers and text body.
+    Txt,
+    /// Headers and text body, in Markdown.
+    Md,
+}
+
+/// Parameters of `export_message`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExportMessageParams {
+    pub message_id: i64,
+    pub format: ExportFormat,
+    /// Absolute directory to write into; default `~/Downloads`.
+    #[serde(default)]
+    pub dir: Option<String>,
+}
+
+/// Result of `export_message`: where the file was written. An existing
+/// file is never overwritten: " (2)", " (3)"… is added to the name.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExportResult {
+    pub path: String,
+}
+
+/// Parameters of `list_history`: cursor pagination, newest first.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ListHistoryParams {
+    #[serde(default)]
+    pub cursor: Option<String>,
+    #[serde(default)]
+    pub limit: Option<u32>,
+}
+
+/// One `audit_log` line.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HistoryEntry {
+    pub id: i64,
+    /// Unix timestamp.
+    pub date: i64,
+    /// Who did it: `app`, `cli`, `core`…
+    pub source: String,
+    /// `account`, `folder`, `address`, `contact_group`, `message`…
+    pub entity: String,
+    pub entity_id: i64,
+    /// `move`, `set_flags`, `screening`, `import_mbox`…
+    pub action: String,
+    /// Readable one-line description built by the core (subject of the
+    /// message, address…), so clients do not decode `detail`.
+    pub summary: String,
+    /// The raw JSON `detail` of the line.
+    pub detail: Value,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ListTagsParams {
+    /// Only the tags of this account; all accounts when absent.
+    #[serde(default)]
+    pub account_id: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TagView {
+    pub id: i64,
+    pub account_id: i64,
+    pub name: String,
+    pub color: Option<String>,
+    /// Number of messages carrying the tag.
+    pub message_count: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TagThreadParams {
+    pub thread_id: i64,
+    /// Tag name; the tag is created in the thread's account if needed.
+    pub name: String,
+    /// Remove the tag instead of adding it.
+    #[serde(default)]
+    pub remove: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupView {
+    pub id: i64,
+    pub name: String,
+    pub color: Option<String>,
+    pub member_count: i64,
+}
+
+/// Parameters of `set_group_member`. Give either `addr` or `thread_id`
+/// (then the member is the thread's sender: the author of its latest
+/// message that is not in Sent or Drafts).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SetGroupMemberParams {
+    /// Group name; the group is created if needed.
+    pub group: String,
+    #[serde(default)]
+    pub addr: Option<String>,
+    #[serde(default)]
+    pub thread_id: Option<i64>,
+    /// Remove the address from the group instead of adding it.
+    #[serde(default)]
+    pub remove: bool,
+}
+
+/// Result of `set_group_member`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupMemberResult {
+    pub group_id: i64,
+    pub addr: String,
+    /// Whether something changed (adding an existing member does not).
+    pub changed: bool,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ListContactsParams {
+    /// Filter: part of the address or of the name, case-insensitive.
+    #[serde(default)]
+    pub query: Option<String>,
+    #[serde(default)]
+    pub cursor: Option<String>,
+    #[serde(default)]
+    pub limit: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContactView {
+    pub id: i64,
+    pub addr: String,
+    pub name: Option<String>,
+    /// Screening decision, `None` without decision.
+    pub screening_target: Option<String>,
+    /// Names of the groups the address belongs to.
+    pub groups: Vec<String>,
+    /// Number of messages received from the address.
+    pub message_count: i64,
+}
+
+/// Parameters of `list_threads_by`: exactly one of the three ids.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ListThreadsByParams {
+    #[serde(default)]
+    pub tag_id: Option<i64>,
+    #[serde(default)]
+    pub group_id: Option<i64>,
+    #[serde(default)]
+    pub address_id: Option<i64>,
+    #[serde(default)]
+    pub limit: Option<u32>,
+}
+
+/// A plain list with the event position of the read.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Items<T> {
+    pub items: Vec<T>,
+    pub as_of: Position,
 }
 
 pub mod paths {

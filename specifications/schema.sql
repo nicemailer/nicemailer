@@ -130,6 +130,10 @@ CREATE TABLE address (
     date_auth_policy_modified INTEGER,  -- NULL = jamais modifiée par l'utilisateur
     -- Découverte par un import ; NULL = réception normale. Jamais effacé.
     imported_from TEXT CHECK (imported_from IN ('imap_initial','mbox')),
+    -- Affichage préféré des mails de cette adresse : 'text' ou 'html' ; NULL =
+    -- choix par défaut du thème (ui.md). Préférence d'affichage locale : ni
+    -- synchronisée, ni journalisée, sans effet sur date_modified.
+    body_format TEXT CHECK (body_format IN ('text','html')),
     -- date_modified : nom, décision de screening ou auth_policy ; pas auth_seen.
     date_created INTEGER NOT NULL DEFAULT (unixepoch()),
     date_modified INTEGER NOT NULL DEFAULT (unixepoch()),
@@ -220,6 +224,9 @@ CREATE TABLE thread_folder (
     thread_id      INTEGER NOT NULL REFERENCES thread(id)  ON DELETE CASCADE,
     folder_id     INTEGER NOT NULL REFERENCES folder(id) ON DELETE CASCADE,
     date_last_received INTEGER NOT NULL,
+    -- Plus récente modification (message.date_modified) des mails de la
+    -- conversation dans ce dossier : tri « ce que j'ai traité récemment » (ui.md).
+    date_last_modified INTEGER NOT NULL DEFAULT 0,
     message_count  INTEGER NOT NULL,
     unread_count   INTEGER NOT NULL,
     PRIMARY KEY (thread_id, folder_id)
@@ -227,6 +234,10 @@ CREATE TABLE thread_folder (
 
 CREATE INDEX idx_thread_folder_list
     ON thread_folder (folder_id, date_last_received DESC, thread_id DESC);
+
+-- Même liste, triée par date de modification.
+CREATE INDEX idx_thread_folder_modified
+    ON thread_folder (folder_id, date_last_modified DESC, thread_id DESC);
 
 -- ------------------------------------------------------------
 -- Messages bruts (stockage-brut.md) : fichiers immuables adressés par leur

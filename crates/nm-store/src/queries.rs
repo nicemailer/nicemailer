@@ -3,7 +3,11 @@
 //! These methods take `&self` (shared access): they never modify the
 //! database.
 
-use nm_api::{AddressView, FolderView, MessageView, SearchHit, ThreadSummary};
+use nm_api::{AddressView, FolderView, MessageView, SearchHit, ThreadSort, ThreadSummary};
+
+/// A row of `thread_folder` joined with its thread: (thread id, subject,
+/// last received, last modified, message count, unread count).
+type ListRow = (i64, String, i64, i64, i64, i64);
 use nm_core::{FolderRole, KW_WAS_TODO, KW_WAS_WAITING};
 use rusqlite::{OptionalExtension, Row, params};
 
@@ -105,7 +109,8 @@ impl Store {
         }
     }
 
-    /// One page of a folder's threads, newest first.
+    /// One page of a folder's threads, newest first, by reception date or by
+    /// modification date (`sort`).
     ///
     /// Returns the threads and the cursor of the next page (`None` when this
     /// is the last page).
@@ -114,40 +119,44 @@ impl Store {
         folder_id: i64,
         cursor: Option<&str>,
         limit: u32,
+        sort: ThreadSort,
     ) -> Result<(Vec<ThreadSummary>, Option<String>)> {
         let role = self.folder_role(folder_id)?;
         // Fetch one extra row: if it exists, there is a next page. This
         // avoids a separate `count(*)` query.
         let fetch = i64::from(limit) + 1;
+        // The sort column. Both have their own index
+        // (idx_thread_folder_list, idx_thread_folder_modified). It is
+        // inserted into the SQL text, never taken from the client: only
+        // these two constants are possible, so there is no injection risk.
+        let key = match sort {
+            ThreadSort::Received => "tf.date_last_received",
+            ThreadSort::Modified => "tf.date_last_modified",
+        };
         // Two separate queries rather than one with `?2 IS NULL OR ...`: such
-        // a condition would prevent SQLite from using idx_thread_folder_list
-        // for the row-value comparison, and every page would scan the folder.
-        let rows: Vec<(i64, String, i64, i64, i64)> = {
+        // a condition would prevent SQLite from using the index for the
+        // row-value comparison, and every page would scan the folder.
+        let rows: Vec<ListRow> = {
             // Closure that converts a row into a tuple, shared by both queries.
-            let map = |r: &Row| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?));
+            let map = |r: &Row| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?));
+            let select = "SELECT tf.thread_id, t.subject, tf.date_last_received, tf.date_last_modified,
+                                 tf.message_count, tf.unread_count
+                            FROM thread_folder tf JOIN thread t ON t.id = tf.thread_id
+                           WHERE tf.folder_id = ?1";
             match cursor {
                 None => {
-                    let mut stmt = self.conn.prepare_cached(
-                        "SELECT tf.thread_id, t.subject, tf.date_last_received, tf.message_count, tf.unread_count
-                           FROM thread_folder tf JOIN thread t ON t.id = tf.thread_id
-                          WHERE tf.folder_id = ?1
-                          ORDER BY tf.date_last_received DESC, tf.thread_id DESC
-                          LIMIT ?2",
-                    )?;
+                    let sql = format!("{select} ORDER BY {key} DESC, tf.thread_id DESC LIMIT ?2");
+                    let mut stmt = self.conn.prepare_cached(&sql)?;
                     stmt.query_map(params![folder_id, fetch], map)?.collect::<std::result::Result<_, _>>()?
                 }
                 Some(c) => {
                     let (d, id) = parse_cursor(c)?;
                     // `(a, b) < (x, y)` is a row-value comparison: true when
                     // a < x, or a = x and b < y. It matches the sort order.
-                    let mut stmt = self.conn.prepare_cached(
-                        "SELECT tf.thread_id, t.subject, tf.date_last_received, tf.message_count, tf.unread_count
-                           FROM thread_folder tf JOIN thread t ON t.id = tf.thread_id
-                          WHERE tf.folder_id = ?1
-                            AND (tf.date_last_received, tf.thread_id) < (?2, ?3)
-                          ORDER BY tf.date_last_received DESC, tf.thread_id DESC
-                          LIMIT ?4",
-                    )?;
+                    let sql = format!(
+                        "{select} AND ({key}, tf.thread_id) < (?2, ?3) ORDER BY {key} DESC, tf.thread_id DESC LIMIT ?4"
+                    );
+                    let mut stmt = self.conn.prepare_cached(&sql)?;
                     stmt.query_map(params![folder_id, d, id, fetch], map)?
                         .collect::<std::result::Result<_, _>>()?
                 }
@@ -160,11 +169,14 @@ impl Store {
         let mut items = Vec::with_capacity(rows.len().min(limit as usize));
         // `into_iter` consumes `rows`; `take(limit)` drops the extra row.
         // The tuple is destructured directly in the `for` pattern.
-        for (thread_id, subject, date, count, unread) in rows.into_iter().take(limit as usize) {
-            items.push(self.thread_summary(thread_id, folder_id, role, subject, date, count, unread)?);
+        for (thread_id, subject, received, modified, count, unread) in rows.into_iter().take(limit as usize) {
+            items.push(self.thread_summary(thread_id, folder_id, role, subject, (received, modified), count, unread)?);
         }
         let next_cursor = if has_more {
-            items.last().map(|t| format!("{}:{}", t.date_last_received, t.id))
+            items.last().map(|t| {
+                let d = if sort == ThreadSort::Modified { t.date_last_modified } else { t.date_last_received };
+                format!("{d}:{}", t.id)
+            })
         } else {
             None
         };
@@ -180,14 +192,16 @@ impl Store {
     ///
     /// `#[allow(...)]` silences the clippy lint about functions with more
     /// than 7 parameters.
+    ///
+    /// `dates` is (last received, last modified) in the folder.
     #[allow(clippy::too_many_arguments)]
-    fn thread_summary(
+    pub(crate) fn thread_summary(
         &self,
         thread_id: i64,
         folder_id: i64,
         role: Option<FolderRole>,
         subject: String,
-        date_last_received: i64,
+        dates: (i64, i64),
         message_count: i64,
         unread_count: i64,
     ) -> Result<ThreadSummary> {
@@ -250,13 +264,30 @@ impl Store {
             None
         };
 
+        // Tags of the thread: keywords of its messages that are declared in
+        // `tag` (other keywords are technical, `modele de donnees.md`).
+        let tags: Vec<String> = self
+            .conn
+            .prepare_cached(
+                "SELECT DISTINCT t.name FROM message m
+                   JOIN message_keyword mk ON mk.message_id = m.id
+                   JOIN tag t ON t.account_id = m.account_id AND t.keyword = mk.keyword AND t.date_deleted IS NULL
+                  WHERE m.thread_id = ?1
+                  ORDER BY t.name",
+            )?
+            .query_map([thread_id], |r| r.get(0))?
+            .collect::<std::result::Result<_, _>>()?;
+
         // Rust note: `subject` alone is shorthand for `subject: subject`.
         Ok(ThreadSummary {
             id: thread_id,
             subject,
             participants,
             snippet,
-            date_last_received,
+            date_last_received: dates.0,
+            date_last_modified: dates.1,
+            folder_id,
+            tags,
             message_count,
             unread_count,
             is_flagged,
@@ -280,10 +311,12 @@ impl Store {
         let mut stmt = self.conn.prepare_cached(
             "SELECT m.id, m.folder_id, f.role, m.subject, m.from_name, m.from_addr,
                     m.date_sent, m.date_received, b.text_plain,
-                    m.is_seen, m.is_flagged, m.is_answered, m.has_attachments, m.auth_result
+                    m.is_seen, m.is_flagged, m.is_answered, m.has_attachments, m.auth_result,
+                    b.html_sanitized, coalesce(b.has_remote_content, 0), a.body_format
                FROM message m
                JOIN folder f ON f.id = m.folder_id
                LEFT JOIN message_body b ON b.message_id = m.id
+               LEFT JOIN address a ON a.id = m.from_address_id
               WHERE m.thread_id = ?1
               ORDER BY m.date_received, m.id",
         )?;
@@ -307,6 +340,9 @@ impl Store {
                     is_answered: r.get(11)?,
                     has_attachments: r.get(12)?,
                     auth_result: r.get(13)?,
+                    body_html: r.get(14)?,
+                    has_remote_content: r.get(15)?,
+                    from_body_format: r.get(16)?,
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;

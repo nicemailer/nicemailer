@@ -1,6 +1,6 @@
 # NiceMailer : groupes de contacts
 
-Statut : modèle de données validé, rien n'est implémenté. Complète `modele de donnees.md` et `schema.sql`.
+Statut : modèle de données validé. Implémenté dans le noyau : `list_groups`, `set_group_member` (ajout et retrait, création du groupe), groupes d'un contact (`list_contacts`) et conversations des membres (`list_threads_by`). Pas encore : renommage, couleur, ordre, suppression d'un groupe, synchronisation. Complète `modele de donnees.md` et `schema.sql`.
 
 ## 1. Objet
 
@@ -26,7 +26,7 @@ Deux tables (`schema.sql`). La première s'appelle `contact_group` et non `group
 | --- | --- |
 | `id` | Identifiant local |
 | `sync_key` | Identifiant stable entre Mac (`g_` suivi de 16 caractères hexadécimaux tirés au hasard). L'`id` diffère d'un Mac à l'autre, et le nom peut changer : la synchronisation ne peut s'appuyer ni sur l'un ni sur l'autre |
-| `name` | Nom affiché, libre. Unique sans casse parmi les groupes non supprimés (index partiel `idx_contact_group_name`) |
+| `name` | Nom affiché, libre. Unique sans casse parmi les groupes non supprimés : l'index partiel `idx_contact_group_name` ne replie que l'ASCII (`NOCASE` de SQLite), le code compare donc les noms en Unicode (« Équipe » et « équipe » sont le même groupe) |
 | `color` | Couleur d'affichage, NULL pour la couleur par défaut |
 | `position` | Ordre d'affichage |
 | `date_deleted` | Pierre tombale : un groupe supprimé garde sa ligne et n'est plus affiché |
@@ -83,9 +83,15 @@ Format, dans le document `nicemailer-config.json` :
 - `audit_log` : entité `contact_group`, actions `create`, `update` (nom, couleur, position ; avant, après), `delete`, `add_member` et `remove_member` (`detail` : l'adresse).
 - Une modification reçue par la synchronisation porte `modified_by = 'config_sync'` et l'horodatage de l'entrée reçue (règle commune).
 
-## 6. Contrat (à préciser à l'implémentation)
+## 6. Contrat
 
-Méthodes envisagées : `list_groups` (avec le nombre de membres), `create_group`, `update_group`, `delete_group`, `add_group_member` et `remove_group_member` (par adresse), `list_group_members`. Un événement `GroupChanged {group_id}` signale un groupe ou ses membres modifiés.
+Implémenté :
+
+- `list_groups` : groupes non supprimés, dans l'ordre d'affichage, avec le nombre de membres ;
+- `set_group_member {group, addr | thread_id, remove}` : ajoute (ou retire) une adresse, ou l'expéditeur d'une conversation (auteur de son dernier mail hors Sent et Drafts), au groupe nommé, créé au besoin. Ajouter un membre déjà présent ne change rien (`changed: false`) ;
+- `list_threads_by {group_id}` : conversations dont un mail vient d'un membre ou lui est adressé (To, Cc), tous dossiers, les plus récentes d'abord.
+
+Envisagé : `update_group` (nom, couleur, position), `delete_group`, `list_group_members`, et un événement `GroupChanged {group_id}`.
 
 ## 7. Tests exigés
 

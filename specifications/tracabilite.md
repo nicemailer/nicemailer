@@ -49,7 +49,7 @@ Trois mécanismes y répondent :
 | Table | Modifie `date_modified` | Ne le modifie pas |
 | --- | --- | --- |
 | `message` | Dossier, `is_seen`, `is_flagged`, `is_answered`, `is_draft`, `is_deleted`, tags (`message_keyword`) | `uid`, `modseq`, `body_state`, `snippet`, `date_last_viewed` |
-| `address` | `name`, décision de screening, `auth_policy` | `auth_seen` |
+| `address` | `name`, décision de screening, `auth_policy` | `auth_seen`, `body_format` (préférence d'affichage) |
 | `domain` | Décision de screening | |
 | `folder` | Rôle, abonnement | Compteurs, `uidvalidity`, `uidnext`, `highestmodseq`, `date_last_sync` |
 | `tag` | Nom, couleur, suppression | |

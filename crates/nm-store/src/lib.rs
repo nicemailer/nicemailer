@@ -12,6 +12,7 @@
 //! - `mbox.rs`: streaming reader of mbox files,
 //! - `ingest.rs`: interpretation of a raw message (headers, bodies, attachments),
 //! - `import.rs`: import of an mbox file into an archive account,
+//! - `library.rs`: history, export, tags, groups, contacts, display preference,
 //! - `seed.rs`: generator of fake mail for development.
 //!
 //! Rust note: `mod queries;` tells the compiler to include `src/queries.rs`
@@ -21,6 +22,7 @@
 mod commands;
 pub mod import;
 pub mod ingest;
+pub mod library;
 pub mod mbox;
 mod queries;
 pub mod raw;
@@ -170,6 +172,8 @@ impl Store {
                     ("SELECT raw_hash FROM message", "message.raw_hash"),
                     ("SELECT hash FROM raw_blob", "raw_blob"),
                     ("SELECT sync_key FROM contact_group", "contact_group"),
+                    ("SELECT date_last_modified FROM thread_folder", "thread_folder.date_last_modified"),
+                    ("SELECT body_format FROM address", "address.body_format"),
                 ] {
                     if conn.prepare(sql).is_err() {
                         return Err(StoreError::OutdatedSchema(what));
@@ -242,8 +246,8 @@ pub(crate) fn refresh_thread(conn: &Connection, thread_id: i64) -> Result<Vec<i6
     // `sum(is_seen = 0)` counts unread messages: in SQLite a comparison
     // yields 1 or 0.
     conn.execute(
-        "INSERT INTO thread_folder (thread_id, folder_id, date_last_received, message_count, unread_count)
-         SELECT thread_id, folder_id, max(date_received), count(*), sum(is_seen = 0)
+        "INSERT INTO thread_folder (thread_id, folder_id, date_last_received, date_last_modified, message_count, unread_count)
+         SELECT thread_id, folder_id, max(date_received), max(date_modified), count(*), sum(is_seen = 0)
            FROM message WHERE thread_id = ?1 GROUP BY folder_id",
         [thread_id],
     )?;

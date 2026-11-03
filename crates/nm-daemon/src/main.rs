@@ -45,10 +45,12 @@ use std::sync::{Arc, Mutex};
 use anyhow::{Context, bail};
 use clap::Parser;
 use nm_api::{
-    CommandResult, DEFAULT_LIMIT, Event, FolderList, GetThreadParams, HelloParams, HelloResult,
-    ImportMboxParams, ImportStatus, ListThreadsParams, MAX_LIMIT, MoveThreadParams, PROTOCOL_VERSION,
-    Page, Request, Response, RpcError, SearchParams, SearchResult, SetThreadFlaggedParams,
-    SetThreadSeenParams, SubscribeParams, SubscribeResult, ThreadView, error_code, method,
+    CommandResult, DEFAULT_LIMIT, Event, ExportMessageParams, ExportResult, FolderList, GetThreadParams,
+    GroupMemberResult, HelloParams, HelloResult, ImportMboxParams, ImportStatus, Items, ListContactsParams,
+    ListHistoryParams, ListTagsParams, ListThreadsByParams, ListThreadsParams, MAX_LIMIT, MoveThreadParams,
+    PROTOCOL_VERSION, Page, Request, Response, RpcError, SearchParams, SearchResult, SetBodyFormatParams,
+    SetGroupMemberParams, SetThreadFlaggedParams, SetThreadSeenParams, SubscribeParams, SubscribeResult,
+    TagThreadParams, ThreadView, error_code, method,
 };
 use nm_core::Source;
 use nm_store::import::{BATCH_SIZE, ImportOptions, ImportProgress, import_mbox};
@@ -411,7 +413,7 @@ async fn dispatch(core: &Arc<Core>, session: &mut Session, req: Request) -> Resu
             let p: ListThreadsParams = params(req.params)?;
             let as_of = as_of();
             let (items, next_cursor) =
-                with_store(core, move |s| s.list_threads(p.folder_id, p.cursor.as_deref(), limit(p.limit))).await?;
+                with_store(core, move |s| s.list_threads(p.folder_id, p.cursor.as_deref(), limit(p.limit), p.sort)).await?;
             to_value(Page { items, next_cursor, as_of })
         }
         method::GET_THREAD => {
@@ -443,6 +445,68 @@ async fn dispatch(core: &Arc<Core>, session: &mut Session, req: Request) -> Resu
             to_value(start_import(core, p, source).await?)
         }
         method::IMPORT_STATUS => to_value(core.import.lock().unwrap().status.clone()),
+        method::SET_BODY_FORMAT => {
+            let p: SetBodyFormatParams = params(req.params)?;
+            with_store(core, move |s| s.set_body_format(&p.addr, p.format.as_deref())).await?;
+            to_value(CommandResult { changed: 1 })
+        }
+        method::EXPORT_MESSAGE => {
+            let p: ExportMessageParams = params(req.params)?;
+            let dir = match p.dir {
+                Some(d) => PathBuf::from(d),
+                None => std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default().join("Downloads"),
+            };
+            if !dir.is_absolute() {
+                return Err(RpcError::new(error_code::INVALID_PARAMS, "dossier absolu attendu"));
+            }
+            let raw = core.raw.clone();
+            let path = with_store(core, move |s| s.export_message(&raw, p.message_id, p.format, &dir)).await?;
+            to_value(ExportResult { path: path.display().to_string() })
+        }
+        method::LIST_HISTORY => {
+            let p: ListHistoryParams = params(req.params)?;
+            let as_of = as_of();
+            let (items, next_cursor) = with_store(core, move |s| s.list_history(p.cursor.as_deref(), limit(p.limit))).await?;
+            to_value(Page { items, next_cursor, as_of })
+        }
+        method::LIST_TAGS => {
+            let p: ListTagsParams = params(req.params)?;
+            let as_of = as_of();
+            let items = with_store(core, move |s| s.list_tags(p.account_id)).await?;
+            to_value(Items { items, as_of })
+        }
+        method::TAG_THREAD => {
+            let p: TagThreadParams = params(req.params)?;
+            command(core, move |s| s.tag_thread(p.thread_id, &p.name, p.remove, source)).await
+        }
+        method::LIST_GROUPS => {
+            let as_of = as_of();
+            let items = with_store(core, |s| s.list_groups()).await?;
+            to_value(Items { items, as_of })
+        }
+        method::SET_GROUP_MEMBER => {
+            let p: SetGroupMemberParams = params(req.params)?;
+            let (group_id, addr, changed) =
+                with_store(core, move |s| s.set_group_member(&p.group, p.addr.as_deref(), p.thread_id, p.remove, source))
+                    .await?;
+            to_value(GroupMemberResult { group_id, addr, changed })
+        }
+        method::LIST_CONTACTS => {
+            let p: ListContactsParams = params(req.params)?;
+            let as_of = as_of();
+            let (items, next_cursor) = with_store(core, move |s| {
+                s.list_contacts(p.query.as_deref(), p.cursor.as_deref(), limit(p.limit))
+            })
+            .await?;
+            to_value(Page { items, next_cursor, as_of })
+        }
+        method::LIST_THREADS_BY => {
+            let p: ListThreadsByParams = params(req.params)?;
+            let as_of = as_of();
+            let items =
+                with_store(core, move |s| s.list_threads_by(p.tag_id, p.group_id, p.address_id, limit(p.limit))).await?;
+            to_value(Items { items, as_of })
+        }
         other => Err(RpcError::new(error_code::METHOD_NOT_FOUND, format!("méthode inconnue : {other}"))),
     }
 }

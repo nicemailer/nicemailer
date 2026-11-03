@@ -640,6 +640,7 @@ dependencies = [
  "nm-core",
  "rand",
  "rusqlite",
+ "serde_json",
  "sha2",
  "tempfile",
  "thiserror",

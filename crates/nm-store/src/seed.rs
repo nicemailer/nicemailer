@@ -566,8 +566,8 @@ pub fn seed(store: &mut Store, opts: &SeedOptions) -> Result<SeedReport> {
            FROM message m LEFT JOIN message_body b ON b.message_id = m.id;",
     )?;
     tx.execute_batch(
-        "INSERT INTO thread_folder (thread_id, folder_id, date_last_received, message_count, unread_count)
-         SELECT thread_id, folder_id, max(date_received), count(*), sum(is_seen = 0)
+        "INSERT INTO thread_folder (thread_id, folder_id, date_last_received, date_last_modified, message_count, unread_count)
+         SELECT thread_id, folder_id, max(date_received), max(date_modified), count(*), sum(is_seen = 0)
            FROM message WHERE thread_id IS NOT NULL GROUP BY thread_id, folder_id;
          UPDATE thread SET
             date_last_received = (SELECT max(date_received) FROM message m WHERE m.thread_id = thread.id),
