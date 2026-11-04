@@ -1106,6 +1106,10 @@ private struct PickerPopup: View {
                                 }
                                 Text(e.label).lineLimit(1).truncationMode(.middle)
                                 Spacer()
+                                // An unread count, at the right end of the row.
+                                if let detail = e.detail {
+                                    Text(detail).foregroundStyle(Palette.unread)
+                                }
                             }
                             .padding(.horizontal, 8)
                             .frame(height: scaled(20))

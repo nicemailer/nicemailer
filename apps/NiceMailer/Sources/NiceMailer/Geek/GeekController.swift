@@ -859,13 +859,14 @@ final class GeekController {
             // one is marked.
             let unified = model.unifiedRole != nil
             let total = accounts.reduce(0) { $0 + $1.unread }
-            var entries = [Entry(key: unified ? "•" : " ", label: AppModel.unifiedName + (total > 0 ? "  \(total)" : "")) {
-                [weak self] in self?.goToAccount(nil)
-            }]
+            // The unread count is a detail aligned on the right, as in the
+            // ; menu.
+            var entries = [Entry(key: unified ? "•" : " ", label: AppModel.unifiedName,
+                                 detail: total > 0 ? "\(total)" : nil) { [weak self] in self?.goToAccount(nil) }]
             let current = model.scopeAccountId
             entries += accounts.map { a in
-                let unread = a.unread > 0 ? "  \(a.unread)" : ""
-                return Entry(key: !unified && a.id == current ? "•" : " ", label: a.name + unread) { [weak self] in
+                Entry(key: !unified && a.id == current ? "•" : " ", label: a.name,
+                      detail: a.unread > 0 ? "\(a.unread)" : nil) { [weak self] in
                     self?.goToAccount(a.id)
                 }
             }

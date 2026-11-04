@@ -54,7 +54,9 @@ struct AccountPickerTests {
         let entries = controller.pickerEntries(.accounts)
         // The current account is marked; unread mails of each account.
         // "all" first (the unified view), with the total.
-        #expect(entries.map(\.label) == ["all  15", "perso  8", "archive  7"])
+        #expect(entries.map(\.label) == ["all", "perso", "archive"])
+        // The counts are details, aligned on the right of the rows.
+        #expect(entries.map(\.detail) == ["15", "8", "7"])
         #expect(entries.map(\.key) == [" ", "•", " "])
     }
 
