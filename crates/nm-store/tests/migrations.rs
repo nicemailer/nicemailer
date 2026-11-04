@@ -93,7 +93,7 @@ fn schema_of(path: &Path) -> BTreeMap<String, String> {
 }
 
 #[test]
-fn migrating_version_1_gives_the_version_2_schema() {
+fn migrating_version_1_gives_the_latest_schema() {
     let dir = tempfile::tempdir().unwrap();
     let old = dir.path().join("old.db");
     version_1(&old);

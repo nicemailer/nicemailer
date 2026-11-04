@@ -7,7 +7,7 @@
 //! (disk full, crash), SQLite rolls it back and the database stays at the
 //! previous version, ready to be migrated again at the next start.
 //!
-//! The test `migrating_version_1_gives_the_version_2_schema`
+//! The test `migrating_version_1_gives_the_latest_schema`
 //! (`tests/migrations.rs`) checks that a migrated database has exactly the
 //! tables, columns and indexes of a fresh one, so `schema.sql` and this file
 //! cannot drift apart unnoticed.
