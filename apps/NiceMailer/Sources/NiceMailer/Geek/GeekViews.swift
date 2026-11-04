@@ -88,6 +88,21 @@ private struct GeekWindow: View {
     }
 
     @ViewBuilder private var overlay: some View {
+        // A question (a suspect move to confirm, a decision to choose)
+        // comes before any other panel, in the bottom-right corner.
+        if let choice = controller.activeChoice {
+            KeyMenu(title: controller.choiceTitle(choice),
+                    entries: controller.choiceEntries(choice).map { .init(key: $0.key, label: $0.label, detail: $0.detail) },
+                    highlighted: controller.choiceIndex,
+                    onSelect: { controller.chooseChoiceEntry($0) })
+                .padding(12)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+        } else {
+            menusAndPickers
+        }
+    }
+
+    @ViewBuilder private var menusAndPickers: some View {
         switch controller.overlay {
         case .menu(let prefix):
             let menu = KeyMenu(title: menuTitle(prefix),
@@ -116,7 +131,7 @@ private struct GeekWindow: View {
         case .picker(let kind):
             PickerPopup(controller: controller, kind: kind)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-        case .none, .contactFilter:
+        case .none, .contactFilter, .choice:
             EmptyView()
         }
     }
@@ -1217,7 +1232,7 @@ private struct ContactsScreen: View {
 
     var body: some View {
         ScreenList(
-            title: L("Contacts"), hint: L("/ filter · return: their mails · esc: back"),
+            title: L("Contacts"), hint: L("/ filter · m: decision · M: domain decision · return: their mails · esc: back"),
             count: controller.contacts.count, index: controller.screenIndex,
             onClick: { controller.clickScreenRow($0) }
         ) { i in
@@ -1225,7 +1240,14 @@ private struct ContactsScreen: View {
             HStack(spacing: 8) {
                 Text(c.addr).frame(width: scaled(300), alignment: .leading)
                 Text(c.name ?? "").foregroundStyle(Palette.muted).frame(width: scaled(200), alignment: .leading)
-                Text(c.screeningTarget.map { Role.name($0) } ?? "").frame(width: scaled(90), alignment: .leading)
+                // The address's decision, or the domain's (marked "@"),
+                // which applies when the address has none.
+                if let own = c.screeningTarget {
+                    Text(Role.name(own)).frame(width: scaled(110), alignment: .leading)
+                } else {
+                    Text(c.domainTarget.map { "@" + Role.name($0) } ?? "").foregroundStyle(Palette.muted)
+                        .frame(width: scaled(110), alignment: .leading)
+                }
                 Text("\(c.messageCount)").foregroundStyle(Palette.muted).frame(width: scaled(60), alignment: .trailing)
                 Text(c.groups.map { "@" + $0 }.joined(separator: " ")).foregroundStyle(Palette.accent)
             }

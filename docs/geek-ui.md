@@ -101,6 +101,7 @@ Actions apply to the **marked** mails if any (`J` / `K`), otherwise to the mail 
 | `T` | show everything in the thread (folded mails, quotes, signatures) or go back to the simplified view |
 | `S` | skip to the text after the next quoted block |
 | `u` | read / unread |
+| `z` | undo the last move or decision, then the one before (see "Moves and decisions") |
 | ⌘U | unsubscribe from the list of the mail (see "Unsubscribing") |
 | `*` | flag |
 | `/` | search everywhere: Contains… in Everything (see [Search](#search-)); Escape goes back |
@@ -140,7 +141,7 @@ The menu lists the folders in blocks separated by a blank line, the folder colum
 | `;s` `;r` | Sent, Drafts |
 | `;d` `;x` `;b` | Deleted, Junk, Banned |
 | `;e` | Everything: every folder of the view |
-| `;c` | Contacts: every known address, with its decision, groups and number of mails; `/` filters; Return lists the contact's mails |
+| `;c` | Contacts: every known address, with its decision (or its domain's, after "@"), groups and number of mails; `/` filters; `m` chooses the decision on the address, `M` on its domain (`i` Inbox, `n` Newsletter, `p` Paperwork, `b` Banned, `-` none); Return lists the contact's mails |
 | `;T` | Tags; Return lists the mails of the tag (uppercase: `;t` is Todo) |
 | `;g` | Groups; Return lists the mails of the group's members |
 | `;h` | History: the audit log, newest first |
@@ -151,10 +152,20 @@ On a screen, `j` `k` move and Escape goes back to the mails.
 
 Pickers (`@`, `l`, `t`, `g`, `F`) are filterable lists: type to filter (every word typed must appear, in any order, ignoring case and accents), `ctrl-n` / `ctrl-p` or the arrows to move, Return to choose, Escape to close. A picker opens on its first row and turns around: up (or `ctrl-p`) from the first row selects the last one, so the end of the list is one key away, and down (or `ctrl-n`) from the last row comes back to the first.
 
+## Moves and decisions
+
+Moving a mail to Newsletter, Paperwork or Banned, or out of Quarantine to the Inbox, also decides where its sender's next mails go and files the mails already received from it (`folder-workflow.md`). The message says so: "“Promo” moved to Newsletter · next mails of news@shop.fr too · 12 other mails filed · z: undo".
+
+`z` undoes the last move or decision: the mails go back where they were and the previous decision returns. Each `z` goes one step further back (50 steps, for the session); a move of several marked mails is one step. A mail moved again since stays where it is.
+
+When the sender's mail is suspected of spoofing, the core refuses the move and the app asks, in a small menu (mode `ASK`) with the mail under the cursor: `y` moves it anyway, `t` moves it and accepts this sender's mail without authentication from now on (a sender whose tool is badly configured), Escape leaves it where it is. Every other key waits for the answer. Moving such a mail to Banned concerns that mail only and asks nothing.
+
+The same small menu chooses a decision on the contacts screen (`m`, `M`); the current decision is marked "•". Keys, the arrows with Return, or a click choose.
+
 ## Not available yet
 
 - The "edition" context: replying, forwarding, writing a new mail.
-- Saving attachments (`sa`, `sg`) and saving as PDF (`sp`).
+- Saving as PDF (`sp`).
 - A dark/light override independent of macOS (the palette follows the system appearance).
 
 ## Implementation notes

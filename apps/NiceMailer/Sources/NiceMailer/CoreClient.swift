@@ -32,7 +32,14 @@ final class CoreClient: @unchecked Sendable {
     struct RPCError: LocalizedError {
         let code: Int
         let message: String
+        /// The error's structured details (`data`), its text values only:
+        /// for `confirmationRequired`, the address and the verdict.
+        var data: [String: String] = [:]
         var errorDescription: String? { "\(message) (code \(code))" }
+
+        /// A favorable decision on a sender suspected of spoofing waits for
+        /// the user's confirmation (`nm_api::error_code`).
+        static let confirmationRequired = 1005
     }
 
     /// Socket-level failures. User-facing texts stay in French.
@@ -256,7 +263,9 @@ final class CoreClient: @unchecked Sendable {
             lock.unlock()
             guard let c else { return }
             if let err = obj["error"] as? [String: Any] {
-                c.resume(throwing: RPCError(code: err["code"] as? Int ?? 0, message: err["message"] as? String ?? "erreur"))
+                let data = (err["data"] as? [String: Any])?.compactMapValues { $0 as? String } ?? [:]
+                c.resume(throwing: RPCError(code: err["code"] as? Int ?? 0, message: err["message"] as? String ?? "erreur",
+                                            data: data))
             } else {
                 // Re-encode `result` alone, so that `call` can decode it with
                 // `JSONDecoder` into the expected struct. `.fragmentsAllowed`

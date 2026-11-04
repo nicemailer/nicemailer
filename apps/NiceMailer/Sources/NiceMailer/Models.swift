@@ -201,6 +201,26 @@ struct CommandResult: Decodable {
     let changed: Int
 }
 
+/// A screening decision taken, changed or removed by a command: on an
+/// address or a domain, from `before` to `after` (`nil`: no decision).
+struct DecisionView: Decodable, Hashable {
+    let kind: String
+    let name: String
+    let before: String?
+    let after: String?
+}
+
+/// What a move, a decision or an undo did (`dossiers.md`, "Décision sur un
+/// expéditeur"): mails of the thread moved, other mails of the sender
+/// filed, the decision recorded, and the token that undoes it all.
+struct WorkflowResult: Decodable {
+    let changed: Int
+    let moved: Int
+    let filed: Int
+    let decision: DecisionView?
+    let undo: String?
+}
+
 /// A plain list (`list_tags`, `list_groups`, `list_threads_by`).
 struct Items<T: Decodable>: Decodable {
     let items: [T]
@@ -241,6 +261,11 @@ struct ContactView: Decodable, Identifiable, Hashable {
     let addr: String
     let name: String?
     let screeningTarget: String?
+    /// Decision of the address's domain, which applies when the address
+    /// has none.
+    var domainTarget: String? = nil
+    /// `auto`, `required` or `not_required`.
+    var authPolicy: String? = nil
     let groups: [String]
     let messageCount: Int
 }

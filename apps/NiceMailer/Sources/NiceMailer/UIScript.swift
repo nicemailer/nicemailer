@@ -418,6 +418,17 @@ private final class Runner {
             "html_font_loaded": UIScript.html["font"] ?? "",
             "html_font_family": UIScript.html["family"] ?? "",
             "html_offset": "\(c.htmlOffset)",
+            // The folder workflow: steps `z` can undo, a suspect move
+            // waiting for its confirmation (its sender), the question shown,
+            // and the decision of the contact under the cursor (its own, or
+            // its domain's after "@").
+            "undo_count": "\(m.undoStack.count)",
+            "suspect": m.suspectMove?.addr ?? "",
+            "choice": c.activeChoice.map { c.choiceTitle($0) } ?? "",
+            "contact_addr": c.contacts.indices.contains(c.screenIndex) ? c.contacts[c.screenIndex].addr : "",
+            "contact_decision": c.contacts.indices.contains(c.screenIndex)
+                ? c.contacts[c.screenIndex].screeningTarget ?? c.contacts[c.screenIndex].domainTarget.map { "@" + $0 } ?? ""
+                : "",
         ]
     }
 }

@@ -1,0 +1,82 @@
+# The folder workflow (`dossiers.md`): the decision a move takes on the
+# sender, `z`, the confirmation of a sender suspected of spoofing, and the
+# decisions of the contacts screen.
+expect folder = Inbox
+expect undo_count = 0
+# Moving a mail of the Inbox to Newsletter decides on its sender; the
+# message says so, and that z undoes it.
+key m
+key n
+expect flash ~ next mails of
+expect flash ~ z: undo
+expect undo_count = 1
+snap decided
+# z puts the mails back and restores the decision.
+key z
+expect flash ~ Undone: move to Newsletter
+expect undo_count = 0
+key z
+expect flash = Nothing to undo
+# A move that does not decide is undone too.
+key d
+expect undo_count = 1
+expect flash !~ next mails of
+key z
+expect flash ~ Undone: move to Archive
+# Quarantine: accepting a sender takes the decision inbox.
+key ;
+key q
+expect folder = Quarantine
+key m
+key i
+expect flash ~ moved to Inbox · next mails of
+# The fourth mail now is from a sender suspected of spoofing: the core asks
+# for a confirmation, and every other key waits.
+key j
+key j
+key j
+key m
+key i
+expect suspect ~ @
+expect choice ~ Probable spoofing of
+expect mode = ASK
+snap suspect
+key d
+expect suspect ~ @
+expect flash ~ Answer with one of the keys
+# Escape leaves it in Quarantine.
+key esc
+expect suspect = 
+expect flash ~ Not moved
+# Asked again, then confirmed with y.
+key m
+key i
+expect suspect ~ @
+key y
+expect suspect = 
+expect flash ~ moved to Inbox
+expect undo_count = 2
+# Contacts: m decides on the address, M on its domain.
+key ;
+key c
+expect screen = contacts
+expect contacts_count > 0
+key m
+expect choice ~ Decision on
+expect mode = ASK
+snap contact-decision
+key b
+expect choice = 
+expect contact_decision = banned
+expect flash ~ Banned
+key z
+expect contact_decision != banned
+# The mouse chooses too: second row, Newsletter.
+key m
+click menu:1
+expect contact_decision = newsletter
+key M
+expect choice ~ Decision on the domain
+key esc
+expect choice = 
+expect screen = contacts

@@ -113,6 +113,7 @@ t tag (ajouter un tag ; si tous les mails visés l'ont déjà, le retirer)
 g group (ajoute l'expéditeur dans un groupe)
 l link (panneau des liens du mail ; entrée ouvre le lien dans le navigateur)
 u lu / non lu
+z annule le dernier déplacement ou la dernière décision (les mails reviennent, la décision précédente aussi) ; chaque z remonte d'une étape
 \* drapeau
 / chercher partout : Contient… dans Everything (voir le sélecteur d'attributs) ; échap revient au dossier de départ
 ? liste des touches
@@ -151,7 +152,7 @@ Les lettres sont celles des dossiers (`dossiers.md`) : `j` est réservé à la n
 ainsi ;i va à l’inbox, ;p va à Paperwork, ;t va à Todo, etc
 
 Le prefix ";" permet également d'aller aux autres écrans : 
-c Contact (liste des adresses ; / filtre ; entrée liste les mails du contact, tous dossiers)
+c Contact (liste des adresses ; / filtre ; m choisit la décision sur l'adresse, M sur son domaine : i Inbox, n Newsletter, p Paperwork, b Banned, - aucune ; entrée liste les mails du contact, tous dossiers)
 h History (affichage de l'historique issu de l audit log, plus récent d'abord)
 T tag (majuscule : `;t` est Todo ; entrée liste les mails du tag)
 g group (entrée liste les mails des membres du groupe)

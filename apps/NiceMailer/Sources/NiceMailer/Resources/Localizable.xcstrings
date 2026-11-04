@@ -31,6 +31,16 @@
         }
       }
     },
+    "%@ → %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ → %2$@"
+          }
+        }
+      }
+    },
     "%lld attachments saved to %@": {
       "localizations": {
         "fr": {
@@ -57,6 +67,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "%lld mails"
+          }
+        }
+      }
+    },
+    "%lld mails filed": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld mails rangés"
           }
         }
       }
@@ -91,6 +111,16 @@
         }
       }
     },
+    "%lld other mails filed": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld autres mails rangés"
+          }
+        }
+      }
+    },
     "%lld threads moved to %@": {
       "localizations": {
         "fr": {
@@ -121,12 +151,12 @@
         }
       }
     },
-    "/ filter · return: their mails · esc: back": {
+    "/ filter · m: decision · M: domain decision · return: their mails · esc: back": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "/ filtrer · entrée : ses mails · échap : retour"
+            "value": "/ filtrer · m : décision · M : décision sur le domaine · entrée : ses mails · échap : retour"
           }
         }
       }
@@ -167,6 +197,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Déjà dans %@"
+          }
+        }
+      }
+    },
+    "Answer with one of the keys, or esc": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Répondez avec l'une des touches, ou échap"
           }
         }
       }
@@ -247,6 +287,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Date…"
+          }
+        }
+      }
+    },
+    "Decision on %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Décision sur %@"
+          }
+        }
+      }
+    },
+    "Decision on the domain %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Décision sur le domaine %@"
           }
         }
       }
@@ -421,6 +481,16 @@
         }
       }
     },
+    "No change": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucun changement"
+          }
+        }
+      }
+    },
     "No command %@": {
       "localizations": {
         "fr": {
@@ -437,6 +507,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Pas de commande %1$@%2$@"
+          }
+        }
+      }
+    },
+    "No decision on %@ any more": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Plus de décision sur %@"
           }
         }
       }
@@ -521,6 +601,26 @@
         }
       }
     },
+    "Not moved: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Non déplacé : %@"
+          }
+        }
+      }
+    },
+    "Nothing to undo": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rien à annuler"
+          }
+        }
+      }
+    },
     "One-click unsubscribe failed (%@): page opened": {
       "localizations": {
         "fr": {
@@ -557,6 +657,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ouvre dans le navigateur la page de désabonnement de la liste (⌘U)"
+          }
+        }
+      }
+    },
+    "Probable spoofing of %@ (verdict %@)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Usurpation probable de %1$@ (verdict %2$@)"
+          }
+        }
+      }
+    },
+    "Probable spoofing of %@: confirm or cancel": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Usurpation probable de %@ : confirmez ou annulez"
           }
         }
       }
@@ -751,6 +871,16 @@
         }
       }
     },
+    "Undone: %@ (%lld mails put back)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Annulé : %1$@ (%2$lld mails remis en place)"
+          }
+        }
+      }
+    },
     "Unnamed attachment": {
       "localizations": {
         "fr": {
@@ -931,6 +1061,16 @@
         }
       }
     },
+    "cancel: leave it where it is": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "annuler : le laisser où il est"
+          }
+        }
+      }
+    },
     "clear all attributes": {
       "localizations": {
         "fr": {
@@ -977,6 +1117,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "date"
+          }
+        }
+      }
+    },
+    "decision on %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "décision sur %@"
           }
         }
       }
@@ -1131,6 +1281,36 @@
         }
       }
     },
+    "move it, and accept this sender without authentication (badly configured tool)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "déplacer, et accepter cet expéditeur sans authentification (outil mal configuré)"
+          }
+        }
+      }
+    },
+    "move it: it is really %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "déplacer : c'est bien %@"
+          }
+        }
+      }
+    },
+    "move to %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "déplacement vers %@"
+          }
+        }
+      }
+    },
     "move to a folder": {
       "localizations": {
         "fr": {
@@ -1157,6 +1337,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "mail suivant / précédent"
+          }
+        }
+      }
+    },
+    "next mails of %@ too": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "les prochains mails de %@ aussi"
+          }
+        }
+      }
+    },
+    "no decision": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "aucune décision"
           }
         }
       }
@@ -1421,6 +1621,16 @@
         }
       }
     },
+    "undo the last move or decision": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "annuler le dernier déplacement ou la dernière décision"
+          }
+        }
+      }
+    },
     "unread": {
       "localizations": {
         "fr": {
@@ -1487,6 +1697,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "hier %@"
+          }
+        }
+      }
+    },
+    "z: undo": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "z : annuler"
           }
         }
       }

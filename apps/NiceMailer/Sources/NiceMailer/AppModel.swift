@@ -52,6 +52,13 @@ final class AppModel {
     /// "not available yet"…); cleared by the next key.
     var flash: String?
 
+    /// What `z` undoes, most recent last: moves and decisions of this
+    /// session (`AppModel+Workflow.swift`).
+    var undoStack: [UndoStep] = []
+    /// A move refused until the user confirms it: its sender's mail is
+    /// suspected of spoofing (`authentification-expediteur.md`, section 5).
+    var suspectMove: SuspectMove?
+
     /// Selected folder. `didSet` is a property observer: it runs after each
     /// assignment, with the previous value in `oldValue`. Changing folder
     /// clears the thread selection and loads the new list.

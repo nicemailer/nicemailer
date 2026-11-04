@@ -45,20 +45,45 @@ extension AppModel {
         }
         // Name the mail, not only the folder: after the move the cursor is
         // already on another mail, so "Moved to Archive" alone does not say
-        // which one left.
-        flash = allowed.count == 1
-            ? L("“%@” moved to %@", Format.flashSubject(allowed[0].subject), Role.name(role))
-            : L("%lld threads moved to %@", allowed.count, Role.name(role))
+        // which one left. The core's answer may complete the message with
+        // the decision on the sender (`Workflow.moveFlash`).
+        flash = Workflow.moveFlash(subjects: allowed.map(\.subject), folder: Role.name(role), decision: nil, filed: 0)
         Task {
+            var tokens: [String] = []
+            var decision: DecisionView?
+            var filed = 0
+            var refused = false
             for t in allowed {
                 do {
-                    let _: CommandResult = try await client.call(
+                    let r: WorkflowResult = try await client.call(
                         "move_thread", ["thread_id": t.id, "target": role, "from_folder_id": t.folderId])
+                    if let u = r.undo { tokens.append(u) }
+                    decision = decision ?? r.decision
+                    filed += r.filed
+                } catch let e as CoreClient.RPCError where e.code == CoreClient.RPCError.confirmationRequired {
+                    // The thread comes back to the list, and the user is
+                    // asked; the other threads go on.
+                    refused = true
+                    if suspectMove == nil {
+                        suspectMove = SuspectMove(threadId: t.id, folderId: t.folderId, target: role, subject: t.subject,
+                                                  addr: e.data["addr"] ?? "", verdict: e.data["verdict"] ?? "")
+                    }
                 } catch {
                     report(error)
                 }
             }
-            if listFilter != nil { await reloadThreads(keepDepth: true) }
+            if !tokens.isEmpty {
+                pushUndo(UndoStep(tokens: tokens, label: L("move to %@", Role.name(role))))
+            }
+            let moved = allowed.filter { t in suspectMove?.threadId != t.id }
+            if let s = suspectMove {
+                flash = L("Probable spoofing of %@: confirm or cancel", s.addr)
+            } else if decision != nil || filed > 0 {
+                flash = Workflow.moveFlash(subjects: moved.map(\.subject), folder: Role.name(role), decision: decision, filed: filed)
+            }
+            if listFilter != nil || refused { await reloadThreads(keepDepth: true) }
+            // The question is about that mail: the cursor goes back to it.
+            if let s = suspectMove, threads.contains(where: { $0.id == s.threadId }) { selectedThreadId = s.threadId }
         }
     }
 

@@ -31,6 +31,8 @@ final class FakeCore: CoreCalling, @unchecked Sendable {
         recorded.append((method, params))
         lock.unlock()
         let result = handler(method, params)
+        // A handler answers an error by returning it.
+        if let error = result as? CoreClient.RPCError { throw error }
         let data = try JSONSerialization.data(withJSONObject: result, options: .fragmentsAllowed)
         return try CoreClient.decoder.decode(R.self, from: data)
     }
@@ -132,6 +134,23 @@ enum Fixture {
             return ["items": [], "next_cursor": NSNull(), "as_of": position]
         case "list_tags", "list_groups", "list_threads_by":
             return ["items": [], "as_of": position]
+        case "move_thread":
+            // A move from the Inbox decides nothing; one to Newsletter
+            // decides on the sender and files two other mails.
+            let thread = params["thread_id"] as? Int ?? 0
+            let decision: Any = params["target"] as? String == "newsletter"
+                ? ["kind": "address", "name": "sender\(thread)@example.org", "before": NSNull(), "after": "newsletter"]
+                : NSNull()
+            let filed = params["target"] as? String == "newsletter" ? 2 : 0
+            return ["changed": 1 + filed, "moved": 1, "filed": filed, "decision": decision, "undo": "\(thread):\(thread)"]
+        case "undo":
+            return ["changed": 1, "moved": 1, "filed": 0, "decision": NSNull(), "undo": "u"]
+        case "set_address_screening", "set_domain_screening":
+            let name = params["addr"] ?? params["domain"] ?? ""
+            return ["changed": 3, "moved": 0, "filed": 3,
+                    "decision": ["kind": params["addr"] != nil ? "address" : "domain", "name": name,
+                                 "before": NSNull(), "after": params["target"] ?? NSNull()],
+                    "undo": "7:9"]
         case "set_group_member":
             return ["group_id": 1, "addr": "sender1@example.org", "changed": true]
         case "export_message":

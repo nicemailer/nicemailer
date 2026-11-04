@@ -69,6 +69,18 @@ final class GeekController {
         case picker(PickerKind)
         /// `/` on the contacts screen: the filter is being typed.
         case contactFilter
+        /// A small menu asking for a choice.
+        case choice(Choice)
+    }
+
+    /// Questions asked in a small menu, each key an answer (`ui.md`).
+    enum Choice: Equatable {
+        /// A move whose sender's mail is suspected of spoofing waits for a
+        /// confirmation (`authentification-expediteur.md`, section 5).
+        case suspect(SuspectMove)
+        /// `m` / `M` on the contacts screen: the decision on the address,
+        /// or on its domain.
+        case decision(name: String, domain: Bool, current: String?)
     }
 
     /// One row of a menu or a picker.
@@ -108,6 +120,8 @@ final class GeekController {
     /// Row of the open prefix menu highlighted with the arrows (`nil`: none
     /// yet); Return goes to it.
     var menuIndex: Int?
+    /// The same for the open choice.
+    var choiceIndex: Int?
     /// Text typed in the open picker, and the highlighted row.
     var pickerQuery = ""
     var pickerIndex = 0
@@ -262,11 +276,14 @@ final class GeekController {
 
     /// Short mode name for the status bar, like Helix's "NOR".
     var modeLabel: String {
-        switch overlay {
+        // A suspect move asks without an overlay of its own.
+        if model.suspectMove != nil { return "ASK" }
+        return switch overlay {
         case .none, .help: "NOR"
         case .menu(let p): p.rawValue
         case .picker: "PCK"
         case .contactFilter: "/"
+        case .choice: "ASK"
         }
     }
 
@@ -337,6 +354,12 @@ final class GeekController {
         model.flash = nil
         model.lastError = nil
 
+        // A question waits for its answer before anything else.
+        if let choice = activeChoice {
+            handleChoiceKey(choice, key: key, code: code)
+            return true
+        }
+
         switch overlay {
         case .menu(let prefix):
             // The arrows highlight a row without closing the menu: down
@@ -377,7 +400,7 @@ final class GeekController {
         case .contactFilter:
             handleContactFilterInput(key: key, code: code)
             return true
-        case .none:
+        case .choice, .none:
             break
         }
 
@@ -404,6 +427,13 @@ final class GeekController {
             return true
         case "?":
             overlay = .help
+            return true
+        case "z":
+            // Undo the last move or decision, from any screen.
+            Task {
+                await model.undoLast()
+                if screen == .contacts { await loadContacts(reset: false, keep: true) }
+            }
             return true
         default:
             break
@@ -735,6 +765,7 @@ final class GeekController {
             ("t", L("tag")),
             ("g", L("add the sender to a group")),
             ("u  *", L("read / unread, flag")),
+            ("z", L("undo the last move or decision")),
             ("⌘U", L("unsubscribe from the list")),
             ("T", L("show / hide quotes, signatures, folded mails")),
             ("S", L("skip to the text after the next quote")),
@@ -1096,6 +1127,110 @@ final class GeekController {
         if key == "/", screen == .contacts {
             overlay = .contactFilter
         }
+        // `m`: decision on the contact's address; `M`: on its domain.
+        if key == "m" || key == "M", screen == .contacts, contacts.indices.contains(screenIndex) {
+            let c = contacts[screenIndex]
+            let domain = key == "M"
+            guard let name = domain ? Self.domain(of: c.addr) : c.addr else { return }
+            choiceIndex = nil
+            overlay = .choice(.decision(name: name, domain: domain, current: domain ? c.domainTarget : c.screeningTarget))
+        }
+    }
+
+    /// Domain part of an address (`news.shop.fr` for `a@news.shop.fr`).
+    static func domain(of addr: String) -> String? {
+        guard let at = addr.lastIndex(of: "@") else { return nil }
+        let d = addr[addr.index(after: at)...].lowercased()
+        return d.isEmpty ? nil : d
+    }
+
+    // MARK: - Choices
+
+    /// The question waiting for an answer: a suspect move first, as it
+    /// arrives from the core without a key; then a choice opened by a key.
+    var activeChoice: Choice? {
+        if let s = model.suspectMove { return .suspect(s) }
+        if case .choice(let c) = overlay { return c }
+        return nil
+    }
+
+    func choiceTitle(_ c: Choice) -> String {
+        switch c {
+        case .suspect(let s): L("Probable spoofing of %@ (verdict %@)", s.addr, s.verdict)
+        case .decision(let name, let domain, _): domain ? L("Decision on the domain %@", name) : L("Decision on %@", name)
+        }
+    }
+
+    /// Answers of a choice. The current decision is marked on the right.
+    func choiceEntries(_ c: Choice) -> [Entry] {
+        switch c {
+        case .suspect(let s):
+            return [
+                Entry(key: "y", label: L("move it: it is really %@", s.addr)) { [model] in
+                    model.confirmSuspect(trustTool: false)
+                },
+                Entry(key: "t", label: L("move it, and accept this sender without authentication (badly configured tool)")) {
+                    [model] in model.confirmSuspect(trustTool: true)
+                },
+                Entry(key: "esc", label: L("cancel: leave it where it is")) { [model] in model.cancelSuspect() },
+            ]
+        case .decision(let name, let domain, let current):
+            var entries = ["inbox", "newsletter", "paperwork", "banned"].map { role in
+                Entry(key: Role.letter(role).lowercased(), label: Role.name(role), detail: current == role ? "•" : nil) {
+                    [weak self] in self?.decide(name, domain: domain, target: role)
+                }
+            }
+            entries.append(Entry(key: "-", label: L("no decision"), detail: current == nil ? "•" : nil) { [weak self] in
+                self?.decide(name, domain: domain, target: nil)
+            })
+            return entries
+        }
+    }
+
+    private func decide(_ name: String, domain: Bool, target: String?) {
+        Task {
+            await model.setScreening(name, domain: domain, target: target)
+            await loadContacts(reset: false, keep: true)
+        }
+    }
+
+    private func handleChoiceKey(_ c: Choice, key: String, code: UInt16) {
+        let entries = choiceEntries(c)
+        switch code {
+        case KeyCode.down:
+            choiceIndex = choiceIndex.map { Self.stepDown($0, count: entries.count) } ?? 0
+            return
+        case KeyCode.up:
+            choiceIndex = choiceIndex.map { Self.stepUp($0, count: entries.count) } ?? max(0, entries.count - 1)
+            return
+        case KeyCode.returnKey:
+            if let i = choiceIndex { chooseChoiceEntry(i) }
+            return
+        case KeyCode.escape:
+            closeChoice()
+            if case .suspect = c { model.cancelSuspect() }
+            return
+        default:
+            break
+        }
+        if let i = entries.firstIndex(where: { $0.key == key }) {
+            chooseChoiceEntry(i)
+        } else if !key.isEmpty {
+            model.flash = L("Answer with one of the keys, or esc")
+        }
+    }
+
+    /// A row of the open choice, by key, Return or click.
+    func chooseChoiceEntry(_ index: Int) {
+        guard let c = activeChoice else { return }
+        let entries = choiceEntries(c)
+        closeChoice()
+        if entries.indices.contains(index) { entries[index].action() }
+    }
+
+    private func closeChoice() {
+        choiceIndex = nil
+        if case .choice = overlay { overlay = .none }
     }
 
     /// Return (or a double-click) on a screen row: lists the mails of the
@@ -1140,16 +1275,19 @@ final class GeekController {
         if screen == .history, historyCursor != nil { Task { await loadHistory(reset: false) } }
     }
 
-    func loadContacts(reset: Bool) async {
+    /// Loads the contacts: the first page (`reset`), the next one, or with
+    /// `keep` the rows already shown again (after a decision), so that the
+    /// cursor stays on its row.
+    func loadContacts(reset: Bool, keep: Bool = false) async {
         guard let client = model.core else { return }
-        var params: [String: Any] = ["limit": 100]
+        var params: [String: Any] = ["limit": keep ? max(100, contacts.count) : 100]
         if !contactsQuery.isEmpty { params["query"] = contactsQuery }
-        if !reset, let c = contactsCursor { params["cursor"] = c }
+        if !reset, !keep, let c = contactsCursor { params["cursor"] = c }
         let query = contactsQuery
         do {
             let page: Page<ContactView> = try await client.call("list_contacts", params)
             guard query == contactsQuery else { return }
-            contacts = reset ? page.items : contacts + page.items
+            contacts = reset || keep ? page.items : contacts + page.items
             contactsCursor = page.nextCursor
         } catch { model.report(error) }
     }
