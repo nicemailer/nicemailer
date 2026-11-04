@@ -81,6 +81,37 @@ For clients other than the CLI:
 - `import_status` returns the status of the running import, or of the last one, or `null`.
 - Events: `ImportProgress` after each batch and `ImportFinished` at the end, both carrying the status fields (`job_id`, `bytes_read`, `total_bytes`, `imported`, `skipped`, `parse_errors`, and at the end `sent`, `archived`, `correspondents`, `seconds`, `error`). Each batch also emits `FolderChanged` for the folders it fills.
 
+## Importing all of Apple Mail
+
+Two scripts move a whole Apple Mail library into NiceMailer, including IMAP accounts whose server no longer exists (Apple Mail's own export fails on them).
+
+1. `scripts/export-apple-mail.py` reads `~/Library/Mail/V10` directly (never writing to it, never contacting a server) and writes `mail-export/` at the project root:
+   - one mbox per IMAP account, all its folders merged, named `<Account> (<address>).mbox`; each message gets an `X-Mail-Folder:` header per Apple Mail folder it was in. Copies of a message with the same `Message-ID`, `Date` and `Subject` are written once (Gmail's "All Mail" holds a copy of everything; `Message-ID` alone is not unique in practice);
+   - accounts deleted from Apple Mail whose files are still on disk: `Deleted account <id> (<address>).mbox`, the address being the most frequent recipient;
+   - one mbox per local folder ("On My Mac"), the tree reproduced as directories under `mail-export/Sur mon Mac/`;
+   - attachments Apple Mail stored outside the message (`.partial.emlx`) are put back; attachments it never downloaded are replaced by a text note with the header `X-Missing-Attachment: true`.
+   - the `From ` separator line of each message carries the date the server received it, as recorded by Apple Mail (`date-received` in the `.emlx` file), else its `Date` header, else the time Apple Mail wrote the file. Exports made before this fix (November 2026) carry the export time there instead; the import falls back on the `Date` header for them (see Dates above), but re-exporting gives the exact reception dates.
+2. `scripts/import-mail-export.py` imports every mbox of `mail-export/` with `nicemailer import-mbox`. First it plans, asking only what it cannot tell:
+   - IMAP account files: the address comes from the file name and the account name from the Apple Mail account (`Achille Sh` → `achille-sh`). It asks when the name is taken by another NiceMailer account (for example an IMAP account `perso`) and for deleted accounts;
+   - `Messages récupérés (<Account>).mbox` goes with `<Account>`;
+   - a file name that contains an address (`HEY-emails-me@hey.com.mbox`): the address is the suffix of the name found most often in the headers; it asks to confirm it and the name;
+   - other local folders mix several of your addresses: it counts which of them sent the messages and asks once per top-level local folder (`Sur mon Mac/Pro`…), or file by file if you type `f`. Type `-` to skip.
+
+   The answers are saved to `mail-export/import-plan.json` and reused next time (`--replan` asks again). After a recap and a single confirmation, the files are imported one after the other without further questions (the core runs one import at a time); a failed file does not stop the others. The CLI output goes to `mail-export/import.log`. Running the script again resumes an interrupted run, since messages already imported are skipped.
+
+```sh
+make core                                   # in one terminal
+scripts/export-apple-mail.py                # ~5 min for 230,000 messages
+scripts/import-mail-export.py --dry-run     # plan only
+scripts/import-mail-export.py               # plan, confirm, import
+```
+
+The export script is tested by `scripts/tests/test_export_apple_mail.py` (part of `make test`).
+
+Options of the import script: `--export-dir`, `--data-dir` (as for the CLI), `--cli PATH` (default: builds `target/release/nicemailer`), `--yes` (no final confirmation).
+
+Because each folder of an account is not kept as a NiceMailer folder (the import files by sender, see above), a message exported from two Apple Mail stores with different bytes (for example once in an IMAP account and once in a local copy) is imported twice; both copies end up in the same conversation.
+
 ## Limitations
 
 - No import from the app yet.

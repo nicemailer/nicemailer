@@ -5,3 +5,7 @@
 *.mbox
 # …except the small test fixture of the UI scenarios, which must be committed.
 !apps/NiceMailer/UITests/fixtures/*.mbox
+
+# Apple Mail export (scripts/export-apple-mail.py): personal data, never committed.
+/mail-export/
+__pycache__/

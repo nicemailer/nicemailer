@@ -17,9 +17,11 @@ build:
 	cargo build --release
 	cd apps/NiceMailer && DEVELOPER_DIR=$(XCODE) swift build
 
-# Every test that runs without a window: Rust (core) and Swift unit tests.
+# Every test that runs without a window: Rust (core), Python scripts and
+# Swift unit tests.
 test:
 	cargo test
+	python3 -m unittest discover -s scripts/tests
 	cd apps/NiceMailer && DEVELOPER_DIR=$(XCODE) swift test
 
 swift-test:
