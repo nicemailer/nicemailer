@@ -1431,6 +1431,16 @@
         }
       }
     },
+    "read the mail in the whole window (one column)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "lire le mail dans toute la fenêtre (une colonne)"
+          }
+        }
+      }
+    },
     "reply, reply all, forward (not yet)": {
       "localizations": {
         "fr": {

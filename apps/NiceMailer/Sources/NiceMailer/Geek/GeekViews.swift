@@ -302,25 +302,40 @@ private struct MailColumns: View {
             let rest = geo.size.width - folderWidth
             let listWidth = controller.columns == 1 ? rest : max(220, min(rest - 260, rest * controller.listFraction))
             HStack(spacing: 0) {
-                if controller.columns == 3 {
-                    GeekFolderColumn(controller: controller).frame(width: folderWidth)
-                    Palette.separator.frame(width: 1)
-                }
-                GeekThreadColumn(controller: controller).frame(width: listWidth).clipped()
-                if controller.columns > 1 {
-                    Palette.separator.frame(width: 1)
-                        // A wider invisible zone makes the line easy to grab.
-                        .overlay(Color.clear.frame(width: 7).contentShape(Rectangle()).onHover { inside in
-                            if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
-                        })
-                        .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .named("columns")).onChanged { g in
-                            controller.listFraction = Double(max(0.15, min(0.7, (g.location.x - folderWidth) / max(rest, 1))))
-                        })
+                if controller.columns == 1, controller.reading, model.selectedThreadId != nil {
+                    // One column, Return pressed: the mail takes the whole
+                    // window until Escape. j / k still move the cursor of
+                    // the hidden list, so the next mail is one key away.
+                    // When the list empties (last mail archived), the list
+                    // comes back rather than an empty reader.
                     GeekReaderColumn(controller: controller)
+                } else {
+                    columns(folderWidth: folderWidth, rest: rest, listWidth: listWidth)
                 }
             }
         }
         .coordinateSpace(name: "columns")
+    }
+
+    /// The usual layout: folders (3 columns), list, and mail (2 or 3).
+    @ViewBuilder
+    private func columns(folderWidth: CGFloat, rest: CGFloat, listWidth: CGFloat) -> some View {
+        if controller.columns == 3 {
+            GeekFolderColumn(controller: controller).frame(width: folderWidth)
+            Palette.separator.frame(width: 1)
+        }
+        GeekThreadColumn(controller: controller).frame(width: listWidth).clipped()
+        if controller.columns > 1 {
+            Palette.separator.frame(width: 1)
+                // A wider invisible zone makes the line easy to grab.
+                .overlay(Color.clear.frame(width: 7).contentShape(Rectangle()).onHover { inside in
+                    if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
+                })
+                .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .named("columns")).onChanged { g in
+                    controller.listFraction = Double(max(0.15, min(0.7, (g.location.x - folderWidth) / max(rest, 1))))
+                })
+            GeekReaderColumn(controller: controller)
+        }
     }
 }
 

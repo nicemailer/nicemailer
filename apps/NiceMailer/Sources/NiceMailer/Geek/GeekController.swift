@@ -141,8 +141,17 @@ final class GeekController {
     /// Number of columns (`ui.md`, display menu): 1 = list only,
     /// 2 = list and mail, 3 = folders, list and mail.
     var columns: Int {
-        didSet { defaults.set(columns, forKey: "geek.columns") }
+        didSet {
+            defaults.set(columns, forKey: "geek.columns")
+            // The full-window reader only exists in one column: another
+            // layout shows the mail beside the list anyway.
+            if columns != 1 { reading = false }
+        }
     }
+    /// In one column, the mail under the cursor fills the window instead of
+    /// the list (`ui.md`, `v1`): Return opens it, Escape goes back to the
+    /// list. Not remembered: the app always opens on the list.
+    var reading = false
     var statusPosition: StatusPosition {
         didSet { defaults.set(statusPosition.rawValue, forKey: "geek.status") }
     }
@@ -455,8 +464,18 @@ final class GeekController {
     /// Shift).
     private func handleMailKey(key: String, code: UInt16, shift: Bool = false) {
         switch code {
+        case KeyCode.returnKey:
+            // One column shows the list only: Return reads the mail under
+            // the cursor in the whole window (`ui.md`, `v1`). With two or
+            // three columns the mail is already shown: nothing to do.
+            if columns == 1, model.selectedThreadId != nil { reading = true }
+            return
         case KeyCode.escape:
-            if !model.marked.isEmpty {
+            if reading {
+                // Back to the list first, before Escape's other steps
+                // (unmark, leave a filter…): it undoes the last thing done.
+                reading = false
+            } else if !model.marked.isEmpty {
                 model.marked = []
             } else if model.listFilter != nil {
                 // Back from a tag, group or contact list to the folder.
@@ -773,6 +792,7 @@ final class GeekController {
             (";…", L("go to a folder or a screen")),
             ("s…", L("save")),
             ("v…", L("display")),
+            ("ret", L("read the mail in the whole window (one column)")),
             ("space ⇧space  ^f ^b", L("scroll the mail")),
             ("r R f", L("reply, reply all, forward (not yet)")),
             ("esc", L("cancel, unmark, back")),
@@ -1337,16 +1357,24 @@ extension GeekController {
     /// - click: select it, unmark everything;
     /// - ⌘-click: mark or unmark it (the mail under the cursor joins the
     ///   selection first, as when building a selection in the Finder);
-    /// - ⇧-click: mark every mail from the cursor to it.
+    /// - ⇧-click: mark every mail from the cursor to it;
+    /// - double-click, with one column: read it in the whole window, like
+    ///   Return (`ui.md`, `v1`). With two or three columns the mail is
+    ///   already shown beside the list: the double-click is a plain click.
     ///
     /// The modifiers come from the click gesture itself (`View.onClick`).
     func clickThread(_ id: Int, _ mods: ClickModifiers) {
         model.flash = nil
+        // Only two plain clicks make a double-click: a ⌘-click or a ⇧-click
+        // is recorded under another tag, so that it never counts as the
+        // first half of one.
+        let double = isDoubleClick(mods == .none ? "thread-\(id)" : "thread-modified")
         let result = Selection.click(
             on: id, in: model.threads.map(\.id), cursor: model.selectedThreadId, marked: model.marked,
             command: mods == .command, shift: mods == .shift)
         model.marked = result.marked
         model.selectedThreadId = result.cursor
+        if double, mods == .none, columns == 1 { reading = true }
     }
 
     /// Click on a row of the contacts, tags or groups screen; a

@@ -169,7 +169,7 @@ s save (dans ~/Downloads ; un fichier existant n'est jamais écrasé ; s'appliqu
 	t as text file
 	m as markdown file
 v display (view)
-	1 une seule colonne (masque la liste des dossiers et la lecture d'un mail)
+	1 une seule colonne (masque la liste des dossiers et la lecture d'un mail). Entrée, ou un double-clic sur une ligne, affiche le mail dans toute la fenêtre (j / k passent au mail suivant / précédent) ; Escape revient à la liste
 	2 colonnes (presentation classique : liste des mails à gauche et lecture du mail à droite)
 	3 colonnes (liste des dossiers à gauche, puis liste des mails au milieu et lecture du mail à droite)
 	c creation date (mail trié par date de création, ou de réception)

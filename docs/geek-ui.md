@@ -7,7 +7,7 @@ Switch themes with the **Theme** menu (Classic, Design, Geek). Design does not e
 ## Layout
 
 - **Mail list** on the left (about a third of the window; drag the separator to resize), **reading pane** on the right.
-- `v1` shows the list only, `v2` the list and the mail, `v3` adds the folders on the left, in a single block titled with the current view: **all** or the account's name.
+- `v1` shows the list only: Return, or a double-click on a row, reads the mail in the whole window, `j` / `k` go on to the next / previous mail, and Escape goes back to the list. `v2` shows the list and the mail, `v3` adds the folders on the left, in a single block titled with the current view: **all** or the account's name.
 
 ## Accounts and the unified view "all"
 
@@ -108,10 +108,11 @@ Actions apply to the **marked** mails if any (`J` / `K`), otherwise to the mail 
 | `;` + key | go to a folder or a screen (see below) |
 | `s` + key | save to `~/Downloads`, for every marked conversation (or the one under the cursor): its latest mail with `se` .eml, `st` text, `sm` Markdown; its attachments with `sa` all of them, `sg` all but the graphics (images: logos, signatures, photos). For attachments every message counts, and a file attached again to a reply is saved once. No file is overwritten |
 | `v` + key | display: `v1` `v2` `v3` columns, `vc` sort by reception, `vm` sort by modification, `vh` text / HTML, `vs` status bar |
+| Return | with one column (`v1`), read the mail in the whole window; Escape goes back to the list |
 | Space, shift-Space | scroll the mail a page down / up, as text or as HTML |
 | `ctrl-f` `ctrl-b` | same, a page down / up in the mail |
 | `?` | list of keys |
-| Escape | cancel a prefix, close a panel, unmark, then go back from a tag, group or contact list to the folder |
+| Escape | cancel a prefix, close a panel, leave the full-window mail (`v1`), unmark, then go back from a tag, group or contact list to the folder |
 | `r` `R` `f` | reply, reply all, forward: not available yet (writing mail needs SMTP) |
 
 After a prefix (`;`, `m`, `s`, `v`), a menu lists the possible second keys, as in Helix. Each prefix has a block in the status bar: the folder for `;` (folders, Everything, screens), and an icon with its key for `m` (move, arrow), `s` (save, tray) and `v` (display, eye). The blocks form three groups set apart by a wide gap: what the list shows (`@`, `;`, `F` and the chips), the display preference (`v`), and actions on the current mail (`m`, `s`). The menu drops down from its block: under it when the bar is at the top, above it when the bar is at the bottom; a click on the block opens it, and its rows can be clicked. The arrows highlight a row (down starts on the first one, up on the last, both turn around) and Return goes to it; a key still acts at once, and Return with nothing highlighted closes the menu. With the status bar hidden, menus appear in the bottom-right corner.
@@ -122,7 +123,7 @@ The keyboard comes first, but every list can also be used with the mouse:
 
 | Where | Click | Other |
 | --- | --- | --- |
-| Mail list | select the mail, unmark the others | ⌘-click marks or unmarks a mail (the current one joins the selection); ⇧-click marks every mail from the current one to the clicked one |
+| Mail list | select the mail, unmark the others | ⌘-click marks or unmarks a mail (the current one joins the selection); ⇧-click marks every mail from the current one to the clicked one; with one column (`v1`), a double-click reads the mail in the whole window |
 | Folders (3 columns) | go to the folder | |
 | Account or folder in the status bar | open the account or folder picker | |
 | Pickers and menus | choose the row | |

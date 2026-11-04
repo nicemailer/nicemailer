@@ -491,6 +491,73 @@ struct GeekControllerTests {
         #expect(again.columns == 3 && again.statusPosition == .top)
     }
 
+    @Test func returnReadsTheMailInOneColumnAndEscapeGoesBackToTheList() {
+        press("v"); press("1")
+        #expect(controller.columns == 1 && !controller.reading)
+        press("ret")
+        #expect(controller.reading)
+        // j / k keep moving the cursor: the reader follows the next mail.
+        press("j")
+        #expect(controller.reading && selectedIndex == 1)
+        press("esc")
+        #expect(!controller.reading && selectedIndex == 1)
+    }
+
+    @Test func escapeLeavesTheReaderBeforeUnmarking() {
+        press("v"); press("1")
+        press("J")
+        let marked = model.marked
+        #expect(!marked.isEmpty)
+        press("ret"); press("esc")
+        // The first Escape only closes the reader; the marks stay.
+        #expect(!controller.reading && model.marked == marked)
+        press("esc")
+        #expect(model.marked.isEmpty)
+    }
+
+    @Test func aDoubleClickReadsTheMailInOneColumn() {
+        press("v"); press("1")
+        controller.clickThread(3, .none)
+        #expect(!controller.reading)
+        controller.clickThread(3, .none)
+        #expect(controller.reading && model.selectedThreadId == 3)
+        press("esc")
+        #expect(!controller.reading)
+    }
+
+    @Test func onlyTwoPlainClicksOnTheSameRowMakeADoubleClick() {
+        press("v"); press("1")
+        // Two different rows.
+        controller.clickThread(3, .none)
+        controller.clickThread(4, .none)
+        #expect(!controller.reading)
+        // A ⌘-click, then a click on the same row.
+        controller.clickThread(5, .command)
+        controller.clickThread(5, .none)
+        #expect(!controller.reading)
+        // Two ⌘-clicks: marking, not reading.
+        controller.clickThread(6, .command)
+        controller.clickThread(6, .command)
+        #expect(!controller.reading)
+    }
+
+    @Test func aDoubleClickWithTwoColumnsIsAPlainClick() {
+        press("v"); press("2")
+        controller.clickThread(3, .none)
+        controller.clickThread(3, .none)
+        #expect(!controller.reading && model.selectedThreadId == 3)
+    }
+
+    @Test func returnDoesNothingWithTwoColumnsAndAnotherLayoutLeavesTheReader() {
+        press("v"); press("2")
+        press("ret")
+        #expect(!controller.reading)
+        press("v"); press("1"); press("ret")
+        #expect(controller.reading)
+        press("v"); press("3")
+        #expect(!controller.reading)
+    }
+
     @Test func sortingByModificationReloadsTheList() async {
         press("v"); press("m")
         #expect(model.sort == "modified")

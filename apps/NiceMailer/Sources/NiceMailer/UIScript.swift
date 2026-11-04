@@ -386,6 +386,7 @@ private final class Runner {
             "tags_count": "\(c.tags.count)",
             "groups_count": "\(c.groups.count)",
             "columns": "\(c.columns)",
+            "reading": "\(c.reading)",
             "status_position": c.statusPosition.rawValue,
             "sort": m.sort,
             "body_format": m.bodyFormat,

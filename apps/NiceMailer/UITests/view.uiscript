@@ -2,6 +2,27 @@
 key v
 key 1
 expect columns = 1
+# One column shows the list only: Return reads the mail in the whole
+# window, j moves to the next mail, Escape goes back to the list.
+expect reading = false
+key ret
+expect reading = true
+expect reader_text ~ Bonjour Alex
+snap one-column-reading
+key j
+expect reading = true
+key esc
+expect reading = false
+snap one-column-list
+# A double-click on a row reads it too; a single click only selects it.
+click thread:3
+expect reading = false
+expect selected = 3
+dblclick thread:4
+expect reading = true
+expect selected = 4
+key esc
+expect reading = false
 key v
 key 3
 expect columns = 3
