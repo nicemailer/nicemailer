@@ -551,7 +551,14 @@ private struct GeekReaderColumn: View {
             let blocks = ThreadDisplay.blocks(thread, state)
             VStack(spacing: 0) {
                 HStack {
+                    // Selectable like the body (the text reader is an
+                    // NSTextView): the subject is often what one copies to
+                    // search for it or quote it. Swift note:
+                    // `.textSelection(.enabled)` lets the user drag over a
+                    // SwiftUI `Text` and copy it with ⌘C; ⌘ shortcuts are left
+                    // to AppKit by `GeekController.handle`.
                     Text(thread.subject).font(.geek(13, weight: .bold)).lineLimit(1)
+                        .textSelection(.enabled)
                     Spacer()
                     if state.showAll {
                         Text("T").foregroundStyle(Palette.accent)
