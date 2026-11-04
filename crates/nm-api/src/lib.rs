@@ -305,7 +305,18 @@ pub struct ListThreadsParams {
 /// qualifies when its messages in the listed folder match (flag and
 /// "answered": any message of the thread, as the list shows them).
 /// Empty by default: no filtering.
+///
+/// Unknown fields are refused rather than ignored: an app newer than the
+/// running core would send a criterion this core does not know (`subject`
+/// to a core built before it), and ignoring it would return the whole list
+/// as if it were the answer. Refused, the request fails and the app shows
+/// the error. An older app still works with a newer core: every field is
+/// optional.
+///
+/// Rust note: `deny_unknown_fields` makes serde fail on a JSON key that
+/// matches no field, where by default it skips it silently.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ThreadFilter {
     /// Read (true: no unread message) or unread (false: at least one).
     #[serde(default)]

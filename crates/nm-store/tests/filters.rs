@@ -190,6 +190,17 @@ fn the_new_fields_are_optional_in_json() {
 }
 
 #[test]
+fn an_unknown_criterion_is_refused_not_ignored() {
+    // A newer app sending a criterion this core does not know must get an
+    // error, not the whole list.
+    let err = serde_json::from_str::<ThreadFilter>(r#"{"subject":"x","not_a_criterion":"y"}"#).unwrap_err();
+    assert!(err.to_string().contains("not_a_criterion"), "{err}");
+    // The same through the request of `list_threads`.
+    let p = serde_json::from_str::<nm_api::ListThreadsParams>(r#"{"folder_id":1,"filter":{"sujet":"x"}}"#);
+    assert!(p.is_err());
+}
+
+#[test]
 fn in_everything_the_criteria_see_every_listed_folder() {
     // acme.fr writes (Inbox), the owner replies (Sent): in "Everything" the
     // thread is shown in Sent, the folder of its latest mail, where nothing
