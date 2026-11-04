@@ -157,6 +157,7 @@ async fn main() -> anyhow::Result<()> {
     // 0o600: only the current user can connect.
     fs::set_permissions(&socket_path, fs::Permissions::from_mode(0o600))?;
     eprintln!("nicemailer-core : base {}, socket {}", db_path.display(), socket_path.display());
+    start_reindex(&core)?;
 
     // Accept connections until Ctrl-C (SIGINT) or SIGTERM (sent by `kill`
     // or by launchd).
@@ -750,6 +751,46 @@ async fn start_import(core: &Arc<Core>, p: ImportMboxParams, source: Source) -> 
         .spawn(move || run_import(core, job_id, opts))
         .map_err(|e| RpcError::new(error_code::INTERNAL_ERROR, e.to_string()))?;
     Ok(status)
+}
+
+/// Starts the reinterpretation of the bodies of an older parser, if any
+/// (`stockage-brut.md`, section 8): after an improvement of the parser, the
+/// stored mails get it in the background, without any command. A plain
+/// thread, as for the import: it runs for minutes on a large mailbox, and
+/// takes the store lock one batch at a time, so the app is answered
+/// meanwhile.
+///
+/// No event is sent: a body only shows when a thread is opened, and an
+/// event per batch would make the app reload its list hundreds of times.
+/// A thread already open keeps its old body until opened again.
+fn start_reindex(core: &Arc<Core>) -> anyhow::Result<()> {
+    let core = core.clone();
+    // Everything happens on the reindex thread, the check included: the
+    // main thread must reach the loop that accepts connections at once
+    // (a slow check here once left the app unanswered for 30 s).
+    std::thread::Builder::new().name("nicemailer-reindex".into()).spawn(move || {
+        let pending = match nm_store::reindex::pending(&core.store.lock().unwrap()) {
+            Ok(0) => return,
+            Ok(n) => n,
+            Err(e) => return eprintln!("reindex : {e}"),
+        };
+        eprintln!("reindex : {pending} mails analysés par une version antérieure, en tâche de fond");
+        let mut last_logged = std::time::Instant::now();
+        let mut progress = |done: u64, total: u64| {
+            if last_logged.elapsed().as_secs() >= 10 {
+                eprintln!("reindex : {done} / {total}");
+                last_logged = std::time::Instant::now();
+            }
+        };
+        match nm_store::reindex::reindex(&core.store, &core.raw, nm_store::reindex::BATCH_SIZE, &mut progress) {
+            Ok(r) => eprintln!(
+                "reindex terminé : {} mails réanalysés, {} corrigés sans relecture, {} inchangés, {} bruts introuvables, {} illisibles, {} noms d'adresses complétés, en {:.1} s",
+                r.reparsed, r.repaired, r.unchanged, r.missing_raw, r.parse_errors, r.names_filled, r.seconds
+            ),
+            Err(e) => eprintln!("reindex échoué : {e}"),
+        }
+    })?;
+    Ok(())
 }
 
 /// Body of the import thread.

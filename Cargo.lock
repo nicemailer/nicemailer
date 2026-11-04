@@ -715,6 +715,7 @@ dependencies = [
  "ammonia",
  "libc",
  "mail-parser",
+ "markup5ever",
  "nm-api",
  "nm-core",
  "rand",

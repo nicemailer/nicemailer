@@ -18,6 +18,7 @@
 //! - `unsubscribe.rs`: how to unsubscribe from a mailing list,
 //! - `html_text.rs`: HTML to plain text, keeping blocks apart,
 //! - `import.rs`: import of an mbox file into an archive account,
+//! - `reindex.rs`: reinterpretation of stored messages after a parser change,
 //! - `library.rs`: history, export, tags, groups, contacts, display preference,
 //! - `seed.rs`: generator of fake mail for development,
 //! - `migrations.rs`: upgrade of a database created by an earlier version.
@@ -38,6 +39,7 @@ pub mod mbox;
 mod migrations;
 mod queries;
 pub mod raw;
+pub mod reindex;
 pub mod screening;
 pub mod unsubscribe;
 pub mod seed;

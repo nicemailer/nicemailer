@@ -179,9 +179,12 @@ fn tidy(text: &str) -> String {
     lines.join("\n")
 }
 
-/// Decodes HTML entities: numeric ones, and the named ones mail uses most.
+/// Decodes HTML entities: numeric ones and every named one of HTML5.
 /// Unknown entities are left as written.
-fn decode_entities(s: &str) -> String {
+///
+/// Also used on the text part of a mail without HTML whose sender wrote
+/// entities in it (`ingest.rs`).
+pub(crate) fn decode_entities(s: &str) -> String {
     if !s.contains('&') {
         return s.to_string();
     }
@@ -190,7 +193,7 @@ fn decode_entities(s: &str) -> String {
     while let Some(start) = rest.find('&') {
         out.push_str(&rest[..start]);
         let after = &rest[start + 1..];
-        let end = after.find(';').filter(|e| *e <= 10);
+        let end = after.find(';').filter(|e| *e <= MAX_ENTITY_NAME);
         let decoded = end.and_then(|e| entity(&after[..e]));
         match (end, decoded) {
             (Some(e), Some(c)) => {
@@ -207,6 +210,115 @@ fn decode_entities(s: &str) -> String {
     out
 }
 
+/// An HTML whose entities were encoded twice by its sender ("Zoom
+/// :&amp;nbsp;https://…", shown "Zoom :&nbsp;https://…" by every mail
+/// client) with them encoded once: `&amp;` followed by a known entity (named
+/// or numeric) and `;` becomes `&`. A plain `&amp;` (in a link, in text) is
+/// left alone. Borrowed, without copy, when there is nothing to change.
+pub fn undouble_entities(html: &str) -> std::borrow::Cow<'_, str> {
+    // Some senders encode three times (`&amp;amp;#039;`): repeated until
+    // stable, at most three times.
+    let mut out = undouble_once(html);
+    for _ in 0..2 {
+        match undouble_once(&out) {
+            std::borrow::Cow::Owned(again) => out = std::borrow::Cow::Owned(again),
+            std::borrow::Cow::Borrowed(_) => break,
+        }
+    }
+    out
+}
+
+/// One pass of `undouble_entities`.
+fn undouble_once(html: &str) -> std::borrow::Cow<'_, str> {
+    if !html.contains("&amp;") {
+        return std::borrow::Cow::Borrowed(html);
+    }
+    let mut out = String::with_capacity(html.len());
+    let mut rest = html;
+    let mut changed = false;
+    while let Some(start) = rest.find("&amp;") {
+        let after = &rest[start + 5..];
+        let name = after.find(';').filter(|e| *e <= MAX_ENTITY_NAME).map(|e| &after[..e]);
+        out.push_str(&rest[..start]);
+        match name.filter(|n| entity(n).is_some()) {
+            Some(n) => {
+                out.push('&');
+                out.push_str(n);
+                out.push(';');
+                rest = &after[n.len() + 1..];
+                changed = true;
+            }
+            None => {
+                out.push_str("&amp;");
+                rest = after;
+            }
+        }
+    }
+    out.push_str(rest);
+    if changed { std::borrow::Cow::Owned(out) } else { std::borrow::Cow::Borrowed(html) }
+}
+
+/// A text with its HTML entities decoded until none is left (at most three
+/// times): a text decoded once can still hold the entities its sender
+/// encoded twice ("&amp;nbsp;" gives "&nbsp;"). Borrowed when it holds none.
+pub fn decode_all_entities(text: &str) -> std::borrow::Cow<'_, str> {
+    if !has_entity(text) {
+        return std::borrow::Cow::Borrowed(text);
+    }
+    let mut out = decode_entities(text);
+    for _ in 0..2 {
+        if !has_entity(&out) {
+            break;
+        }
+        out = decode_entities(&out);
+    }
+    std::borrow::Cow::Owned(out)
+}
+
+/// Whether `s` holds at least one HTML entity this module knows
+/// (`&nbsp;`, `&#39;`…). A text part with entities was generated from HTML
+/// by a sender that forgot to decode them (`ingest.rs`).
+pub(crate) fn has_entity(s: &str) -> bool {
+    let mut rest = s;
+    while let Some(start) = rest.find('&') {
+        let after = &rest[start + 1..];
+        if let Some(e) = after.find(';').filter(|e| *e <= MAX_ENTITY_NAME)
+            && entity(&after[..e]).is_some()
+        {
+            return true;
+        }
+        rest = after;
+    }
+    false
+}
+
+/// Whether a text holds HTML markup a sender left when generating it from
+/// HTML: closing tags (`</p>`, `</a>`…), line breaks (`<br />`), or the
+/// remains of attributes (`" target="_blank" style="…`). A lone opening tag
+/// is not enough: a text may talk about HTML ("add classes to your <img>").
+/// Compared without ASCII case.
+pub(crate) fn has_html_markup(s: &str) -> bool {
+    if !s.contains('<') && !s.contains("=\"") {
+        return false;
+    }
+    let lower = s.to_ascii_lowercase();
+    const MARKS: &[&str] = &[
+        "</p>", "</div>", "</span>", "</a>", "</li>", "</td>", "</tr>", "</table>", "</em>", "</strong>", "</b>",
+        "</i>", "</u>", "</font>", "</h1>", "</h2>", "</h3>", "<br>", "<br/>", "<br />", " style=\"", " target=\"",
+    ];
+    MARKS.iter().any(|m| lower.contains(m))
+}
+
+/// Longest entity name of HTML5 ("CounterClockwiseContourIntegral"): an
+/// `&` farther than that from the next `;` does not start an entity.
+const MAX_ENTITY_NAME: usize = 32;
+
+/// The character of an entity (`nbsp`, `#39`, `#x2019`), without `&` and
+/// `;`. The names mail uses most are listed below, with the core's own
+/// choices (a non-breaking space shown as a plain space); any other HTML5
+/// name comes from the table of `markup5ever` (2,231 names, the one the
+/// HTML sanitizer uses). The few names worth two characters (a letter and
+/// a combining mark) are left as written.
 fn entity(name: &str) -> Option<char> {
     if let Some(num) = name.strip_prefix('#') {
         let code = match num.strip_prefix(['x', 'X']) {
@@ -218,6 +330,8 @@ fn entity(name: &str) -> Option<char> {
     }
     Some(match name {
         "nbsp" => ' ',
+        // Invisible: a soft hyphen, which newsletters put in long words.
+        "shy" => '\u{AD}',
         "amp" => '&',
         "lt" => '<',
         "gt" => '>',
@@ -264,13 +378,61 @@ fn entity(name: &str) -> Option<char> {
         "bull" => '•',
         "times" => '×',
         "zwnj" | "zwj" => '\u{200C}',
-        _ => return None,
+        _ => {
+            let (code, second) = *markup5ever::data::NAMED_ENTITIES.get(format!("{name};").as_str())?;
+            if second != 0 {
+                return None;
+            }
+            return char::from_u32(code);
+        }
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn html_markup_left_in_a_text_is_recognized() {
+        assert!(has_html_markup("disponibles dans votre <em>Espace Client</em>"));
+        assert!(has_html_markup("ligne 1 <br />ligne 2"));
+        assert!(has_html_markup("(https://myswisslife.fr)\" target=\"_blank\" style=\"color: #231f20"));
+        assert!(has_html_markup("<P>Vous trouverez</P>"));
+        // A text that talks about HTML, or uses angle brackets.
+        assert!(!has_html_markup("Add classes to your <img> and let it handle the rest."));
+        assert!(!has_html_markup("Alice <alice@a.example> a écrit : 3 < 4"));
+    }
+
+    #[test]
+    fn every_html5_named_entity_is_decoded() {
+        assert_eq!(decode_entities("Suivant &rarr; &Ecirc;tre &sup2; &acute; &hearts; &rsaquo;"), "Suivant → Être ² ´ ♥ ›");
+        assert_eq!(decode_entities("&CounterClockwiseContourIntegral;"), "∳");
+        // Unknown, or too long to be one: left as written.
+        assert_eq!(decode_entities("&inconnu; & &aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa;"), "&inconnu; & &aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa;");
+        assert!(has_entity("&rarr;"));
+    }
+
+    #[test]
+    fn entities_encoded_twice_are_encoded_once() {
+        assert_eq!(undouble_entities("Zoom :&amp;nbsp;https://x.us/j/1"), "Zoom :&nbsp;https://x.us/j/1");
+        assert_eq!(undouble_entities("l&amp;#39;offre &amp;eacute;t&amp;eacute;"), "l&#39;offre &eacute;t&eacute;");
+        // A plain ampersand of a link or a text stays encoded.
+        assert_eq!(undouble_entities("<a href=\"x?a=1&amp;b=2\">R&amp;D; Tom &amp; Jerry</a>"), "<a href=\"x?a=1&amp;b=2\">R&amp;D; Tom &amp; Jerry</a>");
+        assert!(matches!(undouble_entities("<p>rien</p>"), std::borrow::Cow::Borrowed(_)));
+        // Encoded three times.
+        assert_eq!(undouble_entities("Je n&amp;amp;#039;ai"), "Je n&#039;ai");
+        // Decoded twice, a text loses them too.
+        assert_eq!(decode_all_entities("Zoom :&amp;nbsp;https://x"), "Zoom : https://x");
+        assert_eq!(decode_all_entities("Tom & Jerry; R&D"), "Tom & Jerry; R&D");
+    }
+
+    #[test]
+    fn entities_are_recognized() {
+        assert!(has_entity("l'État de droit&nbsp;(elle"));
+        assert!(has_entity("N&#176;0009"));
+        assert!(!has_entity("Tom & Jerry; R&D"));
+        assert!(!has_entity("&inconnu;"));
+    }
 
     #[test]
     fn blocks_are_separated() {

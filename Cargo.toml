@@ -23,6 +23,8 @@ anyhow = "1"
 clap = { version = "4", features = ["derive", "env"] }
 mail-parser = "1"
 ammonia = "4"
+# HTML5 named entities (already built for ammonia, through html5ever).
+markup5ever = "0.40"
 sha2 = "0.11"
 zstd = "0.14"
 tempfile = "3"

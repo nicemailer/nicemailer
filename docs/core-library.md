@@ -92,6 +92,17 @@ nicemailer call list_threads '{"everything": {}, "filter": {"tag": "Clients", "s
 nicemailer call list_threads '{"everything": {}, "filter": {"group_id": 1}, "sort": "modified"}'
 ```
 
+## Text of a mail, and reinterpretation
+
+The text body of a mail is its text part, except when that part was botched by the sender's own conversion from HTML: HTML entities left as written (`&nbsp;`, `&#39;`), tags or remains of attributes (`</p>`, `<br />`, `" target="_blank" style=…`). Such a part also tends to glue paragraphs together and to miss some. When the mail has an HTML part, the text is then the core's conversion of it (`html_text.rs`); without one, the entities are decoded and the tags kept (they may be meant). Every HTML5 named entity is decoded. Entities a sender encoded twice or three times (`Zoom :&amp;nbsp;https://…`, which every mail client shows as `&nbsp;`) are removed too: encoded once in the HTML view (a plain `&amp;` of a link is kept), decoded in the text.
+
+The core records with each body the version of the parser that produced it (`message_body.parser_version`, now 7). At start, if bodies of an older version remain, it reinterprets them in the background (`reindex.rs`, `stockage-brut.md` section 8): it reads their raw file again and rewrites the body, the snippet, the body of the search index row and the unsubscribe information, and gives a name to the addresses that have none. A change that can be applied to what is stored needs no raw file: the entities encoded twice are removed from the stored text and HTML directly. Nothing to do: nothing happens. The app keeps being answered meanwhile; a thread already open shows its new body when opened again. The core's log reports the progress and the end:
+
+```
+reindex : 274939 mails analysés par une version antérieure, en tâche de fond
+reindex terminé : 31599 mails réanalysés, 350 corrigés sans relecture, 242990 inchangés, … en 116.8 s
+```
+
 ## Tests
 
 `crates/nm-store/tests/library.rs` covers each of these features: pagination of both sorts, the per-sender display choice, history pagination and summaries, tag creation, idempotence, Unicode case and keyword collisions, group rules (sender of a thread, tombstones, revived group), contact filter and pagination, threads by contact, and export in the three formats without overwriting. `crates/nm-store/tests/attachments.rs` covers the attachments: listed per message, images of the HTML left out, inline photos of a text mail kept, extraction (content, read-only, quarantine, reuse, re-extraction after a purge), names that try to leave the directory, and the errors; `attachments.rs` itself covers the IMAP part numbers and the decoding. `crates/nm-store/tests/unsubscribe.rs` covers what reception stores for each kind of list mail, the view, the record of a one-click unsubscribe and the refusals; `unsubscribe.rs` the header and body formats; `crates/nm-proto` the POST, against a local HTTP server (no request leaves the machine).

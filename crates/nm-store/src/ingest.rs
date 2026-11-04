@@ -28,7 +28,13 @@ use mail_parser::{MessageParser, MessagePart, PartKind};
 /// 4: images shown inline in a mail without HTML (Apple Mail) are recorded
 /// as attachments, and "inline" means "referenced by the HTML" (`cid:`).
 /// 5: how to unsubscribe from a mailing list (`unsubscribe.rs`).
-pub const PARSER_VERSION: i64 = 5;
+/// 6: a text part holding HTML entities (`&nbsp;`) or HTML markup
+/// (`</p>`, `<br />`, `target="_blank"`) is replaced by the conversion of
+/// the HTML part; without HTML part, its entities are decoded (see
+/// `parse`).
+/// 7: entities encoded twice by the sender (`&amp;nbsp;`) are encoded once
+/// in the HTML and decoded in the text (`html_text::undouble_entities`).
+pub const PARSER_VERSION: i64 = 7;
 
 /// Length of `message.snippet`, in characters.
 const SNIPPET_CHARS: usize = 200;
@@ -127,23 +133,57 @@ pub fn parse(raw: &[u8]) -> ParsedMessage {
         references.drain(..references.len() - MAX_REFERENCES);
     }
 
+    // The real HTML part, if any (mail-parser can also offer a text part
+    // converted to HTML, which is not one), with the entities its sender
+    // encoded twice ("Zoom :&amp;nbsp;https://…", shown "&nbsp;" by every
+    // client) encoded once, for the HTML view and for the text made from it.
+    let html_part = m
+        .html_body()
+        .next()
+        .filter(|p| matches!(p.kind(), PartKind::Html))
+        .and_then(|p| p.text())
+        .map(|h| crate::html_text::undouble_entities(&h).into_owned());
     // The text part, or the HTML part converted to text by the core's own
     // conversion, which keeps blocks apart (`html_text.rs`).
+    //
+    // Some senders generate their text part from their HTML and botch it:
+    // entities left as written ("l'État de droit&nbsp;(elle a…"), tags and
+    // the remains of attributes ("<em>Espace Client</em>", "\" target=
+    // \"_blank\" style=…"). Such a part is also poor otherwise: paragraphs
+    // glued together ("complet.Si vous"), whole paragraphs missing. When the
+    // text part shows these marks (`html_text::has_entity`,
+    // `has_html_markup`) and the mail has an HTML part, the text is the
+    // core's conversion of the HTML instead. A false alarm (a text quoting
+    // HTML) costs nothing: the HTML part says the same thing. Without an
+    // HTML part, only the entities are decoded: tags in a plain text may be
+    // meant.
     let text = m.text_body().next().and_then(|part| match part.kind() {
         PartKind::Html => part.text().map(|h| crate::html_text::html_to_text(&h)),
-        _ => m.body_text(0).map(Cow::into_owned),
+        _ => m.body_text(0).map(|t| {
+            let entities = crate::html_text::has_entity(&t);
+            match &html_part {
+                Some(h) if entities || crate::html_text::has_html_markup(&t) => crate::html_text::html_to_text(h),
+                // Decoded until none is left: entities encoded twice too.
+                None if entities => crate::html_text::decode_all_entities(&t).into_owned(),
+                _ => t.into_owned(),
+            }
+        }),
+    })
+    // Entities still in the text after one decoding were encoded several
+    // times by the sender ("&amp;amp;#039;"): decoded until none is left,
+    // as the repair of stored bodies does (`reindex.rs`, `repair_stored`).
+    .map(|t| match crate::html_text::decode_all_entities(&t) {
+        Cow::Owned(decoded) => decoded,
+        Cow::Borrowed(_) => t,
     });
     // Only a real HTML part is kept: mail-parser also offers a text part
     // converted to HTML, which would only duplicate `text`.
-    let (html, has_remote_content) = match m.html_body().next() {
-        Some(part) if matches!(part.kind(), PartKind::Html) => match part.text() {
-            Some(h) => {
-                let (clean, remote) = sanitize_html(&h);
-                (Some(clean), remote)
-            }
-            None => (None, false),
-        },
-        _ => (None, false),
+    let (html, has_remote_content) = match &html_part {
+        Some(h) => {
+            let (clean, remote) = sanitize_html(h);
+            (Some(clean), remote)
+        }
+        None => (None, false),
     };
     let snippet = text.as_deref().map(snippet).filter(|s| !s.is_empty());
 
@@ -382,6 +422,74 @@ Subject: Re: 2=?ISO-8859-1?B?6A==?=me rappel\r\n\r\nbody";
         assert_eq!(p.from.unwrap().name.as_deref(), Some("Achille Berès"));
         assert_eq!(p.to[0].name.as_deref(), Some("Hervé Mainguet"));
         assert_eq!(p.subject, "Re: 2ème rappel");
+    }
+
+    /// A newsletter whose text part was generated from its HTML without
+    /// decoding the entities, and with a paragraph missing.
+    const BROKEN_TEXT_PART: &[u8] = b"Subject: s\r\nContent-Type: multipart/alternative; boundary=\"B\"\r\n\r\n\
+--B\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nUn titre.Le texte&nbsp;(suite)&nbsp;: fin\r\n\
+--B\r\nContent-Type: text/html; charset=utf-8\r\n\r\n<p>Un titre.</p><p>Vendredi 9 octobre</p><p>Le texte&nbsp;(suite)&nbsp;: fin</p>\r\n\
+--B--\r\n";
+
+    #[test]
+    fn a_text_part_with_html_entities_gives_way_to_the_html_part() {
+        let p = parse(BROKEN_TEXT_PART);
+        let text = p.text.unwrap();
+        assert!(!text.contains("&nbsp;"), "{text}");
+        // The HTML's paragraphs, including the one the text part lacked.
+        assert!(text.contains("Un titre.\n\nVendredi 9 octobre\n\nLe texte (suite) : fin"), "{text}");
+        assert!(p.html.is_some());
+    }
+
+    #[test]
+    fn a_text_part_with_html_markup_gives_way_to_the_html_part() {
+        // The text part of a Swiss Life notice: tags and attribute remains,
+        // no entity.
+        let raw = b"Subject: s\r\nContent-Type: multipart/alternative; boundary=\"B\"\r\n\r\n\
+--B\r\nContent-Type: text/plain; charset=utf-8\r\n\r\ndans votre <em>Espace Client</em>\r\n(https://x.fr)\" target=\"_blank\r\n\
+--B\r\nContent-Type: text/html; charset=utf-8\r\n\r\n<p>Cher Monsieur,</p><p>dans votre <em>Espace Client</em></p>\r\n\
+--B--\r\n";
+        let text = parse(raw).text.unwrap();
+        assert!(text.starts_with("Cher Monsieur,\n\ndans votre Espace Client"), "{text}");
+        assert!(!text.contains('<') && !text.contains("target"), "{text}");
+    }
+
+    #[test]
+    fn markup_in_a_text_only_mail_is_kept() {
+        // No HTML part to fall back on: tags may be meant.
+        let p = parse(b"Subject: s\r\nContent-Type: text/plain\r\n\r\nUse <br /> between lines.\r\n");
+        assert_eq!(p.text.as_deref().map(str::trim_end), Some("Use <br /> between lines."));
+    }
+
+    #[test]
+    fn entities_encoded_twice_are_removed_from_the_text_and_the_html() {
+        // The HTML of a Zoom invitation forwarded by Outlook.
+        let raw = b"Subject: s\r\nContent-Type: multipart/alternative; boundary=\"B\"\r\n\r\n\
+--B\r\nContent-Type: text/plain\r\n\r\nZoom :&nbsp;https://zoom.us/j/1\r\n\
+--B\r\nContent-Type: text/html\r\n\r\n<p>Zoom :&amp;nbsp;<a href=\"https://zoom.us/j/1?a=1&amp;b=2\">lien</a></p>\r\n--B--\r\n";
+        let p = parse(raw);
+        let text = p.text.unwrap();
+        assert!(text.starts_with("Zoom : lien"), "{text}");
+        let html = p.html.unwrap();
+        assert!(!html.contains("&amp;nbsp;") && html.contains("a=1&amp;b=2"), "{html}");
+        // A text-only mail, entities encoded twice.
+        let p = parse(b"Subject: s\r\nContent-Type: text/plain\r\n\r\nl&amp;#39;offre&amp;nbsp;!\r\n");
+        assert_eq!(p.text.as_deref().map(str::trim_end), Some("l'offre !"));
+    }
+
+    #[test]
+    fn entities_of_a_text_only_mail_are_decoded() {
+        let p = parse(b"Subject: s\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nL&#39;offre &eacute;t&eacute;&nbsp;: 5&nbsp;&euro;\r\n");
+        assert_eq!(p.text.as_deref().map(str::trim_end), Some("L'offre été : 5 €"));
+    }
+
+    #[test]
+    fn a_plain_text_part_without_entities_is_kept_as_written() {
+        // An ampersand that is not an entity, next to an HTML part.
+        let raw = b"Subject: s\r\nContent-Type: multipart/alternative; boundary=\"B\"\r\n\r\n\
+--B\r\nContent-Type: text/plain\r\n\r\nTom & Jerry; R&D\r\n\
+--B\r\nContent-Type: text/html\r\n\r\n<p>Autre chose</p>\r\n--B--\r\n";
+        assert_eq!(parse(raw).text.as_deref().map(str::trim_end), Some("Tom & Jerry; R&D"));
     }
 
     #[test]
