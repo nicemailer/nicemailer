@@ -64,7 +64,7 @@ L'affichage est simplifié au maximum : chaque message montre ce qu'il apporte. 
 
 ### Lecture
 
-- Un mail choisi par l'utilisateur (`j` `k`, un clic, le mail suivant après un déplacement) est marqué lu après une seconde d'affichage. Parcourir vite la liste ne marque rien.
+- Un mail choisi par l'utilisateur (`j` `k`, un clic, le mail suivant après un déplacement) est marqué lu après une seconde d'affichage. Parcourir vite la liste ne marque rien. En une colonne, la liste seule ne montre pas le contenu : rester sur une ligne ne marque rien. Ouvrir le mail (Entrée, double-clic) le marque lu aussitôt ; dans le mail ouvert, j / k suivent la règle de la seconde.
 - Un mail sélectionné par l'app (le premier à l'ouverture d'une liste, ou celui qui remplace un mail sorti de la liste) n'est pas marqué lu tout seul. Il l'est quand l'utilisateur le quitte pour un autre mail de la liste après au moins une seconde. Le déplacer ou changer de dossier ne le marque pas.
 - Dans une liste filtrée (non lus, avec drapeau…), le mail sélectionné qui ne correspond plus (lu après une seconde, `u`, `*`) reste sous le curseur, affiché avec son nouvel état, jusqu'à ce qu'on le quitte ; il sort alors de la liste. Sans cela, une liste de mails non lus se vidait toute seule, un mail par seconde.
 
@@ -169,7 +169,7 @@ s save (dans ~/Downloads ; un fichier existant n'est jamais écrasé ; s'appliqu
 	t as text file
 	m as markdown file
 v display (view)
-	1 une seule colonne (masque la liste des dossiers et la lecture d'un mail). Entrée, ou un double-clic sur une ligne, affiche le mail dans toute la fenêtre (j / k passent au mail suivant / précédent) ; Escape revient à la liste
+	1 une seule colonne (masque la liste des dossiers et la lecture d'un mail). Entrée, ou un double-clic sur une ligne, affiche le mail dans toute la fenêtre et le marque lu aussitôt (j / k passent au mail suivant / précédent) ; Escape revient à la liste
 	2 colonnes (presentation classique : liste des mails à gauche et lecture du mail à droite)
 	3 colonnes (liste des dossiers à gauche, puis liste des mails au milieu et lecture du mail à droite)
 	c creation date (mail trié par date de création, ou de réception)

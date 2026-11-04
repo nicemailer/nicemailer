@@ -146,12 +146,19 @@ final class GeekController {
             // The full-window reader only exists in one column: another
             // layout shows the mail beside the list anyway.
             if columns != 1 { reading = false }
+            model.readerVisible = readerVisible
         }
     }
     /// In one column, the mail under the cursor fills the window instead of
     /// the list (`ui.md`, `v1`): Return opens it, Escape goes back to the
     /// list. Not remembered: the app always opens on the list.
-    var reading = false
+    var reading = false {
+        didSet { model.readerVisible = readerVisible }
+    }
+    /// Whether the mail is on screen: always beside the list with two or
+    /// three columns, only after Return with one. The model needs it for
+    /// its reading rules (`AppModel.readerVisible`).
+    var readerVisible: Bool { columns != 1 || reading }
     var statusPosition: StatusPosition {
         didSet { defaults.set(statusPosition.rawValue, forKey: "geek.status") }
     }
@@ -279,6 +286,9 @@ final class GeekController {
         columns = defaults.object(forKey: "geek.columns") as? Int ?? 2
         statusPosition = StatusPosition(rawValue: defaults.string(forKey: "geek.status") ?? "") ?? .bottom
         listFraction = defaults.object(forKey: "geek.listFraction") as? Double ?? 0.32
+        // Swift note: `didSet` does not run for assignments made in `init`,
+        // so the model is told here about the remembered layout.
+        model.readerVisible = readerVisible
     }
 
     // MARK: - Labels
@@ -468,7 +478,7 @@ final class GeekController {
             // One column shows the list only: Return reads the mail under
             // the cursor in the whole window (`ui.md`, `v1`). With two or
             // three columns the mail is already shown: nothing to do.
-            if columns == 1, model.selectedThreadId != nil { reading = true }
+            if columns == 1 { openReader() }
             return
         case KeyCode.escape:
             if reading {
@@ -525,6 +535,17 @@ final class GeekController {
         default:
             if !key.isEmpty { model.flash = L("No command %@", key) }
         }
+    }
+
+    /// One column: shows the mail under the cursor in the whole window and
+    /// marks it read at once (`ui.md`, `v1`). Opening a mail is asking to
+    /// read it, unlike passing over it with `j` / `k`, which waits a second.
+    /// Already open: nothing to do (a mail marked unread with `u` while it
+    /// is open stays unread).
+    private func openReader() {
+        guard !reading, model.selectedThreadId != nil else { return }
+        reading = true
+        model.markSelectedSeen()
     }
 
     /// One row up in a picker or in the search results. The list turns
@@ -1374,7 +1395,7 @@ extension GeekController {
             command: mods == .command, shift: mods == .shift)
         model.marked = result.marked
         model.selectedThreadId = result.cursor
-        if double, mods == .none, columns == 1 { reading = true }
+        if double, mods == .none, columns == 1 { openReader() }
     }
 
     /// Click on a row of the contacts, tags or groups screen; a

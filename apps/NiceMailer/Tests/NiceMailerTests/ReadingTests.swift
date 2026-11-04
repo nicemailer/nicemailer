@@ -88,6 +88,101 @@ struct ReadingTests {
         _ = await eventually { model.threads.count == 6 }
     }
 
+    func pressEscape() {
+        let e = NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
+            characters: "\u{1b}", charactersIgnoringModifiers: "\u{1b}", isARepeat: false, keyCode: KeyCode.escape)!
+        _ = controller.handle(e)
+    }
+
+    func pressReturn() {
+        let e = NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
+            characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: KeyCode.returnKey)!
+        _ = controller.handle(e)
+    }
+
+    // MARK: Opening a mail in one column
+
+    @Test func returnInOneColumnMarksTheMailReadAtOnce() async {
+        controller.columns = 1
+        // The first mail was selected by the app: alone, it stays unread.
+        pressReturn()
+        #expect(controller.reading)
+        #expect(await eventually { seenCalls == [1] })
+        // Leaving it afterwards does not mark it a second time.
+        press("j")
+        await pause()
+        #expect(seenCalls.filter { $0 == 1 }.count == 1)
+    }
+
+    @Test func aDoubleClickInOneColumnMarksTheMailReadAtOnce() async {
+        controller.columns = 1
+        controller.clickThread(3, .none)
+        controller.clickThread(3, .none)
+        #expect(controller.reading)
+        #expect(await eventually { seenCalls.contains(3) })
+    }
+
+    @Test func returnOnAReadMailOrAgainInTheReaderMarksNothing() async {
+        controller.columns = 1
+        box.setSeen(1, true)
+        await refresh()
+        pressReturn()
+        // Return again while reading: already open, nothing to do.
+        pressReturn()
+        await pause()
+        #expect(controller.reading && seenCalls.isEmpty)
+    }
+
+    @Test func theOneColumnListMarksNothingWhileTheMailIsHidden() async {
+        controller.columns = 1
+        press("j")
+        await pause()
+        // Mail 2 was selected by hand and kept, but only its row was shown.
+        #expect(model.selectedThreadId == 2 && seenCalls.isEmpty)
+        // Leaving the app's first choice by hand marks nothing either.
+        press("j")
+        await pause()
+        #expect(seenCalls.isEmpty)
+    }
+
+    @Test func aMailSelectedByHandIsMarkedOnceInTheReaderOnly() async {
+        controller.columns = 1
+        press("j")
+        pressReturn()
+        #expect(await eventually { seenCalls == [2] })
+        // In the reader, j / k follow the usual delay.
+        press("j")
+        #expect(await eventually { seenCalls == [2, 3] })
+        // Back in the list: staying on a row marks nothing.
+        pressEscape()
+        press("j")
+        await pause()
+        #expect(seenCalls == [2, 3])
+    }
+
+    @Test func goingBackToTwoColumnsStartsTheDelay() async {
+        controller.columns = 1
+        press("j")
+        await pause()
+        #expect(seenCalls.isEmpty)
+        controller.columns = 2
+        #expect(await eventually { seenCalls == [2] })
+    }
+
+    @Test func hidingTheReaderDuringTheDelayMarksNothing() async {
+        model.seenDelay = 0.2
+        controller.columns = 1
+        press("j")
+        pressReturn()
+        // Return marks mail 2 at once; mail 3 is shown, then hidden at once.
+        press("j")
+        controller.reading = false
+        try? await Task.sleep(for: .milliseconds(400))
+        #expect(seenCalls == [2])
+    }
+
     // MARK: Automatic selection (proposal 3)
 
     @Test func theMailSelectedWhenTheListOpensIsNotMarkedRead() async {

@@ -5,8 +5,23 @@ expect columns = 1
 # One column shows the list only: Return reads the mail in the whole
 # window, j moves to the next mail, Escape goes back to the list.
 expect reading = false
+expect selected_unread > 0
+# The list alone shows no content: staying on a row marks nothing, even
+# on an unread mail chosen with j (the third row), nor leaving it.
+key j
+key j
+expect selected = 2
+expect selected_unread > 0
+wait 1500
+expect selected_unread > 0
+key k
+key k
+expect selected = 0
+expect selected_unread > 0
 key ret
 expect reading = true
+# Opening the mail marks it read at once.
+expect selected_unread = 0
 expect reader_text ~ Bonjour Alex
 snap one-column-reading
 key j

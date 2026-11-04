@@ -258,7 +258,10 @@ final class AppModel {
     ///   the mail marked read left the list, the next one was selected
     ///   automatically, marked read a second later, and so on;
     /// - leaving a mail kept in the list although it no longer matches
-    ///   (`stickyThreadId`) removes it from the list.
+    ///   (`stickyThreadId`) removes it from the list;
+    /// - a mail is "shown" only while the reader is visible
+    ///   (`readerVisible`): in the geek theme's single column, the list alone
+    ///   shows no content, so staying on a row marks nothing.
     var selectedThreadId: Int? {
         didSet {
             guard selectedThreadId != oldValue else { return }
@@ -266,7 +269,7 @@ final class AppModel {
             if let old = oldValue {
                 // Moving by hand from an automatically selected mail (still
                 // in the list: a moved mail is not marked) to another one.
-                if !auto, selectedThreadId != nil, let shown = autoShown, shown.id == old,
+                if !auto, readerVisible, selectedThreadId != nil, let shown = autoShown, shown.id == old,
                    Date().timeIntervalSince(shown.since) >= seenDelay,
                    threads.first(where: { $0.id == old }).map({ $0.unreadCount > 0 }) == true {
                     markSeen(old)
@@ -280,6 +283,22 @@ final class AppModel {
             Task { await loadOpenThread(markSeen: !auto) }
         }
     }
+
+    /// Whether the reading pane is on screen. The geek theme's single column
+    /// (`ui.md`, `v1`) shows the list only, until Return opens the mail: a
+    /// mail whose content is not visible has not been read, so the delay
+    /// rule waits. Becoming visible (back to two columns) starts the delay
+    /// for the mail under the cursor, as if it had just been selected.
+    var readerVisible = true {
+        didSet {
+            guard readerVisible, !oldValue, let id = selectedThreadId, autoShown == nil else { return }
+            seenTask?.cancel()
+            seenTask = Task { await markSeenAfterDelay(id) }
+        }
+    }
+
+    /// The delayed mark of a mail that became visible (`readerVisible`).
+    @ObservationIgnored private var seenTask: Task<Void, Never>?
 
     /// Delay after which a mail shown is considered read (seconds). A
     /// variable so that the tests can shorten it.
@@ -597,6 +616,21 @@ final class AppModel {
         }
     }
 
+    /// Marks the selected thread read at once, without `seenDelay`: the user
+    /// asked to read it (Return or a double-click in one column, `ui.md`,
+    /// `v1`), so there is nothing to guess. Even a mail the app selected by
+    /// itself is marked: opening it is the user's choice.
+    func markSelectedSeen() {
+        guard let id = selectedThreadId,
+              threads.first(where: { $0.id == id }).map({ $0.unreadCount > 0 }) == true
+        else { return }
+        // Its leaving no longer needs to mark it (see `selectedThreadId`),
+        // and the delay started by the reader appearing is now pointless.
+        if autoShown?.id == id { autoShown = nil }
+        seenTask?.cancel()
+        markSeen(id)
+    }
+
     /// Loads the selected thread into the reading pane.
     private func loadOpenThread(markSeen: Bool) async {
         guard let client, let id = selectedThreadId else { openThread = nil; return }
@@ -604,16 +638,28 @@ final class AppModel {
             let view: ThreadView = try await client.call("get_thread", ["thread_id": id])
             guard id == selectedThreadId else { return }
             openThread = view
-            // A thread the user selected and kept on screen for `seenDelay`
-            // is marked read. The delay avoids marking everything while
-            // browsing the list with j/k.
-            if markSeen, view.messages.contains(where: { !$0.isSeen }) {
-                try await Task.sleep(for: .seconds(seenDelay))
-                guard id == selectedThreadId else { return }
-                // `let _: CommandResult` decodes the result only to check it;
-                // the value itself is not needed.
-                let _: CommandResult = try await client.call("set_thread_seen", ["thread_id": id, "seen": true])
-            }
+            if markSeen { await markSeenAfterDelay(id) }
+        } catch { report(error) }
+    }
+
+    /// A thread the user selected and kept on screen for `seenDelay` is
+    /// marked read. The delay avoids marking everything while browsing the
+    /// list with j/k. The reader must be visible when the delay starts and
+    /// when it ends: hidden in between (Escape back to the single-column
+    /// list), the mail was not read.
+    private func markSeenAfterDelay(_ id: Int) async {
+        guard let client, readerVisible, openThread?.id == id,
+              openThread?.messages.contains(where: { !$0.isSeen }) == true
+        else { return }
+        do {
+            try await Task.sleep(for: .seconds(seenDelay))
+            guard id == selectedThreadId, readerVisible else { return }
+            // `let _: CommandResult` decodes the result only to check it;
+            // the value itself is not needed.
+            let _: CommandResult = try await client.call("set_thread_seen", ["thread_id": id, "seen": true])
+        } catch is CancellationError {
+            // Swift note: cancelling a task makes `Task.sleep` throw; it is
+            // not an error to report.
         } catch { report(error) }
     }
 

@@ -7,7 +7,7 @@ Switch themes with the **Theme** menu (Classic, Design, Geek). Design does not e
 ## Layout
 
 - **Mail list** on the left (about a third of the window; drag the separator to resize), **reading pane** on the right.
-- `v1` shows the list only: Return, or a double-click on a row, reads the mail in the whole window, `j` / `k` go on to the next / previous mail, and Escape goes back to the list. `v2` shows the list and the mail, `v3` adds the folders on the left, in a single block titled with the current view: **all** or the account's name.
+- `v1` shows the list only: Return, or a double-click on a row, reads the mail in the whole window and marks it read at once, `j` / `k` go on to the next / previous mail, and Escape goes back to the list. `v2` shows the list and the mail, `v3` adds the folders on the left, in a single block titled with the current view: **all** or the account's name.
 
 ## Accounts and the unified view "all"
 
@@ -77,7 +77,7 @@ A one-click attempt the server refuses opens the page instead, and says why. The
 
 ### When a mail becomes read
 
-- A mail you select (`j` `k`, a click, the next mail after a move) is marked read once shown for one second. Browsing quickly with `j` / `k` marks nothing.
+- A mail you select (`j` `k`, a click, the next mail after a move) is marked read once shown for one second. Browsing quickly with `j` / `k` marks nothing. With one column the list alone shows no content, so staying on a row marks nothing; opening the mail (Return, double-click) marks it read at once, and inside the open mail `j` / `k` follow the one-second rule.
 - The mail selected for you, the first one when a list opens or the one that replaces a mail that left the list, is not marked read by itself. It is marked read when you move from it to another mail of the list after at least one second. Moving it (`d`, `m`) or changing folder does not mark it.
 - In a filtered list (unread, flagged…), the selected mail that stops matching (read after one second, `u`, `*`) stays under the cursor, shown with its new state, until you leave it; it then leaves the list. As in Gmail's unread view: without this, a list of unread mails would empty itself, one mail per second.
 
@@ -108,7 +108,7 @@ Actions apply to the **marked** mails if any (`J` / `K`), otherwise to the mail 
 | `;` + key | go to a folder or a screen (see below) |
 | `s` + key | save to `~/Downloads`, for every marked conversation (or the one under the cursor): its latest mail with `se` .eml, `st` text, `sm` Markdown; its attachments with `sa` all of them, `sg` all but the graphics (images: logos, signatures, photos). For attachments every message counts, and a file attached again to a reply is saved once. No file is overwritten |
 | `v` + key | display: `v1` `v2` `v3` columns, `vc` sort by reception, `vm` sort by modification, `vh` text / HTML, `vs` status bar |
-| Return | with one column (`v1`), read the mail in the whole window; Escape goes back to the list |
+| Return | with one column (`v1`), read the mail in the whole window and mark it read; Escape goes back to the list |
 | Space, shift-Space | scroll the mail a page down / up, as text or as HTML |
 | `ctrl-f` `ctrl-b` | same, a page down / up in the mail |
 | `?` | list of keys |
