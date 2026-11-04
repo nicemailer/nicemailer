@@ -143,6 +143,21 @@ enum AttributeField: String, CaseIterable {
         case .date: L("Date…")
         }
     }
+
+    /// Hidden words that also find the attribute in the selector, so that
+    /// the word one thinks of reaches it even when it is not the label
+    /// (`cc`, or "destinataire" in French, for "À…"). One localized string
+    /// per attribute, its words separated by spaces: each language has its
+    /// own synonyms, and the English one (the key) is the fallback.
+    var keywords: [String] {
+        let words: String = switch self {
+        case .from: L("sender")
+        case .to: L("recipient cc")
+        case .contains: L("text words")
+        case .date: L("when day period")
+        }
+        return words.split(separator: " ").map(String.init)
+    }
 }
 
 /// Dates of the "Date…" panel.

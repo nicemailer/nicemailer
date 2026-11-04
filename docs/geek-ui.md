@@ -27,19 +27,39 @@ As in Zed, **⌘+** (or **⌘=**, which needs no Shift on AZERTY keyboards) make
 
 The magnifier after the folder in the status bar (key **F**, or a click) opens the attribute selector. Attributes narrow the current list (folder of an account, or of "all"), combined with AND; a thread qualifies when its mails in the folder match.
 
-| Attribute | Values |
-| --- | --- |
-| read state | unread / read |
-| flag | flagged / not flagged |
-| attachments | with / without |
-| answered | answered (you replied) / not answered |
-| conversation | conversation (several mails) / single mail |
-| From… | part of a name or address, contacts suggested as you type; several values OR-ed |
-| To… | same, on To and Cc |
-| Contains… | words of the full text (subject, sender, recipients, body), as a prefix, accents ignored |
-| Date… | today, last 7 days, last 30 days, this year, older than a year, or "after" / "before" a typed date (2026-10-01, 1/10/2026) |
+| Attribute | Values (English / French rows) | Typed to reach it (English / French) |
+| --- | --- | --- |
+| read state | unread / read — non lus / lus | `un` `r` — `no` (or `nl`) `l` |
+| flag | flagged / not flagged — drapeau / sans drapeau | `f` `nf` — `dr` `sd` |
+| attachments | with attachments / without attachments — pièce jointe / sans pièce jointe | `wi` `witho` — `pj` (or `pi`) `spj` |
+| answered (you replied) | answered / not answered — répondus / sans ma réponse | `an` `na` — `r` `sm` |
+| conversation | conversation (several mails) / single mail — conversations / mails seuls | `co` `si` — `co` `m` |
+| From… — De… | part of a name or address, contacts suggested as you type; several values OR-ed | `fr`, `sender` — `de`, `exp` |
+| To… — À… | same, on To and Cc | `to`, `cc` — `a`, `cc`, `dest` |
+| Contains… — Contient… | words of the full text (subject, sender, recipients, body), as a prefix, accents ignored | `cont`, `text` — `cont`, `te` |
+| Date… — Date… | today, last 7 days, last 30 days, this year, older than a year, or "after" / "before" a typed date (2026-10-01, 1/10/2026) | `da` — `da`, `quand` |
 
 Choosing an active value again removes it; choosing the opposite value replaces it. An attribute with "…" expands the panel at once to choose its value. Active attributes are chips in the status bar: a click on a chip removes it; Escape clears them all (after the marks); they stay when changing folder or account.
+
+### Reaching a row from the keyboard
+
+The selector opens on its first row and Return chooses the highlighted row, so what matters is which row comes first once you type. Rows are ranked (`PickerMatch.swift`), best first; rows of the same rank keep the list order:
+
+1. the label starts with the typed text: `read` puts "read" first, before "unread" which only contains it; `lu` puts "lus" before "non lus";
+2. each typed word starts a word of the label, in any order: `lus` finds "non lus", `jointe sans` finds "sans pièce jointe";
+3. the typed letters are the initials of the label's words (one word of two letters or more): `nf` → "not flagged", `sd` → "sans drapeau", `spj` → "sans pièce jointe", `sm` → "sans ma réponse";
+4. each typed word appears anywhere in the label (the former filter, so nothing it found is lost): `lagg` → "flagged".
+
+Case and accents are ignored (`a` finds "À…"). Attributes with a value also have hidden search words, localized (`AttributeField.keywords`): `cc` or `destinataire` finds To… / À…, `expéditeur` or `sender` finds From… / De…. The French labels were chosen so that two letters always reach a row: "De…", "Date…" and "drapeau" differ at the second letter, and "À…" replaces "Destinataire…", which started like "De…" (and matches the "à :" chip and the "À :" header of a mail).
+
+### Negation
+
+What the selector can exclude today:
+
+- every yes / no attribute has its opposite as a row of its own: "sans drapeau", "sans pièce jointe", "non lus", "sans ma réponse", "mails seuls". Its initials reach it in two or three keys (`sd`, `spj`, `nl`, `sm`), or its first word and a second one (`sans d`);
+- choosing the opposite of an active value replaces it: "drapeau" then "sans drapeau" leaves only "sans drapeau".
+
+Not possible yet: excluding a sender, a recipient, a domain or a word ("not from @acme.fr"). The rules are specified in `specifications/ui.md` ("Négation") and the work is a ticket in `todo.md` ("Negation and narrower text search in the attribute selector").
 
 ## Search (`/`)
 
@@ -151,7 +171,7 @@ On a screen, `j` `k` move and Escape goes back to the mails.
 
 ### Pickers
 
-Pickers (`@`, `l`, `t`, `g`, `F`) are filterable lists: type to filter (every word typed must appear, in any order, ignoring case and accents), `ctrl-n` / `ctrl-p` or the arrows to move, Return to choose, Escape to close. A picker opens on its first row and turns around: up (or `ctrl-p`) from the first row selects the last one, so the end of the list is one key away, and down (or `ctrl-n`) from the last row comes back to the first.
+Pickers (`@`, `l`, `t`, `g`, `F`) are filterable lists: type to filter, ignoring case and accents; the best matches come first (the label starts with the typed text, then each typed word starts a word of the label, then initials such as `nf` for "not flagged", then each word anywhere in the label; see "Reaching a row from the keyboard" above), `ctrl-n` / `ctrl-p` or the arrows to move, Return to choose, Escape to close. A picker opens on its first row and turns around: up (or `ctrl-p`) from the first row selects the last one, so the end of the list is one key away, and down (or `ctrl-n`) from the last row comes back to the first.
 
 ## Moves and decisions
 

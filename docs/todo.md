@@ -41,3 +41,16 @@ Done in the folder workflow change: a suspect sender is never banned and needs a
 ## Several senders in a conversation
 
 The user chose to decide on the sender of the latest received mail (`dossiers.md`, "Décision sur l'expéditeur"). If a colleague in copy is ever banned this way, revisit: the earlier spec asked the user which senders the decision concerns.
+
+## Negation and narrower text search in the attribute selector
+
+**What.** The rest of the attribute selector specified in `specifications/ui.md` ("Sélecteur d'attributs", "Négation"):
+
+- Contains… gives way to **Text…** (subject and body, not the addresses) and **Subject…** (subject only); `/` keeps its own criterion over every column (chip "anywhere: …");
+- excluded values for From…, To…, Text… and Subject…: a "− not acme" row under the "+ acme" row of the value panel, or a value typed with a leading `-`; chips "not from: …", "not to: …"; positive values OR-ed, excluded values AND-ed; a thread is excluded as soon as one of its mails in the folder matches;
+- a value starting with `@` is a domain: exact, with its subdomains (`@acme.fr` matches `x@mail.acme.fr`, not `x@notacme.fr`);
+- `-word` inside Text… and Subject… excludes a word.
+
+**Why.** The owner manages domains at registrars: they need the mails that talk about acme.fr without those sent to or by acme.fr (Text… `acme.fr`, not from `@acme.fr`, not to `@acme.fr`). Today Contains… also searches the addresses, so it brings back exactly the mails to leave out, and nothing can be excluded.
+
+**Where to start.** `ThreadFilter` in `crates/nm-api/src/lib.rs` (new fields `not_from`, `not_to`, `text`, `subject`, `anywhere`), the thread query of `nm-store` (`NOT EXISTS` on the addresses; FTS5 column filters `{subject body}: …` and `subject: …` on `message_fts`, `NOT` for the excluded words, every typed word quoted so that FTS syntax in the text is not interpreted), then `ThreadFilter` and the value panel of the app (`Attributes.swift`, `GeekController.valueEntries`). Tests: store tests on each criterion and their combinations, `AttributesTests`, `GeekControllerTests`, and a `filters.uiscript` scenario with the registrar example.

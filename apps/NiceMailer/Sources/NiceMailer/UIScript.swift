@@ -353,9 +353,9 @@ private final class Runner {
         if let dir = m.exportDirectory {
             exports = "\((try? FileManager.default.contentsOfDirectory(atPath: dir))?.count ?? 0)"
         }
-        let pickerCount: Int = {
-            if case .picker(let k) = c.overlay { return c.pickerEntries(k).count }
-            return 0
+        let pickerRows: [String] = {
+            if case .picker(let k) = c.overlay { return c.pickerEntries(k).map(\.label) }
+            return []
         }()
         return [
             "screen": "\(c.screen)",
@@ -379,7 +379,10 @@ private final class Runner {
             } ?? "",
             "picker_query": c.pickerQuery,
             "picker_index": "\(c.pickerIndex)",
-            "picker_count": "\(pickerCount)",
+            "picker_count": "\(pickerRows.count)",
+            // The row Return would choose (the picker opens on its first
+            // row, and typing brings the best match there).
+            "picker_first": pickerRows.first ?? "",
             "screen_index": "\(c.screenIndex)",
             "contacts_count": "\(c.contacts.count)",
             "history_count": "\(c.history.count)",

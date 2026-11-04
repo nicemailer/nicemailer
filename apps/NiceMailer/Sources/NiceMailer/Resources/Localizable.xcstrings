@@ -826,7 +826,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Destinataire…"
+            "value": "À…"
           }
         }
       }
@@ -976,7 +976,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "répondu"
+            "value": "répondus"
           }
         }
       }
@@ -1106,7 +1106,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "conversation"
+            "value": "conversations"
           }
         }
       }
@@ -1176,7 +1176,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "avec drapeau"
+            "value": "drapeau"
           }
         }
       }
@@ -1366,7 +1366,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "non répondu"
+            "value": "sans ma réponse"
           }
         }
       }
@@ -1416,7 +1416,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "lu"
+            "value": "lus"
           }
         }
       }
@@ -1437,6 +1437,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "lire le mail dans toute la fenêtre (une colonne)"
+          }
+        }
+      }
+    },
+    "recipient cc": {
+      "comment": "Hidden search words of the To… attribute in the F selector, separated by spaces.",
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "destinataire cc copie"
           }
         }
       }
@@ -1491,6 +1502,17 @@
         }
       }
     },
+    "sender": {
+      "comment": "Hidden search words of the From… attribute in the F selector, separated by spaces: typing one of them finds the row.",
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "expéditeur envoyé"
+          }
+        }
+      }
+    },
     "show / hide quotes, signatures, folded mails": {
       "localizations": {
         "fr": {
@@ -1506,7 +1528,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "mail seul"
+            "value": "mails seuls"
           }
         }
       }
@@ -1581,6 +1603,17 @@
         }
       }
     },
+    "text words": {
+      "comment": "Hidden search words of the Contains… attribute in the F selector, separated by spaces.",
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "texte mots"
+          }
+        }
+      }
+    },
     "this year": {
       "localizations": {
         "fr": {
@@ -1646,7 +1679,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "non lu"
+            "value": "non lus"
           }
         }
       }
@@ -1681,12 +1714,23 @@
         }
       }
     },
+    "when day period": {
+      "comment": "Hidden search words of the Date… attribute in the F selector, separated by spaces.",
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "quand jour période"
+          }
+        }
+      }
+    },
     "with attachments": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "avec pièce jointe"
+            "value": "pièce jointe"
           }
         }
       }

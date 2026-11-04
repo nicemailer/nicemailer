@@ -98,6 +98,9 @@ final class GeekController {
         /// What ⌘-Return does, when it differs from Return (a file of `l`:
         /// save, then open).
         var commandAction: (@MainActor () -> Void)? = nil
+        /// Hidden words that also find the row when typed (`cc` for "To…"),
+        /// never shown (`PickerMatch`).
+        var keywords: [String] = []
         let action: @MainActor () -> Void
         var id: String { key + label }
     }
@@ -974,12 +977,10 @@ final class GeekController {
         case .group:
             all = withNew(groups.map(\.name)) { [model] name in model.addSendersToGroup(name) }
         }
-        let words = pickerQuery.split(separator: " ").map(String.init)
-        guard !words.isEmpty else { return all }
-        return all.filter { entry in
-            entry.key == "+"
-                || words.allSatisfy { entry.label.range(of: $0, options: [.caseInsensitive, .diacriticInsensitive]) != nil }
-        }
+        // Best matches first, so that Return takes the row the user meant
+        // (`PickerMatch`); the "+ typed text" row always stays.
+        return PickerMatch.filter(all, query: pickerQuery, label: \.label,
+                                  keywords: \.keywords, pinned: { $0.key == "+" })
     }
 
     /// The attribute selector: each yes / no attribute with its two values
@@ -1003,7 +1004,7 @@ final class GeekController {
             case .contains: a.contains != nil
             case .date: a.after != nil || a.before != nil
             }
-            entries.append(Entry(key: active ? "•" : " ", label: field.title) { [weak self] in
+            entries.append(Entry(key: active ? "•" : " ", label: field.title, keywords: field.keywords) { [weak self] in
                 // The panel grows at once to choose the value (`ui.md`).
                 self?.pickerQuery = ""
                 self?.pickerIndex = 0

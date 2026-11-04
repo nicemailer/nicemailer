@@ -713,6 +713,24 @@ struct GeekControllerTests {
         #expect(model.attributes.isEmpty)
     }
 
+    @Test func typingBringsTheBestMatchFirstInTheAttributeSelector() {
+        // The opposite value contains the typed word ("unread" / "non lus")
+        // and is listed first: ranking puts the exact one under Return.
+        press("F"); type(L("read"))
+        #expect(controller.pickerEntries(.attributes).first?.label == L("read"))
+        press("ret")
+        #expect(model.attributes.seen == true)
+        // Initials reach a negative value.
+        let initials = String(PickerMatch.words(PickerMatch.normalize(L("not flagged"))).compactMap(\.first))
+        press("F"); type(initials)
+        #expect(controller.pickerEntries(.attributes).first?.label == L("not flagged"))
+        press("ret")
+        #expect(model.attributes.flagged == false)
+        // A hidden search word reaches To….
+        press("F"); type("cc")
+        #expect(controller.pickerEntries(.attributes).first?.label == L("To…"))
+    }
+
     @Test func attributesWithAValueExpandThePanel() async {
         press("F"); type(L("From…")); press("ret")
         #expect(controller.overlay == .picker(.attributeValue(.from)))

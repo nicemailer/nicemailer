@@ -25,6 +25,29 @@ snap kept-read-mail
 key j
 expect sticky =
 expect selected_unread > 0
+# Typing ranks the rows: the one starting with the typed text comes first,
+# so "read" chooses "read", not "unread" listed before it (it replaces
+# "unread"); initials reach a negative value; a hidden word finds To….
+key F
+type read
+expect picker_first = read
+key ret
+expect filters = read
+key F
+type nf
+expect picker_first = not flagged
+key ret
+expect filters = read, not flagged
+key F
+type cc
+expect picker_first = To…
+key esc
+# Back to unread only.
+key F
+type unread
+key ret
+click chip:flagged
+expect filters = unread
 # Several attributes are combined; a value attribute expands the panel.
 click status:attributes
 type From
