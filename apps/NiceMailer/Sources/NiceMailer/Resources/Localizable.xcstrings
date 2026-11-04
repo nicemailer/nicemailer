@@ -841,62 +841,12 @@
         }
       }
     },
-    "Type a date: 2026-10-01 or 1/10/2026": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tapez une date : 2026-10-01 ou 1/10/2026"
-          }
-        }
-      }
-    },
     "Type a name": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "Tapez un nom"
-          }
-        }
-      }
-    },
-    "Type a name, an address or @domain; -value to exclude": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tapez un nom, une adresse ou @domaine ; -valeur pour exclure"
-          }
-        }
-      }
-    },
-    "Type words of the subject or body; -word to exclude": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tapez des mots du sujet ou du texte ; -mot pour exclure"
-          }
-        }
-      }
-    },
-    "Type words of the subject; -word to exclude": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tapez des mots du sujet ; -mot pour exclure"
-          }
-        }
-      }
-    },
-    "Type words: subject, sender, recipients or body": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tapez des mots : sujet, expéditeur, destinataires ou texte"
           }
         }
       }
@@ -967,6 +917,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Conversation complète (T)"
+          }
+        }
+      }
+    },
+    "a name, an address or @domain; -value to exclude": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "un nom, une adresse ou @domaine ; -valeur pour exclure"
           }
         }
       }
@@ -1147,6 +1107,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "date"
+          }
+        }
+      }
+    },
+    "dd mm yy": {
+      "comment": "How six typed digits were read: day, month, year.",
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "jj mm aa"
           }
         }
       }
@@ -1479,6 +1450,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "cite seulement les messages précédents"
+          }
+        }
+      }
+    },
+    "or type a date: 2026-10-01, 1/10/2026, 011026 (dd mm yy) or 261001 (yy mm dd)": {
+      "comment": "Hint of the Date… panel input line, shown while nothing is typed.",
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ou tapez une date : 2026-10-01, 1/10/2026, 011026 (jj mm aa) ou 261001 (aa mm jj)"
           }
         }
       }
@@ -1848,12 +1830,53 @@
         }
       }
     },
+    "words of the subject or body; -word to exclude": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "mots du sujet ou du texte ; -mot pour exclure"
+          }
+        }
+      }
+    },
+    "words of the subject; -word to exclude": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "mots du sujet ; -mot pour exclure"
+          }
+        }
+      }
+    },
+    "words: subject, sender, recipients or body": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "mots : sujet, expéditeur, destinataires ou texte"
+          }
+        }
+      }
+    },
     "yesterday %@": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "hier %@"
+          }
+        }
+      }
+    },
+    "yy mm dd": {
+      "comment": "How six typed digits were read: year, month, day.",
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "aa mm jj"
           }
         }
       }

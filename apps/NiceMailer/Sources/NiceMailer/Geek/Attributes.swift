@@ -239,6 +239,9 @@ enum DateChoice {
         let label: String
         let after: Int?
         let before: Int?
+        /// Shown at the right of the row: how six digits were read, when
+        /// they make two dates ("dd mm yy" or "yy mm dd").
+        var detail: String? = nil
     }
 
     /// Presets relative to `now`: today, last 7 days, last 30 days, this
@@ -274,14 +277,54 @@ enum DateChoice {
         return nil
     }
 
-    /// "after" and "before" choices for a typed date.
+    /// The dates six digits can be (`ui.md`, "Sélecteur d'attributs"):
+    /// `ddmmyy` (as in French) or `yymmdd`, in that order, each kept when
+    /// it is a real day (`310299` is no `ddmmyy` date: no 31 February).
+    /// The two readings giving the same day (`111111`) count once. The
+    /// year `yy` is 20yy below 70, 19yy from 70 (no mail before 1970).
+    static func sixDigits(_ text: String, calendar: Calendar = .current) -> [(date: Date, reading: String)] {
+        let t = text.trimmingCharacters(in: .whitespaces)
+        guard t.count == 6, t.allSatisfy(\.isASCII), t.allSatisfy(\.isNumber) else { return [] }
+        let n = t.map { Int(String($0))! }
+        let pair = { (i: Int) in n[i] * 10 + n[i + 1] }
+        let year = { (yy: Int) in yy < 70 ? 2000 + yy : 1900 + yy }
+        // A day exists when the calendar gives back the same day, month
+        // and year (`date(from:)` alone turns 31 February into 3 March).
+        func day(_ d: Int, _ m: Int, _ y: Int) -> Date? {
+            guard (1...12).contains(m), (1...31).contains(d) else { return nil }
+            let c = DateComponents(year: y, month: m, day: d)
+            guard let date = calendar.date(from: c) else { return nil }
+            let back = calendar.dateComponents([.year, .month, .day], from: date)
+            return back.year == y && back.month == m && back.day == d ? calendar.startOfDay(for: date) : nil
+        }
+        var out: [(date: Date, reading: String)] = []
+        if let d = day(pair(0), pair(2), year(pair(4))) { out.append((d, L("dd mm yy"))) }
+        if let d = day(pair(4), pair(2), year(pair(0))), !out.contains(where: { $0.date == d }) {
+            out.append((d, L("yy mm dd")))
+        }
+        return out
+    }
+
+    /// Every date the text can be: one for `2026-10-01` or `1/10/2026`,
+    /// one or two for six digits.
+    static func candidates(_ text: String, calendar: Calendar = .current) -> [(date: Date, reading: String?)] {
+        if let d = parse(text, calendar: calendar) { return [(d, nil)] }
+        return sixDigits(text, calendar: calendar).map { ($0.date, $0.reading) }
+    }
+
+    /// "after" and "before" choices for a typed date: two rows per date it
+    /// can be, so four when six digits make two dates; each row then says
+    /// how the digits were read.
     static func typed(_ text: String, calendar: Calendar = .current) -> [Preset] {
-        guard let d = parse(text, calendar: calendar) else { return [] }
-        let day = Int(d.timeIntervalSince1970)
-        let shown = ISO8601DateFormatter.string(from: d, timeZone: calendar.timeZone, formatOptions: [.withFullDate])
-        return [
-            Preset(label: L("after %@", shown), after: day, before: nil),
-            Preset(label: L("before %@", shown), after: nil, before: day),
-        ]
+        let all = candidates(text, calendar: calendar)
+        return all.flatMap { c -> [Preset] in
+            let day = Int(c.date.timeIntervalSince1970)
+            let shown = ISO8601DateFormatter.string(from: c.date, timeZone: calendar.timeZone, formatOptions: [.withFullDate])
+            let detail = all.count > 1 ? c.reading : nil
+            return [
+                Preset(label: L("after %@", shown), after: day, before: nil, detail: detail),
+                Preset(label: L("before %@", shown), after: nil, before: day, detail: detail),
+            ]
+        }
     }
 }

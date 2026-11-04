@@ -1119,6 +1119,10 @@ private struct PickerPopup: View {
             HStack(spacing: 6) {
                 Text(title).foregroundStyle(Palette.accent)
                 Text(controller.pickerQuery + "▏")
+                // What can be typed, until something is (`pickerHint`).
+                if controller.pickerQuery.isEmpty, let hint = controller.pickerHint(kind) {
+                    Text(hint).foregroundStyle(Palette.muted).lineLimit(1).truncationMode(.tail)
+                }
                 Spacer()
                 Text("\(entries.count)").foregroundStyle(Palette.muted)
             }
@@ -1190,11 +1194,10 @@ private struct PickerPopup: View {
         case .tag, .group: L("Type a name")
         case .accounts: L("No account")
         case .attributes: L("No attribute")
-        case .attributeValue(.date): L("Type a date: 2026-10-01 or 1/10/2026")
-        case .search: L("Type words: subject, sender, recipients or body")
-        case .attributeValue(.text): L("Type words of the subject or body; -word to exclude")
-        case .attributeValue(.subject): L("Type words of the subject; -word to exclude")
-        case .attributeValue: L("Type a name, an address or @domain; -value to exclude")
+        // The value panels: the input line shows the hint while nothing is
+        // typed; text that gives no row (a date that is none) shows it
+        // here instead.
+        case .attributeValue, .search: controller.pickerQuery.isEmpty ? "" : controller.pickerHint(kind) ?? ""
         }
     }
 }

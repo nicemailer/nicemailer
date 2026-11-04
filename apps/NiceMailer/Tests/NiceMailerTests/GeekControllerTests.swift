@@ -782,6 +782,21 @@ struct GeekControllerTests {
         #expect(model.attributes.contains == nil)
     }
 
+    @Test func valuePanelsSayWhatCanBeTyped() {
+        press("F"); type(L("Date…")); press("ret")
+        // The Date… panel opens on its presets: the hint is on the input
+        // line, not only in an empty panel.
+        #expect(controller.pickerHint(.attributeValue(.date))?.contains("011026") == true)
+        #expect(controller.pickerHint(.attributes) == nil)
+        for field in AttributeField.allCases { #expect(controller.pickerHint(.attributeValue(field)) != nil) }
+        // Six digits read two ways: four rows, each saying its reading.
+        type("010120")
+        let rows = controller.pickerEntries(.attributeValue(.date))
+        #expect(rows.prefix(4).map(\.detail) == [L("dd mm yy"), L("dd mm yy"), L("yy mm dd"), L("yy mm dd")])
+        press("down"); press("down"); press("ret")
+        #expect(model.attributes.dateLabel == L("after %@", "2001-01-20"))
+    }
+
     @Test func theDatePanelOffersPresetsAndTypedDates() {
         press("F"); type(L("Date…")); press("ret")
         #expect(controller.pickerEntries(.attributeValue(.date)).count == 5)

@@ -383,6 +383,17 @@ private final class Runner {
             // The row Return would choose (the picker opens on its first
             // row, and typing brings the best match there).
             "picker_first": pickerRows.first ?? "",
+            // Detail of the first row ("dd mm yy" for six digits read two
+            // ways, "domain"…).
+            "picker_first_detail": {
+                if case .picker(let k) = c.overlay { return c.pickerEntries(k).first?.detail ?? "" }
+                return ""
+            }(),
+            // The hint of the input line, shown while nothing is typed.
+            "picker_hint": {
+                if case .picker(let k) = c.overlay, c.pickerQuery.isEmpty { return c.pickerHint(k) ?? "" }
+                return ""
+            }(),
             "screen_index": "\(c.screenIndex)",
             "contacts_count": "\(c.contacts.count)",
             "history_count": "\(c.history.count)",

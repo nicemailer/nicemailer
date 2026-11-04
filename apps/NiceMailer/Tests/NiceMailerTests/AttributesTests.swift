@@ -115,6 +115,44 @@ struct AttributesTests {
         #expect(choices[1].before == Int(iso!.timeIntervalSince1970))
     }
 
+    @Test func sixDigitsAreReadDayFirstThenYearFirst() {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "UTC")!
+        let iso = { (d: Date) in ISO8601DateFormatter.string(from: d, timeZone: cal.timeZone, formatOptions: [.withFullDate]) }
+        // Two real days: 1 January 2020 (dd mm yy), 20 January 2001 (yy mm dd).
+        #expect(DateChoice.sixDigits("010120", calendar: cal).map { iso($0.date) } == ["2020-01-01", "2001-01-20"])
+        #expect(DateChoice.sixDigits("200601", calendar: cal).map { iso($0.date) } == ["2001-06-20", "2020-06-01"])
+        // One reading only: no 99th day, no 13th month, no 31 February.
+        #expect(DateChoice.sixDigits("311299", calendar: cal).map { iso($0.date) } == ["1999-12-31"])
+        #expect(DateChoice.sixDigits("251301", calendar: cal).isEmpty)
+        #expect(DateChoice.sixDigits("310299", calendar: cal).isEmpty)
+        #expect(DateChoice.sixDigits("290223", calendar: cal).map { iso($0.date) } == ["2029-02-23"])
+        // Both readings the same day: once.
+        #expect(DateChoice.sixDigits("111111", calendar: cal).map { iso($0.date) } == ["2011-11-11"])
+        // Years: 20yy below 70, 19yy from 70.
+        #expect(DateChoice.sixDigits("010170", calendar: cal).first.map { iso($0.date) } == "1970-01-01")
+        // Not six ASCII digits.
+        #expect(DateChoice.sixDigits("01012", calendar: cal).isEmpty)
+        #expect(DateChoice.sixDigits("0101200", calendar: cal).isEmpty)
+        #expect(DateChoice.sixDigits("01-120", calendar: cal).isEmpty)
+        #expect(DateChoice.sixDigits("０１０１２０", calendar: cal).isEmpty)
+    }
+
+    @Test func sixDigitsGiveTwoRowsPerDateAndSayHowTheyWereRead() {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "UTC")!
+        let two = DateChoice.typed("010120", calendar: cal)
+        #expect(two.map(\.label) == [L("after %@", "2020-01-01"), L("before %@", "2020-01-01"),
+                                      L("after %@", "2001-01-20"), L("before %@", "2001-01-20")])
+        #expect(two.map(\.detail) == [L("dd mm yy"), L("dd mm yy"), L("yy mm dd"), L("yy mm dd")])
+        #expect(two[0].after != nil && two[0].before == nil && two[1].before == two[0].after)
+        // A single date: two rows, no reading to explain.
+        let one = DateChoice.typed("311299", calendar: cal)
+        #expect(one.map(\.label) == [L("after %@", "1999-12-31"), L("before %@", "1999-12-31")])
+        #expect(one.allSatisfy { $0.detail == nil })
+        #expect(DateChoice.typed("2026-10-01", calendar: cal).allSatisfy { $0.detail == nil })
+    }
+
     @Test func presetsAreRelativeToNow() {
         var cal = Calendar(identifier: .gregorian)
         cal.timeZone = TimeZone(identifier: "UTC")!

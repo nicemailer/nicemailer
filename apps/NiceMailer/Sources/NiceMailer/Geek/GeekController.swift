@@ -925,6 +925,22 @@ final class GeekController {
         if let target { goToFolder(target.id) }
     }
 
+    /// What can be typed in a value panel, shown in the input line while
+    /// nothing is typed (`ui.md`, "Sélecteur d'attributs"): the Date…
+    /// panel opens on its presets, so a hint shown only when the panel is
+    /// empty was never seen, and typed dates went unnoticed. `nil` for the
+    /// pickers whose rows say it all.
+    func pickerHint(_ kind: PickerKind) -> String? {
+        switch kind {
+        case .attributeValue(.date): L("or type a date: 2026-10-01, 1/10/2026, 011026 (dd mm yy) or 261001 (yy mm dd)")
+        case .attributeValue(.text): L("words of the subject or body; -word to exclude")
+        case .attributeValue(.subject): L("words of the subject; -word to exclude")
+        case .attributeValue: L("a name, an address or @domain; -value to exclude")
+        case .search: L("words: subject, sender, recipients or body")
+        default: nil
+        }
+    }
+
     /// Rows of a picker, filtered by the text typed: every word typed must
     /// appear in the row, in any order, ignoring case and accents ("hey arc"
     /// finds "hey · Archive"). Simpler than Helix's fuzzy match.
@@ -1048,11 +1064,11 @@ final class GeekController {
             return rows(value, value)
         case .date:
             let presets = DateChoice.typed(typed) + DateChoice.presets().filter {
-                typed.isEmpty || DateChoice.parse(typed) != nil
+                typed.isEmpty || !DateChoice.candidates(typed).isEmpty
                     || $0.label.range(of: typed, options: [.caseInsensitive, .diacriticInsensitive]) != nil
             }
             return presets.map { p in
-                Entry(key: " ", label: p.label) { [model] in
+                Entry(key: " ", label: p.label, detail: p.detail) { [model] in
                     model.attributes.after = p.after
                     model.attributes.before = p.before
                     model.attributes.dateLabel = p.label

@@ -75,6 +75,8 @@ L'affichage est simplifié au maximum : chaque message montre ce qu'il apporte. 
 - non lus / lus, drapeau / sans drapeau, pièce jointe / sans pièce jointe, répondus / sans ma réponse (répondu par l'utilisateur), conversations / mails seuls ;
 - De…, À… (À et Cc ; une partie d'un nom ou d'une adresse, contacts suggérés pendant la frappe ; plusieurs valeurs combinées par « ou »), Texte… (mots du sujet et du corps), Sujet… (mots du sujet seul), Date… (aujourd'hui, 7 derniers jours, 30 derniers jours, cette année, plus d'un an, ou après / avant une date tapée).
 
+La ligne de saisie de chaque panneau de valeur dit ce qu'on peut taper tant que rien n'est tapé : Date… s'ouvre sur ses préréglages, et une aide montrée seulement quand le panneau est vide restait invisible. Date… accepte `2026-10-01`, `1/10/2026`, `1/10/26`, et **six chiffres**, lus en `jjmmaa` et en `aammjj`. Chaque lecture qui donne un vrai jour propose « après le » et « avant le » ce jour : une seule lecture valide donne deux lignes (`311299` : 31 décembre 1999), deux lectures valides en donnent quatre, et chaque ligne dit à droite sa lecture (« jj mm aa », « aa mm jj ») : `010120` est le 1er janvier 2020 ou le 20 janvier 2001. Deux lectures qui tombent le même jour comptent une fois (`111111`). Une année sur deux chiffres sous 70 est 20aa, à partir de 70 19aa (pas de mail avant 1970).
+
 Texte… ne cherche pas dans les adresses : chercher « dupont » dans le texte ne doit pas ramener tous les mails de Dupont, c'est le rôle de De… et À…. Seule la recherche `/` (« Chercher partout ») reste le joker qui cherche aussi dans l'expéditeur et les destinataires.
 
 #### Accès au clavier

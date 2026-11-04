@@ -38,7 +38,7 @@ The magnifier after the folder in the status bar (key **F**, or a click) opens t
 | To… — À… | same, on To and Cc | `to`, `cc` — `a`, `cc`, `dest` |
 | Text… — Texte… | words of the subject and body, never the addresses; each word a prefix, accents ignored; `-word` excludes | `te` — `te` |
 | Subject… — Sujet… | words of the subject only; `-word` excludes | `su`, `title` — `su`, `objet` |
-| Date… — Date… | today, last 7 days, last 30 days, this year, older than a year, or "after" / "before" a typed date (2026-10-01, 1/10/2026) | `da` — `da`, `quand` |
+| Date… — Date… | today, last 7 days, last 30 days, this year, older than a year, or "after" / "before" a typed date (see "Typed dates" below) | `da` — `da`, `quand` |
 
 Choosing an active value again removes it; choosing the opposite value replaces it. An attribute with "…" expands the panel at once to choose its value. Active attributes are chips in the status bar: a click on a chip removes it; Escape clears them all (after the marks); they stay when changing folder or account.
 
@@ -52,6 +52,15 @@ The selector opens on its first row and Return chooses the highlighted row, so w
 4. each typed word appears anywhere in the label (the former filter, so nothing it found is lost): `lagg` → "flagged".
 
 Case and accents are ignored (`a` finds "À…"). Attributes with a value also have hidden search words, localized (`AttributeField.keywords`): `cc` or `destinataire` finds To… / À…, `expéditeur` or `sender` finds From… / De…. The French labels were chosen so that two letters always reach a row: "De…", "Date…" and "drapeau" differ at the second letter, and "À…" replaces "Destinataire…", which started like "De…" (and matches the "à :" chip and the "À :" header of a mail).
+
+### Typed dates
+
+The input line of every value panel says what can be typed while nothing is typed (in Date…, which opens on its presets, it was otherwise invisible). The Date… panel takes:
+
+- `2026-10-01`, `1/10/2026`, `1/10/26`, `1.10.2026` (day first, as in French);
+- **six digits**, read as `ddmmyy` and as `yymmdd`. Each reading that is a real day gives two rows, "after" and "before" that day. When both readings are real days, the panel shows four rows, and each says on its right how the digits were read ("dd mm yy", "yy mm dd"): `010120` is 1 January 2020 or 20 January 2001. One real day gives two rows (`311299`: 31 December 1999; `290223`: 23 February 2029, since 2023 has no 29 February). Both readings on the same day count once (`111111`). Two-digit years below 70 are 20yy, from 70 19yy.
+
+"after" a day includes that day; "before" it does not.
 
 ### Values: domains and exclusions
 
