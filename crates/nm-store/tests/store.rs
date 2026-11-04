@@ -12,6 +12,7 @@ use std::collections::HashSet;
 
 use nm_core::{FolderRole, Source};
 use nm_api::ThreadSort;
+use nm_store::screening::MoveOptions;
 use nm_store::Store;
 use nm_store::seed::{SeedOptions, seed};
 
@@ -67,8 +68,8 @@ fn move_thread_updates_lists_and_counters() {
     let thread = &items[0];
 
     let before = store.list_folders().unwrap();
-    let changes = store.move_thread(thread.id, FolderRole::Todo, Some(inbox), Source::App).unwrap();
-    assert!(changes.changed_messages() > 0);
+    let changes = store.move_thread(thread.id, FolderRole::Todo, Some(inbox), MoveOptions::default(), Source::App).unwrap();
+    assert!(changes.changes.changed_messages() > 0);
 
     let (inbox_items, _) = store.list_threads(inbox, None, 500, ThreadSort::Received).unwrap();
     assert!(!inbox_items.iter().any(|t| t.id == thread.id));
@@ -94,8 +95,8 @@ fn quarantine_is_never_a_target() {
     let mut store = seeded();
     let inbox = folder_id(&store, FolderRole::Inbox);
     let (items, _) = store.list_threads(inbox, None, 1, ThreadSort::Received).unwrap();
-    assert!(store.move_thread(items[0].id, FolderRole::Quarantine, Some(inbox), Source::App).is_err());
-    assert!(store.move_thread(items[0].id, FolderRole::Sent, None, Source::App).is_err());
+    assert!(store.move_thread(items[0].id, FolderRole::Quarantine, Some(inbox), MoveOptions::default(), Source::App).is_err());
+    assert!(store.move_thread(items[0].id, FolderRole::Sent, None, MoveOptions::default(), Source::App).is_err());
 }
 
 /// Deleted is outside `CONVERSATION_SCOPE`, so restoring only works because
@@ -105,7 +106,7 @@ fn restore_from_deleted_uses_command_folder() {
     let mut store = seeded();
     let deleted = folder_id(&store, FolderRole::Deleted);
     let (items, _) = store.list_threads(deleted, None, 1, ThreadSort::Received).unwrap();
-    store.move_thread(items[0].id, FolderRole::Inbox, Some(deleted), Source::App).unwrap();
+    store.move_thread(items[0].id, FolderRole::Inbox, Some(deleted), MoveOptions::default(), Source::App).unwrap();
     let (_, messages) = store.get_thread(items[0].id).unwrap();
     assert!(!messages.iter().any(|m| m.folder_role == Some(FolderRole::Deleted)));
 }
@@ -140,8 +141,8 @@ fn returned_mark_is_shown_then_removed_by_a_command() {
     let returned = items.iter().find(|t| t.returned_from.is_some()).expect("a returned thread");
     assert_eq!(returned.reply_target, returned.returned_from);
     // Archive it, then bring it back: the mark must be gone.
-    store.move_thread(returned.id, FolderRole::Archive, Some(inbox), Source::App).unwrap();
-    store.move_thread(returned.id, FolderRole::Inbox, None, Source::App).unwrap();
+    store.move_thread(returned.id, FolderRole::Archive, Some(inbox), MoveOptions::default(), Source::App).unwrap();
+    store.move_thread(returned.id, FolderRole::Inbox, None, MoveOptions::default(), Source::App).unwrap();
     let (items, _) = store.list_threads(inbox, None, 500, ThreadSort::Received).unwrap();
     assert_eq!(items.iter().find(|t| t.id == returned.id).unwrap().returned_from, None);
 }

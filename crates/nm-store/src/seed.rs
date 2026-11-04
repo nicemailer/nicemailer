@@ -475,8 +475,8 @@ pub fn seed(store: &mut Store, opts: &SeedOptions) -> Result<SeedReport> {
     // "INBOX" as IMAP requires. `uidvalidity` is an arbitrary distinct value
     // per folder (`role as i64` gives the variant's position in the enum).
     tx.execute(
-        "INSERT INTO account (config_key, created_by, modified_by) VALUES ('perso', 'app', 'app')",
-        [],
+        "INSERT INTO account (config_key, address, created_by, modified_by) VALUES ('perso', ?1, 'app', 'app')",
+        [ME_ADDR],
     )?;
     let account_id = tx.last_insert_rowid();
     let mut folders = HashMap::new();

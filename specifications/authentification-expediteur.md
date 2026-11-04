@@ -119,7 +119,7 @@ Un mail sans `From`, ou avec plusieurs adresses dans `From`, a le verdict `unkno
 - **Badge « non vérifié »** sur tout mail accepté dont le verdict n'est pas `pass`.
 - **Avertissement « usurpation probable »** sur tout mail en Quarantine avec `auth_suspect = 1`, avec le verdict et le domaine concernés.
 - **Adresse complète affichée** dans la Quarantine, pas seulement le nom d'affichage : `PayPal <x@evil.com>` doit être lisible comme tel. Les usurpations par nom affiché et par domaine ressemblant (`paypa1.com`) ne correspondent à aucune règle et arrivent déjà en Quarantine ; c'est l'utilisateur qui doit éviter de les approuver.
-- **Sortie de Quarantine d'un mail suspect** : l'app demande une confirmation explicite et propose de choisir `auth_policy` pour l'adresse (`auto` par défaut, `not_required` pour un outil mal configuré).
+- **Sortie de Quarantine d'un mail suspect** : l'app demande une confirmation explicite et propose de choisir `auth_policy` pour l'adresse (`auto` par défaut, `not_required` pour un outil mal configuré). Le noyau refuse la décision favorable sans confirmation (erreur `1005`, `CONFIRMATION_REQUIRED`, avec l'adresse et le verdict) ; un déplacement vers Banned d'un mail suspect ne concerne que ce mail, sans décision.
 - **Réglage par adresse** : `auth_policy` est modifiable depuis la fiche du contact.
 
 ## 6. Données

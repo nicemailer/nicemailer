@@ -15,7 +15,7 @@
 //! which guarantees they agree on the format. The Swift app has its own
 //! mirror of these types in `Models.swift`.
 
-use nm_core::{FolderCategory, FolderRole};
+use nm_core::{AuthPolicy, FolderCategory, FolderRole, ScreeningTarget};
 use serde::{Deserialize, Serialize};
 // `Value` is serde_json's type for "any JSON value" (object, array, string...).
 // It is used where the shape is not known in advance, e.g. request params
@@ -72,6 +72,13 @@ pub mod method {
     pub const LIST_CONTACTS: &str = "list_contacts";
     /// Threads of a tag, a group or a contact, across folders.
     pub const LIST_THREADS_BY: &str = "list_threads_by";
+    /// Takes, changes or removes the screening decision on an address, and
+    /// files the mails already received from it (`dossiers.md`).
+    pub const SET_ADDRESS_SCREENING: &str = "set_address_screening";
+    /// The same for a domain.
+    pub const SET_DOMAIN_SCREENING: &str = "set_domain_screening";
+    /// Undoes a move or a decision from the token it returned.
+    pub const UNDO: &str = "undo";
 }
 
 /// Stable error codes. Negative codes are the ones defined by the JSON-RPC
@@ -97,6 +104,10 @@ pub mod error_code {
     pub const MAINTENANCE: i64 = 1003;
     /// An import is already running: only one at a time.
     pub const BUSY: i64 = 1004;
+    /// The move would take a favorable decision on a sender whose mail is
+    /// suspected of spoofing: send it again with `confirm_suspect` once the
+    /// user has confirmed. `data` holds `addr` and `verdict`.
+    pub const CONFIRMATION_REQUIRED: i64 = 1005;
 }
 
 // ---------------------------------------------------------------------------
@@ -377,6 +388,66 @@ pub struct MoveThreadParams {
     /// Quarantine). Without it, only messages in `CONVERSATION_SCOPE` move.
     #[serde(default)]
     pub from_folder_id: Option<i64>,
+    /// The user confirmed a favorable decision on a sender whose mail is
+    /// suspected of spoofing (error `CONFIRMATION_REQUIRED`).
+    #[serde(default)]
+    pub confirm_suspect: bool,
+    /// Authentication policy chosen with that confirmation, set on the
+    /// address (`auto` or `not_required` in the app).
+    #[serde(default)]
+    pub auth_policy: Option<AuthPolicy>,
+}
+
+/// A screening decision taken, changed or removed by a command.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DecisionView {
+    /// `address` or `domain`.
+    pub kind: String,
+    /// The address or the domain.
+    pub name: String,
+    pub before: Option<ScreeningTarget>,
+    pub after: Option<ScreeningTarget>,
+}
+
+/// Result of `move_thread`, `set_address_screening`,
+/// `set_domain_screening` and `undo`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowResult {
+    /// Messages modified, filed mails included. `0`: nothing changed.
+    pub changed: usize,
+    /// Mails of the thread moved (for `undo`: mails put back).
+    pub moved: usize,
+    /// Other mails of the sender filed by the decision.
+    pub filed: usize,
+    /// The decision recorded, if the command took one. For a move that
+    /// decides nothing (to Todo, Junk…), absent.
+    pub decision: Option<DecisionView>,
+    /// Pass it to `undo` to cancel the command; absent when nothing changed.
+    pub undo: Option<String>,
+}
+
+/// Parameters of `set_address_screening`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SetAddressScreeningParams {
+    pub addr: String,
+    /// `None` removes the decision.
+    #[serde(default)]
+    pub target: Option<ScreeningTarget>,
+}
+
+/// Parameters of `set_domain_screening`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SetDomainScreeningParams {
+    /// E.g. `example.com`; its subdomains follow the rule.
+    pub domain: String,
+    #[serde(default)]
+    pub target: Option<ScreeningTarget>,
+}
+
+/// Parameters of `undo`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UndoParams {
+    pub token: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -857,6 +928,13 @@ pub struct ContactView {
     pub name: Option<String>,
     /// Screening decision, `None` without decision.
     pub screening_target: Option<String>,
+    /// Decision of the address's domain (or of a parent domain), which
+    /// applies when the address has none.
+    #[serde(default)]
+    pub domain_target: Option<String>,
+    /// `auto`, `required` or `not_required`.
+    #[serde(default)]
+    pub auth_policy: String,
     /// Names of the groups the address belongs to.
     pub groups: Vec<String>,
     /// Number of messages received from the address.

@@ -2,9 +2,8 @@
 //!
 //! v1 limits: commands are only applied to the local database. There is no
 //! spool of actions to replay on the IMAP server (`pending_action`) since
-//! there is no server yet, and no screening decision on the sender either
-//! (moving a newsletter to Newsletter does not file the sender's future
-//! mail there).
+//! there is no server yet. Decisions on senders and the filing they trigger
+//! live in `screening.rs`.
 //!
 //! Every command follows the same pattern:
 //! 1. validate the parameters,
@@ -14,15 +13,19 @@
 //! 4. recompute the denormalized aggregates,
 //! 5. commit and return a `ChangeSet` describing what changed.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 
-use nm_core::{FolderRole, KW_WAS_TODO, KW_WAS_WAITING, Source};
+use nm_core::{FolderRole, KW_WAS_TODO, KW_WAS_WAITING, ScreeningTarget, Source};
 // `OptionalExtension` adds `.optional()` to query results: it turns the
 // "no row" error into `Ok(None)`. `params!` builds a list of SQL parameters
 // of different types.
 use rusqlite::{OptionalExtension, TransactionBehavior, params};
 
 // `crate::` refers to the root of this crate, i.e. `lib.rs`.
+use crate::screening::{
+    DecisionChange, MoveOptions, Outcome, RuleKind, audit_mark, file_address, move_message, record_auth_policy,
+    record_decision, refresh_all, suspect_verdict, thread_sender, undo_token,
+};
 use crate::{ChangeSet, Result, Store, StoreError, refresh_folder_counts, refresh_thread};
 
 impl Store {
@@ -38,13 +41,24 @@ impl Store {
             .ok_or_else(|| StoreError::NotFound(format!("conversation {thread_id}")))
     }
 
-    /// Moves a thread to the folder with role `target`.
+    /// Moves a thread to the folder with role `target`, and records the
+    /// decision on its sender that the move implies (`dossiers.md`,
+    /// "Déplacement et décision sur l'expéditeur").
     ///
     /// Only the thread's messages filed in Inbox, Todo, Waiting, Archive,
     /// Newsletter and Paperwork follow (`CONVERSATION_SCOPE`), plus those in
     /// the folder where the command is given (`from_folder_id`). So the
     /// copies in Sent never move, and a message the user deleted stays in
     /// Deleted unless the user is restoring it from there.
+    ///
+    /// When the move decides (`ScreeningTarget::for_move`), the decision is
+    /// recorded on the thread's sender (`screening::thread_sender`) and the
+    /// sender's other mails are filed, in the same transaction. A sender
+    /// whose mail is suspected of spoofing:
+    /// - is not banned: Banned then concerns this mail only, so a forger
+    ///   cannot get the real address banned;
+    /// - gets a favorable decision only with `opts.confirm_suspect`, else
+    ///   the command fails with `ConfirmationRequired` and changes nothing.
     ///
     /// Rust note: `&mut self` means the method needs exclusive access to the
     /// store, because opening a transaction requires a mutable connection.
@@ -53,8 +67,9 @@ impl Store {
         thread_id: i64,
         target: FolderRole,
         from_folder_id: Option<i64>,
+        opts: MoveOptions,
         source: Source,
-    ) -> Result<ChangeSet> {
+    ) -> Result<Outcome> {
         let account_id = self.thread_account(thread_id)?;
 
         // Role of the folder where the command is given, if any.
@@ -88,10 +103,26 @@ impl Store {
             )));
         }
 
+        // The decision, checked before any write so that a refusal changes
+        // nothing.
+        let decision = match ScreeningTarget::for_move(from_role, target) {
+            Some(d) => match thread_sender(&self.conn, thread_id)? {
+                Some((_, _, _, true)) if d == ScreeningTarget::Banned => None,
+                Some((id, addr, _, true)) if !opts.confirm_suspect => {
+                    let verdict = suspect_verdict(&self.conn, thread_id, id)?;
+                    return Err(StoreError::ConfirmationRequired { addr, verdict });
+                }
+                Some((id, addr, trigger, _)) => Some((d, id, addr, trigger)),
+                None => None,
+            },
+            None => None,
+        };
+
         // From here on every statement goes through `tx`. If the function
         // returns early with an error (`?`), `tx` is dropped without commit
         // and SQLite rolls everything back automatically.
         let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let mark = audit_mark(&tx)?;
         let target_id: i64 = tx
             .query_row(
                 "SELECT id FROM folder WHERE account_id = ?1 AND role = ?2",
@@ -124,28 +155,14 @@ impl Store {
             .collect::<std::result::Result<_, _>>()?
         };
 
-        let mut changes = ChangeSet::default();
-        changes.folders.insert(target_id);
+        let mut out = Outcome { moved: moved.len(), ..Outcome::default() };
+        out.changes.folders.insert(target_id);
+        let mut threads = BTreeSet::new();
+        let none = serde_json::json!({});
         // `&moved` iterates by reference, so `message_id` and `old_folder` are
         // `&i64`; `*old_folder` reads the value behind the reference.
         for (message_id, old_folder) in &moved {
-            // The IMAP UID is only valid within a given server folder, so it
-            // is cleared on move; the future IMAP sync will learn the new one.
-            tx.execute(
-                "UPDATE message SET folder_id = ?2, uid = NULL,
-                        date_modified = unixepoch(), modified_by = ?3
-                  WHERE id = ?1",
-                params![message_id, target_id, source.as_str()],
-            )?;
-            tx.execute(
-                "INSERT INTO audit_log (created_by, entity, entity_id, action, detail)
-                 VALUES (?1, 'message', ?2, 'move',
-                         json_object('before', json_object('folder_id', ?3),
-                                     'after',  json_object('folder_id', ?4)))",
-                params![source.as_str(), message_id, old_folder, target_id],
-            )?;
-            changes.folders.insert(*old_folder);
-            changes.messages.insert((*message_id, Some(thread_id)));
+            move_message(&tx, *message_id, Some(thread_id), *old_folder, target_id, source, &none, &mut out.changes, &mut threads)?;
         }
 
         // Any command clears the "came back from Todo/Waiting" mark, even when
@@ -157,17 +174,27 @@ impl Store {
                 AND message_id IN (SELECT id FROM message WHERE thread_id = ?1)",
             params![thread_id, KW_WAS_TODO, KW_WAS_WAITING],
         )?;
+        if unmarked > 0 {
+            threads.insert(thread_id);
+        }
+
+        if let Some((d, address_id, addr, trigger)) = decision {
+            if d.is_favorable()
+                && let Some(p) = opts.auth_policy
+            {
+                record_auth_policy(&tx, address_id, p, None, source)?;
+            }
+            let before = record_decision(&tx, RuleKind::Address, address_id, Some(d), Some(trigger), None, source)?;
+            let mut folders = HashMap::new();
+            out.filed = file_address(&tx, address_id, d, false, source, &mut folders, &mut out.changes, &mut threads)?;
+            out.decision = Some(DecisionChange { kind: RuleKind::Address, name: addr, before, after: Some(d) });
+        }
 
         // Recompute aggregates only if something actually changed.
-        if !moved.is_empty() || unmarked > 0 {
-            let folders = refresh_thread(&tx, thread_id)?;
-            for f in &changes.folders {
-                refresh_folder_counts(&tx, *f)?;
-            }
-            changes.threads.push((thread_id, folders));
-        }
+        refresh_all(&tx, &threads, &mut out.changes)?;
+        out.undo = undo_token(&tx, mark)?;
         tx.commit()?;
-        Ok(changes)
+        Ok(out)
     }
 
     /// Marks every message of the thread as read or unread.

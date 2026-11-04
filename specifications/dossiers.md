@@ -82,7 +82,7 @@ Une commande sur une conversation (déplacer, supprimer, marquer comme spam) s'a
 Autres règles :
 
 - **Lu, non lu** : s'applique à tous les mails de la conversation. **Drapeau** : posé sur le dernier mail reçu ; la conversation est marquée si l'un de ses mails l'est.
-- **Décision sur l'expéditeur** (déplacement vers Newsletter, Paperwork ou Banned) : si les mails de la conversation, hors ceux de l'utilisateur, viennent d'un seul expéditeur, la décision porte sur lui. S'ils viennent de plusieurs, l'app demande lesquels sont concernés, pour ne pas bannir un collègue en copie.
+- **Décision sur l'expéditeur** (déplacement vers Newsletter, Paperwork ou Banned, ou vers Inbox depuis Quarantine ou Banned) : la décision porte sur l'auteur du dernier mail reçu de la conversation, hors ceux de l'utilisateur (Sent, Drafts, ou envoyés depuis l'adresse du compte). Les autres expéditeurs de la conversation gardent leur décision. Une conversation qui ne contient que des mails de l'utilisateur ne crée aucune décision. Choix assumé : demander quels expéditeurs sont concernés a été écarté pour garder une commande d'une touche ; le risque est de bannir un collègue en copie s'il est l'auteur du dernier mail, et l'annulation (« Annulation ») le rattrape.
 - **Nouveau mail dans une conversation déjà rangée** : il arrive là où le screening le place, en général l'Inbox. La conversation apparaît alors dans l'Inbox ; la commande suivante regroupe tous ses mails. Exception : une conversation en Todo ou en Waiting qui reçoit un mail revient entièrement dans l'Inbox (« Nouveau mail dans une conversation en Todo ou en Waiting »).
 - **Mail isolé** : dans la vue de lecture, un mail seul d'une conversation peut être supprimé. C'est la seule commande au niveau du mail.
 
@@ -249,13 +249,14 @@ Quand l'utilisateur prend ou change une décision sur une adresse, les autres ma
 
 - **Une décision Inbox ne vide que la Quarantine.** Les mails déjà archivés ont été traités : les remettre dans l'Inbox (des années d'échanges avec un collègue) serait un retour en arrière.
 - **Jamais déplacés** : Todo, Waiting, Sent, Drafts, Deleted et Junk, qui résultent d'une commande explicite de l'utilisateur, ainsi que les mails de l'Inbox marqués d'un drapeau.
-- **Décision de domaine** : même règle, pour les mails des adresses du domaine qui n'ont pas de décision propre.
+- **Décision de domaine** : même règle, pour les mails des adresses du domaine, et de ses sous-domaines (`news.exemple.fr` appartient à `exemple.fr`), qui n'ont pas de décision propre.
 - **Authentification** : une décision favorable ne déplace que les mails dont le verdict est accepté, selon l'algorithme de `authentification-expediteur.md`. Un mail usurpé reste en Quarantine. Exception : les mails d'un compte d'archives (import mbox) sont rangés sans condition d'authentification (`import-initial.md`, section 9).
 - **Comptes concernés** : tous les comptes, y compris les comptes d'archives, où le déplacement ne modifie que la base locale.
 - **Retrait d'une décision** : aucun mail n'est déplacé.
 - **Sources** : seules les décisions prises par un client (app, CLI, TUI, web, agent MCP) déclenchent le rangement. Une décision reçue d'un autre Mac (`config_sync`) n'en déclenche pas : cet autre Mac a déjà rangé les mails, et la synchronisation IMAP rapporte ces déplacements. Les décisions prises par le noyau à l'import ne trouvent rien à ranger.
 - **Exécution** : un déplacement ordinaire par mail, dans le spool, que l'exécuteur regroupe en `UID MOVE` sur plusieurs UID (`modele de donnees.md`, section 6). Chaque mail déplacé porte la source de la décision (`modified_by`) et une ligne `move` dans `audit_log`.
-- **Annulation** : l'app affiche « 342 mails rangés dans Newsletter — Annuler ». Annuler rétablit la décision précédente et remet chaque mail dans son dossier d'origine.
+- **Annulation** : l'app affiche « 342 autres mails rangés · z : annuler ». La touche `z` annule le dernier déplacement ou la dernière décision, puis le précédent, et ainsi de suite (pile de la session). Annuler rétablit la décision précédente (et la politique d'authentification choisie avec une confirmation) et remet chaque mail dans son dossier d'origine. Un changement fait depuis l'emporte : un mail déplacé de nouveau, ou une décision changée de nouveau, n'est pas touché ; annuler deux fois est donc sans effet la seconde fois.
+- **Jeton d'annulation** : chaque commande renvoie un jeton, l'intervalle de ses lignes dans `audit_log`. Elles sont consécutives, car la commande tient le verrou d'écriture de sa première écriture à son commit. Annuler rejoue ces lignes à l'envers et écrit ses propres lignes, marquées `undo_of`.
 
 ### Authentification de l'expéditeur
 

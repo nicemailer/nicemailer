@@ -80,7 +80,7 @@ Rules (`specifications/groupes.md`): an address can be in several groups; removi
 
 ## Contacts
 
-`list_contacts {query?, cursor?, limit?}`: known addresses sorted by address, with their name, screening decision, groups and number of messages received from them. `query` filters on a part of the address or the name, case-insensitively.
+`list_contacts {query?, cursor?, limit?}`: known addresses sorted by address, with their name, screening decision, the decision of their domain (`domain_target`), their authentication policy, groups and number of messages received from them. Decisions are taken with `set_address_screening` and `set_domain_screening` (`folder-workflow.md`). `query` filters on a part of the address or the name, case-insensitively.
 
 ## Threads across folders
 

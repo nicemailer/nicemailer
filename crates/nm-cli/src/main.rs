@@ -82,6 +82,45 @@ enum Command {
     Folders,
     /// Print the core's events as they happen.
     Watch,
+    /// Screening decision on an address: where its next mails go. Taking or
+    /// changing one also files the mails already received from it.
+    Address {
+        /// The address, e.g. news@example.com.
+        addr: String,
+        /// inbox, newsletter, paperwork, banned, or none to remove the decision.
+        target: String,
+    },
+    /// Screening decision on a domain and its subdomains, for the addresses
+    /// that have no decision of their own.
+    Domain {
+        /// The domain, e.g. example.com.
+        domain: String,
+        /// inbox, newsletter, paperwork, banned, or none to remove the decision.
+        target: String,
+    },
+    /// Undo a move or a decision, from the token it printed.
+    Undo { token: String },
+}
+
+/// `none` removes the decision; anything else must be a screening target.
+fn decision_target(target: &str) -> anyhow::Result<Value> {
+    match target {
+        "none" => Ok(Value::Null),
+        t if nm_core::ScreeningTarget::parse(t).is_some() => Ok(json!(t)),
+        t => bail!("unknown target {t}: inbox, newsletter, paperwork, banned or none"),
+    }
+}
+
+/// Prints the result of a workflow command (`WorkflowResult`).
+fn print_workflow(result: &Value) {
+    if let Some(d) = result["decision"].as_object() {
+        let name = |v: &Value| v.as_str().unwrap_or("none").to_string();
+        println!("{} {}: {} -> {}", d["kind"].as_str().unwrap_or(""), name(&d["name"]), name(&d["before"]), name(&d["after"]));
+    }
+    println!("{} moved, {} other mails filed", result["moved"], result["filed"]);
+    if let Some(t) = result["undo"].as_str() {
+        println!("undo: nicemailer undo {t}");
+    }
 }
 
 fn main() -> anyhow::Result<()> {
@@ -132,6 +171,25 @@ fn main() -> anyhow::Result<()> {
                     f["thread_count"],
                 );
             }
+            Ok(())
+        }
+        Command::Address { addr, target } => {
+            let mut client = Client::connect(&data_dir)?;
+            let result = client.call("set_address_screening", json!({ "addr": addr, "target": decision_target(&target)? }))?;
+            print_workflow(&result);
+            Ok(())
+        }
+        Command::Domain { domain, target } => {
+            let mut client = Client::connect(&data_dir)?;
+            let result =
+                client.call("set_domain_screening", json!({ "domain": domain, "target": decision_target(&target)? }))?;
+            print_workflow(&result);
+            Ok(())
+        }
+        Command::Undo { token } => {
+            let mut client = Client::connect(&data_dir)?;
+            let result = client.call("undo", json!({ "token": token }))?;
+            print_workflow(&result);
             Ok(())
         }
         Command::Watch => {

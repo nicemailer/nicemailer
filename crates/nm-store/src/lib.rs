@@ -9,6 +9,7 @@
 //! - `queries.rs`: read-only queries returning API views,
 //! - `clean.rs`: simplified display of a thread (quotes, signatures, copies),
 //! - `commands.rs`: write commands (move, read/unread, flag),
+//! - `screening.rs`: decisions on senders, filing of their mails, undo,
 //! - `raw.rs`: immutable raw message files (`stockage-brut.md`),
 //! - `mbox.rs`: streaming reader of mbox files,
 //! - `ingest.rs`: interpretation of a raw message (headers, bodies, attachments),
@@ -33,6 +34,7 @@ pub mod library;
 pub mod mbox;
 mod queries;
 pub mod raw;
+pub mod screening;
 pub mod unsubscribe;
 pub mod seed;
 
@@ -82,6 +84,11 @@ pub enum StoreError {
     InvalidMove(String),
     #[error("paramètre invalide : {0}")]
     InvalidParams(String),
+    /// A favorable decision on a sender whose mail is suspected of spoofing
+    /// needs the user's explicit confirmation
+    /// (`authentification-expediteur.md`, section 5).
+    #[error("confirmation requise : usurpation probable de {addr} (verdict {verdict})")]
+    ConfirmationRequired { addr: String, verdict: String },
     /// The database was created by a newer version of NiceMailer. Opening
     /// it anyway could corrupt it, so the store refuses.
     #[error("version du schéma {found} plus récente que celle du code ({expected})")]

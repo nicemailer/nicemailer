@@ -86,5 +86,3 @@ For clients other than the CLI:
 - No import from the app yet.
 - mbox flags (`Status:`, `X-Status:`, `X-Gmail-Labels`) are ignored: everything is read and filed by sender.
 - One address per archive account (no aliases).
-- Filing imported mail when you later take a screening decision on a sender is specified but not implemented yet: screening decisions themselves are not implemented.
-- Attachments are recorded but cannot be opened yet (extraction from the raw file is not implemented).

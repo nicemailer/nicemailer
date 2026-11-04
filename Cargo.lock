@@ -671,6 +671,7 @@ dependencies = [
  "anyhow",
  "clap",
  "nm-api",
+ "nm-core",
  "nm-store",
  "serde_json",
 ]

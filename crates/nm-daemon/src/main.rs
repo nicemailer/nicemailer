@@ -51,12 +51,14 @@ use nm_api::{
     ListHistoryParams, ListTagsParams, ListThreadsByParams, ListThreadsParams, MAX_LIMIT, MoveThreadParams,
     PROTOCOL_VERSION, Page, Request, Response, RpcError, SearchParams, SearchResult, SetBodyFormatParams,
     SetGroupMemberParams, SetThreadFlaggedParams, SetThreadSeenParams, SubscribeParams, SubscribeResult,
-    TagThreadParams, ThreadView, error_code, method,
+    SetAddressScreeningParams, SetDomainScreeningParams, TagThreadParams, ThreadView, UndoParams, error_code,
+    method,
 };
 use nm_core::Source;
 use nm_store::import::{BATCH_SIZE, ImportOptions, ImportProgress, import_mbox};
 use nm_store::attachments::AttachmentFiles;
 use nm_store::raw::RawStore;
+use nm_store::screening::{MoveOptions, Outcome};
 use nm_store::{ChangeSet, Store, StoreError};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
@@ -281,6 +283,12 @@ fn store_error(e: StoreError) -> RpcError {
         StoreError::NotFound(_) => error_code::NOT_FOUND,
         StoreError::InvalidMove(_) => error_code::INVALID_MOVE,
         StoreError::InvalidParams(_) => error_code::INVALID_PARAMS,
+        // The client needs the address and the verdict to ask the user.
+        StoreError::ConfirmationRequired { ref addr, ref verdict } => {
+            let mut err = RpcError::new(error_code::CONFIRMATION_REQUIRED, e.to_string());
+            err.data = Some(serde_json::json!({ "addr": addr, "verdict": verdict }));
+            return err;
+        }
         _ => error_code::INTERNAL_ERROR,
     };
     RpcError::new(code, e.to_string())
@@ -340,6 +348,22 @@ async fn command(
     })
     .await?;
     to_value(CommandResult { changed })
+}
+
+/// Runs a workflow command (move, decision, undo) like `command`, and
+/// returns what it did: mails filed, decision taken, undo token.
+async fn workflow(
+    core: &Arc<Core>,
+    f: impl FnOnce(&mut Store) -> Result<Outcome, StoreError> + Send + 'static,
+) -> Result<Value, RpcError> {
+    let core2 = core.clone();
+    let result = with_store(core, move |store| {
+        let out = f(store)?;
+        core2.events.lock().unwrap().emit(&out.changes);
+        Ok(out.view())
+    })
+    .await?;
+    to_value(result)
 }
 
 /// Page size requested by the client, or the default, clamped to the
@@ -444,7 +468,20 @@ async fn dispatch(core: &Arc<Core>, session: &mut Session, req: Request) -> Resu
         }
         method::MOVE_THREAD => {
             let p: MoveThreadParams = params(req.params)?;
-            command(core, move |s| s.move_thread(p.thread_id, p.target, p.from_folder_id, source)).await
+            let opts = MoveOptions { confirm_suspect: p.confirm_suspect, auth_policy: p.auth_policy };
+            workflow(core, move |s| s.move_thread(p.thread_id, p.target, p.from_folder_id, opts, source)).await
+        }
+        method::SET_ADDRESS_SCREENING => {
+            let p: SetAddressScreeningParams = params(req.params)?;
+            workflow(core, move |s| s.set_address_screening(&p.addr, p.target, source)).await
+        }
+        method::SET_DOMAIN_SCREENING => {
+            let p: SetDomainScreeningParams = params(req.params)?;
+            workflow(core, move |s| s.set_domain_screening(&p.domain, p.target, source)).await
+        }
+        method::UNDO => {
+            let p: UndoParams = params(req.params)?;
+            workflow(core, move |s| s.undo(&p.token, source)).await
         }
         method::SET_THREAD_SEEN => {
             let p: SetThreadSeenParams = params(req.params)?;

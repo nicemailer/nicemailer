@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use nm_core::{FolderRole, Source};
+use nm_store::screening::MoveOptions;
 use nm_store::import::{ImportOptions, ImportReport, import_mbox};
 use nm_store::raw::RawStore;
 use nm_store::{ChangeSet, Store, StoreError};
@@ -404,8 +405,8 @@ fn imported_threads_can_be_moved_locally() {
     let path = env.write_mbox("a.mbox", &sample());
     env.import(&env.options(&path)).unwrap();
     let thread_id = env.count("SELECT thread_id FROM message WHERE message_id_hdr = 'n1@letter.example'");
-    let changes = env.store.lock().unwrap().move_thread(thread_id, FolderRole::Newsletter, None, Source::App).unwrap();
-    assert_eq!(changes.changed_messages(), 1);
+    let changes = env.store.lock().unwrap().move_thread(thread_id, FolderRole::Newsletter, None, MoveOptions::default(), Source::App).unwrap();
+    assert_eq!(changes.changes.changed_messages(), 1);
     assert_eq!(
         env.text("SELECT f.role FROM message m JOIN folder f ON f.id = m.folder_id WHERE m.message_id_hdr = 'n1@letter.example'"),
         Some("newsletter".into())

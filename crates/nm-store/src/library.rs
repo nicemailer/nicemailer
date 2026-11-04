@@ -256,6 +256,7 @@ impl Store {
         let what = match entity {
             "message" => one("SELECT subject FROM message WHERE id = ?1")?,
             "address" => one("SELECT addr FROM address WHERE id = ?1")?,
+            "domain" => one("SELECT domain FROM domain WHERE id = ?1")?,
             "account" => one("SELECT config_key FROM account WHERE id = ?1")?,
             "contact_group" => one("SELECT name FROM contact_group WHERE id = ?1")?,
             "folder" => one("SELECT coalesce(role, path) FROM folder WHERE id = ?1")?,
@@ -274,7 +275,7 @@ impl Store {
         };
         let change = match action {
             "move" => format!(" → {}", folder_role(&detail["after"]["folder_id"])?),
-            "screening" => format!(" → {}", detail["after"].as_str().unwrap_or("—")),
+            "screening" | "auth_policy" => format!(" → {}", detail["after"].as_str().unwrap_or("—")),
             "set_flags" => detail["after"]
                 .as_object()
                 .and_then(|o| o.iter().next())
@@ -574,19 +575,21 @@ impl Store {
             .filter(|q| !q.is_empty())
             .map(|q| format!("%{}%", q.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")));
         let fetch = i64::from(limit) + 1;
-        let rows: Vec<(i64, String, Option<String>, Option<String>)> = self
+        // id, addr, name, screening_target, auth_policy.
+        type Row = (i64, String, Option<String>, Option<String>, String);
+        let rows: Vec<Row> = self
             .conn
             .prepare_cached(
-                "SELECT id, addr, name, screening_target FROM address
+                "SELECT id, addr, name, screening_target, auth_policy FROM address
                   WHERE (?1 IS NULL OR addr > ?1)
                     AND (?2 IS NULL OR addr LIKE ?2 ESCAPE '\\' OR name LIKE ?2 ESCAPE '\\')
                   ORDER BY addr LIMIT ?3",
             )?
-            .query_map(params![cursor, pattern, fetch], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
+            .query_map(params![cursor, pattern, fetch], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)))?
             .collect::<std::result::Result<_, _>>()?;
         let has_more = rows.len() as i64 > i64::from(limit);
         let mut items = Vec::new();
-        for (id, addr, name, screening_target) in rows.into_iter().take(limit as usize) {
+        for (id, addr, name, screening_target, auth_policy) in rows.into_iter().take(limit as usize) {
             let groups: Vec<String> = self
                 .conn
                 .prepare_cached(
@@ -601,7 +604,8 @@ impl Store {
                 .conn
                 .prepare_cached("SELECT count(*) FROM message WHERE from_address_id = ?1")?
                 .query_row([id], |r| r.get(0))?;
-            items.push(ContactView { id, addr, name, screening_target, groups, message_count });
+            let domain_target = crate::screening::domain_target(&self.conn, &addr)?.map(|t| t.as_str().to_string());
+            items.push(ContactView { id, addr, name, screening_target, domain_target, auth_policy, groups, message_count });
         }
         let next = if has_more { items.last().map(|c| c.addr.clone()) } else { None };
         Ok((items, next))

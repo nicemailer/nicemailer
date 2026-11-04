@@ -6,6 +6,7 @@ use std::sync::Mutex;
 
 use nm_api::{ExportFormat, ThreadSort};
 use nm_core::{FolderRole, Source};
+use nm_store::screening::MoveOptions;
 use nm_store::import::{ImportOptions, import_mbox};
 use nm_store::raw::RawStore;
 use nm_store::seed::{SeedOptions, seed};
@@ -84,7 +85,7 @@ fn history_lists_actions_newest_first_with_a_summary() {
     let mut store = seeded();
     let (thread, inbox) = inbox_thread(&store);
     let subject = store.get_thread(thread).unwrap().0;
-    store.move_thread(thread, FolderRole::Todo, Some(inbox), Source::App).unwrap();
+    store.move_thread(thread, FolderRole::Todo, Some(inbox), MoveOptions::default(), Source::App).unwrap();
     let (items, _) = store.list_history(None, 10).unwrap();
     let first = &items[0];
     assert_eq!((first.entity.as_str(), first.action.as_str(), first.source.as_str()), ("message", "move", "app"));
