@@ -61,11 +61,13 @@ expect filters = unread, from: moreau
 # pane shows nothing either.
 expect thread_count = 0
 expect reader_subject =
-# Date: the input line says a date can be typed, six digits included.
+# Date: the input line says a date or a duration can be typed, six
+# digits included.
 key F
 type Date
 key ret
 expect picker_hint ~ 011026
+expect picker_hint ~ 10d
 snap date-panel
 # Six digits that make two dates: four rows, each with its reading.
 type 010120
@@ -82,6 +84,17 @@ type last 30
 expect picker_hint =
 key ret
 expect filters ~ last 30 days
+# A duration: its rows say the date it gives; "older than" is the upper
+# bound, kept with the lower one (an interval, two chips).
+key F
+type Date
+key ret
+type 1w
+expect picker_first = newer than 1 week
+snap date-duration
+key down
+key ret
+expect filters ~ last 30 days, older than 1 week
 # Text: words of the subject and body.
 key F
 type Text

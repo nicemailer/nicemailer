@@ -932,7 +932,7 @@ final class GeekController {
     /// pickers whose rows say it all.
     func pickerHint(_ kind: PickerKind) -> String? {
         switch kind {
-        case .attributeValue(.date): L("or type a date: 2026-10-01, 1/10/2026, 011026 (dd mm yy) or 261001 (yy mm dd)")
+        case .attributeValue(.date): L("or type a date (2026-10-01, 1/10/2026, 011026, 261001) or a duration (10d, 3w, 6m, 1y)")
         case .attributeValue(.text): L("words of the subject or body; -word to exclude")
         case .attributeValue(.subject): L("words of the subject; -word to exclude")
         case .attributeValue: L("a name, an address or @domain; -value to exclude")
@@ -1063,16 +1063,20 @@ final class GeekController {
             // The words as typed: a "-word" among them stays an exclusion.
             return rows(value, value)
         case .date:
-            let presets = DateChoice.typed(typed) + DateChoice.presets().filter {
-                typed.isEmpty || !DateChoice.candidates(typed).isEmpty
+            // A typed date or duration first, then the presets (all of
+            // them below a typed date, otherwise those whose label
+            // matches).
+            let fromTyped = DateChoice.typed(typed)
+            let presets = fromTyped + DateChoice.presets().filter {
+                typed.isEmpty || !fromTyped.isEmpty
                     || $0.label.range(of: typed, options: [.caseInsensitive, .diacriticInsensitive]) != nil
             }
+            // Each row sets one bound and keeps the other (an interval).
+            // A row that would leave no day between them says so in its
+            // detail instead of how it was read: the list would be empty.
             return presets.map { p in
-                Entry(key: " ", label: p.label, detail: p.detail) { [model] in
-                    model.attributes.after = p.after
-                    model.attributes.before = p.before
-                    model.attributes.dateLabel = p.label
-                }
+                let detail = model.attributes.dateIsEmpty(with: p) ? L("nothing in between") : p.detail
+                return Entry(key: " ", label: p.label, detail: detail) { [model] in model.attributes.setDate(p) }
             }
         }
     }

@@ -61,6 +61,17 @@
         }
       }
     },
+    "%lld days": {
+      "comment": "A typed duration, inserted in “newer than %@” / “older than %@”.",
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld jours"
+          }
+        }
+      }
+    },
     "%lld mails": {
       "localizations": {
         "fr": {
@@ -111,6 +122,17 @@
         }
       }
     },
+    "%lld months": {
+      "comment": "A typed duration, inserted in “newer than %@” / “older than %@”.",
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld mois"
+          }
+        }
+      }
+    },
     "%lld other mails filed": {
       "localizations": {
         "fr": {
@@ -127,6 +149,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "%1$lld conversations déplacées dans %2$@"
+          }
+        }
+      }
+    },
+    "%lld weeks": {
+      "comment": "A typed duration, inserted in “newer than %@” / “older than %@”.",
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld semaines"
+          }
+        }
+      }
+    },
+    "%lld years": {
+      "comment": "A typed duration, inserted in “newer than %@” / “older than %@”.",
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld ans"
           }
         }
       }
@@ -157,6 +201,50 @@
           "stringUnit": {
             "state": "translated",
             "value": "/ filtrer · m : décision · M : décision sur le domaine · entrée : ses mails · échap : retour"
+          }
+        }
+      }
+    },
+    "1 day": {
+      "comment": "A typed duration, inserted in “newer than %@” / “older than %@”.",
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 jour"
+          }
+        }
+      }
+    },
+    "1 month": {
+      "comment": "A typed duration, inserted in “newer than %@” / “older than %@”.",
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 mois"
+          }
+        }
+      }
+    },
+    "1 week": {
+      "comment": "A typed duration, inserted in “newer than %@” / “older than %@”.",
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 semaine"
+          }
+        }
+      }
+    },
+    "1 year": {
+      "comment": "A typed duration, inserted in “newer than %@” / “older than %@”.",
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 an"
           }
         }
       }
@@ -1333,6 +1421,17 @@
         }
       }
     },
+    "newer than %@": {
+      "comment": "Date… row and chip for a typed duration: mails of the last 10 days (lower bound).",
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "depuis %@"
+          }
+        }
+      }
+    },
     "newest first · esc: back": {
       "localizations": {
         "fr": {
@@ -1424,6 +1523,28 @@
         }
       }
     },
+    "nothing in between": {
+      "comment": "Detail of a Date… row that would leave no day between the two date bounds.",
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "rien entre les deux"
+          }
+        }
+      }
+    },
+    "older than %@": {
+      "comment": "Date… row and chip for a typed duration: mails older than it (upper bound).",
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "il y a plus de %@"
+          }
+        }
+      }
+    },
     "older than a year": {
       "localizations": {
         "fr": {
@@ -1454,13 +1575,13 @@
         }
       }
     },
-    "or type a date: 2026-10-01, 1/10/2026, 011026 (dd mm yy) or 261001 (yy mm dd)": {
-      "comment": "Hint of the Date… panel input line, shown while nothing is typed.",
+    "or type a date (2026-10-01, 1/10/2026, 011026, 261001) or a duration (10d, 3w, 6m, 1y)": {
+      "comment": "Hint of the Date… panel input line, shown while nothing is typed. The duration letters are those of the language (both are understood).",
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "ou tapez une date : 2026-10-01, 1/10/2026, 011026 (jj mm aa) ou 261001 (aa mm jj)"
+            "value": "ou tapez une date (2026-10-01, 1/10/2026, 011026, 261001) ou une durée (10j, 3s, 6m, 1a)"
           }
         }
       }

@@ -794,7 +794,7 @@ struct GeekControllerTests {
         let rows = controller.pickerEntries(.attributeValue(.date))
         #expect(rows.prefix(4).map(\.detail) == [L("dd mm yy"), L("dd mm yy"), L("yy mm dd"), L("yy mm dd")])
         press("down"); press("down"); press("ret")
-        #expect(model.attributes.dateLabel == L("after %@", "2001-01-20"))
+        #expect(model.attributes.afterLabel == L("after %@", "2001-01-20"))
     }
 
     @Test func theDatePanelOffersPresetsAndTypedDates() {
@@ -804,7 +804,32 @@ struct GeekControllerTests {
         let labels = controller.pickerEntries(.attributeValue(.date)).map(\.label)
         #expect(labels.first == L("after %@", "2026-10-01"))
         press("ret")
-        #expect(model.attributes.after != nil && model.attributes.dateLabel == L("after %@", "2026-10-01"))
+        #expect(model.attributes.after != nil && model.attributes.afterLabel == L("after %@", "2026-10-01"))
+    }
+
+    @Test func theDatePanelBuildsAnIntervalAndReadsDurations() {
+        press("F"); type(L("Date…")); press("ret")
+        type("2026-10-01"); press("ret")
+        // An upper bound kept with the lower one: two chips.
+        press("F"); type(L("Date…")); press("ret")
+        type("2026-11-01"); press("down"); press("ret")
+        #expect(model.attributes.chips.map(\.label) == [L("after %@", "2026-10-01"), L("before %@", "2026-11-01")])
+        // An upper bound before the lower one: the row says so.
+        press("F"); type(L("Date…")); press("ret")
+        type("2026-09-01")
+        let rows = controller.pickerEntries(.attributeValue(.date))
+        #expect(rows[1].label == L("before %@", "2026-09-01") && rows[1].detail == L("nothing in between"))
+        #expect(rows[0].detail == nil)
+        press("esc")
+        // A duration: newer than, then older than, with the date it gives.
+        press("F"); type(L("Date…")); press("ret")
+        type("3s")
+        let d = controller.pickerEntries(.attributeValue(.date))
+        #expect(d.prefix(2).map(\.label) == [L("newer than %@", L("%lld weeks", 3)), L("older than %@", L("%lld weeks", 3))])
+        #expect(d[0].detail?.count == 10)
+        press("ret")
+        #expect(model.attributes.afterLabel == L("newer than %@", L("%lld weeks", 3)))
+        #expect(model.attributes.beforeLabel == L("before %@", "2026-11-01"))
     }
 
     @Test func escapeClearsTheAttributesLast() {

@@ -28,10 +28,14 @@ struct ThreadFilter: Equatable {
     var text: String?
     /// Words of the subject only (Subject…).
     var subject: String?
+    /// The two bounds of the date criterion, independent of each other so
+    /// that they make an interval (`ui.md`, "Sélecteur d'attributs"): "after" is
+    /// the lower bound (included), "before" the upper one (excluded).
     var after: Int?
     var before: Int?
-    /// How the date criterion is shown ("last 7 days", "after 2026-10-01").
-    var dateLabel: String?
+    /// How each bound is shown ("last 7 days", "after 2026-10-01").
+    var afterLabel: String?
+    var beforeLabel: String?
 
     var isEmpty: Bool { self == ThreadFilter() }
 
@@ -118,7 +122,9 @@ struct ThreadFilter: Equatable {
         if let text { out.append(Chip(id: "text", label: L("text: %@", text))) }
         if let subject { out.append(Chip(id: "subject", label: L("subject: %@", subject))) }
         if let contains { out.append(Chip(id: "contains", label: L("anywhere: %@", contains))) }
-        if after != nil || before != nil { out.append(Chip(id: "date", label: dateLabel ?? L("date"))) }
+        // One chip per bound, so that either can be removed alone.
+        if after != nil { out.append(Chip(id: "after", label: afterLabel ?? L("date"))) }
+        if before != nil { out.append(Chip(id: "before", label: beforeLabel ?? L("date"))) }
         return out
     }
 
@@ -137,7 +143,8 @@ struct ThreadFilter: Equatable {
         case "contains": contains = nil
         case "text": text = nil
         case "subject": subject = nil
-        case "date": after = nil; before = nil; dateLabel = nil
+        case "after": after = nil; afterLabel = nil
+        case "before": before = nil; beforeLabel = nil
         default: break
         }
     }
@@ -188,6 +195,22 @@ struct ThreadFilter: Equatable {
         }
     }
 
+    /// Applies a choice of the Date… panel: it sets the bound it has and
+    /// keeps the other one, so "after 1 January" then "before 1 July" is
+    /// the first half of the year. Choosing a bound again replaces it.
+    mutating func setDate(_ p: DateChoice.Preset) {
+        if let a = p.after { after = a; afterLabel = p.label }
+        if let b = p.before { before = b; beforeLabel = p.label }
+    }
+
+    /// Whether `p` would leave no day between the two bounds: its lower
+    /// bound at or past the current upper one, or the reverse. The panel
+    /// says so on the row rather than refusing it.
+    func dateIsEmpty(with p: DateChoice.Preset) -> Bool {
+        guard let lo = p.after ?? after, let hi = p.before ?? before else { return false }
+        return lo >= hi
+    }
+
     /// Whether `field` has a value (marked "•" in the selector).
     func isActive(_ field: AttributeField) -> Bool {
         switch field {
@@ -234,7 +257,7 @@ enum AttributeField: String, CaseIterable {
 
 /// Dates of the "Date…" panel.
 enum DateChoice {
-    /// A choice: label, and the range it sets.
+    /// A choice: label, and the bound it sets (one of the two).
     struct Preset: Equatable {
         let label: String
         let after: Int?
@@ -312,10 +335,76 @@ enum DateChoice {
         return sixDigits(text, calendar: calendar).map { ($0.date, $0.reading) }
     }
 
+    /// The unit of a typed duration, by its first letter in English or in
+    /// French, or its whole word in either language, accents ignored:
+    /// `d`/`j` day, `w`/`s` week, `m` month, `y`/`a` year. Both languages
+    /// are always understood, whatever the app's language: the letters do
+    /// not collide (`s` is no English unit, `d` no French one).
+    private static let units: [String: Calendar.Component] = {
+        var u: [String: Calendar.Component] = [:]
+        for w in ["d", "j", "day", "days", "jour", "jours"] { u[w] = .day }
+        for w in ["w", "s", "week", "weeks", "sem", "semaine", "semaines"] { u[w] = .weekOfYear }
+        for w in ["m", "month", "months", "mois"] { u[w] = .month }
+        for w in ["y", "a", "year", "years", "an", "ans", "annee", "annees"] { u[w] = .year }
+        return u
+    }()
+
+    /// A typed duration (`ui.md`, "Sélecteur d'attributs"): a number, then a unit
+    /// (`10j`, `3 s`, `8w`, `2 years`); no number means 1 (`m` is a
+    /// month). `nil` if it is not one. The count is capped at 9999 so that
+    /// the date arithmetic cannot overflow; past 1970 it finds every mail
+    /// anyway.
+    static func duration(_ text: String) -> (count: Int, unit: Calendar.Component)? {
+        let t = text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+            .trimmingCharacters(in: .whitespaces)
+        let digits = t.prefix(while: { $0.isASCII && $0.isNumber })
+        let word = t.dropFirst(digits.count).trimmingCharacters(in: .whitespaces)
+        guard let unit = units[word] else { return nil }
+        let count = digits.isEmpty ? 1 : Int(digits) ?? 0
+        guard (1...9999).contains(count) else { return nil }
+        return (count, unit)
+    }
+
+    /// "1 day", "3 weeks": a duration as words, for the row labels. Two
+    /// keys (one, several) rather than catalog plural variations: `L()`
+    /// formats with `String(format:)`, which does not apply them.
+    static func amount(_ count: Int, _ unit: Calendar.Component) -> String {
+        switch (unit, count == 1) {
+        case (.day, true): L("1 day")
+        case (.day, false): L("%lld days", count)
+        case (.weekOfYear, true): L("1 week")
+        case (.weekOfYear, false): L("%lld weeks", count)
+        case (.month, true): L("1 month")
+        case (.month, false): L("%lld months", count)
+        case (_, true): L("1 year")
+        case (_, false): L("%lld years", count)
+        }
+    }
+
+    /// The two rows of a typed duration: newer than it (lower bound) and
+    /// older than it (upper bound). Every unit counts back from `now` by
+    /// the calendar: `1d` is this time yesterday, `1m` this day last month
+    /// (the same rule for all four, so that `7d` and `1w` agree). The date
+    /// it gives is the row's detail.
+    static func durationRows(_ text: String, now: Date = Date(), calendar: Calendar = .current) -> [Preset] {
+        guard let d = duration(text),
+              let start = calendar.date(byAdding: d.unit, value: -d.count, to: now) else { return [] }
+        let ts = Int(start.timeIntervalSince1970)
+        let shown = ISO8601DateFormatter.string(from: start, timeZone: calendar.timeZone, formatOptions: [.withFullDate])
+        let span = amount(d.count, d.unit)
+        return [
+            Preset(label: L("newer than %@", span), after: ts, before: nil, detail: shown),
+            Preset(label: L("older than %@", span), after: nil, before: ts, detail: shown),
+        ]
+    }
+
     /// "after" and "before" choices for a typed date: two rows per date it
     /// can be, so four when six digits make two dates; each row then says
     /// how the digits were read.
-    static func typed(_ text: String, calendar: Calendar = .current) -> [Preset] {
+    /// A typed duration gives its two rows instead.
+    static func typed(_ text: String, now: Date = Date(), calendar: Calendar = .current) -> [Preset] {
+        let durations = durationRows(text, now: now, calendar: calendar)
+        if !durations.isEmpty { return durations }
         let all = candidates(text, calendar: calendar)
         return all.flatMap { c -> [Preset] in
             let day = Int(c.date.timeIntervalSince1970)

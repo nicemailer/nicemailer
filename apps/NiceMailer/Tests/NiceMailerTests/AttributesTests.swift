@@ -45,12 +45,16 @@ struct AttributesTests {
         f.toggle(.seen, false)
         f.add(.from, "alice")
         f.add(.from, "bob")
-        f.after = 1; f.dateLabel = "last 7 days"
-        #expect(f.chips.map(\.id) == ["seen", "from:0", "from:1", "date"])
+        f.after = 1; f.afterLabel = "last 7 days"
+        f.before = 9; f.beforeLabel = "before 2026-10-01"
+        #expect(f.chips.map(\.id) == ["seen", "from:0", "from:1", "after", "before"])
         f.remove("from:0")
         #expect(f.from == ["bob"])
         f.remove("seen")
-        f.remove("date")
+        // Each bound goes alone.
+        f.remove("after")
+        #expect(f.after == nil && f.afterLabel == nil && f.before == 9)
+        f.remove("before")
         f.remove("from:0")
         #expect(f.isEmpty)
     }
@@ -151,6 +155,65 @@ struct AttributesTests {
         #expect(one.map(\.label) == [L("after %@", "1999-12-31"), L("before %@", "1999-12-31")])
         #expect(one.allSatisfy { $0.detail == nil })
         #expect(DateChoice.typed("2026-10-01", calendar: cal).allSatisfy { $0.detail == nil })
+    }
+
+    @Test func dateBoundsMakeAnInterval() {
+        var f = ThreadFilter()
+        let after = DateChoice.Preset(label: "after 1", after: 100, before: nil)
+        let before = DateChoice.Preset(label: "before 2", after: nil, before: 200)
+        f.setDate(after)
+        f.setDate(before)
+        // Both kept: the interval [100, 200).
+        #expect(f.after == 100 && f.before == 200)
+        #expect(f.chips.map(\.label) == ["after 1", "before 2"])
+        #expect(f.parameters["after"] as? Int == 100 && f.parameters["before"] as? Int == 200)
+        // A bound chosen again replaces the old one, the other stays.
+        f.setDate(DateChoice.Preset(label: "after 3", after: 150, before: nil))
+        #expect(f.after == 150 && f.afterLabel == "after 3" && f.before == 200)
+        // A bound that leaves no day between them is flagged, not refused.
+        #expect(f.dateIsEmpty(with: DateChoice.Preset(label: "", after: 200, before: nil)))
+        #expect(f.dateIsEmpty(with: DateChoice.Preset(label: "", after: nil, before: 150)))
+        #expect(!f.dateIsEmpty(with: DateChoice.Preset(label: "", after: 199, before: nil)))
+        // Without the other bound, nothing to compare.
+        #expect(!ThreadFilter().dateIsEmpty(with: after))
+    }
+
+    @Test func durationsAreANumberAndAUnitInEitherLanguage() {
+        let day = Calendar.Component.day, week = Calendar.Component.weekOfYear
+        // First letters, English and French.
+        #expect(DateChoice.duration("10j")! == (10, day))
+        #expect(DateChoice.duration("10d")! == (10, day))
+        #expect(DateChoice.duration("3s")! == (3, week))
+        #expect(DateChoice.duration("8w")! == (8, week))
+        #expect(DateChoice.duration("6m")! == (6, .month))
+        #expect(DateChoice.duration("2a")! == (2, .year))
+        #expect(DateChoice.duration("2y")! == (2, .year))
+        // Spaces, case, whole words, accents; no number means 1.
+        #expect(DateChoice.duration(" 3 S ")! == (3, week))
+        #expect(DateChoice.duration("2 années")! == (2, .year))
+        #expect(DateChoice.duration("4 weeks")! == (4, week))
+        #expect(DateChoice.duration("m")! == (1, .month))
+        // Not durations: no unit, an unknown unit, zero, too large, dates.
+        for t in ["10", "", "10x", "10 jo", "0j", "10000d", "-3d", "2026-10-01", "010120", "j10"] {
+            #expect(DateChoice.duration(t) == nil, "\(t)")
+        }
+    }
+
+    @Test func aDurationGivesNewerAndOlderRowsCountedBackByTheCalendar() {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "UTC")!
+        // 2026-11-04 12:00 UTC.
+        let now = Date(timeIntervalSince1970: 1_793_793_600)
+        let rows = DateChoice.typed("10j", now: now, calendar: cal)
+        #expect(rows.map(\.label) == [L("newer than %@", L("%lld days", 10)), L("older than %@", L("%lld days", 10))])
+        #expect(rows[0].after == 1_793_793_600 - 10 * 86_400 && rows[0].before == nil)
+        #expect(rows[1].before == rows[0].after && rows[1].after == nil)
+        #expect(rows.allSatisfy { $0.detail == "2026-10-25" })
+        // 7 days and 1 week agree; a month is the same day last month.
+        #expect(DateChoice.typed("7d", now: now, calendar: cal)[0].after == DateChoice.typed("1s", now: now, calendar: cal)[0].after)
+        #expect(DateChoice.typed("1m", now: now, calendar: cal)[0].detail == "2026-10-04")
+        #expect(DateChoice.typed("1a", now: now, calendar: cal)[0].label == L("newer than %@", L("1 year")))
+        #expect(DateChoice.amount(1, .weekOfYear) == L("1 week") && DateChoice.amount(3, .month) == L("%lld months", 3))
     }
 
     @Test func presetsAreRelativeToNow() {

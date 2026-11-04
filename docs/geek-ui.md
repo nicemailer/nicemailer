@@ -38,7 +38,7 @@ The magnifier after the folder in the status bar (key **F**, or a click) opens t
 | To… — À… | same, on To and Cc | `to`, `cc` — `a`, `cc`, `dest` |
 | Text… — Texte… | words of the subject and body, never the addresses; each word a prefix, accents ignored; `-word` excludes | `te` — `te` |
 | Subject… — Sujet… | words of the subject only; `-word` excludes | `su`, `title` — `su`, `objet` |
-| Date… — Date… | today, last 7 days, last 30 days, this year, older than a year, or "after" / "before" a typed date (see "Typed dates" below) | `da` — `da`, `quand` |
+| Date… — Date… | today, last 7 days, last 30 days, this year, older than a year, or "after" / "before" a typed date, or newer / older than a typed duration (see "Typed dates" below); the two bounds add up to an interval | `da` — `da`, `quand` |
 
 Choosing an active value again removes it; choosing the opposite value replaces it. An attribute with "…" expands the panel at once to choose its value. Active attributes are chips in the status bar: a click on a chip removes it; Escape clears them all (after the marks); they stay when changing folder or account.
 
@@ -55,12 +55,16 @@ Case and accents are ignored (`a` finds "À…"). Attributes with a value also h
 
 ### Typed dates
 
-The input line of every value panel says what can be typed while nothing is typed (in Date…, which opens on its presets, it was otherwise invisible). The Date… panel takes:
+The input line of every value panel says what can be typed while nothing is typed (in Date…, which opens on its presets, it was otherwise invisible). The Date… panel takes dates and durations:
 
 - `2026-10-01`, `1/10/2026`, `1/10/26`, `1.10.2026` (day first, as in French);
 - **six digits**, read as `ddmmyy` and as `yymmdd`. Each reading that is a real day gives two rows, "after" and "before" that day. When both readings are real days, the panel shows four rows, and each says on its right how the digits were read ("dd mm yy", "yy mm dd"): `010120` is 1 January 2020 or 20 January 2001. One real day gives two rows (`311299`: 31 December 1999; `290223`: 23 February 2029, since 2023 has no 29 February). Both readings on the same day count once (`111111`). Two-digit years below 70 are 20yy, from 70 19yy.
 
+- **a duration**: a number and a unit, by its first letter in English or in French, or its whole word: `d`/`j` day, `w`/`s` week, `m` month, `y`/`a` year (`10j`, `3 s`, `8w`, `6m`, `2 years`). Both languages are understood whatever the app's language, since the letters do not collide. No number means 1 (`m` is one month). The panel offers "newer than 10 days" (French "depuis 10 jours") and "older than 10 days" ("il y a plus de 10 jours"), with on the right the date it gives. Every unit counts back from now by the calendar: `1d` is this time yesterday, `1m` this day last month, so `7d` and `1w` agree.
+
 "after" a day includes that day; "before" it does not.
+
+**Two bounds, an interval.** Each row sets one bound, the lower one ("after", "newer than", the presets but the last) or the upper one ("before", "older than", "older than a year"), and keeps the other: "after 2020-01-01" then "before 2020-07-01" is the first half of 2020, shown as two chips, each removable alone. Choosing a bound again replaces it. A row that would leave no day between the two bounds says "nothing in between" on its right; it can still be chosen (the list is then empty), since the next choice usually moves the other bound.
 
 ### Values: domains and exclusions
 
