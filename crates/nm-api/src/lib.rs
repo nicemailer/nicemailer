@@ -322,16 +322,36 @@ pub struct ThreadFilter {
     /// A conversation (several messages) or a single mail.
     #[serde(default)]
     pub conversation: Option<bool>,
-    /// From one of these (part of the address or of the name), OR-ed.
+    /// From one of these, OR-ed. A value is part of the address or of the
+    /// name, or, when it starts with `@`, a domain: `@acme.fr` matches
+    /// `jean@acme.fr` and `x@mail.acme.fr`, not `x@notacme.fr` (`ui.md`,
+    /// "Négation").
     #[serde(default)]
     pub from: Vec<String>,
-    /// To or Cc one of these (part of the address or of the name), OR-ed.
+    /// Not from any of these (same values as `from`): a thread is left out
+    /// as soon as one of its messages in the folder is from one of them.
+    #[serde(default)]
+    pub not_from: Vec<String>,
+    /// To or Cc one of these (same values as `from`), OR-ed.
     #[serde(default)]
     pub to: Vec<String>,
-    /// Words in the subject, sender, recipients or body (full text, every
-    /// word as a prefix, like `search`).
+    /// To or Cc none of these: a thread is left out as soon as one of its
+    /// messages in the folder is to one of them.
+    #[serde(default)]
+    pub not_to: Vec<String>,
+    /// Words anywhere: subject, sender, recipients or body. The widest
+    /// search, the one of `/` (full text, every word as a prefix, like
+    /// `search`). In this field and the two below, a word written `-word`
+    /// leaves out the threads that contain it.
     #[serde(default)]
     pub contains: Option<String>,
+    /// Words of the subject or the body, never the addresses: searching a
+    /// name in the text does not bring back every mail of that person.
+    #[serde(default)]
+    pub text: Option<String>,
+    /// Words of the subject only.
+    #[serde(default)]
+    pub subject: Option<String>,
     /// Latest message received at or after this Unix time.
     #[serde(default)]
     pub after: Option<i64>,

@@ -75,7 +75,7 @@ L'affichage est simplifié au maximum : chaque message montre ce qu'il apporte. 
 - non lus / lus, drapeau / sans drapeau, pièce jointe / sans pièce jointe, répondus / sans ma réponse (répondu par l'utilisateur), conversations / mails seuls ;
 - De…, À… (À et Cc ; une partie d'un nom ou d'une adresse, contacts suggérés pendant la frappe ; plusieurs valeurs combinées par « ou »), Texte… (mots du sujet et du corps), Sujet… (mots du sujet seul), Date… (aujourd'hui, 7 derniers jours, 30 derniers jours, cette année, plus d'un an, ou après / avant une date tapée).
 
-Texte… ne cherche pas dans les adresses : chercher « dupont » dans le texte ne doit pas ramener tous les mails de Dupont, c'est le rôle de De… et À…. Seule la recherche `/` (« Chercher partout ») reste le joker qui cherche aussi dans l'expéditeur et les destinataires. En attendant Texte… et Sujet… (voir `docs/todo.md`), la ligne s'appelle Contient… et cherche partout, comme `/`.
+Texte… ne cherche pas dans les adresses : chercher « dupont » dans le texte ne doit pas ramener tous les mails de Dupont, c'est le rôle de De… et À…. Seule la recherche `/` (« Chercher partout ») reste le joker qui cherche aussi dans l'expéditeur et les destinataires.
 
 #### Accès au clavier
 
@@ -86,25 +86,27 @@ Le sélecteur s'ouvre sur sa première ligne et entrée choisit la ligne en surb
 3. les lettres tapées sont les initiales des mots du libellé, pour un seul mot tapé d'au moins deux lettres (`nl` → « non lus », `sd` → « sans drapeau », `spj` → « sans pièce jointe », `sm` → « sans ma réponse ») ;
 4. chaque mot tapé apparaît n'importe où dans le libellé.
 
-Les attributs à valeur ont aussi des mots de recherche cachés, traduits : `exp`, `expéditeur` trouvent De… ; `cc`, `copie`, `destinataire` trouvent À… ; `texte`, `mots` trouvent Texte… ; `quand`, `jour`, `période` trouvent Date…. Les libellés français sont choisis pour que deux lettres suffisent toujours : `de` De…, `da` Date…, `dr` drapeau, `a` À…, `l` lus, `no` non lus, `pi` ou `pj` pièce jointe, `r` répondus, `co` conversations, `m` mails seuls. « À… » remplace « Destinataire… », qui commençait comme « De… », et reprend l'en-tête « À : » du mail et la pastille « à : ». Ce classement vaut pour tous les sélecteurs (`@`, `l`, `t`, `g`, `F`).
+Les attributs à valeur ont aussi des mots de recherche cachés, traduits : `exp`, `expéditeur` trouvent De… ; `cc`, `copie`, `destinataire` trouvent À… ; `texte`, `mots`, `corps` trouvent Texte… ; `titre`, `objet` trouvent Sujet… ; `quand`, `jour`, `période` trouvent Date…. Les libellés français sont choisis pour que deux lettres suffisent toujours : `de` De…, `da` Date…, `dr` drapeau, `a` À…, `l` lus, `no` non lus, `pi` ou `pj` pièce jointe, `r` répondus, `co` conversations, `m` mails seuls, `te` Texte…, `su` Sujet…. « À… » remplace « Destinataire… », qui commençait comme « De… », et reprend l'en-tête « À : » du mail et la pastille « à : ». Ce classement vaut pour tous les sélecteurs (`@`, `l`, `t`, `g`, `F`).
 
 #### Négation
 
 Chaque attribut oui / non a son contraire en ligne propre (« sans drapeau », « non lus », « sans ma réponse »…), atteint par ses initiales ; choisir le contraire d'une valeur active la remplace.
 
-Pour De…, À…, Texte… et Sujet…, la négation se choisit dans le panneau de la valeur, sans doubler les lignes du sélecteur (pas encore implémenté, voir `docs/todo.md`) :
+Pour De…, À…, Texte… et Sujet…, la négation se choisit dans le panneau de la valeur, sans doubler les lignes du sélecteur :
 
-- la frappe propose deux lignes : `+ acme` (entrée) et `− pas acme` (flèche bas puis entrée) ; taper `-acme` (tiret devant) choisit directement l'exclusion ;
-- la pastille le dit : « de : acme », « pas de : acme », « pas à : acme », « pas texte : acme » ;
-- les valeurs positives d'un attribut se combinent par « ou », ses valeurs exclues par « et » : « de : alice », « de : bob », « pas de : @acme.fr » garde les mails d'Alice ou de Bob qui ne viennent pas d'acme.fr. Une conversation est exclue dès qu'un de ses mails du dossier correspond à une valeur exclue ;
+- la frappe propose deux lignes : `+ acme` (entrée) et `− pas acme` (flèche bas puis entrée) ; taper `-acme` (tiret devant) ne laisse que l'exclusion, et les contacts suggérés sont alors proposés en exclusion ;
+- une valeur est voulue ou exclue, pas les deux : le dernier choix l'emporte ;
+- la pastille le dit : « de : acme », « pas de : acme », « à : acme », « pas à : acme » ; Texte… et Sujet… gardent le tiret des mots exclus (« texte : renouvellement -facture ») ;
+- les valeurs positives d'un attribut se combinent par « ou », ses valeurs exclues par « et » : « de : alice », « de : bob », « pas de : @acme.fr » garde les mails d'Alice ou de Bob qui ne viennent pas d'acme.fr. Une conversation est exclue dès qu'un de ses mails des dossiers listés correspond à une valeur exclue. Les dossiers listés, et pas seulement celui où la conversation s'affiche : dans Everything, une conversation dont le dernier mail est la réponse de l'utilisateur s'affiche dans Sent, et « pas de : @acme.fr » doit voir le mail d'acme.fr resté dans l'Inbox. La règle vaut pour De…, À… et pièce jointe ;
 - **domaine** : une valeur qui commence par `@` désigne un domaine exact et ses sous-domaines (`@acme.fr` couvre `jean@acme.fr` et `x@mail.acme.fr`, pas `x@notacme.fr`). Sans `@`, la valeur reste une partie de nom ou d'adresse ;
-- dans Texte… et Sujet…, `-mot` exclut un mot parmi d'autres (`renouvellement -facture`).
+- dans Texte… et Sujet…, `-mot` exclut un mot parmi d'autres (`renouvellement -facture`). Choisir de nouveau Texte… ajoute des mots à ceux déjà choisis, sans les remplacer : une exclusion décidée après coup s'ajoute à la recherche ;
+- `/` accepte aussi `-mot`, cherché partout, adresses comprises.
 
 Exemple, la gestion des registrars : trouver les mails qui parlent du domaine acme.fr sans ceux envoyés ou reçus par ce domaine, c'est Texte… `acme.fr`, puis De… `-@acme.fr`, puis À… `-@acme.fr` ; trois pastilles « texte : acme.fr », « pas de : @acme.fr », « pas à : @acme.fr ».
 
 Les attributs avec « … » agrandissent aussitôt le panneau pour choisir la valeur. Choisir de nouveau un attribut actif le retire. Les attributs actifs s'affichent en pastilles dans la barre de statut ; un clic sur une pastille la retire, échap les retire toutes ; ils restent quand on change de dossier ou de compte.
 
-`/` est le raccourci de la recherche partout : il ouvre le même panneau que `F` → Contient… (intitulé « Chercher partout ») ; entrée va dans **Everything** de la vue (tous les dossiers, tous les comptes dans « all ») avec ces mots pour attribut Contient…. Le résultat est la liste ordinaire, une ligne par conversation avec son dossier, la pastille et `F` pour affiner. Échap retire les attributs et revient au dossier d'où `/` a été tapé ; si l'on est allé ailleurs entre-temps (`;`, `@`, clic sur un dossier), échap retire seulement les attributs. Un second `/` remplace les mots et garde le dossier de retour. `/` reste le joker le plus large : quand Contient… cédera la place à Texte… et Sujet…, `/` gardera un critère à lui qui cherche aussi dans l'expéditeur et les destinataires (pastille « partout : … »).
+`/` est le raccourci de la recherche partout : il ouvre un panneau intitulé « Chercher partout » ; entrée va dans **Everything** de la vue (tous les dossiers, tous les comptes dans « all ») avec ces mots. Le résultat est la liste ordinaire, une ligne par conversation avec son dossier, la pastille et `F` pour affiner. Échap retire les attributs et revient au dossier d'où `/` a été tapé ; si l'on est allé ailleurs entre-temps (`;`, `@`, clic sur un dossier), échap retire seulement les attributs. Un second `/` remplace les mots et garde le dossier de retour. `/` reste le joker le plus large : ses mots sont cherchés partout, sujet, expéditeur, destinataires et texte (pastille « partout : … »), là où Texte… laisse les adresses de côté.
 
 Au pied de la liste des dossiers, un dossier virtuel **Everything** (`;e`) réunit tous les dossiers de la vue (de tous les comptes dans « all ») pour chercher partout avec les attributs. Une conversation présente dans plusieurs dossiers (Inbox et Sent) n'y figure qu'une fois, dans le dossier de son dernier mail. Comme la liste mélange tous les dossiers, chaque ligne affiche son dossier (colonne discrète avant le nombre de messages), et le lecteur l'affiche à l'extrémité droite de la ligne du sujet. Dans « all », le compte suit le dossier (« Archive · perso ») : toujours dans le lecteur, et dans la liste seulement si le sujet garde au moins 30 caractères ; sinon le dossier seul.
 
@@ -142,7 +144,7 @@ l link (panneau des liens du mail ; entrée ouvre le lien dans le navigateur)
 u lu / non lu
 z annule le dernier déplacement ou la dernière décision (les mails reviennent, la décision précédente aussi) ; chaque z remonte d'une étape
 \* drapeau
-/ chercher partout : Contient… dans Everything (voir le sélecteur d'attributs) ; échap revient au dossier de départ
+/ chercher partout : des mots n'importe où, adresses comprises, dans Everything (voir le sélecteur d'attributs) ; échap revient au dossier de départ
 ? liste des touches
 échap annule un préfixe, ferme un panneau, démarque, puis revient du tag, groupe ou contact listé au dossier
 espace et ctrl-f font défiler le mail d'une page vers le bas, maj-espace et ctrl-b vers le haut, en texte comme en HTML

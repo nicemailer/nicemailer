@@ -72,7 +72,7 @@ expect overlay = menu(NiceMailer.GeekController.Prefix.goto)
 click menu:0
 expect account = fixture
 expect folder = Inbox
-# Search (/): the panel of F → Contains…, applied to "Everything" of the
+# Search (/): words anywhere (addresses included), applied to "Everything" of the
 # view; the list is the ordinary one, with the chip and the folder column.
 # Escape comes back to the folder / was pressed from.
 key /

@@ -429,13 +429,13 @@ struct GeekControllerTests {
 
     // MARK: Search (/)
 
-    @Test func slashSearchesEverythingWithTheContainsAttribute() async {
+    @Test func slashSearchesEverythingWithTheAnywhereCriterion() async {
         press("/")
         #expect(controller.overlay == .picker(.search))
         type("devis")
         #expect(controller.pickerEntries(.search).map(\.label) == ["devis"])
         press("ret")
-        // The same list as F → Contains…, over every folder of the account.
+        // Words anywhere, addresses included, over every folder of the account.
         #expect(controller.overlay == .none)
         #expect(model.attributes.contains == "devis" && model.everything == .account(1))
         #expect(await eventually {
@@ -743,6 +743,43 @@ struct GeekControllerTests {
         press("ret")
         #expect(model.attributes.from == ["alice"])
         #expect(controller.overlay == .none)
+    }
+
+    @Test func aValuePanelOffersTheValueThenItsExclusion() async {
+        press("F"); type(L("From…")); press("ret")
+        type("@acme.fr")
+        var rows = controller.pickerEntries(.attributeValue(.from))
+        #expect(rows.map(\.key).prefix(2) == ["+", "−"])
+        #expect(rows[1].label == L("not %@", "@acme.fr") && rows[0].detail == L("domain"))
+        // One arrow down, then Return: excluded.
+        press("down"); press("ret")
+        #expect(model.attributes.notFrom == ["@acme.fr"] && model.attributes.from.isEmpty)
+        #expect(await eventually {
+            (core.calls("list_threads").last?["filter"] as? [String: Any])?["not_from"] as? [String] == ["@acme.fr"]
+        })
+        // A leading "-" leaves only the exclusion, and the contacts are
+        // looked for without it.
+        press("F"); type(L("To…")); press("ret")
+        type("-alice")
+        rows = controller.pickerEntries(.attributeValue(.to))
+        #expect(rows.first?.key == "−" && rows.first?.label == L("not %@", "alice"))
+        #expect(await eventually { core.calls("list_contacts").contains { $0["query"] as? String == "alice" } })
+        press("ret")
+        #expect(model.attributes.notTo == ["alice"])
+    }
+
+    @Test func textAndSubjectPanelsAddWordsAndExclusions() {
+        press("F"); type(L("Text…")); press("ret")
+        #expect(controller.overlay == .picker(.attributeValue(.text)))
+        type("acme.fr"); press("ret")
+        #expect(model.attributes.text == "acme.fr")
+        press("F"); type(L("Text…")); press("ret")
+        type("facture"); press("down"); press("ret")
+        #expect(model.attributes.text == "acme.fr -facture")
+        press("F"); type(L("Subject…")); press("ret")
+        type("-panne"); press("ret")
+        #expect(model.attributes.subject == "-panne")
+        #expect(model.attributes.contains == nil)
     }
 
     @Test func theDatePanelOffersPresetsAndTypedDates() {

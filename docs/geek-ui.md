@@ -25,7 +25,7 @@ As in Zed, **⌘+** (or **⌘=**, which needs no Shift on AZERTY keyboards) make
 
 ## Attributes (filters)
 
-The magnifier after the folder in the status bar (key **F**, or a click) opens the attribute selector. Attributes narrow the current list (folder of an account, or of "all"), combined with AND; a thread qualifies when its mails in the folder match.
+The magnifier after the folder in the status bar (key **F**, or a click) opens the attribute selector. Attributes narrow the current list (folder of an account, or of "all"), combined with AND; a thread qualifies when its mails in the listed folders match (in Everything, every folder: a thread shown in Sent because your reply is its latest mail is still seen with the mail it answers).
 
 | Attribute | Values (English / French rows) | Typed to reach it (English / French) |
 | --- | --- | --- |
@@ -34,9 +34,10 @@ The magnifier after the folder in the status bar (key **F**, or a click) opens t
 | attachments | with attachments / without attachments — pièce jointe / sans pièce jointe | `wi` `witho` — `pj` (or `pi`) `spj` |
 | answered (you replied) | answered / not answered — répondus / sans ma réponse | `an` `na` — `r` `sm` |
 | conversation | conversation (several mails) / single mail — conversations / mails seuls | `co` `si` — `co` `m` |
-| From… — De… | part of a name or address, contacts suggested as you type; several values OR-ed | `fr`, `sender` — `de`, `exp` |
+| From… — De… | part of a name or address, or a domain written `@acme.fr`; contacts suggested as you type; several values OR-ed; `-value` excludes | `fr`, `sender` — `de`, `exp` |
 | To… — À… | same, on To and Cc | `to`, `cc` — `a`, `cc`, `dest` |
-| Contains… — Contient… | words of the full text (subject, sender, recipients, body), as a prefix, accents ignored | `cont`, `text` — `cont`, `te` |
+| Text… — Texte… | words of the subject and body, never the addresses; each word a prefix, accents ignored; `-word` excludes | `te` — `te` |
+| Subject… — Sujet… | words of the subject only; `-word` excludes | `su`, `title` — `su`, `objet` |
 | Date… — Date… | today, last 7 days, last 30 days, this year, older than a year, or "after" / "before" a typed date (2026-10-01, 1/10/2026) | `da` — `da`, `quand` |
 
 Choosing an active value again removes it; choosing the opposite value replaces it. An attribute with "…" expands the panel at once to choose its value. Active attributes are chips in the status bar: a click on a chip removes it; Escape clears them all (after the marks); they stay when changing folder or account.
@@ -52,18 +53,25 @@ The selector opens on its first row and Return chooses the highlighted row, so w
 
 Case and accents are ignored (`a` finds "À…"). Attributes with a value also have hidden search words, localized (`AttributeField.keywords`): `cc` or `destinataire` finds To… / À…, `expéditeur` or `sender` finds From… / De…. The French labels were chosen so that two letters always reach a row: "De…", "Date…" and "drapeau" differ at the second letter, and "À…" replaces "Destinataire…", which started like "De…" (and matches the "à :" chip and the "À :" header of a mail).
 
+### Values: domains and exclusions
+
+In the From… and To… panels, a value starting with `@` is a **domain**: `@acme.fr` matches `jean@acme.fr` and its subdomains (`x@mail.acme.fr`), not `x@notacme.fr`; the row says "domain" on its right. Without `@`, a value is any part of a name or address (`acme.fr` also finds `notacme.fr`).
+
+Text… and Subject… add their words to those already chosen (choosing Text… again does not replace the search), and Text… never looks at the addresses: searching a name in the text does not bring back every mail of that person; From… and To… do that.
+
 ### Negation
 
-What the selector can exclude today:
+- **Yes / no attributes**: each has its opposite as a row of its own ("sans drapeau", "sans pièce jointe", "non lus", "sans ma réponse", "mails seuls"), reached by its initials (`sd`, `spj`, `nl`, `sm`). Choosing the opposite of an active value replaces it.
+- **From…, To…, Text…, Subject…**: the panel shows the typed value ("+", Return) and, just under it, the same value excluded ("− not …", Down then Return). Typing the value with a leading `-` (`-@acme.fr`) leaves only the exclusion, Return at once; the contacts suggested are then offered as exclusions too.
+- In Text… and Subject…, words can be mixed: `renouvellement -facture` wants one word and excludes the other. An exclusion added later joins the words already there.
+- **Combination**: the wanted values of an attribute are OR-ed, its excluded values AND-ed ("from alice or bob, but from nobody at acme.fr"); a thread is left out as soon as one of its mails in the listed folders matches an excluded value. A value is wanted or excluded, not both: the last choice wins.
+- **Chips**: `not from: @acme.fr`, `not to: @acme.fr`; Text… and Subject… keep the dash of their excluded words (`text: renouvellement -facture`).
 
-- every yes / no attribute has its opposite as a row of its own: "sans drapeau", "sans pièce jointe", "non lus", "sans ma réponse", "mails seuls". Its initials reach it in two or three keys (`sd`, `spj`, `nl`, `sm`), or its first word and a second one (`sans d`);
-- choosing the opposite of an active value replaces it: "drapeau" then "sans drapeau" leaves only "sans drapeau".
-
-Not possible yet: excluding a sender, a recipient, a domain or a word ("not from @acme.fr"). The rules are specified in `specifications/ui.md` ("Négation") and the work is a ticket in `todo.md` ("Negation and narrower text search in the attribute selector").
+Example, at a registrar: the mails that talk about the domain acme.fr, without those sent to or by acme.fr. `F` `te` Return `acme.fr` Return; `F` `de` Return `-@acme.fr` Return; `F` `a` Return `-@acme.fr` Return (French keys; in English `fr` and `to` instead of `de` and `a`). Three chips: `text: acme.fr`, `not from: @acme.fr`, `not to: @acme.fr`.
 
 ## Search (`/`)
 
-`/` is the quick way to search everywhere: it opens the same panel as `F` → Contains… (titled "Search everywhere"); Return goes to **Everything** of the current view (every folder, every account in "all") with the words as the Contains… attribute. The result is the ordinary list: one row per conversation, with its folder, the `contains:` chip, and `F` to narrow it further (unread, From…). Escape clears the attributes and goes back to the folder `/` was pressed from; going elsewhere first (`;`, `@`, a click on a folder) forgets that folder, and Escape then only clears the attributes. A second `/` replaces the words and keeps the folder to go back to.
+`/` is the widest search, the joker: its words are looked for anywhere, subject, sender, recipients and body (where Text… leaves the addresses out), and `-word` excludes a word there too. It opens a panel titled "Search everywhere"; Return goes to **Everything** of the current view (every folder, every account in "all") with these words. The result is the ordinary list: one row per conversation, with its folder, the `anywhere:` chip, and `F` to narrow it further (unread, From…). Escape clears the attributes and goes back to the folder `/` was pressed from; going elsewhere first (`;`, `@`, a click on a folder) forgets that folder, and Escape then only clears the attributes. A second `/` replaces the words and keeps the folder to go back to.
 
 ## Reading a mail
 
@@ -124,7 +132,7 @@ Actions apply to the **marked** mails if any (`J` / `K`), otherwise to the mail 
 | `z` | undo the last move or decision, then the one before (see "Moves and decisions") |
 | ⌘U | unsubscribe from the list of the mail (see "Unsubscribing") |
 | `*` | flag |
-| `/` | search everywhere: Contains… in Everything (see [Search](#search-)); Escape goes back |
+| `/` | search everywhere: words anywhere, addresses included, in Everything (see [Search](#search-)); Escape goes back |
 | `;` + key | go to a folder or a screen (see below) |
 | `s` + key | save to `~/Downloads`, for every marked conversation (or the one under the cursor): its latest mail with `se` .eml, `st` text, `sm` Markdown; its attachments with `sa` all of them, `sg` all but the graphics (images: logos, signatures, photos). For attachments every message counts, and a file attached again to a reply is saved once. No file is overwritten |
 | `v` + key | display: `v1` `v2` `v3` columns, `vc` sort by reception, `vm` sort by modification, `vh` text / HTML, `vs` status bar |

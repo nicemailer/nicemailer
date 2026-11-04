@@ -68,17 +68,17 @@ key ret
 type last 30
 key ret
 expect filters ~ last 30 days
-# Contains: words of the full text.
+# Text: words of the subject and body.
 key F
-type Contains
+type Text
 key ret
 type facture
 key ret
-expect filters ~ contains: facture
+expect filters ~ text: facture
 snap chips
 # A click on a chip removes it.
-click chip:contains
-expect filters !~ contains
+click chip:text
+expect filters !~ text:
 # The attributes stay when changing folder.
 key ;
 key a
@@ -112,3 +112,56 @@ key ;
 key i
 expect folder = Inbox
 expect reader_folder = 
+# Text… against `/`, and exclusions, in the fixture account (4 threads:
+# Rapport mensuel, La lettre de novembre, Un long mail, Chantier).
+key @
+type fixture
+key ret
+key ;
+key e
+expect folder = Everything
+expect thread_count = 4
+# `/` also searches the addresses: Bob sent one thread, and is in copy of
+# another.
+key /
+type bob
+key ret
+expect filters = anywhere: bob
+expect thread_count = 2
+key esc
+expect folder = Everything
+expect filters =
+# Text… never looks at the addresses.
+key F
+type Text
+key ret
+type bob
+key ret
+expect filters = text: bob
+expect thread_count = 0
+click chip:text
+# A value typed with "-" is excluded: a domain (with "@"), not only a
+# part of the address.
+key F
+type From
+key ret
+type -@example.org
+expect picker_first = not @example.org
+snap exclusion-panel
+key ret
+expect filters = not from: @example.org
+expect thread_count = 1
+expect selected_subject ~ lettre
+# The exclusion is also the row under the value (one arrow down).
+key F
+type To
+key ret
+type @example.org
+key down
+key ret
+expect filters = not from: @example.org, not to: @example.org
+expect thread_count = 1
+snap exclusions
+key esc
+expect filters =
+expect thread_count = 4

@@ -13,9 +13,21 @@ struct ThreadFilter: Equatable {
     var attachments: Bool?
     var answered: Bool?
     var conversation: Bool?
+    /// From one of these (OR-ed); a value starting with `@` is a domain
+    /// (the core matches it with its subdomains).
     var from: [String] = []
+    /// From none of these (`ui.md`, "Négation").
+    var notFrom: [String] = []
+    /// To or Cc one of these.
     var to: [String] = []
+    /// To or Cc none of these.
+    var notTo: [String] = []
+    /// Words anywhere, addresses included: the `/` search, the widest one.
     var contains: String?
+    /// Words of the subject or body (Text…); `-word` excludes a word.
+    var text: String?
+    /// Words of the subject only (Subject…).
+    var subject: String?
     var after: Int?
     var before: Int?
     /// How the date criterion is shown ("last 7 days", "after 2026-10-01").
@@ -76,8 +88,12 @@ struct ThreadFilter: Equatable {
             if let v = value(flag) { p[flag.rawValue] = v }
         }
         if !from.isEmpty { p["from"] = from }
+        if !notFrom.isEmpty { p["not_from"] = notFrom }
         if !to.isEmpty { p["to"] = to }
+        if !notTo.isEmpty { p["not_to"] = notTo }
         if let contains, !contains.isEmpty { p["contains"] = contains }
+        if let text, !text.isEmpty { p["text"] = text }
+        if let subject, !subject.isEmpty { p["subject"] = subject }
         if let after { p["after"] = after }
         if let before { p["before"] = before }
         return p
@@ -95,8 +111,13 @@ struct ThreadFilter: Equatable {
             if let v = value(flag) { out.append(Chip(id: flag.rawValue, label: Self.label(flag, v))) }
         }
         for (i, v) in from.enumerated() { out.append(Chip(id: "from:\(i)", label: L("from: %@", v))) }
+        for (i, v) in notFrom.enumerated() { out.append(Chip(id: "not_from:\(i)", label: L("not from: %@", v))) }
         for (i, v) in to.enumerated() { out.append(Chip(id: "to:\(i)", label: L("to: %@", v))) }
-        if let contains { out.append(Chip(id: "contains", label: L("contains: %@", contains))) }
+        for (i, v) in notTo.enumerated() { out.append(Chip(id: "not_to:\(i)", label: L("not to: %@", v))) }
+        // Excluded words keep their dash: "text: renouvellement -facture".
+        if let text { out.append(Chip(id: "text", label: L("text: %@", text))) }
+        if let subject { out.append(Chip(id: "subject", label: L("subject: %@", subject))) }
+        if let contains { out.append(Chip(id: "contains", label: L("anywhere: %@", contains))) }
         if after != nil || before != nil { out.append(Chip(id: "date", label: dateLabel ?? L("date"))) }
         return out
     }
@@ -110,36 +131,86 @@ struct ThreadFilter: Equatable {
         let parts = chip.split(separator: ":").map(String.init)
         switch parts.first {
         case "from": if let i = parts.last.flatMap(Int.init), from.indices.contains(i) { from.remove(at: i) }
+        case "not_from": if let i = parts.last.flatMap(Int.init), notFrom.indices.contains(i) { notFrom.remove(at: i) }
         case "to": if let i = parts.last.flatMap(Int.init), to.indices.contains(i) { to.remove(at: i) }
+        case "not_to": if let i = parts.last.flatMap(Int.init), notTo.indices.contains(i) { notTo.remove(at: i) }
         case "contains": contains = nil
+        case "text": text = nil
+        case "subject": subject = nil
         case "date": after = nil; before = nil; dateLabel = nil
         default: break
         }
     }
 
-    /// Adds a value to From or To (ignored if already there).
-    mutating func add(_ field: AttributeField, _ value: String) {
-        let v = value.trimmingCharacters(in: .whitespaces)
+    /// What was typed in a value panel: the value, and whether it is
+    /// excluded (typed with a leading `-`, `ui.md`, "Négation"). A lone
+    /// `-` is an empty value.
+    static func parse(_ typed: String) -> (value: String, excluded: Bool) {
+        let t = typed.trimmingCharacters(in: .whitespaces)
+        guard t.hasPrefix("-") else { return (t, false) }
+        return (String(t.dropFirst()).trimmingCharacters(in: .whitespaces), true)
+    }
+
+    /// Adds a value to an attribute; `excluded` (or a value typed `-x`)
+    /// adds it to the values left out.
+    ///
+    /// - From / To: a value is kept once, and is either wanted or excluded:
+    ///   adding it to one side removes it from the other.
+    /// - Text / Subject: the words are added to those already there (so an
+    ///   exclusion adds to a search instead of replacing it), each excluded
+    ///   word written `-word`, as the core reads it; a word already there
+    ///   is not repeated.
+    mutating func add(_ field: AttributeField, _ value: String, excluded: Bool = false) {
+        let parsed = Self.parse(value)
+        let v = parsed.value
+        let out = excluded || parsed.excluded
         guard !v.isEmpty else { return }
+        // Swift note: an `inout` parameter lets a nested function change the array
+        // it is given, here one side or the other of From / To.
+        func put(_ v: String, into wanted: inout [String], _ left: inout [String]) {
+            left.removeAll { $0 == v }
+            if !wanted.contains(v) { wanted.append(v) }
+        }
+        func words(_ current: String?) -> String {
+            var all = (current ?? "").split(separator: " ").map(String.init)
+            for w in v.split(separator: " ").map(String.init) {
+                let word = out && !w.hasPrefix("-") ? "-" + w : w
+                if !all.contains(word) { all.append(word) }
+            }
+            return all.joined(separator: " ")
+        }
         switch field {
-        case .from: if !from.contains(v) { from.append(v) }
-        case .to: if !to.contains(v) { to.append(v) }
-        case .contains: contains = v
+        case .from: if out { put(v, into: &notFrom, &from) } else { put(v, into: &from, &notFrom) }
+        case .to: if out { put(v, into: &notTo, &to) } else { put(v, into: &to, &notTo) }
+        case .text: text = words(text)
+        case .subject: subject = words(subject)
         case .date: break
+        }
+    }
+
+    /// Whether `field` has a value (marked "•" in the selector).
+    func isActive(_ field: AttributeField) -> Bool {
+        switch field {
+        case .from: !from.isEmpty || !notFrom.isEmpty
+        case .to: !to.isEmpty || !notTo.isEmpty
+        case .text: text != nil
+        case .subject: subject != nil
+        case .date: after != nil || before != nil
         }
     }
 }
 
 /// The attributes whose value is chosen in the expanded panel ("…").
 enum AttributeField: String, CaseIterable {
-    case from, to, contains, date
+    case from, to, text, subject, date
 
     /// Name in the selector, with "…" since a value follows.
     var title: String {
         switch self {
         case .from: L("From…")
         case .to: L("To…")
-        case .contains: L("Contains…")
+        case .text: L("Text…")
+        case .subject: L("Subject…")
         case .date: L("Date…")
         }
     }
@@ -153,7 +224,8 @@ enum AttributeField: String, CaseIterable {
         let words: String = switch self {
         case .from: L("sender")
         case .to: L("recipient cc")
-        case .contains: L("text words")
+        case .text: L("text words body")
+        case .subject: L("title")
         case .date: L("when day period")
         }
         return words.split(separator: " ").map(String.init)

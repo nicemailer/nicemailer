@@ -1176,7 +1176,7 @@ private struct PickerPopup: View {
         case .accounts: L("Account")
         case .attributes: L("Attributes")
         case .attributeValue(let field): field.title
-        // Same panel as Contains…, named after what it does.
+        // The widest search: words anywhere, addresses included.
         case .search: L("Search everywhere")
         case .links: L("Links")
         case .tag: L("Tag")
@@ -1191,8 +1191,10 @@ private struct PickerPopup: View {
         case .accounts: L("No account")
         case .attributes: L("No attribute")
         case .attributeValue(.date): L("Type a date: 2026-10-01 or 1/10/2026")
-        case .attributeValue(.contains), .search: L("Type words: subject, sender, recipients or body")
-        case .attributeValue: L("Type a name, an address or words")
+        case .search: L("Type words: subject, sender, recipients or body")
+        case .attributeValue(.text): L("Type words of the subject or body; -word to exclude")
+        case .attributeValue(.subject): L("Type words of the subject; -word to exclude")
+        case .attributeValue: L("Type a name, an address or @domain; -value to exclude")
         }
     }
 }

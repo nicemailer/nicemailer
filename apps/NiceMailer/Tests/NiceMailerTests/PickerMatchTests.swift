@@ -8,7 +8,7 @@ struct PickerMatchTests {
     /// The French rows of the attribute selector, in their list order.
     let french = ["non lus", "lus", "drapeau", "sans drapeau", "pièce jointe", "sans pièce jointe",
                   "répondus", "sans ma réponse", "conversations", "mails seuls",
-                  "De…", "À…", "Contient…", "Date…"]
+                  "De…", "À…", "Texte…", "Sujet…", "Date…"]
     let keywords: [String: [String]] = ["De…": ["expéditeur", "envoyé"], "À…": ["destinataire", "cc", "copie"]]
 
     func first(_ query: String, in labels: [String]) -> String? {
@@ -63,24 +63,26 @@ struct PickerMatchTests {
     @Test func theKeysOfTheDocumentationReachTheirRows() {
         let english = ["unread", "read", "flagged", "not flagged", "with attachments", "without attachments",
                        "answered", "not answered", "conversation", "single mail",
-                       "From…", "To…", "Contains…", "Date…"]
+                       "From…", "To…", "Text…", "Subject…", "Date…"]
         let englishWords: [String: [String]] = ["From…": ["sender"], "To…": ["recipient", "cc"],
-                                                "Contains…": ["text", "words"], "Date…": ["when", "day", "period"]]
+                                                "Text…": ["text", "words", "body"], "Subject…": ["title"],
+                                                "Date…": ["when", "day", "period"]]
         let en: [String: String] = ["un": "unread", "r": "read", "f": "flagged", "nf": "not flagged",
                                     "wi": "with attachments", "witho": "without attachments",
                                     "an": "answered", "na": "not answered", "co": "conversation", "si": "single mail",
                                     "fr": "From…", "sender": "From…", "to": "To…", "cc": "To…",
-                                    "cont": "Contains…", "text": "Contains…", "da": "Date…"]
+                                    "te": "Text…", "su": "Subject…", "title": "Subject…", "da": "Date…"]
         for (typed, row) in en {
             let got = PickerMatch.filter(english, query: typed, label: { $0 }, keywords: { englishWords[$0] ?? [] }).first
             #expect(got == row, "\(typed)")
         }
-        let frenchWords = keywords.merging(["Contient…": ["texte", "mots"], "Date…": ["quand", "jour", "période"]]) { a, _ in a }
+        let frenchWords = keywords.merging(["Texte…": ["texte", "mots", "corps"], "Sujet…": ["titre", "objet"],
+                                            "Date…": ["quand", "jour", "période"]]) { a, _ in a }
         let fr: [String: String] = ["no": "non lus", "nl": "non lus", "l": "lus", "dr": "drapeau", "sd": "sans drapeau",
                                     "pj": "pièce jointe", "pi": "pièce jointe", "spj": "sans pièce jointe",
                                     "r": "répondus", "sm": "sans ma réponse", "co": "conversations", "m": "mails seuls",
                                     "de": "De…", "exp": "De…", "a": "À…", "cc": "À…", "dest": "À…",
-                                    "cont": "Contient…", "te": "Contient…", "da": "Date…", "quand": "Date…"]
+                                    "te": "Texte…", "su": "Sujet…", "objet": "Sujet…", "da": "Date…", "quand": "Date…"]
         for (typed, row) in fr {
             let got = PickerMatch.filter(french, query: typed, label: { $0 }, keywords: { frenchWords[$0] ?? [] }).first
             #expect(got == row, "\(typed)")

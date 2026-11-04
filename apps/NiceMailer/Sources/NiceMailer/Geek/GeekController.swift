@@ -46,9 +46,10 @@ final class GeekController {
         /// `F`: attributes narrowing the list.
         case attributes
         /// The expanded panel of an attribute with a value (From…, To…,
-        /// Contains…, Date…).
+        /// Text…, Subject…, Date…).
         case attributeValue(AttributeField)
-        /// `/`: the Contains… panel, applied to "Everything" (`ui.md`).
+        /// `/`: words searched anywhere (addresses included), applied to
+        /// "Everything" (`ui.md`).
         case search
         /// `l`: open a link of the mail.
         case links
@@ -812,7 +813,7 @@ final class GeekController {
             ("⌘U", L("unsubscribe from the list")),
             ("T", L("show / hide quotes, signatures, folded mails")),
             ("S", L("skip to the text after the next quote")),
-            ("/", L("search everywhere (Contains… in Everything)")),
+            ("/", L("search everywhere: words anywhere, addresses included, in Everything")),
             (";…", L("go to a folder or a screen")),
             ("s…", L("save")),
             ("v…", L("display")),
@@ -846,12 +847,13 @@ final class GeekController {
 
     /// Loads the contacts matching the text typed in a From… or To… panel.
     private func loadSuggestions() {
-        let query = pickerQuery.trimmingCharacters(in: .whitespaces)
+        // Without the "-" of an exclusion: the contacts are the same.
+        let query = ThreadFilter.parse(pickerQuery).value
         guard query.count >= 2, let client = model.core else { valueSuggestions = []; return }
         Task {
             do {
                 let page: Page<ContactView> = try await client.call("list_contacts", ["query": query, "limit": 20])
-                if query == pickerQuery.trimmingCharacters(in: .whitespaces) { valueSuggestions = page.items }
+                if query == ThreadFilter.parse(self.pickerQuery).value { valueSuggestions = page.items }
             } catch { model.report(error) }
         }
     }
@@ -951,7 +953,7 @@ final class GeekController {
         case .attributeValue(let field):
             return valueEntries(field)
         case .search:
-            // The rows of Contains…, applied to "Everything".
+            // The typed words, searched anywhere in "Everything".
             let typed = pickerQuery.trimmingCharacters(in: .whitespaces)
             guard !typed.isEmpty else { return [] }
             return [Entry(key: "+", label: typed) { [weak self] in self?.searchEverywhere(typed) }]
@@ -998,13 +1000,7 @@ final class GeekController {
             }
         }
         for field in AttributeField.allCases {
-            let active: Bool = switch field {
-            case .from: !a.from.isEmpty
-            case .to: !a.to.isEmpty
-            case .contains: a.contains != nil
-            case .date: a.after != nil || a.before != nil
-            }
-            entries.append(Entry(key: active ? "•" : " ", label: field.title, keywords: field.keywords) { [weak self] in
+            entries.append(Entry(key: a.isActive(field) ? "•" : " ", label: field.title, keywords: field.keywords) { [weak self] in
                 // The panel grows at once to choose the value (`ui.md`).
                 self?.pickerQuery = ""
                 self?.pickerIndex = 0
@@ -1018,23 +1014,38 @@ final class GeekController {
         return entries
     }
 
-    /// Rows of the expanded panel of `field`.
+    /// Rows of the expanded panel of `field` (`ui.md`, "Négation"): the
+    /// typed value to add ("+"), then the same value to exclude ("−",
+    /// one arrow down), or only the exclusion when the value was typed
+    /// with a leading `-`. From / To add the contacts suggested for the
+    /// value, wanted or excluded the same way.
     private func valueEntries(_ field: AttributeField) -> [Entry] {
         let typed = pickerQuery.trimmingCharacters(in: .whitespaces)
+        let (value, excluded) = ThreadFilter.parse(typed)
+        // A value starting with "@" is a domain: say so on the row.
+        let detail = value.hasPrefix("@") && value.count > 1 ? L("domain") : nil
+        func rows(_ label: String, _ value: String, key wanted: String = "+", detail: String? = nil) -> [Entry] {
+            let add = Entry(key: wanted, label: label, detail: detail) { [model] in model.attributes.add(field, value) }
+            let exclude = Entry(key: "−", label: L("not %@", label), detail: detail) { [model] in
+                model.attributes.add(field, value, excluded: true)
+            }
+            return excluded ? [exclude] : [add, exclude]
+        }
         switch field {
         case .from, .to:
             var entries: [Entry] = []
-            if !typed.isEmpty {
-                entries.append(Entry(key: "+", label: typed) { [model] in model.attributes.add(field, typed) })
-            }
-            entries += valueSuggestions.map { c in
+            if !value.isEmpty { entries += rows(value, value, detail: detail) }
+            for c in valueSuggestions {
                 let label = c.name.map { "\($0) <\(c.addr)>" } ?? c.addr
-                return Entry(key: " ", label: label) { [model] in model.attributes.add(field, c.addr) }
+                // One row per contact: wanted, or excluded when "-" was
+                // typed (the first of its rows).
+                entries.append(rows(label, c.addr, key: " ")[0])
             }
             return entries
-        case .contains:
-            guard !typed.isEmpty else { return [] }
-            return [Entry(key: "+", label: typed) { [model] in model.attributes.add(.contains, typed) }]
+        case .text, .subject:
+            guard !value.isEmpty else { return [] }
+            // The words as typed: a "-word" among them stays an exclusion.
+            return rows(value, value)
         case .date:
             let presets = DateChoice.typed(typed) + DateChoice.presets().filter {
                 typed.isEmpty || DateChoice.parse(typed) != nil
@@ -1100,7 +1111,7 @@ final class GeekController {
 
     // MARK: - Search
 
-    /// `/` then Return: the words become the Contains… attribute of
+    /// `/` then Return: the words become the "anywhere" criterion of
     /// "Everything" of the current view (every folder, every account in
     /// "all"), shown like any filtered list (`ui.md`). The place `/` was
     /// pressed from is kept for Escape; a second `/` keeps the first one.
@@ -1110,7 +1121,7 @@ final class GeekController {
                 folderId: model.selectedFolderId, unifiedRole: model.unifiedRole, everything: model.everything)
         }
         screen = .mail
-        model.attributes.add(.contains, words)
+        model.attributes.contains = words
         model.selectEverything(model.scopeAccountId.map { .account($0) } ?? .all)
     }
 

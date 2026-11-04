@@ -166,7 +166,10 @@ impl Store {
         let map = |r: &Row| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?));
         // Attribute filters: extra conditions, with their values bound after
         // the fixed parameters (`?1`… are folder, cursor and limit).
-        let (filter_sql, filter_values) = filter_clause(filter);
+        // The listed folders, as integers from the store written into the
+        // SQL text (no user input).
+        let set = folder_ids.iter().map(|f| f.to_string()).collect::<Vec<_>>().join(",");
+        let (filter_sql, filter_values) = filter_clause(filter, &set);
         // Several folders: a thread present in more than one of them (Inbox
         // and Sent, in the virtual folder "Everything") is listed once, in
         // the folder of its latest message among them (ties: the smallest
@@ -174,7 +177,6 @@ impl Store {
         // page, so pagination stays consistent. Folder ids are integers
         // from the store, written into the SQL text.
         let once = if folder_ids.len() > 1 {
-            let set = folder_ids.iter().map(|f| f.to_string()).collect::<Vec<_>>().join(",");
             let col = key.trim_start_matches("tf.");
             format!(
                 " AND NOT EXISTS (SELECT 1 FROM thread_folder tf2
@@ -542,27 +544,89 @@ fn present_thread(messages: &mut [MessageView]) {
 /// the user are removed, as they would break the syntax. Words separated by
 /// spaces are implicitly ANDed by FTS5.
 fn fts_query(query: &str) -> String {
-    query
-        .split_whitespace()
-        .map(|w| w.replace('"', ""))
-        .filter(|w| !w.is_empty())
-        .map(|w| format!("\"{w}\"*"))
-        .collect::<Vec<_>>()
-        .join(" ")
+    fts_words(query).0.into_iter().map(|w| fts_phrase(&w, "")).collect::<Vec<_>>().join(" ")
+}
+
+/// The words typed in a text criterion, split into the wanted ones and the
+/// excluded ones (written `-word`, `ui.md`, "Négation"), double quotes
+/// removed. A lone `-` is no word; a dash inside a word (`e-mail`) is part
+/// of it.
+fn fts_words(query: &str) -> (Vec<String>, Vec<String>) {
+    let mut wanted = Vec::new();
+    let mut excluded = Vec::new();
+    for w in query.split_whitespace().map(|w| w.replace('"', "")) {
+        match w.strip_prefix('-') {
+            Some(rest) if !rest.is_empty() => excluded.push(rest.to_string()),
+            Some(_) => {}
+            None if !w.is_empty() => wanted.push(w),
+            None => {}
+        }
+    }
+    (wanted, excluded)
+}
+
+/// One FTS5 phrase: the word quoted, as a prefix, behind a column filter
+/// (`{subject body} : ` restricts it to those columns; empty: every
+/// column).
+fn fts_phrase(word: &str, columns: &str) -> String {
+    format!("{columns}\"{word}\"*")
+}
+
+/// SQL conditions for one text criterion over `columns` of `message_fts`
+/// (`ui.md`, "Sélecteur d'attributs"): the thread has a message holding
+/// every wanted word, and no message holding an excluded word. Each part
+/// runs its full-text query once (not correlated), whatever the number of
+/// threads.
+fn text_clause(query: &str, columns: &str, bind: &mut dyn FnMut(Value) -> String) -> String {
+    let (wanted, excluded) = fts_words(query);
+    let mut sql = String::new();
+    let in_fts = |p: String| {
+        format!("SELECT mc.thread_id FROM message_fts JOIN message mc ON mc.id = message_fts.rowid WHERE message_fts MATCH {p}")
+    };
+    if !wanted.is_empty() {
+        let q = wanted.iter().map(|w| fts_phrase(w, columns)).collect::<Vec<_>>().join(" ");
+        sql.push_str(&format!(" AND tf.thread_id IN ({})", in_fts(bind(Value::Text(q)))));
+    }
+    if !excluded.is_empty() {
+        // Any excluded word leaves the thread out: the words are OR-ed.
+        let q = excluded.iter().map(|w| fts_phrase(w, columns)).collect::<Vec<_>>().join(" OR ");
+        sql.push_str(&format!(" AND tf.thread_id NOT IN ({})", in_fts(bind(Value::Text(q)))));
+    }
+    sql
+}
+
+/// The condition matching one From / To value on an address column and a
+/// name column. A value starting with `@` is a domain: the address ends
+/// with `@domain` or `.domain` (its subdomains), and the name is not
+/// looked at. Otherwise the value is part of the address or of the name.
+/// LIKE ignores ASCII case, and addresses are stored in lower case.
+fn address_condition(value: &str, addr: &str, name: &str, bind: &mut dyn FnMut(Value) -> String) -> String {
+    // `%` and `_` are LIKE wildcards: escape them in the user's text.
+    let escape = |s: &str| s.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
+    let v = value.trim();
+    match v.strip_prefix('@').map(str::trim).filter(|d| !d.is_empty()) {
+        Some(domain) => {
+            let d = escape(&domain.to_lowercase());
+            let at = bind(Value::Text(format!("%@{d}")));
+            let sub = bind(Value::Text(format!("%.{d}")));
+            format!("{addr} LIKE {at} ESCAPE '\\' OR {addr} LIKE {sub} ESCAPE '\\'")
+        }
+        None => {
+            let p = bind(Value::Text(format!("%{}%", escape(v))));
+            format!("{addr} LIKE {p} ESCAPE '\\' OR {name} LIKE {p} ESCAPE '\\'")
+        }
+    }
 }
 
 /// SQL conditions (each starting with " AND ") for the attribute filters,
 /// and their values, numbered from `?10` (the first nine numbers are kept
 /// for the fixed parameters of the list query). Every condition uses an
 /// index or a small correlated lookup on the thread's messages
-/// (`idx_message_thread`); "contains" runs the full-text query once.
-fn filter_clause(f: &ThreadFilter) -> (String, Vec<Value>) {
+/// (`idx_message_thread`); each text criterion runs its full-text queries
+/// once (`text_clause`).
+fn filter_clause(f: &ThreadFilter, folders: &str) -> (String, Vec<Value>) {
     let mut sql = String::new();
     let mut values: Vec<Value> = Vec::new();
-    let bind = |v: Value, values: &mut Vec<Value>| -> String {
-        values.push(v);
-        format!("?{}", 9 + values.len())
-    };
     let exists = |yes: bool, cond: &str| format!(" AND {}EXISTS ({cond})", if yes { "" } else { "NOT " });
     if let Some(seen) = f.seen {
         sql.push_str(if seen { " AND tf.unread_count = 0" } else { " AND tf.unread_count > 0" });
@@ -573,7 +637,7 @@ fn filter_clause(f: &ThreadFilter) -> (String, Vec<Value>) {
     if let Some(yes) = f.attachments {
         sql.push_str(&exists(
             yes,
-            "SELECT 1 FROM message mf WHERE mf.thread_id = tf.thread_id AND mf.folder_id = tf.folder_id AND mf.has_attachments = 1",
+            &format!("SELECT 1 FROM message mf WHERE mf.thread_id = tf.thread_id AND mf.folder_id IN ({folders}) AND mf.has_attachments = 1"),
         ));
     }
     if let Some(yes) = f.answered {
@@ -582,48 +646,57 @@ fn filter_clause(f: &ThreadFilter) -> (String, Vec<Value>) {
     if let Some(yes) = f.conversation {
         sql.push_str(if yes { " AND t.message_count > 1" } else { " AND t.message_count = 1" });
     }
-    // `%` and `_` are LIKE wildcards: escape them in the user's text.
-    let like = |s: &str| format!("%{}%", s.trim().replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_"));
-    let from: Vec<&String> = f.from.iter().filter(|s| !s.trim().is_empty()).collect();
-    if !from.is_empty() {
-        let mut ors = Vec::new();
-        for v in from {
-            let p = bind(Value::Text(like(v)), &mut values);
-            ors.push(format!("mf.from_addr LIKE {p} ESCAPE '\\' OR mf.from_name LIKE {p} ESCAPE '\\'"));
+    // From, and To / Cc: a message of the thread in the listed folders is
+    // (or, for the exclusions, none is) from / to one of the values, OR-ed.
+    // The listed folders, not only the one the thread is shown in: in
+    // "Everything", a thread whose latest mail is the user's reply is shown
+    // in Sent, and "not from @acme.fr" must still see acme.fr's mail in the
+    // Inbox.
+    let address_sql = |list: &[String], sender: bool, bind: &mut dyn FnMut(Value) -> String| -> Option<String> {
+        let (addr, name) = if sender { ("mf.from_addr", "mf.from_name") } else { ("a.addr", "a.name") };
+        let ors: Vec<String> = list
+            .iter()
+            .filter(|v| !v.trim().is_empty())
+            .map(|v| address_condition(v, addr, name, bind))
+            .collect();
+        if ors.is_empty() {
+            return None;
         }
-        sql.push_str(&format!(
-            " AND EXISTS (SELECT 1 FROM message mf WHERE mf.thread_id = tf.thread_id AND mf.folder_id = tf.folder_id AND ({}))",
-            ors.join(" OR ")
-        ));
-    }
-    let to: Vec<&String> = f.to.iter().filter(|s| !s.trim().is_empty()).collect();
-    if !to.is_empty() {
-        let mut ors = Vec::new();
-        for v in to {
-            let p = bind(Value::Text(like(v)), &mut values);
-            ors.push(format!("a.addr LIKE {p} ESCAPE '\\' OR a.name LIKE {p} ESCAPE '\\'"));
+        let ors = ors.join(" OR ");
+        Some(if sender {
+            format!("SELECT 1 FROM message mf WHERE mf.thread_id = tf.thread_id AND mf.folder_id IN ({folders}) AND ({ors})")
+        } else {
+            format!(
+                "SELECT 1 FROM message mf JOIN message_address ma ON ma.message_id = mf.id AND ma.role IN ('to', 'cc')
+                          JOIN address a ON a.id = ma.address_id
+                         WHERE mf.thread_id = tf.thread_id AND mf.folder_id IN ({folders}) AND ({ors})"
+            )
+        })
+    };
+    // Rust note: `bind` borrows `values` mutably, so it is a closure created
+    // here and passed down as `&mut dyn FnMut`: one numbering of the
+    // parameters for every condition.
+    let mut bind = |v: Value| -> String {
+        values.push(v);
+        format!("?{}", 9 + values.len())
+    };
+    for (list, yes, sender) in [(&f.from, true, true), (&f.not_from, false, true), (&f.to, true, false), (&f.not_to, false, false)] {
+        if let Some(cond) = address_sql(list, sender, &mut bind) {
+            sql.push_str(&exists(yes, &cond));
         }
-        sql.push_str(&format!(
-            " AND EXISTS (SELECT 1 FROM message mt JOIN message_address ma ON ma.message_id = mt.id AND ma.role IN ('to', 'cc')
-                           JOIN address a ON a.id = ma.address_id
-                          WHERE mt.thread_id = tf.thread_id AND mt.folder_id = tf.folder_id AND ({}))",
-            ors.join(" OR ")
-        ));
     }
-    if let Some(words) = f.contains.as_deref().map(fts_query).filter(|q| !q.is_empty()) {
-        let p = bind(Value::Text(words), &mut values);
-        // Not correlated: SQLite runs the full-text query once per page.
-        sql.push_str(&format!(
-            " AND tf.thread_id IN (SELECT mc.thread_id FROM message_fts JOIN message mc ON mc.id = message_fts.rowid
-                                    WHERE message_fts MATCH {p})"
-        ));
+    // Text criteria: `/` (every column), Text… (subject and body), Subject….
+    for (query, columns) in [(&f.contains, ""), (&f.text, "{subject body} : "), (&f.subject, "subject : ")] {
+        if let Some(q) = query.as_deref() {
+            sql.push_str(&text_clause(q, columns, &mut bind));
+        }
     }
     if let Some(after) = f.after {
-        let p = bind(Value::Integer(after), &mut values);
+        let p = bind(Value::Integer(after));
         sql.push_str(&format!(" AND tf.date_last_received >= {p}"));
     }
     if let Some(before) = f.before {
-        let p = bind(Value::Integer(before), &mut values);
+        let p = bind(Value::Integer(before));
         sql.push_str(&format!(" AND tf.date_last_received < {p}"));
     }
     (sql, values)

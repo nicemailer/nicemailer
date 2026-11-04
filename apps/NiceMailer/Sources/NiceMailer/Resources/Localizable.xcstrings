@@ -261,16 +261,6 @@
         }
       }
     },
-    "Contains…": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Contient…"
-          }
-        }
-      }
-    },
     "Date: %@": {
       "localizations": {
         "fr": {
@@ -741,6 +731,16 @@
         }
       }
     },
+    "Subject…": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sujet…"
+          }
+        }
+      }
+    },
     "Tag": {
       "localizations": {
         "fr": {
@@ -787,6 +787,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Taille du texte : %lld pt"
+          }
+        }
+      }
+    },
+    "Text…": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Texte…"
           }
         }
       }
@@ -851,12 +861,32 @@
         }
       }
     },
-    "Type a name, an address or words": {
+    "Type a name, an address or @domain; -value to exclude": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Tapez un nom, une adresse ou des mots"
+            "value": "Tapez un nom, une adresse ou @domaine ; -valeur pour exclure"
+          }
+        }
+      }
+    },
+    "Type words of the subject or body; -word to exclude": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tapez des mots du sujet ou du texte ; -mot pour exclure"
+          }
+        }
+      }
+    },
+    "Type words of the subject; -word to exclude": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tapez des mots du sujet ; -mot pour exclure"
           }
         }
       }
@@ -981,6 +1011,16 @@
         }
       }
     },
+    "anywhere: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "partout : %@"
+          }
+        }
+      }
+    },
     "as .eml file": {
       "localizations": {
         "fr": {
@@ -1091,16 +1131,6 @@
         }
       }
     },
-    "contains: %@": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "contient : %@"
-          }
-        }
-      }
-    },
     "conversation": {
       "localizations": {
         "fr": {
@@ -1147,6 +1177,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "affichage"
+          }
+        }
+      }
+    },
+    "domain": {
+      "comment": "Shown at the right of a From… / To… value starting with @, which is a domain.",
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "domaine"
           }
         }
       }
@@ -1361,6 +1402,17 @@
         }
       }
     },
+    "not %@": {
+      "comment": "A value to exclude in the From…, To…, Text… and Subject… panels.",
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "pas %@"
+          }
+        }
+      }
+    },
     "not answered": {
       "localizations": {
         "fr": {
@@ -1377,6 +1429,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "sans drapeau"
+          }
+        }
+      }
+    },
+    "not from: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "pas de : %@"
+          }
+        }
+      }
+    },
+    "not to: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "pas à : %@"
           }
         }
       }
@@ -1492,12 +1564,12 @@
         }
       }
     },
-    "search everywhere (Contains… in Everything)": {
+    "search everywhere: words anywhere, addresses included, in Everything": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "chercher partout (Contient… dans Everything)"
+            "value": "chercher partout : des mots n'importe où, adresses comprises, dans Everything"
           }
         }
       }
@@ -1573,6 +1645,16 @@
         }
       }
     },
+    "subject: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "sujet : %@"
+          }
+        }
+      }
+    },
     "tag": {
       "localizations": {
         "fr": {
@@ -1603,13 +1685,23 @@
         }
       }
     },
-    "text words": {
-      "comment": "Hidden search words of the Contains… attribute in the F selector, separated by spaces.",
+    "text words body": {
+      "comment": "Hidden search words of the Text… attribute in the F selector, separated by spaces.",
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "texte mots"
+            "value": "texte mots corps"
+          }
+        }
+      }
+    },
+    "text: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "texte : %@"
           }
         }
       }
@@ -1630,6 +1722,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "trois colonnes"
+          }
+        }
+      }
+    },
+    "title": {
+      "comment": "Hidden search words of the Subject… attribute in the F selector, separated by spaces.",
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "titre objet"
           }
         }
       }
