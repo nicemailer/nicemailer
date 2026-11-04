@@ -11,7 +11,7 @@ XCODE ?= /Applications/Xcode.app/Contents/Developer
 THREADS ?= 2500
 
 # These targets are commands, not files to produce.
-.PHONY: build test swift-test ui-test seed core app
+.PHONY: build test swift-test ui-test bench seed core app
 
 build:
 	cargo build --release
@@ -32,6 +32,12 @@ swift-test:
 # takes the keyboard, so this can run while you work.
 ui-test:
 	scripts/ui-test.sh
+
+# Times the thread lists of the core on a generated mailbox of 100,000
+# conversations (`THREADS=…` to change it), or on an existing data directory
+# with BENCH_DATA_DIR=<dir> (see scripts/bench.sh).
+bench:
+	scripts/bench.sh
 
 # Recreate the database with fake mail (the core must be stopped first,
 # since it holds the database lock).

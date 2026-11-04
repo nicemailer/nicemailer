@@ -14,6 +14,19 @@ use rusqlite::{OptionalExtension, Row, params};
 
 use crate::{Result, Store, StoreError};
 
+/// The messages of a thread in one folder, oldest first: the details of a
+/// list row (`thread_summary`). It must use `idx_message_thread (thread_id,
+/// folder_id, …)`; through `idx_message_list (folder_id, …)`, which gives
+/// the order for free, SQLite read the whole folder for every row of the
+/// list (1.5 s for a page of a folder of 75 000 threads).
+const THREAD_MESSAGES_IN_FOLDER: &str = "SELECT from_name, from_addr, snippet, has_attachments
+       FROM message WHERE thread_id = ?1 AND folder_id = ?2
+      ORDER BY date_received, id";
+
+/// Whether a thread has a flagged message, in any folder (read from the
+/// partial index `idx_message_thread_flagged`).
+const THREAD_IS_FLAGGED: &str = "SELECT EXISTS (SELECT 1 FROM message WHERE thread_id = ?1 AND is_flagged = 1)";
+
 /// Parses a list cursor: `<date_last_received>:<thread_id>` of the last row
 /// of the previous page.
 ///
@@ -96,17 +109,16 @@ impl Store {
         Ok(items)
     }
 
-    /// Role of a folder, or `NotFound` if the folder does not exist.
-    fn folder_role(&self, folder_id: i64) -> Result<Option<FolderRole>> {
-        // Two levels of Option: the outer one says whether a row was found,
-        // the inner one whether its `role` column is NULL.
-        let role: Option<Option<String>> = self
+    /// Role and account of a folder, or `NotFound` if the folder does not
+    /// exist.
+    fn folder_role_and_account(&self, folder_id: i64) -> Result<(Option<FolderRole>, i64)> {
+        let row: Option<(Option<String>, i64)> = self
             .conn
-            .query_row("SELECT role FROM folder WHERE id = ?1", [folder_id], |r| r.get(0))
+            .query_row("SELECT role, account_id FROM folder WHERE id = ?1", [folder_id], |r| Ok((r.get(0)?, r.get(1)?)))
             .optional()?;
-        match role {
+        match row {
             None => Err(StoreError::NotFound(format!("dossier {folder_id}"))),
-            Some(r) => Ok(role_of(r)),
+            Some((r, account)) => Ok((role_of(r), account)),
         }
     }
 
@@ -127,8 +139,9 @@ impl Store {
 
     /// One page of the threads of several folders together, newest first:
     /// the unified view ("all") lists the folders of the same role in every
-    /// account, the virtual folder "Everything" every folder. A thread in
-    /// several of the folders is listed once (see `once` below).
+    /// account. (The virtual folder "Everything" has its own query,
+    /// `list_everything`.) A thread in several of the folders is listed once
+    /// (see `once` below).
     ///
     /// Each folder is read with its own index, `limit + 1` rows at most,
     /// then the pages are merged: the cost depends on the page size, not on
@@ -146,8 +159,11 @@ impl Store {
             return Ok((vec![], None));
         }
         let mut roles = Vec::with_capacity(folder_ids.len());
+        let mut accounts = Vec::with_capacity(folder_ids.len());
         for f in folder_ids {
-            roles.push((*f, self.folder_role(*f)?));
+            let (role, account) = self.folder_role_and_account(*f)?;
+            roles.push((*f, role));
+            accounts.push(account);
         }
         // Fetch one extra row: if it exists, there is a next page. This
         // avoids a separate `count(*)` query.
@@ -164,19 +180,20 @@ impl Store {
         let mut rows: Vec<(i64, ListRow)> = Vec::new();
         // Closure that converts a row into a tuple, shared by both queries.
         let map = |r: &Row| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?));
-        // Attribute filters: extra conditions, with their values bound after
-        // the fixed parameters (`?1`… are folder, cursor and limit).
         // The listed folders, as integers from the store written into the
         // SQL text (no user input).
         let set = folder_ids.iter().map(|f| f.to_string()).collect::<Vec<_>>().join(",");
-        let (filter_sql, filter_values) = filter_clause(filter, &set);
-        // Several folders: a thread present in more than one of them (Inbox
-        // and Sent, in the virtual folder "Everything") is listed once, in
-        // the folder of its latest message among them (ties: the smallest
-        // folder id). Its rows in the other folders are skipped, on every
-        // page, so pagination stays consistent. Folder ids are integers
-        // from the store, written into the SQL text.
-        let once = if folder_ids.len() > 1 {
+        // Attribute filters: extra conditions, with their values bound after
+        // the fixed parameters (`?1`… are folder, cursor and limit).
+        let (filter_sql, filter_values) = filter_clause(filter, &Target::folders(&set));
+        // A thread belongs to one account, so it can only be in two listed
+        // folders if two of them belong to the same account (never in the
+        // unified view, which lists one folder per account). Then it is
+        // listed once, in the folder of its latest message among them (ties:
+        // the smallest folder id). Its rows in the other folders are
+        // skipped, on every page, so pagination stays consistent.
+        let shared_account = (1..accounts.len()).any(|i| accounts[..i].contains(&accounts[i]));
+        let once = if shared_account {
             let col = key.trim_start_matches("tf.");
             format!(
                 " AND NOT EXISTS (SELECT 1 FROM thread_folder tf2
@@ -186,36 +203,8 @@ impl Store {
         } else {
             String::new()
         };
-        let select = format!(
-            "SELECT tf.thread_id, t.subject, tf.date_last_received, tf.date_last_modified,
-                    tf.message_count, tf.unread_count
-               FROM thread_folder tf JOIN thread t ON t.id = tf.thread_id
-              WHERE tf.folder_id = ?1{once}{filter_sql}"
-        );
         for &folder_id in folder_ids {
-            // Two separate queries rather than one with `?2 IS NULL OR ...`:
-            // such a condition would prevent SQLite from using the index for
-            // the row-value comparison, and every page would scan the folder.
-            // Fixed parameters first, then the filter values (numbered from
-            // `?10`, see `filter_clause`).
-            let (sql, mut values): (String, Vec<Value>) = match after {
-                None => (
-                    format!("{select} ORDER BY {key} DESC, tf.thread_id DESC LIMIT ?2"),
-                    vec![Value::Integer(folder_id), Value::Integer(fetch)],
-                ),
-                // `(a, b) < (x, y)` is a row-value comparison: true when
-                // a < x, or a = x and b < y. It matches the sort order.
-                Some((d, id)) => (
-                    format!("{select} AND ({key}, tf.thread_id) < (?3, ?4) ORDER BY {key} DESC, tf.thread_id DESC LIMIT ?2"),
-                    vec![Value::Integer(folder_id), Value::Integer(fetch), Value::Integer(d), Value::Integer(id)],
-                ),
-            };
-            // SQLite counts parameters up to the highest number used: pad
-            // the unused numbers (up to `?9`) only when filters follow.
-            if !filter_values.is_empty() {
-                values.resize(9, Value::Null);
-                values.extend(filter_values.iter().cloned());
-            }
+            let (sql, values) = folder_query(key, &once, &filter_sql, &filter_values, folder_id, fetch, after);
             let mut stmt = self.conn.prepare_cached(&sql)?;
             let page: Vec<ListRow> =
                 stmt.query_map(rusqlite::params_from_iter(values), map)?.collect::<std::result::Result<_, _>>()?;
@@ -252,6 +241,67 @@ impl Store {
         Ok((items, next_cursor))
     }
 
+    /// One page of the virtual folder "Everything" (`ui.md`): every folder,
+    /// of one account or of all of them, newest first.
+    ///
+    /// Every folder means whole threads, so the list is read from `thread`
+    /// itself, whose aggregates (`date_last_received`,
+    /// `date_last_modified`, counters) span all folders: one walk of
+    /// `idx_thread_received` (or its per-account and "modified" variants),
+    /// whatever the number of accounts and folders. Listing it folder by
+    /// folder, as `list_threads_in` does, ran one query per folder (156 for
+    /// thirteen accounts) and had to check, for every row, that the thread
+    /// was not also in a more recent folder.
+    ///
+    /// Each thread is shown in the folder of its latest message (on the
+    /// sort key; ties: the smallest folder id), with that folder's counters,
+    /// exactly as when Everything was listed folder by folder.
+    pub fn list_everything(
+        &self,
+        account_id: Option<i64>,
+        cursor: Option<&str>,
+        limit: u32,
+        sort: ThreadSort,
+        filter: &ThreadFilter,
+    ) -> Result<(Vec<ThreadSummary>, Option<String>)> {
+        let fetch = i64::from(limit) + 1;
+        let after = cursor.map(parse_cursor).transpose()?;
+        let (sql, values) = everything_query(account_id, after, fetch, sort, filter);
+        // Constant of ours, never client input (see `list_threads_in`).
+        let tf_key = match sort {
+            ThreadSort::Received => "tf.date_last_received",
+            ThreadSort::Modified => "tf.date_last_modified",
+        };
+        let rows: Vec<(i64, String, i64)> = self
+            .conn
+            .prepare_cached(&sql)?
+            .query_map(rusqlite::params_from_iter(values), |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+            .collect::<std::result::Result<_, _>>()?;
+
+        let has_more = rows.len() as i64 > i64::from(limit);
+        // The folder each thread is shown in (`shown_in_sql`).
+        let mut shown_in = self.conn.prepare_cached(&shown_in_sql(tf_key))?;
+        let mut items = Vec::with_capacity(rows.len().min(limit as usize));
+        let mut last_key = None;
+        for (thread_id, subject, sort_value) in rows.into_iter().take(limit as usize) {
+            last_key = Some((sort_value, thread_id));
+            let row = shown_in
+                .query_row([thread_id], |r| {
+                    Ok((r.get::<_, i64>(0)?, role_of(r.get(1)?), r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?))
+                })
+                .optional()?;
+            // A thread with messages always has a folder row; skip rather
+            // than fail if an inconsistency ever slips in.
+            let Some((folder_id, role, received, modified, count, unread)) = row else { continue };
+            items.push(self.thread_summary(thread_id, folder_id, role, subject, (received, modified), count, unread)?);
+        }
+        // The cursor is the sort key of the thread itself (equal to that of
+        // the folder it is shown in), so the next page continues the walk of
+        // the index where this one stopped.
+        let next_cursor = if has_more { last_key.map(|(d, id)| format!("{d}:{id}")) } else { None };
+        Ok((items, next_cursor))
+    }
+
     /// Completes a list row with the details that `thread_folder` does not
     /// store: participants, snippet, attachments, flag and return mark.
     ///
@@ -275,11 +325,7 @@ impl Store {
         unread_count: i64,
     ) -> Result<ThreadSummary> {
         // The thread's messages in this folder, oldest first.
-        let mut stmt = self.conn.prepare_cached(
-            "SELECT from_name, from_addr, snippet, has_attachments
-               FROM message WHERE thread_id = ?1 AND folder_id = ?2
-              ORDER BY date_received, id",
-        )?;
+        let mut stmt = self.conn.prepare_cached(THREAD_MESSAGES_IN_FOLDER)?;
         let mut participants: Vec<String> = Vec::new();
         let mut snippet = None;
         let mut has_attachments = false;
@@ -303,9 +349,7 @@ impl Store {
 
         // The flag is looked up across the whole thread, not only this
         // folder: a flagged message in Sent still flags the conversation.
-        let is_flagged: bool = self.conn.prepare_cached(
-            "SELECT EXISTS (SELECT 1 FROM message WHERE thread_id = ?1 AND is_flagged = 1)",
-        )?
+        let is_flagged: bool = self.conn.prepare_cached(THREAD_IS_FLAGGED)?
         .query_row([thread_id], |r| r.get(0))?;
 
         // The return mark only matters in the Inbox, where the thread landed
@@ -500,6 +544,100 @@ impl Store {
     }
 }
 
+/// The list query of one folder of `list_threads_in` and its parameters:
+/// `once` and `filter_sql` are the extra conditions, `filter_values` the
+/// values of the filters.
+fn folder_query(
+    key: &str,
+    once: &str,
+    filter_sql: &str,
+    filter_values: &[Value],
+    folder_id: i64,
+    fetch: i64,
+    after: Option<(i64, i64)>,
+) -> (String, Vec<Value>) {
+    let select = format!(
+        "SELECT tf.thread_id, t.subject, tf.date_last_received, tf.date_last_modified,
+                tf.message_count, tf.unread_count
+           FROM thread_folder tf JOIN thread t ON t.id = tf.thread_id
+          WHERE tf.folder_id = ?1{once}{filter_sql}"
+    );
+    // Two separate queries rather than one with `?2 IS NULL OR ...`: such a
+    // condition would prevent SQLite from using the index for the row-value
+    // comparison, and every page would scan the folder. Fixed parameters
+    // first, then the filter values (numbered from `?10`, see
+    // `filter_clause`).
+    let (sql, mut values): (String, Vec<Value>) = match after {
+        None => (
+            format!("{select} ORDER BY {key} DESC, tf.thread_id DESC LIMIT ?2"),
+            vec![Value::Integer(folder_id), Value::Integer(fetch)],
+        ),
+        // `(a, b) < (x, y)` is a row-value comparison: true when a < x, or
+        // a = x and b < y. It matches the sort order.
+        Some((d, id)) => (
+            format!("{select} AND ({key}, tf.thread_id) < (?3, ?4) ORDER BY {key} DESC, tf.thread_id DESC LIMIT ?2"),
+            vec![Value::Integer(folder_id), Value::Integer(fetch), Value::Integer(d), Value::Integer(id)],
+        ),
+    };
+    // SQLite counts parameters up to the highest number used: pad the
+    // unused numbers (up to `?9`) only when filters follow.
+    if !filter_values.is_empty() {
+        values.resize(9, Value::Null);
+        values.extend(filter_values.iter().cloned());
+    }
+    (sql, values)
+}
+
+/// The list query of `list_everything` and its parameters.
+fn everything_query(
+    account_id: Option<i64>,
+    after: Option<(i64, i64)>,
+    fetch: i64,
+    sort: ThreadSort,
+    filter: &ThreadFilter,
+) -> (String, Vec<Value>) {
+    // Constants of ours, never client input (see `list_threads_in`).
+    let key = match sort {
+        ThreadSort::Received => "t.date_last_received",
+        ThreadSort::Modified => "t.date_last_modified",
+    };
+    let (filter_sql, filter_values) = filter_clause(filter, &Target::everything());
+    // `message_count > 0`: a thread whose messages were all deleted keeps
+    // its row until it is cleaned up, and has nothing to show.
+    let mut sql = format!("SELECT t.id, t.subject, {key} FROM thread t WHERE t.message_count > 0{filter_sql}");
+    // Fixed parameters: ?1 account, ?2 limit, ?3 and ?4 cursor; the filter
+    // values start at ?10. SQLite counts parameters up to the highest number
+    // used, so unused numbers are bound to NULL.
+    let mut values = vec![Value::Null, Value::Integer(fetch)];
+    if let Some(a) = account_id {
+        sql.push_str(" AND t.account_id = ?1");
+        values[0] = Value::Integer(a);
+    }
+    if let Some((d, id)) = after {
+        sql.push_str(&format!(" AND ({key}, t.id) < (?3, ?4)"));
+        values.extend([Value::Integer(d), Value::Integer(id)]);
+    }
+    sql.push_str(&format!(" ORDER BY {key} DESC, t.id DESC LIMIT ?2"));
+    if !filter_values.is_empty() {
+        values.resize(9, Value::Null);
+        values.extend(filter_values);
+    }
+    (sql, values)
+}
+
+/// The folder a thread of Everything is shown in, with its counters there:
+/// the row of `thread_folder` with the latest date on the sort key `tf_key`
+/// (ties: the smallest folder id), read through its primary key (a thread
+/// is in a handful of folders).
+fn shown_in_sql(tf_key: &str) -> String {
+    format!(
+        "SELECT tf.folder_id, f.role, tf.date_last_received, tf.date_last_modified, tf.message_count, tf.unread_count
+           FROM thread_folder tf JOIN folder f ON f.id = tf.folder_id
+          WHERE tf.thread_id = ?1
+          ORDER BY {tf_key} DESC, tf.folder_id LIMIT 1"
+    )
+}
+
 /// Simplified presentation of a thread, computed by the core so every
 /// client shows the same thing (`clean.rs`, `docs/thread-display.md`):
 /// segments of each message, messages folded by default, recipients only
@@ -572,35 +710,85 @@ fn fts_phrase(word: &str, columns: &str) -> String {
     format!("{columns}\"{word}\"*")
 }
 
+/// What the attribute filters apply to: the columns of the list query, and
+/// the folders whose messages count.
+///
+/// A folder list (`list_threads_in`) reads `thread_folder tf JOIN thread t`;
+/// Everything (`list_everything`) reads `thread t` alone. The column names
+/// are constants of ours written into the SQL text, never client input.
+struct Target<'a> {
+    /// The thread id of the row.
+    thread: &'static str,
+    /// Unread messages of the row (in the folder, or in the whole thread).
+    unread: &'static str,
+    /// Date of the latest message of the row.
+    received: &'static str,
+    /// The listed folders (comma-separated ids), for the criteria that only
+    /// look at the messages of those folders (`ui.md`, "Négation": From,
+    /// To and attachments). `None` in Everything: every folder is listed,
+    /// so the whole thread counts.
+    folders: Option<&'a str>,
+}
+
+impl<'a> Target<'a> {
+    fn folders(set: &'a str) -> Target<'a> {
+        Target { thread: "tf.thread_id", unread: "tf.unread_count", received: "tf.date_last_received", folders: Some(set) }
+    }
+
+    fn everything() -> Target<'static> {
+        Target { thread: "t.id", unread: "t.unread_count", received: "t.date_last_received", folders: None }
+    }
+
+    /// " AND m.folder_id IN (…)" on the messages of a criterion, or nothing
+    /// in Everything.
+    fn in_folders(&self, alias: &str) -> String {
+        self.folders.map(|set| format!(" AND {alias}.folder_id IN ({set})")).unwrap_or_default()
+    }
+}
+
 /// SQL conditions for one text criterion over `columns` of `message_fts`
 /// (`ui.md`, "Sélecteur d'attributs"): the thread has a message holding
 /// every wanted word, and no message holding an excluded word. Each part
 /// runs its full-text query once (not correlated), whatever the number of
 /// threads.
-fn text_clause(query: &str, columns: &str, bind: &mut dyn FnMut(Value) -> String) -> String {
+fn text_clause(query: &str, columns: &str, thread: &str, bind: &mut dyn FnMut(Value) -> String) -> String {
     let (wanted, excluded) = fts_words(query);
     let mut sql = String::new();
+    // `thread_id IS NOT NULL`: in `x NOT IN (set)`, a single NULL in the set
+    // makes the result NULL (unknown), which would leave out every thread.
     let in_fts = |p: String| {
-        format!("SELECT mc.thread_id FROM message_fts JOIN message mc ON mc.id = message_fts.rowid WHERE message_fts MATCH {p}")
+        format!(
+            "SELECT mc.thread_id FROM message_fts JOIN message mc ON mc.id = message_fts.rowid
+              WHERE message_fts MATCH {p} AND mc.thread_id IS NOT NULL"
+        )
     };
     if !wanted.is_empty() {
         let q = wanted.iter().map(|w| fts_phrase(w, columns)).collect::<Vec<_>>().join(" ");
-        sql.push_str(&format!(" AND tf.thread_id IN ({})", in_fts(bind(Value::Text(q)))));
+        sql.push_str(&format!(" AND {thread} IN ({})", in_fts(bind(Value::Text(q)))));
     }
     if !excluded.is_empty() {
         // Any excluded word leaves the thread out: the words are OR-ed.
         let q = excluded.iter().map(|w| fts_phrase(w, columns)).collect::<Vec<_>>().join(" OR ");
-        sql.push_str(&format!(" AND tf.thread_id NOT IN ({})", in_fts(bind(Value::Text(q)))));
+        sql.push_str(&format!(" AND {thread} NOT IN ({})", in_fts(bind(Value::Text(q)))));
     }
     sql
 }
 
-/// The condition matching one From / To value on an address column and a
-/// name column. A value starting with `@` is a domain: the address ends
-/// with `@domain` or `.domain` (its subdomains), and the name is not
-/// looked at. Otherwise the value is part of the address or of the name.
+/// The addresses matching one From / To value, as conditions on the
+/// `address` table (`ui.md`, "Sélecteur d'attributs"). A value starting
+/// with `@` is a domain: the address ends with `@domain` or `.domain` (its
+/// subdomains), and the name is not looked at. Otherwise the value is part
+/// of the address or of its name.
+///
+/// The name is the one of the address (`address.name`), not the display
+/// name of each mail: a sender is a person, and a mail sent on someone's
+/// behalf by a shared address (`notifications@github.com` showing
+/// "thomas-serverhouse") is not from them. It also keeps the search fast:
+/// the address table is small, and the mails are then reached through
+/// indexes (`idx_message_from`, `idx_message_address_address`).
+///
 /// LIKE ignores ASCII case, and addresses are stored in lower case.
-fn address_condition(value: &str, addr: &str, name: &str, bind: &mut dyn FnMut(Value) -> String) -> String {
+fn address_condition(value: &str, bind: &mut dyn FnMut(Value) -> String) -> String {
     // `%` and `_` are LIKE wildcards: escape them in the user's text.
     let escape = |s: &str| s.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
     let v = value.trim();
@@ -609,67 +797,76 @@ fn address_condition(value: &str, addr: &str, name: &str, bind: &mut dyn FnMut(V
             let d = escape(&domain.to_lowercase());
             let at = bind(Value::Text(format!("%@{d}")));
             let sub = bind(Value::Text(format!("%.{d}")));
-            format!("{addr} LIKE {at} ESCAPE '\\' OR {addr} LIKE {sub} ESCAPE '\\'")
+            format!("addr LIKE {at} ESCAPE '\\' OR addr LIKE {sub} ESCAPE '\\'")
         }
         None => {
             let p = bind(Value::Text(format!("%{}%", escape(v))));
-            format!("{addr} LIKE {p} ESCAPE '\\' OR {name} LIKE {p} ESCAPE '\\'")
+            format!("addr LIKE {p} ESCAPE '\\' OR name LIKE {p} ESCAPE '\\'")
         }
     }
 }
 
 /// SQL conditions (each starting with " AND ") for the attribute filters,
 /// and their values, numbered from `?10` (the first nine numbers are kept
-/// for the fixed parameters of the list query). Every condition uses an
-/// index or a small correlated lookup on the thread's messages
-/// (`idx_message_thread`); each text criterion runs its full-text queries
-/// once (`text_clause`).
-fn filter_clause(f: &ThreadFilter, folders: &str) -> (String, Vec<Value>) {
+/// for the fixed parameters of the list query).
+///
+/// Every criterion on the messages of a thread is a set of thread ids,
+/// computed once through an index and tested with `IN` / `NOT IN`, never a
+/// subquery run for each row of the list. A list walks its index until it
+/// has a page of matching rows: with a rare criterion (a sender seen in 2009
+/// only, no flagged mail at all), a per-row subquery ran for every thread of
+/// the mailbox, several seconds on 200 000 threads.
+fn filter_clause(f: &ThreadFilter, target: &Target) -> (String, Vec<Value>) {
     let mut sql = String::new();
     let mut values: Vec<Value> = Vec::new();
-    let exists = |yes: bool, cond: &str| format!(" AND {}EXISTS ({cond})", if yes { "" } else { "NOT " });
+    let thread = target.thread;
+    // " AND <thread> IN (<set>)", or NOT IN for `false` / an exclusion.
+    let member = |yes: bool, set: &str| format!(" AND {thread} {}IN ({set})", if yes { "" } else { "NOT " });
     if let Some(seen) = f.seen {
-        sql.push_str(if seen { " AND tf.unread_count = 0" } else { " AND tf.unread_count > 0" });
+        let unread = target.unread;
+        sql.push_str(&if seen { format!(" AND {unread} = 0") } else { format!(" AND {unread} > 0") });
     }
+    // Flag and "answered" look at the whole thread, attachments at the
+    // listed folders. Each set is read from a partial index that holds only
+    // the marked messages (`idx_message_thread_flagged`…, schema.sql).
     if let Some(yes) = f.flagged {
-        sql.push_str(&exists(yes, "SELECT 1 FROM message mf WHERE mf.thread_id = tf.thread_id AND mf.is_flagged = 1"));
-    }
-    if let Some(yes) = f.attachments {
-        sql.push_str(&exists(
-            yes,
-            &format!("SELECT 1 FROM message mf WHERE mf.thread_id = tf.thread_id AND mf.folder_id IN ({folders}) AND mf.has_attachments = 1"),
-        ));
+        sql.push_str(&member(yes, "SELECT thread_id FROM message WHERE is_flagged = 1 AND thread_id IS NOT NULL"));
     }
     if let Some(yes) = f.answered {
-        sql.push_str(&exists(yes, "SELECT 1 FROM message mf WHERE mf.thread_id = tf.thread_id AND mf.is_answered = 1"));
+        sql.push_str(&member(yes, "SELECT thread_id FROM message WHERE is_answered = 1 AND thread_id IS NOT NULL"));
+    }
+    if let Some(yes) = f.attachments {
+        let set = format!(
+            "SELECT m.thread_id FROM message m WHERE m.has_attachments = 1 AND m.thread_id IS NOT NULL{}",
+            target.in_folders("m")
+        );
+        sql.push_str(&member(yes, &set));
     }
     if let Some(yes) = f.conversation {
         sql.push_str(if yes { " AND t.message_count > 1" } else { " AND t.message_count = 1" });
     }
     // From, and To / Cc: a message of the thread in the listed folders is
     // (or, for the exclusions, none is) from / to one of the values, OR-ed.
-    // The listed folders, not only the one the thread is shown in: in
-    // "Everything", a thread whose latest mail is the user's reply is shown
-    // in Sent, and "not from @acme.fr" must still see acme.fr's mail in the
-    // Inbox.
-    let address_sql = |list: &[String], sender: bool, bind: &mut dyn FnMut(Value) -> String| -> Option<String> {
-        let (addr, name) = if sender { ("mf.from_addr", "mf.from_name") } else { ("a.addr", "a.name") };
-        let ors: Vec<String> = list
-            .iter()
-            .filter(|v| !v.trim().is_empty())
-            .map(|v| address_condition(v, addr, name, bind))
-            .collect();
+    // The listed folders, not only the one the thread is shown in: in a
+    // folder list of several folders, "not from @acme.fr" must see acme.fr's
+    // mail in any of them.
+    let address_set = |list: &[String], sender: bool, bind: &mut dyn FnMut(Value) -> String| -> Option<String> {
+        let ors: Vec<String> =
+            list.iter().filter(|v| !v.trim().is_empty()).map(|v| address_condition(v, bind)).collect();
         if ors.is_empty() {
             return None;
         }
-        let ors = ors.join(" OR ");
+        let ids = format!("SELECT id FROM address WHERE {}", ors.join(" OR "));
+        let folders = target.in_folders("m");
         Some(if sender {
-            format!("SELECT 1 FROM message mf WHERE mf.thread_id = tf.thread_id AND mf.folder_id IN ({folders}) AND ({ors})")
+            format!(
+                "SELECT m.thread_id FROM message m
+                  WHERE m.from_address_id IN ({ids}) AND m.thread_id IS NOT NULL{folders}"
+            )
         } else {
             format!(
-                "SELECT 1 FROM message mf JOIN message_address ma ON ma.message_id = mf.id AND ma.role IN ('to', 'cc')
-                          JOIN address a ON a.id = ma.address_id
-                         WHERE mf.thread_id = tf.thread_id AND mf.folder_id IN ({folders}) AND ({ors})"
+                "SELECT m.thread_id FROM message_address ma JOIN message m ON m.id = ma.message_id
+                  WHERE ma.address_id IN ({ids}) AND ma.role IN ('to', 'cc') AND m.thread_id IS NOT NULL{folders}"
             )
         })
     };
@@ -681,23 +878,24 @@ fn filter_clause(f: &ThreadFilter, folders: &str) -> (String, Vec<Value>) {
         format!("?{}", 9 + values.len())
     };
     for (list, yes, sender) in [(&f.from, true, true), (&f.not_from, false, true), (&f.to, true, false), (&f.not_to, false, false)] {
-        if let Some(cond) = address_sql(list, sender, &mut bind) {
-            sql.push_str(&exists(yes, &cond));
+        if let Some(set) = address_set(list, sender, &mut bind) {
+            sql.push_str(&member(yes, &set));
         }
     }
     // Text criteria: `/` (every column), Text… (subject and body), Subject….
     for (query, columns) in [(&f.contains, ""), (&f.text, "{subject body} : "), (&f.subject, "subject : ")] {
         if let Some(q) = query.as_deref() {
-            sql.push_str(&text_clause(q, columns, &mut bind));
+            sql.push_str(&text_clause(q, columns, thread, &mut bind));
         }
     }
+    let received = target.received;
     if let Some(after) = f.after {
         let p = bind(Value::Integer(after));
-        sql.push_str(&format!(" AND tf.date_last_received >= {p}"));
+        sql.push_str(&format!(" AND {received} >= {p}"));
     }
     if let Some(before) = f.before {
         let p = bind(Value::Integer(before));
-        sql.push_str(&format!(" AND tf.date_last_received < {p}"));
+        sql.push_str(&format!(" AND {received} < {p}"));
     }
     (sql, values)
 }
@@ -726,4 +924,142 @@ fn unsubscribe_view(
         mailto,
         sender_unsubscribed_at: unsubscribed_at,
     })
+}
+
+/// Query plans of the list queries (`EXPLAIN QUERY PLAN`), checked on an
+/// empty database, that is without planner statistics: the case where a
+/// missing index once made a page of a large folder take 1.5 s. Timing a
+/// query in a test would be slow and flaky; its plan is deterministic and
+/// says whether the cost grows with the page or with the mailbox.
+#[cfg(test)]
+mod plan_tests {
+    use super::*;
+    use crate::Store;
+
+    /// The plan of `sql`, one line per step ("SEARCH t USING INDEX …").
+    fn plan(store: &Store, sql: &str, values: &[Value]) -> Vec<String> {
+        let mut stmt = store.conn().prepare(&format!("EXPLAIN QUERY PLAN {sql}")).unwrap();
+        stmt.query_map(rusqlite::params_from_iter(values.iter()), |r| r.get::<_, String>(3))
+            .unwrap()
+            .collect::<std::result::Result<_, _>>()
+            .unwrap()
+    }
+
+    /// Every filter of the attribute selector, one at a time, plus all of
+    /// them together.
+    fn filters() -> Vec<(&'static str, ThreadFilter)> {
+        let v = |s: &str| vec![s.to_string()];
+        let mut all = ThreadFilter {
+            seen: Some(false),
+            flagged: Some(true),
+            attachments: Some(true),
+            answered: Some(true),
+            conversation: Some(true),
+            from: v("alice"),
+            not_from: v("@acme.fr"),
+            to: v("bob"),
+            not_to: v("@x.org"),
+            contains: Some("devis -spam".into()),
+            text: Some("rénovation".into()),
+            subject: Some("facture".into()),
+            after: Some(1),
+            before: Some(2),
+        };
+        let mut out = vec![("none", ThreadFilter::default())];
+        out.push(("seen", ThreadFilter { seen: Some(false), ..Default::default() }));
+        out.push(("flagged", ThreadFilter { flagged: Some(true), ..Default::default() }));
+        out.push(("not flagged", ThreadFilter { flagged: Some(false), ..Default::default() }));
+        out.push(("answered", ThreadFilter { answered: Some(true), ..Default::default() }));
+        out.push(("attachments", ThreadFilter { attachments: Some(true), ..Default::default() }));
+        out.push(("from", ThreadFilter { from: v("alice"), ..Default::default() }));
+        out.push(("not from", ThreadFilter { not_from: v("@acme.fr"), ..Default::default() }));
+        out.push(("to", ThreadFilter { to: v("bob"), ..Default::default() }));
+        out.push(("contains", ThreadFilter { contains: Some("devis".into()), ..Default::default() }));
+        out.push(("dates", ThreadFilter { after: Some(1), before: Some(2), ..Default::default() }));
+        all.conversation = Some(true);
+        out.push(("all", all));
+        out
+    }
+
+    /// The steps a list query may take. A full read (`SCAN`) is only
+    /// allowed on what is small or already narrowed: the list's own index,
+    /// the address table (a LIKE needs to read it), the full-text index
+    /// (it answers a MATCH itself) and the partial index of the messages
+    /// with attachments. A correlated subquery (one run per row of the list)
+    /// is never allowed, nor reading a whole folder through
+    /// `idx_message_list`.
+    fn check(what: &str, steps: &[String]) {
+        for step in steps {
+            assert!(!step.contains("CORRELATED"), "{what}: per-row subquery: {steps:?}");
+            assert!(!step.contains("idx_message_list"), "{what}: reads a whole folder: {steps:?}");
+            if step.starts_with("SCAN ") {
+                let allowed = ["SCAN t USING INDEX idx_thread_", "SCAN address", "SCAN message_fts VIRTUAL TABLE",
+                    "SCAN m USING COVERING INDEX idx_message_thread_attachments", "SCAN CONSTANT ROW"];
+                assert!(allowed.iter().any(|a| step.starts_with(a)), "{what}: full scan `{step}`: {steps:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn row_details_use_the_thread_and_folder_index() {
+        let store = Store::open_in_memory().unwrap();
+        let steps = plan(&store, THREAD_MESSAGES_IN_FOLDER, &[Value::Integer(1), Value::Integer(1)]);
+        assert_eq!(steps, ["SEARCH message USING INDEX idx_message_thread (thread_id=? AND folder_id=?)"]);
+        let steps = plan(&store, THREAD_IS_FLAGGED, &[Value::Integer(1)]);
+        assert!(steps.iter().any(|s| s.contains("idx_message_thread_flagged (thread_id=?)")), "{steps:?}");
+        for key in ["tf.date_last_received", "tf.date_last_modified"] {
+            let steps = plan(&store, &shown_in_sql(key), &[Value::Integer(1)]);
+            assert_eq!(steps[0], "SEARCH tf USING PRIMARY KEY (thread_id=?)");
+            check("shown_in", &steps);
+        }
+    }
+
+    #[test]
+    fn everything_walks_a_thread_index_with_every_filter() {
+        let store = Store::open_in_memory().unwrap();
+        for (name, f) in filters() {
+            for account in [None, Some(1)] {
+                for sort in [ThreadSort::Received, ThreadSort::Modified] {
+                    for after in [None, Some((1, 1))] {
+                        let (sql, values) = everything_query(account, after, 61, sort, &f);
+                        let steps = plan(&store, &sql, &values);
+                        let what = format!("everything {name} account={account:?} {sort:?} cursor={}", after.is_some());
+                        check(&what, &steps);
+                        // The list itself: a thread index, or the threads
+                        // of a criterion's set, by primary key.
+                        assert!(
+                            steps[0].contains("USING INDEX idx_thread_") || steps[0] == "SEARCH t USING INTEGER PRIMARY KEY (rowid=?)",
+                            "{what}: {steps:?}"
+                        );
+                    }
+                }
+            }
+        }
+        // Without filter, the index of the sort and the scope, nothing else.
+        let first = |account, sort| {
+            let (sql, values) = everything_query(account, None, 61, sort, &ThreadFilter::default());
+            plan(&store, &sql, &values)
+        };
+        assert_eq!(first(None, ThreadSort::Received), ["SCAN t USING INDEX idx_thread_received"]);
+        assert_eq!(first(None, ThreadSort::Modified), ["SCAN t USING INDEX idx_thread_modified"]);
+        assert_eq!(first(Some(1), ThreadSort::Received), ["SEARCH t USING INDEX idx_thread_account_received (account_id=?)"]);
+        assert_eq!(first(Some(1), ThreadSort::Modified), ["SEARCH t USING INDEX idx_thread_account_modified (account_id=?)"]);
+    }
+
+    #[test]
+    fn a_folder_list_walks_its_index_with_every_filter() {
+        let store = Store::open_in_memory().unwrap();
+        for (name, f) in filters() {
+            for key in ["tf.date_last_received", "tf.date_last_modified"] {
+                for after in [None, Some((1, 1))] {
+                    let (filter_sql, filter_values) = filter_clause(&f, &Target::folders("1,2"));
+                    let (sql, values) = folder_query(key, "", &filter_sql, &filter_values, 1, 61, after);
+                    let steps = plan(&store, &sql, &values);
+                    let what = format!("folder {name} {key} cursor={}", after.is_some());
+                    check(&what, &steps);
+                    assert!(steps[0].starts_with("SEARCH tf USING INDEX idx_thread_folder_"), "{what}: {steps:?}");
+                }
+            }
+        }
+    }
 }

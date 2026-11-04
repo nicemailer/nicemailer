@@ -440,7 +440,7 @@ struct GeekControllerTests {
         #expect(model.attributes.contains == "devis" && model.everything == .account(1))
         #expect(await eventually {
             let call = core.calls("list_threads").last
-            return (call?["folder_ids"] as? [Int])?.sorted() == [1, 2, 3, 4]
+            return (call?["everything"] as? [String: Any])?["account_id"] as? Int == 1
                 && (call?["filter"] as? [String: Any])?["contains"] as? String == "devis"
         })
     }

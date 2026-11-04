@@ -1,5 +1,5 @@
 -- ============================================================
--- NiceMailer : schéma SQLite du noyau Rust (version 1)
+-- NiceMailer : schéma SQLite du noyau Rust (version 2)
 -- Dates : INTEGER, secondes Unix UTC. Booléens : 0/1.
 -- Nécessite SQLite >= 3.38 (STRICT, unixepoch) avec FTS5.
 -- Analyse et justification : modele de donnees.md
@@ -30,7 +30,10 @@ PRAGMA journal_mode = WAL;
 PRAGMA foreign_keys = ON;
 PRAGMA synchronous = NORMAL;
 PRAGMA temp_store = MEMORY;
-PRAGMA user_version = 1;   -- migrations : comparer à la version attendue au démarrage
+-- Une base existante est mise à jour par les migrations du noyau
+-- (crates/nm-store/src/migrations.rs) ; ce fichier crée directement la
+-- dernière version.
+PRAGMA user_version = 2;   -- migrations : comparer à la version attendue au démarrage
 
 -- ------------------------------------------------------------
 -- Comptes : état seulement. Les paramètres (adresse, serveurs, identifiants,
@@ -115,8 +118,9 @@ CREATE TABLE folder (
 CREATE TABLE address (
     id          INTEGER PRIMARY KEY,
     addr        TEXT NOT NULL COLLATE NOCASE,   -- adresse complète
-    name        TEXT,    -- nom d'affichage : renseigné à la première rencontre, jamais
-                         -- écrasé ensuite par l'ingestion, modifiable par l'utilisateur
+    name        TEXT,    -- nom d'affichage : renseigné à la première rencontre qui en
+                         -- porte un (l'ingestion complète un nom vide), jamais écrasé
+                         -- ensuite par l'ingestion, modifiable par l'utilisateur
     screening_target     TEXT           -- NULL = pas de décision
                          CHECK (screening_target IN ('inbox','newsletter','paperwork','banned')),
     date_screening_modified INTEGER,
@@ -218,8 +222,19 @@ CREATE TABLE thread (
     subject        TEXT NOT NULL DEFAULT '',
     date_last_received INTEGER NOT NULL DEFAULT 0,
     message_count  INTEGER NOT NULL DEFAULT 0,
-    unread_count   INTEGER NOT NULL DEFAULT 0
+    unread_count   INTEGER NOT NULL DEFAULT 0,
+    -- Plus récente modification des mails de la conversation, tous dossiers
+    -- confondus : tri par modification d'Everything (version 2).
+    date_last_modified INTEGER NOT NULL DEFAULT 0
 ) STRICT;
+
+-- Everything (ui.md) : tous les dossiers, donc la conversation entière. La
+-- liste est un parcours de ces index, de tous les comptes ou d'un seul, sans
+-- fusionner dossier par dossier (version 2).
+CREATE INDEX idx_thread_received ON thread (date_last_received, id);
+CREATE INDEX idx_thread_account_received ON thread (account_id, date_last_received, id);
+CREATE INDEX idx_thread_modified ON thread (date_last_modified, id);
+CREATE INDEX idx_thread_account_modified ON thread (account_id, date_last_modified, id);
 
 -- Vue matérialisée "conversations par dossier" : rend la liste de threads
 -- d'un dossier en simple parcours d'index, sans agrégation à chaque scroll.
@@ -340,9 +355,24 @@ CREATE INDEX idx_message_modified ON message (date_modified);
 CREATE INDEX idx_message_viewed
     ON message (date_last_viewed) WHERE date_last_viewed IS NOT NULL;
 
--- Messages d'une conversation, dans l'ordre chronologique.
+-- Messages d'une conversation, et ceux d'une conversation dans un dossier
+-- (aperçu d'une ligne de liste), dans l'ordre chronologique. Sans folder_id
+-- après thread_id, SQLite lisait tout le dossier pour chaque ligne de la
+-- liste (version 2).
 CREATE INDEX idx_message_thread
-    ON message (thread_id, date_received, id);
+    ON message (thread_id, folder_id, date_received, id);
+
+-- Filtres « avec drapeau », « répondu » et « pièce jointe » (ui.md) : les
+-- conversations concernées sont lues dans ces index partiels, qui ne
+-- contiennent que les mails marqués, au lieu d'interroger chaque
+-- conversation de la liste (version 2). La pièce jointe porte le dossier :
+-- elle ne compte que dans les dossiers listés, d'où folder_id en tête.
+CREATE INDEX idx_message_thread_flagged
+    ON message (thread_id) WHERE is_flagged = 1;
+CREATE INDEX idx_message_thread_answered
+    ON message (thread_id) WHERE is_answered = 1;
+CREATE INDEX idx_message_thread_attachments
+    ON message (folder_id, thread_id) WHERE has_attachments = 1;
 
 -- Mails d'un expéditeur, par dossier : rangement après une décision d'adresse
 -- ou de domaine, « adresse vue dans cette boîte » (synchronisation-configuration.md).

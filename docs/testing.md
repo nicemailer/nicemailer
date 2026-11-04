@@ -2,13 +2,16 @@
 
 | Command | What runs | Needs |
 | --- | --- | --- |
-| `make test` | Rust tests (`cargo test`) and Swift unit tests (`swift test`) | nothing running |
+| `make test` | Rust tests (`cargo test`), Python script tests and Swift unit tests (`swift test`) | nothing running |
 | `make swift-test` | Swift unit tests only | |
 | `make ui-test` | scripted UI tests of the app | builds the core; starts its own cores on temporary data |
+| `make bench` | times every thread list (folders, Everything, search, each filter) through the socket on 100,000 generated conversations, or on `BENCH_DATA_DIR` | starts its own core |
 
 ## Rust
 
 Unit tests live next to the code (`#[cfg(test)]`), integration tests in `crates/*/tests/`. `crates/nm-daemon/tests/import_rpc.rs` starts the real core binary and talks to it over its socket.
+
+Speed is tested by the plans of the queries rather than by timing them, which would be slow and flaky. `plan_tests` in `crates/nm-store/src/queries.rs` runs `EXPLAIN QUERY PLAN` on every list query (each filter, sort, scope and page) on an empty database, that is without planner statistics, and fails if one reads a whole folder, scans `message` or `thread_folder`, or runs a subquery for each row. `crates/nm-store/tests/everything.rs` checks that Everything, read from whole threads, lists exactly what merging every folder lists, page after page, on a generated mailbox. `crates/nm-store/tests/migrations.rs` checks that a version 1 database (`tests/fixtures/schema_v1.sql`) migrated by the core has exactly the schema of a fresh one, and repaired data.
 
 ## Swift unit tests
 

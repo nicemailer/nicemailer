@@ -138,8 +138,30 @@ struct AccountPickerTests {
         controller.open(everything)
         #expect(model.everything == .all && model.currentFolderName == "Everything" && model.scopeName == "all")
         #expect(model.listedFolderIds.sorted() == [1, 2, 3, 4, 11, 13])
-        #expect(await eventually { (core.calls("list_threads").last?["folder_ids"] as? [Int])?.sorted() == [1, 2, 3, 4, 11, 13] })
+        // The core is asked for Everything itself, not for the 6 folders:
+        // it then reads whole threads in one query.
+        #expect(await eventually {
+            let last = core.calls("list_threads").last
+            return last?["everything"] as? [String: Any] != nil && last?["folder_ids"] == nil
+        })
+        #expect((core.calls("list_threads").last?["everything"] as? [String: Any])?.isEmpty == true)
         #expect(controller.isCurrent(everything))
+    }
+
+    @Test func everythingOfAnAccountAsksForThatAccount() async {
+        controller.open(controller.scopeFolders.last!)
+        controller.goToAccount(2)
+        #expect(await eventually {
+            (core.calls("list_threads").last?["everything"] as? [String: Any])?["account_id"] as? Int == 2
+        })
+    }
+
+    @Test func theListScopeIsEverythingOrTheFolders() {
+        #expect((AppModel.listScope(everything: .all, folderIds: [1, 2])["everything"] as? [String: Any])?.isEmpty == true)
+        let account = AppModel.listScope(everything: .account(3), folderIds: [7])
+        #expect((account["everything"] as? [String: Any])?["account_id"] as? Int == 3 && account["folder_ids"] == nil)
+        let folders = AppModel.listScope(everything: nil, folderIds: [1, 11])
+        #expect(folders["folder_ids"] as? [Int] == [1, 11] && folders["everything"] == nil)
     }
 
     @Test func everythingStaysEverythingWhenChangingAccount() {

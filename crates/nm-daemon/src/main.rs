@@ -443,13 +443,31 @@ async fn dispatch(core: &Arc<Core>, session: &mut Session, req: Request) -> Resu
         method::LIST_THREADS => {
             let p: ListThreadsParams = params(req.params)?;
             let as_of = as_of();
-            let folders = match (p.folder_id, p.folder_ids) {
-                (Some(f), None) => vec![f],
-                (None, Some(fs)) if !fs.is_empty() => fs,
-                _ => return Err(RpcError::new(error_code::INVALID_PARAMS, "folder_id ou folder_ids attendu")),
+            // Rust note: an enum local to this arm says which of the three
+            // exclusive parameters was given, so the closure below gets a
+            // single value to match on.
+            enum Scope {
+                Folders(Vec<i64>),
+                Everything(Option<i64>),
+            }
+            let scope = match (p.folder_id, p.folder_ids, p.everything) {
+                (Some(f), None, None) => Scope::Folders(vec![f]),
+                (None, Some(fs), None) if !fs.is_empty() => Scope::Folders(fs),
+                (None, None, Some(e)) => Scope::Everything(e.account_id),
+                _ => {
+                    return Err(RpcError::new(
+                        error_code::INVALID_PARAMS,
+                        "un seul de folder_id, folder_ids, everything attendu",
+                    ));
+                }
             };
-            let (items, next_cursor) = with_store(core, move |s| {
-                s.list_threads_in(&folders, p.cursor.as_deref(), limit(p.limit), p.sort, &p.filter)
+            let (items, next_cursor) = with_store(core, move |s| match scope {
+                Scope::Folders(folders) => {
+                    s.list_threads_in(&folders, p.cursor.as_deref(), limit(p.limit), p.sort, &p.filter)
+                }
+                Scope::Everything(account) => {
+                    s.list_everything(account, p.cursor.as_deref(), limit(p.limit), p.sort, &p.filter)
+                }
             })
             .await?;
             to_value(Page { items, next_cursor, as_of })

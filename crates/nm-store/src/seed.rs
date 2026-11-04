@@ -572,7 +572,8 @@ pub fn seed(store: &mut Store, opts: &SeedOptions) -> Result<SeedReport> {
          UPDATE thread SET
             date_last_received = (SELECT max(date_received) FROM message m WHERE m.thread_id = thread.id),
             message_count      = (SELECT count(*) FROM message m WHERE m.thread_id = thread.id),
-            unread_count       = (SELECT count(*) FROM message m WHERE m.thread_id = thread.id AND m.is_seen = 0);
+            unread_count       = (SELECT count(*) FROM message m WHERE m.thread_id = thread.id AND m.is_seen = 0),
+            date_last_modified = (SELECT max(date_modified) FROM message m WHERE m.thread_id = thread.id);
          UPDATE folder SET
             total_count  = (SELECT count(*) FROM message m WHERE m.folder_id = folder.id),
             unread_count = (SELECT count(*) FROM message m WHERE m.folder_id = folder.id AND m.is_seen = 0),

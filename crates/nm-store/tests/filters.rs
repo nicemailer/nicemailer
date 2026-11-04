@@ -76,10 +76,18 @@ fn found(env: &(Store, Vec<i64>), filter: ThreadFilter) -> Vec<usize> {
     let (store, folders) = env;
     let (items, next) = store.list_threads_in(folders, None, 100, ThreadSort::Received, &filter).unwrap();
     assert!(next.is_none());
-    let mut out: Vec<usize> =
-        items.iter().map(|t| MAILS.iter().position(|m| m.2 == t.subject).expect("a subject of MAILS")).collect();
-    out.sort();
-    out
+    let index = |items: &[nm_api::ThreadSummary]| {
+        let mut out: Vec<usize> =
+            items.iter().map(|t| MAILS.iter().position(|m| m.2 == t.subject).expect("a subject of MAILS")).collect();
+        out.sort();
+        out
+    };
+    // Every folder is what the virtual folder Everything lists, with its
+    // own query: both must find the same threads.
+    let (everything, next) = store.list_everything(None, None, 100, ThreadSort::Received, &filter).unwrap();
+    assert!(next.is_none());
+    assert_eq!(index(&everything), index(&items), "Everything and every folder differ for {filter:?}");
+    index(&items)
 }
 
 fn words(s: &str) -> Option<String> {

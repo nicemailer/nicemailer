@@ -13,12 +13,14 @@
 //! - `raw.rs`: immutable raw message files (`stockage-brut.md`),
 //! - `mbox.rs`: streaming reader of mbox files,
 //! - `ingest.rs`: interpretation of a raw message (headers, bodies, attachments),
+//! - `encoded_words.rs`: RFC 2047 encoded words that `mail-parser` leaves undecoded,
 //! - `attachments.rs`: attachments of a thread, extraction of their files,
 //! - `unsubscribe.rs`: how to unsubscribe from a mailing list,
 //! - `html_text.rs`: HTML to plain text, keeping blocks apart,
 //! - `import.rs`: import of an mbox file into an archive account,
 //! - `library.rs`: history, export, tags, groups, contacts, display preference,
-//! - `seed.rs`: generator of fake mail for development.
+//! - `seed.rs`: generator of fake mail for development,
+//! - `migrations.rs`: upgrade of a database created by an earlier version.
 //!
 //! Rust note: `mod queries;` tells the compiler to include `src/queries.rs`
 //! as a module. Without `pub`, the module is private to this crate; its
@@ -27,11 +29,13 @@
 pub mod attachments;
 mod commands;
 pub mod clean;
+pub mod encoded_words;
 pub mod html_text;
 pub mod import;
 pub mod ingest;
 pub mod library;
 pub mod mbox;
+mod migrations;
 mod queries;
 pub mod raw;
 pub mod screening;
@@ -53,12 +57,15 @@ pub use rusqlite;
 /// Schema version expected by this code, stored in SQLite's
 /// `PRAGMA user_version` (a free integer in the database header that SQLite
 /// reserves for applications).
-pub const SCHEMA_VERSION: i64 = 1;
+///
+/// 2: indexes for large mailboxes, `thread.date_last_modified`, repaired
+/// encoded words (`migrations.rs`).
+pub const SCHEMA_VERSION: i64 = 2;
 
-/// Full text of the schema. `include_str!` reads the file at compile time
-/// and embeds it in the binary as a `&'static str`; the path is relative to
-/// this source file.
-const SCHEMA_V1: &str = include_str!("../../../specifications/schema.sql");
+/// Full text of the schema, at the latest version. `include_str!` reads the
+/// file at compile time and embeds it in the binary as a `&'static str`; the
+/// path is relative to this source file.
+const SCHEMA: &str = include_str!("../../../specifications/schema.sql");
 
 /// Errors returned by the store.
 ///
@@ -174,56 +181,86 @@ impl Store {
         // `query_row` runs a query expected to return one row and passes it to
         // the closure `|r| r.get(0)`, which reads column 0.
         let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+        // Rust note: `mut` because migrating needs `&mut Connection` (a
+        // transaction borrows the connection exclusively).
+        let mut conn = conn;
         match version {
             // Fresh database: create everything. schema.sql ends by setting
-            // `user_version` to 1.
-            0 => conn.execute_batch(SCHEMA_V1)?,
-            // Same version number: check that the schema really is the
-            // current one (see `OutdatedSchema`). `prepare` fails if a
-            // column or table is missing, without running anything.
-            SCHEMA_VERSION => {
-                for (sql, what) in [
-                    ("SELECT kind, address FROM account", "account.kind"),
-                    ("SELECT raw_hash FROM message", "message.raw_hash"),
-                    ("SELECT hash FROM raw_blob", "raw_blob"),
-                    ("SELECT sync_key FROM contact_group", "contact_group"),
-                    ("SELECT date_last_modified FROM thread_folder", "thread_folder.date_last_modified"),
-                    ("SELECT body_format FROM address", "address.body_format"),
-                    ("SELECT unsubscribed_at FROM address", "address.unsubscribed_at"),
-                    ("SELECT one_click FROM message_unsubscribe", "message_unsubscribe"),
-                ] {
-                    if conn.prepare(sql).is_err() {
-                        return Err(StoreError::OutdatedSchema(what));
-                    }
-                }
-                // Older builds indexed new messages with a trigger; the code
-                // now does it, and the two together would index twice.
-                let old_trigger: i64 = conn.query_row(
-                    "SELECT count(*) FROM sqlite_master WHERE type = 'trigger' AND name = 'message_fts_ai'",
-                    [],
-                    |r| r.get(0),
-                )?;
-                if old_trigger > 0 {
-                    return Err(StoreError::OutdatedSchema("trigger message_fts_ai encore présent"));
-                }
-            }
+            // `user_version` to the latest version.
+            0 => conn.execute_batch(SCHEMA)?,
             // `v if ...` is a *match guard*: the arm matches only if the
             // condition holds.
             v if v > SCHEMA_VERSION => {
                 return Err(StoreError::SchemaTooNew { found: v, expected: SCHEMA_VERSION });
             }
-            // Future migrations (version 1 -> 2, ...) will go here. For now no
-            // version between 0 and 1 can exist; `unreachable!` panics if the
-            // impossible happens.
-            _ => unreachable!("pas de migration antérieure à la version 1"),
+            // An earlier version: check it is a complete one, then upgrade it.
+            v => {
+                check_schema(&conn, v)?;
+                migrations::migrate(&mut conn, v)?;
+            }
         }
-        Ok(Store { conn })
+        // Planner statistics (`sqlite_stat1`). Without them SQLite guesses how
+        // selective each index is, and on a large mailbox it once preferred
+        // an index that read a whole folder for every row of a list. The
+        // queries are written to be fast without statistics; these are a
+        // safety net. `0x10002` is the setting SQLite recommends when a
+        // connection opens: it analyzes only the tables that need it, with a
+        // bounded effort, so it stays quick on a large database.
+        conn.execute_batch("PRAGMA optimize = 0x10002;")?;
+                Ok(Store { conn })
+    }
+
+    /// Updates the planner statistics after a large change (an import adds
+    /// tens of thousands of rows at once). Same as at opening: only the
+    /// tables whose size changed much are analyzed.
+    pub fn optimize(&self) -> Result<()> {
+        self.conn.execute_batch("PRAGMA optimize;")?;
+        Ok(())
     }
 
     /// Direct access to the connection, for the CLI and tests.
     pub fn conn(&self) -> &Connection {
         &self.conn
     }
+}
+
+/// Checks that a database at `version` really has that version's schema.
+///
+/// Version 1 was edited in place during development (it is not released),
+/// so a database created by an early build may lack tables added since;
+/// `prepare` fails on a missing table or column without running anything.
+/// Such a database cannot be migrated and has to be recreated
+/// (`OutdatedSchema`).
+fn check_schema(conn: &Connection, version: i64) -> Result<()> {
+    let mut checks = vec![
+        ("SELECT kind, address FROM account", "account.kind"),
+        ("SELECT raw_hash FROM message", "message.raw_hash"),
+        ("SELECT hash FROM raw_blob", "raw_blob"),
+        ("SELECT sync_key FROM contact_group", "contact_group"),
+        ("SELECT date_last_modified FROM thread_folder", "thread_folder.date_last_modified"),
+        ("SELECT body_format FROM address", "address.body_format"),
+        ("SELECT unsubscribed_at FROM address", "address.unsubscribed_at"),
+        ("SELECT one_click FROM message_unsubscribe", "message_unsubscribe"),
+    ];
+    if version >= 2 {
+        checks.push(("SELECT date_last_modified FROM thread", "thread.date_last_modified"));
+    }
+    for (sql, what) in checks {
+        if conn.prepare(sql).is_err() {
+            return Err(StoreError::OutdatedSchema(what));
+        }
+    }
+    // Older builds indexed new messages with a trigger; the code now does
+    // it, and the two together would index twice.
+    let old_trigger: i64 = conn.query_row(
+        "SELECT count(*) FROM sqlite_master WHERE type = 'trigger' AND name = 'message_fts_ai'",
+        [],
+        |r| r.get(0),
+    )?;
+    if old_trigger > 0 {
+        return Err(StoreError::OutdatedSchema("trigger message_fts_ai encore présent"));
+    }
+    Ok(())
 }
 
 /// Recomputes the denormalized aggregates of a thread (tables `thread` and
@@ -272,7 +309,8 @@ pub(crate) fn refresh_thread(conn: &Connection, thread_id: i64) -> Result<Vec<i6
         "UPDATE thread SET
             date_last_received = coalesce((SELECT max(date_received) FROM message WHERE thread_id = ?1), 0),
             message_count      = (SELECT count(*) FROM message WHERE thread_id = ?1),
-            unread_count       = (SELECT count(*) FROM message WHERE thread_id = ?1 AND is_seen = 0)
+            unread_count       = (SELECT count(*) FROM message WHERE thread_id = ?1 AND is_seen = 0),
+            date_last_modified = coalesce((SELECT max(date_modified) FROM message WHERE thread_id = ?1), 0)
           WHERE id = ?1",
         [thread_id],
     )?;

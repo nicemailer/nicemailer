@@ -34,7 +34,7 @@ The magnifier after the folder in the status bar (key **F**, or a click) opens t
 | attachments | with attachments / without attachments — pièce jointe / sans pièce jointe | `wi` `witho` — `pj` (or `pi`) `spj` |
 | answered (you replied) | answered / not answered — répondus / sans ma réponse | `an` `na` — `r` `sm` |
 | conversation | conversation (several mails) / single mail — conversations / mails seuls | `co` `si` — `co` `m` |
-| From… — De… | part of a name or address, or a domain written `@acme.fr`; contacts suggested as you type; several values OR-ed; `-value` excludes | `fr`, `sender` — `de`, `exp` |
+| From… — De… | part of a name or address, or a domain written `@acme.fr`; contacts suggested as you type; several values OR-ed; `-value` excludes. The name is the contact's, not the display name of each mail | `fr`, `sender` — `de`, `exp` |
 | To… — À… | same, on To and Cc | `to`, `cc` — `a`, `cc`, `dest` |
 | Text… — Texte… | words of the subject and body, never the addresses; each word a prefix, accents ignored; `-word` excludes | `te` — `te` |
 | Subject… — Sujet… | words of the subject only; `-word` excludes | `su`, `title` — `su`, `objet` |

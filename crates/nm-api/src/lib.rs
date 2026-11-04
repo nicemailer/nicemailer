@@ -283,9 +283,15 @@ pub struct ListThreadsParams {
     #[serde(default)]
     pub folder_id: Option<i64>,
     /// …or several folders listed together (the unified view lists the
-    /// folders of the same role in every account). Exactly one of the two.
+    /// folders of the same role in every account)…
     #[serde(default)]
     pub folder_ids: Option<Vec<i64>>,
+    /// …or the virtual folder "Everything": every folder of one account, or
+    /// of every account. Exactly one of the three. Faster than listing every
+    /// folder in `folder_ids`: the core reads whole threads instead of
+    /// merging folders.
+    #[serde(default)]
+    pub everything: Option<EverythingScope>,
     /// Opaque cursor returned as `next_cursor` by the previous page. Absent
     /// for the first page. Clients must not build or parse it. A cursor is
     /// only valid with the `sort` it was produced with.
@@ -299,6 +305,16 @@ pub struct ListThreadsParams {
     /// Attributes narrowing the list (`ui.md`, attribute selector).
     #[serde(default)]
     pub filter: ThreadFilter,
+}
+
+/// Scope of the virtual folder "Everything" in `list_threads`:
+/// `{"everything": {}}` for every account, `{"everything": {"account_id": 3}}`
+/// for one.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EverythingScope {
+    #[serde(default)]
+    pub account_id: Option<i64>,
 }
 
 /// Attributes that narrow a thread list, combined with AND. A thread

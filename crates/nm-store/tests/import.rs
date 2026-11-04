@@ -489,3 +489,54 @@ fn reception_date_rules() {
     assert_eq!(reception_date(None, Some(sent), now), sent);
     assert_eq!(reception_date(None, None, now), 0);
 }
+
+// --- Names of addresses (`schema.sql`, table `address`) ---
+
+#[test]
+fn an_address_without_a_name_gets_the_first_one_a_mail_gives() {
+    let env = Env::new();
+    // An address known before any mail with a name: a screening decision
+    // taken on it creates it without a name.
+    env.store.lock().unwrap().set_address_screening("carol@c.example", Some(nm_core::ScreeningTarget::Inbox), Source::App).unwrap();
+    let path = env.write_mbox(
+        "names.mbox",
+        &[
+            // Dave first appears without a name, then with one, then with
+            // another: the first name seen is kept.
+            mail("Mon Jun  1 10:00:00 2020", &["From: dave@d.example", "To: me@hey.example", "Subject: a", "Message-ID: <a@d>"], "x"),
+            mail("Mon Jun  1 11:00:00 2020", &["From: Dave Durand <dave@d.example>", "To: me@hey.example", "Subject: b", "Message-ID: <b@d>"], "x"),
+            mail("Mon Jun  1 12:00:00 2020", &["From: D. Durand <dave@d.example>", "To: me@hey.example", "Subject: c", "Message-ID: <c@d>"], "x"),
+            // Carol's name arrives as a recipient.
+            mail("Mon Jun  1 13:00:00 2020", &["From: me@hey.example", "To: Carol Petit <carol@c.example>", "Subject: d", "Message-ID: <d@me>"], "x"),
+            // An encoded word glued inside the name is decoded.
+            mail("Mon Jun  1 14:00:00 2020", &["From: Achille Ber=?ISO-8859-1?B?6A==?=s <achille@b.example>", "To: me@hey.example", "Subject: e", "Message-ID: <e@b>"], "x"),
+        ],
+    );
+    env.import(&env.options(&path)).unwrap();
+    let name = |addr: &str| env.text(&format!("SELECT name FROM address WHERE addr = '{addr}'"));
+    assert_eq!(name("dave@d.example").as_deref(), Some("Dave Durand"));
+    assert_eq!(name("carol@c.example").as_deref(), Some("Carol Petit"));
+    assert_eq!(name("achille@b.example").as_deref(), Some("Achille Berès"));
+    assert_eq!(env.text("SELECT from_name FROM message WHERE message_id_hdr = 'e@b'").as_deref(), Some("Achille Berès"));
+    assert_eq!(env.text("SELECT modified_by FROM address WHERE addr = 'carol@c.example'").as_deref(), Some("core"));
+    // The From filter finds Dave by the name of his address.
+    let filter = nm_api::ThreadFilter { from: vec!["durand".into()], ..Default::default() };
+    let store = env.store.lock().unwrap();
+    let (items, _) = store.list_everything(None, None, 10, nm_api::ThreadSort::Received, &filter).unwrap();
+    assert_eq!(items.len(), 3);
+}
+
+#[test]
+fn a_name_already_set_is_never_replaced_by_a_mail() {
+    let env = Env::new();
+    let path = env.write_mbox("a.mbox", &sample());
+    env.import(&env.options(&path)).unwrap();
+    // The user renames Alice; a new mail with another name changes nothing.
+    env.store.lock().unwrap().conn().execute("UPDATE address SET name = 'Alice (cliente)' WHERE addr = 'alice@a.example'", []).unwrap();
+    let path = env.write_mbox(
+        "b.mbox",
+        &[mail("Mon Jun  1 10:00:00 2020", &["From: Alice M. <alice@a.example>", "To: me@hey.example", "Subject: z", "Message-ID: <z@a>"], "x")],
+    );
+    env.import(&env.options(&path)).unwrap();
+    assert_eq!(env.text("SELECT name FROM address WHERE addr = 'alice@a.example'").as_deref(), Some("Alice (cliente)"));
+}

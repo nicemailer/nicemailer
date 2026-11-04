@@ -68,6 +68,28 @@ fn import_mbox_runs_in_the_background_and_reports_events() {
     assert_eq!(archive["account_kind"], "archive");
     assert_eq!(archive["total_count"], 1);
 
+    // The virtual folder Everything: the conversation once, shown in the
+    // folder of its latest mail (the reply, in Sent), for every account or
+    // for this one.
+    let account = archive["account_id"].clone();
+    for scope in [json!({}), json!({"account_id": account})] {
+        let page = c.call("list_threads", json!({"everything": scope, "limit": 10})).unwrap();
+        let items = page["items"].as_array().unwrap();
+        assert_eq!(items.len(), 1, "{scope}");
+        let sent = folders["items"].as_array().unwrap().iter().find(|f| f["role"] == "sent").unwrap();
+        assert_eq!(items[0]["folder_id"], sent["id"]);
+        assert_eq!(items[0]["message_count"], 1);
+    }
+    let page = c.call("list_threads", json!({"everything": {}, "filter": {"from": ["alice"]}})).unwrap();
+    assert_eq!(page["items"].as_array().unwrap().len(), 1);
+    // Exactly one of folder_id, folder_ids and everything.
+    let err = c.call("list_threads", json!({"everything": {}, "folder_id": archive["id"]})).unwrap_err();
+    assert_eq!(err["code"], -32602);
+    let err = c.call("list_threads", json!({})).unwrap_err();
+    assert_eq!(err["code"], -32602);
+    let err = c.call("list_threads", json!({"everything": {"account": 1}})).unwrap_err();
+    assert_eq!(err["code"], -32602);
+
     // Same account name with another address: refused before starting.
     let err = c
         .call("import_mbox", json!({"path": mbox.to_str().unwrap(), "account": "hey", "address": "other@x.example"}))

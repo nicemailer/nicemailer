@@ -165,7 +165,9 @@ pub fn parse(raw: &[u8]) -> ParsedMessage {
         message_id: message_id.filter(|s| !s.is_empty()),
         in_reply_to: in_reply_to.filter(|s| !s.is_empty()),
         references,
-        subject: m.subject().map(|s| s.trim().to_string()).unwrap_or_default(),
+        // `decode_leftovers`: encoded words `mail-parser` did not decode
+        // because they are glued inside a word (`encoded_words.rs`).
+        subject: m.subject().map(|s| crate::encoded_words::decode_leftovers(s.trim()).into_owned()).unwrap_or_default(),
         from: m.from().and_then(|l| l.first()).and_then(|mb| address(mb.address(), mb.name())),
         to: addresses(m.to()),
         cc: addresses(m.cc()),
@@ -196,7 +198,11 @@ fn address(addr: Option<&str>, name: Option<&str>) -> Option<ParsedAddress> {
     if !addr.contains('@') || addr.len() > 320 {
         return None;
     }
-    let name = name.map(|n| n.trim().trim_matches('"').trim().to_string()).filter(|n| !n.is_empty() && *n != addr);
+    // Encoded words glued inside the name (`Ber=?ISO-8859-1?B?6A==?=s`) are
+    // decoded here: `mail-parser` only decodes whole words.
+    let name = name
+        .map(|n| crate::encoded_words::decode_leftovers(n.trim().trim_matches('"').trim()).trim().to_string())
+        .filter(|n| !n.is_empty() && *n != addr);
     Some(ParsedAddress { addr, name })
 }
 
@@ -365,6 +371,17 @@ Subject:  Bonjour =?utf-8?Q?=C3=A0_tous?= \r\nDate: Tue, 23 Jun 2020 21:20:56 +0
         assert_eq!(p.date_sent, Some(1_592_940_056));
         assert_eq!(p.text.as_deref().map(str::trim), Some("Hello"));
         assert!(p.html.is_none());
+    }
+
+    #[test]
+    fn decodes_encoded_words_glued_inside_names_and_subject() {
+        let raw = b"From: Achille Ber=?ISO-8859-1?B?6A==?=s <A@x.org>\r\n\
+To: Herv=?ISO-8859-1?B?6SA=?=Mainguet <h@x.org>\r\n\
+Subject: Re: 2=?ISO-8859-1?B?6A==?=me rappel\r\n\r\nbody";
+        let p = parse(raw);
+        assert_eq!(p.from.unwrap().name.as_deref(), Some("Achille Berès"));
+        assert_eq!(p.to[0].name.as_deref(), Some("Hervé Mainguet"));
+        assert_eq!(p.subject, "Re: 2ème rappel");
     }
 
     #[test]

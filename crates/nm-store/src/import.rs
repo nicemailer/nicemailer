@@ -376,9 +376,10 @@ struct Writer {
     account: ArchiveAccount,
     address: String,
     source: Source,
-    /// Address ids already looked up, by lowercase address. Most messages
-    /// involve the same few hundred people, so this saves most queries.
-    addresses: HashMap<String, i64>,
+    /// Address ids already looked up, by lowercase address, with whether the
+    /// address has a name. Most messages involve the same few hundred
+    /// people, so this saves most queries.
+    addresses: HashMap<String, (i64, bool)>,
     report: ImportReport,
     /// When the import started, in Unix seconds: no message can have been
     /// delivered after it (see `reception_date`).
@@ -579,28 +580,55 @@ impl Writer {
 
     /// Id of the `address` row, created if needed with `imported_from =
     /// 'mbox'`. An address that already exists keeps its name and its
-    /// `imported_from` (`import-initial.md`, section 7).
+    /// `imported_from` (`import-initial.md`, section 7), except that an
+    /// address without a name gets the one this message gives it: the name
+    /// is "filled in at the first encounter that has one" (`schema.sql`,
+    /// table `address`). A recipient added to a group, or a sender decided
+    /// on before any of their mail with a name arrived, would otherwise stay
+    /// nameless forever, and the From / To filters look names up there.
     fn address_id(&mut self, tx: &Transaction, a: &ParsedAddress) -> Result<i64> {
-        if let Some(id) = self.addresses.get(&a.addr) {
-            return Ok(*id);
+        if let Some(&(id, named)) = self.addresses.get(&a.addr) {
+            if !named && a.name.is_some() {
+                self.fill_name(tx, id, a)?;
+            }
+            return Ok(id);
         }
-        let existing: Option<i64> = tx
-            .prepare_cached("SELECT id FROM address WHERE addr = ?1")?
-            .query_row([&a.addr], |r| r.get(0))
+        let existing: Option<(i64, Option<String>)> = tx
+            .prepare_cached("SELECT id, name FROM address WHERE addr = ?1")?
+            .query_row([&a.addr], |r| Ok((r.get(0)?, r.get(1)?)))
             .optional()?;
-        let id = match existing {
-            Some(id) => id,
+        let (id, named) = match existing {
+            Some((id, name)) if name.as_deref().is_some_and(|n| !n.is_empty()) => (id, true),
+            Some((id, _)) => {
+                if a.name.is_some() {
+                    self.fill_name(tx, id, a)?;
+                }
+                (id, a.name.is_some())
+            }
             None => {
                 tx.prepare_cached(
                     "INSERT INTO address (addr, name, imported_from, created_by, modified_by)
                      VALUES (?1, ?2, 'mbox', ?3, ?3)",
                 )?
                 .execute(params![a.addr, a.name, self.source.as_str()])?;
-                tx.last_insert_rowid()
+                (tx.last_insert_rowid(), a.name.is_some())
             }
         };
-        self.addresses.insert(a.addr.clone(), id);
+        self.addresses.insert(a.addr.clone(), (id, named));
         Ok(id)
+    }
+
+    /// Gives the address `id`, which has no name, the name of `a`. The
+    /// condition on the name is repeated in SQL so that a name set in the
+    /// meantime (by the user, between two batches) is never overwritten.
+    fn fill_name(&mut self, tx: &Transaction, id: i64, a: &ParsedAddress) -> Result<()> {
+        tx.prepare_cached(
+            "UPDATE address SET name = ?2, date_modified = unixepoch(), modified_by = 'core'
+              WHERE id = ?1 AND coalesce(name, '') = ''",
+        )?
+        .execute(params![id, a.name])?;
+        self.addresses.insert(a.addr.clone(), (id, true));
+        Ok(())
     }
 
     /// Finds the thread of a message, creating or merging threads as needed.
@@ -738,6 +766,8 @@ impl Writer {
             ],
         )?;
         tx.commit()?;
+        // Tens of thousands of new rows change the planner statistics.
+        guard.optimize()?;
         let mut changes = ChangeSet::default();
         changes.folders.insert(acc.archive_folder);
         changes.folders.insert(acc.sent_folder);

@@ -149,6 +149,19 @@ final class AppModel {
         return selectedFolderId.map { [$0] } ?? []
     }
 
+    /// What `list_threads` lists, as its parameters: Everything by its scope
+    /// (the core then reads whole threads, one query whatever the number of
+    /// folders), anything else by its folders.
+    ///
+    /// A pure function of its inputs, so it is tested without a core.
+    static func listScope(everything: Everything?, folderIds: [Int]) -> [String: Any] {
+        switch everything {
+        case .all: return ["everything": [String: Any]()]
+        case .account(let a): return ["everything": ["account_id": a]]
+        case nil: return ["folder_ids": folderIds]
+        }
+    }
+
     /// Account of the view: `nil` for the unified one.
     var scopeAccountId: Int? {
         switch everything {
@@ -467,13 +480,17 @@ final class AppModel {
         guard let client, !folderIds.isEmpty else { threads = []; return }
         let sort = self.sort
         let filter = attributes
+        // Read once: every page of this reload lists the same thing.
+        let scope = Self.listScope(everything: everything, folderIds: folderIds)
         let wanted = keepDepth ? max(threads.count, Self.pageSize) : Self.pageSize
         var items: [ThreadSummary] = []
         var cursor: String?
         do {
             // `repeat { } while` runs the body at least once.
             repeat {
-                var params: [String: Any] = ["folder_ids": folderIds, "limit": min(200, wanted - items.count), "sort": sort]
+                var params = scope
+                params["limit"] = min(200, wanted - items.count)
+                params["sort"] = sort
                 if !filter.isEmpty { params["filter"] = filter.parameters }
                 if let cursor { params["cursor"] = cursor }
                 let page: Page<ThreadSummary> = try await client.call("list_threads", params)
@@ -570,7 +587,10 @@ final class AppModel {
         // `defer` runs when the function exits, whatever the path.
         defer { loadingMore = false }
         do {
-            var params: [String: Any] = ["folder_ids": folderIds, "cursor": cursor, "limit": Self.pageSize, "sort": sort]
+            var params = Self.listScope(everything: everything, folderIds: folderIds)
+            params["cursor"] = cursor
+            params["limit"] = Self.pageSize
+            params["sort"] = sort
             if !filter.isEmpty { params["filter"] = filter.parameters }
             let page: Page<ThreadSummary> = try await client.call("list_threads", params)
             // Drop the page if the folder or the list changed meanwhile.
