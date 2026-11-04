@@ -23,6 +23,20 @@ key ret
 expect screen = mail
 expect list_filter ~ contact
 expect thread_count > 0
+# The attributes narrow the mails of a contact too: the status bar keeps
+# "contact: …" and shows the magnifier and the chip.
+key F
+type Text
+key ret
+type zzzz
+key ret
+expect filters = text: zzzz
+expect list_filter ~ contact
+expect thread_count = 0
+snap contact-filtered
+click chip:text
+expect filters =
+expect thread_count > 0
 key esc
 expect list_filter =
 expect folder = Inbox

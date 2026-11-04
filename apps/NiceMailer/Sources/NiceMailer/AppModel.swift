@@ -151,15 +151,33 @@ final class AppModel {
 
     /// What `list_threads` lists, as its parameters: Everything by its scope
     /// (the core then reads whole threads, one query whatever the number of
-    /// folders), anything else by its folders.
+    /// folders), anything else by its folders. The threads of a tag, a group
+    /// or a contact are Everything of every account, narrowed by the
+    /// criterion (`listFilterParameters`).
     ///
     /// A pure function of its inputs, so it is tested without a core.
-    static func listScope(everything: Everything?, folderIds: [Int]) -> [String: Any] {
+    static func listScope(everything: Everything?, folderIds: [Int], listFilter: ListFilter? = nil) -> [String: Any] {
+        if listFilter != nil { return ["everything": [String: Any]()] }
         switch everything {
         case .all: return ["everything": [String: Any]()]
         case .account(let a): return ["everything": ["account_id": a]]
         case nil: return ["folder_ids": folderIds]
         }
+    }
+
+    /// The `filter` of `list_threads`: the attributes, plus the criterion of
+    /// a tag, group or contact list. A tag goes by its name: the core lists
+    /// the tags of that name in every account (each account has its own
+    /// "Clients"). `nil` when there is nothing to filter.
+    static func filterParameters(_ attributes: ThreadFilter, listFilter: ListFilter?) -> [String: Any]? {
+        var p = attributes.parameters
+        switch listFilter {
+        case .tag(let t): p["tag"] = t.name
+        case .group(let g): p["group_id"] = g.id
+        case .contact(let c): p["address_id"] = c.id
+        case nil: break
+        }
+        return p.isEmpty ? nil : p
     }
 
     /// Account of the view: `nil` for the unified one.
@@ -472,16 +490,14 @@ final class AppModel {
     /// (in several pages if needed), so the list does not jump back to the
     /// top on every invalidation.
     func reloadThreads(keepDepth: Bool = false) async {
-        if let filter = listFilter {
-            await reloadFiltered(filter)
-            return
-        }
         let folderIds = listedFolderIds
-        guard let client, !folderIds.isEmpty else { threads = []; return }
+        let listFilter = self.listFilter
+        guard let client, !folderIds.isEmpty || listFilter != nil else { threads = []; return }
         let sort = self.sort
         let filter = attributes
         // Read once: every page of this reload lists the same thing.
-        let scope = Self.listScope(everything: everything, folderIds: folderIds)
+        let scope = Self.listScope(everything: everything, folderIds: folderIds, listFilter: listFilter)
+        let filterParameters = Self.filterParameters(filter, listFilter: listFilter)
         let wanted = keepDepth ? max(threads.count, Self.pageSize) : Self.pageSize
         var items: [ThreadSummary] = []
         var cursor: String?
@@ -491,7 +507,7 @@ final class AppModel {
                 var params = scope
                 params["limit"] = min(200, wanted - items.count)
                 params["sort"] = sort
-                if !filter.isEmpty { params["filter"] = filter.parameters }
+                if let filterParameters { params["filter"] = filterParameters }
                 if let cursor { params["cursor"] = cursor }
                 let page: Page<ThreadSummary> = try await client.call("list_threads", params)
                 items += page.items
@@ -499,13 +515,14 @@ final class AppModel {
             } while cursor != nil && items.count < wanted
             // The user may have changed folder while we were loading: then
             // this result is stale and must not replace the new list.
-            guard folderIds == listedFolderIds, sort == self.sort, filter == attributes, listFilter == nil else { return }
+            guard folderIds == listedFolderIds, sort == self.sort, filter == attributes, listFilter == self.listFilter else { return }
             // A refresh (`keepDepth`) keeps the selected mail if it only
             // stopped matching the attributes; a new list (other folder,
             // other attributes) starts afresh.
             let kept = keepDepth
                 ? Self.keepingSelected(items, previous: threads, selected: selectedThreadId,
-                                       open: openThread, listed: Set(folderIds))
+                                       open: openThread,
+                                       listed: listFilter == nil ? Set(folderIds) : Set(folders.map(\.id)))
                 : (threads: items, sticky: nil)
             threads = kept.threads
             stickyThreadId = kept.sticky
@@ -558,28 +575,12 @@ final class AppModel {
         Task { await reloadThreads() }
     }
 
-    private func reloadFiltered(_ filter: ListFilter) async {
-        guard let client else { return }
-        var params: [String: Any] = ["limit": 200]
-        switch filter {
-        case .tag(let t): params["tag_id"] = t.id
-        case .group(let g): params["group_id"] = g.id
-        case .contact(let c): params["address_id"] = c.id
-        }
-        do {
-            let list: Items<ThreadSummary> = try await client.call("list_threads_by", params)
-            guard filter == listFilter else { return }
-            threads = list.items
-            nextCursor = nil
-            selectFirstIfNeeded()
-        } catch { report(error) }
-    }
-
     /// Loads the next page when the last row appears on screen (called by
     /// each row's `.task` in `ThreadList`).
     func loadMoreIfNeeded(after thread: ThreadSummary) async {
         let folderIds = listedFolderIds
-        guard let client, !folderIds.isEmpty, let cursor = nextCursor, listFilter == nil,
+        let listFilter = self.listFilter
+        guard let client, !folderIds.isEmpty || listFilter != nil, let cursor = nextCursor,
               !loadingMore, thread.id == threads.last?.id else { return }
         let sort = self.sort
         let filter = attributes
@@ -587,14 +588,15 @@ final class AppModel {
         // `defer` runs when the function exits, whatever the path.
         defer { loadingMore = false }
         do {
-            var params = Self.listScope(everything: everything, folderIds: folderIds)
+            var params = Self.listScope(everything: everything, folderIds: folderIds, listFilter: listFilter)
             params["cursor"] = cursor
             params["limit"] = Self.pageSize
             params["sort"] = sort
-            if !filter.isEmpty { params["filter"] = filter.parameters }
+            if let p = Self.filterParameters(filter, listFilter: listFilter) { params["filter"] = p }
             let page: Page<ThreadSummary> = try await client.call("list_threads", params)
             // Drop the page if the folder or the list changed meanwhile.
-            guard folderIds == listedFolderIds, cursor == nextCursor, sort == self.sort, filter == attributes else { return }
+            guard folderIds == listedFolderIds, cursor == nextCursor, sort == self.sort, filter == attributes,
+                  listFilter == self.listFilter else { return }
             threads += page.items
             nextCursor = page.nextCursor
         } catch { report(error) }

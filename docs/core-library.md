@@ -85,7 +85,12 @@ Rules (`specifications/groupes.md`): an address can be in several groups; removi
 
 ## Threads across folders
 
-`list_threads_by {tag_id | group_id | address_id, limit?}` lists the latest threads (200 at most by default) of a tag, of a group's members, or of a contact, in every folder. For a group or a contact, a thread qualifies when one of its messages is from the address or addressed to it (To, Cc). Each thread is listed with the folder of its latest message (`folder_id`), from which moves start.
+The threads of a tag, of a group's members or of a contact are criteria of `filter` in `list_threads`, used with `everything`: `tag` (a name: the tags of that name in every account, compared without case, since each account has its own "Clients"), `group_id` and `address_id`. For a group or a contact, a thread qualifies when one of its messages is from the address or addressed to it (To, Cc). The list is then an ordinary one: newest first on the date shown, paginated by cursor, sorted by reception or by modification, and combined with the other attributes ("unread mails of the group"). Each thread is listed with the folder of its latest message (`folder_id`), from which moves start. On 275,000 mails: a tag of 5,000 threads 18 ms, a group of 6 colleagues 35 ms, a group of 67 addresses covering 140,000 mails 150 ms. They replace `list_threads_by`, which returned at most 200 threads, ignored the attributes and the sort, and ordered a thread by its latest mail from or to the member rather than by the date it showed.
+
+```sh
+nicemailer call list_threads '{"everything": {}, "filter": {"tag": "Clients", "seen": false}}'
+nicemailer call list_threads '{"everything": {}, "filter": {"group_id": 1}, "sort": "modified"}'
+```
 
 ## Tests
 

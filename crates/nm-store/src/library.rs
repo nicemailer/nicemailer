@@ -1,15 +1,15 @@
 //! Features around the mail itself, used by the screens of the app
 //! (`ui.md`): display preference per address, export of a message to a
-//! file, history (audit log), tags, contact groups, contacts, and thread
-//! lists across folders (by tag, group or contact).
+//! file, history (audit log), tags, contact groups and contacts. The
+//! threads of a tag, a group or a contact are criteria of the thread lists
+//! (`ThreadFilter`, `queries.rs`).
 
-use std::collections::BTreeSet;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use nm_api::{ContactView, ExportFormat, GroupView, HistoryEntry, TagView, ThreadSummary};
-use nm_core::{FolderRole, Source};
+use nm_api::{ContactView, ExportFormat, GroupView, HistoryEntry, TagView};
+use nm_core::Source;
 use rusqlite::{OptionalExtension, Transaction, TransactionBehavior, params};
 use serde_json::Value;
 
@@ -609,99 +609,6 @@ impl Store {
         }
         let next = if has_more { items.last().map(|c| c.addr.clone()) } else { None };
         Ok((items, next))
-    }
-
-    // ----------------------------------------------------------------
-    // Thread lists across folders
-    // ----------------------------------------------------------------
-
-    /// The latest threads (at most `limit`) of a tag, of a group's members,
-    /// or of a contact, in every folder, newest first. A thread is listed
-    /// with the folder of its latest message.
-    ///
-    /// For a group or a contact, a thread qualifies when one of its
-    /// messages is from the address or addressed to it (To, Cc).
-    pub fn list_threads_by(
-        &self,
-        tag_id: Option<i64>,
-        group_id: Option<i64>,
-        address_id: Option<i64>,
-        limit: u32,
-    ) -> Result<Vec<ThreadSummary>> {
-        let threads: Vec<i64> = match (tag_id, group_id, address_id) {
-            (Some(t), None, None) => self
-                .conn
-                .prepare_cached(
-                    "SELECT m.thread_id FROM tag t
-                       JOIN message_keyword mk ON mk.keyword = t.keyword
-                       JOIN message m ON m.id = mk.message_id AND m.account_id = t.account_id
-                      WHERE t.id = ?1 AND m.thread_id IS NOT NULL
-                      GROUP BY m.thread_id ORDER BY max(m.date_received) DESC LIMIT ?2",
-                )?
-                .query_map(params![t, limit], |r| r.get(0))?
-                .collect::<std::result::Result<_, _>>()?,
-            (None, g, a) if g.is_some() != a.is_some() => {
-                // The addresses concerned: the group's active members, or
-                // the single contact.
-                let ids: Vec<i64> = match g {
-                    Some(g) => self
-                        .conn
-                        .prepare_cached("SELECT address_id FROM contact_group_member WHERE group_id = ?1 AND date_removed IS NULL")?
-                        .query_map([g], |r| r.get(0))?
-                        .collect::<std::result::Result<_, _>>()?,
-                    None => vec![a.unwrap_or_default()],
-                };
-                let mut found: Vec<(i64, i64)> = Vec::new();
-                let mut seen = BTreeSet::new();
-                let mut from = self.conn.prepare_cached(
-                    "SELECT thread_id, max(date_received) FROM message
-                      WHERE from_address_id = ?1 AND thread_id IS NOT NULL GROUP BY thread_id",
-                )?;
-                let mut to = self.conn.prepare_cached(
-                    "SELECT m.thread_id, max(m.date_received) FROM message_address ma JOIN message m ON m.id = ma.message_id
-                      WHERE ma.address_id = ?1 AND ma.role IN ('to', 'cc') AND m.thread_id IS NOT NULL GROUP BY m.thread_id",
-                )?;
-                for id in ids {
-                    for stmt in [&mut from, &mut to] {
-                        for row in stmt.query_map([id], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)))? {
-                            let (t, d) = row?;
-                            if seen.insert(t) {
-                                found.push((d, t));
-                            }
-                        }
-                    }
-                }
-                // Newest first; a thread found twice keeps its first date,
-                // which is close enough for ordering a short list.
-                found.sort_unstable_by(|a, b| b.cmp(a));
-                found.into_iter().take(limit as usize).map(|(_, t)| t).collect()
-            }
-            _ => return Err(StoreError::InvalidParams("exactement un de tag_id, group_id, address_id".into())),
-        };
-
-        let mut items = Vec::with_capacity(threads.len());
-        for thread_id in threads {
-            let row: Option<(i64, Option<String>)> = self
-                .conn
-                .prepare_cached(
-                    "SELECT m.folder_id, f.role FROM message m JOIN folder f ON f.id = m.folder_id
-                      WHERE m.thread_id = ?1 ORDER BY m.date_received DESC, m.id DESC LIMIT 1",
-                )?
-                .query_row([thread_id], |r| Ok((r.get(0)?, r.get(1)?)))
-                .optional()?;
-            let Some((folder_id, role)) = row else { continue };
-            let (subject, received, modified, count, unread): (String, i64, i64, i64, i64) = self
-                .conn
-                .prepare_cached(
-                    "SELECT t.subject, tf.date_last_received, tf.date_last_modified, tf.message_count, tf.unread_count
-                       FROM thread t JOIN thread_folder tf ON tf.thread_id = t.id AND tf.folder_id = ?2
-                      WHERE t.id = ?1",
-                )?
-                .query_row(params![thread_id, folder_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)))?;
-            let role = role.as_deref().and_then(FolderRole::parse);
-            items.push(self.thread_summary(thread_id, folder_id, role, subject, (received, modified), count, unread)?);
-        }
-        Ok(items)
     }
 }
 

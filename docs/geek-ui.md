@@ -25,7 +25,7 @@ As in Zed, **⌘+** (or **⌘=**, which needs no Shift on AZERTY keyboards) make
 
 ## Attributes (filters)
 
-The magnifier after the folder in the status bar (key **F**, or a click) opens the attribute selector. Attributes narrow the current list (folder of an account, or of "all"), combined with AND; a thread qualifies when its mails in the listed folders match (in Everything, every folder: a thread shown in Sent because your reply is its latest mail is still seen with the mail it answers).
+The magnifier after the folder in the status bar (key **F**, or a click) opens the attribute selector. Attributes narrow the current list (folder of an account, or of "all", or the mails of a tag, a group or a contact, whose status bar then shows the magnifier and the chips after "tag: …"), combined with AND; a thread qualifies when its mails in the listed folders match (in Everything, every folder: a thread shown in Sent because your reply is its latest mail is still seen with the mail it answers).
 
 | Attribute | Values (English / French rows) | Typed to reach it (English / French) |
 | --- | --- | --- |
@@ -184,7 +184,7 @@ The menu lists the folders in blocks separated by a blank line, the folder colum
 | `;d` `;x` `;b` | Deleted, Junk, Banned |
 | `;e` | Everything: every folder of the view |
 | `;c` | Contacts: every known address, with its decision (or its domain's, after "@"), groups and number of mails; `/` filters; `m` chooses the decision on the address, `M` on its domain (`i` Inbox, `n` Newsletter, `p` Paperwork, `b` Banned, `-` none); Return lists the contact's mails |
-| `;T` | Tags; Return lists the mails of the tag (uppercase: `;t` is Todo) |
+| `;T` | Tags; Return lists the mails of the tag, in every account (uppercase: `;t` is Todo) |
 | `;g` | Groups; Return lists the mails of the group's members |
 | `;h` | History: the audit log, newest first |
 

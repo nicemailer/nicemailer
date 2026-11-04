@@ -132,7 +132,7 @@ enum Fixture {
             return ["items": items, "next_cursor": NSNull(), "as_of": position]
         case "list_history":
             return ["items": [], "next_cursor": NSNull(), "as_of": position]
-        case "list_tags", "list_groups", "list_threads_by":
+        case "list_tags", "list_groups":
             return ["items": [], "as_of": position]
         case "move_thread":
             // A move from the Inbox decides nothing; one to Newsletter

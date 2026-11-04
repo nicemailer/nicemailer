@@ -82,6 +82,16 @@ fn import_mbox_runs_in_the_background_and_reports_events() {
     }
     let page = c.call("list_threads", json!({"everything": {}, "filter": {"from": ["alice"]}})).unwrap();
     assert_eq!(page["items"].as_array().unwrap().len(), 1);
+    // The threads of a contact are a criterion of the list (the former
+    // `list_threads_by` is gone).
+    let contacts = c.call("list_contacts", json!({"query": "alice"})).unwrap();
+    let alice = contacts["items"][0]["id"].clone();
+    let page = c.call("list_threads", json!({"everything": {}, "filter": {"address_id": alice}})).unwrap();
+    assert_eq!(page["items"].as_array().unwrap().len(), 1);
+    let page = c.call("list_threads", json!({"everything": {}, "filter": {"tag": "absent"}})).unwrap();
+    assert!(page["items"].as_array().unwrap().is_empty());
+    let err = c.call("list_threads_by", json!({"address_id": alice})).unwrap_err();
+    assert_eq!(err["code"], -32601);
     // Exactly one of folder_id, folder_ids and everything.
     let err = c.call("list_threads", json!({"everything": {}, "folder_id": archive["id"]})).unwrap_err();
     assert_eq!(err["code"], -32602);

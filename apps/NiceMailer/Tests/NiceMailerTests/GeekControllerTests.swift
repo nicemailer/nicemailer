@@ -221,8 +221,11 @@ struct GeekControllerTests {
         #expect(controller.screenIndex == 1)
         press("ret")
         #expect(controller.screen == .mail)
-        #expect(await eventually { !core.calls("list_threads_by").isEmpty })
-        #expect(core.calls("list_threads_by")[0]["address_id"] as? Int == 2)
+        // The threads of the contact: Everything narrowed to the contact.
+        #expect(await eventually {
+            let call = core.calls("list_threads").last
+            return (call?["filter"] as? [String: Any])?["address_id"] as? Int == 2 && call?["everything"] != nil
+        })
         press(";"); press("h")
         #expect(controller.screen == .history)
         press("esc")

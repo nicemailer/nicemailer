@@ -70,8 +70,6 @@ pub mod method {
     pub const SET_GROUP_MEMBER: &str = "set_group_member";
     /// Known addresses, with their decision and groups.
     pub const LIST_CONTACTS: &str = "list_contacts";
-    /// Threads of a tag, a group or a contact, across folders.
-    pub const LIST_THREADS_BY: &str = "list_threads_by";
     /// Takes, changes or removes the screening decision on an address, and
     /// files the mails already received from it (`dossiers.md`).
     pub const SET_ADDRESS_SCREENING: &str = "set_address_screening";
@@ -385,6 +383,19 @@ pub struct ThreadFilter {
     /// Latest message received before this Unix time.
     #[serde(default)]
     pub before: Option<i64>,
+    /// Tagged with this tag: a message of the thread carries it. A name,
+    /// not an id: the tags of the same name in every account are one (each
+    /// account has its own "Clients"), compared without case.
+    #[serde(default)]
+    pub tag: Option<String>,
+    /// Of the members of this group (`groupes.md`): a message of the thread
+    /// in the listed folders is from one of them or to them (To, Cc).
+    #[serde(default)]
+    pub group_id: Option<i64>,
+    /// Of this contact (an `address` id): a message of the thread in the
+    /// listed folders is from it or to it (To, Cc).
+    #[serde(default)]
+    pub address_id: Option<i64>,
 }
 
 impl ThreadFilter {
@@ -573,7 +584,7 @@ pub struct ThreadSummary {
     /// Folder preselected if the user replies (see `FolderRole::reply_target`).
     pub reply_target: Option<FolderRole>,
     /// Folder this row describes: the listed folder, or for a list across
-    /// folders (`list_threads_by`) the folder of the latest message. Moves
+    /// folders (Everything) the folder of the latest message. Moves
     /// pass it as `from_folder_id`.
     pub folder_id: i64,
     /// Unix timestamp of the latest change to a message of the thread in
@@ -986,19 +997,6 @@ pub struct ContactView {
     pub groups: Vec<String>,
     /// Number of messages received from the address.
     pub message_count: i64,
-}
-
-/// Parameters of `list_threads_by`: exactly one of the three ids.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct ListThreadsByParams {
-    #[serde(default)]
-    pub tag_id: Option<i64>,
-    #[serde(default)]
-    pub group_id: Option<i64>,
-    #[serde(default)]
-    pub address_id: Option<i64>,
-    #[serde(default)]
-    pub limit: Option<u32>,
 }
 
 /// A plain list with the event position of the read.

@@ -48,7 +48,7 @@ use nm_api::{
     AttachmentFileView, CommandResult, DEFAULT_LIMIT, Event, ExportMessageParams, ExportResult, FolderList,
     GetAttachmentParams, GetThreadParams, UnsubscribeParams, UnsubscribeResult,
     GroupMemberResult, HelloParams, HelloResult, ImportMboxParams, ImportStatus, Items, ListContactsParams,
-    ListHistoryParams, ListTagsParams, ListThreadsByParams, ListThreadsParams, MAX_LIMIT, MoveThreadParams,
+    ListHistoryParams, ListTagsParams, ListThreadsParams, MAX_LIMIT, MoveThreadParams,
     PROTOCOL_VERSION, Page, Request, Response, RpcError, SearchParams, SearchResult, SetBodyFormatParams,
     SetGroupMemberParams, SetThreadFlaggedParams, SetThreadSeenParams, SubscribeParams, SubscribeResult,
     SetAddressScreeningParams, SetDomainScreeningParams, TagThreadParams, ThreadView, UndoParams, error_code,
@@ -627,13 +627,6 @@ async fn dispatch(core: &Arc<Core>, session: &mut Session, req: Request) -> Resu
             })
             .await?;
             to_value(Page { items, next_cursor, as_of })
-        }
-        method::LIST_THREADS_BY => {
-            let p: ListThreadsByParams = params(req.params)?;
-            let as_of = as_of();
-            let items =
-                with_store(core, move |s| s.list_threads_by(p.tag_id, p.group_id, p.address_id, limit(p.limit))).await?;
-            to_value(Items { items, as_of })
         }
         other => Err(RpcError::new(error_code::METHOD_NOT_FOUND, format!("méthode inconnue : {other}"))),
     }

@@ -70,7 +70,7 @@ L'affichage est simplifié au maximum : chaque message montre ce qu'il apporte. 
 
 ### Sélecteur d'attributs
 
-À droite du compte et du dossier, dans la barre de statut, une loupe (touche `F`, ou un clic) ouvre le sélecteur d'attributs, qui affine la liste courante (dossier d'un compte, ou de « all ») ; les attributs se combinent par « et ».
+À droite du compte et du dossier, dans la barre de statut, une loupe (touche `F`, ou un clic) ouvre le sélecteur d'attributs, qui affine la liste courante (dossier d'un compte, ou de « all », ou mails d'un tag, d'un groupe ou d'un contact, dont la barre de statut garde alors « tag : … » suivi de la loupe et des pastilles) ; les attributs se combinent par « et ».
 
 - non lus / lus, drapeau / sans drapeau, pièce jointe / sans pièce jointe, répondus / sans ma réponse (répondu par l'utilisateur), conversations / mails seuls ;
 - De…, À… (À et Cc ; une partie d'un nom ou d'une adresse, contacts suggérés pendant la frappe ; plusieurs valeurs combinées par « ou » ; le nom est celui du contact, `address.name`, et non le nom d'affichage de chaque mail : un mail envoyé par une adresse partagée, comme `notifications@github.com` au nom de Thomas, n'est pas « de : thomas »), Texte… (mots du sujet et du corps), Sujet… (mots du sujet seul), Date… (aujourd'hui, 7 derniers jours, 30 derniers jours, cette année, plus d'un an, ou après / avant une date tapée, ou depuis / il y a plus de une durée tapée).
@@ -189,7 +189,7 @@ ainsi ;i va à l’inbox, ;p va à Paperwork, ;t va à Todo, etc
 Le prefix ";" permet également d'aller aux autres écrans : 
 c Contact (liste des adresses ; / filtre ; m choisit la décision sur l'adresse, M sur son domaine : i Inbox, n Newsletter, p Paperwork, b Banned, - aucune ; entrée liste les mails du contact, tous dossiers)
 h History (affichage de l'historique issu de l audit log, plus récent d'abord)
-T tag (majuscule : `;t` est Todo ; entrée liste les mails du tag)
+T tag (majuscule : `;t` est Todo ; entrée liste les mails du tag, et des tags de même nom des autres comptes)
 g group (entrée liste les mails des membres du groupe)
 
 Sur ces écrans, j/k se déplacent et échap revient aux mails.

@@ -184,8 +184,8 @@ struct GeekStatusBar: View {
                 .font(.geek(11, weight: .bold))
                 .foregroundStyle(Palette.background)
                 .background(Palette.accent)
-            if controller.screen == .mail, model.listFilter == nil,
-               !model.listedFolderIds.isEmpty {
+            let listsMail = controller.screen == .mail && (model.listFilter != nil || !model.listedFolderIds.isEmpty)
+            if listsMail, model.listFilter == nil {
                 // Account ("all" for the unified view) and folder, each with
                 // its icon and the key that opens its picker; a click opens
                 // it too.
@@ -196,9 +196,16 @@ struct GeekStatusBar: View {
                     .menuAnchor(.goto, controller)
                     .onTapGesture { controller.openMenuFromStatusBar(.goto) }
                     .uiTarget("status-folder")
-                // Attributes narrowing the list: the magnifier opens the
-                // selector (`F`); each active attribute is a chip, removed
-                // by a click.
+            } else {
+                // A tag, group or contact list ("tag: Clients"), or a screen.
+                Text(controller.locationLabel)
+                    .lineLimit(1)
+            }
+            if listsMail {
+                // Attributes narrowing the list, also in a tag, group or
+                // contact list ("unread mails of the group"): the magnifier
+                // opens the selector (`F`); each active attribute is a chip,
+                // removed by a click.
                 StatusBlock(icon: "magnifyingglass", text: "", key: "F")
                     .onTapGesture { controller.openPickerFromStatusBar(.attributes) }
                     .uiTarget("status-attributes")
@@ -212,9 +219,6 @@ struct GeekStatusBar: View {
                         .onTapGesture { model.attributes.remove(chip.id) }
                         .uiTarget("chip-\(chip.id)")
                 }
-            } else {
-                Text(controller.locationLabel)
-                    .lineLimit(1)
             }
             if controller.screen == .mail {
                 // The other prefix menus, an icon and the key; the menu drops

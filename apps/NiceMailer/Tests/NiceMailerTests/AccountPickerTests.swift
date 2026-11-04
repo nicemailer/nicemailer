@@ -156,6 +156,21 @@ struct AccountPickerTests {
         })
     }
 
+    @Test func aTagGroupOrContactListIsEverythingWithItsCriterion() {
+        let tag = TagView(id: 4, accountId: 2, name: "Clients", color: nil, messageCount: 3)
+        let scope = AppModel.listScope(everything: nil, folderIds: [1], listFilter: .tag(tag))
+        #expect((scope["everything"] as? [String: Any])?.isEmpty == true && scope["folder_ids"] == nil)
+        // The tag goes by its name (the core joins the tags of that name in
+        // every account), with the attributes chosen.
+        var attributes = ThreadFilter()
+        attributes.contains = "devis"
+        let filter = AppModel.filterParameters(attributes, listFilter: .tag(tag))
+        #expect(filter?["tag"] as? String == "Clients" && filter?["contains"] as? String == "devis")
+        let group = GroupView(id: 7, name: "Équipe", color: nil, memberCount: 2)
+        #expect(AppModel.filterParameters(ThreadFilter(), listFilter: .group(group))?["group_id"] as? Int == 7)
+        #expect(AppModel.filterParameters(ThreadFilter(), listFilter: nil) == nil)
+    }
+
     @Test func theListScopeIsEverythingOrTheFolders() {
         #expect((AppModel.listScope(everything: .all, folderIds: [1, 2])["everything"] as? [String: Any])?.isEmpty == true)
         let account = AppModel.listScope(everything: .account(3), folderIds: [7])

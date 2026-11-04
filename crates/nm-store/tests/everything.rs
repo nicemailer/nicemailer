@@ -12,10 +12,21 @@ use nm_api::{ThreadFilter, ThreadSort, ThreadSummary};
 use nm_store::Store;
 use nm_store::seed::{SeedOptions, seed};
 
-/// A seeded store and the ids of every folder.
+/// A seeded store and the ids of every folder. Every seventh thread is
+/// tagged "Clients", and the group "Équipe" (id 1) holds the senders of
+/// three threads.
 fn store() -> (Store, Vec<i64>) {
     let mut store = Store::open_in_memory().unwrap();
     seed(&mut store, &SeedOptions { threads: 1500, seed: 7, now: 1_750_000_000 }).unwrap();
+    let threads: Vec<i64> = store.conn().prepare("SELECT id FROM thread ORDER BY id").unwrap()
+        .query_map([], |r| r.get(0)).unwrap().map(|r| r.unwrap()).collect();
+    for t in threads.iter().step_by(7) {
+        store.tag_thread(*t, "Clients", false, nm_core::Source::App).unwrap();
+    }
+    for t in [threads[3], threads[300], threads[900]] {
+        // A thread without a received mail has no sender to add: skip it.
+        let _ = store.set_group_member("Équipe", None, Some(t), false, nm_core::Source::App);
+    }
     let folders = store.list_folders().unwrap().iter().map(|f| f.id).collect();
     (store, folders)
 }
@@ -39,9 +50,17 @@ fn rows(items: &[ThreadSummary]) -> Vec<(i64, i64, i64, i64, i64, i64)> {
     items.iter().map(|t| (t.id, t.folder_id, t.date_last_received, t.date_last_modified, t.message_count, t.unread_count)).collect()
 }
 
+/// The address with the most mails, for the contact criterion.
+fn busiest_address(store: &Store) -> i64 {
+    store
+        .conn()
+        .query_row("SELECT address_id FROM message_address GROUP BY address_id ORDER BY count(*) DESC LIMIT 1", [], |r| r.get(0))
+        .unwrap()
+}
+
 /// The filters compared. Not `seen`: see
 /// `unread_in_everything_looks_at_the_whole_thread`.
-fn filters() -> Vec<ThreadFilter> {
+fn filters(contact: i64) -> Vec<ThreadFilter> {
     vec![
         ThreadFilter::default(),
         ThreadFilter { flagged: Some(true), ..Default::default() },
@@ -54,6 +73,12 @@ fn filters() -> Vec<ThreadFilter> {
         ThreadFilter { to: vec!["alex".into()], ..Default::default() },
         ThreadFilter { contains: Some("facture".into()), ..Default::default() },
         ThreadFilter { after: Some(1_740_000_000), before: Some(1_745_000_000), ..Default::default() },
+        ThreadFilter { tag: Some("clients".into()), ..Default::default() },
+        ThreadFilter { group_id: Some(1), ..Default::default() },
+        ThreadFilter { address_id: Some(contact), ..Default::default() },
+        // A criterion of a tag list combined with attributes.
+        ThreadFilter { tag: Some("Clients".into()), attachments: Some(true), ..Default::default() },
+        ThreadFilter { address_id: Some(contact), flagged: Some(false), from: vec!["@gmail.com".into()], ..Default::default() },
     ]
 }
 
@@ -65,7 +90,8 @@ fn everything_lists_what_every_folder_lists_page_after_page() {
         a.dedup();
         a
     };
-    for filter in filters() {
+    let contact = busiest_address(&store);
+    for filter in filters(contact) {
         for sort in [ThreadSort::Received, ThreadSort::Modified] {
             let merged = all_pages(|c| store.list_threads_in(&folders, c, 37, sort, &filter).unwrap());
             let everything = all_pages(|c| store.list_everything(None, c, 37, sort, &filter).unwrap());
@@ -131,4 +157,31 @@ fn a_cursor_of_everything_continues_where_the_page_stopped() {
     assert_eq!(rows(&[first, second].concat()), rows(&both));
     // A malformed cursor is refused.
     assert!(store.list_everything(None, Some("x"), 10, ThreadSort::Received, &filter).is_err());
+}
+
+#[test]
+fn the_lists_of_a_tag_a_group_and_a_contact_are_complete_and_ordered() {
+    let (store, _) = store();
+    let contact = busiest_address(&store);
+    for filter in [
+        ThreadFilter { tag: Some("Clients".into()), ..Default::default() },
+        ThreadFilter { group_id: Some(1), ..Default::default() },
+        ThreadFilter { address_id: Some(contact), ..Default::default() },
+    ] {
+        let list = all_pages(|c| store.list_everything(None, c, 25, ThreadSort::Received, &filter).unwrap());
+        // Newest first on the date shown, every page (no cap at 200).
+        assert!(list.windows(2).all(|w| (w[0].date_last_received, w[0].id) >= (w[1].date_last_received, w[1].id)), "{filter:?}");
+        let ids: std::collections::BTreeSet<i64> = list.iter().map(|t| t.id).collect();
+        assert_eq!(ids.len(), list.len(), "{filter:?}: a thread twice");
+        assert!(!list.is_empty(), "{filter:?}");
+    }
+    // The tag: exactly the tagged threads (every seventh), more than a page.
+    let tagged = all_pages(|c| {
+        store.list_everything(None, c, 25, ThreadSort::Received, &ThreadFilter { tag: Some("CLIENTS".into()), ..Default::default() }).unwrap()
+    });
+    let expected: i64 = store.conn().query_row(
+        "SELECT count(DISTINCT m.thread_id) FROM message_keyword mk JOIN message m ON m.id = mk.message_id WHERE mk.keyword = 'Clients'",
+        [], |r| r.get(0)).unwrap();
+    assert_eq!(tagged.len() as i64, expected);
+    assert!(expected > 200);
 }

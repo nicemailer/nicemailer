@@ -109,6 +109,26 @@ impl Store {
         Ok(items)
     }
 
+    /// Ids of the active tags named like the `tag` criterion of `filter`,
+    /// in every account (each account has its own tags, and the unified
+    /// view shows "Clients" once). Names are compared in Rust, without
+    /// case: SQLite's NOCASE only folds ASCII, so "Équipe" and "équipe"
+    /// would differ (the same rule as `tag_thread`). An account has few
+    /// tags, reading them all is cheap. Empty without a `tag` criterion.
+    fn tag_ids(&self, filter: &ThreadFilter) -> Result<Vec<i64>> {
+        let Some(wanted) = filter.tag.as_deref().map(|t| t.trim().to_lowercase()) else { return Ok(vec![]) };
+        let mut stmt = self.conn.prepare_cached("SELECT id, name FROM tag WHERE date_deleted IS NULL")?;
+        let rows = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))?;
+        let mut ids = Vec::new();
+        for row in rows {
+            let (id, name) = row?;
+            if name.to_lowercase() == wanted {
+                ids.push(id);
+            }
+        }
+        Ok(ids)
+    }
+
     /// Role and account of a folder, or `NotFound` if the folder does not
     /// exist.
     fn folder_role_and_account(&self, folder_id: i64) -> Result<(Option<FolderRole>, i64)> {
@@ -185,7 +205,8 @@ impl Store {
         let set = folder_ids.iter().map(|f| f.to_string()).collect::<Vec<_>>().join(",");
         // Attribute filters: extra conditions, with their values bound after
         // the fixed parameters (`?1`… are folder, cursor and limit).
-        let (filter_sql, filter_values) = filter_clause(filter, &Target::folders(&set));
+        let tags = self.tag_ids(filter)?;
+        let (filter_sql, filter_values) = filter_clause(filter, &Target::folders(&set), &tags);
         // A thread belongs to one account, so it can only be in two listed
         // folders if two of them belong to the same account (never in the
         // unified view, which lists one folder per account). Then it is
@@ -266,7 +287,8 @@ impl Store {
     ) -> Result<(Vec<ThreadSummary>, Option<String>)> {
         let fetch = i64::from(limit) + 1;
         let after = cursor.map(parse_cursor).transpose()?;
-        let (sql, values) = everything_query(account_id, after, fetch, sort, filter);
+        let tags = self.tag_ids(filter)?;
+        let (sql, values) = everything_query(account_id, after, fetch, sort, filter, &tags);
         // Constant of ours, never client input (see `list_threads_in`).
         let tf_key = match sort {
             ThreadSort::Received => "tf.date_last_received",
@@ -595,13 +617,14 @@ fn everything_query(
     fetch: i64,
     sort: ThreadSort,
     filter: &ThreadFilter,
+    tags: &[i64],
 ) -> (String, Vec<Value>) {
     // Constants of ours, never client input (see `list_threads_in`).
     let key = match sort {
         ThreadSort::Received => "t.date_last_received",
         ThreadSort::Modified => "t.date_last_modified",
     };
-    let (filter_sql, filter_values) = filter_clause(filter, &Target::everything());
+    let (filter_sql, filter_values) = filter_clause(filter, &Target::everything(), tags);
     // `message_count > 0`: a thread whose messages were all deleted keeps
     // its row until it is cleaned up, and has nothing to show.
     let mut sql = format!("SELECT t.id, t.subject, {key} FROM thread t WHERE t.message_count > 0{filter_sql}");
@@ -816,7 +839,7 @@ fn address_condition(value: &str, bind: &mut dyn FnMut(Value) -> String) -> Stri
 /// has a page of matching rows: with a rare criterion (a sender seen in 2009
 /// only, no flagged mail at all), a per-row subquery ran for every thread of
 /// the mailbox, several seconds on 200 000 threads.
-fn filter_clause(f: &ThreadFilter, target: &Target) -> (String, Vec<Value>) {
+fn filter_clause(f: &ThreadFilter, target: &Target, tags: &[i64]) -> (String, Vec<Value>) {
     let mut sql = String::new();
     let mut values: Vec<Value> = Vec::new();
     let thread = target.thread;
@@ -881,6 +904,48 @@ fn filter_clause(f: &ThreadFilter, target: &Target) -> (String, Vec<Value>) {
         if let Some(set) = address_set(list, sender, &mut bind) {
             sql.push_str(&member(yes, &set));
         }
+    }
+    // A tag: a message of the thread carries the keyword of one of the tags
+    // of that name (`tags`, resolved by `tag_ids`), in that tag's account.
+    // Read from `idx_message_keyword_kw`. Like the flag, it looks at the
+    // whole thread. A name no tag has matches nothing.
+    if f.tag.is_some() {
+        if tags.is_empty() {
+            sql.push_str(" AND 0");
+        } else {
+            let ids = tags.iter().map(i64::to_string).collect::<Vec<_>>().join(",");
+            sql.push_str(&member(
+                true,
+                &format!(
+                    "SELECT m.thread_id FROM tag tg
+                       JOIN message_keyword mk ON mk.keyword = tg.keyword
+                       JOIN message m ON m.id = mk.message_id AND m.account_id = tg.account_id
+                      WHERE tg.id IN ({ids}) AND m.thread_id IS NOT NULL"
+                ),
+            ));
+        }
+    }
+    // A group or a contact: a message of the thread in the listed folders
+    // is from one of the addresses or to them (To, Cc) (`groupes.md`). One
+    // set, the union of the two, each read through its index.
+    let people = |ids: &str| {
+        let folders = target.in_folders("m");
+        format!(
+            "SELECT m.thread_id FROM message m
+              WHERE m.from_address_id IN ({ids}) AND m.thread_id IS NOT NULL{folders}
+             UNION ALL
+             SELECT m.thread_id FROM message_address ma JOIN message m ON m.id = ma.message_id
+              WHERE ma.address_id IN ({ids}) AND ma.role IN ('to', 'cc') AND m.thread_id IS NOT NULL{folders}"
+        )
+    };
+    if let Some(group) = f.group_id {
+        let g = bind(Value::Integer(group));
+        let members = format!("SELECT address_id FROM contact_group_member WHERE group_id = {g} AND date_removed IS NULL");
+        sql.push_str(&member(true, &people(&members)));
+    }
+    if let Some(address) = f.address_id {
+        let a = bind(Value::Integer(address));
+        sql.push_str(&member(true, &people(&a)));
     }
     // Text criteria: `/` (every column), Text… (subject and body), Subject….
     for (query, columns) in [(&f.contains, ""), (&f.text, "{subject body} : "), (&f.subject, "subject : ")] {
@@ -964,6 +1029,9 @@ mod plan_tests {
             subject: Some("facture".into()),
             after: Some(1),
             before: Some(2),
+            tag: Some("Clients".into()),
+            group_id: Some(1),
+            address_id: Some(2),
         };
         let mut out = vec![("none", ThreadFilter::default())];
         out.push(("seen", ThreadFilter { seen: Some(false), ..Default::default() }));
@@ -976,6 +1044,9 @@ mod plan_tests {
         out.push(("to", ThreadFilter { to: v("bob"), ..Default::default() }));
         out.push(("contains", ThreadFilter { contains: Some("devis".into()), ..Default::default() }));
         out.push(("dates", ThreadFilter { after: Some(1), before: Some(2), ..Default::default() }));
+        out.push(("tag", ThreadFilter { tag: Some("Clients".into()), ..Default::default() }));
+        out.push(("group", ThreadFilter { group_id: Some(1), ..Default::default() }));
+        out.push(("contact", ThreadFilter { address_id: Some(2), ..Default::default() }));
         all.conversation = Some(true);
         out.push(("all", all));
         out
@@ -1021,7 +1092,7 @@ mod plan_tests {
             for account in [None, Some(1)] {
                 for sort in [ThreadSort::Received, ThreadSort::Modified] {
                     for after in [None, Some((1, 1))] {
-                        let (sql, values) = everything_query(account, after, 61, sort, &f);
+                        let (sql, values) = everything_query(account, after, 61, sort, &f, &[1, 2]);
                         let steps = plan(&store, &sql, &values);
                         let what = format!("everything {name} account={account:?} {sort:?} cursor={}", after.is_some());
                         check(&what, &steps);
@@ -1037,7 +1108,7 @@ mod plan_tests {
         }
         // Without filter, the index of the sort and the scope, nothing else.
         let first = |account, sort| {
-            let (sql, values) = everything_query(account, None, 61, sort, &ThreadFilter::default());
+            let (sql, values) = everything_query(account, None, 61, sort, &ThreadFilter::default(), &[]);
             plan(&store, &sql, &values)
         };
         assert_eq!(first(None, ThreadSort::Received), ["SCAN t USING INDEX idx_thread_received"]);
@@ -1052,7 +1123,7 @@ mod plan_tests {
         for (name, f) in filters() {
             for key in ["tf.date_last_received", "tf.date_last_modified"] {
                 for after in [None, Some((1, 1))] {
-                    let (filter_sql, filter_values) = filter_clause(&f, &Target::folders("1,2"));
+                    let (filter_sql, filter_values) = filter_clause(&f, &Target::folders("1,2"), &[1, 2]);
                     let (sql, values) = folder_query(key, "", &filter_sql, &filter_values, 1, 61, after);
                     let steps = plan(&store, &sql, &values);
                     let what = format!("folder {name} {key} cursor={}", after.is_some());

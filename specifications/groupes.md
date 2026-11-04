@@ -1,6 +1,6 @@
 # NiceMailer : groupes de contacts
 
-Statut : modèle de données validé. Implémenté dans le noyau : `list_groups`, `set_group_member` (ajout et retrait, création du groupe), groupes d'un contact (`list_contacts`) et conversations des membres (`list_threads_by`). Pas encore : renommage, couleur, ordre, suppression d'un groupe, synchronisation. Complète `modele de donnees.md` et `schema.sql`.
+Statut : modèle de données validé. Implémenté dans le noyau : `list_groups`, `set_group_member` (ajout et retrait, création du groupe), groupes d'un contact (`list_contacts`) et conversations des membres (critère `group_id` de `list_threads`). Pas encore : renommage, couleur, ordre, suppression d'un groupe, synchronisation. Complète `modele de donnees.md` et `schema.sql`.
 
 ## 1. Objet
 
@@ -89,7 +89,7 @@ Implémenté :
 
 - `list_groups` : groupes non supprimés, dans l'ordre d'affichage, avec le nombre de membres ;
 - `set_group_member {group, addr | thread_id, remove}` : ajoute (ou retire) une adresse, ou l'expéditeur d'une conversation (auteur de son dernier mail hors Sent et Drafts), au groupe nommé, créé au besoin. Ajouter un membre déjà présent ne change rien (`changed: false`) ;
-- `list_threads_by {group_id}` : conversations dont un mail vient d'un membre ou lui est adressé (To, Cc), tous dossiers, les plus récentes d'abord.
+- `list_threads {everything: {}, filter: {group_id}}` : conversations dont un mail vient d'un membre ou lui est adressé (To, Cc), tous dossiers, les plus récentes d'abord (sur la date affichée), paginées, combinables avec les autres attributs (« non lus du groupe »).
 
 Envisagé : `update_group` (nom, couleur, position), `delete_group`, `list_group_members`, et un événement `GroupChanged {group_id}`.
 

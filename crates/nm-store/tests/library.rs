@@ -1,10 +1,10 @@
 //! Integration tests of `library.rs`: sort by modification, display
-//! preference, history, export, tags, groups, contacts and thread lists
-//! across folders.
+//! preference, history, export, tags, groups, contacts, and the threads of
+//! a tag, a group or a contact (criteria of the Everything list).
 
 use std::sync::Mutex;
 
-use nm_api::{ExportFormat, ThreadSort};
+use nm_api::{ExportFormat, ThreadFilter, ThreadSort, ThreadSummary};
 use nm_core::{FolderRole, Source};
 use nm_store::screening::MoveOptions;
 use nm_store::import::{ImportOptions, import_mbox};
@@ -20,6 +20,25 @@ fn seeded() -> Store {
 
 fn folder_id(store: &Store, role: FolderRole) -> i64 {
     store.list_folders().unwrap().into_iter().find(|f| f.role == Some(role)).unwrap().id
+}
+
+/// Every page of Everything with `filter`, in every account.
+fn everything(store: &Store, filter: &ThreadFilter) -> Vec<ThreadSummary> {
+    let mut out = Vec::new();
+    let mut cursor: Option<String> = None;
+    loop {
+        let (items, next) = store.list_everything(None, cursor.as_deref(), 40, ThreadSort::Received, filter).unwrap();
+        out.extend(items);
+        match next {
+            Some(c) => cursor = Some(c),
+            None => return out,
+        }
+    }
+}
+
+/// Whether `list` is newest first, on the date it shows.
+fn newest_first(list: &[ThreadSummary]) -> bool {
+    list.windows(2).all(|w| (w[0].date_last_received, w[0].id) >= (w[1].date_last_received, w[1].id))
 }
 
 /// A thread of the Inbox and its folder.
@@ -123,9 +142,11 @@ fn tags_are_created_listed_shown_and_removed() {
     assert_eq!(keyword, "Equipe_Paris");
     let (items, _) = store.list_threads(inbox, None, 200, ThreadSort::Received).unwrap();
     assert_eq!(items.iter().find(|t| t.id == thread).unwrap().tags, vec!["Équipe Paris"]);
-    // Threads of the tag.
-    let by_tag = store.list_threads_by(Some(tags[0].id), None, None, 50).unwrap();
+    // Threads of the tag, by its name, without case.
+    let by_tag = everything(&store, &ThreadFilter { tag: Some("ÉQUIPE paris".into()), ..Default::default() });
     assert_eq!(by_tag.iter().map(|t| t.id).collect::<Vec<_>>(), vec![thread]);
+    // A name no tag has finds nothing.
+    assert!(everything(&store, &ThreadFilter { tag: Some("Inconnu".into()), ..Default::default() }).is_empty());
     // Removal.
     store.tag_thread(thread, "Équipe Paris", true, Source::App).unwrap();
     assert_eq!(store.list_tags(None).unwrap()[0].message_count, 0);
@@ -159,8 +180,9 @@ fn group_membership_follows_the_rules_of_groupes_md() {
     store.set_group_member("Équipe", Some(&addr), None, false, Source::App).unwrap();
     let (contacts, _) = store.list_contacts(Some(&addr), None, 10).unwrap();
     assert_eq!(contacts[0].groups, vec!["VIP", "Équipe"]);
-    // Threads of the group include this thread.
-    assert!(store.list_threads_by(None, Some(gid), None, 200).unwrap().iter().any(|t| t.id == thread));
+    // Threads of the group include this thread, newest first.
+    let of_group = everything(&store, &ThreadFilter { group_id: Some(gid), ..Default::default() });
+    assert!(of_group.iter().any(|t| t.id == thread) && newest_first(&of_group));
     // Removal is a tombstone; adding back clears it.
     assert!(store.set_group_member("VIP", Some(&addr), None, true, Source::App).unwrap().2);
     let removed: Option<i64> = store
@@ -222,12 +244,26 @@ fn threads_by_contact_include_mail_to_and_from_the_address() {
     let (_, msgs) = store.get_thread(thread).unwrap();
     let addr = msgs.iter().find_map(|m| m.from_addr.clone()).unwrap();
     let id: i64 = store.conn().query_row("SELECT id FROM address WHERE addr = ?1", [&addr], |r| r.get(0)).unwrap();
-    let list = store.list_threads_by(None, None, Some(id), 500).unwrap();
+    let list = everything(&store, &ThreadFilter { address_id: Some(id), ..Default::default() });
     assert!(list.iter().any(|t| t.id == thread));
-    // Each thread once.
+    // Each thread once, newest first on the date shown.
     let ids: std::collections::HashSet<i64> = list.iter().map(|t| t.id).collect();
     assert_eq!(ids.len(), list.len());
-    assert!(matches!(store.list_threads_by(None, None, None, 10), Err(StoreError::InvalidParams(_))));
+    assert!(newest_first(&list));
+    // Exactly the threads with a mail from or to the address.
+    let expected: std::collections::HashSet<i64> = store
+        .conn()
+        .prepare(
+            "SELECT thread_id FROM message WHERE from_address_id = ?1
+             UNION SELECT m.thread_id FROM message_address ma JOIN message m ON m.id = ma.message_id
+                    WHERE ma.address_id = ?1 AND ma.role IN ('to', 'cc')",
+        )
+        .unwrap()
+        .query_map([id], |r| r.get(0))
+        .unwrap()
+        .map(|r| r.unwrap())
+        .collect();
+    assert_eq!(ids, expected);
 }
 
 #[test]
@@ -405,3 +441,46 @@ fn a_thread_in_several_listed_folders_is_listed_once() {
     }
 }
 
+
+#[test]
+fn a_tag_name_lists_the_tags_of_that_name_in_every_account() {
+    // A seeded account, and an archive account imported next to it.
+    let dir = tempfile::tempdir().unwrap();
+    let raw = RawStore::open(dir.path()).unwrap();
+    let store = Mutex::new(seeded());
+    let mbox = dir.path().join("a.mbox");
+    std::fs::write(
+        &mbox,
+        "From a Tue Jun 23 19:20:56 2020\nSubject: Devis\nFrom: Alice <alice@a.example>\nTo: me@x.example\nMessage-ID: <1@a>\n\nBonjour\n",
+    )
+    .unwrap();
+    let opts = ImportOptions {
+        path: mbox,
+        account: "arch".into(),
+        address: "me@x.example".into(),
+        mark_correspondents: false,
+        source: Source::Cli,
+        batch_size: 10,
+    };
+    import_mbox(&store, &raw, &opts, &mut |_, _, _| {}).unwrap();
+    let mut store = store.into_inner().unwrap();
+    let (seeded_thread, _) = inbox_thread(&store);
+    let imported: i64 = store
+        .conn()
+        .query_row("SELECT thread_id FROM message WHERE message_id_hdr = '1@a'", [], |r| r.get(0))
+        .unwrap();
+    // "Clients" in one account, "clients" in the other: two tags.
+    store.tag_thread(seeded_thread, "Clients", false, Source::App).unwrap();
+    store.tag_thread(imported, "clients", false, Source::App).unwrap();
+    assert_eq!(store.list_tags(None).unwrap().len(), 2);
+    let both = everything(&store, &ThreadFilter { tag: Some("Clients".into()), ..Default::default() });
+    let mut ids: Vec<i64> = both.iter().map(|t| t.id).collect();
+    ids.sort();
+    let mut expected = vec![seeded_thread, imported];
+    expected.sort();
+    assert_eq!(ids, expected);
+    // A deleted tag no longer lists anything.
+    store.conn().execute("UPDATE tag SET date_deleted = 1 WHERE name = 'clients'", []).unwrap();
+    let one = everything(&store, &ThreadFilter { tag: Some("Clients".into()), ..Default::default() });
+    assert_eq!(one.iter().map(|t| t.id).collect::<Vec<_>>(), vec![seeded_thread]);
+}

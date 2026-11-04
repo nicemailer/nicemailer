@@ -221,7 +221,7 @@ struct WorkflowResult: Decodable {
     let undo: String?
 }
 
-/// A plain list (`list_tags`, `list_groups`, `list_threads_by`).
+/// A plain list (`list_tags`, `list_groups`).
 struct Items<T: Decodable>: Decodable {
     let items: [T]
     let asOf: Position

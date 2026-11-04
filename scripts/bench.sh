@@ -55,6 +55,12 @@ big = max(f, key=lambda x: x["thread_count"])["id"]
 arch = ",".join(str(x["id"]) for x in f if x["role"] == "archive")
 print(big, arch, f[0]["account_id"])')"
 
+# A sender of the generated mailbox (or the first contact of a real one).
+CONTACT=$(call list_contacts '{"query":"energie-plus","limit":1}' | python3 -I -c '
+import json, sys
+items = json.load(sys.stdin)["items"]
+print(items[0]["id"] if items else 1)')
+
 E='"everything":{},"limit":60,"sort":"received"'
 typeset -A P
 P=(
@@ -78,6 +84,8 @@ P=(
   "18 a month long ago"        "{$E,\"filter\":{\"after\":1230768000,\"before\":1233446400}}"
   "19 from a domain, long ago" "{$E,\"filter\":{\"from\":[\"@gmail.com\"],\"before\":1262304000}}"
   "20 biggest folder, flagged" "{\"folder_id\":$BIG,\"limit\":60,\"sort\":\"received\",\"filter\":{\"flagged\":true}}"
+  "21 mails of a contact"      "{$E,\"filter\":{\"address_id\":$CONTACT}}"
+  "22 a tag (none here)"       "{$E,\"filter\":{\"tag\":\"Clients\"}}"
 )
 
 OUT=$(mktemp /tmp/nmbench-out.XXXXXX)
