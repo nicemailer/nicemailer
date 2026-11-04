@@ -121,7 +121,7 @@ Un mbox ne porte ni dossier ni flag fiable : tout est archivé, comme les mails 
 
 Autres attributs :
 
-- `date_received` : date de la ligne de séparation `From ` du mbox (date de réception par le serveur exportateur, équivalent de l'INTERNALDATE), à défaut l'en-tête `Date`.
+- `date_received` : date de la ligne de séparation `From ` du mbox (date de réception par le serveur exportateur, équivalent de l'INTERNALDATE), à défaut l'en-tête `Date`, à défaut 0. La date de la ligne `From ` est écartée au profit de l'en-tête `Date` quand elle ne peut pas être une date de livraison : postérieure au début de l'import, ou postérieure de plus de 7 jours à l'en-tête `Date` (un serveur SMTP abandonne au bout de 5 jours environ). Certains outils d'export y écrivent la date de l'export (le module `mailbox` de Python le fait si on ne lui donne pas de date) : sans cette règle, tous les mails paraîtraient reçus le jour de l'export.
 - `is_answered` : posé sur un mail reçu auquel un mail de Sent du même compte répond (`In-Reply-To`).
 - `uid` : NULL (pas de serveur).
 - `auth_result` : `unknown`, `auth_source` NULL. Un export ne garantit pas que les en-têtes `Authentication-Results` viennent d'un serveur de confiance ; dans l'export HEY, ils viennent de plusieurs serveurs (`haystack-mail-inbound-postfix-1` à `-8`), et la détection de `authserv_id` (`authentification-expediteur.md`) échouerait.

@@ -245,6 +245,7 @@ pub fn import_mbox(
         source: opts.source,
         addresses: HashMap::new(),
         report: ImportReport { account_id: account.id, ..Default::default() },
+        imported_at: unix_now(),
     };
     writer.report.progress.total_bytes = total_bytes;
 
@@ -318,6 +319,47 @@ pub fn import_mbox(
     Ok(writer.report)
 }
 
+/// Longest plausible delay between the `Date` header of a message (set by
+/// the sender's client when sending) and its delivery. SMTP servers give up
+/// retrying after about 5 days, so a real delivery never comes later than
+/// that; 7 days leaves a margin for clocks set wrong.
+pub const MAX_DELIVERY_DELAY_SECS: i64 = 7 * 24 * 3600;
+
+/// Reception date of an imported message (`import-initial.md`, section 9,
+/// "Autres attributs"), in Unix seconds.
+///
+/// The date of the mbox `From ` line is preferred: when the exporting server
+/// received the message, like IMAP's INTERNALDATE. But some tools do not know
+/// that date and write the time of the export instead. Python's `mailbox`
+/// module does this, and so did `scripts/export-apple-mail.py`: every message
+/// then appeared as received on the day of the export. Since the core cannot
+/// tell who wrote the file, it checks the date instead and falls back to the
+/// `Date` header when the `From ` line date cannot be a delivery date:
+/// - it is after the start of the import (a date in the future);
+/// - it is more than `MAX_DELIVERY_DELAY_SECS` after the `Date` header.
+///
+/// A message whose `From ` line date is *before* its `Date` header keeps the
+/// `From ` line date: that only means the sender's clock was ahead. Without
+/// any usable date, the message gets 0 (1970), which sorts it last.
+pub fn reception_date(delivered_at: Option<i64>, date_sent: Option<i64>, imported_at: i64) -> i64 {
+    // Rust note: `Option::filter` keeps the value only if the closure returns
+    // true, and `or` then falls back to the other `Option`. `is_none_or`
+    // is true for `None`, or when the closure is true for the value.
+    delivered_at
+        .filter(|&d| d <= imported_at)
+        .filter(|&d| date_sent.is_none_or(|s| d - s <= MAX_DELIVERY_DELAY_SECS))
+        .or(date_sent)
+        .unwrap_or(0)
+}
+
+/// Current time in Unix seconds.
+fn unix_now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
+
 /// The slow, parallel part of the pipeline for one message.
 fn prepare(raw: &RawStore, seq: u64, m: crate::mbox::MboxMessage) -> std::io::Result<Prepared> {
     let written = raw.write(&m.bytes)?;
@@ -338,6 +380,9 @@ struct Writer {
     /// involve the same few hundred people, so this saves most queries.
     addresses: HashMap<String, i64>,
     report: ImportReport,
+    /// When the import started, in Unix seconds: no message can have been
+    /// delivered after it (see `reception_date`).
+    imported_at: i64,
 }
 
 impl Writer {
@@ -444,9 +489,7 @@ impl Writer {
             Some(a) => Some(self.address_id(tx, a)?),
             None => None,
         };
-        // Reception date: the mbox From_ line (when the exporting server
-        // received it, like IMAP's INTERNALDATE), else the Date header.
-        let date_received = p.delivered_at.or(m.date_sent).unwrap_or(0);
+        let date_received = reception_date(p.delivered_at, m.date_sent, self.imported_at);
         let thread_id = self.thread_for(tx, m, changes)?;
         threads.insert(thread_id);
 

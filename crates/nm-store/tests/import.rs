@@ -9,7 +9,7 @@ use std::sync::Mutex;
 
 use nm_core::{FolderRole, Source};
 use nm_store::screening::MoveOptions;
-use nm_store::import::{ImportOptions, ImportReport, import_mbox};
+use nm_store::import::{ImportOptions, ImportReport, MAX_DELIVERY_DELAY_SECS, import_mbox, reception_date};
 use nm_store::raw::RawStore;
 use nm_store::{ChangeSet, Store, StoreError};
 
@@ -411,4 +411,81 @@ fn imported_threads_can_be_moved_locally() {
         env.text("SELECT f.role FROM message m JOIN folder f ON f.id = m.folder_id WHERE m.message_id_hdr = 'n1@letter.example'"),
         Some("newsletter".into())
     );
+}
+
+// --- Reception date (`import-initial.md`, section 9, "Autres attributs") ---
+
+/// `date_received` of the message with this `Message-ID`.
+fn date_received(env: &Env, message_id: &str) -> i64 {
+    env.count(&format!("SELECT date_received FROM message WHERE message_id_hdr = '{message_id}'"))
+}
+
+#[test]
+fn the_from_line_date_is_the_reception_date() {
+    let env = Env::new();
+    let path = env.write_mbox("a.mbox", &sample());
+    env.import(&env.options(&path)).unwrap();
+    // From_ line "Tue Jun 23 19:20:56 2020", Date header two hours later in
+    // +0200, i.e. the same instant: the From_ line wins either way.
+    assert_eq!(date_received(&env, "m1@a.example"), 1_592_940_056);
+    // No Date header: the From_ line date ("Thu Jun 25 07:00:00 2020").
+    assert_eq!(date_received(&env, "n1@letter.example"), 1_593_068_400);
+}
+
+#[test]
+fn a_from_line_written_at_export_time_falls_back_to_the_date_header() {
+    // What Python's `mailbox` module writes when the exporting script does
+    // not give it a date: the time of the export, years after the message.
+    let env = Env::new();
+    let path = env.write_mbox(
+        "export.mbox",
+        &[
+            mail(
+                "Wed Nov  4 10:04:44 2026",
+                &["From: a@a.example", "To: me@hey.example", "Subject: Vieux", "Message-ID: <old@a.example>",
+                  "Date: Tue, 27 Oct 2015 09:49:25 +0100"],
+                "Bonjour",
+            ),
+            // A From_ line in the future: never a delivery date, even without
+            // a Date header to compare with. No date at all: 0.
+            mail(
+                "Thu Jan  1 00:00:00 2099",
+                &["From: b@b.example", "To: me@hey.example", "Subject: Futur", "Message-ID: <future@b.example>"],
+                "Bonjour",
+            ),
+        ],
+    );
+    env.import(&env.options(&path)).unwrap();
+    assert_eq!(date_received(&env, "old@a.example"), 1_445_935_765);
+    assert_eq!(date_received(&env, "future@b.example"), 0);
+    // The thread's date in its folder follows the message date.
+    assert_eq!(
+        env.count(
+            "SELECT tf.date_last_received FROM thread_folder tf JOIN message m ON m.thread_id = tf.thread_id
+              WHERE m.message_id_hdr = 'old@a.example'"
+        ),
+        1_445_935_765
+    );
+}
+
+#[test]
+fn reception_date_rules() {
+    let now = 2_000_000_000;
+    let sent = 1_000_000_000;
+    // Normal delivery a few minutes after sending: the From_ line.
+    assert_eq!(reception_date(Some(sent + 300), Some(sent), now), sent + 300);
+    // Delivered at the very limit of the delay: still the From_ line.
+    assert_eq!(reception_date(Some(sent + MAX_DELIVERY_DELAY_SECS), Some(sent), now), sent + MAX_DELIVERY_DELAY_SECS);
+    // One second later: not a delivery, the Date header.
+    assert_eq!(reception_date(Some(sent + MAX_DELIVERY_DELAY_SECS + 1), Some(sent), now), sent);
+    // Sender's clock ahead (From_ before Date): the From_ line.
+    assert_eq!(reception_date(Some(sent - 3600), Some(sent), now), sent - 3600);
+    // From_ line after the import started: the Date header, else 0.
+    assert_eq!(reception_date(Some(now + 1), Some(sent), now), sent);
+    assert_eq!(reception_date(Some(now + 1), None, now), 0);
+    // From_ line at the import's start, no Date header: kept.
+    assert_eq!(reception_date(Some(now), None, now), now);
+    // No From_ line date.
+    assert_eq!(reception_date(None, Some(sent), now), sent);
+    assert_eq!(reception_date(None, None, now), 0);
 }
