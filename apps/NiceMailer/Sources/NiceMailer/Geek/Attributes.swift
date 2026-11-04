@@ -163,10 +163,13 @@ struct ThreadFilter: Equatable {
     ///
     /// - From / To: a value is kept once, and is either wanted or excluded:
     ///   adding it to one side removes it from the other.
-    /// - Text / Subject: the words are added to those already there (so an
-    ///   exclusion adds to a search instead of replacing it), each excluded
-    ///   word written `-word`, as the core reads it; a word already there
-    ///   is not repeated.
+    /// - Text / Subject: the words replace those already there, each
+    ///   excluded word written `-word`, as the core reads it, and a word is
+    ///   not repeated. The panel opens on the current words, selected
+    ///   (`LineEdit.selectedAll`): typing replaces them, and an arrow lets
+    ///   the user edit them, for instance to add `-word` after the fact
+    ///   (`ui.md`, "Négation"). Adding to words the user could not see made
+    ///   a second Subject… search silently narrow the first one.
     mutating func add(_ field: AttributeField, _ value: String, excluded: Bool = false) {
         let parsed = Self.parse(value)
         let v = parsed.value
@@ -178,8 +181,8 @@ struct ThreadFilter: Equatable {
             left.removeAll { $0 == v }
             if !wanted.contains(v) { wanted.append(v) }
         }
-        func words(_ current: String?) -> String {
-            var all = (current ?? "").split(separator: " ").map(String.init)
+        func words() -> String {
+            var all: [String] = []
             for w in v.split(separator: " ").map(String.init) {
                 let word = out && !w.hasPrefix("-") ? "-" + w : w
                 if !all.contains(word) { all.append(word) }
@@ -189,8 +192,8 @@ struct ThreadFilter: Equatable {
         switch field {
         case .from: if out { put(v, into: &notFrom, &from) } else { put(v, into: &from, &notFrom) }
         case .to: if out { put(v, into: &notTo, &to) } else { put(v, into: &to, &notTo) }
-        case .text: text = words(text)
-        case .subject: subject = words(subject)
+        case .text: text = words()
+        case .subject: subject = words()
         case .date: break
         }
     }
@@ -209,6 +212,25 @@ struct ThreadFilter: Equatable {
     func dateIsEmpty(with p: DateChoice.Preset) -> Bool {
         guard let lo = p.after ?? after, let hi = p.before ?? before else { return false }
         return lo >= hi
+    }
+
+    /// The current words of Text… or Subject…, which their panel opens on
+    /// (`nil` for the other attributes, whose values are added one by one).
+    func words(of field: AttributeField) -> String? {
+        switch field {
+        case .text: text
+        case .subject: subject
+        case .from, .to, .date: nil
+        }
+    }
+
+    /// Removes the criterion of Text… or Subject… (its panel emptied).
+    mutating func clearWords(of field: AttributeField) {
+        switch field {
+        case .text: text = nil
+        case .subject: subject = nil
+        case .from, .to, .date: break
+        }
     }
 
     /// Whether `field` has a value (marked "•" in the selector).

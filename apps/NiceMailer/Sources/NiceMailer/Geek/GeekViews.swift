@@ -55,6 +55,7 @@ private struct GeekWindow: View {
             if controller.statusPosition == .top { GeekStatusBar(controller: controller) }
             ZStack(alignment: .bottomTrailing) {
                 content
+                clickCatcher
                 overlay
             }
             if controller.statusPosition == .bottom { GeekStatusBar(controller: controller) }
@@ -84,6 +85,25 @@ private struct GeekWindow: View {
             NamesScreen(
                 controller: controller, title: L("Groups"),
                 rows: controller.groups.map { ($0.name, L("%lld members", $0.memberCount)) })
+        }
+    }
+
+    /// Under an open menu, picker or help, a transparent layer over the
+    /// whole content: a click outside the panel lands on it and closes the
+    /// panel (`clickOutsideOverlay`), instead of reaching the list or the
+    /// reader under it. The status bar is not covered: a click on one of
+    /// its blocks opens that block's menu or picker directly.
+    @ViewBuilder private var clickCatcher: some View {
+        if controller.closesOnClickOutside {
+            Color.clear
+                .contentShape(Rectangle())
+                .onTapGesture { controller.clickOutsideOverlay() }
+                // For the UI scripts: a spot in the top-right corner,
+                // which no panel covers (pickers are centered, menus drop
+                // from the status bar's left part, help sits bottom-right).
+                .overlay(alignment: .topTrailing) {
+                    Color.clear.frame(width: 16, height: 16).padding(8).uiTarget("outside-panel")
+                }
         }
     }
 
@@ -234,7 +254,8 @@ struct GeekStatusBar: View {
                 }
             }
             if case .contactFilter = controller.overlay {
-                Text("/" + controller.contactsQuery + "▏").foregroundStyle(Palette.accent)
+                Text("/" + controller.contactsLine.beforeCursor + "▏" + controller.contactsLine.afterCursor)
+                    .foregroundStyle(Palette.accent)
             }
             Spacer(minLength: 8)
             if let error = model.lastError {
@@ -1129,7 +1150,14 @@ private struct PickerPopup: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 6) {
                 Text(title).foregroundStyle(Palette.accent)
-                Text(controller.pickerQuery + "▏")
+                // The caret is drawn where the cursor is (`LineEdit`); a
+                // selected text (the current words of Subject…, Text…) is
+                // highlighted, since typing will replace it.
+                if controller.pickerLine.selectedAll {
+                    Text(controller.pickerLine.text).background(Palette.cursor)
+                } else {
+                    Text(controller.pickerLine.beforeCursor + "▏" + controller.pickerLine.afterCursor)
+                }
                 // What can be typed, until something is (`pickerHint`).
                 if controller.pickerQuery.isEmpty, let hint = controller.pickerHint(kind) {
                     Text(hint).foregroundStyle(Palette.muted).lineLimit(1).truncationMode(.tail)
@@ -1139,6 +1167,7 @@ private struct PickerPopup: View {
             }
             .padding(.horizontal, 8)
             .frame(height: scaled(24))
+            .uiTarget("picker-header")
             Palette.separator.frame(height: 1)
             ScrollViewReader { proxy in
                 ScrollView {

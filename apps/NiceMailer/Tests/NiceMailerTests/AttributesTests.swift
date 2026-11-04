@@ -76,18 +76,24 @@ struct AttributesTests {
         #expect(f.isActive(.from) && !f.isActive(.to))
     }
 
-    @Test func textAndSubjectWordsAddUpWithTheirExclusions() {
+    @Test func textAndSubjectWordsReplaceThePreviousOnes() {
         var f = ThreadFilter()
-        f.add(.text, "acme.fr")
-        f.add(.text, "facture", excluded: true)
-        #expect(f.text == "acme.fr -facture")
-        // Already there: not repeated; an excluded word typed with its dash.
-        f.add(.text, "acme.fr -panne")
-        #expect(f.text == "acme.fr -facture -panne")
+        f.add(.subject, "devis")
+        // A second Subject… search replaces the first one: it used to be
+        // added to it, unseen, so that the list was always wrong.
+        f.add(.subject, "facture")
+        #expect(f.subject == "facture")
+        // An excluded word typed with its dash; a word is not repeated.
+        f.add(.text, "acme.fr -panne acme.fr")
+        #expect(f.text == "acme.fr -panne")
         // Excluding several words excludes each of them.
         f.add(.subject, "a b", excluded: true)
         #expect(f.subject == "-a -b")
         #expect(f.isActive(.text) && f.isActive(.subject))
+        // Their panel opens on the current words; they can be removed.
+        #expect(f.words(of: .subject) == "-a -b" && f.words(of: .from) == nil)
+        f.clearWords(of: .subject)
+        #expect(f.subject == nil && !f.isActive(.subject) && f.text != nil)
     }
 
     @Test func everyNewCriterionHasItsChip() {

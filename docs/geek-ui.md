@@ -70,7 +70,7 @@ The input line of every value panel says what can be typed while nothing is type
 
 In the From… and To… panels, a value starting with `@` is a **domain**: `@acme.fr` matches `jean@acme.fr` and its subdomains (`x@mail.acme.fr`), not `x@notacme.fr`; the row says "domain" on its right. Without `@`, a value is any part of a name or address (`acme.fr` also finds `notacme.fr`).
 
-Text… and Subject… add their words to those already chosen (choosing Text… again does not replace the search), and Text… never looks at the addresses: searching a name in the text does not bring back every mail of that person; From… and To… do that.
+Choosing Text… or Subject… again opens its panel on the current words, selected, as in a macOS field reached with Tab: typing (or ⌘V) replaces them, Return alone keeps them, → (or ←) ends the selection to edit them, for instance to add `-word` after the fact, and Delete then Return removes the criterion ("remove subject: …"). A second Subject… search therefore replaces the first one instead of narrowing it unseen. Text… never looks at the addresses: searching a name in the text does not bring back every mail of that person; From… and To… do that.
 
 ### Negation
 
@@ -167,7 +167,7 @@ The keyboard comes first, but every list can also be used with the mouse:
 | Mail list | select the mail, unmark the others | ⌘-click marks or unmarks a mail (the current one joins the selection); ⇧-click marks every mail from the current one to the clicked one; with one column (`v1`), a double-click reads the mail in the whole window |
 | Folders (3 columns) | go to the folder | |
 | Account or folder in the status bar | open the account or folder picker | |
-| Pickers and menus | choose the row | |
+| Pickers and menus | choose the row | a click outside closes them |
 | Contacts, tags, groups | select the row | double-click lists its mails |
 
 A click acts at once: double-clicks are detected without delaying single clicks.
@@ -194,6 +194,10 @@ On a screen, `j` `k` move and Escape goes back to the mails.
 
 Pickers (`@`, `l`, `t`, `g`, `F`) are filterable lists: type to filter, ignoring case and accents; the best matches come first (the label starts with the typed text, then each typed word starts a word of the label, then initials such as `nf` for "not flagged", then each word anywhere in the label; see "Reaching a row from the keyboard" above), `ctrl-n` / `ctrl-p` or the arrows to move, Return to choose, Escape to close. A picker opens on its first row and turns around: up (or `ctrl-p`) from the first row selects the last one, so the end of the list is one key away, and down (or `ctrl-n`) from the last row comes back to the first.
 
+The typed text is edited as in any macOS text field (`LineEdit.swift`): ← and → move the cursor, ⌥← ⌥→ by word, ⌘← ⌘→ (or Home, End, `ctrl-a`, `ctrl-e`) to either end; Delete removes the character left of the cursor, forward delete (fn-Delete) the one right of it, ⌥-Delete a word, ⌘-Delete everything before the cursor. **⌘V** pastes the text copied in any app at the cursor, as one line: line breaks become spaces and the spaces around it go (copying a word often takes the space after it). The contacts filter (`/` on the contacts screen) is edited the same way.
+
+A click outside an open picker, prefix menu or the help closes it, like Escape. The click does nothing else: the mail under it is not selected. A click on a block of the status bar opens that block's menu or picker directly. A question (a suspect move, a decision) is not closed by a click: it waits for its answer.
+
 ## Moves and decisions
 
 Moving a mail to Newsletter, Paperwork or Banned, or out of Quarantine to the Inbox, also decides where its sender's next mails go and files the mails already received from it (`folder-workflow.md`). The message says so: "“Promo” moved to Newsletter · next mails of news@shop.fr too · 12 other mails filed · z: undo".
@@ -212,7 +216,7 @@ The same small menu chooses a decision on the contacts screen (`m`, `M`); the cu
 
 ## Implementation notes
 
-- Keys are read by an AppKit event monitor (`GeekController.handle`) before any view, so a key is never lost to a focused field: picker text is edited by the controller itself.
+- Keys are read by an AppKit event monitor (`GeekController.handle`) before any view, so a key is never lost to a focused field: picker text is edited by the controller itself, with its cursor in a `LineEdit` value (pure functions, tested on their own), and ⌘V is read there too. AppKit gives the arrows and other function keys characters of the private use area (U+F700–U+F8FF): `LineEdit.isTypable` rejects them, otherwise the left arrow would type an invisible character.
 - All user-facing strings go through `L(...)` and the String Catalog `Resources/Localizable.xcstrings` (English and French). The language is chosen explicitly from the user's preferences, because an app launched with `swift run` has no main bundle declaring its languages.
 - Rows of lazy lists receive plain values (cursor, marks) as parameters: reading the observable model only inside a `ScrollView` closure did not always refresh them.
 - Clicks use tap gestures filtered by modifier (`View.onClick`): SwiftUI runs tap actions after the click was processed, when `NSApp.currentEvent` no longer describes it.

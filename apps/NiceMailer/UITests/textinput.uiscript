@@ -1,0 +1,133 @@
+# Text typed in a picker: the cursor (arrows, Home, End, words), pasting
+# with ⌘V, and closing a panel with a click outside it.
+# ⌘V reads a private pasteboard filled by `clipboard`, never the user's.
+
+# A click outside the attribute selector closes it, and does nothing else:
+# the mail under the click (here the reader) stays as it was.
+key j
+expect selected = 1
+key F
+expect overlay ~ picker
+snap picker-open
+# A click inside the panel (its input line) keeps it open.
+click picker:header
+expect overlay ~ picker
+click outside:panel
+expect overlay = none
+expect selected = 1
+# The same for the search, a prefix menu and the help.
+key /
+type devis
+click outside:panel
+expect overlay = none
+expect filters =
+key m
+expect overlay ~ menu
+click outside:panel
+expect overlay = none
+key ?
+expect overlay = help
+click outside:panel
+expect overlay = none
+
+# The left arrow goes back into the text: what is typed goes there.
+key /
+type devs
+key left
+expect picker_cursor = 3
+expect picker_query = devs
+type i
+expect picker_query = devis
+expect picker_cursor = 4
+key home
+expect picker_cursor = 0
+key fdel
+expect picker_query = evis
+type d
+key end
+expect picker_cursor = 5
+type  toiture
+key alt-left
+expect picker_cursor = 6
+key alt-del
+expect picker_query = toiture
+key cmd-right
+key cmd-del
+expect picker_query =
+expect overlay ~ picker
+key esc
+
+# ⌘V pastes an address copied in another app: line break and spaces
+# around it go; the From… panel looks for it like typed text.
+clipboard   me@example.com\n
+key F
+type From
+key ret
+expect overlay ~ attributeValue
+key cmd-v
+expect picker_query = me@example.com
+expect picker_cursor = 14
+snap paste-from
+key ret
+expect overlay = none
+expect filters ~ me@example.com
+key esc
+expect filters =
+# Pasted in the middle of the text, at the cursor.
+clipboard rapport
+key /
+type mensuel
+key home
+key cmd-v
+key space
+expect picker_query = rapport mensuel
+key esc
+
+# A second Subject… search replaces the first one (it used to be added to
+# it, unseen, and the list was always wrong). In the fixture account's
+# Everything: Rapport mensuel, La lettre de novembre, Un long mail,
+# Chantier.
+key @
+type fixture
+key ret
+key ;
+key e
+expect thread_count = 4
+key F
+type Subject
+key ret
+type rapport
+key ret
+expect filters = subject: rapport
+expect thread_count = 1
+# The panel opens on the current subject, selected.
+key F
+type Subject
+key ret
+expect picker_query = rapport
+expect picker_selected = true
+snap subject-selected
+type lettre
+expect picker_selected = false
+key ret
+expect filters = subject: lettre
+expect thread_count = 1
+expect selected_subject ~ lettre
+# → keeps the words to edit them: an exclusion added after the fact.
+key F
+type Subject
+key ret
+key right
+type  -novembre
+key ret
+expect filters = subject: lettre -novembre
+expect thread_count = 0
+# Erased, then Return: the criterion goes.
+key F
+type Subject
+key ret
+key del
+expect picker_first ~ remove
+key ret
+expect filters =
+expect thread_count = 4

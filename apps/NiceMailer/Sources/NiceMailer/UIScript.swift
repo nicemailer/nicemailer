@@ -78,6 +78,9 @@ enum UIScript {
         // Opening a file would launch an app on the user's screen: only
         // record its name.
         model.openFile = { openedFile = $0.isFileURL ? $0.lastPathComponent : $0.absoluteString }
+        // ⌘V reads a private pasteboard filled by `clipboard`: the user's
+        // clipboard is never read nor overwritten.
+        controller.pasteboard = NSPasteboard(name: NSPasteboard.Name("NiceMailer-UIScript-\(ProcessInfo.processInfo.processIdentifier)"))
         Task { @MainActor in
             let runner = Runner(model: model, controller: controller)
             let failures = await runner.run(path: path)
@@ -120,6 +123,7 @@ extension View {
 /// | --- | --- |
 /// | `key K` | one key: a character, or `esc` `ret` `del` `up` `down` `space` `shift-space` `shift-up` `shift-down` `cmd-ret`, or `ctrl-X` / `cmd-X` |
 /// | `type TEXT` | each character of TEXT as a key |
+/// | `clipboard TEXT` | puts TEXT (`\n` for a line break) on the pasteboard ⌘V reads |
 /// | `click TARGET [cmd] [shift]` | a mouse click on a row |
 /// | `dblclick TARGET` | two clicks |
 /// | `resize WxH` | window size |
@@ -173,6 +177,9 @@ private final class Runner {
             key(arg)
         case "type":
             for c in arg { key(String(c)) }
+        case "clipboard":
+            controller.pasteboard.clearContents()
+            controller.pasteboard.setString(arg.replacingOccurrences(of: "\\n", with: "\n"), forType: .string)
         case "click", "dblclick":
             let words = arg.split(separator: " ").map(String.init)
             var mods: NSEvent.ModifierFlags = []
@@ -223,6 +230,18 @@ private final class Runner {
         case "shift-up": chars = "\u{F700}"; code = KeyCode.up; mods = .shift
         case "shift-down": chars = "\u{F701}"; code = KeyCode.down; mods = .shift
         case "cmd-ret": chars = "\r"; code = KeyCode.returnKey; mods = .command
+        // Editing keys of a typed line (`LineEdit`).
+        case "left": chars = "\u{F702}"; code = KeyCode.left; mods = .function
+        case "right": chars = "\u{F703}"; code = KeyCode.right; mods = .function
+        case "alt-left": chars = "\u{F702}"; code = KeyCode.left; mods = [.function, .option]
+        case "alt-right": chars = "\u{F703}"; code = KeyCode.right; mods = [.function, .option]
+        case "cmd-left": chars = "\u{F702}"; code = KeyCode.left; mods = [.function, .command]
+        case "cmd-right": chars = "\u{F703}"; code = KeyCode.right; mods = [.function, .command]
+        case "home": chars = "\u{F729}"; code = KeyCode.home; mods = .function
+        case "end": chars = "\u{F72B}"; code = KeyCode.end; mods = .function
+        case "fdel": chars = "\u{F728}"; code = KeyCode.forwardDelete; mods = .function
+        case "alt-del": chars = "\u{7f}"; code = KeyCode.delete; mods = .option
+        case "cmd-del": chars = "\u{7f}"; code = KeyCode.delete; mods = .command
         default:
             if name.hasPrefix("ctrl-") {
                 mods = .control
@@ -378,6 +397,10 @@ private final class Runner {
                 o.folderId.map { "folder:\($0)" } ?? o.unifiedRole.map { "all:\($0)" } ?? "everything"
             } ?? "",
             "picker_query": c.pickerQuery,
+            // Where the cursor of the typed text is, in characters.
+            "picker_cursor": "\(c.pickerLine.cursor)",
+            // Whether the typed text is selected (typing replaces it).
+            "picker_selected": "\(c.pickerLine.selectedAll)",
             "picker_index": "\(c.pickerIndex)",
             "picker_count": "\(pickerRows.count)",
             // The row Return would choose (the picker opens on its first

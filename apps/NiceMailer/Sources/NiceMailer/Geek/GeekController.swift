@@ -126,9 +126,20 @@ final class GeekController {
     var menuIndex: Int?
     /// The same for the open choice.
     var choiceIndex: Int?
-    /// Text typed in the open picker, and the highlighted row.
-    var pickerQuery = ""
+    /// Text typed in the open picker, with its cursor (`LineEdit`), and
+    /// the highlighted row.
+    var pickerLine = LineEdit()
     var pickerIndex = 0
+    /// The text typed in the open picker. Setting it puts the cursor at
+    /// the end (a new panel, a cleared query).
+    var pickerQuery: String {
+        get { pickerLine.text }
+        set { pickerLine = LineEdit(newValue) }
+    }
+    /// Where ⌘V reads from. The general pasteboard, except in tests and in
+    /// UI script mode, which use a private one so as never to read or
+    /// overwrite what the user copied.
+    @ObservationIgnored var pasteboard: NSPasteboard = .general
     /// Where `/` was pressed from, to come back there with Escape (`ui.md`):
     /// set when `/` leaves a folder for "Everything", forgotten as soon as
     /// the user goes elsewhere (`;`, `@`, a click on a folder).
@@ -178,7 +189,12 @@ final class GeekController {
     // Data of the screens, loaded when a screen opens.
     var contacts: [ContactView] = []
     var contactsCursor: String?
-    var contactsQuery = ""
+    /// The contacts filter typed after `/`, with its cursor.
+    var contactsLine = LineEdit()
+    var contactsQuery: String {
+        get { contactsLine.text }
+        set { contactsLine = LineEdit(newValue) }
+    }
     var history: [HistoryEntry] = []
     var historyCursor: String?
     var tags: [TagView] = []
@@ -346,6 +362,12 @@ final class GeekController {
             }
             return true
         }
+        // While text is typed (a picker, the contacts filter), ⌘V pastes and
+        // ⌘ with the arrows or Delete edits the line, as in any text field.
+        // This comes before the other ⌘ shortcuts, which do not apply there.
+        if mods.contains(.command), let edited = editTypedLine(event, mods: mods) {
+            return edited
+        }
         // ⌘U: unsubscribe from the list of the open mail (`ui.md`,
         // "Désabonnement"), with ⌘ because it cannot be undone and `u` alone
         // toggles read / unread. Only on the mail screen, without a panel.
@@ -418,10 +440,10 @@ final class GeekController {
             overlay = .none
             return true
         case .picker(let kind):
-            handlePickerKey(kind, key: key, code: code, control: control)
+            handlePickerKey(kind, key: key, code: code, mods: mods)
             return true
         case .contactFilter:
-            handleContactFilterInput(key: key, code: code)
+            handleContactFilterInput(key: key, code: code, mods: mods)
             return true
         case .choice, .none:
             break
@@ -1018,7 +1040,9 @@ final class GeekController {
         for field in AttributeField.allCases {
             entries.append(Entry(key: a.isActive(field) ? "•" : " ", label: field.title, keywords: field.keywords) { [weak self] in
                 // The panel grows at once to choose the value (`ui.md`).
-                self?.pickerQuery = ""
+                // Text… and Subject… open on their current words, selected:
+                // typing replaces them (`ThreadFilter.add`).
+                self?.pickerLine = LineEdit(a.words(of: field) ?? "", selected: true)
                 self?.pickerIndex = 0
                 self?.valueSuggestions = []
                 self?.overlay = .picker(.attributeValue(field))
@@ -1059,6 +1083,12 @@ final class GeekController {
             }
             return entries
         case .text, .subject:
+            // The words erased: Return removes the criterion.
+            if value.isEmpty, let current = model.attributes.chips.first(where: { $0.id == field.rawValue }) {
+                return [Entry(key: "×", label: L("remove %@", current.label)) { [model] in
+                    model.attributes.clearWords(of: field)
+                }]
+            }
             guard !value.isEmpty else { return [] }
             // The words as typed: a "-word" among them stays an exclusion.
             return rows(value, value)
@@ -1092,8 +1122,14 @@ final class GeekController {
         return entries
     }
 
-    private func handlePickerKey(_ kind: PickerKind, key: String, code: UInt16, control: Bool) {
+    private func handlePickerKey(_ kind: PickerKind, key: String, code: UInt16, mods: NSEvent.ModifierFlags) {
+        let control = mods.contains(.control)
         let entries = pickerEntries(kind)
+        // Moving in the text and deleting (`LineEdit`).
+        if let change = Self.edit(&pickerLine, key: key, code: code, mods: mods) {
+            if change == .text { pickerTextChanged(kind) }
+            return
+        }
         switch code {
         case KeyCode.escape:
             overlay = .none
@@ -1108,11 +1144,6 @@ final class GeekController {
         case KeyCode.up:
             pickerIndex = Self.stepUp(pickerIndex, count: entries.count)
             return
-        case KeyCode.delete:
-            if !pickerQuery.isEmpty { pickerQuery.removeLast() }
-            pickerIndex = 0
-            if kind == .attributeValue(.from) || kind == .attributeValue(.to) { loadSuggestions() }
-            return
         default:
             break
         }
@@ -1122,11 +1153,103 @@ final class GeekController {
             if key == "p" || key == "k" { pickerIndex = Self.stepUp(pickerIndex, count: entries.count) }
             return
         }
-        if let c = key.first, !c.isNewline, key.unicodeScalars.allSatisfy({ !CharacterSet.controlCharacters.contains($0) }) {
-            pickerQuery += key
-            pickerIndex = 0
+        if LineEdit.isTypable(key) {
+            pickerLine.insert(key)
+            pickerTextChanged(kind)
         }
+    }
+
+    /// After the text of a picker changed: the best match is on top again,
+    /// and the From… and To… panels look for contacts.
+    private func pickerTextChanged(_ kind: PickerKind) {
+        pickerIndex = 0
         if kind == .attributeValue(.from) || kind == .attributeValue(.to) { loadSuggestions() }
+    }
+
+    // MARK: - Line editing
+
+    /// What an editing key changed.
+    enum LineChange { case text, cursor }
+
+    /// Applies an editing key to a line being typed, with the shortcuts of
+    /// every macOS text field: ← →, ⌥← ⌥→ by word, ⌘← ⌘→ (and Home, End,
+    /// `ctrl-a`, `ctrl-e`) to the ends, ⌫ and ⌦, ⌥⌫ a word, ⌘⌫ everything
+    /// before the cursor. Returns `nil` for any other key.
+    ///
+    /// Swift note: `inout` lets the function change the caller's variable
+    /// (passed with `&`), here the picker's or the contacts filter's line.
+    static func edit(_ line: inout LineEdit, key: String, code: UInt16, mods: NSEvent.ModifierFlags) -> LineChange? {
+        let option = mods.contains(.option), command = mods.contains(.command)
+        switch code {
+        case KeyCode.left:
+            if command { line.moveToStart() } else if option { line.moveWordLeft() } else { line.moveLeft() }
+            return .cursor
+        case KeyCode.right:
+            if command { line.moveToEnd() } else if option { line.moveWordRight() } else { line.moveRight() }
+            return .cursor
+        case KeyCode.home:
+            line.moveToStart()
+            return .cursor
+        case KeyCode.end:
+            line.moveToEnd()
+            return .cursor
+        case KeyCode.delete:
+            if command { line.deleteToStart() } else if option { line.deleteWordBackward() } else { line.deleteBackward() }
+            return .text
+        case KeyCode.forwardDelete:
+            line.deleteForward()
+            return .text
+        default:
+            break
+        }
+        // Emacs keys that every macOS text field knows, by their letter
+        // (on any keyboard layout). `ctrl-n` / `ctrl-p` stay the picker's
+        // (Helix).
+        if mods.contains(.control) {
+            switch key {
+            case "a": line.moveToStart(); return .cursor
+            case "e": line.moveToEnd(); return .cursor
+            default: break
+            }
+        }
+        return nil
+    }
+
+    /// ⌘ keys while a line is typed: ⌘V pastes the text copied in any app,
+    /// ⌘← ⌘→ ⌘⌫ edit (`edit`). `nil` when no line is being typed or the
+    /// key is another ⌘ shortcut, which then goes on as usual.
+    private func editTypedLine(_ event: NSEvent, mods: NSEvent.ModifierFlags) -> Bool? {
+        let kind: PickerKind?
+        switch overlay {
+        case .picker(let k): kind = k
+        case .contactFilter: kind = nil
+        default: return nil
+        }
+        guard activeChoice == nil else { return nil }
+        let isPaste = event.charactersIgnoringModifiers?.lowercased() == "v"
+        // Only ⌘ alone pastes: ⌥⌘V and ⇧⌘V are other commands elsewhere.
+        if isPaste, mods.isDisjoint(with: [.option, .shift, .control]) {
+            model.flash = nil
+            let text = LineEdit.pasted(pasteboard.string(forType: .string) ?? "")
+            guard !text.isEmpty else { return true }
+            if let kind {
+                pickerLine.insert(text)
+                pickerTextChanged(kind)
+            } else {
+                contactsLine.insert(text)
+                contactsFilterChanged()
+            }
+            return true
+        }
+        let key = event.charactersIgnoringModifiers ?? ""
+        if let kind {
+            guard let change = Self.edit(&pickerLine, key: key, code: event.keyCode, mods: mods) else { return nil }
+            if change == .text { pickerTextChanged(kind) }
+        } else {
+            guard let change = Self.edit(&contactsLine, key: key, code: event.keyCode, mods: mods) else { return nil }
+            if change == .text { contactsFilterChanged() }
+        }
+        return true
     }
 
     // MARK: - Search
@@ -1324,7 +1447,11 @@ final class GeekController {
         }
     }
 
-    private func handleContactFilterInput(key: String, code: UInt16) {
+    private func handleContactFilterInput(key: String, code: UInt16, mods: NSEvent.ModifierFlags) {
+        if let change = Self.edit(&contactsLine, key: key, code: code, mods: mods) {
+            if change == .text { contactsFilterChanged() }
+            return
+        }
         switch code {
         case KeyCode.escape:
             overlay = .none
@@ -1332,12 +1459,15 @@ final class GeekController {
         case KeyCode.returnKey:
             overlay = .none
             return
-        case KeyCode.delete:
-            if !contactsQuery.isEmpty { contactsQuery.removeLast() }
         default:
-            guard !key.isEmpty, key.unicodeScalars.allSatisfy({ !CharacterSet.controlCharacters.contains($0) }) else { return }
-            contactsQuery += key
+            guard !mods.contains(.control), LineEdit.isTypable(key) else { return }
+            contactsLine.insert(key)
         }
+        contactsFilterChanged()
+    }
+
+    /// The contacts filter changed: the list is loaded again from its top.
+    private func contactsFilterChanged() {
         screenIndex = 0
         Task { await loadContacts(reset: true) }
     }
@@ -1437,6 +1567,31 @@ extension GeekController {
         if isDoubleClick("screen-\(screen)-\(index)") { activateScreenRow() }
     }
 
+    /// A click outside the open menu, picker or help: closes it, like
+    /// Escape, as a popover does. The click does nothing else (it does not
+    /// also select the mail under it), so that closing a panel never
+    /// changes the list by surprise. A question (`activeChoice`) stays: it
+    /// waits for its answer.
+    func clickOutsideOverlay() {
+        guard activeChoice == nil else { return }
+        switch overlay {
+        case .menu, .help, .picker:
+            model.flash = nil
+            overlay = .none
+        case .none, .contactFilter, .choice:
+            break
+        }
+    }
+
+    /// Whether a click outside the panel should close it (`clickOutsideOverlay`).
+    var closesOnClickOutside: Bool {
+        guard activeChoice == nil else { return false }
+        switch overlay {
+        case .menu, .help, .picker: return true
+        case .none, .contactFilter, .choice: return false
+        }
+    }
+
     /// Click on a picker row: chooses it, like Return.
     func clickPicker(_ kind: PickerKind, _ index: Int) {
         let entries = pickerEntries(kind)
@@ -1452,6 +1607,10 @@ enum KeyCode {
     static let delete: UInt16 = 51
     static let escape: UInt16 = 53
     static let forwardDelete: UInt16 = 117
+    static let home: UInt16 = 115
+    static let end: UInt16 = 119
+    static let left: UInt16 = 123
+    static let right: UInt16 = 124
     static let down: UInt16 = 125
     static let up: UInt16 = 126
 }

@@ -40,6 +40,16 @@ struct GeekControllerTests {
         case "shift-down": chars = "\u{F701}"; code = KeyCode.down; mods = .shift
         case "cmd-ret": chars = "\r"; code = KeyCode.returnKey; mods = .command
         case "shift-up": chars = "\u{F700}"; code = KeyCode.up; mods = .shift
+        case "left": chars = "\u{F702}"; code = KeyCode.left; mods = .function
+        case "right": chars = "\u{F703}"; code = KeyCode.right; mods = .function
+        case "alt-left": chars = "\u{F702}"; code = KeyCode.left; mods = [.function, .option]
+        case "cmd-left": chars = "\u{F702}"; code = KeyCode.left; mods = [.function, .command]
+        case "cmd-right": chars = "\u{F703}"; code = KeyCode.right; mods = [.function, .command]
+        case "home": chars = "\u{F729}"; code = KeyCode.home; mods = .function
+        case "end": chars = "\u{F72B}"; code = KeyCode.end; mods = .function
+        case "fdel": chars = "\u{F728}"; code = KeyCode.forwardDelete; mods = .function
+        case "alt-del": chars = "\u{7f}"; code = KeyCode.delete; mods = .option
+        case "cmd-del": chars = "\u{7f}"; code = KeyCode.delete; mods = .command
         default:
             if name.hasPrefix("ctrl-") { mods = .control; chars = String(name.dropFirst(5)) }
             if name.hasPrefix("cmd-") { mods = .command; chars = String(name.dropFirst(4)) }
@@ -430,6 +440,138 @@ struct GeekControllerTests {
         #expect(await eventually { FileManager.default.fileExists(atPath: dir.appendingPathComponent("photo.jpg").path) })
     }
 
+    // MARK: Editing the typed text
+
+    /// Puts text on the controller's own pasteboard (never the user's).
+    func copy(_ text: String) {
+        controller.pasteboard = NSPasteboard(name: NSPasteboard.Name("NiceMailerTests-\(UUID().uuidString)"))
+        controller.pasteboard.clearContents()
+        controller.pasteboard.setString(text, forType: .string)
+    }
+
+    @Test func theLeftArrowGoesBackToEditTheTypedText() {
+        press("F"); type(L("From…")); press("ret")
+        type("alce")
+        press("left"); press("left")
+        #expect(controller.pickerLine.cursor == 2)
+        // The arrow adds nothing to the text (it used to add its character).
+        #expect(controller.pickerQuery == "alce")
+        type("i")
+        #expect(controller.pickerQuery == "alice" && controller.pickerLine.cursor == 3)
+        press("right"); press("fdel")
+        #expect(controller.pickerQuery == "alic")
+        press("home"); press("fdel")
+        #expect(controller.pickerQuery == "lic" && controller.pickerLine.cursor == 0)
+        press("end"); press("del")
+        #expect(controller.pickerQuery == "li")
+        press("cmd-left"); type("a")
+        #expect(controller.pickerQuery == "ali")
+        press("ctrl-e"); type("ce")
+        #expect(controller.pickerQuery == "alice")
+        press("ctrl-a")
+        #expect(controller.pickerLine.cursor == 0)
+        press("cmd-right")
+        #expect(controller.pickerLine.cursor == 5)
+        // Still a picker: Return applies the edited text.
+        press("ret")
+        #expect(model.attributes.from == ["alice"])
+    }
+
+    @Test func wordKeysEditTheSearch() {
+        press("/"); type("devis toiture")
+        press("alt-left")
+        #expect(controller.pickerLine.afterCursor == "toiture")
+        press("alt-del")
+        #expect(controller.pickerQuery == "toiture")
+        press("end"); press("cmd-del")
+        #expect(controller.pickerQuery == "" && controller.overlay == .picker(.search))
+    }
+
+    @Test func editingKeysKeepThePickerOpenAndCtrlNPStillMove() {
+        press("F")
+        press("down")
+        #expect(controller.pickerIndex == 1)
+        press("left"); press("right")
+        #expect(controller.pickerIndex == 1)
+        press("ctrl-n")
+        #expect(controller.pickerIndex == 2)
+        #expect(controller.overlay == .picker(.attributes))
+    }
+
+    @Test func commandVPastesAtTheCursor() async {
+        copy("  alice@acme.fr\n")
+        press("F"); type(L("From…")); press("ret")
+        press("cmd-v")
+        #expect(controller.pickerQuery == "alice@acme.fr")
+        // Pasted text is looked for like typed text.
+        #expect(await eventually { core.calls("list_contacts").contains { $0["query"] as? String == "alice@acme.fr" } })
+        press("ret")
+        #expect(model.attributes.from == ["alice@acme.fr"])
+        // In the middle of the text, at the cursor; the spaces around a
+        // pasted text go (a double-click copy often takes one), those
+        // typed stay.
+        copy("toiture\n")
+        press("/"); type("devis  2024")
+        press("alt-left"); press("left"); press("cmd-v")
+        #expect(controller.pickerQuery == "devis toiture 2024")
+    }
+
+    @Test func commandVOutsideATypedLineIsLeftToTheMenus() {
+        copy("x")
+        let event = NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: .command, timestamp: 0, windowNumber: 0, context: nil,
+            characters: "v", charactersIgnoringModifiers: "v", isARepeat: false, keyCode: 9)!
+        #expect(!controller.handle(event))
+        #expect(controller.overlay == .none)
+    }
+
+    @Test func anEmptyPasteChangesNothing() {
+        copy("\n ")
+        press("F"); type("un")
+        press("cmd-v")
+        #expect(controller.pickerQuery == "un")
+    }
+
+    @Test func theContactsFilterIsEditedTheSameWay() async {
+        press(";"); press("c")
+        press("/"); type("ab")
+        press("left"); type("x")
+        #expect(controller.contactsQuery == "axb")
+        copy("acme")
+        press("cmd-v")
+        #expect(controller.contactsQuery == "axacmeb")
+        #expect(await eventually { core.calls("list_contacts").last?["query"] as? String == "axacmeb" })
+        // Control keys other than ctrl-a / ctrl-e type nothing.
+        press("ctrl-n")
+        #expect(controller.contactsQuery == "axacmeb")
+    }
+
+    @Test func aClickOutsideClosesThePickerTheMenuAndTheHelp() {
+        press("F")
+        #expect(controller.closesOnClickOutside)
+        controller.clickOutsideOverlay()
+        #expect(controller.overlay == .none)
+        // Nothing else happens: the mail under the click is not selected.
+        #expect(selectedIndex == 0)
+        press("/"); type("devis")
+        controller.clickOutsideOverlay()
+        #expect(controller.overlay == .none && model.attributes.contains == nil)
+        press("m")
+        controller.clickOutsideOverlay()
+        #expect(controller.overlay == .none)
+        press("?")
+        controller.clickOutsideOverlay()
+        #expect(controller.overlay == .none)
+        #expect(!controller.closesOnClickOutside)
+    }
+
+    @Test func aClickOutsideDoesNotCloseTheContactsFilter() {
+        press(";"); press("c"); press("/")
+        #expect(!controller.closesOnClickOutside)
+        controller.clickOutsideOverlay()
+        #expect(controller.overlay == .contactFilter)
+    }
+
     // MARK: Search (/)
 
     @Test func slashSearchesEverythingWithTheAnywhereCriterion() async {
@@ -771,18 +913,60 @@ struct GeekControllerTests {
         #expect(model.attributes.notTo == ["alice"])
     }
 
-    @Test func textAndSubjectPanelsAddWordsAndExclusions() {
+    @Test func textAndSubjectPanelsTakeWordsAndExclusions() {
         press("F"); type(L("Text…")); press("ret")
         #expect(controller.overlay == .picker(.attributeValue(.text)))
         type("acme.fr"); press("ret")
         #expect(model.attributes.text == "acme.fr")
+        // An exclusion decided after the fact: → leaves the current words,
+        // selected, for the end of the line.
         press("F"); type(L("Text…")); press("ret")
-        type("facture"); press("down"); press("ret")
+        press("right"); type(" -facture"); press("ret")
         #expect(model.attributes.text == "acme.fr -facture")
         press("F"); type(L("Subject…")); press("ret")
         type("-panne"); press("ret")
         #expect(model.attributes.subject == "-panne")
         #expect(model.attributes.contains == nil)
+    }
+
+    @Test func aSecondSubjectReplacesTheFirst() async {
+        press("F"); type(L("Subject…")); press("ret")
+        type("devis"); press("ret")
+        #expect(model.attributes.subject == "devis")
+        // The panel opens on the current subject, selected: typing
+        // replaces it.
+        press("F"); type(L("Subject…")); press("ret")
+        #expect(controller.pickerQuery == "devis" && controller.pickerLine.selectedAll)
+        type("facture")
+        #expect(controller.pickerQuery == "facture" && !controller.pickerLine.selectedAll)
+        press("ret")
+        #expect(model.attributes.subject == "facture")
+        #expect(await eventually {
+            (core.calls("list_threads").last?["filter"] as? [String: Any])?["subject"] as? String == "facture"
+        })
+        // Return without touching it keeps it as it is.
+        press("F"); type(L("Subject…")); press("ret"); press("ret")
+        #expect(model.attributes.subject == "facture")
+        // A paste replaces it too.
+        copy("rapport\n")
+        press("F"); type(L("Subject…")); press("ret"); press("cmd-v"); press("ret")
+        #expect(model.attributes.subject == "rapport")
+    }
+
+    @Test func erasingTheWordsOfThePanelRemovesTheCriterion() {
+        press("F"); type(L("Subject…")); press("ret")
+        type("devis"); press("ret")
+        press("F"); type(L("Subject…")); press("ret")
+        // Delete clears the selected words; Return then removes the chip.
+        press("del")
+        #expect(controller.pickerQuery == "")
+        let rows = controller.pickerEntries(.attributeValue(.subject))
+        #expect(rows.map(\.label) == [L("remove %@", L("subject: %@", "devis"))])
+        press("ret")
+        #expect(model.attributes.subject == nil && model.attributes.isEmpty)
+        // With no criterion, an empty panel offers nothing.
+        press("F"); type(L("Subject…")); press("ret")
+        #expect(controller.pickerEntries(.attributeValue(.subject)).isEmpty && !controller.pickerLine.selectedAll)
     }
 
     @Test func valuePanelsSayWhatCanBeTyped() {
