@@ -21,7 +21,7 @@ Speed is tested by the plans of the queries rather than by timing them, which wo
 | Server | Ports (127.0.0.1) | Announces |
 | --- | --- | --- |
 | `full` | 31143 (STARTTLS), 31993 (TLS) | every extension of Dovecot: CONDSTORE, QRESYNC, MOVE, ESEARCH, SPECIAL-USE… |
-| `minimal` | 32143 (STARTTLS), 32993 (TLS) | `IMAP4rev1 UIDPLUS IDLE LITERAL+` only, like the servers of Infomaniak |
+| `minimal` | 32143 (STARTTLS), 32993 (TLS) | `IMAP4rev1 UIDPLUS IDLE LITERAL+` only: a plain server without the sync extensions, to test the fallbacks |
 
 The core only uses what a server announces, so the minimal server exercises the fallbacks (no MOVE, no CONDSTORE, no SPECIAL-USE) that many real servers need. Any user name logs in with the password `nicemailer`, and a new user starts with an empty mailbox: a test picks a random user and needs no setup or cleanup. Mail is kept in memory and lost when the servers stop.
 

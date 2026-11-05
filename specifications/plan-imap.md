@@ -18,7 +18,10 @@ Méthode : **une phase = une revue = un commit**. Chaque phase livre son code, s
 | Configuration `config.toml` | JMAP, LaunchAgent, vérification des signatures des clients |
 | Robustesse : reprise, pannes réseau, ramasse-miettes du brut | Bridage du débit de téléchargement (à analyser plus tard) |
 
-**Cible V1 : tout serveur IMAP4rev1 classique.** Le serveur de référence est celui de l'utilisateur, Infomaniak, qui annonce avant authentification `IMAP4rev1 UIDPLUS IDLE LITERAL+ QUOTA AUTH=PLAIN AUTH=LOGIN` : ni CONDSTORE, ni QRESYNC, ni MOVE, ni ESEARCH, ni SPECIAL-USE. Les chemins de repli ne sont donc pas des cas rares mais le chemin principal, et ils sont testés comme tels (section 4).
+**Cible V1 : tout serveur IMAP4rev1 classique.** Le serveur de référence est celui de l'utilisateur, Infomaniak (un Dovecot). Avant authentification, il n'annonce que `IMAP4rev1 UIDPLUS IDLE LITERAL+ QUOTA AUTH=PLAIN AUTH=LOGIN` ; après authentification, il annonce notamment `CONDSTORE QRESYNC ESEARCH MOVE SPECIAL-USE LIST-STATUS UIDPLUS IDLE LITERAL+ ENABLE ID NAMESPACE BINARY STATUS=SIZE` (relevé du 5 novembre 2026). Le chemin principal est donc QRESYNC. Deux conséquences :
+
+- les capacités sont **relues après l'authentification** (code `[CAPABILITY …]` de la réponse `OK` au LOGIN, sinon une commande `CAPABILITY`) ; celles d'avant ne servent qu'à choisir le mécanisme d'authentification ;
+- les chemins de repli (sans CONDSTORE, sans MOVE, sans SPECIAL-USE) restent nécessaires pour les autres serveurs et restent testés (section 4), mais ils ne sont plus le cas de référence.
 
 ## 2. Décisions prises
 
@@ -32,7 +35,7 @@ Méthode : **une phase = une revue = un commit**. Chaque phase livre son code, s
 | Sous-domaines | Inclus partout, y compris dans le routage à la réception : une décision sur `exemple.fr` s'applique à `news.exemple.fr` sans décision propre. `modele de donnees.md` sera corrigé (phase 6) |
 | Lectures SQLite | Une connexion d'écriture unique et un pool de connexions de lecture (WAL) : une écriture de synchronisation ne fait plus attendre l'app |
 | Secrets en développement | Mot de passe en clair dans `config.toml` (clé `password` du serveur), **accepté seulement par une compilation de développement** (`cfg(debug_assertions)`, comme l'exigence de signature assouplie, `architecture.md`, section 9). Une compilation de production refuse le fichier (`ConfigError`) au lieu de l'ignorer. Le Keychain arrive avec `add_account` (phase 7), derrière la même interface |
-| Serveur de test | Dovecot 2.4.5 sous OrbStack (`dev/dovecot/`), deux instances : complète, et minimale (capacités d'Infomaniak) |
+| Serveur de test | Dovecot 2.4.5 sous OrbStack (`dev/dovecot/`), deux instances : complète (proche d'Infomaniak après authentification), et minimale (serveur IMAP4rev1 sans extension de synchronisation) |
 
 Conseil pour le développement : garder les comptes de test et leurs mots de passe dans un fichier à part, désigné par `NICEMAILER_CONFIG`, plutôt que dans `~/.config/nicemailer/config.toml`, que la spécification invite à versionner dans Git.
 
@@ -106,7 +109,7 @@ Tests : les tests de l'import mbox restent verts ; un message de 150 Mo en morce
   - UIDVALIDITY changé : purge du dossier, puis resynchronisation ;
   - avec QRESYNC : SELECT avec `(QRESYNC (uidvalidity highestmodseq))`, VANISHED et flags modifiés en une commande ;
   - avec CONDSTORE seul : flags modifiés par `CHANGEDSINCE`, suppressions par comparaison des UID ;
-  - sans rien (Infomaniak) : nouveaux UID depuis `uidnext`, suppressions par `UID SEARCH ALL` comparé à la base, flags par `UID FETCH 1:* (FLAGS)`. Ce dernier coûte environ 40 octets par message, soit 4 Mo pour un dossier de 100 000 mails ; il est fait à chaque interrogation de l'Inbox, et moins souvent pour les gros dossiers de rangement (fréquence à mesurer) ;
+  - sans rien (serveur minimal) : nouveaux UID depuis `uidnext`, suppressions par `UID SEARCH ALL` comparé à la base, flags par `UID FETCH 1:* (FLAGS)`. Ce dernier coûte environ 40 octets par message, soit 4 Mo pour un dossier de 100 000 mails ; il est fait à chaque interrogation de l'Inbox, et moins souvent pour les gros dossiers de rangement (fréquence à mesurer) ;
   - nouvelles valeurs de `uidvalidity`, `uidnext`, `highestmodseq` enregistrées dans la même transaction que les messages.
 - **Rapprochement des déplacements faits ailleurs** : un UID nouveau dans un dossier B, dont le `Message-ID` correspond à une seule ligne du même compte dans un dossier A, sans action en attente et de même taille, est un candidat. Les candidats sont vérifiés par dossier source, en une commande (`UID SEARCH UID <ensemble>`) : si l'UID d'origine n'existe plus dans A, la ligne est déplacée (`UPDATE folder_id, uid`) au lieu d'être supprimée puis recréée. Sinon, c'est une vraie copie et une nouvelle ligne est insérée. Pas de `Message-ID`, plusieurs candidats, ou des tailles différentes : pas de rapprochement.
 - **Rythme** : IDLE sur l'Inbox ; autres dossiers toutes les `sync.poll_interval_secs` (300 s) ; `sync_now` pour forcer.
@@ -169,7 +172,6 @@ Conclusion : le client IMAP est écrit pour accueillir un mécanisme SASL de plu
 
 ## 7. Questions ouvertes
 
-1. **Capacités d'Infomaniak après authentification.** Avant authentification, le serveur n'annonce que le minimum (section 1) ; beaucoup de serveurs en annoncent davantage une fois connecté. Pour le vérifier sur un compte réel :
-   `openssl s_client -connect mail.infomaniak.com:993 -quiet`, puis `a LOGIN adresse motdepasse`, puis `b CAPABILITY`, puis `c LOGOUT`.
+1. ~~Capacités d'Infomaniak après authentification~~ : réglé, voir section 1.
 2. **Fréquence de la comparaison complète des flags** sur un serveur sans CONDSTORE, pour les gros dossiers hors Inbox : à mesurer en phase 4.
 3. **Infomaniak et `Authentication-Results`** : quel `authserv-id`, et le serveur retire-t-il les en-têtes entrants qui portent le sien ? À vérifier sur quelques mails reçus.
