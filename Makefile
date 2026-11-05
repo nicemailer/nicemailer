@@ -11,7 +11,7 @@ XCODE ?= /Applications/Xcode.app/Contents/Developer
 THREADS ?= 2500
 
 # These targets are commands, not files to produce.
-.PHONY: build test swift-test ui-test bench seed core app
+.PHONY: build test swift-test ui-test bench seed core app imap-up imap-down
 
 build:
 	cargo build --release
@@ -50,3 +50,16 @@ core:
 
 app:
 	cd apps/NiceMailer && DEVELOPER_DIR=$(XCODE) swift run
+
+# Test IMAP servers (dev/dovecot/compose.yaml), run by OrbStack or Docker:
+# a complete Dovecot on 127.0.0.1:31143/31993 and a minimal one, announcing
+# only IMAP4rev1 UIDPLUS IDLE LITERAL+, on 32143/32993. Any user name logs in
+# with the password "nicemailer" and starts with an empty mailbox. The
+# certificate is signed by a test authority, dev/dovecot/tls/ca.crt.
+imap-up:
+	dev/dovecot/make-tls.sh
+	docker compose -f dev/dovecot/compose.yaml up -d --wait
+
+# Stops the test IMAP servers; their mail, kept in memory, is lost.
+imap-down:
+	docker compose -f dev/dovecot/compose.yaml down

@@ -5,6 +5,7 @@
 | `make test` | Rust tests (`cargo test`), Python script tests and Swift unit tests (`swift test`) | nothing running |
 | `make swift-test` | Swift unit tests only | |
 | `make ui-test` | scripted UI tests of the app | builds the core; starts its own cores on temporary data |
+| `make imap-up`, `make imap-down` | start and stop the test IMAP servers (Dovecot, see below) | OrbStack or Docker |
 | `make bench` | times every thread list (folders, Everything, search, each filter) through the socket on 100,000 generated conversations, or on `BENCH_DATA_DIR` | starts its own core |
 
 ## Rust
@@ -12,6 +13,27 @@
 Unit tests live next to the code (`#[cfg(test)]`), integration tests in `crates/*/tests/`. `crates/nm-daemon/tests/import_rpc.rs` starts the real core binary and talks to it over its socket.
 
 Speed is tested by the plans of the queries rather than by timing them, which would be slow and flaky. `plan_tests` in `crates/nm-store/src/queries.rs` runs `EXPLAIN QUERY PLAN` on every list query (each filter, sort, scope and page) on an empty database, that is without planner statistics, and fails if one reads a whole folder, scans `message` or `thread_folder`, or runs a subquery for each row. `crates/nm-store/tests/everything.rs` checks that Everything, read from whole threads, lists exactly what merging every folder lists, page after page, on a generated mailbox. `crates/nm-store/tests/migrations.rs` checks that a version 1 database (`tests/fixtures/schema_v1.sql`) migrated by the core has exactly the schema of a fresh one, and repaired data.
+
+## Test IMAP servers
+
+`dev/dovecot/compose.yaml` describes two Dovecot 2.4 servers, started by `make imap-up` (OrbStack or Docker) and stopped by `make imap-down`:
+
+| Server | Ports (127.0.0.1) | Announces |
+| --- | --- | --- |
+| `full` | 31143 (STARTTLS), 31993 (TLS) | every extension of Dovecot: CONDSTORE, QRESYNC, MOVE, ESEARCH, SPECIAL-USE… |
+| `minimal` | 32143 (STARTTLS), 32993 (TLS) | `IMAP4rev1 UIDPLUS IDLE LITERAL+` only, like the servers of Infomaniak |
+
+The core only uses what a server announces, so the minimal server exercises the fallbacks (no MOVE, no CONDSTORE, no SPECIAL-USE) that many real servers need. Any user name logs in with the password `nicemailer`, and a new user starts with an empty mailbox: a test picks a random user and needs no setup or cleanup. Mail is kept in memory and lost when the servers stop.
+
+The servers present a certificate for `localhost` and `127.0.0.1`, signed by a test authority that `dev/dovecot/make-tls.sh` creates on the first `make imap-up` (`dev/dovecot/tls/`, not committed). Clients trust `dev/dovecot/tls/ca.crt` and check the certificate as they would with a real server.
+
+To look at a server by hand:
+
+```sh
+openssl s_client -connect 127.0.0.1:32993 -CAfile dev/dovecot/tls/ca.crt -quiet
+a LOGIN alice nicemailer
+b LIST "" "*"
+```
 
 ## Swift unit tests
 

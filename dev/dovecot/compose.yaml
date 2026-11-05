@@ -1,0 +1,39 @@
+# Dovecot servers for the IMAP tests (`make imap-up`, `make imap-down`).
+#
+# Any user name logs in with the password "nicemailer" (static passdb of the
+# image), and a new user starts with an empty mailbox: each test picks a
+# random user and is isolated from the others without any setup.
+#
+# - full:    every extension Dovecot has (CONDSTORE, QRESYNC, MOVE, ...),
+#            IMAP on 127.0.0.1:31143 (STARTTLS) and 31993 (TLS);
+# - minimal: the same server announcing only IMAP4rev1 UIDPLUS IDLE LITERAL+,
+#            on 127.0.0.1:32143 and 32993.
+#
+# Mail lives in tmpfs: stopping the servers deletes it. The certificate is
+# made by make-tls.sh, signed by a test authority (tls/ca.crt).
+services:
+  full:
+    image: dovecot/dovecot:2.4.5
+    environment:
+      USER_PASSWORD: nicemailer
+    ports:
+      - "127.0.0.1:31143:31143"
+      - "127.0.0.1:31993:31993"
+    tmpfs:
+      - /srv/vmail:uid=1000,gid=1000
+    volumes:
+      - ./tls/server.crt:/etc/dovecot/ssl/tls.crt:ro
+      - ./tls/server.key:/etc/dovecot/ssl/tls.key:ro
+  minimal:
+    image: dovecot/dovecot:2.4.5
+    environment:
+      USER_PASSWORD: nicemailer
+    ports:
+      - "127.0.0.1:32143:31143"
+      - "127.0.0.1:32993:31993"
+    tmpfs:
+      - /srv/vmail:uid=1000,gid=1000
+    volumes:
+      - ./tls/server.crt:/etc/dovecot/ssl/tls.crt:ro
+      - ./tls/server.key:/etc/dovecot/ssl/tls.key:ro
+      - ./minimal.conf:/etc/dovecot/conf.d/zz-minimal.conf:ro

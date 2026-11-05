@@ -9,3 +9,4 @@
 # Apple Mail export (scripts/export-apple-mail.py): personal data, never committed.
 /mail-export/
 __pycache__/
+/dev/dovecot/tls/
