@@ -42,10 +42,27 @@ enum AppDefaults {
     }()
 }
 
+/// The bundle of the app's resources (fonts, translations).
+///
+/// SwiftPM puts them in `NiceMailer_NiceMailer.bundle`, and its generated
+/// `Bundle.module` looks for it beside the executable (`swift run`) or at
+/// the root of an `.app`, where macOS's code signature allows nothing.
+/// `make bundle` puts it in `Contents/Resources`, the regular place, which
+/// is looked at first; `Bundle.module` covers `swift run` and the tests.
+enum AppResources {
+    static let bundle: Bundle = {
+        if let url = Bundle.main.resourceURL?.appendingPathComponent("NiceMailer_NiceMailer.bundle"),
+           let bundle = Bundle(url: url) {
+            return bundle
+        }
+        return Bundle.module
+    }()
+}
+
 /// Localized string from the app's String Catalog.
 ///
-/// Swift note: in a Swift Package, resources live in `Bundle.module`, not in
-/// `Bundle.main`, so SwiftUI's default lookup would not find the
+/// Swift note: in a Swift Package, resources live in their own bundle
+/// (`AppResources.bundle`), not in `Bundle.main`, so SwiftUI's default lookup would not find the
 /// translations. Every user-facing string goes through this function (see
 /// CLAUDE.md, "Languages"). The key is the English text.
 func L(_ key: String) -> String {
@@ -61,14 +78,14 @@ func L(_ key: String) -> String {
 /// of System Settings) and the bundled translations is computed here, once.
 /// A missing translation falls back to the key, which is the English text.
 private let localizedBundle: Bundle = {
-    let available = Bundle.module.localizations
+    let available = AppResources.bundle.localizations
     let wanted = Bundle.preferredLocalizations(from: available, forPreferences: Locale.preferredLanguages)
     if let lang = wanted.first,
-       let path = Bundle.module.path(forResource: lang, ofType: "lproj"),
+       let path = AppResources.bundle.path(forResource: lang, ofType: "lproj"),
        let bundle = Bundle(path: path) {
         return bundle
     }
-    return Bundle.module
+    return AppResources.bundle
 }()
 
 /// Same, with values inserted: `L("%lld marked", n)`. The catalog stores the
@@ -86,7 +103,7 @@ enum Fonts {
     /// Registers the bundled fonts for this process only (they are not
     /// installed on the system). Called once at launch.
     static func register() {
-        guard let dir = Bundle.module.url(forResource: "Fonts", withExtension: nil),
+        guard let dir = AppResources.bundle.url(forResource: "Fonts", withExtension: nil),
               let files = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)
         else { return }
         for url in files where url.pathExtension == "ttf" {
@@ -121,7 +138,7 @@ enum Fonts {
     /// the fonts registered by the app, and does not reliably read local
     /// files. Built once (about 370 KB of text), then reused.
     static let cssFontFaces: String = {
-        guard let dir = Bundle.module.url(forResource: "Fonts", withExtension: nil) else { return "" }
+        guard let dir = AppResources.bundle.url(forResource: "Fonts", withExtension: nil) else { return "" }
         func face(_ file: String, _ style: String) -> String {
             guard let data = try? Data(contentsOf: dir.appendingPathComponent(file)) else { return "" }
             return "@font-face { font-family: \"NM Mono\"; font-style: \(style); "

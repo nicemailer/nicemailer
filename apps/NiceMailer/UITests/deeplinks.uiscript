@@ -1,0 +1,56 @@
+# Deep links (docs/deep-links.md): each mail has its URL,
+# nicemailer://m/<id>. The first row of `l` copies it as a Markdown link
+# (Return) or a bare URL (⌘-Return), to the private pasteboard; `openurl`
+# gives a URL to the app as macOS would.
+
+# The newsletter, in the Archive of the fixture account.
+key @
+type fixture
+key ret
+key ;
+key a
+expect selected_subject = La lettre de novembre
+key l
+expect picker_first = Link to this mail
+expect picker_first_detail ~ nicemailer://m/
+snap deeplink-row
+key ret
+expect overlay = none
+expect pasteboard ~ [La lettre de novembre](nicemailer://m/
+expect flash ~ Markdown link copied
+key l
+key cmd-ret
+expect pasteboard ~ nicemailer://m/
+expect pasteboard !~ [
+
+# Elsewhere (the Inbox, another mail, a panel open), the link brings the
+# mail back, in its folder.
+key ;
+key i
+expect selected_subject != La lettre de novembre
+key ?
+expect overlay = help
+openurl clipboard
+expect selected_subject = La lettre de novembre
+expect folder = Archive
+expect overlay = none
+
+# In one column, the mail fills the window, as after Return.
+key v
+key 1
+expect columns = 1
+key esc
+key ;
+key i
+openurl clipboard
+expect selected_subject = La lettre de novembre
+expect reading = true
+key esc
+key v
+key 2
+
+# A link to a mail no longer there, and a URL that is no mail link.
+openurl nicemailer://m/999999999
+expect error ~ no longer in NiceMailer
+openurl nicemailer://x/1
+expect error ~ Not a link to a NiceMailer mail

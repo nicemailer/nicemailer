@@ -18,6 +18,9 @@ struct GeekControllerTests {
         defaults = UserDefaults(suiteName: "NiceMailerTests-\(UUID().uuidString)")!
         textSize = TextSize(defaults: defaults)
         controller = GeekController(model: model, defaults: defaults, textSize: textSize)
+        // A pasteboard of its own: a test that copies (a link to a mail)
+        // never overwrites what the user copied.
+        controller.pasteboard = NSPasteboard(name: NSPasteboard.Name("NiceMailerTests-\(UUID().uuidString)"))
         model.exportDirectory = "/tmp/nicemailer-tests"
         // Never launch an app from the tests.
         model.openFile = { _ in }
@@ -346,8 +349,9 @@ struct GeekControllerTests {
 
     @Test func theLinkPickerListsTheLinksOfTheMail() {
         press("l")
-        #expect(controller.pickerEntries(.links).map(\.label) == ["example.org"])
-        #expect(controller.pickerEntries(.links).map(\.detail) == ["https://example.org/1"])
+        // The link to the mail itself first, then the link of its text.
+        #expect(controller.pickerEntries(.links).map(\.label) == [L("Link to this mail"), "example.org"])
+        #expect(controller.pickerEntries(.links).map(\.detail) == ["nicemailer://m/10", "https://example.org/1"])
         press("esc")
         #expect(controller.overlay == .none)
     }
@@ -372,8 +376,11 @@ struct GeekControllerTests {
         model.selectedThreadId = 2
         _ = await eventually { model.openThread?.id == 2 }
         press("l")
-        let entries = controller.pickerEntries(.links)
-        // Links with a text, the phone number, then the link without text.
+        let rows = controller.pickerEntries(.links)
+        // After the link to the mail itself: links with a text, the phone
+        // number, then the link without text.
+        #expect(rows.first?.label == L("Link to this mail"))
+        let entries = Array(rows.dropFirst())
         #expect(entries.map(\.label) == ["Voir ma facture", "Écrire au support", "06 12 34 56 78", "example.org"])
         #expect(entries.map(\.detail) == ["https://t.example.com/c?u=1", "aide@example.org", nil, "https://example.org/plain"])
         #expect(entries.map(\.icon) == ["link", "link", "phone", "link"])
@@ -389,6 +396,54 @@ struct GeekControllerTests {
         press("esc"); press("l"); type("06 12")
         press("ret")
         #expect(opened?.absoluteString == "tel:0612345678")
+    }
+
+    // MARK: Deep links
+
+    @Test func theFirstRowOfLCopiesAMarkdownLinkAndCommandReturnTheURL() {
+        press("l")
+        press("ret")
+        #expect(controller.pasteboard.string(forType: .string) == "[Subject 1](nicemailer://m/10)")
+        #expect(controller.overlay == .none)
+        #expect(model.flash?.contains("nicemailer://m/10") == true)
+        press("l")
+        press("cmd-ret")
+        #expect(controller.pasteboard.string(forType: .string) == "nicemailer://m/10")
+        // Found by typing what one looks for.
+        press("l"); type("obsidian")
+        #expect(controller.pickerEntries(.links).first?.label == L("Link to this mail"))
+    }
+
+    @Test func aDeepLinkOpensTheMailInItsFolderAndClosesThePanels() async {
+        core.handler = { method, params in
+            guard method == "locate_message" else { return Fixture.answer(method, params) }
+            if params["message_id"] as? Int == 50 {
+                return ["message_id": 50, "thread_id": 5, "folder_id": 3, "account_id": 1]
+            }
+            return CoreClient.RPCError(code: CoreClient.RPCError.notFound, message: "message not found")
+        }
+        controller.columns = 1
+        press("l")
+        model.openDeepLink(URL(string: "nicemailer://m/50")!)
+        #expect(await eventually { model.selectedThreadId == 5 })
+        #expect(model.selectedFolderId == 3)
+        #expect(await eventually { controller.overlay == .none && controller.reading })
+        #expect(await eventually { model.openThread?.id == 5 })
+    }
+
+    @Test func aDeepLinkToAMissingMailSaysSo() async {
+        core.handler = { method, params in
+            guard method == "locate_message" else { return Fixture.answer(method, params) }
+            return CoreClient.RPCError(code: CoreClient.RPCError.notFound, message: "message not found")
+        }
+        let before = model.selectedThreadId
+        model.openDeepLink(URL(string: "nicemailer://m/999")!)
+        #expect(await eventually { model.lastError == L("This mail is no longer in NiceMailer") })
+        #expect(model.selectedThreadId == before)
+        // Not a link of this app: refused without asking the core.
+        model.openDeepLink(URL(string: "nicemailer://x/1")!)
+        #expect(model.lastError == L("Not a link to a NiceMailer mail: %@", "nicemailer://x/1"))
+        #expect(core.calls("locate_message").count == 1)
     }
 
     @Test func unreadCountsStandOutAndInformationStaysMuted() {
@@ -444,9 +499,12 @@ struct GeekControllerTests {
     @Test func theLinkPickerListsTheLinksThenTheFiles() async {
         await openThreadWithFiles()
         press("l")
-        let entries = controller.pickerEntries(.links)
-        // The three files with their icons, then the link written in the
-        // text (no text of its own: after the files).
+        // After the link to the mail itself (first row): the three files
+        // with their icons, then the link written in the text (no text of
+        // its own: after the files).
+        let all = controller.pickerEntries(.links)
+        #expect(all.first?.label == L("Link to this mail") && all.map(\.key) == ["1", "2", "3", "4", "5"])
+        let entries = Array(all.dropFirst())
         #expect(entries.count == 4)
         // The name on the left, the size in the right half.
         #expect(entries[0].label == "devis.pdf" && entries[0].icon == "doc.richtext")
@@ -454,7 +512,6 @@ struct GeekControllerTests {
         #expect(entries[1].icon == "photo")
         #expect(entries[2].label == L("Unnamed attachment") && entries[2].icon == "doc.zipper")
         #expect(entries[3].icon == "link" && entries[3].label == "example.org" && entries[3].detail == "https://example.org/4")
-        #expect(entries.map(\.key) == ["1", "2", "3", "4"])
         // Typing filters the files too.
         type("photo")
         #expect(controller.pickerEntries(.links).count == 1)

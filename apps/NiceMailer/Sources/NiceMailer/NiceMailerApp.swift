@@ -34,6 +34,17 @@ struct NiceMailerApp: App {
             }
             .environment(model)
             .frame(minWidth: 700, minHeight: 420)
+            // A deep link `nicemailer://m/<id>` (`DeepLink`), clicked in a
+            // note: macOS gives it to the app (its bundle declares the
+            // scheme, `make bundle`), which opens the mail.
+            .onOpenURL { url in
+                NSApp.activate(ignoringOtherApps: true)
+                model.openDeepLink(url)
+            }
+            // Swift note: by default a `WindowGroup` opens a new window for
+            // each URL it receives; this sends every URL to the window
+            // already open instead.
+            .handlesExternalEvents(preferring: ["*"], allowing: ["*"])
             // `.task` starts async work when the view appears.
             .task {
                 guard !UIScript.isActive else { return }

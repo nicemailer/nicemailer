@@ -162,6 +162,15 @@ struct MessageView: Decodable, Identifiable, Hashable {
     var links: [LinkView] = []
 }
 
+/// Where a message is (`locate_message`), to open a deep link.
+struct MessageLocation: Decodable {
+    let messageId: Int
+    /// nil for a message not linked to a thread yet.
+    let threadId: Int?
+    let folderId: Int
+    let accountId: Int
+}
+
 /// A link of a message (`MessageView.links`).
 struct LinkView: Decodable, Hashable {
     let url: String

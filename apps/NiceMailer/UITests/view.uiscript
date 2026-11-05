@@ -94,10 +94,10 @@ expect flash ~ devis.pdf
 click attachment:1 cmd
 expect export_files = 2
 expect opened_file = photo.png
-# The l picker lists them after the links and the phone number of the
-# newsletter.
+# The l picker lists them after the link to the mail, the links and the
+# phone number of the newsletter.
 key l
-expect picker_count = 6
+expect picker_count = 7
 type budget
 key ret
 expect export_files = 3

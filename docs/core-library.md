@@ -75,6 +75,10 @@ The HTML is read because the text the core makes from an HTML part (an HTML-only
 
 `crates/nm-store/tests/links.rs` covers a botched text part replaced by its HTML, an HTML-only mail and a text mail with a phone number; `links.rs` itself the scanner (entities, tags inside a link, `>` inside an attribute, links left open, schemes, bounds, a number given by a `tel:` link and the text once); `phones.rs` the formats, the numbers that are not phones, addresses, faxes and a huge line.
 
+## Locating a message
+
+`locate_message {message_id}` answers where a message is, `{message_id, thread_id, folder_id, account_id}` (`thread_id` null for a message not linked to a thread yet), or the error `1001` when it is not in the database. The app uses it to open a deep link `nicemailer://m/<id>` (`docs/deep-links.md`).
+
 ## Unsubscribing from a list
 
 When a message arrives, the core looks for a way to unsubscribe from the list it comes from (`crates/nm-store/src/unsubscribe.rs`) and stores it in `message_unsubscribe`:

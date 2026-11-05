@@ -77,6 +77,9 @@ pub mod method {
     pub const SET_DOMAIN_SCREENING: &str = "set_domain_screening";
     /// Undoes a move or a decision from the token it returned.
     pub const UNDO: &str = "undo";
+    /// Where a message is (its thread and folder), from its id: opens a
+    /// deep link `nicemailer://m/<id>` (`docs/deep-links.md`).
+    pub const LOCATE_MESSAGE: &str = "locate_message";
 }
 
 /// Stable error codes. Negative codes are the ones defined by the JSON-RPC
@@ -423,6 +426,24 @@ pub enum ThreadSort {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GetThreadParams {
     pub thread_id: i64,
+}
+
+/// Params of `locate_message`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocateMessageParams {
+    pub message_id: i64,
+}
+
+/// Result of `locate_message`: where to show a message. A message is in
+/// one folder; its thread may span several.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MessageLocation {
+    pub message_id: i64,
+    /// `None` for a message not linked to a thread yet (`message.thread_id`
+    /// may be NULL while threading is pending).
+    pub thread_id: Option<i64>,
+    pub folder_id: i64,
+    pub account_id: i64,
 }
 
 /// Params of `search`. `query` is plain text typed by the user; the core

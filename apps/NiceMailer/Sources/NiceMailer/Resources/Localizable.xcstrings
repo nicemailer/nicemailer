@@ -519,12 +519,42 @@
         }
       }
     },
+    "Link copied: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lien copié : %@"
+          }
+        }
+      }
+    },
+    "Link to this mail": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lien vers ce mail"
+          }
+        }
+      }
+    },
     "Links": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "Liens"
+          }
+        }
+      }
+    },
+    "Markdown link copied: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lien Markdown copié : %@"
           }
         }
       }
@@ -665,6 +695,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Aucun lien de désabonnement dans ce mail"
+          }
+        }
+      }
+    },
+    "Not a link to a NiceMailer mail: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce n'est pas un lien vers un mail NiceMailer : %@"
           }
         }
       }
@@ -935,6 +975,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ce mail n'a pas d'images distantes"
+          }
+        }
+      }
+    },
+    "This mail is no longer in NiceMailer": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce mail n'est plus dans NiceMailer"
+          }
+        }
+      }
+    },
+    "This mail is not in a conversation yet": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce mail n'est pas encore rattaché à une conversation"
           }
         }
       }

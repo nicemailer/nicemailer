@@ -40,6 +40,8 @@ final class CoreClient: @unchecked Sendable {
         /// A favorable decision on a sender suspected of spoofing waits for
         /// the user's confirmation (`nm_api::error_code`).
         static let confirmationRequired = 1005
+        /// What was asked for does not exist (a deep link to a deleted mail).
+        static let notFound = 1001
     }
 
     /// Socket-level failures. User-facing texts stay in French.

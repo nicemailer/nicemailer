@@ -190,6 +190,16 @@ private final class Runner {
             key(arg)
         case "type":
             for c in arg { key(String(c)) }
+        case "openurl":
+            // A deep link, as macOS would give it to the app. `clipboard`
+            // opens the first `nicemailer://` URL of the private pasteboard
+            // (a link copied with `l`).
+            var text = arg
+            if arg == "clipboard" {
+                let copied = controller.pasteboard.string(forType: .string) ?? ""
+                text = copied.range(of: #"nicemailer://[^\s)]+"#, options: .regularExpression).map { String(copied[$0]) } ?? copied
+            }
+            if let url = URL(string: text) { model.openDeepLink(url) }
         case "clipboard":
             controller.pasteboard.clearContents()
             controller.pasteboard.setString(arg.replacingOccurrences(of: "\\n", with: "\n"), forType: .string)
@@ -461,6 +471,11 @@ private final class Runner {
             // The reader's title line: subject and controls on 1 line, or
             // the subject above them on 2 (`ReaderTitleBar`).
             "title_lines": "\(UIScript.titleLines)",
+            // Where the fonts and translations were found (`AppResources`):
+            // `Contents/Resources` of NiceMailer.app, or the build folder.
+            "resources_bundle": AppResources.bundle.bundlePath,
+            // What the private pasteboard holds (a link copied with `l`).
+            "pasteboard": controller.pasteboard.string(forType: .string) ?? "",
             "reader_subject": m.openThread?.subject ?? "",
             "unsubscribe": m.unsubscribeOffer.map {
                 $0.senderUnsubscribedAt != nil ? "done" : "\($0.source):\($0.method)"

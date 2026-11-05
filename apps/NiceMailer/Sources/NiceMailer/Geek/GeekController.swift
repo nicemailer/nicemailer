@@ -320,6 +320,9 @@ final class GeekController {
         // Swift note: `didSet` does not run for assignments made in `init`,
         // so the model is told here about the remembered layout.
         model.readerVisible = readerVisible
+        // Swift note: `[weak self]` keeps the model from holding the
+        // controller alive (the controller already holds the model).
+        model.onDeepLinkOpened = { [weak self] in self?.showDeepLinkedMail() }
     }
 
     // MARK: - Labels
@@ -572,6 +575,30 @@ final class GeekController {
         default:
             if !key.isEmpty { model.flash = L("No command %@", key) }
         }
+    }
+
+    /// Copies the link of the open mail (`DeepLink`): as a Markdown link
+    /// `[subject](nicemailer://m/<id>)`, ready to paste in a note, or as the
+    /// bare URL. The status bar says what was copied.
+    func copyMailLink(markdown: Bool) {
+        guard let id = model.deepLinkMessageId else { return }
+        let text = markdown
+            ? DeepLink.markdown(subject: model.openThread?.subject ?? "", messageId: id)
+            : DeepLink.url(messageId: id).absoluteString
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
+        model.flash = markdown ? L("Markdown link copied: %@", text) : L("Link copied: %@", text)
+    }
+
+    /// A deep link was opened (`AppModel.openDeepLink`): the mail is
+    /// selected in its folder; the panels close and, in one column, the
+    /// mail fills the window, as after Return.
+    func showDeepLinkedMail() {
+        // A question waiting (a suspect move) is dropped as by Escape: the
+        // mail it was about stays where it is.
+        overlay = .none
+        screen = .mail
+        if columns == 1 { reading = true }
     }
 
     /// One column: shows the mail under the cursor in the whole window and
@@ -1019,6 +1046,17 @@ final class GeekController {
             // whole address is a hidden keyword, so typing part of it finds
             // the row too.
             let links = model.links
+            // First, the link to this mail itself, for a note app
+            // (`DeepLink`): Return copies it as a Markdown link, ⌘-Return as
+            // a bare URL.
+            let selfRow = model.deepLinkMessageId.map { id in
+                Entry(key: "", label: L("Link to this mail"), detail: DeepLink.url(messageId: id).absoluteString,
+                      detailStyle: .info, icon: "doc.on.doc",
+                      commandAction: { [weak self] in self?.copyMailLink(markdown: false) },
+                      keywords: ["nicemailer", "obsidian", "deeplink", "markdown"]) { [weak self] in
+                    self?.copyMailLink(markdown: true)
+                }
+            }
             let linkRows = links.map { link in
                 Entry(key: "", label: link.label, detail: link.destination, detailStyle: .info,
                       icon: link.icon, keywords: [link.url.absoluteString]) { [model] in model.openFile(link.url) }
@@ -1035,7 +1073,7 @@ final class GeekController {
             // Which link rows are bare (no text, not a number); each group
             // keeps the order `merge` gave it.
             let bare = links.map { $0.text == nil && !$0.isPhone }
-            let ordered = zip(linkRows, bare).filter { !$0.1 }.map(\.0) + fileRows
+            let ordered = Array([selfRow].compactMap { $0 }) + zip(linkRows, bare).filter { !$0.1 }.map(\.0) + fileRows
                 + zip(linkRows, bare).filter { $0.1 }.map(\.0)
             // Numbered once ordered: the number is the row's place.
             all = ordered.enumerated().map { i, e in

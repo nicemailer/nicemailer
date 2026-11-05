@@ -11,7 +11,7 @@ XCODE ?= /Applications/Xcode.app/Contents/Developer
 THREADS ?= 2500
 
 # These targets are commands, not files to produce.
-.PHONY: build test swift-test ui-test bench seed core app
+.PHONY: build test swift-test ui-test bench seed core app bundle
 
 build:
 	cargo build --release
@@ -50,3 +50,9 @@ core:
 
 app:
 	cd apps/NiceMailer && DEVELOPER_DIR=$(XCODE) swift run
+
+# Build NiceMailer.app and install it in ~/Applications, so that deep links
+# nicemailer://m/<id> open it (docs/deep-links.md). NICEMAILER_DATA_DIR, if
+# set, is written into the app.
+bundle:
+	DEVELOPER_DIR=$(XCODE) scripts/make-bundle.sh

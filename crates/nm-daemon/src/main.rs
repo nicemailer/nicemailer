@@ -46,7 +46,7 @@ use anyhow::{Context, bail};
 use clap::Parser;
 use nm_api::{
     AttachmentFileView, CommandResult, DEFAULT_LIMIT, Event, ExportMessageParams, ExportResult, FolderList,
-    GetAttachmentParams, GetThreadParams, UnsubscribeParams, UnsubscribeResult,
+    GetAttachmentParams, GetThreadParams, LocateMessageParams, UnsubscribeParams, UnsubscribeResult,
     GroupMemberResult, HelloParams, HelloResult, ImportMboxParams, ImportStatus, Items, ListContactsParams,
     ListHistoryParams, ListTagsParams, ListThreadsParams, MAX_LIMIT, MoveThreadParams,
     PROTOCOL_VERSION, Page, Request, Response, RpcError, SearchParams, SearchResult, SetBodyFormatParams,
@@ -478,6 +478,10 @@ async fn dispatch(core: &Arc<Core>, session: &mut Session, req: Request) -> Resu
             let as_of = as_of();
             let (subject, messages) = with_store(core, move |s| s.get_thread(p.thread_id)).await?;
             to_value(ThreadView { id: p.thread_id, subject, messages, as_of })
+        }
+        method::LOCATE_MESSAGE => {
+            let p: LocateMessageParams = params(req.params)?;
+            to_value(with_store(core, move |s| s.locate_message(p.message_id)).await?)
         }
         method::SEARCH => {
             let p: SearchParams = params(req.params)?;
