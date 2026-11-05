@@ -34,7 +34,7 @@
 //! batch at a time, so the app and the CLI keep being served between batches,
 //! and each batch is one transaction: readers never see half a batch.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::PathBuf;
@@ -46,10 +46,11 @@ use std::time::Instant;
 use nm_core::{FolderRole, Source};
 use rusqlite::{OptionalExtension, Transaction, TransactionBehavior, params};
 
-use crate::ingest::{self, PARSER_VERSION, ParsedAddress, ParsedMessage};
+use crate::ingest::{self, ParsedMessage};
+use crate::insert::{Body, Flags, Inserter, NewMessage};
 use crate::mbox::MboxReader;
 use crate::raw::{RawStore, Written};
-use crate::{ChangeSet, Result, Store, StoreError, refresh_folder_counts, refresh_thread};
+use crate::{ChangeSet, Result, Store, StoreError};
 
 /// Number of messages written per transaction. Large enough to amortize the
 /// cost of a commit, small enough to release the store lock every few
@@ -243,8 +244,7 @@ pub fn import_mbox(
     let mut writer = Writer {
         account,
         address,
-        source: opts.source,
-        addresses: HashMap::new(),
+        inserter: Inserter::new(opts.source, Some("mbox")),
         report: ImportReport { account_id: account.id, ..Default::default() },
         imported_at: unix_now(),
     };
@@ -376,11 +376,9 @@ fn io_error(path: &std::path::Path, e: std::io::Error) -> StoreError {
 struct Writer {
     account: ArchiveAccount,
     address: String,
-    source: Source,
-    /// Address ids already looked up, by lowercase address, with whether the
-    /// address has a name. Most messages involve the same few hundred
-    /// people, so this saves most queries.
-    addresses: HashMap<String, (i64, bool)>,
+    /// The insertion path shared with the IMAP synchronization
+    /// (`insert.rs`): rows, addresses, threading.
+    inserter: Inserter,
     report: ImportReport,
     /// When the import started, in Unix seconds: no message can have been
     /// delivered after it (see `reception_date`).
@@ -441,29 +439,18 @@ impl Writer {
         let mut changes = ChangeSet::default();
         {
             let tx = guard.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-            let mut threads: BTreeSet<i64> = BTreeSet::new();
             // `drain(..)` moves the messages out of the batch, leaving it
             // empty and ready to be refilled (its memory is reused).
             for p in batch.drain(..) {
-                self.insert(&tx, p, &mut threads, &mut changes)?;
-            }
-            for t in &threads {
-                tx.execute(
-                    "UPDATE thread SET subject = coalesce(
-                        (SELECT subject FROM message WHERE thread_id = ?1 ORDER BY date_received, id LIMIT 1), '')
-                      WHERE id = ?1",
-                    [t],
-                )?;
-                for f in refresh_thread(&tx, *t)? {
-                    changes.folders.insert(f);
+                if let Err(e) = self.insert(&tx, p, &mut changes) {
+                    // The transaction is rolled back when `tx` is dropped.
+                    self.inserter.abandon();
+                    return Err(e);
                 }
             }
             changes.folders.insert(self.account.archive_folder);
             changes.folders.insert(self.account.sent_folder);
-            for f in &changes.folders {
-                refresh_folder_counts(&tx, *f)?;
-            }
-            tx.commit()?;
+            self.inserter.commit(tx, &mut changes)?;
         }
         self.report.progress.bytes_read = bytes_read.load(Ordering::Relaxed);
         on_batch(&guard, &changes, &self.report.progress);
@@ -471,106 +458,32 @@ impl Writer {
     }
 
     /// Inserts one message, unless the account already has these exact bytes.
-    fn insert(&mut self, tx: &Transaction, p: Prepared, threads: &mut BTreeSet<i64>, changes: &mut ChangeSet) -> Result<()> {
+    fn insert(&mut self, tx: &Transaction, p: Prepared, changes: &mut ChangeSet) -> Result<()> {
         let account_id = self.account.id;
-        let hash = &p.written.hash[..];
         let duplicate = tx
             .prepare_cached("SELECT 1 FROM message WHERE raw_hash = ?1 AND account_id = ?2 LIMIT 1")?
-            .exists(params![hash, account_id])?;
+            .exists(params![&p.written.hash[..], account_id])?;
         if duplicate {
             self.report.progress.skipped += 1;
             return Ok(());
         }
-        tx.prepare_cached("INSERT OR IGNORE INTO raw_blob (hash, size, stored_size) VALUES (?1, ?2, ?3)")?
-            .execute(params![hash, p.written.size as i64, p.written.stored_size as i64])?;
-
         let m = &p.parsed;
         let sent = m.from.as_ref().is_some_and(|f| f.addr == self.address);
-        let folder_id = if sent { self.account.sent_folder } else { self.account.archive_folder };
-        let from_id = match &m.from {
-            Some(a) => Some(self.address_id(tx, a)?),
-            None => None,
-        };
-        let date_received = reception_date(p.delivered_at, m.date_sent, self.imported_at);
-        let thread_id = self.thread_for(tx, m, changes)?;
-        threads.insert(thread_id);
-
-        tx.prepare_cached(
-            "INSERT INTO message (account_id, folder_id, uid, thread_id, message_id_hdr, in_reply_to, subject,
-                from_address_id, from_name, from_addr, date_sent, date_received, size, snippet,
-                is_seen, has_attachments, auth_result, body_state, raw_hash, created_by, modified_by)
-             VALUES (?1, ?2, NULL, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13,
-                     1, ?14, 'unknown', 1, ?15, ?16, ?16)",
-        )?
-        .execute(params![
+        let message = NewMessage {
             account_id,
-            folder_id,
-            thread_id,
-            m.message_id,
-            m.in_reply_to,
-            m.subject,
-            from_id,
-            m.from.as_ref().and_then(|a| a.name.as_deref()),
-            m.from.as_ref().map(|a| a.addr.as_str()),
-            m.date_sent,
-            date_received,
-            p.written.size as i64,
-            m.snippet,
-            m.has_attachments(),
-            hash,
-            self.source.as_str(),
-        ])?;
-        let message_id = tx.last_insert_rowid();
-
-        for (pos, r) in m.references.iter().enumerate() {
-            tx.prepare_cached("INSERT OR IGNORE INTO message_reference (message_id, position, ref_msgid) VALUES (?1, ?2, ?3)")?
-                .execute(params![message_id, pos as i64, r])?;
-        }
-        let mut recipients = String::new();
-        for (role, list) in [("to", &m.to), ("cc", &m.cc), ("bcc", &m.bcc), ("reply_to", &m.reply_to)] {
-            for (pos, a) in list.iter().enumerate() {
-                let aid = self.address_id(tx, a)?;
-                tx.prepare_cached(
-                    "INSERT OR IGNORE INTO message_address (message_id, role, position, address_id) VALUES (?1, ?2, ?3, ?4)",
-                )?
-                .execute(params![message_id, role, pos as i64, aid])?;
-                if role != "reply_to" {
-                    recipients.push_str(a.name.as_deref().unwrap_or(""));
-                    recipients.push(' ');
-                    recipients.push_str(&a.addr);
-                    recipients.push(' ');
-                }
-            }
-        }
-        if m.parsed {
-            tx.prepare_cached(
-                "INSERT INTO message_body (message_id, text_plain, html_sanitized, has_remote_content, tracking_pixels,
-                                           parser_version)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            )?
-            .execute(params![message_id, m.text, m.html, m.has_remote_content, m.tracking_pixels, PARSER_VERSION])?;
-        } else {
+            folder_id: if sent { self.account.sent_folder } else { self.account.archive_folder },
+            uid: None,
+            date_received: reception_date(p.delivered_at, m.date_sent, self.imported_at),
+            size: Some(p.written.size),
+            modseq: None,
+            // Archived mail has been dealt with: read.
+            flags: Flags { seen: true, ..Flags::default() },
+            headers: m,
+        };
+        self.inserter.insert(tx, &message, Some(Body { written: &p.written, parsed: m }), changes)?;
+        if !m.parsed {
             self.report.progress.parse_errors += 1;
         }
-        // Search index: one row per message, written once with everything
-        // (no trigger, see the comment above `message_fts` in schema.sql).
-        let sender = m.from.as_ref().map(|a| format!("{} {}", a.name.as_deref().unwrap_or(""), a.addr)).unwrap_or_default();
-        tx.prepare_cached("INSERT INTO message_fts (rowid, subject, sender, recipients, body) VALUES (?1, ?2, ?3, ?4, ?5)")?
-            .execute(params![message_id, m.subject, sender.trim(), recipients.trim_end(), m.text.as_deref().unwrap_or("")])?;
-        for a in &m.attachments {
-            tx.prepare_cached(
-                "INSERT OR IGNORE INTO attachment (message_id, part_id, filename, mime_type, size, content_id, is_inline)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            )?
-            .execute(params![message_id, a.part_id, a.filename, a.mime_type, a.size, a.content_id, a.is_inline])?;
-        }
-        if let Some(u) = &m.unsubscribe {
-            tx.prepare_cached(
-                "INSERT INTO message_unsubscribe (message_id, url, mailto, one_click, source) VALUES (?1, ?2, ?3, ?4, ?5)",
-            )?
-            .execute(params![message_id, u.url, u.mailto, u.one_click, u.source.as_str()])?;
-        }
-
         if sent {
             self.report.sent += 1;
         } else {
@@ -578,118 +491,6 @@ impl Writer {
         }
         self.report.progress.imported += 1;
         Ok(())
-    }
-
-    /// Id of the `address` row, created if needed with `imported_from =
-    /// 'mbox'`. An address that already exists keeps its name and its
-    /// `imported_from` (`import-initial.md`, section 7), except that an
-    /// address without a name gets the one this message gives it: the name
-    /// is "filled in at the first encounter that has one" (`schema.sql`,
-    /// table `address`). A recipient added to a group, or a sender decided
-    /// on before any of their mail with a name arrived, would otherwise stay
-    /// nameless forever, and the From / To filters look names up there.
-    fn address_id(&mut self, tx: &Transaction, a: &ParsedAddress) -> Result<i64> {
-        if let Some(&(id, named)) = self.addresses.get(&a.addr) {
-            if !named && a.name.is_some() {
-                self.fill_name(tx, id, a)?;
-            }
-            return Ok(id);
-        }
-        let existing: Option<(i64, Option<String>)> = tx
-            .prepare_cached("SELECT id, name FROM address WHERE addr = ?1")?
-            .query_row([&a.addr], |r| Ok((r.get(0)?, r.get(1)?)))
-            .optional()?;
-        let (id, named) = match existing {
-            Some((id, name)) if name.as_deref().is_some_and(|n| !n.is_empty()) => (id, true),
-            Some((id, _)) => {
-                if a.name.is_some() {
-                    self.fill_name(tx, id, a)?;
-                }
-                (id, a.name.is_some())
-            }
-            None => {
-                tx.prepare_cached(
-                    "INSERT INTO address (addr, name, imported_from, created_by, modified_by)
-                     VALUES (?1, ?2, 'mbox', ?3, ?3)",
-                )?
-                .execute(params![a.addr, a.name, self.source.as_str()])?;
-                (tx.last_insert_rowid(), a.name.is_some())
-            }
-        };
-        self.addresses.insert(a.addr.clone(), (id, named));
-        Ok(id)
-    }
-
-    /// Gives the address `id`, which has no name, the name of `a`. The
-    /// condition on the name is repeated in SQL so that a name set in the
-    /// meantime (by the user, between two batches) is never overwritten.
-    fn fill_name(&mut self, tx: &Transaction, id: i64, a: &ParsedAddress) -> Result<()> {
-        tx.prepare_cached(
-            "UPDATE address SET name = ?2, date_modified = unixepoch(), modified_by = 'core'
-              WHERE id = ?1 AND coalesce(name, '') = ''",
-        )?
-        .execute(params![id, a.name])?;
-        self.addresses.insert(a.addr.clone(), (id, true));
-        Ok(())
-    }
-
-    /// Finds the thread of a message, creating or merging threads as needed.
-    ///
-    /// A message belongs to the thread of any message of the same account
-    /// that it references, that references it, or that has the same
-    /// `Message-ID` (another copy). Messages arrive in any order, so a reply
-    /// can be imported before the message it answers: when the parent
-    /// arrives, it finds the reply through `message_reference`. When a
-    /// message links several existing threads, they are merged into the
-    /// oldest one.
-    ///
-    /// This is the linking part of the JWZ algorithm (`modele de
-    /// donnees.md`); messages without any reference are not grouped by
-    /// subject, which would wrongly merge unrelated mails such as monthly
-    /// invoices with the same subject.
-    fn thread_for(&mut self, tx: &Transaction, m: &ParsedMessage, changes: &mut ChangeSet) -> Result<i64> {
-        let account_id = self.account.id;
-        let mut found: BTreeSet<i64> = BTreeSet::new();
-        {
-            let mut by_id = tx.prepare_cached(
-                "SELECT DISTINCT thread_id FROM message
-                  WHERE account_id = ?1 AND message_id_hdr = ?2 AND thread_id IS NOT NULL",
-            )?;
-            for r in m.references.iter().chain(m.message_id.iter()) {
-                for t in by_id.query_map(params![account_id, r], |row| row.get::<_, i64>(0))? {
-                    found.insert(t?);
-                }
-            }
-        }
-        if let Some(id) = &m.message_id {
-            let mut referencing = tx.prepare_cached(
-                "SELECT DISTINCT m.thread_id FROM message_reference r JOIN message m ON m.id = r.message_id
-                  WHERE r.ref_msgid = ?1 AND m.account_id = ?2 AND m.thread_id IS NOT NULL",
-            )?;
-            for t in referencing.query_map(params![id, account_id], |row| row.get::<_, i64>(0))? {
-                found.insert(t?);
-            }
-        }
-        // `pop_first` removes and returns the smallest element: the oldest
-        // thread, which survives the merge.
-        let Some(keep) = found.pop_first() else {
-            tx.prepare_cached("INSERT INTO thread (account_id, subject) VALUES (?1, ?2)")?
-                .execute(params![account_id, m.subject])?;
-            return Ok(tx.last_insert_rowid());
-        };
-        for other in found {
-            // Folders of the absorbed thread must be refreshed too.
-            {
-                let mut stmt = tx.prepare_cached("SELECT folder_id FROM thread_folder WHERE thread_id = ?1")?;
-                for f in stmt.query_map([other], |r| r.get::<_, i64>(0))? {
-                    changes.folders.insert(f?);
-                }
-            }
-            tx.prepare_cached("UPDATE message SET thread_id = ?1 WHERE thread_id = ?2")?.execute(params![keep, other])?;
-            // `thread_folder` rows go with the thread (ON DELETE CASCADE).
-            tx.prepare_cached("DELETE FROM thread WHERE id = ?1")?.execute([other])?;
-        }
-        Ok(keep)
     }
 
     /// Last steps, once every message is written: answered flags,

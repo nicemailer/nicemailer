@@ -234,6 +234,39 @@ pub fn parse(raw: &[u8]) -> ParsedMessage {
     }
 }
 
+/// Parses the header block of a message alone (`BODY.PEEK[HEADER]` of
+/// IMAP), for the first step of the ingestion: everything the message list
+/// and the threading need, before the body is downloaded
+/// (`plan-imap.md`, phase 3).
+///
+/// The fields that come from the body stay empty (`text`, `html`,
+/// `snippet`, `attachments`), and so does `unsubscribe`, read again with
+/// the body, which may hold the only link. The header fields are exactly
+/// those `parse` gives for the whole message: same code, same bytes.
+pub fn parse_headers(header: &[u8]) -> ParsedMessage {
+    // Without the empty line that ends a header block, the last header
+    // would be taken for a body by a strict reader: add it if missing.
+    let ends = header.ends_with(b"\r\n\r\n") || header.ends_with(b"\n\n");
+    let bytes: Cow<[u8]> = if ends || header.is_empty() {
+        Cow::Borrowed(header)
+    } else if header.ends_with(b"\n") {
+        Cow::Owned([header, b"\r\n"].concat())
+    } else {
+        Cow::Owned([header, b"\r\n\r\n"].concat())
+    };
+    let full = parse(&bytes);
+    ParsedMessage {
+        text: None,
+        html: None,
+        has_remote_content: false,
+        tracking_pixels: 0,
+        snippet: None,
+        attachments: Vec::new(),
+        unsubscribe: None,
+        ..full
+    }
+}
+
 /// Removes the angle brackets and spaces around a message id.
 fn clean_id(s: &str) -> String {
     s.trim().trim_start_matches('<').trim_end_matches('>').trim().to_string()
@@ -426,6 +459,31 @@ pub fn sanitize_html(html: &str) -> SanitizedHtml {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_header_block_alone_gives_the_same_headers() {
+        let header = "Message-ID: <abc@x.org>\r\nReferences: <p1@x.org>\r\nFrom: =?utf-8?Q?Ren=C3=A9?= <Rene@z.org>\r\n\
+To: bob@y.org\r\nSubject: Re: =?utf-8?Q?f=C3=AAte?=\r\nDate: Tue, 23 Jun 2020 21:20:56 +0200\r\n\
+List-Unsubscribe: <https://x.org/u>\r\nContent-Type: multipart/mixed; boundary=b\r\n\r\n";
+        let full = format!("{header}--b\r\nContent-Type: text/plain\r\n\r\nHello\r\n--b\r\n\
+Content-Type: application/pdf; name=a.pdf\r\nContent-Disposition: attachment\r\n\r\nJVBERi0=\r\n--b--\r\n");
+        let f = parse(full.as_bytes());
+        // As IMAP gives it (with its empty line), and cut short of it.
+        for h in [header, header.trim_end_matches("\r\n"), &header[..header.len() - 2]] {
+            let p = parse_headers(h.as_bytes());
+            assert!(p.parsed);
+            assert_eq!(p.message_id, f.message_id);
+            assert_eq!(p.references, f.references);
+            assert_eq!(p.from, f.from);
+            assert_eq!(p.to, f.to);
+            assert_eq!(p.subject, "Re: fête");
+            assert_eq!(p.date_sent, f.date_sent);
+            // What comes from the body waits for the body.
+            assert!(p.text.is_none() && p.snippet.is_none() && p.attachments.is_empty() && p.unsubscribe.is_none());
+        }
+        assert_eq!(f.attachments.len(), 1);
+        assert!(f.unsubscribe.is_some());
+    }
 
     #[test]
     fn parses_headers_and_normalizes_addresses() {

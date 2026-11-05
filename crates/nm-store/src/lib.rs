@@ -38,6 +38,7 @@ pub mod clean;
 pub mod encoded_words;
 pub mod html_text;
 pub mod import;
+pub mod insert;
 pub mod ingest;
 pub mod library;
 pub mod links;
@@ -272,6 +273,16 @@ impl Store {
     /// Direct access to the connection, for the CLI and tests.
     pub fn conn(&self) -> &Connection {
         &self.conn
+    }
+
+    /// Starts a write transaction, for the insertion of messages
+    /// (`insert.rs`), which [`insert::Inserter::commit`] commits.
+    ///
+    /// `Immediate`: the write lock is taken at once, not at the first
+    /// write, so the transaction cannot fail halfway through because a
+    /// reader upgraded first (`SQLITE_BUSY`).
+    pub fn transaction(&mut self) -> Result<rusqlite::Transaction<'_>> {
+        Ok(self.conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?)
     }
 }
 

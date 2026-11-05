@@ -22,3 +22,4 @@ core-foundation.workspace = true
 [dev-dependencies]
 tempfile.workspace = true
 toml_edit.workspace = true
+rand.workspace = true

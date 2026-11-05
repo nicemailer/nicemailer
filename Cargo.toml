@@ -54,3 +54,15 @@ imap-codec = { version = "=2.0.0-alpha.10", features = ["ext_condstore_qresync",
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12", "logging"] }
 rustls-platform-verifier = "0.6"
 rustls-pki-types = { version = "1", features = ["std"] }
+
+# The tests build in debug mode, where hashing and MIME parsing are 10 to
+# 50 times slower than in release: the test of a 150 MB message
+# (nm-store/tests/big_message.rs) took 24 s. These crates are compiled
+# optimized even in debug builds; the code of NiceMailer itself stays
+# unoptimized, so it still compiles fast and debugs well.
+[profile.dev.package.sha2]
+opt-level = 3
+[profile.dev.package.mail-parser]
+opt-level = 3
+[profile.dev.package.zstd-sys]
+opt-level = 3

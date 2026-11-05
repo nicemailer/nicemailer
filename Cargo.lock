@@ -926,6 +926,7 @@ dependencies = [
  "nm-proto",
  "nm-store",
  "notify",
+ "rand",
  "security-framework",
  "serde",
  "serde_json",

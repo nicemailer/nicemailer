@@ -80,6 +80,7 @@ imap-up:
 imap-test:
 	cargo test -p nm-proto --test dovecot -- --ignored
 	cargo test -p nm-daemon --test imap_rpc -- --ignored
+	cargo test -p nm-engine --test ingest_imap -- --ignored
 
 # Stops the test IMAP servers; their mail, kept in memory, is lost.
 imap-down:

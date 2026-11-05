@@ -1,6 +1,6 @@
 # NiceMailer : plan de travail du back-end IMAP
 
-Statut : en cours. Phases 0, 1, 1 bis et 2 terminées (novembre 2026).
+Statut : en cours. Phases 0, 1, 1 bis, 2 et 3 terminées (novembre 2026).
 
 Ce document n'est pas une spécification : c'est le plan de réalisation du back-end qui communique avec les serveurs IMAP, récupère les mails, synchronise les dossiers, trie les mails entrants et importe un compte. Les règles restent dans les spécifications citées ; quand ce plan tranche une question qu'elles laissaient ouverte, la décision est reportée dans la spécification concernée au moment où la phase qui l'implémente est livrée.
 
@@ -35,7 +35,7 @@ Méthode : **une phase = une revue = un commit**. Chaque phase livre son code, s
 | Déplacements faits ailleurs | Rapprochés par `Message-ID` quand c'est sans ambiguïté (section 5.4) : le message garde son `id`, ses tags, son historique et sa consultation |
 | Sous-domaines | Inclus partout, y compris dans le routage à la réception : une décision sur `exemple.fr` s'applique à `news.exemple.fr` sans décision propre. `modele de donnees.md` sera corrigé (phase 6) |
 | Lectures SQLite | Une connexion d'écriture unique et un pool de connexions de lecture (WAL) : une écriture de synchronisation ne fait plus attendre l'app |
-| Secrets | **Trousseau dès le développement** (phase 1 bis, décision de l'utilisateur) : élément « mot de passe générique » du trousseau de session, le serveur (hôte, identifiant) dans un attribut, lisible sans autorisation ; le noyau seul lit et écrit, et n'affiche jamais de dialogue. Saisie par `nicemailer account password <clé>` (méthode `set_password`, refusée aux agents). Une clé `password` dans `config.toml` est une erreur. En développement, `make core` signe le noyau avec un certificat personnel (`make dev-cert`, une fois) : sans lui, chaque recompilation serait une autre application pour le trousseau, et perdrait l'accès aux mots de passe (mesuré). Remplace la lecture du mot de passe dans le fichier (feature `dev-passwords`) de la phase 1 |
+| Secrets | **Trousseau dès le développement** (phase 1 bis, décision de l'utilisateur) : élément « mot de passe générique » du trousseau de session, le serveur (hôte, identifiant) dans un attribut, lisible sans autorisation ; le noyau seul lit et écrit, et n'affiche jamais de dialogue. Saisie par `nicemailer account password <clé>` (méthode `set_password`, refusée aux agents). Une clé `password` dans `config.toml` est une erreur. En développement, `make core` signe le noyau avec un certificat Apple Development (gratuit avec un identifiant Apple, créé une fois dans Xcode) : sans signature stable, chaque recompilation serait une autre application pour le trousseau, et perdrait l'accès aux mots de passe (mesuré). Un certificat auto-signé (`make dev-cert`, première solution) ne suffit pas : dans le trousseau de session, un élément reçoit une partition tirée de la signature de son créateur, `cdhash:<empreinte du binaire>` sans identifiant d'équipe Apple, `teamid:<équipe>` avec. Seule la seconde survit à une recompilation (constaté le 5 novembre 2026 ; un trousseau créé par `security create-keychain`, celui des tests, n'a pas de partition, d’où des tests verts). Remplace la lecture du mot de passe dans le fichier (feature `dev-passwords`) de la phase 1 |
 | Serveur de test | Dovecot 2.4.5 sous OrbStack (`dev/dovecot/`), deux instances : complète (proche d'Infomaniak après authentification), et minimale (serveur IMAP4rev1 sans extension de synchronisation) |
 
 Conseil pour le développement : garder les comptes de test dans un fichier à part, désigné par `NICEMAILER_CONFIG`, plutôt que dans `~/.config/nicemailer/config.toml`.
@@ -117,7 +117,7 @@ Contenu livré :
 
 Tests : chaque commande contre les deux Dovecot ; conversations scriptées (coupure au milieu d'un littéral, réponse illisible ou trop grosse, silence, étiquette inconnue, `BYE`, littéral refusé) ; coupure réseau par un relais TCP au milieu d'un corps, puis nouvelle session qui le récupère entier.
 
-### Phase 3 : ingestion commune
+### Phase 3 : ingestion commune — terminée
 
 - Écrivain en flux du stockage brut : morceaux successifs, hash et compression au fil de l'eau, vérification de la taille annoncée, temporaire supprimé en cas d'échec (`stockage-brut.md`, section 5).
 - Chemin d'insertion commun à l'import mbox et à IMAP :
@@ -126,6 +126,18 @@ Tests : chaque commande contre les deux Dovecot ; conversations scriptées (coup
 - Threading indépendant de l'ordre d'arrivée (réponse avant l'original, fusion de deux conversations), comme pour l'import mbox.
 
 Tests : les tests de l'import mbox restent verts ; un message de 150 Mo en morceaux, mémoire bornée ; disque plein simulé, aucune ligne sans fichier.
+
+Réalisé (novembre 2026), détail dans `docs/ingestion.md` :
+
+- `RawWriter` (`raw.rs`) : hash et compression au fil des morceaux, taille vérifiée à la fin si elle est donnée, temporaires supprimés dès que l'écriture n'aboutit pas (coupure, disque plein, erreur). `RawStore::write`, pour l'import mbox, est le même écrivain alimenté d'un seul morceau.
+- Copie non compressée pour l'analyse : en mémoire jusqu'à 16 Mo, au-delà dans un temporaire projeté en mémoire (`mmap`), supprimé aussitôt. Mesure : 26 Mo de tas au plus pour un message de 150 Mo. Pas de nouvelle dépendance : l'appel `mmap` passe par `libc`.
+- `Inserter` (`insert.rs`) : `insert` avec les en-têtes seuls (`ingest::parse_headers`) ou avec le corps, `complete` pour le corps (résultat `Done`, `Already` ou `Missing`), `commit` qui recalcule une fois par lot conversations et compteurs. L'import mbox passe par lui : même vitesse qu'avant (30 000 messages générés, 10 s dans les deux cas), mêmes conversations.
+- Écart : le **parent fantôme** de JWZ est ajouté au threading. Deux réponses à un message absent (supprimé, ou rangé dans un dossier sans rôle, que NiceMailer ne synchronise pas) forment une conversation. Avant, elles restaient séparées tant que le parent n'arrivait pas. Les bases déjà importées ne sont pas reprises.
+- Écart : une insertion n'ajoute pas le message au `ChangeSet` (pas d'événement `MessageChanged` par nouveau message, 50 000 pour un import) ; le dossier suffit, et la synchronisation aura `MessageArrived`. `complete` l'ajoute : le corps est arrivé.
+- Le cache des adresses de l'`Inserter` ne garde que ce qui a été validé : après une transaction annulée (`abandon`), aucun identifiant de ligne disparue n'est réutilisé.
+- Tests : threading sur les 120 ordres d'arrivée de cinq messages, lot annulé, disque plein simulé (`RawStore::with_disk_space`), message de 150 Mo à mémoire mesurée, et contre Dovecot (`make imap-test`) un corps de 22 Mo reçu en morceaux, puis coupé à 8 Mo sans rien laisser.
+- Outillage : `sha2`, `mail-parser` et `zstd-sys` sont compilés optimisés même en debug, pour des tests rapides (24 s ramenées à 0,8 s).
+- Reste pour la phase 4 : la conduite en cas d'écart entre `RFC822.SIZE` et les octets reçus (`stockage-brut.md`, section 5, étape 2), et l'appel de `RawStore::barrier` avant chaque validation de lot qui contient des corps.
 
 ### Phase 4 : synchronisation des dossiers (serveur vers base)
 

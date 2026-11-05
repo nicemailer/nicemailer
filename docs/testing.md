@@ -7,7 +7,7 @@
 | `make swift-test` | Swift unit tests only | |
 | `make ui-test` | scripted UI tests of the app | builds the core; starts its own cores on temporary data |
 | `make imap-up`, `make imap-down` | start and stop the test IMAP servers (Dovecot, see below) | OrbStack or Docker |
-| `make imap-test` | the tests that talk to the test IMAP servers: the IMAP client on both servers, and `probe_account` end to end | `make imap-up` |
+| `make imap-test` | the tests that talk to the test IMAP servers: the IMAP client on both servers, `probe_account` end to end, and a large body streamed from the server into the raw store ([ingestion.md](ingestion.md)) | `make imap-up` |
 | `make bench` | times every thread list (folders, Everything, search, each filter) through the socket on 100,000 generated conversations, or on `BENCH_DATA_DIR` | starts its own core |
 
 ## Rust
@@ -15,6 +15,8 @@
 Unit tests live next to the code (`#[cfg(test)]`), integration tests in `crates/*/tests/`. `crates/nm-daemon/tests/import_rpc.rs` starts the real core binary and talks to it over its socket. The harness (`tests/common/mod.rs`) gives the core `--config <temporary dir>/config.toml`, and `scripts/ui-test.sh` and `scripts/bench.sh` set a settings file of their own too: a test must never read the settings of the machine, whose accounts the core would start to synchronize.
 
 Nor its Keychain: the harness creates a throwaway keychain file in the test's directory (`security create-keychain`, which does not add it to the user's search list) and gives it to the core with `--keychain`; `crates/nm-engine/tests/keychain.rs` does the same. No test ever reads or writes the login keychain, and the core never shows a Keychain dialog (see [configuration.md](configuration.md), "Passwords").
+
+The ingestion path ([ingestion.md](ingestion.md)) has its own tests: the order of arrival of messages (every one of 120 orders gives the same threads), a batch rolled back, a full disk simulated by `RawStore::with_disk_space`, and a 150 MB message whose heap use is measured by a counting allocator (`crates/nm-store/tests/big_message.rs`). Hashing, MIME parsing and compression are compiled optimized even in debug builds (`[profile.dev.package.*]` in `Cargo.toml`), so that these tests take about a second instead of half a minute.
 
 Speed is tested by the plans of the queries rather than by timing them, which would be slow and flaky. `plan_tests` in `crates/nm-store/src/queries.rs` runs `EXPLAIN QUERY PLAN` on every list query (each filter, sort, scope and page) on an empty database, that is without planner statistics, and fails if one reads a whole folder, scans `message` or `thread_folder`, or runs a subquery for each row. `crates/nm-store/tests/everything.rs` checks that Everything, read from whole threads, lists exactly what merging every folder lists, page after page, on a generated mailbox. `crates/nm-store/tests/migrations.rs` checks that a version 1 database (`tests/fixtures/schema_v1.sql`) migrated by the core has exactly the schema of a fresh one, and repaired data.
 
