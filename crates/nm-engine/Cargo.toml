@@ -6,6 +6,7 @@ edition.workspace = true
 publish.workspace = true
 
 [dependencies]
+rand.workspace = true
 nm-core.workspace = true
 nm-api.workspace = true
 nm-store.workspace = true

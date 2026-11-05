@@ -479,6 +479,35 @@ impl Drop for Mapped {
     }
 }
 
+impl RawStore {
+    /// Checks that the file of `hash` exists and still holds the bytes of
+    /// that hash, reading it as a stream: a 150 MB message is checked with
+    /// a few MB of memory (`nicemailer sync verify`). `Ok(false)`: the
+    /// file is missing; an `InvalidData` error: it is corrupt.
+    pub fn verify(&self, hash: &Hash) -> io::Result<bool> {
+        let file = match File::open(self.path(hash)) {
+            Ok(f) => f,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(false),
+            Err(e) => return Err(e),
+        };
+        let mut decoder = zstd::stream::read::Decoder::new(file)?;
+        let mut hasher = Sha256::new();
+        let mut buf = vec![0u8; 256 << 10];
+        loop {
+            let n = decoder.read(&mut buf)?;
+            if n == 0 {
+                break;
+            }
+            hasher.update(&buf[..n]);
+        }
+        let got: Hash = hasher.finalize().into();
+        if &got != hash {
+            return Err(io::Error::new(io::ErrorKind::InvalidData, format!("brut corrompu : {}", hex(hash))));
+        }
+        Ok(true)
+    }
+}
+
 /// Plain `fsync(2)`: hands the file's data to the drive without the costly
 /// drive-cache flush of `F_FULLFSYNC` (see the module documentation).
 ///
@@ -647,6 +676,19 @@ mod tests {
         // Same for a write in one piece.
         assert_eq!(raw.write(&bytes).unwrap_err().kind(), io::ErrorKind::StorageFull);
         assert_eq!(tmp_count(dir.path()), 0);
+    }
+
+    #[test]
+    fn verify_reads_as_a_stream() {
+        let dir = tempfile::tempdir().unwrap();
+        let raw = RawStore::open(dir.path()).unwrap();
+        let w = raw.write(b"original").unwrap();
+        assert!(raw.verify(&w.hash).unwrap());
+        assert!(!raw.verify(&hash(b"never stored")).unwrap());
+        let path = raw.path(&w.hash);
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+        fs::write(&path, zstd::bulk::compress(b"tampered", 3).unwrap()).unwrap();
+        assert_eq!(raw.verify(&w.hash).unwrap_err().kind(), io::ErrorKind::InvalidData);
     }
 
     #[test]

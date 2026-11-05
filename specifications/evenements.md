@@ -83,7 +83,7 @@ Les événements **séquencés** passent par le tampon et sont rejoués. Les év
 | `FolderChanged` | `folder_id` | séquencé | Contenu ou compteurs du dossier modifiés |
 | `ThreadChanged` | `thread_id`, `folder_ids` | séquencé | Conversation créée, modifiée ou supprimée, dans les dossiers indiqués |
 | `MessageChanged` | `message_id`, `thread_id` | séquencé | Message modifié (flags, dossier, corps réinterprété, consultation) ou supprimé |
-| `MessageArrived` | `message_id`, `folder_id` | séquencé | Nouveau mail, trié dans le dossier indiqué ; sert aussi aux notifications |
+| `MessageArrived` | `message_id`, `folder_id` | séquencé | Nouveau mail, trié dans le dossier indiqué ; sert aussi aux notifications. Émis après le `FolderChanged` du dossier, et jamais pendant la première synchronisation d'un dossier, dont tous les mails seraient « nouveaux » |
 | `AccountChanged` | `account_id` | séquencé | Compte ajouté, modifié ou supprimé |
 | `AccountError` | `account_id`, `error` | séquencé | Erreur de connexion ou d'authentification d'un compte |
 | `ActionReverted` | `message_id`, `kind`, `reason` | séquencé | Action locale annulée après un échec définitif (`modele de donnees.md`, section 6) |
@@ -92,7 +92,7 @@ Les événements **séquencés** passent par le tampon et sont rejoués. Les év
 | `ConfigChanged` | `keys` | séquencé | Réglages de `config.toml` modifiés, par une commande ou une édition directe (`configuration.md`). `keys` vide : le fichier est de nouveau valide après un `ConfigError`, sans changement des réglages appliqués |
 | `ConfigError` | `line`, `key`, `message` | séquencé | `config.toml` invalide : la configuration précédente reste appliquée. `line` (à partir de 1) et `key` (clé pointée) valent `null` quand ils ne s'appliquent pas (fichier illisible) ; l'état reste disponible par `config_status` |
 | `ResyncRequired` | `epoch`, `seq` | séquencé | Le client doit recharger toutes ses vues |
-| `SyncProgress` | `account_id`, `folder_id`, `done`, `total` | transitoire | Avancement d'une synchronisation |
+| `SyncProgress` | `account_id`, `folder_id` (`null` pour les corps), `stage` (`headers` ou `bodies`), `done`, `total` | transitoire | Avancement d'une synchronisation, quatre par seconde au plus. Sans `seq` : il ne prend aucune place dans la séquence, et un client ne doit pas y voir un trou |
 | `ImportProgress` | `job_id`, `path`, `account_id`, `running`, `bytes_read`, `total_bytes`, `imported`, `skipped`, `parse_errors` | séquencé | Avancement d'un import mbox, un par lot de mails écrits (`import-initial.md`, section 9) |
 | `ImportFinished` | mêmes paramètres, plus `sent`, `archived`, `correspondents`, `seconds`, et `error` en cas d'échec | séquencé | Fin d'un import mbox, réussi ou non ; l'état reste disponible par `import_status` |
 

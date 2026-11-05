@@ -58,10 +58,14 @@ final class CoreClient: @unchecked Sendable {
 
     /// Event pushed by the core. `Sendable` because events cross from the
     /// reader thread to the main actor.
+    ///
+    /// `seq` is `nil` for a transient event (`SyncProgress`,
+    /// `evenements.md`): it has no place in the sequence and is never
+    /// replayed, so it must not be taken for a gap.
     struct Event: Sendable {
         let method: String
         let epoch: String
-        let seq: Int
+        let seq: Int?
         let params: [String: JSONValue]
     }
 
@@ -281,7 +285,7 @@ final class CoreClient: @unchecked Sendable {
             eventContinuation.yield(Event(
                 method: method,
                 epoch: params["epoch"] as? String ?? "",
-                seq: params["seq"] as? Int ?? 0,
+                seq: params["seq"] as? Int,
                 params: params.compactMapValues(JSONValue.init)
             ))
         }

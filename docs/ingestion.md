@@ -22,7 +22,7 @@ The mbox import has the whole message at once and calls `insert` with the body: 
 
 ### Events
 
-A new message adds its folder to the `ChangeSet` (counters changed), not the message itself: an import of 50,000 mails sends one event per folder and batch rather than 50,000 `MessageChanged`. The synchronization will announce a new mail with its own event (`MessageArrived`, phase 4). `complete` does add the message (`MessageChanged`): a client showing it wants its body now.
+A new message adds its folder to the `ChangeSet` (counters changed), not the message itself: an import of 50,000 mails sends one event per folder and batch rather than 50,000 `MessageChanged`. The synchronization announces a new mail with its own event (`MessageArrived`, [sync.md](sync.md)). `complete` does add the message (`MessageChanged`): a client showing it wants its body now.
 
 ## Transactions
 
@@ -50,7 +50,7 @@ Messages without any reference are not grouped by subject, which would merge unr
 A message received from an IMAP server comes in pieces of 1 MB above 4 MB (`nm-proto`, [imap.md](imap.md)), and may weigh 150 MB. `RawStore::writer` returns a `RawWriter`, which takes the pieces one by one:
 
 1. each piece is hashed (SHA-256) and compressed (zstd, level 9) as it arrives, and the compressed bytes go to a temporary file in `raw.noindex/.tmp/`;
-2. `finish(Some(size))` checks the number of bytes against the size the server announced (`RFC822.SIZE`), and refuses a message that is shorter or longer (`finish(None)` checks nothing). The specification asks for this check (`stockage-brut.md`, section 5, step 2), but some servers count `RFC822.SIZE` differently from the bytes they send: refusing such a message would leave it without body for good. What the synchronization passes, and what it does on a difference, is decided in phase 4;
+2. `finish(Some(size))` checks the number of bytes against the size the server announced (`RFC822.SIZE`), and refuses a message that is shorter or longer (`finish(None)` checks nothing). The specification asks for this check (`stockage-brut.md`, section 5, step 2), but some servers count `RFC822.SIZE` differently from the bytes they send: refusing such a message would leave it without body for good. The synchronization passes the size announced, and refuses a body that differs, without retrying it until the core restarts ([sync.md](sync.md), "Bodies");
 3. the file gets a plain `fsync`, then its final name, the hash (`rename`, atomic), and its directory an `fsync`. If a file with that hash already exists, the new copy is deleted instead (the same bytes in two folders are stored once).
 
 A writer dropped without `finish` (a network cut, a full disk, the core stopping) removes its temporary files: a message partially received is never stored, and nothing is left behind. The `raw_blob` and `message` rows are written by `complete` only after `finish` succeeded, in the transaction of the batch, after `RawStore::barrier` (one `F_FULLFSYNC` per batch, see [import-mbox.md](import-mbox.md), "Performance"): a row never exists without its file.

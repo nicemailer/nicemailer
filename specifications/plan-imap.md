@@ -1,6 +1,6 @@
 # NiceMailer : plan de travail du back-end IMAP
 
-Statut : en cours. Phases 0, 1, 1 bis, 2 et 3 terminées (novembre 2026).
+Statut : en cours. Phases 0 à 4 terminées (novembre 2026).
 
 Ce document n'est pas une spécification : c'est le plan de réalisation du back-end qui communique avec les serveurs IMAP, récupère les mails, synchronise les dossiers, trie les mails entrants et importe un compte. Les règles restent dans les spécifications citées ; quand ce plan tranche une question qu'elles laissaient ouverte, la décision est reportée dans la spécification concernée au moment où la phase qui l'implémente est livrée.
 
@@ -139,7 +139,7 @@ Réalisé (novembre 2026), détail dans `docs/ingestion.md` :
 - Outillage : `sha2`, `mail-parser` et `zstd-sys` sont compilés optimisés même en debug, pour des tests rapides (24 s ramenées à 0,8 s).
 - Reste pour la phase 4 : la conduite en cas d'écart entre `RFC822.SIZE` et les octets reçus (`stockage-brut.md`, section 5, étape 2), et l'appel de `RawStore::barrier` avant chaque validation de lot qui contient des corps.
 
-### Phase 4 : synchronisation des dossiers (serveur vers base)
+### Phase 4 : synchronisation des dossiers (serveur vers base) — terminée
 
 - **Connexions par compte** : une connexion IDLE sur l'Inbox ; une connexion de travail (synchronisation des dossiers, puis spool en phase 5) ; une connexion de téléchargement des corps, de basse priorité, pour que 200 000 corps à télécharger ne retardent ni une action ni l'arrivée d'un mail. Plafond configurable.
 - **Liste des dossiers** : LIST, rôles déjà attribués, dossiers disparus ou renommés.
@@ -158,6 +158,22 @@ Réalisé (novembre 2026), détail dans `docs/ingestion.md` :
 - `nicemailer sync status | now | verify`.
 
 Tests : les deux Dovecot ; changements faits par une seconde connexion de test (« le téléphone ») : flags, suppressions, déplacements rapprochés ou non, UIDVALIDITY changé ; coupures à chaque étape ; `sync verify` vert après chaque scénario.
+
+Réalisé (novembre 2026), détail dans `docs/sync.md` :
+
+- `nm-engine/src/sync/` : un travailleur par compte de `config.toml`, sur ses propres fils d'exécution (un runtime tokio mono-fil par connexion : le réseau est asynchrone, les écritures en base restent des appels courts et bloquants). `nm-store/src/sync.rs` écrit ce que le serveur a montré, sans réseau : toutes ses règles sont testées sans serveur.
+- **Lecture seule envers le serveur** : `EXAMINE` partout, `PEEK` pour toute lecture. La synchronisation ne peut rien changer sur le serveur, même par erreur, tant que le spool n'existe pas. Les commandes qui modifient un mail sont refusées sur ces comptes (code `1010`, `READ_ONLY`) ; une décision sur un expéditeur est enregistrée mais ne range aucun de leurs mails. Les faux comptes de `make seed` et les comptes d'archives restent modifiables : le noyau indique au `Store` les comptes de `config.toml`.
+- Une passe en trois temps : découverte de tous les dossiers changés (suppressions, flags, nouveaux UID), puis arrivées, puis fin de chaque dossier. Les suppressions de toute la passe sont connues avant la première arrivée : un déplacement fait par le téléphone garde la ligne (même `id`, tags, historique), quel que soit l'ordre des dossiers.
+- Écart : **deux connexions par compte** au lieu de trois. La connexion de travail attend en IDLE sur l'Inbox entre deux passes et en sort en quelques millisecondes quand elle a autre chose à faire ; une troisième ne ferait qu'occuper une des rares connexions permises par les serveurs. `sync.max_connections = 1` met aussi les corps sur la connexion de travail.
+- Après un changement signalé par IDLE, la passe attend 1,5 s : un client qui déplace sans `MOVE` (copie, `\Deleted`, effacement) serait sinon vu au milieu de son déplacement, et le mail pris pour une copie. Mesuré sur le Dovecot minimal.
+- Le dossier sélectionné par la session (l'Inbox, pour IDLE) est toujours ouvert à chaque passe : Dovecot répond au `STATUS` d'un dossier sélectionné avec ce que la session en sait déjà (constaté : les flags changés par le téléphone étaient manqués).
+- Rôles des dossiers, provisoirement jusqu'à la phase 7 : la première synchronisation d'un compte sans aucun rôle applique la proposition de `folders.rs` (consignée dans `audit_log`). Un dossier renommé sur le serveur est reconnu à son `UIDVALIDITY` ; un dossier à rôle disparu est conservé avec ses mails, non synchronisé.
+- Question ouverte 2 tranchée provisoirement : sans CONDSTORE, comparaison complète des flags de l'Inbox à chaque passe, des autres dossiers à chaque `poll_interval_secs`.
+- Corps de taille différente de `RFC822.SIZE` : refusé, retenté au redémarrage seulement (`stockage-brut.md`, section 5).
+- `MessageArrived` pour chaque nouveau mail, sauf pendant la première synchronisation d'un dossier ; `SyncProgress` est transitoire, sans `seq`. L'app ne prenait pas en compte l'absence de `seq` : elle y voyait un trou et rechargeait tout (corrigé, `AppModel.order`).
+- `nicemailer sync status | now | verify`.
+- Tests : `nm-store/tests/sync.rs` (11, sans serveur) ; `nm-daemon/tests/sync_rpc.rs` (6, `make imap-test`) : le vrai noyau contre les deux Dovecot, une seconde connexion jouant le téléphone (arrivée annoncée, flags, déplacement avec et sans `MOVE` gardant l'identité, suppression, commandes refusées), une seule connexion, `UIDVALIDITY` changé, mot de passe refusé sans nouvelle tentative, coupures réseau (connexion, liste, corps) sans perte, doublon ni fichier partiel ; `sync verify` vert après chaque étape.
+- Reste pour plus tard : la reprise d'un brut corrompu ou absent depuis le serveur (phase 8), le GC des blobs des messages supprimés (phase 8).
 
 ### Phase 5 : spool (base vers serveur)
 
@@ -211,5 +227,5 @@ Conclusion : le client IMAP est écrit pour accueillir un mécanisme SASL de plu
 ## 7. Questions ouvertes
 
 1. ~~Capacités d'Infomaniak après authentification~~ : réglé, voir section 1.
-2. **Fréquence de la comparaison complète des flags** sur un serveur sans CONDSTORE, pour les gros dossiers hors Inbox : à mesurer en phase 4.
+2. **Fréquence de la comparaison complète des flags** sur un serveur sans CONDSTORE, pour les gros dossiers hors Inbox : provisoirement à chaque `poll_interval_secs` (phase 4) ; à mesurer sur un vrai serveur sans CONDSTORE.
 3. **Infomaniak et `Authentication-Results`** : quel `authserv-id`, et le serveur retire-t-il les en-têtes entrants qui portent le sien ? À vérifier sur quelques mails reçus.

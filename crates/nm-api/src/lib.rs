@@ -94,6 +94,14 @@ pub mod method {
     /// offers, without changing anything (`ProbeAccountParams`,
     /// `ProbeReport`).
     pub const PROBE_ACCOUNT: &str = "probe_account";
+    /// State of the synchronization of each IMAP account (`plan-imap.md`,
+    /// phase 4).
+    pub const SYNC_STATUS: &str = "sync_status";
+    /// Synchronizes an account, or every account, now.
+    pub const SYNC_NOW: &str = "sync_now";
+    /// Compares, folder by folder, the server and the database: UIDs,
+    /// flags, raw files of complete messages.
+    pub const SYNC_VERIFY: &str = "sync_verify";
 }
 
 /// Stable error codes. Negative codes are the ones defined by the JSON-RPC
@@ -135,6 +143,9 @@ pub mod error_code {
     /// The mail server could not be reached, refused the login, or failed;
     /// the message holds its answer.
     pub const SERVER: i64 = 1009;
+    /// A command that changes mail, on a synchronized IMAP account, before
+    /// the spool sends changes to the server (`plan-imap.md`, phase 5).
+    pub const READ_ONLY: i64 = 1010;
 }
 
 // ---------------------------------------------------------------------------
@@ -275,6 +286,14 @@ pub enum Event {
     /// settings stay applied (`configuration.md`, section 4). `line` (from
     /// 1) and `key` locate the problem when known.
     ConfigError { line: Option<u32>, key: Option<String>, message: String },
+    /// New mail, found by the synchronization in `folder_id`; what the app
+    /// turns into a notification. Not sent for the first synchronization
+    /// of a folder, whose every mail would be "new".
+    MessageArrived { message_id: i64, folder_id: i64 },
+    /// Progress of a synchronization: `done` of `total` (messages whose
+    /// headers or bodies are fetched). Transient: without sequence number,
+    /// never replayed (`evenements.md`), at most a few per second.
+    SyncProgress { account_id: i64, folder_id: Option<i64>, stage: String, done: u64, total: u64 },
 }
 
 // ---------------------------------------------------------------------------
@@ -1256,4 +1275,114 @@ pub mod paths {
     pub const DATABASE: &str = "nicemailer.db";
     /// Unix socket file name, inside the data directory.
     pub const SOCKET: &str = "core.sock";
+}
+
+// ---------------------------------------------------------------------------
+// Synchronization (`plan-imap.md`, phase 4)
+// ---------------------------------------------------------------------------
+
+/// Params of `sync_status` and `sync_now`: one account (its key in
+/// `config.toml`), or every account.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct SyncAccountParams {
+    #[serde(default)]
+    pub account: Option<String>,
+}
+
+/// Params of `sync_verify`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SyncVerifyParams {
+    pub account: String,
+    /// Skip reading every raw file again (fast, but checks only that the
+    /// file exists).
+    #[serde(default)]
+    pub skip_hash: bool,
+}
+
+/// Result of `sync_status`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SyncStatus {
+    pub accounts: Vec<AccountSync>,
+}
+
+/// The synchronization of one IMAP account.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AccountSync {
+    pub account_id: i64,
+    pub key: String,
+    /// `connecting`, `syncing`, `idle` (waiting for new mail on the
+    /// Inbox), `waiting` (until the next attempt after an error),
+    /// `auth_failed` (stopped until the password or the file changes),
+    /// `stopped` (no password, or disabled).
+    pub state: String,
+    pub error: Option<String>,
+    /// How the server is followed: `qresync`, `condstore` or `none` (full
+    /// comparisons), once connected.
+    pub mode: Option<String>,
+    /// End of the last complete pass, Unix seconds.
+    pub last_pass: Option<i64>,
+    /// Passes completed since the core started: a client (or a test) that
+    /// asked `sync_now` knows the pass it waits for is done when this
+    /// grows.
+    pub passes: u64,
+    /// Next attempt after an error, Unix seconds.
+    pub next_retry: Option<i64>,
+    /// Messages still without body.
+    pub bodies_missing: u64,
+    /// Bodies refused this run: their size differs from what the server
+    /// announced (`stockage-brut.md`, section 5, step 2). Tried again at
+    /// the next start of the core.
+    pub bodies_refused: u64,
+    pub folders: Vec<FolderSync>,
+}
+
+/// One folder of an account, as synchronized.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FolderSync {
+    pub folder_id: i64,
+    pub path: String,
+    pub role: String,
+    pub messages: u64,
+    pub bodies_missing: u64,
+    /// End of its last synchronization, Unix seconds.
+    pub last_sync: Option<i64>,
+    /// The server no longer lists it: kept with its mail, not synchronized.
+    pub missing_on_server: bool,
+}
+
+/// Result of `sync_verify`.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct SyncVerifyReport {
+    pub account: String,
+    /// No difference anywhere.
+    pub ok: bool,
+    pub folders: Vec<FolderVerify>,
+    pub seconds: f64,
+}
+
+/// The comparison of one folder. UID lists are cut at 20 entries; the
+/// counts are complete.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FolderVerify {
+    pub path: String,
+    pub role: String,
+    pub server_messages: u64,
+    pub local_messages: u64,
+    /// UIDs on the server, not in the database.
+    pub missing_locally: Vec<u32>,
+    pub missing_locally_count: u64,
+    /// UIDs in the database, no longer on the server.
+    pub extra_locally: Vec<u32>,
+    pub extra_locally_count: u64,
+    /// UIDs whose flags or keywords differ.
+    pub flags_differ: Vec<u32>,
+    pub flags_differ_count: u64,
+    /// UIDVALIDITY of the server, if it differs from the database's.
+    pub uidvalidity_differs: Option<u32>,
+    /// Complete messages whose raw file was checked.
+    pub bodies_checked: u64,
+    /// Messages still without body (not a difference: still downloading).
+    pub bodies_missing: u64,
+    /// Raw files missing or corrupt, as `uid: problem`.
+    pub raw_problems: Vec<String>,
 }

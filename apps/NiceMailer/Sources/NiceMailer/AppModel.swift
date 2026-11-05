@@ -419,9 +419,16 @@ final class AppModel {
     /// event is missing (seq not consecutive, or another epoch), the model
     /// can no longer know what changed, so it reloads everything it shows.
     private func handle(_ e: CoreClient.Event) {
-        let consecutive = lastEvent.map { $0.epoch == e.epoch && e.seq == $0.seq + 1 } ?? false
-        lastEvent = Position(epoch: e.epoch, seq: e.seq)
-        if e.method == "ResyncRequired" || !consecutive {
+        let order = AppModel.order(of: e, after: lastEvent)
+        switch order {
+        case .transient:
+            // Progress of a synchronization: nothing to reload, and the
+            // position stays that of the last numbered event.
+            return
+        case .inOrder(let p), .gap(let p):
+            lastEvent = p
+        }
+        if e.method == "ResyncRequired" || order.isGap {
             scheduleRefresh(full: true)
             return
         }
@@ -437,6 +444,25 @@ final class AppModel {
             return
         }
         scheduleRefresh(full: false)
+    }
+
+    /// Where an event stands in the stream (`evenements.md`): transient
+    /// (no `seq`: outside the sequence), next in order, or after a gap (an
+    /// event missed, or another epoch: the core restarted). A pure function
+    /// of the event and the last position, so it is tested alone.
+    enum EventOrder: Equatable {
+        case transient
+        case inOrder(Position)
+        case gap(Position)
+
+        nonisolated var isGap: Bool { if case .gap = self { return true } else { return false } }
+    }
+
+    nonisolated static func order(of e: CoreClient.Event, after last: Position?) -> EventOrder {
+        guard let seq = e.seq else { return .transient }
+        let p = Position(epoch: e.epoch, seq: seq)
+        if let last, last.epoch == e.epoch, seq == last.seq + 1 { return .inOrder(p) }
+        return .gap(p)
     }
 
     /// Groups invalidations received in a burst into a single reload: a move

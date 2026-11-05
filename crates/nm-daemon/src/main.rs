@@ -39,6 +39,7 @@
 //! lines are never interleaved on the socket.
 
 mod events;
+mod sync;
 
 use std::fs::{self, File};
 // Unix-specific extension trait that adds `from_mode` (chmod-style
@@ -125,6 +126,9 @@ struct Core {
     attachments: AttachmentFiles,
     /// The running mbox import, or the last one.
     import: Mutex<ImportState>,
+    /// The synchronization of the IMAP accounts (`sync.rs`). Set once the
+    /// core is shared, since the workers hold a pointer to it.
+    syncer: std::sync::OnceLock<nm_engine::sync::Syncer>,
 }
 
 /// Imports run one at a time, on a dedicated thread (see `start_import`).
@@ -199,7 +203,18 @@ async fn main() -> anyhow::Result<()> {
         raw,
         attachments,
         import: Mutex::new(ImportState::default()),
+        syncer: std::sync::OnceLock::new(),
     });
+    // The workers of the IMAP accounts of the file (`plan-imap.md`,
+    // phase 4). They only start working once the socket is up: their
+    // first writes wait for the store's lock like any command.
+    {
+        let secrets = core.engine.lock().unwrap().secrets();
+        let host: Arc<dyn nm_engine::sync::SyncHost> = Arc::new(sync::CoreHost(core.clone()));
+        let _ = core.syncer.set(nm_engine::sync::Syncer::new(host, secrets));
+        let mut store = core.store.lock().unwrap();
+        sync::apply(&core, &mut store);
+    }
     // Kept alive until the end of `main`: dropping it stops the watch. A
     // watch that cannot start is not fatal: the file is then read at the
     // next start only.
@@ -245,6 +260,10 @@ async fn main() -> anyhow::Result<()> {
             _ = tokio::signal::ctrl_c() => break,
             _ = sigterm.recv() => break,
         }
+    }
+    // A batch in progress ends; the workers stop at their next check.
+    if let Some(syncer) = core.syncer.get() {
+        syncer.stop_all(std::time::Duration::from_secs(2));
     }
     cleanup(&socket_path);
     drop(lock);
@@ -349,6 +368,7 @@ fn store_error(e: StoreError) -> RpcError {
         StoreError::NotFound(_) => error_code::NOT_FOUND,
         StoreError::InvalidMove(_) => error_code::INVALID_MOVE,
         StoreError::InvalidParams(_) => error_code::INVALID_PARAMS,
+        StoreError::ReadOnly(_) => error_code::READ_ONLY,
         // The client needs the address and the verdict to ask the user.
         StoreError::ConfirmationRequired { ref addr, ref verdict } => {
             let mut err = RpcError::new(error_code::CONFIRMATION_REQUIRED, e.to_string());
@@ -451,6 +471,12 @@ async fn set_password(core: &Arc<Core>, p: SetPasswordParams, source: Source) ->
         for e in events {
             log.push(e);
         }
+        drop(log);
+        // A worker stopped by a refused login or a missing password tries
+        // again with the new password.
+        if let Some(syncer) = core2.syncer.get() {
+            syncer.kick();
+        }
         Ok(())
     })
     .await?;
@@ -497,17 +523,31 @@ fn reload_config(core: &Arc<Core>) {
     // order of the writes.
     let mut store = core.store.lock().unwrap();
     let mut engine = core.engine.lock().unwrap();
-    match engine.reload(&mut store, false) {
+    let changed = match engine.reload(&mut store, false) {
         Ok(events) => {
-            if !events.is_empty() {
+            let changed = !events.is_empty();
+            if changed {
                 log_config(&engine);
             }
             let mut log = core.events.lock().unwrap();
             for e in events {
                 log.push(e);
             }
+            changed
         }
-        Err(e) => eprintln!("config : {e}"),
+        Err(e) => {
+            eprintln!("config : {e}");
+            false
+        }
+    };
+    drop(engine);
+    // The workers follow the accounts of the file (`sync.rs`); a file
+    // changed may also fix what stopped one (a user name).
+    if changed {
+        sync::apply(core, &mut store);
+        if let Some(syncer) = core.syncer.get() {
+            syncer.kick();
+        }
     }
 }
 
@@ -671,7 +711,11 @@ async fn dispatch(core: &Arc<Core>, session: &mut Session, req: Request) -> Resu
         method::GET_THREAD => {
             let p: GetThreadParams = params(req.params)?;
             let as_of = as_of();
-            let (subject, messages) = with_reader(core, move |s| s.get_thread(p.thread_id)).await?;
+            let thread_id = p.thread_id;
+            let ((subject, messages), missing) =
+                with_reader(core, move |s| Ok((s.get_thread(thread_id)?, s.thread_bodies_missing(thread_id)?))).await?;
+            // Bodies not downloaded yet: the user is waiting for them.
+            sync::prioritize(core, missing);
             to_value(ThreadView { id: p.thread_id, subject, messages, as_of })
         }
         method::LOCATE_MESSAGE => {
@@ -839,6 +883,19 @@ async fn dispatch(core: &Arc<Core>, session: &mut Session, req: Request) -> Resu
         method::SET_PASSWORD => {
             let p: SetPasswordParams = params(req.params)?;
             to_value(set_password(core, p, source).await?)
+        }
+        method::SYNC_STATUS => {
+            let p: nm_api::SyncAccountParams = params(req.params)?;
+            to_value(sync::status(core, p).await?)
+        }
+        method::SYNC_NOW => {
+            let p: nm_api::SyncAccountParams = params(req.params)?;
+            sync::now(core, p)?;
+            to_value(CommandResult { changed: 0 })
+        }
+        method::SYNC_VERIFY => {
+            let p: nm_api::SyncVerifyParams = params(req.params)?;
+            to_value(sync::verify(core, p).await?)
         }
         method::PROBE_ACCOUNT => {
             let p: ProbeAccountParams = params(req.params)?;

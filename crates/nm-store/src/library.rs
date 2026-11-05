@@ -336,6 +336,8 @@ impl Store {
             .query_row("SELECT account_id FROM thread WHERE id = ?1", [thread_id], |r| r.get(0))
             .optional()?
             .ok_or_else(|| StoreError::NotFound(format!("conversation {thread_id}")))?;
+        // Tags are IMAP keywords: refused on an IMAP account until phase 5.
+        crate::sync::refuse_imap_thread(&self.server_accounts, &tx, thread_id)?;
         // Names are compared without case in Rust: SQLite's NOCASE only folds
         // ASCII, so "Équipe" and "équipe" would be two tags. An account has
         // few tags, reading them all is cheap.

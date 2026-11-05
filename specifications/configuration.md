@@ -163,6 +163,7 @@ Les paramètres sont définis dans les spécifications qui les utilisent. Ce tab
 | `core.idle_exit_secs` | Délai d'arrêt du noyau sans client, quand le tri en arrière-plan est désactivé | 60 | `architecture.md`, section 6 |
 | `core.update_timeout_secs` | Durée maximale du mode maintenance | 900 | `mise-a-jour.md` |
 | `sync.poll_interval_secs` | Intervalle d'interrogation des dossiers hors Inbox | 300 | `dossiers.md` |
+| `sync.max_connections` | Connexions IMAP par compte : 2 (dossiers et IDLE sur l'une, corps sur l'autre) ou 1 (tout sur une seule, pour un serveur qui en permet peu) | 2 | `plan-imap.md`, phase 4 |
 | `config_sync.push_delay_secs` | Regroupement des modifications avant écriture de la configuration synchronisée | 5 | `synchronisation-configuration.md` |
 | `events.replay_buffer` | Événements gardés pour le rejeu | 10 000 | `evenements.md` |
 | `events.client_queue` | Taille maximale de la file d'un client | 1 000 | `evenements.md` |

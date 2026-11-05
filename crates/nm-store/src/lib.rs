@@ -53,6 +53,7 @@ pub mod remote_images;
 pub mod screening;
 pub mod unsubscribe;
 pub mod seed;
+pub mod sync;
 
 // `BTreeSet` is a sorted set without duplicates. It is used instead of
 // `HashSet` so that iteration order is deterministic (events are emitted in
@@ -102,6 +103,10 @@ pub enum StoreError {
     Sqlite(#[from] rusqlite::Error),
     #[error("introuvable : {0}")]
     NotFound(String),
+    /// A command that changes mail, on an account whose mail cannot be
+    /// changed yet (IMAP, until the spool of phase 5).
+    #[error("{0}")]
+    ReadOnly(String),
     #[error("déplacement refusé : {0}")]
     InvalidMove(String),
     #[error("paramètre invalide : {0}")]
@@ -147,6 +152,9 @@ pub struct ChangeSet {
     pub folders: BTreeSet<i64>,
     /// Accounts whose settings or state changed (`AccountChanged`).
     pub accounts: BTreeSet<i64>,
+    /// New mail found by the synchronization, as `(message_id, folder_id)`
+    /// pairs (`MessageArrived`, which the app turns into notifications).
+    pub arrived: BTreeSet<(i64, i64)>,
 }
 
 impl ChangeSet {
@@ -162,6 +170,9 @@ impl ChangeSet {
 /// time. Queries run on read-only stores of a [`pool::ReadPool`].
 pub struct Store {
     conn: Connection,
+    /// IMAP accounts synchronized by the core, whose mail commands may not
+    /// change yet (`sync.rs`, `set_server_accounts`).
+    server_accounts: BTreeSet<i64>,
 }
 
 impl Store {
@@ -204,7 +215,7 @@ impl Store {
         if version != SCHEMA_VERSION {
             return Err(StoreError::ReaderVersion { found: version, expected: SCHEMA_VERSION });
         }
-        Ok(Store { conn })
+        Ok(Store { conn, server_accounts: BTreeSet::new() })
     }
 
     /// In-memory database, used by tests: fast and thrown away at the end.
@@ -259,7 +270,7 @@ impl Store {
         // connection opens: it analyzes only the tables that need it, with a
         // bounded effort, so it stays quick on a large database.
         conn.execute_batch("PRAGMA optimize = 0x10002;")?;
-        Ok(Store { conn })
+        Ok(Store { conn, server_accounts: BTreeSet::new() })
     }
 
     /// Updates the planner statistics after a large change (an import adds

@@ -212,7 +212,8 @@ A key the core does not know is a warning, not an error, so a file written by a 
 | `core.background_sorting` | true | | no |
 | `core.idle_exit_secs` | 60 | 1 to 86400 | no |
 | `core.update_timeout_secs` | 900 | 60 to 86400 | no |
-| `sync.poll_interval_secs` | 300 | 30 to 86400 | no (phase 4) |
+| `sync.poll_interval_secs` | 300 | 30 to 86400 | yes, when a worker starts ([sync.md](sync.md)) |
+| `sync.max_connections` | 2 | 1 to 2 | yes, when a worker starts: connections per account ([sync.md](sync.md)) |
 | `config_sync.push_delay_secs` | 5 | 0 to 3600 | no |
 | `events.replay_buffer` | 10000 | 100 to 1000000 | at start |
 | `events.client_queue` | 1000 | 10 to 100000 | at start |

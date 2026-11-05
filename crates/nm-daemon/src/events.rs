@@ -131,6 +131,25 @@ impl EventLog {
         for account_id in &changes.accounts {
             self.push(Event::AccountChanged { account_id: *account_id });
         }
+        // After the folders: a client reloads the list, then notifies.
+        for (message_id, folder_id) in &changes.arrived {
+            self.push(Event::MessageArrived { message_id: *message_id, folder_id: *folder_id });
+        }
+    }
+
+    /// Broadcasts a transient event (`SyncProgress`, `evenements.md`): no
+    /// sequence number (`seq` is omitted), not kept for replay. A client
+    /// that misses one loses nothing that a query would not give back.
+    pub fn push_transient(&mut self, event: Event) {
+        let mut line = Self::encode(&event, &self.epoch, 0);
+        // `encode` always adds a seq: remove it, transient events have none.
+        if let Ok(mut v) = serde_json::from_str::<serde_json::Value>(&line)
+            && let Some(p) = v.get_mut("params").and_then(|p| p.as_object_mut())
+        {
+            p.remove("seq");
+            line = v.to_string();
+        }
+        let _ = self.sender.send((0, Arc::new(line)));
     }
 
     /// Subscribes a client and works out what it must receive first.
@@ -214,6 +233,23 @@ mod tests {
         assert_eq!(v["method"], "FolderChanged");
         assert_eq!(v["params"]["folder_id"], 3);
         assert_eq!(v["params"]["seq"], 7);
+    }
+
+    /// A transient event goes to the subscribers, without a sequence number
+    /// and without taking one, and is never replayed.
+    #[test]
+    fn transient_events_have_no_seq_and_are_not_replayed() {
+        let mut log = EventLog::new(10, 10);
+        let start = log.position();
+        let (_, mut rx) = log.subscribe(None);
+        log.push_transient(Event::SyncProgress { account_id: 1, folder_id: None, stage: "bodies".into(), done: 1, total: 2 });
+        assert_eq!(log.position().seq, start.seq);
+        let (_, line) = rx.try_recv().unwrap();
+        let v: serde_json::Value = serde_json::from_str(&line).unwrap();
+        assert_eq!(v["method"], "SyncProgress");
+        assert!(v["params"].get("seq").is_none());
+        assert_eq!(v["params"]["done"], 1);
+        assert!(matches!(log.subscribe(Some(&start)).0, Replay::Events(e) if e.is_empty()));
     }
 
     /// Import events carry the status fields directly in `params`, next to

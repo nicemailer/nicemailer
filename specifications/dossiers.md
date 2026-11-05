@@ -182,6 +182,8 @@ Règles de la proposition (`nm-engine`, `folders.rs`, déjà visibles avec `nice
 - Seul un dossier au premier niveau de l'espace de noms personnel compte (`INBOX/Sent` aussi, disposition courante) : `Clients/Sent` est un dossier de l'utilisateur, pas le dossier Sent.
 - Un rôle va à un seul dossier : l'attribut, puis le premier nom de la liste, puis le premier dossier listé par le serveur.
 
+Provisoirement, jusqu'au panneau de la phase 7 (`plan-imap.md`), la première synchronisation d'un compte qui n'a encore aucun rôle donne à chaque dossier le rôle proposé par ces règles, sans confirmation ; les dossiers créés ensuite sur le serveur n'en reçoivent pas.
+
 Seule l'Inbox est surveillée en IDLE : c'est par elle que les nouveaux mails arrivent sur le serveur, et c'est là que le screening doit réagir sans délai. IDLE ne surveille qu'un dossier par connexion, et multiplier les connexions est coûteux et limité par les serveurs. Les autres dossiers du workflow sont interrogés de temps à autre, toutes les cinq minutes (paramètre `sync.poll_interval_secs`, 300 par défaut), pour récupérer les changements faits ailleurs, par exemple depuis le téléphone. Les actions faites dans NiceMailer sont appliquées localement tout de suite, sans attendre l'interrogation.
 
 ### Import initial

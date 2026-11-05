@@ -14,14 +14,16 @@
 //! - [`Engine`] (this file): the settings applied, and the accounts they
 //!   declare, kept in line with the database.
 //!
-//! The IMAP client itself is in `nm-proto`; the synchronization will live
-//! here.
+//! - `sync/`: the synchronization of the IMAP accounts (phase 4).
+//!
+//! The IMAP client itself is in `nm-proto`.
 
 pub mod config;
 pub mod folders;
 pub mod keychain;
 pub mod probe;
 pub mod secrets;
+pub mod sync;
 pub mod watch;
 
 use std::collections::{BTreeMap, BTreeSet};

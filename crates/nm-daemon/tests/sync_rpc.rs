@@ -1,0 +1,398 @@
+//! The synchronization end to end (`plan-imap.md`, phase 4): the real core,
+//! a test Dovecot, and a second connection playing the phone, which adds,
+//! flags, deletes and moves mail. After each step, `sync_verify` must find
+//! the server and the database the same.
+//!
+//! `#[ignore]`: needs the test servers (`make imap-up`, then
+//! `make imap-test`). Every test runs on a new random user, so an empty
+//! mailbox, and most on both servers: the complete one (QRESYNC, MOVE…)
+//! and the minimal one (none of the synchronization extensions, the
+//! fallbacks).
+
+mod common;
+
+use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
+
+use common::{Client, start};
+use nm_proto::imap::{MailboxName, Security, ServerSpec, Session, StoreOp, Timeouts, UidSet, Uids};
+use serde_json::{Value, json};
+
+const FULL: u16 = 31993;
+const MINIMAL: u16 = 32993;
+
+fn ca() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../dev/dovecot/tls/ca.crt")
+}
+
+fn config(port: u16, user: &str, extra: &str) -> String {
+    format!(
+        "[accounts.dovecot]\nemail = \"{user}@example.com\"\n[accounts.dovecot.imap]\nhost = \"127.0.0.1\"\nport = {port}\n\
+         security = \"tls\"\nusername = \"{user}\"\nca_file = \"{}\"\n{extra}",
+        ca().display()
+    )
+}
+
+/// The phone: a session of its own on the same mailbox, with its own
+/// little runtime (the test itself is synchronous, like the CLI).
+struct Phone {
+    rt: tokio::runtime::Runtime,
+    s: Session,
+}
+
+impl Phone {
+    fn open(port: u16, user: &str) -> Phone {
+        let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let s = rt.block_on(async {
+            let spec = ServerSpec { host: "127.0.0.1".into(), port, security: Security::Tls, ca_file: Some(ca()) };
+            let mut s = Session::connect(&spec, Timeouts::default()).await.unwrap();
+            s.login(user, "nicemailer").await.unwrap();
+            s
+        });
+        Phone { rt, s }
+    }
+
+    fn create(&mut self, name: &str) {
+        let _ = self.rt.block_on(self.s.create(&MailboxName::new(name)));
+    }
+
+    /// Delivers a mail to `folder`; returns its UID.
+    fn deliver(&mut self, folder: &str, id: &str, flags: &[&str]) -> u32 {
+        let mail = format!(
+            "From: Alice <alice@example.com>\r\nTo: bob@example.com\r\nSubject: Mail {id}\r\nMessage-ID: <{id}@test.nicemailer>\r\n\
+             Date: Thu, 05 Nov 2026 10:00:00 +0000\r\n\r\nBody of {id}, with the word chantier.\r\n"
+        );
+        self.rt.block_on(self.s.append(&MailboxName::new(folder), flags, None, mail.into_bytes())).unwrap().unwrap().uid
+    }
+
+    fn select(&mut self, folder: &str) {
+        self.rt.block_on(self.s.select(&MailboxName::new(folder), None)).unwrap();
+    }
+
+    fn store(&mut self, uid: u32, op: StoreOp, flags: &[&str]) {
+        self.rt.block_on(self.s.uid_store(&Uids::Set(UidSet::from_uids([uid])), op, flags, true, None)).unwrap();
+    }
+
+    fn expunge(&mut self, uid: u32) {
+        self.store(uid, StoreOp::Add, &["\\Deleted"]);
+        self.rt.block_on(self.s.uid_expunge(&Uids::Set(UidSet::from_uids([uid])))).unwrap();
+    }
+
+    /// Moves `uid` of the selected folder to `to`: `MOVE` where the server
+    /// has it, else copy, `\Deleted`, expunge (the minimal server).
+    fn move_to(&mut self, uid: u32, to: &str) {
+        self.rt.block_on(self.s.uid_move(&Uids::Set(UidSet::from_uids([uid])), &MailboxName::new(to))).unwrap();
+    }
+}
+
+/// The core on a fresh data directory, with the account's password saved.
+fn core(dir: &Path, port: u16, user: &str, extra: &str) -> (common::Core, Client) {
+    std::fs::write(dir.join("config.toml"), config(port, user, extra)).unwrap();
+    let core = start(dir);
+    let mut c = Client::connect(dir);
+    c.call("set_password", json!({"account": "dovecot", "password": "nicemailer"})).unwrap();
+    (core, c)
+}
+
+fn account(c: &mut Client) -> Value {
+    c.call("sync_status", json!({"account": "dovecot"})).unwrap()["accounts"][0].clone()
+}
+
+/// Waits for a pass after `passes` (the count before the change), and for
+/// every body to be downloaded; returns the new count.
+fn settled(c: &mut Client, passes: u64) -> u64 {
+    let deadline = Instant::now() + Duration::from_secs(120);
+    loop {
+        let a = account(c);
+        let n = a["passes"].as_u64().unwrap_or(0);
+        if n > passes && a["state"] == "idle" && a["bodies_missing"] == 0 {
+            return n;
+        }
+        assert!(Instant::now() < deadline, "not settled: {a}");
+        std::thread::sleep(Duration::from_millis(100));
+    }
+}
+
+/// `sync_now`, then waits for its pass.
+fn sync(c: &mut Client) -> u64 {
+    let before = account(c)["passes"].as_u64().unwrap_or(0);
+    c.call("sync_now", json!({"account": "dovecot"})).unwrap();
+    settled(c, before)
+}
+
+fn verify_ok(c: &mut Client) -> Value {
+    let r = c.call("sync_verify", json!({"account": "dovecot"})).unwrap();
+    assert_eq!(r["ok"], true, "{r:#}");
+    r
+}
+
+fn folder<'a>(r: &'a Value, path: &str) -> &'a Value {
+    r["folders"].as_array().unwrap().iter().find(|f| f["path"] == path).unwrap_or_else(|| panic!("no {path} in {r:#}"))
+}
+
+/// The database of the core, read directly.
+fn db(dir: &Path) -> nm_store::rusqlite::Connection {
+    nm_store::rusqlite::Connection::open_with_flags(dir.join("nicemailer.db"), nm_store::rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap()
+}
+
+fn message_id_of(dir: &Path, msgid: &str) -> (i64, String, u32) {
+    db(dir)
+        .query_row(
+            "SELECT m.id, f.path, m.uid FROM message m JOIN folder f ON f.id = m.folder_id WHERE m.message_id_hdr = ?1",
+            [format!("{msgid}@test.nicemailer")],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .unwrap()
+}
+
+fn new_user() -> String {
+    format!("s{:016x}", rand::random::<u64>())
+}
+
+/// Every step of a phone's life, on one server.
+fn follows_the_phone(port: u16) {
+    let dir = tempfile::tempdir().unwrap();
+    let user = new_user();
+    let mut phone = Phone::open(port, &user);
+    phone.create("Archive");
+    phone.create("Sent");
+    let a = phone.deliver("INBOX", "a", &[]);
+    let _b = phone.deliver("INBOX", "b", &["\\Flagged"]);
+    phone.deliver("Sent", "c", &["\\Seen"]);
+    phone.deliver("Archive", "d", &["\\Seen", "$Projet"]);
+
+    // First synchronization: every folder, every body.
+    let (_core, mut c) = core(dir.path(), port, &user, "");
+    let mut passes = settled(&mut c, 0);
+    let r = verify_ok(&mut c);
+    assert_eq!(folder(&r, "INBOX")["server_messages"], 2);
+    assert_eq!(folder(&r, "INBOX")["bodies_checked"], 2);
+    assert_eq!(folder(&r, "Archive")["local_messages"], 1);
+    let st = account(&mut c);
+    let roles: Vec<&str> = st["folders"].as_array().unwrap().iter().map(|f| f["role"].as_str().unwrap()).collect();
+    assert!(roles.starts_with(&["inbox"]) && roles.contains(&"archive") && roles.contains(&"sent"), "{roles:?}");
+    // The search finds the bodies.
+    let hits = c.call("search", json!({"query": "chantier"})).unwrap();
+    assert_eq!(hits["items"].as_array().unwrap().len(), 4, "{hits}");
+
+    // New mail: seen by IDLE, announced.
+    c.call("subscribe", json!({})).unwrap();
+    c.clear_events();
+    phone.deliver("INBOX", "e", &[]);
+    let arrived = c.event("MessageArrived", 30);
+    assert!(arrived["message_id"].as_i64().is_some());
+    settled(&mut c, passes);
+    verify_ok(&mut c);
+
+    // Flags changed on the phone.
+    phone.select("INBOX");
+    phone.store(a, StoreOp::Add, &["\\Seen", "Urgent"]);
+    passes = sync(&mut c);
+    let r = verify_ok(&mut c);
+    assert_eq!(folder(&r, "INBOX")["flags_differ_count"], 0);
+    let seen: i64 = db(dir.path())
+        .query_row("SELECT is_seen FROM message WHERE message_id_hdr = 'a@test.nicemailer'", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(seen, 1);
+
+    // A mail moved by the phone keeps its identity: same id, new folder.
+    let (id_before, _, _) = message_id_of(dir.path(), "a");
+    phone.move_to(a, "Archive");
+    passes = settled(&mut c, passes);
+    let (id_after, path, _) = message_id_of(dir.path(), "a");
+    assert_eq!((id_after, path.as_str()), (id_before, "Archive"), "moved, not deleted and created again");
+    verify_ok(&mut c);
+
+    // A mail deleted by the phone.
+    let e = message_id_of(dir.path(), "e").2;
+    phone.select("INBOX");
+    phone.expunge(e);
+    let _ = sync(&mut c);
+    let r = verify_ok(&mut c);
+    assert_eq!(folder(&r, "INBOX")["local_messages"], 1, "b alone");
+    let _ = passes;
+
+    // Commands that change mail are refused on this account (phase 5).
+    let thread: i64 = db(dir.path())
+        .query_row("SELECT thread_id FROM message WHERE message_id_hdr = 'b@test.nicemailer'", [], |r| r.get(0))
+        .unwrap();
+    let err = c.call("set_thread_seen", json!({"thread_id": thread, "seen": true})).unwrap_err();
+    assert_eq!(err["code"], 1010, "{err}");
+}
+
+#[test]
+#[ignore = "needs the test servers: make imap-up, then make imap-test"]
+fn follows_the_phone_on_the_complete_server() {
+    follows_the_phone(FULL);
+}
+
+#[test]
+#[ignore = "needs the test servers: make imap-up, then make imap-test"]
+fn follows_the_phone_on_the_minimal_server() {
+    follows_the_phone(MINIMAL);
+}
+
+#[test]
+#[ignore = "needs the test servers: make imap-up, then make imap-test"]
+fn one_connection_does_everything() {
+    let dir = tempfile::tempdir().unwrap();
+    let user = new_user();
+    let mut phone = Phone::open(FULL, &user);
+    for i in 0..30 {
+        phone.deliver("INBOX", &format!("m{i}"), &[]);
+    }
+    let (_core, mut c) = core(dir.path(), FULL, &user, "[accounts.dovecot.sync]\nmax_connections = 1\n");
+    settled(&mut c, 0);
+    let r = verify_ok(&mut c);
+    assert_eq!(folder(&r, "INBOX")["bodies_checked"], 30);
+}
+
+#[test]
+#[ignore = "needs the test servers: make imap-up, then make imap-test"]
+fn a_new_uidvalidity_fetches_the_folder_again() {
+    let dir = tempfile::tempdir().unwrap();
+    let user = new_user();
+    let mut phone = Phone::open(FULL, &user);
+    phone.create("Archive");
+    phone.deliver("Archive", "old", &[]);
+    let (_core, mut c) = core(dir.path(), FULL, &user, "");
+    settled(&mut c, 0);
+    // The server's Archive is replaced by another folder of the same name:
+    // a new UIDVALIDITY, other UIDs.
+    phone.rt.block_on(phone.s.create(&MailboxName::new("Archive2"))).unwrap();
+    raw_command(&user, "RENAME Archive Gone");
+    raw_command(&user, "RENAME Archive2 Archive");
+    phone.deliver("Archive", "new", &[]);
+    sync(&mut c);
+    let r = verify_ok(&mut c);
+    assert_eq!(folder(&r, "Archive")["local_messages"], 1);
+    let n: i64 = db(dir.path()).query_row("SELECT count(*) FROM message WHERE message_id_hdr = 'old@test.nicemailer'", [], |r| r.get(0)).unwrap();
+    assert_eq!(n, 0, "the old folder's mail is gone with it");
+}
+
+/// RENAME is not in the client (NiceMailer renames no folder on the server
+/// yet): the test sends it through openssl's TLS client, as `user`.
+fn raw_command(user: &str, command: &str) {
+    use std::io::Write;
+    let mut child = std::process::Command::new("/usr/bin/openssl")
+        .args(["s_client", "-connect", "127.0.0.1:31993", "-quiet", "-CAfile"])
+        .arg(ca())
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    write!(stdin, "a LOGIN {user} nicemailer\r\nb {command}\r\nc LOGOUT\r\n").unwrap();
+    drop(stdin);
+    let out = child.wait_with_output().unwrap();
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("b OK"), "{command}: {text}");
+}
+
+/// A TCP relay to the complete server that cuts its first connections,
+/// the `n`-th after `cuts[n]` bytes from the server, and relays the next
+/// ones whole: network cuts at chosen moments.
+fn cutting_proxy(cuts: Vec<usize>) -> u16 {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    std::thread::spawn(move || {
+        let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        rt.block_on(async move {
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+            listener.set_nonblocking(true).unwrap();
+            let listener = tokio::net::TcpListener::from_std(listener).unwrap();
+            let mut n = 0;
+            loop {
+                let (client, _) = listener.accept().await.unwrap();
+                let cut = cuts.get(n).copied().unwrap_or(usize::MAX);
+                n += 1;
+                tokio::spawn(async move {
+                    let server = tokio::net::TcpStream::connect(("127.0.0.1", FULL)).await.unwrap();
+                    let (mut cr, mut cw) = client.into_split();
+                    let (mut sr, mut sw) = server.into_split();
+                    let up = tokio::spawn(async move {
+                        let _ = tokio::io::copy(&mut cr, &mut sw).await;
+                    });
+                    let mut relayed = 0usize;
+                    let mut buf = vec![0; 16 * 1024];
+                    while relayed < cut {
+                        let k = match sr.read(&mut buf).await {
+                            Ok(0) | Err(_) => break,
+                            Ok(k) => k.min(cut - relayed),
+                        };
+                        if cw.write_all(&buf[..k]).await.is_err() {
+                            break;
+                        }
+                        relayed += k;
+                    }
+                    up.abort();
+                });
+            }
+        });
+    });
+    port
+}
+
+#[test]
+#[ignore = "needs the test servers: make imap-up, then make imap-test"]
+fn cuts_at_every_step_lose_nothing_and_duplicate_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let user = new_user();
+    let mut phone = Phone::open(FULL, &user);
+    phone.create("Archive");
+    // 150 mails of about 30 kB: the headers take a few round trips, the
+    // bodies 4.5 MB.
+    let filler = "x".repeat(30_000);
+    for i in 0..150 {
+        let mail = format!(
+            "From: alice@example.com\r\nSubject: Cut {i}\r\nMessage-ID: <cut{i}@test.nicemailer>\r\n\r\n{filler}\r\n"
+        );
+        let folder = if i % 3 == 0 { "Archive" } else { "INBOX" };
+        phone.rt.block_on(phone.s.append(&MailboxName::new(folder), &[], None, mail.into_bytes())).unwrap();
+    }
+    // Cuts during the login, the listing, the headers, the bodies (both
+    // connections draw from the same list, in the order they connect).
+    let port = cutting_proxy(vec![3_000, 20_000, 60_000, 400_000, 1_500_000, 3_000_000]);
+    std::fs::write(dir.path().join("config.toml"), config(port, &user, "")).unwrap();
+    let _core = start(dir.path());
+    let mut c = Client::connect(dir.path());
+    c.call("set_password", json!({"account": "dovecot", "password": "nicemailer"})).unwrap();
+    settled(&mut c, 0);
+    // The proxy relays whole now: verify through it as well.
+    let r = verify_ok(&mut c);
+    assert_eq!(folder(&r, "INBOX")["local_messages"], 100);
+    assert_eq!(folder(&r, "Archive")["local_messages"], 50);
+    let d = db(dir.path());
+    let dup: i64 = d
+        .query_row("SELECT count(*) FROM (SELECT message_id_hdr FROM message GROUP BY message_id_hdr HAVING count(*) > 1)", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(dup, 0, "no message twice");
+    let tmp = std::fs::read_dir(dir.path().join("raw.noindex/.tmp")).unwrap().count();
+    assert_eq!(tmp, 0, "no partial file left");
+}
+
+#[test]
+#[ignore = "needs the test servers: make imap-up, then make imap-test"]
+fn a_refused_login_waits_for_a_new_password() {
+    let dir = tempfile::tempdir().unwrap();
+    let user = new_user();
+    Phone::open(FULL, &user).deliver("INBOX", "one", &[]);
+    std::fs::write(dir.path().join("config.toml"), config(FULL, &user, "")).unwrap();
+    let _core = start(dir.path());
+    let mut c = Client::connect(dir.path());
+    c.call("subscribe", json!({})).unwrap();
+    c.call("set_password", json!({"account": "dovecot", "password": "wrong"})).unwrap();
+    let e = c.event("AccountError", 30);
+    assert!(e["error"].as_str().unwrap().contains("refused the login"), "{e}");
+    // No new attempt on its own: a server may lock an account that keeps
+    // sending a wrong password.
+    std::thread::sleep(Duration::from_secs(8));
+    let a = account(&mut c);
+    assert_eq!(a["state"], "auth_failed", "{a}");
+    assert_eq!(a["passes"], 0);
+    // The right password: it starts again at once.
+    c.call("set_password", json!({"account": "dovecot", "password": "nicemailer"})).unwrap();
+    settled(&mut c, 0);
+    verify_ok(&mut c);
+}

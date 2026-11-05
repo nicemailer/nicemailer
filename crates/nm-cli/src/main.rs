@@ -118,6 +118,116 @@ enum Command {
         #[command(subcommand)]
         action: ImapAction,
     },
+    /// The synchronization of the IMAP accounts.
+    Sync {
+        #[command(subcommand)]
+        action: SyncAction,
+    },
+}
+
+/// `nicemailer sync …`.
+#[derive(Subcommand)]
+enum SyncAction {
+    /// Show the state of the synchronization of each IMAP account, or of
+    /// one: connection, last pass, folders, bodies left to download.
+    Status {
+        /// Account key, as in [accounts.<key>]; every account if omitted.
+        key: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Synchronize now: every folder checked, without waiting for the next
+    /// interval.
+    Now {
+        /// Account key; every account if omitted.
+        key: Option<String>,
+    },
+    /// Compare the server and the database, folder by folder: UIDs, flags
+    /// and the raw file of every complete message. Changes nothing. Exits
+    /// with status 1 if they differ.
+    Verify {
+        /// Account key.
+        key: String,
+        /// Only check that each raw file exists, without reading it.
+        #[arg(long)]
+        skip_hash: bool,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+/// A date of the core (Unix seconds), for a terminal: "12:04:31" today,
+/// "2026-11-04 12:04" before.
+fn when(t: Option<i64>) -> String {
+    let Some(t) = t else { return "never".into() };
+    let ago = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0) - t;
+    match ago {
+        i64::MIN..=-1 => format!("in {} s", -ago),
+        0..=59 => format!("{ago} s ago"),
+        60..=3599 => format!("{} min ago", ago / 60),
+        3600..=86_399 => format!("{} h ago", ago / 3600),
+        _ => format!("{} days ago", ago / 86_400),
+    }
+}
+
+/// The report of `nicemailer sync status`, for a terminal.
+fn print_sync_status(st: &nm_api::SyncStatus) {
+    if st.accounts.is_empty() {
+        println!("No IMAP account is synchronized (config.toml has none).");
+    }
+    for a in &st.accounts {
+        print!("{} ({}): {}", a.key, a.mode.as_deref().unwrap_or("not connected yet"), a.state);
+        if let Some(t) = a.next_retry {
+            print!(", next attempt {}", when(Some(t)));
+        }
+        println!(", last pass {}", when(a.last_pass));
+        if let Some(e) = &a.error {
+            println!("  error: {e}");
+        }
+        println!("  bodies left to download: {}{}", a.bodies_missing, if a.bodies_refused > 0 {
+            format!(", {} refused (size other than announced)", a.bodies_refused)
+        } else {
+            String::new()
+        });
+        let width = a.folders.iter().map(|f| f.path.chars().count()).max().unwrap_or(0).clamp(6, 40);
+        println!("  {:<width$}  {:<11}  {:>8}  {:>9}  last sync", "folder", "role", "messages", "no body");
+        for f in &a.folders {
+            let last = if f.missing_on_server { "no longer on the server".to_string() } else { when(f.last_sync) };
+            println!("  {:<width$}  {:<11}  {:>8}  {:>9}  {last}", f.path, f.role, f.messages, f.bodies_missing);
+        }
+    }
+}
+
+/// The report of `nicemailer sync verify`, for a terminal.
+fn print_verify(r: &nm_api::SyncVerifyReport) {
+    for f in &r.folders {
+        let mut problems = Vec::new();
+        let list = |v: &[u32], n: u64| {
+            let shown: Vec<String> = v.iter().map(u32::to_string).collect();
+            format!("{n} ({}{})", shown.join(" "), if n as usize > v.len() { " …" } else { "" })
+        };
+        if let Some(uv) = f.uidvalidity_differs {
+            problems.push(format!("UIDVALIDITY {uv} on the server"));
+        }
+        if f.missing_locally_count > 0 {
+            problems.push(format!("not in the database: {}", list(&f.missing_locally, f.missing_locally_count)));
+        }
+        if f.extra_locally_count > 0 {
+            problems.push(format!("no longer on the server: {}", list(&f.extra_locally, f.extra_locally_count)));
+        }
+        if f.flags_differ_count > 0 {
+            problems.push(format!("other flags: {}", list(&f.flags_differ, f.flags_differ_count)));
+        }
+        for p in &f.raw_problems {
+            problems.push(format!("raw file of UID {p}"));
+        }
+        let state = if problems.is_empty() { "ok".to_string() } else { problems.join("; ") };
+        println!(
+            "{:<20} {:>7} on the server, {:>7} here, {:>7} raw files checked, {:>6} bodies to come: {state}",
+            f.path, f.server_messages, f.local_messages, f.bodies_checked, f.bodies_missing
+        );
+    }
+    println!("{} ({:.1} s)", if r.ok { "Same on both sides" } else { "Differences found" }, r.seconds);
 }
 
 /// `nicemailer imap …`: through the core, which alone reads the password.
@@ -317,6 +427,36 @@ fn main() -> anyhow::Result<()> {
             client.call("set_account_order", json!({ "account_ids": ids }))?;
             for (i, k) in keys.iter().enumerate() {
                 println!("{}. {k}", i + 1);
+            }
+            Ok(())
+        }
+        Command::Sync { action } => {
+            let mut client = Client::connect(&data_dir)?;
+            match action {
+                SyncAction::Status { key, json } => {
+                    let r = client.call("sync_status", json!({ "account": key }))?;
+                    if json {
+                        println!("{}", serde_json::to_string_pretty(&r)?);
+                    } else {
+                        print_sync_status(&serde_json::from_value(r)?);
+                    }
+                }
+                SyncAction::Now { key } => {
+                    client.call("sync_now", json!({ "account": key }))?;
+                    println!("Synchronization asked; follow it with: nicemailer sync status");
+                }
+                SyncAction::Verify { key, skip_hash, json } => {
+                    let r = client.call("sync_verify", json!({ "account": key, "skip_hash": skip_hash }))?;
+                    let report: nm_api::SyncVerifyReport = serde_json::from_value(r.clone())?;
+                    if json {
+                        println!("{}", serde_json::to_string_pretty(&r)?);
+                    } else {
+                        print_verify(&report);
+                    }
+                    if !report.ok {
+                        std::process::exit(1);
+                    }
+                }
             }
             Ok(())
         }

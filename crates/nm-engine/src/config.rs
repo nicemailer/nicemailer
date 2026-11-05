@@ -105,11 +105,15 @@ pub struct SyncSettings {
     /// Interval between two checks of the folders other than the Inbox,
     /// which is followed live with IDLE (`dossiers.md`).
     pub poll_interval_secs: u64,
+    /// IMAP connections per account (`plan-imap.md`, phase 4): 2, one for
+    /// the folders and IDLE, one for downloading bodies; 1, both on the
+    /// same connection, for a server that allows few.
+    pub max_connections: u64,
 }
 
 impl Default for SyncSettings {
     fn default() -> Self {
-        SyncSettings { poll_interval_secs: 300 }
+        SyncSettings { poll_interval_secs: 300, max_connections: 2 }
     }
 }
 
@@ -666,7 +670,10 @@ impl<'t> Reader<'t> {
 
     /// `[sync]`, or an account's override starting from `base`.
     fn sync(&mut self, mut t: Section, base: &SyncSettings) -> R<SyncSettings> {
-        let s = SyncSettings { poll_interval_secs: self.int(&mut t, "poll_interval_secs", base.poll_interval_secs, 30..=86_400)? };
+        let s = SyncSettings {
+            poll_interval_secs: self.int(&mut t, "poll_interval_secs", base.poll_interval_secs, 30..=86_400)?,
+            max_connections: self.int(&mut t, "max_connections", base.max_connections, 1..=2)?,
+        };
         self.finish(t);
         Ok(s)
     }
@@ -885,6 +892,10 @@ update_timeout_secs = {update_timeout_secs}
 # Inbox is followed live). 30 to 86400. An account may override it in
 # [accounts.<key>.sync].
 poll_interval_secs = {poll_interval_secs}
+# IMAP connections per account: 2 (folders and new mail on one, bodies
+# downloaded on the other) or 1 (everything on one, for a server that
+# allows few). An account may override it too.
+max_connections = {max_connections}
 
 [config_sync]
 # Seconds of grouping before writing the synchronized configuration.
@@ -960,6 +971,7 @@ retention_days = {retention_days}
         idle_exit_secs = d.core.idle_exit_secs,
         update_timeout_secs = d.core.update_timeout_secs,
         poll_interval_secs = d.sync.poll_interval_secs,
+        max_connections = d.sync.max_connections,
         push_delay_secs = d.config_sync.push_delay_secs,
         replay_buffer = d.events.replay_buffer,
         client_queue = d.events.client_queue,

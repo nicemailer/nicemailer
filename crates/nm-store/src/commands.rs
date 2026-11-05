@@ -35,10 +35,15 @@ impl Store {
     /// Rust note: `ok_or_else` turns an `Option` into a `Result`: `Some(x)`
     /// becomes `Ok(x)` and `None` becomes the error built by the closure.
     fn thread_account(&self, thread_id: i64) -> Result<i64> {
-        self.conn
+        let id = self
+            .conn
             .query_row("SELECT account_id FROM thread WHERE id = ?1", [thread_id], |r| r.get(0))
             .optional()?
-            .ok_or_else(|| StoreError::NotFound(format!("conversation {thread_id}")))
+            .ok_or_else(|| StoreError::NotFound(format!("conversation {thread_id}")))?;
+        // Every command that changes a thread goes through here: refused on
+        // an IMAP account until phase 5 (`sync.rs`, `refuse_imap_thread`).
+        crate::sync::refuse_imap_thread(&self.server_accounts, &self.conn, thread_id)?;
+        Ok(id)
     }
 
     /// Moves a thread to the folder with role `target`, and records the
@@ -186,7 +191,7 @@ impl Store {
             }
             let before = record_decision(&tx, RuleKind::Address, address_id, Some(d), Some(trigger), None, source)?;
             let mut folders = HashMap::new();
-            out.filed = file_address(&tx, address_id, d, false, source, &mut folders, &mut out.changes, &mut threads)?;
+            out.filed = file_address(&tx, &self.server_accounts, address_id, d, false, source, &mut folders, &mut out.changes, &mut threads)?;
             out.decision = Some(DecisionChange { kind: RuleKind::Address, name: addr, before, after: Some(d) });
         }
 

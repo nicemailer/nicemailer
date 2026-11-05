@@ -167,8 +167,17 @@ fn a_password_saved_by_the_cli_goes_to_the_keychain() {
     // password is saved again.
     c.clear_events();
     save(&mut c, dir.path(), &ACCOUNT.replace("127.0.0.1", "imap.example.com"));
-    let e = c.event("AccountError", 15);
-    assert!(e["error"].as_str().unwrap().contains("save the password again"), "{e}");
+    // The account's worker may report its own errors meanwhile (it tries
+    // to connect once a password is saved, and nothing answers there):
+    // wait for the one of the binding.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    loop {
+        let e = c.event("AccountError", 15);
+        if e["error"].as_str().unwrap().contains("save the password again") {
+            break;
+        }
+        assert!(std::time::Instant::now() < deadline, "no binding error, last: {e}");
+    }
     c.call("set_password", json!({"account": "perso", "password": "nicemailer"})).unwrap();
     assert!(accounts(&mut c)[0]["error"].is_null());
 

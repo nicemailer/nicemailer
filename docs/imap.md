@@ -1,6 +1,6 @@
 # The IMAP client
 
-The core talks to mail servers through its own IMAP client, in `crates/nm-proto/src/imap/`. It connects, logs in, and runs the commands the synchronization needs; it knows nothing of the database, the accounts or the Keychain. `nm-engine` decides what to ask and what to do with the answers. This page describes the client and the one command built on it so far, `nicemailer imap probe`. The plan of the IMAP back end, phase by phase, is `specifications/plan-imap.md`.
+The core talks to mail servers through its own IMAP client, in `crates/nm-proto/src/imap/`. It connects, logs in, and runs the commands the synchronization needs; it knows nothing of the database, the accounts or the Keychain. `nm-engine` decides what to ask and what to do with the answers. This page describes the client and `nicemailer imap probe`; the synchronization built on it is [sync.md](sync.md). The plan of the IMAP back end, phase by phase, is `specifications/plan-imap.md`.
 
 ## Layers
 
@@ -83,7 +83,7 @@ A response is kept in memory until decoded, so responses are bounded:
 | Body fetched whole | up to 4 MiB (`WHOLE_BODY_MAX`) | most messages: one command |
 | Pieces of a larger body | 1 MiB (`BODY_CHUNK`), `BODY.PEEK[]<offset.length>` | a 150 MB message never takes more than about 1 MiB |
 
-`fetch_body` uses the size from `RFC822.SIZE` to choose, but stops on the first short piece rather than trusting the size, which some servers count differently. It gives each piece to a callback, the streaming writer of the raw store (`RawWriter::write`, [ingestion.md](ingestion.md)), and returns `None` if the message disappeared meanwhile. The writer can check the total against `RFC822.SIZE` at the end (`RawWriter::finish`); what the synchronization does when they differ is decided in phase 4.
+`fetch_body` uses the size from `RFC822.SIZE` to choose, but stops on the first short piece rather than trusting the size, which some servers count differently. It gives each piece to a callback, the streaming writer of the raw store (`RawWriter::write`, [ingestion.md](ingestion.md)), and returns `None` if the message disappeared meanwhile. The writer can check the total against `RFC822.SIZE` at the end (`RawWriter::finish`); the synchronization refuses a body whose size differs ([sync.md](sync.md), "Bodies").
 
 ## Failures
 

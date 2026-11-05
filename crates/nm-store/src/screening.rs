@@ -269,6 +269,7 @@ type FilingRow = (i64, Option<i64>, i64, i64, String, String, bool, String);
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn file_address(
     conn: &Connection,
+    server_accounts: &BTreeSet<i64>,
     address_id: i64,
     target: ScreeningTarget,
     domain_rule: bool,
@@ -306,6 +307,12 @@ pub(crate) fn file_address(
         if role == "inbox" && flagged {
             continue;
         }
+        // The mail of a synchronized IMAP account is not moved until the
+        // spool sends the moves to its server (phase 5): the decision is
+        // recorded, the filing waits.
+        if server_accounts.contains(&account) {
+            continue;
+        }
         if target.is_favorable() && kind != "archive" {
             let verdict = AuthResult::parse(&verdict);
             let accepted = if domain_rule { domain_rule_accepts(verdict) } else { policy.accepts(verdict, auth_seen) };
@@ -339,6 +346,7 @@ pub(crate) fn file_address(
 /// address of a subdomain (`news.example.com`) belongs to the domain.
 fn file_domain(
     conn: &Connection,
+    server_accounts: &BTreeSet<i64>,
     domain: &str,
     target: ScreeningTarget,
     source: Source,
@@ -356,7 +364,7 @@ fn file_domain(
     let mut folders = HashMap::new();
     let mut filed = 0;
     for id in ids {
-        filed += file_address(conn, id, target, true, source, &mut folders, changes, threads)?;
+        filed += file_address(conn, server_accounts, id, target, true, source, &mut folders, changes, threads)?;
     }
     Ok(filed)
 }
@@ -424,7 +432,7 @@ impl Store {
             && source != Source::ConfigSync
         {
             let mut folders = HashMap::new();
-            out.filed = file_address(&tx, id, t, false, source, &mut folders, &mut out.changes, &mut threads)?;
+            out.filed = file_address(&tx, &self.server_accounts, id, t, false, source, &mut folders, &mut out.changes, &mut threads)?;
         }
         refresh_all(&tx, &threads, &mut out.changes)?;
         out.decision = Some(DecisionChange { kind: RuleKind::Address, name: addr, before, after: target });
@@ -454,7 +462,7 @@ impl Store {
         if let Some(t) = target
             && source != Source::ConfigSync
         {
-            out.filed = file_domain(&tx, &domain, t, source, &mut out.changes, &mut threads)?;
+            out.filed = file_domain(&tx, &self.server_accounts, &domain, t, source, &mut out.changes, &mut threads)?;
         }
         refresh_all(&tx, &threads, &mut out.changes)?;
         out.decision = Some(DecisionChange { kind: RuleKind::Domain, name: domain, before, after: target });
