@@ -129,7 +129,7 @@ macOS recognizes an application by its code signature. A Rust binary is signed b
 
 ```sh
 make dev-cert    # once: creates the certificate "NiceMailer Dev" in the login keychain
-make core        # builds, signs with it (identifier org.nicemailer.core), runs
+make core        # builds the core and the CLI, signs the core with it (identifier org.nicemailer.core), runs it
 ```
 
 Signed with the same certificate and identifier, every build is the same application for the Keychain. Measured on a throwaway keychain (`scripts/dev-cert.sh`, then two different builds signed by `scripts/sign-core.sh`): the second build reads the password saved by the first; an unsigned build, or one signed with another identifier, is refused. The certificate is self-signed and not marked as trusted, which would need an administrator password: `codesign` uses it anyway, and the Keychain only compares a signature with the one that saved the item.

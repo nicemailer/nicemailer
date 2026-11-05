@@ -44,12 +44,13 @@ bench:
 seed:
 	cargo run --release --bin nicemailer -- seed --reset --threads $(THREADS)
 
-# Run the core in the foreground; stop it with Ctrl-C. Signed with the
+# Run the core in the foreground; stop it with Ctrl-C. Builds the CLI
+# (nicemailer) too, so that the two always speak the same protocol. Signed with the
 # development certificate (make dev-cert, once), so that every build reads
 # the passwords the previous ones saved in the Keychain
 # (docs/configuration.md, "Passwords").
 core:
-	cargo build --release --bin nicemailer-core
+	cargo build --release --bin nicemailer-core --bin nicemailer
 	scripts/sign-core.sh target/release/nicemailer-core
 	target/release/nicemailer-core
 
