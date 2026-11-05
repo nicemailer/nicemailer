@@ -1,0 +1,57 @@
+# Remote images (ui.md, "Images distantes"): the text | html | images
+# switch, the tracking pixels removed by the core, images loaded only on
+# request and once. Requests go to a local stand-in (no request leaves the
+# machine); `remote_requests` counts them.
+key @
+type fixture
+key ret
+key ;
+key a
+expect selected_subject = La lettre de novembre
+# The newsletter has two remote images and a tracking pixel.
+expect images_offered = true
+expect tracking_pixels = 1
+expect body_format = text
+snap switch
+# HTML: the page, without its images; nothing is asked.
+click format:html
+expect body_format = html
+expect html_text ~ Les nouveautés du mois
+expect remote_allowed = 0
+wait 500
+expect remote_requests = 0
+expect remote_shown = 0
+# Images: the mail was imported, so not authenticated: loaded for this
+# conversation only. Two requests, none for the pixel.
+click format:images
+expect body_format = images
+expect flash ~ not authenticated
+expect remote_allowed = 2
+expect remote_shown = 2
+expect remote_requests = 2
+snap images
+# Back to HTML, then images again: from a cache (WebKit's or the app's),
+# no new request.
+key v
+key i
+expect body_format = html
+expect remote_allowed = 0
+key v
+key i
+expect body_format = images
+expect remote_allowed = 2
+wait 500
+expect remote_requests = 2
+# Another mail, then back: "images" is remembered for the sender, but an
+# unauthenticated mail does not load its images by itself.
+key j
+key k
+expect selected_subject = La lettre de novembre
+expect body_format = html
+expect remote_allowed = 0
+# vh: text.
+key v
+key h
+expect body_format = text
+wait 300
+expect remote_requests = 2

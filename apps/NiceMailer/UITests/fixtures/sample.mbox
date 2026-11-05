@@ -41,7 +41,7 @@ Content-Type: multipart/related; boundary="R"
 --R
 Content-Type: text/html; charset=utf-8
 
-<h1>Novembre</h1><p>Les nouveautés du mois.</p><p><img src="cid:logo@example.net"></p>
+<h1>Novembre</h1><p>Les nouveautés du mois.</p><p><img src="cid:logo@example.net"></p><p><img src="https://images.example.net/banner.png" width="600" alt="Bannière"><img src="http://images.example.net/photo.jpg"></p><img src="https://t.example.net/open?u=me%40example.com" width="1" height="1">
 --R
 Content-Type: image/png; name="logo.png"
 Content-Disposition: inline; filename="logo.png"

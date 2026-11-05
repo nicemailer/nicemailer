@@ -718,6 +718,100 @@ struct GeekControllerTests {
         #expect(core.calls("set_body_format")[0]["addr"] as? String == "sender3@example.org")
     }
 
+    /// Thread 3 with a remote image and two tracking pixels, from a sender
+    /// whose mail is `auth`, in `role`; `from_body_format` follows
+    /// `set_body_format`, as with the core.
+    func remoteImages(auth: String = "pass", role: String = "inbox", remembered: String? = nil) {
+        var format: Any = remembered ?? NSNull()
+        core.handler = { method, params in
+            switch method {
+            case "set_body_format":
+                format = params["format"] ?? NSNull()
+                return ["changed": 1]
+            case "get_thread" where params["thread_id"] as? Int == 3:
+                var thread = Fixture.threadView(3)
+                var m = (thread["messages"] as! [[String: Any]])[0]
+                m["body_html"] = #"<p>Hi</p><img src="nm-remote://image?u=https%3A%2F%2Fimg.example.com%2Fa.png">"#
+                m["has_remote_content"] = true
+                m["tracking_pixels"] = 2
+                m["auth_result"] = auth
+                m["folder_role"] = role
+                m["from_body_format"] = format
+                thread["messages"] = [m]
+                return thread
+            default:
+                return Fixture.answer(method, params)
+            }
+        }
+    }
+
+    func openThree() async {
+        press("j"); press("j")
+        _ = await eventually { model.openThread?.id == 3 }
+        await model.reloadOpenThread()
+    }
+
+    @Test func imagesAreRememberedForAnAuthenticatedSender() async {
+        remoteImages()
+        await openThree()
+        #expect(model.imagesOffered && model.trackingPixels == 2 && model.bodyFormat == "text")
+        press("v"); press("i")
+        #expect(await eventually { model.bodyFormat == "images" })
+        #expect(core.calls("set_body_format").last?["format"] as? String == "images")
+        #expect(core.calls("set_body_format").last?["addr"] as? String == "sender3@example.org")
+        #expect(model.remoteImagesOnce == nil)
+        // `vi` again: HTML without images; `vh` from images: text.
+        press("v"); press("i")
+        #expect(await eventually { model.bodyFormat == "html" })
+        #expect(core.calls("set_body_format").last?["format"] as? String == "html")
+        press("v"); press("i")
+        #expect(await eventually { model.bodyFormat == "images" })
+        press("v"); press("h")
+        #expect(await eventually { model.bodyFormat == "text" })
+    }
+
+    @Test func anUnauthenticatedSenderGetsImagesForThisConversationOnly() async {
+        remoteImages(auth: "unknown")
+        await openThree()
+        press("v"); press("i")
+        #expect(await eventually { model.bodyFormat == "images" })
+        // Remembered, but applied here only because it was asked here.
+        #expect(core.calls("set_body_format").last?["format"] as? String == "images")
+        #expect(model.remoteImagesOnce == 3)
+        #expect(await eventually {
+            model.flash == L("Images loaded for this conversation only: %@ is not authenticated", "sender3@example.org")
+        })
+        press("v"); press("i")
+        #expect(await eventually { model.bodyFormat == "html" })
+        #expect(model.remoteImagesOnce == nil)
+    }
+
+    @Test func aRememberedChoiceDoesNotLoadTheImagesOfAnUnauthenticatedMail() async {
+        remoteImages(auth: "none", remembered: "images")
+        await openThree()
+        #expect(model.bodyFormat == "html")
+        remoteImages(auth: "pass", remembered: "images")
+        await model.reloadOpenThread()
+        #expect(model.bodyFormat == "images")
+    }
+
+    @Test func imagesAreNeverLoadedInJunk() async {
+        remoteImages(role: "junk")
+        await openThree()
+        #expect(!model.imagesOffered)
+        press("v"); press("i")
+        #expect(core.calls("set_body_format").isEmpty)
+        #expect(model.flash == L("Images are never loaded in Junk, Quarantine or Banned"))
+    }
+
+    @Test func imagesAreRefusedForAMailWithoutRemoteImages() async {
+        press("j"); press("j")
+        #expect(await eventually { model.openThread?.id == 3 })
+        #expect(!model.imagesOffered)
+        press("v"); press("i")
+        #expect(core.calls("set_body_format").isEmpty && model.flash == L("This mail has no remote images"))
+    }
+
     @Test func textHtmlIsRefusedForATextOnlyMail() {
         press("v"); press("h")
         #expect(core.calls("set_body_format").isEmpty && model.flash != nil)

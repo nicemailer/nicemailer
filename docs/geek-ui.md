@@ -88,7 +88,7 @@ Example, at a registrar: the mails that talk about the domain acme.fr, without t
 
 ## Reading a mail
 
-The whole theme (lists, status bar, menus, mails, including the HTML view) uses **iA Writer Mono V**, a font bundled with the app (SIL Open Font License). List columns have fixed widths counted in characters of this monospaced font, computed from the list width, so they stay aligned when the window is resized. Mails are shown as plain text, simplified: each message shows what it brings, the history it repeats is hidden, older read messages are folded (see `thread-display.md`). The `text | html` switch at the top of the mail, or `vh`, shows the sanitized HTML version instead (scripts and remote images are removed by the core). The choice is remembered **for the sender**: the next mails from the same address open the same way.
+The whole theme (lists, status bar, menus, mails, including the HTML view) uses **iA Writer Mono V**, a font bundled with the app (SIL Open Font License). List columns have fixed widths counted in characters of this monospaced font, computed from the list width, so they stay aligned when the window is resized. Mails are shown as plain text, simplified: each message shows what it brings, the history it repeats is hidden, older read messages are folded (see `thread-display.md`). The `text | html | images` switch at the top of the mail, or `vh`, shows the sanitized HTML version instead (scripts are removed by the core, and remote images are not loaded); `images`, or `vi`, also loads its remote images (see "Remote images" below). Each word of the switch is clicked on its own. The choice is remembered **for the sender**: the next mails from the same address open the same way.
 
 ### Attachments
 
@@ -103,9 +103,22 @@ Images the HTML of the mail shows (`cid:`) are part of the body, not tiles. An i
 
 Files are extracted by the core from the raw message on first use (`docs/core-library.md`, "Attachments"). Generated mail (`make seed`) has no raw message: its tiles show, but saving one reports that the content is not available.
 
+### Remote images
+
+Most HTML mails show images stored on the sender's servers. Loading one tells the sender that the mail was opened, when, and from which IP address; many mails also hold a **tracking pixel**, an invisible image whose only use is that. NiceMailer never loads them unless asked.
+
+- **Tracking pixels are removed by the core**, when the mail arrives: a remote image of 2 pixels or less (`width`, `height` or its style), or hidden by its style (`display: none`, `visibility: hidden`, `opacity: 0`), loses its source and is never requested, whatever the display. Their number is shown on the title line, `pixels blocked: N`. On a mailbox of 46,539 mails, 63% of the mails had remote images, and a script applying close rules found 26,868 pixels in 58% of those.
+- **Other remote images keep their address** in a form the web view cannot load by itself (`nm-remote:`). The `images` word of the switch appears only when the conversation has some.
+- **`images`** (a click, or `vi`) shows the HTML with those images. The app downloads each one once, over HTTPS only (an `http:` address is upgraded, never sent in clear), without cookies, `Referer` or a revealing User-Agent, never towards this Mac or the local network, at most 10 MB and only `image/…` content. Images are kept in `~/Library/Caches/NiceMailer/RemoteImages` (file names are hashes: no address appears), so reopening a mail sends no new request. Only **unfolded** messages load their images.
+- **Remembered for the sender, applied to authenticated mail only.** Choosing `images` remembers it for the sender, but the next mails load their images by themselves only when they pass authentication (`pass`, see `authentification-expediteur.md`): anybody can write in the name of a trusted sender, and loading their images would confirm that the address is read. For any other mail (imported mail, whose verdict is unknown, included), the thread opens as HTML; choosing `images` loads its images **for this conversation only**, and the status bar says why.
+- **Never in Junk, Quarantine or Banned**, even when asked.
+- `vh` goes from HTML or images to text; `vi` toggles between HTML and images.
+
+What this does not hide: the IP address and the time of the first opening, for each image loaded (only a VPN changes that); a mail whose every image carries a token proper to the recipient (about a quarter of the mails with remote images) reveals the opening as soon as its images load; a pixel hidden by a parent element, or declared without any size, is not recognised. A message unfolded by a click inside the HTML page (rather than from the keyboard) shows its images only once the conversation is reopened. Images inside the mail itself (`cid:`) are not shown yet.
+
 ### Unsubscribing
 
-When the latest received mail of the conversation says how to unsubscribe from its list, a button appears on the title line, left of `text | html` (never in Junk, Quarantine or Banned: unsubscribing from a spam confirms the address to the spammer). Its look says where the link comes from and what a click does:
+When the latest received mail of the conversation says how to unsubscribe from its list, a button appears on the title line, left of `text | html | images` (never in Junk, Quarantine or Banned: unsubscribing from a spam confirms the address to the spammer). Its look says where the link comes from and what a click does:
 
 | Button | Link | A click (or ⌘U) |
 | --- | --- | --- |
@@ -148,7 +161,7 @@ Actions apply to the **marked** mails if any (`J` / `K`), otherwise to the mail 
 | `/` | search everywhere: words anywhere, addresses included, in Everything (see [Search](#search-)); Escape goes back |
 | `;` + key | go to a folder or a screen (see below) |
 | `s` + key | save to `~/Downloads`, for every marked conversation (or the one under the cursor): its latest mail with `se` .eml, `st` text, `sm` Markdown; its attachments with `sa` all of them, `sg` all but the graphics (images: logos, signatures, photos). For attachments every message counts, and a file attached again to a reply is saved once. No file is overwritten |
-| `v` + key | display: `v1` `v2` `v3` columns, `vc` sort by reception, `vm` sort by modification, `vh` text / HTML, `vs` status bar |
+| `v` + key | display: `v1` `v2` `v3` columns, `vc` sort by reception, `vm` sort by modification, `vh` text / HTML, `vi` remote images, `vs` status bar |
 | Return | with one column (`v1`), read the mail in the whole window and mark it read; Escape goes back to the list |
 | Space, shift-Space | scroll the mail a page down / up, as text or as HTML |
 | `ctrl-f` `ctrl-b` | same, a page down / up in the mail |

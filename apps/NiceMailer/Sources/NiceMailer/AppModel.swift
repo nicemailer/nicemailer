@@ -51,6 +51,11 @@ final class AppModel {
     /// Short message shown in the geek status bar (result of an action,
     /// "not available yet"…); cleared by the next key.
     var flash: String?
+    /// The conversation whose remote images the user asked to load although
+    /// its sender's mail is not authenticated (`RemoteImages.automatic`):
+    /// while it stays open, until another display is chosen. Forgotten when
+    /// another conversation is opened; never stored.
+    var remoteImagesOnce: Int?
 
     /// What `z` undoes, most recent last: moves and decisions of this
     /// session (`AppModel+Workflow.swift`).
@@ -659,6 +664,7 @@ final class AppModel {
         do {
             let view: ThreadView = try await client.call("get_thread", ["thread_id": id])
             guard id == selectedThreadId else { return }
+            if remoteImagesOnce != id { remoteImagesOnce = nil }
             openThread = view
             if markSeen { await markSeenAfterDelay(id) }
         } catch { report(error) }

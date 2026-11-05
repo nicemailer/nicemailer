@@ -165,27 +165,76 @@ extension AppModel {
         openThread?.messages.last { $0.folderRole != "sent" && $0.folderRole != "drafts" } ?? latestMessage
     }
 
-    /// Display of the open thread: the choice remembered for the sender of
-    /// its latest received message, text by default in the geek theme.
+    /// Display of the open thread: "text", "html" or "images" (`ui.md`,
+    /// "Images distantes"). The choice remembered for the sender of its
+    /// latest received message, text by default in the geek theme. A
+    /// remembered "images" only applies when that mail's images load by
+    /// themselves (`RemoteImages.automatic`: authenticated, in a folder
+    /// that allows them); otherwise the thread is shown as HTML, without
+    /// its images, unless the user asked for them (`remoteImagesOnce`).
     var bodyFormat: String {
         guard let m = latestReceived, m.bodyHtml != nil else { return "text" }
-        return m.fromBodyFormat ?? "text"
+        if let once = remoteImagesOnce, once == openThread?.id, imagesOffered { return "images" }
+        let format = m.fromBodyFormat ?? "text"
+        return format == "images" && !RemoteImages.automatic(m) ? "html" : format
     }
 
-    /// Switches the open thread between text and HTML, and remembers the
-    /// choice for the sender (`vh`, or the button of the reading pane).
+    /// Whether the open thread has remote images that may be loaded: the
+    /// "images" switch is shown only then.
+    var imagesOffered: Bool {
+        openThread?.messages.contains(where: RemoteImages.offered) ?? false
+    }
+
+    /// Tracking pixels removed from the mails of the open thread.
+    var trackingPixels: Int {
+        openThread?.messages.reduce(0) { $0 + $1.trackingPixels } ?? 0
+    }
+
+    /// Switches the open thread between text and HTML (`vh`): from HTML or
+    /// images to text, from text to HTML.
     func toggleBodyFormat() {
-        guard let client = core, let m = latestReceived, let addr = m.fromAddr else { return }
+        setBodyFormat(bodyFormat == "text" ? "html" : "text")
+    }
+
+    /// Switches the open thread between HTML with and without its remote
+    /// images (`vi`).
+    func toggleRemoteImages() {
+        setBodyFormat(bodyFormat == "images" ? "html" : "images")
+    }
+
+    /// Shows the open thread as `format` ("text", "html", "images") and
+    /// remembers the choice for the sender of its latest received mail
+    /// (`vh`, `vi`, or a click on the switch of the reading pane).
+    ///
+    /// "images" is remembered even when that mail is not authenticated, but
+    /// then it applies to this conversation only (`remoteImagesOnce`): the
+    /// next mails of the sender load their images by themselves only if
+    /// they are authenticated (`RemoteImages.automatic`).
+    func setBodyFormat(_ format: String) {
+        guard let client = core, let thread = openThread, let m = latestReceived, let addr = m.fromAddr else { return }
         guard m.bodyHtml != nil else {
             flash = L("This mail has no HTML version")
             return
         }
-        let next = bodyFormat == "html" ? "text" : "html"
+        if format == "images" {
+            guard !RemoteImages.blockedRoles.contains(m.folderRole ?? "") else {
+                flash = L("Images are never loaded in Junk, Quarantine or Banned")
+                return
+            }
+            guard imagesOffered else {
+                flash = L("This mail has no remote images")
+                return
+            }
+        }
+        let once = format == "images" && m.authResult != "pass"
         Task {
             do {
-                let _: CommandResult = try await client.call("set_body_format", ["addr": addr, "format": next])
+                let _: CommandResult = try await client.call("set_body_format", ["addr": addr, "format": format])
+                remoteImagesOnce = once ? thread.id : nil
                 await reloadOpenThread()
-                flash = L("%@ shown as %@", addr, next)
+                flash = once
+                    ? L("Images loaded for this conversation only: %@ is not authenticated", addr)
+                    : L("%@ shown as %@", addr, format)
             } catch { report(error) }
         }
     }

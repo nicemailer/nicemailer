@@ -609,7 +609,7 @@ final class GeekController {
     /// Scrolls the reading pane by a fraction of its height: the text
     /// reader, or the HTML page when the mail is shown as HTML.
     private func scrollReader(pages: CGFloat) {
-        if model.bodyFormat == "html", let web = readerWeb, web.window != nil {
+        if model.bodyFormat != "text", let web = readerWeb, web.window != nil {
             // Scripts of the page are off (`HTMLReader`), but the app's own
             // calls still run: `evaluateJavaScript` is not page content.
             web.evaluateJavaScript(Self.htmlScrollScript(pages: pages)) { [weak self] result, _ in
@@ -691,6 +691,7 @@ final class GeekController {
                 Entry(key: "c", label: L("sort by reception date")) { [model] in model.sort = "received" },
                 Entry(key: "m", label: L("sort by modification date")) { [model] in model.sort = "modified" },
                 Entry(key: "h", label: L("text / HTML")) { [model] in model.toggleBodyFormat() },
+                Entry(key: "i", label: L("remote images")) { [model] in model.toggleRemoteImages() },
                 Entry(key: "s", label: L("status bar: bottom, top, hidden")) { [weak self] in self?.cycleStatusBar() },
             ]
         }

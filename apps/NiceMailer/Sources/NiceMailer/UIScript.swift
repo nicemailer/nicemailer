@@ -39,6 +39,15 @@ enum UIScript {
     static var readerLinks = 0
     /// Attachment tiles drawn by the text reader.
     static var readerAttachments = 0
+    /// Remote images the current HTML page may load (`HTMLReader`).
+    static var remoteImagesAllowed = 0
+    /// Remote images handed to the web view since launch
+    /// (`RemoteImageLoader`).
+    static var remoteImagesShown = 0
+    /// Requests that reached the "network" since launch: in UI script mode
+    /// a local stand-in that answers every request with a small PNG
+    /// (`UIScriptImageProtocol`); nothing leaves the machine.
+    static var remoteRequests = 0
     /// Name of the last attachment the app would have opened: in UI script
     /// mode nothing is opened, so as not to launch Preview or Word on the
     /// user's screen.
@@ -427,6 +436,14 @@ private final class Runner {
             "status_position": c.statusPosition.rawValue,
             "sort": m.sort,
             "body_format": m.bodyFormat,
+            // Remote images (`RemoteImages.swift`): the switch offers
+            // "images", pixels removed by the core, images the page may
+            // load, images shown and requests sent since launch.
+            "images_offered": "\(m.imagesOffered)",
+            "tracking_pixels": "\(m.trackingPixels)",
+            "remote_allowed": "\(UIScript.remoteImagesAllowed)",
+            "remote_shown": "\(UIScript.remoteImagesShown)",
+            "remote_requests": "\(UIScript.remoteRequests)",
             "reader_subject": m.openThread?.subject ?? "",
             "unsubscribe": m.unsubscribeOffer.map {
                 $0.senderUnsubscribedAt != nil ? "done" : "\($0.source):\($0.method)"

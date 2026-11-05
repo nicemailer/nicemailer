@@ -132,9 +132,11 @@ struct MessageView: Decodable, Identifiable, Hashable {
     let authResult: String
     /// Sanitized HTML body, if the message has an HTML part.
     let bodyHtml: String?
-    /// Remote images were removed from `bodyHtml`.
+    /// `bodyHtml` holds remote images that can be loaded on request, with
+    /// `nm-remote:` sources (`RemoteImages.swift`).
     let hasRemoteContent: Bool
-    /// Display remembered for the sender: "text", "html" or nil (default).
+    /// Display remembered for the sender: "text", "html", "images" (HTML
+    /// with its remote images) or nil (default).
     let fromBodyFormat: String?
     /// The text cut into segments by the core, for the simplified display
     /// (`docs/thread-display.md`).
@@ -152,6 +154,8 @@ struct MessageView: Decodable, Identifiable, Hashable {
     /// says (`ui.md`, "Désabonnement"). A `var` with a default so that the
     /// tests can build messages without it.
     var unsubscribe: UnsubscribeView? = nil
+    /// Tracking pixels the core removed from `bodyHtml`: never requested.
+    var trackingPixels: Int = 0
 }
 
 /// A piece of a message's text, typed by the core: "text", "quote",

@@ -489,6 +489,26 @@
         }
       }
     },
+    "Images are never loaded in Junk, Quarantine or Banned": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les images ne sont jamais chargées dans Junk, Quarantine ou Banned"
+          }
+        }
+      }
+    },
+    "Images loaded for this conversation only: %@ is not authenticated": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Images chargées pour cette conversation seulement : %@ n'est pas authentifié"
+          }
+        }
+      }
+    },
     "Keys": {
       "localizations": {
         "fr": {
@@ -909,6 +929,16 @@
         }
       }
     },
+    "This mail has no remote images": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce mail n'a pas d'images distantes"
+          }
+        }
+      }
+    },
     "To: %@": {
       "localizations": {
         "fr": {
@@ -925,6 +955,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "À…"
+          }
+        }
+      }
+    },
+    "Tracking pixels removed from this conversation: they are never loaded": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pixels de suivi retirés de cette conversation : ils ne sont jamais chargés"
           }
         }
       }
@@ -1341,6 +1381,16 @@
         }
       }
     },
+    "images": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "images"
+          }
+        }
+      }
+    },
     "last 30 days": {
       "localizations": {
         "fr": {
@@ -1586,6 +1636,16 @@
         }
       }
     },
+    "pixels blocked: %lld": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "pixels bloqués : %lld"
+          }
+        }
+      }
+    },
     "read": {
       "localizations": {
         "fr": {
@@ -1623,6 +1683,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "destinataire cc copie"
+          }
+        }
+      }
+    },
+    "remote images": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "images distantes"
           }
         }
       }

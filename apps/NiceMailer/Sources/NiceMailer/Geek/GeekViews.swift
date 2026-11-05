@@ -604,15 +604,26 @@ private struct GeekReaderColumn: View {
                             .uiTarget("reader-unsubscribe")
                         }
                     }
+                    // Tracking pixels the core removed (`ui.md`, "Images
+                    // distantes"): shown in every display, they are never
+                    // loaded.
+                    if model.trackingPixels > 0 {
+                        Text(L("pixels blocked: %lld", model.trackingPixels))
+                            .foregroundStyle(Palette.muted)
+                            .help(L("Tracking pixels removed from this conversation: they are never loaded"))
+                    }
                     if model.latestReceived?.bodyHtml != nil {
-                        // The text / HTML switch (`ui.md`); also `vh`.
+                        // The text | html | images switch (`ui.md`); also
+                        // `vh` and `vi`. Each word is clicked on its own;
+                        // "images" only when the thread has remote images.
                         HStack(spacing: 0) {
-                            Text(" text ").background(model.bodyFormat == "text" ? Palette.cursor : Color.clear)
-                            Text(" html ").background(model.bodyFormat == "html" ? Palette.cursor : Color.clear)
+                            formatSegment("text", Text(" text "))
+                            formatSegment("html", Text(" html "))
+                            if model.imagesOffered {
+                                formatSegment("images", Text(" " + L("images") + " "))
+                            }
                         }
                         .foregroundStyle(Palette.muted)
-                        .contentShape(Rectangle())
-                        .onTapGesture { model.toggleBodyFormat() }
                     }
                     // In "Everything", the folder of the mail (and its
                     // account in "all"), at the right end of the subject line
@@ -624,8 +635,9 @@ private struct GeekReaderColumn: View {
                 .padding(.horizontal, 12)
                 .frame(height: scaled(26))
                 Palette.separator.frame(height: 1)
-                if model.bodyFormat == "html" {
-                    HTMLReader(html: threadHTML(thread, state), controller: controller)
+                if model.bodyFormat != "text" {
+                    let page = threadHTML(thread, state)
+                    HTMLReader(html: page.html, allowedImages: page.images, controller: controller)
                 } else {
                     TextReader(blocks: blocks, threadId: thread.id, controller: controller)
                 }
@@ -635,12 +647,28 @@ private struct GeekReaderColumn: View {
         }
     }
 
+    /// One word of the text | html | images switch: highlighted when it is
+    /// the current display, clicked to choose it.
+    private func formatSegment(_ format: String, _ label: Text) -> some View {
+        label
+            .background(model.bodyFormat == format ? Palette.cursor : Color.clear)
+            .contentShape(Rectangle())
+            .onTapGesture { model.setBodyFormat(format) }
+            .uiTarget("format-\(format)")
+    }
+
     /// The thread as one HTML document. Each message is a `<details>`
     /// element (it folds without JavaScript), open when unfolded; its body
     /// is the sanitized HTML, or the visible segments of its text. Quoted
     /// history and signatures marked by the sender's mail app are hidden
     /// unless `T` shows everything.
-    private func threadHTML(_ thread: ThreadView, _ state: ThreadDisplay.State) -> String {
+    ///
+    /// In the images mode, the remote images of a message load only when
+    /// `RemoteImages.loads` says so (unfolded, sender's choice and
+    /// authentication, or asked for this conversation); the others keep a
+    /// source the web view ignores. Returns the page and the original URLs
+    /// it may load, for the scheme handler (`RemoteImageLoader.allowed`).
+    private func threadHTML(_ thread: ThreadView, _ state: ThreadDisplay.State) -> (html: String, images: Set<String>) {
         func esc(_ s: String) -> String {
             s.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;")
                 .replacingOccurrences(of: ">", with: "&gt;")
@@ -666,8 +694,9 @@ private struct GeekReaderColumn: View {
         pre { font: \(Int(scaled(14)))px "NM Mono", ui-monospace, monospace; white-space: pre-wrap; margin: 0 0 8px; }
         hr { border: 0; border-top: 1px solid #8884; margin: 16px 0; }
         img { max-width: 100%; height: auto; }
-        /* Remote images were removed by the core: hide the empty boxes. */
-        img:not([src]), img[src^="cid:"] { display: none; }
+        /* Images without a source (tracking pixels removed by the core),
+           remote images not loaded, `cid:` images: hide the empty boxes. */
+        img:not([src]), img[data-nm-src], img[src^="cid:"] { display: none; }
         /* Attachment tiles: 3 to 5 per row, as in the text reader. */
         .att { display: grid; gap: 6px; margin: 12px 0;
                grid-template-columns: repeat(auto-fill, minmax(clamp(18%, 24ch, 31%), 1fr)); }
@@ -682,6 +711,9 @@ private struct GeekReaderColumn: View {
         ::-webkit-scrollbar { display: none; }
         </style></head><body>
         """
+        let mode = model.bodyFormat
+        let once = model.remoteImagesOnce == thread.id
+        var images = Set<String>()
         for (i, m) in thread.messages.enumerated() {
             if i > 0 { html += "<hr>" }
             let unfolded = state.showAll || (state.folding[m.id] ?? m.expanded)
@@ -693,7 +725,9 @@ private struct GeekReaderColumn: View {
             }
             html += "<details\(unfolded ? " open" : "")><summary>\(summary)</summary>"
             if let body = m.bodyHtml {
-                html += body
+                let loading = RemoteImages.loads(m, mode: mode, unfolded: unfolded, once: once)
+                if loading { images.formUnion(RemoteImages.sources(in: body)) }
+                html += RemoteImages.body(body, loading: loading)
             } else {
                 for (j, seg) in m.segments.enumerated() {
                     if !seg.hidden || state.showAll || state.revealed.contains("\(m.id):\(j)") {
@@ -718,7 +752,7 @@ private struct GeekReaderColumn: View {
             }
             html += "</details>"
         }
-        return html + "</body></html>"
+        return (html + "</body></html>", images)
     }
 
     /// An SF Symbol as a PNG `data:` URL for the HTML reader (a web page
@@ -1006,8 +1040,12 @@ private struct TextReader: NSViewRepresentable {
 }
 
 /// HTML reader: a web view without JavaScript; links open in the browser.
+/// Remote images come only through the app's `nm-remote:` scheme
+/// (`RemoteImages.swift`), and only those of `allowedImages`.
 private struct HTMLReader: NSViewRepresentable {
     let html: String
+    /// Original URLs of the remote images the page may load.
+    let allowedImages: Set<String>
     /// Keeps the web view, to scroll it from the keyboard (Space, ctrl-f…).
     let controller: GeekController
 
@@ -1016,6 +1054,10 @@ private struct HTMLReader: NSViewRepresentable {
         // The HTML is already sanitized by the core (no script); turning
         // JavaScript off is a second barrier.
         config.defaultWebpagePreferences.allowsContentJavaScript = false
+        // A scheme handler can only be set before the web view is created.
+        config.setURLSchemeHandler(context.coordinator.images, forURLScheme: RemoteImages.scheme)
+        // Nothing in the page's own storage outlives the page.
+        config.websiteDataStore = .nonPersistent()
         let view = WKWebView(frame: .zero, configuration: config)
         view.navigationDelegate = context.coordinator
         view.setValue(false, forKey: "drawsBackground")
@@ -1024,9 +1066,21 @@ private struct HTMLReader: NSViewRepresentable {
     }
 
     func updateNSView(_ view: WKWebView, context: Context) {
-        guard context.coordinator.html != html else { return }
-        context.coordinator.html = html
-        view.loadHTMLString(html, baseURL: nil)
+        let c = context.coordinator
+        guard c.html != html || c.images.allowed != allowedImages else { return }
+        c.html = html
+        c.images.allowed = allowedImages
+        // The page is loaded once the block list is in place (compiled
+        // once, then immediate). A newer page asked meanwhile wins.
+        Task { @MainActor in
+            if let list = await RemoteBlocker.list(), !c.blocking {
+                view.configuration.userContentController.add(list)
+                c.blocking = true
+            }
+            guard c.html == html else { return }
+            if UIScript.isActive { UIScript.remoteImagesAllowed = allowedImages.count }
+            view.loadHTMLString(html, baseURL: nil)
+        }
     }
 
     func makeCoordinator() -> Coordinator {
@@ -1038,6 +1092,11 @@ private struct HTMLReader: NSViewRepresentable {
     final class Coordinator: NSObject, WKNavigationDelegate {
         var html = ""
         weak var controller: GeekController?
+        /// The handler of `nm-remote:` sources; kept by the coordinator,
+        /// which lives as long as the web view.
+        let images = MainActor.assumeIsolated { RemoteImageLoader() }
+        /// Whether the block list was added to the web view.
+        var blocking = false
 
         /// In UI script mode, reports what the page shows, since a snapshot
         /// of the window cannot see a web view (it draws in another

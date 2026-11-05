@@ -107,6 +107,7 @@ enum Fixture {
             "only_quotes": false, "expanded": true, "show_recipients": false,
             "attachments": id == 4 ? Fixture.attachments : id == 6 ? Fixture.otherAttachments : [],
             "unsubscribe": Fixture.unsubscribe[id] ?? NSNull(),
+            "tracking_pixels": 0,
         ]
         return ["id": id, "subject": "Subject \(id)", "messages": [message], "as_of": position]
     }
