@@ -30,7 +30,7 @@ make core     # starts the core (leave it running)
 make app      # in another terminal
 ```
 
-`make bundle` installs `NiceMailer.app` in `~/Applications`, needed for the links to a mail (`nicemailer://m/<id>`, to paste in Obsidian): see `docs/deep-links.md`.
+`make bundle` installs `NiceMailer.app` in `~/Applications` (`make open` also quits the old one and launches it), needed for the links to a mail (`nicemailer://m/<id>`, to paste in Obsidian): see `docs/deep-links.md`.
 
 `NICEMAILER_DATA_DIR=/other/directory` changes the data directory for the core, the CLI and the app. The socket path must stay under 104 characters.
 

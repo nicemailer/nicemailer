@@ -37,6 +37,15 @@ make bundle
 
 It builds the app in release mode, wraps it in `NiceMailer.app` (its `Info.plist` declares the `nicemailer` scheme), signs it ad hoc (enough for this Mac), installs it in `~/Applications` and registers it with Launch Services. Run it again after pulling new code.
 
+`make open` does the same, then launches the app: once built, it quits the installed app if it runs (a SIGTERM, waiting 5 s at most; it keeps nothing unsaved, the core holds the data), installs the new one and opens it. An app started by `make app` is left alone. With the core in another terminal, the two commands to run the app with links are:
+
+```sh
+NICEMAILER_DATA_DIR="$HOME/Library/Application Support/NiceMailer-archive" make core
+NICEMAILER_DATA_DIR="$HOME/Library/Application Support/NiceMailer-archive" make open
+```
+
+`make app` stays the quickest way to run a debug build, its output in the terminal, but a link clicked meanwhile launches the installed app as well, in a second window on the same core.
+
 An app opened by a link or by the Finder gets no variable from a shell. To use another data directory, give it when building: `NICEMAILER_DATA_DIR=/other/directory make bundle` writes it into the app (`LSEnvironment`). The core must be running, as for `make app`.
 
 If the app is not running, the link launches it, and the mail opens once the app is connected to the core. If it is running, the link goes to its window (no second window opens).

@@ -11,7 +11,7 @@ XCODE ?= /Applications/Xcode.app/Contents/Developer
 THREADS ?= 2500
 
 # These targets are commands, not files to produce.
-.PHONY: build test swift-test ui-test bench seed core app bundle
+.PHONY: build test swift-test ui-test bench seed core app bundle open
 
 build:
 	cargo build --release
@@ -56,3 +56,9 @@ app:
 # set, is written into the app.
 bundle:
 	DEVELOPER_DIR=$(XCODE) scripts/make-bundle.sh
+
+# Same, then quit the installed app if it runs and launch the new one: the
+# way to run the app when deep links are needed (the core still runs with
+# `make core`).
+open:
+	DEVELOPER_DIR=$(XCODE) scripts/make-bundle.sh --open

@@ -6,12 +6,16 @@
 # in NiceMailer.app, whose Info.plist declares `nicemailer://`, so that a
 # link nicemailer://m/<id> clicked in a note opens the mail.
 #
-# Usage: scripts/make-bundle.sh [install dir]   (default: ~/Applications)
+# Usage: scripts/make-bundle.sh [--open] [install dir]   (default: ~/Applications)
+# --open (`make open`): once built, quits the installed app if it runs,
+# installs the new one and launches it.
 # NICEMAILER_DATA_DIR, if set, is written into the bundle (LSEnvironment):
 # an app opened by Finder or by a link gets no variable from a shell.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+OPEN=0
+if [ "${1:-}" = "--open" ]; then OPEN=1; shift; fi
 DEST="${1:-$HOME/Applications}"
 XCODE="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
 PKG="$ROOT/apps/NiceMailer"
@@ -68,6 +72,25 @@ plutil -lint "$APP/Contents/Info.plist" >/dev/null
 # signed code), not to distribute.
 codesign --force --sign - "$APP" >/dev/null
 
+# Built: only now is the running app quit, so that it stays usable during
+# the build. SIGTERM rather than an Apple Event "quit", which would make
+# macOS ask once for the right to control the app; the app keeps nothing
+# unsaved (the core holds the data). Only the installed app is stopped,
+# not one started by `make app`.
+INSTALLED="$DEST/NiceMailer.app/Contents/MacOS/NiceMailer"
+if [ "$OPEN" = 1 ] && pgrep -f -x "$INSTALLED" >/dev/null; then
+  echo "Quitting the running NiceMailer.app…"
+  pkill -TERM -f -x "$INSTALLED" || true
+  for _ in $(seq 50); do
+    pgrep -f -x "$INSTALLED" >/dev/null || break
+    sleep 0.1
+  done
+  if pgrep -f -x "$INSTALLED" >/dev/null; then
+    echo "NiceMailer.app does not quit: quit it (⌘Q) and run again." >&2
+    exit 1
+  fi
+fi
+
 mkdir -p "$DEST"
 rm -rf "$DEST/NiceMailer.app"
 cp -R "$APP" "$DEST/"
@@ -77,4 +100,7 @@ cp -R "$APP" "$DEST/"
 echo "Installed $DEST/NiceMailer.app (nicemailer:// links open it)."
 if [ -n "${NICEMAILER_DATA_DIR:-}" ]; then
   echo "Data directory: $NICEMAILER_DATA_DIR"
+fi
+if [ "$OPEN" = 1 ]; then
+  open "$DEST/NiceMailer.app"
 fi
