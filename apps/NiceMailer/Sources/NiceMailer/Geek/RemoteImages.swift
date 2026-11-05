@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import OSLog
 import WebKit
 
 // Remote images of the HTML reader (`ui.md`, "Images distantes";
@@ -405,22 +406,74 @@ final class RemoteImageLoader: NSObject, WKURLSchemeHandler {
 /// delegate and opened in the browser (`HTMLReader`).
 @MainActor
 enum RemoteBlocker {
-    static let rules = """
-    [{"trigger": {"url-filter": "^(https?|wss?|ftp)://",
-                  "resource-type": ["image", "style-sheet", "script", "font", "raw", "svg-document", "media"]},
-      "action": {"type": "block"}}]
-    """
-    private static var compiled: WKContentRuleList?
+    /// One rule per scheme. WebKit compiles `url-filter` with a small
+    /// subset of regular expressions, without alternatives: a single
+    /// `^(https?|wss?|ftp)://` was refused ("Disjunctions are not supported
+    /// yet"), and the barrier silently missing. `RemoteBlockerTests`
+    /// compiles the list and checks that it blocks.
+    static let schemes = ["^https?://", "^wss?://", "^ftp://"]
+    static let resourceTypes = ["image", "style-sheet", "script", "font", "raw", "svg-document", "media"]
+
+    /// The rules, as WebKit's JSON.
+    static var rules: String {
+        let list: [[String: Any]] = schemes.map { filter in
+            ["trigger": ["url-filter": filter, "resource-type": resourceTypes], "action": ["type": "block"]]
+        }
+        // Swift note: `try!` stops the program if the call throws; a
+        // dictionary of strings and arrays always turns into JSON, so it
+        // cannot happen here.
+        let data = try! JSONSerialization.data(withJSONObject: list, options: [.sortedKeys])
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    private enum State {
+        case notCompiled
+        case compiled(WKContentRuleList)
+        /// WebKit refused the rules: they will not compile better later,
+        /// so the page is shown without them and the error logged once.
+        case refused
+    }
+    private static var state = State.notCompiled
+
+    /// Swift note: `Logger` writes to the unified system log (Console.app,
+    /// or `log stream --predicate 'subsystem == "NiceMailer"'`),
+    /// not to the terminal the app was started from.
+    private static let log = Logger(subsystem: "NiceMailer", category: "RemoteBlocker")
 
     /// The compiled list (compiled once, then kept). `nil` if WebKit
     /// refused it: the page is shown anyway, the core's sanitization being
-    /// the first barrier.
+    /// the first barrier, and the refusal is logged.
     static func list() async -> WKContentRuleList? {
-        if let compiled { return compiled }
-        let list = try? await WKContentRuleListStore.default()
-            .compileContentRuleList(forIdentifier: "nicemailer-remote-block", encodedContentRuleList: rules)
-        compiled = list
-        return list
+        switch state {
+        case .compiled(let list): return list
+        case .refused: return nil
+        case .notCompiled: break
+        }
+        do {
+            let list = try await WKContentRuleListStore.default()
+                .compileContentRuleList(forIdentifier: "nicemailer-remote-block", encodedContentRuleList: rules)
+            // Two pages opened at once both compile; the first result wins.
+            if case .compiled(let first) = state { return first }
+            guard let list else { throw CocoaError(.featureUnsupported) }
+            state = .compiled(list)
+            return list
+        } catch {
+            if case .notCompiled = state {
+                log.error("Remote content rule list refused by WebKit: \(error.localizedDescription, privacy: .public)")
+                state = .refused
+            }
+            return nil
+        }
+    }
+
+    /// Whether the list is in force: `on`, `off` (refused) or `pending`
+    /// (not compiled yet), for the UI scenarios (`remote_blocker`).
+    static var status: String {
+        switch state {
+        case .compiled: "on"
+        case .refused: "off"
+        case .notCompiled: "pending"
+        }
     }
 }
 

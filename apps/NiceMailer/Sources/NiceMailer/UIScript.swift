@@ -444,6 +444,9 @@ private final class Runner {
             "remote_allowed": "\(UIScript.remoteImagesAllowed)",
             "remote_shown": "\(UIScript.remoteImagesShown)",
             "remote_requests": "\(UIScript.remoteRequests)",
+            // The content rule list of the HTML reader (`RemoteBlocker`):
+            // `on` once compiled, `off` if WebKit refused it.
+            "remote_blocker": RemoteBlocker.status,
             "reader_subject": m.openThread?.subject ?? "",
             "unsubscribe": m.unsubscribeOffer.map {
                 $0.senderUnsubscribedAt != nil ? "done" : "\($0.source):\($0.method)"
