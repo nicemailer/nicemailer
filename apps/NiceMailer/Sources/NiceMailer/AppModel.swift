@@ -56,6 +56,17 @@ final class AppModel {
     /// while it stays open, until another display is chosen. Forgotten when
     /// another conversation is opened; never stored.
     var remoteImagesOnce: Int?
+    /// The Mac's address book (`AddressBook.swift`). The UI scenarios get
+    /// a book of their own: the user's cards are never read in script mode.
+    @ObservationIgnored var addressBook: any AddressBook =
+        UIScript.isActive ? FixtureAddressBook.sample() : SystemAddressBook()
+    /// The cards of the senders of the open thread (`loadSenderCards`),
+    /// and the thread they belong to.
+    var senderCards: [ContactCard] = []
+    var senderCardsThreadId: Int?
+    /// Whether the status bar already said, this session, that the
+    /// address book cannot be read: said once, not at each `l`.
+    @ObservationIgnored var addressBookRefusalShown = false
 
     /// What `z` undoes, most recent last: moves and decisions of this
     /// session (`AppModel+Workflow.swift`).
@@ -673,6 +684,9 @@ final class AppModel {
             guard id == selectedThreadId else { return }
             if remoteImagesOnce != id { remoteImagesOnce = nil }
             openThread = view
+            // The senders' cards, if the book may already be read: macOS's
+            // question is only asked from `l` (`linksOpened`).
+            Task { await loadSenderCards(asking: false) }
             if markSeen { await markSeenAfterDelay(id) }
         } catch { report(error) }
     }

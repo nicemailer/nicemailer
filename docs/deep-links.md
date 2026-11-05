@@ -35,7 +35,7 @@ macOS gives a URL only to an app bundle that declares its scheme. `make app` (`s
 make bundle
 ```
 
-It builds the app in release mode, wraps it in `NiceMailer.app` (its `Info.plist` declares the `nicemailer` scheme), signs it ad hoc (enough for this Mac), installs it in `~/Applications` and registers it with Launch Services. Run it again after pulling new code.
+It builds the app in release mode, wraps it in `NiceMailer.app` (its `Info.plist` declares the `nicemailer` scheme, and why the app reads Contacts: `docs/geek-ui.md`, "Senders in the address book"), signs it ad hoc (enough for this Mac), installs it in `~/Applications` and registers it with Launch Services. Run it again after pulling new code.
 
 `make open` does the same, then launches the app: once built, it quits the installed app if it runs (a SIGTERM, waiting 5 s at most; it keeps nothing unsaved, the core holds the data), installs the new one and opens it. An app started by `make app` is left alone. With the core in another terminal, the two commands to run the app with links are:
 

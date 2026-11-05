@@ -444,10 +444,66 @@ extension AppModel {
     }
 
     /// Links of the open thread for `l`, each once (`Link.merge`). The
-    /// core finds them (`links.rs`, `phones.rs`).
+    /// core finds them (`links.rs`, `phones.rs`). A number that is also in
+    /// a sender's card is left to `contactLinks`, which names it.
     var links: [Link] {
         guard let thread = openThread else { return [] }
-        return Link.merge(thread.messages.map(\.links))
+        let known = Set(contactLinks.filter(\.isPhone).map(\.key))
+        return Link.merge(thread.messages.map(\.links)).filter { !known.contains($0.key) }
+    }
+
+    /// The senders of the open thread, latest first, each once: the
+    /// addresses of its received messages (not those in Sent or Drafts,
+    /// which are the user's). People in copy are left out: in a
+    /// conversation, the one to call back is one who wrote.
+    var threadSenders: [String] {
+        guard let thread = openThread else { return [] }
+        var out: [String] = []
+        for m in thread.messages.reversed() where m.folderRole != "sent" && m.folderRole != "drafts" {
+            guard let addr = m.fromAddr?.lowercased(), !addr.isEmpty, !out.contains(addr) else { continue }
+            out.append(addr)
+        }
+        return out
+    }
+
+    /// The rows the senders' cards add to `l` (`ContactLinks`): their
+    /// numbers, then each card. Empty until the cards of this thread are
+    /// read.
+    var contactLinks: [Link] {
+        guard let id = openThread?.id, senderCardsThreadId == id else { return [] }
+        return ContactLinks.links(senderCards)
+    }
+
+    /// Reads the cards of the open thread's senders. With `asking`, macOS's
+    /// question is asked first if it never was (the first `l`); a book that
+    /// cannot be read is said once in the status bar.
+    func loadSenderCards(asking: Bool) async {
+        guard let id = openThread?.id else { return }
+        let book = addressBook
+        switch book.access {
+        case .authorized:
+            break
+        case .notDetermined:
+            guard asking, await book.requestAccess() else { return }
+        case .denied:
+            if asking { sayAddressBookRefused(L("NiceMailer may not read Contacts: allow it in System Settings, Privacy & Security, Contacts")) }
+            return
+        case .unavailable:
+            if asking { sayAddressBookRefused(L("Contacts are only read by the installed app (make open)")) }
+            return
+        }
+        let senders = threadSenders
+        let cards = await book.cards(matching: senders)
+        // Another thread opened meanwhile: these cards are not its.
+        guard openThread?.id == id else { return }
+        senderCards = cards
+        senderCardsThreadId = id
+    }
+
+    private func sayAddressBookRefused(_ message: String) {
+        guard !addressBookRefusalShown else { return }
+        addressBookRefusalShown = true
+        flash = message
     }
 
     /// A link of the `l` panel: where it goes, and what the mail calls it.
@@ -463,8 +519,13 @@ extension AppModel {
         /// The other texts of the same link in the thread, each once:
         /// "Voir ma facture (and 2 others)".
         var otherTexts: [String] = []
+        /// A number from the address book, as its card writes it
+        /// (`ContactLinks`): shown on the right, the text being the name.
+        var shownNumber: String? = nil
 
         var isPhone: Bool { url.scheme == "tel" }
+        /// A card of the address book, opened in Contacts.
+        var isCard: Bool { url.scheme == "addressbook" }
 
         /// The links of several messages as one list, each once, in three
         /// groups, each in the order of the mail:
@@ -552,6 +613,8 @@ extension AppModel {
         /// Nothing when the left half already says it: a mail address or a
         /// number shown as such.
         var destination: String? {
+            if isCard { return L("Contacts") }
+            if let shownNumber { return shownNumber }
             if isPhone {
                 // "06 12 34 56 78" for tel:0612345678 says it already.
                 guard let text else { return nil }
@@ -563,7 +626,7 @@ extension AppModel {
         }
 
         /// SF Symbol of the row.
-        var icon: String { isPhone ? "phone" : "link" }
+        var icon: String { isCard ? "person.crop.circle" : isPhone ? "phone" : "link" }
     }
 
     /// Marks the cursor's thread, then moves the cursor and marks the next

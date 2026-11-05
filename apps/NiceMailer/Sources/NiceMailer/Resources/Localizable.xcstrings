@@ -339,6 +339,16 @@
         }
       }
     },
+    "Card of %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fiche de %@"
+          }
+        }
+      }
+    },
     "Cc: %@": {
       "localizations": {
         "fr": {
@@ -365,6 +375,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Contacts"
+          }
+        }
+      }
+    },
+    "Contacts are only read by the installed app (make open)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les Contacts ne sont lus que par l'app installée (make open)"
           }
         }
       }
@@ -585,6 +605,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Déplacer"
+          }
+        }
+      }
+    },
+    "NiceMailer may not read Contacts: allow it in System Settings, Privacy & Security, Contacts": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "NiceMailer n'a pas accès aux Contacts : autorisez-le dans Réglages Système, Confidentialité et sécurité, Contacts"
           }
         }
       }

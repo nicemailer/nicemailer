@@ -24,6 +24,9 @@ struct GeekControllerTests {
         model.exportDirectory = "/tmp/nicemailer-tests"
         // Never launch an app from the tests.
         model.openFile = { _ in }
+        // Never read the user's address book: a book of the test's own,
+        // empty unless a test fills it.
+        model.addressBook = FixtureAddressBook(cards: [:])
         await model.attach(core)
         _ = await eventually { model.threads.count == 8 && model.openThread != nil }
     }

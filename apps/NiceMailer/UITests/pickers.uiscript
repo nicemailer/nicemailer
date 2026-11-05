@@ -84,8 +84,10 @@ expect overlay = none
 key j
 expect selected_subject = Rapport mensuel
 key l
-expect picker_count = 2
-expect picker_rows = Link to this mail | ici
+# Alice, its sender, has a card in the scenario's address book
+# (addressbook.uiscript): her numbers and card come before the mail's link.
+expect picker_count = 5
+expect picker_rows = Link to this mail | Alice Martin — mobile | Alice Martin — work | Card of Alice Martin | ici
 key esc
 expect overlay = none
 # Tag: create by typing, then remove by clicking it in the picker.

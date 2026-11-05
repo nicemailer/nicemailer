@@ -202,6 +202,14 @@ private final class Runner {
                 text = copied.range(of: #"nicemailer://[^\s)]+"#, options: .regularExpression).map { String(copied[$0]) } ?? copied
             }
             if let url = URL(string: text) { model.openDeepLink(url) }
+        case "addressbook":
+            // What macOS would answer for Contacts: `denied`, `unavailable`
+            // (a bare executable), `authorized`, `undetermined`. The book
+            // is always the scenario's own (`FixtureAddressBook.sample`).
+            let access: [String: AddressBookAccess] = [
+                "denied": .denied, "unavailable": .unavailable, "authorized": .authorized, "undetermined": .notDetermined,
+            ]
+            if let book = model.addressBook as? FixtureAddressBook, let value = access[arg] { book.setAccess(value) }
         case "clipboard":
             controller.pasteboard.clearContents()
             controller.pasteboard.setString(arg.replacingOccurrences(of: "\\n", with: "\n"), forType: .string)

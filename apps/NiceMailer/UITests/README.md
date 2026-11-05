@@ -24,6 +24,7 @@ One command per line; `#` starts a comment.
 | `key K` | one key: a character (`j`, `J`, `;`, `*`…), `esc`, `ret`, `del`, `up`, `down`, `space`, `shift-space`, `shift-up`, `shift-down`, `cmd-ret`, the editing keys `left`, `right`, `alt-left`, `alt-right`, `cmd-left`, `cmd-right`, `home`, `end`, `fdel` (forward delete), `alt-del`, `cmd-del`, or `ctrl-X` or `cmd-X` |
 | `type TEXT` | each character of TEXT as a key |
 | `openurl URL` | gives URL to the app as macOS would (a deep link `nicemailer://m/<id>`); `openurl clipboard` opens the first `nicemailer://` URL of the private pasteboard |
+| `addressbook ACCESS` | what macOS answers about Contacts: `authorized`, `denied`, `unavailable` (a bare executable), `undetermined`; the book is always the scenario's own (`FixtureAddressBook.sample`: Alice and Bob), never the user's |
 | `clipboard TEXT` | puts TEXT (`\n` for a line break) on the pasteboard ⌘V reads: a private one, never the user's clipboard |
 | `click TARGET [cmd] [shift]` | a click on a row, with modifiers |
 | `dblclick TARGET` | a double-click |

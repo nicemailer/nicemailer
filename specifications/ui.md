@@ -52,6 +52,7 @@ L'affichage est simplifié au maximum : chaque message montre ce qu'il apporte. 
 - Un clic enregistre le fichier dans Téléchargements, sans jamais écraser un fichier existant (« devis (2).pdf ») ; la barre de statut le confirme. ⌘-clic l'enregistre de même, puis ouvre la copie enregistrée avec l'app par défaut, au premier plan.
 - Les images affichées par le HTML du mail (`cid:`) ne sont pas des dalles. Une image marquée « intégrée » qu'aucun HTML n'affiche (photo d'Apple Mail dans un mail texte) en est une.
 - Au clavier, `l` liste les liens du mail puis une ligne par fichier joint, avec son icône ; entrée enregistre le fichier, ⌘-entrée l'enregistre puis ouvre aussitôt la copie enregistrée, au premier plan.
+- `l` cherche aussi les **expéditeurs du fil** dans le carnet d'adresses du Mac (les auteurs des messages reçus, pas les personnes en copie) : pour chaque fiche trouvée, une ligne par numéro de téléphone (« Alice Martin — mobile », entrée appelle) puis « Fiche de Alice Martin », qui ouvre Contacts. Un numéro déjà présent dans le mail n'apparaît qu'une fois, sous le nom. L'accès est demandé par macOS au premier `l` ; refusé, la barre de statut le dit une fois. Rien du carnet n'est copié dans la base.
 - En HTML, les mêmes dalles suivent le corps du mail.
 
 ### Images distantes

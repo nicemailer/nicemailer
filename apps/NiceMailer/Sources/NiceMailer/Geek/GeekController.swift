@@ -896,7 +896,12 @@ final class GeekController {
             Task { await loadTags() }
         case .group:
             Task { await loadGroups() }
-        case .links, .accounts, .attributes:
+        case .links:
+            // The senders' cards join the links; on the first `l`, macOS
+            // asks whether the app may read Contacts. The rows appear
+            // when the cards are read (the panel follows the model).
+            Task { await model.loadSenderCards(asking: true) }
+        case .accounts, .attributes:
             break
         case .attributeValue, .search:
             valueSuggestions = []
@@ -1035,8 +1040,8 @@ final class GeekController {
             guard !typed.isEmpty else { return [] }
             return [Entry(key: "+", label: typed) { [weak self] in self?.searchEverywhere(typed) }]
         case .links:
-            // The links of the mail and its files (`ui.md`), in four
-            // groups: links with a text, phone numbers (`AppModel.Link.merge`),
+            // The links of the mail and its files (`ui.md`), after the
+            // link to the mail and the senders' cards, in four groups: links with a text, phone numbers (`AppModel.Link.merge`),
             // the attached files, then the links without a text (mostly an
             // image leading to a social network: the least wanted, after
             // the files). Return opens a link in the browser, calls a
@@ -1055,6 +1060,14 @@ final class GeekController {
                       commandAction: { [weak self] in self?.copyMailLink(markdown: false) },
                       keywords: ["nicemailer", "obsidian", "deeplink", "markdown"]) { [weak self] in
                     self?.copyMailLink(markdown: true)
+                }
+            }
+            // Then the senders' numbers and cards, from the address book
+            // (`ContactLinks`): who wrote, before what the mail offers.
+            let contactRows = model.contactLinks.map { link in
+                Entry(key: "", label: link.title, detail: link.destination, detailStyle: .info, icon: link.icon,
+                      keywords: [link.url.absoluteString, link.shownNumber ?? "", "contacts"]) { [model] in
+                    model.openFile(link.url)
                 }
             }
             let linkRows = links.map { link in
@@ -1077,7 +1090,7 @@ final class GeekController {
             // Which link rows are bare (no text, not a number); each group
             // keeps the order `merge` gave it.
             let bare = links.map { $0.text == nil && !$0.isPhone }
-            let ordered = Array([selfRow].compactMap { $0 }) + zip(linkRows, bare).filter { !$0.1 }.map(\.0) + fileRows
+            let ordered = Array([selfRow].compactMap { $0 }) + contactRows + zip(linkRows, bare).filter { !$0.1 }.map(\.0) + fileRows
                 + zip(linkRows, bare).filter { $0.1 }.map(\.0)
             // Numbered once ordered: the number is the row's place.
             all = ordered.enumerated().map { i, e in
