@@ -1,0 +1,41 @@
+# A mail made for a white page (white background, dark text, an orange
+# button), shown in the dark theme: Dark Reader adapts its colours in its
+# frame (DarkMode). In the light theme the mail keeps its own. Dark Reader
+# asks for nothing from the network.
+key @
+type fixture
+key ret
+key ;
+key a
+key j
+key j
+expect selected_subject = Un long mail
+appearance dark
+click format:html
+expect body_format = html
+expect html_frames = 1
+expect html_paper = 0
+expect dark_reader = on
+expect html_styled_background = rgb(27, 29, 35)
+expect dark_reader_fetches = 0
+expect html_text ~ Ligne 1 du long mail
+snap dark
+# The light theme: Dark Reader steps aside, the mail is white again.
+appearance light
+click format:text
+expect body_format = text
+click format:html
+expect body_format = html
+expect dark_reader = off
+expect html_styled_background = rgb(255, 255, 255)
+snap light
+# A mail with its own dark mode does not need it.
+appearance dark
+key k
+key k
+expect selected_subject = La lettre de novembre
+click format:html
+expect body_format = html
+expect dark_reader = absent
+expect html_styled_background = rgb(4, 10, 37)
+appearance system

@@ -37,8 +37,9 @@ enum MailFrame {
         /// The mail's own colours, light or dark as the theme asks (its
         /// `prefers-color-scheme` rules).
         case own
-        /// A mail made for a white page, in a dark theme: shown on a white
-        /// sheet, as written, until the reader adapts its colours.
+        /// A mail made for a white page: in the dark theme, Dark Reader
+        /// adapts its colours (`DarkMode`); without it, the mail is shown
+        /// on a white sheet, as written.
         case paper
     }
 
@@ -67,8 +68,10 @@ enum MailFrame {
     }
 
     /// The message `body` (sanitized HTML from the core) in its frame.
-    static func wrap(_ body: String, base: String) -> String {
-        let paper = colours(body) == .paper ? " paper" : ""
+    /// `sheet`: a mail made for a white page is shown on a white sheet (Dark
+    /// Reader is missing, `DarkMode.available`).
+    static func wrap(_ body: String, base: String, sheet: Bool = false) -> String {
+        let paper = sheet && colours(body) == .paper ? " paper" : ""
         return "<div class=\"nm-msg\(paper)\"><template shadowrootmode=\"open\"><style>\(base)</style>"
             + "<div class=\"nm-body\">\(body)</div></template></div>"
     }

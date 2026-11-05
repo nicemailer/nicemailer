@@ -162,8 +162,13 @@ enum Palette {
         })
     }
 
-    static let background = dynamic(dark: 0x1B1D23, light: 0xFAFAF8)
-    static let text = dynamic(dark: 0xD5D8DE, light: 0x24262B)
+    /// The dark background and text, also given to Dark Reader so that a
+    /// mail it darkens takes the theme's own colours (`DarkMode`).
+    static let darkBackground: UInt32 = 0x1B1D23
+    static let darkText: UInt32 = 0xD5D8DE
+
+    static let background = dynamic(dark: darkBackground, light: 0xFAFAF8)
+    static let text = dynamic(dark: darkText, light: 0x24262B)
     static let muted = dynamic(dark: 0x6E7380, light: 0x8A8D94)
     /// Accent, Helix's lilac.
     static let accent = dynamic(dark: 0xA4A0E8, light: 0x6B5FD6)

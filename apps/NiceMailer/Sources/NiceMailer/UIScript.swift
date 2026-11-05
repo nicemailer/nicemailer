@@ -46,6 +46,10 @@ enum UIScript {
     static var remoteImagesShown = 0
     /// Embedded images (`cid:`) served to the HTML reader.
     static var inlineImagesShown = 0
+    /// Dark Reader in the HTML page (`DarkMode`): `on`, `off` (light
+    /// theme), `absent` (not needed); and the requests it asked for.
+    static var darkReader = ""
+    static var darkReaderFetches = ""
     /// Requests that reached the "network" since launch: in UI script mode
     /// a local stand-in that answers every request with a small PNG
     /// (`UIScriptImageProtocol`); nothing leaves the machine.
@@ -525,6 +529,8 @@ private final class Runner {
             "html_table_width": UIScript.html["tableWidth"] ?? "",
             "html_csp": UIScript.html["csp"] ?? "",
             "html_frames": UIScript.html["frames"] ?? "",
+            "dark_reader": UIScript.darkReader,
+            "dark_reader_fetches": UIScript.darkReaderFetches,
             "html_paper": UIScript.html["paper"] ?? "",
             "html_styled_width": UIScript.html["styledWidth"] ?? "",
             "html_styled_background": UIScript.html["styledBackground"] ?? "",

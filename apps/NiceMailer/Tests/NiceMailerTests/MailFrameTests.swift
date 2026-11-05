@@ -20,10 +20,12 @@ struct MailFrameTests {
     }
 
     @Test func eachMessageIsInAShadowRoot() {
-        let frame = MailFrame.wrap("<p>x</p>", base: "p{}")
+        let frame = MailFrame.wrap("<p>x</p>", base: "p{}", sheet: true)
         #expect(frame == "<div class=\"nm-msg paper\"><template shadowrootmode=\"open\"><style>p{}</style><div class=\"nm-body\"><p>x</p></div></template></div>")
-        let own = MailFrame.wrap("<style>@media (prefers-color-scheme:dark){p{}}</style><p>x</p>", base: "")
+        let own = MailFrame.wrap("<style>@media (prefers-color-scheme:dark){p{}}</style><p>x</p>", base: "", sheet: true)
         #expect(own.hasPrefix("<div class=\"nm-msg\"><template"))
+        // With Dark Reader, no white sheet.
+        #expect(MailFrame.wrap("<p>x</p>", base: "").hasPrefix("<div class=\"nm-msg\"><template"))
     }
 
     @Test func theStylesOfAMailStayInItsFrame() async throws {

@@ -648,7 +648,7 @@ private struct GeekReaderColumn: View {
                 if model.bodyFormat != "text" {
                     let page = threadHTML(thread, state)
                     HTMLReader(html: page.html, allowedImages: page.images, inlineImages: page.inline,
-                               controller: controller)
+                               darkMode: page.darkMode, controller: controller)
                 } else {
                     TextReader(blocks: blocks, threadId: thread.id, controller: controller)
                 }
@@ -747,7 +747,7 @@ private struct GeekReaderColumn: View {
     /// fonts named in `<font face>`: `ingest.rs`, `LAYOUT_ATTRIBUTES`), but
     /// not its colours: every mail is shown in the theme's colours.
     private func threadHTML(_ thread: ThreadView, _ state: ThreadDisplay.State)
-        -> (html: String, images: Set<String>, inline: Set<Int>) {
+        -> (html: String, images: Set<String>, inline: Set<Int>, darkMode: Bool) {
         func esc(_ s: String) -> String {
             s.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;")
                 .replacingOccurrences(of: ">", with: "&gt;")
@@ -759,6 +759,10 @@ private struct GeekReaderColumn: View {
         """
         // The reader's styles inside each message's frame.
         let frameStyle = MailFrame.baseStyle(hiding: hideQuotes, scale: TextSize.shared.scale)
+        // Mails made for a white page, in the dark theme: Dark Reader adapts
+        // their colours (`DarkMode`), or, without it, a white sheet.
+        let darkMode = DarkMode.available && DarkMode.needed(thread.messages.compactMap(\.bodyHtml))
+        let sheet = !DarkMode.available
         var html = """
         <html><head><meta charset="utf-8">
         <meta http-equiv="Content-Security-Policy" content="\(ContentPolicy.header)">
@@ -808,7 +812,7 @@ private struct GeekReaderColumn: View {
                 let loading = RemoteImages.loads(m, mode: mode, unfolded: unfolded, once: once)
                 if loading { images.formUnion(RemoteImages.sources(in: body)) }
                 inline.formUnion(InlineImages.ids(in: body))
-                html += MailFrame.wrap(RemoteImages.body(body, loading: loading), base: frameStyle)
+                html += MailFrame.wrap(RemoteImages.body(body, loading: loading), base: frameStyle, sheet: sheet)
             } else {
                 for (j, seg) in m.segments.enumerated() {
                     if !seg.hidden || state.showAll || state.revealed.contains("\(m.id):\(j)") {
@@ -833,7 +837,7 @@ private struct GeekReaderColumn: View {
             }
             html += "</details>"
         }
-        return (html + "</body></html>", images, inline)
+        return (html + "</body></html>", images, inline, darkMode)
     }
 
 
@@ -1130,6 +1134,8 @@ private struct HTMLReader: NSViewRepresentable {
     let allowedImages: Set<String>
     /// Attachment ids of the embedded images the page shows (`nm-cid:`).
     let inlineImages: Set<Int>
+    /// Whether the page runs Dark Reader (`DarkMode`).
+    let darkMode: Bool
     /// Keeps the web view, to scroll it from the keyboard (Space, ctrl-f…).
     let controller: GeekController
 
@@ -1153,6 +1159,10 @@ private struct HTMLReader: NSViewRepresentable {
     func updateNSView(_ view: WKWebView, context: Context) {
         let c = context.coordinator
         guard c.html != html || c.images.allowed != allowedImages || c.inline.allowed != inlineImages else { return }
+        // Scripts of the app apply from the next load on: set before it.
+        let scripts = view.configuration.userContentController
+        scripts.removeAllUserScripts()
+        if darkMode, let script = DarkMode.userScript() { scripts.addUserScript(script) }
         c.html = html
         c.images.allowed = allowedImages
         c.inline.allowed = inlineImages
@@ -1226,6 +1236,19 @@ private struct HTMLReader: NSViewRepresentable {
                       let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
                 MainActor.assumeIsolated {
                     UIScript.html = obj.mapValues { "\($0)" }
+                }
+            }
+            // Dark Reader, in its own world: whether it is on, and the
+            // requests it asked for (refused).
+            webView.evaluateJavaScript(
+                "typeof DarkReader === 'undefined' ? 'absent' : (DarkReader.isEnabled() ? 'on' : 'off') + ' ' + window.__nmDarkFetches",
+                in: nil, in: DarkMode.world
+            ) { result in
+                let value = (try? result.get()) as? String ?? "absent"
+                MainActor.assumeIsolated {
+                    let parts = value.split(separator: " ")
+                    UIScript.darkReader = parts.first.map(String.init) ?? "absent"
+                    UIScript.darkReaderFetches = parts.count > 1 ? String(parts[1]) : ""
                 }
             }
         }

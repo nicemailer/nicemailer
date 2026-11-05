@@ -22,6 +22,8 @@ let package = Package(
             // Catalog into per-language `.strings` files.
             resources: [
                 .copy("Resources/Fonts"),
+                // Dark Reader, run in the HTML reader (`DarkMode.swift`).
+                .copy("Resources/DarkReader"),
                 .process("Resources/Localizable.xcstrings"),
             ],
             // Swift 5 language mode: Swift 6's strict concurrency checking
