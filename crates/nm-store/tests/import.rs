@@ -135,7 +135,7 @@ fn sample() -> Vec<Mail> {
                 "Message-ID: <n1@letter.example>",
                 "Content-Type: text/html; charset=utf-8",
             ],
-            "<p>Nouveaut\u{e9}s <img src=\"https://track.example/p.gif\"></p><script>x()</script>",
+            "<p>Nouveaut\u{e9}s <img src=\"https://img.example/p.gif\"><img src=\"https://track.example/o.gif\" width=\"1\" height=\"1\"></p><script>x()</script>",
         ),
         mail(
             "Fri Jun 26 08:00:00 2020",
@@ -270,9 +270,16 @@ fn stores_text_sanitized_html_and_attachments() {
     let html = env
         .text("SELECT b.html_sanitized FROM message_body b JOIN message m ON m.id = b.message_id WHERE m.message_id_hdr = 'n1@letter.example'")
         .unwrap();
-    assert!(!html.contains("script") && !html.contains("track.example"));
+    // The pixel is gone; the image keeps its URL in the app's scheme, which
+    // no web view loads by itself (`remote_images.rs`).
+    assert!(!html.contains("script") && !html.contains("track.example"), "{html}");
+    assert!(html.contains("src=\"nm-remote://image?u=https%3A%2F%2Fimg.example%2Fp.gif\""), "{html}");
     assert_eq!(
         env.count("SELECT b.has_remote_content FROM message_body b JOIN message m ON m.id = b.message_id WHERE m.message_id_hdr = 'n1@letter.example'"),
+        1
+    );
+    assert_eq!(
+        env.count("SELECT b.tracking_pixels FROM message_body b JOIN message m ON m.id = b.message_id WHERE m.message_id_hdr = 'n1@letter.example'"),
         1
     );
     let text = env

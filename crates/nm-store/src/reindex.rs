@@ -6,8 +6,8 @@
 //! the parser improves, the core starts this reindex in the background: it
 //! reads the raw file of every body of an older version again, parses it,
 //! and rewrites what the parser produces from the body:
-//! - `message_body` (text, sanitized HTML, remote content), created if the
-//!   first parse failed;
+//! - `message_body` (text, sanitized HTML, remote content, tracking
+//!   pixels), created if the first parse failed;
 //! - `message.snippet`;
 //! - the `body` column of the search index;
 //! - `message_unsubscribe`;
@@ -17,7 +17,9 @@
 //! A version that can be applied to what is stored does without the raw
 //! files: version 7 (entities encoded twice) corrects the stored text and
 //! HTML directly (`repair_stored`). And a version declares which bodies it
-//! cannot change, marked without being read again (`skip_unchanged`).
+//! cannot change, marked without being read again (`skip_unchanged`;
+//! `skip_without_remote_images` for version 8, which keeps the URL of remote
+//! images: the stored HTML no longer has it, so the others are read again).
 //!
 //! Not rewritten: the headers already interpreted (threads, addresses,
 //! references), the attachments (their ids and extracted files are in use),
@@ -117,10 +119,15 @@ pub fn reindex(store: &Mutex<Store>, raw: &RawStore, batch_size: usize, on_batch
             let guard = store.lock().unwrap();
             // The bodies marked version 6 here go on to `repair_stored`,
             // which counts them.
+            // Version 7 bodies without remote image are counted here; those
+            // that `repair_stored` brings from 6 to 7 are marked 8 by the
+            // second call, not counted again (it counted them).
+            report.unchanged += skip_without_remote_images(&guard, start, end)?;
             skip_unchanged(&guard, start, end)?;
             let (marked, repaired) = repair_stored(&guard, start, end)?;
             report.unchanged += marked;
             report.repaired += repaired;
+            skip_without_remote_images(&guard, start, end)?;
         }
         start = end;
         // Let a waiting request take the lock. A `Mutex` is not fair: a
@@ -239,7 +246,7 @@ fn skip_unchanged(store: &Store, start: i64, end: i64) -> Result<u64> {
 /// small, `RANGE`); only a body that changes is written, with its snippet
 /// and its row of the search index.
 fn repair_stored(store: &Store, start: i64, end: i64) -> Result<(u64, u64)> {
-    debug_assert_eq!(PARSER_VERSION, 7, "repair_stored brings bodies from version 6 to 7");
+    debug_assert!(PARSER_VERSION >= 7, "repair_stored brings bodies from version 6 to 7");
     let rows: Vec<(i64, Option<String>, Option<String>)> = store
         .conn
         .prepare_cached(
@@ -279,6 +286,25 @@ fn repair_stored(store: &Store, start: i64, end: i64) -> Result<(u64, u64)> {
     Ok((marked, repaired))
 }
 
+/// Marks the version 7 bodies without remote image as version 8, so that
+/// only the others are read again. Version 8 only changes the sources of
+/// remote images (`remote_images.rs`); a body without any
+/// (`has_remote_content = 0`, which version 7 set for any `<img>` with an
+/// `http:`, `https:` or `//` source, the same test as version 8) comes out
+/// the same, with no tracking pixel. On a real mailbox this leaves about
+/// two bodies in three to read again: most HTML mails have remote images.
+/// Returns how many were marked.
+fn skip_without_remote_images(store: &Store, start: i64, end: i64) -> Result<u64> {
+    let n = store
+        .conn
+        .prepare_cached(
+            "UPDATE message_body SET parser_version = 8
+              WHERE message_id >= ?1 AND message_id < ?2 AND parser_version = 7 AND has_remote_content = 0",
+        )?
+        .execute(params![start, end])?;
+    Ok(n as u64)
+}
+
 /// The raw message `hash`, parsed; `None` if the file is missing or
 /// corrupt.
 fn parse_raw(raw: &RawStore, hash: &[u8]) -> Option<ParsedMessage> {
@@ -309,8 +335,11 @@ fn write(tx: &rusqlite::Transaction, id: i64, m: &ParsedMessage) -> Result<Writt
         .optional()?;
     let mut written = Written { bytes: 0, names_filled: 0 };
     if same == Some(true) {
-        tx.prepare_cached("UPDATE message_body SET parser_version = ?2, has_remote_content = ?3 WHERE message_id = ?1")?
-            .execute(params![id, PARSER_VERSION, m.has_remote_content])?;
+        tx.prepare_cached(
+            "UPDATE message_body SET parser_version = ?2, has_remote_content = ?3, tracking_pixels = ?4
+              WHERE message_id = ?1",
+        )?
+        .execute(params![id, PARSER_VERSION, m.has_remote_content, m.tracking_pixels])?;
     } else {
         written.bytes = m.text.as_ref().map_or(0, String::len) + m.html.as_ref().map_or(0, String::len);
         write_body(tx, id, m)?;
@@ -341,13 +370,15 @@ fn write(tx: &rusqlite::Transaction, id: i64, m: &ParsedMessage) -> Result<Writt
 /// row of the search index.
 fn write_body(tx: &rusqlite::Transaction, id: i64, m: &ParsedMessage) -> Result<()> {
     tx.prepare_cached(
-        "INSERT INTO message_body (message_id, text_plain, html_sanitized, has_remote_content, parser_version)
-         VALUES (?1, ?2, ?3, ?4, ?5)
+        "INSERT INTO message_body (message_id, text_plain, html_sanitized, has_remote_content, tracking_pixels,
+                                   parser_version)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)
          ON CONFLICT (message_id) DO UPDATE SET
             text_plain = excluded.text_plain, html_sanitized = excluded.html_sanitized,
-            has_remote_content = excluded.has_remote_content, parser_version = excluded.parser_version",
+            has_remote_content = excluded.has_remote_content, tracking_pixels = excluded.tracking_pixels,
+            parser_version = excluded.parser_version",
     )?
-    .execute(params![id, m.text, m.html, m.has_remote_content, PARSER_VERSION])?;
+    .execute(params![id, m.text, m.html, m.has_remote_content, m.tracking_pixels, PARSER_VERSION])?;
     tx.prepare_cached("UPDATE message SET snippet = ?2 WHERE id = ?1")?.execute(params![id, m.snippet])?;
     // The search index has one row per message (`import.rs`); only its body
     // comes from the text.

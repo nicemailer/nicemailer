@@ -543,10 +543,11 @@ impl Writer {
         }
         if m.parsed {
             tx.prepare_cached(
-                "INSERT INTO message_body (message_id, text_plain, html_sanitized, has_remote_content, parser_version)
-                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                "INSERT INTO message_body (message_id, text_plain, html_sanitized, has_remote_content, tracking_pixels,
+                                           parser_version)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             )?
-            .execute(params![message_id, m.text, m.html, m.has_remote_content, PARSER_VERSION])?;
+            .execute(params![message_id, m.text, m.html, m.has_remote_content, m.tracking_pixels, PARSER_VERSION])?;
         } else {
             self.report.progress.parse_errors += 1;
         }

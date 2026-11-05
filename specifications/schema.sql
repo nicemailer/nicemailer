@@ -33,7 +33,7 @@ PRAGMA temp_store = MEMORY;
 -- Une base existante est mise à jour par les migrations du noyau
 -- (crates/nm-store/src/migrations.rs) ; ce fichier crée directement la
 -- dernière version.
-PRAGMA user_version = 2;   -- migrations : comparer à la version attendue au démarrage
+PRAGMA user_version = 3;   -- migrations : comparer à la version attendue au démarrage
 
 -- ------------------------------------------------------------
 -- Comptes : état seulement. Les paramètres (adresse, serveurs, identifiants,
@@ -136,7 +136,8 @@ CREATE TABLE address (
     imported_from TEXT CHECK (imported_from IN ('imap_initial','mbox')),
     -- Affichage préféré des mails de cette adresse : 'text' ou 'html' ; NULL =
     -- choix par défaut du thème (ui.md). Préférence d'affichage locale : ni
-    -- synchronisée, ni journalisée, sans effet sur date_modified.
+    -- synchronisée, ni journalisée, sans effet sur date_modified. Le mode
+    -- « images » est 'html' avec remote_images = 1 (en fin de table).
     body_format TEXT CHECK (body_format IN ('text','html')),
     -- Désabonnement en un clic réussi depuis l'app (ui.md, « Désabonnement ») ;
     -- NULL = jamais. Sans effet sur la décision de screening.
@@ -146,6 +147,10 @@ CREATE TABLE address (
     date_modified INTEGER NOT NULL DEFAULT (unixepoch()),
     created_by  TEXT NOT NULL CHECK (created_by  IN ('core','app','cli','tui','web','mcp','config_sync','imap')),
     modified_by TEXT NOT NULL CHECK (modified_by IN ('core','app','cli','tui','web','mcp','config_sync','imap')),
+    -- Version 3. 1 : les images distantes des mails de cette adresse sont
+    -- chargées (mode « images », ui.md, « Images distantes ») ; seulement avec
+    -- body_format = 'html'. Même statut que body_format : local, non journalisé.
+    remote_images INTEGER NOT NULL DEFAULT 0 CHECK (remote_images IN (0,1)),
     UNIQUE (addr)
 ) STRICT;
 
@@ -461,11 +466,17 @@ CREATE TABLE tag (
 CREATE TABLE message_body (
     message_id      INTEGER PRIMARY KEY REFERENCES message(id) ON DELETE CASCADE,
     text_plain      TEXT,
-    html_sanitized  TEXT,                 -- déjà passé par ammonia, images distantes retirées
+    html_sanitized  TEXT,                 -- déjà passé par ammonia ; aucune source qu'une vue web
+                                          -- chargerait seule : images distantes en nm-remote:,
+                                          -- pixels de suivi sans source (remote_images.rs)
+    -- 1 : le HTML contient des images distantes chargeables à la demande
+    -- (hors pixels de suivi).
     has_remote_content INTEGER NOT NULL DEFAULT 0 CHECK (has_remote_content IN (0,1)),
     parser_version  INTEGER NOT NULL,     -- version de l'analyseur et de l'assainissement ;
                                           -- reindex cible les lignes de version inférieure
-    date_fetched    INTEGER NOT NULL DEFAULT (unixepoch())
+    date_fetched    INTEGER NOT NULL DEFAULT (unixepoch()),
+    -- Version 3. Pixels de suivi distants retirés du HTML.
+    tracking_pixels INTEGER NOT NULL DEFAULT 0
 ) STRICT;
 
 CREATE INDEX idx_message_body_parser ON message_body (parser_version);

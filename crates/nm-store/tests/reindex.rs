@@ -58,9 +58,14 @@ struct Env {
 }
 
 fn env() -> Env {
+    env_with(MBOX)
+}
+
+/// A store filled by the import of `mbox`.
+fn env_with(mbox: &str) -> Env {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("a.mbox");
-    std::fs::write(&path, MBOX).unwrap();
+    std::fs::write(&path, mbox).unwrap();
     let raw = RawStore::open(dir.path()).unwrap();
     let store = Mutex::new(Store::open_in_memory().unwrap());
     let opts = ImportOptions {
@@ -250,5 +255,51 @@ fn entities_encoded_twice_are_repaired_from_what_is_stored() {
     assert_eq!(e.int("SELECT count(*) FROM message_fts WHERE body = 'Zoom : https://zoom.us/j/1'"), 1);
     // Every body is now current.
     assert_eq!(e.int(&format!("SELECT count(*) FROM message_body WHERE parser_version = {PARSER_VERSION}")), 3);
+    assert_eq!(pending(&e.store.lock().unwrap()).unwrap(), 0);
+}
+
+/// Two HTML mails: a newsletter with a remote banner and a tracking pixel,
+/// and a mail without any remote image.
+const MBOX_IMAGES: &str = "From a Tue Jun 23 19:20:56 2020
+From: Lettre <news@letter.example>
+To: me@x.example
+Subject: Images
+Message-ID: <i1@letter.example>
+Content-Type: text/html; charset=utf-8
+
+<p>Hello</p><img src=\"https://img.letter.example/banner.png\" width=\"600\"><img src=\"https://t.letter.example/open?u=1\" width=\"1\" height=\"1\">
+
+From a Wed Jun 24 09:00:00 2020
+From: Bob <bob@b.example>
+To: me@x.example
+Subject: Sans image
+Message-ID: <i2@b.example>
+Content-Type: text/html; charset=utf-8
+
+<p>Rien de distant</p>
+";
+
+#[test]
+fn version_8_reads_again_only_the_bodies_with_remote_images() {
+    let e = env_with(MBOX_IMAGES);
+    // As version 7 stored them: the remote image without its source, no
+    // count of pixels.
+    e.exec(
+        "UPDATE message_body SET parser_version = 7, tracking_pixels = 0;
+         UPDATE message_body SET html_sanitized = '<p>Hello</p><img width=\"600\"><img width=\"1\" height=\"1\">'
+          WHERE message_id = (SELECT id FROM message WHERE message_id_hdr = 'i1@letter.example');",
+    );
+    assert_eq!(pending(&e.store.lock().unwrap()).unwrap(), 2);
+    let r = e.run();
+    // The mail without remote image is only marked.
+    assert_eq!((r.unchanged, r.reparsed, r.missing_raw), (1, 1, 0));
+    let q = |col: &str| e.text(&format!(
+        "SELECT {col} FROM message_body WHERE message_id = (SELECT id FROM message WHERE message_id_hdr = 'i1@letter.example')"));
+    let html = q("html_sanitized").unwrap();
+    assert!(html.contains("src=\"nm-remote://image?u=https%3A%2F%2Fimg.letter.example%2Fbanner.png\""), "{html}");
+    assert!(!html.contains("t.letter.example"), "{html}");
+    assert_eq!(e.int("SELECT tracking_pixels FROM message_body WHERE message_id = (SELECT id FROM message WHERE message_id_hdr = 'i1@letter.example')"), 1);
+    assert_eq!(e.int("SELECT has_remote_content FROM message_body WHERE message_id = (SELECT id FROM message WHERE message_id_hdr = 'i1@letter.example')"), 1);
+    assert_eq!(e.int(&format!("SELECT count(*) FROM message_body WHERE parser_version = {PARSER_VERSION}")), 2);
     assert_eq!(pending(&e.store.lock().unwrap()).unwrap(), 0);
 }

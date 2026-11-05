@@ -40,6 +40,7 @@ mod migrations;
 mod queries;
 pub mod raw;
 pub mod reindex;
+pub mod remote_images;
 pub mod screening;
 pub mod unsubscribe;
 pub mod seed;
@@ -62,7 +63,7 @@ pub use rusqlite;
 ///
 /// 2: indexes for large mailboxes, `thread.date_last_modified`, repaired
 /// encoded words (`migrations.rs`).
-pub const SCHEMA_VERSION: i64 = 2;
+pub const SCHEMA_VERSION: i64 = 3;
 
 /// Full text of the schema, at the latest version. `include_str!` reads the
 /// file at compile time and embeds it in the binary as a `&'static str`; the
@@ -246,6 +247,10 @@ fn check_schema(conn: &Connection, version: i64) -> Result<()> {
     ];
     if version >= 2 {
         checks.push(("SELECT date_last_modified FROM thread", "thread.date_last_modified"));
+    }
+    if version >= 3 {
+        checks.push(("SELECT remote_images FROM address", "address.remote_images"));
+        checks.push(("SELECT tracking_pixels FROM message_body", "message_body.tracking_pixels"));
     }
     for (sql, what) in checks {
         if conn.prepare(sql).is_err() {

@@ -94,7 +94,24 @@ fn body_format_is_remembered_per_sender() {
     let (_, messages) = store.get_thread(thread).unwrap();
     let m = messages.iter().find(|m| m.from_addr.as_deref() == Some(sender.as_str())).unwrap();
     assert_eq!(m.from_body_format.as_deref(), Some("html"));
+    // Images: HTML with remote images, read back as "images"; html again
+    // forgets the images.
+    store.set_body_format(&sender, Some("images")).unwrap();
+    let format = |store: &Store| {
+        let (_, messages) = store.get_thread(thread).unwrap();
+        messages.into_iter().find(|m| m.from_addr.as_deref() == Some(sender.as_str())).unwrap().from_body_format
+    };
+    assert_eq!(format(&store).as_deref(), Some("images"));
+    store.set_body_format(&sender, Some("html")).unwrap();
+    assert_eq!(format(&store).as_deref(), Some("html"));
+    store.set_body_format(&sender, Some("images")).unwrap();
     store.set_body_format(&sender, None).unwrap();
+    assert_eq!(format(&store), None);
+    let images: i64 = store
+        .conn()
+        .query_row("SELECT remote_images FROM address WHERE addr = ?1", [&sender], |r| r.get(0))
+        .unwrap();
+    assert_eq!(images, 0);
     assert!(matches!(store.set_body_format(&sender, Some("pdf")), Err(StoreError::InvalidParams(_))));
     assert!(matches!(store.set_body_format("nobody@x.example", Some("text")), Err(StoreError::NotFound(_))));
 }

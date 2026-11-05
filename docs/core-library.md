@@ -13,11 +13,20 @@ nicemailer call list_threads '{"folder_id": 4, "sort": "modified", "limit": 10}'
 nicemailer call list_threads '{"everything": {}, "filter": {"contains": "devis"}}'
 ```
 
-## Text or HTML, per sender
+## Text, HTML or images, per sender
 
-`set_body_format {addr, format}` remembers how the mails of an address are displayed: `"text"`, `"html"`, or `null` for the theme's default. `get_thread` returns, for each message, `body_html` (sanitized), `has_remote_content` and `from_body_format`, the choice remembered for its sender.
+`set_body_format {addr, format}` remembers how the mails of an address are displayed: `"text"`, `"html"`, `"images"` (the HTML with its remote images loaded), or `null` for the theme's default. `get_thread` returns, for each message, `body_html` (sanitized), `has_remote_content`, `tracking_pixels` and `from_body_format`, the choice remembered for its sender.
 
-The preference is stored in `address.body_format`. It is local to the Mac: not synced, not journaled.
+The preference is stored in `address.body_format`; `"images"` is `body_format = 'html'` with `address.remote_images = 1` (a new column rather than a new value: SQLite can only change a `CHECK` constraint by rebuilding the table). It is local to the Mac: not synced, not journaled.
+
+### Remote images in `body_html`
+
+The sanitized HTML never holds a source a web view would load by itself (`crates/nm-store/src/remote_images.rs`):
+
+- a remote **tracking pixel** (an `<img>` with an `http:`, `https:` or `//` source, 2 pixels or less in `width`, `height` or its style, or hidden by its style) loses its source; `tracking_pixels` counts them;
+- any other remote image gets the source `nm-remote://image?u=<percent-encoded URL>` (`//host` made `https://host`; every byte but `A-Z a-z 0-9 - . _ ~` encoded). `has_remote_content` is true when there is at least one.
+
+The pixels are found by a pass of html5ever's tokenizer over the original HTML before ammonia runs: ammonia's attribute filter sees one attribute at a time, and `style` is already gone when it runs. A body without `<img` skips that pass. The client decides when to load the images and loads them itself; the core never requests them.
 
 ## Saving a message
 

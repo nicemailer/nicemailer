@@ -638,10 +638,14 @@ pub struct MessageView {
     pub auth_result: String,
     /// Sanitized HTML body, when the message has an HTML part.
     pub body_html: Option<String>,
-    /// Remote images were removed from `body_html`.
+    /// `body_html` holds remote images a client may load on request: their
+    /// sources are `nm-remote://image?u=<percent-encoded URL>`, a scheme no
+    /// web view loads by itself. Tracking pixels are not among them: they
+    /// are removed (`tracking_pixels`).
     pub has_remote_content: bool,
-    /// Display preferred for the sender's mails: `"text"`, `"html"`, or
-    /// `None` for the client's default (`set_body_format`).
+    /// Display preferred for the sender's mails: `"text"`, `"html"`,
+    /// `"images"` (HTML with remote images), or `None` for the client's
+    /// default (`set_body_format`).
     pub from_body_format: Option<String>,
     /// The text body cut into segments, for a simplified display: what the
     /// message brings is visible, the history it repeats is `hidden`
@@ -663,6 +667,10 @@ pub struct MessageView {
     /// says (`ui.md`, "Désabonnement").
     #[serde(default)]
     pub unsubscribe: Option<UnsubscribeView>,
+    /// Remote tracking pixels removed from `body_html`: never requested,
+    /// whatever the display.
+    #[serde(default)]
+    pub tracking_pixels: i64,
 }
 
 /// How to unsubscribe from a mailing list (`MessageView.unsubscribe`).
@@ -808,7 +816,8 @@ pub struct ImportStatus {
 pub struct SetBodyFormatParams {
     /// Address whose mails are concerned (usually the sender's).
     pub addr: String,
-    /// `"text"`, `"html"`, or `null` to go back to the default.
+    /// `"text"`, `"html"`, `"images"` (HTML with its remote images), or
+    /// `null` to go back to the default.
     #[serde(default)]
     pub format: Option<String>,
 }

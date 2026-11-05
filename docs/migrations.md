@@ -20,6 +20,7 @@ Rule of thumb: a migration does what the code cannot work without (a new column,
 | Version | Content |
 | --- | --- |
 | 1 | First schema. Edited in place during development, before any release (see "Incomplete version 1" below). Frozen in `crates/nm-store/tests/fixtures/schema_v1.sql`. |
+| 3 | Remote images: `address.remote_images` (the sender's mails are shown with their remote images) and `message_body.tracking_pixels`. Two columns added at the end of their tables, instant. The bodies get their `nm-remote:` sources and pixel counts from the reinterpretation (`PARSER_VERSION` 8), in the background: bodies without remote image are only marked, the others (about two in three on a real mailbox) are read again from their raw file. |
 | 2 | Indexes for large mailboxes: `idx_message_thread` becomes `(thread_id, folder_id, date_received, id)`; partial indexes for flagged, answered and attachment messages; `thread.date_last_modified` and the four thread indexes of Everything. Data: names and subjects with RFC 2047 encoded words glued inside a word decoded (`encoded_words.rs`), in `message`, `thread`, `address` and the search index; empty address names filled from the oldest mail the address sent with a name. About 30 s on 275,000 mails. |
 
 The reasons for the indexes of version 2, with measurements, are in `specifications/modele de donnees.md`, section 11.

@@ -26,6 +26,7 @@ pub(crate) fn migrate(conn: &mut Connection, mut version: i64) -> Result<()> {
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         match version {
             1 => to_2(&tx)?,
+            2 => to_3(&tx)?,
             _ => unreachable!("aucune migration depuis la version {version}"),
         }
         version += 1;
@@ -59,6 +60,20 @@ fn to_2(conn: &Connection) -> Result<()> {
     )?;
     repair_encoded_words(conn)?;
     fill_empty_address_names(conn)?;
+    Ok(())
+}
+
+/// Version 3: remote images (`ui.md`, "Images distantes"): the choice to
+/// load them for a sender, and the count of tracking pixels removed from a
+/// body. Two columns added at the end of their tables, which SQLite does
+/// without rewriting them: instant on any mailbox. The bodies themselves
+/// are brought up to date by the reinterpretation (`PARSER_VERSION` 8),
+/// in the background.
+fn to_3(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "ALTER TABLE address ADD COLUMN remote_images INTEGER NOT NULL DEFAULT 0 CHECK (remote_images IN (0,1));
+         ALTER TABLE message_body ADD COLUMN tracking_pixels INTEGER NOT NULL DEFAULT 0;",
+    )?;
     Ok(())
 }
 

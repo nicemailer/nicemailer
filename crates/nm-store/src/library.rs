@@ -40,18 +40,26 @@ impl Store {
     // ----------------------------------------------------------------
 
     /// Remembers how the mails of `addr` are displayed: `"text"`, `"html"`,
-    /// or `None` for the client's default. A local display preference: not
-    /// synced, not journaled, `date_modified` untouched (schema.sql).
+    /// `"images"` (the HTML with its remote images loaded, `ui.md`, "Images
+    /// distantes"), or `None` for the client's default. A local display
+    /// preference: not synced, not journaled, `date_modified` untouched
+    /// (schema.sql).
+    ///
+    /// `"images"` is stored as `body_format = 'html'` with `remote_images =
+    /// 1`: a column added to the table rather than a new value of
+    /// `body_format`, whose CHECK constraint SQLite can only change by
+    /// rebuilding the table.
     pub fn set_body_format(&mut self, addr: &str, format: Option<&str>) -> Result<()> {
-        if let Some(f) = format
-            && f != "text"
-            && f != "html"
-        {
-            return Err(StoreError::InvalidParams(format!("format inconnu : {f} (text ou html)")));
-        }
+        let (stored, images) = match format {
+            None => (None, false),
+            Some("text") => (Some("text"), false),
+            Some("html") => (Some("html"), false),
+            Some("images") => (Some("html"), true),
+            Some(f) => return Err(StoreError::InvalidParams(format!("format inconnu : {f} (text, html ou images)"))),
+        };
         let n = self.conn.execute(
-            "UPDATE address SET body_format = ?2 WHERE addr = ?1",
-            params![addr.trim().to_lowercase(), format],
+            "UPDATE address SET body_format = ?2, remote_images = ?3 WHERE addr = ?1",
+            params![addr.trim().to_lowercase(), stored, images],
         )?;
         if n == 0 {
             return Err(StoreError::NotFound(format!("adresse {addr}")));

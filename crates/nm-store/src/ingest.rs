@@ -12,7 +12,7 @@
 
 use std::borrow::Cow;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 
 use mail_parser::{MessageParser, MessagePart, PartKind};
 
@@ -34,7 +34,10 @@ use mail_parser::{MessageParser, MessagePart, PartKind};
 /// `parse`).
 /// 7: entities encoded twice by the sender (`&amp;nbsp;`) are encoded once
 /// in the HTML and decoded in the text (`html_text::undouble_entities`).
-pub const PARSER_VERSION: i64 = 7;
+/// 8: remote images keep their URL, in the app's `nm-remote:` scheme, so a
+/// client can load them on request; tracking pixels are removed and counted
+/// (`remote_images.rs`).
+pub const PARSER_VERSION: i64 = 8;
 
 /// Length of `message.snippet`, in characters.
 const SNIPPET_CHARS: usize = 200;
@@ -87,8 +90,12 @@ pub struct ParsedMessage {
     pub text: Option<String>,
     /// Sanitized HTML body, if the message has an HTML part.
     pub html: Option<String>,
-    /// Whether the HTML referenced remote images (removed by sanitization).
+    /// Whether the sanitized HTML holds remote images a client may load on
+    /// request (`nm-remote:` sources, `remote_images.rs`). Tracking pixels
+    /// do not count: they are removed.
     pub has_remote_content: bool,
+    /// Remote tracking pixels removed from the HTML.
+    pub tracking_pixels: i64,
     pub snippet: Option<String>,
     pub attachments: Vec<ParsedAttachment>,
     /// How to unsubscribe from the list the message comes from, if it says.
@@ -178,12 +185,12 @@ pub fn parse(raw: &[u8]) -> ParsedMessage {
     });
     // Only a real HTML part is kept: mail-parser also offers a text part
     // converted to HTML, which would only duplicate `text`.
-    let (html, has_remote_content) = match &html_part {
+    let (html, has_remote_content, tracking_pixels) = match &html_part {
         Some(h) => {
-            let (clean, remote) = sanitize_html(h);
-            (Some(clean), remote)
+            let s = sanitize_html(h);
+            (Some(s.html), s.remote_images, s.tracking_pixels)
         }
-        None => (None, false),
+        None => (None, false, 0),
     };
     let snippet = text.as_deref().map(snippet).filter(|s| !s.is_empty());
 
@@ -219,6 +226,7 @@ pub fn parse(raw: &[u8]) -> ParsedMessage {
         text,
         html,
         has_remote_content,
+        tracking_pixels,
         snippet,
         attachments,
         unsubscribe,
@@ -345,10 +353,23 @@ fn collect_attachments(
     });
 }
 
+/// An HTML body made safe to display (`sanitize_html`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct SanitizedHtml {
+    pub html: String,
+    /// Remote images left, with an `nm-remote:` source.
+    pub remote_images: bool,
+    /// Remote tracking pixels removed.
+    pub tracking_pixels: i64,
+}
+
 /// Sanitizes an HTML body for display: removes scripts, event handlers,
-/// forms, styles and anything ammonia does not allow, and drops remote
-/// images (tracking pixels, `modele de donnees.md`). Returns the clean HTML
-/// and whether remote content was removed.
+/// forms, styles and anything ammonia does not allow.
+///
+/// No source a web view would load by itself is left: a remote tracking
+/// pixel loses its source, any other remote image gets one in the app's
+/// `nm-remote:` scheme, loaded only when the user asks for the images
+/// (`remote_images.rs`, `ui.md`, "Images distantes").
 ///
 /// Images embedded in the message (`cid:` URLs) are kept, and so are the
 /// markers mail apps put on quoted history and signatures, so that clients
@@ -358,15 +379,23 @@ fn collect_attachments(
 /// `<blockquote type="cite">`, Outlook's `divRplyFwdMsg` and `appendonsend`
 /// ids. Ids are prefixed with `nm-` so a mail cannot clash with the app's
 /// own ids.
-pub fn sanitize_html(html: &str) -> (String, bool) {
+pub fn sanitize_html(html: &str) -> SanitizedHtml {
+    // The pixels are found first, on the original HTML: the filter below
+    // sees one attribute at a time, and no longer sees `style`.
+    let pixels = crate::remote_images::find_pixels(html);
     // The filter closure must be `'static`, so the flag is shared through an
     // `Arc` (a reference-counted pointer) rather than borrowed.
     //
     // Rust note: `AtomicBool` can be modified through a shared reference,
     // safely from several threads; plain `bool` could not be changed from
-    // inside a `Fn` closure.
+    // inside a `Fn` closure. The same goes for the set of pixels, moved into
+    // the closure and only read there.
     let remote = Arc::new(AtomicBool::new(false));
     let flag = remote.clone();
+    // Counted here, where they are removed: an image with the same source as
+    // a pixel (rare) loses it too, and counts.
+    let removed = Arc::new(AtomicI64::new(0));
+    let removed_in_filter = removed.clone();
     let clean = ammonia::Builder::default()
         .add_url_schemes(["cid"])
         .add_allowed_classes("div", ["gmail_quote", "gmail_attr", "gmail_signature", "moz-cite-prefix", "moz-signature"])
@@ -375,18 +404,23 @@ pub fn sanitize_html(html: &str) -> (String, bool) {
         .add_tag_attributes("div", ["id"])
         .id_prefix(Some("nm-"))
         .attribute_filter(move |element, attribute, value| {
-            if element == "img" && attribute == "src" {
-                let v = value.trim_start().to_ascii_lowercase();
-                if v.starts_with("http:") || v.starts_with("https:") || v.starts_with("//") {
-                    flag.store(true, Ordering::Relaxed);
+            if element == "img" && attribute == "src" && crate::remote_images::is_remote(value) {
+                if pixels.contains(value) {
+                    removed_in_filter.fetch_add(1, Ordering::Relaxed);
                     return None;
                 }
+                flag.store(true, Ordering::Relaxed);
+                return Some(crate::remote_images::rewrite_source(value).into());
             }
             Some(value.into())
         })
         .clean(html)
         .to_string();
-    (clean, remote.load(Ordering::Relaxed))
+    SanitizedHtml {
+        html: clean,
+        remote_images: remote.load(Ordering::Relaxed),
+        tracking_pixels: removed.load(Ordering::Relaxed),
+    }
 }
 
 #[cfg(test)]
@@ -505,10 +539,13 @@ Subject: Re: 2=?ISO-8859-1?B?6A==?=me rappel\r\n\r\nbody";
         let p = parse(raw);
         let html = p.html.unwrap();
         assert!(!html.contains("script") && !html.contains("alert"));
-        assert!(!html.contains("t.example"));
+        // The remote image keeps its URL, in a scheme no web view loads.
+        assert!(html.contains(r#"src="nm-remote://image?u=https%3A%2F%2Ft.example%2Fp.gif""#), "{html}");
+        assert!(!html.contains("src=\"https:"));
         assert!(html.contains("cid:logo"));
         assert!(!html.contains("onclick"));
         assert!(p.has_remote_content);
+        assert_eq!(p.tracking_pixels, 0);
         let text = p.text.unwrap();
         assert!(text.contains("Café"));
         assert!(p.snippet.unwrap().starts_with("Café ok"));
@@ -583,11 +620,41 @@ Content-Transfer-Encoding: base64\r\n\r\n/9j/4AAQ\r\n--C--\r\n";
     #[test]
     fn quote_markers_survive_sanitization() {
         let html = r#"<div>OK</div><div class="gmail_quote evil"><div class="gmail_attr">On Mon, A wrote:</div><blockquote class="gmail_quote" type="cite" onclick="x()">old</blockquote></div><div id="divRplyFwdMsg">From: A</div>"#;
-        let (clean, _) = sanitize_html(html);
+        let clean = sanitize_html(html).html;
         assert!(clean.contains(r#"class="gmail_quote""#), "{clean}");
         assert!(clean.contains(r#"class="gmail_attr""#));
         assert!(clean.contains(r#"type="cite""#));
         assert!(clean.contains(r#"id="nm-divRplyFwdMsg""#));
         assert!(!clean.contains("evil") && !clean.contains("onclick"));
+    }
+
+    #[test]
+    fn tracking_pixels_are_removed_and_counted() {
+        let html = r#"<p>Hi</p><img src="https://x.org/banner.png" width="600" alt="Banner">
+            <img src="https://t.x.org/open?id=1&amp;u=2" width="1" height="1">
+            <img src="//t.x.org/o.gif" style="display:none"><img src="cid:logo">"#;
+        let s = sanitize_html(html);
+        assert_eq!(s.tracking_pixels, 2);
+        assert!(s.remote_images);
+        // No source a web view would load: neither the pixels, nor the
+        // banner, whose source is in the app's scheme.
+        assert!(!s.html.contains("t.x.org"), "{}", s.html);
+        assert!(!s.html.contains("src=\"https:") && !s.html.contains("src=\"//"), "{}", s.html);
+        assert!(s.html.contains(r#"src="nm-remote://image?u=https%3A%2F%2Fx.org%2Fbanner.png""#), "{}", s.html);
+        assert!(s.html.contains(r#"width="600""#) && s.html.contains("cid:logo"));
+        // Only pixels: nothing left to load.
+        let s = sanitize_html(r#"<p>Hi</p><img src="https://t.x.org/p.gif" width="1" height="1">"#);
+        assert_eq!((s.remote_images, s.tracking_pixels), (false, 1));
+        // Nothing remote.
+        let s = sanitize_html("<p>Hi</p>");
+        assert_eq!((s.remote_images, s.tracking_pixels), (false, 0));
+    }
+
+    #[test]
+    fn a_parsed_message_counts_its_pixels() {
+        let raw = b"Content-Type: text/html\r\nSubject: s\r\n\r\n<p>x</p><img src=\"https://t.x.org/p\" height=\"1\"><img src=\"https://x.org/a.png\">";
+        let p = parse(raw);
+        assert_eq!(p.tracking_pixels, 1);
+        assert!(p.has_remote_content);
     }
 }

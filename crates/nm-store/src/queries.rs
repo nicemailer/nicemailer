@@ -447,8 +447,12 @@ impl Store {
             "SELECT m.id, m.folder_id, f.role, m.subject, m.from_name, m.from_addr,
                     m.date_sent, m.date_received, b.text_plain,
                     m.is_seen, m.is_flagged, m.is_answered, m.has_attachments, m.auth_result,
-                    b.html_sanitized, coalesce(b.has_remote_content, 0), a.body_format,
-                    u.url, u.mailto, u.one_click, u.source, a.unsubscribed_at
+                    b.html_sanitized, coalesce(b.has_remote_content, 0),
+                    -- The images mode is stored as 'html' plus remote_images
+                    -- (schema.sql, table address).
+                    CASE WHEN a.body_format = 'html' AND a.remote_images = 1 THEN 'images' ELSE a.body_format END,
+                    u.url, u.mailto, u.one_click, u.source, a.unsubscribed_at,
+                    coalesce(b.tracking_pixels, 0)
                FROM message m
                JOIN folder f ON f.id = m.folder_id
                LEFT JOIN message_body b ON b.message_id = m.id
@@ -487,6 +491,7 @@ impl Store {
                     show_recipients: false,
                     attachments: vec![],
                     unsubscribe: unsubscribe_view(r.get(17)?, r.get(18)?, r.get(19)?, r.get(20)?, r.get(21)?),
+                    tracking_pixels: r.get(22)?,
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
