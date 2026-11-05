@@ -68,7 +68,8 @@ pub use rusqlite;
 /// 2: indexes for large mailboxes, `thread.date_last_modified`, repaired
 /// encoded words (`migrations.rs`).
 /// 3: remote images (`address.remote_images`, `message_body.tracking_pixels`).
-/// 4: `account.disabled_at`, accounts whose key left `config.toml`.
+/// 4: `account.disabled_at`, accounts whose key left `config.toml`, and
+///    `account.position`, their display order.
 pub const SCHEMA_VERSION: i64 = 4;
 
 /// Full text of the schema, at the latest version. `include_str!` reads the
@@ -139,6 +140,8 @@ pub struct ChangeSet {
     pub threads: Vec<(i64, Vec<i64>)>,
     /// Folders whose counters or content changed.
     pub folders: BTreeSet<i64>,
+    /// Accounts whose settings or state changed (`AccountChanged`).
+    pub accounts: BTreeSet<i64>,
 }
 
 impl ChangeSet {
@@ -294,7 +297,7 @@ fn check_schema(conn: &Connection, version: i64) -> Result<()> {
         checks.push(("SELECT tracking_pixels FROM message_body", "message_body.tracking_pixels"));
     }
     if version >= 4 {
-        checks.push(("SELECT disabled_at FROM account", "account.disabled_at"));
+        checks.push(("SELECT disabled_at, position FROM account", "account.disabled_at, account.position"));
     }
     for (sql, what) in checks {
         if conn.prepare(sql).is_err() {

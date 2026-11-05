@@ -29,6 +29,9 @@ pub struct Client {
     stream: UnixStream,
     reader: BufReader<UnixStream>,
     next_id: u64,
+    /// Events received while waiting for a response, kept for `event`: an
+    /// event caused by a request often arrives before its response.
+    pending: std::collections::VecDeque<Value>,
 }
 
 impl Client {
@@ -44,7 +47,7 @@ impl Client {
         };
         stream.set_read_timeout(Some(Duration::from_secs(30))).unwrap();
         let reader = BufReader::new(stream.try_clone().unwrap());
-        let mut c = Client { stream, reader, next_id: 1 };
+        let mut c = Client { stream, reader, next_id: 1, pending: Default::default() };
         c.call("hello", json!({"protocol_version": 1, "client": "cli"})).unwrap();
         c
     }
@@ -56,7 +59,7 @@ impl Client {
     }
 
     /// Sends a request; returns its result or its error object. Event lines
-    /// received meanwhile are dropped.
+    /// received meanwhile are kept for `event`.
     pub fn call(&mut self, method: &str, params: Value) -> Result<Value, Value> {
         let id = self.next_id;
         self.next_id += 1;
@@ -68,6 +71,9 @@ impl Client {
                     Some(e) => Err(e.clone()),
                     None => Ok(v["result"].clone()),
                 };
+            }
+            if v.get("id").is_none() {
+                self.pending.push_back(v);
             }
         }
     }
@@ -89,9 +95,23 @@ pub fn start(dir: &Path) -> Core {
 }
 
 impl Client {
+    /// Forgets the events received so far, so that `event` waits for one
+    /// caused by what the test does next.
+    pub fn clear_events(&mut self) {
+        self.pending.clear();
+    }
+
     /// Waits for the event `method`, dropping the others; panics after
     /// `secs` seconds. Returns its params.
     pub fn event(&mut self, method: &str, secs: u64) -> Value {
+        // Rust note: `position` finds the index of the first match; `remove`
+        // takes it out of the queue, so an event is returned only once.
+        if let Some(i) = self.pending.iter().position(|v| v["method"] == method) {
+            let v = self.pending.remove(i).expect("index found above");
+            self.pending.drain(..i);
+            return v["params"].clone();
+        }
+        self.pending.clear();
         let deadline = Instant::now() + Duration::from_secs(secs);
         loop {
             assert!(Instant::now() < deadline, "no {method} event within {secs} s");

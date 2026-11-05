@@ -117,7 +117,7 @@ impl EventLog {
     }
 
     /// Emits the events of a change committed to the database: messages
-    /// first, then threads, then folders.
+    /// first, then threads, then folders, then accounts.
     pub fn emit(&mut self, changes: &ChangeSet) {
         for (message_id, thread_id) in &changes.messages {
             self.push(Event::MessageChanged { message_id: *message_id, thread_id: *thread_id });
@@ -127,6 +127,9 @@ impl EventLog {
         }
         for folder_id in &changes.folders {
             self.push(Event::FolderChanged { folder_id: *folder_id });
+        }
+        for account_id in &changes.accounts {
+            self.push(Event::AccountChanged { account_id: *account_id });
         }
     }
 

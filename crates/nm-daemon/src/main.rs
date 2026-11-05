@@ -60,7 +60,7 @@ use nm_api::{
     PROTOCOL_VERSION, Page, Request, Response, RpcError, SearchParams, SearchResult, SetBodyFormatParams,
     SetGroupMemberParams, SetThreadFlaggedParams, SetThreadSeenParams, SubscribeParams, SubscribeResult,
     SetAddressScreeningParams, SetDomainScreeningParams, TagThreadParams, ThreadView, UndoParams, error_code,
-    method, ConfigStatus,
+    method, ConfigStatus, SetAccountOrderParams,
 };
 use nm_core::Source;
 use nm_engine::Engine;
@@ -749,6 +749,10 @@ async fn dispatch(core: &Arc<Core>, session: &mut Session, req: Request) -> Resu
             // lock is never held while waiting for the database.
             let items = core.engine.lock().unwrap().account_views(rows);
             to_value(Items { items, as_of })
+        }
+        method::SET_ACCOUNT_ORDER => {
+            let p: SetAccountOrderParams = params(req.params)?;
+            command(core, move |s| s.set_account_order(&p.account_ids, source)).await
         }
         method::CONFIG_STATUS => {
             let as_of = as_of();

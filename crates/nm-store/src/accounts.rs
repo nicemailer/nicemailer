@@ -15,15 +15,23 @@
 //! - archive accounts (`kind = 'archive'`, created by an mbox import) are
 //!   never in the file, and are left alone.
 //!
+//! Accounts also have a display order, `account.position`: the order of
+//! the account picker (`@`) and of the sidebar, which follow the folder
+//! list (`list_folders`). A new account goes after the others; the user
+//! changes the order with [`Store::set_account_order`]. It is a state of the
+//! interface, not an intention about the servers, hence in the database and
+//! not in the file.
+//!
 //! Every creation, disabling and enabling is written to `audit_log`
 //! (`tracabilite.md`), source `core`: the core cannot know who edited the
 //! file, the user's Git history does.
 
 use std::collections::BTreeMap;
 
+use nm_core::Source;
 use rusqlite::{OptionalExtension, TransactionBehavior, params};
 
-use crate::{Result, Store};
+use crate::{ChangeSet, Result, Store, StoreError};
 
 /// An account as stored in the database.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -38,6 +46,8 @@ pub struct AccountRow {
     pub address: Option<String>,
     /// Whether the key is missing from the file (IMAP accounts only).
     pub disabled: bool,
+    /// Display order: rows are listed by `position`, then `id`.
+    pub position: i64,
 }
 
 /// What [`Store::sync_config_accounts`] changed.
@@ -94,7 +104,11 @@ impl Store {
                 }
                 None => {
                     tx.execute(
-                        "INSERT INTO account (config_key, kind, created_by, modified_by) VALUES (?1, 'imap', 'core', 'core')",
+                        // After the other accounts in the display order. Keys
+                        // created by the same reading come in the order of
+                        // `keys`, sorted by name.
+                        "INSERT INTO account (config_key, kind, created_by, modified_by, position)
+                         VALUES (?1, 'imap', 'core', 'core', (SELECT coalesce(max(position), 0) + 1 FROM account))",
                         [key],
                     )?;
                     let id = tx.last_insert_rowid();
@@ -128,7 +142,7 @@ impl Store {
     /// Every account, IMAP and archive, by id.
     pub fn list_account_rows(&self) -> Result<Vec<AccountRow>> {
         let mut stmt = self.conn.prepare_cached(
-            "SELECT id, config_key, kind, address, disabled_at IS NOT NULL FROM account ORDER BY id",
+            "SELECT id, config_key, kind, address, disabled_at IS NOT NULL, position FROM account ORDER BY position, id",
         )?;
         let rows = stmt
             .query_map([], |r| {
@@ -138,10 +152,67 @@ impl Store {
                     kind: r.get(2)?,
                     address: r.get(3)?,
                     disabled: r.get(4)?,
+                    position: r.get(5)?,
                 })
             })?
             .collect::<std::result::Result<_, _>>()?;
         Ok(rows)
+    }
+
+    /// Puts the accounts `ids` first, in this order, and the others after
+    /// them in their current order; positions become 1, 2, 3…
+    ///
+    /// A partial list is accepted on purpose: a client that shows only some
+    /// accounts (not the disabled ones, say) can reorder what it shows
+    /// without knowing the rest. An unknown or repeated id is refused, so a
+    /// stale client cannot reorder by mistake.
+    ///
+    /// Each account whose position changes gets a line in `audit_log`
+    /// (`reorder`, with before and after) and its folders are reported as
+    /// changed: the order of the folder list, which the app's account
+    /// picker follows, is what changed for the clients.
+    pub fn set_account_order(&mut self, ids: &[i64], source: Source) -> Result<ChangeSet> {
+        let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let current: Vec<(i64, i64)> = {
+            let mut stmt = tx.prepare("SELECT id, position FROM account ORDER BY position, id")?;
+            stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<std::result::Result<_, _>>()?
+        };
+        for (i, id) in ids.iter().enumerate() {
+            if !current.iter().any(|(c, _)| c == id) {
+                return Err(StoreError::NotFound(format!("compte {id}")));
+            }
+            if ids[..i].contains(id) {
+                return Err(StoreError::InvalidParams(format!("compte {id} présent deux fois")));
+            }
+        }
+        let order: Vec<(i64, i64)> = ids
+            .iter()
+            .map(|id| *current.iter().find(|(c, _)| c == id).expect("checked above"))
+            .chain(current.iter().filter(|(c, _)| !ids.contains(c)).copied())
+            .collect();
+        let mut changes = ChangeSet::default();
+        for (i, (id, before)) in order.into_iter().enumerate() {
+            let after = i as i64 + 1;
+            if before == after {
+                continue;
+            }
+            tx.execute(
+                "UPDATE account SET position = ?2, date_modified = unixepoch(), modified_by = ?3 WHERE id = ?1",
+                params![id, after, source.as_str()],
+            )?;
+            tx.execute(
+                "INSERT INTO audit_log (created_by, entity, entity_id, action, detail)
+                 VALUES (?1, 'account', ?2, 'reorder', json_object('before', ?3, 'after', ?4))",
+                params![source.as_str(), id, before, after],
+            )?;
+            changes.accounts.insert(id);
+            let mut stmt = tx.prepare_cached("SELECT id FROM folder WHERE account_id = ?1")?;
+            for f in stmt.query_map([id], |r| r.get::<_, i64>(0))? {
+                changes.folders.insert(f?);
+            }
+        }
+        tx.commit()?;
+        Ok(changes)
     }
 
     /// Records a change of `config.toml` seen when reloading it

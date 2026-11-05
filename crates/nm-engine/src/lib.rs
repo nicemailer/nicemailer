@@ -211,6 +211,7 @@ impl Engine {
                     display_name: account.and_then(|a| a.display_name.clone()),
                     enabled: !row.disabled,
                     error: self.account_errors.get(&row.id).cloned(),
+                    position: row.position,
                     key: row.config_key,
                     kind: row.kind,
                 }

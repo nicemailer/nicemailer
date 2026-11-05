@@ -63,7 +63,17 @@ Disabling instead of deleting is the rule of the specification: going back to an
 
 Archive accounts, created by an mbox import ([import-mbox.md](import-mbox.md)), are never in the file and never disabled.
 
-Disabled accounts are still listed, and their mail is still shown; only their synchronization stops (when it exists).
+Disabled accounts are still listed, and their mail is still shown (the user's choice); only their synchronization stops (when it exists).
+
+### Order of the accounts
+
+`account.position` orders the accounts: `list_accounts` lists them by position (then id), and so does `list_folders`, whose order the app's account picker (`@`) and sidebar follow. A new account, from the file or from an mbox import, goes after the others; accounts created by the same reading of the file come in the order of their keys. A disabled account keeps its place.
+
+The order is a state of the interface, not an intention about the servers, so it is in the database, not in `config.toml`. It is changed by `set_account_order {account_ids: [...]}`: the accounts given come first, in this order, the others after them in their current order, and positions become 1, 2, 3… An unknown or repeated id is refused. Each account that moved gets an `audit_log` line (`reorder`, before and after), an `AccountChanged`, and a `FolderChanged` for each of its folders, which makes the app reload its folder list.
+
+```sh
+nicemailer accounts order pro perso    # pro first, then perso, then the others
+```
 
 ### `list_accounts` and `nicemailer accounts`
 
@@ -74,7 +84,7 @@ nicemailer accounts
   3  pro          imap     -                              disabled (no longer in config.toml, mail kept)
 ```
 
-`list_accounts` returns, for each account: `id`, `key`, `kind` (`imap` or `archive`), `email`, `display_name`, `enabled`, and `error`, the reason it cannot connect if one is known. `error: null` does not mean connected: there is no connection yet in this phase.
+`list_accounts` returns, for each account in display order: `id`, `key`, `kind` (`imap` or `archive`), `email`, `display_name`, `enabled`, `position`, and `error`, the reason it cannot connect if one is known. `error: null` does not mean connected: there is no connection yet in this phase.
 
 ## Passwords
 
@@ -164,7 +174,7 @@ Also part of this phase: the queries of the contract (`list_threads`, `get_threa
 | `crates/nm-engine/src/watch.rs` | The watch of the file |
 | `crates/nm-engine/src/secrets.rs` | `Secrets`, `imap_password` and the binding to the server, `ConfigPasswords`, `NoSecrets` |
 | `crates/nm-engine/src/lib.rs` | `Engine`: reload, refusals, accounts and their errors, events |
-| `crates/nm-store/src/accounts.rs` | `sync_config_accounts`, `list_account_rows`, `record_config_reload` |
+| `crates/nm-store/src/accounts.rs` | `sync_config_accounts`, `list_account_rows`, `set_account_order`, `record_config_reload` |
 | `crates/nm-store/src/pool.rs` | `ReadPool` |
 | `crates/nm-daemon/src/main.rs` | Reading at start, `reload_config`, `list_accounts`, `config_status`, `with_reader` |
 
@@ -173,5 +183,6 @@ Also part of this phase: the queries of the contract (`list_threads`, `get_threa
 - `crates/nm-engine/tests/config.rs`: the example of the specification, defaults per security, lines of syntax, type and range errors, duplicate keys, unknown keys (general, account, server), required keys, account keys, `security = "none"`, newer format, overrides, identities in both forms, `~/` paths, passwords hidden, `changed_keys`, and the defaults file parsing back to the defaults with every key present.
 - `crates/nm-engine/tests/engine.rs`: no file; invalid file at start then later (previous settings kept, one `ConfigError`, cleared when fixed, even back to the same text); unreadable file; same text twice; unknown key; reload recorded in `audit_log`; account removed then restored with its data and id; archive account clash; a new IMAP host or user refused before confirmation; a build without `dev-passwords`; OAuth2.
 - `crates/nm-engine/tests/watch.rs`: an edit, a save by rename (twice), a file created in a missing directory, the target of a symbolic link, other files ignored.
+- `crates/nm-store/tests/accounts.rs`: a new account goes last, a reorder moves the accounts and the folder list (the picker's order), audit lines and announced changes, the same order twice changes nothing, unknown and repeated ids refused, a disabled account keeps its place.
 - `crates/nm-store/tests/pool.rs`: a read during a write held 2 s returns at once and sees the committed state; one snapshot per read; readers cannot write; a panic gives the connection back; six threads on three connections; wrong schema version.
-- `crates/nm-daemon/tests/config_rpc.rs`, end to end on the real binary: no file; accounts listed, then an invalid file, its fix, an account removed and restored, seen through events, `config_status`, `list_accounts` and `list_history`; an invalid file at start. Run it with `--features dev-passwords` too, for the other case of the passwords.
+- `crates/nm-daemon/tests/config_rpc.rs`, end to end on the real binary: no file; accounts listed, then an invalid file, its fix, an account removed and restored, an archive account placed last then moved first with `set_account_order`, seen through events, `config_status`, `list_accounts`, `list_folders` and `list_history`; an invalid file at start. Run it with `--features dev-passwords` too, for the other case of the passwords.

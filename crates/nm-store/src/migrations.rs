@@ -78,13 +78,21 @@ fn to_3(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
-/// Version 4: `account.disabled_at`, set when the key of an IMAP account
-/// leaves `config.toml` (`configuration.md`, section 6: an account missing
-/// from the file is disabled, not deleted). A column added at the end of a
-/// small table: instant. Every existing account starts active; the core
-/// disables the ones missing from the file when it reads it, right after.
+/// Version 4, two columns of `account`, added at the end of a small table:
+/// instant.
+/// - `disabled_at`, set when the key of an IMAP account leaves `config.toml`
+///   (`configuration.md`, section 6: an account missing from the file is
+///   disabled, not deleted). Every existing account starts active; the core
+///   disables the ones missing from the file when it reads it, right after.
+/// - `position`, the display order of the accounts (account picker,
+///   sidebar). Existing accounts keep the order they were shown in until
+///   now, their creation order: `position = id`.
 fn to_4(conn: &Connection) -> Result<()> {
-    conn.execute_batch("ALTER TABLE account ADD COLUMN disabled_at INTEGER;")?;
+    conn.execute_batch(
+        "ALTER TABLE account ADD COLUMN disabled_at INTEGER;
+         ALTER TABLE account ADD COLUMN position INTEGER NOT NULL DEFAULT 0;
+         UPDATE account SET position = id;",
+    )?;
     Ok(())
 }
 

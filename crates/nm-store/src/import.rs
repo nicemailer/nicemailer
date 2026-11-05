@@ -171,8 +171,9 @@ impl Store {
             Some((id, _, _)) => id,
             None => {
                 tx.execute(
-                    "INSERT INTO account (config_key, kind, address, created_by, modified_by)
-                     VALUES (?1, 'archive', ?2, ?3, ?3)",
+                    // After the other accounts in the display order.
+                    "INSERT INTO account (config_key, kind, address, created_by, modified_by, position)
+                     VALUES (?1, 'archive', ?2, ?3, ?3, (SELECT coalesce(max(position), 0) + 1 FROM account))",
                     params![name, address, source.as_str()],
                 )?;
                 let id = tx.last_insert_rowid();

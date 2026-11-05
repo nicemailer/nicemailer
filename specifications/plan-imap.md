@@ -73,7 +73,9 @@ Critère de « récupération parfaite » : la commande `nicemailer sync verify 
 
 ### Phase 1 : fondations — terminée
 
-Documentation : `docs/configuration.md`. Écarts au plan : la feature `dev-passwords` (section 2) ; `ConfigError` porte aussi `key` ; `config_status` donne l'état du fichier (règle « un état ne repose jamais sur un événement seul », `evenements.md`) ; schéma en version 4 (`account.disabled_at`).
+Documentation : `docs/configuration.md`. Écarts au plan : la feature `dev-passwords` (section 2) ; `ConfigError` porte aussi `key` ; `config_status` donne l'état du fichier (règle « un état ne repose jamais sur un événement seul », `evenements.md`) ; schéma en version 4 (`account.disabled_at`, et `account.position`, l'ordre des comptes du sélecteur `@`, modifié par `set_account_order`).
+
+Décision de l'utilisateur à la revue : les mails d'un compte désactivé restent visibles ; seule sa synchronisation s'arrête.
 
 
 - Crate `nm-engine`, qui ne dépend d'aucune interface (`architecture.md`, principe 1).
@@ -130,7 +132,7 @@ Tests : les deux Dovecot ; changements faits par une seconde connexion de test (
 - Exécuteur sur la connexion de travail : fusion, exécution en série par message, regroupement en un `UID MOVE` par couple de dossiers, COPYUID, rattachement par `Message-ID` sans UIDPLUS ; erreur temporaire (recul) ou définitive (restauration depuis `undo`, actions suivantes annulées, `ActionReverted`) ; message disparu = succès ; reprise des actions `running` au démarrage ; purge.
 - Interaction avec la synchronisation : UID d'une action en attente ignoré dans le dossier source, rattachement dans le dossier cible, flags locaux conservés tant que l'action n'est pas exécutée.
 - Mots-clés refusés par le serveur (`PERMANENTFLAGS` sans `\*`) : tags et marques de retour restent locaux.
-- Valeurs proposées pour ce que la spécification laisse ouvert : 8 tentatives au plus, recul de 30 s doublé à chaque échec et plafonné à 1 h, purge des actions terminées après 7 jours.
+- Valeurs validées par l'utilisateur (5 novembre 2026) pour ce que la spécification laisse ouvert : 8 tentatives au plus, recul de 30 s doublé à chaque échec et plafonné à 1 h, purge des actions terminées après 7 jours.
 
 Tests : `modele de donnees.md`, section 6, scénario par scénario ; deux noyaux qui déplacent le même mail ; plantage simulé entre le MOVE et le passage à `done`.
 

@@ -65,15 +65,17 @@ impl Store {
         let mut stmt = self.conn.prepare_cached(
             "SELECT f.id, f.role, f.path, f.total_count, f.unread_count,
                     (SELECT count(*) FROM thread_folder tf WHERE tf.folder_id = f.id),
-                    a.id, a.config_key, a.kind
+                    a.id, a.config_key, a.kind, a.position
                FROM folder f JOIN account a ON a.id = f.account_id
               WHERE f.subscribed = 1 AND (f.role IS NULL OR f.role <> 'config')",
         )?;
+        // Each folder with the position of its account, for the sort below.
         let mut items = stmt
             .query_map([], |r| {
+                let position: i64 = r.get(9)?;
                 let role = role_of(r.get(1)?);
                 let path: String = r.get(2)?;
-                Ok(FolderView {
+                Ok((position, FolderView {
                     id: r.get(0)?,
                     role,
                     // Workflow folders use their standard name; any other
@@ -89,16 +91,19 @@ impl Store {
                     account_id: r.get(6)?,
                     account_name: r.get(7)?,
                     account_kind: r.get(8)?,
-                })
+                }))
             })?
-            .collect::<std::result::Result<Vec<_>, _>>()?;
-        // Grouped by account (oldest account first), then workflow folders in
+            .collect::<std::result::Result<Vec<(i64, FolderView)>, _>>()?;
+        // Grouped by account, in the order of `account.position` (the order
+        // of the account picker, `set_account_order`; the oldest account
+        // first on a tie), then workflow folders in
         // the order of the spec, then the others by name. `sort_by_key`
         // sorts on a computed key; tuples compare element by element, so the
-        // account decides first, then the position, and the name breaks
-        // ties. Folders without a role get `usize::MAX` and end up last.
-        items.sort_by_key(|f| {
+        // rank of the account decides first, then the place of the folder's
+        // role, and the name breaks ties. Folders without a role get `usize::MAX` and end up last.
+        items.sort_by_key(|(position, f)| {
             (
+                *position,
                 f.account_id,
                 f.role
                     .and_then(|r| FolderRole::ALL.iter().position(|x| *x == r))
@@ -106,6 +111,7 @@ impl Store {
                 f.name.clone(),
             )
         });
+        let items: Vec<FolderView> = items.into_iter().map(|(_, f)| f).collect();
         Ok(items)
     }
 

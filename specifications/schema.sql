@@ -64,7 +64,12 @@ CREATE TABLE account (
     -- le compte n'est plus synchronisé, ses données restent. NULL = actif.
     -- Remis à NULL quand la clé revient (configuration.md, section 6).
     -- Toujours NULL pour un compte d'archives, absent du fichier par nature.
-    disabled_at   INTEGER
+    disabled_at   INTEGER,
+    -- (version 4) Rang d'affichage du compte : sélecteur de compte (@), barre
+    -- latérale, vue unifiée. Croissant ; à égalité, le plus ancien (id) d'abord.
+    -- Un nouveau compte se place après les autres (max + 1). État de l'interface
+    -- modifié par set_account_order, donc en base et pas dans config.toml.
+    position      INTEGER NOT NULL DEFAULT 0
 ) STRICT;
 
 -- ------------------------------------------------------------

@@ -20,8 +20,11 @@ fn accounts(c: &mut Client) -> Vec<Value> {
     c.call("list_accounts", json!({})).unwrap()["items"].as_array().unwrap().clone()
 }
 
-/// Writes the file as editors do: a temporary file renamed over it.
-fn save(dir: &std::path::Path, text: &str) {
+/// Writes the file as editors do: a temporary file renamed over it. The
+/// events received before are forgotten, so the test waits for those of
+/// this save.
+fn save(c: &mut Client, dir: &std::path::Path, text: &str) {
+    c.clear_events();
     let tmp = dir.join(".config.toml.tmp");
     std::fs::write(&tmp, text).unwrap();
     std::fs::rename(&tmp, dir.join("config.toml")).unwrap();
@@ -67,7 +70,7 @@ fn accounts_and_changes_of_the_file_are_reported() {
     std::thread::sleep(Duration::from_millis(500));
 
     // An invalid file: refused, with its line; the account stays.
-    save(dir.path(), &format!("{ACCOUNT}[sync]\npoll_interval_secs = \"soon\"\n"));
+    save(&mut c, dir.path(), &format!("{ACCOUNT}[sync]\npoll_interval_secs = \"soon\"\n"));
     let e = c.event("ConfigError", 15);
     assert_eq!(e["line"], 9);
     assert_eq!(e["key"], "sync.poll_interval_secs");
@@ -76,13 +79,13 @@ fn accounts_and_changes_of_the_file_are_reported() {
     assert_eq!(accounts(&mut c)[0]["enabled"], true);
 
     // Fixed: applied.
-    save(dir.path(), &format!("{ACCOUNT}[sync]\npoll_interval_secs = 600\n"));
+    save(&mut c, dir.path(), &format!("{ACCOUNT}[sync]\npoll_interval_secs = 600\n"));
     let e = c.event("ConfigChanged", 15);
     assert!(e["keys"].as_array().unwrap().contains(&json!("sync.poll_interval_secs")), "{e}");
     assert!(c.call("config_status", json!({})).unwrap()["error"].is_null());
 
     // The account removed: disabled, not deleted.
-    save(dir.path(), "");
+    save(&mut c, dir.path(), "");
     let e = c.event("AccountChanged", 15);
     assert_eq!(e["account_id"], id);
     let list = accounts(&mut c);
@@ -90,11 +93,34 @@ fn accounts_and_changes_of_the_file_are_reported() {
     assert_eq!(list[0]["enabled"], false);
 
     // And back, with the same id.
-    save(dir.path(), ACCOUNT);
+    save(&mut c, dir.path(), ACCOUNT);
     c.event("AccountChanged", 15);
     let list = accounts(&mut c);
     assert_eq!(list[0]["id"], id);
     assert_eq!(list[0]["enabled"], true);
+
+    // Display order: an archive account, created after, goes last; the
+    // order can be changed, and is announced.
+    let mbox = dir.path().join("old.mbox");
+    std::fs::write(&mbox, "From x@example.com Mon Jan  1 00:00:00 2024\nFrom: x@example.com\nSubject: hi\nMessage-ID: <1@x>\n\nhello\n").unwrap();
+    c.call("import_mbox", json!({"path": mbox.to_string_lossy(), "account": "old", "address": "old@example.com"})).unwrap();
+    c.event("ImportFinished", 15);
+    let list = accounts(&mut c);
+    let keys: Vec<&str> = list.iter().map(|a| a["key"].as_str().unwrap()).collect();
+    assert_eq!(keys, vec!["perso", "old"]);
+    let archive = list[1]["id"].as_i64().unwrap();
+    c.clear_events();
+    c.call("set_account_order", json!({"account_ids": [archive]})).unwrap();
+    let e = c.event("AccountChanged", 5);
+    assert!(e["account_id"] == archive || e["account_id"] == id, "{e}");
+    let list = accounts(&mut c);
+    assert_eq!(list[0]["key"], "old");
+    assert_eq!(list[0]["position"], 1);
+    assert_eq!(list[1]["position"], 2);
+    let folders = c.call("list_folders", json!({})).unwrap();
+    assert_eq!(folders["items"][0]["account_id"], archive, "the folder list follows the order");
+    let err = c.call("set_account_order", json!({"account_ids": [archive, archive]})).unwrap_err();
+    assert!(err["message"].as_str().unwrap().contains("deux fois"), "{err}");
 
     // The history has the reloads and the account's life.
     let history = c.call("list_history", json!({"limit": 50})).unwrap();

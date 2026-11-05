@@ -119,6 +119,9 @@ fn migration_repairs_names_and_subjects_and_fills_thread_dates() {
     let conn = store.conn();
     let text = |sql: &str| -> Option<String> { conn.query_row(sql, [], |r| r.get(0)).unwrap() };
     let int = |sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get(0)).unwrap() };
+    // Version 4: existing accounts are active, in their creation order.
+    assert_eq!(int("SELECT position FROM account WHERE id = 1"), 1);
+    assert_eq!(int("SELECT count(*) FROM account WHERE disabled_at IS NOT NULL"), 0);
     // Encoded words glued inside words are decoded everywhere.
     assert_eq!(text("SELECT from_name FROM message WHERE id = 1").as_deref(), Some("Achille Berès"));
     assert_eq!(text("SELECT subject FROM message WHERE id = 1").as_deref(), Some("2ème rappel"));

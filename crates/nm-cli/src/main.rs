@@ -105,8 +105,24 @@ enum Command {
         #[command(subcommand)]
         action: ConfigAction,
     },
-    /// List the accounts and their state, as the core sees them.
-    Accounts,
+    /// List the accounts and their state, as the core sees them, in their
+    /// display order.
+    Accounts {
+        #[command(subcommand)]
+        action: Option<AccountsAction>,
+    },
+}
+
+/// `nicemailer accounts …`.
+#[derive(Subcommand)]
+enum AccountsAction {
+    /// Change the display order (account picker, sidebar): the accounts
+    /// named come first, in this order, the others after them.
+    Order {
+        /// Account keys, e.g. `perso pro`.
+        #[arg(required = true)]
+        keys: Vec<String>,
+    },
 }
 
 /// `nicemailer config …`: works on the file directly, without the core.
@@ -217,10 +233,21 @@ fn main() -> anyhow::Result<()> {
             Ok(())
         }
         Command::Config { action } => run_config(action),
-        Command::Accounts => {
+        Command::Accounts { action } => {
             let mut client = Client::connect(&data_dir)?;
             let result = client.call("list_accounts", Value::Null)?;
-            let items = result["items"].as_array().cloned().unwrap_or_default();
+            let mut items = result["items"].as_array().cloned().unwrap_or_default();
+            if let Some(AccountsAction::Order { keys }) = action {
+                let mut ids = Vec::new();
+                for k in &keys {
+                    match items.iter().find(|a| a["key"].as_str() == Some(k.as_str())) {
+                        Some(a) => ids.push(a["id"].clone()),
+                        None => bail!("no account {k} (see `nicemailer accounts`)"),
+                    }
+                }
+                client.call("set_account_order", json!({ "account_ids": ids }))?;
+                items = client.call("list_accounts", Value::Null)?["items"].as_array().cloned().unwrap_or_default();
+            }
             if items.is_empty() {
                 println!("No account. Declare one in {} (see `nicemailer config defaults`).", nm_engine::config::default_path().display());
             }

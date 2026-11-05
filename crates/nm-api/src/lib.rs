@@ -82,6 +82,8 @@ pub mod method {
     /// State of `config.toml`: path, error refusing it, warnings
     /// (`ConfigStatus`).
     pub const CONFIG_STATUS: &str = "config_status";
+    /// Changes the display order of the accounts (account picker, sidebar).
+    pub const SET_ACCOUNT_ORDER: &str = "set_account_order";
 }
 
 /// Stable error codes. Negative codes are the ones defined by the JSON-RPC
@@ -1047,6 +1049,18 @@ pub struct AccountView {
     /// Why the account cannot connect, if known. `None` does not mean
     /// connected, only that nothing prevents it.
     pub error: Option<String>,
+    /// Display order: `list_accounts` and `list_folders` give the accounts
+    /// by increasing position (then by id). Changed by `set_account_order`.
+    pub position: i64,
+}
+
+/// Params of `set_account_order`: these accounts first, in this order;
+/// the others after them, in their current order. Answered with
+/// `CommandResult` (`changed`: 0), and announced by `AccountChanged` and
+/// `FolderChanged` for each account that moved and its folders.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SetAccountOrderParams {
+    pub account_ids: Vec<i64>,
 }
 
 /// A problem of `config.toml`: why it was refused, or a warning.
