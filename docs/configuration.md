@@ -219,7 +219,7 @@ A key the core does not know is a warning, not an error, so a file written by a 
 
 ## Reads and writes of the database
 
-Also part of this phase: the queries of the contract (`list_threads`, `get_thread`, `search`, `list_folders`, `list_history`, `list_tags`, `list_groups`, `list_contacts`, `list_accounts`, `export_message`, `unsubscribe`'s lookup) run on a pool of four read-only connections (`nm-store`, `pool.rs`), and only commands take the single writing connection. In WAL mode a reader does not wait for a writer: a synchronization writing a batch of mail will not make the app wait for its list. Each query runs in one read transaction, so all its statements see the same state of the database. Reader connections are `query_only`: a query that writes by mistake fails in the tests instead of racing the writer.
+Also part of this phase: the queries of the contract (`list_threads`, `get_thread`, `search`, `list_folders`, `list_history`, `list_tags`, `list_groups`, `list_contacts`, `list_accounts`, `locate_message`, `export_message`, `unsubscribe`'s lookup) run on a pool of four read-only connections (`nm-store`, `pool.rs`), and only commands take the single writing connection. In WAL mode a reader does not wait for a writer: a synchronization writing a batch of mail will not make the app wait for its list. Each query runs in one read transaction, so all its statements see the same state of the database. Reader connections are `query_only`: a query that writes by mistake fails in the tests instead of racing the writer.
 
 ## Code
 

@@ -52,6 +52,10 @@ enum UIScript {
     /// mode nothing is opened, so as not to launch Preview or Word on the
     /// user's screen.
     static var openedFile = ""
+    /// Lines of the reader's title line, 1 or 2 (`ReaderTitleBar`).
+    static var titleLines = 0
+    /// Width of the open picker panel, in points (`PickerPopup.width`).
+    static var pickerWidth: CGFloat = 0
 
     private static var started = false
     /// The test window and its model, kept alive while the script runs.
@@ -186,6 +190,16 @@ private final class Runner {
             key(arg)
         case "type":
             for c in arg { key(String(c)) }
+        case "openurl":
+            // A deep link, as macOS would give it to the app. `clipboard`
+            // opens the first `nicemailer://` URL of the private pasteboard
+            // (a link copied with `l`).
+            var text = arg
+            if arg == "clipboard" {
+                let copied = controller.pasteboard.string(forType: .string) ?? ""
+                text = copied.range(of: #"nicemailer://[^\s)]+"#, options: .regularExpression).map { String(copied[$0]) } ?? copied
+            }
+            if let url = URL(string: text) { model.openDeepLink(url) }
         case "clipboard":
             controller.pasteboard.clearContents()
             controller.pasteboard.setString(arg.replacingOccurrences(of: "\\n", with: "\n"), forType: .string)
@@ -415,6 +429,13 @@ private final class Runner {
             // The row Return would choose (the picker opens on its first
             // row, and typing brings the best match there).
             "picker_first": pickerRows.first ?? "",
+            // Width of the open picker panel, in whole points.
+            "picker_width": {
+                if case .picker = c.overlay { return "\(Int(UIScript.pickerWidth.rounded()))" }
+                return ""
+            }(),
+            // Every row of the open picker, in order, " | " between them.
+            "picker_rows": pickerRows.joined(separator: " | "),
             // Detail of the first row ("dd mm yy" for six digits read two
             // ways, "domain"…).
             "picker_first_detail": {
@@ -444,6 +465,17 @@ private final class Runner {
             "remote_allowed": "\(UIScript.remoteImagesAllowed)",
             "remote_shown": "\(UIScript.remoteImagesShown)",
             "remote_requests": "\(UIScript.remoteRequests)",
+            // The content rule list of the HTML reader (`RemoteBlocker`):
+            // `on` once compiled, `off` if WebKit refused it.
+            "remote_blocker": RemoteBlocker.status,
+            // The reader's title line: subject and controls on 1 line, or
+            // the subject above them on 2 (`ReaderTitleBar`).
+            "title_lines": "\(UIScript.titleLines)",
+            // Where the fonts and translations were found (`AppResources`):
+            // `Contents/Resources` of NiceMailer.app, or the build folder.
+            "resources_bundle": AppResources.bundle.bundlePath,
+            // What the private pasteboard holds (a link copied with `l`).
+            "pasteboard": controller.pasteboard.string(forType: .string) ?? "",
             "reader_subject": m.openThread?.subject ?? "",
             "unsubscribe": m.unsubscribeOffer.map {
                 $0.senderUnsubscribedAt != nil ? "done" : "\($0.source):\($0.method)"

@@ -11,7 +11,7 @@ XCODE ?= /Applications/Xcode.app/Contents/Developer
 THREADS ?= 2500
 
 # These targets are commands, not files to produce.
-.PHONY: dev-cert build test swift-test ui-test bench seed core app imap-up imap-down
+.PHONY: dev-cert build test swift-test ui-test bench seed core app bundle open imap-up imap-down
 
 build:
 	cargo build --release
@@ -73,3 +73,15 @@ imap-up:
 # Stops the test IMAP servers; their mail, kept in memory, is lost.
 imap-down:
 	docker compose -f dev/dovecot/compose.yaml down
+
+# Build NiceMailer.app and install it in ~/Applications, so that deep links
+# nicemailer://m/<id> open it (docs/deep-links.md). NICEMAILER_DATA_DIR, if
+# set, is written into the app.
+bundle:
+	DEVELOPER_DIR=$(XCODE) scripts/make-bundle.sh
+
+# Same, then quit the installed app if it runs and launch the new one: the
+# way to run the app when deep links are needed (the core still runs with
+# `make core`).
+open:
+	DEVELOPER_DIR=$(XCODE) scripts/make-bundle.sh --open

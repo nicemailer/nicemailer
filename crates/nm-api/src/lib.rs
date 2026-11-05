@@ -87,6 +87,9 @@ pub mod method {
     /// Saves the IMAP password of an account in the Keychain, for the
     /// server the file names now (`configuration.md`, section 6).
     pub const SET_PASSWORD: &str = "set_password";
+    /// Where a message is (its thread and folder), from its id: opens a
+    /// deep link `nicemailer://m/<id>` (`docs/deep-links.md`).
+    pub const LOCATE_MESSAGE: &str = "locate_message";
 }
 
 /// Stable error codes. Negative codes are the ones defined by the JSON-RPC
@@ -456,6 +459,24 @@ pub struct GetThreadParams {
     pub thread_id: i64,
 }
 
+/// Params of `locate_message`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocateMessageParams {
+    pub message_id: i64,
+}
+
+/// Result of `locate_message`: where to show a message. A message is in
+/// one folder; its thread may span several.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MessageLocation {
+    pub message_id: i64,
+    /// `None` for a message not linked to a thread yet (`message.thread_id`
+    /// may be NULL while threading is pending).
+    pub thread_id: Option<i64>,
+    pub folder_id: i64,
+    pub account_id: i64,
+}
+
 /// Params of `search`. `query` is plain text typed by the user; the core
 /// turns it into a full-text query.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -702,6 +723,24 @@ pub struct MessageView {
     /// whatever the display.
     #[serde(default)]
     pub tracking_pixels: i64,
+    /// Links of the message, for the `l` panel: the `<a href>` of the HTML
+    /// with their text, then the addresses written in the text part, then
+    /// its phone numbers as `tel:` links, each once (`links.rs` and
+    /// `phones.rs` in nm-store). Only `http`, `https`, `mailto` and `tel`.
+    #[serde(default)]
+    pub links: Vec<LinkView>,
+}
+
+/// A link of a message (`MessageView.links`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LinkView {
+    /// `tel:` URLs hold digits only, after a `+` for an international
+    /// number: `tel:+33612345678`, `tel:0612345678`.
+    pub url: String,
+    /// Visible text of the link in the HTML ("See my invoice"), or a phone
+    /// number as written in the text; `None` for an address written in the
+    /// text, or a link around an image.
+    pub text: Option<String>,
 }
 
 /// How to unsubscribe from a mailing list (`MessageView.unsubscribe`).

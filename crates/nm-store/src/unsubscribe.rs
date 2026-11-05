@@ -42,8 +42,8 @@ pub struct Unsubscribe {
     pub source: Source,
 }
 
-/// Longest URL kept: anything longer is not a link a human would follow.
-const MAX_URL: usize = 2048;
+/// Longest URL kept (shared with the `l` panel).
+use crate::links::MAX_URL;
 
 /// Words announcing an unsubscription, folded (lowercase, no accents), in
 /// the languages of the mail the user is likely to receive.
@@ -109,31 +109,18 @@ pub fn from_header(value: &str, post: Option<&str>) -> Option<Unsubscribe> {
 }
 
 /// The first link `<a href="http…">` whose text (or address) announces an
-/// unsubscription. A small scanner rather than a full HTML parser: the HTML
-/// is the core's sanitized copy, where links are plain `<a href="…">`.
+/// unsubscription. The HTML is the core's sanitized copy, read by the
+/// anchor scanner of `links.rs`.
 pub fn from_html(html: &str) -> Option<String> {
-    // ASCII lowercase keeps every byte at its place, so positions found in
-    // `lower` are valid in `html`.
-    let lower = html.to_ascii_lowercase();
-    let mut from = 0;
-    while let Some(i) = lower[from..].find("<a").map(|i| i + from) {
-        from = i + 2;
-        // `<a` followed by a space or `>`, not `<abbr>`.
-        if !lower[from..].starts_with(|c: char| c.is_ascii_whitespace() || c == '>') {
-            continue;
+    crate::links::anchors(html).into_iter().find_map(|a| {
+        let href = a.href;
+        if !is_web(&href) || href.len() > MAX_URL {
+            return None;
         }
-        let Some(tag_end) = tag_end(&lower, from) else { break };
-        let Some(close) = lower[tag_end..].find("</a").map(|j| j + tag_end) else { break };
-        let href = attribute(&html[from..tag_end], "href").map(|h| decode_entities(&h));
-        let text = fold(&decode_entities(&strip_tags(&html[tag_end + 1..close])));
-        from = close;
-        let Some(href) = href.filter(|h| is_web(h) && h.len() <= MAX_URL) else { continue };
         let folded_href = fold(&href);
-        if has_keyword(&text) || ["unsubscribe", "desabonn", "optout", "opt-out"].iter().any(|k| folded_href.contains(k)) {
-            return Some(href);
-        }
-    }
-    None
+        (has_keyword(&fold(&a.text)) || ["unsubscribe", "desabonn", "optout", "opt-out"].iter().any(|k| folded_href.contains(k)))
+            .then_some(href)
+    })
 }
 
 /// In a plain text body, a URL on a line that announces an unsubscription
@@ -170,78 +157,6 @@ fn first_url(line: &str) -> Option<String> {
         .collect();
     let url = url.trim_end_matches(['.', ',', ';', ':']).to_string();
     (url.len() > 8 && url.len() <= MAX_URL).then_some(url)
-}
-
-/// Position of the `>` closing a tag that starts at `from`, skipping `>`
-/// inside quoted attribute values.
-fn tag_end(s: &str, from: usize) -> Option<usize> {
-    let mut quote: Option<u8> = None;
-    for (i, &b) in s.as_bytes()[from..].iter().enumerate() {
-        match (quote, b) {
-            (None, b'"' | b'\'') => quote = Some(b),
-            (Some(q), _) if b == q => quote = None,
-            (None, b'>') => return Some(from + i),
-            _ => {}
-        }
-    }
-    None
-}
-
-/// Value of the attribute `name` in the inside of a tag (`a href="…"`).
-fn attribute(tag: &str, name: &str) -> Option<String> {
-    let lower = tag.to_ascii_lowercase();
-    let mut from = 0;
-    while let Some(i) = lower[from..].find(name).map(|i| i + from) {
-        from = i + name.len();
-        // A whole attribute name: preceded by whitespace, followed by `=`.
-        let before_ok = i == 0 || lower.as_bytes()[i - 1].is_ascii_whitespace();
-        let after = lower[from..].trim_start();
-        if !before_ok || !after.starts_with('=') {
-            continue;
-        }
-        let value_start = tag.len() - after.len() + 1;
-        let value = tag[value_start..].trim_start();
-        return Some(match value.chars().next() {
-            Some(q @ ('"' | '\'')) => value[1..].split(q).next().unwrap_or("").to_string(),
-            _ => value.split(|c: char| c.is_whitespace() || c == '>').next().unwrap_or("").to_string(),
-        });
-    }
-    None
-}
-
-/// Text of an HTML fragment without its tags.
-fn strip_tags(html: &str) -> String {
-    let mut out = String::with_capacity(html.len());
-    let mut in_tag = false;
-    for c in html.chars() {
-        match c {
-            '<' => in_tag = true,
-            '>' => {
-                in_tag = false;
-                out.push(' ');
-            }
-            _ if !in_tag => out.push(c),
-            _ => {}
-        }
-    }
-    out
-}
-
-/// The few entities found in link texts and addresses.
-fn decode_entities(s: &str) -> String {
-    let mut out = s
-        .replace("&nbsp;", " ")
-        .replace("&#160;", " ")
-        .replace("&eacute;", "é")
-        .replace("&#233;", "é")
-        .replace("&egrave;", "è")
-        .replace("&ccedil;", "ç")
-        .replace("&quot;", "\"")
-        .replace("&#39;", "'")
-        .replace("&apos;", "'");
-    // Last, so that "&amp;eacute;" stays "&eacute;".
-    out = out.replace("&amp;", "&");
-    out
 }
 
 /// Lowercase without the accents of the Latin languages, and with single

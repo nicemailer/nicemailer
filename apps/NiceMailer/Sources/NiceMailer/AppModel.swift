@@ -397,6 +397,7 @@ final class AppModel {
             // connection lives, while this function goes on.
             Task { await listen(c) }
             await reloadAll()
+            openPendingDeepLink()
         } catch {
             // Inside `catch`, the error is implicitly named `error`.
             status = .failed(error.localizedDescription)
@@ -561,6 +562,12 @@ final class AppModel {
     /// Thread to keep selected after the next reload, even if it is not in
     /// the loaded pages (set by `openSearchHit`).
     private var keepSelection: Int?
+    /// A deep link received before the core answered (the app launched by
+    /// the link itself): opened once connected (`openDeepLink`).
+    var pendingDeepLink: URL?
+    /// Called once a deep link selected its mail, so that the interface
+    /// follows (the geek theme closes its panels and shows the mail).
+    @ObservationIgnored var onDeepLinkOpened: (() -> Void)?
 
     /// Leaves a tag, group or contact list for the folder (or unified view)
     /// shown before.
@@ -712,20 +719,26 @@ final class AppModel {
     /// their context, then closes the search.
     func openSearchHit(_ hit: SearchHit) {
         guard let threadId = hit.threadId else { return }
-        // In the unified view, stay unified: show the hit's role for all
-        // accounts. Otherwise, go to the hit's folder. When the list is
-        // reloaded, the hit stays selected even if it is not in the first
-        // pages (`keepSelection`).
-        if unifiedRole != nil, let role = folders.first(where: { $0.id == hit.folderId })?.role {
+        show(threadId: threadId, folderId: hit.folderId)
+        searchText = ""
+    }
+
+    /// Shows the thread `threadId` in the folder `folderId`, selected and
+    /// open: a search result, a deep link (`openDeepLink`).
+    func show(threadId: Int, folderId: Int) {
+        // In the unified view, stay unified: show the folder's role for all
+        // accounts. Otherwise, go to the folder. When the list is
+        // reloaded, the thread stays selected even if it is not in the
+        // first pages (`keepSelection`).
+        if unifiedRole != nil, let role = folders.first(where: { $0.id == folderId })?.role {
             if role != unifiedRole || listFilter != nil { keepSelection = threadId }
             selectUnified(role)
-        } else if selectedFolderId != hit.folderId {
+        } else if selectedFolderId != folderId {
             keepSelection = threadId
-            selectedFolderId = hit.folderId
+            selectedFolderId = folderId
         }
         // Set after the folder, because changing folder clears the selection.
         selectedThreadId = threadId
-        searchText = ""
     }
 
     // MARK: - Commands
@@ -789,6 +802,44 @@ final class AppModel {
         lastError = error.localizedDescription
     }
 
+    // MARK: - Deep links
+
+    /// Opens the mail of a deep link `nicemailer://m/<id>` (`DeepLink`,
+    /// `docs/deep-links.md`): asks the core where the message is, then shows
+    /// its thread in its folder. Before the core answered (the link launched
+    /// the app), the link waits for the connection.
+    func openDeepLink(_ url: URL) {
+        guard let id = DeepLink.messageId(from: url) else {
+            lastError = L("Not a link to a NiceMailer mail: %@", url.absoluteString)
+            return
+        }
+        guard case .connected = status, let client else {
+            pendingDeepLink = url
+            return
+        }
+        Task {
+            do {
+                let place: MessageLocation = try await client.call("locate_message", ["message_id": id])
+                guard let threadId = place.threadId else {
+                    lastError = L("This mail is not in a conversation yet")
+                    return
+                }
+                lastError = nil
+                show(threadId: threadId, folderId: place.folderId)
+                onDeepLinkOpened?()
+            } catch let e as CoreClient.RPCError where e.code == CoreClient.RPCError.notFound {
+                // Deleted since, or the database was rebuilt (ids changed).
+                lastError = L("This mail is no longer in NiceMailer")
+            } catch { report(error) }
+        }
+    }
+
+    private func openPendingDeepLink() {
+        guard let url = pendingDeepLink else { return }
+        pendingDeepLink = nil
+        openDeepLink(url)
+    }
+
     /// The connected client, for the actions defined in other files
     /// (`AppModel+Actions.swift`).
     var core: (any CoreCalling)? { client }
@@ -801,6 +852,7 @@ final class AppModel {
         client = core
         status = .connected(coreVersion: "test")
         await reloadAll()
+        openPendingDeepLink()
     }
 
     /// Reloads the open thread (after a change of display preference).

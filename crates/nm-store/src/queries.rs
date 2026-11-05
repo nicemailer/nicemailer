@@ -438,6 +438,21 @@ impl Store {
         })
     }
 
+    /// Where the message `message_id` is: its thread, folder and account
+    /// (`locate_message`, deep links `nicemailer://m/<id>`). `NotFound`
+    /// when it is not in the database any more (deleted, or the database
+    /// was rebuilt and ids changed).
+    pub fn locate_message(&self, message_id: i64) -> Result<nm_api::MessageLocation> {
+        self.conn
+            .query_row(
+                "SELECT thread_id, folder_id, account_id FROM message WHERE id = ?1",
+                [message_id],
+                |r| Ok(nm_api::MessageLocation { message_id, thread_id: r.get(0)?, folder_id: r.get(1)?, account_id: r.get(2)? }),
+            )
+            .optional()?
+            .ok_or_else(|| StoreError::NotFound(format!("message {message_id}")))
+    }
+
     /// Every message of a thread, across all folders, oldest first.
     /// Returns the thread's subject and its messages.
     pub fn get_thread(&self, thread_id: i64) -> Result<(String, Vec<MessageView>)> {
@@ -498,6 +513,8 @@ impl Store {
                     attachments: vec![],
                     unsubscribe: unsubscribe_view(r.get(17)?, r.get(18)?, r.get(19)?, r.get(20)?, r.get(21)?),
                     tracking_pixels: r.get(22)?,
+                    // Filled below, from the bodies just read.
+                    links: vec![],
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -525,6 +542,15 @@ impl Store {
             if let Some(m) = messages.iter_mut().find(|m| m.id == message_id) {
                 m.attachments.push(a);
             }
+        }
+        // The links of `l`, read from the HTML: the text the core makes
+        // from it has no address left (`links.rs`). One scan per body,
+        // already in memory: computed here rather than stored.
+        for m in &mut messages {
+            m.links = crate::links::find(m.body_html.as_deref(), m.body_text.as_deref())
+                .into_iter()
+                .map(|l| nm_api::LinkView { url: l.url, text: l.text })
+                .collect();
         }
         present_thread(&mut messages);
         Ok((subject, messages))

@@ -13,11 +13,28 @@ expect images_offered = true
 expect tracking_pixels = 1
 expect body_format = text
 snap switch
+# The title line (subject, unsubscribe, blocked pixels, switch): one line
+# while the whole subject fits beside the controls, two in a narrow window.
+# A bigger text makes the line longer: the choice follows (⌘+, then ⌘0).
+expect title_lines = 1
+resize 760x800
+expect title_lines = 1
+key cmd-=
+key cmd-=
+key cmd-=
+expect title_lines = 2
+snap title-two-lines
+key cmd-0
+expect title_lines = 1
+resize 1400x900
+expect title_lines = 1
 # HTML: the page, without its images; nothing is asked.
 click format:html
 expect body_format = html
 expect html_text ~ Les nouveautés du mois
 expect remote_allowed = 0
+# WebKit's own barrier against remote loads is in force.
+expect remote_blocker = on
 wait 500
 expect remote_requests = 0
 expect remote_shown = 0

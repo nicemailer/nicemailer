@@ -161,6 +161,11 @@ extension AppModel {
 
     /// The latest received message (not in Sent or Drafts): its sender
     /// decides the display of the thread (text or HTML).
+    /// The message a deep link to the open mail points to (`DeepLink`):
+    /// its latest received message, so that the link opens it in its
+    /// folder (Inbox, Archive…) rather than in Sent.
+    var deepLinkMessageId: Int? { latestReceived?.id }
+
     var latestReceived: MessageView? {
         openThread?.messages.last { $0.folderRole != "sent" && $0.folderRole != "drafts" } ?? latestMessage
     }
@@ -423,23 +428,95 @@ extension AppModel {
         }
     }
 
-    /// Links of the open thread's text, in order, without duplicates (`l`).
-    var links: [URL] {
+    /// Links of the open thread for `l`, each once (`Link.merge`). The
+    /// core finds them (`links.rs`, `phones.rs`).
+    var links: [Link] {
         guard let thread = openThread else { return [] }
-        let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
-        var seen = Set<URL>()
-        var out: [URL] = []
-        for m in thread.messages {
-            let text = m.bodyText ?? ""
-            let range = NSRange(text.startIndex..., in: text)
-            for match in detector?.matches(in: text, range: range) ?? [] {
-                if let url = match.url, url.scheme?.hasPrefix("http") == true || url.scheme == "mailto",
-                   seen.insert(url).inserted {
-                    out.append(url)
+        return Link.merge(thread.messages.map(\.links))
+    }
+
+    /// A link of the `l` panel: where it goes, and what the mail calls it.
+    /// A phone number is a `tel:` link.
+    struct Link: Equatable {
+        let url: URL
+        /// Text of the link in the HTML, or a phone number as written; nil
+        /// when the mail only wrote the address, or put an image in the link.
+        let text: String?
+
+        var isPhone: Bool { url.scheme == "tel" }
+
+        /// The links of several messages as one list, each once, in three
+        /// groups, each in the order of the mail:
+        ///
+        /// 1. links with a text ("Voir ma facture"): what the mail offers;
+        /// 2. phone numbers;
+        /// 3. links without a text: in a newsletter, mostly an image
+        ///    leading to a social network or a shop, the least wanted.
+        ///
+        /// A link first seen without text takes the text a later message
+        /// gives it (and its group); a URL Foundation cannot read is left
+        /// out.
+        static func merge(_ lists: [[LinkView]]) -> [Link] {
+            var all: [Link] = []
+            var index: [String: Int] = [:]
+            for view in lists.joined() {
+                guard let url = URL(string: view.url) else { continue }
+                let link = Link(url: url, text: view.text?.isEmpty == false ? view.text : nil)
+                if let i = index[link.key] {
+                    if all[i].text == nil, link.text != nil { all[i] = link }
+                } else {
+                    index[link.key] = all.count
+                    all.append(link)
                 }
             }
+            let phones = all.filter(\.isPhone)
+            let others = all.filter { !$0.isPhone }
+            return others.filter { $0.text != nil } + phones + others.filter { $0.text == nil }
         }
-        return out
+
+        /// What makes two links the same: the URL, or for a phone its last
+        /// nine digits, as in the core (`links.rs`, `dedup_key`): a quoted
+        /// signature gives the same number in national and international
+        /// form.
+        var key: String {
+            guard isPhone else { return url.absoluteString }
+            return "tel:" + String(number.filter(\.isNumber).suffix(9))
+        }
+
+        /// The number of a `tel:` link: `+33612345678`, `0612345678`.
+        private var number: String {
+            String(url.absoluteString.dropFirst("tel:".count)).removingPercentEncoding ?? ""
+        }
+
+        /// The address of a `mailto:` link, without the scheme.
+        private var mailAddress: String { String(url.absoluteString.dropFirst("mailto:".count)) }
+
+        /// Left half of the row: what the link is. Its text; without one,
+        /// the number of a phone, the address of a mail link, the site of a
+        /// web link ("facebook.com"), the full address being on the right.
+        var label: String {
+            if let text { return text }
+            if isPhone { return number }
+            if url.scheme == "mailto" { return mailAddress }
+            return url.host() ?? url.absoluteString
+        }
+
+        /// Right half of the row: where the link goes, in full (cut in the
+        /// middle when too long), so it can be read before opening it.
+        /// Nothing when the left half already says it: a mail address or a
+        /// number shown as such.
+        var destination: String? {
+            if isPhone {
+                // "06 12 34 56 78" for tel:0612345678 says it already.
+                guard let text else { return nil }
+                return text.filter(\.isNumber).hasSuffix(String(number.filter(\.isNumber).suffix(9))) ? nil : number
+            }
+            if url.scheme == "mailto" { return text == nil ? nil : mailAddress }
+            return url.absoluteString
+        }
+
+        /// SF Symbol of the row.
+        var icon: String { isPhone ? "phone" : "link" }
     }
 
     /// Marks the cursor's thread, then moves the cursor and marks the next

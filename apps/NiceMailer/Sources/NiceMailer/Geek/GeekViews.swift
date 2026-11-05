@@ -149,8 +149,14 @@ private struct GeekWindow: View {
             KeyMenu(title: L("Keys"), entries: controller.helpLines.map { .init(key: $0.0, label: $0.1) }, onSelect: nil)
                 .padding(12)
         case .picker(let kind):
-            PickerPopup(controller: controller, kind: kind)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // Swift note: a `GeometryReader` gives its content the size it
+            // is offered, here the window's content: the links panel takes
+            // as much of its width as is useful.
+            GeometryReader { geometry in
+                PickerPopup(controller: controller, kind: kind,
+                            width: PickerPopup.width(kind, available: geometry.size.width, scale: TextSize.shared.scale))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
         case .none, .contactFilter, .choice:
             EmptyView()
         }
@@ -254,8 +260,11 @@ struct GeekStatusBar: View {
                 }
             }
             if case .contactFilter = controller.overlay {
-                Text("/" + controller.contactsLine.beforeCursor + "▏" + controller.contactsLine.afterCursor)
-                    .foregroundStyle(Palette.accent)
+                HStack(spacing: 0) {
+                    Text("/")
+                    CaretText(line: controller.contactsLine)
+                }
+                .foregroundStyle(Palette.accent)
             }
             Spacer(minLength: 8)
             if let error = model.lastError {
@@ -560,6 +569,66 @@ private struct GeekThreadRow: View {
 
 // MARK: - Reader
 
+/// The title line of the reader: the subject, then the controls of the
+/// mail (unsubscribe, blocked pixels, text | html | images, folder).
+///
+/// On one line when the whole subject fits beside the controls, otherwise
+/// on two: the subject alone, then the controls aligned on the right. The
+/// choice is measured, not guessed: the font size (⌘+ ⌘−), the length of
+/// the subject, the controls this mail has and the width of the reader all
+/// count, and it is made again whenever one of them changes.
+///
+/// Swift note: `ViewThatFits` lays out its children in order and shows the
+/// first whose ideal width fits in the space offered. The ideal width of a
+/// one-line `Text` is that of its whole text, so the first child fits only
+/// when the subject is not cut.
+struct ReaderTitleBar<Controls: View>: View {
+    let subject: String
+    @ViewBuilder let controls: () -> Controls
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: scaled(8)) {
+                subjectText
+                Spacer(minLength: scaled(16))
+                controls()
+            }
+            .frame(height: scaled(26))
+            .onAppear { Self.report(lines: 1) }
+            VStack(alignment: .leading, spacing: 0) {
+                subjectText
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(height: scaled(24))
+                HStack(spacing: scaled(8)) {
+                    Spacer(minLength: 0)
+                    controls()
+                }
+                .frame(height: scaled(22))
+                .padding(.bottom, scaled(2))
+            }
+            .onAppear { Self.report(lines: 2) }
+        }
+        .padding(.horizontal, 12)
+    }
+
+    // Selectable like the body (the text reader is an NSTextView): the
+    // subject is often what one copies to search for it or quote it.
+    // Swift note: `.textSelection(.enabled)` lets the user drag over a
+    // SwiftUI `Text` and copy it with ⌘C; ⌘ shortcuts are left to AppKit
+    // by `GeekController.handle`. On two lines, a subject longer than the
+    // whole reader is cut at the end; the tooltip shows it whole.
+    private var subjectText: some View {
+        Text(subject).font(.geek(13, weight: .bold)).lineLimit(1)
+            .textSelection(.enabled)
+            .help(subject)
+    }
+
+    /// In UI script mode, which layout is shown (`title_lines`).
+    private static func report(lines: Int) {
+        if UIScript.isActive { UIScript.titleLines = lines }
+    }
+}
+
 /// The open thread, as text (iA Writer Mono V) or as sanitized HTML,
 /// following the choice remembered for the sender.
 private struct GeekReaderColumn: View {
@@ -571,69 +640,10 @@ private struct GeekReaderColumn: View {
             let state = controller.readerState
             let blocks = ThreadDisplay.blocks(thread, state)
             VStack(spacing: 0) {
-                HStack {
-                    // Selectable like the body (the text reader is an
-                    // NSTextView): the subject is often what one copies to
-                    // search for it or quote it. Swift note:
-                    // `.textSelection(.enabled)` lets the user drag over a
-                    // SwiftUI `Text` and copy it with ⌘C; ⌘ shortcuts are left
-                    // to AppKit by `GeekController.handle`.
-                    Text(thread.subject).font(.geek(13, weight: .bold)).lineLimit(1)
-                        .textSelection(.enabled)
-                    Spacer()
-                    if state.showAll {
-                        Text("T").foregroundStyle(Palette.accent)
-                    }
-                    // Unsubscribe, left of text | html (`ui.md`,
-                    // "Désabonnement"); "unsubscribed on …" once done.
-                    if let offer = model.unsubscribeOffer {
-                        if let at = offer.senderUnsubscribedAt {
-                            Text(UnsubscribeDisplay.done(at)).foregroundStyle(Palette.muted)
-                        } else {
-                            let label = UnsubscribeDisplay.label(offer)
-                            HStack(spacing: scaled(4)) {
-                                Text(label.text)
-                                if let symbol = label.symbol { Image(systemName: symbol) }
-                            }
-                            .foregroundStyle(offer.source == "body" ? Palette.muted : Palette.accent)
-                            .padding(.horizontal, scaled(4))
-                            .overlay(Rectangle().stroke(Palette.separator, lineWidth: 1))
-                            .contentShape(Rectangle())
-                            .help(label.help)
-                            .onTapGesture { model.unsubscribe() }
-                            .uiTarget("reader-unsubscribe")
-                        }
-                    }
-                    // Tracking pixels the core removed (`ui.md`, "Images
-                    // distantes"): shown in every display, they are never
-                    // loaded.
-                    if model.trackingPixels > 0 {
-                        Text(L("pixels blocked: %lld", model.trackingPixels))
-                            .foregroundStyle(Palette.muted)
-                            .help(L("Tracking pixels removed from this conversation: they are never loaded"))
-                    }
-                    if model.latestReceived?.bodyHtml != nil {
-                        // The text | html | images switch (`ui.md`); also
-                        // `vh` and `vi`. Each word is clicked on its own;
-                        // "images" only when the thread has remote images.
-                        HStack(spacing: 0) {
-                            formatSegment("text", Text(" text "))
-                            formatSegment("html", Text(" html "))
-                            if model.imagesOffered {
-                                formatSegment("images", Text(" " + L("images") + " "))
-                            }
-                        }
-                        .foregroundStyle(Palette.muted)
-                    }
-                    // In "Everything", the folder of the mail (and its
-                    // account in "all"), at the right end of the subject line
-                    // (`ui.md`): the list mixes every folder.
-                    if let label = model.selectedThreadFolderLabel {
-                        Text(label).foregroundStyle(Palette.muted).lineLimit(1)
-                    }
-                }
-                .padding(.horizontal, 12)
-                .frame(height: scaled(26))
+                // The subject, then the controls of the mail; on two lines
+                // when the subject would not fit whole beside them
+                // (`ReaderTitleBar`).
+                ReaderTitleBar(subject: thread.subject) { titleControls(state) }
                 Palette.separator.frame(height: 1)
                 if model.bodyFormat != "text" {
                     let page = threadHTML(thread, state)
@@ -644,6 +654,68 @@ private struct GeekReaderColumn: View {
             }
         } else {
             Text(L("No mail")).foregroundStyle(Palette.muted).frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    /// The controls of the title line, left to right: `T`, unsubscribe,
+    /// blocked pixels, the text | html | images switch, the folder.
+    @ViewBuilder
+    private func titleControls(_ state: ThreadDisplay.State) -> some View {
+        if state.showAll {
+            Text("T").foregroundStyle(Palette.accent)
+        }
+        // Unsubscribe, left of text | html (`ui.md`,
+        // "Désabonnement"); "unsubscribed on …" once done.
+        if let offer = model.unsubscribeOffer {
+            if let at = offer.senderUnsubscribedAt {
+                Text(UnsubscribeDisplay.done(at)).foregroundStyle(Palette.muted)
+            } else {
+                let label = UnsubscribeDisplay.label(offer)
+                HStack(spacing: scaled(4)) {
+                    Text(label.text)
+                    if let symbol = label.symbol { Image(systemName: symbol) }
+                }
+                .foregroundStyle(offer.source == "body" ? Palette.muted : Palette.accent)
+                .padding(.horizontal, scaled(4))
+                .overlay(Rectangle().stroke(Palette.separator, lineWidth: 1))
+                .contentShape(Rectangle())
+                .help(label.help)
+                .onTapGesture { model.unsubscribe() }
+                .uiTarget("reader-unsubscribe")
+            }
+        }
+        // Tracking pixels the core removed (`ui.md`, "Images distantes"):
+        // shown in every display, they are never loaded. An eye struck out
+        // and the number, shorter than a sentence on a line that holds the
+        // subject; the tooltip and VoiceOver say what it is.
+        if model.trackingPixels > 0 {
+            HStack(spacing: scaled(3)) {
+                Image(systemName: "eye.slash")
+                Text("\(model.trackingPixels)")
+            }
+            .foregroundStyle(Palette.muted)
+            .help(L("Tracking pixels removed from this conversation: they are never loaded"))
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(L("pixels blocked: %lld", model.trackingPixels))
+        }
+        if model.latestReceived?.bodyHtml != nil {
+            // The text | html | images switch (`ui.md`); also
+            // `vh` and `vi`. Each word is clicked on its own;
+            // "images" only when the thread has remote images.
+            HStack(spacing: 0) {
+                formatSegment("text", Text(" text "))
+                formatSegment("html", Text(" html "))
+                if model.imagesOffered {
+                    formatSegment("images", Text(" " + L("images") + " "))
+                }
+            }
+            .foregroundStyle(Palette.muted)
+        }
+        // In "Everything", the folder of the mail (and its
+        // account in "all"), at the right end of the subject line
+        // (`ui.md`): the list mixes every folder.
+        if let label = model.selectedThreadFolderLabel {
+            Text(label).foregroundStyle(Palette.muted).lineLimit(1)
         }
     }
 
@@ -1199,9 +1271,31 @@ private struct KeyMenu: View {
 }
 
 /// Helix-style picker: the typed text on top, the filtered rows below.
-private struct PickerPopup: View {
+struct PickerPopup: View {
     let controller: GeekController
     let kind: GeekController.PickerKind
+    /// Width of the panel (`width(_:available:scale:)`).
+    let width: CGFloat
+
+    /// Width of a picker panel, in points, for a window content `available`
+    /// points wide at the text size `scale`:
+    ///
+    /// - the links panel (`l`) as wide as the window allows, with a margin
+    ///   on each side, up to 1,100 points at the default size: link texts
+    ///   and addresses are long, and cut in the middle when they do not fit;
+    /// - an attribute with a value, or the search, 680 points (`ui.md`);
+    /// - any other picker 520 points;
+    ///
+    /// never wider than the window.
+    static func width(_ kind: GeekController.PickerKind, available: CGFloat, scale: CGFloat) -> CGFloat {
+        let wanted: CGFloat
+        switch kind {
+        case .links: wanted = max(min(available - 2 * 40 * scale, 1100 * scale), 520 * scale)
+        case .attributeValue, .search: wanted = 680 * scale
+        default: wanted = 520 * scale
+        }
+        return min(wanted, available)
+    }
 
     var body: some View {
         let entries = controller.pickerEntries(kind)
@@ -1215,7 +1309,7 @@ private struct PickerPopup: View {
                 if controller.pickerLine.selectedAll {
                     Text(controller.pickerLine.text).background(Palette.cursor)
                 } else {
-                    Text(controller.pickerLine.beforeCursor + "▏" + controller.pickerLine.afterCursor)
+                    CaretText(line: controller.pickerLine)
                 }
                 // What can be typed, until something is (`pickerHint`).
                 if controller.pickerQuery.isEmpty, let hint = controller.pickerHint(kind) {
@@ -1237,11 +1331,26 @@ private struct PickerPopup: View {
                                 if let icon = e.icon {
                                     Image(systemName: icon).foregroundStyle(Palette.muted).frame(width: scaled(16))
                                 }
-                                Text(e.label).lineLimit(1).truncationMode(.middle)
-                                Spacer()
-                                // An unread count, at the right end of the row.
-                                if let detail = e.detail {
-                                    Text(detail).foregroundStyle(Palette.unread)
+                                if halves {
+                                    // Links: what the mail calls the link on the
+                                    // left, where it goes on the right, each in
+                                    // half of the row, so that a long text never
+                                    // pushes the address out of sight. Two frames
+                                    // equally flexible get the same width.
+                                    Text(e.label).lineLimit(1).truncationMode(.middle)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                    Text(e.detail ?? "").lineLimit(1).truncationMode(.middle)
+                                        .foregroundStyle(Palette.muted)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                } else {
+                                    Text(e.label).lineLimit(1).truncationMode(.middle)
+                                    Spacer()
+                                    // At the right end of the row: an unread count
+                                    // stands out, an information stays muted.
+                                    if let detail = e.detail {
+                                        Text(detail).lineLimit(1)
+                                            .foregroundStyle(e.detailStyle == .count ? Palette.unread : Palette.muted)
+                                    }
                                 }
                             }
                             .padding(.horizontal, 8)
@@ -1261,15 +1370,21 @@ private struct PickerPopup: View {
                 if entries.isEmpty { Text(emptyText).foregroundStyle(Palette.muted) }
             }
         }
-        // An attribute with a value gets a bigger panel at once (`ui.md`).
-        .frame(width: scaled(expanded ? 680 : 520), height: scaled(expanded ? 440 : 320))
+        // An attribute with a value gets a bigger panel at once (`ui.md`),
+        // and so do the links of a mail.
+        .frame(width: width, height: scaled(expanded ? 440 : 320))
+        .onAppear { if UIScript.isActive { UIScript.pickerWidth = width } }
+        .onChange(of: width) { _, w in if UIScript.isActive { UIScript.pickerWidth = w } }
         .background(Palette.popup)
         .overlay(Rectangle().stroke(Palette.separator, lineWidth: 1))
     }
 
+    /// Rows in two halves, text and address (the links of `l`).
+    private var halves: Bool { kind == .links }
+
     private var expanded: Bool {
         switch kind {
-        case .attributeValue, .search: return true
+        case .attributeValue, .search, .links: return true
         default: return false
         }
     }

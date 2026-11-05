@@ -50,12 +50,41 @@ The file goes to `dir` (absolute), by default `~/Downloads`, named `<date> <subj
 nicemailer call get_attachment '{"attachment_id": 12}'
 ```
 
+## Links of a message
+
+`get_thread` gives with each message its `links`, for the `l` panel (`crates/nm-store/src/links.rs`): a list of `{url, text}`, in order of appearance, each once. The app shows them in groups: links with a text, phone numbers, the attached files, links without a text (`docs/geek-ui.md`).
+
+1. The `<a href>` of the sanitized HTML, with the visible text of the link (`"Voir ma facture"`), whitespace collapsed, cut at 200 characters; `text` is `null` for a link around an image.
+2. Then the addresses written in the text part (`https://…`, `http://…`, `mailto:…`) that the HTML does not already have, with `text` `null`. Brackets, parentheses and a final punctuation mark are not part of the address.
+
+3. Then the phone numbers written in the text part (`crates/nm-store/src/phones.rs`), as `tel:` links whose `text` is the number as written: `{"url": "tel:0612345678", "text": "06 12 34 56 78"}`. A `tel:` link of the HTML is kept too, with its text. The URL holds the digits only, after a `+` for an international number. A number is listed once, known by its last nine digits, whether written `06 12 34 56 78` or `+33 6 12 34 56 78`.
+
+Only `http`, `https`, `mailto` and `tel` links are kept (no `javascript:`, `cid:`, `#anchor` or relative path), 2,048 bytes long at most, 500 per message at most.
+
+A mail is full of digits that are not phone numbers (dates, amounts, order numbers, SIRET, IBAN), so the rules are strict: a false number is noise, a missed one only costs a copy. A number is taken when it is
+
+- international: `+` (or `00` glued to the country code) then 8 to 15 digits, the first not 0, in any grouping (`+33 (0)6 12 34 56 78`, `+1 415-555-0100`, `0044 20 7946 0958`);
+- national, `0` then a non-zero digit, grouped as in France, Belgium and Switzerland: 10 digits as 2-2-2-2-2, 3-3-2-2 or 4-2-2-2, 9 digits as 2-3-2-2 or 3-2-2-2, with one kind of separator (space, dot or dash);
+- 9 or 10 digits without separators only right after a word announcing a phone ("Tél", "phone", "mobile", "portable", "GSM", "standard"…).
+
+A run of digits is read whole (ten digits inside an IBAN are not a number), digits glued to a letter or inside an address (`https://…`, `x@y`) are left out, and so is a fax: announced before ("Fax :", "Télécopie", "F :", "par fax au") or right after ("(Fax)"). National numbers of other countries written without their `+` prefix (`(415) 555-0100`) are not recognized.
+
+Measured on 30,000 mails of a real archive: about 13 µs per mail for all the links and numbers of a mail under 200 KB, 66 ms for the worst (a 10 MB log); the 120 numbers drawn at random from the 15,000 found were all phone numbers. The scanner reads bytes, never goes back further than an address's length, and drops runs of fewer than 8 digits first, so its time stays linear on lines of megabytes.
+
+The HTML is read because the text the core makes from an HTML part (an HTML-only mail, or a botched text part replaced by the HTML, parser version 7) keeps the words of a link and drops its address. The links are computed when the thread is read, not stored: it is one linear scan of bodies already loaded, and a change of the rule needs no reindexing.
+
+`crates/nm-store/tests/links.rs` covers a botched text part replaced by its HTML, an HTML-only mail and a text mail with a phone number; `links.rs` itself the scanner (entities, tags inside a link, `>` inside an attribute, links left open, schemes, bounds, a number given by a `tel:` link and the text once); `phones.rs` the formats, the numbers that are not phones, addresses, faxes and a huge line.
+
+## Locating a message
+
+`locate_message {message_id}` answers where a message is, `{message_id, thread_id, folder_id, account_id}` (`thread_id` null for a message not linked to a thread yet), or the error `1001` when it is not in the database. The app uses it to open a deep link `nicemailer://m/<id>` (`docs/deep-links.md`).
+
 ## Unsubscribing from a list
 
 When a message arrives, the core looks for a way to unsubscribe from the list it comes from (`crates/nm-store/src/unsubscribe.rs`) and stores it in `message_unsubscribe`:
 
 1. the `List-Unsubscribe` header (RFC 2369): the first web URL and the first `mailto:` in angle brackets, whitespace of a folded header removed. With `List-Unsubscribe-Post: List-Unsubscribe=One-Click` (RFC 8058) and an https URL, the unsubscribe takes one click;
-2. otherwise a link of the HTML body whose text (or address) announces an unsubscription, in English, French, German, Spanish, Italian or Dutch ("unsubscribe", "se désabonner", "désinscription", "abmelden", "darse de baja", "disiscriviti", "uitschrijven", "opt out"…);
+2. otherwise a link of the HTML body (read by the same scanner as the links above) whose text (or address) announces an unsubscription, in English, French, German, Spanish, Italian or Dutch ("unsubscribe", "se désabonner", "désinscription", "abmelden", "darse de baja", "disiscriviti", "uitschrijven", "opt out"…);
 3. otherwise, in a plain text body, a URL on such a line or on the next one.
 
 `get_thread` shows it in `unsubscribe`: `method` (`one_click`, `browser` or `mail`), `source` (`header`, reliable, or `body`, a page of the sender to open), `url`, `mailto`, and `sender_unsubscribed_at`.

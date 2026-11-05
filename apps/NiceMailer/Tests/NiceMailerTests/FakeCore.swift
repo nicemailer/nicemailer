@@ -108,6 +108,8 @@ enum Fixture {
             "attachments": id == 4 ? Fixture.attachments : id == 6 ? Fixture.otherAttachments : [],
             "unsubscribe": Fixture.unsubscribe[id] ?? NSNull(),
             "tracking_pixels": 0,
+            // What the core finds in the text above (`links.rs`).
+            "links": [["url": "https://example.org/\(id)", "text": NSNull()]],
         ]
         return ["id": id, "subject": "Subject \(id)", "messages": [message], "as_of": position]
     }

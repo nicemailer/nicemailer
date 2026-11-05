@@ -19,7 +19,9 @@ cargo build --release --quiet --manifest-path "$ROOT/Cargo.toml"
 
 CLI="$ROOT/target/release/nicemailer"
 CORE="$ROOT/target/release/nicemailer-core"
-BIN="$APP/.build/debug/NiceMailer"
+# NICEMAILER_UI_BIN plays the scenarios with another build of the app, such
+# as the executable of NiceMailer.app (`make bundle`).
+BIN="${NICEMAILER_UI_BIN:-$APP/.build/debug/NiceMailer}"
 
 rm -rf "$OUT"
 mkdir -p "$OUT"

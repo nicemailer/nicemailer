@@ -57,7 +57,7 @@ L'affichage est simplifié au maximum : chaque message montre ce qu'il apporte. 
 
 Charger une image distante apprend à l'expéditeur que le mail a été ouvert, quand, et depuis quelle adresse IP. Les pixels de suivi n'ont pas d'autre usage. Règles :
 
-- **Pixels de suivi retirés par le noyau** à la réception : une image distante de 2 pixels ou moins (`width`, `height` ou style), ou masquée par son style (`display: none`, `visibility: hidden`, `opacity: 0`), perd sa source et n'est jamais demandée, quel que soit l'affichage. Leur nombre s'affiche sur la ligne de titre (« pixels bloqués : N »). La détection se fait avant toute requête : une fois la requête partie, l'ouverture est signalée.
+- **Pixels de suivi retirés par le noyau** à la réception : une image distante de 2 pixels ou moins (`width`, `height` ou style), ou masquée par son style (`display: none`, `visibility: hidden`, `opacity: 0`), perd sa source et n'est jamais demandée, quel que soit l'affichage. Leur nombre s'affiche sur la ligne de titre : un œil barré suivi du nombre (l'infobulle dit « pixels bloqués : N »). La ligne de titre (sujet, désabonnement, pixels, text | html | images) passe sur deux lignes, le sujet seul puis les contrôles à droite, dès que le sujet entier ne tient plus à côté des contrôles. La détection se fait avant toute requête : une fois la requête partie, l'ouverture est signalée.
 - **Autres images distantes** : leur adresse est conservée sous une forme que la vue web ne charge pas seule (`nm-remote:`). Le mot `images` du sélecteur n'apparaît que si la conversation en contient.
 - **Mode `images`** (clic ou `vi`) : l'app télécharge chaque image une fois, en HTTPS uniquement (`http:` est converti, jamais envoyé en clair), sans cookies, sans `Referer`, avec un User-Agent neutre, jamais vers la machine ni le réseau local, 10 Mo au plus et seulement du contenu `image/…`. Les images sont gardées en cache : rouvrir un mail ne refait aucune requête. Seuls les messages **dépliés** chargent leurs images.
 - **Mémorisé par expéditeur, appliqué aux seuls mails authentifiés** (`pass`, `authentification-expediteur.md`) : sans authentification, n'importe qui peut écrire au nom d'un expéditeur de confiance. Pour un autre mail (import compris), la conversation s'ouvre en HTML ; choisir `images` charge les images **pour cette conversation seulement**.
@@ -159,7 +159,7 @@ m move (déplacer), puis choisir le dossier. mt déplacer dans le dossier Todo, 
 del supprimer (déplacer dans Deleted)
 t tag (ajouter un tag ; si tous les mails visés l'ont déjà, le retirer)
 g group (ajoute l'expéditeur dans un groupe)
-l link (panneau des liens du mail ; entrée ouvre le lien dans le navigateur)
+l link (panneau des liens du mail ; entrée ouvre le lien dans le navigateur). En première ligne, « Lien vers ce mail » : entrée copie un lien Markdown `[sujet](nicemailer://m/<id>)` vers le mail, pour le coller dans une note (Obsidian), ⌘-entrée l'URL seule ; un clic sur ce lien ouvre le mail dans NiceMailer. D'abord les liens qui ont un texte (« Voir ma facture »), puis les numéros de téléphone trouvés dans le mail, avec une icône de téléphone (entrée lance l'appel dans l'app Téléphone du Mac), puis les pièces jointes, enfin les liens sans texte (le plus souvent une image menant à un réseau social). Le panneau est aussi large que la fenêtre le permet, pour lire les liens longs.
 u lu / non lu
 z annule le dernier déplacement ou la dernière décision (les mails reviennent, la décision précédente aussi) ; chaque z remonte d'une étape
 \* drapeau
