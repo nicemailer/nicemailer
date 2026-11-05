@@ -26,11 +26,15 @@
 //!
 //! A Rust binary is signed by the linker with a signature of its own
 //! content ("ad hoc"): every rebuild is a new application for the Keychain.
-//! In development, `make core` therefore signs the core with a personal
-//! certificate (`make dev-cert`, once), whose identity stays the same from
-//! one build to the next (`docs/configuration.md`, "Passwords"). The
-//! shipped core is signed by the developer's Apple identity, which plays
-//! the same role.
+//! In development, `make core` therefore signs the core with an Apple
+//! Development certificate (`scripts/sign-core.sh`). Its Team ID matters:
+//! besides the access list, an item of the login keychain has a
+//! *partition* made from the signature of its creator, `teamid:<team>`
+//! for a signature with a Team ID, the same from one build to the next,
+//! but `cdhash:<hash of the binary>` for one without (a self-signed
+//! certificate), which the next build does not match
+//! (`docs/configuration.md`, "Passwords"). The shipped core is signed by
+//! the developer ID of the same team, which plays the same role.
 //!
 //! # Never a dialog
 //!
@@ -132,8 +136,8 @@ fn binding_of(attrs: &std::collections::HashMap<String, String>) -> Result<Bindi
 fn describe(e: Error) -> String {
     match e.code() {
         AUTH_FAILED | INTERACTION_NOT_ALLOWED => "the Keychain refused the password of this account: it is locked, \
-             or the password was saved by another build of the core (run make dev-cert once, then save the \
-             password again)"
+             or the password was saved by another build of the core (sign it with an Apple Development certificate, \
+             see docs/configuration.md, \"Passwords\", then save the password again)"
             .into(),
         _ => format!("Keychain: {e}"),
     }

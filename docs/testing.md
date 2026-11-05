@@ -2,7 +2,7 @@
 
 | Command | What runs | Needs |
 | --- | --- | --- |
-| `make dev-cert` | Once: the certificate that signs the core of `make core`, so it keeps reading the passwords it saved in the Keychain across rebuilds | |
+| `make dev-cert` | Fallback only: a self-signed certificate for `make core` when there is no Apple Development one; its passwords survive no rebuild (`configuration.md`, "Passwords") | |
 | `make test` | Rust tests (`cargo test`), Python script tests and Swift unit tests (`swift test`) | nothing running |
 | `make swift-test` | Swift unit tests only | |
 | `make ui-test` | scripted UI tests of the app | builds the core; starts its own cores on temporary data |

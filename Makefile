@@ -46,16 +46,17 @@ seed:
 
 # Run the core in the foreground; stop it with Ctrl-C. Builds the CLI
 # (nicemailer) too, so that the two always speak the same protocol. Signed with the
-# development certificate (make dev-cert, once), so that every build reads
-# the passwords the previous ones saved in the Keychain
+# Apple Development certificate (scripts/sign-core.sh), so that every build
+# reads the passwords the previous ones saved in the Keychain
 # (docs/configuration.md, "Passwords").
 core:
 	cargo build --release --bin nicemailer-core --bin nicemailer
 	scripts/sign-core.sh target/release/nicemailer-core
 	target/release/nicemailer-core
 
-# Creates, once, the personal code signing certificate "NiceMailer Dev" in
-# the login keychain (scripts/dev-cert.sh). Does nothing if it exists.
+# Fallback only: creates the self-signed certificate "NiceMailer Dev" for a
+# Mac without an Apple Development one (scripts/dev-cert.sh). Its passwords
+# survive no rebuild of the core (docs/configuration.md, "Passwords").
 dev-cert:
 	scripts/dev-cert.sh
 

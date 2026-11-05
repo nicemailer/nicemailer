@@ -123,20 +123,32 @@ It is checked twice:
 
 An item of the Keychain has an access list: the application that saved it reads it without a dialog, any other one needs the user's permission. The core runs in the background, so it turns the Keychain's dialogs off at start (`keychain::never_prompt`): a dialog would appear out of nowhere and block the core. An access that would need one fails instead, and the account's error says so ("the Keychain refused the password of this account: it is locked, or the password was saved by another build of the core").
 
-### Development: `make dev-cert`, once
+### Development: an Apple Development certificate, once
 
-macOS recognizes an application by its code signature. A Rust binary is signed by the linker with a signature of its own content, so every rebuild of the core would be a new application, refused by the items the previous build saved. Hence, in development:
+macOS recognizes an application by its code signature. A Rust binary is signed by the linker with a signature of its own content, so every rebuild of the core would be a new application, refused by the items the previous build saved. `make core` therefore signs the core (`scripts/sign-core.sh`, identifier `org.nicemailer.core`).
 
-```sh
-make dev-cert    # once: creates the certificate "NiceMailer Dev" in the login keychain
-make core        # builds the core and the CLI, signs the core with it (identifier org.nicemailer.core), runs it
-```
+The certificate must carry an Apple **Team ID**. Besides its access list, an item of the login keychain has a *partition*, which macOS sets from the signature of the program that created it:
 
-Signed with the same certificate and identifier, every build is the same application for the Keychain. Measured on a throwaway keychain (`scripts/dev-cert.sh`, then two different builds signed by `scripts/sign-core.sh`): the second build reads the password saved by the first; an unsigned build, or one signed with another identifier, is refused. The certificate is self-signed and not marked as trusted, which would need an administrator password: `codesign` uses it anyway, and the Keychain only compares a signature with the one that saved the item.
+| Signature of the core | Partition of the items it saves | The next build |
+| --- | --- | --- |
+| Apple Development (Team ID `ABCDE12345`) | `teamid:ABCDE12345` | reads them |
+| self-signed (`NiceMailer Dev`), ad hoc, unsigned | `cdhash:<hash of this very binary>` | refused |
 
-A core run without signing (`cargo run`) works, but cannot read the passwords saved by `make core`; its accounts say so. A password saved before `make dev-cert` (by an unsigned build) cannot be read or replaced by the signed core: delete the item `NiceMailer: <key> (IMAP)` in Keychain Access, then save the password again.
+An Apple Development certificate is free with an Apple ID, once:
 
-The shipped core will be signed by the developer's Apple identity, which plays the same role.
+1. Xcode → Settings → Accounts → **+** → Apple ID; a "Personal Team" appears.
+2. Select it → **Manage Certificates…** → **+** → **Apple Development**.
+3. `security find-identity -v -p codesigning` must list it as valid. If it says `0 valid identities found`, the intermediate certificate of Apple that issued it is missing: install "Worldwide Developer Relations - G3" from <https://www.apple.com/certificateauthority/> (double-click, login keychain).
+
+At the first signature macOS may ask whether `codesign` may use the key: answer **Always Allow**. Renewing the certificate, every year, keeps the Team ID and the name the access list checks: the saved passwords should stay readable (not yet observed: the first renewal will tell).
+
+`sign-core.sh` uses `$SIGN_IDENTITY` when set, else the first valid Apple Development identity, else the self-signed `NiceMailer Dev` (`make dev-cert`) with a warning: a core signed with it reads its passwords until the next rebuild only.
+
+A keychain made by `security create-keychain`, as the tests use, gets no partition: there, two builds signed with the same self-signed certificate do share their items. This is why the first design, which relied on `NiceMailer Dev` alone, passed its tests and failed on the login keychain.
+
+A core run without signing (`cargo run`) works, but cannot read the passwords saved by `make core`; its accounts say so. A password saved by a build with another signature cannot be read or replaced by the signed core: delete the item `NiceMailer: <key> (IMAP)` in Keychain Access, then save the password again.
+
+The shipped core will be signed by the Developer ID of the same team, whose partition `teamid:` plays the same role.
 
 Limit, the one the specification accepts (`configuration.md`, section 7): a program running as the user can use the development certificate to sign itself as the core. The protection is aimed at agents and edits of the file, not at malware on the Mac.
 
@@ -230,7 +242,7 @@ Also part of this phase: the queries of the contract (`list_threads`, `get_threa
 | `crates/nm-engine/src/watch.rs` | The watch of the file |
 | `crates/nm-engine/src/secrets.rs` | `Secrets`, `check` and `imap_password` (the binding to the server), `MemorySecrets` for tests |
 | `crates/nm-engine/src/keychain.rs` | The Keychain: items, `never_prompt` |
-| `scripts/dev-cert.sh`, `scripts/sign-core.sh` | The development certificate, and the signature of `make core` |
+| `scripts/sign-core.sh`, `scripts/dev-cert.sh` | The signature of `make core` (Apple Development, else the self-signed fallback) |
 | `crates/nm-engine/src/lib.rs` | `Engine`: reload, refusals, accounts and their errors, events |
 | `crates/nm-store/src/accounts.rs` | `sync_config_accounts`, `list_account_rows`, `set_account_order`, `record_config_reload` |
 | `crates/nm-store/src/pool.rs` | `ReadPool` |

@@ -1,6 +1,13 @@
 #!/bin/bash
-# Creates, once, the personal code signing certificate "NiceMailer Dev"
-# used by `make core` to sign the core in development.
+# Creates, once, the self-signed code signing certificate "NiceMailer Dev",
+# the fallback of `make core` (scripts/sign-core.sh) on a Mac without an
+# Apple Development certificate.
+#
+# Limit: in the login keychain, an item saved by a program signed without
+# an Apple Team ID gets the partition "cdhash:<hash of that binary>", so
+# the next build is refused even with this certificate. Only throwaway
+# keychains (security create-keychain) have no partition. Prefer an Apple
+# Development certificate, see docs/configuration.md, "Passwords".
 #
 # Why: the core keeps the passwords of the accounts in the Keychain, which
 # lets an item be read without a dialog only by the application that saved

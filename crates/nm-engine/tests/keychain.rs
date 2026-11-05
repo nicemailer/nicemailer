@@ -89,7 +89,7 @@ fn another_application_gets_the_server_but_not_the_password() {
     let kc = keychain(&path);
     assert_eq!(kc.imap_binding("perso").unwrap().unwrap().host, "imap.example.com");
     let err = kc.imap("perso").unwrap_err();
-    assert!(err.contains("make dev-cert"), "{err}");
+    assert!(err.contains("Apple Development"), "{err}");
     // And it cannot be replaced either: deleting it needs the same
     // permission.
     assert!(kc.set_imap("perso", &credential("imap.example.com", "new")).is_err());
