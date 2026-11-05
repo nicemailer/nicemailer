@@ -41,14 +41,14 @@ Content-Type: multipart/related; boundary="R"
 --R
 Content-Type: text/html; charset=utf-8
 
-<h1>Novembre</h1><p>Les nouveautés du mois. <a href="https://example.net/novembre?u=1&amp;k=2">Lire en ligne</a></p><p><a href="https://social.example.net/lettre"><img src="cid:logo@example.net"></a></p><p>Service client : 01 23 45 67 89</p><p>Le ministre <a href="https://t.example.net/lnk/AA/13/s1/aHR0cHM6Ly92aWRlby5leGFtcGxlLm5ldC9saXZlLzQyP3Q9MTI3OQ">ressent </a><i><a href="https://t.example.net/lnk/AA/14/s2/aHR0cHM6Ly92aWRlby5leGFtcGxlLm5ldC9saXZlLzQyP3Q9MTI3OQ">"les angoisses"</a></i><a href="https://t.example.net/lnk/AA/15/s3/aHR0cHM6Ly92aWRlby5leGFtcGxlLm5ldC9saXZlLzQyP3Q9MTI3OQ"> du pays</a>. Revoir <a href="https://t.example.net/lnk/AA/16/s4/aHR0cHM6Ly92aWRlby5leGFtcGxlLm5ldC9saXZlLzQyP3Q9MTI3OQ">la vidéo</a>.</p><p><img src="https://images.example.net/banner.png" width="600" alt="Bannière"><img src="http://images.example.net/photo.jpg"></p><img src="https://t.example.net/open?u=me%40example.com" width="1" height="1">
+<h1>Novembre</h1><table width="480" cellpadding="6" align="center" bgcolor="#ffffff"><tr><td valign="top"><font face="Georgia, serif" color="#333333">Édito</font></td></tr></table><p>Les nouveautés du mois. <a href="https://example.net/novembre?u=1&amp;k=2">Lire en ligne</a></p><p><a href="https://social.example.net/lettre"><img src="cid:logo@example.net"></a></p><p>Service client : 01 23 45 67 89</p><p>Le ministre <a href="https://t.example.net/lnk/AA/13/s1/aHR0cHM6Ly92aWRlby5leGFtcGxlLm5ldC9saXZlLzQyP3Q9MTI3OQ">ressent </a><i><a href="https://t.example.net/lnk/AA/14/s2/aHR0cHM6Ly92aWRlby5leGFtcGxlLm5ldC9saXZlLzQyP3Q9MTI3OQ">"les angoisses"</a></i><a href="https://t.example.net/lnk/AA/15/s3/aHR0cHM6Ly92aWRlby5leGFtcGxlLm5ldC9saXZlLzQyP3Q9MTI3OQ"> du pays</a>. Revoir <a href="https://t.example.net/lnk/AA/16/s4/aHR0cHM6Ly92aWRlby5leGFtcGxlLm5ldC9saXZlLzQyP3Q9MTI3OQ">la vidéo</a>.</p><p><img src="https://images.example.net/banner.png" width="600" alt="Bannière"><img src="http://images.example.net/photo.jpg"></p><img src="https://t.example.net/open?u=me%40example.com" width="1" height="1">
 --R
 Content-Type: image/png; name="logo.png"
 Content-Disposition: inline; filename="logo.png"
 Content-ID: <logo@example.net>
 Content-Transfer-Encoding: base64
 
-iVBORw0KGgo=
+iVBORw0KGgoAAAANSUhEUgAAAAMAAAACCAIAAAASFvFNAAAAEElEQVR4nGO44OAAQQxwFgBSNAfh9tMsJgAAAABJRU5ErkJggg==
 --R--
 --N
 Content-Type: application/pdf; name="devis.pdf"

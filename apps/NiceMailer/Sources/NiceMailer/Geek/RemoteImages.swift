@@ -477,6 +477,24 @@ enum RemoteBlocker {
     }
 }
 
+/// The Content Security Policy of the HTML reader's page, in a `<meta>` at
+/// the top of its `<head>` (`threadHTML`): a third barrier, after the core's
+/// sanitization and `RemoteBlocker`, written by the browser engine's own
+/// rules rather than ours. Nothing loads but the app's schemes and `data:`
+/// (the icons of the tiles, the bundled font); no script, no frame, no
+/// form, no `<base>`. Inline styles stay allowed: the page's own sheet is
+/// one. `RemoteBlockerTests` checks that it stops a remote image by itself.
+enum ContentPolicy {
+    static let header = [
+        "default-src 'none'",
+        "img-src \(RemoteImages.scheme): \(InlineImages.scheme): data:",
+        "style-src 'unsafe-inline'",
+        "font-src data:",
+        "base-uri 'none'",
+        "form-action 'none'",
+    ].joined(separator: "; ")
+}
+
 /// In UI script mode, the fetcher's only "network": every request gets a
 /// small PNG, and nothing leaves the machine. Each request is counted
 /// (`UIScript.remoteRequests`).

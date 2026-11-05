@@ -360,6 +360,21 @@ extension AppModel {
         }
     }
 
+    /// The bytes of an image embedded in a mail (`cid:`), for the HTML
+    /// reader (`InlineImageLoader`): the part the core extracts, read from
+    /// its file. Nil when the core cannot give it, or when it is not an
+    /// image that can be shown (`InlineImages.showable`).
+    func inlineImage(_ id: Int) async -> (data: Data, mimeType: String)? {
+        guard let client = core,
+              let file: AttachmentFileView = try? await client.call("get_attachment", ["attachment_id": id]),
+              InlineImages.showable(mimeType: file.mimeType, size: file.size) else { return nil }
+        // Read off the main thread, like the copies of `copyAttachment`.
+        let path = file.path
+        guard let data = await Task.detached(operation: { try? Data(contentsOf: URL(fileURLWithPath: path)) }).value,
+              data.count <= InlineImages.maxBytes else { return nil }
+        return (data, file.mimeType)
+    }
+
     /// Where attachments are saved: `exportDirectory`, by default
     /// ~/Downloads.
     var saveDirectory: URL {

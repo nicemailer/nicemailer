@@ -46,6 +46,19 @@ Headers are light: sender and date ("14:05", "yesterday 14:05", "3 Nov 14:05", "
 
 In the HTML view, messages are `<details>` elements (they fold without JavaScript). The core's sanitizer keeps the markers mail apps put on quoted history and signatures (Gmail's `gmail_quote` and `gmail_signature`, Thunderbird's `moz-cite-prefix` and `moz-signature`, Apple Mail's `blockquote type="cite"`, Outlook's `divRplyFwdMsg`, prefixed `nm-`), and the app hides them unless `T` shows everything. Messages imported before this change keep their old sanitized HTML (parser version 1) until a reindex.
 
+## HTML of the sender
+
+The HTML view keeps the **layout** the sender chose, and shows it in the **theme's colours**:
+
+- Kept by the core's sanitizer (`ingest.rs`, `LAYOUT_ATTRIBUTES`, parser version 9): table widths and heights, `border`, `cellpadding`, `cellspacing`, the alignment of cells (`valign`, `nowrap`), of paragraphs and headings (`align`), the spacing of images (`hspace`, `vspace`), `<font face size>`, `<tfoot>` and the text direction (`dir`). None of these takes a URL.
+- Left out: the colours (`bgcolor`, `color`), which the reader does not apply so that every mail stays readable in the dark theme; `background` (an image URL); `style` attributes and `<style>` blocks (not yet: they need a CSS sanitizer).
+- Fonts: the theme font (iA Writer Mono) is the page's default; a font the sender names in `<font face>` is used for its text when the Mac has it. Web fonts are never loaded.
+- A table wider than the reader shrinks to it (`max-width: 100%`).
+- **Embedded images** (`cid:`, a logo or a signature carried by the mail) are shown, in the html and images displays alike: nothing is requested from the network. `get_thread` gives each one a source in the app's scheme, `nm-cid://image/<attachment id>` (`attachments.rs`, `resolve_inline_images`; the stored HTML keeps `cid:`), and the app's handler serves the part the core extracts (`get_attachment`; `InlineImages.swift`): images only, SVG excepted, 10 MB at most, and only the ids of the page. A mail that writes an `nm-cid:` source itself loses it in the sanitizer, so it cannot show another mail's attachment.
+- The page carries a **Content Security Policy** (`ContentPolicy`): nothing loads but the app's schemes (`nm-remote:`, `nm-cid:`) and `data:`; no script, frame, form or `<base>`. It is a third barrier after the sanitizer and WebKit's block list (`RemoteBlocker`), and stops a remote load on its own (`RemoteBlockerTests`).
+
+Bodies stored by an older parser are rewritten by the background reindex: the HTML ones read their raw message again, the others are only marked.
+
 ## Limits
 
 - Messages are not deleted, unlike Outlook's cleanup: redundant content is only hidden.
@@ -55,3 +68,5 @@ In the HTML view, messages are `<details>` elements (they fold without JavaScrip
 ## Tests
 
 `crates/nm-store/src/clean.rs` (unit tests of every rule), `crates/nm-store/tests/thread_display.rs` (a conversation imported then read with `get_thread`), `apps/NiceMailer/Tests/NiceMailerTests/ThreadDisplayTests.swift` (blocks of the reader, toggles, `S`), and the UI scenario `apps/NiceMailer/UITests/thread.uiscript`.
+
+HTML of the sender: `ingest.rs` (attributes kept, colours and URLs not, a mail's own `nm-cid:` removed), `tests/reindex.rs` (version 9 reads only the HTML bodies again), `tests/attachments.rs` (the `nm-cid:` source of an embedded image), `InlineImagesTests` (ids, URLs refused, parts shown, the handler in a web view through the policy), `RemoteBlockerTests` (the policy alone stops a request), and `images.uiscript` (table width, sender's font, embedded logo drawn, policy present).

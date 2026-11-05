@@ -37,7 +37,9 @@ use mail_parser::{MessageParser, MessagePart, PartKind};
 /// 8: remote images keep their URL, in the app's `nm-remote:` scheme, so a
 /// client can load them on request; tracking pixels are removed and counted
 /// (`remote_images.rs`).
-pub const PARSER_VERSION: i64 = 8;
+/// 9: the layout attributes of the sender's HTML are kept (table widths,
+/// cell padding and alignment, `<font face size>`: `LAYOUT_ATTRIBUTES`).
+pub const PARSER_VERSION: i64 = 9;
 
 /// Length of `message.snippet`, in characters.
 const SNIPPET_CHARS: usize = 200;
@@ -353,6 +355,39 @@ fn collect_attachments(
     });
 }
 
+/// Presentational attributes kept on top of ammonia's defaults, by tag
+/// (`docs/thread-display.md`, "HTML of the sender"). A newsletter is laid
+/// out with tables of fixed width, padded and aligned cells: without these
+/// attributes it collapses into one column of text.
+///
+/// Only attributes whose value is a size, a number, a keyword or a font
+/// name: none takes a URL, so none can make the web view load anything.
+/// `background` (an image URL) is left out, and so are the colours
+/// (`bgcolor`, `color`, `text`, `link`): the reader shows every mail in the
+/// app's dark theme, and colours chosen for a white page would not be
+/// readable on it.
+const LAYOUT_ATTRIBUTES: &[(&str, &[&str])] = &[
+    ("table", &["width", "height", "border", "cellpadding", "cellspacing"]),
+    ("td", &["width", "height", "valign", "nowrap"]),
+    ("th", &["width", "height", "valign", "nowrap"]),
+    ("tr", &["height", "valign"]),
+    ("tbody", &["valign"]),
+    ("thead", &["valign"]),
+    ("tfoot", &["valign"]),
+    ("col", &["width", "valign"]),
+    ("colgroup", &["width", "valign"]),
+    ("img", &["border", "hspace", "vspace"]),
+    ("font", &["face", "size"]),
+    ("p", &["align"]),
+    ("div", &["align"]),
+    ("h1", &["align"]),
+    ("h2", &["align"]),
+    ("h3", &["align"]),
+    ("h4", &["align"]),
+    ("h5", &["align"]),
+    ("h6", &["align"]),
+];
+
 /// An HTML body made safe to display (`sanitize_html`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct SanitizedHtml {
@@ -396,7 +431,14 @@ pub fn sanitize_html(html: &str) -> SanitizedHtml {
     // a pixel (rare) loses it too, and counts.
     let removed = Arc::new(AtomicI64::new(0));
     let removed_in_filter = removed.clone();
-    let clean = ammonia::Builder::default()
+    let mut builder = ammonia::Builder::default();
+    // `<font>` and `<tfoot>` are not among ammonia's default tags; `dir`
+    // (text direction, for Arabic or Hebrew) is allowed everywhere.
+    builder.add_tags(["font", "tfoot"]).add_generic_attributes(["dir"]);
+    for (tag, attributes) in LAYOUT_ATTRIBUTES {
+        builder.add_tag_attributes(tag, attributes.iter().copied());
+    }
+    let clean = builder
         .add_url_schemes(["cid"])
         .add_allowed_classes("div", ["gmail_quote", "gmail_attr", "gmail_signature", "moz-cite-prefix", "moz-signature"])
         .add_allowed_classes("blockquote", ["gmail_quote"])
@@ -648,6 +690,34 @@ Content-Transfer-Encoding: base64\r\n\r\n/9j/4AAQ\r\n--C--\r\n";
         // Nothing remote.
         let s = sanitize_html("<p>Hi</p>");
         assert_eq!((s.remote_images, s.tracking_pixels), (false, 0));
+    }
+
+    #[test]
+    fn layout_attributes_survive_but_not_colours_or_urls() {
+        let html = r##"<table width="600" cellpadding="8" cellspacing="0" border="0" align="center" bgcolor="#ffffff" background="https://x.org/bg.png">
+            <tr valign="top"><td width="50%" nowrap valign="middle" style="color:red" bgcolor="red">A</td></tr>
+            <tfoot><tr><td>F</td></tr></tfoot></table>
+            <font face="Georgia, serif" size="2" color="red">Texte</font>
+            <p align="center" dir="rtl">x</p><img src="cid:logo" border="0" hspace="4" onerror="x()">"##;
+        let clean = sanitize_html(html).html;
+        for kept in [r#"width="600""#, r#"cellpadding="8""#, r#"cellspacing="0""#, r#"border="0""#, r#"align="center""#,
+            r#"valign="top""#, r#"width="50%""#, "nowrap", r#"valign="middle""#, "<tfoot>",
+            r#"<font face="Georgia, serif" size="2">"#, r#"dir="rtl""#, r#"hspace="4""#] {
+            assert!(clean.contains(kept), "{kept} missing in {clean}");
+        }
+        // Colours wait for the dark adaptation; `background` is a URL.
+        for gone in ["bgcolor", "color", "background", "x.org", "style", "onerror"] {
+            assert!(!clean.contains(gone), "{gone} left in {clean}");
+        }
+    }
+
+    #[test]
+    fn a_mail_cannot_write_the_apps_own_image_schemes() {
+        // The core alone writes `nm-cid:` (`queries.rs`, `get_thread`) and
+        // `nm-remote:` (this file) sources: a mail that writes one itself,
+        // to show another mail's attachment, loses it.
+        let clean = sanitize_html(r#"<img src="nm-cid://image/5"><img src="nm-remote://image?u=x"><a href="nm-cid://image/5">a</a>"#).html;
+        assert!(!clean.contains("nm-cid") && !clean.contains("nm-remote"), "{clean}");
     }
 
     #[test]

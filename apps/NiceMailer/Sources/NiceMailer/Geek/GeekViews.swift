@@ -647,7 +647,8 @@ private struct GeekReaderColumn: View {
                 Palette.separator.frame(height: 1)
                 if model.bodyFormat != "text" {
                     let page = threadHTML(thread, state)
-                    HTMLReader(html: page.html, allowedImages: page.images, controller: controller)
+                    HTMLReader(html: page.html, allowedImages: page.images, inlineImages: page.inline,
+                               controller: controller)
                 } else {
                     TextReader(blocks: blocks, threadId: thread.id, controller: controller)
                 }
@@ -738,9 +739,15 @@ private struct GeekReaderColumn: View {
     /// In the images mode, the remote images of a message load only when
     /// `RemoteImages.loads` says so (unfolded, sender's choice and
     /// authentication, or asked for this conversation); the others keep a
-    /// source the web view ignores. Returns the page and the original URLs
-    /// it may load, for the scheme handler (`RemoteImageLoader.allowed`).
-    private func threadHTML(_ thread: ThreadView, _ state: ThreadDisplay.State) -> (html: String, images: Set<String>) {
+    /// source the web view ignores. Returns the page, the original URLs it
+    /// may load, for the scheme handler (`RemoteImageLoader.allowed`), and
+    /// the attachments its embedded images show (`InlineImageLoader`).
+    ///
+    /// The sender's layout is kept (table widths, padding, alignment,
+    /// fonts named in `<font face>`: `ingest.rs`, `LAYOUT_ATTRIBUTES`), but
+    /// not its colours: every mail is shown in the theme's colours.
+    private func threadHTML(_ thread: ThreadView, _ state: ThreadDisplay.State)
+        -> (html: String, images: Set<String>, inline: Set<Int>) {
         func esc(_ s: String) -> String {
             s.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;")
                 .replacingOccurrences(of: ">", with: "&gt;")
@@ -751,13 +758,21 @@ private struct GeekReaderColumn: View {
         #nm-divRplyFwdMsg, #nm-divRplyFwdMsg ~ *, hr:has(+ #nm-divRplyFwdMsg), #nm-appendonsend ~ * { display: none; }
         """
         var html = """
-        <html><head><meta charset="utf-8"><style>
+        <html><head><meta charset="utf-8">
+        <meta http-equiv="Content-Security-Policy" content="\(ContentPolicy.header)">
+        <style>
         \(Fonts.cssFontFaces)
         :root { color-scheme: light dark; }
-        /* The mail's own styles are removed by the sanitizer: everything is
-           shown in the theme font, like the text reader. */
-        body, table, td, p, div, span, a, li, summary { font-family: "NM Mono", ui-monospace, monospace; }
+        /* The theme font is the page's default; a font the sender named
+           (`<font face>`) wins in its own text. The page has no doctype, so
+           WebKit draws it in "quirks" mode, as mail clients do, where a
+           table does not inherit the size and font of the text around it:
+           told here to inherit. */
+        body, summary { font-family: "NM Mono", ui-monospace, monospace; }
+        table { font-family: inherit; font-size: inherit; }
         body { margin: 16px; font-size: \(Int(scaled(14)))px; }
+        /* A newsletter is 600 px wide or so: narrower when the reader is. */
+        table { max-width: 100%; }
         summary { font-size: \(Int(scaled(12)))px; color: #888; cursor: pointer; list-style: none; margin: 4px 0; }
         summary::-webkit-details-marker { display: none; }
         details[open] summary { margin-bottom: 12px; }
@@ -767,7 +782,8 @@ private struct GeekReaderColumn: View {
         hr { border: 0; border-top: 1px solid #8884; margin: 16px 0; }
         img { max-width: 100%; height: auto; }
         /* Images without a source (tracking pixels removed by the core),
-           remote images not loaded, `cid:` images: hide the empty boxes. */
+           remote images not loaded, `cid:` images without a part (those
+           with one have an `nm-cid:` source): hide the empty boxes. */
         img:not([src]), img[data-nm-src], img[src^="cid:"] { display: none; }
         /* Attachment tiles: 3 to 5 per row, as in the text reader. */
         .att { display: grid; gap: 6px; margin: 12px 0;
@@ -786,6 +802,7 @@ private struct GeekReaderColumn: View {
         let mode = model.bodyFormat
         let once = model.remoteImagesOnce == thread.id
         var images = Set<String>()
+        var inline = Set<Int>()
         for (i, m) in thread.messages.enumerated() {
             if i > 0 { html += "<hr>" }
             let unfolded = state.showAll || (state.folding[m.id] ?? m.expanded)
@@ -799,6 +816,7 @@ private struct GeekReaderColumn: View {
             if let body = m.bodyHtml {
                 let loading = RemoteImages.loads(m, mode: mode, unfolded: unfolded, once: once)
                 if loading { images.formUnion(RemoteImages.sources(in: body)) }
+                inline.formUnion(InlineImages.ids(in: body))
                 html += RemoteImages.body(body, loading: loading)
             } else {
                 for (j, seg) in m.segments.enumerated() {
@@ -824,8 +842,9 @@ private struct GeekReaderColumn: View {
             }
             html += "</details>"
         }
-        return (html + "</body></html>", images)
+        return (html + "</body></html>", images, inline)
     }
+
 
     /// An SF Symbol as a PNG `data:` URL for the HTML reader (a web page
     /// cannot draw SF Symbols), gray like the page's muted text. Rendered
@@ -1118,6 +1137,8 @@ private struct HTMLReader: NSViewRepresentable {
     let html: String
     /// Original URLs of the remote images the page may load.
     let allowedImages: Set<String>
+    /// Attachment ids of the embedded images the page shows (`nm-cid:`).
+    let inlineImages: Set<Int>
     /// Keeps the web view, to scroll it from the keyboard (Space, ctrl-f…).
     let controller: GeekController
 
@@ -1128,6 +1149,7 @@ private struct HTMLReader: NSViewRepresentable {
         config.defaultWebpagePreferences.allowsContentJavaScript = false
         // A scheme handler can only be set before the web view is created.
         config.setURLSchemeHandler(context.coordinator.images, forURLScheme: RemoteImages.scheme)
+        config.setURLSchemeHandler(context.coordinator.inline, forURLScheme: InlineImages.scheme)
         // Nothing in the page's own storage outlives the page.
         config.websiteDataStore = .nonPersistent()
         let view = WKWebView(frame: .zero, configuration: config)
@@ -1139,9 +1161,10 @@ private struct HTMLReader: NSViewRepresentable {
 
     func updateNSView(_ view: WKWebView, context: Context) {
         let c = context.coordinator
-        guard c.html != html || c.images.allowed != allowedImages else { return }
+        guard c.html != html || c.images.allowed != allowedImages || c.inline.allowed != inlineImages else { return }
         c.html = html
         c.images.allowed = allowedImages
+        c.inline.allowed = inlineImages
         // The page is loaded once the block list is in place (compiled
         // once, then immediate). A newer page asked meanwhile wins.
         Task { @MainActor in
@@ -1158,6 +1181,10 @@ private struct HTMLReader: NSViewRepresentable {
     func makeCoordinator() -> Coordinator {
         let c = Coordinator()
         c.controller = controller
+        // Swift note: `[weak model]` keeps the closure from holding the
+        // model alive; it lives as long as the web view.
+        let model = controller.model
+        c.inline.load = { [weak model] id in await model?.inlineImage(id) }
         return c
     }
 
@@ -1167,19 +1194,28 @@ private struct HTMLReader: NSViewRepresentable {
         /// The handler of `nm-remote:` sources; kept by the coordinator,
         /// which lives as long as the web view.
         let images = MainActor.assumeIsolated { RemoteImageLoader() }
+        /// The handler of `nm-cid:` sources (embedded images).
+        let inline = MainActor.assumeIsolated { InlineImageLoader() }
         /// Whether the block list was added to the web view.
         var blocking = false
 
         /// In UI script mode, reports what the page shows, since a snapshot
         /// of the window cannot see a web view (it draws in another
-        /// process): its text, whether the bundled font loaded, and the font
-        /// family applied to the body.
+        /// process): its text, whether the bundled font loaded, the font
+        /// family applied to the body, the embedded images drawn, the font
+        /// of the first `<font face>`, the width of the first table with a
+        /// width, and whether the Content Security Policy is in the page.
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             guard UIScript.isActive else { return }
             let js = """
             JSON.stringify({text: document.body.innerText.slice(0, 300),
                             font: document.fonts.check('14px "NM Mono"'),
-                            family: getComputedStyle(document.body).fontFamily})
+                            family: getComputedStyle(document.body).fontFamily,
+                            inline: [...document.querySelectorAll('img[src^="nm-cid:"]')]
+                                .filter(i => i.complete && i.naturalWidth > 0).length,
+                            authorFont: (f => f ? getComputedStyle(f).fontFamily : '')(document.querySelector('font[face]')),
+                            tableWidth: (t => t ? t.offsetWidth : '')(document.querySelector('table[width]')),
+                            csp: !!document.querySelector('meta[http-equiv="Content-Security-Policy"]')})
             """
             webView.evaluateJavaScript(js) { result, _ in
                 guard let json = result as? String, let data = json.data(using: .utf8),

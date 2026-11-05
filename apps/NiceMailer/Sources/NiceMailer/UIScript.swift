@@ -44,6 +44,8 @@ enum UIScript {
     /// Remote images handed to the web view since launch
     /// (`RemoteImageLoader`).
     static var remoteImagesShown = 0
+    /// Embedded images (`cid:`) served to the HTML reader.
+    static var inlineImagesShown = 0
     /// Requests that reached the "network" since launch: in UI script mode
     /// a local stand-in that answers every request with a small PNG
     /// (`UIScriptImageProtocol`); nothing leaves the machine.
@@ -464,6 +466,7 @@ private final class Runner {
             "tracking_pixels": "\(m.trackingPixels)",
             "remote_allowed": "\(UIScript.remoteImagesAllowed)",
             "remote_shown": "\(UIScript.remoteImagesShown)",
+            "inline_shown": "\(UIScript.inlineImagesShown)",
             "remote_requests": "\(UIScript.remoteRequests)",
             // The content rule list of the HTML reader (`RemoteBlocker`):
             // `on` once compiled, `off` if WebKit refused it.
@@ -504,6 +507,10 @@ private final class Runner {
             "html_text": UIScript.html["text"] ?? "",
             "html_font_loaded": UIScript.html["font"] ?? "",
             "html_font_family": UIScript.html["family"] ?? "",
+            "html_inline_drawn": UIScript.html["inline"] ?? "",
+            "html_author_font": UIScript.html["authorFont"] ?? "",
+            "html_table_width": UIScript.html["tableWidth"] ?? "",
+            "html_csp": UIScript.html["csp"] ?? "",
             "html_offset": "\(c.htmlOffset)",
             // The folder workflow: steps `z` can undo, a suspect move
             // waiting for its confirmation (its sender), the question shown,

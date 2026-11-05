@@ -63,12 +63,15 @@ const WRITE_BYTES: usize = 2_000_000;
 pub struct ReindexReport {
     /// Bodies whose raw file was read and parsed again.
     pub reparsed: u64,
-    /// Bodies marked with the current version without being reparsed: the
-    /// new version is known to give the same result for them (`skip_unchanged`,
-    /// `repair_stored`).
+    /// Bodies brought to the current version without being reparsed: the
+    /// new versions are known to give the same result for them, or a
+    /// correction of what is stored is enough (`skip_unchanged`,
+    /// `repair_stored`, `skip_without_remote_images`, `skip_without_html`).
     pub unchanged: u64,
     /// Bodies corrected from what is stored, without reading the raw file
-    /// (`repair_stored`).
+    /// (`repair_stored`). Those a later version reads again anyway (an
+    /// HTML body, for version 9) are counted here and in `reparsed`; the
+    /// others here and in `unchanged`.
     pub repaired: u64,
     /// Messages whose raw file is missing or corrupt: left as they were.
     pub missing_raw: u64,
@@ -117,17 +120,24 @@ pub fn reindex(store: &Mutex<Store>, raw: &RawStore, batch_size: usize, on_batch
         let end = start + RANGE;
         {
             let guard = store.lock().unwrap();
-            // The bodies marked version 6 here go on to `repair_stored`,
-            // which counts them.
-            // Version 7 bodies without remote image are counted here; those
-            // that `repair_stored` brings from 6 to 7 are marked 8 by the
-            // second call, not counted again (it counted them).
-            report.unchanged += skip_without_remote_images(&guard, start, end)?;
+            // Each step brings what it can one version up, without the raw
+            // files; a body goes through as many as apply, and stops where
+            // a version needs its raw file (read below). What reached the
+            // current version is counted once, by difference, whatever the
+            // path it took.
+            let current = || -> Result<i64> {
+                Ok(guard.conn.prepare_cached(
+                    "SELECT count(*) FROM message_body WHERE message_id >= ?1 AND message_id < ?2 AND parser_version = ?3",
+                )?
+                .query_row(params![start, end, PARSER_VERSION], |r| r.get(0))?)
+            };
+            let before = current()?;
             skip_unchanged(&guard, start, end)?;
-            let (marked, repaired) = repair_stored(&guard, start, end)?;
-            report.unchanged += marked;
+            let (_, repaired) = repair_stored(&guard, start, end)?;
             report.repaired += repaired;
             skip_without_remote_images(&guard, start, end)?;
+            skip_without_html(&guard, start, end)?;
+            report.unchanged += (current()? - before) as u64;
         }
         start = end;
         // Let a waiting request take the lock. A `Mutex` is not fair: a
@@ -300,6 +310,21 @@ fn skip_without_remote_images(store: &Store, start: i64, end: i64) -> Result<u64
         .prepare_cached(
             "UPDATE message_body SET parser_version = 8
               WHERE message_id >= ?1 AND message_id < ?2 AND parser_version = 7 AND has_remote_content = 0",
+        )?
+        .execute(params![start, end])?;
+    Ok(n as u64)
+}
+
+/// Marks the version 8 bodies without HTML as version 9, so that only the
+/// HTML mails are read again. Version 9 only keeps more attributes of the
+/// HTML (`ingest::LAYOUT_ATTRIBUTES`); a body without HTML part comes out
+/// the same. Returns how many were marked.
+fn skip_without_html(store: &Store, start: i64, end: i64) -> Result<u64> {
+    let n = store
+        .conn
+        .prepare_cached(
+            "UPDATE message_body SET parser_version = 9
+              WHERE message_id >= ?1 AND message_id < ?2 AND parser_version = 8 AND html_sanitized IS NULL",
         )?
         .execute(params![start, end])?;
     Ok(n as u64)
