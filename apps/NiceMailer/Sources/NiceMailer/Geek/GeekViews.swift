@@ -254,8 +254,11 @@ struct GeekStatusBar: View {
                 }
             }
             if case .contactFilter = controller.overlay {
-                Text("/" + controller.contactsLine.beforeCursor + "▏" + controller.contactsLine.afterCursor)
-                    .foregroundStyle(Palette.accent)
+                HStack(spacing: 0) {
+                    Text("/")
+                    CaretText(line: controller.contactsLine)
+                }
+                .foregroundStyle(Palette.accent)
             }
             Spacer(minLength: 8)
             if let error = model.lastError {
@@ -1215,7 +1218,7 @@ private struct PickerPopup: View {
                 if controller.pickerLine.selectedAll {
                     Text(controller.pickerLine.text).background(Palette.cursor)
                 } else {
-                    Text(controller.pickerLine.beforeCursor + "▏" + controller.pickerLine.afterCursor)
+                    CaretText(line: controller.pickerLine)
                 }
                 // What can be typed, until something is (`pickerHint`).
                 if controller.pickerQuery.isEmpty, let hint = controller.pickerHint(kind) {

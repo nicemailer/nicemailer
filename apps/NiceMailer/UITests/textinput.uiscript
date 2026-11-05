@@ -36,6 +36,8 @@ type devs
 key left
 expect picker_cursor = 3
 expect picker_query = devs
+# The caret is a thin bar between "v" and "s": no gap after it.
+snap caret-inside
 type i
 expect picker_query = devis
 expect picker_cursor = 4
