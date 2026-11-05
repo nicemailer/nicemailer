@@ -569,6 +569,66 @@ private struct GeekThreadRow: View {
 
 // MARK: - Reader
 
+/// The title line of the reader: the subject, then the controls of the
+/// mail (unsubscribe, blocked pixels, text | html | images, folder).
+///
+/// On one line when the whole subject fits beside the controls, otherwise
+/// on two: the subject alone, then the controls aligned on the right. The
+/// choice is measured, not guessed: the font size (⌘+ ⌘−), the length of
+/// the subject, the controls this mail has and the width of the reader all
+/// count, and it is made again whenever one of them changes.
+///
+/// Swift note: `ViewThatFits` lays out its children in order and shows the
+/// first whose ideal width fits in the space offered. The ideal width of a
+/// one-line `Text` is that of its whole text, so the first child fits only
+/// when the subject is not cut.
+struct ReaderTitleBar<Controls: View>: View {
+    let subject: String
+    @ViewBuilder let controls: () -> Controls
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: scaled(8)) {
+                subjectText
+                Spacer(minLength: scaled(16))
+                controls()
+            }
+            .frame(height: scaled(26))
+            .onAppear { Self.report(lines: 1) }
+            VStack(alignment: .leading, spacing: 0) {
+                subjectText
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(height: scaled(24))
+                HStack(spacing: scaled(8)) {
+                    Spacer(minLength: 0)
+                    controls()
+                }
+                .frame(height: scaled(22))
+                .padding(.bottom, scaled(2))
+            }
+            .onAppear { Self.report(lines: 2) }
+        }
+        .padding(.horizontal, 12)
+    }
+
+    // Selectable like the body (the text reader is an NSTextView): the
+    // subject is often what one copies to search for it or quote it.
+    // Swift note: `.textSelection(.enabled)` lets the user drag over a
+    // SwiftUI `Text` and copy it with ⌘C; ⌘ shortcuts are left to AppKit
+    // by `GeekController.handle`. On two lines, a subject longer than the
+    // whole reader is cut at the end; the tooltip shows it whole.
+    private var subjectText: some View {
+        Text(subject).font(.geek(13, weight: .bold)).lineLimit(1)
+            .textSelection(.enabled)
+            .help(subject)
+    }
+
+    /// In UI script mode, which layout is shown (`title_lines`).
+    private static func report(lines: Int) {
+        if UIScript.isActive { UIScript.titleLines = lines }
+    }
+}
+
 /// The open thread, as text (iA Writer Mono V) or as sanitized HTML,
 /// following the choice remembered for the sender.
 private struct GeekReaderColumn: View {
@@ -580,69 +640,10 @@ private struct GeekReaderColumn: View {
             let state = controller.readerState
             let blocks = ThreadDisplay.blocks(thread, state)
             VStack(spacing: 0) {
-                HStack {
-                    // Selectable like the body (the text reader is an
-                    // NSTextView): the subject is often what one copies to
-                    // search for it or quote it. Swift note:
-                    // `.textSelection(.enabled)` lets the user drag over a
-                    // SwiftUI `Text` and copy it with ⌘C; ⌘ shortcuts are left
-                    // to AppKit by `GeekController.handle`.
-                    Text(thread.subject).font(.geek(13, weight: .bold)).lineLimit(1)
-                        .textSelection(.enabled)
-                    Spacer()
-                    if state.showAll {
-                        Text("T").foregroundStyle(Palette.accent)
-                    }
-                    // Unsubscribe, left of text | html (`ui.md`,
-                    // "Désabonnement"); "unsubscribed on …" once done.
-                    if let offer = model.unsubscribeOffer {
-                        if let at = offer.senderUnsubscribedAt {
-                            Text(UnsubscribeDisplay.done(at)).foregroundStyle(Palette.muted)
-                        } else {
-                            let label = UnsubscribeDisplay.label(offer)
-                            HStack(spacing: scaled(4)) {
-                                Text(label.text)
-                                if let symbol = label.symbol { Image(systemName: symbol) }
-                            }
-                            .foregroundStyle(offer.source == "body" ? Palette.muted : Palette.accent)
-                            .padding(.horizontal, scaled(4))
-                            .overlay(Rectangle().stroke(Palette.separator, lineWidth: 1))
-                            .contentShape(Rectangle())
-                            .help(label.help)
-                            .onTapGesture { model.unsubscribe() }
-                            .uiTarget("reader-unsubscribe")
-                        }
-                    }
-                    // Tracking pixels the core removed (`ui.md`, "Images
-                    // distantes"): shown in every display, they are never
-                    // loaded.
-                    if model.trackingPixels > 0 {
-                        Text(L("pixels blocked: %lld", model.trackingPixels))
-                            .foregroundStyle(Palette.muted)
-                            .help(L("Tracking pixels removed from this conversation: they are never loaded"))
-                    }
-                    if model.latestReceived?.bodyHtml != nil {
-                        // The text | html | images switch (`ui.md`); also
-                        // `vh` and `vi`. Each word is clicked on its own;
-                        // "images" only when the thread has remote images.
-                        HStack(spacing: 0) {
-                            formatSegment("text", Text(" text "))
-                            formatSegment("html", Text(" html "))
-                            if model.imagesOffered {
-                                formatSegment("images", Text(" " + L("images") + " "))
-                            }
-                        }
-                        .foregroundStyle(Palette.muted)
-                    }
-                    // In "Everything", the folder of the mail (and its
-                    // account in "all"), at the right end of the subject line
-                    // (`ui.md`): the list mixes every folder.
-                    if let label = model.selectedThreadFolderLabel {
-                        Text(label).foregroundStyle(Palette.muted).lineLimit(1)
-                    }
-                }
-                .padding(.horizontal, 12)
-                .frame(height: scaled(26))
+                // The subject, then the controls of the mail; on two lines
+                // when the subject would not fit whole beside them
+                // (`ReaderTitleBar`).
+                ReaderTitleBar(subject: thread.subject) { titleControls(state) }
                 Palette.separator.frame(height: 1)
                 if model.bodyFormat != "text" {
                     let page = threadHTML(thread, state)
@@ -653,6 +654,68 @@ private struct GeekReaderColumn: View {
             }
         } else {
             Text(L("No mail")).foregroundStyle(Palette.muted).frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    /// The controls of the title line, left to right: `T`, unsubscribe,
+    /// blocked pixels, the text | html | images switch, the folder.
+    @ViewBuilder
+    private func titleControls(_ state: ThreadDisplay.State) -> some View {
+        if state.showAll {
+            Text("T").foregroundStyle(Palette.accent)
+        }
+        // Unsubscribe, left of text | html (`ui.md`,
+        // "Désabonnement"); "unsubscribed on …" once done.
+        if let offer = model.unsubscribeOffer {
+            if let at = offer.senderUnsubscribedAt {
+                Text(UnsubscribeDisplay.done(at)).foregroundStyle(Palette.muted)
+            } else {
+                let label = UnsubscribeDisplay.label(offer)
+                HStack(spacing: scaled(4)) {
+                    Text(label.text)
+                    if let symbol = label.symbol { Image(systemName: symbol) }
+                }
+                .foregroundStyle(offer.source == "body" ? Palette.muted : Palette.accent)
+                .padding(.horizontal, scaled(4))
+                .overlay(Rectangle().stroke(Palette.separator, lineWidth: 1))
+                .contentShape(Rectangle())
+                .help(label.help)
+                .onTapGesture { model.unsubscribe() }
+                .uiTarget("reader-unsubscribe")
+            }
+        }
+        // Tracking pixels the core removed (`ui.md`, "Images distantes"):
+        // shown in every display, they are never loaded. An eye struck out
+        // and the number, shorter than a sentence on a line that holds the
+        // subject; the tooltip and VoiceOver say what it is.
+        if model.trackingPixels > 0 {
+            HStack(spacing: scaled(3)) {
+                Image(systemName: "eye.slash")
+                Text("\(model.trackingPixels)")
+            }
+            .foregroundStyle(Palette.muted)
+            .help(L("Tracking pixels removed from this conversation: they are never loaded"))
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(L("pixels blocked: %lld", model.trackingPixels))
+        }
+        if model.latestReceived?.bodyHtml != nil {
+            // The text | html | images switch (`ui.md`); also
+            // `vh` and `vi`. Each word is clicked on its own;
+            // "images" only when the thread has remote images.
+            HStack(spacing: 0) {
+                formatSegment("text", Text(" text "))
+                formatSegment("html", Text(" html "))
+                if model.imagesOffered {
+                    formatSegment("images", Text(" " + L("images") + " "))
+                }
+            }
+            .foregroundStyle(Palette.muted)
+        }
+        // In "Everything", the folder of the mail (and its
+        // account in "all"), at the right end of the subject line
+        // (`ui.md`): the list mixes every folder.
+        if let label = model.selectedThreadFolderLabel {
+            Text(label).foregroundStyle(Palette.muted).lineLimit(1)
         }
     }
 

@@ -52,6 +52,8 @@ enum UIScript {
     /// mode nothing is opened, so as not to launch Preview or Word on the
     /// user's screen.
     static var openedFile = ""
+    /// Lines of the reader's title line, 1 or 2 (`ReaderTitleBar`).
+    static var titleLines = 0
     /// Width of the open picker panel, in points (`PickerPopup.width`).
     static var pickerWidth: CGFloat = 0
 
@@ -456,6 +458,9 @@ private final class Runner {
             // The content rule list of the HTML reader (`RemoteBlocker`):
             // `on` once compiled, `off` if WebKit refused it.
             "remote_blocker": RemoteBlocker.status,
+            // The reader's title line: subject and controls on 1 line, or
+            // the subject above them on 2 (`ReaderTitleBar`).
+            "title_lines": "\(UIScript.titleLines)",
             "reader_subject": m.openThread?.subject ?? "",
             "unsubscribe": m.unsubscribeOffer.map {
                 $0.senderUnsubscribedAt != nil ? "done" : "\($0.source):\($0.method)"
