@@ -174,6 +174,14 @@ S'ils ne sont pas présents, un panneau s'affiche pour éventuellement sélectio
 
 Le panneau propose par défaut les dossiers que le serveur déclare avec un attribut d'usage spécial (RFC 6154 : `\Drafts`, `\Sent`, `\Trash`, `\Junk`, `\Archive`), pour Drafts, Sent, Deleted, Junk et Archive. Un dossier Brouillons déjà utilisé par le téléphone est ainsi repris tel quel, et NiceMailer n'en crée pas un second. À défaut d'attribut, la proposition repose sur le nom du dossier, que l'utilisateur confirme.
 
+Règles de la proposition (`nm-engine`, `folders.rs`, déjà visibles avec `nicemailer imap probe`) :
+
+- INBOX est l'Inbox.
+- L'attribut d'usage spécial l'emporte sur le nom. `\All` et `\Flagged` désignent des vues d'autres dossiers : jamais un rôle.
+- À défaut d'attribut, le nom, en anglais ou en français : `Sent`, `Sent Items`, `Sent Messages`, `Sent Mail`, `Envoyés`, `Messages envoyés`, `Éléments envoyés` ; `Drafts`, `Brouillons` ; `Trash`, `Deleted`, `Deleted Items`, `Deleted Messages`, `Corbeille`, `Éléments supprimés` ; `Junk`, `Spam`, `Junk E-mail`, `Junk Email`, `Courrier indésirable`, `Indésirables`, `Pourriels` ; `Archive`, `Archives`. S'y ajoutent les noms des dossiers propres à NiceMailer : `Todo`, `Waiting`, `Newsletter` (ou `Newsletters`), `Paperwork`, `Quarantine`, `Banned`. La casse ne compte pas.
+- Seul un dossier au premier niveau de l'espace de noms personnel compte (`INBOX/Sent` aussi, disposition courante) : `Clients/Sent` est un dossier de l'utilisateur, pas le dossier Sent.
+- Un rôle va à un seul dossier : l'attribut, puis le premier nom de la liste, puis le premier dossier listé par le serveur.
+
 Seule l'Inbox est surveillée en IDLE : c'est par elle que les nouveaux mails arrivent sur le serveur, et c'est là que le screening doit réagir sans délai. IDLE ne surveille qu'un dossier par connexion, et multiplier les connexions est coûteux et limité par les serveurs. Les autres dossiers du workflow sont interrogés de temps à autre, toutes les cinq minutes (paramètre `sync.poll_interval_secs`, 300 par défaut), pour récupérer les changements faits ailleurs, par exemple depuis le téléphone. Les actions faites dans NiceMailer sont appliquées localement tout de suite, sans attendre l'interrogation.
 
 ### Import initial

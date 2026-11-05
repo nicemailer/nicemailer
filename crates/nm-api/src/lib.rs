@@ -90,6 +90,10 @@ pub mod method {
     /// Where a message is (its thread and folder), from its id: opens a
     /// deep link `nicemailer://m/<id>` (`docs/deep-links.md`).
     pub const LOCATE_MESSAGE: &str = "locate_message";
+    /// Connects to the IMAP server of an account and reports what it
+    /// offers, without changing anything (`ProbeAccountParams`,
+    /// `ProbeReport`).
+    pub const PROBE_ACCOUNT: &str = "probe_account";
 }
 
 /// Stable error codes. Negative codes are the ones defined by the JSON-RPC
@@ -125,6 +129,12 @@ pub mod error_code {
     /// The client may not do this: saving a password, for one, is
     /// reserved to the app and the CLI.
     pub const FORBIDDEN: i64 = 1007;
+    /// The account cannot log in yet: no password saved, the server changed
+    /// since it was saved, OAuth2. The message says what to do.
+    pub const ACCOUNT_NOT_READY: i64 = 1008;
+    /// The mail server could not be reached, refused the login, or failed;
+    /// the message holds its answer.
+    pub const SERVER: i64 = 1009;
 }
 
 // ---------------------------------------------------------------------------
@@ -1119,6 +1129,64 @@ impl std::fmt::Debug for SetPasswordParams {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SetPasswordParams").field("account", &self.account).field("password", &"***").finish()
     }
+}
+
+/// Params of `probe_account`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProbeAccountParams {
+    /// Key of the account in `config.toml`.
+    pub account: String,
+}
+
+/// What `probe_account` found on the server. Nothing is written: neither
+/// the database nor the server.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProbeReport {
+    /// `host:port`, and how the connection is protected (`tls`,
+    /// `starttls`, `none`).
+    pub server: String,
+    pub security: String,
+    /// Capabilities announced before login, then after: only the second
+    /// list counts for the synchronization.
+    pub capabilities_before_login: Vec<String>,
+    pub capabilities: Vec<String>,
+    /// Extensions turned on by `ENABLE` (`CONDSTORE`, `QRESYNC`).
+    pub enabled: Vec<String>,
+    /// Prefix and separator of the personal namespace, if the server
+    /// announces NAMESPACE.
+    pub namespace: Option<ProbeNamespace>,
+    pub folders: Vec<ProbeFolder>,
+    /// Milliseconds to connect (TLS included), to log in, to list.
+    pub connect_ms: u64,
+    pub login_ms: u64,
+    pub list_ms: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProbeNamespace {
+    pub prefix: String,
+    pub delimiter: Option<String>,
+}
+
+/// One folder of the server.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProbeFolder {
+    /// Full name, decoded (`Envoyés/2026`).
+    pub name: String,
+    pub delimiter: Option<String>,
+    /// Attributes as the server sent them (`\Sent`, `\HasNoChildren`).
+    pub attributes: Vec<String>,
+    /// `false` for a node of the hierarchy that holds no mail.
+    pub selectable: bool,
+    /// Workflow role NiceMailer would propose (`dossiers.md`, "A la
+    /// création du compte"): `inbox`, `sent`, `drafts`, `deleted`, `junk`,
+    /// `archive`… `None` when none fits.
+    pub proposed_role: Option<String>,
+    /// Why: `inbox`, `special-use` (the server's attribute) or `name`.
+    pub role_from: Option<String>,
+    /// From STATUS, when the server answered it.
+    pub messages: Option<u32>,
+    pub unseen: Option<u32>,
 }
 
 /// Params of `set_account_order`: these accounts first, in this order;

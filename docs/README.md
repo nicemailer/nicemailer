@@ -11,6 +11,7 @@ User and developer documentation, in English. It is written together with the co
 | [folder-workflow.md](folder-workflow.md) | Moving mail: the decision on the sender, filing its other mails, authentication, domain decisions, undo |
 | [migrations.md](migrations.md) | Upgrading a database: schema migrations at opening, reinterpretation of stored mail after a parser change, and how to add either |
 | [configuration.md](configuration.md) | Settings and accounts in `config.toml`: where it is, what is checked, how changes apply while the core runs, passwords in development, the read pool |
+| [imap.md](imap.md) | The IMAP client of the core: connection, certificates, login, commands and their fallbacks, large messages, failures, IDLE, `nicemailer imap probe` |
 | [deep-links.md](deep-links.md) | The URL of each mail, `nicemailer://m/<id>`: copying it from `l` (Markdown for Obsidian), opening it, `make bundle` |
 | [core-library.md](core-library.md) | Core methods behind the screens: sort by modification, text/HTML per sender, export, history, tags, groups, contacts |
 

@@ -9,13 +9,18 @@
 //! - `watch.rs`: watching the file to apply it without a restart,
 //! - `secrets.rs`: the secrets of the accounts, bound to their server,
 //! - `keychain.rs`: the macOS Keychain, where they are kept,
+//! - `folders.rs`: the workflow role proposed for each server folder,
+//! - `probe.rs`: what an account's server offers (`probe_account`),
 //! - [`Engine`] (this file): the settings applied, and the accounts they
 //!   declare, kept in line with the database.
 //!
-//! The IMAP synchronization will live here too.
+//! The IMAP client itself is in `nm-proto`; the synchronization will live
+//! here.
 
 pub mod config;
+pub mod folders;
 pub mod keychain;
+pub mod probe;
 pub mod secrets;
 pub mod watch;
 

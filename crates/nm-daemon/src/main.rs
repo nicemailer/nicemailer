@@ -57,7 +57,7 @@ use nm_api::{
     GetAttachmentParams, GetThreadParams, LocateMessageParams, UnsubscribeParams, UnsubscribeResult,
     GroupMemberResult, HelloParams, HelloResult, ImportMboxParams, ImportStatus, Items, ListContactsParams,
     ListHistoryParams, ListTagsParams, ListThreadsParams, MAX_LIMIT, MoveThreadParams,
-    PROTOCOL_VERSION, Page, Request, Response, RpcError, SearchParams, SearchResult, SetBodyFormatParams,
+    PROTOCOL_VERSION, Page, ProbeAccountParams, ProbeReport, Request, Response, RpcError, SearchParams, SearchResult, SetBodyFormatParams,
     SetGroupMemberParams, SetThreadFlaggedParams, SetThreadSeenParams, SubscribeParams, SubscribeResult,
     SetAddressScreeningParams, SetDomainScreeningParams, TagThreadParams, ThreadView, UndoParams, error_code,
     method, ConfigStatus, SetAccountOrderParams, SetPasswordParams,
@@ -457,6 +457,37 @@ async fn set_password(core: &Arc<Core>, p: SetPasswordParams, source: Source) ->
     Ok(CommandResult { changed: 0 })
 }
 
+/// `probe_account`: connects to the account's IMAP server and reports what
+/// it offers (`nm-engine`, `probe.rs`). Changes nothing, so any client may
+/// call it. No lock is held while the Keychain and the server answer.
+async fn probe_account(core: &Arc<Core>, p: ProbeAccountParams) -> Result<ProbeReport, RpcError> {
+    let (secrets, account) = {
+        let engine = core.engine.lock().unwrap();
+        let Some(account) = engine.config().accounts.get(&p.account) else {
+            return Err(RpcError::new(error_code::NOT_FOUND, format!("no account {} in config.toml", p.account)));
+        };
+        (engine.secrets(), account.clone())
+    };
+    // The password is read on a blocking thread (the Keychain may take a
+    // moment), after the check that it was saved for this very server.
+    let key = p.account.clone();
+    let acc = account.clone();
+    let password = tokio::task::spawn_blocking(move || nm_engine::secrets::imap_password(secrets.as_ref(), &key, &acc))
+        .await
+        .map_err(|e| RpcError::new(error_code::INTERNAL_ERROR, e.to_string()))?
+        .map_err(|refusal| {
+            let code = match refusal {
+                nm_engine::secrets::Refusal::Unavailable(_) => error_code::SECRETS,
+                _ => error_code::ACCOUNT_NOT_READY,
+            };
+            RpcError::new(code, refusal.message(&p.account, &account))
+        })?;
+    let spec = nm_engine::probe::imap_spec(&account);
+    nm_engine::probe::probe(&spec, &account.imap.username, password.expose(), nm_proto::imap::Timeouts::default())
+        .await
+        .map_err(|e| RpcError::new(error_code::SERVER, e.to_string()))
+}
+
 /// Reads `config.toml` again after a change seen by the watch, and emits
 /// what it changed. Runs on the thread of the watch: it may block on the
 /// store while a command or an import batch finishes.
@@ -808,6 +839,10 @@ async fn dispatch(core: &Arc<Core>, session: &mut Session, req: Request) -> Resu
         method::SET_PASSWORD => {
             let p: SetPasswordParams = params(req.params)?;
             to_value(set_password(core, p, source).await?)
+        }
+        method::PROBE_ACCOUNT => {
+            let p: ProbeAccountParams = params(req.params)?;
+            to_value(probe_account(core, p).await?)
         }
         method::SET_ACCOUNT_ORDER => {
             let p: SetAccountOrderParams = params(req.params)?;

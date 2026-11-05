@@ -17,7 +17,7 @@ nm-engine = { path = "crates/nm-engine" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rusqlite = { version = "0.37", features = ["bundled"] }
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util", "sync", "signal"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util", "sync", "signal", "time"] }
 rand = "0.9"
 thiserror = "2"
 anyhow = "1"
@@ -44,3 +44,13 @@ notify = "8"
 # (`nm-engine`, `keychain.rs`), and the Core Foundation types it takes.
 security-framework = "3"
 core-foundation = "0.10"
+# IMAP client of nm-proto (`nm-proto/src/imap/`). imap-codec parses the
+# server's responses; it is an alpha, pinned to the exact version tried in
+# phase 0 (`plan-imap.md`, section 2), and only `nm-proto::imap` sees its types.
+imap-codec = { version = "=2.0.0-alpha.10", features = ["ext_condstore_qresync", "ext_id", "ext_namespace", "starttls"] }
+# TLS of the IMAP connections: rustls on tokio, with the ring provider
+# already built for ureq, and certificates checked by macOS's own trust
+# settings (rustls-platform-verifier), plus an optional authority per account.
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12", "logging"] }
+rustls-platform-verifier = "0.6"
+rustls-pki-types = { version = "1", features = ["std"] }

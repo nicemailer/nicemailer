@@ -7,6 +7,7 @@
 | `make swift-test` | Swift unit tests only | |
 | `make ui-test` | scripted UI tests of the app | builds the core; starts its own cores on temporary data |
 | `make imap-up`, `make imap-down` | start and stop the test IMAP servers (Dovecot, see below) | OrbStack or Docker |
+| `make imap-test` | the tests that talk to the test IMAP servers: the IMAP client on both servers, and `probe_account` end to end | `make imap-up` |
 | `make bench` | times every thread list (folders, Everything, search, each filter) through the socket on 100,000 generated conversations, or on `BENCH_DATA_DIR` | starts its own core |
 
 ## Rust
@@ -28,7 +29,14 @@ Speed is tested by the plans of the queries rather than by timing them, which wo
 
 The core only uses what a server announces, so the minimal server exercises the fallbacks (no MOVE, no CONDSTORE, no SPECIAL-USE) that many real servers need. Any user name logs in with the password `nicemailer`, and a new user starts with an empty mailbox: a test picks a random user and needs no setup or cleanup. Mail is kept in memory and lost when the servers stop.
 
-The servers present a certificate for `localhost` and `127.0.0.1`, signed by a test authority that `dev/dovecot/make-tls.sh` creates on the first `make imap-up` (`dev/dovecot/tls/`, not committed). Clients trust `dev/dovecot/tls/ca.crt` and check the certificate as they would with a real server.
+The servers present a certificate for `localhost` and `127.0.0.1`, signed by a test authority that `dev/dovecot/make-tls.sh` creates on the first `make imap-up` (`dev/dovecot/tls/`, not committed). Clients trust `dev/dovecot/tls/ca.crt` and check the certificate as they would with a real server: the core checks it with macOS's own rules, which refuse a server certificate valid for more than 825 days or without the "server authentication" usage, so the script makes one that follows them, and makes it again when an older one does not or is about to expire. `make imap-up` recreates the servers each time, so they pick up a new certificate (and lose their mail).
+
+### IMAP client tests
+
+The IMAP client of `nm-proto` ([imap.md](imap.md)) is tested at two levels:
+
+- `crates/nm-proto/tests/imap_script.rs`, run by `make test`: the client against a scripted server over an in-memory pipe. Each test is the exact conversation, what the client must send and what the server answers, with the tags the client uses (`N1`, `N2`…). They cover what a real server rarely does on demand: a connection cut in the middle of a literal, a response that cannot be read, a response over the size limit, silence until the time limit, a response to an unknown tag, `BYE`, a literal refused before it is sent, plus the details of the commands (quoting, literals with and without `LITERAL+`, QRESYNC at `SELECT`, `COPYUID`, `MODIFIED`, bodies in pieces, IDLE keep-alives);
+- `crates/nm-proto/tests/dovecot.rs`, run by `make imap-test`: every command against both Dovecot servers, so each fallback is exercised by the minimal one (moves without `MOVE`, no CONDSTORE, no LIST-STATUS). One test puts a TCP relay between the client and the server, which cuts the connection in the middle of a message body: the session must close with a fatal error, give nothing of the incomplete body, and a new session must fetch it whole.
 
 To look at a server by hand:
 

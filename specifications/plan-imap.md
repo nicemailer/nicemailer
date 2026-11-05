@@ -1,6 +1,6 @@
 # NiceMailer : plan de travail du back-end IMAP
 
-Statut : en cours. Phase 0 terminée le 2026-11-05.
+Statut : en cours. Phases 0, 1, 1 bis et 2 terminées (novembre 2026).
 
 Ce document n'est pas une spécification : c'est le plan de réalisation du back-end qui communique avec les serveurs IMAP, récupère les mails, synchronise les dossiers, trie les mails entrants et importe un compte. Les règles restent dans les spécifications citées ; quand ce plan tranche une question qu'elles laissaient ouverte, la décision est reportée dans la spécification concernée au moment où la phase qui l'implémente est livrée.
 
@@ -29,7 +29,8 @@ Méthode : **une phase = une revue = un commit**. Chaque phase livre son code, s
 | --- | --- |
 | Bibliothèque IMAP | `imap-codec` **2.0.0-alpha.10**, version épinglée, sous notre propre client async (tokio + `tokio-rustls`). Essai de la phase 0 : décode sans erreur CAPABILITY, LIST avec attributs d'usage spécial, SELECT, FETCH (UID, FLAGS, INTERNALDATE, RFC822.SIZE, MODSEQ, BODY[HEADER], BODY[]<partiel>), APPENDUID, COPYUID, ENABLE, VANISHED et VANISHED (EARLIER), STATUS. `async-imap` est écarté : ni QRESYNC ni VANISHED. Le risque d'une version alpha est contenu : seul le module `nm-proto::imap` voit les types d'`imap-codec`, le reste du noyau voit nos types |
 | Gros messages | `imap-codec` garde chaque réponse entière en mémoire. Les messages au-delà d'un seuil (4 Mo) sont téléchargés par morceaux de 1 Mo (`BODY.PEEK[]<offset.longueur>`, IMAP4rev1 standard), écrits au fil de l'eau dans le stockage brut. La mémoire reste bornée quelle que soit la taille du message (`stockage-brut.md`, section 11) |
-| TLS | rustls, racines du système ; fichier d'autorité facultatif par compte (`ca_file`), utile pour un serveur auto-hébergé et pour les tests. Jamais de désactivation de la vérification |
+| TLS | rustls (fournisseur `ring`), certificat vérifié par macOS lui-même (`rustls-platform-verifier`) : même confiance que Mail et Safari, autorités ajoutées par l'utilisateur et révocation comprises ; fichier d'autorité facultatif par compte (`ca_file`), utile pour un serveur auto-hébergé et pour les tests. Jamais de désactivation de la vérification. macOS impose ses règles aux certificats de serveur, même d'une autorité approuvée (825 jours au plus, usage « authentification de serveur ») : le certificat de test les respecte (`make-tls.sh`) |
+| Écriture des commandes | Écrites par NiceMailer (`encode.rs`), lues par `imap-codec` : ses types ne savent pas exprimer `LIST … RETURN (SPECIAL-USE)` ni `SELECT … (QRESYNC …)`. Toute valeur venue de l'extérieur passe par une seule fonction qui choisit atome, chaîne entre guillemets ou littéral : aucune ne peut terminer la ligne et injecter une commande |
 | Corps | Tous téléchargés en tâche de fond : Inbox d'abord, puis les autres dossiers, les plus récents d'abord. Un message ouvert dont le corps manque est téléchargé en priorité |
 | Déplacements faits ailleurs | Rapprochés par `Message-ID` quand c'est sans ambiguïté (section 5.4) : le message garde son `id`, ses tags, son historique et sa consultation |
 | Sous-domaines | Inclus partout, y compris dans le routage à la réception : une décision sur `exemple.fr` s'applique à `news.exemple.fr` sans décision propre. `modele de donnees.md` sera corrigé (phase 6) |
@@ -91,14 +92,30 @@ Tests : `configuration.md`, section 12, sauf l'écriture ; une lecture n'attend 
 
 Voir section 2, « Secrets », et `docs/configuration.md`, « Passwords ». Essai préalable sur un trousseau jetable : un binaire recompilé perd l'accès à ses éléments ; signé avec un même certificat personnel et un même identifiant, il le garde, sans que le certificat soit approuvé. Les attributs d'un élément se lisent sans autorisation, même trousseau verrouillé, d'où la vérification du serveur à chaque lecture du fichier sans risque de dialogue.
 
-### Phase 2 : client IMAP (`nm-proto::imap`)
+### Phase 2 : client IMAP (`nm-proto::imap`) — terminée
 
-- Connexion TLS directe ou STARTTLS (et `none` réservé à `127.0.0.1`), délais d'attente sur chaque lecture et écriture.
-- CAPABILITY (avant et après authentification), LOGIN et AUTHENTICATE PLAIN, ID, ENABLE (CONDSTORE, QRESYNC, UTF8=ACCEPT si annoncés), NAMESPACE, LIST (attributs d'usage spécial si annoncés, délimiteur, noms en UTF-7 modifié), CREATE, STATUS, SELECT et EXAMINE (avec QRESYNC si annoncé), UID FETCH (en-têtes complets, flags, date interne, taille, MODSEQ, corps entier ou par morceaux), UID SEARCH, UID STORE, UID MOVE ou COPY + STORE `\Deleted` + UID EXPUNGE, APPEND avec APPENDUID, IDLE (renouvelé toutes les 25 minutes, RFC 2177), NOOP, LOGOUT.
-- Réponses non sollicitées (EXISTS, EXPUNGE, FETCH, VANISHED) remontées à l'appelant, jamais perdues.
+Documentation : `docs/imap.md`. Tests : `nm-proto/tests/imap_script.rs` (serveur scripté, dans `make test`), `nm-proto/tests/dovecot.rs` et `nm-daemon/tests/imap_rpc.rs` (les deux Dovecot, `make imap-test`).
+
+Décisions et écarts au plan :
+
+- **Lecture bornée** : une réponse de plus de 16 Mio est refusée sans être gardée en mémoire ; la session continue (le découpage d'`imap-codec` a trouvé sa fin). Corps entiers jusqu'à 4 Mio, au-delà par morceaux de 1 Mio ; l'arrêt se fait sur le premier morceau court, pas sur la taille annoncée.
+- **Délais** sur chaque lecture et chaque écriture (90 s de silence), pas sur une commande entière : un gros téléchargement qui avance n'expire jamais.
+- **Erreurs fatales ou non** : réseau, délai, TLS, `BYE` et désaccord sur l'état de la conversation ferment la session ; `NO`, `BAD`, extension absente et réponse illisible (`Malformed`) la laissent utilisable.
+- **NUL dans un littéral** : interdit par la RFC 3501 et refusé par `imap-codec`, il bloquerait pour toujours la synchronisation sur le message. Il est lu comme 0x80, ce que Dovecot envoie à sa place.
+- **Réponses non sollicitées** gardées dans l'ordre avec le dossier sélectionné à leur arrivée (`Notice`), jamais perdues.
+- **`UTF8=ACCEPT` n'est pas activé** : Infomaniak ne l'annonce pas, et un seul codage des noms de dossiers (UTF-7 modifié) partout évite des écarts. Le nom brut reçu du serveur est celui qu'on lui renvoie, jamais un nom décodé puis recodé.
+- **Déplacement sans `MOVE` ni `UIDPLUS`** : copie et `\Deleted`, mais pas d'`EXPUNGE`, qui effacerait aussi des messages marqués par un autre client.
+- **`nicemailer imap probe`** passe par le noyau (méthode `probe_account`), seul à pouvoir lire le mot de passe. Il ne sélectionne aucun dossier et n'écrit rien. Il propose aussi le rôle de chaque dossier (`dossiers.md`, « A la création du compte »). Nouveaux codes d'erreur : `ACCOUNT_NOT_READY` (1008), `SERVER` (1009).
+- **Pas encore** : envoi de plusieurs commandes à la suite sans attendre (pipelining, phase 8 si les mesures le demandent), `COMPRESS`, `BINARY`, `ESEARCH`.
+
+Contenu livré :
+
+- Connexion TLS directe ou STARTTLS (et `none` réservé à la machine locale), délais d'attente sur chaque lecture et écriture. STARTTLS sans repli en clair, capacités relues après la mise à niveau, données reçues avant la poignée de main refusées.
+- CAPABILITY (avant et après authentification), LOGIN et AUTHENTICATE PLAIN (avec ou sans SASL-IR), ID, ENABLE (CONDSTORE, QRESYNC si annoncés), NAMESPACE, LIST (attributs d'usage spécial, délimiteur, noms en UTF-7 modifié ; avec LIST-STATUS si annoncé), CREATE, STATUS, SELECT et EXAMINE (avec QRESYNC si annoncé), UID FETCH (en-têtes complets, flags, date interne, taille, MODSEQ, corps entier ou par morceaux, CHANGEDSINCE et VANISHED), UID SEARCH, UID STORE (avec UNCHANGEDSINCE), UID MOVE ou COPY + STORE `\Deleted` + UID EXPUNGE, APPEND avec APPENDUID, IDLE (25 minutes au plus, RFC 2177), NOOP, LOGOUT.
+- Réponses non sollicitées (EXISTS, EXPUNGE, FETCH, VANISHED, ALERT) remontées à l'appelant, jamais perdues.
 - `nicemailer imap probe <compte>` : capacités, dossiers, rôles proposés, sans rien modifier.
 
-Tests : chaque commande contre les deux Dovecot ; transcriptions de réponses réelles rejouées ; coupure au milieu d'un littéral ; réponse malformée (connexion fermée proprement, jamais de plantage).
+Tests : chaque commande contre les deux Dovecot ; conversations scriptées (coupure au milieu d'un littéral, réponse illisible ou trop grosse, silence, étiquette inconnue, `BYE`, littéral refusé) ; coupure réseau par un relais TCP au milieu d'un corps, puis nouvelle session qui le récupère entier.
 
 ### Phase 3 : ingestion commune
 

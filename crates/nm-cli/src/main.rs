@@ -113,6 +113,27 @@ enum Command {
         #[command(subcommand)]
         action: AccountAction,
     },
+    /// Talk to an account's IMAP server.
+    Imap {
+        #[command(subcommand)]
+        action: ImapAction,
+    },
+}
+
+/// `nicemailer imap …`: through the core, which alone reads the password.
+#[derive(Subcommand)]
+enum ImapAction {
+    /// Connect to the account's server and show what it offers: its
+    /// capabilities before and after login, its folders, and the workflow
+    /// role NiceMailer would propose for each. Changes nothing, on the
+    /// server or in the database.
+    Probe {
+        /// Account key, as in [accounts.<key>].
+        key: String,
+        /// Print the report as JSON.
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 /// `nicemailer account …`.
@@ -132,6 +153,33 @@ enum AccountAction {
         #[arg(required = true)]
         keys: Vec<String>,
     },
+}
+
+/// The report of `nicemailer imap probe`, for a terminal.
+fn print_probe(r: &nm_api::ProbeReport) {
+    println!(
+        "Server {} ({}): connected in {} ms, logged in in {} ms, folders listed in {} ms",
+        r.server, r.security, r.connect_ms, r.login_ms, r.list_ms
+    );
+    println!("Before login: {}", r.capabilities_before_login.join(" "));
+    println!("After login:  {}", r.capabilities.join(" "));
+    println!("Enabled:      {}", if r.enabled.is_empty() { "none".to_string() } else { r.enabled.join(" ") });
+    if let Some(ns) = &r.namespace {
+        println!("Namespace:    prefix {:?}, separator {}", ns.prefix, ns.delimiter.as_deref().unwrap_or("none"));
+    }
+    println!();
+    let width = r.folders.iter().map(|f| f.name.chars().count()).max().unwrap_or(0).clamp(6, 40);
+    println!("{:<width$}  {:<24}  {:>8}  {:>7}  attributes", "folder", "proposed role", "messages", "unread");
+    for f in &r.folders {
+        let role = match (&f.proposed_role, &f.role_from) {
+            (Some(role), Some(from)) if from != "inbox" => format!("{role} ({from})"),
+            (Some(role), _) => role.clone(),
+            _ if !f.selectable => "(holds no mail)".to_string(),
+            _ => "-".to_string(),
+        };
+        let n = |v: Option<u32>| v.map(|v| v.to_string()).unwrap_or_else(|| "-".into());
+        println!("{:<width$}  {:<24}  {:>8}  {:>7}  {}", f.name, role, n(f.messages), n(f.unseen), f.attributes.join(" "));
+    }
 }
 
 /// `nicemailer config …`: works on the file directly, without the core.
@@ -269,6 +317,17 @@ fn main() -> anyhow::Result<()> {
             client.call("set_account_order", json!({ "account_ids": ids }))?;
             for (i, k) in keys.iter().enumerate() {
                 println!("{}. {k}", i + 1);
+            }
+            Ok(())
+        }
+        Command::Imap { action: ImapAction::Probe { key, json } } => {
+            let mut client = Client::connect(&data_dir)?;
+            let report = client.call("probe_account", json!({ "account": key }))?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&report)?);
+            } else {
+                let r: nm_api::ProbeReport = serde_json::from_value(report)?;
+                print_probe(&r);
             }
             Ok(())
         }

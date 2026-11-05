@@ -44,7 +44,7 @@ poll_interval_secs = 60
 ```
 
 - **`security = "none"`** is refused unless the host is `localhost`, `127.0.0.1` or `::1`: elsewhere it would send the password in clear text.
-- **`ca_file`** adds an authority to the system's, for a self-hosted server or the test servers (`dev/dovecot/tls/ca.crt`). There is no way to turn certificate checks off.
+- **`ca_file`** adds an authority to the system's, for a self-hosted server or the test servers (`dev/dovecot/tls/ca.crt`). There is no way to turn certificate checks off. Certificates are checked by macOS, with its own rules (at most 825 days, "server authentication" usage): see [imap.md](imap.md), "Connecting".
 - **Per-account overrides.** `[accounts.<key>.sync]` and `[accounts.<key>.import]` start from the general `[sync]` and `[import]` and replace the keys they set. The other tables are global.
 
 ### What happens to the database
@@ -156,6 +156,7 @@ ca_file = "~/path/to/niceMailer/dev/dovecot/tls/ca.crt"
 
 ```sh
 printf %s nicemailer | nicemailer account password dovecot
+nicemailer imap probe dovecot    # what the server offers (docs/imap.md)
 ```
 
 ## Changes while the core runs

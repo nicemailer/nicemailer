@@ -1,6 +1,6 @@
 [package]
 name = "nm-proto"
-description = "Network adapters: for now the one-click unsubscribe (RFC 8058); IMAP and SMTP will come here"
+description = "Network adapters: IMAP client, one-click unsubscribe (RFC 8058); SMTP will come here"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
@@ -8,3 +8,12 @@ publish.workspace = true
 [dependencies]
 ureq.workspace = true
 thiserror.workspace = true
+imap-codec.workspace = true
+tokio.workspace = true
+tokio-rustls.workspace = true
+rustls-platform-verifier.workspace = true
+rustls-pki-types.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
+rand.workspace = true

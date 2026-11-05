@@ -11,7 +11,7 @@ XCODE ?= /Applications/Xcode.app/Contents/Developer
 THREADS ?= 2500
 
 # These targets are commands, not files to produce.
-.PHONY: dev-cert build test swift-test ui-test bench seed core app bundle open imap-up imap-down
+.PHONY: dev-cert build test swift-test ui-test bench seed core app bundle open imap-up imap-down imap-test
 
 build:
 	cargo build --release
@@ -65,10 +65,19 @@ app:
 # a complete Dovecot on 127.0.0.1:31143/31993 and a minimal one, announcing
 # only IMAP4rev1 UIDPLUS IDLE LITERAL+, on 32143/32993. Any user name logs in
 # with the password "nicemailer" and starts with an empty mailbox. The
-# certificate is signed by a test authority, dev/dovecot/tls/ca.crt.
+# certificate is signed by a test authority, dev/dovecot/tls/ca.crt. The
+# servers are made anew each time (--force-recreate): they lose their mail,
+# and pick up certificates that make-tls.sh renewed.
 imap-up:
 	dev/dovecot/make-tls.sh
-	docker compose -f dev/dovecot/compose.yaml up -d --wait
+	docker compose -f dev/dovecot/compose.yaml up -d --wait --force-recreate
+
+# The tests that need the test IMAP servers (make imap-up first): the IMAP
+# client against both Dovecot servers, and probe_account end to end. They
+# are #[ignore] in the other tests, so that make test needs no server.
+imap-test:
+	cargo test -p nm-proto --test dovecot -- --ignored
+	cargo test -p nm-daemon --test imap_rpc -- --ignored
 
 # Stops the test IMAP servers; their mail, kept in memory, is lost.
 imap-down:
