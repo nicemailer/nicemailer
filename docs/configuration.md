@@ -31,7 +31,6 @@ port = 993                        # default: 993 for tls, 143 otherwise
 security = "tls"                  # tls (default), starttls, or none (localhost only)
 username = "me"                   # default: the email
 ca_file = "~/certs/my-ca.pem"     # extra certificate authority for this server
-password = "…"                    # development builds only, see below
 
 [accounts.perso.smtp]             # read and checked; sending is not implemented yet
 host = "smtp.example.com"         # ports: 465 tls, 587 starttls, 25 none
@@ -72,7 +71,7 @@ Disabled accounts are still listed, and their mail is still shown (the user's ch
 The order is a state of the interface, not an intention about the servers, so it is in the database, not in `config.toml`. It is changed by `set_account_order {account_ids: [...]}`: the accounts given come first, in this order, the others after them in their current order, and positions become 1, 2, 3… An unknown or repeated id is refused. Each account that moved gets an `audit_log` line (`reorder`, before and after), an `AccountChanged`, and a `FolderChanged` for each of its folders, which makes the app reload its folder list.
 
 ```sh
-nicemailer accounts order pro perso    # pro first, then perso, then the others
+nicemailer account order pro perso    # pro first, then perso, then the others
 ```
 
 ### `list_accounts` and `nicemailer accounts`
@@ -88,20 +87,76 @@ nicemailer accounts
 
 ## Passwords
 
-The specification puts secrets in the Keychain only, entered in the app or the CLI. The Keychain arrives with `add_account` (phase 7). Until then, for development, a password can be written in the file, `password` in `[accounts.<key>.imap]`, on two conditions:
+Passwords are in the macOS Keychain, never in the file (`configuration.md`, section 2). A `password` key in `config.toml` is an error: the file is refused, and the message says how to save the password instead. It is refused rather than ignored, so that a password does not stay, in clear text, in a file the specification invites to keep in Git.
 
-- **only a core built with the `dev-passwords` feature reads it.** `make core` builds it so; `cargo build` and the shipped core do not. A core without the feature ignores the key and says so in the account's error ("this build of the core does not read passwords from config.toml");
-- **every reading of the file warns about it** (`config check`, `config_status`, the core's log).
+```sh
+nicemailer account password perso                 # asked without echo
+printf %s "$PW" | nicemailer account password perso   # from a script
+```
 
-Keep such a file out of Git: put the test accounts in a file of their own and point `NICEMAILER_CONFIG` at it, rather than in `~/.config/nicemailer/config.toml`, which the specification invites to version.
+The CLI sends the password to the core (`set_password {account, password}`, over the socket only the user can open), which saves it; the app will do the same. The core alone reads and writes the Keychain. Only the app and the CLI may call `set_password`: an agent (`mcp`) or the web server gets `FORBIDDEN` (1007), so that none can bind a password of its choosing to a server of its choosing. Each save is in `audit_log` (`account` / `set_password`, with the host and the user name, never the password).
 
-The password never leaves the core: its debug output shows `SecretString(***)`, and the list of changed keys (`ConfigChanged`, `audit_log`) only says that `accounts.<key>.imap.password` changed.
+The password never leaves the core otherwise: `SecretString` prints `SecretString(***)`, and `SetPasswordParams` prints `***` too.
+
+### The Keychain item
+
+One generic password of the login keychain per account:
+
+| Attribute | Value |
+| --- | --- |
+| service | `NiceMailer` |
+| account | `imap:<key>` |
+| label | `NiceMailer: <key> (IMAP)`, the name Keychain Access shows |
+| comment | `{"host": "…", "username": "…"}`, the server it was saved for |
+| data | the password |
 
 ### A password belongs to its server
 
-Every login goes through one function, `nm_engine::secrets::imap_password`. A secret is stored with the host and the user name it was entered for; if the file now names another host or user, the function refuses and the account gets the error "the password was entered for … on …, the file now says … on …: enter the password again to confirm the new server". Without this rule, anyone able to edit the file, an agent tricked by a mail included, could point the account at their own server and receive the password at the next login.
+The server a password was saved for is the one the file named when it was saved. If the file now names another host or user, the core refuses to send the password, and the account gets the error "the password was saved for … on …, the file now says … on …: save the password again to confirm the new server". Saving the password again is the confirmation. Without this rule, anyone able to edit the file, an agent tricked by a mail included, could point the account at their own server and receive the password at the next login.
 
-With the development passwords, the secret is in the same file as the host, so the check always passes: it starts protecting with the Keychain. It is tested with a fake store of secrets (`crates/nm-engine/tests/engine.rs`).
+It is checked twice:
+
+- **at each reading of the file** (`secrets::check`), from the attributes of the item only. The Keychain gives attributes to anyone, without any dialog, even when it is locked, so the core checks them with its locks held, and an account without a password or pointing at another server shows its error at once;
+- **at each login** (`secrets::imap_password`, from phase 2), on the item read with its password: the file may have changed since the last check.
+
+### No dialog, ever
+
+An item of the Keychain has an access list: the application that saved it reads it without a dialog, any other one needs the user's permission. The core runs in the background, so it turns the Keychain's dialogs off at start (`keychain::never_prompt`): a dialog would appear out of nowhere and block the core. An access that would need one fails instead, and the account's error says so ("the Keychain refused the password of this account: it is locked, or the password was saved by another build of the core").
+
+### Development: `make dev-cert`, once
+
+macOS recognizes an application by its code signature. A Rust binary is signed by the linker with a signature of its own content, so every rebuild of the core would be a new application, refused by the items the previous build saved. Hence, in development:
+
+```sh
+make dev-cert    # once: creates the certificate "NiceMailer Dev" in the login keychain
+make core        # builds, signs with it (identifier org.nicemailer.core), runs
+```
+
+Signed with the same certificate and identifier, every build is the same application for the Keychain. Measured on a throwaway keychain (`scripts/dev-cert.sh`, then two different builds signed by `scripts/sign-core.sh`): the second build reads the password saved by the first; an unsigned build, or one signed with another identifier, is refused. The certificate is self-signed and not marked as trusted, which would need an administrator password: `codesign` uses it anyway, and the Keychain only compares a signature with the one that saved the item.
+
+A core run without signing (`cargo run`) works, but cannot read the passwords saved by `make core`; its accounts say so. A password saved before `make dev-cert` (by an unsigned build) cannot be read or replaced by the signed core: delete the item `NiceMailer: <key> (IMAP)` in Keychain Access, then save the password again.
+
+The shipped core will be signed by the developer's Apple identity, which plays the same role.
+
+Limit, the one the specification accepts (`configuration.md`, section 7): a program running as the user can use the development certificate to sign itself as the core. The protection is aimed at agents and edits of the file, not at malware on the Mac.
+
+### Test servers
+
+The test Dovecot servers accept any user name with the password `nicemailer` (`docs/testing.md`):
+
+```toml
+[accounts.dovecot]
+email = "alice@example.com"
+[accounts.dovecot.imap]
+host = "127.0.0.1"
+port = 31993
+username = "alice"
+ca_file = "~/path/to/niceMailer/dev/dovecot/tls/ca.crt"
+```
+
+```sh
+printf %s nicemailer | nicemailer account password dovecot
+```
 
 ## Changes while the core runs
 
@@ -172,7 +227,9 @@ Also part of this phase: the queries of the contract (`list_threads`, `get_threa
 | --- | --- |
 | `crates/nm-engine/src/config.rs` | The settings, the reader (lines of errors, unknown keys, overrides), `changed_keys`, `defaults_file` |
 | `crates/nm-engine/src/watch.rs` | The watch of the file |
-| `crates/nm-engine/src/secrets.rs` | `Secrets`, `imap_password` and the binding to the server, `ConfigPasswords`, `NoSecrets` |
+| `crates/nm-engine/src/secrets.rs` | `Secrets`, `check` and `imap_password` (the binding to the server), `MemorySecrets` for tests |
+| `crates/nm-engine/src/keychain.rs` | The Keychain: items, `never_prompt` |
+| `scripts/dev-cert.sh`, `scripts/sign-core.sh` | The development certificate, and the signature of `make core` |
 | `crates/nm-engine/src/lib.rs` | `Engine`: reload, refusals, accounts and their errors, events |
 | `crates/nm-store/src/accounts.rs` | `sync_config_accounts`, `list_account_rows`, `set_account_order`, `record_config_reload` |
 | `crates/nm-store/src/pool.rs` | `ReadPool` |
@@ -180,9 +237,10 @@ Also part of this phase: the queries of the contract (`list_threads`, `get_threa
 
 ## Tests
 
-- `crates/nm-engine/tests/config.rs`: the example of the specification, defaults per security, lines of syntax, type and range errors, duplicate keys, unknown keys (general, account, server), required keys, account keys, `security = "none"`, newer format, overrides, identities in both forms, `~/` paths, passwords hidden, `changed_keys`, and the defaults file parsing back to the defaults with every key present.
-- `crates/nm-engine/tests/engine.rs`: no file; invalid file at start then later (previous settings kept, one `ConfigError`, cleared when fixed, even back to the same text); unreadable file; same text twice; unknown key; reload recorded in `audit_log`; account removed then restored with its data and id; archive account clash; a new IMAP host or user refused before confirmation; a build without `dev-passwords`; OAuth2.
+- `crates/nm-engine/tests/config.rs`: the example of the specification, a password in the file refused, defaults per security, lines of syntax, type and range errors, duplicate keys, unknown keys (general, account, server), required keys, account keys, `security = "none"`, newer format, overrides, identities in both forms, `~/` paths, passwords hidden, `changed_keys`, and the defaults file parsing back to the defaults with every key present.
+- `crates/nm-engine/tests/engine.rs`: no file; invalid file at start then later (previous settings kept, one `ConfigError`, cleared when fixed, even back to the same text); unreadable file; same text twice; unknown key; reload recorded in `audit_log`; account removed then restored with its data and id; archive account clash; a missing password, then saved; a new IMAP host or user refused until the password is saved again; the login checks the binding again; OAuth2.
+- `crates/nm-engine/tests/keychain.rs`, on a throwaway keychain file (never the login keychain, never a dialog): a password saved and read back with its server (UTF-8, spaces); saving again replaces it; the item as Keychain Access shows it; an item saved by another program gives its server but not its password; a locked keychain refuses without a dialog and still gives the server.
 - `crates/nm-engine/tests/watch.rs`: an edit, a save by rename (twice), a file created in a missing directory, the target of a symbolic link, other files ignored.
 - `crates/nm-store/tests/accounts.rs`: a new account goes last, a reorder moves the accounts and the folder list (the picker's order), audit lines and announced changes, the same order twice changes nothing, unknown and repeated ids refused, a disabled account keeps its place.
 - `crates/nm-store/tests/pool.rs`: a read during a write held 2 s returns at once and sees the committed state; one snapshot per read; readers cannot write; a panic gives the connection back; six threads on three connections; wrong schema version.
-- `crates/nm-daemon/tests/config_rpc.rs`, end to end on the real binary: no file; accounts listed, then an invalid file, its fix, an account removed and restored, an archive account placed last then moved first with `set_account_order`, seen through events, `config_status`, `list_accounts`, `list_folders` and `list_history`; an invalid file at start. Run it with `--features dev-passwords` too, for the other case of the passwords.
+- `crates/nm-daemon/tests/config_rpc.rs`, end to end on the real binary: no file; accounts listed, then an invalid file, its fix, an account removed and restored, an archive account placed last then moved first with `set_account_order`, seen through events, `config_status`, `list_accounts`, `list_folders` and `list_history`; an invalid file at start; `set_password` refused to an agent and for an unknown account, then saved in the core's keychain, the account's error cleared, refused again when the file changes server, traced without the password.

@@ -276,19 +276,22 @@ fn paths_accept_the_home_folder() {
 }
 
 #[test]
-fn a_password_is_a_warning_and_never_shown() {
+fn a_password_in_the_file_is_refused() {
     let text = "[accounts.a]\nemail = \"a@b.c\"\n[accounts.a.imap]\nhost = \"h\"\npassword = \"hunter2\"\n";
-    let parsed = parse(text).unwrap();
-    assert_eq!(parsed.config.accounts["a"].imap.password.as_ref().unwrap().expose(), "hunter2");
-    let w = &parsed.warnings[0];
-    assert_eq!(w.key.as_deref(), Some("accounts.a.imap.password"));
-    assert_eq!(w.line, Some(5));
-    // Neither the debug output nor the flattened settings (used for the
-    // keys of `ConfigChanged`) contain the password.
-    assert!(!format!("{:?}", parsed.config).contains("hunter2"));
-    let flat = flatten(&parsed.config);
-    let shown = &flat["accounts.a.imap.password"];
-    assert!(shown.starts_with("\"sha256:") && !shown.contains("hunter2"), "{shown}");
+    let p = refused(text);
+    assert_eq!(p.line, Some(5));
+    assert_eq!(p.key.as_deref(), Some("accounts.a.imap.password"));
+    assert!(p.message.contains("nicemailer account password a"), "{p}");
+    // The problem never quotes the password.
+    assert!(!p.to_string().contains("hunter2"));
+}
+
+#[test]
+fn a_secret_is_never_shown() {
+    let secret = nm_engine::config::SecretString::new("hunter2");
+    assert!(!format!("{secret:?}").contains("hunter2"));
+    let json = serde_json::to_string(&secret).unwrap();
+    assert!(json.starts_with("\"sha256:") && !json.contains("hunter2"), "{json}");
 }
 
 #[test]
@@ -297,13 +300,6 @@ fn changed_keys_name_what_changed() {
     let b = parse(&EXAMPLE.replace("port = 993", "port = 994")).unwrap().config;
     assert_eq!(changed_keys(&a, &b), vec!["accounts.perso.imap.port"]);
     assert!(changed_keys(&a, &a).is_empty());
-    // A password changed is a key changed, without its value.
-    let with = |p: &str| {
-        parse(&EXAMPLE.replace("username = \"prenom\"\n\n[accounts.perso.smtp]", &format!("username = \"prenom\"\npassword = \"{p}\"\n\n[accounts.perso.smtp]")))
-            .unwrap()
-            .config
-    };
-    assert_eq!(changed_keys(&with("one"), &with("two")), vec!["accounts.perso.imap.password"]);
     // An account removed lists its keys.
     let removed = changed_keys(&a, &Config::default());
     assert!(removed.contains(&"accounts.perso.email".to_string()));

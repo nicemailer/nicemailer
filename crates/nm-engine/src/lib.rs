@@ -7,25 +7,28 @@
 //!
 //! - `config.rs`: reading and validating `config.toml`,
 //! - `watch.rs`: watching the file to apply it without a restart,
-//! - `secrets.rs`: where passwords come from, bound to their server,
+//! - `secrets.rs`: the secrets of the accounts, bound to their server,
+//! - `keychain.rs`: the macOS Keychain, where they are kept,
 //! - [`Engine`] (this file): the settings applied, and the accounts they
 //!   declare, kept in line with the database.
 //!
 //! The IMAP synchronization will live here too.
 
 pub mod config;
+pub mod keychain;
 pub mod secrets;
 pub mod watch;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use nm_api::{AccountView, ConfigProblem, Event};
 use nm_store::accounts::AccountRow;
 use nm_store::{Store, StoreError};
 
 use config::{Config, Problem};
-use secrets::{Refusal, Secrets};
+use secrets::Secrets;
 
 /// The settings applied, and the state of the accounts they declare.
 ///
@@ -35,7 +38,9 @@ use secrets::{Refusal, Secrets};
 /// they return are emitted in the order of the writes.
 pub struct Engine {
     path: PathBuf,
-    secrets: Box<dyn Secrets>,
+    /// Shared with the daemon, which saves passwords without holding the
+    /// engine's lock (the Keychain may be slow).
+    secrets: Arc<dyn Secrets>,
     /// Settings applied: the last valid file, or the defaults.
     config: Config,
     /// Text of the last file read, valid or not (`None`: no file). Used to
@@ -54,7 +59,7 @@ pub struct Engine {
 impl Engine {
     /// An engine with the default settings and no account, until
     /// [`Engine::reload`] reads the file at `path`.
-    pub fn new(path: PathBuf, secrets: Box<dyn Secrets>) -> Engine {
+    pub fn new(path: PathBuf, secrets: Arc<dyn Secrets>) -> Engine {
         Engine {
             path,
             secrets,
@@ -69,6 +74,15 @@ impl Engine {
 
     pub fn path(&self) -> &Path {
         &self.path
+    }
+
+    /// Id of the account of the file `key`, if it has one.
+    pub fn account_id(&self, key: &str) -> Option<i64> {
+        self.ids.get(key).copied()
+    }
+
+    pub fn secrets(&self) -> Arc<dyn Secrets> {
+        self.secrets.clone()
     }
 
     /// Settings applied.
@@ -163,38 +177,50 @@ impl Engine {
         }
         changed.extend(sync.created.iter().chain(&sync.enabled).chain(&sync.disabled));
 
-        // Errors, account by account.
-        let mut errors = BTreeMap::new();
-        for (key, id) in &sync.ids {
-            let account = &self.config.accounts[key];
-            if let Err(refusal) = secrets::imap_password(self.secrets.as_ref(), key, account) {
-                let mut message = refusal.message(account);
-                if refusal == Refusal::Missing && account.imap.password.is_some() {
-                    message = "this build of the core does not read passwords from config.toml \
-                               (development builds only: feature dev-passwords)"
-                        .into();
-                }
-                errors.insert(*id, message);
-            }
-        }
-        let mut events = Vec::new();
-        let mut errored = Vec::new();
-        for (id, message) in &errors {
-            if self.account_errors.get(id) != Some(message) {
-                errored.push(Event::AccountError { account_id: *id, error: message.clone() });
-            }
-        }
-        // An error that went away is a change of the account's state.
-        for id in self.account_errors.keys() {
-            if !errors.contains_key(id) && sync.ids.values().any(|v| v == id) {
-                changed.insert(*id);
-            }
-        }
-        events.extend(changed.iter().map(|id| Event::AccountChanged { account_id: *id }));
+        let (errored, cleared) = self.account_errors_for(&sync.ids);
+        changed.extend(cleared);
+        let mut events: Vec<Event> = changed.iter().map(|id| Event::AccountChanged { account_id: *id }).collect();
         events.extend(errored);
         self.ids = sync.ids;
-        self.account_errors = errors;
         Ok(events)
+    }
+
+    /// Checks again whether each account could log in, after a password
+    /// was saved: `AccountChanged` for the accounts whose error went away,
+    /// `AccountError` for the new errors.
+    pub fn recheck_accounts(&mut self) -> Vec<Event> {
+        let ids = self.ids.clone();
+        let (errored, cleared) = self.account_errors_for(&ids);
+        let mut events: Vec<Event> = cleared.into_iter().map(|id| Event::AccountChanged { account_id: id }).collect();
+        events.extend(errored);
+        events
+    }
+
+    /// Works out the error of each account of `ids` (key to id), records
+    /// them, and returns the `AccountError` events of the new or changed
+    /// errors, and the ids whose error went away. Reads no secret
+    /// (`secrets::check`): safe with the locks held.
+    fn account_errors_for(&mut self, ids: &BTreeMap<String, i64>) -> (Vec<Event>, Vec<i64>) {
+        let mut errors = BTreeMap::new();
+        for (key, id) in ids {
+            let account = &self.config.accounts[key];
+            if let Err(refusal) = secrets::check(self.secrets.as_ref(), key, account) {
+                errors.insert(*id, refusal.message(key, account));
+            }
+        }
+        let errored = errors
+            .iter()
+            .filter(|(id, m)| self.account_errors.get(*id) != Some(*m))
+            .map(|(id, m)| Event::AccountError { account_id: *id, error: m.clone() })
+            .collect();
+        let cleared = self
+            .account_errors
+            .keys()
+            .filter(|id| !errors.contains_key(*id) && ids.values().any(|v| v == *id))
+            .copied()
+            .collect();
+        self.account_errors = errors;
+        (errored, cleared)
     }
 
     /// The `list_accounts` view of the rows of the database: their address

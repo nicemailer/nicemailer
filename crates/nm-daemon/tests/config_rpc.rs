@@ -1,10 +1,7 @@
 //! End to end: the core reads `config.toml`, watches it, and reports the
 //! accounts and the state of the file (`configuration.md`, section 12).
 //!
-//! By default the test binary is built without the `dev-passwords`
-//! feature, like the shipped core: a password in the file is not read, and
-//! the account says so. `cargo test -p nm-daemon --features dev-passwords`
-//! checks the other case.
+//! The core uses a throwaway keychain file of the test (`common::start`).
 
 mod common;
 
@@ -14,7 +11,7 @@ use common::{Client, start};
 use serde_json::{Value, json};
 
 const ACCOUNT: &str = "[accounts.perso]\nemail = \"me@example.com\"\ndisplay_name = \"Me\"\n\
-                       [accounts.perso.imap]\nhost = \"127.0.0.1\"\nport = 31993\npassword = \"nicemailer\"\n";
+                       [accounts.perso.imap]\nhost = \"127.0.0.1\"\nport = 31993\n";
 
 fn accounts(c: &mut Client) -> Vec<Value> {
     c.call("list_accounts", json!({})).unwrap()["items"].as_array().unwrap().clone()
@@ -55,14 +52,7 @@ fn accounts_and_changes_of_the_file_are_reported() {
     assert_eq!(list[0]["email"], "me@example.com");
     assert_eq!(list[0]["display_name"], "Me");
     assert_eq!(list[0]["enabled"], true);
-    if cfg!(feature = "dev-passwords") {
-        // `cargo test --features dev-passwords`: the password is read.
-        assert!(list[0]["error"].is_null(), "{}", list[0]);
-    } else {
-        assert!(list[0]["error"].as_str().unwrap().contains("dev-passwords"), "{}", list[0]);
-    }
-    let status = c.call("config_status", json!({})).unwrap();
-    assert_eq!(status["warnings"][0]["key"], "accounts.perso.imap.password");
+    assert!(list[0]["error"].as_str().unwrap().contains("nicemailer account password perso"), "{}", list[0]);
     let id = list[0]["id"].as_i64().unwrap();
 
     c.call("subscribe", json!({})).unwrap();
@@ -72,10 +62,10 @@ fn accounts_and_changes_of_the_file_are_reported() {
     // An invalid file: refused, with its line; the account stays.
     save(&mut c, dir.path(), &format!("{ACCOUNT}[sync]\npoll_interval_secs = \"soon\"\n"));
     let e = c.event("ConfigError", 15);
-    assert_eq!(e["line"], 9);
+    assert_eq!(e["line"], 8);
     assert_eq!(e["key"], "sync.poll_interval_secs");
     let status = c.call("config_status", json!({})).unwrap();
-    assert_eq!(status["error"]["line"], 9);
+    assert_eq!(status["error"]["line"], 8);
     assert_eq!(accounts(&mut c)[0]["enabled"], true);
 
     // Fixed: applied.
@@ -141,4 +131,49 @@ fn an_invalid_file_at_start_is_reported_by_config_status() {
     assert_eq!(status["error"]["line"], 2);
     assert_eq!(status["error"]["key"], "accounts.perso.email");
     assert!(accounts(&mut c).is_empty(), "nothing of an invalid file is applied");
+}
+
+#[test]
+fn a_password_saved_by_the_cli_goes_to_the_keychain() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("config.toml"), ACCOUNT).unwrap();
+    let _core = start(dir.path());
+    let mut c = Client::connect(dir.path());
+    c.call("subscribe", json!({})).unwrap();
+    let id = accounts(&mut c)[0]["id"].clone();
+
+    // An agent may not save a password (`configuration.md`, section 6).
+    let mut agent = Client::connect_as(dir.path(), "mcp");
+    let err = agent.call("set_password", json!({"account": "perso", "password": "x"})).unwrap_err();
+    assert_eq!(err["code"], 1007);
+    // Nor anyone for an account the file does not have.
+    let err = c.call("set_password", json!({"account": "nobody", "password": "x"})).unwrap_err();
+    assert_eq!(err["code"], 1001);
+
+    c.clear_events();
+    c.call("set_password", json!({"account": "perso", "password": "nicemailer"})).unwrap();
+    assert_eq!(c.event("AccountChanged", 5)["account_id"], id);
+    assert!(accounts(&mut c)[0]["error"].is_null());
+
+    // In the keychain of the core, for the server of the file.
+    let out = std::process::Command::new("/usr/bin/security")
+        .args(["find-generic-password", "-s", "NiceMailer", "-a", "imap:perso"])
+        .arg(dir.path().join("test.keychain-db"))
+        .output()
+        .unwrap();
+    assert!(String::from_utf8_lossy(&out.stdout).contains("127.0.0.1"));
+
+    // The file points the account at another server: refused until the
+    // password is saved again.
+    c.clear_events();
+    save(&mut c, dir.path(), &ACCOUNT.replace("127.0.0.1", "imap.example.com"));
+    let e = c.event("AccountError", 15);
+    assert!(e["error"].as_str().unwrap().contains("save the password again"), "{e}");
+    c.call("set_password", json!({"account": "perso", "password": "nicemailer"})).unwrap();
+    assert!(accounts(&mut c)[0]["error"].is_null());
+
+    // Traced, without the password.
+    let history = c.call("list_history", json!({"limit": 50})).unwrap().to_string();
+    assert!(history.contains("set_password"), "{history}");
+    assert!(!history.contains("nicemailer\""), "the password is not in the history");
 }

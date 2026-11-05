@@ -11,7 +11,7 @@ XCODE ?= /Applications/Xcode.app/Contents/Developer
 THREADS ?= 2500
 
 # These targets are commands, not files to produce.
-.PHONY: build test swift-test ui-test bench seed core app imap-up imap-down
+.PHONY: dev-cert build test swift-test ui-test bench seed core app imap-up imap-down
 
 build:
 	cargo build --release
@@ -44,11 +44,19 @@ bench:
 seed:
 	cargo run --release --bin nicemailer -- seed --reset --threads $(THREADS)
 
-# Run the core in the foreground; stop it with Ctrl-C. Built with the
-# dev-passwords feature: it reads the `password` keys of config.toml, which
-# the shipped core never does (docs/configuration.md, "Passwords").
+# Run the core in the foreground; stop it with Ctrl-C. Signed with the
+# development certificate (make dev-cert, once), so that every build reads
+# the passwords the previous ones saved in the Keychain
+# (docs/configuration.md, "Passwords").
 core:
-	cargo run --release --bin nicemailer-core --features dev-passwords
+	cargo build --release --bin nicemailer-core
+	scripts/sign-core.sh target/release/nicemailer-core
+	target/release/nicemailer-core
+
+# Creates, once, the personal code signing certificate "NiceMailer Dev" in
+# the login keychain (scripts/dev-cert.sh). Does nothing if it exists.
+dev-cert:
+	scripts/dev-cert.sh
 
 app:
 	cd apps/NiceMailer && DEVELOPER_DIR=$(XCODE) swift run

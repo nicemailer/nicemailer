@@ -34,10 +34,10 @@ Méthode : **une phase = une revue = un commit**. Chaque phase livre son code, s
 | Déplacements faits ailleurs | Rapprochés par `Message-ID` quand c'est sans ambiguïté (section 5.4) : le message garde son `id`, ses tags, son historique et sa consultation |
 | Sous-domaines | Inclus partout, y compris dans le routage à la réception : une décision sur `exemple.fr` s'applique à `news.exemple.fr` sans décision propre. `modele de donnees.md` sera corrigé (phase 6) |
 | Lectures SQLite | Une connexion d'écriture unique et un pool de connexions de lecture (WAL) : une écriture de synchronisation ne fait plus attendre l'app |
-| Secrets en développement | Mot de passe en clair dans `config.toml` (clé `password` du serveur IMAP), **lu seulement par un noyau compilé avec la feature `dev-passwords`** (`make core` l'active ; `cargo build` et le noyau distribué non). Un noyau sans la feature ne lit pas la clé et le dit dans l'erreur du compte (`AccountError`), et toute lecture du fichier avertit de sa présence. Choix revu en phase 1 : `cfg(debug_assertions)` aurait refusé le noyau de `make core`, compilé en `--release` ; et une `ConfigError` aurait refusé tout le fichier pour un problème qui ne concerne qu'un compte. Le Keychain arrive avec `add_account` (phase 7), derrière la même interface |
+| Secrets | **Trousseau dès le développement** (phase 1 bis, décision de l'utilisateur) : élément « mot de passe générique » du trousseau de session, le serveur (hôte, identifiant) dans un attribut, lisible sans autorisation ; le noyau seul lit et écrit, et n'affiche jamais de dialogue. Saisie par `nicemailer account password <clé>` (méthode `set_password`, refusée aux agents). Une clé `password` dans `config.toml` est une erreur. En développement, `make core` signe le noyau avec un certificat personnel (`make dev-cert`, une fois) : sans lui, chaque recompilation serait une autre application pour le trousseau, et perdrait l'accès aux mots de passe (mesuré). Remplace la lecture du mot de passe dans le fichier (feature `dev-passwords`) de la phase 1 |
 | Serveur de test | Dovecot 2.4.5 sous OrbStack (`dev/dovecot/`), deux instances : complète (proche d'Infomaniak après authentification), et minimale (serveur IMAP4rev1 sans extension de synchronisation) |
 
-Conseil pour le développement : garder les comptes de test et leurs mots de passe dans un fichier à part, désigné par `NICEMAILER_CONFIG`, plutôt que dans `~/.config/nicemailer/config.toml`, que la spécification invite à versionner dans Git.
+Conseil pour le développement : garder les comptes de test dans un fichier à part, désigné par `NICEMAILER_CONFIG`, plutôt que dans `~/.config/nicemailer/config.toml`.
 
 ## 3. Analyse de l'existant
 
@@ -73,7 +73,7 @@ Critère de « récupération parfaite » : la commande `nicemailer sync verify 
 
 ### Phase 1 : fondations — terminée
 
-Documentation : `docs/configuration.md`. Écarts au plan : la feature `dev-passwords` (section 2) ; `ConfigError` porte aussi `key` ; `config_status` donne l'état du fichier (règle « un état ne repose jamais sur un événement seul », `evenements.md`) ; schéma en version 4 (`account.disabled_at`, et `account.position`, l'ordre des comptes du sélecteur `@`, modifié par `set_account_order`).
+Documentation : `docs/configuration.md`. Écarts au plan : le trousseau dès cette phase, en phase 1 bis (section 2) ; `ConfigError` porte aussi `key` ; `config_status` donne l'état du fichier (règle « un état ne repose jamais sur un événement seul », `evenements.md`) ; schéma en version 4 (`account.disabled_at`, et `account.position`, l'ordre des comptes du sélecteur `@`, modifié par `set_account_order`).
 
 Décision de l'utilisateur à la revue : les mails d'un compte désactivé restent visibles ; seule sa synchronisation s'arrête.
 
@@ -81,11 +81,15 @@ Décision de l'utilisateur à la revue : les mails d'un compte désactivé reste
 - Crate `nm-engine`, qui ne dépend d'aucune interface (`architecture.md`, principe 1).
 - `config.toml` (`configuration.md`) : chemin et `NICEMAILER_CONFIG`, lecture, validation complète (fichier invalide refusé en entier, ligne fautive), clés inconnues signalées, réglages par compte, surveillance FSEvents (crate `notify`) et application sans redémarrage, `nicemailer config check | defaults | path`. Pas encore d'écriture par le contrat : elle arrive avec `add_account` (phase 7).
 - Comptes : ligne `account` créée ou réactivée pour chaque clé du fichier ; clé disparue = compte désactivé, données conservées.
-- Secrets : interface `Secrets`, dont la seule implémentation de cette phase lit la clé `password` du fichier (compilation de développement seulement). L'hôte et l'identifiant sont enregistrés avec le secret, pour refuser de l'envoyer à un autre serveur.
+- Secrets : interface `Secrets`, implémentée par le trousseau (phase 1 bis). L'hôte et l'identifiant sont enregistrés avec le secret, pour refuser de l'envoyer à un autre serveur.
 - SQLite : connexion d'écriture et pool de lecture ; les requêtes du contrat passent par le pool.
 - Événements `AccountChanged`, `AccountError`, `ConfigChanged`, `ConfigError` ; `list_accounts`.
 
 Tests : `configuration.md`, section 12, sauf l'écriture ; une lecture n'attend pas une écriture longue.
+
+### Phase 1 bis : trousseau — terminée
+
+Voir section 2, « Secrets », et `docs/configuration.md`, « Passwords ». Essai préalable sur un trousseau jetable : un binaire recompilé perd l'accès à ses éléments ; signé avec un même certificat personnel et un même identifiant, il le garde, sans que le certificat soit approuvé. Les attributs d'un élément se lisent sans autorisation, même trousseau verrouillé, d'où la vérification du serveur à chaque lecture du fichier sans risque de dialogue.
 
 ### Phase 2 : client IMAP (`nm-proto::imap`)
 
@@ -149,7 +153,7 @@ Tests : `authentification-expediteur.md`, section 8 ; `dossiers.md` (retour de T
 ### Phase 7 : création d'un compte et import initial
 
 - Commandes du contrat et CLI : `test_account` (connexion de test), `propose_folder_roles` (attributs d'usage spécial, sinon noms connus en plusieurs langues), `set_folder_roles` (avec création des dossiers manquants), `add_account` (écriture de `config.toml` par `toml_edit`, secret dans le Keychain), `account rename`, `account remove`.
-- Keychain (crate `security-framework`), trousseau de session ; le secret de développement en clair reste accepté en compilation de développement.
+- Trousseau : fait en phase 1 bis ; reste la suppression de l'élément par `account remove`, et son renommage par `account rename`.
 - Import initial (`import-initial.md`) : comptage, synchronisation des en-têtes de Sent et correspondants, décompte exact par `UID SEARCH`, action `initial_archive` par lots de 1 000 UID, frontière `uid_screening_start`, UIDVALIDITY changé pendant l'import.
 
 Tests : `import-initial.md`, section 11, contre les deux Dovecot ; `configuration.md` pour l'écriture du fichier.

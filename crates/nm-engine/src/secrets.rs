@@ -2,27 +2,61 @@
 //! that binds it to its server (`configuration.md`, section 6, "Secrets
 //! liés au serveur").
 //!
-//! In the shipped application, secrets live in the Keychain, entered only
-//! in the app or the CLI. The Keychain arrives with `add_account` (phase 7
-//! of `plan-imap.md`); until then the only provider is [`ConfigPasswords`],
-//! which reads the `password` key of the file, for development.
+//! Secrets live in the macOS Keychain ([`crate::keychain`]), entered only in
+//! the app or the CLI, and sent to the core, which alone reads and writes
+//! them. There is no secret in `config.toml`.
 //!
 //! # The binding to the server
 //!
 //! Each secret is stored with the host and the user name it was entered
 //! for. If the file later names another host or user, the core refuses to
 //! authenticate ([`Refusal::ServerChanged`]) until the user confirms the new
-//! server by typing the password again. Without this rule, anyone able to
+//! server by entering the password again. Without this rule, anyone able to
 //! edit the file, an agent tricked by a mail included, could point an
 //! account at their own server and receive the password at the next login.
+//!
+//! # Two reads, one of which never asks anything
+//!
+//! The Keychain may refuse to give a secret, or want the user's permission,
+//! but it gives the *attributes* of an item (here the host and the user
+//! name) to anyone. So the trait has two reads:
+//! - [`Secrets::imap_binding`]: the attributes only. It never blocks on the
+//!   user, so the core calls it while holding its locks, at each reading of
+//!   the file, to tell the user at once that an account lacks a password or
+//!   points at another server;
+//! - [`Secrets::imap`]: the secret itself, only at login time, without any
+//!   lock held.
 
-use crate::config::{AccountConfig, SecretString};
+use std::collections::BTreeMap;
+use std::sync::Mutex;
+
+use crate::config::{AccountConfig, AuthMethod, SecretString};
+
+/// The server a secret was entered for.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Binding {
+    pub host: String,
+    pub username: String,
+}
+
+impl Binding {
+    /// The server of an account's IMAP settings.
+    pub fn of(account: &AccountConfig) -> Binding {
+        Binding { host: account.imap.host.clone(), username: account.imap.username.clone() }
+    }
+
+    /// Whether it is the server the file names now. Host names are
+    /// compared without case (the file reader lowercases them); user names
+    /// exactly, since some servers distinguish them.
+    pub fn matches(&self, account: &AccountConfig) -> bool {
+        self.host.eq_ignore_ascii_case(&account.imap.host) && self.username == account.imap.username
+    }
+}
 
 /// A secret, with the server it was entered for.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Credential {
-    pub host: String,
-    pub username: String,
+    pub binding: Binding,
     pub secret: SecretString,
 }
 
@@ -30,12 +64,17 @@ pub struct Credential {
 ///
 /// Rust note: a *trait* is an interface: a set of methods a type promises
 /// to provide. The engine works with `dyn Secrets` ("any type implementing
-/// `Secrets`"), so the Keychain can replace [`ConfigPasswords`] later
-/// without any change to the code that uses it, and tests can provide a
-/// fake. `Send + Sync` allows sharing it between threads.
+/// `Secrets`"): the Keychain in the core, [`MemorySecrets`] in tests.
+/// `Send + Sync` allows sharing it between threads.
 pub trait Secrets: Send + Sync {
-    /// The IMAP secret of the account `key`, if one is stored.
-    fn imap(&self, key: &str, account: &AccountConfig) -> Result<Option<Credential>, String>;
+    /// The server the IMAP secret of account `key` was entered for, if one
+    /// is stored. Never asks the user anything.
+    fn imap_binding(&self, key: &str) -> Result<Option<Binding>, String>;
+    /// The IMAP secret of account `key`, with its server. The Keychain may
+    /// refuse it: call it only to log in, never with a lock held.
+    fn imap(&self, key: &str) -> Result<Option<Credential>, String>;
+    /// Stores (or replaces) the IMAP secret of account `key`.
+    fn set_imap(&self, key: &str, credential: &Credential) -> Result<(), String>;
 }
 
 /// Why the core will not authenticate an account.
@@ -47,67 +86,72 @@ pub enum Refusal {
     OauthUnsupported,
     /// The file names another server than the one the secret was entered
     /// for: the user must confirm it.
-    ServerChanged { stored_host: String, stored_username: String },
-    /// The store of secrets failed (Keychain locked…).
+    ServerChanged { stored: Binding },
+    /// The store of secrets failed (Keychain locked, access refused…).
     Unavailable(String),
 }
 
 impl Refusal {
     /// The message shown to the user (`AccountError`, `list_accounts`).
-    pub fn message(&self, account: &AccountConfig) -> String {
+    pub fn message(&self, key: &str, account: &AccountConfig) -> String {
         match self {
-            Refusal::Missing => "no password stored for this account".into(),
+            Refusal::Missing => format!("no password saved for this account: nicemailer account password {key}"),
             Refusal::OauthUnsupported => "auth = \"oauth2\" is not supported yet".into(),
-            Refusal::ServerChanged { stored_host, stored_username } => format!(
-                "the password was entered for {stored_username} on {stored_host}, the file now says {} on {}: \
-                 enter the password again to confirm the new server",
-                account.imap.username, account.imap.host
+            Refusal::ServerChanged { stored } => format!(
+                "the password was saved for {} on {}, the file now says {} on {}: \
+                 save the password again to confirm the new server (nicemailer account password {key})",
+                stored.username, stored.host, account.imap.username, account.imap.host
             ),
-            Refusal::Unavailable(e) => format!("secrets unavailable: {e}"),
+            Refusal::Unavailable(e) => e.clone(),
         }
     }
 }
 
-/// The IMAP password of an account, if the core may send it to the server
-/// named in the file. Every authentication goes through this function.
-pub fn imap_password(secrets: &dyn Secrets, key: &str, account: &AccountConfig) -> Result<SecretString, Refusal> {
-    if account.auth == crate::config::AuthMethod::Oauth2 {
+/// Whether the core could log in to the account: a secret is stored, for
+/// the server the file names. Reads no secret, asks nothing: used at each
+/// reading of the file to show the state of the accounts.
+pub fn check(secrets: &dyn Secrets, key: &str, account: &AccountConfig) -> Result<(), Refusal> {
+    if account.auth == AuthMethod::Oauth2 {
         return Err(Refusal::OauthUnsupported);
     }
-    let credential = secrets.imap(key, account).map_err(Refusal::Unavailable)?.ok_or(Refusal::Missing)?;
-    // Host names are compared without case (the file reader lowercases
-    // them); user names exactly, since some servers distinguish them.
-    if !credential.host.eq_ignore_ascii_case(&account.imap.host) || credential.username != account.imap.username {
-        return Err(Refusal::ServerChanged { stored_host: credential.host, stored_username: credential.username });
+    let stored = secrets.imap_binding(key).map_err(Refusal::Unavailable)?.ok_or(Refusal::Missing)?;
+    if !stored.matches(account) {
+        return Err(Refusal::ServerChanged { stored });
+    }
+    Ok(())
+}
+
+/// The IMAP password of an account, if the core may send it to the server
+/// named in the file. Every login goes through this function. The binding
+/// is checked again on the item read, not on an earlier [`check`]: the
+/// file may have changed in between.
+pub fn imap_password(secrets: &dyn Secrets, key: &str, account: &AccountConfig) -> Result<SecretString, Refusal> {
+    if account.auth == AuthMethod::Oauth2 {
+        return Err(Refusal::OauthUnsupported);
+    }
+    let credential = secrets.imap(key).map_err(Refusal::Unavailable)?.ok_or(Refusal::Missing)?;
+    if !credential.binding.matches(account) {
+        return Err(Refusal::ServerChanged { stored: credential.binding });
     }
     Ok(credential.secret)
 }
 
-/// Development provider: the `password` key of `[accounts.<key>.imap]`.
-///
-/// The password is in the same file as the host, so the binding to the
-/// server is always satisfied: this provider is a stand-in for the
-/// Keychain, not a safe place. The core uses it only when built with the
-/// `dev-passwords` feature (`nm-daemon`); a build without it ignores the
-/// key and says so in the account's error.
-pub struct ConfigPasswords;
+/// Secrets in memory, for tests: the same behavior as the Keychain, without
+/// touching it.
+#[derive(Default)]
+pub struct MemorySecrets(Mutex<BTreeMap<String, Credential>>);
 
-impl Secrets for ConfigPasswords {
-    fn imap(&self, _key: &str, account: &AccountConfig) -> Result<Option<Credential>, String> {
-        Ok(account.imap.password.clone().map(|secret| Credential {
-            host: account.imap.host.clone(),
-            username: account.imap.username.clone(),
-            secret,
-        }))
+impl Secrets for MemorySecrets {
+    fn imap_binding(&self, key: &str) -> Result<Option<Binding>, String> {
+        Ok(self.0.lock().unwrap().get(key).map(|c| c.binding.clone()))
     }
-}
 
-/// Provider of builds without `dev-passwords`, until the Keychain: there is
-/// no secret anywhere yet.
-pub struct NoSecrets;
+    fn imap(&self, key: &str) -> Result<Option<Credential>, String> {
+        Ok(self.0.lock().unwrap().get(key).cloned())
+    }
 
-impl Secrets for NoSecrets {
-    fn imap(&self, _key: &str, _account: &AccountConfig) -> Result<Option<Credential>, String> {
-        Ok(None)
+    fn set_imap(&self, key: &str, credential: &Credential) -> Result<(), String> {
+        self.0.lock().unwrap().insert(key.to_string(), credential.clone());
+        Ok(())
     }
 }

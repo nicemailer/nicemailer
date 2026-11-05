@@ -60,7 +60,7 @@ use nm_api::{
     PROTOCOL_VERSION, Page, Request, Response, RpcError, SearchParams, SearchResult, SetBodyFormatParams,
     SetGroupMemberParams, SetThreadFlaggedParams, SetThreadSeenParams, SubscribeParams, SubscribeResult,
     SetAddressScreeningParams, SetDomainScreeningParams, TagThreadParams, ThreadView, UndoParams, error_code,
-    method, ConfigStatus, SetAccountOrderParams,
+    method, ConfigStatus, SetAccountOrderParams, SetPasswordParams,
 };
 use nm_core::Source;
 use nm_engine::Engine;
@@ -92,6 +92,10 @@ struct Args {
     /// Fichier de réglages (par défaut ~/.config/nicemailer/config.toml).
     #[arg(long, env = "NICEMAILER_CONFIG")]
     config: Option<PathBuf>,
+    /// Trousseau des mots de passe : un fichier de trousseau déverrouillé,
+    /// au lieu du trousseau de session (tests, trousseau de développement).
+    #[arg(long, env = "NICEMAILER_KEYCHAIN")]
+    keychain: Option<PathBuf>,
 }
 
 /// State shared by all connections.
@@ -164,8 +168,15 @@ async fn main() -> anyhow::Result<()> {
     // Settings, before the event log, whose sizes they give. An invalid
     // file does not stop the core: it starts with the defaults and no
     // account, and reports the error (`configuration.md`, section 4).
+    // The core never shows a Keychain dialog (`nm-engine`, `keychain.rs`):
+    // an access that would need one fails, and the account says why.
+    nm_engine::keychain::never_prompt().map_err(|e| anyhow::anyhow!("trousseau : {e}"))?;
+    let secrets: Arc<dyn nm_engine::secrets::Secrets> = match &args.keychain {
+        Some(path) => Arc::new(nm_engine::keychain::Keychain::file(path).map_err(|e| anyhow::anyhow!(e))?),
+        None => Arc::new(nm_engine::keychain::Keychain::login()),
+    };
     let config_path = args.config.unwrap_or_else(nm_engine::config::default_path);
-    let mut engine = Engine::new(config_path.clone(), secrets());
+    let mut engine = Engine::new(config_path.clone(), secrets);
     let startup_events = engine.reload(&mut store, true)?;
     log_config(&engine);
     let settings = engine.config().events.clone();
@@ -397,15 +408,53 @@ async fn with_reader<T: Send + 'static>(
         .map_err(store_error)
 }
 
-/// Where the passwords of the accounts come from. The `password` key of
-/// `config.toml` only in a build with the `dev-passwords` feature; the
-/// Keychain arrives with `add_account` (`plan-imap.md`, phase 7).
-fn secrets() -> Box<dyn nm_engine::secrets::Secrets> {
-    if cfg!(feature = "dev-passwords") {
-        Box::new(nm_engine::secrets::ConfigPasswords)
-    } else {
-        Box::new(nm_engine::secrets::NoSecrets)
+/// `set_password`: saves the IMAP password of an account in the Keychain,
+/// bound to the server the file names now. Saving it again after the file
+/// changed server is how the user confirms the new server.
+async fn set_password(core: &Arc<Core>, p: SetPasswordParams, source: Source) -> Result<CommandResult, RpcError> {
+    // `configuration.md`, section 6: the secret is entered in the app or
+    // the CLI only. An agent (MCP) or the web server must not be able to
+    // bind a password of its choosing to a server of its choosing. The
+    // source is declared by the client until its signature is checked.
+    if !matches!(source, Source::App | Source::Cli | Source::Tui) {
+        return Err(RpcError::new(error_code::FORBIDDEN, "only the app and the CLI can save a password"));
     }
+    if p.password.is_empty() {
+        return Err(RpcError::new(error_code::INVALID_PARAMS, "empty password"));
+    }
+    let (secrets, binding, account_id) = {
+        let engine = core.engine.lock().unwrap();
+        let Some(account) = engine.config().accounts.get(&p.account) else {
+            return Err(RpcError::new(error_code::NOT_FOUND, format!("no account {} in config.toml", p.account)));
+        };
+        let Some(id) = engine.account_id(&p.account) else {
+            return Err(RpcError::new(error_code::NOT_FOUND, format!("account {} is not in the database", p.account)));
+        };
+        (engine.secrets(), nm_engine::secrets::Binding::of(account), id)
+    };
+    // The Keychain call runs on a blocking thread, without any lock held.
+    let credential = nm_engine::secrets::Credential {
+        binding: binding.clone(),
+        secret: nm_engine::config::SecretString::new(p.password),
+    };
+    let key = p.account.clone();
+    tokio::task::spawn_blocking(move || secrets.set_imap(&key, &credential))
+        .await
+        .map_err(|e| RpcError::new(error_code::INTERNAL_ERROR, e.to_string()))?
+        .map_err(|e| RpcError::new(error_code::SECRETS, e))?;
+    let core2 = core.clone();
+    with_store(core, move |s| {
+        s.record_password_saved(account_id, &binding.host, &binding.username, source)?;
+        // Lock order: store, engine, events.
+        let events = core2.engine.lock().unwrap().recheck_accounts();
+        let mut log = core2.events.lock().unwrap();
+        for e in events {
+            log.push(e);
+        }
+        Ok(())
+    })
+    .await?;
+    Ok(CommandResult { changed: 0 })
 }
 
 /// Reads `config.toml` again after a change seen by the watch, and emits
@@ -508,6 +557,8 @@ async fn dispatch(core: &Arc<Core>, session: &mut Session, req: Request) -> Resu
             session.source = match p.client.as_deref() {
                 Some("app") => Source::App,
                 Some("tui") => Source::Tui,
+                Some("mcp") => Source::Mcp,
+                Some("web") => Source::Web,
                 _ => Source::Cli,
             };
             session.hello = true;
@@ -749,6 +800,10 @@ async fn dispatch(core: &Arc<Core>, session: &mut Session, req: Request) -> Resu
             // lock is never held while waiting for the database.
             let items = core.engine.lock().unwrap().account_views(rows);
             to_value(Items { items, as_of })
+        }
+        method::SET_PASSWORD => {
+            let p: SetPasswordParams = params(req.params)?;
+            to_value(set_password(core, p, source).await?)
         }
         method::SET_ACCOUNT_ORDER => {
             let p: SetAccountOrderParams = params(req.params)?;

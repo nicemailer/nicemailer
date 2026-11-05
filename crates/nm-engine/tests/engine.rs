@@ -1,14 +1,13 @@
 //! The engine applies `config.toml`: reloads, refusals, accounts enabled and
 //! disabled, secrets bound to their server (`configuration.md`, section 12).
 
-use std::collections::BTreeMap;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::Arc;
 
 use nm_api::Event;
 use nm_engine::Engine;
-use nm_engine::config::{AccountConfig, SecretString};
-use nm_engine::secrets::{self, ConfigPasswords, Credential, NoSecrets, Refusal, Secrets};
+use nm_engine::config::SecretString;
+use nm_engine::secrets::{self, Binding, Credential, MemorySecrets, Refusal, Secrets};
 use nm_store::Store;
 
 /// A file of the test, and a store in memory.
@@ -29,14 +28,27 @@ impl Setup {
         std::fs::write(&self.path, text).unwrap();
     }
 
-    fn engine(&self, secrets: Box<dyn Secrets>) -> Engine {
+    fn engine(&self, secrets: Arc<dyn Secrets>) -> Engine {
         Engine::new(self.path.clone(), secrets)
     }
 }
 
-/// An account `key` on `host`, with a password in the file.
+/// An account `key` on `host`.
 fn account(key: &str, host: &str) -> String {
-    format!("[accounts.{key}]\nemail = \"{key}@example.com\"\n[accounts.{key}.imap]\nhost = \"{host}\"\npassword = \"pw\"\n")
+    format!("[accounts.{key}]\nemail = \"{key}@example.com\"\n[accounts.{key}.imap]\nhost = \"{host}\"\n")
+}
+
+/// Secrets with a password saved for `key` on `host` (user `key@example.com`).
+fn stored(key: &str, host: &str) -> Arc<MemorySecrets> {
+    let secrets = MemorySecrets::default();
+    let binding = Binding { host: host.into(), username: format!("{key}@example.com") };
+    secrets.set_imap(key, &Credential { binding, secret: SecretString::new("pw") }).unwrap();
+    Arc::new(secrets)
+}
+
+/// No password saved.
+fn none() -> Arc<MemorySecrets> {
+    Arc::new(MemorySecrets::default())
 }
 
 fn names(events: &[Event]) -> Vec<String> {
@@ -54,7 +66,7 @@ fn audit(store: &Store) -> Vec<(String, String)> {
 #[test]
 fn no_file_means_no_account_and_the_defaults() {
     let mut s = Setup::new();
-    let mut engine = s.engine(Box::new(ConfigPasswords));
+    let mut engine = s.engine(stored("perso", "h"));
     let events = engine.reload(&mut s.store, true).unwrap();
     assert!(events.is_empty(), "{events:?}");
     assert_eq!(engine.config(), &nm_engine::config::Config::default());
@@ -66,11 +78,11 @@ fn no_file_means_no_account_and_the_defaults() {
 fn an_invalid_file_at_startup_keeps_the_defaults_and_says_where() {
     let mut s = Setup::new();
     s.write(&format!("{}[sync]\npoll_interval_secs = 1\n", account("perso", "h")));
-    let mut engine = s.engine(Box::new(ConfigPasswords));
+    let mut engine = s.engine(stored("perso", "h"));
     let events = engine.reload(&mut s.store, true).unwrap();
     match &events[..] {
         [Event::ConfigError { line, key, .. }] => {
-            assert_eq!(*line, Some(7));
+            assert_eq!(*line, Some(6));
             assert_eq!(key.as_deref(), Some("sync.poll_interval_secs"));
         }
         other => panic!("{other:?}"),
@@ -84,7 +96,7 @@ fn an_invalid_file_at_startup_keeps_the_defaults_and_says_where() {
 fn an_invalid_file_later_keeps_the_previous_settings() {
     let mut s = Setup::new();
     s.write(&format!("[sync]\npoll_interval_secs = 60\n{}", account("perso", "h")));
-    let mut engine = s.engine(Box::new(ConfigPasswords));
+    let mut engine = s.engine(stored("perso", "h"));
     engine.reload(&mut s.store, true).unwrap();
     assert_eq!(engine.config().sync.poll_interval_secs, 60);
 
@@ -117,7 +129,7 @@ fn fixing_a_file_back_to_the_applied_one_clears_the_error() {
     let mut s = Setup::new();
     let good = account("perso", "h");
     s.write(&good);
-    let mut engine = s.engine(Box::new(ConfigPasswords));
+    let mut engine = s.engine(stored("perso", "h"));
     engine.reload(&mut s.store, true).unwrap();
     s.write("not toml at all = = =");
     assert_eq!(names(&engine.reload(&mut s.store, false).unwrap()), vec!["ConfigError"]);
@@ -133,7 +145,7 @@ fn fixing_a_file_back_to_the_applied_one_clears_the_error() {
 fn the_same_text_twice_does_nothing() {
     let mut s = Setup::new();
     s.write(&account("perso", "h"));
-    let mut engine = s.engine(Box::new(ConfigPasswords));
+    let mut engine = s.engine(stored("perso", "h"));
     engine.reload(&mut s.store, true).unwrap();
     s.write(&format!("{}\n# a comment\n", account("perso", "h")));
     // A new text, but the same settings: no change to announce.
@@ -145,7 +157,7 @@ fn the_same_text_twice_does_nothing() {
 fn an_unknown_key_is_a_warning_and_the_rest_applies() {
     let mut s = Setup::new();
     s.write(&format!("{}[sync]\npoll_interval_secs = 45\nwhatever = 1\n", account("perso", "h")));
-    let mut engine = s.engine(Box::new(ConfigPasswords));
+    let mut engine = s.engine(stored("perso", "h"));
     engine.reload(&mut s.store, true).unwrap();
     assert!(engine.error().is_none());
     assert_eq!(engine.config().sync.poll_interval_secs, 45);
@@ -156,7 +168,7 @@ fn an_unknown_key_is_a_warning_and_the_rest_applies() {
 fn a_change_is_recorded_and_announced() {
     let mut s = Setup::new();
     s.write(&account("perso", "h"));
-    let mut engine = s.engine(Box::new(ConfigPasswords));
+    let mut engine = s.engine(stored("perso", "h"));
     let events = engine.reload(&mut s.store, true).unwrap();
     // At startup: the account is created, nothing else is announced.
     assert_eq!(names(&events), vec!["AccountChanged"]);
@@ -179,7 +191,7 @@ fn a_change_is_recorded_and_announced() {
 fn an_account_removed_then_restored_keeps_its_data() {
     let mut s = Setup::new();
     s.write(&format!("{}{}", account("perso", "h"), account("pro", "h2")));
-    let mut engine = s.engine(Box::new(ConfigPasswords));
+    let mut engine = s.engine(stored("perso", "h"));
     engine.reload(&mut s.store, true).unwrap();
     let rows = s.store.list_account_rows().unwrap();
     let perso = rows.iter().find(|r| r.config_key == "perso").unwrap().id;
@@ -218,7 +230,7 @@ fn an_archive_account_is_never_disabled_and_its_name_cannot_be_taken() {
     let mut s = Setup::new();
     s.store.prepare_archive_account("old", "old@example.com", nm_core::Source::Cli).unwrap();
     s.write(&account("old", "h"));
-    let mut engine = s.engine(Box::new(ConfigPasswords));
+    let mut engine = s.engine(stored("perso", "h"));
     engine.reload(&mut s.store, true).unwrap();
     let rows = s.store.list_account_rows().unwrap();
     assert_eq!(rows.len(), 1);
@@ -231,20 +243,6 @@ fn an_archive_account_is_never_disabled_and_its_name_cannot_be_taken() {
     s.write("");
     engine.reload(&mut s.store, false).unwrap();
     assert!(!s.store.list_account_rows().unwrap()[0].disabled, "an archive account stays enabled");
-}
-
-/// Secrets entered for given servers, as the Keychain will hold them.
-struct Stored(Mutex<BTreeMap<String, Credential>>);
-
-impl Secrets for Stored {
-    fn imap(&self, key: &str, _: &AccountConfig) -> Result<Option<Credential>, String> {
-        Ok(self.0.lock().unwrap().get(key).cloned())
-    }
-}
-
-fn stored(key: &str, host: &str) -> Box<Stored> {
-    let c = Credential { host: host.into(), username: format!("{key}@example.com"), secret: SecretString::new("pw") };
-    Box::new(Stored(Mutex::new(BTreeMap::from([(key.to_string(), c)]))))
 }
 
 #[test]
@@ -262,12 +260,12 @@ fn a_new_imap_host_gets_no_password_before_confirmation() {
     let Event::AccountError { error, .. } = &events[2] else { unreachable!() };
     assert!(error.contains("imap.example.com") && error.contains("imap.attacker.example"), "{error}");
     let view = engine.account_views(s.store.list_account_rows().unwrap());
-    assert!(view[0].error.as_deref().unwrap().contains("enter the password again"));
+    assert!(view[0].error.as_deref().unwrap().contains("save the password again"));
 
     // And the function every login goes through refuses to give it.
     let config = engine.config().accounts["perso"].clone();
     let refusal = secrets::imap_password(&*stored("perso", "imap.example.com"), "perso", &config).unwrap_err();
-    assert!(matches!(refusal, Refusal::ServerChanged { ref stored_host, .. } if stored_host == "imap.example.com"));
+    assert!(matches!(refusal, Refusal::ServerChanged { ref stored } if stored.host == "imap.example.com"));
 
     // Back to the right server: the error goes away, announced as a change.
     s.write(&account("perso", "imap.example.com"));
@@ -288,27 +286,60 @@ fn a_changed_username_is_a_changed_server_too() {
 }
 
 #[test]
-fn a_build_without_dev_passwords_says_why_it_has_none() {
+fn a_missing_password_is_an_error_until_it_is_saved() {
     let mut s = Setup::new();
-    s.write(&account("perso", "h"));
-    let mut engine = s.engine(Box::new(NoSecrets));
+    s.write(&account("perso", "imap.example.com"));
+    let secrets = none();
+    let mut engine = s.engine(secrets.clone());
     let events = engine.reload(&mut s.store, true).unwrap();
     assert_eq!(names(&events), vec!["AccountChanged", "AccountError"]);
     let Event::AccountError { error, .. } = &events[1] else { unreachable!() };
-    assert!(error.contains("dev-passwords"), "{error}");
+    assert!(error.contains("nicemailer account password perso"), "{error}");
+    // Nothing changed: rechecking announces nothing.
+    assert!(engine.recheck_accounts().is_empty());
 
-    // Without a password in the file: the plain "missing" message.
-    s.write("[accounts.perso]\nemail = \"p@example.com\"\n[accounts.perso.imap]\nhost = \"h\"\n");
+    // Saved, for the server of the file: the error goes away.
+    let config = engine.config().accounts["perso"].clone();
+    secrets.set_imap("perso", &Credential { binding: Binding::of(&config), secret: SecretString::new("pw") }).unwrap();
+    assert_eq!(names(&engine.recheck_accounts()), vec!["AccountChanged"]);
+    assert!(engine.account_views(s.store.list_account_rows().unwrap())[0].error.is_none());
+    assert_eq!(secrets::imap_password(secrets.as_ref(), "perso", &config).unwrap().expose(), "pw");
+}
+
+#[test]
+fn saving_again_confirms_a_new_server() {
+    let mut s = Setup::new();
+    s.write(&account("perso", "imap.example.com"));
+    let secrets = stored("perso", "imap.example.com");
+    let mut engine = s.engine(secrets.clone());
+    engine.reload(&mut s.store, true).unwrap();
+    s.write(&account("perso", "imap.new.example"));
     let events = engine.reload(&mut s.store, false).unwrap();
-    let error = events.iter().find_map(|e| if let Event::AccountError { error, .. } = e { Some(error.clone()) } else { None });
-    assert_eq!(error.as_deref(), Some("no password stored for this account"));
+    assert!(names(&events).contains(&"AccountError".to_string()));
+    // The user saves the password again: it is now bound to the new server.
+    let config = engine.config().accounts["perso"].clone();
+    secrets.set_imap("perso", &Credential { binding: Binding::of(&config), secret: SecretString::new("pw2") }).unwrap();
+    assert_eq!(names(&engine.recheck_accounts()), vec!["AccountChanged"]);
+    assert_eq!(secrets::imap_password(secrets.as_ref(), "perso", &config).unwrap().expose(), "pw2");
+}
+
+#[test]
+fn the_login_checks_the_binding_again() {
+    // `check` passed when the file was read; the file changed since, and
+    // the secret was replaced by one for another server: the login, which
+    // reads the item itself, refuses.
+    let config = nm_engine::config::parse(&account("perso", "imap.example.com")).unwrap().config.accounts["perso"].clone();
+    let secrets = stored("perso", "imap.example.com");
+    assert!(secrets::check(secrets.as_ref(), "perso", &config).is_ok());
+    let other = stored("perso", "imap.attacker.example");
+    assert!(matches!(secrets::imap_password(other.as_ref(), "perso", &config), Err(Refusal::ServerChanged { .. })));
 }
 
 #[test]
 fn oauth2_is_reported_as_unsupported() {
     let mut s = Setup::new();
     s.write("[accounts.g]\nemail = \"g@example.com\"\nauth = \"oauth2\"\n[accounts.g.imap]\nhost = \"imap.gmail.com\"\n");
-    let mut engine = s.engine(Box::new(ConfigPasswords));
+    let mut engine = s.engine(stored("perso", "h"));
     engine.reload(&mut s.store, true).unwrap();
     let views = engine.account_views(s.store.list_account_rows().unwrap());
     assert!(views[0].error.as_deref().unwrap().contains("oauth2"));
@@ -319,7 +350,7 @@ fn an_unreadable_file_is_an_error_until_it_is_readable() {
     use std::os::unix::fs::PermissionsExt;
     let mut s = Setup::new();
     s.write(&account("perso", "h"));
-    let mut engine = s.engine(Box::new(ConfigPasswords));
+    let mut engine = s.engine(stored("perso", "h"));
     engine.reload(&mut s.store, true).unwrap();
     std::fs::set_permissions(&s.path, std::fs::Permissions::from_mode(0o000)).unwrap();
     let events = engine.reload(&mut s.store, false).unwrap();

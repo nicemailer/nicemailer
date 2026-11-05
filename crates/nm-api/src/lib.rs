@@ -84,6 +84,9 @@ pub mod method {
     pub const CONFIG_STATUS: &str = "config_status";
     /// Changes the display order of the accounts (account picker, sidebar).
     pub const SET_ACCOUNT_ORDER: &str = "set_account_order";
+    /// Saves the IMAP password of an account in the Keychain, for the
+    /// server the file names now (`configuration.md`, section 6).
+    pub const SET_PASSWORD: &str = "set_password";
 }
 
 /// Stable error codes. Negative codes are the ones defined by the JSON-RPC
@@ -113,6 +116,12 @@ pub mod error_code {
     /// suspected of spoofing: send it again with `confirm_suspect` once the
     /// user has confirmed. `data` holds `addr` and `verdict`.
     pub const CONFIRMATION_REQUIRED: i64 = 1005;
+    /// The store of secrets (the Keychain) refused to save or give a
+    /// password; the message says why.
+    pub const SECRETS: i64 = 1006;
+    /// The client may not do this: saving a password, for one, is
+    /// reserved to the app and the CLI.
+    pub const FORBIDDEN: i64 = 1007;
 }
 
 // ---------------------------------------------------------------------------
@@ -1052,6 +1061,25 @@ pub struct AccountView {
     /// Display order: `list_accounts` and `list_folders` give the accounts
     /// by increasing position (then by id). Changed by `set_account_order`.
     pub position: i64,
+}
+
+/// Params of `set_password`. The password is never logged nor stored
+/// outside the Keychain. Answered with `CommandResult` (`changed`: 0);
+/// the account's state is announced by `AccountChanged` or `AccountError`.
+#[derive(Clone, Serialize, Deserialize)]
+pub struct SetPasswordParams {
+    /// Key of the account in `config.toml`.
+    pub account: String,
+    pub password: String,
+}
+
+/// Rust note: `Debug` is written by hand rather than derived, so that
+/// printing the params (in a log, a panic message) never shows the
+/// password.
+impl std::fmt::Debug for SetPasswordParams {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SetPasswordParams").field("account", &self.account).field("password", &"***").finish()
+    }
 }
 
 /// Params of `set_account_order`: these accounts first, in this order;

@@ -36,6 +36,11 @@ pub struct Client {
 
 impl Client {
     pub fn connect(dir: &Path) -> Client {
+        Client::connect_as(dir, "cli")
+    }
+
+    /// Connects declaring the client `client` (`app`, `cli`, `mcp`…).
+    pub fn connect_as(dir: &Path, client: &str) -> Client {
         // The core needs a moment to create its socket.
         let deadline = Instant::now() + Duration::from_secs(10);
         let stream = loop {
@@ -48,7 +53,7 @@ impl Client {
         stream.set_read_timeout(Some(Duration::from_secs(30))).unwrap();
         let reader = BufReader::new(stream.try_clone().unwrap());
         let mut c = Client { stream, reader, next_id: 1, pending: Default::default() };
-        c.call("hello", json!({"protocol_version": 1, "client": "cli"})).unwrap();
+        c.call("hello", json!({"protocol_version": 1, "client": client})).unwrap();
         c
     }
 
@@ -80,15 +85,28 @@ impl Client {
 }
 
 /// Starts the core on `dir`; it is killed when the returned value drops.
-/// Its settings file is `dir/config.toml`, missing unless the test writes
-/// it: a test must never read the settings (and accounts) of the machine.
+///
+/// The core gets nothing of the machine: its settings file is
+/// `dir/config.toml`, missing unless the test writes it, and its keychain a
+/// throwaway file `dir/test.keychain-db` (created unlocked; `security
+/// create-keychain` does not add it to the user's search list), never the
+/// login keychain.
 pub fn start(dir: &Path) -> Core {
+    let keychain = dir.join("test.keychain-db");
+    if !keychain.exists() {
+        for args in [["create-keychain", "-p", "test"], ["unlock-keychain", "-p", "test"]] {
+            let ok = Command::new("/usr/bin/security").args(args).arg(&keychain).status().unwrap().success();
+            assert!(ok, "security {args:?}");
+        }
+    }
     Core(
         Command::new(env!("CARGO_BIN_EXE_nicemailer-core"))
             .arg("--data-dir")
             .arg(dir)
             .arg("--config")
             .arg(dir.join("config.toml"))
+            .arg("--keychain")
+            .arg(&keychain)
             .spawn()
             .unwrap(),
     )

@@ -253,8 +253,6 @@ pub struct ServerConfig {
     /// top of the system's: for a self-hosted server, and for the test
     /// servers (`dev/dovecot`). Certificate checks are never disabled.
     pub ca_file: Option<PathBuf>,
-    /// Password in clear text. Development only: see [`crate::secrets`].
-    pub password: Option<SecretString>,
 }
 
 /// One entry of `[[accounts.<key>.identities]]`.
@@ -333,7 +331,7 @@ impl fmt::Display for Problem {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Parsed {
     pub config: Config,
-    /// Unknown keys, passwords in clear text.
+    /// Unknown keys.
     pub warnings: Vec<Problem>,
 }
 
@@ -737,19 +735,22 @@ impl<'t> Reader<'t> {
         let port = self.int(&mut s, "port", protocol.default_port(security) as u64, 1..=65_535)? as u16;
         let username = self.string(&mut s, "username")?.unwrap_or_else(|| email.to_string());
         let ca_file = self.path(&mut s, "ca_file")?;
-        let password_item = s.table.get("password");
-        let password = self.string(&mut s, "password")?.map(SecretString::new);
-        if password.is_some() {
-            self.warnings.push(Problem {
-                line: self.line(password_item.and_then(|i| i.span())),
-                key: Some(s.key("password")),
-                message: "password in clear text: read only by development builds of the core \
-                          (feature dev-passwords); keep this file out of Git"
-                    .into(),
-            });
+        // No secret in the file (`configuration.md`, section 2): a password
+        // here is refused rather than ignored, so it does not stay, in clear
+        // text, in a file the specification invites to keep in Git.
+        if let Some(item) = s.get("password") {
+            let account = s.path.split('.').nth(1).unwrap_or("<key>");
+            return Err(self.problem(
+                Some(item),
+                s.key("password"),
+                format!(
+                    "passwords are not kept in config.toml: remove this line, and save the password in the \
+                     Keychain with: nicemailer account password {account}"
+                ),
+            ));
         }
         self.finish(s);
-        Ok(ServerConfig { host, port, security, username, ca_file, password })
+        Ok(ServerConfig { host, port, security, username, ca_file })
     }
 
     /// `identities`, written as `[[accounts.<key>.identities]]` tables or as

@@ -107,15 +107,24 @@ enum Command {
     },
     /// List the accounts and their state, as the core sees them, in their
     /// display order.
-    Accounts {
+    Accounts,
+    /// Work on one account.
+    Account {
         #[command(subcommand)]
-        action: Option<AccountsAction>,
+        action: AccountAction,
     },
 }
 
-/// `nicemailer accounts …`.
+/// `nicemailer account …`.
 #[derive(Subcommand)]
-enum AccountsAction {
+enum AccountAction {
+    /// Save the IMAP password of an account in the Keychain, for the server
+    /// config.toml names now. Asked without echo; read from the standard
+    /// input when it is not a terminal (`printf %s "$PW" | nicemailer …`).
+    Password {
+        /// Account key, as in [accounts.<key>].
+        key: String,
+    },
     /// Change the display order (account picker, sidebar): the accounts
     /// named come first, in this order, the others after them.
     Order {
@@ -233,21 +242,40 @@ fn main() -> anyhow::Result<()> {
             Ok(())
         }
         Command::Config { action } => run_config(action),
-        Command::Accounts { action } => {
+        Command::Account { action: AccountAction::Password { key } } => {
+            // Connect first: no point asking for a password the core
+            // cannot receive.
+            let mut client = Client::connect(&data_dir)?;
+            let password = read_password(&format!("IMAP password of {key}: "))?;
+            client.call("set_password", json!({ "account": key, "password": password }))?;
+            let result = client.call("list_accounts", Value::Null)?;
+            let account = result["items"].as_array().into_iter().flatten().find(|a| a["key"] == key.as_str());
+            match account.and_then(|a| a["error"].as_str()) {
+                Some(e) => println!("Saved, but the account still has an error: {e}"),
+                None => println!("Saved in the Keychain."),
+            }
+            Ok(())
+        }
+        Command::Account { action: AccountAction::Order { keys } } => {
+            let mut client = Client::connect(&data_dir)?;
+            let items = client.call("list_accounts", Value::Null)?["items"].as_array().cloned().unwrap_or_default();
+            let mut ids = Vec::new();
+            for k in &keys {
+                match items.iter().find(|a| a["key"].as_str() == Some(k.as_str())) {
+                    Some(a) => ids.push(a["id"].clone()),
+                    None => bail!("no account {k} (see `nicemailer accounts`)"),
+                }
+            }
+            client.call("set_account_order", json!({ "account_ids": ids }))?;
+            for (i, k) in keys.iter().enumerate() {
+                println!("{}. {k}", i + 1);
+            }
+            Ok(())
+        }
+        Command::Accounts => {
             let mut client = Client::connect(&data_dir)?;
             let result = client.call("list_accounts", Value::Null)?;
-            let mut items = result["items"].as_array().cloned().unwrap_or_default();
-            if let Some(AccountsAction::Order { keys }) = action {
-                let mut ids = Vec::new();
-                for k in &keys {
-                    match items.iter().find(|a| a["key"].as_str() == Some(k.as_str())) {
-                        Some(a) => ids.push(a["id"].clone()),
-                        None => bail!("no account {k} (see `nicemailer accounts`)"),
-                    }
-                }
-                client.call("set_account_order", json!({ "account_ids": ids }))?;
-                items = client.call("list_accounts", Value::Null)?["items"].as_array().cloned().unwrap_or_default();
-            }
+            let items = result["items"].as_array().cloned().unwrap_or_default();
             if items.is_empty() {
                 println!("No account. Declare one in {} (see `nicemailer config defaults`).", nm_engine::config::default_path().display());
             }
@@ -279,6 +307,46 @@ fn main() -> anyhow::Result<()> {
             }
         }
     }
+}
+
+/// Reads a password: from the terminal without echo, or a line of the
+/// standard input when it is not a terminal (a script, a pipe).
+///
+/// Turning echo off is done by hand with the C library (`termios`): the
+/// terminal's settings are read, the `ECHO` flag removed, and the old
+/// settings put back after the line is read, even when reading fails.
+fn read_password(prompt: &str) -> anyhow::Result<String> {
+    use std::io::IsTerminal;
+    let stdin = std::io::stdin();
+    let mut line = String::new();
+    if !stdin.is_terminal() {
+        stdin.lock().read_line(&mut line)?;
+    } else {
+        eprint!("{prompt}");
+        std::io::stderr().flush()?;
+        // Rust note: `unsafe` marks calls the compiler cannot check, here
+        // functions of the C library. `mem::zeroed` makes a blank
+        // `termios` struct for `tcgetattr` to fill.
+        let fd = libc::STDIN_FILENO;
+        let mut old: libc::termios = unsafe { std::mem::zeroed() };
+        if unsafe { libc::tcgetattr(fd, &mut old) } != 0 {
+            bail!("cannot read the terminal settings");
+        }
+        let mut quiet = old;
+        quiet.c_lflag &= !libc::ECHO;
+        unsafe { libc::tcsetattr(fd, libc::TCSANOW, &quiet) };
+        let read = stdin.lock().read_line(&mut line);
+        unsafe { libc::tcsetattr(fd, libc::TCSANOW, &old) };
+        // The Enter key was not echoed either.
+        eprintln!();
+        read?;
+    }
+    // Only the line ending is removed: spaces may be part of a password.
+    let password = line.trim_end_matches(['\n', '\r']).to_string();
+    if password.is_empty() {
+        bail!("empty password");
+    }
+    Ok(password)
 }
 
 /// `nicemailer config check | defaults | path`.

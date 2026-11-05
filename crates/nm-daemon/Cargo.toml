@@ -9,13 +9,6 @@ publish.workspace = true
 name = "nicemailer-core"
 path = "src/main.rs"
 
-[features]
-# Reads the `password` key of config.toml, for development only
-# (`plan-imap.md`, section 2): the shipped core never reads a password from
-# a file that the specification invites to keep in Git. `make core` enables
-# it; a plain `cargo build` does not.
-dev-passwords = []
-
 [dependencies]
 nm-core.workspace = true
 nm-api.workspace = true

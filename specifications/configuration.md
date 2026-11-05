@@ -143,6 +143,7 @@ Limite assumée, comme pour la confirmation des envois : un programme qui a les 
 | `nicemailer config check` | Valide le fichier, sans l'appliquer |
 | `nicemailer config defaults` | Affiche le fichier complet, avec toutes les clés, leurs valeurs par défaut et leur rôle en commentaire |
 | `nicemailer config path` | Affiche le chemin du fichier utilisé |
+| `nicemailer account password <clé>` | Enregistre le mot de passe IMAP du compte dans le trousseau, pour le serveur que nomme le fichier ; le refaire confirme un nouveau serveur |
 | `nicemailer account rename <ancienne> <nouvelle>` | Renomme la clé d'un compte en gardant ses données |
 | `nicemailer account remove <clé>` | Supprime un compte, ses données et ses secrets, après confirmation |
 

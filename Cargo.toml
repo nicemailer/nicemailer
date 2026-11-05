@@ -40,3 +40,7 @@ ureq = "3"
 toml_edit = "0.25"
 # Watches config.toml (FSEvents on macOS) to apply it without a restart.
 notify = "8"
+# The macOS Keychain, where the core keeps the passwords of the accounts
+# (`nm-engine`, `keychain.rs`), and the Core Foundation types it takes.
+security-framework = "3"
+core-foundation = "0.10"

@@ -215,6 +215,17 @@ impl Store {
         Ok(changes)
     }
 
+    /// Records that the password of an account was saved, for which server,
+    /// and by which client (`tracabilite.md`). Never the password.
+    pub fn record_password_saved(&self, account_id: i64, host: &str, username: &str, source: Source) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO audit_log (created_by, entity, entity_id, action, detail)
+             VALUES (?1, 'account', ?2, 'set_password', json_object('host', ?3, 'username', ?4))",
+            params![source.as_str(), account_id, host, username],
+        )?;
+        Ok(())
+    }
+
     /// Records a change of `config.toml` seen when reloading it
     /// (`configuration.md`, section 10): action `reload`, source `core`,
     /// with the keys that changed. Only the keys: the values may include a

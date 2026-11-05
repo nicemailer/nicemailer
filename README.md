@@ -67,6 +67,7 @@ nicemailer call move_thread '{"thread_id": 42, "target": "todo", "from_folder_id
 nicemailer import-status  # running or last mbox import
 nicemailer accounts       # accounts of config.toml and archive accounts
 nicemailer config check   # validate config.toml (docs/configuration.md)
+nicemailer account password perso   # save an IMAP password in the Keychain
 nicemailer watch          # live event stream
 ```
 
