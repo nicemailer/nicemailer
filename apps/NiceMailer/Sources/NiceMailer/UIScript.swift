@@ -202,6 +202,11 @@ private final class Runner {
                 text = copied.range(of: #"nicemailer://[^\s)]+"#, options: .regularExpression).map { String(copied[$0]) } ?? copied
             }
             if let url = URL(string: text) { model.openDeepLink(url) }
+        case "appearance":
+            // Light or dark, for this app only: scenarios and snapshots do
+            // not depend on the Mac's setting (`dark`, `light`, `system`).
+            NSApp.appearance = arg == "dark" ? NSAppearance(named: .darkAqua)
+                : arg == "light" ? NSAppearance(named: .aqua) : nil
         case "addressbook":
             // What macOS would answer for Contacts: `denied`, `unavailable`
             // (a bare executable), `authorized`, `undetermined`. The book
@@ -519,6 +524,10 @@ private final class Runner {
             "html_author_font": UIScript.html["authorFont"] ?? "",
             "html_table_width": UIScript.html["tableWidth"] ?? "",
             "html_csp": UIScript.html["csp"] ?? "",
+            "html_frames": UIScript.html["frames"] ?? "",
+            "html_paper": UIScript.html["paper"] ?? "",
+            "html_styled_width": UIScript.html["styledWidth"] ?? "",
+            "html_styled_background": UIScript.html["styledBackground"] ?? "",
             "html_offset": "\(c.htmlOffset)",
             // The folder workflow: steps `z` can undo, a suspect move
             // waiting for its confirmation (its sender), the question shown,

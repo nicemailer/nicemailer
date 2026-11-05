@@ -39,7 +39,9 @@ use mail_parser::{MessageParser, MessagePart, PartKind};
 /// (`remote_images.rs`).
 /// 9: the layout attributes of the sender's HTML are kept (table widths,
 /// cell padding and alignment, `<font face size>`: `LAYOUT_ATTRIBUTES`).
-pub const PARSER_VERSION: i64 = 9;
+/// 10: the sender's CSS is kept, sanitized (`css.rs`): `style` attributes,
+/// `<style>` blocks, classes and ids; and its colour attributes.
+pub const PARSER_VERSION: i64 = 10;
 
 /// Length of `message.snippet`, in characters.
 const SNIPPET_CHARS: usize = 200;
@@ -356,28 +358,26 @@ fn collect_attachments(
 }
 
 /// Presentational attributes kept on top of ammonia's defaults, by tag
-/// (`docs/thread-display.md`, "HTML of the sender"). A newsletter is laid
-/// out with tables of fixed width, padded and aligned cells: without these
-/// attributes it collapses into one column of text.
+/// (`docs/thread-display.md`, "HTML of the sender"). A mail of the 2000s
+/// is laid out with tables of fixed width, padded and aligned cells and
+/// colour attributes: without them it collapses into one column of text.
 ///
-/// Only attributes whose value is a size, a number, a keyword or a font
-/// name: none takes a URL, so none can make the web view load anything.
-/// `background` (an image URL) is left out, and so are the colours
-/// (`bgcolor`, `color`, `text`, `link`): the reader shows every mail in the
-/// app's dark theme, and colours chosen for a white page would not be
-/// readable on it.
+/// Only attributes whose value is a size, a number, a keyword, a colour or
+/// a font name: none takes a URL, so none can make the web view load
+/// anything. `background` (an image URL) is left out. The colours are the
+/// sender's: the reader decides how to show them in a dark theme.
 const LAYOUT_ATTRIBUTES: &[(&str, &[&str])] = &[
-    ("table", &["width", "height", "border", "cellpadding", "cellspacing"]),
-    ("td", &["width", "height", "valign", "nowrap"]),
-    ("th", &["width", "height", "valign", "nowrap"]),
-    ("tr", &["height", "valign"]),
+    ("table", &["width", "height", "border", "cellpadding", "cellspacing", "bgcolor"]),
+    ("td", &["width", "height", "valign", "nowrap", "bgcolor"]),
+    ("th", &["width", "height", "valign", "nowrap", "bgcolor"]),
+    ("tr", &["height", "valign", "bgcolor"]),
     ("tbody", &["valign"]),
     ("thead", &["valign"]),
     ("tfoot", &["valign"]),
     ("col", &["width", "valign"]),
     ("colgroup", &["width", "valign"]),
     ("img", &["border", "hspace", "vspace"]),
-    ("font", &["face", "size"]),
+    ("font", &["face", "size", "color"]),
     ("p", &["align"]),
     ("div", &["align"]),
     ("h1", &["align"]),
@@ -414,6 +414,12 @@ pub struct SanitizedHtml {
 /// `<blockquote type="cite">`, Outlook's `divRplyFwdMsg` and `appendonsend`
 /// ids. Ids are prefixed with `nm-` so a mail cannot clash with the app's
 /// own ids.
+///
+/// The sender's CSS is kept, sanitized (`css.rs`): each `style` attribute,
+/// and the `<style>` blocks, gathered in one block at the start of the
+/// result. Every class is kept, since the CSS selects on them; the reader
+/// shows each message in its own shadow root, so a class or a rule of the
+/// mail never reaches the app's page.
 pub fn sanitize_html(html: &str) -> SanitizedHtml {
     // The pixels are found first, on the original HTML: the filter below
     // sees one attribute at a time, and no longer sees `style`.
@@ -431,21 +437,39 @@ pub fn sanitize_html(html: &str) -> SanitizedHtml {
     // a pixel (rare) loses it too, and counts.
     let removed = Arc::new(AtomicI64::new(0));
     let removed_in_filter = removed.clone();
+    // The `<style>` blocks, read before ammonia, which drops them.
+    let mut sheet = String::new();
+    let mut budget = crate::css::MAX_SHEET;
+    for block in crate::css::style_blocks(html) {
+        // Beyond the budget, the rest of the CSS is dropped as a whole.
+        let Some(left) = budget.checked_sub(block.len()) else { break };
+        budget = left;
+        // The remote images of the CSS (backgrounds) are not counted in
+        // `remote_images` yet: the reader does not load them.
+        sheet.push_str(&crate::css::sanitize_stylesheet(block).css);
+    }
     let mut builder = ammonia::Builder::default();
     // `<font>` and `<tfoot>` are not among ammonia's default tags; `dir`
-    // (text direction, for Arabic or Hebrew) is allowed everywhere.
-    builder.add_tags(["font", "tfoot"]).add_generic_attributes(["dir"]);
+    // (text direction, for Arabic or Hebrew) is allowed everywhere, and so
+    // are `class`, `id` (prefixed below) and `style` (sanitized in the
+    // filter).
+    builder.add_tags(["font", "tfoot"]).add_generic_attributes(["dir", "class", "id", "style"]);
     for (tag, attributes) in LAYOUT_ATTRIBUTES {
         builder.add_tag_attributes(tag, attributes.iter().copied());
     }
     let clean = builder
+        // The document's `<title>` (shown by a browser in its tab, never
+        // in the page) would otherwise leave its text at the top of the
+        // mail: removed with its content, as scripts and styles are.
+        .add_clean_content_tags(["title"])
         .add_url_schemes(["cid"])
-        .add_allowed_classes("div", ["gmail_quote", "gmail_attr", "gmail_signature", "moz-cite-prefix", "moz-signature"])
-        .add_allowed_classes("blockquote", ["gmail_quote"])
         .add_tag_attributes("blockquote", ["type"])
-        .add_tag_attributes("div", ["id"])
         .id_prefix(Some("nm-"))
         .attribute_filter(move |element, attribute, value| {
+            if attribute == "style" {
+                let css = crate::css::sanitize_declarations(value).css;
+                return (!css.is_empty()).then(|| css.into());
+            }
             if element == "img" && attribute == "src" && crate::remote_images::is_remote(value) {
                 if pixels.contains(value) {
                     removed_in_filter.fetch_add(1, Ordering::Relaxed);
@@ -458,8 +482,9 @@ pub fn sanitize_html(html: &str) -> SanitizedHtml {
         })
         .clean(html)
         .to_string();
+    let html = if sheet.is_empty() { clean } else { format!("<style>{sheet}</style>{clean}") };
     SanitizedHtml {
-        html: clean,
+        html,
         remote_images: remote.load(Ordering::Relaxed),
         tracking_pixels: removed.load(Ordering::Relaxed),
     }
@@ -667,7 +692,9 @@ Content-Transfer-Encoding: base64\r\n\r\n/9j/4AAQ\r\n--C--\r\n";
         assert!(clean.contains(r#"class="gmail_attr""#));
         assert!(clean.contains(r#"type="cite""#));
         assert!(clean.contains(r#"id="nm-divRplyFwdMsg""#));
-        assert!(!clean.contains("evil") && !clean.contains("onclick"));
+        // Every class is kept now (the CSS selects on them); never a
+        // handler.
+        assert!(clean.contains(r#"class="gmail_quote evil""#) && !clean.contains("onclick"));
     }
 
     #[test]
@@ -693,22 +720,52 @@ Content-Transfer-Encoding: base64\r\n\r\n/9j/4AAQ\r\n--C--\r\n";
     }
 
     #[test]
-    fn layout_attributes_survive_but_not_colours_or_urls() {
+    fn layout_and_colour_attributes_survive_but_not_urls() {
         let html = r##"<table width="600" cellpadding="8" cellspacing="0" border="0" align="center" bgcolor="#ffffff" background="https://x.org/bg.png">
-            <tr valign="top"><td width="50%" nowrap valign="middle" style="color:red" bgcolor="red">A</td></tr>
+            <tr valign="top"><td width="50%" nowrap valign="middle" bgcolor="red">A</td></tr>
             <tfoot><tr><td>F</td></tr></tfoot></table>
             <font face="Georgia, serif" size="2" color="red">Texte</font>
             <p align="center" dir="rtl">x</p><img src="cid:logo" border="0" hspace="4" onerror="x()">"##;
         let clean = sanitize_html(html).html;
         for kept in [r#"width="600""#, r#"cellpadding="8""#, r#"cellspacing="0""#, r#"border="0""#, r#"align="center""#,
-            r#"valign="top""#, r#"width="50%""#, "nowrap", r#"valign="middle""#, "<tfoot>",
-            r#"<font face="Georgia, serif" size="2">"#, r#"dir="rtl""#, r#"hspace="4""#] {
+            r#"valign="top""#, r#"width="50%""#, "nowrap", r#"valign="middle""#, "<tfoot>", r##"bgcolor="#ffffff""##,
+            r#"bgcolor="red""#, r#"<font face="Georgia, serif" size="2" color="red">"#, r#"dir="rtl""#, r#"hspace="4""#] {
             assert!(clean.contains(kept), "{kept} missing in {clean}");
         }
-        // Colours wait for the dark adaptation; `background` is a URL.
-        for gone in ["bgcolor", "color", "background", "x.org", "style", "onerror"] {
+        // `background` is a URL; a handler is code.
+        for gone in ["background", "x.org", "onerror"] {
             assert!(!clean.contains(gone), "{gone} left in {clean}");
         }
+    }
+
+    #[test]
+    fn the_senders_css_is_kept_sanitized() {
+        let html = r##"<!DOCTYPE html><html><head>
+            <style>:root{color-scheme:light dark} .col{max-width:680px;margin:0 auto}
+              @media (prefers-color-scheme:dark){.dark-bg{background-color:#040a25 !important}}
+              @import url(https://x.org/a.css);</style>
+            <!--[if mso]><style>.mso{width:600px}</style><![endif]-->
+            </head><body style="background:#fff"><div id="main" class="col dark-bg" style="width:530px; position:fixed; background:url(https://x.org/bg.png)">
+            <span style="display:none;max-height:0">Aperçu</span><p style="color:#09144b;behavior:url(x.htc)">Texte</p></div></body></html>"##;
+        let s = sanitize_html(html);
+        // The blocks, sanitized, in one `<style>` at the start.
+        assert!(s.html.starts_with("<style>:host{color-scheme:light dark;}"), "{}", s.html);
+        assert!(s.html.contains(".col{max-width:680px;margin:0 auto;}"), "{}", s.html);
+        assert!(s.html.contains("@media (prefers-color-scheme:dark){.dark-bg{background-color:#040a25 !important;}}"), "{}", s.html);
+        assert!(!s.html.contains("@import") && !s.html.contains(".mso"), "{}", s.html);
+        // Classes and ids for the CSS; each `style` sanitized: no fixed
+        // position, the background in the app's scheme, no `behavior`.
+        assert!(s.html.contains(r#"id="nm-main" class="col dark-bg""#), "{}", s.html);
+        assert!(s.html.contains(r#"style="width:530px;background:url(&quot;nm-remote://image?u=https%3A%2F%2Fx.org%2Fbg.png&quot;);""#), "{}", s.html);
+        assert!(s.html.contains(r#"<span style="display:none;max-height:0;">Aperçu</span>"#), "{}", s.html);
+        assert!(s.html.contains(r#"<p style="color:#09144b;">"#), "{}", s.html);
+        assert!(!s.html.contains("fixed") && !s.html.contains("behavior") && !s.html.contains("x.org/a.css"), "{}", s.html);
+        // The title of the document is not text of the mail.
+        let titled = sanitize_html("<html><head><title>TTSO du mardi</title></head><body><p>Bonjour</p></body></html>").html;
+        assert_eq!(titled, "<p>Bonjour</p>");
+        // A CSS background alone does not offer the images display yet:
+        // the reader does not load them.
+        assert!(!s.remote_images);
     }
 
     #[test]

@@ -531,7 +531,8 @@ struct GeekControllerTests {
         // The user's copy is writable, unlike the core's.
         let mode = try FileManager.default.attributesOfItem(atPath: dir.appendingPathComponent("devis.pdf").path)[.posixPermissions] as? Int
         #expect(mode == 0o644)
-        #expect(model.flash?.contains("devis.pdf") == true)
+        // Said once the copy is done, a moment after the file appears.
+        #expect(await eventually { model.flash?.contains("devis.pdf") == true })
         // A second save: "devis (2).pdf".
         press("l"); type("devis"); press("ret")
         #expect(await eventually { FileManager.default.fileExists(atPath: dir.appendingPathComponent("devis (2).pdf").path) })

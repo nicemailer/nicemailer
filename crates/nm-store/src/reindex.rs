@@ -315,18 +315,20 @@ fn skip_without_remote_images(store: &Store, start: i64, end: i64) -> Result<u64
     Ok(n as u64)
 }
 
-/// Marks the version 8 bodies without HTML as version 9, so that only the
-/// HTML mails are read again. Version 9 only keeps more attributes of the
-/// HTML (`ingest::LAYOUT_ATTRIBUTES`); a body without HTML part comes out
-/// the same. Returns how many were marked.
+/// Marks the bodies of version 8 or later without HTML as current, so
+/// that only the HTML mails are read again. Versions 9 (layout attributes,
+/// `ingest::LAYOUT_ATTRIBUTES`) and 10 (the sender's CSS, `css.rs`) only
+/// change the sanitized HTML; a body without HTML part comes out the same.
+/// Returns how many were marked.
 fn skip_without_html(store: &Store, start: i64, end: i64) -> Result<u64> {
     let n = store
         .conn
         .prepare_cached(
-            "UPDATE message_body SET parser_version = 9
-              WHERE message_id >= ?1 AND message_id < ?2 AND parser_version = 8 AND html_sanitized IS NULL",
+            "UPDATE message_body SET parser_version = ?3
+              WHERE message_id >= ?1 AND message_id < ?2 AND parser_version >= 8 AND parser_version < ?3
+                AND html_sanitized IS NULL",
         )?
-        .execute(params![start, end])?;
+        .execute(params![start, end, PARSER_VERSION])?;
     Ok(n as u64)
 }
 

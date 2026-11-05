@@ -48,6 +48,28 @@ expect html_inline_drawn = 1
 expect inline_shown = 1
 expect html_csp = 1
 snap html-layout
+# The sender's CSS (`css.rs`, `MailFrame`): the column keeps its width, the
+# preview text it hides stays hidden, and the mail, which has its own dark
+# mode, is shown with it in a dark theme and with its light colours in a
+# light one. One frame, not a white sheet.
+expect html_frames = 1
+expect html_paper = 0
+expect html_styled_width = 520
+expect html_text !~ Aperçu caché
+appearance dark
+click format:text
+expect body_format = text
+click format:html
+expect body_format = html
+expect html_styled_background = rgb(4, 10, 37)
+snap html-dark
+appearance light
+click format:text
+expect body_format = text
+click format:html
+expect body_format = html
+expect html_styled_background = rgb(255, 255, 255)
+appearance system
 # Images: the mail was imported, so not authenticated: loaded for this
 # conversation only. Two requests, none for the pixel.
 click format:images

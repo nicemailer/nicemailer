@@ -32,6 +32,7 @@
 pub mod attachments;
 mod commands;
 pub mod clean;
+pub mod css;
 pub mod encoded_words;
 pub mod html_text;
 pub mod import;

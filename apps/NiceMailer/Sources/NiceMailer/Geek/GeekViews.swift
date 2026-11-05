@@ -757,6 +757,8 @@ private struct GeekReaderColumn: View {
         .gmail_quote, .gmail_signature, .moz-cite-prefix, .moz-signature, blockquote[type=cite],
         #nm-divRplyFwdMsg, #nm-divRplyFwdMsg ~ *, hr:has(+ #nm-divRplyFwdMsg), #nm-appendonsend ~ * { display: none; }
         """
+        // The reader's styles inside each message's frame.
+        let frameStyle = MailFrame.baseStyle(hiding: hideQuotes, scale: TextSize.shared.scale)
         var html = """
         <html><head><meta charset="utf-8">
         <meta http-equiv="Content-Security-Policy" content="\(ContentPolicy.header)">
@@ -764,15 +766,10 @@ private struct GeekReaderColumn: View {
         \(Fonts.cssFontFaces)
         :root { color-scheme: light dark; }
         /* The theme font is the page's default; a font the sender named
-           (`<font face>`) wins in its own text. The page has no doctype, so
-           WebKit draws it in "quirks" mode, as mail clients do, where a
-           table does not inherit the size and font of the text around it:
-           told here to inherit. */
+           wins in its own text. Each HTML message is in its own frame, with
+           its own styles (`MailFrame`). */
         body, summary { font-family: "NM Mono", ui-monospace, monospace; }
-        table { font-family: inherit; font-size: inherit; }
         body { margin: 16px; font-size: \(Int(scaled(14)))px; }
-        /* A newsletter is 600 px wide or so: narrower when the reader is. */
-        table { max-width: 100%; }
         summary { font-size: \(Int(scaled(12)))px; color: #888; cursor: pointer; list-style: none; margin: 4px 0; }
         summary::-webkit-details-marker { display: none; }
         details[open] summary { margin-bottom: 12px; }
@@ -780,11 +777,6 @@ private struct GeekReaderColumn: View {
         .m { color: #888; font-size: \(Int(scaled(12)))px; }
         pre { font: \(Int(scaled(14)))px "NM Mono", ui-monospace, monospace; white-space: pre-wrap; margin: 0 0 8px; }
         hr { border: 0; border-top: 1px solid #8884; margin: 16px 0; }
-        img { max-width: 100%; height: auto; }
-        /* Images without a source (tracking pixels removed by the core),
-           remote images not loaded, `cid:` images without a part (those
-           with one have an `nm-cid:` source): hide the empty boxes. */
-        img:not([src]), img[data-nm-src], img[src^="cid:"] { display: none; }
         /* Attachment tiles: 3 to 5 per row, as in the text reader. */
         .att { display: grid; gap: 6px; margin: 12px 0;
                grid-template-columns: repeat(auto-fill, minmax(clamp(18%, 24ch, 31%), 1fr)); }
@@ -793,7 +785,6 @@ private struct GeekReaderColumn: View {
         .att a img { width: \(Int(scaled(13)))px; height: \(Int(scaled(13)))px; vertical-align: -2px; margin-right: 6px; }
         .att a span { display: block; color: #888; font-size: \(Int(scaled(11)))px; }
         summary img { width: \(Int(scaled(11)))px; height: \(Int(scaled(11)))px; vertical-align: -1px; }
-        \(hideQuotes)
         /* No scroll bar in the geek theme (ui.md). */
         html { scrollbar-width: none; }
         ::-webkit-scrollbar { display: none; }
@@ -817,7 +808,7 @@ private struct GeekReaderColumn: View {
                 let loading = RemoteImages.loads(m, mode: mode, unfolded: unfolded, once: once)
                 if loading { images.formUnion(RemoteImages.sources(in: body)) }
                 inline.formUnion(InlineImages.ids(in: body))
-                html += RemoteImages.body(body, loading: loading)
+                html += MailFrame.wrap(RemoteImages.body(body, loading: loading), base: frameStyle)
             } else {
                 for (j, seg) in m.segments.enumerated() {
                     if !seg.hidden || state.showAll || state.revealed.contains("\(m.id):\(j)") {
@@ -1207,15 +1198,28 @@ private struct HTMLReader: NSViewRepresentable {
         /// width, and whether the Content Security Policy is in the page.
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             guard UIScript.isActive else { return }
+            // The messages are in shadow roots (`MailFrame`): each query
+            // looks in the page and in every frame.
             let js = """
-            JSON.stringify({text: document.body.innerText.slice(0, 300),
-                            font: document.fonts.check('14px "NM Mono"'),
-                            family: getComputedStyle(document.body).fontFamily,
-                            inline: [...document.querySelectorAll('img[src^="nm-cid:"]')]
-                                .filter(i => i.complete && i.naturalWidth > 0).length,
-                            authorFont: (f => f ? getComputedStyle(f).fontFamily : '')(document.querySelector('font[face]')),
-                            tableWidth: (t => t ? t.offsetWidth : '')(document.querySelector('table[width]')),
-                            csp: !!document.querySelector('meta[http-equiv="Content-Security-Policy"]')})
+            (() => {
+            const frames = [...document.querySelectorAll('.nm-msg')].map(h => h.shadowRoot).filter(r => r);
+            const all = s => [document, ...frames].flatMap(r => [...r.querySelectorAll(s)]);
+            const first = s => all(s)[0];
+            const bodies = frames.map(r => r.querySelector('.nm-body')).filter(b => b);
+            return JSON.stringify({
+                text: [document.body.innerText, ...bodies.map(b => b.innerText)].join('\\n').slice(0, 2000),
+                font: document.fonts.check('14px "NM Mono"'),
+                family: getComputedStyle(document.body).fontFamily,
+                inline: all('img[src^="nm-cid:"]').filter(i => i.complete && i.naturalWidth > 0).length,
+                authorFont: (f => f ? getComputedStyle(f).fontFamily : '')(first('font[face]')),
+                tableWidth: (t => t ? t.offsetWidth : '')(first('table[width]')),
+                csp: !!document.querySelector('meta[http-equiv="Content-Security-Policy"]'),
+                frames: frames.length,
+                paper: document.querySelectorAll('.nm-msg.paper').length,
+                styledWidth: (e => e ? e.offsetWidth : '')(first('.probe-width')),
+                styledBackground: (e => e ? getComputedStyle(e).backgroundColor : '')(first('.probe-background')),
+            });
+            })()
             """
             webView.evaluateJavaScript(js) { result, _ in
                 guard let json = result as? String, let data = json.data(using: .utf8),

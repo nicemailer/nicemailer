@@ -48,14 +48,26 @@ In the HTML view, messages are `<details>` elements (they fold without JavaScrip
 
 ## HTML of the sender
 
-The HTML view keeps the **layout** the sender chose, and shows it in the **theme's colours**:
+The HTML view shows the mail as its sender laid it out, CSS included, each message in a frame of its own; nothing it holds is loaded from the network in the html display.
 
-- Kept by the core's sanitizer (`ingest.rs`, `LAYOUT_ATTRIBUTES`, parser version 9): table widths and heights, `border`, `cellpadding`, `cellspacing`, the alignment of cells (`valign`, `nowrap`), of paragraphs and headings (`align`), the spacing of images (`hspace`, `vspace`), `<font face size>`, `<tfoot>` and the text direction (`dir`). None of these takes a URL.
-- Left out: the colours (`bgcolor`, `color`), which the reader does not apply so that every mail stays readable in the dark theme; `background` (an image URL); `style` attributes and `<style>` blocks (not yet: they need a CSS sanitizer).
-- Fonts: the theme font (iA Writer Mono) is the page's default; a font the sender names in `<font face>` is used for its text when the Mac has it. Web fonts are never loaded.
-- A table wider than the reader shrinks to it (`max-width: 100%`).
+**What the core keeps** (`ingest.rs`, `sanitize_html`; parser version 10):
+
+- The sender's **CSS**, sanitized by `css.rs` with a real CSS tokenizer (`cssparser`, never regular expressions): every `style` attribute, and the `<style>` blocks, gathered in one block at the start of the body. Those inside comments (Outlook's `<!--[if mso]>`) are left out.
+  - Every `url()` is rewritten: a remote image to `nm-remote://image?u=…`, a remote font to `nm-remote://font?u=…` (neither is loaded in the html display), a `data:` image or font kept; any other URL drops its declaration. A URL under `:hover`, `:focus`, `:active`… or in a `@media` on the screen's size is dropped too: loading it would tell the sender what the reader does, or which device it uses. `prefers-color-scheme` is allowed.
+  - `@import`, `@charset`, `@namespace`, `@keyframes` and the other at-rules go; `@media`, `@supports` and `@font-face` stay.
+  - `expression()`, `image-set()`, `behavior`, `-moz-binding`, `position: fixed` and `sticky` go.
+  - Selectors are adapted to the frame: `:root` and `html` become `:host`, `body` becomes `.nm-body`, `#x` becomes `#nm-x` (ids are prefixed in the HTML).
+  - The result never holds `<`: a block cannot close its `<style>` element. A sheet larger than 256 kB, or a `style` attribute larger than 16 kB, is dropped.
+- **Classes and ids** (the CSS selects on them), and the layout and colour attributes of older mails (`LAYOUT_ATTRIBUTES`): table widths and heights, `border`, `cellpadding`, `cellspacing`, `bgcolor`, the alignment of cells and paragraphs, `<font face size color>`, `<tfoot>`, `dir`. `background` (an image URL) is left out.
+- The document's `<title>` is removed with its text (it used to show at the top of the mail).
+
+**How the app shows it** (`MailFrame.swift`):
+
+- Each HTML message is in its own **shadow root**, written in the page (`<template shadowrootmode="open">`, no script needed). The CSS of a mail applies to it alone: not to the other messages of the thread, nor to the app's lines (headers, attachment tiles), and the app's styles do not enter it, except the inherited text font and colour. `contain: layout paint` makes the frame the box of any positioned element of the mail, and clips what overflows it.
+- **Colours**: a mail that brings its own dark mode (`prefers-color-scheme` rules in its CSS) is shown with its colours, the dark ones in a dark theme, as its author designed them. Any other mail is, for now, shown on a white sheet in the dark theme, as written.
+- Fonts: a font the mail names is used when the Mac has it (most newsletters fall back on `Helvetica`, `Arial`, `sans-serif`); the theme font otherwise. Web fonts are not loaded.
 - **Embedded images** (`cid:`, a logo or a signature carried by the mail) are shown, in the html and images displays alike: nothing is requested from the network. `get_thread` gives each one a source in the app's scheme, `nm-cid://image/<attachment id>` (`attachments.rs`, `resolve_inline_images`; the stored HTML keeps `cid:`), and the app's handler serves the part the core extracts (`get_attachment`; `InlineImages.swift`): images only, SVG excepted, 10 MB at most, and only the ids of the page. A mail that writes an `nm-cid:` source itself loses it in the sanitizer, so it cannot show another mail's attachment.
-- The page carries a **Content Security Policy** (`ContentPolicy`): nothing loads but the app's schemes (`nm-remote:`, `nm-cid:`) and `data:`; no script, frame, form or `<base>`. It is a third barrier after the sanitizer and WebKit's block list (`RemoteBlocker`), and stops a remote load on its own (`RemoteBlockerTests`).
+- The page carries a **Content Security Policy** (`ContentPolicy`): nothing loads but the app's schemes (`nm-remote:`, `nm-cid:`) and `data:`; no script, frame, form or `<base>`. It is a third barrier after the sanitizer and WebKit's block list (`RemoteBlocker`), and stops a remote load on its own (`RemoteBlockerTests`). The remote fonts of a mail are refused by it in every display, for now.
 
 Bodies stored by an older parser are rewritten by the background reindex: the HTML ones read their raw message again, the others are only marked.
 
@@ -69,4 +81,4 @@ Bodies stored by an older parser are rewritten by the background reindex: the HT
 
 `crates/nm-store/src/clean.rs` (unit tests of every rule), `crates/nm-store/tests/thread_display.rs` (a conversation imported then read with `get_thread`), `apps/NiceMailer/Tests/NiceMailerTests/ThreadDisplayTests.swift` (blocks of the reader, toggles, `S`), and the UI scenario `apps/NiceMailer/UITests/thread.uiscript`.
 
-HTML of the sender: `ingest.rs` (attributes kept, colours and URLs not, a mail's own `nm-cid:` removed), `tests/reindex.rs` (version 9 reads only the HTML bodies again), `tests/attachments.rs` (the `nm-cid:` source of an embedded image), `InlineImagesTests` (ids, URLs refused, parts shown, the handler in a web view through the policy), `RemoteBlockerTests` (the policy alone stops a request), and `images.uiscript` (table width, sender's font, embedded logo drawn, policy present).
+HTML of the sender: `css.rs` (declarations, URLs rewritten or refused, escaped `url(`, at-rules, selectors adapted, nothing closing `<style>`, broken CSS, the `<style>` blocks outside comments), `ingest.rs` (attributes, classes and CSS kept, the title removed, a mail's own `nm-cid:` removed), `tests/reindex.rs` (only the HTML bodies are read again), `tests/attachments.rs` (the `nm-cid:` source of an embedded image), `InlineImagesTests` (ids, URLs refused, parts shown, the handler in a web view through the policy), `RemoteBlockerTests` (the policy alone stops a request), `MailFrameTests` (own dark mode, the frame, and in a web view: the CSS of a mail reaches neither another message nor the page), and `images.uiscript` (table width, sender's font, embedded logo drawn, policy present, the column of the CSS, the hidden preview text, the mail's own dark mode in a dark and a light theme).
