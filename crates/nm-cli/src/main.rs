@@ -100,6 +100,30 @@ enum Command {
     },
     /// Undo a move or a decision, from the token it printed.
     Undo { token: String },
+    /// The settings file, config.toml.
+    Config {
+        #[command(subcommand)]
+        action: ConfigAction,
+    },
+    /// List the accounts and their state, as the core sees them.
+    Accounts,
+}
+
+/// `nicemailer config …`: works on the file directly, without the core.
+#[derive(Subcommand)]
+enum ConfigAction {
+    /// Check the file without applying it: errors (with their line) and
+    /// warnings. Exits with status 1 if the core would refuse it.
+    Check {
+        /// File to check; by default the one the core reads.
+        file: Option<PathBuf>,
+    },
+    /// Print a complete file: every key at its default value, with what it
+    /// does in a comment.
+    Defaults,
+    /// Print the path of the file: $NICEMAILER_CONFIG, or
+    /// ~/.config/nicemailer/config.toml.
+    Path,
 }
 
 /// `none` removes the decision; anything else must be a screening target.
@@ -192,6 +216,30 @@ fn main() -> anyhow::Result<()> {
             print_workflow(&result);
             Ok(())
         }
+        Command::Config { action } => run_config(action),
+        Command::Accounts => {
+            let mut client = Client::connect(&data_dir)?;
+            let result = client.call("list_accounts", Value::Null)?;
+            let items = result["items"].as_array().cloned().unwrap_or_default();
+            if items.is_empty() {
+                println!("No account. Declare one in {} (see `nicemailer config defaults`).", nm_engine::config::default_path().display());
+            }
+            for a in items {
+                let state = match (a["enabled"].as_bool(), a["error"].as_str()) {
+                    (Some(false), _) => "disabled (no longer in config.toml, mail kept)".to_string(),
+                    (_, Some(e)) => format!("error: {e}"),
+                    _ => "ok".to_string(),
+                };
+                println!(
+                    "{:>3}  {:<12} {:<8} {:<30} {state}",
+                    a["id"],
+                    a["key"].as_str().unwrap_or(""),
+                    a["kind"].as_str().unwrap_or(""),
+                    a["email"].as_str().unwrap_or("-"),
+                );
+            }
+            Ok(())
+        }
         Command::Watch => {
             let mut client = Client::connect(&data_dir)?;
             let pos = client.call("subscribe", json!({}))?;
@@ -204,6 +252,43 @@ fn main() -> anyhow::Result<()> {
             }
         }
     }
+}
+
+/// `nicemailer config check | defaults | path`.
+fn run_config(action: ConfigAction) -> anyhow::Result<()> {
+    use nm_engine::config;
+    match action {
+        ConfigAction::Path => println!("{}", config::default_path().display()),
+        ConfigAction::Defaults => print!("{}", config::defaults_file()),
+        ConfigAction::Check { file } => {
+            let path = file.unwrap_or_else(config::default_path);
+            let text = match config::read(&path) {
+                Ok(Some(t)) => t,
+                Ok(None) => {
+                    println!("{}: no file; the core starts with the defaults and no account", path.display());
+                    return Ok(());
+                }
+                Err(p) => bail!("{}: {p}", path.display()),
+            };
+            match config::parse(&text) {
+                Ok(parsed) => {
+                    for w in &parsed.warnings {
+                        println!("{}: warning: {w}", path.display());
+                    }
+                    let n = parsed.config.accounts.len();
+                    println!("{}: valid, {n} account{}", path.display(), if n == 1 { "" } else { "s" });
+                }
+                // `std::process::exit` rather than an error: the message is
+                // the whole output, without anyhow's "Error:" prefix, and
+                // the status says "refused" to scripts.
+                Err(p) => {
+                    println!("{}: refused: {p}", path.display());
+                    std::process::exit(1);
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 /// `nicemailer seed`: fills the database with fake mail, directly through

@@ -27,6 +27,7 @@ pub(crate) fn migrate(conn: &mut Connection, mut version: i64) -> Result<()> {
         match version {
             1 => to_2(&tx)?,
             2 => to_3(&tx)?,
+            3 => to_4(&tx)?,
             _ => unreachable!("aucune migration depuis la version {version}"),
         }
         version += 1;
@@ -74,6 +75,16 @@ fn to_3(conn: &Connection) -> Result<()> {
         "ALTER TABLE address ADD COLUMN remote_images INTEGER NOT NULL DEFAULT 0 CHECK (remote_images IN (0,1));
          ALTER TABLE message_body ADD COLUMN tracking_pixels INTEGER NOT NULL DEFAULT 0;",
     )?;
+    Ok(())
+}
+
+/// Version 4: `account.disabled_at`, set when the key of an IMAP account
+/// leaves `config.toml` (`configuration.md`, section 6: an account missing
+/// from the file is disabled, not deleted). A column added at the end of a
+/// small table: instant. Every existing account starts active; the core
+/// disables the ones missing from the file when it reads it, right after.
+fn to_4(conn: &Connection) -> Result<()> {
+    conn.execute_batch("ALTER TABLE account ADD COLUMN disabled_at INTEGER;")?;
     Ok(())
 }
 

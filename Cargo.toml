@@ -13,6 +13,7 @@ nm-core = { path = "crates/nm-core" }
 nm-store = { path = "crates/nm-store" }
 nm-api = { path = "crates/nm-api" }
 nm-proto = { path = "crates/nm-proto" }
+nm-engine = { path = "crates/nm-engine" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rusqlite = { version = "0.37", features = ["bundled"] }
@@ -34,3 +35,8 @@ libc = "0.2"
 # HTTP client of nm-proto: small, blocking (called off the async runtime),
 # TLS by rustls.
 ureq = "3"
+# config.toml: parsed with the position of every key, for errors with a
+# line number; later edited in place, keeping comments (`configuration.md`).
+toml_edit = "0.25"
+# Watches config.toml (FSEvents on macOS) to apply it without a restart.
+notify = "8"

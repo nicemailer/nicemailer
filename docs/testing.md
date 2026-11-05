@@ -10,7 +10,9 @@
 
 ## Rust
 
-Unit tests live next to the code (`#[cfg(test)]`), integration tests in `crates/*/tests/`. `crates/nm-daemon/tests/import_rpc.rs` starts the real core binary and talks to it over its socket.
+Unit tests live next to the code (`#[cfg(test)]`), integration tests in `crates/*/tests/`. `crates/nm-daemon/tests/import_rpc.rs` starts the real core binary and talks to it over its socket. The harness (`tests/common/mod.rs`) gives the core `--config <temporary dir>/config.toml`, and `scripts/ui-test.sh` and `scripts/bench.sh` set a settings file of their own too: a test must never read the settings of the machine, whose accounts the core would start to synchronize.
+
+The core is built without the `dev-passwords` feature by `cargo test`, as it is shipped. `cargo test -p nm-daemon --features dev-passwords` runs the end-to-end tests of the settings (`config_rpc.rs`) with it (see [configuration.md](configuration.md), "Passwords").
 
 Speed is tested by the plans of the queries rather than by timing them, which would be slow and flaky. `plan_tests` in `crates/nm-store/src/queries.rs` runs `EXPLAIN QUERY PLAN` on every list query (each filter, sort, scope and page) on an empty database, that is without planner statistics, and fails if one reads a whole folder, scans `message` or `thread_folder`, or runs a subquery for each row. `crates/nm-store/tests/everything.rs` checks that Everything, read from whole threads, lists exactly what merging every folder lists, page after page, on a generated mailbox. `crates/nm-store/tests/migrations.rs` checks that a version 1 database (`tests/fixtures/schema_v1.sql`) migrated by the core has exactly the schema of a fresh one, and repaired data.
 

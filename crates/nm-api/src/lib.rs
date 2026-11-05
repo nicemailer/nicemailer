@@ -77,6 +77,11 @@ pub mod method {
     pub const SET_DOMAIN_SCREENING: &str = "set_domain_screening";
     /// Undoes a move or a decision from the token it returned.
     pub const UNDO: &str = "undo";
+    /// Every account, IMAP and archive, with its state (`AccountView`).
+    pub const LIST_ACCOUNTS: &str = "list_accounts";
+    /// State of `config.toml`: path, error refusing it, warnings
+    /// (`ConfigStatus`).
+    pub const CONFIG_STATUS: &str = "config_status";
 }
 
 /// Stable error codes. Negative codes are the ones defined by the JSON-RPC
@@ -231,6 +236,21 @@ pub enum Event {
     ImportProgress(ImportStatus),
     /// An mbox import ended, successfully (`error` is `None`) or not.
     ImportFinished(ImportStatus),
+    /// An account was created, enabled again, disabled, or its settings or
+    /// state changed: reload it with `list_accounts`.
+    AccountChanged { account_id: i64 },
+    /// An account cannot connect or authenticate; `error` says why. The
+    /// state stays available in `list_accounts` until it is resolved,
+    /// which is announced by `AccountChanged`.
+    AccountError { account_id: i64, error: String },
+    /// `config.toml` was applied with these changed keys (dotted, sorted).
+    /// Empty `keys` after a `ConfigError`: the file is valid again,
+    /// without any change to the settings applied.
+    ConfigChanged { keys: Vec<String> },
+    /// `config.toml` is invalid and was refused whole: the previous
+    /// settings stay applied (`configuration.md`, section 4). `line` (from
+    /// 1) and `key` locate the problem when known.
+    ConfigError { line: Option<u32>, key: Option<String>, message: String },
 }
 
 // ---------------------------------------------------------------------------
@@ -1006,6 +1026,54 @@ pub struct ContactView {
     pub groups: Vec<String>,
     /// Number of messages received from the address.
     pub message_count: i64,
+}
+
+/// An account, in `list_accounts`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AccountView {
+    pub id: i64,
+    /// Key in `config.toml` (`[accounts.<key>]`), or name of the archive
+    /// account.
+    pub key: String,
+    /// `imap` or `archive`.
+    pub kind: String,
+    /// Main address. `None` for a disabled IMAP account: its address was in
+    /// the file, which no longer has it.
+    pub email: Option<String>,
+    pub display_name: Option<String>,
+    /// `false` when the key of an IMAP account left `config.toml`: it is no
+    /// longer synchronized, its mail is kept (`configuration.md`, section 6).
+    pub enabled: bool,
+    /// Why the account cannot connect, if known. `None` does not mean
+    /// connected, only that nothing prevents it.
+    pub error: Option<String>,
+}
+
+/// A problem of `config.toml`: why it was refused, or a warning.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ConfigProblem {
+    /// Line, from 1.
+    pub line: Option<u32>,
+    /// Dotted key, e.g. `accounts.perso.imap.port`.
+    pub key: Option<String>,
+    pub message: String,
+}
+
+/// Result of `config_status`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ConfigStatus {
+    /// Path of the file read by the core.
+    pub path: String,
+    /// Whether the file exists. A missing file is valid: no account, every
+    /// setting at its default.
+    pub exists: bool,
+    /// Why the current file is refused; the previous settings (or the
+    /// defaults, at start) stay applied. `None` when it is applied.
+    pub error: Option<ConfigProblem>,
+    /// Warnings about the file applied: unknown keys, passwords in clear
+    /// text, keys clashing with an archive account.
+    pub warnings: Vec<ConfigProblem>,
+    pub as_of: Position,
 }
 
 /// A plain list with the event position of the read.

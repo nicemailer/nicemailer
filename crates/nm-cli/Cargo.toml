@@ -13,6 +13,7 @@ path = "src/main.rs"
 nm-api.workspace = true
 nm-core.workspace = true
 nm-store.workspace = true
+nm-engine.workspace = true
 serde_json.workspace = true
 anyhow.workspace = true
 clap.workspace = true

@@ -34,7 +34,7 @@ Méthode : **une phase = une revue = un commit**. Chaque phase livre son code, s
 | Déplacements faits ailleurs | Rapprochés par `Message-ID` quand c'est sans ambiguïté (section 5.4) : le message garde son `id`, ses tags, son historique et sa consultation |
 | Sous-domaines | Inclus partout, y compris dans le routage à la réception : une décision sur `exemple.fr` s'applique à `news.exemple.fr` sans décision propre. `modele de donnees.md` sera corrigé (phase 6) |
 | Lectures SQLite | Une connexion d'écriture unique et un pool de connexions de lecture (WAL) : une écriture de synchronisation ne fait plus attendre l'app |
-| Secrets en développement | Mot de passe en clair dans `config.toml` (clé `password` du serveur), **accepté seulement par une compilation de développement** (`cfg(debug_assertions)`, comme l'exigence de signature assouplie, `architecture.md`, section 9). Une compilation de production refuse le fichier (`ConfigError`) au lieu de l'ignorer. Le Keychain arrive avec `add_account` (phase 7), derrière la même interface |
+| Secrets en développement | Mot de passe en clair dans `config.toml` (clé `password` du serveur IMAP), **lu seulement par un noyau compilé avec la feature `dev-passwords`** (`make core` l'active ; `cargo build` et le noyau distribué non). Un noyau sans la feature ne lit pas la clé et le dit dans l'erreur du compte (`AccountError`), et toute lecture du fichier avertit de sa présence. Choix revu en phase 1 : `cfg(debug_assertions)` aurait refusé le noyau de `make core`, compilé en `--release` ; et une `ConfigError` aurait refusé tout le fichier pour un problème qui ne concerne qu'un compte. Le Keychain arrive avec `add_account` (phase 7), derrière la même interface |
 | Serveur de test | Dovecot 2.4.5 sous OrbStack (`dev/dovecot/`), deux instances : complète (proche d'Infomaniak après authentification), et minimale (serveur IMAP4rev1 sans extension de synchronisation) |
 
 Conseil pour le développement : garder les comptes de test et leurs mots de passe dans un fichier à part, désigné par `NICEMAILER_CONFIG`, plutôt que dans `~/.config/nicemailer/config.toml`, que la spécification invite à versionner dans Git.
@@ -71,7 +71,10 @@ Critère de « récupération parfaite » : la commande `nicemailer sync verify 
 - `make imap-up`, `make imap-down`.
 - Ce plan.
 
-### Phase 1 : fondations
+### Phase 1 : fondations — terminée
+
+Documentation : `docs/configuration.md`. Écarts au plan : la feature `dev-passwords` (section 2) ; `ConfigError` porte aussi `key` ; `config_status` donne l'état du fichier (règle « un état ne repose jamais sur un événement seul », `evenements.md`) ; schéma en version 4 (`account.disabled_at`).
+
 
 - Crate `nm-engine`, qui ne dépend d'aucune interface (`architecture.md`, principe 1).
 - `config.toml` (`configuration.md`) : chemin et `NICEMAILER_CONFIG`, lecture, validation complète (fichier invalide refusé en entier, ligne fautive), clés inconnues signalées, réglages par compte, surveillance FSEvents (crate `notify`) et application sans redémarrage, `nicemailer config check | defaults | path`. Pas encore d'écriture par le contrat : elle arrive avec `add_account` (phase 7).

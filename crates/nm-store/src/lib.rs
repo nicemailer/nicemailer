@@ -21,12 +21,15 @@
 //! - `reindex.rs`: reinterpretation of stored messages after a parser change,
 //! - `library.rs`: history, export, tags, groups, contacts, display preference,
 //! - `seed.rs`: generator of fake mail for development,
+//! - `pool.rs`: read-only connections, so queries never wait for a write,
+//! - `accounts.rs`: accounts of `config.toml` in the database (enable, disable),
 //! - `migrations.rs`: upgrade of a database created by an earlier version.
 //!
 //! Rust note: `mod queries;` tells the compiler to include `src/queries.rs`
 //! as a module. Without `pub`, the module is private to this crate; its
 //! `impl Store` blocks still add public methods to `Store`.
 
+pub mod accounts;
 pub mod attachments;
 mod commands;
 pub mod clean;
@@ -37,6 +40,7 @@ pub mod ingest;
 pub mod library;
 pub mod mbox;
 mod migrations;
+pub mod pool;
 mod queries;
 pub mod raw;
 pub mod reindex;
@@ -63,7 +67,9 @@ pub use rusqlite;
 ///
 /// 2: indexes for large mailboxes, `thread.date_last_modified`, repaired
 /// encoded words (`migrations.rs`).
-pub const SCHEMA_VERSION: i64 = 3;
+/// 3: remote images (`address.remote_images`, `message_body.tracking_pixels`).
+/// 4: `account.disabled_at`, accounts whose key left `config.toml`.
+pub const SCHEMA_VERSION: i64 = 4;
 
 /// Full text of the schema, at the latest version. `include_str!` reads the
 /// file at compile time and embeds it in the binary as a `&'static str`; the
@@ -103,6 +109,10 @@ pub enum StoreError {
     /// it anyway could corrupt it, so the store refuses.
     #[error("version du schéma {found} plus récente que celle du code ({expected})")]
     SchemaTooNew { found: i64, expected: i64 },
+    /// A read-only connection found another schema version than the code's:
+    /// the writing store must open (and migrate) the database first.
+    #[error("connexion de lecture : schéma en version {found}, attendu {expected}")]
+    ReaderVersion { found: i64, expected: i64 },
     /// The database was created by an earlier development build whose
     /// version-1 schema lacked tables added since (version 1 is not released
     /// yet, so it is still edited in place). It has to be recreated.
@@ -139,8 +149,9 @@ impl ChangeSet {
     }
 }
 
-/// Handle on the database. There is a single `Store` in the core, protected
-/// by a mutex (see `nm-daemon`), so only one write happens at a time.
+/// Handle on the database. There is a single writing `Store` in the core,
+/// protected by a mutex (see `nm-daemon`), so only one write happens at a
+/// time. Queries run on read-only stores of a [`pool::ReadPool`].
 pub struct Store {
     conn: Connection,
 }
@@ -156,6 +167,36 @@ impl Store {
             OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE,
         )?;
         Self::init(conn)
+    }
+
+    /// Opens a read-only connection to an existing database, for the read
+    /// pool (`pool.rs`). The database must be at the current schema
+    /// version: readers never create or migrate it, the writing store does,
+    /// before the pool is opened.
+    ///
+    /// The file is opened read-write but the connection is set to
+    /// `query_only`: a read-only *file* handle cannot create the WAL index
+    /// (`-shm` file) if it is missing, while `query_only` gives the same
+    /// guarantee without that limit. Any write through a reader fails with
+    /// an error, so a query that writes by mistake is caught by the tests
+    /// instead of racing the writer.
+    pub fn open_reader(path: &Path) -> Result<Store> {
+        let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_WRITE)?;
+        // Same settings as the writer (see `init`), with a smaller page
+        // cache: there are several readers, and the operating system caches
+        // the file for all of them anyway.
+        conn.execute_batch(
+            "PRAGMA query_only = ON;
+             PRAGMA foreign_keys = ON;
+             PRAGMA temp_store = MEMORY;
+             PRAGMA busy_timeout = 5000;
+             PRAGMA cache_size = -32768;",
+        )?;
+        let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+        if version != SCHEMA_VERSION {
+            return Err(StoreError::ReaderVersion { found: version, expected: SCHEMA_VERSION });
+        }
+        Ok(Store { conn })
     }
 
     /// In-memory database, used by tests: fast and thrown away at the end.
@@ -210,7 +251,7 @@ impl Store {
         // connection opens: it analyzes only the tables that need it, with a
         // bounded effort, so it stays quick on a large database.
         conn.execute_batch("PRAGMA optimize = 0x10002;")?;
-                Ok(Store { conn })
+        Ok(Store { conn })
     }
 
     /// Updates the planner statistics after a large change (an import adds
@@ -251,6 +292,9 @@ fn check_schema(conn: &Connection, version: i64) -> Result<()> {
     if version >= 3 {
         checks.push(("SELECT remote_images FROM address", "address.remote_images"));
         checks.push(("SELECT tracking_pixels FROM message_body", "message_body.tracking_pixels"));
+    }
+    if version >= 4 {
+        checks.push(("SELECT disabled_at FROM account", "account.disabled_at"));
     }
     for (sql, what) in checks {
         if conn.prepare(sql).is_err() {

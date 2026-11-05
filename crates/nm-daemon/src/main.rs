@@ -19,7 +19,15 @@
 //!
 //! SQLite calls, however, are blocking: they would stall a tokio thread.
 //! They therefore run on tokio's pool of blocking threads
-//! (`spawn_blocking`, see `with_store`).
+//! (`spawn_blocking`, see `with_store` and `with_reader`). Commands take the
+//! single writing store; queries take a connection of the read pool, so a
+//! long write never makes a list wait (`nm-store`, `pool.rs`).
+//!
+//! # Settings
+//!
+//! The core reads `config.toml` at start and watches it (`nm-engine`): a
+//! valid change is applied at once, an invalid file is refused whole and
+//! reported (`configuration.md`, section 4).
 //!
 //! Per connection there are:
 //! - a reading loop (`serve`) that handles one request at a time,
@@ -52,9 +60,11 @@ use nm_api::{
     PROTOCOL_VERSION, Page, Request, Response, RpcError, SearchParams, SearchResult, SetBodyFormatParams,
     SetGroupMemberParams, SetThreadFlaggedParams, SetThreadSeenParams, SubscribeParams, SubscribeResult,
     SetAddressScreeningParams, SetDomainScreeningParams, TagThreadParams, ThreadView, UndoParams, error_code,
-    method,
+    method, ConfigStatus,
 };
 use nm_core::Source;
+use nm_engine::Engine;
+use nm_store::pool::ReadPool;
 use nm_store::import::{BATCH_SIZE, ImportOptions, ImportProgress, import_mbox};
 use nm_store::attachments::AttachmentFiles;
 use nm_store::raw::RawStore;
@@ -79,6 +89,9 @@ struct Args {
     /// Dossier de données (base, socket, verrou).
     #[arg(long, env = "NICEMAILER_DATA_DIR")]
     data_dir: Option<PathBuf>,
+    /// Fichier de réglages (par défaut ~/.config/nicemailer/config.toml).
+    #[arg(long, env = "NICEMAILER_CONFIG")]
+    config: Option<PathBuf>,
 }
 
 /// State shared by all connections.
@@ -88,12 +101,20 @@ struct Args {
 /// guard goes out of scope. The store and the event log have separate locks
 /// so that reading the event position never waits for a slow query.
 ///
-/// Lock order, to avoid deadlocks: `store`, then `import`, then `events`.
-/// A thread holding one of them never waits for one that comes earlier in
-/// this list.
+/// Lock order, to avoid deadlocks: `store`, then `engine`, then `import`,
+/// then `events`. A thread holding one of them never waits for one that
+/// comes earlier in this list. The read pool has its own internal lock,
+/// held only to lend or take back a connection, never while waiting for
+/// another lock.
 struct Core {
     store: Mutex<Store>,
+    /// Read-only connections for the queries.
+    readers: ReadPool,
+    /// Settings applied and state of the accounts (`nm-engine`).
+    engine: Mutex<Engine>,
     events: Mutex<EventLog>,
+    /// `events.client_queue`: lines a client may have waiting.
+    client_queue: usize,
     /// Immutable raw message files (`stockage-brut.md`).
     raw: RawStore,
     /// Attachments extracted from them on demand (`attachments.rs`).
@@ -134,20 +155,53 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let db_path = data_dir.join(nm_api::paths::DATABASE);
-    let store = Store::open(&db_path).with_context(|| format!("ouverture de {}", db_path.display()))?;
-    // `Arc` so that every connection task can hold a pointer to the shared
-    // state. Replay buffer of 10 000 events; a client may lag 1 000 events
-    // behind before being told to resync.
+    let mut store = Store::open(&db_path).with_context(|| format!("ouverture de {}", db_path.display()))?;
+    // Opened after the writing store, which creates or migrates the
+    // database. Four connections: the app rarely has more queries running
+    // at once (a list, a thread, a search), and each is short.
+    let readers = ReadPool::open(&db_path, 4).with_context(|| format!("lecture de {}", db_path.display()))?;
+
+    // Settings, before the event log, whose sizes they give. An invalid
+    // file does not stop the core: it starts with the defaults and no
+    // account, and reports the error (`configuration.md`, section 4).
+    let config_path = args.config.unwrap_or_else(nm_engine::config::default_path);
+    let mut engine = Engine::new(config_path.clone(), secrets());
+    let startup_events = engine.reload(&mut store, true)?;
+    log_config(&engine);
+    let settings = engine.config().events.clone();
+
     let raw = RawStore::open(&data_dir).with_context(|| format!("stockage brut dans {}", data_dir.display()))?;
     let attachments = AttachmentFiles::open(&data_dir)
         .with_context(|| format!("pièces jointes dans {}", data_dir.display()))?;
+    let mut events = EventLog::new(settings.replay_buffer as usize, settings.client_queue as usize);
+    for e in startup_events {
+        events.push(e);
+    }
+    // `Arc` so that every connection task can hold a pointer to the shared
+    // state.
     let core = Arc::new(Core {
         store: Mutex::new(store),
-        events: Mutex::new(EventLog::new(10_000, 1_000)),
+        readers,
+        engine: Mutex::new(engine),
+        events: Mutex::new(events),
+        client_queue: settings.client_queue as usize,
         raw,
         attachments,
         import: Mutex::new(ImportState::default()),
     });
+    // Kept alive until the end of `main`: dropping it stops the watch. A
+    // watch that cannot start is not fatal: the file is then read at the
+    // next start only.
+    let _watch = {
+        let core = core.clone();
+        match nm_engine::watch::watch(&config_path, move || reload_config(&core)) {
+            Ok(w) => Some(w),
+            Err(e) => {
+                eprintln!("config : surveillance impossible ({e}) ; le fichier sera relu au prochain démarrage");
+                None
+            }
+        }
+    };
 
     let socket_path = data_dir.join(nm_api::paths::SOCKET);
     // A socket file left behind by a crash would make `bind` fail. Thanks to
@@ -211,7 +265,7 @@ async fn serve(core: Arc<Core>, stream: UnixStream) -> anyhow::Result<()> {
     let (read, mut write) = stream.into_split();
     // Bounded queue per client (`events.client_queue`): a client that stops
     // reading cannot make the core's memory grow without limit.
-    let (out, mut rx) = mpsc::channel::<Arc<String>>(1_000);
+    let (out, mut rx) = mpsc::channel::<Arc<String>>(core.client_queue);
     // Writer task: takes lines from the queue and writes them, each followed
     // by a newline. `recv` returns `None` once every sender is dropped,
     // which ends the loop.
@@ -330,6 +384,65 @@ async fn with_store<T: Send + 'static>(
     .map_err(store_error)
 }
 
+/// Runs the query `f` on a connection of the read pool, on a blocking
+/// thread. Unlike `with_store`, it never waits for a write in progress.
+async fn with_reader<T: Send + 'static>(
+    core: &Arc<Core>,
+    f: impl FnOnce(&Store) -> Result<T, StoreError> + Send + 'static,
+) -> Result<T, RpcError> {
+    let core = core.clone();
+    tokio::task::spawn_blocking(move || core.readers.read(f))
+        .await
+        .map_err(|e| RpcError::new(error_code::INTERNAL_ERROR, e.to_string()))?
+        .map_err(store_error)
+}
+
+/// Where the passwords of the accounts come from. The `password` key of
+/// `config.toml` only in a build with the `dev-passwords` feature; the
+/// Keychain arrives with `add_account` (`plan-imap.md`, phase 7).
+fn secrets() -> Box<dyn nm_engine::secrets::Secrets> {
+    if cfg!(feature = "dev-passwords") {
+        Box::new(nm_engine::secrets::ConfigPasswords)
+    } else {
+        Box::new(nm_engine::secrets::NoSecrets)
+    }
+}
+
+/// Reads `config.toml` again after a change seen by the watch, and emits
+/// what it changed. Runs on the thread of the watch: it may block on the
+/// store while a command or an import batch finishes.
+fn reload_config(core: &Arc<Core>) {
+    // Lock order: store, engine, events. The events are emitted with the
+    // store's lock held, like those of the commands, so their order is the
+    // order of the writes.
+    let mut store = core.store.lock().unwrap();
+    let mut engine = core.engine.lock().unwrap();
+    match engine.reload(&mut store, false) {
+        Ok(events) => {
+            if !events.is_empty() {
+                log_config(&engine);
+            }
+            let mut log = core.events.lock().unwrap();
+            for e in events {
+                log.push(e);
+            }
+        }
+        Err(e) => eprintln!("config : {e}"),
+    }
+}
+
+/// Prints the state of the settings on the core's standard error.
+fn log_config(engine: &Engine) {
+    let path = engine.path().display();
+    match engine.error() {
+        Some(p) => eprintln!("config : {path} refusé, réglages précédents conservés : {p}"),
+        None => eprintln!("config : {path}, {} compte(s)", engine.config().accounts.len()),
+    }
+    for w in engine.warnings() {
+        eprintln!("config : avertissement : {w}");
+    }
+}
+
 /// Runs a write command and emits its events once the transaction is
 /// committed. Returns the number of messages changed.
 async fn command(
@@ -438,7 +551,7 @@ async fn dispatch(core: &Arc<Core>, session: &mut Session, req: Request) -> Resu
         }
         method::LIST_FOLDERS => {
             let as_of = as_of();
-            let items = with_store(core, |s| s.list_folders()).await?;
+            let items = with_reader(core, |s| s.list_folders()).await?;
             to_value(FolderList { items, as_of })
         }
         method::LIST_THREADS => {
@@ -462,7 +575,7 @@ async fn dispatch(core: &Arc<Core>, session: &mut Session, req: Request) -> Resu
                     ));
                 }
             };
-            let (items, next_cursor) = with_store(core, move |s| match scope {
+            let (items, next_cursor) = with_reader(core, move |s| match scope {
                 Scope::Folders(folders) => {
                     s.list_threads_in(&folders, p.cursor.as_deref(), limit(p.limit), p.sort, &p.filter)
                 }
@@ -476,13 +589,13 @@ async fn dispatch(core: &Arc<Core>, session: &mut Session, req: Request) -> Resu
         method::GET_THREAD => {
             let p: GetThreadParams = params(req.params)?;
             let as_of = as_of();
-            let (subject, messages) = with_store(core, move |s| s.get_thread(p.thread_id)).await?;
+            let (subject, messages) = with_reader(core, move |s| s.get_thread(p.thread_id)).await?;
             to_value(ThreadView { id: p.thread_id, subject, messages, as_of })
         }
         method::SEARCH => {
             let p: SearchParams = params(req.params)?;
             let as_of = as_of();
-            let items = with_store(core, move |s| s.search(&p.query, limit(p.limit))).await?;
+            let items = with_reader(core, move |s| s.search(&p.query, limit(p.limit))).await?;
             to_value(SearchResult { items, as_of })
         }
         method::MOVE_THREAD => {
@@ -530,7 +643,7 @@ async fn dispatch(core: &Arc<Core>, session: &mut Session, req: Request) -> Resu
                 return Err(RpcError::new(error_code::INVALID_PARAMS, "dossier absolu attendu"));
             }
             let raw = core.raw.clone();
-            let path = with_store(core, move |s| s.export_message(&raw, p.message_id, p.format, &dir)).await?;
+            let path = with_reader(core, move |s| s.export_message(&raw, p.message_id, p.format, &dir)).await?;
             to_value(ExportResult { path: path.display().to_string() })
         }
         method::UNSUBSCRIBE => {
@@ -540,7 +653,7 @@ async fn dispatch(core: &Arc<Core>, session: &mut Session, req: Request) -> Resu
             // falls back to opening the page.
             let p: UnsubscribeParams = params(req.params)?;
             let id = p.message_id;
-            let target = with_store(core, move |s| s.unsubscribe_target(id)).await?;
+            let target = with_reader(core, move |s| s.unsubscribe_target(id)).await?;
             let browser = |error: Option<String>| UnsubscribeResult {
                 method: "browser".into(),
                 done: false,
@@ -595,13 +708,13 @@ async fn dispatch(core: &Arc<Core>, session: &mut Session, req: Request) -> Resu
         method::LIST_HISTORY => {
             let p: ListHistoryParams = params(req.params)?;
             let as_of = as_of();
-            let (items, next_cursor) = with_store(core, move |s| s.list_history(p.cursor.as_deref(), limit(p.limit))).await?;
+            let (items, next_cursor) = with_reader(core, move |s| s.list_history(p.cursor.as_deref(), limit(p.limit))).await?;
             to_value(Page { items, next_cursor, as_of })
         }
         method::LIST_TAGS => {
             let p: ListTagsParams = params(req.params)?;
             let as_of = as_of();
-            let items = with_store(core, move |s| s.list_tags(p.account_id)).await?;
+            let items = with_reader(core, move |s| s.list_tags(p.account_id)).await?;
             to_value(Items { items, as_of })
         }
         method::TAG_THREAD => {
@@ -610,7 +723,7 @@ async fn dispatch(core: &Arc<Core>, session: &mut Session, req: Request) -> Resu
         }
         method::LIST_GROUPS => {
             let as_of = as_of();
-            let items = with_store(core, |s| s.list_groups()).await?;
+            let items = with_reader(core, |s| s.list_groups()).await?;
             to_value(Items { items, as_of })
         }
         method::SET_GROUP_MEMBER => {
@@ -623,11 +736,30 @@ async fn dispatch(core: &Arc<Core>, session: &mut Session, req: Request) -> Resu
         method::LIST_CONTACTS => {
             let p: ListContactsParams = params(req.params)?;
             let as_of = as_of();
-            let (items, next_cursor) = with_store(core, move |s| {
+            let (items, next_cursor) = with_reader(core, move |s| {
                 s.list_contacts(p.query.as_deref(), p.cursor.as_deref(), limit(p.limit))
             })
             .await?;
             to_value(Page { items, next_cursor, as_of })
+        }
+        method::LIST_ACCOUNTS => {
+            let as_of = as_of();
+            let rows = with_reader(core, |s| s.list_account_rows()).await?;
+            // The rows are read first, then the engine's state: the engine
+            // lock is never held while waiting for the database.
+            let items = core.engine.lock().unwrap().account_views(rows);
+            to_value(Items { items, as_of })
+        }
+        method::CONFIG_STATUS => {
+            let as_of = as_of();
+            let engine = core.engine.lock().unwrap();
+            to_value(ConfigStatus {
+                path: engine.path().display().to_string(),
+                exists: engine.path().exists(),
+                error: engine.error().map(nm_engine::problem_view),
+                warnings: engine.warnings().iter().map(nm_engine::problem_view).collect(),
+                as_of,
+            })
         }
         other => Err(RpcError::new(error_code::METHOD_NOT_FOUND, format!("méthode inconnue : {other}"))),
     }

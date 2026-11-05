@@ -20,8 +20,9 @@ Rule of thumb: a migration does what the code cannot work without (a new column,
 | Version | Content |
 | --- | --- |
 | 1 | First schema. Edited in place during development, before any release (see "Incomplete version 1" below). Frozen in `crates/nm-store/tests/fixtures/schema_v1.sql`. |
-| 3 | Remote images: `address.remote_images` (the sender's mails are shown with their remote images) and `message_body.tracking_pixels`. Two columns added at the end of their tables, instant. The bodies get their `nm-remote:` sources and pixel counts from the reinterpretation (`PARSER_VERSION` 8), in the background: bodies without remote image are only marked, the others (about two in three on a real mailbox) are read again from their raw file. |
 | 2 | Indexes for large mailboxes: `idx_message_thread` becomes `(thread_id, folder_id, date_received, id)`; partial indexes for flagged, answered and attachment messages; `thread.date_last_modified` and the four thread indexes of Everything. Data: names and subjects with RFC 2047 encoded words glued inside a word decoded (`encoded_words.rs`), in `message`, `thread`, `address` and the search index; empty address names filled from the oldest mail the address sent with a name. About 30 s on 275,000 mails. |
+| 3 | Remote images: `address.remote_images` (the sender's mails are shown with their remote images) and `message_body.tracking_pixels`. Two columns added at the end of their tables, instant. The bodies get their `nm-remote:` sources and pixel counts from the reinterpretation (`PARSER_VERSION` 8), in the background: bodies without remote image are only marked, the others (about two in three on a real mailbox) are read again from their raw file. |
+| 4 | Accounts removed from `config.toml`: `account.disabled_at`, the date the key of an IMAP account left the file (`NULL` while it is there). One column added at the end of a small table, instant. |
 
 The reasons for the indexes of version 2, with measurements, are in `specifications/modele de donnees.md`, section 11.
 
@@ -93,9 +94,6 @@ Say version 3:
 
 | Version | Change |
 | --- | --- |
-| 5 | how to unsubscribe from a list (`message_unsubscribe`) |
-| 6 | a text part botched by its sender (HTML entities, tags, attribute remains) is replaced by the conversion of the HTML part |
-| 7 | entities encoded twice or three times by the sender (`&amp;nbsp;`) are removed from the text and the HTML |
 
 ### When it runs
 

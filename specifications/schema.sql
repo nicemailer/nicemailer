@@ -1,5 +1,5 @@
 -- ============================================================
--- NiceMailer : schéma SQLite du noyau Rust (version 2)
+-- NiceMailer : schéma SQLite du noyau Rust (version 4)
 -- Dates : INTEGER, secondes Unix UTC. Booléens : 0/1.
 -- Nécessite SQLite >= 3.38 (STRICT, unixepoch) avec FTS5.
 -- Analyse et justification : modele de donnees.md
@@ -33,7 +33,7 @@ PRAGMA temp_store = MEMORY;
 -- Une base existante est mise à jour par les migrations du noyau
 -- (crates/nm-store/src/migrations.rs) ; ce fichier crée directement la
 -- dernière version.
-PRAGMA user_version = 3;   -- migrations : comparer à la version attendue au démarrage
+PRAGMA user_version = 4;   -- migrations : comparer à la version attendue au démarrage
 
 -- ------------------------------------------------------------
 -- Comptes : état seulement. Les paramètres (adresse, serveurs, identifiants,
@@ -59,7 +59,12 @@ CREATE TABLE account (
     date_created  INTEGER NOT NULL DEFAULT (unixepoch()),
     date_modified INTEGER NOT NULL DEFAULT (unixepoch()),
     created_by    TEXT NOT NULL CHECK (created_by  IN ('core','app','cli','tui','web','mcp','config_sync','imap')),
-    modified_by   TEXT NOT NULL CHECK (modified_by IN ('core','app','cli','tui','web','mcp','config_sync','imap'))
+    modified_by   TEXT NOT NULL CHECK (modified_by IN ('core','app','cli','tui','web','mcp','config_sync','imap')),
+    -- (version 4) Date à laquelle la clé du compte a disparu de config.toml :
+    -- le compte n'est plus synchronisé, ses données restent. NULL = actif.
+    -- Remis à NULL quand la clé revient (configuration.md, section 6).
+    -- Toujours NULL pour un compte d'archives, absent du fichier par nature.
+    disabled_at   INTEGER
 ) STRICT;
 
 -- ------------------------------------------------------------

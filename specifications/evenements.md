@@ -89,8 +89,8 @@ Les événements **séquencés** passent par le tampon et sont rejoués. Les év
 | `ActionReverted` | `message_id`, `kind`, `reason` | séquencé | Action locale annulée après un échec définitif (`modele de donnees.md`, section 6) |
 | `SendConfirmationRequested` | `request_id` | séquencé | Un agent demande un envoi (`architecture.md`, section 9) |
 | `DraftChanged` | `draft_id` | séquencé | Brouillon remplacé par une version modifiée ailleurs, ou dédoublé après un conflit (`brouillons.md`, section 6) |
-| `ConfigChanged` | `keys` | séquencé | Réglages de `config.toml` modifiés, par une commande ou une édition directe (`configuration.md`) |
-| `ConfigError` | `line`, `message` | séquencé | `config.toml` invalide : la configuration précédente reste appliquée |
+| `ConfigChanged` | `keys` | séquencé | Réglages de `config.toml` modifiés, par une commande ou une édition directe (`configuration.md`). `keys` vide : le fichier est de nouveau valide après un `ConfigError`, sans changement des réglages appliqués |
+| `ConfigError` | `line`, `key`, `message` | séquencé | `config.toml` invalide : la configuration précédente reste appliquée. `line` (à partir de 1) et `key` (clé pointée) valent `null` quand ils ne s'appliquent pas (fichier illisible) ; l'état reste disponible par `config_status` |
 | `ResyncRequired` | `epoch`, `seq` | séquencé | Le client doit recharger toutes ses vues |
 | `SyncProgress` | `account_id`, `folder_id`, `done`, `total` | transitoire | Avancement d'une synchronisation |
 | `ImportProgress` | `job_id`, `path`, `account_id`, `running`, `bytes_read`, `total_bytes`, `imported`, `skipped`, `parse_errors` | séquencé | Avancement d'un import mbox, un par lot de mails écrits (`import-initial.md`, section 9) |

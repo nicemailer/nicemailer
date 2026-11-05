@@ -38,6 +38,13 @@ Done in the folder workflow change: a suspect sender is never banned and needs a
 - The undo stack of the app lives for the session; the tokens stay valid in the core, but a restarted app forgets them.
 - Undo covers moves, decisions and authentication policies; not read/unread, flags or tags.
 
+## Settings: what phase 1 left out
+
+- **The app shows nothing of `config.toml` yet**: no banner for `ConfigError` pointing at the line (`configuration.md`, section 4), no list of accounts. The core gives everything needed: `config_status`, `list_accounts`, the events `ConfigError`, `ConfigChanged`, `AccountChanged`, `AccountError`.
+- **`set_config`, `nicemailer account rename` and `account remove`** (`configuration.md`, sections 5 and 9): writing the file with `toml_edit`, keeping comments; renaming a key in the file and the database together. The plan puts the writing with `add_account` (phase 7).
+- **Settings read at start only** (`events.*`) are accepted while the core runs and apply at the next start; the others are validated but not used yet (table in `docs/configuration.md`).
+- **Edits made while the core was stopped** are not in `audit_log`: the first reading has nothing to compare with. Storing the keys applied last would allow it.
+
 ## Several senders in a conversation
 
 The user chose to decide on the sender of the latest received mail (`dossiers.md`, "Décision sur l'expéditeur"). If a colleague in copy is ever banned this way, revisit: the earlier spec asked the user which senders the decision concerns.

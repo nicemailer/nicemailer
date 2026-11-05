@@ -1,0 +1,20 @@
+[package]
+name = "nm-engine"
+description = "Mail engine of the core: configuration, accounts, secrets, and (later) IMAP synchronization"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+nm-core.workspace = true
+nm-api.workspace = true
+nm-store.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+toml_edit.workspace = true
+notify.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+toml_edit.workspace = true

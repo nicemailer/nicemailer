@@ -65,6 +65,8 @@ nicemailer call get_thread '{"thread_id": 42}'
 nicemailer call search '{"query": "facture"}'
 nicemailer call move_thread '{"thread_id": 42, "target": "todo", "from_folder_id": 1}'
 nicemailer import-status  # running or last mbox import
+nicemailer accounts       # accounts of config.toml and archive accounts
+nicemailer config check   # validate config.toml (docs/configuration.md)
 nicemailer watch          # live event stream
 ```
 

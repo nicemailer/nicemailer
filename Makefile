@@ -44,9 +44,11 @@ bench:
 seed:
 	cargo run --release --bin nicemailer -- seed --reset --threads $(THREADS)
 
-# Run the core in the foreground; stop it with Ctrl-C.
+# Run the core in the foreground; stop it with Ctrl-C. Built with the
+# dev-passwords feature: it reads the `password` keys of config.toml, which
+# the shipped core never does (docs/configuration.md, "Passwords").
 core:
-	cargo run --release --bin nicemailer-core
+	cargo run --release --bin nicemailer-core --features dev-passwords
 
 app:
 	cd apps/NiceMailer && DEVELOPER_DIR=$(XCODE) swift run

@@ -74,6 +74,31 @@ impl Client {
 }
 
 /// Starts the core on `dir`; it is killed when the returned value drops.
+/// Its settings file is `dir/config.toml`, missing unless the test writes
+/// it: a test must never read the settings (and accounts) of the machine.
 pub fn start(dir: &Path) -> Core {
-    Core(Command::new(env!("CARGO_BIN_EXE_nicemailer-core")).arg("--data-dir").arg(dir).spawn().unwrap())
+    Core(
+        Command::new(env!("CARGO_BIN_EXE_nicemailer-core"))
+            .arg("--data-dir")
+            .arg(dir)
+            .arg("--config")
+            .arg(dir.join("config.toml"))
+            .spawn()
+            .unwrap(),
+    )
+}
+
+impl Client {
+    /// Waits for the event `method`, dropping the others; panics after
+    /// `secs` seconds. Returns its params.
+    pub fn event(&mut self, method: &str, secs: u64) -> Value {
+        let deadline = Instant::now() + Duration::from_secs(secs);
+        loop {
+            assert!(Instant::now() < deadline, "no {method} event within {secs} s");
+            let v = self.line();
+            if v.get("id").is_none() && v["method"] == method {
+                return v["params"].clone();
+            }
+        }
+    }
 }
