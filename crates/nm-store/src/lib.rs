@@ -16,6 +16,8 @@
 //! - `encoded_words.rs`: RFC 2047 encoded words that `mail-parser` leaves undecoded,
 //! - `attachments.rs`: attachments of a thread, extraction of their files,
 //! - `unsubscribe.rs`: how to unsubscribe from a mailing list,
+//! - `links.rs`: the links of a message (HTML anchors, addresses of the text),
+//! - `phones.rs`: phone numbers written in the text of a message,
 //! - `html_text.rs`: HTML to plain text, keeping blocks apart,
 //! - `import.rs`: import of an mbox file into an archive account,
 //! - `reindex.rs`: reinterpretation of stored messages after a parser change,
@@ -35,6 +37,8 @@ pub mod html_text;
 pub mod import;
 pub mod ingest;
 pub mod library;
+pub mod links;
+pub mod phones;
 pub mod mbox;
 mod migrations;
 mod queries;

@@ -492,6 +492,8 @@ impl Store {
                     attachments: vec![],
                     unsubscribe: unsubscribe_view(r.get(17)?, r.get(18)?, r.get(19)?, r.get(20)?, r.get(21)?),
                     tracking_pixels: r.get(22)?,
+                    // Filled below, from the bodies just read.
+                    links: vec![],
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -519,6 +521,15 @@ impl Store {
             if let Some(m) = messages.iter_mut().find(|m| m.id == message_id) {
                 m.attachments.push(a);
             }
+        }
+        // The links of `l`, read from the HTML: the text the core makes
+        // from it has no address left (`links.rs`). One scan per body,
+        // already in memory: computed here rather than stored.
+        for m in &mut messages {
+            m.links = crate::links::find(m.body_html.as_deref(), m.body_text.as_deref())
+                .into_iter()
+                .map(|l| nm_api::LinkView { url: l.url, text: l.text })
+                .collect();
         }
         present_thread(&mut messages);
         Ok((subject, messages))

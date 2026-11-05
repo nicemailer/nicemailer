@@ -671,6 +671,24 @@ pub struct MessageView {
     /// whatever the display.
     #[serde(default)]
     pub tracking_pixels: i64,
+    /// Links of the message, for the `l` panel: the `<a href>` of the HTML
+    /// with their text, then the addresses written in the text part, then
+    /// its phone numbers as `tel:` links, each once (`links.rs` and
+    /// `phones.rs` in nm-store). Only `http`, `https`, `mailto` and `tel`.
+    #[serde(default)]
+    pub links: Vec<LinkView>,
+}
+
+/// A link of a message (`MessageView.links`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LinkView {
+    /// `tel:` URLs hold digits only, after a `+` for an international
+    /// number: `tel:+33612345678`, `tel:0612345678`.
+    pub url: String,
+    /// Visible text of the link in the HTML ("See my invoice"), or a phone
+    /// number as written in the text; `None` for an address written in the
+    /// text, or a link around an image.
+    pub text: Option<String>,
 }
 
 /// How to unsubscribe from a mailing list (`MessageView.unsubscribe`).
