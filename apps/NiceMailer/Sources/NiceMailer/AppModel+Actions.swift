@@ -441,7 +441,13 @@ extension AppModel {
         let url: URL
         /// Text of the link in the HTML, or a phone number as written; nil
         /// when the mail only wrote the address, or put an image in the link.
-        let text: String?
+        var text: String?
+        /// Where a tracking link really goes, when the core could read it
+        /// from its address (`links.rs`, `target`).
+        var target: String? = nil
+        /// The other texts of the same link in the thread, each once:
+        /// "Voir ma facture (and 2 others)".
+        var otherTexts: [String] = []
 
         var isPhone: Bool { url.scheme == "tel" }
 
@@ -461,13 +467,24 @@ extension AppModel {
             var index: [String: Int] = [:]
             for view in lists.joined() {
                 guard let url = URL(string: view.url) else { continue }
-                let link = Link(url: url, text: view.text?.isEmpty == false ? view.text : nil)
-                if let i = index[link.key] {
-                    if all[i].text == nil, link.text != nil { all[i] = link }
-                } else {
+                let text = view.text?.isEmpty == false ? view.text : nil
+                let link = Link(url: url, text: text, target: view.target, otherTexts: view.otherTexts ?? [])
+                guard let i = index[link.key] else {
                     index[link.key] = all.count
                     all.append(link)
+                    continue
                 }
+                // The same link in another message (a quoted history, a
+                // later issue): its texts join those already known.
+                var known = all[i]
+                for t in [link.text].compactMap({ $0 }) + link.otherTexts {
+                    if known.text == nil {
+                        known.text = t
+                    } else if t != known.text, !known.otherTexts.contains(t) {
+                        known.otherTexts.append(t)
+                    }
+                }
+                all[i] = known
             }
             let phones = all.filter(\.isPhone)
             let others = all.filter { !$0.isPhone }
@@ -479,7 +496,9 @@ extension AppModel {
         /// signature gives the same number in national and international
         /// form.
         var key: String {
-            guard isPhone else { return url.absoluteString }
+            // A tracking link is known by where it goes: each place of a
+            // newsletter has its own tracking address to the same page.
+            guard isPhone else { return target ?? url.absoluteString }
             return "tel:" + String(number.filter(\.isNumber).suffix(9))
         }
 
@@ -498,7 +517,19 @@ extension AppModel {
             if let text { return text }
             if isPhone { return number }
             if url.scheme == "mailto" { return mailAddress }
-            return url.host() ?? url.absoluteString
+            // The site the link leads to, not that of its tracker.
+            return target.flatMap { URL(string: $0)?.host() } ?? url.host() ?? url.absoluteString
+        }
+
+        /// The row's text: the label and, when the mail links the same
+        /// place from other texts, how many: "ressent "les angoisses" du
+        /// pays (and 2 others)".
+        var title: String {
+            switch otherTexts.count {
+            case 0: return label
+            case 1: return label + " " + L("(and 1 other)")
+            default: return label + " " + L("(and %lld others)", otherTexts.count)
+            }
         }
 
         /// Right half of the row: where the link goes, in full (cut in the
@@ -512,7 +543,8 @@ extension AppModel {
                 return text.filter(\.isNumber).hasSuffix(String(number.filter(\.isNumber).suffix(9))) ? nil : number
             }
             if url.scheme == "mailto" { return text == nil ? nil : mailAddress }
-            return url.absoluteString
+            // A tracking link shows the page it leads to, not the tracker.
+            return target ?? url.absoluteString
         }
 
         /// SF Symbol of the row.

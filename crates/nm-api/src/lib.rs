@@ -710,6 +710,14 @@ pub struct LinkView {
     /// number as written in the text; `None` for an address written in the
     /// text, or a link around an image.
     pub text: Option<String>,
+    /// Where a tracking link really goes, when its address carries it
+    /// (decoded from base64 or percent-encoding); `None` otherwise.
+    #[serde(default)]
+    pub target: Option<String>,
+    /// The other texts of the same link (same destination) in the message,
+    /// each once, in order.
+    #[serde(default)]
+    pub other_texts: Vec<String>,
 }
 
 /// How to unsubscribe from a mailing list (`MessageView.unsubscribe`).

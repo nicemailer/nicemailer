@@ -1058,8 +1058,12 @@ final class GeekController {
                 }
             }
             let linkRows = links.map { link in
-                Entry(key: "", label: link.label, detail: link.destination, detailStyle: .info,
-                      icon: link.icon, keywords: [link.url.absoluteString]) { [model] in model.openFile(link.url) }
+                // Typing any of its texts, its address or where it leads
+                // finds the row.
+                Entry(key: "", label: link.title, detail: link.destination, detailStyle: .info, icon: link.icon,
+                      keywords: [link.url.absoluteString] + [link.target].compactMap { $0 } + link.otherTexts) { [model] in
+                    model.openFile(link.url)
+                }
             }
             let fileRows = model.attachments.map { a in
                 // The name on the left, the size in the right half, as the

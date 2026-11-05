@@ -175,6 +175,26 @@
         }
       }
     },
+    "(and %lld others)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "(et %lld autres)"
+          }
+        }
+      }
+    },
+    "(and 1 other)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "(et 1 autre)"
+          }
+        }
+      }
+    },
     "(body not downloaded)": {
       "localizations": {
         "fr": {

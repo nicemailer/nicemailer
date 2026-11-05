@@ -543,7 +543,7 @@ impl Store {
         for m in &mut messages {
             m.links = crate::links::find(m.body_html.as_deref(), m.body_text.as_deref())
                 .into_iter()
-                .map(|l| nm_api::LinkView { url: l.url, text: l.text })
+                .map(|l| nm_api::LinkView { url: l.url, text: l.text, target: l.target, other_texts: l.other_texts })
                 .collect();
         }
         present_thread(&mut messages);

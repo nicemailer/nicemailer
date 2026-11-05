@@ -53,6 +53,36 @@ struct LinkTests {
         #expect(AppModel.Link(url: URL(string: "https://x.org")!, text: nil).icon == "link")
     }
 
+    @Test func trackingLinksToTheSamePageAreOneRowWithTheCountOfTheirOtherTexts() {
+        let youtube = "https://www.youtube.com/live/6sAJ097Rau4?t=1279"
+        let merged = AppModel.Link.merge([
+            [LinkView(url: "https://r.t.fr/lnk/13/aHR0", text: #"ressent "les angoisses" du pays"#, target: youtube,
+                      otherTexts: ["une forme de perma-crise"])],
+            // The same page, from a quoted message, under another tracker
+            // address and another text, and again under the first text.
+            [LinkView(url: "https://r.t.fr/lnk/40/aHR0", text: "il y a un moment de fatigue", target: youtube),
+             LinkView(url: "https://r.t.fr/lnk/41/aHR0", text: #"ressent "les angoisses" du pays"#, target: youtube)],
+        ])
+        #expect(merged.count == 1)
+        let link = merged[0]
+        #expect(link.otherTexts == ["une forme de perma-crise", "il y a un moment de fatigue"])
+        #expect(link.title == #"ressent "les angoisses" du pays "# + L("(and %lld others)", 2))
+        // Where it goes: the page, not the tracker; it opens as written.
+        #expect(link.destination == youtube)
+        #expect(link.url.absoluteString == "https://r.t.fr/lnk/13/aHR0")
+    }
+
+    @Test func oneOtherTextIsSingularAndNoneAddsNothing() {
+        let one = AppModel.Link(url: URL(string: "https://x.org/a")!, text: "Lire", otherTexts: ["ici"])
+        #expect(one.title == "Lire " + L("(and 1 other)"))
+        let none = AppModel.Link(url: URL(string: "https://x.org/a")!, text: "Lire")
+        #expect(none.title == "Lire")
+        // A bare tracking link shows the site it leads to.
+        let bare = AppModel.Link(url: URL(string: "https://r.t.fr/lnk/1/aHR0")!, text: nil,
+                                 target: "https://www.facebook.com/page")
+        #expect(bare.label == "www.facebook.com")
+    }
+
     @Test func aUrlFoundationCannotReadIsLeftOutAndASpaceIsEncoded() {
         // A space a sender left in an `href` is encoded: the link opens.
         #expect(AppModel.Link.merge([[view(""), view("https://x.org/a b")]]).map(\.url.absoluteString)

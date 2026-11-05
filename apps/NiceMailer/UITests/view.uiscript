@@ -97,7 +97,7 @@ expect opened_file = photo.png
 # The l picker lists them after the link to the mail, the links and the
 # phone number of the newsletter.
 key l
-expect picker_count = 7
+expect picker_count = 8
 type budget
 key ret
 expect export_files = 3
