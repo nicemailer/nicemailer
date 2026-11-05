@@ -346,9 +346,73 @@ struct GeekControllerTests {
 
     @Test func theLinkPickerListsTheLinksOfTheMail() {
         press("l")
-        #expect(controller.pickerEntries(.links).map(\.label) == ["https://example.org/1"])
+        #expect(controller.pickerEntries(.links).map(\.label) == ["example.org"])
+        #expect(controller.pickerEntries(.links).map(\.detail) == ["https://example.org/1"])
         press("esc")
         #expect(controller.overlay == .none)
+    }
+
+    @Test func theLinkPickerShowsTheTextOfHtmlLinksAndFindsThemByAddress() async {
+        // A newsletter: its text, made from the HTML, has no address; the
+        // core gives the links of the HTML with their text.
+        core.handler = { method, params in
+            guard method == "get_thread", params["thread_id"] as? Int == 2 else { return Fixture.answer(method, params) }
+            var thread = Fixture.threadView(2)
+            var m = (thread["messages"] as! [[String: Any]])[0]
+            m["body_text"] = "Votre facture est disponible. Voir ma facture"
+            m["links"] = [
+                ["url": "https://example.org/plain", "text": NSNull()],
+                ["url": "https://t.example.com/c?u=1", "text": "Voir ma facture"],
+                ["url": "mailto:aide@example.org", "text": "Écrire au support"],
+                ["url": "tel:0612345678", "text": "06 12 34 56 78"],
+            ]
+            thread["messages"] = [m]
+            return thread
+        }
+        model.selectedThreadId = 2
+        _ = await eventually { model.openThread?.id == 2 }
+        press("l")
+        let entries = controller.pickerEntries(.links)
+        // Links with a text, the phone number, then the link without text.
+        #expect(entries.map(\.label) == ["Voir ma facture", "Écrire au support", "06 12 34 56 78", "example.org"])
+        #expect(entries.map(\.detail) == ["https://t.example.com/c?u=1", "aide@example.org", nil, "https://example.org/plain"])
+        #expect(entries.map(\.icon) == ["link", "link", "phone", "link"])
+        // Where a link goes is information, not a count.
+        #expect(entries.allSatisfy { $0.detailStyle == .info })
+        // A part of the address finds the row, though it is not shown.
+        type("u=1")
+        #expect(controller.pickerEntries(.links).map(\.label) == ["Voir ma facture"])
+        // Return on the number hands its tel: URL to the system, which
+        // opens the phone app.
+        var opened: URL?
+        model.openFile = { opened = $0 }
+        press("esc"); press("l"); type("06 12")
+        press("ret")
+        #expect(opened?.absoluteString == "tel:0612345678")
+    }
+
+    @Test func unreadCountsStandOutAndInformationStaysMuted() {
+        // The account picker's unread counts stand out.
+        press("@")
+        #expect(controller.pickerEntries(.accounts).filter { $0.detail != nil }.allSatisfy { $0.detailStyle == .count })
+        press("esc")
+        // How six digits were read is information.
+        press("F"); type(L("Date…")); press("ret")
+        type("010120")
+        #expect(controller.pickerEntries(.attributeValue(.date)).prefix(4).allSatisfy { $0.detailStyle == .info })
+        press("esc")
+        // An interval left empty is a warning: it stands out.
+        press("F"); type(L("Date…")); press("ret")
+        type("2026-10-01"); press("ret")
+        press("F"); type(L("Date…")); press("ret")
+        type("2026-09-01")
+        let warning = controller.pickerEntries(.attributeValue(.date))[1]
+        #expect(warning.detail == L("nothing in between") && warning.detailStyle == .count)
+        press("esc")
+        // "domain" on a From… value.
+        press("F"); type(L("From…")); press("ret")
+        type("@acme.fr")
+        #expect(controller.pickerEntries(.attributeValue(.from)).first?.detailStyle == .info)
     }
 
     @Test func stepDownTurnsAroundFromTheLastRowOnly() {
@@ -381,12 +445,15 @@ struct GeekControllerTests {
         await openThreadWithFiles()
         press("l")
         let entries = controller.pickerEntries(.links)
-        // One link in the text, then the three files with their icons.
+        // The three files with their icons, then the link written in the
+        // text (no text of its own: after the files).
         #expect(entries.count == 4)
-        #expect(entries[0].icon == "link")
-        #expect(entries[1].label.hasPrefix("devis.pdf") && entries[1].icon == "doc.richtext")
-        #expect(entries[2].icon == "photo")
-        #expect(entries[3].label.hasPrefix(L("Unnamed attachment")) && entries[3].icon == "doc.zipper")
+        // The name on the left, the size in the right half.
+        #expect(entries[0].label == "devis.pdf" && entries[0].icon == "doc.richtext")
+        #expect(entries.prefix(3).allSatisfy { $0.detail?.isEmpty == false && $0.detailStyle == .info })
+        #expect(entries[1].icon == "photo")
+        #expect(entries[2].label == L("Unnamed attachment") && entries[2].icon == "doc.zipper")
+        #expect(entries[3].icon == "link" && entries[3].label == "example.org" && entries[3].detail == "https://example.org/4")
         #expect(entries.map(\.key) == ["1", "2", "3", "4"])
         // Typing filters the files too.
         type("photo")

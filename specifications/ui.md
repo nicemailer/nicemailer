@@ -159,7 +159,7 @@ m move (déplacer), puis choisir le dossier. mt déplacer dans le dossier Todo, 
 del supprimer (déplacer dans Deleted)
 t tag (ajouter un tag ; si tous les mails visés l'ont déjà, le retirer)
 g group (ajoute l'expéditeur dans un groupe)
-l link (panneau des liens du mail ; entrée ouvre le lien dans le navigateur)
+l link (panneau des liens du mail ; entrée ouvre le lien dans le navigateur). D'abord les liens qui ont un texte (« Voir ma facture »), puis les numéros de téléphone trouvés dans le mail, avec une icône de téléphone (entrée lance l'appel dans l'app Téléphone du Mac), puis les pièces jointes, enfin les liens sans texte (le plus souvent une image menant à un réseau social). Le panneau est aussi large que la fenêtre le permet, pour lire les liens longs.
 u lu / non lu
 z annule le dernier déplacement ou la dernière décision (les mails reviennent, la décision précédente aussi) ; chaque z remonte d'une étape
 \* drapeau

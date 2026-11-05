@@ -156,6 +156,18 @@ struct MessageView: Decodable, Identifiable, Hashable {
     var unsubscribe: UnsubscribeView? = nil
     /// Tracking pixels the core removed from `bodyHtml`: never requested.
     var trackingPixels: Int = 0
+    /// Links of the message for `l`, found by the core in the HTML (with
+    /// their text) and in the text part (`links.rs`): the text made from an
+    /// HTML has no address left to look for.
+    var links: [LinkView] = []
+}
+
+/// A link of a message (`MessageView.links`).
+struct LinkView: Decodable, Hashable {
+    let url: String
+    /// Visible text of the link in the HTML; nil for an address written
+    /// in the text, or a link around an image.
+    let text: String?
 }
 
 /// A piece of a message's text, typed by the core: "text", "quote",

@@ -86,7 +86,7 @@ final class GeekController {
 
     /// One row of a menu or a picker.
     struct Entry: Identifiable {
-        let key: String
+        var key: String
         let label: String
         /// Grayed out: shown for discoverability, not available yet.
         var disabled = false
@@ -94,6 +94,9 @@ final class GeekController {
         var gapBefore = false
         /// Shown at the right end of the row (a folder's unread count).
         var detail: String? = nil
+        /// How the detail is shown: a count stands out, an information
+        /// (where a link goes, how a date was read) stays in the background.
+        var detailStyle: DetailStyle = .count
         /// SF Symbol drawn before the label (pickers: link, file type).
         var icon: String? = nil
         /// What ⌘-Return does, when it differs from Return (a file of `l`:
@@ -104,6 +107,14 @@ final class GeekController {
         var keywords: [String] = []
         let action: @MainActor () -> Void
         var id: String { key + label }
+    }
+
+    /// How the detail of a row is shown (`Entry.detailStyle`).
+    enum DetailStyle {
+        /// Something to notice (unread mails, a warning): the unread colour.
+        case count
+        /// Secondary information (a domain, a host, a date as read): muted.
+        case info
     }
 
     /// Where the status bar is (`ui.md`: bottom, top or hidden).
@@ -997,19 +1008,40 @@ final class GeekController {
             guard !typed.isEmpty else { return [] }
             return [Entry(key: "+", label: typed) { [weak self] in self?.searchEverywhere(typed) }]
         case .links:
-            // The links of the text, then one row per attached file
-            // (`ui.md`): Return opens a link or saves a file; ⌘-Return saves
-            // the file and opens it at once.
+            // The links of the mail and its files (`ui.md`), in four
+            // groups: links with a text, phone numbers (`AppModel.Link.merge`),
+            // the attached files, then the links without a text (mostly an
+            // image leading to a social network: the least wanted, after
+            // the files). Return opens a link in the browser, calls a
+            // number with the phone app (macOS opens `tel:` URLs with it),
+            // or saves a file; ⌘-Return saves the file and opens it at once.
+            // A link shows its text and, on the right, where it goes; its
+            // whole address is a hidden keyword, so typing part of it finds
+            // the row too.
             let links = model.links
-            all = links.enumerated().map { i, url in
-                Entry(key: "\(i + 1)", label: url.absoluteString, icon: "link") { NSWorkspace.shared.open(url) }
-            } + model.attachments.enumerated().map { i, a in
-                Entry(key: "\(links.count + i + 1)",
-                      label: AttachmentDisplay.name(a) + "  " + AttachmentDisplay.size(a.size),
+            let linkRows = links.map { link in
+                Entry(key: "", label: link.label, detail: link.destination, detailStyle: .info,
+                      icon: link.icon, keywords: [link.url.absoluteString]) { [model] in model.openFile(link.url) }
+            }
+            let fileRows = model.attachments.map { a in
+                // The name on the left, the size in the right half, as the
+                // address of a link.
+                Entry(key: "", label: AttachmentDisplay.name(a), detail: AttachmentDisplay.size(a.size), detailStyle: .info,
                       icon: AttachmentDisplay.symbol(mimeType: a.mimeType, filename: a.filename),
                       commandAction: { [model] in model.saveAttachment(a.id, .saveAndOpen) }) { [model] in
                     model.saveAttachment(a.id, .save)
                 }
+            }
+            // Which link rows are bare (no text, not a number); each group
+            // keeps the order `merge` gave it.
+            let bare = links.map { $0.text == nil && !$0.isPhone }
+            let ordered = zip(linkRows, bare).filter { !$0.1 }.map(\.0) + fileRows
+                + zip(linkRows, bare).filter { $0.1 }.map(\.0)
+            // Numbered once ordered: the number is the row's place.
+            all = ordered.enumerated().map { i, e in
+                var e = e
+                e.key = "\(i + 1)"
+                return e
             }
         case .tag:
             let accountId = model.folders.first { $0.id == model.selectedThread?.folderId }?.accountId
@@ -1066,8 +1098,10 @@ final class GeekController {
         // A value starting with "@" is a domain: say so on the row.
         let detail = value.hasPrefix("@") && value.count > 1 ? L("domain") : nil
         func rows(_ label: String, _ value: String, key wanted: String = "+", detail: String? = nil) -> [Entry] {
-            let add = Entry(key: wanted, label: label, detail: detail) { [model] in model.attributes.add(field, value) }
-            let exclude = Entry(key: "−", label: L("not %@", label), detail: detail) { [model] in
+            let add = Entry(key: wanted, label: label, detail: detail, detailStyle: .info) { [model] in
+                model.attributes.add(field, value)
+            }
+            let exclude = Entry(key: "−", label: L("not %@", label), detail: detail, detailStyle: .info) { [model] in
                 model.attributes.add(field, value, excluded: true)
             }
             return excluded ? [exclude] : [add, exclude]
@@ -1106,8 +1140,11 @@ final class GeekController {
             // A row that would leave no day between them says so in its
             // detail instead of how it was read: the list would be empty.
             return presets.map { p in
-                let detail = model.attributes.dateIsEmpty(with: p) ? L("nothing in between") : p.detail
-                return Entry(key: " ", label: p.label, detail: detail) { [model] in model.attributes.setDate(p) }
+                // How the date was read is information; an empty interval
+                // is a warning, shown as such.
+                let empty = model.attributes.dateIsEmpty(with: p)
+                return Entry(key: " ", label: p.label, detail: empty ? L("nothing in between") : p.detail,
+                             detailStyle: empty ? .count : .info) { [model] in model.attributes.setDate(p) }
             }
         }
     }

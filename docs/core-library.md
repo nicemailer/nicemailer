@@ -52,7 +52,7 @@ nicemailer call get_attachment '{"attachment_id": 12}'
 
 ## Links of a message
 
-`get_thread` gives with each message its `links`, for the `l` panel (`crates/nm-store/src/links.rs`): a list of `{url, text}`, in order of appearance, each once.
+`get_thread` gives with each message its `links`, for the `l` panel (`crates/nm-store/src/links.rs`): a list of `{url, text}`, in order of appearance, each once. The app shows them in groups: links with a text, phone numbers, the attached files, links without a text (`docs/geek-ui.md`).
 
 1. The `<a href>` of the sanitized HTML, with the visible text of the link (`"Voir ma facture"`), whitespace collapsed, cut at 200 characters; `text` is `null` for a link around an image.
 2. Then the addresses written in the text part (`https://…`, `http://…`, `mailto:…`) that the HTML does not already have, with `text` `null`. Brackets, parentheses and a final punctuation mark are not part of the address.

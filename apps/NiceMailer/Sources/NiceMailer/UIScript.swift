@@ -52,6 +52,8 @@ enum UIScript {
     /// mode nothing is opened, so as not to launch Preview or Word on the
     /// user's screen.
     static var openedFile = ""
+    /// Width of the open picker panel, in points (`PickerPopup.width`).
+    static var pickerWidth: CGFloat = 0
 
     private static var started = false
     /// The test window and its model, kept alive while the script runs.
@@ -415,6 +417,13 @@ private final class Runner {
             // The row Return would choose (the picker opens on its first
             // row, and typing brings the best match there).
             "picker_first": pickerRows.first ?? "",
+            // Width of the open picker panel, in whole points.
+            "picker_width": {
+                if case .picker = c.overlay { return "\(Int(UIScript.pickerWidth.rounded()))" }
+                return ""
+            }(),
+            // Every row of the open picker, in order, " | " between them.
+            "picker_rows": pickerRows.joined(separator: " | "),
             // Detail of the first row ("dd mm yy" for six digits read two
             // ways, "domain"…).
             "picker_first_detail": {

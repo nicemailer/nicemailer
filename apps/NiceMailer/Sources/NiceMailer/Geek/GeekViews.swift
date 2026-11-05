@@ -149,8 +149,14 @@ private struct GeekWindow: View {
             KeyMenu(title: L("Keys"), entries: controller.helpLines.map { .init(key: $0.0, label: $0.1) }, onSelect: nil)
                 .padding(12)
         case .picker(let kind):
-            PickerPopup(controller: controller, kind: kind)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // Swift note: a `GeometryReader` gives its content the size it
+            // is offered, here the window's content: the links panel takes
+            // as much of its width as is useful.
+            GeometryReader { geometry in
+                PickerPopup(controller: controller, kind: kind,
+                            width: PickerPopup.width(kind, available: geometry.size.width, scale: TextSize.shared.scale))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
         case .none, .contactFilter, .choice:
             EmptyView()
         }
@@ -1202,9 +1208,31 @@ private struct KeyMenu: View {
 }
 
 /// Helix-style picker: the typed text on top, the filtered rows below.
-private struct PickerPopup: View {
+struct PickerPopup: View {
     let controller: GeekController
     let kind: GeekController.PickerKind
+    /// Width of the panel (`width(_:available:scale:)`).
+    let width: CGFloat
+
+    /// Width of a picker panel, in points, for a window content `available`
+    /// points wide at the text size `scale`:
+    ///
+    /// - the links panel (`l`) as wide as the window allows, with a margin
+    ///   on each side, up to 1,100 points at the default size: link texts
+    ///   and addresses are long, and cut in the middle when they do not fit;
+    /// - an attribute with a value, or the search, 680 points (`ui.md`);
+    /// - any other picker 520 points;
+    ///
+    /// never wider than the window.
+    static func width(_ kind: GeekController.PickerKind, available: CGFloat, scale: CGFloat) -> CGFloat {
+        let wanted: CGFloat
+        switch kind {
+        case .links: wanted = max(min(available - 2 * 40 * scale, 1100 * scale), 520 * scale)
+        case .attributeValue, .search: wanted = 680 * scale
+        default: wanted = 520 * scale
+        }
+        return min(wanted, available)
+    }
 
     var body: some View {
         let entries = controller.pickerEntries(kind)
@@ -1240,11 +1268,26 @@ private struct PickerPopup: View {
                                 if let icon = e.icon {
                                     Image(systemName: icon).foregroundStyle(Palette.muted).frame(width: scaled(16))
                                 }
-                                Text(e.label).lineLimit(1).truncationMode(.middle)
-                                Spacer()
-                                // An unread count, at the right end of the row.
-                                if let detail = e.detail {
-                                    Text(detail).foregroundStyle(Palette.unread)
+                                if halves {
+                                    // Links: what the mail calls the link on the
+                                    // left, where it goes on the right, each in
+                                    // half of the row, so that a long text never
+                                    // pushes the address out of sight. Two frames
+                                    // equally flexible get the same width.
+                                    Text(e.label).lineLimit(1).truncationMode(.middle)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                    Text(e.detail ?? "").lineLimit(1).truncationMode(.middle)
+                                        .foregroundStyle(Palette.muted)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                } else {
+                                    Text(e.label).lineLimit(1).truncationMode(.middle)
+                                    Spacer()
+                                    // At the right end of the row: an unread count
+                                    // stands out, an information stays muted.
+                                    if let detail = e.detail {
+                                        Text(detail).lineLimit(1)
+                                            .foregroundStyle(e.detailStyle == .count ? Palette.unread : Palette.muted)
+                                    }
                                 }
                             }
                             .padding(.horizontal, 8)
@@ -1264,15 +1307,21 @@ private struct PickerPopup: View {
                 if entries.isEmpty { Text(emptyText).foregroundStyle(Palette.muted) }
             }
         }
-        // An attribute with a value gets a bigger panel at once (`ui.md`).
-        .frame(width: scaled(expanded ? 680 : 520), height: scaled(expanded ? 440 : 320))
+        // An attribute with a value gets a bigger panel at once (`ui.md`),
+        // and so do the links of a mail.
+        .frame(width: width, height: scaled(expanded ? 440 : 320))
+        .onAppear { if UIScript.isActive { UIScript.pickerWidth = width } }
+        .onChange(of: width) { _, w in if UIScript.isActive { UIScript.pickerWidth = w } }
         .background(Palette.popup)
         .overlay(Rectangle().stroke(Palette.separator, lineWidth: 1))
     }
 
+    /// Rows in two halves, text and address (the links of `l`).
+    private var halves: Bool { kind == .links }
+
     private var expanded: Bool {
         switch kind {
-        case .attributeValue, .search: return true
+        case .attributeValue, .search, .links: return true
         default: return false
         }
     }
