@@ -339,13 +339,24 @@ final class AppModel {
     var readerVisible = true {
         didSet {
             guard readerVisible, !oldValue, let id = selectedThreadId, autoShown == nil else { return }
-            seenTask?.cancel()
-            seenTask = Task { await markSeenAfterDelay(id) }
+            scheduleSeen(id)
         }
     }
 
-    /// The delayed mark of a mail that became visible (`readerVisible`).
+    /// The one delayed mark in progress: the mail just opened, or the one
+    /// under the cursor when the reader became visible (`readerVisible`).
+    /// One task for both, so that a mail is never marked twice: when its
+    /// content arrived late, after the reader came back, both used to wait
+    /// their delay, then both marked it.
     @ObservationIgnored private var seenTask: Task<Void, Never>?
+
+    /// Starts the delay of `id`, replacing the one in progress. Swift note:
+    /// cancelling a task makes its `Task.sleep` throw `CancellationError`,
+    /// so the replaced delay ends without marking anything.
+    private func scheduleSeen(_ id: Int) {
+        seenTask?.cancel()
+        seenTask = Task { await markSeenAfterDelay(id) }
+    }
 
     /// Delay after which a mail shown is considered read (seconds). A
     /// variable so that the tests can shorten it.
@@ -729,7 +740,7 @@ final class AppModel {
             // The senders' cards, if the book may already be read: macOS's
             // question is only asked from `l` (`linksOpened`).
             Task { await loadSenderCards(asking: false) }
-            if markSeen { await markSeenAfterDelay(id) }
+            if markSeen { scheduleSeen(id) }
         } catch { report(error) }
     }
 

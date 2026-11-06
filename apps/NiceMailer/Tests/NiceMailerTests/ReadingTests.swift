@@ -22,6 +22,16 @@ struct ReadingTests {
         func setSeen(_ id: Int, _ value: Bool) {
             lock.withLock { if value { seen.insert(id) } else { seen.remove(id) } }
         }
+        /// `get_thread` of `id` waits until `release()`. The fake core
+        /// answers off the main actor, so waiting there blocks only that
+        /// request.
+        private var held: (id: Int, gate: DispatchSemaphore)?
+        func hold(_ id: Int) { lock.withLock { held = (id, DispatchSemaphore(value: 0)) } }
+        func release() { lock.withLock { held?.gate.signal() } }
+        func waitIfHeld(_ id: Int) {
+            let gate = lock.withLock { held?.id == id ? held?.gate : nil }
+            gate?.wait()
+        }
     }
 
     let box = Mailbox()
@@ -44,6 +54,7 @@ struct ReadingTests {
                 return ["items": items, "next_cursor": NSNull(), "as_of": Fixture.position]
             case "get_thread":
                 let id = params["thread_id"] as? Int ?? 1
+                box.waitIfHeld(id)
                 var view = Fixture.threadView(id)
                 var messages = view["messages"] as! [[String: Any]]
                 messages[0]["is_seen"] = box.isSeen(id)
@@ -169,6 +180,24 @@ struct ReadingTests {
         #expect(seenCalls.isEmpty)
         controller.columns = 2
         #expect(await eventually { seenCalls == [2] })
+    }
+
+    @Test func aMailWhoseContentArrivesAfterTheReaderCameBackIsMarkedOnce() async {
+        // The order a loaded machine produced: the content of mail 2 comes
+        // back only once the reader is visible again. The opening and the
+        // return of the reader each started a delay, and both marked it.
+        controller.columns = 1
+        box.hold(2)
+        press("j")
+        await pause()
+        box.release()
+        // Blocks the main actor while the fake core answers on its thread:
+        // the answer is queued before the delay of the reader starts.
+        Thread.sleep(forTimeInterval: 0.05)
+        controller.columns = 2
+        #expect(await eventually { seenCalls == [2] })
+        await pause()
+        #expect(seenCalls == [2], "marked once")
     }
 
     @Test func hidingTheReaderDuringTheDelayMarksNothing() async {
