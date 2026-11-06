@@ -37,6 +37,11 @@ struct FormatTests {
         #expect(!narrow.showsAccount)
         #expect(wide.showsAccount)
         #expect(wide.subjectWidth(folderWidth: wide.folder(withAccount: true)) >= 30 * wide.char)
+        // Paperclip and flag: one fixed icon column each, so rows with and
+        // without them line up; the subject gets what is left.
+        #expect(wide.icon >= wide.char && wide.icon <= 2 * wide.char)
+        let fixed = 2 + wide.char + wide.date + wide.sender + 2 * wide.icon + wide.count + 8 * wide.char + 6
+        #expect(wide.subjectWidth(folderWidth: 0) == wide.width - fixed)
         // The folder column is 10 characters, 18 with the account.
         #expect(abs(narrow.folder(withAccount: false) - 10 * narrow.char) < 0.001)
         #expect(abs(narrow.folder(withAccount: true) - 18 * narrow.char) < 0.001)

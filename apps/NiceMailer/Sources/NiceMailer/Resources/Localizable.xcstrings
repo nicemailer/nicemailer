@@ -1631,6 +1631,16 @@
         }
       }
     },
+    "mark every mail of the list": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "marquer tous les mails de la liste"
+          }
+        }
+      }
+    },
     "move it, and accept this sender without authentication (badly configured tool)": {
       "localizations": {
         "fr": {

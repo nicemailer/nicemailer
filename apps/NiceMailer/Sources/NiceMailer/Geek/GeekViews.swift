@@ -496,12 +496,15 @@ struct RowLayout: Equatable {
     /// names ("Newsletter", "Quarantine"); 18 with the account.
     func folder(withAccount: Bool) -> CGFloat { (withAccount ? 18 : 10) * char }
 
+    /// Paperclip and flag: one icon each, a character and a half.
+    var icon: CGFloat { (char * 1.5).rounded(.up) }
+
     /// Width left to the subject (and tags) in a row with a folder column
     /// of `folderWidth`: the list minus the fixed columns (mark bar, unread
-    /// dot, date, sender, folder, count, flag), the 7 gaps between the 8
-    /// columns and the trailing padding.
+    /// dot, date, sender, paperclip, folder, count, flag), the 8 gaps
+    /// between the 9 columns and the trailing padding.
     func subjectWidth(folderWidth: CGFloat) -> CGFloat {
-        width - 2 - char - date - sender - folderWidth - count - char - 7 * char - 6
+        width - 2 - char - date - sender - icon - folderWidth - count - icon - 8 * char - 6
     }
 
     /// The account fits after the folder ("Inbox · perso") only if the
@@ -520,9 +523,13 @@ struct RowLayout: Equatable {
     }
 }
 
-/// One list row: mark bar, unread dot, date, sender, subject and tags,
-/// (in "Everything") folder, count, flag. Every column but the subject has
-/// a fixed width.
+/// One list row: mark bar, unread dot, date, sender, paperclip, subject and
+/// tags, (in "Everything") folder, count, flag. Every column but the
+/// subject has a fixed width.
+///
+/// The paperclip says the conversation has attachments, without a number,
+/// and sits before the subject: next to the message count at the end of
+/// the row, "📎 3" would read as three attachments (`ui.md`, "Liste").
 private struct GeekThreadRow: View {
     let thread: ThreadSummary
     let cursor: Bool
@@ -540,6 +547,17 @@ private struct GeekThreadRow: View {
             Text(thread.participants.last ?? "")
                 .fontWeight(thread.unreadCount > 0 ? .bold : .regular)
                 .frame(width: layout.sender, alignment: .leading)
+            Group {
+                if thread.hasAttachments {
+                    Image(systemName: "paperclip")
+                        .font(.system(size: scaled(11), weight: .medium))
+                        .foregroundStyle(Palette.muted)
+                        .accessibilityLabel(L("with attachments"))
+                } else {
+                    Color.clear
+                }
+            }
+            .frame(width: layout.icon)
             // The subject takes the remaining width; tags follow it and are
             // cut first.
             HStack(spacing: layout.char) {
@@ -558,7 +576,19 @@ private struct GeekThreadRow: View {
             }
             Text(thread.messageCount > 1 ? "\(thread.messageCount)" : "").foregroundStyle(Palette.muted)
                 .frame(width: layout.count, alignment: .trailing)
-            Text(thread.isFlagged ? "*" : " ").foregroundStyle(Palette.unread).frame(width: layout.char)
+            // The flag: an icon in its own colour, apart from the unread
+            // dot's, at the end of the row.
+            Group {
+                if thread.isFlagged {
+                    Image(systemName: "flag.fill")
+                        .font(.system(size: scaled(11), weight: .semibold))
+                        .foregroundStyle(Palette.flag)
+                        .accessibilityLabel(L("flagged"))
+                } else {
+                    Color.clear
+                }
+            }
+            .frame(width: layout.icon)
         }
         .font(.geek(RowLayout.fontSize, weight: .regular))
         .lineLimit(1)

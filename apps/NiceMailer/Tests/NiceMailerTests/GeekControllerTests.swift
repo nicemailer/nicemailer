@@ -1017,6 +1017,23 @@ struct GeekControllerTests {
         #expect(await eventually { model.flash?.contains("3") == true })
     }
 
+    @Test func commandAMarksEveryMailOfTheList() {
+        press("cmd-a")
+        #expect(model.marked == Set(model.threads.map(\.id)) && model.marked.count == 8)
+        // The status bar shows the count already: no message on top.
+        #expect(model.flash == nil)
+        // Escape unmarks, as after J / K.
+        press("esc")
+        #expect(model.marked.isEmpty)
+        // Not with a panel open: ⌘A is left to the rest of the app.
+        press("?")
+        let event = NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: .command, timestamp: 0, windowNumber: 0, context: nil,
+            characters: "a", charactersIgnoringModifiers: "a", isARepeat: false, keyCode: 0)!
+        #expect(!controller.handle(event))
+        #expect(model.marked.isEmpty)
+    }
+
     @Test func ctrlKAndCtrlJStepThroughTheConversation() async {
         // A single mail: nowhere to go.
         press("ctrl-k")

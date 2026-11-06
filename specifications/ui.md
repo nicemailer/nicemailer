@@ -36,6 +36,13 @@ La fenêtre principale permet de lister les mails en deux colonnes :
 
 Lors de l'ouverture d'une fenêtre, le premier mail est systématiquement sélectionné dans la liste, de sorte que la partie de droite affiche quelque chose. 
 
+### Liste
+
+- Chaque ligne : le point des non lus, la date, l'expéditeur, un trombone s'il y a des pièces jointes, le sujet et ses tags, (dans Everything) le dossier, le nombre de messages de la conversation, le drapeau.
+- Le trombone est seul, sans chiffre, et placé avant le sujet : à côté du nombre de messages en fin de ligne, « 📎 3 » se lirait comme trois pièces jointes.
+- Le drapeau est une icône orange en fin de ligne, couleur propre, distincte du point jaune des non lus.
+- ⌘A marque tous les mails de la liste telle qu'affichée (les lignes chargées jusqu'ici), pour une action groupée ; la barre de statut dit combien ; Échap les démarque. Seulement sur l'écran des mails, sans panneau ouvert.
+
 ### Affichage d'une conversation
 
 L'affichage est simplifié au maximum : chaque message montre ce qu'il apporte. Le noyau découpe chaque message et l'app n'affiche que le résultat (détail : `docs/thread-display.md`).

@@ -6,7 +6,7 @@ Switch themes with the **Theme** menu (Classic, Design, Geek). Design does not e
 
 ## Layout
 
-- **Mail list** on the left (about a third of the window; drag the separator to resize), **reading pane** on the right.
+- **Mail list** on the left (about a third of the window; drag the separator to resize), **reading pane** on the right. Each row: the unread dot, the date, the sender, a **paperclip** when the conversation has attachments, the subject and its tags, (in Everything) the folder, the number of messages, the **flag**. The paperclip has no number and comes before the subject: next to the message count at the end of the row, "📎 3" would read as three attachments. The flag is an orange icon at the end of the row, a colour of its own, apart from the unread dot's (`GeekThreadRow`, `RowLayout`: fixed icon columns, so the rows line up). ⌘A marks every mail of the list as shown (the rows loaded so far), for a grouped action; the status bar says how many, Escape unmarks. Only on the mail screen, without a panel open.
 - `v1` shows the list only: Return, or a double-click on a row, reads the mail in the whole window and marks it read at once, `j` / `k` go on to the next / previous mail, and Escape goes back to the list. `v2` shows the list and the mail, `v3` adds the folders on the left, in a single block titled with the current view: **all** or the account's name.
 
 ## Accounts and the unified view "all"

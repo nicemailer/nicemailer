@@ -76,6 +76,13 @@ key ;
 key a
 expect selected_subject = La lettre de novembre
 expect body_format = text
+# The list: a paperclip before the subject of a mail with attachments (no
+# number, apart from the message count), the flag in orange at the end.
+key *
+expect selected_flagged = true
+snap list-icons
+key *
+expect selected_flagged = false
 # The HTML-only newsletter converted to text by the core keeps its blocks
 # apart (title, then paragraph).
 expect reader_text ~ Les nouveautés du mois
