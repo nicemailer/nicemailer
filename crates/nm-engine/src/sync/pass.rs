@@ -216,10 +216,17 @@ pub(crate) async fn run(s: &mut Session, ctx: &mut Ctx<'_>, full: bool) -> Resul
     // the mailbox a session has selected with what that session already
     // knows, not with its current state (Dovecot does: measured).
     let selected = s.selected().map(|(m, _)| m.name.clone());
+    // The initial import archives old Inbox mail on the server first: the
+    // Inbox waits, so that each mail is fetched once, in its final folder
+    // (`import-initial.md`, section 6).
+    let archiving = read(ctx.host, |st| st.pending_initial_archive(account_id))?;
     let changed: Vec<SyncFolder> = folders
         .into_iter()
         .filter(|f| {
             let flags_compare = mode == Mode::None && (full || f.role == "inbox");
+            if archiving && f.role == "inbox" {
+                return false;
+            }
             if selected.as_deref() == Some(f.path.as_str()) {
                 return true;
             }
@@ -289,6 +296,9 @@ pub(crate) async fn run(s: &mut Session, ctx: &mut Ctx<'_>, full: bool) -> Resul
                 authserv = Some(id);
             }
         }
+        // Addresses met by a first synchronization were in the mailbox
+        // before NiceMailer (`import-initial.md`, section 7).
+        ctx.inserter.set_imported_from(if w.announce { None } else { Some("imap_initial") });
         let rc = Reception {
             role: &w.folder.role,
             announce: w.announce,

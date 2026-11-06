@@ -135,6 +135,13 @@ impl Inserter {
         Inserter { source, imported_from, addresses: HashMap::new(), pending: HashMap::new(), threads: BTreeSet::new() }
     }
 
+    /// Changes the `imported_from` of the addresses created from now on:
+    /// `imap_initial` while a folder is synchronized for the first time
+    /// (its mail was there before NiceMailer), `None` after.
+    pub fn set_imported_from(&mut self, v: Option<&'static str>) {
+        self.imported_from = v;
+    }
+
     /// Inserts a message and returns its id. With `body`, the message is
     /// complete at once (both steps); without, its body is to come
     /// ([`Inserter::complete`]).

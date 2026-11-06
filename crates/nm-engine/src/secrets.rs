@@ -75,6 +75,9 @@ pub trait Secrets: Send + Sync {
     fn imap(&self, key: &str) -> Result<Option<Credential>, String>;
     /// Stores (or replaces) the IMAP secret of account `key`.
     fn set_imap(&self, key: &str, credential: &Credential) -> Result<(), String>;
+    /// Deletes the IMAP secret of account `key` (`account remove`,
+    /// `account rename`); nothing stored is not an error.
+    fn remove_imap(&self, key: &str) -> Result<(), String>;
 }
 
 /// Why the core will not authenticate an account.
@@ -152,6 +155,11 @@ impl Secrets for MemorySecrets {
 
     fn set_imap(&self, key: &str, credential: &Credential) -> Result<(), String> {
         self.0.lock().unwrap().insert(key.to_string(), credential.clone());
+        Ok(())
+    }
+
+    fn remove_imap(&self, key: &str) -> Result<(), String> {
+        self.0.lock().unwrap().remove(key);
         Ok(())
     }
 }

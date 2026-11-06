@@ -24,7 +24,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// `#[serde(rename_all = "snake_case")]` makes `FolderRole::Inbox` appear as
 /// `"inbox"` in JSON instead of `"Inbox"`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FolderRole {
     Inbox,

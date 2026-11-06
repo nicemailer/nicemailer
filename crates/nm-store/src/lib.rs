@@ -55,6 +55,7 @@ pub mod remote_images;
 pub mod screening;
 pub mod unsubscribe;
 pub mod seed;
+pub mod setup;
 pub mod spool;
 pub mod sync;
 

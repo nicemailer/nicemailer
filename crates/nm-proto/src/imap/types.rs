@@ -484,7 +484,13 @@ pub enum SearchKey {
     /// A header containing a value (`HEADER Message-ID <x@y>`).
     Header(String, String),
     Unseen,
+    Seen,
+    Flagged,
     Deleted,
+    /// Arrived before this day (internal date), the day excluded.
+    Before { year: i32, month: u32, day: u32 },
+    /// The opposite.
+    Not(Box<SearchKey>),
     /// Both criteria.
     And(Box<SearchKey>, Box<SearchKey>),
 }

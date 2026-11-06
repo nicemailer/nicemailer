@@ -108,3 +108,13 @@ fn a_locked_keychain_refuses_without_a_dialog() {
     // while the keychain is locked.
     assert_eq!(kc.imap_binding("perso").unwrap().unwrap().host, "imap.example.com");
 }
+
+#[test]
+fn a_removed_password_is_gone_and_removing_nothing_is_fine() {
+    let (_dir, path) = throwaway();
+    let kc = keychain(&path);
+    kc.set_imap("perso", &credential("imap.example.com", "pw")).unwrap();
+    kc.remove_imap("perso").unwrap();
+    assert!(kc.imap_binding("perso").unwrap().is_none());
+    kc.remove_imap("perso").unwrap();
+}

@@ -144,6 +144,14 @@ fn describe(e: Error) -> String {
 }
 
 impl Secrets for Keychain {
+    fn remove_imap(&self, key: &str) -> Result<(), String> {
+        match self.search(key).delete() {
+            Ok(()) => Ok(()),
+            Err(e) if e.code() == NOT_FOUND => Ok(()),
+            Err(e) => Err(describe(e)),
+        }
+    }
+
     fn imap_binding(&self, key: &str) -> Result<Option<Binding>, String> {
         self.find(key, false)?.map(|a| binding_of(&a)).transpose()
     }

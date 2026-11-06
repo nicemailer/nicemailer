@@ -58,7 +58,7 @@ The core keeps the `account` table in line with the keys of the file (`nm-store`
 | A disabled key that comes back | The same account, same id, enabled again, with all its mail (`enable`) |
 | A key equal to the name of an archive account | Ignored, with a warning: rename one of the two |
 
-Disabling instead of deleting is the rule of the specification: going back to an older version of the file in Git, or taking the file of another Mac, must not erase gigabytes of cached mail. Renaming a key by hand therefore creates a new account and disables the old one; `nicemailer account rename` will do it while keeping the data (not implemented yet).
+Disabling instead of deleting is the rule of the specification: going back to an older version of the file in Git, or taking the file of another Mac, must not erase gigabytes of cached mail. Renaming a key by hand therefore creates a new account and disables the old one; `nicemailer account rename` does it while keeping the data, and `nicemailer account add` writes a new account into the file without touching the rest ([accounts.md](accounts.md)).
 
 Archive accounts, created by an mbox import ([import-mbox.md](import-mbox.md)), are never in the file and never disabled.
 

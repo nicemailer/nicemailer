@@ -15,6 +15,8 @@
 //! which guarantees they agree on the format. The Swift app has its own
 //! mirror of these types in `Models.swift`.
 
+use std::collections::BTreeMap;
+
 use nm_core::{AuthPolicy, FolderCategory, FolderRole, ScreeningTarget};
 use serde::{Deserialize, Serialize};
 // `Value` is serde_json's type for "any JSON value" (object, array, string...).
@@ -102,6 +104,21 @@ pub mod method {
     /// Compares, folder by folder, the server and the database: UIDs,
     /// flags, raw files of complete messages.
     pub const SYNC_VERIFY: &str = "sync_verify";
+    /// Tries the server of an account not created yet: capabilities,
+    /// folders with the proposed roles, counts for the import screen
+    /// (`import-initial.md`, sections 2 and 3).
+    pub const TEST_ACCOUNT: &str = "test_account";
+    /// Exact count of the mails the initial archiving would move.
+    pub const COUNT_ARCHIVE: &str = "count_archive";
+    /// Creates an IMAP account: folders, roles, initial import, password,
+    /// `config.toml`.
+    pub const ADD_ACCOUNT: &str = "add_account";
+    /// Changes the workflow roles of the folders of an account.
+    pub const SET_FOLDER_ROLES: &str = "set_folder_roles";
+    /// Renames the key of an account, keeping its data.
+    pub const RENAME_ACCOUNT: &str = "rename_account";
+    /// Deletes an account, its data and its password.
+    pub const REMOVE_ACCOUNT: &str = "remove_account";
 }
 
 /// Stable error codes. Negative codes are the ones defined by the JSON-RPC
@@ -1333,6 +1350,11 @@ pub struct AccountSync {
     pub bodies_missing: u64,
     /// Changes made in NiceMailer not sent to the server yet (spool).
     pub actions_pending: u64,
+    /// The server-side archiving of the initial import, if there was one:
+    /// `queued`, `running`, `done`, or `reverted` (failed for good), with
+    /// its error (`import-initial.md`, section 6).
+    pub initial_archive: Option<String>,
+    pub initial_archive_error: Option<String>,
     /// The `authserv-id` whose `Authentication-Results` are trusted: the
     /// file's, else the one detected; `None`: every verdict is `unknown`
     /// (`authentification-expediteur.md`).
@@ -1393,4 +1415,160 @@ pub struct FolderVerify {
     pub bodies_missing: u64,
     /// Raw files missing or corrupt, as `uid: problem`.
     pub raw_problems: Vec<String>,
+}
+
+// ---------------------------------------------------------------------------
+// Creating an account (`plan-imap.md`, phase 7)
+// ---------------------------------------------------------------------------
+
+/// The server of an account, as `config.toml` will say it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ImapParams {
+    pub host: String,
+    #[serde(default = "default_imap_port")]
+    pub port: u16,
+    /// `tls` (default), `starttls`, or `none` (loopback only).
+    #[serde(default = "default_security")]
+    pub security: String,
+    /// Default: the email address.
+    #[serde(default)]
+    pub username: Option<String>,
+    /// An authority to trust besides the system's (self-hosted server).
+    #[serde(default)]
+    pub ca_file: Option<String>,
+}
+
+fn default_imap_port() -> u16 {
+    993
+}
+
+fn default_security() -> String {
+    "tls".into()
+}
+
+/// Params of `test_account`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TestAccountParams {
+    pub email: String,
+    pub imap: ImapParams,
+    pub password: String,
+    /// Other addresses of the account (identities), excluded from the
+    /// correspondents.
+    #[serde(default)]
+    pub identities: Vec<String>,
+}
+
+/// What `test_account` found: the probe of the server, and the counts of
+/// the import screen.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TestAccountReport {
+    pub probe: ProbeReport,
+    pub inbox_messages: u64,
+    pub inbox_unseen: u64,
+    /// The boundary of the screening: mails at or above it are screened.
+    /// Given back to `add_account`, so that a mail arriving while the user
+    /// fills the import screen is screened (`import-initial.md`, section 5).
+    pub inbox_uidnext: u32,
+    /// Distinct recipients of the mails of Sent, the account's own
+    /// addresses excluded.
+    pub correspondents: u64,
+    /// The Inbox is above `import.threshold_total` or
+    /// `import.threshold_unseen`: the archiving is offered.
+    pub offer_archive: bool,
+    /// Defaults of the screen, `YYYY-MM-DD`: today for read mail, 30 days
+    /// ago (`import.unseen_default_age_days`) for unread mail.
+    pub read_before: String,
+    pub unread_before: String,
+    /// What the defaults would archive.
+    pub archive_read: u64,
+    pub archive_unread: u64,
+}
+
+/// Params of `count_archive`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CountArchiveParams {
+    pub email: String,
+    pub imap: ImapParams,
+    pub password: String,
+    pub uidnext: u32,
+    #[serde(default)]
+    pub read_before: Option<String>,
+    #[serde(default)]
+    pub unread_before: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ArchiveCount {
+    pub read: u64,
+    pub unread: u64,
+}
+
+/// Params of `add_account`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AddAccountParams {
+    /// The key of `[accounts.<key>]`.
+    pub key: String,
+    pub email: String,
+    #[serde(default)]
+    pub display_name: Option<String>,
+    pub imap: ImapParams,
+    pub password: String,
+    /// The folder of each workflow role: a folder of the server, or a new
+    /// one to create. Roles left out get the proposal (special-use, then
+    /// names); a proposed role without folder gets one created under its
+    /// English name.
+    #[serde(default)]
+    pub roles: BTreeMap<FolderRole, String>,
+    /// The boundary read by `test_account`; omitted: read again now.
+    #[serde(default)]
+    pub uidnext: Option<u32>,
+    /// Archive read mails before this day, unread mails before that one
+    /// (`YYYY-MM-DD`); none: no archiving.
+    #[serde(default)]
+    pub archive_read_before: Option<String>,
+    #[serde(default)]
+    pub archive_unread_before: Option<String>,
+    /// The people written to get the decision `inbox` (default yes).
+    #[serde(default = "yes")]
+    pub correspondents: bool,
+}
+
+fn yes() -> bool {
+    true
+}
+
+/// What `add_account` did.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AddAccountResult {
+    pub account_id: i64,
+    /// Folders created on the server.
+    pub created: Vec<String>,
+    /// Role of each folder, as set.
+    pub roles: BTreeMap<FolderRole, String>,
+    pub correspondents: u64,
+    /// The server-side archiving is queued; `sync status` follows it.
+    pub archive_queued: bool,
+}
+
+/// Params of `set_folder_roles`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SetFolderRolesParams {
+    pub account: String,
+    pub roles: BTreeMap<FolderRole, String>,
+    /// Create on the server the folders named that do not exist.
+    #[serde(default)]
+    pub create_missing: bool,
+}
+
+/// Params of `rename_account`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RenameAccountParams {
+    pub from: String,
+    pub to: String,
+}
+
+/// Params of `remove_account`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RemoveAccountParams {
+    pub account: String,
 }

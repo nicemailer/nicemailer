@@ -5,6 +5,7 @@ User and developer documentation, in English. It is written together with the co
 | Page | Content |
 | --- | --- |
 | [import-mbox.md](import-mbox.md) | Importing a whole mailbox from an mbox file into an archive account |
+| [accounts.md](accounts.md) | Creating an IMAP account with its initial import (archiving on the server, correspondents), folder roles, renaming and removing an account, how `config.toml` is written |
 | [sync.md](sync.md) | The synchronization of the IMAP accounts, server to database: passes, moves made elsewhere, IDLE, failures, `nicemailer sync status | now | verify` |
 | [screening.md](screening.md) | New mail sorted at reception: authentication verdict (`Authentication-Results`, Public Suffix List), routing, conversations back from Todo/Waiting, mail found in Sent |
 | [spool.md](spool.md) | The changes made in NiceMailer sent to the server: actions, merging, grouping, retries, refusals undone, crash recovery, two Macs on one mailbox |

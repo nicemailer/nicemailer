@@ -39,6 +39,7 @@
 //! lines are never interleaved on the socket.
 
 mod events;
+mod setup;
 mod sync;
 
 use std::fs::{self, File};
@@ -891,6 +892,32 @@ async fn dispatch(core: &Arc<Core>, session: &mut Session, req: Request) -> Resu
         method::SET_PASSWORD => {
             let p: SetPasswordParams = params(req.params)?;
             to_value(set_password(core, p, source).await?)
+        }
+        method::TEST_ACCOUNT => {
+            let p: nm_api::TestAccountParams = params(req.params)?;
+            to_value(setup::test_account(core, p, source).await?)
+        }
+        method::COUNT_ARCHIVE => {
+            let p: nm_api::CountArchiveParams = params(req.params)?;
+            to_value(setup::count_archive(p, source).await?)
+        }
+        method::ADD_ACCOUNT => {
+            let p: nm_api::AddAccountParams = params(req.params)?;
+            to_value(setup::add_account(core, p, source).await?)
+        }
+        method::SET_FOLDER_ROLES => {
+            let p: nm_api::SetFolderRolesParams = params(req.params)?;
+            to_value(setup::set_folder_roles(core, p, source).await?)
+        }
+        method::RENAME_ACCOUNT => {
+            let p: nm_api::RenameAccountParams = params(req.params)?;
+            setup::rename_account(core, p, source).await?;
+            to_value(CommandResult { changed: 0 })
+        }
+        method::REMOVE_ACCOUNT => {
+            let p: nm_api::RemoveAccountParams = params(req.params)?;
+            setup::remove_account(core, p, source).await?;
+            to_value(CommandResult { changed: 0 })
         }
         method::SYNC_STATUS => {
             let p: nm_api::SyncAccountParams = params(req.params)?;

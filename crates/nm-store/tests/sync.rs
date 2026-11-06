@@ -217,7 +217,12 @@ fn arrivals_advance_uidnext_and_announce_only_after_the_first_sync() {
 #[test]
 fn a_new_uidvalidity_purges_the_folder() {
     let (mut s, _, inbox, _, _) = with_one_mail();
+    // A screening boundary set (account created): a new UIDVALIDITY during
+    // the import makes everything there count as imported, the pass sets
+    // the boundary again to the new UIDNEXT (`import-initial.md`, section 5).
+    s.set_screening_start(inbox, 5).unwrap();
     let (n, changes) = s.purge_folder(inbox, 77).unwrap();
+    assert_eq!(count(&s, "SELECT uid_screening_start IS NULL FROM folder WHERE path = 'INBOX'"), 1);
     assert_eq!(n, 1);
     assert!(changes.folders.contains(&inbox));
     assert_eq!(count(&s, "SELECT count(*) FROM message") + count(&s, "SELECT count(*) FROM thread"), 0);

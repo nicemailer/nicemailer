@@ -19,10 +19,12 @@
 //! The IMAP client itself is in `nm-proto`.
 
 pub mod config;
+pub mod config_write;
 pub mod folders;
 pub mod keychain;
 pub mod probe;
 pub mod secrets;
+pub mod setup;
 pub mod sync;
 pub mod watch;
 

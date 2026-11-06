@@ -146,6 +146,8 @@ Limite assumée, comme pour la confirmation des envois : un programme qui a les 
 | `nicemailer account password <clé>` | Enregistre le mot de passe IMAP du compte dans le trousseau, pour le serveur que nomme le fichier ; le refaire confirme un nouveau serveur |
 | `nicemailer account rename <ancienne> <nouvelle>` | Renomme la clé d'un compte en gardant ses données |
 | `nicemailer account remove <clé>` | Supprime un compte, ses données et ses secrets, après confirmation |
+| `nicemailer account add <clé> --email … --host …` | Crée un compte : connexion d'essai, rôles des dossiers, import initial, mot de passe, table du fichier (`import-initial.md`) |
+| `nicemailer account roles <clé> rôle=dossier…` | Change le rôle de dossiers du compte, en créant au besoin ceux qui manquent |
 
 ## 10. Traçabilité
 

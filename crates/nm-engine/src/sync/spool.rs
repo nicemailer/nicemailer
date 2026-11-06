@@ -64,6 +64,7 @@ pub(crate) async fn run(
 ) -> Result<SpoolReport, PassError> {
     let mut report = SpoolReport::default();
     write(host, |st| Ok((st.spool_purge()?, ChangeSet::default())))?;
+    initial_archive(s, host, account_id, &mut report).await?;
     loop {
         let actions = write(host, |st| Ok((st.spool_claim(account_id, ROUND)?, ChangeSet::default())))?;
         if actions.is_empty() {
@@ -334,6 +335,74 @@ pub(crate) fn merge(into: &mut ChangeSet, from: ChangeSet) {
 fn crash_point() {
     if std::env::var_os("NICEMAILER_TEST_CRASH_AFTER_MOVE").is_some() {
         eprintln!("spool: NICEMAILER_TEST_CRASH_AFTER_MOVE: stopping right after the MOVE");
+        std::process::abort();
+    }
+}
+
+/// The archiving of the initial import (`import-initial.md`, section 6):
+/// the Inbox's old mail moved to Archive on the server, by batches of
+/// `import.batch_size`, before the Inbox is synchronized. Replayable: after
+/// an interruption, the search no longer finds the mails moved already.
+async fn initial_archive(s: &mut Session, host: &dyn SyncHost, account_id: i64, report: &mut SpoolReport) -> Result<(), PassError> {
+    let actions = write(host, |st| Ok((st.spool_claim_account(account_id)?, ChangeSet::default())))?;
+    for a in actions {
+        let c = &a.criteria;
+        let result: Result<u64, ImapError> = async {
+            let (read, unread) =
+                crate::setup::archive_uids(s, c.boundary, c.read_before.as_deref(), c.unread_before.as_deref()).await?;
+            let mut uids: Vec<u32> = read.into_iter().chain(unread).collect();
+            uids.sort_unstable();
+            uids.dedup();
+            s.select(&MailboxName::new(&c.from_path), None).await?;
+            let mut moved = 0u64;
+            for chunk in uids.chunks(c.batch_size as usize) {
+                s.uid_move(&Uids::Set(UidSet::from_uids(chunk.iter().copied())), &MailboxName::new(&c.to_path)).await?;
+                moved += chunk.len() as u64;
+                archive_crash_point();
+            }
+            Ok(moved)
+        }
+        .await;
+        match result {
+            Ok(moved) => {
+                write(host, |st| Ok(((), {
+                    st.initial_archive_done(a.id, moved)?;
+                    ChangeSet::default()
+                })))?;
+                eprintln!("spool: initial archiving: {moved} mails moved to {}", c.to_path);
+                report.done += 1;
+            }
+            Err(e) if e.is_fatal() => {
+                let msg = e.to_string();
+                write(host, |st| Ok(((), {
+                    st.initial_archive_retry(a.id, &msg)?;
+                    ChangeSet::default()
+                })))?;
+                report.retried += 1;
+                return Err(e.into());
+            }
+            Err(e) => {
+                let o = refusal(e)?;
+                write(host, |st| Ok(((), {
+                    match &o {
+                        Outcome::Revert(r) => st.initial_archive_failed(a.id, r)?,
+                        Outcome::Retry(r) => st.initial_archive_retry(a.id, r)?,
+                        Outcome::Done(_) => {}
+                    }
+                    ChangeSet::default()
+                })))?;
+                report.reverted += 1;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Tests only: `NICEMAILER_TEST_CRASH_DURING_ARCHIVE` makes the core die
+/// after the first batch of the initial archiving, as a crash would.
+fn archive_crash_point() {
+    if std::env::var_os("NICEMAILER_TEST_CRASH_DURING_ARCHIVE").is_some() {
+        eprintln!("spool: NICEMAILER_TEST_CRASH_DURING_ARCHIVE: stopping after a batch");
         std::process::abort();
     }
 }

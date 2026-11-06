@@ -108,6 +108,10 @@ pub async fn status(core: &Arc<Core>, p: SyncAccountParams) -> Result<SyncStatus
                     .collect();
                 a.bodies_missing = a.folders.iter().map(|f| f.bodies_missing).sum();
                 a.actions_pending = s.spool_pending(a.account_id)?;
+                if let Some((state, error)) = s.initial_archive_state(a.account_id)? {
+                    a.initial_archive = Some(state);
+                    a.initial_archive_error = error;
+                }
                 a.authserv_id = match configured.get(&a.key) {
                     Some(id) => Some(id.clone()),
                     None => s.account_authserv_id(a.account_id)?,

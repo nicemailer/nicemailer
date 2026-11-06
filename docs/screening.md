@@ -23,7 +23,7 @@ The verdict is computed once, at reception, from the headers alone: it does not 
 
 ## Routing
 
-Only the mails of the Inbox at or above `folder.uid_screening_start` are screened: those below were there before NiceMailer (`import-initial.md`, section 5). Until the account creation screen (phase 7), the synchronization sets this boundary itself, to the `UIDNEXT` of the Inbox at its first synchronization, and again after its `UIDVALIDITY` changes. While it is NULL, the account is not screened.
+Only the mails of the Inbox at or above `folder.uid_screening_start` are screened: those below were there before NiceMailer (`import-initial.md`, section 5). `add_account` sets it to the `UIDNEXT` read by the test connection ([accounts.md](accounts.md)); for an account declared by hand in `config.toml`, the synchronization sets it to the `UIDNEXT` of the Inbox at its first synchronization. After the Inbox's `UIDVALIDITY` changes, it is set again to the new `UIDNEXT`: what is there counts as imported. While it is NULL, the account is not screened.
 
 For a mail from address `A`, of domain `D`:
 
@@ -40,7 +40,7 @@ Then `A.auth_seen` becomes 1 if the verdict is `pass`, and never goes back to 0.
 - A suspect mail has `message.auth_suspect = 1`: the app warns of a probable spoofing.
 - Each screened mail has a `screen` row in `audit_log` (source `core`): target folder, rule (`address`, `domain`, `conversation`, `self`, `no_sender`, `unknown_sender`), verdict, suspect.
 - A mail screened out of the Inbox moves like any command, through the spool ([spool.md](spool.md)): the server moves it too, at once.
-- A target folder the account does not have (no Quarantine or Newsletter on the server yet; phase 7 will create them): the mail stays in the Inbox, and the `screen` row says `folder_missing`.
+- A target folder the account does not have (an account declared by hand on a server without Quarantine or Newsletter; `add_account` creates them): the mail stays in the Inbox, and the `screen` row says `folder_missing`.
 
 `MessageArrived` gives the folder the mail ends in.
 

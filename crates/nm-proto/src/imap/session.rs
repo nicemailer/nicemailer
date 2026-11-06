@@ -1270,6 +1270,7 @@ fn search_needs_utf8(key: &SearchKey) -> bool {
     match key {
         SearchKey::Header(n, v) => !n.is_ascii() || !v.is_ascii(),
         SearchKey::And(a, b) => search_needs_utf8(a) || search_needs_utf8(b),
+        SearchKey::Not(k) => search_needs_utf8(k),
         _ => false,
     }
 }
@@ -1279,7 +1280,14 @@ fn push_key(cmd: Command, key: &SearchKey) -> Command {
     match key {
         SearchKey::All => cmd.raw("ALL"),
         SearchKey::Unseen => cmd.raw("UNSEEN"),
+        SearchKey::Seen => cmd.raw("SEEN"),
+        SearchKey::Flagged => cmd.raw("FLAGGED"),
         SearchKey::Deleted => cmd.raw("DELETED"),
+        SearchKey::Before { year, month, day } => {
+            let m = MONTHS[((*month).clamp(1, 12) - 1) as usize];
+            cmd.raw(&format!("BEFORE {day}-{m}-{year}"))
+        }
+        SearchKey::Not(k) => push_key(cmd.raw("NOT"), k),
         // An empty set matches nothing; `UID 0` is not valid, and `NOT ALL`
         // says it plainly.
         SearchKey::Uid(s) if s.is_empty() => cmd.raw("NOT ALL"),
@@ -1366,6 +1374,11 @@ mod tests {
             c(&SearchKey::Header("Message-ID".into(), "<a b@x>".into())),
             "UID SEARCH HEADER Message-ID \"<a b@x>\""
         );
+        let archive = SearchKey::And(
+            Box::new(SearchKey::Not(Box::new(SearchKey::Flagged))),
+            Box::new(SearchKey::And(Box::new(SearchKey::Seen), Box::new(SearchKey::Before { year: 2026, month: 10, day: 6 }))),
+        );
+        assert_eq!(c(&archive), "UID SEARCH NOT FLAGGED SEEN BEFORE 6-Oct-2026");
         let and = SearchKey::And(Box::new(SearchKey::Unseen), Box::new(SearchKey::Deleted));
         assert_eq!(c(&and), "UID SEARCH UNSEEN DELETED");
         assert!(search_needs_utf8(&SearchKey::Header("Subject".into(), "été".into())));

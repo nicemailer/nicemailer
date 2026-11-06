@@ -185,6 +185,12 @@ fn print_sync_status(st: &nm_api::SyncStatus) {
             println!("  error: {e}");
         }
         println!("  changes to send to the server: {}", a.actions_pending);
+        if let Some(state) = &a.initial_archive {
+            match &a.initial_archive_error {
+                Some(e) => println!("  initial archiving: {state} ({e})"),
+                None => println!("  initial archiving: {state}"),
+            }
+        }
         match &a.authserv_id {
             Some(id) => println!("  trusted Authentication-Results: {id}"),
             None => println!("  trusted Authentication-Results: none found yet (every verdict is unknown)"),
@@ -260,6 +266,73 @@ enum AccountAction {
     Password {
         /// Account key, as in [accounts.<key>].
         key: String,
+    },
+    /// Create an IMAP account: try the server, show its folders and the
+    /// roles proposed, then create the missing folders, archive the old
+    /// mail of the Inbox on the server if asked, accept the people you
+    /// wrote to, save the password and add the account to config.toml.
+    /// The password is asked without echo, or read from the standard input.
+    Add {
+        /// Key of the account, as in [accounts.<key>].
+        key: String,
+        #[arg(long)]
+        email: String,
+        #[arg(long)]
+        host: String,
+        #[arg(long, default_value_t = 993)]
+        port: u16,
+        /// tls, starttls, or none (loopback only).
+        #[arg(long, default_value = "tls")]
+        security: String,
+        /// Default: the email address.
+        #[arg(long)]
+        username: Option<String>,
+        /// An authority to trust besides the system's (self-hosted server).
+        #[arg(long)]
+        ca_file: Option<PathBuf>,
+        #[arg(long)]
+        display_name: Option<String>,
+        /// The folder of a role, e.g. `--role sent="Sent Items"`; repeat it.
+        /// Without: the proposal, else a new folder.
+        #[arg(long = "role", value_name = "ROLE=FOLDER")]
+        roles: Vec<String>,
+        /// Archive the read mails of the Inbox received before this day
+        /// (YYYY-MM-DD). Default when the Inbox is large: all of them.
+        #[arg(long)]
+        archive_read_before: Option<String>,
+        /// Archive the unread mails received before this day. Default when
+        /// the Inbox is large: those older than 30 days.
+        #[arg(long)]
+        archive_unread_before: Option<String>,
+        /// Archive nothing: the Inbox stays as it is.
+        #[arg(long)]
+        no_archive: bool,
+        /// Do not accept the people you wrote to.
+        #[arg(long)]
+        no_correspondents: bool,
+        /// Do not ask for confirmation.
+        #[arg(long)]
+        yes: bool,
+    },
+    /// Change the workflow role of folders, e.g. `todo=Todo archive=Archives`.
+    Roles {
+        key: String,
+        #[arg(required = true, value_name = "ROLE=FOLDER")]
+        roles: Vec<String>,
+        /// Create on the server the folders named that do not exist.
+        #[arg(long)]
+        create_missing: bool,
+    },
+    /// Rename the key of an account in config.toml, keeping its mail, its
+    /// history and its password.
+    Rename { from: String, to: String },
+    /// Delete an account: its mail in NiceMailer, its password, its table
+    /// of config.toml. The mail on the server is not touched.
+    Remove {
+        key: String,
+        /// Do not ask to type the key again.
+        #[arg(long)]
+        yes: bool,
     },
     /// Change the display order (account picker, sidebar): the accounts
     /// named come first, in this order, the others after them.
@@ -419,6 +492,115 @@ fn main() -> anyhow::Result<()> {
             }
             Ok(())
         }
+        Command::Account {
+            action:
+                AccountAction::Add {
+                    key,
+                    email,
+                    host,
+                    port,
+                    security,
+                    username,
+                    ca_file,
+                    display_name,
+                    roles,
+                    archive_read_before,
+                    archive_unread_before,
+                    no_archive,
+                    no_correspondents,
+                    yes,
+                },
+        } => {
+            let mut client = Client::connect(&data_dir)?;
+            let roles = parse_roles(&roles)?;
+            let ca_file = ca_file.map(|p| std::path::absolute(&p).unwrap_or(p).display().to_string());
+            let imap = json!({ "host": host, "port": port, "security": security, "username": username, "ca_file": ca_file });
+            let password = read_password(&format!("IMAP password of {email}: "))?;
+            eprintln!("Trying {host}…");
+            let r: nm_api::TestAccountReport =
+                serde_json::from_value(client.call("test_account", json!({ "email": email, "imap": imap, "password": password }))?)?;
+            print_probe(&r.probe);
+            println!();
+            println!("Inbox: {} mails, {} unread.", r.inbox_messages, r.inbox_unseen);
+            let (read_before, unread_before) = if no_archive {
+                (None, None)
+            } else if archive_read_before.is_some() || archive_unread_before.is_some() {
+                (archive_read_before, archive_unread_before)
+            } else if r.offer_archive {
+                (Some(r.read_before.clone()), Some(r.unread_before.clone()))
+            } else {
+                (None, None)
+            };
+            if read_before.is_some() || unread_before.is_some() {
+                let n: nm_api::ArchiveCount = serde_json::from_value(client.call(
+                    "count_archive",
+                    json!({ "email": email, "imap": imap, "password": password, "uidnext": r.inbox_uidnext,
+                            "read_before": read_before, "unread_before": unread_before }),
+                )?)?;
+                println!(
+                    "To archive on the server: {} read mails before {}, {} unread mails before {} (flagged mails stay).",
+                    n.read,
+                    read_before.as_deref().unwrap_or("-"),
+                    n.unread,
+                    unread_before.as_deref().unwrap_or("-")
+                );
+                println!("{} mails will stay in the Inbox.", r.inbox_messages.saturating_sub(n.read + n.unread));
+            } else {
+                println!("Nothing archived: the Inbox stays as it is.");
+            }
+            if no_correspondents {
+                println!("The people you wrote to ({}) are not accepted: their next mail goes to Quarantine.", r.correspondents);
+            } else {
+                println!("The people you wrote to ({}) will go straight to the Inbox.", r.correspondents);
+            }
+            println!("The other senders go through the Quarantine with their next mail.");
+            if !yes && !confirm("Create the account? [y/N] ")? {
+                bail!("nothing created");
+            }
+            let res: nm_api::AddAccountResult = serde_json::from_value(client.call(
+                "add_account",
+                json!({ "key": key, "email": email, "display_name": display_name, "imap": imap, "password": password,
+                        "roles": roles, "uidnext": r.inbox_uidnext, "archive_read_before": read_before,
+                        "archive_unread_before": unread_before, "correspondents": !no_correspondents }),
+            )?)?;
+            if !res.created.is_empty() {
+                println!("Folders created on the server: {}", res.created.join(", "));
+            }
+            println!("Account {key} created; {} correspondents accepted.", res.correspondents);
+            println!("Follow the import with: nicemailer sync status {key}");
+            Ok(())
+        }
+        Command::Account { action: AccountAction::Roles { key, roles, create_missing } } => {
+            let mut client = Client::connect(&data_dir)?;
+            let roles = parse_roles(&roles)?;
+            let created = client.call("set_folder_roles", json!({ "account": key, "roles": roles, "create_missing": create_missing }))?;
+            for c in created.as_array().into_iter().flatten() {
+                println!("Created on the server: {}", c.as_str().unwrap_or_default());
+            }
+            println!("Roles set.");
+            Ok(())
+        }
+        Command::Account { action: AccountAction::Rename { from, to } } => {
+            let mut client = Client::connect(&data_dir)?;
+            client.call("rename_account", json!({ "from": from, "to": to }))?;
+            println!("Account {from} is now {to}.");
+            Ok(())
+        }
+        Command::Account { action: AccountAction::Remove { key, yes } } => {
+            let mut client = Client::connect(&data_dir)?;
+            if !yes {
+                eprint!("This deletes the mail of {key} in NiceMailer (not on the server) and its password. Type {key} to confirm: ");
+                std::io::stderr().flush()?;
+                let mut line = String::new();
+                std::io::stdin().read_line(&mut line)?;
+                if line.trim() != key {
+                    bail!("nothing deleted");
+                }
+            }
+            client.call("remove_account", json!({ "account": key }))?;
+            println!("Account {key} deleted.");
+            Ok(())
+        }
         Command::Account { action: AccountAction::Order { keys } } => {
             let mut client = Client::connect(&data_dir)?;
             let items = client.call("list_accounts", Value::Null)?["items"].as_array().cloned().unwrap_or_default();
@@ -519,6 +701,33 @@ fn main() -> anyhow::Result<()> {
 /// Turning echo off is done by hand with the C library (`termios`): the
 /// terminal's settings are read, the `ECHO` flag removed, and the old
 /// settings put back after the line is read, even when reading fails.
+/// `role=folder` pairs, the role a workflow role (`sent`, `todo`…).
+fn parse_roles(pairs: &[String]) -> anyhow::Result<serde_json::Map<String, Value>> {
+    let mut out = serde_json::Map::new();
+    for p in pairs {
+        let Some((role, folder)) = p.split_once('=') else { bail!("{p:?}: ROLE=FOLDER expected") };
+        let role = role.trim().to_lowercase();
+        if nm_core::FolderRole::parse(&role).is_none() {
+            bail!("{role:?} is not a workflow role (inbox, todo, waiting, archive, sent, drafts, newsletter, paperwork, quarantine, deleted, junk, banned)");
+        }
+        out.insert(role, Value::String(folder.trim().to_string()));
+    }
+    Ok(out)
+}
+
+/// Asks a yes or no question on the terminal; `false` without one.
+fn confirm(question: &str) -> anyhow::Result<bool> {
+    use std::io::IsTerminal;
+    if !std::io::stdin().is_terminal() {
+        bail!("no terminal to confirm: add --yes");
+    }
+    eprint!("{question}");
+    std::io::stderr().flush()?;
+    let mut line = String::new();
+    std::io::stdin().read_line(&mut line)?;
+    Ok(matches!(line.trim().to_lowercase().as_str(), "y" | "yes"))
+}
+
 fn read_password(prompt: &str) -> anyhow::Result<String> {
     use std::io::IsTerminal;
     let stdin = std::io::stdin();

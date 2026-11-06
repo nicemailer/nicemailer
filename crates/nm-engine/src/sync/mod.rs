@@ -295,6 +295,22 @@ impl Syncer {
         self.workers.lock().unwrap().get(key).map(|w| w.spec.clone())
     }
 
+    /// Stops the worker of `key` and waits for its threads, at most `wait`:
+    /// before its account's data is deleted, nothing may still write it.
+    pub fn stop_and_join(&self, key: &str, wait: std::time::Duration) {
+        let Some(w) = self.workers.lock().unwrap().remove(key) else { return };
+        w.control.stop();
+        let deadline = std::time::Instant::now() + wait;
+        for t in w.threads {
+            while !t.is_finished() && std::time::Instant::now() < deadline {
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            if t.is_finished() {
+                let _ = t.join();
+            }
+        }
+    }
+
     /// Stops every worker and waits for them, at most `wait` (core
     /// stopping). A transaction in progress ends; the rest stops at the
     /// next point where a worker checks its signal.

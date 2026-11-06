@@ -1,6 +1,6 @@
 # NiceMailer : plan de travail du back-end IMAP
 
-Statut : en cours. Phases 0 à 6 terminées (novembre 2026).
+Statut : en cours. Phases 0 à 7 terminées (novembre 2026).
 
 Ce document n'est pas une spécification : c'est le plan de réalisation du back-end qui communique avec les serveurs IMAP, récupère les mails, synchronise les dossiers, trie les mails entrants et importe un compte. Les règles restent dans les spécifications citées ; quand ce plan tranche une question qu'elles laissaient ouverte, la décision est reportée dans la spécification concernée au moment où la phase qui l'implémente est livrée.
 
@@ -224,13 +224,27 @@ Réalisé (novembre 2026), détail dans `docs/screening.md` :
 - Tests : `auth.rs` (6 : table de traduction, faux en-tête, autre `authserv-id`, `From` absent ou multiple, suffixes publics et exceptions, seuil de 90 %) ; `nm-store/tests/reception.rs` (10 : exemples de la section 4, règles d'adresse et de domaine, conversation connue, frontière d'UID, retour de Todo/Waiting et ses exclusions, Sent, marque retirée ailleurs) ; contre Dovecot, un scénario complet (détection, Quarantine, faux en-tête, retour de Todo marqué sur le serveur, envoi depuis le téléphone qui sort un expéditeur de Quarantine).
 - Limites : les domaines internationalisés sont comparés tels qu'écrits (pas de conversion punycode) ; question ouverte 1 de `authentification-expediteur.md` (Microsoft sans `authserv-id`) inchangée.
 
-### Phase 7 : création d'un compte et import initial
+### Phase 7 : création d'un compte et import initial — terminée
 
 - Commandes du contrat et CLI : `test_account` (connexion de test), `propose_folder_roles` (attributs d'usage spécial, sinon noms connus en plusieurs langues), `set_folder_roles` (avec création des dossiers manquants), `add_account` (écriture de `config.toml` par `toml_edit`, secret dans le Keychain), `account rename`, `account remove`.
 - Trousseau : fait en phase 1 bis ; reste la suppression de l'élément par `account remove`, et son renommage par `account rename`.
 - Import initial (`import-initial.md`) : comptage, synchronisation des en-têtes de Sent et correspondants, décompte exact par `UID SEARCH`, action `initial_archive` par lots de 1 000 UID, frontière `uid_screening_start`, UIDVALIDITY changé pendant l'import.
 
 Tests : `import-initial.md`, section 11, contre les deux Dovecot ; `configuration.md` pour l'écriture du fichier.
+
+Réalisé (novembre 2026), détail dans `docs/accounts.md` :
+
+- Contrat : `test_account` (sonde, comptage de l'Inbox et de son `UIDNEXT`, nombre de correspondants lus dans les destinataires de Sent, offre d'archivage et décompte des valeurs par défaut), `count_archive` (décompte exact par le même `UID SEARCH` que l'archivage), `add_account`, `set_folder_roles`, `rename_account`, `remove_account`. Toutes refusées aux agents (`1007`). CLI : `nicemailer account add | roles | rename | remove`.
+- Écart : pas de méthode `propose_folder_roles` distincte. La proposition est rendue par `test_account` (et `nicemailer imap probe` pour un compte existant) ; `set_folder_roles` l'applique.
+- `add_account`, dans l'ordre : dossiers manquants créés sur le serveur (nom anglais du rôle, dans l'espace de noms personnel), compte, rôles, frontière `uid_screening_start` (le `UIDNEXT` lu par `test_account`), décisions des correspondants, action `initial_archive`, mot de passe dans le trousseau, puis `config.toml` (ajout par `toml_edit`, relu avant, écrit atomiquement, validé), appliqué aussitôt.
+- Archivage côté serveur : exécuté par le spool avant toute passe ; la passe n'ouvre pas l'Inbox tant qu'il reste à faire. Recherche refaite à chaque reprise, déplacement par lots de `import.batch_size`, une ligne `initial_archive` au journal. Interruption testée en tuant le noyau après le premier lot.
+- Date par défaut des mails lus : le lendemain (`BEFORE` exclut le jour donné), pour archiver « tous » les lus comme le veut la section 3 de `import-initial.md`.
+- Adresses découvertes par la première synchronisation d'un dossier : `imported_from = 'imap_initial'`.
+- Les rôles et la frontière provisoires des phases 4 et 6 restent la règle d'un compte déclaré à la main dans `config.toml`.
+- `account rename` : base, trousseau, puis fichier (les tables gardent leur place). `account remove` : arrêt du travailleur attendu, fichier, données, trousseau ; le serveur n'est pas touché.
+- Correction en route : `toml_edit` range un commentaire de fin de fichier (ou un fichier fait seulement de commentaires) après toute table ajoutée ; il est désormais placé avant le nouveau compte.
+- Tests : `config_write.rs` (5), `setup.rs` du moteur (1), `nm-store/tests/setup.rs` (5), trousseau (1) ; contre Dovecot (`nm-daemon/tests/setup_rpc.rs`, 4) : petite Inbox laissée telle quelle et correspondants acceptés, mail arrivé pendant l'écran trié, fichier écrit avec son commentaire, prochain mail d'un expéditeur importé en Quarantine ; archivage conforme au décompte, mails marqués d'un drapeau laissés ; archivage interrompu repris sans perte ni doublon ; renommage avec données et mot de passe, suppression ; agent refusé. Le changement d'`UIDVALIDITY` pendant l'import est couvert sans serveur (la purge remet la frontière à zéro, la passe la reprend au nouveau `UIDNEXT`).
+- Hors périmètre de la phase : l'écran de création dans l'app (la CLI le remplace pour l'instant).
 
 ### Phase 8 : robustesse et volume
 
