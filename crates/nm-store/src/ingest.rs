@@ -41,7 +41,10 @@ use mail_parser::{MessageParser, MessagePart, PartKind};
 /// cell padding and alignment, `<font face size>`: `LAYOUT_ATTRIBUTES`).
 /// 10: the sender's CSS is kept, sanitized (`css.rs`): `style` attributes,
 /// `<style>` blocks, classes and ids; and its colour attributes.
-pub const PARSER_VERSION: i64 = 10;
+/// 11: the text made from the HTML leaves out the elements the mail hides;
+/// the preview text a newsletter hides for the list becomes the snippet
+/// (`html_text::convert`).
+pub const PARSER_VERSION: i64 = 11;
 
 /// Length of `message.snippet`, in characters.
 const SNIPPET_CHARS: usize = 200;
@@ -168,12 +171,22 @@ pub fn parse(raw: &[u8]) -> ParsedMessage {
     // HTML) costs nothing: the HTML part says the same thing. Without an
     // HTML part, only the entities are decoded: tags in a plain text may be
     // meant.
+    //
+    // A text made from the HTML leaves out what the mail hides; the preview
+    // text a newsletter hides for the list of mails is kept apart, for the
+    // snippet (`html_text::convert`).
+    let mut preview = None;
+    let mut from_html = |h: &str| {
+        let converted = crate::html_text::convert(h);
+        preview = converted.preview;
+        converted.text
+    };
     let text = m.text_body().next().and_then(|part| match part.kind() {
-        PartKind::Html => part.text().map(|h| crate::html_text::html_to_text(&h)),
+        PartKind::Html => part.text().map(|h| from_html(&h)),
         _ => m.body_text(0).map(|t| {
             let entities = crate::html_text::has_entity(&t);
             match &html_part {
-                Some(h) if entities || crate::html_text::has_html_markup(&t) => crate::html_text::html_to_text(h),
+                Some(h) if entities || crate::html_text::has_html_markup(&t) => from_html(h),
                 // Decoded until none is left: entities encoded twice too.
                 None if entities => crate::html_text::decode_all_entities(&t).into_owned(),
                 _ => t.into_owned(),
@@ -196,7 +209,9 @@ pub fn parse(raw: &[u8]) -> ParsedMessage {
         }
         None => (None, false, 0),
     };
-    let snippet = text.as_deref().map(snippet).filter(|s| !s.is_empty());
+    // The preview text the sender wrote for the list, as mail apps show it;
+    // otherwise the start of the text.
+    let snippet = preview.as_deref().or(text.as_deref()).map(snippet).filter(|s| !s.is_empty());
 
     let mut attachments = Vec::new();
     collect_attachments(m.root_part(), "", true, html.as_deref(), &mut attachments);
@@ -775,6 +790,17 @@ Content-Transfer-Encoding: base64\r\n\r\n/9j/4AAQ\r\n--C--\r\n";
         // to show another mail's attachment, loses it.
         let clean = sanitize_html(r#"<img src="nm-cid://image/5"><img src="nm-remote://image?u=x"><a href="nm-cid://image/5">a</a>"#).html;
         assert!(!clean.contains("nm-cid") && !clean.contains("nm-remote"), "{clean}");
+    }
+
+    #[test]
+    fn the_hidden_preview_text_is_the_snippet_not_the_body() {
+        let raw = "Content-Type: text/html; charset=utf-8\r\nSubject: s\r\n\r\n<div style=\"display:none;max-height:0;overflow:hidden\">C'est d\u{e9}lirant.&zwnj;&nbsp;</div><p>Mardi 29 septembre</p>";
+        let p = parse(raw.as_bytes());
+        assert_eq!(p.text.as_deref(), Some("Mardi 29 septembre"));
+        assert_eq!(p.snippet.as_deref(), Some("C'est délirant."));
+        // Without a preview, the start of the text.
+        let p = parse(b"Content-Type: text/html\r\nSubject: s\r\n\r\n<p>Bonjour</p>");
+        assert_eq!(p.snippet.as_deref(), Some("Bonjour"));
     }
 
     #[test]

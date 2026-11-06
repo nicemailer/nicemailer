@@ -12,6 +12,15 @@
 //! - table cells: separated by a tab;
 //! - `<pre>`: whitespace kept as is;
 //! - `<script>`, `<style>`, `<head>`, `<title>`: dropped;
+//! - elements the mail hides (`display: none` and the like, in their
+//!   `style` attribute, `css.rs`): dropped, since a mail app does not show
+//!   them; unless the mail's `<style>` may show them again
+//!   (`css::shown_classes`). Classes hidden by the `<style>` alone are not
+//!   followed: which rule wins depends on specificity, and a wrong guess
+//!   would drop the body of the mail. The first of them,
+//!   before any visible text, is usually the **preview text** a newsletter
+//!   writes for the list of mails ("C'est délirant."): it is kept apart
+//!   (`Converted::preview`), for the list's snippet (`ingest.rs`);
 //! - entities (`&eacute;`, `&#233;`, `&#xE9;`) decoded.
 //!
 //! It is a small tokenizer, not a full HTML parser: mail HTML is often
@@ -38,9 +47,86 @@ fn tag_break(name: &str) -> Break {
     }
 }
 
+/// The text of an HTML body, and the preview text the mail hides for the
+/// list of mails, if any.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Converted {
+    pub text: String,
+    /// Text of the hidden elements before any visible text, whitespace and
+    /// invisible characters collapsed, 300 characters at most.
+    pub preview: Option<String>,
+}
+
+/// Longest preview kept (the list shows far less).
+const MAX_PREVIEW: usize = 300;
+
+/// Elements without content: never "closed", so they cannot start a
+/// hidden region.
+const VOID: [&str; 14] = ["br", "img", "hr", "input", "meta", "link", "wbr", "col", "area", "base", "source", "track", "embed", "param"];
+
 /// Converts HTML to plain text (see the module documentation).
 pub fn html_to_text(html: &str) -> String {
+    convert(html).text
+}
+
+/// Converts HTML to plain text, the elements the mail hides left out.
+///
+/// An element hidden but never closed (broken HTML) would hide the rest of
+/// the mail: the text is then made again without hiding anything, as it
+/// was before: a preview shown in the text is better than a mail lost.
+pub fn convert(html: &str) -> Converted {
+    let classes: std::collections::HashSet<String> =
+        crate::css::style_blocks(html).into_iter().flat_map(crate::css::shown_classes).collect();
+    let pass = run(html, Some(&classes));
+    if pass.unclosed {
+        return Converted { text: run(html, None).text, preview: None };
+    }
+    let preview: String = pass
+        .preview
+        .chars()
+        .map(|c| if is_invisible(c) { ' ' } else { c })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    let preview = (!preview.is_empty()).then(|| preview.chars().take(MAX_PREVIEW).collect());
+    Converted { text: pass.text, preview }
+}
+
+/// Characters newsletters pad their preview text with, so that the list
+/// does not show the start of the body after it: invisible, taken as
+/// spaces.
+fn is_invisible(c: char) -> bool {
+    matches!(c, '\u{200B}' | '\u{200C}' | '\u{200D}' | '\u{2060}' | '\u{FEFF}' | '\u{00AD}' | '\u{034F}' | '\u{2007}' | '\u{00A0}')
+}
+
+/// What one pass of the conversion produced.
+struct Pass {
+    text: String,
+    preview: String,
+    /// A hidden element was still open at the end.
+    unclosed: bool,
+}
+
+/// Whether the start tag `inner` (the inside of `<…>`) hides its element:
+/// its `style` does, and none of its classes is one the mail's sheet may
+/// show (`shown`).
+fn hides(inner: &str, shown: &std::collections::HashSet<String>) -> bool {
+    let Some(style) = crate::links::attribute(inner, "style") else { return false };
+    crate::css::hides(&decode_entities(&style))
+        && !crate::links::attribute(inner, "class").is_some_and(|c| c.split_whitespace().any(|c| shown.contains(c)))
+}
+
+/// One pass over the HTML; `hiding`: the classes the mail's sheet may show
+/// over a hiding `style`, or `None` to hide nothing.
+fn run(html: &str, hiding: Option<&std::collections::HashSet<String>>) -> Pass {
     let mut out = String::with_capacity(html.len() / 2);
+    let mut preview = String::new();
+    // The hidden element being skipped: its name, and how many elements of
+    // that name are open inside it, itself included.
+    let mut hidden: Option<(String, usize)> = None;
+    // Whether text skipped now goes to the preview: nothing visible yet.
+    let mut previewing = false;
     // Characters of the current run of text, before entity decoding and
     // whitespace collapsing.
     let mut i = 0;
@@ -87,6 +173,36 @@ pub fn html_to_text(html: &str) -> String {
                     continue;
                 }
             }
+            // Inside a hidden element: only its end matters.
+            if let Some((hidden_name, depth)) = &mut hidden {
+                if *hidden_name == name {
+                    if closing {
+                        *depth -= 1;
+                    } else if !inner.ends_with('/') {
+                        *depth += 1;
+                    }
+                }
+                if *depth == 0 {
+                    hidden = None;
+                    if previewing {
+                        preview.push(' ');
+                    }
+                } else if previewing && matches!(tag_break(&name), Break::Line | Break::Paragraph) {
+                    preview.push(' ');
+                }
+                continue;
+            }
+            if let Some(classes) = hiding
+                && !closing
+                && !name.is_empty()
+                && !VOID.contains(&name.as_str())
+                && !inner.ends_with('/')
+                && hides(inner, classes)
+            {
+                hidden = Some((name, 1));
+                previewing = out.trim().is_empty();
+                continue;
+            }
             if name == "pre" {
                 if closing {
                     pre_depth = pre_depth.saturating_sub(1);
@@ -120,6 +236,12 @@ pub fn html_to_text(html: &str) -> String {
         if skip_until.is_some() {
             continue;
         }
+        if hidden.is_some() {
+            if previewing && preview.len() < MAX_PREVIEW * 8 {
+                preview.push_str(&decode_entities(raw));
+            }
+            continue;
+        }
         let text = decode_entities(raw);
         if pre_depth > 0 {
             flush_break(&mut out, &mut pending);
@@ -143,7 +265,7 @@ pub fn html_to_text(html: &str) -> String {
             out.push(' ');
         }
     }
-    tidy(&out)
+    Pass { text: tidy(&out), preview, unclosed: hidden.is_some() }
 }
 
 /// Writes the pending line break(s) before new text.
@@ -458,6 +580,38 @@ mod tests {
     fn scripts_styles_head_and_comments_are_dropped() {
         let html = "<html><head><title>T</title><style>p{color:red}</style></head><body><!-- c --><script>x()</script><p>Texte</p></body></html>";
         assert_eq!(html_to_text(html), "Texte");
+    }
+
+    #[test]
+    fn hidden_elements_are_left_out_and_the_first_is_the_preview() {
+        // TTSO's preview text, then the body.
+        let html = r#"<div style="max-width:680px"><div style="max-height:0; mso-hide:all; overflow:hidden; display:none; color:#09144b;">
+            <div style="padding:6px 0;">C'est délirant.</div>&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;</div>
+            <p>Mardi 29 septembre 2026</p><span style="display:none">plus tard</span><p>Fin</p></div>"#;
+        let c = convert(html);
+        assert_eq!(c.text, "Mardi 29 septembre 2026\n\nFin");
+        assert_eq!(c.preview.as_deref(), Some("C'est délirant."));
+        // A class the mail's sheet hides is not followed (which rule wins
+        // depends on specificity); one it shows over the `style` wins.
+        let html = "<style>.preheader{display:none!important}</style><span class=\"x preheader\">Aperçu</span><p>Corps</p>";
+        assert_eq!(convert(html), Converted { text: "Aperçu\n\nCorps".into(), preview: None });
+        let html = "<style>.show{display:block!important}</style><div class=\"show\" style=\"display:none;mso-hide:all\">Pour tous</div><p>Corps</p>";
+        assert_eq!(convert(html).text, "Pour tous\n\nCorps");
+        // A hidden element after visible text is no preview.
+        let html = "<p>Corps</p><div style=\"display:none\"><div>caché</div></div><p>Suite</p>";
+        assert_eq!(convert(html), Converted { text: "Corps\n\nSuite".into(), preview: None });
+        // Nested elements of the same name close the right one.
+        assert_eq!(html_to_text("<div style=\"display:none\"><div>a</div><div>b</div></div><div>visible</div>"), "visible");
+        // An image in a hidden element does not end it.
+        assert_eq!(html_to_text("<span style=\"display:none\">x<img src=\"a\">y</span>z"), "z");
+    }
+
+    #[test]
+    fn a_hidden_element_never_closed_hides_nothing() {
+        // Broken HTML: rather the preview in the text than a mail lost.
+        let c = convert("<div style=\"display:none\">Aperçu<p>Tout le mail</p>");
+        assert_eq!(c.text, "Aperçu\n\nTout le mail");
+        assert_eq!(c.preview, None);
     }
 
     #[test]

@@ -531,6 +531,141 @@ fn no_markup(css: String) -> String {
     if css.contains('<') { css.replace('<', "\\3c ") } else { css }
 }
 
+/// The declarations of a block, as (name, value, important) in
+/// lowercase, value without `!important`: for reading what a style does,
+/// not for output.
+fn plain_declarations(p: &mut Parser) -> Vec<(String, String, bool)> {
+    let mut out = Vec::new();
+    loop {
+        let name = match p.next_including_whitespace() {
+            Ok(Token::WhiteSpace(_)) | Ok(Token::Semicolon) => continue,
+            Ok(Token::Ident(name)) => Some(name.to_ascii_lowercase()),
+            Ok(_) => None,
+            Err(_) => return out,
+        };
+        let value = p
+            .parse_until_after(cssparser::Delimiter::Semicolon, |p| -> Result<String> {
+                let mut value = String::new();
+                while let Ok(t) = p.next_including_whitespace() {
+                    let t = t.clone();
+                    copy_token(p, &t, &mut value, 0);
+                }
+                Ok(value)
+            })
+            .unwrap_or_default();
+        if let (Some(name), Some(value)) = (name, value.split_once(':').map(|(_, v)| v.to_ascii_lowercase())) {
+            let important = value.contains("!important");
+            out.push((name, value.replace("!important", "").trim().to_string(), important));
+        }
+    }
+}
+
+/// Whether declarations hide their element: `display: none`,
+/// `visibility: hidden`, `opacity: 0`, or a height of 0 with
+/// `overflow: hidden` (how newsletters hide their preview text).
+fn declarations_hide(declarations: &[(String, String, bool)]) -> bool {
+    let value = |name: &str| declarations.iter().rev().find(|(n, _, _)| n == name).map(|(_, v, _)| v.as_str());
+    let zero = |v: Option<&str>| v.is_some_and(|v| v.trim_end_matches(|c: char| c.is_ascii_alphabetic() || c == '%') == "0");
+    value("display") == Some("none")
+        || value("visibility") == Some("hidden")
+        || zero(value("opacity"))
+        || ((zero(value("max-height")) || zero(value("height"))) && value("overflow") == Some("hidden"))
+}
+
+/// Whether a `style` attribute hides its element (`declarations_hide`):
+/// the text made from the HTML leaves such an element out
+/// (`html_text.rs`).
+pub fn hides(style: &str) -> bool {
+    if style.len() > MAX_INLINE {
+        return false;
+    }
+    let mut parser = Parser::new(style);
+    declarations_hide(&plain_declarations(&mut parser))
+}
+
+/// The classes a style sheet may show over a `display: none` written in a
+/// `style` attribute: those of a top-level rule that sets `display` to
+/// another value with `!important` (a `style` attribute wins over any
+/// other rule). Newsletters hide a part from Outlook this way and show it
+/// to every other app: `<div class="show" style="display:none">` with
+/// `.show { display: block !important }`.
+///
+/// Rules inside `@media` are left out: they show a part on some screens
+/// only (a mobile version). The class may be anywhere in the selector's
+/// last part (`.a .show`, `div.show`): a wide reading, so that a part
+/// meant to be seen is never left out of the text.
+pub fn shown_classes(css: &str) -> std::collections::HashSet<String> {
+    let mut out = std::collections::HashSet::new();
+    if css.len() > MAX_SHEET {
+        return out;
+    }
+    let mut p = Parser::new(css);
+    loop {
+        let first = match p.next_including_whitespace() {
+            Ok(Token::WhiteSpace(_)) | Ok(Token::CDO) | Ok(Token::CDC) | Ok(Token::Semicolon) => continue,
+            Ok(t) => t.clone(),
+            Err(_) => return out,
+        };
+        if let Token::AtKeyword(_) = first {
+            if at_prelude(&mut p).1 {
+                skip_block(&mut p);
+            }
+            continue;
+        }
+        // The classes of the last part of each selector.
+        let mut classes: Vec<String> = Vec::new();
+        let mut last_part: Vec<String> = Vec::new();
+        let mut previous_dot = false;
+        // A space is a combinator only when a part follows it (not before
+        // `{` or `,`).
+        let mut after_space = false;
+        let mut next = Some(first);
+        let mut has_block = false;
+        loop {
+            let t = match next.take() {
+                Some(t) => t,
+                None => match p.next_including_whitespace() {
+                    Ok(Token::CurlyBracketBlock) => {
+                        has_block = true;
+                        break;
+                    }
+                    Ok(t) => t.clone(),
+                    Err(_) => break,
+                },
+            };
+            if after_space && !matches!(t, Token::WhiteSpace(_) | Token::Comma) {
+                last_part.clear();
+            }
+            after_space = matches!(t, Token::WhiteSpace(_));
+            match &t {
+                Token::Comma => classes.append(&mut last_part),
+                Token::WhiteSpace(_) => {}
+                // A combinator: what comes after is the last part.
+                Token::Delim('>') | Token::Delim('+') | Token::Delim('~') => last_part.clear(),
+                Token::Ident(name) if previous_dot => last_part.push(name.to_string()),
+                t if is_block_start(t) => {
+                    let mut ignored = String::new();
+                    copy_token(&mut p, t, &mut ignored, 0);
+                }
+                _ => {}
+            }
+            previous_dot = matches!(t, Token::Delim('.'));
+        }
+        if !has_block {
+            return out;
+        }
+        classes.append(&mut last_part);
+        let shows = p
+            .parse_nested_block(|p| -> Result<bool> {
+                Ok(plain_declarations(p).iter().any(|(n, v, important)| n == "display" && v != "none" && *important))
+            })
+            .unwrap_or(false);
+        if shows {
+            out.extend(classes);
+        }
+    }
+}
+
 /// The text of the `<style>` elements of an HTML document, in order. Those
 /// in a comment are not elements, and are left out: the conditional
 /// comments of Outlook (`<!--[if mso]><style>…</style><![endif]-->`) hold
@@ -685,6 +820,36 @@ mod tests {
         assert!(inline(&"x:(".repeat(3_000)).is_empty() || !inline(&"x:(".repeat(3_000)).contains('<'));
         // Too large: dropped as a whole.
         assert!(sheet(&"p{color:red}".repeat(30_000)).is_empty());
+    }
+
+    #[test]
+    fn what_hides_an_element() {
+        for hidden in [
+            "display:none",
+            "max-height:0; mso-hide:all; overflow:hidden; display:none; color:#09144b",
+            "DISPLAY: NONE !important",
+            "visibility:hidden",
+            "opacity:0",
+            "max-height:0px;overflow:hidden",
+            "height:0;overflow:hidden;font-size:1px",
+        ] {
+            assert!(hides(hidden), "{hidden}");
+        }
+        for shown in ["display:block", "overflow:hidden", "max-height:0", "opacity:0.5", "height:10px;overflow:hidden", "color:red", ""] {
+            assert!(!hides(shown), "{shown}");
+        }
+        // The last declaration wins.
+        assert!(!hides("display:none; display:block"));
+    }
+
+    #[test]
+    fn classes_a_sheet_shows_over_a_style_attribute() {
+        let css = ".show { display:block !important } .a .b.c, div.d { display: table !important }
+            .weak { display:block } .none { display:none !important }
+            @media (max-width:600px) { .mobile { display:block !important } }";
+        let mut classes: Vec<String> = shown_classes(css).into_iter().collect();
+        classes.sort();
+        assert_eq!(classes, ["b", "c", "d", "show"]);
     }
 
     #[test]

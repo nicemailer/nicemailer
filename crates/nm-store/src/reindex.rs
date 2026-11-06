@@ -317,8 +317,10 @@ fn skip_without_remote_images(store: &Store, start: i64, end: i64) -> Result<u64
 
 /// Marks the bodies of version 8 or later without HTML as current, so
 /// that only the HTML mails are read again. Versions 9 (layout attributes,
-/// `ingest::LAYOUT_ATTRIBUTES`) and 10 (the sender's CSS, `css.rs`) only
-/// change the sanitized HTML; a body without HTML part comes out the same.
+/// `ingest::LAYOUT_ATTRIBUTES`), 10 (the sender's CSS, `css.rs`) and 11
+/// (the hidden elements of the HTML out of its text, `html_text::convert`)
+/// only change what is made from the HTML part; a body without one comes
+/// out the same.
 /// Returns how many were marked.
 fn skip_without_html(store: &Store, start: i64, end: i64) -> Result<u64> {
     let n = store

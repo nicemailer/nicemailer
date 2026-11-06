@@ -12,6 +12,10 @@ expect selected_subject = La lettre de novembre
 expect images_offered = true
 expect tracking_pixels = 1
 expect body_format = text
+# The text view leaves out what the mail hides: its preview text, meant
+# for the list of mails (html_text.rs), is not in the body.
+expect reader_text ~ Novembre
+expect reader_text !~ Aperçu caché
 snap switch
 # The title line (subject, unsubscribe, blocked pixels, switch): one line
 # while the whole subject fits beside the controls, two in a narrow window.
