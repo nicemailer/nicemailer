@@ -280,8 +280,12 @@ final class GeekController {
 
     /// A click in the reader on a header (fold / unfold the message) or on
     /// a "···" line (show that hidden part). Links use the `nm:` scheme.
-    func readerLink(_ url: URL) -> Bool {
+    func readerLink(_ url: URL, command: Bool? = nil) -> Bool {
         guard url.scheme == "nm" else { return false }
+        // ⌘ held: given by the HTML reader (its navigation action knows), or
+        // read from the event being handled (the text reader; no app,
+        // hence no event, in unit tests).
+        let command = command ?? (NSApp?.currentEvent?.modifierFlags.contains(.command) == true)
         let parts = url.pathComponents.filter { $0 != "/" }
         var s = readerState
         switch url.host {
@@ -298,7 +302,13 @@ final class GeekController {
             // modifiers, read from the event being handled; no app, hence
             // no event, in unit tests).
             if let id = parts.first.flatMap(Int.init) {
-                model.saveAttachment(id, NSApp?.currentEvent?.modifierFlags.contains(.command) == true ? .saveAndOpen : .save)
+                model.saveAttachment(id, command ? .saveAndOpen : .save)
+            }
+            return true
+        case "sender":
+            if let id = parts.first.flatMap(Int.init),
+               let address = model.openThread?.messages.first(where: { $0.id == id })?.fromAddr {
+                senderClicked(address, command: command)
             }
             return true
         default:
@@ -306,6 +316,20 @@ final class GeekController {
         }
         readerState = s
         return true
+    }
+
+    /// A click on the sender's address in the reader (`ui.md`,
+    /// "Expéditeur"): copied to the pasteboard; with ⌘, the list filtered
+    /// on this sender (a "from:" chip, as `F` would add).
+    func senderClicked(_ address: String, command: Bool) {
+        if command {
+            model.attributes.add(.from, address)
+            model.flash = L("Mails from %@", address)
+        } else {
+            pasteboard.clearContents()
+            pasteboard.setString(address, forType: .string)
+            model.flash = L("Copied: %@", address)
+        }
     }
 
     /// Last row clicked and when, to detect double-clicks (see `clickSearch`).

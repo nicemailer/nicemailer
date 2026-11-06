@@ -103,8 +103,20 @@ struct AttachmentDisplayTests {
 
     @Test func aFoldedMailShowsHowManyFilesItHas() {
         let files = [file("a.pdf", "application/pdf", id: 1), file("b.pdf", "application/pdf", id: 2)]
-        let blocks = ThreadDisplay.blocks(thread(expanded: false, files: files), .init())
-        guard case .header(7, true, _, _, let n) = blocks.first else { Issue.record("\(blocks)"); return }
+        // A conversation: a single mail is never folded. A later reply,
+        // without files, is open.
+        var t = thread(expanded: false, files: files)
+        let first = t.messages[0]
+        let reply = MessageView(
+            id: 8, folderId: 1, folderRole: "archive", subject: "S", fromName: "Bob", fromAddr: "b@x.org",
+            to: [], cc: [], dateSent: nil, dateReceived: 1_700_000_100, bodyText: "Merci",
+            isSeen: true, isFlagged: false, isAnswered: false, hasAttachments: false, authResult: "unknown",
+            bodyHtml: nil, hasRemoteContent: false, fromBodyFormat: nil,
+            segments: [SegmentView(kind: "text", text: "Merci", depth: 0, hidden: false, inThread: false)],
+            onlyQuotes: false, expanded: true, showRecipients: false, attachments: [])
+        t = ThreadView(id: 1, subject: "S", messages: [first, reply], asOf: t.asOf)
+        let blocks = ThreadDisplay.blocks(t, .init())
+        guard case .header(7, true, _, _, let n, _, _, _) = blocks.first else { Issue.record("\(blocks)"); return }
         #expect(n == 2)
         #expect(!blocks.contains { if case .attachments = $0 { return true } else { return false } })
     }

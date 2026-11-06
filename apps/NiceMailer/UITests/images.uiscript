@@ -36,6 +36,10 @@ expect title_lines = 1
 click format:html
 expect body_format = html
 expect html_text ~ Les nouveautés du mois
+# One line: no arrow for a single mail, the name, the date, the sender's
+# address in full, as in the text reader.
+expect html_text ~ Lettre · 3 nov. 09:00 · news@example.net
+expect html_text !~ ▾
 expect remote_allowed = 0
 # WebKit's own barrier against remote loads is in force.
 expect remote_blocker = on

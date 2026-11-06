@@ -41,12 +41,14 @@ struct ThreadDisplayTests {
     @Test func foldedMessagesAreOneLineWithASnippet() {
         let blocks = ThreadDisplay.blocks(thread, .init())
         #expect(ThreadDisplay.foldedCount(blocks) == 2)
-        guard case .header(1, true, let title, let detail, _) = blocks[0] else { Issue.record("\(blocks[0])"); return }
-        #expect(title.hasPrefix("▸ Alice"))
+        guard case .header(1, true, let title, let detail, _, _, _, _) = blocks[0] else { Issue.record("\(blocks[0])"); return }
+        // The arrow (a conversation), then name · date · @domain (`ui.md`,
+        // "Expéditeur").
+        #expect(title == "▸ Alice · \(Format.geekMessageDate(1_700_000_000)) · @x.org")
         #expect(detail == "Peux-tu passer jeudi ?")
         // A message that only quotes says so instead of a snippet.
-        let last = blocks.last { if case .header(3, _, _, _, _) = $0 { return true } else { return false } }
-        if case .header(_, true, _, let d, _) = last { #expect(d == L("only quotes earlier messages")) }
+        let last = blocks.last { if case .header(3, _, _, _, _, _, _, _) = $0 { return true } else { return false } }
+        if case .header(_, true, _, let d, _, _, _, _) = last { #expect(d == L("only quotes earlier messages")) }
     }
 
     @Test func unfoldedMessagesShowVisibleSegmentsAndHiddenLines() {
@@ -54,8 +56,57 @@ struct ThreadDisplayTests {
         #expect(blocks.contains(.segment(messageId: 2, index: 0, kind: "quote", text: "jeudi ?", depth: 1)))
         #expect(blocks.contains(.segment(messageId: 2, index: 1, kind: "text", text: "Oui, 10 h.", depth: 0)))
         #expect(blocks.contains(.hidden(messageId: 2, index: 2, label: L("··· %lld quoted lines", 2))))
-        // Recipients only when the core says they changed.
-        #expect(blocks.contains { if case .header(2, false, _, let d?, _) = $0 { return d.contains("me@x.org") } else { return false } })
+        // One line: arrow, name · date, then the address in full; the
+        // recipients below, only when the core says they changed.
+        #expect(blocks.contains(.header(messageId: 2, folded: false, title: "▾ Bob · \(Format.geekMessageDate(1_700_000_000))",
+                                        detail: L("To: %@", "me@x.org"), address: "Bob@x.org", alert: false, foldable: true)))
+    }
+
+    @Test func aSingleMailHasNoArrowAndASenderWithoutNameItsAddressOnce() {
+        var m = message(4, from: "x", segments: [segment("text", "Hi", hidden: false)], expanded: false)
+        m = MessageView(id: 4, folderId: 1, folderRole: "archive", subject: "S", fromName: nil, fromAddr: "zoe@x.org",
+                        to: [], cc: [], dateSent: nil, dateReceived: 1_700_000_000, bodyText: "Hi", isSeen: true,
+                        isFlagged: false, isAnswered: false, hasAttachments: false, authResult: "unknown", bodyHtml: nil,
+                        hasRemoteContent: false, fromBodyFormat: nil, segments: m.segments, onlyQuotes: false,
+                        expanded: false, showRecipients: false, attachments: [])
+        let blocks = ThreadDisplay.blocks(ThreadView(id: 1, subject: "S", messages: [m], asOf: Position(epoch: "e", seq: 0)), .init())
+        // A single mail: unfolded although the core says folded, no arrow,
+        // no folding; the address is the name, not repeated.
+        guard case .header(4, false, let title, _, _, let address, _, let foldable) = blocks[0] else { Issue.record("\(blocks)"); return }
+        #expect(title == "zoe@x.org · \(Format.geekMessageDate(1_700_000_000))")
+        #expect(address == nil && !foldable)
+    }
+
+    @Test func theDomainsASendersNameShows() {
+        #expect(ThreadDisplay.domain("Alice@Atelier.FR") == "atelier.fr")
+        #expect(ThreadDisplay.domain("nobody") == nil)
+        #expect(ThreadDisplay.namedDomains("service@paypal.com") == ["paypal.com"])
+        #expect(ThreadDisplay.namedDomains("PayPal.com Service") == ["paypal.com"])
+        #expect(ThreadDisplay.namedDomains("Le Monde.fr") == ["monde.fr"])
+        #expect(ThreadDisplay.namedDomains("Alice Martin").isEmpty)
+        #expect(ThreadDisplay.namedDomains("M. Dupont, Sr.").isEmpty)
+        #expect(ThreadDisplay.namedDomains("v1.2 release").isEmpty)
+    }
+
+    @Test func aSenderPassingForAnotherIsInTheAlertColour() {
+        func sender(_ name: String?, _ address: String, auth: String = "pass") -> MessageView {
+            MessageView(id: 1, folderId: 1, folderRole: "inbox", subject: "S", fromName: name, fromAddr: address,
+                        to: [], cc: [], dateSent: nil, dateReceived: 1, bodyText: "x", isSeen: true, isFlagged: false,
+                        isAnswered: false, hasAttachments: false, authResult: auth, bodyHtml: nil, hasRemoteContent: false,
+                        fromBodyFormat: nil, segments: [], onlyQuotes: false, expanded: true, showRecipients: false,
+                        attachments: [])
+        }
+        // Another address or domain in the name.
+        #expect(ThreadDisplay.senderAlert(sender("service@paypal.com", "x7@promo-mail.ru")))
+        #expect(ThreadDisplay.senderAlert(sender("PayPal.com", "x7@promo-mail.ru")))
+        // The same domain, or one it ends with.
+        #expect(!ThreadDisplay.senderAlert(sender("service@paypal.com", "service@paypal.com")))
+        #expect(!ThreadDisplay.senderAlert(sender("Le Monde.fr", "news@info.lemonde.fr")))
+        #expect(!ThreadDisplay.senderAlert(sender("Alice Martin", "alice@atelier.fr")))
+        #expect(!ThreadDisplay.senderAlert(sender(nil, "alice@atelier.fr")))
+        // A failed authentication, whatever the name.
+        #expect(ThreadDisplay.senderAlert(sender("Alice Martin", "alice@atelier.fr", auth: "fail")))
+        #expect(!ThreadDisplay.senderAlert(sender("Alice Martin", "alice@atelier.fr", auth: "none")))
     }
 
     @Test func showAllUnfoldsAndRevealsEverything() {

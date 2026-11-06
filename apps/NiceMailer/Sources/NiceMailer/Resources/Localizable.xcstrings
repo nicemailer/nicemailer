@@ -419,6 +419,16 @@
         }
       }
     },
+    "Copied: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copié : %@"
+          }
+        }
+      }
+    },
     "Date: %@": {
       "localizations": {
         "fr": {
@@ -615,6 +625,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Liens"
+          }
+        }
+      }
+    },
+    "Mails from %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mails de %@"
           }
         }
       }

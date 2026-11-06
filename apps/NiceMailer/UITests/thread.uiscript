@@ -41,3 +41,18 @@ snap revealed
 # Folding the message again with a click on its header.
 click reader-link:0
 expect reader_folded = 3
+# One line per message: the arrow (a conversation), the name, the date,
+# then the sender's domain on the folded lines, its address in full on an
+# unfolded one (only Bob's now). A click copies it; ⌘-click filters the
+# list on it.
+expect reader_text ~ ▸ Alice · 30 oct. 11:00 · @example.org
+expect reader_text ~ ▾ Bob · 30 oct. 14:00 · bob@example.org
+snap sender
+click reader-sender:0
+expect pasteboard = bob@example.org
+expect flash ~ Copied: bob@example.org
+click reader-sender:0 cmd
+expect filters ~ bob@example.org
+expect flash ~ Mails from bob@example.org
+key esc
+expect filters = 

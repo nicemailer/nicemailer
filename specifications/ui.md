@@ -55,6 +55,14 @@ L'affichage est simplifié au maximum : chaque message montre ce qu'il apporte. 
 - `l` cherche aussi les **expéditeurs du fil** dans le carnet d'adresses du Mac (les auteurs des messages reçus, pas les personnes en copie) : pour chaque fiche trouvée, une ligne par numéro de téléphone (« Alice Martin — mobile », entrée appelle) puis « Fiche de Alice Martin », qui ouvre Contacts. Un numéro déjà présent dans le mail n'apparaît qu'une fois, sous le nom. L'accès est demandé par macOS au premier `l` ; refusé, la barre de statut le dit une fois. Rien du carnet n'est copié dans la base.
 - En HTML, les mêmes dalles suivent le corps du mail.
 
+### Expéditeur
+
+- Une seule ligne par message : « nom · date · adresse ». Message déplié : l'adresse complète (« ▾ Alice Martin · 30 oct. 14:00 · alice@atelier-dupuis.fr ») ; les destinataires, quand ils valent d'être montrés (À, Cc), sur la ligne suivante. Message replié : le domaine seul, puis l'aperçu (« ▸ Alice Martin · 30 oct. 11:00 · @atelier-dupuis.fr  Peux-tu… ») ; sans nom, l'adresse tient lieu de nom et n'est pas répétée. En texte comme en HTML.
+- La flèche (▸ replié, ▾ déplié) précède le nom dans une conversation seulement : un clic sur la ligne replie ou déplie le message. Un mail seul n'a ni flèche ni repli : il est toujours déplié.
+- Alerte : l'adresse passe dans la couleur d'alerte quand le mail a échoué à l'authentification, ou quand le nom affiché montre une autre adresse ou un autre domaine que le vrai (« service@paypal.com » <x7@promo-mail.ru>, « PayPal.com »). Un domaine du nom dont le vrai domaine se termine par lui ne compte pas (« Le Monde.fr » depuis news.lemonde.fr).
+- Un clic sur l'adresse la copie (la barre de statut le dit) ; ⌘-clic filtre la liste sur cet expéditeur (pastille « de : »).
+- Les destinataires gardent leur nom seul.
+
 ### Images distantes
 
 Charger une image distante apprend à l'expéditeur que le mail a été ouvert, quand, et depuis quelle adresse IP. Les pixels de suivi n'ont pas d'autre usage. Règles :

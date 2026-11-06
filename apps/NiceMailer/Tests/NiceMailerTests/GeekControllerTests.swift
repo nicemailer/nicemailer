@@ -1016,6 +1016,23 @@ struct GeekControllerTests {
         #expect(await eventually { model.flash?.contains("3") == true })
     }
 
+    @Test func aClickOnTheSendersAddressCopiesItAndCommandFiltersOnIt() {
+        // The open thread's message is 10, from sender1@example.org.
+        let url = URL(string: "nm://sender/10")!
+        #expect(controller.readerLink(url, command: false))
+        #expect(controller.pasteboard.string(forType: .string) == "sender1@example.org")
+        #expect(model.flash == L("Copied: %@", "sender1@example.org"))
+        #expect(model.attributes.from.isEmpty)
+        // ⌘-click: a "from:" chip, as `F` would add.
+        #expect(controller.readerLink(url, command: true))
+        #expect(model.attributes.from == ["sender1@example.org"])
+        #expect(model.flash == L("Mails from %@", "sender1@example.org"))
+        // A message not in the open thread: nothing.
+        model.flash = nil
+        #expect(controller.readerLink(URL(string: "nm://sender/999")!, command: false))
+        #expect(model.flash == nil)
+    }
+
     @Test func capitalTAndMSaveThenOpenInFront() async {
         var opened: [String] = []
         model.openFile = { opened.append($0.path) }

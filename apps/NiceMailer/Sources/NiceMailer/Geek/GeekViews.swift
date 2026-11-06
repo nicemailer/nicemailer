@@ -778,6 +778,13 @@ private struct GeekReaderColumn: View {
         summary { font-size: \(Int(scaled(12)))px; color: #888; cursor: pointer; list-style: none; margin: 4px 0; }
         summary::-webkit-details-marker { display: none; }
         details[open] summary { margin-bottom: 12px; }
+        summary a.addr { text-decoration: none; color: inherit; }
+        summary a.alert { color: #E06C75; }
+        @media (prefers-color-scheme: light) { summary a.alert { color: #C0392B; } }
+        /* A single mail: a click on its line does nothing, except on the
+           address. */
+        details.single summary { pointer-events: none; cursor: default; }
+        details.single summary a { pointer-events: auto; cursor: pointer; }
         .q { color: #888; border-left: 2px solid #8886; padding-left: 8px; }
         .m { color: #888; font-size: \(Int(scaled(12)))px; }
         pre { font: \(Int(scaled(14)))px "NM Mono", ui-monospace, monospace; white-space: pre-wrap; margin: 0 0 8px; }
@@ -797,18 +804,34 @@ private struct GeekReaderColumn: View {
         """
         let mode = model.bodyFormat
         let once = model.remoteImagesOnce == thread.id
+        // A conversation: each message folds, and shows an arrow.
+        let conversation = thread.messages.count > 1
         var images = Set<String>()
         var inline = Set<Int>()
         for (i, m) in thread.messages.enumerated() {
             if i > 0 { html += "<hr>" }
-            let unfolded = state.showAll || (state.folding[m.id] ?? m.expanded)
+            let unfolded = !conversation || state.showAll || (state.folding[m.id] ?? m.expanded)
             let who = esc(m.fromName ?? m.fromAddr ?? "")
             let date = esc(Format.geekMessageDate(m.dateReceived))
-            var summary = unfolded ? "\(who) · \(date)" : "\(who) · \(date) — \(esc(ThreadDisplay.snippet(m)))"
+            // One line, as in the text reader (`ThreadDisplay.blocks`): the
+            // arrow in a conversation only; folded, the sender's domain
+            // last and a snippet; unfolded, the address in full, a link
+            // (click: copied; ⌘-click: the list filtered on it), in the
+            // alert colour when it deserves a second look.
+            let arrow = conversation ? (unfolded ? "▾ " : "▸ ") : ""
+            let domain = m.fromName != nil ? m.fromAddr.flatMap(ThreadDisplay.domain).map { " · @" + esc($0) } ?? "" : ""
+            var address = ""
+            if m.fromName != nil, let addr = m.fromAddr, !addr.isEmpty {
+                let alert = ThreadDisplay.senderAlert(m) ? " alert" : ""
+                address = " · <a class=\"addr\(alert)\" href=\"nm://sender/\(m.id)\">\(esc(addr))</a>"
+            }
+            var summary = unfolded ? "\(arrow)\(who) · \(date)\(address)"
+                : "\(arrow)\(who) · \(date)\(domain) — \(esc(ThreadDisplay.snippet(m)))"
             if !unfolded && !m.attachments.isEmpty {
                 summary += " &nbsp;<img src=\"\(Self.symbolDataURI("paperclip"))\">\(m.attachments.count)"
             }
-            html += "<details\(unfolded ? " open" : "")><summary>\(summary)</summary>"
+            // A single mail: its line does not fold it (`single`).
+            html += "<details\(unfolded ? " open" : "")\(conversation ? "" : " class=\"single\"")><summary>\(summary)</summary>"
             if let body = m.bodyHtml {
                 let loading = RemoteImages.loads(m, mode: mode, unfolded: unfolded, once: once)
                 if loading { images.formUnion(RemoteImages.sources(in: body)) }
@@ -983,19 +1006,32 @@ private struct TextReader: NSViewRepresentable {
             switch b {
             case .separator:
                 add("\n", small)
-            case .header(let id, let folded, let title, let detail, let files):
+            case .header(let id, let folded, let title, let detail, let files, let address, let alert, let foldable):
                 let titleAttrs: [NSAttributedString.Key: Any] = [
                     .font: Fonts.scaled(12, weight: folded ? .regular : .semibold),
                     .foregroundColor: folded ? muted : NSColor(Palette.text),
                 ]
-                add(title, titleAttrs, link: "nm://fold/\(id)", region: .text)
+                // In a conversation, a click on the header folds or unfolds
+                // the message; a single mail has nothing to fold.
+                let fold = foldable ? "nm://fold/\(id)" : nil
+                add(title, titleAttrs, link: fold, region: .text)
+                if let address {
+                    // "· alice@atelier.fr": the address in full, a link
+                    // (click: copied; ⌘-click: the list filtered on it), in
+                    // the alert colour when it deserves a second look.
+                    let addressAttrs: [NSAttributedString.Key: Any] = [
+                        .font: Fonts.scaled(12), .foregroundColor: alert ? NSColor(Palette.error) : muted,
+                    ]
+                    add(" · ", small)
+                    add(address, addressAttrs, link: "nm://sender/\(id)")
+                }
                 if folded && files > 0 {
                     // A paperclip and the number of files of the folded mail.
                     add("  ", small)
                     out.append(Self.symbol("paperclip", size: scaled(11), color: muted, link: "nm://fold/\(id)"))
-                    add("\(files)", small, link: "nm://fold/\(id)")
+                    add("\(files)", small, link: fold)
                 }
-                if folded, let detail, !detail.isEmpty { add("  " + detail, small, link: "nm://fold/\(id)") }
+                if folded, let detail, !detail.isEmpty { add("  " + detail, small, link: fold) }
                 add("\n", small)
                 if !folded, let detail { add(detail + "\n", small) }
                 if !folded { add("\n", small) }
@@ -1108,9 +1144,15 @@ private struct TextReader: NSViewRepresentable {
         controller.readerSkip = (quotes, texts)
         guard UIScript.isActive, let storage = text.textStorage else { return }
         UIScript.readerText = storage.string
-        var n = 0, files = 0
+        var n = 0, files = 0, senders = 0
         storage.enumerateAttribute(.link, in: NSRange(location: 0, length: storage.length)) { value, range, _ in
             guard let url = value as? URL, url.scheme == "nm" else { return }
+            if url.host == "sender" {
+                // The sender's address of an unfolded message.
+                UIScript.frames["reader-sender-\(senders)"] = text.convert(rect(range), to: nil)
+                senders += 1
+                return
+            }
             if url.host == "attachment" {
                 // The first line of the tile (icon and name).
                 let line = (storage.string as NSString).lineRange(for: NSRange(location: range.location, length: 0))
@@ -1260,6 +1302,13 @@ private struct HTMLReader: NSViewRepresentable {
                let id = Int(url.lastPathComponent) {
                 let open = action.modifierFlags.contains(.command)
                 MainActor.assumeIsolated { controller?.model.saveAttachment(id, open ? .saveAndOpen : .save) }
+                decisionHandler(.cancel)
+                return
+            }
+            // The sender's address: copied, or the list filtered on it.
+            if let url = action.request.url, url.scheme == "nm", url.host == "sender" {
+                let command = action.modifierFlags.contains(.command)
+                MainActor.assumeIsolated { _ = controller?.readerLink(url, command: command) }
                 decisionHandler(.cancel)
                 return
             }
