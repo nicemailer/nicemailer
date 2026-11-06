@@ -29,6 +29,13 @@ key *
 expect selected_flagged = true
 key *
 expect selected_flagged = false
+# ⌘A marks every mail of the list; Escape unmarks.
+key cmd-a
+expect marked_count > 2
+expect flash = 
+snap all-marked
+key esc
+expect marked_count = 0
 # Unknown keys and commands are reported, not executed.
 key y
 expect flash ~ y

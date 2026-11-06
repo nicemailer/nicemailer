@@ -182,6 +182,9 @@ enum Palette {
     static let separator = dynamic(dark: 0x30333C, light: 0xDDDDD8)
     static let unread = dynamic(dark: 0xE6C07B, light: 0xB07D16)
     static let error = dynamic(dark: 0xE06C75, light: 0xC0392B)
+    /// A flagged mail: orange, as in Apple Mail, and apart from the unread
+    /// colour, so that the flag stands out at the end of its row.
+    static let flag = dynamic(dark: 0xF0883E, light: 0xD9661C)
 }
 
 extension NSColor {

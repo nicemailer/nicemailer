@@ -270,6 +270,13 @@ final class GeekController {
     /// after layout.
     @ObservationIgnored var readerHeaders: [Int: Double] = [:]
 
+    /// ⌘A: every mail of the list marked. The status bar shows how many,
+    /// as for `J` / `K`: no message on top of it.
+    func markAll() {
+        model.marked = Set(model.threads.map(\.id))
+        model.flash = model.marked.isEmpty ? L("No mail") : nil
+    }
+
     /// `ctrl-k` / `ctrl-j`: up to the previous message of the conversation,
     /// or down to the next (`ThreadDisplay.step`); the reader scrolls to
     /// its header. Stops at either end, and says so.
@@ -465,6 +472,14 @@ final class GeekController {
             guard screen == .mail, overlay == .none else { return false }
             model.flash = nil
             model.unsubscribe()
+            return true
+        }
+        // ⌘A: marks every mail of the list as shown now (the rows loaded so
+        // far, as far as one can scroll), for a grouped action (`ui.md`,
+        // "Liste"). On the mail screen, without a panel; Escape unmarks.
+        if mods.contains(.command), event.charactersIgnoringModifiers?.lowercased() == "a" {
+            guard screen == .mail, overlay == .none else { return false }
+            markAll()
             return true
         }
         if mods.contains(.command) {
@@ -954,6 +969,7 @@ final class GeekController {
             ("j k", L("next / previous mail")),
             ("^d ^u", L("half a page down / up in the list")),
             ("J K", L("mark and move (multiple selection)")),
+            ("⌘A", L("mark every mail of the list")),
             ("@", L("go to an account")),
             ("F", L("filter by attributes")),
             ("l", L("links of the mail")),
