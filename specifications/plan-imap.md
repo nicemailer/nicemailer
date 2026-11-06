@@ -1,6 +1,6 @@
 # NiceMailer : plan de travail du back-end IMAP
 
-Statut : en cours. Phases 0 à 7 terminées (novembre 2026).
+Statut : phases 0 à 8 terminées (novembre 2026) ; reste l'essai sur un compte réel, à faire par l'utilisateur.
 
 Ce document n'est pas une spécification : c'est le plan de réalisation du back-end qui communique avec les serveurs IMAP, récupère les mails, synchronise les dossiers, trie les mails entrants et importe un compte. Les règles restent dans les spécifications citées ; quand ce plan tranche une question qu'elles laissaient ouverte, la décision est reportée dans la spécification concernée au moment où la phase qui l'implémente est livrée.
 
@@ -246,13 +246,22 @@ Réalisé (novembre 2026), détail dans `docs/accounts.md` :
 - Tests : `config_write.rs` (5), `setup.rs` du moteur (1), `nm-store/tests/setup.rs` (5), trousseau (1) ; contre Dovecot (`nm-daemon/tests/setup_rpc.rs`, 4) : petite Inbox laissée telle quelle et correspondants acceptés, mail arrivé pendant l'écran trié, fichier écrit avec son commentaire, prochain mail d'un expéditeur importé en Quarantine ; archivage conforme au décompte, mails marqués d'un drapeau laissés ; archivage interrompu repris sans perte ni doublon ; renommage avec données et mot de passe, suppression ; agent refusé. Le changement d'`UIDVALIDITY` pendant l'import est couvert sans serveur (la purge remet la frontière à zéro, la passe la reprend au nouveau `UIDNEXT`).
 - Hors périmètre de la phase : l'écran de création dans l'app (la CLI le remplace pour l'instant).
 
-### Phase 8 : robustesse et volume
+### Phase 8 : robustesse et volume — terminée (essai réel à faire)
 
 - Ramasse-miettes des blobs et balayage des orphelins (`stockage-brut.md`, section 7), devenus nécessaires puisque la synchronisation supprime des messages.
 - Brut corrompu ou absent : mise à l'écart, puis retéléchargement depuis le serveur.
 - Passage du stockage brut à deux niveaux de sous-dossiers (au-delà de 100 000 messages), par une migration.
 - Essai de volume : boîte Dovecot générée de 100 000 mails ; durée de la synchronisation initiale, mémoire, réactivité des listes pendant la synchronisation (`make bench`).
 - Essai sur le compte Infomaniak réel de l'utilisateur, en lecture d'abord, avec son accord explicite.
+
+Réalisé (novembre 2026) :
+
+- **Comptes en lecture seule** (`read_only = true`, `account add --read-only`), préalable à l'essai réel demandé par l'utilisateur sur une adresse Orange en production « où il ne faut rien toucher » : la session IMAP refuse elle-même `SELECT`, `STORE`, `COPY`, `MOVE`, `EXPUNGE`, `APPEND` et `CREATE` avant envoi ; pas de spool ; commandes refusées (`1010`) ; screening « à blanc » journalisé (`dry_run`) ; aucun dossier créé ni archivage. Vérifié contre Dovecot par un instantané du serveur avant et après. `test_account`, `count_archive` et `sync verify` n'écrivent jamais, quel que soit le compte.
+- **Ramasse-miettes et balayage des orphelins** (`nm-store/src/gc.rs`), avec des épingles pour la concurrence avec l'ingestion (`stockage-brut.md`, section 7) ; une minute après le démarrage puis toutes les heures, et `nicemailer raw gc`.
+- **Brut corrompu ou absent** : trouvé à la lecture (pièce jointe, export) ou par `sync verify --repair` ; mis à l'écart dans `.corrupt/`, messages repassés en en-têtes seuls et retéléchargés ; code `1011` (`RAW_DAMAGED`) ; un mail sans serveur garde son erreur.
+- Écart : **pas de second niveau de sous-dossiers**. Mesuré : trouver un fichier coûte le même temps avec 400 et 40 000 fichiers par dossier ; la migration déplacerait tout le stockage pour rien (`stockage-brut.md`, section 7).
+- **Essai de volume** (`make volume-test`, 100 000 mails générés sur le Dovecot de test, même machine) : en-têtes de tout en 20 s, corps compris en 728 s (environ 140 corps par seconde), mémoire du noyau au plus 289 Mo, liste de la boîte de réception pendant la synchronisation 2 ms en moyenne et 5 ms au pire, base 807 Mo pour 390 Mo de bruts (`docs/sync.md`, « Volume »). Trouvé en chemin : un trousseau de test se verrouille après 5 minutes d'inactivité, ce qui faisait échouer un essai long ; les trousseaux de test n'ont plus de délai.
+- Reste : l'essai sur un compte réel, en lecture seule, que l'utilisateur fera lui-même (son mot de passe ne passe jamais par la conversation) ; procédure dans `docs/accounts.md`, « Trying NiceMailer on a mailbox in production ».
 
 ## 6. Gmail, Microsoft 365 et OAuth2 : ce que cela implique
 

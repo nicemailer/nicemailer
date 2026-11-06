@@ -11,7 +11,7 @@ XCODE ?= /Applications/Xcode.app/Contents/Developer
 THREADS ?= 2500
 
 # These targets are commands, not files to produce.
-.PHONY: dev-cert build test swift-test ui-test bench seed core app bundle open imap-up imap-down imap-test
+.PHONY: dev-cert build test swift-test ui-test bench seed core app bundle open imap-up imap-down imap-test volume-test
 
 build:
 	cargo build --release
@@ -83,6 +83,12 @@ imap-test:
 	cargo test -p nm-engine --test ingest_imap -- --ignored
 	cargo test -p nm-daemon --test sync_rpc -- --ignored
 	cargo test -p nm-daemon --test setup_rpc -- --ignored
+
+# The volume test of plan-imap.md, phase 8: a generated mailbox of
+# NM_VOLUME mails (100,000 by default) synchronized from nothing; prints
+# the durations, the memory and the latency of the lists. Minutes long.
+volume-test:
+	cargo test --release -p nm-daemon --test volume_rpc -- --ignored --nocapture
 
 # Stops the test IMAP servers; their mail, kept in memory, is lost.
 imap-down:

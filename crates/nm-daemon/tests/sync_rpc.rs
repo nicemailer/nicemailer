@@ -629,3 +629,67 @@ fn new_mail_is_screened_on_arrival() {
     assert!(phone.has("INBOX", "new1"), "the stranger's mail left the Quarantine");
     verify_ok(&mut c);
 }
+
+#[test]
+#[ignore = "needs the test servers: make imap-up, then make imap-test"]
+fn a_damaged_raw_file_is_fetched_again_and_a_deleted_mail_collected() {
+    let dir = tempfile::tempdir().unwrap();
+    let user = new_user();
+    let mut phone = Phone::open(FULL, &user);
+    phone.deliver("INBOX", "a", &[]);
+    let b = phone.deliver("INBOX", "b", &[]);
+    let (_core, mut c) = core(dir.path(), FULL, &user, "");
+    let passes = settled(&mut c, 0);
+    // The raw file of `a` is damaged on disk.
+    let hash: Vec<u8> = db(dir.path())
+        .query_row(
+            "SELECT raw_hash FROM message WHERE message_id_hdr = 'a@test.nicemailer'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    let hex: String = hash.iter().map(|x| format!("{x:02x}")).collect();
+    let path = dir
+        .path()
+        .join("raw.noindex")
+        .join(&hex[..2])
+        .join(format!("{hex}.eml.zst"));
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+    std::fs::write(&path, b"not zstd at all").unwrap();
+    let r = c
+        .call("sync_verify", json!({"account": "dovecot", "repair": true}))
+        .unwrap();
+    assert_eq!(r["ok"], false, "the damage is reported");
+    assert_eq!(r["repaired"], 1);
+    // The body connection downloads it again (no pass needed).
+    let _ = passes;
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while db(dir.path())
+        .query_row(
+            "SELECT body_state FROM message WHERE message_id_hdr = 'a@test.nicemailer'",
+            [],
+            |r| r.get::<_, i64>(0),
+        )
+        .unwrap()
+        == 0
+    {
+        assert!(Instant::now() < deadline, "not downloaded again");
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    verify_ok(&mut c);
+    assert!(
+        std::fs::read_dir(dir.path().join("raw.noindex/.corrupt"))
+            .unwrap()
+            .count()
+            == 1
+    );
+
+    // The phone deletes `b`: once synchronized, its raw file has no mail.
+    phone.select("INBOX");
+    phone.expunge(b);
+    sync(&mut c);
+    let r = c.call("raw_gc", json!({})).unwrap();
+    assert_eq!(r["blobs"], 1, "{r}");
+    verify_ok(&mut c);
+}

@@ -148,6 +148,8 @@ Les pièces jointes des brouillons (`outgoing.noindex/`, table `outgoing_blob`) 
 - tout fichier de `.tmp/` de plus de 24 heures ;
 - tout fichier final sans ligne `raw_blob` et dont la date de modification dépasse un délai de grâce (par exemple 24 heures).
 
+**Implémentation** (phase 8, `nm-store/src/gc.rs`) : GC une minute après le démarrage puis toutes les heures, et sur demande (`nicemailer raw gc`). Le verrou partagé/exclusif ci-dessous est réalisé par des épingles : un écrivain épingle le hash dès qu'il sait le fichier présent (écrit ou trouvé) et jusqu'à la validation de sa ligne ; le GC vérifie et supprime sous le même verrou, et laisse les hash épinglés. Le second niveau de sous-dossiers (`raw.fanout = 2`) n'est pas fait : mesuré sur APFS, trouver un fichier coûte 2,3 à 2,8 µs avec 400 comme avec 40 000 fichiers par dossier (soit 10 millions de mails sur 256 dossiers) ; seul le listage complet d'un dossier grandit (0,4 à 23 ms), que seul le balayage horaire fait.
+
 **Concurrence entre ingestion et GC** : dans le noyau, un verrou partagé/exclusif sérialise les deux. L'ingestion le prend en mode partagé de l'étape 4 à la validation de la transaction ; le GC le prend en mode exclusif. Cela évite le cas où l'ingestion constate que le fichier existe, puis où le GC le supprime avant que la ligne soit validée. L'auto-réparation de la section 6 couvre tout reliquat.
 
 Une suppression de fichier ne garantit pas l'effacement sécurisé des données sur le disque.

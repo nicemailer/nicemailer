@@ -114,6 +114,8 @@ pub struct Session {
     bye: Option<String>,
     /// A response of the current command that could not be read.
     malformed: Option<String>,
+    /// Writing commands refused before they leave (`forbid_writes`).
+    read_only: bool,
 }
 
 impl Session {
@@ -161,6 +163,7 @@ impl Session {
             notices: VecDeque::new(),
             bye: None,
             malformed: None,
+            read_only: false,
         }
     }
 
@@ -500,6 +503,22 @@ impl Session {
         }
     }
 
+    /// From now on, this session refuses every command that could change
+    /// the mailbox (`SELECT`, `STORE`, `COPY`, `MOVE`, `EXPUNGE`, `APPEND`,
+    /// `CREATE`), before it is sent: for an account the user wants read
+    /// only, a mistake elsewhere in NiceMailer cannot reach the server.
+    /// `EXAMINE` and every `PEEK` still work.
+    pub fn forbid_writes(&mut self) {
+        self.read_only = true;
+    }
+
+    fn need_writable(&self, command: &'static str) -> Result<()> {
+        if self.read_only {
+            return Err(ImapError::ReadOnly(command));
+        }
+        Ok(())
+    }
+
     fn need_auth(&self) -> Result<()> {
         match self.state {
             State::NotAuthenticated => Err(ImapError::State("not logged in")),
@@ -780,6 +799,7 @@ impl Session {
     /// `CREATE`. A mailbox that already exists is an error
     /// (`ImapError::No` with code `ALREADYEXISTS` on most servers).
     pub async fn create(&mut self, mailbox: &MailboxName) -> Result<()> {
+        self.need_writable("CREATE")?;
         self.need_auth()?;
         let (_, untagged) = self.exec(Command::new("CREATE").astring(&mailbox.raw)).await?;
         self.absorb(untagged);
@@ -790,6 +810,7 @@ impl Session {
     /// and `qresync` given, the server also says what changed since
     /// (`Selected::vanished`, `Selected::changed`).
     pub async fn select(&mut self, mailbox: &MailboxName, qresync: Option<&QresyncParams>) -> Result<Selected> {
+        self.need_writable("SELECT")?;
         self.open_mailbox("SELECT", mailbox, qresync).await
     }
 
@@ -1015,6 +1036,7 @@ impl Session {
     /// messages changed on the server after this modseq; they are listed in
     /// [`StoreResult::modified`].
     pub async fn uid_store(&mut self, uids: &Uids, op: StoreOp, flags: &[&str], silent: bool, unchanged_since: Option<u64>) -> Result<StoreResult> {
+        self.need_writable("STORE")?;
         self.need_selected()?;
         if unchanged_since.is_some() && !self.condstore() {
             return Err(ImapError::Unsupported("CONDSTORE"));
@@ -1060,6 +1082,7 @@ impl Session {
 
     /// `UID COPY`: returns where the messages went, with `UIDPLUS`.
     pub async fn uid_copy(&mut self, uids: &Uids, to: &MailboxName) -> Result<Option<CopyUids>> {
+        self.need_writable("COPY")?;
         self.need_selected()?;
         let mut all: Option<CopyUids> = None;
         for set in set_texts(uids) {
@@ -1077,6 +1100,7 @@ impl Session {
     /// UIDPLUS either, the messages stay flagged `\Deleted`
     /// ([`MoveResult::expunged`]). The expunges come as notices.
     pub async fn uid_move(&mut self, uids: &Uids, to: &MailboxName) -> Result<MoveResult> {
+        self.need_writable("MOVE")?;
         self.need_selected()?;
         if !self.caps.has("MOVE") {
             let copy_uids = self.uid_copy(uids, to).await?;
@@ -1110,6 +1134,7 @@ impl Session {
     /// `UID EXPUNGE` (UIDPLUS): expunges these UIDs only, if flagged
     /// `\Deleted`. The expunges come as notices.
     pub async fn uid_expunge(&mut self, uids: &Uids) -> Result<()> {
+        self.need_writable("EXPUNGE")?;
         self.need_selected()?;
         if !self.caps.has("UIDPLUS") {
             return Err(ImapError::Unsupported("UIDPLUS"));
@@ -1125,6 +1150,7 @@ impl Session {
     /// seconds, the date of arrival to give it (the server's clock
     /// otherwise). Returns its UID, with UIDPLUS.
     pub async fn append(&mut self, mailbox: &MailboxName, flags: &[&str], internal_date: Option<i64>, message: Vec<u8>) -> Result<Option<AppendUid>> {
+        self.need_writable("APPEND")?;
         self.need_auth()?;
         for f in flags {
             if !valid_flag(f) || f.eq_ignore_ascii_case("\\Recent") {

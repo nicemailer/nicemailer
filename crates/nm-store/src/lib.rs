@@ -37,6 +37,7 @@ pub mod attachments;
 mod commands;
 pub mod clean;
 pub mod encoded_words;
+pub mod gc;
 pub mod html_text;
 pub mod import;
 pub mod insert;
@@ -107,6 +108,14 @@ pub enum StoreError {
     Sqlite(#[from] rusqlite::Error),
     #[error("introuvable : {0}")]
     NotFound(String),
+    /// A command that changes the mail of a read-only account.
+    #[error("{0}")]
+    ReadOnly(String),
+    /// The raw file of a message is corrupt or missing (`gc.rs`): the
+    /// caller sets it aside (`Store::raw_damaged`), and the message is
+    /// downloaded again if its server still has it. The hash, in hex.
+    #[error("the raw file of this mail is damaged ({0}): it is set aside and downloaded again from the server if possible")]
+    RawDamaged(String),
     #[error("déplacement refusé : {0}")]
     InvalidMove(String),
     #[error("paramètre invalide : {0}")]
@@ -137,6 +146,15 @@ pub enum StoreError {
 /// Shorthand used throughout the crate: `Result<T>` means
 /// `Result<T, StoreError>`.
 pub type Result<T> = std::result::Result<T, StoreError>;
+
+/// The error of reading a raw file: `RawDamaged` when the file is corrupt
+/// (`InvalidData`) or missing (`NotFound`), the cases `gc.rs` repairs.
+pub(crate) fn raw_error(hash: &raw::Hash, e: std::io::Error) -> StoreError {
+    match e.kind() {
+        std::io::ErrorKind::InvalidData | std::io::ErrorKind::NotFound => StoreError::RawDamaged(raw::hex(hash)),
+        _ => StoreError::Io(e.to_string()),
+    }
+}
 
 /// What a command modified, so that the core can emit the matching events.
 /// The store knows nothing about events or sockets; it only reports what
@@ -279,7 +297,10 @@ impl Store {
         // The accounts whose changes go to the spool (`spool.rs`,
         // `set_server_accounts`): a table of this connection only, gone
         // when it closes, filled by the core from `config.toml`.
-        conn.execute_batch("CREATE TEMP TABLE IF NOT EXISTS server_account (id INTEGER PRIMARY KEY);")?;
+        conn.execute_batch(
+            "CREATE TEMP TABLE IF NOT EXISTS server_account (id INTEGER PRIMARY KEY);
+             CREATE TEMP TABLE IF NOT EXISTS read_only_account (id INTEGER PRIMARY KEY);",
+        )?;
         Ok(Store { conn, server_accounts: BTreeSet::new() })
     }
 

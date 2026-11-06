@@ -40,6 +40,7 @@ impl Store {
             .query_row("SELECT account_id FROM thread WHERE id = ?1", [thread_id], |r| r.get(0))
             .optional()?
             .ok_or_else(|| StoreError::NotFound(format!("conversation {thread_id}")))?;
+        crate::spool::refuse_read_only(&self.conn, thread_id)?;
         Ok(id)
     }
 

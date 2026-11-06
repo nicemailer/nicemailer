@@ -18,6 +18,13 @@ use serde_json::{Value, json};
 /// The core process, killed when the test ends (even on failure).
 pub struct Core(Child);
 
+impl Core {
+    /// The process id of the core, to measure it.
+    pub fn pid(&self) -> u32 {
+        self.0.id()
+    }
+}
+
 impl Drop for Core {
     fn drop(&mut self) {
         let _ = self.0.kill();
@@ -98,6 +105,10 @@ pub fn start(dir: &Path) -> Core {
             let ok = Command::new("/usr/bin/security").args(args).arg(&keychain).status().unwrap().success();
             assert!(ok, "security {args:?}");
         }
+        // A new keychain locks itself after 5 minutes without use; a long
+        // test (the volume test) would then lose its password. No timeout.
+        let ok = Command::new("/usr/bin/security").arg("set-keychain-settings").arg(&keychain).status().unwrap().success();
+        assert!(ok, "security set-keychain-settings");
     }
     Core(
         Command::new(env!("CARGO_BIN_EXE_nicemailer-core"))

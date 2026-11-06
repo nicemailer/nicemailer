@@ -209,6 +209,11 @@ pub struct AccountConfig {
     /// Whether this account carries the synchronized configuration
     /// (`synchronisation-configuration.md`; not implemented yet).
     pub config_sync: bool,
+    /// Never change anything on this account's server: the mail is
+    /// synchronized and screened "dry" (where each mail would go is
+    /// journaled, nothing moves), and the commands that change mail are
+    /// refused (`docs/sync.md`, "Read-only accounts").
+    pub read_only: bool,
     /// Trusted `authserv-id` of `Authentication-Results`, replacing the
     /// detected one (`configuration.md`, section 6).
     pub authserv_id: Option<String>,
@@ -698,6 +703,7 @@ impl<'t> Reader<'t> {
             _ => AuthMethod::Password,
         };
         let config_sync = self.bool(&mut s, "config_sync", false)?;
+        let read_only = self.bool(&mut s, "read_only", false)?;
         let authserv_id = self.string(&mut s, "authserv_id")?;
         let imap = match self.table(&mut s, "imap")? {
             Some(t) => self.server(t, &email, Protocol::Imap)?,
@@ -717,7 +723,7 @@ impl<'t> Reader<'t> {
             None => import.clone(),
         };
         self.finish(s);
-        Ok(AccountConfig { email, display_name, auth, config_sync, authserv_id, imap, smtp, identities, sync, import })
+        Ok(AccountConfig { email, display_name, auth, config_sync, read_only, authserv_id, imap, smtp, identities, sync, import })
     }
 
     fn server(&mut self, mut s: Section, email: &str, protocol: Protocol) -> R<ServerConfig> {
@@ -948,6 +954,7 @@ retention_days = {retention_days}
 # display_name = "My Name"
 # auth = "password"            # or "oauth2" (not supported yet)
 # config_sync = false
+# read_only = false              # true: never change anything on the server
 # authserv_id = "mx.example.com"   # only to replace the detected one
 #
 # [accounts.perso.imap]

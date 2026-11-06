@@ -10,6 +10,18 @@ The synchronization itself cannot change anything on the server, even by mistake
 
 (In phase 4 alone, before the spool, the commands that changed mail were refused on these accounts; that refusal is gone.)
 
+## Read-only accounts
+
+`read_only = true` in `[accounts.<key>]` (or `nicemailer account add … --read-only`) is for a mailbox in production that NiceMailer must look at without touching: nothing is ever changed on its server.
+
+- **The session refuses.** Each connection of the account is told to write nothing (`Session::forbid_writes`): `SELECT`, `STORE`, `COPY`, `MOVE`, `EXPUNGE`, `APPEND` and `CREATE` fail before they are sent (`ImapError::ReadOnly`), whatever the rest of NiceMailer asks. Only `EXAMINE` and the `PEEK` fetches go out.
+- **No spool.** The account is not among the accounts whose changes go to the spool, and the spool is not even run for it.
+- **Commands refused.** Moving a thread, marking it read or flagged, tagging it: error `1010` (`READ_ONLY`), since the next synchronization would undo a local change. A decision on a sender is recorded, but files none of this account's mail.
+- **Screening dry.** A new mail of the Inbox is screened as usual, and its `screen` row in `audit_log` says where it would go, with `"dry_run": true`; it stays in the Inbox, unmarked. A mail found in Sent has no effect. `audit_log` thus shows what NiceMailer would have done.
+- **Creation.** `add_account` with `read_only` creates no folder (the roles without a folder stay unassigned) and refuses any archiving.
+
+Tested against Dovecot by taking a snapshot of the server (folders, UIDs, flags) before NiceMailer works on the account, and comparing after (`crates/nm-daemon/tests/setup_rpc.rs`, `a_read_only_account_changes_nothing_on_its_server`), and by a scripted server that would fail on any writing command (`crates/nm-proto/tests/imap_script.rs`).
+
 ## Connections
 
 Each account has two connections, each on a thread of its own:
@@ -123,3 +135,20 @@ Same on both sides (0.1 s)
 | `crates/nm-store/tests/sync.rs` | folder listing (roles of the first listing only, a rename found by `UIDVALIDITY`, a role folder gone kept), flags and keywords, a move made elsewhere kept, a copy or an uncertain move inserted, flags and deletions in one transaction applied twice harmlessly, `uidnext` per batch, a UID already known not inserted twice, purge, nothing of it journaled (`tracabilite.md`), the order of bodies |
 | `crates/nm-daemon/tests/sync_rpc.rs` (`make imap-test`) | the real core against Dovecot, a second connection playing the phone. On both servers: first synchronization, new mail seen by IDLE and announced, flags, a move (with `MOVE`, and copy-delete-expunge on the minimal server) keeping the message's id, a deletion, changes made in NiceMailer reaching the server ([spool.md](spool.md)); `sync_verify` clean after each step. Also: one connection doing everything; a folder replaced (new `UIDVALIDITY`); a refused login waiting for a new password; network cuts at several moments (login, listing, bodies) without loss, duplicate or partial file |
 | `apps/NiceMailer/Tests/NiceMailerTests/EventOrderTests.swift` | a transient event neither reloads the app nor moves its position in the sequence |
+
+## Volume
+
+`make volume-test` (after `make imap-up`; `crates/nm-daemon/tests/volume_rpc.rs`): a mailbox of `NM_VOLUME` generated mails (100,000 by default: 60 % Inbox, 30 % Archive, 10 % Sent, bodies of 1 to 6 kB, one mail in three a reply) on the complete test Dovecot, synchronized from nothing by the real core, in release mode. Filling the mailbox takes the test Dovecot about 20 minutes; `NM_VOLUME_USER=<user>` synchronizes again a mailbox filled by an earlier run (its name is printed).
+
+Measured on 2026-11-06 (MacBook, Dovecot in Docker on the same machine):
+
+| Measure | 100,000 mails |
+| --- | --- |
+| Headers of every mail (the lists are complete) | 20 s |
+| Everything, bodies included | 728 s (about 140 bodies a second) |
+| Core memory (RSS), at most | 289 MB |
+| List of the Inbox (60 threads) during the sync | 2 ms average, 4 ms p99, 5 ms at worst (2,430 samples) |
+| Database (with the WAL) / raw store | 807 MB / 390 MB |
+| `sync verify --skip-hash` | 0.7 s |
+
+The lists stay instant while the core writes, thanks to the read pool on WAL. The bodies are the long part; on a real server, latency rather than the core sets their pace. The database is twice the raw store: it holds the full-text index and the extracted text of each body, on top of the headers.

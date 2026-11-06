@@ -64,8 +64,9 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufWriter, Read, Write};
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 
 // Rust note: `sha2::Digest` is a trait; importing it brings the `digest`
 // method into scope on `Sha256`.
@@ -138,6 +139,32 @@ pub struct RawStore {
     /// clones of the store, on several threads, share one counter;
     /// `AtomicU64` lets them change it without a lock.
     space: Option<Arc<AtomicU64>>,
+    /// Hashes written or found already stored, whose rows are not
+    /// committed yet: the garbage collector leaves them alone
+    /// (`stockage-brut.md`, section 7, "Concurrence entre ingestion et
+    /// GC"). Shared by every clone of the store.
+    pins: Arc<Mutex<HashMap<Hash, usize>>>,
+}
+
+/// A hash protected from the garbage collector while it lives: from the
+/// moment the file is known to be there (written, or found already) until
+/// the row that references it is committed, when the caller drops it.
+#[derive(Debug)]
+pub struct Pin {
+    pins: Arc<Mutex<HashMap<Hash, usize>>>,
+    hash: Hash,
+}
+
+impl Drop for Pin {
+    fn drop(&mut self) {
+        let mut pins = self.pins.lock().unwrap();
+        if let Some(n) = pins.get_mut(&self.hash) {
+            *n -= 1;
+            if *n == 0 {
+                pins.remove(&self.hash);
+            }
+        }
+    }
 }
 
 impl RawStore {
@@ -149,7 +176,7 @@ impl RawStore {
             fs::create_dir_all(&dir)?;
             fs::set_permissions(&dir, fs::Permissions::from_mode(0o700))?;
         }
-        Ok(RawStore { root, space: None })
+        Ok(RawStore { root, space: None, pins: Arc::default() })
     }
 
     /// Tests only: simulates a disk with `bytes` of free space left. Every
@@ -213,13 +240,55 @@ impl RawStore {
     /// The bytes are hashed first: a message already stored (an import run
     /// twice) then costs no compression at all.
     pub fn write(&self, bytes: &[u8]) -> io::Result<Written> {
+        Ok(self.write_pinned(bytes)?.0)
+    }
+
+    /// [`RawStore::write`], with the hash pinned until the caller has
+    /// committed the rows that reference it.
+    pub fn write_pinned(&self, bytes: &[u8]) -> io::Result<(Written, Pin)> {
         let hash = hash(bytes);
-        if let Ok(meta) = fs::metadata(self.path(&hash)) {
-            return Ok(Written { hash, size: bytes.len() as u64, stored_size: meta.len(), existed: true });
+        {
+            let mut pins = self.pins.lock().unwrap();
+            if let Ok(meta) = fs::metadata(self.path(&hash)) {
+                *pins.entry(hash).or_default() += 1;
+                drop(pins);
+                return Ok((Written { hash, size: bytes.len() as u64, stored_size: meta.len(), existed: true }, self.pin_taken(hash)));
+            }
         }
         let mut w = self.writer(false)?;
         w.write(bytes)?;
-        Ok(w.finish(Some(bytes.len() as u64))?.written)
+        let f = w.finish(Some(bytes.len() as u64))?;
+        Ok((f.written, f.pin))
+    }
+
+    /// The `Pin` of a hash already counted in `pins`.
+    fn pin_taken(&self, hash: Hash) -> Pin {
+        Pin { pins: self.pins.clone(), hash }
+    }
+
+    /// Runs `f` with the pins locked, given a test of whether a hash is
+    /// pinned: no writer can find a file "already there" meanwhile. The
+    /// garbage collector deletes files inside it.
+    pub fn with_pins_locked<R>(&self, f: impl FnOnce(&dyn Fn(&Hash) -> bool) -> R) -> R {
+        let pins = self.pins.lock().unwrap();
+        f(&|h: &Hash| pins.contains_key(h))
+    }
+
+    /// Root of the raw store.
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
+
+    /// Moves the file of `hash` to `.corrupt/`, out of the way and kept for
+    /// inspection (`stockage-brut.md`, section 6). `false`: no such file.
+    pub fn set_aside(&self, hash: &Hash) -> io::Result<bool> {
+        let from = self.path(hash);
+        if !from.exists() {
+            return Ok(false);
+        }
+        let to = self.root.join(".corrupt").join(format!("{}-{:08x}.eml.zst", hex(hash), rand::random::<u32>()));
+        fs::rename(from, to)?;
+        Ok(true)
     }
 
     /// Makes every file written so far durable, drive cache included (see
@@ -278,6 +347,9 @@ pub struct Finished {
     pub written: Written,
     /// The plain bytes, when asked for ([`RawStore::writer`]).
     pub plain: Option<PlainBytes>,
+    /// Keeps the file from the garbage collector until the caller has
+    /// committed its row: drop it after the commit.
+    pub pin: Pin,
 }
 
 /// The plain bytes of a message: in memory, or a mapped file. Either way a
@@ -355,15 +427,27 @@ impl RawWriter {
         drop(disk);
 
         let path = self.store.path(&hash);
-        let existed = path.exists();
-        if existed {
-            // Same bytes already stored: the copy just written is useless.
-            fs::remove_file(&self.tmp)?;
-        } else {
-            let parent = path.parent().expect("path has a parent");
-            fs::create_dir_all(parent)?;
-            fs::rename(&self.tmp, &path)?;
-            // The new directory entry, so the rename itself is not lost.
+        // Under the pins' lock: the garbage collector, which deletes files
+        // under it too, cannot remove this file between the check and the
+        // pin.
+        let parent = path.parent().expect("path has a parent");
+        let existed = {
+            let mut pins = self.store.pins.lock().unwrap();
+            let existed = path.exists();
+            if existed {
+                // Same bytes already stored: the copy just written is useless.
+                fs::remove_file(&self.tmp)?;
+            } else {
+                fs::create_dir_all(parent)?;
+                fs::rename(&self.tmp, &path)?;
+            }
+            *pins.entry(hash).or_default() += 1;
+            existed
+        };
+        let pin = self.store.pin_taken(hash);
+        if !existed {
+            // The new directory entry, so the rename itself is not lost;
+            // outside the lock, which other writers wait for.
             fsync(&File::open(parent)?)?;
         }
         // From here, `Drop` has no temporary file to remove: mark it so
@@ -382,7 +466,7 @@ impl RawWriter {
                 Some(PlainBytes::Mapped(result?))
             }
         };
-        Ok(Finished { written: Written { hash, size, stored_size, existed }, plain })
+        Ok(Finished { written: Written { hash, size, stored_size, existed }, plain, pin })
     }
 }
 

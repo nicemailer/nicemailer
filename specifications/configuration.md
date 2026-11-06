@@ -38,6 +38,7 @@ email = "prenom@exemple.fr"
 display_name = "Prénom Nom"
 auth = "password"            # ou "oauth2"
 config_sync = false          # synchronisation-configuration.md
+read_only = false            # true : ne jamais rien modifier sur le serveur
 
 [accounts.perso.imap]
 host = "imap.exemple.fr"
@@ -107,6 +108,10 @@ Sans cette règle, toute personne ou tout programme capable de modifier le fichi
 - Avec l'adresse principale, elles forment **les adresses du compte lui-même**, exclues de la règle « écrire vaut décision Inbox » (`dossiers.md`) et des correspondants de l'import initial (`import-initial.md`).
 - La signature, propre à chaque identité, sera spécifiée avec la composition.
 
+### `read_only`
+
+Un compte `read_only = true` n'est jamais modifié sur son serveur : chaque connexion refuse elle-même toute commande d'écriture avant de l'envoyer, aucune action n'est mise dans le spool, les commandes qui modifient un mail sont refusées (`1010`), et le screening tourne « à blanc » (la ligne `screen` de `audit_log` dit où le mail serait allé, rien ne bouge). Usage : regarder une boîte en production sans risque (`plan-imap.md`, phase 8).
+
 ### `authserv_id`
 
 L'identifiant de serveur reconnu dans `Authentication-Results` est détecté automatiquement et enregistré en base (`authentification-expediteur.md`). La clé `authserv_id` d'un compte, si elle est présente, remplace la valeur détectée : c'est le réglage avancé prévu pour un serveur mal détecté.
@@ -175,7 +180,7 @@ Les paramètres sont définis dans les spécifications qui les utilisent. Ce tab
 | `import.batch_size` | Nombre d'UID par `UID MOVE` | 1 000 | `import-initial.md` |
 | `raw.dir` | Racine du stockage brut | `<data_dir>/raw.noindex` | `stockage-brut.md` |
 | `raw.zstd_level` | Niveau de compression | à mesurer | `stockage-brut.md` |
-| `raw.fanout` | Niveaux de sous-dossiers | 1 | `stockage-brut.md` |
+| `raw.fanout` | Niveaux de sous-dossiers ; reste à 1, un second niveau n'apporte rien de mesurable (`stockage-brut.md`, section 7) | 1 | `stockage-brut.md` |
 | `raw.gc_grace_secs` | Délai de grâce des orphelins | 86 400 | `stockage-brut.md` |
 | `raw.verify_on_read` | Vérifier le hash à la lecture | vrai | `stockage-brut.md` |
 | `ui.view_threshold_ms` | Durée d'affichage avant `mark_viewed` | 2 000 | `tracabilite.md` |

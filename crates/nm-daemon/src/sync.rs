@@ -61,7 +61,11 @@ pub fn apply(core: &Core, store: &mut Store) {
             specs.push(AccountSpec { key: key.clone(), account_id: id, config: account.clone() });
         }
     }
-    if let Err(e) = store.set_server_accounts(specs.iter().map(|s| s.account_id).collect::<BTreeSet<_>>()) {
+    // A read-only account gets no action in the spool, and its mail no
+    // command (`spool.rs`, `set_read_only_accounts`).
+    let writable = specs.iter().filter(|s| !s.config.read_only).map(|s| s.account_id).collect::<BTreeSet<_>>();
+    let read_only = specs.iter().filter(|s| s.config.read_only).map(|s| s.account_id).collect::<BTreeSet<_>>();
+    if let Err(e) = store.set_server_accounts(writable).and_then(|_| store.set_read_only_accounts(read_only)) {
         eprintln!("sync : {e}");
     }
     drop(engine);
@@ -144,10 +148,17 @@ pub async fn verify(core: &Arc<Core>, p: SyncVerifyParams) -> Result<SyncVerifyR
     };
     let secrets = core.engine.lock().unwrap().secrets();
     let host: Arc<dyn SyncHost> = Arc::new(CoreHost(core.clone()));
-    tokio::task::spawn_blocking(move || nm_engine::sync::verify::verify_blocking(&spec, secrets, host, p.skip_hash))
+    let account_id = spec.account_id;
+    let report = tokio::task::spawn_blocking(move || nm_engine::sync::verify::verify_blocking(&spec, secrets, host, p.skip_hash, p.repair))
         .await
         .map_err(|e| RpcError::new(error_code::INTERNAL_ERROR, e.to_string()))?
-        .map_err(|e| RpcError::new(error_code::SERVER, e))
+        .map_err(|e| RpcError::new(error_code::SERVER, e))?;
+    if report.repaired > 0
+        && let Some(syncer) = core.syncer.get()
+    {
+        syncer.refetch(&BTreeSet::from([account_id]));
+    }
+    Ok(report)
 }
 
 /// A command queued changes for servers: their workers send them now.
@@ -167,4 +178,81 @@ pub fn prioritize(core: &Core, missing: Vec<(i64, i64)>) {
     for (account, ids) in by_account {
         syncer.prioritize(account, &ids);
     }
+}
+
+/// The answer of a command that read a raw file: a damaged one (corrupt or
+/// missing, `RAW_DAMAGED`) is set aside and its mail downloaded again
+/// (`nm-store`, `gc.rs`), then the error goes to the client, which can try
+/// again once the mail is back.
+pub async fn repaired<T>(core: &Arc<Core>, r: Result<T, RpcError>) -> Result<T, RpcError> {
+    if let Err(e) = &r
+        && e.code == error_code::RAW_DAMAGED
+        && let Some(hash) = hash_in(&e.message)
+    {
+        repair(core, hash).await;
+    }
+    r
+}
+
+/// The hash (64 hex digits) in an error message.
+fn hash_in(message: &str) -> Option<nm_store::raw::Hash> {
+    let token = message
+        .split(|c: char| !c.is_ascii_hexdigit())
+        .find(|t| t.len() == 64)?;
+    let mut out = [0u8; 32];
+    for (i, b) in out.iter_mut().enumerate() {
+        *b = u8::from_str_radix(&token[2 * i..2 * i + 2], 16).ok()?;
+    }
+    Some(out)
+}
+
+async fn repair(core: &Arc<Core>, hash: nm_store::raw::Hash) {
+    let raw = core.raw.clone();
+    match crate::with_store(core, move |s| s.raw_damaged(&raw, &hash)).await {
+        Ok(r) => {
+            eprintln!(
+                "raw : {} endommagé, mis à l'écart ; {} mail(s) retéléchargé(s), {} sans serveur",
+                nm_store::raw::hex(&hash),
+                r.refetch,
+                r.lost
+            );
+            if let Some(syncer) = core.syncer.get() {
+                syncer.refetch(&r.accounts);
+            }
+        }
+        Err(e) => eprintln!("raw : réparation impossible : {}", e.message),
+    }
+}
+
+/// The garbage collector of the raw store (`nm-store`, `gc.rs`): a minute
+/// after the start, then every hour, on a thread of its own.
+pub fn start_gc(core: &Arc<Core>) {
+    let core = core.clone();
+    std::thread::Builder::new()
+        .name("nm-raw-gc".into())
+        .spawn(move || {
+            std::thread::sleep(std::time::Duration::from_secs(60));
+            loop {
+                match run_gc(&core) {
+                    Ok(r) if r != nm_store::gc::GcReport::default() => {
+                        eprintln!("raw : ramasse-miettes : {r:?}")
+                    }
+                    Ok(_) => {}
+                    Err(e) => eprintln!("raw : ramasse-miettes : {e}"),
+                }
+                std::thread::sleep(std::time::Duration::from_secs(3600));
+            }
+        })
+        .expect("thread");
+}
+
+/// One collection, with the grace delay of `raw.gc_grace_secs`.
+pub fn run_gc(core: &Core) -> Result<nm_store::gc::GcReport, StoreError> {
+    let grace = core.engine.lock().unwrap().config().raw.gc_grace_secs;
+    nm_store::gc::collect_garbage(
+        &core.store,
+        &core.raw,
+        Some(core.attachments.root()),
+        std::time::Duration::from_secs(grace),
+    )
 }

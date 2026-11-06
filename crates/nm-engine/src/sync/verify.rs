@@ -31,16 +31,19 @@ pub fn verify_blocking(
     secrets: Arc<dyn Secrets>,
     host: Arc<dyn SyncHost>,
     skip_hash: bool,
+    repair: bool,
 ) -> Result<SyncVerifyReport, String> {
     let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().map_err(|e| e.to_string())?;
-    rt.block_on(verify(spec, secrets.as_ref(), host.as_ref(), skip_hash))
+    rt.block_on(verify(spec, secrets.as_ref(), host.as_ref(), skip_hash, repair))
 }
 
-async fn verify(spec: &AccountSpec, secrets: &dyn Secrets, host: &dyn SyncHost, skip_hash: bool) -> Result<SyncVerifyReport, String> {
+async fn verify(spec: &AccountSpec, secrets: &dyn Secrets, host: &dyn SyncHost, skip_hash: bool, repair: bool) -> Result<SyncVerifyReport, String> {
     let started = Instant::now();
     let cfg = &spec.config;
     let password = secrets::imap_password(secrets, &spec.key, cfg).map_err(|r| r.message(&spec.key, cfg))?;
     let mut s = Session::connect(&imap_spec(cfg), Timeouts::default()).await.map_err(|e| e.to_string())?;
+    // Verifying reads only.
+    s.forbid_writes();
     s.login(&cfg.imap.username, password.expose()).await.map_err(|e| e.to_string())?;
     let account_id = spec.account_id;
     let folders = read(host, |st| st.account_sync_folders(account_id)).map_err(|e| e.to_string())?;
@@ -100,10 +103,15 @@ async fn verify(spec: &AccountSpec, secrets: &dyn Secrets, host: &dyn SyncHost, 
                 }
             };
             v.bodies_checked += 1;
-            if let Some(p) = problem
-                && v.raw_problems.len() < LIST_MAX
-            {
-                v.raw_problems.push(format!("{uid}: {p}"));
+            if let Some(p) = problem {
+                if repair {
+                    let raw = host.raw().clone();
+                    let r = super::write(host, |st| Ok((st.raw_damaged(&raw, &hash)?, nm_store::ChangeSet::default()))).map_err(|e| e.to_string())?;
+                    report.repaired += r.refetch;
+                }
+                if v.raw_problems.len() < LIST_MAX {
+                    v.raw_problems.push(format!("{uid}: {p}"));
+                }
             }
         }
         let clean = v.missing_locally_count + v.extra_locally_count + v.flags_differ_count == 0

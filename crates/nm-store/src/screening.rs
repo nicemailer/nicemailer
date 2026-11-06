@@ -309,6 +309,14 @@ pub(crate) fn file_address(
         if role == "inbox" && flagged {
             continue;
         }
+        // A read-only account's mail is not filed: the move could not reach
+        // its server, and the next synchronization would undo it.
+        let read_only: bool = conn
+            .prepare_cached("SELECT EXISTS (SELECT 1 FROM temp.read_only_account WHERE id = ?1)")?
+            .query_row([account], |r| r.get(0))?;
+        if read_only {
+            continue;
+        }
         if target.is_favorable() && kind != "archive" {
             let verdict = AuthResult::parse(&verdict);
             let accepted = if domain_rule { domain_rule_accepts(verdict) } else { policy.accepts(verdict, auth_seen) };

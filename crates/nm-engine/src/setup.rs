@@ -54,6 +54,8 @@ pub async fn test_account(
 ) -> Result<TestAccountReport, ImapError> {
     let report = probe(spec, username, password, Timeouts::default()).await?;
     let mut s = open(spec, username, password).await?;
+    // Only reading here: a test of a production mailbox writes nothing.
+    s.forbid_writes();
     let st = s.status(&MailboxName::inbox()).await?;
     let uidnext = st.uid_next.unwrap_or(1);
     let sent = report.folders.iter().find(|f| f.proposed_role.as_deref() == Some("sent")).map(|f| f.name.clone());

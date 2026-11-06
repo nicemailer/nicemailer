@@ -245,6 +245,7 @@ async fn main() -> anyhow::Result<()> {
     fs::set_permissions(&socket_path, fs::Permissions::from_mode(0o600))?;
     eprintln!("nicemailer-core : base {}, socket {}", db_path.display(), socket_path.display());
     start_reindex(&core)?;
+    sync::start_gc(&core);
 
     // Accept connections until Ctrl-C (SIGINT) or SIGTERM (sent by `kill`
     // or by launchd).
@@ -375,6 +376,8 @@ fn store_error(e: StoreError) -> RpcError {
         StoreError::NotFound(_) => error_code::NOT_FOUND,
         StoreError::InvalidMove(_) => error_code::INVALID_MOVE,
         StoreError::InvalidParams(_) => error_code::INVALID_PARAMS,
+        StoreError::ReadOnly(_) => error_code::READ_ONLY,
+        StoreError::RawDamaged(_) => error_code::RAW_DAMAGED,
         // The client needs the address and the verdict to ask the user.
         StoreError::ConfirmationRequired { ref addr, ref verdict } => {
             let mut err = RpcError::new(error_code::CONFIRMATION_REQUIRED, e.to_string());
@@ -782,7 +785,7 @@ async fn dispatch(core: &Arc<Core>, session: &mut Session, req: Request) -> Resu
                 return Err(RpcError::new(error_code::INVALID_PARAMS, "dossier absolu attendu"));
             }
             let raw = core.raw.clone();
-            let path = with_reader(core, move |s| s.export_message(&raw, p.message_id, p.format, &dir)).await?;
+            let path = sync::repaired(core, with_reader(core, move |s| s.export_message(&raw, p.message_id, p.format, &dir)).await).await?;
             to_value(ExportResult { path: path.display().to_string() })
         }
         method::UNSUBSCRIBE => {
@@ -836,7 +839,7 @@ async fn dispatch(core: &Arc<Core>, session: &mut Session, req: Request) -> Resu
             // client receives its path, never its bytes.
             let p: GetAttachmentParams = params(req.params)?;
             let (raw, files) = (core.raw.clone(), core.attachments.clone());
-            let f = with_store(core, move |s| s.get_attachment(&raw, &files, p.attachment_id)).await?;
+            let f = sync::repaired(core, with_store(core, move |s| s.get_attachment(&raw, &files, p.attachment_id)).await).await?;
             to_value(AttachmentFileView {
                 path: f.path.display().to_string(),
                 filename: f.filename,
@@ -918,6 +921,14 @@ async fn dispatch(core: &Arc<Core>, session: &mut Session, req: Request) -> Resu
             let p: nm_api::RemoveAccountParams = params(req.params)?;
             setup::remove_account(core, p, source).await?;
             to_value(CommandResult { changed: 0 })
+        }
+        method::RAW_GC => {
+            let core2 = core.clone();
+            let r = tokio::task::spawn_blocking(move || sync::run_gc(&core2))
+                .await
+                .map_err(|e| RpcError::new(error_code::INTERNAL_ERROR, e.to_string()))?
+                .map_err(store_error)?;
+            to_value(nm_api::RawGcResult { blobs: r.blobs, temporary: r.temporary, orphans: r.orphans, attachment_dirs: r.attachment_dirs })
         }
         method::SYNC_STATUS => {
             let p: nm_api::SyncAccountParams = params(req.params)?;

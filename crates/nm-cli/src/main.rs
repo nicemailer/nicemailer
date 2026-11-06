@@ -123,6 +123,20 @@ enum Command {
         #[command(subcommand)]
         action: SyncAction,
     },
+    /// The store of raw messages.
+    Raw {
+        #[command(subcommand)]
+        action: RawAction,
+    },
+}
+
+/// `nicemailer raw …`.
+#[derive(Subcommand)]
+enum RawAction {
+    /// Delete now the raw files no mail references any more, the temporary
+    /// files left by a crash, and the orphan files (the core does it every
+    /// hour anyway).
+    Gc,
 }
 
 /// `nicemailer sync …`.
@@ -151,6 +165,10 @@ enum SyncAction {
         /// Only check that each raw file exists, without reading it.
         #[arg(long)]
         skip_hash: bool,
+        /// Set aside the raw files found corrupt or missing, and download
+        /// their mails again from the server.
+        #[arg(long)]
+        repair: bool,
         #[arg(long)]
         json: bool,
     },
@@ -176,7 +194,7 @@ fn print_sync_status(st: &nm_api::SyncStatus) {
         println!("No IMAP account is synchronized (config.toml has none).");
     }
     for a in &st.accounts {
-        print!("{} ({}): {}", a.key, a.mode.as_deref().unwrap_or("not connected yet"), a.state);
+        print!("{} ({}{}): {}", a.key, a.mode.as_deref().unwrap_or("not connected yet"), if a.read_only { ", read-only" } else { "" }, a.state);
         if let Some(t) = a.next_retry {
             print!(", next attempt {}", when(Some(t)));
         }
@@ -310,6 +328,12 @@ enum AccountAction {
         /// Do not accept the people you wrote to.
         #[arg(long)]
         no_correspondents: bool,
+        /// Never change anything on this server: no folder created, no
+        /// archiving, new mail screened dry (where it would go is recorded,
+        /// nothing moves), changes in NiceMailer refused. For a mailbox in
+        /// production you want to look at only.
+        #[arg(long)]
+        read_only: bool,
         /// Do not ask for confirmation.
         #[arg(long)]
         yes: bool,
@@ -508,6 +532,7 @@ fn main() -> anyhow::Result<()> {
                     archive_unread_before,
                     no_archive,
                     no_correspondents,
+                    read_only,
                     yes,
                 },
         } => {
@@ -522,7 +547,7 @@ fn main() -> anyhow::Result<()> {
             print_probe(&r.probe);
             println!();
             println!("Inbox: {} mails, {} unread.", r.inbox_messages, r.inbox_unseen);
-            let (read_before, unread_before) = if no_archive {
+            let (read_before, unread_before) = if no_archive || read_only {
                 (None, None)
             } else if archive_read_before.is_some() || archive_unread_before.is_some() {
                 (archive_read_before, archive_unread_before)
@@ -553,7 +578,11 @@ fn main() -> anyhow::Result<()> {
             } else {
                 println!("The people you wrote to ({}) will go straight to the Inbox.", r.correspondents);
             }
-            println!("The other senders go through the Quarantine with their next mail.");
+            if read_only {
+                println!("Read-only: no folder is created and nothing changes on the server; new mail is screened dry.");
+            } else {
+                println!("The other senders go through the Quarantine with their next mail.");
+            }
             if !yes && !confirm("Create the account? [y/N] ")? {
                 bail!("nothing created");
             }
@@ -561,7 +590,7 @@ fn main() -> anyhow::Result<()> {
                 "add_account",
                 json!({ "key": key, "email": email, "display_name": display_name, "imap": imap, "password": password,
                         "roles": roles, "uidnext": r.inbox_uidnext, "archive_read_before": read_before,
-                        "archive_unread_before": unread_before, "correspondents": !no_correspondents }),
+                        "archive_unread_before": unread_before, "correspondents": !no_correspondents, "read_only": read_only }),
             )?)?;
             if !res.created.is_empty() {
                 println!("Folders created on the server: {}", res.created.join(", "));
@@ -617,6 +646,15 @@ fn main() -> anyhow::Result<()> {
             }
             Ok(())
         }
+        Command::Raw { action: RawAction::Gc } => {
+            let mut client = Client::connect(&data_dir)?;
+            let r: nm_api::RawGcResult = serde_json::from_value(client.call("raw_gc", Value::Null)?)?;
+            println!(
+                "{} raw files no mail referenced, {} temporary files, {} orphans, {} attachment folders deleted.",
+                r.blobs, r.temporary, r.orphans, r.attachment_dirs
+            );
+            Ok(())
+        }
         Command::Sync { action } => {
             let mut client = Client::connect(&data_dir)?;
             match action {
@@ -632,13 +670,16 @@ fn main() -> anyhow::Result<()> {
                     client.call("sync_now", json!({ "account": key }))?;
                     println!("Synchronization asked; follow it with: nicemailer sync status");
                 }
-                SyncAction::Verify { key, skip_hash, json } => {
-                    let r = client.call("sync_verify", json!({ "account": key, "skip_hash": skip_hash }))?;
+                SyncAction::Verify { key, skip_hash, repair, json } => {
+                    let r = client.call("sync_verify", json!({ "account": key, "skip_hash": skip_hash, "repair": repair }))?;
                     let report: nm_api::SyncVerifyReport = serde_json::from_value(r.clone())?;
                     if json {
                         println!("{}", serde_json::to_string_pretty(&r)?);
                     } else {
                         print_verify(&report);
+                    }
+                    if report.repaired > 0 {
+                        println!("{} mails set to download again (damaged raw files set aside).", report.repaired);
                     }
                     if !report.ok {
                         std::process::exit(1);

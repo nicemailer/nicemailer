@@ -12,6 +12,7 @@ nicemailer account add perso --email me@example.fr --host imap.example.fr
 # --role sent="Éléments envoyés"      the folder of a role (repeat it)
 # --archive-read-before 2026-11-07    --archive-unread-before 2026-10-07
 # --no-archive    --no-correspondents    --yes (no confirmation)
+# --read-only     never change anything on this server (docs/sync.md, "Read-only accounts")
 ```
 
 The password is asked without echo, or read from the standard input (`printf %s "$PW" | nicemailer account add … --yes`). Then:
@@ -41,6 +42,30 @@ The worker sends the `initial_archive` action before anything else, and the Inbo
 - **Journal**: one `initial_archive` row on the account, with the criteria and the number of mails moved; not one per mail.
 
 The mails already in the mailbox are synchronized without screening (below the boundary); the addresses met then are marked `imported_from = 'imap_initial'`. After the import, every new mail is screened ([screening.md](screening.md)): a sender of the history without decision goes to Quarantine with their next mail.
+
+## Trying NiceMailer on a mailbox in production
+
+To look at a real mailbox without any risk to it, in a data directory and a settings file of their own, apart from the everyday ones:
+
+```sh
+# Terminal 1: a core of its own.
+export NICEMAILER_DATA_DIR=~/nm-trial NICEMAILER_CONFIG=~/nm-trial/config.toml
+make core
+
+# Terminal 2, same variables: the account, read-only.
+nicemailer account add trial --email you@example.fr --host imap.example.fr --read-only
+nicemailer sync status trial          # until "idle" and no body left
+nicemailer sync verify trial          # every folder, every raw file checked
+```
+
+With `--read-only`, the test connection and every connection after it refuse any writing command before it leaves (`docs/sync.md`, "Read-only accounts"): no folder created, no archiving, no flag, no move. New mail is screened dry: where each would have gone is in `audit_log`:
+
+```sh
+sqlite3 ~/nm-trial/nicemailer.db "SELECT json_extract(detail, '$.folder'), json_extract(detail, '$.rule'), count(*)
+  FROM audit_log WHERE action = 'screen' GROUP BY 1, 2"
+```
+
+`nicemailer sync status` also shows the `authserv-id` detected on the server's `Authentication-Results` (open question 3 of `plan-imap.md`). Removing the trial afterwards: `nicemailer account remove trial` (the server is not touched), then delete `~/nm-trial`.
 
 ## Writing `config.toml`
 

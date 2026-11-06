@@ -47,6 +47,10 @@ pub enum ImapError {
     /// The server lacks what the command needs.
     #[error("the server does not support {0}")]
     Unsupported(&'static str),
+    /// A command that could change the mailbox, on a session told to
+    /// write nothing (`Session::forbid_writes`). Never sent.
+    #[error("{0} refused: the account is read-only")]
+    ReadOnly(&'static str),
     /// A call that makes no sense in the current state (a FETCH without a
     /// selected mailbox): a bug of the caller.
     #[error("{0}")]

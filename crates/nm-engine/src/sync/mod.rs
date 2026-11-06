@@ -259,6 +259,20 @@ impl Syncer {
         }
     }
 
+    /// Bodies were reset to be downloaded again (a raw file damaged): the
+    /// body connections of these accounts read their queue again.
+    pub fn refetch(&self, account_ids: &std::collections::BTreeSet<i64>) {
+        for w in self.workers.lock().unwrap().values() {
+            if account_ids.contains(&w.spec.account_id) {
+                w.control.reload.store(true, Ordering::SeqCst);
+                w.control.bodies.notify_one();
+                if w.spec.settings().max_connections < 2 {
+                    w.control.work.notify_one();
+                }
+            }
+        }
+    }
+
     /// The bodies of `message_ids` of `account_id` are wanted now (the user
     /// opened them): first in line on the body connection.
     pub fn prioritize(&self, account_id: i64, message_ids: &[i64]) {

@@ -75,6 +75,7 @@ pub async fn count_archive(p: CountArchiveParams, source: Source) -> Result<Arch
         setup::parse_day(d).ok_or_else(|| invalid(format!("date {d:?}: YYYY-MM-DD expected")))?;
     }
     let mut s = setup::open(&spec, &user, &p.password).await.map_err(server)?;
+    s.forbid_writes();
     let n = setup::count_archive(&mut s, p.uidnext, p.read_before.as_deref(), p.unread_before.as_deref()).await.map_err(server)?;
     s.logout().await;
     Ok(n)
@@ -124,23 +125,36 @@ pub async fn add_account(core: &Arc<Core>, p: AddAccountParams, source: Source) 
     for d in [&p.archive_read_before, &p.archive_unread_before].into_iter().flatten() {
         setup::parse_day(d).ok_or_else(|| invalid(format!("date {d:?}: YYYY-MM-DD expected")))?;
     }
+    if p.read_only && (p.archive_read_before.is_some() || p.archive_unread_before.is_some()) {
+        return Err(invalid("a read-only account archives nothing on its server"));
+    }
     let spec = setup::spec_of(&p.imap).map_err(invalid)?;
     let user = setup::username_of(&p.imap, &p.email);
     let own = own(&p.email, &[]);
 
     // 1 and 2: the server.
     let mut s = setup::open(&spec, &user, &p.password).await.map_err(server)?;
+    if p.read_only {
+        s.forbid_writes();
+    }
     let namespace = s.namespace().await.ok().and_then(|n| n.personal.into_iter().next());
     let entries = s.list().await.map_err(server)?;
-    let roles = roles_for(&p.roles, &entries, namespace.as_ref());
-    let paths: Vec<String> = roles.values().cloned().collect();
-    let created = setup::create_folders(&mut s, &paths).await.map_err(server)?;
+    let mut roles = roles_for(&p.roles, &entries, namespace.as_ref());
+    let created = if p.read_only {
+        // Nothing created: the roles without folder stay unassigned.
+        let existing: BTreeSet<String> = entries.iter().map(|e| e.name.name.clone()).collect();
+        roles.retain(|r, path| *r == FolderRole::Inbox || existing.contains(path));
+        Vec::new()
+    } else {
+        let paths: Vec<String> = roles.values().cloned().collect();
+        setup::create_folders(&mut s, &paths).await.map_err(server)?
+    };
     let boundary = match p.uidnext {
         Some(u) => u,
         None => s.status(&nm_proto::imap::MailboxName::inbox()).await.map_err(server)?.uid_next.unwrap_or(1),
     };
-    let recipients = if p.correspondents {
-        setup::sent_recipients(&mut s, &roles[&FolderRole::Sent], &own).await.map_err(server)?
+    let recipients = if p.correspondents && let Some(sent) = roles.get(&FolderRole::Sent) {
+        setup::sent_recipients(&mut s, sent, &own).await.map_err(server)?
     } else {
         Vec::new()
     };
@@ -157,9 +171,10 @@ pub async fn add_account(core: &Arc<Core>, p: AddAccountParams, source: Source) 
             role: Some(*role),
         })
         .collect();
+    let archive_to = roles.get(&FolderRole::Archive).cloned().unwrap_or_default();
     let archive = (p.archive_read_before.is_some() || p.archive_unread_before.is_some()).then(|| ArchiveCriteria {
         from_path: "INBOX".into(),
-        to_path: roles[&FolderRole::Archive].clone(),
+        to_path: archive_to,
         boundary,
         read_before: p.archive_read_before.clone(),
         unread_before: p.archive_unread_before.clone(),
@@ -206,6 +221,7 @@ pub async fn add_account(core: &Arc<Core>, p: AddAccountParams, source: Source) 
         },
         username: user,
         ca_file: p.imap.ca_file.clone(),
+        read_only: p.read_only,
     };
     write_file(core, move |t| config_write::add_account(t, &new), &config_path).await?;
     Ok(AddAccountResult {

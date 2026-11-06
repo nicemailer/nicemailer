@@ -124,6 +124,8 @@ pub(crate) struct Ctx<'a> {
     /// When the detection of the `authserv-id` was last tried: at most once
     /// an hour while none is found (`authentification-expediteur.md`).
     pub detect_tried: &'a mut Option<Instant>,
+    /// `read_only = true`: the screening runs dry.
+    pub read_only: bool,
 }
 
 /// What a pass did.
@@ -306,6 +308,7 @@ pub(crate) async fn run(s: &mut Session, ctx: &mut Ctx<'_>, full: bool) -> Resul
             authserv_id: authserv.as_deref(),
             own: ctx.own,
             screen_from_uid: if w.folder.role == "inbox" { w.folder.screening_start } else { None },
+            dry_run: ctx.read_only,
         };
         let items = FetchItems { flags: true, internal_date: true, size: true, modseq: mode != Mode::None, header: true, ..FetchItems::default() };
         let total = w.new_uids.len() as u64;

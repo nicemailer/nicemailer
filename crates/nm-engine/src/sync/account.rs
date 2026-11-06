@@ -90,6 +90,7 @@ pub(super) fn start(spec: AccountSpec, host: Arc<dyn SyncHost>, secrets: Arc<dyn
     let status = Arc::new(Mutex::new(AccountSync {
         account_id: spec.account_id,
         key: spec.key.clone(),
+        read_only: spec.config.read_only,
         state: "connecting".into(),
         ..AccountSync::default()
     }));
@@ -180,6 +181,11 @@ async fn connect(w: &Shared) -> Result<(Session, Option<Namespace>), NoSession> 
         Err(r) => return Err(NoSession::Blocked { state: "stopped", error: r.message(&w.spec.key, cfg) }),
     };
     let mut s = Session::connect(&imap_spec(cfg), Timeouts::default()).await.map_err(|e| NoSession::Retry(e.to_string()))?;
+    // A read-only account: the session itself refuses any writing command,
+    // whatever the rest of NiceMailer asks.
+    if cfg.read_only {
+        s.forbid_writes();
+    }
     match s.login(&cfg.imap.username, password.expose()).await {
         Ok(()) => {}
         Err(e @ ImapError::AuthFailed(_)) => return Err(NoSession::Blocked { state: "auth_failed", error: e.to_string() }),
@@ -333,7 +339,8 @@ async fn work_loop(w: &Shared) {
             // What NiceMailer changed first, then what the server changed:
             // the pass then sees the moves done, and attaches their UIDs.
             w.control.spool.store(false, Ordering::SeqCst);
-            match spool::run(&mut s, w.host.as_ref(), w.spec.account_id, &mut keywords).await {
+            let spool_result = if cfg.read_only { Ok(Default::default()) } else { spool::run(&mut s, w.host.as_ref(), w.spec.account_id, &mut keywords).await };
+            match spool_result {
                 Ok(r) => {
                     if r.done + r.reverted + r.retried > 0 {
                         eprintln!("sync {}: spool: {} done, {} undone, {} to retry", w.spec.key, r.done, r.reverted, r.retried);
@@ -357,6 +364,7 @@ async fn work_loop(w: &Shared) {
                 own: &own,
                 authserv_config: cfg.authserv_id.as_deref(),
                 detect_tried: &mut detect_tried,
+                read_only: cfg.read_only,
             };
             match pass::run(&mut s, &mut ctx, full).await {
                 Ok(report) => {
@@ -396,7 +404,8 @@ async fn work_loop(w: &Shared) {
                     // The pass itself may have queued actions (the screening
                     // of new mail, a conversation brought back): sent now,
                     // not at the next pass.
-                    match spool::run(&mut s, w.host.as_ref(), w.spec.account_id, &mut keywords).await {
+                    let spool_result = if cfg.read_only { Ok(Default::default()) } else { spool::run(&mut s, w.host.as_ref(), w.spec.account_id, &mut keywords).await };
+                    match spool_result {
                         Ok(r) if r.done + r.reverted + r.retried > 0 => {
                             eprintln!("sync {}: spool: {} done, {} undone, {} to retry", w.spec.key, r.done, r.reverted, r.retried);
                         }

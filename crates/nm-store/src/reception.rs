@@ -58,12 +58,16 @@ pub struct Reception<'a> {
     /// Inbox only: mails at or above this UID are screened. `None`: the
     /// screening of the account is suspended (account being created).
     pub screen_from_uid: Option<u32>,
+    /// A read-only account: the screening says where each mail would go
+    /// (`screen` row with `dry_run`), and moves nothing; a mail found in
+    /// Sent has no effect.
+    pub dry_run: bool,
 }
 
 impl Reception<'_> {
     /// A folder with no reception rule: no screening, no verdict source.
     pub fn plain(announce: bool) -> Reception<'static> {
-        Reception { role: "", announce, keywords_local: false, authserv_id: None, own: &[], screen_from_uid: None }
+        Reception { role: "", announce, keywords_local: false, authserv_id: None, own: &[], screen_from_uid: None, dry_run: false }
     }
 }
 
@@ -92,7 +96,7 @@ pub(crate) fn after_insert(
     if rc.role == "inbox" && rc.screen_from_uid.is_some_and(|start| a.uid >= start) {
         folder = screen(tx, rc, account_id, folder_id, message_id, a, verdict, changes, threads)?;
     }
-    if rc.role == "sent" && rc.announce {
+    if rc.role == "sent" && rc.announce && !rc.dry_run {
         sent_effects(tx, rc, account_id, message_id, changes, threads)?;
     }
     // Trust on first use: a sender seen authenticated must stay so.
@@ -211,11 +215,11 @@ fn screen(
     // The user's own mail (a copy to oneself): it stays, and brings no
     // conversation back from Todo or Waiting (`dossiers.md`).
     if a.headers.from.as_ref().is_some_and(|f| rc.own.contains(&f.addr)) {
-        audit(tx, json!({"folder": "inbox", "rule": "self", "verdict": verdict.as_str()}))?;
+        audit(tx, json!({"folder": "inbox", "rule": "self", "verdict": verdict.as_str(), "dry_run": rc.dry_run}))?;
         return Ok(inbox);
     }
     let r = route(tx, account_id, message_id, a, verdict)?;
-    if r.suspect {
+    if r.suspect && !rc.dry_run {
         tx.prepare_cached("UPDATE message SET auth_suspect = 1 WHERE id = ?1")?.execute([message_id])?;
     }
     // A target folder the account does not have (phase 7 creates the
@@ -224,8 +228,12 @@ fn screen(
     audit(
         tx,
         json!({"folder": r.target.as_str(), "rule": r.rule, "verdict": verdict.as_str(), "suspect": r.suspect,
-               "folder_missing": to.is_none()}),
+               "folder_missing": to.is_none(), "dry_run": rc.dry_run}),
     )?;
+    if rc.dry_run {
+        // Said, not done.
+        return Ok(inbox);
+    }
     let thread = thread_of(tx, message_id)?;
     match to {
         Some(to) if to != inbox => {

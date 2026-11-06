@@ -48,6 +48,11 @@ pub struct AttachmentFile {
 impl AttachmentFiles {
     /// Opens (and creates if needed) the directory under `data_dir`, mode
     /// 0700 like the raw storage.
+    /// The directory of the extracted files (`attachments.noindex`).
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
+
     pub fn open(data_dir: &Path) -> io::Result<AttachmentFiles> {
         let root = data_dir.join(ATTACHMENTS_DIR);
         for dir in [root.clone(), root.join(".tmp")] {
@@ -112,7 +117,7 @@ impl Store {
         // downloaded yet) have nothing to extract.
         let hash = hash.ok_or_else(|| StoreError::NotFound(format!("contenu de la pièce jointe (message {message_id})")))?;
         let hash: Hash = hash.try_into().map_err(|_| StoreError::Io("hash de brut invalide".into()))?;
-        let bytes = raw.read(&hash).map_err(|e| StoreError::Io(e.to_string()))?;
+        let bytes = raw.read(&hash).map_err(|e| crate::raw_error(&hash, e))?;
         let content = part_content(&bytes, &part_id)
             .ok_or_else(|| StoreError::NotFound(format!("partie {part_id} du message {message_id}")))?;
         let path = files.path(&hash, &part_id, &name);

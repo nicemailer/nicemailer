@@ -49,6 +49,8 @@ struct Done {
     id: i64,
     written: Written,
     parsed: ParsedMessage,
+    /// Keeps the raw file from the garbage collector until committed.
+    _pin: nm_store::raw::Pin,
 }
 
 /// The body queue of an account, kept across connections.
@@ -152,7 +154,7 @@ impl Bodies {
             };
             self.pending_bytes += finished.written.size;
             self.oldest.get_or_insert_with(Instant::now);
-            self.pending.push(Done { id: next.id, written: finished.written, parsed });
+            self.pending.push(Done { id: next.id, written: finished.written, parsed, _pin: finished.pin });
             self.done += 1;
             if last_progress.elapsed() >= Duration::from_millis(500) {
                 last_progress = Instant::now();

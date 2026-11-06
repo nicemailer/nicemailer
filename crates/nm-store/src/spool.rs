@@ -234,6 +234,21 @@ impl Store {
         &self.server_accounts
     }
 
+    /// The accounts whose server must never be changed (`read_only = true`
+    /// in `config.toml`): no action is queued for them (they are not among
+    /// [`Store::set_server_accounts`]), and the commands that change their
+    /// mail are refused, since the next synchronization would undo a local
+    /// change.
+    pub fn set_read_only_accounts(&mut self, ids: BTreeSet<i64>) -> Result<()> {
+        let tx = self.conn.transaction()?;
+        tx.execute("DELETE FROM temp.read_only_account", [])?;
+        for id in &ids {
+            tx.execute("INSERT INTO temp.read_only_account (id) VALUES (?1)", [id])?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
     /// At start: the actions that were running when the core stopped are
     /// queued again. Each can be replayed: a move whose source UID is gone
     /// was done (`modele de donnees.md`, section 6, "Reprise après
@@ -473,5 +488,17 @@ fn undo_one(
     }
     changes.messages.insert((message_id, thread));
     threads.extend(thread);
+    Ok(())
+}
+
+/// Refuses a command that changes the mail of a thread of a read-only
+/// account (`Store::set_read_only_accounts`).
+pub(crate) fn refuse_read_only(conn: &Connection, thread_id: i64) -> Result<()> {
+    let ro: bool = conn
+        .prepare_cached("SELECT EXISTS (SELECT 1 FROM thread t JOIN temp.read_only_account r ON r.id = t.account_id WHERE t.id = ?1)")?
+        .query_row([thread_id], |r| r.get(0))?;
+    if ro {
+        return Err(crate::StoreError::ReadOnly("this account is read-only (read_only = true in config.toml): nothing is changed".into()));
+    }
     Ok(())
 }

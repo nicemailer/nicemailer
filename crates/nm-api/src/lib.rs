@@ -119,6 +119,8 @@ pub mod method {
     pub const RENAME_ACCOUNT: &str = "rename_account";
     /// Deletes an account, its data and its password.
     pub const REMOVE_ACCOUNT: &str = "remove_account";
+    /// Runs the garbage collector of the raw store now.
+    pub const RAW_GC: &str = "raw_gc";
 }
 
 /// Stable error codes. Negative codes are the ones defined by the JSON-RPC
@@ -160,6 +162,12 @@ pub mod error_code {
     /// The mail server could not be reached, refused the login, or failed;
     /// the message holds its answer.
     pub const SERVER: i64 = 1009;
+    /// A command that changes the mail of a read-only account
+    /// (`read_only = true` in `config.toml`).
+    pub const READ_ONLY: i64 = 1010;
+    /// The raw file of the mail is corrupt or missing: set aside, and the
+    /// mail downloaded again from its server; try again later.
+    pub const RAW_DAMAGED: i64 = 1011;
 }
 
 // ---------------------------------------------------------------------------
@@ -1316,6 +1324,10 @@ pub struct SyncVerifyParams {
     /// file exists).
     #[serde(default)]
     pub skip_hash: bool,
+    /// Set aside the raw files found corrupt or missing, and download
+    /// their mails again from the server.
+    #[serde(default)]
+    pub repair: bool,
 }
 
 /// Result of `sync_status`.
@@ -1329,6 +1341,8 @@ pub struct SyncStatus {
 pub struct AccountSync {
     pub account_id: i64,
     pub key: String,
+    /// `read_only = true`: nothing is changed on the server.
+    pub read_only: bool,
     /// `connecting`, `syncing`, `idle` (waiting for new mail on the
     /// Inbox), `waiting` (until the next attempt after an error),
     /// `auth_failed` (stopped until the password or the file changes),
@@ -1388,6 +1402,9 @@ pub struct SyncVerifyReport {
     pub ok: bool,
     pub folders: Vec<FolderVerify>,
     pub seconds: f64,
+    /// With `repair`: mails whose damaged raw file was set aside, to be
+    /// downloaded again.
+    pub repaired: u64,
 }
 
 /// The comparison of one folder. UID lists are cut at 20 entries; the
@@ -1531,6 +1548,10 @@ pub struct AddAccountParams {
     /// The people written to get the decision `inbox` (default yes).
     #[serde(default = "yes")]
     pub correspondents: bool,
+    /// Never change anything on the server (`read_only = true`): no folder
+    /// created, no archiving, screening dry.
+    #[serde(default)]
+    pub read_only: bool,
 }
 
 fn yes() -> bool {
@@ -1571,4 +1592,16 @@ pub struct RenameAccountParams {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RemoveAccountParams {
     pub account: String,
+}
+
+/// Result of `raw_gc`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RawGcResult {
+    /// Raw files no mail referenced, deleted.
+    pub blobs: u64,
+    /// Temporary files older than a day.
+    pub temporary: u64,
+    /// Files without row older than `raw.gc_grace_secs`.
+    pub orphans: u64,
+    pub attachment_dirs: u64,
 }

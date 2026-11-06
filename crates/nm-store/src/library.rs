@@ -120,7 +120,7 @@ impl Store {
                 let hash = hash.ok_or_else(|| StoreError::NotFound(format!("brut du message {message_id}")))?;
                 let hash: crate::raw::Hash =
                     hash.try_into().map_err(|_| StoreError::Io("hash de brut invalide".into()))?;
-                (raw.read(&hash).map_err(|e| StoreError::Io(e.to_string()))?, "eml")
+                (raw.read(&hash).map_err(|e| crate::raw_error(&hash, e))?, "eml")
             }
             ExportFormat::Txt => {
                 let mut s = format!("From: {from}\nTo: {}\n", recipients("to")?);
@@ -336,6 +336,7 @@ impl Store {
             .query_row("SELECT account_id FROM thread WHERE id = ?1", [thread_id], |r| r.get(0))
             .optional()?
             .ok_or_else(|| StoreError::NotFound(format!("conversation {thread_id}")))?;
+        crate::spool::refuse_read_only(&tx, thread_id)?;
         // Names are compared without case in Rust: SQLite's NOCASE only folds
         // ASCII, so "Équipe" and "équipe" would be two tags. An account has
         // few tags, reading them all is cheap.

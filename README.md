@@ -73,7 +73,8 @@ nicemailer account password perso   # save an IMAP password in the Keychain
 nicemailer imap probe perso     # what the server offers: capabilities, folders, roles (docs/imap.md)
 nicemailer account add perso --email me@example.fr --host imap.example.fr   # create an account (docs/accounts.md)
 nicemailer sync status          # the synchronization of each IMAP account (docs/sync.md)
-nicemailer sync verify perso    # server and database compared, folder by folder
+nicemailer sync verify perso    # server and database compared, folder by folder; --repair downloads damaged raw files again
+nicemailer raw gc         # delete raw files no mail references (the core does it hourly; docs/ingestion.md)
 nicemailer watch          # live event stream
 ```
 

@@ -32,6 +32,8 @@ pub struct NewAccount {
     pub security: Security,
     pub username: String,
     pub ca_file: Option<String>,
+    /// `read_only = true`: nothing is ever changed on the server.
+    pub read_only: bool,
 }
 
 fn doc(text: &str) -> Result<DocumentMut, String> {
@@ -69,6 +71,9 @@ pub fn add_account(text: &str, a: &NewAccount) -> Result<String, String> {
     t["email"] = value(&a.email);
     if let Some(n) = &a.display_name {
         t["display_name"] = value(n);
+    }
+    if a.read_only {
+        t["read_only"] = value(true);
     }
     let mut imap = Table::new();
     imap["host"] = value(&a.host);
@@ -185,6 +190,7 @@ port = 993\nsecurity = \"tls\"\n";
             security: Security::Tls,
             username: "bob".into(),
             ca_file: None,
+            read_only: false,
         }
     }
 

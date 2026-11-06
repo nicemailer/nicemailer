@@ -328,3 +328,124 @@ fn an_account_is_renamed_with_its_data_and_removed_with_them() {
     let err = agent.call("add_account", json!({"key": "x", "email": "x@y.example", "imap": imap(&user), "password": "p"})).unwrap_err();
     assert_eq!(err["code"], 1007);
 }
+
+/// Each folder of a server, and the UIDs and flags of its mails.
+type Snapshot = Vec<(String, Vec<(u32, Vec<String>)>)>;
+
+impl Phone {
+    /// Everything the server shows.
+    fn snapshot(&mut self) -> Snapshot {
+        let mut folders: Vec<String> = self
+            .rt
+            .block_on(self.s.list())
+            .unwrap()
+            .into_iter()
+            .map(|e| e.name.name)
+            .collect();
+        folders.sort();
+        folders
+            .into_iter()
+            .map(|f| {
+                let sel = self
+                    .rt
+                    .block_on(self.s.examine(&MailboxName::new(&f), None))
+                    .unwrap();
+                let mut mails = Vec::new();
+                if sel.exists > 0 {
+                    let items = nm_proto::imap::FetchItems {
+                        flags: true,
+                        ..Default::default()
+                    };
+                    for m in self
+                        .rt
+                        .block_on(self.s.uid_fetch(&nm_proto::imap::Uids::From(1), &items))
+                        .unwrap()
+                    {
+                        let mut fl = m.flags.unwrap_or_default();
+                        fl.sort();
+                        mails.push((m.uid.unwrap(), fl));
+                    }
+                }
+                mails.sort();
+                (f, mails)
+            })
+            .collect()
+    }
+}
+
+#[test]
+#[ignore = "needs the test servers: make imap-up, then make imap-test"]
+fn a_read_only_account_changes_nothing_on_its_server() {
+    let dir = tempfile::tempdir().unwrap();
+    let user = new_user();
+    let me = email(&user);
+    let mut phone = Phone::open(&user);
+    phone.deliver("INBOX", "kept", "stranger@far.example", &me, &[], 3);
+    phone.deliver("Sent", "s", &me, "bob@b.example", &["\\Seen"], 1);
+    let (_core, mut c) = core(dir.path(), "");
+    // Archiving is refused on a read-only account.
+    let err = c
+        .call("add_account", json!({"key": "prod", "email": me, "imap": imap(&user), "password": "nicemailer", "read_only": true,
+                                     "archive_read_before": "2026-11-01"}))
+        .unwrap_err();
+    assert_eq!(err["code"], -32602, "{err}");
+    let before = phone.snapshot();
+    let res = c.call("add_account", json!({"key": "prod", "email": me, "imap": imap(&user), "password": "nicemailer", "read_only": true})).unwrap();
+    assert_eq!(res["created"], json!([]), "no folder created");
+    settled(&mut c, "prod");
+    assert_eq!(status(&mut c, "prod")["read_only"], true);
+    let file = std::fs::read_to_string(dir.path().join("config.toml")).unwrap();
+    assert!(file.contains("read_only = true"), "{file}");
+
+    // New mail: screened dry, left where it is.
+    phone.deliver("INBOX", "new", "someone@new.example", &me, &[], 0);
+    c.call("sync_now", json!({"account": "prod"})).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while int(
+        dir.path(),
+        "SELECT count(*) FROM audit_log WHERE action = 'screen'",
+    ) == 0
+    {
+        assert!(Instant::now() < deadline, "not screened");
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    assert_eq!(
+        int(
+            dir.path(),
+            "SELECT json_extract(detail, '$.dry_run') FROM audit_log WHERE action = 'screen'"
+        ),
+        1
+    );
+    // Commands are refused.
+    let thread = int(
+        dir.path(),
+        "SELECT thread_id FROM message WHERE message_id_hdr = 'kept@test.nicemailer'",
+    );
+    for (method, params) in [
+        (
+            "set_thread_seen",
+            json!({"thread_id": thread, "seen": true}),
+        ),
+        (
+            "move_thread",
+            json!({"thread_id": thread, "target": "deleted"}),
+        ),
+        ("tag_thread", json!({"thread_id": thread, "name": "x"})),
+    ] {
+        assert_eq!(
+            c.call(method, params).unwrap_err()["code"],
+            1010,
+            "{method}"
+        );
+    }
+    settled(&mut c, "prod");
+    verify_ok(&mut c, "prod");
+    // The server is as it was, plus the mail the phone delivered.
+    let mut after = phone.snapshot();
+    for (f, mails) in after.iter_mut() {
+        if f == "INBOX" {
+            mails.pop();
+        }
+    }
+    assert_eq!(after, before, "nothing changed on the server");
+}

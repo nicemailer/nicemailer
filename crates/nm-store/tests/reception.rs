@@ -23,6 +23,8 @@ struct Env {
     ins: Inserter,
     own: Vec<String>,
     next_uid: u32,
+    /// A read-only account: the screening runs dry.
+    dry_run: bool,
 }
 
 fn env() -> Env {
@@ -37,7 +39,7 @@ fn env() -> Env {
         .collect();
     s.sync_folder_list(acc, &listed).unwrap();
     s.set_server_accounts(BTreeSet::from([acc])).unwrap();
-    Env { s, acc, ins: Inserter::new(Source::Imap, None), own: vec![ME.to_string()], next_uid: 10 }
+    Env { s, acc, ins: Inserter::new(Source::Imap, None), own: vec![ME.to_string()], next_uid: 10, dry_run: false }
 }
 
 fn folder(s: &Store, role: &str) -> i64 {
@@ -83,7 +85,7 @@ impl Env {
             modseq: None,
             headers: parse_headers(header.as_bytes()),
         };
-        let rc = Reception { role, announce: true, keywords_local: false, authserv_id: authserv, own: &self.own, screen_from_uid: screen_from };
+        let rc = Reception { role, announce: true, keywords_local: false, authserv_id: authserv, own: &self.own, screen_from_uid: screen_from, dry_run: self.dry_run };
         let f = folder(&self.s, role);
         let (_, changes) = self.s.insert_arrivals(&mut self.ins, self.acc, f, &[a], &mut BTreeMap::new(), &rc).unwrap();
         let id: i64 = self.s.conn().query_row("SELECT max(id) FROM message", [], |r| r.get(0)).unwrap();
@@ -313,11 +315,41 @@ fn a_marked_mail_that_left_the_inbox_elsewhere_loses_its_mark() {
     };
     let mut deletions = BTreeMap::from([(folder(&e.s, "inbox"), BTreeSet::from([77]))]);
     let own = e.own.clone();
-    let rc = Reception { role: "archive", announce: true, keywords_local: false, authserv_id: Some(SERVER), own: &own, screen_from_uid: None };
+    let rc = Reception { role: "archive", announce: true, keywords_local: false, authserv_id: Some(SERVER), own: &own, screen_from_uid: None, dry_run: false };
     let archive = folder(&e.s, "archive");
     let (got, _) = e.s.insert_arrivals(&mut e.ins, e.acc, archive, &[a], &mut deletions, &rc).unwrap();
     assert_eq!(got.moved, 1);
     assert_eq!(e.role_of(first), "archive");
     assert_eq!(e.int("SELECT count(*) FROM message_keyword WHERE message_id = ?1", first), 0);
     assert_eq!(count(&e.s, "SELECT count(*) FROM pending_action WHERE state = 'queued' AND payload LIKE '%\"set\":false%'"), 1);
+}
+
+#[test]
+fn a_read_only_account_is_screened_dry_and_its_mail_cannot_be_changed() {
+    let mut e = env();
+    e.s.set_server_accounts(BTreeSet::new()).unwrap();
+    e.s.set_read_only_accounts(BTreeSet::from([e.acc])).unwrap();
+    e.dry_run = true;
+    // Where it would go is said; it stays.
+    let (id, role, _) = e.arrive("inbox", &mail("ro1@x", "stranger@far.example", Some("dmarc=fail"), &[]));
+    assert_eq!(role, "inbox");
+    let (folder, dry): (String, bool) = e
+        .s
+        .conn()
+        .query_row("SELECT json_extract(detail, '$.folder'), json_extract(detail, '$.dry_run') FROM audit_log WHERE action = 'screen' AND entity_id = ?1", [id], |r| Ok((r.get(0)?, r.get(1)?)))
+        .unwrap();
+    assert_eq!((folder.as_str(), dry), ("quarantine", true));
+    assert_eq!(e.int("SELECT auth_suspect FROM message WHERE id = ?1", id), 0, "nothing marked either");
+    assert_eq!(count(&e.s, "SELECT count(*) FROM pending_action"), 0);
+    // No command changes its mail, and a decision files none of it.
+    let thread = e.int("SELECT thread_id FROM message WHERE id = ?1", id);
+    let refused = |r: Result<(), nm_store::StoreError>| assert!(matches!(r, Err(nm_store::StoreError::ReadOnly(_))), "{r:?}");
+    refused(e.s.set_thread_seen(thread, true, Source::Cli).map(|_| ()));
+    refused(e.s.move_thread(thread, FolderRole::Archive, None, MoveOptions::default(), Source::Cli).map(|_| ()));
+    refused(e.s.tag_thread(thread, "Projet", false, Source::Cli).map(|_| ()));
+    e.decide("stranger@far.example", ScreeningTarget::Newsletter);
+    assert_eq!(e.role_of(id), "inbox");
+    // A mail found in Sent changes nothing.
+    e.arrive("sent", &format!("Message-ID: <rs@x>\r\nFrom: {ME}\r\nTo: zed@z.example\r\n\r\n"));
+    assert_eq!(count(&e.s, "SELECT count(*) FROM address WHERE addr = 'zed@z.example' AND screening_target IS NOT NULL"), 0);
 }

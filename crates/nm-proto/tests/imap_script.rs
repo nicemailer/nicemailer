@@ -631,3 +631,27 @@ async fn commands_out_of_state_send_nothing() {
     drop(s);
     task.await.unwrap();
 }
+
+#[tokio::test]
+async fn a_read_only_session_sends_no_writing_command() {
+    // The script expects EXAMINE alone: any writing command would be a line
+    // the server does not expect, and the test would fail.
+    let (mut s, task) = logged_in(
+        "C: N2 EXAMINE INBOX (CONDSTORE)\nS: * 3 EXISTS\nS: * OK [UIDVALIDITY 7] ok\nS: * OK [UIDNEXT 4] ok\nS: N2 OK [READ-ONLY] done",
+    )
+    .await;
+    s.forbid_writes();
+    let inbox = MailboxName::inbox();
+    assert!(matches!(s.select(&inbox, None).await, Err(ImapError::ReadOnly("SELECT"))));
+    assert!(matches!(s.create(&MailboxName::new("X")).await, Err(ImapError::ReadOnly("CREATE"))));
+    assert!(matches!(s.append(&inbox, &[], None, b"x".to_vec()).await, Err(ImapError::ReadOnly("APPEND"))));
+    s.examine(&inbox, None).await.unwrap();
+    let one = Uids::Set(UidSet::from_uids([1]));
+    assert!(matches!(s.uid_store(&one, StoreOp::Add, &["\\Seen"], true, None).await, Err(ImapError::ReadOnly("STORE"))));
+    assert!(matches!(s.uid_move(&one, &MailboxName::new("X")).await, Err(ImapError::ReadOnly("MOVE"))));
+    assert!(matches!(s.uid_copy(&one, &MailboxName::new("X")).await, Err(ImapError::ReadOnly("COPY"))));
+    assert!(matches!(s.uid_expunge(&one).await, Err(ImapError::ReadOnly("EXPUNGE"))));
+    assert!(s.is_open(), "a refusal is no failure of the session");
+    drop(s);
+    task.await.unwrap();
+}

@@ -8,6 +8,7 @@
 | `make ui-test` | scripted UI tests of the app | builds the core; starts its own cores on temporary data |
 | `make imap-up`, `make imap-down` | start and stop the test IMAP servers (Dovecot, see below) | OrbStack or Docker |
 | `make imap-test` | the tests that talk to the test IMAP servers: the IMAP client on both servers, `probe_account` end to end, a large body streamed from the server into the raw store ([ingestion.md](ingestion.md)), the synchronization end to end against a second connection playing the phone, with network cuts ([sync.md](sync.md)), the spool: changes reaching the server, refusals, two cores, a crash after a MOVE ([spool.md](spool.md)), the screening of new mail ([screening.md](screening.md)), and the creation of an account with its initial import ([accounts.md](accounts.md)) | `make imap-up` |
+| `make volume-test` | the volume test: a generated mailbox of `NM_VOLUME` mails (100,000) synchronized from nothing by the real core; durations, memory, latency of the lists during the sync ([sync.md](sync.md), "Volume") | `make imap-up` |
 | `make bench` | times every thread list (folders, Everything, search, each filter) through the socket on 100,000 generated conversations, or on `BENCH_DATA_DIR` | starts its own core |
 
 ## Rust

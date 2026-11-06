@@ -89,8 +89,31 @@ A text body itself is not limited: a 150 MB `text/plain` mail would have 150 MB 
 | `crates/nm-store/tests/insert.rs` | headers then body (list, counters, search before and after the body, `Already`, `Missing`); threads in each of 120 orders of arrival; two replies to an absent message; a merge; a batch rolled back leaves nothing and its addresses are forgotten; a full disk while the body arrives changes nothing |
 | `crates/nm-store/tests/big_message.rs` | 150 MB in pieces, bounded heap, stored byte for byte |
 | `crates/nm-store/tests/import.rs` | the mbox import, through the same path |
+| `crates/nm-store/tests/gc.rs` | files nothing references collected with their attachments, the others kept; a hash an ingestion holds never collected; leftovers of a crash swept after the grace delay only; a damaged raw file set aside and its mail fetched again; an archive mail that cannot be |
 | `crates/nm-engine/tests/ingest_imap.rs` (`make imap-test`) | against Dovecot: the headers of a 22 MB mail, then its body streamed from the server into the raw store; a cut at 8 MB stores nothing, and the next connection completes the message |
 
 The simulated full disk is `RawStore::with_disk_space(bytes)`, for tests only: every write beyond fails with the error of a full disk.
 
 In debug builds, which the tests use, `sha2`, `mail-parser` and `zstd-sys` are compiled optimized (`[profile.dev.package.*]` in `Cargo.toml`): the 150 MB test took 24 s without it, under a second with it. NiceMailer's own code stays unoptimized in debug, so it still compiles fast.
+
+## Housekeeping (phase 8)
+
+`crates/nm-store/src/gc.rs`; `stockage-brut.md`, sections 6 and 7.
+
+### Garbage collector
+
+A raw file nothing references any more (the server deleted the mail, an account was removed) is deleted, with the attachments extracted from it (`attachments.noindex/<hash>/`). The core runs it a minute after it starts, then every hour; `nicemailer raw gc` (`raw_gc`) runs it at once.
+
+The race of the specification: an ingestion finds a file "already there" (the same bytes in two folders), and the collector deletes it before the ingestion commits the row that references it. NiceMailer closes it with **pins** (`raw.rs`, `Pin`): from the moment a writer knows the file is there (written, or found) until its row is committed, the hash is pinned, and the collector, which checks and deletes under the same lock, leaves it alone. The other order is harmless: a file deleted first is simply written again by the ingestion, which then finds it missing. The mbox import and the body connection keep their pins until their batch is committed. The lock is held for the check and the rename only, not for the `fsync` of the directory: the ten workers of an import do not wait for each other's disk.
+
+### Sweep of orphans
+
+What a crash may leave: files of `.tmp/` older than a day, and final files without `raw_blob` row older than `raw.gc_grace_secs` (a day) and not pinned. The directories are listed without any lock; each candidate is checked under the locks.
+
+### A raw file corrupt or missing
+
+Found when it is read (an attachment, an export) or by `nicemailer sync verify --repair`: the file is moved to `raw.noindex/.corrupt/` (kept for inspection), and each message of a synchronized folder that had it goes back to "headers only": its body, attachments and unsubscribe rows deleted, `raw_hash` NULL, `body_state = 0`. Its body connection reads its queue again and downloads it from the server; the command that found it answers `1011` (`RAW_DAMAGED`), to try again once the mail is back. A message without server (an archive account) cannot be repaired: it keeps its row, and the error.
+
+### No second level of directories
+
+The plan foresaw a second level of subdirectories beyond 100,000 messages (`raw.fanout = 2`). Measured on APFS (macOS, 2026-11-06), for 400, 8,000 and 40,000 files in one directory: creating a file 63 µs, finding one 2.3 to 2.8 µs, finding one absent 4.6 to 5.3 µs, in each case; only listing a whole directory grows (0.4, 4.8, 23 ms), which the hourly sweep alone does. With 256 directories, 40,000 files each is 10 million mails. A second level would gain nothing measurable, and its migration would move every file of a large store: not done. `raw.fanout` stays at 1.

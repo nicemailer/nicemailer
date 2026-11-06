@@ -122,6 +122,9 @@ struct Prepared {
     /// ids, same display name kept for an address).
     seq: u64,
     written: Written,
+    /// Keeps the raw file from the garbage collector until the batch is
+    /// committed (`raw.rs`, `Pin`).
+    pin: Option<crate::raw::Pin>,
     parsed: ParsedMessage,
     /// Date of the mbox From_ line.
     delivered_at: Option<i64>,
@@ -363,9 +366,9 @@ fn unix_now() -> i64 {
 
 /// The slow, parallel part of the pipeline for one message.
 fn prepare(raw: &RawStore, seq: u64, m: crate::mbox::MboxMessage) -> std::io::Result<Prepared> {
-    let written = raw.write(&m.bytes)?;
+    let (written, pin) = raw.write_pinned(&m.bytes)?;
     let parsed = ingest::parse(&m.bytes);
-    Ok(Prepared { seq, written, parsed, delivered_at: m.delivered_at })
+    Ok(Prepared { seq, written, pin: Some(pin), parsed, delivered_at: m.delivered_at })
 }
 
 fn io_error(path: &std::path::Path, e: std::io::Error) -> StoreError {
@@ -440,8 +443,11 @@ impl Writer {
         {
             let tx = guard.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
             // `drain(..)` moves the messages out of the batch, leaving it
-            // empty and ready to be refilled (its memory is reused).
-            for p in batch.drain(..) {
+            // empty and ready to be refilled (its memory is reused). The
+            // pins live until the commit below.
+            let mut pins = Vec::with_capacity(batch.len());
+            for mut p in batch.drain(..) {
+                pins.extend(p.pin.take());
                 if let Err(e) = self.insert(&tx, p, &mut changes) {
                     // The transaction is rolled back when `tx` is dropped.
                     self.inserter.abandon();
@@ -451,6 +457,7 @@ impl Writer {
             changes.folders.insert(self.account.archive_folder);
             changes.folders.insert(self.account.sent_folder);
             self.inserter.commit(tx, &mut changes)?;
+            drop(pins);
         }
         self.report.progress.bytes_read = bytes_read.load(Ordering::Relaxed);
         on_batch(&guard, &changes, &self.report.progress);
