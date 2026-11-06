@@ -102,6 +102,10 @@ final class GeekController {
         /// What ⌘-Return does, when it differs from Return (a file of `l`:
         /// save, then open).
         var commandAction: (@MainActor () -> Void)? = nil
+        /// In a menu, a second key that runs `commandAction`: `T` for "as
+        /// text file, then open", next to `t` on the same row (`ui.md`,
+        /// menu `s`). The row says so in its detail.
+        var altKey: String? = nil
         /// Hidden words that also find the row when typed (`cc` for "To…"),
         /// never shown (`PickerMatch`).
         var keywords: [String] = []
@@ -376,6 +380,12 @@ final class GeekController {
             }
             return true
         }
+        // ⌘-Return in a prefix menu: the highlighted row's second action
+        // (`sT`: save, then open), or its usual one.
+        if mods.contains(.command), event.keyCode == KeyCode.returnKey, case .menu = overlay {
+            if let i = menuIndex { chooseMenuEntry(i, command: true) } else { overlay = .none }
+            return true
+        }
         // While text is typed (a picker, the contacts filter), ⌘V pastes and
         // ⌘ with the arrows or Delete edits the line, as in any text field.
         // This comes before the other ⌘ shortcuts, which do not apply there.
@@ -433,6 +443,7 @@ final class GeekController {
                 menuIndex = menuIndex.map { Self.stepUp($0, count: count) } ?? max(0, count - 1)
                 return true
             case KeyCode.returnKey:
+                // (⌘-Return is handled at the top of `handle`.)
                 if let i = menuIndex { chooseMenuEntry(i) } else { overlay = .none }
                 return true
             default:
@@ -440,12 +451,15 @@ final class GeekController {
             }
             overlay = .none
             if code == KeyCode.escape { return true }
-            if let entry = menuEntries(prefix).first(where: { $0.key == key }) {
+            let entries = menuEntries(prefix)
+            if let entry = entries.first(where: { $0.key == key }) {
                 if entry.disabled {
                     model.flash = L("Not available yet: %@", entry.label)
                 } else {
                     entry.action()
                 }
+            } else if let entry = entries.first(where: { $0.altKey == key }), let second = entry.commandAction {
+                second()
             } else {
                 model.flash = L("No command %@%@", prefix.rawValue, key)
             }
@@ -709,8 +723,17 @@ final class GeekController {
         case .save:
             return [
                 Entry(key: "e", label: L("as .eml file")) { [model] in model.export("eml") },
-                Entry(key: "t", label: L("as text file")) { [model] in model.export("txt") },
-                Entry(key: "m", label: L("as Markdown file")) { [model] in model.export("md") },
+                // The capital saves, then opens the file in front, in the
+                // app macOS gives it (TextEdit, Obsidian…): `T`, `M`, or
+                // ⌘-Return on the row (`ui.md`, menu `s`).
+                Entry(key: "t", label: L("as text file"), detail: L("%@: and open", "T"), detailStyle: .info,
+                      commandAction: { [model] in model.export("txt", open: true) }, altKey: "T") { [model] in
+                    model.export("txt")
+                },
+                Entry(key: "m", label: L("as Markdown file"), detail: L("%@: and open", "M"), detailStyle: .info,
+                      commandAction: { [model] in model.export("md", open: true) }, altKey: "M") { [model] in
+                    model.export("md")
+                },
                 // Every attachment of the marked threads (or of the one
                 // under the cursor), with or without the graphics.
                 Entry(key: "a", label: L("all attachments")) { [model] in
@@ -932,14 +955,17 @@ final class GeekController {
         overlay = .menu(prefix)
     }
 
-    /// A click on a row of the open prefix menu: same as its key.
-    func chooseMenuEntry(_ index: Int) {
+    /// A click on a row of the open prefix menu: same as its key; with
+    /// `command` (⌘-Return), its second action if it has one.
+    func chooseMenuEntry(_ index: Int, command: Bool = false) {
         guard case .menu(let prefix) = overlay else { return }
         overlay = .none
         let entries = menuEntries(prefix)
         guard entries.indices.contains(index) else { return }
         if entries[index].disabled {
             model.flash = L("Not available yet: %@", entries[index].label)
+        } else if command, let second = entries[index].commandAction {
+            second()
         } else {
             entries[index].action()
         }

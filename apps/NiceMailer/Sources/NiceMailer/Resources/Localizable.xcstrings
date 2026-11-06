@@ -41,6 +41,16 @@
         }
       }
     },
+    "%@: and open": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ : et ouvrir"
+          }
+        }
+      }
+    },
     "%lld attachments saved to %@": {
       "localizations": {
         "fr": {
@@ -98,6 +108,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "%1$lld mails enregistrés dans %2$@"
+          }
+        }
+      }
+    },
+    "%lld mails saved to %@ and opened": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld mails enregistrés dans %2$@ et ouverts"
+          }
+        }
+      }
+    },
+    "%lld mails saved to %@, not opened: more than %lld": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld mails enregistrés dans %2$@, non ouverts : plus de %3$lld"
           }
         }
       }
@@ -885,6 +915,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Enregistrer"
+          }
+        }
+      }
+    },
+    "Saved and opened: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enregistré et ouvert : %@"
           }
         }
       }

@@ -127,7 +127,8 @@ private struct GeekWindow: View {
         case .menu(let prefix):
             let menu = KeyMenu(title: menuTitle(prefix),
                                entries: controller.menuEntries(prefix).map {
-                                   .init(key: $0.key, label: $0.label, muted: $0.disabled, gapBefore: $0.gapBefore, detail: $0.detail)
+                                   .init(key: $0.key, label: $0.label, muted: $0.disabled, gapBefore: $0.gapBefore, detail: $0.detail,
+                                         detailMuted: $0.detailStyle == .info)
                                },
                                highlighted: controller.menuIndex,
                                onSelect: { controller.chooseMenuEntry($0) })
@@ -1291,6 +1292,8 @@ private struct KeyMenu: View {
         var muted = false
         var gapBefore = false
         var detail: String? = nil
+        /// An information ("T: and open") rather than a count to notice.
+        var detailMuted = false
     }
     /// Called with the row clicked; `nil` for a menu that only informs
     /// (the help).
@@ -1309,7 +1312,7 @@ private struct KeyMenu: View {
                     // of two characters after the longest label.
                     Spacer(minLength: scaled(16))
                     if let detail = e.detail {
-                        Text(detail).foregroundStyle(Palette.unread)
+                        Text(detail).foregroundStyle(e.detailMuted ? Palette.muted : Palette.unread)
                     }
                 }
                 // Every row takes the menu's width (that of its widest

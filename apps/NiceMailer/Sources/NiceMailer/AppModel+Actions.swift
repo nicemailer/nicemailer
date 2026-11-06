@@ -264,8 +264,9 @@ extension AppModel {
     /// `se`, `st`, `sm`: saves the latest message of each target thread
     /// (the marked ones, or the one under the cursor) to `exportDirectory`,
     /// by default ~/Downloads (chosen by the core). One file: its path in
-    /// the status bar; several: how many.
-    func export(_ format: String) {
+    /// the status bar; several: how many. `sT`, `sM` (`open`): then opens
+    /// the files in front, 5 at most (`maxOpened`).
+    func export(_ format: String, open: Bool = false) {
         guard let client = core, !targetThreads.isEmpty else { return }
         let dir = exportDirectory
         Task {
@@ -280,16 +281,31 @@ extension AppModel {
                     paths.append(r.path)
                 } catch { firstError = firstError ?? error }
             }
+            // Opened in front, each in the app macOS gives its type; not
+            // beyond `maxOpened`, which would bury the screen in windows.
+            let opening = open && paths.count <= Self.maxOpened
+            if opening {
+                for path in paths { openFile(URL(fileURLWithPath: path)) }
+            }
             if paths.count == 1 {
-                flash = L("Saved: %@", paths[0])
+                flash = opening ? L("Saved and opened: %@", paths[0]) : L("Saved: %@", paths[0])
             } else if let first = paths.first {
                 let place = FileManager.default.displayName(atPath: (first as NSString).deletingLastPathComponent)
-                flash = L("%lld mails saved to %@", paths.count, place)
+                if opening {
+                    flash = L("%lld mails saved to %@ and opened", paths.count, place)
+                } else if open {
+                    flash = L("%lld mails saved to %@, not opened: more than %lld", paths.count, place, Self.maxOpened)
+                } else {
+                    flash = L("%lld mails saved to %@", paths.count, place)
+                }
             } else if let firstError {
                 report(firstError)
             }
         }
     }
+
+    /// Files `export(_:open:)` opens at most: beyond, they are only saved.
+    static let maxOpened = 5
 
     /// Attachments of the open thread, message by message (`l`, tiles).
     var attachments: [AttachmentView] { openThread?.messages.flatMap(\.attachments) ?? [] }

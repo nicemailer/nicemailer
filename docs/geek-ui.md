@@ -170,7 +170,7 @@ Actions apply to the **marked** mails if any (`J` / `K`), otherwise to the mail 
 | `*` | flag |
 | `/` | search everywhere: words anywhere, addresses included, in Everything (see [Search](#search-)); Escape goes back |
 | `;` + key | go to a folder or a screen (see below) |
-| `s` + key | save to `~/Downloads`, for every marked conversation (or the one under the cursor): its latest mail with `se` .eml, `st` text, `sm` Markdown; its attachments with `sa` all of them, `sg` all but the graphics (images: logos, signatures, photos). For attachments every message counts, and a file attached again to a reply is saved once. No file is overwritten |
+| `s` + key | save to `~/Downloads`, for every marked conversation (or the one under the cursor): its latest mail with `se` .eml, `st` text, `sm` Markdown, and `sT` / `sM` to save then open the file in front, in the app macOS gives its type (TextEdit, Obsidian…; also ⌘-Return on the highlighted row; the row says "T: and open" on the right, muted; beyond 5 mails the files are saved but not opened, and the status bar says so); its attachments with `sa` all of them, `sg` all but the graphics (images: logos, signatures, photos). For attachments every message counts, and a file attached again to a reply is saved once. No file is overwritten |
 | `v` + key | display: `v1` `v2` `v3` columns, `vc` sort by reception, `vm` sort by modification, `vh` text / HTML, `vi` remote images, `vs` status bar |
 | Return | with one column (`v1`), read the mail in the whole window and mark it read; Escape goes back to the list |
 | Space, shift-Space | scroll the mail a page down / up, as text or as HTML |

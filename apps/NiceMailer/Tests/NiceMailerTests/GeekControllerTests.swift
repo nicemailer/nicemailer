@@ -1016,6 +1016,54 @@ struct GeekControllerTests {
         #expect(await eventually { model.flash?.contains("3") == true })
     }
 
+    @Test func capitalTAndMSaveThenOpenInFront() async {
+        var opened: [String] = []
+        model.openFile = { opened.append($0.path) }
+        // `t` saves only.
+        press("s"); press("t")
+        #expect(await eventually { core.calls("export_message").count == 1 })
+        #expect(opened.isEmpty)
+        // `T` saves, then opens the file, and says so.
+        press("s"); press("T")
+        #expect(await eventually { opened == ["/tmp/x.eml"] })
+        #expect(core.calls("export_message").last?["format"] as? String == "txt")
+        #expect(model.flash == L("Saved and opened: %@", "/tmp/x.eml"))
+        // `M`: Markdown, three marked mails, three files opened.
+        opened = []
+        press("J"); press("J")
+        press("s"); press("M")
+        #expect(await eventually { opened.count == 3 })
+        #expect(core.calls("export_message").suffix(3).allSatisfy { $0["format"] as? String == "md" })
+        #expect(await eventually { model.flash?.contains("3") == true })
+    }
+
+    @Test func beyondFiveFilesTheyAreSavedButNotOpened() async {
+        var opened: [String] = []
+        model.openFile = { opened.append($0.path) }
+        for _ in 0..<5 { press("J") }
+        #expect(model.marked.count == 6)
+        press("s"); press("T")
+        #expect(await eventually { core.calls("export_message").count == 6 })
+        #expect(await eventually { model.flash == L("%lld mails saved to %@, not opened: more than %lld", 6, "tmp", 5) })
+        #expect(opened.isEmpty)
+    }
+
+    @Test func theSaveMenuShowsTheSecondKeyAndCommandReturnRunsIt() async {
+        let rows = controller.menuEntries(.save)
+        let text = rows.first { $0.key == "t" }
+        #expect(text?.altKey == "T" && text?.detail == L("%@: and open", "T") && text?.detailStyle == .info)
+        #expect(rows.first { $0.key == "m" }?.altKey == "M")
+        // The arrows to the Markdown row, then ⌘-Return.
+        var opened: [String] = []
+        model.openFile = { opened.append($0.path) }
+        press("s")
+        let index = rows.firstIndex { $0.key == "m" }!
+        for _ in 0...index { press("down") }
+        press("cmd-ret")
+        #expect(await eventually { opened.count == 1 })
+        #expect(core.calls("export_message").last?["format"] as? String == "md")
+    }
+
     @Test func saWithoutAttachmentsSaysSo() async throws {
         let dir = try exportDir()
         press("s"); press("a")

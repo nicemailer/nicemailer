@@ -216,8 +216,9 @@ s save (dans ~/Downloads ; un fichier existant n'est jamais écrasé ; s'appliqu
 	g attachments but graphics (gif, png, ...) : de même, sans les images (logos, signatures, photos)
 	p as pdf (pas encore)
 	e as eml file (dernier mail de chaque conversation, comme t et m)
-	t as text file
-	m as markdown file
+	t as text file (T : enregistre puis ouvre le fichier au premier plan, dans l'app associée par macOS)
+	m as markdown file (M : de même)
+	Dans le menu, la ligne de t (et de m) rappelle à droite, en grisé, « T : et ouvrir ». Avec les flèches, ⌘-entrée sur la ligne fait de même. Au-delà de 5 mails, les fichiers sont enregistrés mais pas ouverts, et la barre de statut le dit.
 v display (view)
 	1 une seule colonne (masque la liste des dossiers et la lecture d'un mail). Entrée, ou un double-clic sur une ligne, affiche le mail dans toute la fenêtre et le marque lu aussitôt (j / k passent au mail suivant / précédent) ; Escape revient à la liste
 	2 colonnes (presentation classique : liste des mails à gauche et lecture du mail à droite)
