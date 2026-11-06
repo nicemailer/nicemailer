@@ -245,7 +245,10 @@ fn entities_encoded_twice_are_repaired_from_what_is_stored() {
         let _ = std::fs::remove_file(e.raw.path(&h.try_into().unwrap()));
     }
     let r = e.run();
-    assert_eq!((r.repaired, r.reparsed, r.missing_raw), (1, 0, 0));
+    // Repaired from what is stored; but version 9 (layout attributes)
+    // needs the raw file of each HTML body, gone here: those stay at
+    // version 8, counted as missing.
+    assert_eq!((r.repaired, r.reparsed, r.missing_raw), (1, 0, 2));
     let q = |col: &str| e.text(&format!(
         "SELECT {col} FROM message_body WHERE message_id = (SELECT id FROM message WHERE message_id_hdr = 'p1@x.example')"));
     assert_eq!(q("text_plain").as_deref(), Some("Zoom : https://zoom.us/j/1"));
@@ -253,9 +256,10 @@ fn entities_encoded_twice_are_repaired_from_what_is_stored() {
     assert!(html.contains("Zoom :&nbsp;<a") && html.contains("a=1&amp;b=2"), "{html}");
     assert_eq!(e.text("SELECT snippet FROM message WHERE message_id_hdr = 'p1@x.example'").as_deref(), Some("Zoom : https://zoom.us/j/1"));
     assert_eq!(e.int("SELECT count(*) FROM message_fts WHERE body = 'Zoom : https://zoom.us/j/1'"), 1);
-    // Every body is now current.
-    assert_eq!(e.int(&format!("SELECT count(*) FROM message_body WHERE parser_version = {PARSER_VERSION}")), 3);
-    assert_eq!(pending(&e.store.lock().unwrap()).unwrap(), 0);
+    // The text body is current; the two HTML bodies wait for their raw.
+    assert_eq!(e.int(&format!("SELECT count(*) FROM message_body WHERE parser_version = {PARSER_VERSION}")), 1);
+    assert_eq!(e.int("SELECT count(*) FROM message_body WHERE parser_version = 8"), 2);
+    assert_eq!(pending(&e.store.lock().unwrap()).unwrap(), 2);
 }
 
 /// Two HTML mails: a newsletter with a remote banner and a tracking pixel,
@@ -291,8 +295,9 @@ fn version_8_reads_again_only_the_bodies_with_remote_images() {
     );
     assert_eq!(pending(&e.store.lock().unwrap()).unwrap(), 2);
     let r = e.run();
-    // The mail without remote image is only marked.
-    assert_eq!((r.unchanged, r.reparsed, r.missing_raw), (1, 1, 0));
+    // Version 8 alone would only mark the mail without remote image; but
+    // both are HTML, which version 9 reads again.
+    assert_eq!((r.unchanged, r.reparsed, r.missing_raw), (0, 2, 0));
     let q = |col: &str| e.text(&format!(
         "SELECT {col} FROM message_body WHERE message_id = (SELECT id FROM message WHERE message_id_hdr = 'i1@letter.example')"));
     let html = q("html_sanitized").unwrap();
@@ -300,6 +305,49 @@ fn version_8_reads_again_only_the_bodies_with_remote_images() {
     assert!(!html.contains("t.letter.example"), "{html}");
     assert_eq!(e.int("SELECT tracking_pixels FROM message_body WHERE message_id = (SELECT id FROM message WHERE message_id_hdr = 'i1@letter.example')"), 1);
     assert_eq!(e.int("SELECT has_remote_content FROM message_body WHERE message_id = (SELECT id FROM message WHERE message_id_hdr = 'i1@letter.example')"), 1);
+    assert_eq!(e.int(&format!("SELECT count(*) FROM message_body WHERE parser_version = {PARSER_VERSION}")), 2);
+    assert_eq!(pending(&e.store.lock().unwrap()).unwrap(), 0);
+}
+
+/// A text mail and an HTML newsletter laid out with a table.
+const MBOX_LAYOUT: &str = "From a Tue Jun 23 19:20:56 2020
+From: Lettre <news@letter.example>
+To: me@x.example
+Subject: Mise en page
+Message-ID: <l1@letter.example>
+Content-Type: text/html; charset=utf-8
+
+<table width=\"600\" cellpadding=\"12\" align=\"center\"><tr><td valign=\"top\"><font face=\"Georgia\">Bonjour</font></td></tr></table>
+
+From a Wed Jun 24 09:00:00 2020
+From: Bob <bob@b.example>
+To: me@x.example
+Subject: Texte
+Message-ID: <l2@b.example>
+Content-Type: text/plain; charset=utf-8
+
+Rien que du texte
+";
+
+#[test]
+fn version_9_reads_again_only_the_html_bodies() {
+    let e = env_with(MBOX_LAYOUT);
+    // As version 8 stored them: the table without its layout attributes.
+    e.exec(
+        "UPDATE message_body SET parser_version = 8;
+         UPDATE message_body SET html_sanitized = '<table align=\"center\"><tr><td>Bonjour</td></tr></table>'
+          WHERE message_id = (SELECT id FROM message WHERE message_id_hdr = 'l1@letter.example');",
+    );
+    assert_eq!(pending(&e.store.lock().unwrap()).unwrap(), 2);
+    let r = e.run();
+    // The text mail is only marked.
+    assert_eq!((r.unchanged, r.reparsed, r.missing_raw), (1, 1, 0));
+    let html = e
+        .text("SELECT html_sanitized FROM message_body WHERE message_id = (SELECT id FROM message WHERE message_id_hdr = 'l1@letter.example')")
+        .unwrap();
+    for kept in [r#"width="600""#, r#"cellpadding="12""#, r#"valign="top""#, r#"<font face="Georgia">"#] {
+        assert!(html.contains(kept), "{kept} missing in {html}");
+    }
     assert_eq!(e.int(&format!("SELECT count(*) FROM message_body WHERE parser_version = {PARSER_VERSION}")), 2);
     assert_eq!(pending(&e.store.lock().unwrap()).unwrap(), 0);
 }

@@ -28,6 +28,9 @@ ammonia = "4"
 markup5ever = "0.40"
 # HTML5 tokenizer, the one ammonia parses with (`remote_images.rs`).
 html5ever = "0.40"
+# CSS tokenizer (Servo's), already built for ammonia: the sanitizer of the
+# sender's CSS reads with it (`css.rs`).
+cssparser = { version = "0.38", default-features = false }
 sha2 = "0.11"
 zstd = "0.14"
 tempfile = "3"

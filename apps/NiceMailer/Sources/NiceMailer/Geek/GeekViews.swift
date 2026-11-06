@@ -127,7 +127,8 @@ private struct GeekWindow: View {
         case .menu(let prefix):
             let menu = KeyMenu(title: menuTitle(prefix),
                                entries: controller.menuEntries(prefix).map {
-                                   .init(key: $0.key, label: $0.label, muted: $0.disabled, gapBefore: $0.gapBefore, detail: $0.detail)
+                                   .init(key: $0.key, label: $0.label, muted: $0.disabled, gapBefore: $0.gapBefore, detail: $0.detail,
+                                         detailMuted: $0.detailStyle == .info)
                                },
                                highlighted: controller.menuIndex,
                                onSelect: { controller.chooseMenuEntry($0) })
@@ -647,7 +648,8 @@ private struct GeekReaderColumn: View {
                 Palette.separator.frame(height: 1)
                 if model.bodyFormat != "text" {
                     let page = threadHTML(thread, state)
-                    HTMLReader(html: page.html, allowedImages: page.images, controller: controller)
+                    HTMLReader(html: page.html, allowedImages: page.images, inlineImages: page.inline,
+                               darkMode: page.darkMode, controller: controller)
                 } else {
                     TextReader(blocks: blocks, threadId: thread.id, controller: controller)
                 }
@@ -738,9 +740,15 @@ private struct GeekReaderColumn: View {
     /// In the images mode, the remote images of a message load only when
     /// `RemoteImages.loads` says so (unfolded, sender's choice and
     /// authentication, or asked for this conversation); the others keep a
-    /// source the web view ignores. Returns the page and the original URLs
-    /// it may load, for the scheme handler (`RemoteImageLoader.allowed`).
-    private func threadHTML(_ thread: ThreadView, _ state: ThreadDisplay.State) -> (html: String, images: Set<String>) {
+    /// source the web view ignores. Returns the page, the original URLs it
+    /// may load, for the scheme handler (`RemoteImageLoader.allowed`), and
+    /// the attachments its embedded images show (`InlineImageLoader`).
+    ///
+    /// The sender's layout is kept (table widths, padding, alignment,
+    /// fonts named in `<font face>`: `ingest.rs`, `LAYOUT_ATTRIBUTES`), but
+    /// not its colours: every mail is shown in the theme's colours.
+    private func threadHTML(_ thread: ThreadView, _ state: ThreadDisplay.State)
+        -> (html: String, images: Set<String>, inline: Set<Int>, darkMode: Bool) {
         func esc(_ s: String) -> String {
             s.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;")
                 .replacingOccurrences(of: ">", with: "&gt;")
@@ -750,25 +758,37 @@ private struct GeekReaderColumn: View {
         .gmail_quote, .gmail_signature, .moz-cite-prefix, .moz-signature, blockquote[type=cite],
         #nm-divRplyFwdMsg, #nm-divRplyFwdMsg ~ *, hr:has(+ #nm-divRplyFwdMsg), #nm-appendonsend ~ * { display: none; }
         """
+        // The reader's styles inside each message's frame.
+        let frameStyle = MailFrame.baseStyle(hiding: hideQuotes, scale: TextSize.shared.scale)
+        // Mails made for a white page, in the dark theme: Dark Reader adapts
+        // their colours (`DarkMode`), or, without it, a white sheet.
+        let darkMode = DarkMode.available && DarkMode.needed(thread.messages.compactMap(\.bodyHtml))
+        let sheet = !DarkMode.available
         var html = """
-        <html><head><meta charset="utf-8"><style>
+        <html><head><meta charset="utf-8">
+        <meta http-equiv="Content-Security-Policy" content="\(ContentPolicy.header)">
+        <style>
         \(Fonts.cssFontFaces)
         :root { color-scheme: light dark; }
-        /* The mail's own styles are removed by the sanitizer: everything is
-           shown in the theme font, like the text reader. */
-        body, table, td, p, div, span, a, li, summary { font-family: "NM Mono", ui-monospace, monospace; }
+        /* The theme font is the page's default; a font the sender named
+           wins in its own text. Each HTML message is in its own frame, with
+           its own styles (`MailFrame`). */
+        body, summary { font-family: "NM Mono", ui-monospace, monospace; }
         body { margin: 16px; font-size: \(Int(scaled(14)))px; }
         summary { font-size: \(Int(scaled(12)))px; color: #888; cursor: pointer; list-style: none; margin: 4px 0; }
         summary::-webkit-details-marker { display: none; }
         details[open] summary { margin-bottom: 12px; }
+        summary a.addr { text-decoration: none; color: inherit; }
+        summary a.alert { color: #E06C75; }
+        @media (prefers-color-scheme: light) { summary a.alert { color: #C0392B; } }
+        /* A single mail: a click on its line does nothing, except on the
+           address. */
+        details.single summary { pointer-events: none; cursor: default; }
+        details.single summary a { pointer-events: auto; cursor: pointer; }
         .q { color: #888; border-left: 2px solid #8886; padding-left: 8px; }
         .m { color: #888; font-size: \(Int(scaled(12)))px; }
         pre { font: \(Int(scaled(14)))px "NM Mono", ui-monospace, monospace; white-space: pre-wrap; margin: 0 0 8px; }
         hr { border: 0; border-top: 1px solid #8884; margin: 16px 0; }
-        img { max-width: 100%; height: auto; }
-        /* Images without a source (tracking pixels removed by the core),
-           remote images not loaded, `cid:` images: hide the empty boxes. */
-        img:not([src]), img[data-nm-src], img[src^="cid:"] { display: none; }
         /* Attachment tiles: 3 to 5 per row, as in the text reader. */
         .att { display: grid; gap: 6px; margin: 12px 0;
                grid-template-columns: repeat(auto-fill, minmax(clamp(18%, 24ch, 31%), 1fr)); }
@@ -777,7 +797,6 @@ private struct GeekReaderColumn: View {
         .att a img { width: \(Int(scaled(13)))px; height: \(Int(scaled(13)))px; vertical-align: -2px; margin-right: 6px; }
         .att a span { display: block; color: #888; font-size: \(Int(scaled(11)))px; }
         summary img { width: \(Int(scaled(11)))px; height: \(Int(scaled(11)))px; vertical-align: -1px; }
-        \(hideQuotes)
         /* No scroll bar in the geek theme (ui.md). */
         html { scrollbar-width: none; }
         ::-webkit-scrollbar { display: none; }
@@ -785,21 +804,39 @@ private struct GeekReaderColumn: View {
         """
         let mode = model.bodyFormat
         let once = model.remoteImagesOnce == thread.id
+        // A conversation: each message folds, and shows an arrow.
+        let conversation = thread.messages.count > 1
         var images = Set<String>()
+        var inline = Set<Int>()
         for (i, m) in thread.messages.enumerated() {
             if i > 0 { html += "<hr>" }
-            let unfolded = state.showAll || (state.folding[m.id] ?? m.expanded)
+            let unfolded = !conversation || state.showAll || (state.folding[m.id] ?? m.expanded)
             let who = esc(m.fromName ?? m.fromAddr ?? "")
             let date = esc(Format.geekMessageDate(m.dateReceived))
-            var summary = unfolded ? "\(who) · \(date)" : "\(who) · \(date) — \(esc(ThreadDisplay.snippet(m)))"
+            // One line, as in the text reader (`ThreadDisplay.blocks`): the
+            // arrow in a conversation only; folded, the sender's domain
+            // last and a snippet; unfolded, the address in full, a link
+            // (click: copied; ⌘-click: the list filtered on it), in the
+            // alert colour when it deserves a second look.
+            let arrow = conversation ? (unfolded ? "▾ " : "▸ ") : ""
+            let domain = m.fromName != nil ? m.fromAddr.flatMap(ThreadDisplay.domain).map { " · @" + esc($0) } ?? "" : ""
+            var address = ""
+            if m.fromName != nil, let addr = m.fromAddr, !addr.isEmpty {
+                let alert = ThreadDisplay.senderAlert(m) ? " alert" : ""
+                address = " · <a class=\"addr\(alert)\" href=\"nm://sender/\(m.id)\">\(esc(addr))</a>"
+            }
+            var summary = unfolded ? "\(arrow)\(who) · \(date)\(address)"
+                : "\(arrow)\(who) · \(date)\(domain) — \(esc(ThreadDisplay.snippet(m)))"
             if !unfolded && !m.attachments.isEmpty {
                 summary += " &nbsp;<img src=\"\(Self.symbolDataURI("paperclip"))\">\(m.attachments.count)"
             }
-            html += "<details\(unfolded ? " open" : "")><summary>\(summary)</summary>"
+            // A single mail: its line does not fold it (`single`).
+            html += "<details id=\"nm-message-\(m.id)\"\(unfolded ? " open" : "")\(conversation ? "" : " class=\"single\"")><summary>\(summary)</summary>"
             if let body = m.bodyHtml {
                 let loading = RemoteImages.loads(m, mode: mode, unfolded: unfolded, once: once)
                 if loading { images.formUnion(RemoteImages.sources(in: body)) }
-                html += RemoteImages.body(body, loading: loading)
+                inline.formUnion(InlineImages.ids(in: body))
+                html += MailFrame.wrap(RemoteImages.body(body, loading: loading), base: frameStyle, sheet: sheet)
             } else {
                 for (j, seg) in m.segments.enumerated() {
                     if !seg.hidden || state.showAll || state.revealed.contains("\(m.id):\(j)") {
@@ -824,8 +861,9 @@ private struct GeekReaderColumn: View {
             }
             html += "</details>"
         }
-        return (html + "</body></html>", images)
+        return (html + "</body></html>", images, inline, darkMode)
     }
+
 
     /// An SF Symbol as a PNG `data:` URL for the HTML reader (a web page
     /// cannot draw SF Symbols), gray like the page's muted text. Rendered
@@ -968,19 +1006,32 @@ private struct TextReader: NSViewRepresentable {
             switch b {
             case .separator:
                 add("\n", small)
-            case .header(let id, let folded, let title, let detail, let files):
+            case .header(let id, let folded, let title, let detail, let files, let address, let alert, let foldable):
                 let titleAttrs: [NSAttributedString.Key: Any] = [
                     .font: Fonts.scaled(12, weight: folded ? .regular : .semibold),
                     .foregroundColor: folded ? muted : NSColor(Palette.text),
                 ]
-                add(title, titleAttrs, link: "nm://fold/\(id)", region: .text)
+                // In a conversation, a click on the header folds or unfolds
+                // the message; a single mail has nothing to fold.
+                let fold = foldable ? "nm://fold/\(id)" : nil
+                add(title, titleAttrs, link: fold, region: .text)
+                if let address {
+                    // "· alice@atelier.fr": the address in full, a link
+                    // (click: copied; ⌘-click: the list filtered on it), in
+                    // the alert colour when it deserves a second look.
+                    let addressAttrs: [NSAttributedString.Key: Any] = [
+                        .font: Fonts.scaled(12), .foregroundColor: alert ? NSColor(Palette.error) : muted,
+                    ]
+                    add(" · ", small)
+                    add(address, addressAttrs, link: "nm://sender/\(id)")
+                }
                 if folded && files > 0 {
                     // A paperclip and the number of files of the folded mail.
                     add("  ", small)
                     out.append(Self.symbol("paperclip", size: scaled(11), color: muted, link: "nm://fold/\(id)"))
-                    add("\(files)", small, link: "nm://fold/\(id)")
+                    add("\(files)", small, link: fold)
                 }
-                if folded, let detail, !detail.isEmpty { add("  " + detail, small, link: "nm://fold/\(id)") }
+                if folded, let detail, !detail.isEmpty { add("  " + detail, small, link: fold) }
                 add("\n", small)
                 if !folded, let detail { add(detail + "\n", small) }
                 if !folded { add("\n", small) }
@@ -1091,11 +1142,32 @@ private struct TextReader: NSViewRepresentable {
             }
         }
         controller.readerSkip = (quotes, texts)
+        // The top of each message's header (its first fold link), for
+        // ctrl-k / ctrl-j, which scroll there once the reader is laid out.
+        var headers: [Int: Double] = [:]
+        if let storage = text.textStorage {
+            storage.enumerateAttribute(.link, in: NSRange(location: 0, length: storage.length)) { value, range, _ in
+                guard let url = value as? URL, url.scheme == "nm", url.host == "fold",
+                      let id = Int(url.lastPathComponent), headers[id] == nil else { return }
+                headers[id] = Double(rect(range).minY)
+            }
+        }
+        controller.readerHeaders = headers
+        if let message = controller.pendingMessageScroll, headers[message] != nil {
+            controller.pendingMessageScroll = nil
+            controller.scrollToMessage(message)
+        }
         guard UIScript.isActive, let storage = text.textStorage else { return }
         UIScript.readerText = storage.string
-        var n = 0, files = 0
+        var n = 0, files = 0, senders = 0
         storage.enumerateAttribute(.link, in: NSRange(location: 0, length: storage.length)) { value, range, _ in
             guard let url = value as? URL, url.scheme == "nm" else { return }
+            if url.host == "sender" {
+                // The sender's address of an unfolded message.
+                UIScript.frames["reader-sender-\(senders)"] = text.convert(rect(range), to: nil)
+                senders += 1
+                return
+            }
             if url.host == "attachment" {
                 // The first line of the tile (icon and name).
                 let line = (storage.string as NSString).lineRange(for: NSRange(location: range.location, length: 0))
@@ -1118,6 +1190,10 @@ private struct HTMLReader: NSViewRepresentable {
     let html: String
     /// Original URLs of the remote images the page may load.
     let allowedImages: Set<String>
+    /// Attachment ids of the embedded images the page shows (`nm-cid:`).
+    let inlineImages: Set<Int>
+    /// Whether the page runs Dark Reader (`DarkMode`).
+    let darkMode: Bool
     /// Keeps the web view, to scroll it from the keyboard (Space, ctrl-f…).
     let controller: GeekController
 
@@ -1128,6 +1204,7 @@ private struct HTMLReader: NSViewRepresentable {
         config.defaultWebpagePreferences.allowsContentJavaScript = false
         // A scheme handler can only be set before the web view is created.
         config.setURLSchemeHandler(context.coordinator.images, forURLScheme: RemoteImages.scheme)
+        config.setURLSchemeHandler(context.coordinator.inline, forURLScheme: InlineImages.scheme)
         // Nothing in the page's own storage outlives the page.
         config.websiteDataStore = .nonPersistent()
         let view = WKWebView(frame: .zero, configuration: config)
@@ -1139,9 +1216,14 @@ private struct HTMLReader: NSViewRepresentable {
 
     func updateNSView(_ view: WKWebView, context: Context) {
         let c = context.coordinator
-        guard c.html != html || c.images.allowed != allowedImages else { return }
+        guard c.html != html || c.images.allowed != allowedImages || c.inline.allowed != inlineImages else { return }
+        // Scripts of the app apply from the next load on: set before it.
+        let scripts = view.configuration.userContentController
+        scripts.removeAllUserScripts()
+        if darkMode, let script = DarkMode.userScript() { scripts.addUserScript(script) }
         c.html = html
         c.images.allowed = allowedImages
+        c.inline.allowed = inlineImages
         // The page is loaded once the block list is in place (compiled
         // once, then immediate). A newer page asked meanwhile wins.
         Task { @MainActor in
@@ -1158,6 +1240,10 @@ private struct HTMLReader: NSViewRepresentable {
     func makeCoordinator() -> Coordinator {
         let c = Coordinator()
         c.controller = controller
+        // Swift note: `[weak model]` keeps the closure from holding the
+        // model alive; it lives as long as the web view.
+        let model = controller.model
+        c.inline.load = { [weak model] id in await model?.inlineImage(id) }
         return c
     }
 
@@ -1167,25 +1253,67 @@ private struct HTMLReader: NSViewRepresentable {
         /// The handler of `nm-remote:` sources; kept by the coordinator,
         /// which lives as long as the web view.
         let images = MainActor.assumeIsolated { RemoteImageLoader() }
+        /// The handler of `nm-cid:` sources (embedded images).
+        let inline = MainActor.assumeIsolated { InlineImageLoader() }
         /// Whether the block list was added to the web view.
         var blocking = false
 
         /// In UI script mode, reports what the page shows, since a snapshot
         /// of the window cannot see a web view (it draws in another
-        /// process): its text, whether the bundled font loaded, and the font
-        /// family applied to the body.
+        /// process): its text, whether the bundled font loaded, the font
+        /// family applied to the body, the embedded images drawn, the font
+        /// of the first `<font face>`, the width of the first table with a
+        /// width, and whether the Content Security Policy is in the page.
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            // ctrl-k / ctrl-j: the message to show, once the page is there.
+            MainActor.assumeIsolated {
+                if let message = controller?.pendingMessageScroll {
+                    controller?.pendingMessageScroll = nil
+                    controller?.scrollToMessage(message)
+                }
+            }
             guard UIScript.isActive else { return }
+            // The messages are in shadow roots (`MailFrame`): each query
+            // looks in the page and in every frame.
             let js = """
-            JSON.stringify({text: document.body.innerText.slice(0, 300),
-                            font: document.fonts.check('14px "NM Mono"'),
-                            family: getComputedStyle(document.body).fontFamily})
+            (() => {
+            const frames = [...document.querySelectorAll('.nm-msg')].map(h => h.shadowRoot).filter(r => r);
+            const all = s => [document, ...frames].flatMap(r => [...r.querySelectorAll(s)]);
+            const first = s => all(s)[0];
+            const bodies = frames.map(r => r.querySelector('.nm-body')).filter(b => b);
+            return JSON.stringify({
+                text: [document.body.innerText, ...bodies.map(b => b.innerText)].join('\\n').slice(0, 2000),
+                font: document.fonts.check('14px "NM Mono"'),
+                family: getComputedStyle(document.body).fontFamily,
+                inline: all('img[src^="nm-cid:"]').filter(i => i.complete && i.naturalWidth > 0).length,
+                authorFont: (f => f ? getComputedStyle(f).fontFamily : '')(first('font[face]')),
+                tableWidth: (t => t ? t.offsetWidth : '')(first('table[width]')),
+                csp: !!document.querySelector('meta[http-equiv="Content-Security-Policy"]'),
+                frames: frames.length,
+                paper: document.querySelectorAll('.nm-msg.paper').length,
+                styledWidth: (e => e ? e.offsetWidth : '')(first('.probe-width')),
+                styledBackground: (e => e ? getComputedStyle(e).backgroundColor : '')(first('.probe-background')),
+            });
+            })()
             """
             webView.evaluateJavaScript(js) { result, _ in
                 guard let json = result as? String, let data = json.data(using: .utf8),
                       let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
                 MainActor.assumeIsolated {
                     UIScript.html = obj.mapValues { "\($0)" }
+                }
+            }
+            // Dark Reader, in its own world: whether it is on, and the
+            // requests it asked for (refused).
+            webView.evaluateJavaScript(
+                "typeof DarkReader === 'undefined' ? 'absent' : (DarkReader.isEnabled() ? 'on' : 'off') + ' ' + window.__nmDarkFetches",
+                in: nil, in: DarkMode.world
+            ) { result in
+                let value = (try? result.get()) as? String ?? "absent"
+                MainActor.assumeIsolated {
+                    let parts = value.split(separator: " ")
+                    UIScript.darkReader = parts.first.map(String.init) ?? "absent"
+                    UIScript.darkReaderFetches = parts.count > 1 ? String(parts[1]) : ""
                 }
             }
         }
@@ -1196,6 +1324,13 @@ private struct HTMLReader: NSViewRepresentable {
                let id = Int(url.lastPathComponent) {
                 let open = action.modifierFlags.contains(.command)
                 MainActor.assumeIsolated { controller?.model.saveAttachment(id, open ? .saveAndOpen : .save) }
+                decisionHandler(.cancel)
+                return
+            }
+            // The sender's address: copied, or the list filtered on it.
+            if let url = action.request.url, url.scheme == "nm", url.host == "sender" {
+                let command = action.modifierFlags.contains(.command)
+                MainActor.assumeIsolated { _ = controller?.readerLink(url, command: command) }
                 decisionHandler(.cancel)
                 return
             }
@@ -1228,6 +1363,8 @@ private struct KeyMenu: View {
         var muted = false
         var gapBefore = false
         var detail: String? = nil
+        /// An information ("T: and open") rather than a count to notice.
+        var detailMuted = false
     }
     /// Called with the row clicked; `nil` for a menu that only informs
     /// (the help).
@@ -1246,7 +1383,7 @@ private struct KeyMenu: View {
                     // of two characters after the longest label.
                     Spacer(minLength: scaled(16))
                     if let detail = e.detail {
-                        Text(detail).foregroundStyle(Palette.unread)
+                        Text(detail).foregroundStyle(e.detailMuted ? Palette.muted : Palette.unread)
                     }
                 }
                 // Every row takes the menu's width (that of its widest

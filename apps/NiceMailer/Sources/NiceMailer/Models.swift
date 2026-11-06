@@ -177,6 +177,11 @@ struct LinkView: Decodable, Hashable {
     /// Visible text of the link in the HTML; nil for an address written
     /// in the text, or a link around an image.
     let text: String?
+    /// Where a tracking link really goes, when its address says so.
+    /// Optional, so that an older core (or a test) may leave it out.
+    var target: String? = nil
+    /// The other texts of the same link in the message, each once.
+    var otherTexts: [String]? = nil
 }
 
 /// A piece of a message's text, typed by the core: "text", "quote",

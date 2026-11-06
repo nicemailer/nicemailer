@@ -22,6 +22,7 @@ Pendant le développement, il y a un menu thème qui permet de basculer d'un th�
 
 - Police monospace pour l'interface (SF Mono) ; corps des mails en **iA Writer Mono V**, livrée avec l'app (licence SIL OFL).
 - Palette inspirée de Helix, en variante claire et sombre selon l'apparence de macOS.
+- HTML de l'expéditeur : sa mise en page et son CSS sont gardés, assainis par le noyau (aucune adresse distante chargeable, rien qui dépende du survol ou de la taille de l'écran), chaque message dans un cadre isolé : son style ne touche ni les autres messages ni l'interface. Un mail qui prévoit son mode sombre s'affiche avec ses couleurs, sombres dans le thème sombre. Les autres, faits pour une page blanche, sont adaptés au thème sombre par Dark Reader (licence MIT) : fond du thème, texte clair, teintes des boutons et des titres gardées ; il tourne isolé de la page, sans aucun accès au réseau, et s'efface dans le thème clair. Les polices web ne sont pas chargées. Les images intégrées au mail (`cid:`) s'affichent en html comme en images : elles ne demandent rien au réseau.
 - Corps des mails en texte par défaut. Un sélecteur `text | html | images` en haut du mail, et `vh`, basculent en HTML assaini ; `images` (ou `vi`) charge aussi les images distantes (voir « Images distantes »). Le choix est mémorisé **par adresse d'expéditeur** (`address.body_format`, `address.remote_images`, `schema.sql`).
 - Compte unifié **all** : avec plusieurs comptes, l'app s'ouvre sur « all », qui regroupe tous les comptes. Chaque dossier (Inbox, Archive…) y réunit les dossiers de même rôle de tous les comptes, avec leurs compteurs additionnés. La colonne des dossiers n'a qu'un bloc, intitulé « all » ou le nom du compte choisi ; le sélecteur de dossiers et le menu `;` ne montrent que les dossiers de cette vue, sans notion de compte.
 - Barre de statut : le mode (`NOR`, ou le préfixe en attente, comme dans Helix), puis le compte (icône @, « all » pour la vue unifiée) et le dossier (icône de dossier), chacun suivi du rappel de sa touche. Chaque élément s'ouvre d'une touche ou d'un clic : le mode avec `?` (liste des touches), le compte avec `@` (sélecteur de comptes, « all » en tête : on arrive dans le dossier de même rôle, sinon l'Inbox), le dossier avec `;` (menu des dossiers de la vue, d'« Everything » et des écrans, qui se déroule à gauche depuis le bloc dossier de la barre de statut : en dessous si la barre est en haut, au-dessus si elle est en bas ; ses lignes se cliquent aussi). Les menus `m` (déplacer), `s` (enregistrer) et `v` (affichage) ont aussi leur bloc dans la barre de statut, une icône suivie de la touche. Un large espace sépare trois groupes : ce que la liste affiche (`@`, `;`, `F` et les pastilles), la préférence d'affichage (`v`), les actions sur le mail courant (`m`, `s`). Leur menu se déroule depuis ce bloc de la même façon. Dans un menu, les flèches surlignent une ligne (bas commence à la première, haut à la dernière, la liste tourne) et entrée va à la ligne surlignée ; une touche agit toujours directement. Barre masquée : les menus s'affichent en bas à droite. `h` ne fait plus rien : il faisait double emploi avec `;`. Pendant qu'un tag, un groupe ou un contact est listé, la barre l'affiche à la place. Les messages (résultat d'une action, erreur) s'affichent à droite et disparaissent à la touche suivante. Un déplacement nomme le mail et le dossier : « Devis toiture » déplacé dans Archive (sujet coupé à 50 caractères) ; pour plusieurs mails, leur nombre : 3 conversations déplacées dans Archive.
@@ -43,7 +44,7 @@ L'affichage est simplifié au maximum : chaque message montre ce qu'il apporte. 
 - Les citations intercalées entre les réponses restent visibles, atténuées, avec une barre par niveau. Un message transféré n'est jamais masqué.
 - Comme dans Gmail, le dernier message et les non-lus sont dépliés ; les autres tiennent sur une ligne (expéditeur, date, début du texte). Un message qui ne fait que citer l'indique.
 - En-têtes allégés : expéditeur et date ; les destinataires seulement s'ils changent d'un message à l'autre.
-- `T` (comme dans mutt) affiche ou masque tout ce que la vue simplifiée cache, pour la conversation ouverte ; `S` va au texte qui suit la citation suivante. Un clic sur un en-tête plie ou déplie le message, un clic sur « ··· » affiche cette partie.
+- `T` (comme dans mutt) affiche ou masque tout ce que la vue simplifiée cache, pour la conversation ouverte ; `S` va au texte qui suit la citation suivante ; `ctrl-k` remonte au message précédent de la conversation et `ctrl-j` redescend au suivant, un seul déplié à la fois : le message courant se replie, l'autre se déplie et la lecture va à son en-tête (au départ, le dernier message déplié, ou le dernier en-tête cliqué ; arrêt aux deux bouts, que la barre de statut signale ; avec `T`, rien ne se replie, on passe d'un en-tête à l'autre). Un clic sur un en-tête plie ou déplie le message, un clic sur « ··· » affiche cette partie.
 
 ### Pièces jointes
 
@@ -51,7 +52,16 @@ L'affichage est simplifié au maximum : chaque message montre ce qu'il apporte. 
 - Un clic enregistre le fichier dans Téléchargements, sans jamais écraser un fichier existant (« devis (2).pdf ») ; la barre de statut le confirme. ⌘-clic l'enregistre de même, puis ouvre la copie enregistrée avec l'app par défaut, au premier plan.
 - Les images affichées par le HTML du mail (`cid:`) ne sont pas des dalles. Une image marquée « intégrée » qu'aucun HTML n'affiche (photo d'Apple Mail dans un mail texte) en est une.
 - Au clavier, `l` liste les liens du mail puis une ligne par fichier joint, avec son icône ; entrée enregistre le fichier, ⌘-entrée l'enregistre puis ouvre aussitôt la copie enregistrée, au premier plan.
+- `l` cherche aussi les **expéditeurs du fil** dans le carnet d'adresses du Mac (les auteurs des messages reçus, pas les personnes en copie) : pour chaque fiche trouvée, une ligne par numéro de téléphone (« Alice Martin — mobile », entrée appelle) puis « Fiche de Alice Martin », qui ouvre Contacts. Un numéro déjà présent dans le mail n'apparaît qu'une fois, sous le nom. L'accès est demandé par macOS au premier `l` ; refusé, la barre de statut le dit une fois. Rien du carnet n'est copié dans la base.
 - En HTML, les mêmes dalles suivent le corps du mail.
+
+### Expéditeur
+
+- Une seule ligne par message : « nom · date · adresse ». Message déplié : l'adresse complète (« ▾ Alice Martin · 30 oct. 14:00 · alice@atelier-dupuis.fr ») ; les destinataires, quand ils valent d'être montrés (À, Cc), sur la ligne suivante. Message replié : le domaine seul, puis l'aperçu (« ▸ Alice Martin · 30 oct. 11:00 · @atelier-dupuis.fr  Peux-tu… ») ; sans nom, l'adresse tient lieu de nom et n'est pas répétée. En texte comme en HTML.
+- La flèche (▸ replié, ▾ déplié) précède le nom dans une conversation seulement : un clic sur la ligne replie ou déplie le message. Un mail seul n'a ni flèche ni repli : il est toujours déplié.
+- Alerte : l'adresse passe dans la couleur d'alerte quand le mail a échoué à l'authentification, ou quand le nom affiché montre une autre adresse ou un autre domaine que le vrai (« service@paypal.com » <x7@promo-mail.ru>, « PayPal.com »). Un domaine du nom dont le vrai domaine se termine par lui ne compte pas (« Le Monde.fr » depuis news.lemonde.fr).
+- Un clic sur l'adresse la copie (la barre de statut le dit) ; ⌘-clic filtre la liste sur cet expéditeur (pastille « de : »).
+- Les destinataires gardent leur nom seul.
 
 ### Images distantes
 
@@ -159,7 +169,7 @@ m move (déplacer), puis choisir le dossier. mt déplacer dans le dossier Todo, 
 del supprimer (déplacer dans Deleted)
 t tag (ajouter un tag ; si tous les mails visés l'ont déjà, le retirer)
 g group (ajoute l'expéditeur dans un groupe)
-l link (panneau des liens du mail ; entrée ouvre le lien dans le navigateur). En première ligne, « Lien vers ce mail » : entrée copie un lien Markdown `[sujet](nicemailer://m/<id>)` vers le mail, pour le coller dans une note (Obsidian), ⌘-entrée l'URL seule ; un clic sur ce lien ouvre le mail dans NiceMailer. D'abord les liens qui ont un texte (« Voir ma facture »), puis les numéros de téléphone trouvés dans le mail, avec une icône de téléphone (entrée lance l'appel dans l'app Téléphone du Mac), puis les pièces jointes, enfin les liens sans texte (le plus souvent une image menant à un réseau social). Le panneau est aussi large que la fenêtre le permet, pour lire les liens longs.
+l link (panneau des liens du mail ; entrée ouvre le lien dans le navigateur). En première ligne, « Lien vers ce mail » : entrée copie un lien Markdown `[sujet](nicemailer://m/<id>)` vers le mail, pour le coller dans une note (Obsidian), ⌘-entrée l'URL seule ; un clic sur ce lien ouvre le mail dans NiceMailer. Un même lien (même destination, même derrière des adresses de suivi différentes) n'apparaît qu'une fois, avec son premier libellé suivi du nombre exact d'autres libellés qui y mènent : « ressent "les angoisses" du pays (et 2 autres) ». Des liens collés l'un à l'autre vers la même destination forment un seul lien, leurs textes réunis. D'abord les liens qui ont un texte (« Voir ma facture »), puis les numéros de téléphone trouvés dans le mail, avec une icône de téléphone (entrée lance l'appel dans l'app Téléphone du Mac), puis les pièces jointes, enfin les liens sans texte (le plus souvent une image menant à un réseau social). Le panneau est aussi large que la fenêtre le permet, pour lire les liens longs.
 u lu / non lu
 z annule le dernier déplacement ou la dernière décision (les mails reviennent, la décision précédente aussi) ; chaque z remonte d'une étape
 \* drapeau
@@ -214,8 +224,9 @@ s save (dans ~/Downloads ; un fichier existant n'est jamais écrasé ; s'appliqu
 	g attachments but graphics (gif, png, ...) : de même, sans les images (logos, signatures, photos)
 	p as pdf (pas encore)
 	e as eml file (dernier mail de chaque conversation, comme t et m)
-	t as text file
-	m as markdown file
+	t as text file (T : enregistre puis ouvre le fichier au premier plan, dans l'app associée par macOS)
+	m as markdown file (M : de même)
+	Dans le menu, la ligne de t (et de m) rappelle à droite, en grisé, « T : et ouvrir ». Avec les flèches, ⌘-entrée sur la ligne fait de même. Au-delà de 5 mails, les fichiers sont enregistrés mais pas ouverts, et la barre de statut le dit.
 v display (view)
 	1 une seule colonne (masque la liste des dossiers et la lecture d'un mail). Entrée, ou un double-clic sur une ligne, affiche le mail dans toute la fenêtre et le marque lu aussitôt (j / k passent au mail suivant / précédent) ; Escape revient à la liste
 	2 colonnes (presentation classique : liste des mails à gauche et lecture du mail à droite)

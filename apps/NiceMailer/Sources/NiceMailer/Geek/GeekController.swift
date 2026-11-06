@@ -102,6 +102,10 @@ final class GeekController {
         /// What ⌘-Return does, when it differs from Return (a file of `l`:
         /// save, then open).
         var commandAction: (@MainActor () -> Void)? = nil
+        /// In a menu, a second key that runs `commandAction`: `T` for "as
+        /// text file, then open", next to `t` on the same row (`ui.md`,
+        /// menu `s`). The row says so in its detail.
+        var altKey: String? = nil
         /// Hidden words that also find the row when typed (`cc` for "To…"),
         /// never shown (`PickerMatch`).
         var keywords: [String] = []
@@ -259,6 +263,46 @@ final class GeekController {
         model.flash = s.showAll ? L("Whole conversation shown (T)") : L("Simplified conversation (T)")
     }
 
+    /// The message the reader scrolls to once laid out (`stepMessage`);
+    /// the reader clears it.
+    @ObservationIgnored var pendingMessageScroll: Int?
+    /// Top of each message's header in the text reader, by message id, set
+    /// after layout.
+    @ObservationIgnored var readerHeaders: [Int: Double] = [:]
+
+    /// `ctrl-k` / `ctrl-j`: up to the previous message of the conversation,
+    /// or down to the next (`ThreadDisplay.step`); the reader scrolls to
+    /// its header. Stops at either end, and says so.
+    func stepMessage(_ delta: Int) {
+        guard let thread = model.openThread else { return }
+        guard thread.messages.count > 1 else {
+            model.flash = L("A single mail: no other message")
+            return
+        }
+        guard let (state, message) = ThreadDisplay.step(thread, readerState, by: delta) else {
+            model.flash = delta < 0 ? L("First message of the conversation") : L("Last message of the conversation")
+            return
+        }
+        readerState = state
+        // Scrolled now if the reader is laid out already (`T`: nothing
+        // folds), and again once laid out anew.
+        pendingMessageScroll = message
+        scrollToMessage(message)
+    }
+
+    /// Scrolls the reader to the header of `message`.
+    func scrollToMessage(_ message: Int) {
+        if model.bodyFormat != "text", let web = readerWeb {
+            web.evaluateJavaScript("document.getElementById('nm-message-\(message)')?.scrollIntoView()")
+            return
+        }
+        guard let y = readerHeaders[message], let scroll = readerScroll, let doc = scroll.documentView else { return }
+        let clip = scroll.contentView
+        let maxY = max(0, doc.frame.height - clip.bounds.height)
+        clip.scroll(to: NSPoint(x: 0, y: min(maxY, max(0, CGFloat(y) - 8))))
+        scroll.reflectScrolledClipView(clip)
+    }
+
     /// `S` (like mutt's skip-quoted): scrolls to the text after the next
     /// quoted block.
     func skipQuoted() {
@@ -276,8 +320,12 @@ final class GeekController {
 
     /// A click in the reader on a header (fold / unfold the message) or on
     /// a "···" line (show that hidden part). Links use the `nm:` scheme.
-    func readerLink(_ url: URL) -> Bool {
+    func readerLink(_ url: URL, command: Bool? = nil) -> Bool {
         guard url.scheme == "nm" else { return false }
+        // ⌘ held: given by the HTML reader (its navigation action knows), or
+        // read from the event being handled (the text reader; no app,
+        // hence no event, in unit tests).
+        let command = command ?? (NSApp?.currentEvent?.modifierFlags.contains(.command) == true)
         let parts = url.pathComponents.filter { $0 != "/" }
         var s = readerState
         switch url.host {
@@ -286,6 +334,8 @@ final class GeekController {
                let m = model.openThread?.messages.first(where: { $0.id == id }) {
                 let unfolded = s.folding[id] ?? m.expanded
                 s.folding[id] = !unfolded
+                // The message clicked is where ctrl-k / ctrl-j go on from.
+                s.current = id
             }
         case "reveal":
             if parts.count == 2 { s.revealed.insert("\(parts[0]):\(parts[1])") }
@@ -294,7 +344,13 @@ final class GeekController {
             // modifiers, read from the event being handled; no app, hence
             // no event, in unit tests).
             if let id = parts.first.flatMap(Int.init) {
-                model.saveAttachment(id, NSApp?.currentEvent?.modifierFlags.contains(.command) == true ? .saveAndOpen : .save)
+                model.saveAttachment(id, command ? .saveAndOpen : .save)
+            }
+            return true
+        case "sender":
+            if let id = parts.first.flatMap(Int.init),
+               let address = model.openThread?.messages.first(where: { $0.id == id })?.fromAddr {
+                senderClicked(address, command: command)
             }
             return true
         default:
@@ -302,6 +358,20 @@ final class GeekController {
         }
         readerState = s
         return true
+    }
+
+    /// A click on the sender's address in the reader (`ui.md`,
+    /// "Expéditeur"): copied to the pasteboard; with ⌘, the list filtered
+    /// on this sender (a "from:" chip, as `F` would add).
+    func senderClicked(_ address: String, command: Bool) {
+        if command {
+            model.attributes.add(.from, address)
+            model.flash = L("Mails from %@", address)
+        } else {
+            pasteboard.clearContents()
+            pasteboard.setString(address, forType: .string)
+            model.flash = L("Copied: %@", address)
+        }
     }
 
     /// Last row clicked and when, to detect double-clicks (see `clickSearch`).
@@ -376,6 +446,12 @@ final class GeekController {
             }
             return true
         }
+        // ⌘-Return in a prefix menu: the highlighted row's second action
+        // (`sT`: save, then open), or its usual one.
+        if mods.contains(.command), event.keyCode == KeyCode.returnKey, case .menu = overlay {
+            if let i = menuIndex { chooseMenuEntry(i, command: true) } else { overlay = .none }
+            return true
+        }
         // While text is typed (a picker, the contacts filter), ⌘V pastes and
         // ⌘ with the arrows or Delete edits the line, as in any text field.
         // This comes before the other ⌘ shortcuts, which do not apply there.
@@ -433,6 +509,7 @@ final class GeekController {
                 menuIndex = menuIndex.map { Self.stepUp($0, count: count) } ?? max(0, count - 1)
                 return true
             case KeyCode.returnKey:
+                // (⌘-Return is handled at the top of `handle`.)
                 if let i = menuIndex { chooseMenuEntry(i) } else { overlay = .none }
                 return true
             default:
@@ -440,12 +517,15 @@ final class GeekController {
             }
             overlay = .none
             if code == KeyCode.escape { return true }
-            if let entry = menuEntries(prefix).first(where: { $0.key == key }) {
+            let entries = menuEntries(prefix)
+            if let entry = entries.first(where: { $0.key == key }) {
                 if entry.disabled {
                     model.flash = L("Not available yet: %@", entry.label)
                 } else {
                     entry.action()
                 }
+            } else if let entry = entries.first(where: { $0.altKey == key }), let second = entry.commandAction {
+                second()
             } else {
                 model.flash = L("No command %@%@", prefix.rawValue, key)
             }
@@ -472,6 +552,10 @@ final class GeekController {
             case "u" where screen == .mail: moveCursor(-halfPage)
             // Other screens: used, but nothing to do (no beep).
             case "d", "u": break
+            // ctrl-k / ctrl-j: the previous / next message of the
+            // conversation, as k / j move in the list.
+            case "k" where screen == .mail: stepMessage(-1)
+            case "j" where screen == .mail: stepMessage(1)
             case "f": scrollReader(pages: 1)
             case "b": scrollReader(pages: -1)
             default: return false
@@ -709,8 +793,17 @@ final class GeekController {
         case .save:
             return [
                 Entry(key: "e", label: L("as .eml file")) { [model] in model.export("eml") },
-                Entry(key: "t", label: L("as text file")) { [model] in model.export("txt") },
-                Entry(key: "m", label: L("as Markdown file")) { [model] in model.export("md") },
+                // The capital saves, then opens the file in front, in the
+                // app macOS gives it (TextEdit, Obsidian…): `T`, `M`, or
+                // ⌘-Return on the row (`ui.md`, menu `s`).
+                Entry(key: "t", label: L("as text file"), detail: L("%@: and open", "T"), detailStyle: .info,
+                      commandAction: { [model] in model.export("txt", open: true) }, altKey: "T") { [model] in
+                    model.export("txt")
+                },
+                Entry(key: "m", label: L("as Markdown file"), detail: L("%@: and open", "M"), detailStyle: .info,
+                      commandAction: { [model] in model.export("md", open: true) }, altKey: "M") { [model] in
+                    model.export("md")
+                },
                 // Every attachment of the marked threads (or of the one
                 // under the cursor), with or without the graphics.
                 Entry(key: "a", label: L("all attachments")) { [model] in
@@ -874,6 +967,7 @@ final class GeekController {
             ("⌘U", L("unsubscribe from the list")),
             ("T", L("show / hide quotes, signatures, folded mails")),
             ("S", L("skip to the text after the next quote")),
+            ("^k ^j", L("previous / next message of the conversation")),
             ("/", L("search everywhere: words anywhere, addresses included, in Everything")),
             (";…", L("go to a folder or a screen")),
             ("s…", L("save")),
@@ -896,7 +990,12 @@ final class GeekController {
             Task { await loadTags() }
         case .group:
             Task { await loadGroups() }
-        case .links, .accounts, .attributes:
+        case .links:
+            // The senders' cards join the links; on the first `l`, macOS
+            // asks whether the app may read Contacts. The rows appear
+            // when the cards are read (the panel follows the model).
+            Task { await model.loadSenderCards(asking: true) }
+        case .accounts, .attributes:
             break
         case .attributeValue, .search:
             valueSuggestions = []
@@ -927,14 +1026,17 @@ final class GeekController {
         overlay = .menu(prefix)
     }
 
-    /// A click on a row of the open prefix menu: same as its key.
-    func chooseMenuEntry(_ index: Int) {
+    /// A click on a row of the open prefix menu: same as its key; with
+    /// `command` (⌘-Return), its second action if it has one.
+    func chooseMenuEntry(_ index: Int, command: Bool = false) {
         guard case .menu(let prefix) = overlay else { return }
         overlay = .none
         let entries = menuEntries(prefix)
         guard entries.indices.contains(index) else { return }
         if entries[index].disabled {
             model.flash = L("Not available yet: %@", entries[index].label)
+        } else if command, let second = entries[index].commandAction {
+            second()
         } else {
             entries[index].action()
         }
@@ -1035,8 +1137,8 @@ final class GeekController {
             guard !typed.isEmpty else { return [] }
             return [Entry(key: "+", label: typed) { [weak self] in self?.searchEverywhere(typed) }]
         case .links:
-            // The links of the mail and its files (`ui.md`), in four
-            // groups: links with a text, phone numbers (`AppModel.Link.merge`),
+            // The links of the mail and its files (`ui.md`), after the
+            // link to the mail and the senders' cards, in four groups: links with a text, phone numbers (`AppModel.Link.merge`),
             // the attached files, then the links without a text (mostly an
             // image leading to a social network: the least wanted, after
             // the files). Return opens a link in the browser, calls a
@@ -1057,9 +1159,21 @@ final class GeekController {
                     self?.copyMailLink(markdown: true)
                 }
             }
+            // Then the senders' numbers and cards, from the address book
+            // (`ContactLinks`): who wrote, before what the mail offers.
+            let contactRows = model.contactLinks.map { link in
+                Entry(key: "", label: link.title, detail: link.destination, detailStyle: .info, icon: link.icon,
+                      keywords: [link.url.absoluteString, link.shownNumber ?? "", "contacts"]) { [model] in
+                    model.openFile(link.url)
+                }
+            }
             let linkRows = links.map { link in
-                Entry(key: "", label: link.label, detail: link.destination, detailStyle: .info,
-                      icon: link.icon, keywords: [link.url.absoluteString]) { [model] in model.openFile(link.url) }
+                // Typing any of its texts, its address or where it leads
+                // finds the row.
+                Entry(key: "", label: link.title, detail: link.destination, detailStyle: .info, icon: link.icon,
+                      keywords: [link.url.absoluteString] + [link.target].compactMap { $0 } + link.otherTexts) { [model] in
+                    model.openFile(link.url)
+                }
             }
             let fileRows = model.attachments.map { a in
                 // The name on the left, the size in the right half, as the
@@ -1073,7 +1187,7 @@ final class GeekController {
             // Which link rows are bare (no text, not a number); each group
             // keeps the order `merge` gave it.
             let bare = links.map { $0.text == nil && !$0.isPhone }
-            let ordered = Array([selfRow].compactMap { $0 }) + zip(linkRows, bare).filter { !$0.1 }.map(\.0) + fileRows
+            let ordered = Array([selfRow].compactMap { $0 }) + contactRows + zip(linkRows, bare).filter { !$0.1 }.map(\.0) + fileRows
                 + zip(linkRows, bare).filter { $0.1 }.map(\.0)
             // Numbered once ordered: the number is the row's place.
             all = ordered.enumerated().map { i, e in

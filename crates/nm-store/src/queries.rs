@@ -538,7 +538,8 @@ impl Store {
         }
         // Attachments of the whole thread in one query, then dealt out to
         // their messages (`attachments.rs`).
-        for (message_id, a) in self.thread_attachments(thread_id)? {
+        let attachments = self.thread_attachments(thread_id)?;
+        for (message_id, a) in attachments.listed {
             if let Some(m) = messages.iter_mut().find(|m| m.id == message_id) {
                 m.attachments.push(a);
             }
@@ -549,8 +550,20 @@ impl Store {
         for m in &mut messages {
             m.links = crate::links::find(m.body_html.as_deref(), m.body_text.as_deref())
                 .into_iter()
-                .map(|l| nm_api::LinkView { url: l.url, text: l.text })
+                .map(|l| nm_api::LinkView { url: l.url, text: l.text, target: l.target, other_texts: l.other_texts })
                 .collect();
+        }
+        // Embedded images get a source the reader can load (`nm-cid:`,
+        // `attachments.rs`). Done here rather than stored: the attachment
+        // ids are only known once the message is inserted, after its body
+        // is sanitized.
+        for m in &mut messages {
+            let mut images = attachments.inline.iter().filter(|i| i.message_id == m.id).peekable();
+            if images.peek().is_some()
+                && let Some(html) = &m.body_html
+            {
+                m.body_html = Some(crate::attachments::resolve_inline_images(html, images));
+            }
         }
         present_thread(&mut messages);
         Ok((subject, messages))

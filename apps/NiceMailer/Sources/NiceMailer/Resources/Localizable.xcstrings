@@ -41,6 +41,16 @@
         }
       }
     },
+    "%@: and open": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ : et ouvrir"
+          }
+        }
+      }
+    },
     "%lld attachments saved to %@": {
       "localizations": {
         "fr": {
@@ -98,6 +108,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "%1$lld mails enregistrés dans %2$@"
+          }
+        }
+      }
+    },
+    "%lld mails saved to %@ and opened": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld mails enregistrés dans %2$@ et ouverts"
+          }
+        }
+      }
+    },
+    "%lld mails saved to %@, not opened: more than %lld": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld mails enregistrés dans %2$@, non ouverts : plus de %3$lld"
           }
         }
       }
@@ -171,6 +201,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "%lld ans"
+          }
+        }
+      }
+    },
+    "(and %lld others)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "(et %lld autres)"
+          }
+        }
+      }
+    },
+    "(and 1 other)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "(et 1 autre)"
           }
         }
       }
@@ -249,6 +299,16 @@
         }
       }
     },
+    "A single mail: no other message": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un mail seul : pas d'autre message"
+          }
+        }
+      }
+    },
     "Account": {
       "localizations": {
         "fr": {
@@ -319,6 +379,16 @@
         }
       }
     },
+    "Card of %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fiche de %@"
+          }
+        }
+      }
+    },
     "Cc: %@": {
       "localizations": {
         "fr": {
@@ -345,6 +415,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Contacts"
+          }
+        }
+      }
+    },
+    "Contacts are only read by the installed app (make open)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les Contacts ne sont lus que par l'app installée (make open)"
+          }
+        }
+      }
+    },
+    "Copied: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copié : %@"
           }
         }
       }
@@ -405,6 +495,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Affichage"
+          }
+        }
+      }
+    },
+    "First message of the conversation": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Premier message de la conversation"
           }
         }
       }
@@ -519,6 +619,16 @@
         }
       }
     },
+    "Last message of the conversation": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dernier message de la conversation"
+          }
+        }
+      }
+    },
     "Link copied: %@": {
       "localizations": {
         "fr": {
@@ -549,6 +659,16 @@
         }
       }
     },
+    "Mails from %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mails de %@"
+          }
+        }
+      }
+    },
     "Markdown link copied: %@": {
       "localizations": {
         "fr": {
@@ -565,6 +685,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Déplacer"
+          }
+        }
+      }
+    },
+    "NiceMailer may not read Contacts: allow it in System Settings, Privacy & Security, Contacts": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "NiceMailer n'a pas accès aux Contacts : autorisez-le dans Réglages Système, Confidentialité et sécurité, Contacts"
           }
         }
       }
@@ -835,6 +965,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Enregistrer"
+          }
+        }
+      }
+    },
+    "Saved and opened: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enregistré et ouvert : %@"
           }
         }
       }
@@ -1722,6 +1862,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "pixels bloqués : %lld"
+          }
+        }
+      }
+    },
+    "previous / next message of the conversation": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "message précédent / suivant de la conversation"
           }
         }
       }

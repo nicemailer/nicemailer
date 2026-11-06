@@ -87,7 +87,7 @@ fn links(store: &Store, subject: &str) -> (Vec<LinkView>, String) {
 }
 
 fn link(url: &str, text: &str) -> LinkView {
-    LinkView { url: url.into(), text: Some(text.into()) }
+    LinkView { url: url.into(), text: Some(text.into()), target: None, other_texts: vec![] }
 }
 
 #[test]
@@ -117,7 +117,7 @@ fn a_text_mail_gives_its_written_addresses_once_and_its_phone_number() {
     assert_eq!(
         links(&store, "Texte").0,
         vec![
-            LinkView { url: "https://x.org/plan".into(), text: None },
+            LinkView { url: "https://x.org/plan".into(), text: None, target: None, other_texts: vec![] },
             // A phone number: its digits in the URL, as written in the text.
             link("tel:0612345678", "06 12 34 56 78"),
         ]

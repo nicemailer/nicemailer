@@ -22,14 +22,44 @@ enum ThreadDisplay {
         var folding: [Int: Bool] = [:]
         /// Hidden segments shown anyway, as "messageId:segmentIndex".
         var revealed: Set<String> = []
+        /// The message `ctrl-k` / `ctrl-j` start from (`step`); nil: the
+        /// last unfolded one.
+        var current: Int? = nil
+    }
+
+    /// `ctrl-k` (`delta` -1) / `ctrl-j` (+1): the message before or after
+    /// the current one in a conversation (`ui.md`). The current one is
+    /// folded and the other unfolded, unless `T` shows everything. Returns
+    /// the new state and the message to scroll to; nil at either end (or
+    /// for a single mail).
+    static func step(_ thread: ThreadView, _ state: State, by delta: Int) -> (state: State, message: Int)? {
+        let ids = thread.messages.map(\.id)
+        guard ids.count > 1 else { return nil }
+        let unfolded = { (m: MessageView) in state.showAll || (state.folding[m.id] ?? m.expanded) }
+        let current = state.current.flatMap { ids.firstIndex(of: $0) }
+            ?? thread.messages.lastIndex(where: unfolded) ?? ids.count - 1
+        let target = current + delta
+        guard ids.indices.contains(target) else { return nil }
+        var s = state
+        if !s.showAll {
+            s.folding[ids[current]] = false
+            s.folding[ids[target]] = true
+        }
+        s.current = ids[target]
+        return (s, ids[target])
     }
 
     enum Block: Hashable {
-        /// A message header. `folded`: one line with a snippet; otherwise
-        /// the sender and date, then the recipients if worth showing.
-        /// `files`: attachments of a folded message, shown as a paperclip
-        /// and their number.
-        case header(messageId: Int, folded: Bool, title: String, detail: String?, files: Int = 0)
+        /// A message header, one line (`ui.md`, "Expéditeur"). `folded`:
+        /// "▸ name · date · @domain" and a snippet (`detail`); otherwise
+        /// "▾ name · date", then the sender's `address` in full (alert
+        /// colour when `alert`, `senderAlert`), and the recipients on a
+        /// second line if worth showing (`detail`). The arrow, and folding
+        /// by a click (`foldable`), only in a conversation: a single mail
+        /// has nothing to fold. `files`: attachments of a folded message,
+        /// shown as a paperclip and their number.
+        case header(messageId: Int, folded: Bool, title: String, detail: String?, files: Int = 0,
+                    address: String? = nil, alert: Bool = false, foldable: Bool = true)
         /// A visible segment.
         case segment(messageId: Int, index: Int, kind: String, text: String, depth: Int)
         /// A hidden segment, replaced by a "···" line that opens it.
@@ -45,13 +75,19 @@ enum ThreadDisplay {
 
     static func blocks(_ thread: ThreadView, _ state: State) -> [Block] {
         var out: [Block] = []
+        // A conversation: each message folds, and shows an arrow.
+        let conversation = thread.messages.count > 1
         for (i, m) in thread.messages.enumerated() {
             if i > 0 { out.append(.separator) }
-            let unfolded = state.showAll || (state.folding[m.id] ?? m.expanded)
+            let unfolded = !conversation || state.showAll || (state.folding[m.id] ?? m.expanded)
             let who = m.fromName ?? m.fromAddr ?? ""
             let date = Format.geekMessageDate(m.dateReceived)
             if !unfolded {
-                out.append(.header(messageId: m.id, folded: true, title: "▸ \(who) · \(date)", detail: snippet(m),
+                // The sender's domain last: short, and the part that tells
+                // whether the mail is genuine. Without a name, the address
+                // is already shown.
+                let domain = m.fromName != nil ? m.fromAddr.flatMap(Self.domain).map { " · @" + $0 } ?? "" : ""
+                out.append(.header(messageId: m.id, folded: true, title: "▸ \(who) · \(date)\(domain)", detail: snippet(m),
                                    files: m.attachments.count))
                 continue
             }
@@ -62,7 +98,10 @@ enum ThreadDisplay {
                 if !m.cc.isEmpty { parts.append(L("Cc: %@", m.cc.map(\.display).joined(separator: ", "))) }
                 recipients = parts.isEmpty ? nil : parts.joined(separator: "   ")
             }
-            out.append(.header(messageId: m.id, folded: false, title: "▾ \(who) · \(date)", detail: recipients))
+            // The address after the date, unless it is the name already.
+            let address = m.fromName != nil ? m.fromAddr.flatMap { $0.isEmpty ? nil : $0 } : nil
+            out.append(.header(messageId: m.id, folded: false, title: "\(conversation ? "▾ " : "")\(who) · \(date)",
+                               detail: recipients, address: address, alert: senderAlert(m), foldable: conversation))
             if m.onlyQuotes && !state.showAll {
                 out.append(.note(messageId: m.id, text: L("only quotes earlier messages")))
             }
@@ -108,9 +147,49 @@ enum ThreadDisplay {
         return String(flat.prefix(120))
     }
 
+    /// The domain of an address: what follows its last `@`, in lowercase;
+    /// nil without one.
+    static func domain(_ address: String) -> String? {
+        guard let at = address.lastIndex(of: "@") else { return nil }
+        let d = address[address.index(after: at)...].lowercased()
+        return d.isEmpty ? nil : d
+    }
+
+    /// Whether the sender's address deserves a second look, shown in the
+    /// alert colour:
+    /// - the mail failed its authentication (`auth_result`): anybody may
+    ///   have written in this name;
+    /// - its name shows another address or domain than the real one
+    ///   (`"service@paypal.com" <x7@promo-mail.ru>`, "PayPal.com"): the
+    ///   usual way to pass for someone else.
+    ///
+    /// A name's domain matches when the real domain ends with it ("Le
+    /// Monde.fr" from `news.lemonde.fr`).
+    static func senderAlert(_ m: MessageView) -> Bool {
+        if m.authResult == "fail" { return true }
+        guard let name = m.fromName, let real = m.fromAddr.flatMap(domain) else { return false }
+        return namedDomains(name).contains { !real.hasSuffix($0) }
+    }
+
+    /// The domains a sender's name shows: those of the addresses in it,
+    /// and words such as "paypal.com" (letters, a dot, a final part of two
+    /// letters or more).
+    static func namedDomains(_ name: String) -> [String] {
+        name.lowercased()
+            .split(whereSeparator: { $0.isWhitespace || "<>()\"'[],;:".contains($0) })
+            .compactMap { word -> String? in
+                let w = word.hasSuffix(".") ? String(word.dropLast()) : String(word)
+                if let d = domain(w), d.contains(".") { return d }
+                let parts = w.split(separator: ".", omittingEmptySubsequences: false)
+                guard parts.count >= 2, parts.allSatisfy({ !$0.isEmpty && $0.allSatisfy { $0.isLetter || $0.isNumber || $0 == "-" } }),
+                      let last = parts.last, last.count >= 2, last.allSatisfy(\.isLetter) else { return nil }
+                return w
+            }
+    }
+
     /// Number of folded messages (UI script state, tests).
     static func foldedCount(_ blocks: [Block]) -> Int {
-        blocks.filter { if case .header(_, true, _, _, _) = $0 { return true } else { return false } }.count
+        blocks.filter { if case .header(_, true, _, _, _, _, _, _) = $0 { return true } else { return false } }.count
     }
 
     /// `S` (like mutt's "skip quoted"): from the scroll position `y`, the

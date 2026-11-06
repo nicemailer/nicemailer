@@ -43,9 +43,9 @@ expect folder = Archive
 # listed once with the text of the HTML.
 expect selected_subject = La lettre de novembre
 key l
-expect picker_count = 7
+expect picker_count = 8
 expect picker_first = Link to this mail
-expect picker_rows = Link to this mail | Lire en ligne | 01 23 45 67 89 | devis.pdf | photo.png | budget.xlsx | social.example.net
+expect picker_rows = Link to this mail | Lire en ligne | ressent "les angoisses" du pays (and 1 other) | 01 23 45 67 89 | devis.pdf | photo.png | budget.xlsx | social.example.net
 expect picker_first_detail ~ nicemailer://m/
 # As wide as the window allows (1400 points here), 1100 at most.
 expect picker_width = 1100
@@ -57,6 +57,17 @@ key l
 expect picker_width = 820
 key esc
 resize 1400x900
+key l
+# Three touching tracking links to one video are one row, named by their
+# joined text; the video is linked once more further on ("1 other"). Its
+# other text, and the video's address, find it.
+type la vidéo
+expect picker_first = ressent "les angoisses" du pays (and 1 other)
+key esc
+key l
+type video.example.net
+expect picker_count = 1
+key esc
 key l
 # A part of the address, not shown, finds the link too.
 type novembre?u
@@ -73,8 +84,10 @@ expect overlay = none
 key j
 expect selected_subject = Rapport mensuel
 key l
-expect picker_count = 2
-expect picker_rows = Link to this mail | ici
+# Alice, its sender, has a card in the scenario's address book
+# (addressbook.uiscript): her numbers and card come before the mail's link.
+expect picker_count = 5
+expect picker_rows = Link to this mail | Alice Martin — mobile | Alice Martin — work | Card of Alice Martin | ici
 key esc
 expect overlay = none
 # Tag: create by typing, then remove by clicking it in the picker.

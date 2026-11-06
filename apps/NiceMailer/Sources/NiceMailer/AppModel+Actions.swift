@@ -264,8 +264,9 @@ extension AppModel {
     /// `se`, `st`, `sm`: saves the latest message of each target thread
     /// (the marked ones, or the one under the cursor) to `exportDirectory`,
     /// by default ~/Downloads (chosen by the core). One file: its path in
-    /// the status bar; several: how many.
-    func export(_ format: String) {
+    /// the status bar; several: how many. `sT`, `sM` (`open`): then opens
+    /// the files in front, 5 at most (`maxOpened`).
+    func export(_ format: String, open: Bool = false) {
         guard let client = core, !targetThreads.isEmpty else { return }
         let dir = exportDirectory
         Task {
@@ -280,16 +281,31 @@ extension AppModel {
                     paths.append(r.path)
                 } catch { firstError = firstError ?? error }
             }
+            // Opened in front, each in the app macOS gives its type; not
+            // beyond `maxOpened`, which would bury the screen in windows.
+            let opening = open && paths.count <= Self.maxOpened
+            if opening {
+                for path in paths { openFile(URL(fileURLWithPath: path)) }
+            }
             if paths.count == 1 {
-                flash = L("Saved: %@", paths[0])
+                flash = opening ? L("Saved and opened: %@", paths[0]) : L("Saved: %@", paths[0])
             } else if let first = paths.first {
                 let place = FileManager.default.displayName(atPath: (first as NSString).deletingLastPathComponent)
-                flash = L("%lld mails saved to %@", paths.count, place)
+                if opening {
+                    flash = L("%lld mails saved to %@ and opened", paths.count, place)
+                } else if open {
+                    flash = L("%lld mails saved to %@, not opened: more than %lld", paths.count, place, Self.maxOpened)
+                } else {
+                    flash = L("%lld mails saved to %@", paths.count, place)
+                }
             } else if let firstError {
                 report(firstError)
             }
         }
     }
+
+    /// Files `export(_:open:)` opens at most: beyond, they are only saved.
+    static let maxOpened = 5
 
     /// Attachments of the open thread, message by message (`l`, tiles).
     var attachments: [AttachmentView] { openThread?.messages.flatMap(\.attachments) ?? [] }
@@ -358,6 +374,21 @@ extension AppModel {
                 }
             } catch { report(error) }
         }
+    }
+
+    /// The bytes of an image embedded in a mail (`cid:`), for the HTML
+    /// reader (`InlineImageLoader`): the part the core extracts, read from
+    /// its file. Nil when the core cannot give it, or when it is not an
+    /// image that can be shown (`InlineImages.showable`).
+    func inlineImage(_ id: Int) async -> (data: Data, mimeType: String)? {
+        guard let client = core,
+              let file: AttachmentFileView = try? await client.call("get_attachment", ["attachment_id": id]),
+              InlineImages.showable(mimeType: file.mimeType, size: file.size) else { return nil }
+        // Read off the main thread, like the copies of `copyAttachment`.
+        let path = file.path
+        guard let data = await Task.detached(operation: { try? Data(contentsOf: URL(fileURLWithPath: path)) }).value,
+              data.count <= InlineImages.maxBytes else { return nil }
+        return (data, file.mimeType)
     }
 
     /// Where attachments are saved: `exportDirectory`, by default
@@ -429,10 +460,66 @@ extension AppModel {
     }
 
     /// Links of the open thread for `l`, each once (`Link.merge`). The
-    /// core finds them (`links.rs`, `phones.rs`).
+    /// core finds them (`links.rs`, `phones.rs`). A number that is also in
+    /// a sender's card is left to `contactLinks`, which names it.
     var links: [Link] {
         guard let thread = openThread else { return [] }
-        return Link.merge(thread.messages.map(\.links))
+        let known = Set(contactLinks.filter(\.isPhone).map(\.key))
+        return Link.merge(thread.messages.map(\.links)).filter { !known.contains($0.key) }
+    }
+
+    /// The senders of the open thread, latest first, each once: the
+    /// addresses of its received messages (not those in Sent or Drafts,
+    /// which are the user's). People in copy are left out: in a
+    /// conversation, the one to call back is one who wrote.
+    var threadSenders: [String] {
+        guard let thread = openThread else { return [] }
+        var out: [String] = []
+        for m in thread.messages.reversed() where m.folderRole != "sent" && m.folderRole != "drafts" {
+            guard let addr = m.fromAddr?.lowercased(), !addr.isEmpty, !out.contains(addr) else { continue }
+            out.append(addr)
+        }
+        return out
+    }
+
+    /// The rows the senders' cards add to `l` (`ContactLinks`): their
+    /// numbers, then each card. Empty until the cards of this thread are
+    /// read.
+    var contactLinks: [Link] {
+        guard let id = openThread?.id, senderCardsThreadId == id else { return [] }
+        return ContactLinks.links(senderCards)
+    }
+
+    /// Reads the cards of the open thread's senders. With `asking`, macOS's
+    /// question is asked first if it never was (the first `l`); a book that
+    /// cannot be read is said once in the status bar.
+    func loadSenderCards(asking: Bool) async {
+        guard let id = openThread?.id else { return }
+        let book = addressBook
+        switch book.access {
+        case .authorized:
+            break
+        case .notDetermined:
+            guard asking, await book.requestAccess() else { return }
+        case .denied:
+            if asking { sayAddressBookRefused(L("NiceMailer may not read Contacts: allow it in System Settings, Privacy & Security, Contacts")) }
+            return
+        case .unavailable:
+            if asking { sayAddressBookRefused(L("Contacts are only read by the installed app (make open)")) }
+            return
+        }
+        let senders = threadSenders
+        let cards = await book.cards(matching: senders)
+        // Another thread opened meanwhile: these cards are not its.
+        guard openThread?.id == id else { return }
+        senderCards = cards
+        senderCardsThreadId = id
+    }
+
+    private func sayAddressBookRefused(_ message: String) {
+        guard !addressBookRefusalShown else { return }
+        addressBookRefusalShown = true
+        flash = message
     }
 
     /// A link of the `l` panel: where it goes, and what the mail calls it.
@@ -441,9 +528,20 @@ extension AppModel {
         let url: URL
         /// Text of the link in the HTML, or a phone number as written; nil
         /// when the mail only wrote the address, or put an image in the link.
-        let text: String?
+        var text: String?
+        /// Where a tracking link really goes, when the core could read it
+        /// from its address (`links.rs`, `target`).
+        var target: String? = nil
+        /// The other texts of the same link in the thread, each once:
+        /// "Voir ma facture (and 2 others)".
+        var otherTexts: [String] = []
+        /// A number from the address book, as its card writes it
+        /// (`ContactLinks`): shown on the right, the text being the name.
+        var shownNumber: String? = nil
 
         var isPhone: Bool { url.scheme == "tel" }
+        /// A card of the address book, opened in Contacts.
+        var isCard: Bool { url.scheme == "addressbook" }
 
         /// The links of several messages as one list, each once, in three
         /// groups, each in the order of the mail:
@@ -461,13 +559,24 @@ extension AppModel {
             var index: [String: Int] = [:]
             for view in lists.joined() {
                 guard let url = URL(string: view.url) else { continue }
-                let link = Link(url: url, text: view.text?.isEmpty == false ? view.text : nil)
-                if let i = index[link.key] {
-                    if all[i].text == nil, link.text != nil { all[i] = link }
-                } else {
+                let text = view.text?.isEmpty == false ? view.text : nil
+                let link = Link(url: url, text: text, target: view.target, otherTexts: view.otherTexts ?? [])
+                guard let i = index[link.key] else {
                     index[link.key] = all.count
                     all.append(link)
+                    continue
                 }
+                // The same link in another message (a quoted history, a
+                // later issue): its texts join those already known.
+                var known = all[i]
+                for t in [link.text].compactMap({ $0 }) + link.otherTexts {
+                    if known.text == nil {
+                        known.text = t
+                    } else if t != known.text, !known.otherTexts.contains(t) {
+                        known.otherTexts.append(t)
+                    }
+                }
+                all[i] = known
             }
             let phones = all.filter(\.isPhone)
             let others = all.filter { !$0.isPhone }
@@ -479,7 +588,9 @@ extension AppModel {
         /// signature gives the same number in national and international
         /// form.
         var key: String {
-            guard isPhone else { return url.absoluteString }
+            // A tracking link is known by where it goes: each place of a
+            // newsletter has its own tracking address to the same page.
+            guard isPhone else { return target ?? url.absoluteString }
             return "tel:" + String(number.filter(\.isNumber).suffix(9))
         }
 
@@ -498,7 +609,19 @@ extension AppModel {
             if let text { return text }
             if isPhone { return number }
             if url.scheme == "mailto" { return mailAddress }
-            return url.host() ?? url.absoluteString
+            // The site the link leads to, not that of its tracker.
+            return target.flatMap { URL(string: $0)?.host() } ?? url.host() ?? url.absoluteString
+        }
+
+        /// The row's text: the label and, when the mail links the same
+        /// place from other texts, how many: "ressent "les angoisses" du
+        /// pays (and 2 others)".
+        var title: String {
+            switch otherTexts.count {
+            case 0: return label
+            case 1: return label + " " + L("(and 1 other)")
+            default: return label + " " + L("(and %lld others)", otherTexts.count)
+            }
         }
 
         /// Right half of the row: where the link goes, in full (cut in the
@@ -506,17 +629,20 @@ extension AppModel {
         /// Nothing when the left half already says it: a mail address or a
         /// number shown as such.
         var destination: String? {
+            if isCard { return L("Contacts") }
+            if let shownNumber { return shownNumber }
             if isPhone {
                 // "06 12 34 56 78" for tel:0612345678 says it already.
                 guard let text else { return nil }
                 return text.filter(\.isNumber).hasSuffix(String(number.filter(\.isNumber).suffix(9))) ? nil : number
             }
             if url.scheme == "mailto" { return text == nil ? nil : mailAddress }
-            return url.absoluteString
+            // A tracking link shows the page it leads to, not the tracker.
+            return target ?? url.absoluteString
         }
 
         /// SF Symbol of the row.
-        var icon: String { isPhone ? "phone" : "link" }
+        var icon: String { isCard ? "person.crop.circle" : isPhone ? "phone" : "link" }
     }
 
     /// Marks the cursor's thread, then moves the cursor and marks the next

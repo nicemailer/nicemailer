@@ -44,6 +44,12 @@ enum UIScript {
     /// Remote images handed to the web view since launch
     /// (`RemoteImageLoader`).
     static var remoteImagesShown = 0
+    /// Embedded images (`cid:`) served to the HTML reader.
+    static var inlineImagesShown = 0
+    /// Dark Reader in the HTML page (`DarkMode`): `on`, `off` (light
+    /// theme), `absent` (not needed); and the requests it asked for.
+    static var darkReader = ""
+    static var darkReaderFetches = ""
     /// Requests that reached the "network" since launch: in UI script mode
     /// a local stand-in that answers every request with a small PNG
     /// (`UIScriptImageProtocol`); nothing leaves the machine.
@@ -200,6 +206,19 @@ private final class Runner {
                 text = copied.range(of: #"nicemailer://[^\s)]+"#, options: .regularExpression).map { String(copied[$0]) } ?? copied
             }
             if let url = URL(string: text) { model.openDeepLink(url) }
+        case "appearance":
+            // Light or dark, for this app only: scenarios and snapshots do
+            // not depend on the Mac's setting (`dark`, `light`, `system`).
+            NSApp.appearance = arg == "dark" ? NSAppearance(named: .darkAqua)
+                : arg == "light" ? NSAppearance(named: .aqua) : nil
+        case "addressbook":
+            // What macOS would answer for Contacts: `denied`, `unavailable`
+            // (a bare executable), `authorized`, `undetermined`. The book
+            // is always the scenario's own (`FixtureAddressBook.sample`).
+            let access: [String: AddressBookAccess] = [
+                "denied": .denied, "unavailable": .unavailable, "authorized": .authorized, "undetermined": .notDetermined,
+            ]
+            if let book = model.addressBook as? FixtureAddressBook, let value = access[arg] { book.setAccess(value) }
         case "clipboard":
             controller.pasteboard.clearContents()
             controller.pasteboard.setString(arg.replacingOccurrences(of: "\\n", with: "\n"), forType: .string)
@@ -464,6 +483,7 @@ private final class Runner {
             "tracking_pixels": "\(m.trackingPixels)",
             "remote_allowed": "\(UIScript.remoteImagesAllowed)",
             "remote_shown": "\(UIScript.remoteImagesShown)",
+            "inline_shown": "\(UIScript.inlineImagesShown)",
             "remote_requests": "\(UIScript.remoteRequests)",
             // The content rule list of the HTML reader (`RemoteBlocker`):
             // `on` once compiled, `off` if WebKit refused it.
@@ -504,6 +524,16 @@ private final class Runner {
             "html_text": UIScript.html["text"] ?? "",
             "html_font_loaded": UIScript.html["font"] ?? "",
             "html_font_family": UIScript.html["family"] ?? "",
+            "html_inline_drawn": UIScript.html["inline"] ?? "",
+            "html_author_font": UIScript.html["authorFont"] ?? "",
+            "html_table_width": UIScript.html["tableWidth"] ?? "",
+            "html_csp": UIScript.html["csp"] ?? "",
+            "html_frames": UIScript.html["frames"] ?? "",
+            "dark_reader": UIScript.darkReader,
+            "dark_reader_fetches": UIScript.darkReaderFetches,
+            "html_paper": UIScript.html["paper"] ?? "",
+            "html_styled_width": UIScript.html["styledWidth"] ?? "",
+            "html_styled_background": UIScript.html["styledBackground"] ?? "",
             "html_offset": "\(c.htmlOffset)",
             // The folder workflow: steps `z` can undo, a suspect move
             // waiting for its confirmation (its sender), the question shown,

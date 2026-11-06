@@ -79,3 +79,8 @@ nicemailer watch          # live event stream
 ```
 
 The protocol is JSON-RPC 2.0, one JSON object per line. A client starts with `hello {"protocol_version": 1}`, then calls `subscribe` if it wants events.
+
+## Third-party code bundled with the app
+
+- **iA Writer Mono V**, the font of the geek theme (SIL Open Font License), in `apps/NiceMailer/Sources/NiceMailer/Resources/Fonts`.
+- **Dark Reader** 4.9.134 (MIT License), which adapts mails made for a white page to the dark theme, in `apps/NiceMailer/Sources/NiceMailer/Resources/DarkReader` with its licence (`docs/thread-display.md`, "HTML of the sender").

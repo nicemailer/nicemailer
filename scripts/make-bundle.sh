@@ -55,6 +55,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.productivity</string>
   <key>NSHighResolutionCapable</key><true/>
+  <key>NSContactsUsageDescription</key><string>NiceMailer shows the phone numbers and the card of the senders of a conversation among the links of the mail (l). Nothing is copied or sent.</string>
   <key>CFBundleURLTypes</key>
   <array>
     <dict>
@@ -67,6 +68,13 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 plutil -lint "$APP/Contents/Info.plist" >/dev/null
+# The reason macOS shows when it asks for Contacts, in French (the English
+# one is in Info.plist above).
+mkdir -p "$APP/Contents/Resources/fr.lproj"
+cat > "$APP/Contents/Resources/fr.lproj/InfoPlist.strings" <<'STRINGS'
+"NSContactsUsageDescription" = "NiceMailer affiche les numéros de téléphone et la fiche des expéditeurs d'une conversation parmi les liens du mail (l). Rien n'est copié ni envoyé.";
+STRINGS
+plutil -lint "$APP/Contents/Resources/fr.lproj/InfoPlist.strings" >/dev/null
 
 # An ad-hoc signature: enough to run on this Mac (Apple Silicon requires
 # signed code), not to distribute.

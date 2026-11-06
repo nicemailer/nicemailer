@@ -136,7 +136,10 @@ impl Store {
     /// body and is not listed, unless the message has no HTML referencing
     /// it: some clients (Apple Mail) mark photos attached to a plain text
     /// mail as inline, and they would be invisible otherwise.
-    pub(crate) fn thread_attachments(&self, thread_id: i64) -> Result<Vec<(i64, AttachmentView)>> {
+    ///
+    /// The embedded images come back apart (`ThreadAttachments::inline`),
+    /// for the reader to show them in the HTML (`queries.rs`, `get_thread`).
+    pub(crate) fn thread_attachments(&self, thread_id: i64) -> Result<ThreadAttachments> {
         let mut stmt = self.conn.prepare_cached(
             "SELECT a.message_id, a.id, a.filename, a.mime_type, coalesce(a.size, 0), a.content_id, a.is_inline,
                     b.html_sanitized
@@ -152,22 +155,67 @@ impl Store {
             let html: Option<String> = r.get(7)?;
             let in_body = inline
                 && matches!((&cid, &html), (Some(c), Some(h)) if h.contains(&format!("cid:{c}")));
-            Ok((r.get::<_, i64>(0)?, in_body, AttachmentView {
+            Ok((r.get::<_, i64>(0)?, in_body.then_some(cid).flatten(), AttachmentView {
                 id: r.get(1)?,
                 filename: r.get(2)?,
                 mime_type: r.get(3)?,
                 size: r.get(4)?,
             }))
         })?;
-        let mut out = Vec::new();
+        let mut out = ThreadAttachments::default();
         for row in rows {
             let (message_id, in_body, view) = row?;
-            if !in_body {
-                out.push((message_id, view));
+            match in_body {
+                // Only images: the reader shows the part in an `<img>`.
+                Some(cid) if view.mime_type.starts_with("image/") => {
+                    out.inline.push(InlineImage { message_id, content_id: cid, attachment_id: view.id })
+                }
+                Some(_) => {}
+                None => out.listed.push((message_id, view)),
             }
         }
         Ok(out)
     }
+}
+
+/// The attachments of a thread (`thread_attachments`).
+#[derive(Debug, Default)]
+pub(crate) struct ThreadAttachments {
+    /// The attachments shown under their message, with its id.
+    pub listed: Vec<(i64, AttachmentView)>,
+    /// The images the HTML of their message shows (`cid:`).
+    pub inline: Vec<InlineImage>,
+}
+
+/// An image embedded in the HTML of a message: `<img src="cid:logo@x">`
+/// shows the part whose `Content-ID` is `logo@x`.
+#[derive(Debug)]
+pub(crate) struct InlineImage {
+    pub message_id: i64,
+    pub content_id: String,
+    pub attachment_id: i64,
+}
+
+/// The source the reader loads an embedded image from:
+/// `nm-cid://image/<attachment id>`. A web view cannot resolve `cid:`
+/// itself; the app's handler of this scheme asks the core for the part
+/// (`get_attachment`). Only the core writes it: the sanitizer drops any
+/// source of an unknown scheme a mail would write (`ingest.rs`), so a mail
+/// cannot point at another mail's attachment.
+pub const INLINE_SOURCE_PREFIX: &str = "nm-cid://image/";
+
+/// `html` with each `src="cid:<content id>"` of `images` replaced by its
+/// `nm-cid:` source. The HTML comes from the sanitizer's serializer, which
+/// always writes ` src="…"` with double quotes, so a plain replacement is
+/// reliable; a `cid:` without a part stays as it is (the reader hides it).
+pub(crate) fn resolve_inline_images<'a>(html: &str, images: impl Iterator<Item = &'a InlineImage>) -> String {
+    let mut out = html.to_owned();
+    for image in images {
+        let from = format!(" src=\"cid:{}\"", image.content_id);
+        let to = format!(" src=\"{INLINE_SOURCE_PREFIX}{}\"", image.attachment_id);
+        out = out.replace(&from, &to);
+    }
+    out
 }
 
 /// The transfer-decoded content of the part `part_id` (IMAP numbering, as

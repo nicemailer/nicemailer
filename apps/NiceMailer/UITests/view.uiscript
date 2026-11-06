@@ -97,7 +97,7 @@ expect opened_file = photo.png
 # The l picker lists them after the link to the mail, the links and the
 # phone number of the newsletter.
 key l
-expect picker_count = 7
+expect picker_count = 8
 type budget
 key ret
 expect export_files = 3
@@ -179,26 +179,45 @@ expect export_files = 6
 key s
 key m
 expect export_files = 7
+# The capitals save, then open the file in front (recorded only in UI
+# script mode). The menu says so on the row, muted.
+key s
+snap save-menu
+key T
+expect export_files = 8
+expect opened_file ~ .txt
+expect flash ~ Saved and opened
+key s
+key M
+expect export_files = 9
+expect opened_file ~ .md
+# ⌘-Return on a highlighted row (the second, "as text file"): the same.
+key s
+key down
+key down
+key cmd-ret
+expect export_files = 10
+expect opened_file ~ .txt
 # sa / sg: the attachments of the mail under the cursor (the newsletter:
 # three files, one of them a graphic), then of every marked mail.
 click thread:0
 expect selected_subject = La lettre de novembre
 key s
 key a
-expect export_files = 10
+expect export_files = 13
 expect flash ~ 3 attachments saved
 key s
 key g
-expect export_files = 12
+expect export_files = 15
 key J
 expect marked_count = 2
 key s
 key a
-expect export_files = 15
+expect export_files = 18
 # se also saves the latest mail of every marked conversation.
 key s
 key e
-expect export_files = 17
+expect export_files = 20
 expect flash ~ 2 mails saved
 key esc
 expect marked_count = 0

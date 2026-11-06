@@ -24,6 +24,9 @@ struct GeekControllerTests {
         model.exportDirectory = "/tmp/nicemailer-tests"
         // Never launch an app from the tests.
         model.openFile = { _ in }
+        // Never read the user's address book: a book of the test's own,
+        // empty unless a test fills it.
+        model.addressBook = FixtureAddressBook(cards: [:])
         await model.attach(core)
         _ = await eventually { model.threads.count == 8 && model.openThread != nil }
     }
@@ -525,10 +528,12 @@ struct GeekControllerTests {
         press("l"); type("devis"); press("ret")
         #expect(await eventually { FileManager.default.fileExists(atPath: dir.appendingPathComponent("devis.pdf").path) })
         #expect(core.calls("get_attachment").first?["attachment_id"] as? Int == 41)
-        // The user's copy is writable, unlike the core's.
-        let mode = try FileManager.default.attributesOfItem(atPath: dir.appendingPathComponent("devis.pdf").path)[.posixPermissions] as? Int
-        #expect(mode == 0o644)
-        #expect(model.flash?.contains("devis.pdf") == true)
+        // The user's copy is writable, unlike the core's: its permissions
+        // are set a moment after the copy appears.
+        let mode = { (try? FileManager.default.attributesOfItem(atPath: dir.appendingPathComponent("devis.pdf").path))?[.posixPermissions] as? Int }
+        #expect(await eventually { mode() == 0o644 })
+        // Said once the copy is done, a moment after the file appears.
+        #expect(await eventually { model.flash?.contains("devis.pdf") == true })
         // A second save: "devis (2).pdf".
         press("l"); type("devis"); press("ret")
         #expect(await eventually { FileManager.default.fileExists(atPath: dir.appendingPathComponent("devis (2).pdf").path) })
@@ -1010,6 +1015,100 @@ struct GeekControllerTests {
         #expect(ids == [10, 20, 30])
         #expect(core.calls("export_message").allSatisfy { $0["format"] as? String == "txt" })
         #expect(await eventually { model.flash?.contains("3") == true })
+    }
+
+    @Test func ctrlKAndCtrlJStepThroughTheConversation() async {
+        // A single mail: nowhere to go.
+        press("ctrl-k")
+        #expect(model.flash == L("A single mail: no other message"))
+        // Thread 2: two messages, the second unfolded.
+        core.handler = { method, params in
+            guard method == "get_thread", params["thread_id"] as? Int == 2 else { return Fixture.answer(method, params) }
+            var thread = Fixture.threadView(2)
+            var first = (thread["messages"] as! [[String: Any]])[0]
+            var second = first
+            first["id"] = 21
+            first["expanded"] = false
+            second["id"] = 22
+            thread["messages"] = [first, second]
+            return thread
+        }
+        model.selectedThreadId = 2
+        _ = await eventually { model.openThread?.messages.count == 2 }
+        press("ctrl-k")
+        #expect(controller.readerState.folding == [22: false, 21: true])
+        #expect(controller.readerState.current == 21)
+        press("ctrl-k")
+        #expect(model.flash == L("First message of the conversation"))
+        press("ctrl-j")
+        #expect(controller.readerState.folding == [21: false, 22: true])
+        press("ctrl-j")
+        #expect(model.flash == L("Last message of the conversation"))
+    }
+
+    @Test func aClickOnTheSendersAddressCopiesItAndCommandFiltersOnIt() {
+        // The open thread's message is 10, from sender1@example.org.
+        let url = URL(string: "nm://sender/10")!
+        #expect(controller.readerLink(url, command: false))
+        #expect(controller.pasteboard.string(forType: .string) == "sender1@example.org")
+        #expect(model.flash == L("Copied: %@", "sender1@example.org"))
+        #expect(model.attributes.from.isEmpty)
+        // ⌘-click: a "from:" chip, as `F` would add.
+        #expect(controller.readerLink(url, command: true))
+        #expect(model.attributes.from == ["sender1@example.org"])
+        #expect(model.flash == L("Mails from %@", "sender1@example.org"))
+        // A message not in the open thread: nothing.
+        model.flash = nil
+        #expect(controller.readerLink(URL(string: "nm://sender/999")!, command: false))
+        #expect(model.flash == nil)
+    }
+
+    @Test func capitalTAndMSaveThenOpenInFront() async {
+        var opened: [String] = []
+        model.openFile = { opened.append($0.path) }
+        // `t` saves only.
+        press("s"); press("t")
+        #expect(await eventually { core.calls("export_message").count == 1 })
+        #expect(opened.isEmpty)
+        // `T` saves, then opens the file, and says so.
+        press("s"); press("T")
+        #expect(await eventually { opened == ["/tmp/x.eml"] })
+        #expect(core.calls("export_message").last?["format"] as? String == "txt")
+        #expect(model.flash == L("Saved and opened: %@", "/tmp/x.eml"))
+        // `M`: Markdown, three marked mails, three files opened.
+        opened = []
+        press("J"); press("J")
+        press("s"); press("M")
+        #expect(await eventually { opened.count == 3 })
+        #expect(core.calls("export_message").suffix(3).allSatisfy { $0["format"] as? String == "md" })
+        #expect(await eventually { model.flash?.contains("3") == true })
+    }
+
+    @Test func beyondFiveFilesTheyAreSavedButNotOpened() async {
+        var opened: [String] = []
+        model.openFile = { opened.append($0.path) }
+        for _ in 0..<5 { press("J") }
+        #expect(model.marked.count == 6)
+        press("s"); press("T")
+        #expect(await eventually { core.calls("export_message").count == 6 })
+        #expect(await eventually { model.flash == L("%lld mails saved to %@, not opened: more than %lld", 6, "tmp", 5) })
+        #expect(opened.isEmpty)
+    }
+
+    @Test func theSaveMenuShowsTheSecondKeyAndCommandReturnRunsIt() async {
+        let rows = controller.menuEntries(.save)
+        let text = rows.first { $0.key == "t" }
+        #expect(text?.altKey == "T" && text?.detail == L("%@: and open", "T") && text?.detailStyle == .info)
+        #expect(rows.first { $0.key == "m" }?.altKey == "M")
+        // The arrows to the Markdown row, then ⌘-Return.
+        var opened: [String] = []
+        model.openFile = { opened.append($0.path) }
+        press("s")
+        let index = rows.firstIndex { $0.key == "m" }!
+        for _ in 0...index { press("down") }
+        press("cmd-ret")
+        #expect(await eventually { opened.count == 1 })
+        #expect(core.calls("export_message").last?["format"] as? String == "md")
     }
 
     @Test func saWithoutAttachmentsSaysSo() async throws {

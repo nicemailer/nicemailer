@@ -153,6 +153,25 @@ fn each_message_lists_its_files_but_not_the_images_of_its_html() {
 }
 
 #[test]
+fn the_images_of_the_html_get_a_source_the_reader_can_load() {
+    let f = imported();
+    let thread: i64 = f.store.conn().query_row("SELECT thread_id FROM message WHERE subject = 'Lettre'", [], |r| r.get(0)).unwrap();
+    let m = f.store.get_thread(thread).unwrap().1.remove(0);
+    let logo: i64 = f.store.conn().query_row("SELECT id FROM attachment WHERE content_id = 'logo@x'", [], |r| r.get(0)).unwrap();
+    let html = m.body_html.unwrap();
+    // `cid:` is replaced by the app's scheme, with the attachment's id,
+    // which `get_attachment` extracts like any other file.
+    assert!(html.contains(&format!(r#"<img src="nm-cid://image/{logo}">"#)), "{html}");
+    assert!(!html.contains("cid:logo"), "{html}");
+    let file = f.store.get_attachment(&f.raw, &f.files, logo).unwrap();
+    assert_eq!(file.mime_type, "image/png");
+    // The stored HTML keeps `cid:`: the source is made on each read.
+    let stored: String = f.store.conn().query_row(
+        "SELECT html_sanitized FROM message_body WHERE message_id = ?1", [m.id], |r| r.get(0)).unwrap();
+    assert!(stored.contains("cid:logo@x"), "{stored}");
+}
+
+#[test]
 fn a_file_is_extracted_once_read_only_and_quarantined() {
     let f = imported();
     let pdf = &listed(&f.store, "Devis")[0];

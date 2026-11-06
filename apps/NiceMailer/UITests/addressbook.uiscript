@@ -1,0 +1,38 @@
+# The senders' cards in the links panel (`l`), from the address book. The
+# app reads a book of the scenario's own (FixtureAddressBook.sample: Alice
+# and Bob), never the user's; `addressbook` sets what macOS answers.
+key @
+type fixture
+key ret
+key ;
+key a
+key j
+key j
+key j
+expect selected_subject = Chantier
+# The first `l` asks for Contacts (granted here), then the cards of the
+# senders join the panel: Bob wrote last, then Alice; the user's own
+# messages and the people in copy are not looked up. Alice's work number
+# is also in her signature: listed once, under her name.
+key l
+expect picker_rows = Link to this mail | Bob Durand | Card of Bob Durand | Alice Martin — mobile | Alice Martin — work | Card of Alice Martin
+expect picker_rows !~ 01 44 55 66 77
+snap cards
+# Return on a number dials it (tel:), on a card opens Contacts.
+type mobile
+key ret
+expect opened_file = tel:+33612345678
+key l
+type card of alice
+key ret
+expect opened_file = addressbook://card-alice
+# Access refused: the status bar says it once; the mail's own links stay.
+addressbook denied
+key k
+key k
+key k
+expect selected_subject = La lettre de novembre
+key l
+expect flash ~ System Settings
+expect picker_rows ~ Link to this mail | Lire en ligne
+expect picker_rows !~ Card of

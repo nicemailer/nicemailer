@@ -955,6 +955,7 @@ name = "nm-store"
 version = "0.1.0"
 dependencies = [
  "ammonia",
+ "cssparser",
  "html5ever",
  "libc",
  "mail-parser",

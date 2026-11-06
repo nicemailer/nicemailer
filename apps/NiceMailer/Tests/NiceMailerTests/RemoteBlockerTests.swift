@@ -46,6 +46,17 @@ struct RemoteBlockerTests {
         #expect(server.connections > 0)
     }
 
+    @Test func thePolicyAloneStopsTheRemoteRequests() async throws {
+        // The third barrier on its own: no rules, the page's policy only.
+        let server = try await LocalServer.start()
+        defer { server.stop() }
+        let html = page(server.port).replacingOccurrences(
+            of: "<head>", with: #"<head><meta http-equiv="Content-Security-Policy" content="\#(ContentPolicy.header)">"#)
+        try await load(html, rules: nil)
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(server.connections == 0)
+    }
+
     /// An image, a style sheet and a background, all on the test server.
     private func page(_ port: UInt16) -> String {
         let base = "http://127.0.0.1:\(port)"
