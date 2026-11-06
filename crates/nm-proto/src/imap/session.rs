@@ -287,6 +287,19 @@ impl Session {
                         return Ok(Ok(convert::response(r)));
                     }
                 }
+                // A UIDVALIDITY of 0, which RFC 3501 forbids (section
+                // 2.3.1.1, a non-zero number) and imap-codec refuses:
+                // Dovecot gives it for a folder it is still creating, when
+                // several sessions of a new user open at once. It means "not
+                // known yet": the response is read without it, and the pass
+                // opens the folder to learn the real one (or skips it until
+                // the next pass if `EXAMINE` gives none).
+                if let Some(fixed) = without_zero_uidvalidity(bytes)
+                    && let Ok((rest, r)) = imap_codec::decode::Decoder::decode(&ResponseCodec::default(), &fixed)
+                    && rest.is_empty()
+                {
+                    return Ok(Ok(convert::response(r)));
+                }
                 let sample = String::from_utf8_lossy(&bytes[..bytes.len().min(160)]).into_owned();
                 Err((self.frag.decode_tag().map(|t| t.as_ref().to_string()), format!("cannot read {:?}", sample.trim_end())))
             }
@@ -1353,6 +1366,45 @@ pub(crate) fn imap_date_time(unix: i64) -> String {
     )
 }
 
+
+/// A copy of an untagged response without its `UIDVALIDITY 0` (see
+/// `read_resp`), or `None` if it has none. Only two shapes are touched, so
+/// that the bytes of a mail (a literal) are never changed:
+///
+/// - `* STATUS <mailbox> (… UIDVALIDITY 0 …)`: the item leaves the list,
+///   which is the last parenthesized group of the line (a mailbox name in
+///   a literal comes before it);
+/// - `* OK [UIDVALIDITY 0] text`, in the answer to `SELECT` or `EXAMINE`:
+///   the code leaves the response.
+fn without_zero_uidvalidity(bytes: &[u8]) -> Option<Vec<u8>> {
+    let starts = |prefix: &[u8]| bytes.len() >= prefix.len() && bytes[..prefix.len()].eq_ignore_ascii_case(prefix);
+    if starts(b"* OK [UIDVALIDITY 0]") {
+        let rest = &bytes[b"* OK [UIDVALIDITY 0]".len()..];
+        let rest = rest.strip_prefix(b" ").unwrap_or(rest);
+        return Some([b"* OK ".as_slice(), rest].concat());
+    }
+    if !starts(b"* STATUS ") {
+        return None;
+    }
+    let open = bytes.iter().rposition(|&b| b == b'(')?;
+    let close = open + bytes[open..].iter().position(|&b| b == b')')?;
+    let text = std::str::from_utf8(&bytes[open + 1..close]).ok()?;
+    let words: Vec<&str> = text.split_ascii_whitespace().collect();
+    if !words.len().is_multiple_of(2) {
+        return None;
+    }
+    let mut kept = Vec::new();
+    let mut dropped = false;
+    for pair in words.chunks(2) {
+        if pair[0].eq_ignore_ascii_case("UIDVALIDITY") && pair[1] == "0" {
+            dropped = true;
+        } else {
+            kept.extend_from_slice(pair);
+        }
+    }
+    dropped.then(|| [&bytes[..=open], kept.join(" ").as_bytes(), &bytes[close..]].concat())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1408,5 +1460,20 @@ mod tests {
         let and = SearchKey::And(Box::new(SearchKey::Unseen), Box::new(SearchKey::Deleted));
         assert_eq!(c(&and), "UID SEARCH UNSEEN DELETED");
         assert!(search_needs_utf8(&SearchKey::Header("Subject".into(), "été".into())));
+    }
+
+    #[test]
+    fn a_zero_uidvalidity_is_taken_out_and_nothing_else() {
+        let f = |b: &[u8]| without_zero_uidvalidity(b).map(|v| String::from_utf8(v).unwrap());
+        assert_eq!(
+            f(b"* STATUS Drafts (MESSAGES 0 UIDNEXT 1 UIDVALIDITY 0 UNSEEN 0 HIGHESTMODSEQ 1)\r\n").as_deref(),
+            Some("* STATUS Drafts (MESSAGES 0 UIDNEXT 1 UNSEEN 0 HIGHESTMODSEQ 1)\r\n")
+        );
+        assert_eq!(f(b"* status \"A (b)\" (uidvalidity 0)\r\n").as_deref(), Some("* status \"A (b)\" ()\r\n"));
+        assert_eq!(f(b"* OK [UIDVALIDITY 0] UIDs valid\r\n").as_deref(), Some("* OK UIDs valid\r\n"));
+        // Valid values, and other responses, are left alone.
+        assert_eq!(f(b"* STATUS Drafts (UIDVALIDITY 10 UIDNEXT 0)\r\n"), None);
+        assert_eq!(f(b"* 1 FETCH (BODY[] {13}\r\nUIDVALIDITY 0)\r\n"), None);
+        assert_eq!(f(b"* OK [UIDVALIDITY 07] x\r\n"), None);
     }
 }

@@ -655,3 +655,33 @@ async fn a_read_only_session_sends_no_writing_command() {
     drop(s);
     task.await.unwrap();
 }
+
+#[tokio::test]
+async fn a_folder_dovecot_is_still_creating_does_not_fail_the_list() {
+    // Several sessions of a new Dovecot user at once: the folders it
+    // creates for them answer `UIDVALIDITY 0`, forbidden by RFC 3501. The
+    // list is read, without that UIDVALIDITY; `EXAMINE` too.
+    let (mut s, task) = logged_in(
+        "C: N2 LIST \"\" \"*\" RETURN (SPECIAL-USE STATUS (MESSAGES UIDNEXT UIDVALIDITY UNSEEN HIGHESTMODSEQ))
+         S: * LIST () \"/\" INBOX
+         S: * STATUS INBOX (MESSAGES 2 UIDNEXT 3 UIDVALIDITY 7 UNSEEN 0 HIGHESTMODSEQ 4)
+         S: * LIST (\\Drafts) \"/\" Drafts
+         S: * STATUS Drafts (MESSAGES 0 UIDNEXT 1 UIDVALIDITY 0 UNSEEN 0 HIGHESTMODSEQ 1)
+         S: N2 OK done
+         C: N3 EXAMINE Drafts (CONDSTORE)
+         S: * 0 EXISTS
+         S: * OK [UIDVALIDITY 0] UIDs valid
+         S: * OK [UIDNEXT 1] ok
+         S: N3 OK [READ-ONLY] done",
+    )
+    .await;
+    let got = s.list_with_status().await.unwrap();
+    assert_eq!(got.len(), 2);
+    let drafts = got[1].1.as_ref().unwrap();
+    assert_eq!((drafts.uid_validity, drafts.uid_next, drafts.messages), (None, Some(1), Some(0)));
+    assert_eq!(got[0].1.as_ref().unwrap().uid_validity, Some(7));
+    let sel = s.examine(&MailboxName::new("Drafts"), None).await.unwrap();
+    assert_eq!((sel.uid_validity, sel.exists), (None, 0));
+    drop(s);
+    task.await.unwrap();
+}
