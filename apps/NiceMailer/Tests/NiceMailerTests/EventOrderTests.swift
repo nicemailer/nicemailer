@@ -29,4 +29,14 @@ struct EventOrderTests {
         // The position is unchanged, so the next numbered event is in order.
         #expect(AppModel.order(of: event("MessageArrived", "e_1", 8), after: last) == .inOrder(Position(epoch: "e_1", seq: 8)))
     }
+
+    /// `ActionReverted`: the server refused a change made in NiceMailer,
+    /// which the core undid. The status bar says what, and the server's
+    /// answer.
+    @Test func aRefusedChangeIsSaidInTheStatusBar() {
+        // Compared through `L`: the tests run in the language of the Mac.
+        let move = AppModel.revertedFlash(kind: "move", reason: "Mailbox doesn't exist: Archive")
+        #expect(move == L("The server refused the move") + " · " + L("undone: %@", "Mailbox doesn't exist: Archive"))
+        #expect(AppModel.revertedFlash(kind: "set_flags", reason: "quota").hasPrefix(L("The server refused the change")))
+    }
 }

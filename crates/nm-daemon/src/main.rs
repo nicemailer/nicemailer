@@ -213,6 +213,12 @@ async fn main() -> anyhow::Result<()> {
         let host: Arc<dyn nm_engine::sync::SyncHost> = Arc::new(sync::CoreHost(core.clone()));
         let _ = core.syncer.set(nm_engine::sync::Syncer::new(host, secrets));
         let mut store = core.store.lock().unwrap();
+        // Actions that were being sent when the core stopped: sent again
+        // (each can be replayed, `nm-store`, `spool.rs`).
+        let requeued = store.spool_requeue_running()?;
+        if requeued > 0 {
+            eprintln!("spool : {requeued} action(s) interrompue(s) remise(s) en file");
+        }
         sync::apply(&core, &mut store);
     }
     // Kept alive until the end of `main`: dropping it stops the watch. A
@@ -368,7 +374,6 @@ fn store_error(e: StoreError) -> RpcError {
         StoreError::NotFound(_) => error_code::NOT_FOUND,
         StoreError::InvalidMove(_) => error_code::INVALID_MOVE,
         StoreError::InvalidParams(_) => error_code::INVALID_PARAMS,
-        StoreError::ReadOnly(_) => error_code::READ_ONLY,
         // The client needs the address and the verdict to ask the user.
         StoreError::ConfirmationRequired { ref addr, ref verdict } => {
             let mut err = RpcError::new(error_code::CONFIRMATION_REQUIRED, e.to_string());
@@ -578,6 +583,8 @@ async fn command(
         // released first, two concurrent commands could emit their events in
         // the opposite order of their commits.
         core2.events.lock().unwrap().emit(&changes);
+        // Changes to send to a server: its worker leaves IDLE for them.
+        sync::wake(&core2, &changes);
         Ok(changes.changed_messages())
     })
     .await?;
@@ -594,6 +601,7 @@ async fn workflow(
     let result = with_store(core, move |store| {
         let out = f(store)?;
         core2.events.lock().unwrap().emit(&out.changes);
+        sync::wake(&core2, &out.changes);
         Ok(out.view())
     })
     .await?;

@@ -61,7 +61,9 @@ pub fn apply(core: &Core, store: &mut Store) {
             specs.push(AccountSpec { key: key.clone(), account_id: id, config: account.clone() });
         }
     }
-    store.set_server_accounts(specs.iter().map(|s| s.account_id).collect::<BTreeSet<_>>());
+    if let Err(e) = store.set_server_accounts(specs.iter().map(|s| s.account_id).collect::<BTreeSet<_>>()) {
+        eprintln!("sync : {e}");
+    }
     drop(engine);
     syncer.apply(specs);
 }
@@ -99,6 +101,7 @@ pub async fn status(core: &Arc<Core>, p: SyncAccountParams) -> Result<SyncStatus
                     })
                     .collect();
                 a.bodies_missing = a.folders.iter().map(|f| f.bodies_missing).sum();
+                a.actions_pending = s.spool_pending(a.account_id)?;
             }
             Ok(SyncStatus { accounts })
         })
@@ -131,6 +134,13 @@ pub async fn verify(core: &Arc<Core>, p: SyncVerifyParams) -> Result<SyncVerifyR
         .await
         .map_err(|e| RpcError::new(error_code::INTERNAL_ERROR, e.to_string()))?
         .map_err(|e| RpcError::new(error_code::SERVER, e))
+}
+
+/// A command queued changes for servers: their workers send them now.
+pub fn wake(core: &Core, changes: &ChangeSet) {
+    if let Some(syncer) = core.syncer.get() {
+        syncer.wake(&changes.spooled);
+    }
 }
 
 /// A thread was opened: its messages still without body go first.

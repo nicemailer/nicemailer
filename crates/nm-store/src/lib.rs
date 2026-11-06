@@ -53,6 +53,7 @@ pub mod remote_images;
 pub mod screening;
 pub mod unsubscribe;
 pub mod seed;
+pub mod spool;
 pub mod sync;
 
 // `BTreeSet` is a sorted set without duplicates. It is used instead of
@@ -103,10 +104,6 @@ pub enum StoreError {
     Sqlite(#[from] rusqlite::Error),
     #[error("introuvable : {0}")]
     NotFound(String),
-    /// A command that changes mail, on an account whose mail cannot be
-    /// changed yet (IMAP, until the spool of phase 5).
-    #[error("{0}")]
-    ReadOnly(String),
     #[error("déplacement refusé : {0}")]
     InvalidMove(String),
     #[error("paramètre invalide : {0}")]
@@ -155,6 +152,12 @@ pub struct ChangeSet {
     /// New mail found by the synchronization, as `(message_id, folder_id)`
     /// pairs (`MessageArrived`, which the app turns into notifications).
     pub arrived: BTreeSet<(i64, i64)>,
+    /// Accounts that got actions in the spool: their worker is woken to
+    /// send them (`spool.rs`).
+    pub spooled: BTreeSet<i64>,
+    /// Local changes undone after the server refused them for good, as
+    /// `(message_id, kind, reason)` (`ActionReverted`).
+    pub reverted: Vec<(i64, String, String)>,
 }
 
 impl ChangeSet {
@@ -170,8 +173,8 @@ impl ChangeSet {
 /// time. Queries run on read-only stores of a [`pool::ReadPool`].
 pub struct Store {
     conn: Connection,
-    /// IMAP accounts synchronized by the core, whose mail commands may not
-    /// change yet (`sync.rs`, `set_server_accounts`).
+    /// IMAP accounts synchronized by the core, whose changes go to the
+    /// spool (`spool.rs`, `set_server_accounts`).
     server_accounts: BTreeSet<i64>,
 }
 
@@ -270,6 +273,10 @@ impl Store {
         // connection opens: it analyzes only the tables that need it, with a
         // bounded effort, so it stays quick on a large database.
         conn.execute_batch("PRAGMA optimize = 0x10002;")?;
+        // The accounts whose changes go to the spool (`spool.rs`,
+        // `set_server_accounts`): a table of this connection only, gone
+        // when it closes, filled by the core from `config.toml`.
+        conn.execute_batch("CREATE TEMP TABLE IF NOT EXISTS server_account (id INTEGER PRIMARY KEY);")?;
         Ok(Store { conn, server_accounts: BTreeSet::new() })
     }
 

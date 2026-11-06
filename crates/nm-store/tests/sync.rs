@@ -5,12 +5,11 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use nm_core::{FolderRole, Source};
+use nm_core::Source;
 use nm_store::ingest::parse_headers;
 use nm_store::insert::Inserter;
-use nm_store::screening::MoveOptions;
 use nm_store::sync::{Arrival, FlagUpdate, FolderState, ListedFolder, ServerFlags};
-use nm_store::{Store, StoreError};
+use nm_store::Store;
 
 fn store() -> (Store, i64) {
     let store = Store::open_in_memory().unwrap();
@@ -82,7 +81,7 @@ fn a_folder_renamed_on_the_server_keeps_its_row_and_its_mail() {
     let archive = folder_id(&s, "Archive");
     s.conn().execute("UPDATE folder SET uidvalidity = 2 WHERE id = ?1", [archive]).unwrap();
     let mut ins = Inserter::new(Source::Imap, None);
-    s.insert_arrivals(&mut ins, acc, archive, &[arrival(1, "a@x", 100, &[])], &mut BTreeMap::new(), false).unwrap();
+    s.insert_arrivals(&mut ins, acc, archive, &[arrival(1, "a@x", 100, &[])], &mut BTreeMap::new(), false, false).unwrap();
 
     let mut renamed = standard();
     renamed[1] = listed("Archives 2026", Some("archive"), 2);
@@ -119,7 +118,7 @@ fn with_one_mail() -> (Store, i64, i64, i64, Inserter) {
     s.sync_folder_list(acc, &standard()).unwrap();
     let (inbox, archive) = (folder_id(&s, "INBOX"), folder_id(&s, "Archive"));
     let mut ins = Inserter::new(Source::Imap, None);
-    let (got, _) = s.insert_arrivals(&mut ins, acc, inbox, &[arrival(7, "m1@x", 1000, &["$Projet"])], &mut BTreeMap::new(), false).unwrap();
+    let (got, _) = s.insert_arrivals(&mut ins, acc, inbox, &[arrival(7, "m1@x", 1000, &["$Projet"])], &mut BTreeMap::new(), false, false).unwrap();
     assert_eq!(got.inserted, 1);
     (s, acc, inbox, archive, ins)
 }
@@ -131,7 +130,7 @@ fn a_move_made_elsewhere_keeps_the_message() {
     // The phone moved it: UID 7 vanished from the Inbox, UID 3 appeared in
     // Archive, in the same pass.
     let mut deletions = BTreeMap::from([(inbox, BTreeSet::from([7]))]);
-    let (got, changes) = s.insert_arrivals(&mut ins, acc, archive, &[arrival(3, "m1@x", 1000, &["\\Seen"])], &mut deletions, true).unwrap();
+    let (got, changes) = s.insert_arrivals(&mut ins, acc, archive, &[arrival(3, "m1@x", 1000, &["\\Seen"])], &mut deletions, true, false).unwrap();
     assert_eq!((got.moved, got.inserted), (1, 0));
     assert!(deletions[&inbox].is_empty(), "no longer a deletion");
     assert!(changes.arrived.is_empty(), "a move is not new mail");
@@ -139,9 +138,11 @@ fn a_move_made_elsewhere_keeps_the_message() {
         s.conn().query_row("SELECT folder_id, uid, is_seen FROM message WHERE id = ?1", [id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).unwrap();
     assert_eq!((fid, uid, seen), (archive, 3, true), "same id, new place and flags");
     assert_eq!(count(&s, "SELECT count(*) FROM message_keyword"), 0, "the keywords are the server's");
-    assert_eq!(count(&s, "SELECT count(*) FROM audit_log WHERE action = 'move'"), 1);
+    // Changes seen on the server are not journaled (`tracabilite.md`).
+    assert_eq!(count(&s, "SELECT count(*) FROM audit_log WHERE action = 'move'"), 0);
+    assert_eq!(count(&s, "SELECT count(*) FROM message WHERE modified_by = 'imap'"), 1);
     // The end of the Inbox deletes nothing more.
-    s.finish_folder(inbox, &[], &deletions[&inbox], FolderState { uidvalidity: 1, uidnext: Some(8), highestmodseq: None }).unwrap();
+    s.finish_folder(inbox, &[], &deletions[&inbox], FolderState { uidvalidity: 1, uidnext: Some(8), highestmodseq: None }, false).unwrap();
     assert_eq!(count(&s, "SELECT count(*) FROM message"), 1);
     assert_eq!(count(&s, "SELECT total_count FROM folder WHERE path = 'Archive'"), 1);
     assert_eq!(count(&s, "SELECT total_count FROM folder WHERE path = 'INBOX'"), 0);
@@ -151,7 +152,7 @@ fn a_move_made_elsewhere_keeps_the_message() {
 fn a_copy_or_an_uncertain_move_is_a_new_message() {
     // The original stayed (no deletion): a copy.
     let (mut s, acc, inbox, archive, mut ins) = with_one_mail();
-    let (got, changes) = s.insert_arrivals(&mut ins, acc, archive, &[arrival(3, "m1@x", 1000, &[])], &mut BTreeMap::new(), true).unwrap();
+    let (got, changes) = s.insert_arrivals(&mut ins, acc, archive, &[arrival(3, "m1@x", 1000, &[])], &mut BTreeMap::new(), true, false).unwrap();
     assert_eq!((got.moved, got.inserted), (0, 1));
     assert_eq!(changes.arrived.len(), 1);
     let threads = count(&s, "SELECT count(DISTINCT thread_id) FROM message");
@@ -160,7 +161,7 @@ fn a_copy_or_an_uncertain_move_is_a_new_message() {
     // Another size: not the same message, whatever its Message-ID says.
     let (mut s, acc, inbox2, archive, mut ins) = with_one_mail();
     let mut deletions = BTreeMap::from([(inbox2, BTreeSet::from([7]))]);
-    let (got, _) = s.insert_arrivals(&mut ins, acc, archive, &[arrival(3, "m1@x", 999, &[])], &mut deletions, true).unwrap();
+    let (got, _) = s.insert_arrivals(&mut ins, acc, archive, &[arrival(3, "m1@x", 999, &[])], &mut deletions, true, false).unwrap();
     assert_eq!((got.moved, got.inserted), (0, 1));
     assert_eq!(deletions[&inbox2].len(), 1, "still to delete");
     let _ = inbox;
@@ -169,11 +170,11 @@ fn a_copy_or_an_uncertain_move_is_a_new_message() {
 #[test]
 fn flags_deletions_and_state_in_one_transaction() {
     let (mut s, acc, inbox, _, mut ins) = with_one_mail();
-    s.insert_arrivals(&mut ins, acc, inbox, &[arrival(8, "m2@x", 10, &[])], &mut BTreeMap::new(), true).unwrap();
+    s.insert_arrivals(&mut ins, acc, inbox, &[arrival(8, "m2@x", 10, &[])], &mut BTreeMap::new(), true, false).unwrap();
     assert_eq!(count(&s, "SELECT unread_count FROM folder WHERE path = 'INBOX'"), 2);
     let flags = [FlagUpdate { uid: 8, flags: ServerFlags::parse(&["\\Seen", "\\Flagged", "Urgent"]), modseq: Some(40) }];
     let changes = s
-        .finish_folder(inbox, &flags, &BTreeSet::from([7, 99]), FolderState { uidvalidity: 1, uidnext: Some(9), highestmodseq: Some(40) })
+        .finish_folder(inbox, &flags, &BTreeSet::from([7, 99]), FolderState { uidvalidity: 1, uidnext: Some(9), highestmodseq: Some(40) }, false)
         .unwrap();
     assert_eq!(changes.messages.len(), 2, "one changed, one deleted");
     assert_eq!(count(&s, "SELECT count(*) FROM message"), 1);
@@ -186,7 +187,7 @@ fn flags_deletions_and_state_in_one_transaction() {
     assert_eq!(count(&s, "SELECT count(*) FROM thread"), 1, "the thread of the deleted mail is gone");
     // Applied twice (a crash before the next pass): nothing more changes.
     let again = s
-        .finish_folder(inbox, &flags, &BTreeSet::from([7]), FolderState { uidvalidity: 1, uidnext: Some(9), highestmodseq: Some(40) })
+        .finish_folder(inbox, &flags, &BTreeSet::from([7]), FolderState { uidvalidity: 1, uidnext: Some(9), highestmodseq: Some(40) }, false)
         .unwrap();
     assert!(again.messages.is_empty());
 }
@@ -197,14 +198,16 @@ fn arrivals_advance_uidnext_and_announce_only_after_the_first_sync() {
     s.sync_folder_list(acc, &standard()).unwrap();
     let inbox = folder_id(&s, "INBOX");
     let mut ins = Inserter::new(Source::Imap, None);
-    let (_, first) = s.insert_arrivals(&mut ins, acc, inbox, &[arrival(1, "a@x", 1, &[]), arrival(5, "b@x", 1, &[])], &mut BTreeMap::new(), false).unwrap();
+    let (_, first) = s.insert_arrivals(&mut ins, acc, inbox, &[arrival(1, "a@x", 1, &[]), arrival(5, "b@x", 1, &[])], &mut BTreeMap::new(), false, false).unwrap();
     assert!(first.arrived.is_empty());
     assert_eq!(count(&s, "SELECT uidnext FROM folder WHERE id = (SELECT id FROM folder WHERE path = 'INBOX')"), 6);
-    let (_, later) = s.insert_arrivals(&mut ins, acc, inbox, &[arrival(6, "c@x", 1, &[])], &mut BTreeMap::new(), true).unwrap();
+    let (_, later) = s.insert_arrivals(&mut ins, acc, inbox, &[arrival(6, "c@x", 1, &[])], &mut BTreeMap::new(), true, false).unwrap();
     assert_eq!(later.arrived.len(), 1);
-    // The same UID again (a pass after a crash) is refused by the database
-    // rather than duplicated.
-    assert!(s.insert_arrivals(&mut ins, acc, inbox, &[arrival(6, "c@x", 1, &[])], &mut BTreeMap::new(), true).is_err());
+    // The same UID again (a pass after a crash, or a message the spool
+    // moved here with its UID): nothing new, never two rows.
+    let (again, changes) = s.insert_arrivals(&mut ins, acc, inbox, &[arrival(6, "c@x", 1, &[])], &mut BTreeMap::new(), true, false).unwrap();
+    assert_eq!(again.inserted, 0);
+    assert!(changes.arrived.is_empty());
     assert_eq!(count(&s, "SELECT count(*) FROM message"), 3);
     let known = s.known_messages(inbox).unwrap();
     assert_eq!(known.iter().map(|k| k.uid).collect::<Vec<_>>(), [1, 5, 6]);
@@ -219,35 +222,15 @@ fn a_new_uidvalidity_purges_the_folder() {
     assert_eq!(count(&s, "SELECT count(*) FROM message") + count(&s, "SELECT count(*) FROM thread"), 0);
     assert_eq!(count(&s, "SELECT uidvalidity FROM folder WHERE path = 'INBOX'"), 77);
     assert_eq!(count(&s, "SELECT uidnext IS NULL FROM folder WHERE path = 'INBOX'"), 1);
-    assert_eq!(count(&s, "SELECT count(*) FROM audit_log WHERE action = 'purge'"), 1);
+    assert_eq!(count(&s, "SELECT count(*) FROM audit_log WHERE created_by = 'imap' AND action <> 'role'"), 0, "not journaled");
 }
 
 #[test]
 fn bodies_are_fetched_inbox_first_then_newest_first() {
     let (mut s, acc, inbox, archive, mut ins) = with_one_mail();
-    s.insert_arrivals(&mut ins, acc, archive, &[arrival(1, "old@x", 1, &[]), arrival(2, "new@x", 1, &[])], &mut BTreeMap::new(), false)
+    s.insert_arrivals(&mut ins, acc, archive, &[arrival(1, "old@x", 1, &[]), arrival(2, "new@x", 1, &[])], &mut BTreeMap::new(), false, false)
         .unwrap();
     let order: Vec<(i64, u32)> = s.bodies_missing(acc).unwrap().iter().map(|b| (b.folder_id, b.uid)).collect();
     assert_eq!(order, [(inbox, 7), (archive, 2), (archive, 1)]);
 }
 
-#[test]
-fn commands_that_change_mail_are_refused_on_imap_accounts() {
-    let (mut s, acc, _, _, _) = with_one_mail();
-    let thread: i64 = s.conn().query_row("SELECT thread_id FROM message", [], |r| r.get(0)).unwrap();
-    // Before the core says the account is synchronized (a fake account of
-    // `make seed`), commands work.
-    s.set_thread_seen(thread, true, Source::Cli).unwrap();
-    s.set_thread_seen(thread, false, Source::Cli).unwrap();
-    s.set_server_accounts(BTreeSet::from([acc]));
-    let read_only = |r: Result<(), StoreError>| assert!(matches!(r, Err(StoreError::ReadOnly(_))), "{r:?}");
-    read_only(s.set_thread_seen(thread, true, Source::Cli).map(|_| ()));
-    read_only(s.set_thread_flagged(thread, true, Source::Cli).map(|_| ()));
-    read_only(s.move_thread(thread, FolderRole::Archive, None, MoveOptions::default(), Source::Cli).map(|_| ()));
-    read_only(s.tag_thread(thread, "Projet", false, Source::Cli).map(|_| ()));
-    assert_eq!(count(&s, "SELECT is_seen FROM message"), 0, "nothing changed");
-    // A decision on the sender is recorded, but files no IMAP mail.
-    s.set_address_screening("alice@a.example", Some(nm_core::ScreeningTarget::Paperwork), Source::Cli).unwrap();
-    assert_eq!(count(&s, "SELECT count(*) FROM message m JOIN folder f ON f.id = m.folder_id WHERE f.role = 'inbox'"), 1, "still in the Inbox");
-    assert_eq!(count(&s, "SELECT count(*) FROM address WHERE screening_target = 'paperwork'"), 1);
-}

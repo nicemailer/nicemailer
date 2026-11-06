@@ -135,6 +135,9 @@ impl EventLog {
         for (message_id, folder_id) in &changes.arrived {
             self.push(Event::MessageArrived { message_id: *message_id, folder_id: *folder_id });
         }
+        for (message_id, kind, reason) in &changes.reverted {
+            self.push(Event::ActionReverted { message_id: *message_id, kind: kind.clone(), reason: reason.clone() });
+        }
     }
 
     /// Broadcasts a transient event (`SyncProgress`, `evenements.md`): no

@@ -139,12 +139,15 @@ pub(crate) fn move_message(
     changes: &mut ChangeSet,
     threads: &mut BTreeSet<i64>,
 ) -> Result<()> {
-    // The IMAP UID is only valid within a server folder: the future sync
-    // learns the new one (`modele de donnees.md`, section 6).
+    // The IMAP UID is only valid within a server folder: the spool learns
+    // the new one when the server moves it (`modele de donnees.md`,
+    // section 6). The old one goes to the spool's action first.
+    let old_uid: Option<u32> = conn.prepare_cached("SELECT uid FROM message WHERE id = ?1")?.query_row([message_id], |r| r.get(0))?;
+    let back = crate::spool::enqueue_move(conn, message_id, from_folder, old_uid, to_folder, source.as_str(), changes)?;
     conn.prepare_cached(
-        "UPDATE message SET folder_id = ?2, uid = NULL, date_modified = unixepoch(), modified_by = ?3 WHERE id = ?1",
+        "UPDATE message SET folder_id = ?2, uid = ?4, date_modified = unixepoch(), modified_by = ?3 WHERE id = ?1",
     )?
-    .execute(params![message_id, to_folder, source.as_str()])?;
+    .execute(params![message_id, to_folder, source.as_str(), back])?;
     // `json_patch` merges `extra` into the before/after object.
     conn.prepare_cached(
         "INSERT INTO audit_log (created_by, entity, entity_id, action, detail)
@@ -269,7 +272,6 @@ type FilingRow = (i64, Option<i64>, i64, i64, String, String, bool, String);
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn file_address(
     conn: &Connection,
-    server_accounts: &BTreeSet<i64>,
     address_id: i64,
     target: ScreeningTarget,
     domain_rule: bool,
@@ -307,12 +309,6 @@ pub(crate) fn file_address(
         if role == "inbox" && flagged {
             continue;
         }
-        // The mail of a synchronized IMAP account is not moved until the
-        // spool sends the moves to its server (phase 5): the decision is
-        // recorded, the filing waits.
-        if server_accounts.contains(&account) {
-            continue;
-        }
         if target.is_favorable() && kind != "archive" {
             let verdict = AuthResult::parse(&verdict);
             let accepted = if domain_rule { domain_rule_accepts(verdict) } else { policy.accepts(verdict, auth_seen) };
@@ -346,7 +342,6 @@ pub(crate) fn file_address(
 /// address of a subdomain (`news.example.com`) belongs to the domain.
 fn file_domain(
     conn: &Connection,
-    server_accounts: &BTreeSet<i64>,
     domain: &str,
     target: ScreeningTarget,
     source: Source,
@@ -364,7 +359,7 @@ fn file_domain(
     let mut folders = HashMap::new();
     let mut filed = 0;
     for id in ids {
-        filed += file_address(conn, server_accounts, id, target, true, source, &mut folders, changes, threads)?;
+        filed += file_address(conn, id, target, true, source, &mut folders, changes, threads)?;
     }
     Ok(filed)
 }
@@ -432,7 +427,7 @@ impl Store {
             && source != Source::ConfigSync
         {
             let mut folders = HashMap::new();
-            out.filed = file_address(&tx, &self.server_accounts, id, t, false, source, &mut folders, &mut out.changes, &mut threads)?;
+            out.filed = file_address(&tx, id, t, false, source, &mut folders, &mut out.changes, &mut threads)?;
         }
         refresh_all(&tx, &threads, &mut out.changes)?;
         out.decision = Some(DecisionChange { kind: RuleKind::Address, name: addr, before, after: target });
@@ -462,7 +457,7 @@ impl Store {
         if let Some(t) = target
             && source != Source::ConfigSync
         {
-            out.filed = file_domain(&tx, &self.server_accounts, &domain, t, source, &mut out.changes, &mut threads)?;
+            out.filed = file_domain(&tx, &domain, t, source, &mut out.changes, &mut threads)?;
         }
         refresh_all(&tx, &threads, &mut out.changes)?;
         out.decision = Some(DecisionChange { kind: RuleKind::Domain, name: domain, before, after: target });

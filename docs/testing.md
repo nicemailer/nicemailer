@@ -7,7 +7,7 @@
 | `make swift-test` | Swift unit tests only | |
 | `make ui-test` | scripted UI tests of the app | builds the core; starts its own cores on temporary data |
 | `make imap-up`, `make imap-down` | start and stop the test IMAP servers (Dovecot, see below) | OrbStack or Docker |
-| `make imap-test` | the tests that talk to the test IMAP servers: the IMAP client on both servers, `probe_account` end to end, a large body streamed from the server into the raw store ([ingestion.md](ingestion.md)), and the synchronization end to end against a second connection playing the phone, with network cuts ([sync.md](sync.md)) | `make imap-up` |
+| `make imap-test` | the tests that talk to the test IMAP servers: the IMAP client on both servers, `probe_account` end to end, a large body streamed from the server into the raw store ([ingestion.md](ingestion.md)), the synchronization end to end against a second connection playing the phone, with network cuts ([sync.md](sync.md)), and the spool: changes reaching the server, refusals, two cores, a crash after a MOVE ([spool.md](spool.md)) | `make imap-up` |
 | `make bench` | times every thread list (folders, Everything, search, each filter) through the socket on 100,000 generated conversations, or on `BENCH_DATA_DIR` | starts its own core |
 
 ## Rust

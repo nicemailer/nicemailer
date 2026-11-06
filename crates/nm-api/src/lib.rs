@@ -143,9 +143,6 @@ pub mod error_code {
     /// The mail server could not be reached, refused the login, or failed;
     /// the message holds its answer.
     pub const SERVER: i64 = 1009;
-    /// A command that changes mail, on a synchronized IMAP account, before
-    /// the spool sends changes to the server (`plan-imap.md`, phase 5).
-    pub const READ_ONLY: i64 = 1010;
 }
 
 // ---------------------------------------------------------------------------
@@ -294,6 +291,11 @@ pub enum Event {
     /// headers or bodies are fetched). Transient: without sequence number,
     /// never replayed (`evenements.md`), at most a few per second.
     SyncProgress { account_id: i64, folder_id: Option<i64>, stage: String, done: u64, total: u64 },
+    /// The server refused for good a change made in NiceMailer (`kind`:
+    /// `move`, `set_flags`): it was undone locally, with the later changes
+    /// of the same message (`modele de donnees.md`, section 6). `reason` is
+    /// the server's answer.
+    ActionReverted { message_id: i64, kind: String, reason: String },
 }
 
 // ---------------------------------------------------------------------------
@@ -1329,6 +1331,8 @@ pub struct AccountSync {
     pub next_retry: Option<i64>,
     /// Messages still without body.
     pub bodies_missing: u64,
+    /// Changes made in NiceMailer not sent to the server yet (spool).
+    pub actions_pending: u64,
     /// Bodies refused this run: their size differs from what the server
     /// announced (`stockage-brut.md`, section 5, step 2). Tried again at
     /// the next start of the core.

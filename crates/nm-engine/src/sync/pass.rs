@@ -111,6 +111,10 @@ pub(crate) struct Ctx<'a> {
     pub inserter: &'a mut Inserter,
     /// The personal namespace (for the role proposal).
     pub namespace: Option<Namespace>,
+    /// Whether each folder keeps keywords, by path, as its last `SELECT`
+    /// by the spool said (`spool.rs`). A folder that keeps none keeps its
+    /// tags locally: the server's empty list must not erase them.
+    pub keywords: &'a HashMap<String, bool>,
 }
 
 /// What a pass did.
@@ -287,9 +291,10 @@ pub(crate) async fn run(s: &mut Session, ctx: &mut Ctx<'_>, full: bool) -> Resul
             batch.sort_by_key(|a| a.uid);
             let folder_id = w.folder.id;
             let announce = w.announce;
+            let keywords_local = ctx.keywords.get(&w.folder.path) == Some(&false);
             let inserter = &mut *ctx.inserter;
             let deletions = &mut deletions;
-            let got = write(ctx.host, |st| st.insert_arrivals(inserter, account_id, folder_id, &batch, deletions, announce))?;
+            let got = write(ctx.host, |st| st.insert_arrivals(inserter, account_id, folder_id, &batch, deletions, announce, keywords_local))?;
             report.inserted += got.inserted as u64;
             report.moved += got.moved as u64;
             done += chunk.len() as u64;
@@ -306,7 +311,8 @@ pub(crate) async fn run(s: &mut Session, ctx: &mut Ctx<'_>, full: bool) -> Resul
         report.deleted += gone.len() as u64;
         let state = FolderState { uidvalidity: w.uidvalidity, uidnext: w.uidnext, highestmodseq: w.modseq };
         let folder_id = w.folder.id;
-        write(ctx.host, |st| Ok(((), st.finish_folder(folder_id, &w.flags, &gone, state)?)))?;
+        let keywords_local = ctx.keywords.get(&w.folder.path) == Some(&false);
+        write(ctx.host, |st| Ok(((), st.finish_folder(folder_id, &w.flags, &gone, state, keywords_local)?)))?;
         report.folders_synced += 1;
     }
     // What the server said on its own during the pass is in the database
@@ -416,6 +422,11 @@ async fn discover(
         gone.extend(known.keys().filter(|u| !server.contains(u)));
         server.iter().filter(|u| !known.contains_key(u)).copied().collect()
     };
+    // The UIDs a move of the spool takes away, not sent yet: the server
+    // still has them here, the database already has the message in its
+    // new folder. Not new mail.
+    let leaving = read(host, |st| st.pending_source_uids(folder_id))?;
+    let new_uids: Vec<u32> = new_uids.into_iter().filter(|u| !leaving.contains(u)).collect();
     let uidnext = sel.uid_next.or_else(|| new_uids.last().map(|u| u + 1)).or(f.uidnext);
     Ok(Some((Work { folder: f, uidvalidity: uv, uidnext, modseq, new_uids, flags, announce }, gone)))
 }

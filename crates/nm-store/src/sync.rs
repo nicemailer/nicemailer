@@ -46,7 +46,7 @@ use rusqlite::{OptionalExtension, Transaction, params};
 use crate::ingest::ParsedMessage;
 use crate::insert::{Flags, Inserter, NewMessage};
 use crate::screening::refresh_all;
-use crate::{ChangeSet, Result, Store, StoreError};
+use crate::{ChangeSet, Result, Store};
 
 /// The order in which the folders of an account are synchronized: the
 /// Inbox first (new mail), then the folders the user works in, then the
@@ -178,6 +178,8 @@ pub struct Arrived {
     pub inserted: u32,
     /// Rows moved from another folder (a move made elsewhere).
     pub moved: u32,
+    /// Rows moved by NiceMailer that got their UID in this folder.
+    pub attached: u32,
 }
 
 /// A message of a folder in the database, for comparisons with the server.
@@ -283,17 +285,6 @@ impl Store {
         Ok((folders, change, changes))
     }
 
-    /// The accounts whose mail comes from a server, synchronized by the
-    /// core: their mail cannot be changed by commands until phase 5
-    /// (`refuse_imap_thread`). Set by the core from `config.toml`.
-    pub fn set_server_accounts(&mut self, ids: BTreeSet<i64>) {
-        self.server_accounts = ids;
-    }
-
-    pub fn server_accounts(&self) -> &BTreeSet<i64> {
-        &self.server_accounts
-    }
-
     /// The synchronization of a folder starts: records its `UIDVALIDITY` if
     /// the database has none yet (first synchronization). From then on its
     /// mail counts as server mail (`refuse_imap_thread`).
@@ -356,11 +347,6 @@ impl Store {
             "UPDATE folder SET uidvalidity = ?2, uidnext = NULL, highestmodseq = NULL, date_last_sync = NULL WHERE id = ?1",
             params![folder_id, uidvalidity],
         )?;
-        tx.execute(
-            "INSERT INTO audit_log (created_by, entity, entity_id, action, detail)
-             VALUES ('imap', 'folder', ?1, 'purge', json_object('reason', 'uidvalidity', 'messages', ?2, 'uidvalidity', ?3))",
-            params![folder_id, ids.len() as i64, uidvalidity],
-        )?;
         changes.folders.insert(folder_id);
         refresh_threads_after_delete(&tx, &threads, &mut changes)?;
         tx.commit()?;
@@ -394,6 +380,7 @@ impl Store {
         batch: &[Arrival],
         deletions: &mut BTreeMap<i64, BTreeSet<u32>>,
         announce: bool,
+        keywords_local: bool,
     ) -> Result<(Arrived, ChangeSet)> {
         let mut changes = ChangeSet::default();
         let mut arrived = Arrived::default();
@@ -401,18 +388,39 @@ impl Store {
         let result = (|| -> Result<()> {
             let mut threads = BTreeSet::new();
             for a in batch {
+                // Already known here: a message NiceMailer moved here, whose
+                // UID the server gave (`COPYUID`), past the folder's old
+                // `uidnext`. Nothing new; and never two rows for one UID.
+                let known = tx
+                    .prepare_cached("SELECT 1 FROM message WHERE folder_id = ?1 AND uid = ?2")?
+                    .exists(params![folder_id, a.uid])?;
+                if known {
+                    continue;
+                }
+                // A row of this folder without UID, with the same
+                // Message-ID: moved here by NiceMailer, by a server without
+                // UIDPLUS (no `COPYUID`), or by the phone when this row's
+                // own move found it gone. It gets its UID; no new row.
+                if let Some((id, thread)) = attach_here(&tx, folder_id, a)? {
+                    tx.prepare_cached("UPDATE message SET uid = ?2, modseq = ?3 WHERE id = ?1")?
+                        .execute(params![id, a.uid, a.modseq.map(|m| m as i64)])?;
+                    if !pending_flags(&tx, id)? {
+                        write_flags(&tx, id, &a.flags, false, keywords_local)?;
+                    }
+                    changes.messages.insert((id, thread));
+                    arrived.attached += 1;
+                    continue;
+                }
                 if let Some(MovedFrom { id, folder: from, uid: from_uid, thread }) = moved_here(&tx, account_id, folder_id, a, deletions)? {
                     tx.prepare_cached(
                         "UPDATE message SET folder_id = ?2, uid = ?3, modseq = ?4, date_modified = unixepoch(), modified_by = 'imap'
                           WHERE id = ?1",
                     )?
                     .execute(params![id, folder_id, a.uid, a.modseq.map(|m| m as i64)])?;
-                    write_flags(&tx, id, &a.flags, false)?;
-                    tx.prepare_cached(
-                        "INSERT INTO audit_log (created_by, entity, entity_id, action, detail)
-                         VALUES ('imap', 'message', ?1, 'move', json_object('from_folder', ?2, 'to_folder', ?3, 'reason', 'elsewhere'))",
-                    )?
-                    .execute(params![id, from, folder_id])?;
+                    // No `audit_log` row: changes seen on the server are not
+                    // journaled (`tracabilite.md`, "Ce qui n'est pas
+                    // journalisé"); `modified_by = 'imap'` says where it came from.
+                    write_flags(&tx, id, &a.flags, false, keywords_local)?;
                     if let Some(set) = deletions.get_mut(&from) {
                         set.remove(&from_uid);
                     }
@@ -433,7 +441,7 @@ impl Store {
                     headers: &a.headers,
                 };
                 let id = inserter.insert(&tx, &m, None, &mut changes)?;
-                write_flags(&tx, id, &a.flags, true)?;
+                write_flags(&tx, id, &a.flags, true, false)?;
                 if announce {
                     changes.arrived.insert((id, folder_id));
                 }
@@ -472,6 +480,7 @@ impl Store {
         flags: &[FlagUpdate],
         deleted: &BTreeSet<u32>,
         state: FolderState,
+        keywords_local: bool,
     ) -> Result<ChangeSet> {
         let tx = self.transaction()?;
         let mut changes = ChangeSet::default();
@@ -487,7 +496,13 @@ impl Store {
             if let Some(m) = u.modseq {
                 tx.prepare_cached("UPDATE message SET modseq = ?2 WHERE id = ?1")?.execute(params![id, m as i64])?;
             }
-            if write_flags(&tx, id, &u.flags, false)? {
+            // A flag changed in NiceMailer and not sent yet: the local
+            // value stays until the spool sends it (`modele de donnees.md`,
+            // section 6, "Synchro et spool").
+            if pending_flags(&tx, id)? {
+                continue;
+            }
+            if write_flags(&tx, id, &u.flags, false, keywords_local)? {
                 changes.messages.insert((id, thread));
                 threads.extend(thread);
             }
@@ -504,12 +519,25 @@ impl Store {
                 gone += 1;
             }
         }
-        if gone > 0 {
-            tx.execute(
-                "INSERT INTO audit_log (created_by, entity, entity_id, action, detail)
-                 VALUES ('imap', 'folder', ?1, 'expunge', json_object('messages', ?2))",
-                params![folder_id, gone],
-            )?;
+        let _ = gone;
+        // Rows of this folder still without UID and without action pending:
+        // their move was done, but the message was not found here (moved
+        // or deleted elsewhere meanwhile). It shows again through the
+        // folder it really is in (`modele de donnees.md`, section 6,
+        // "Message disparu du serveur").
+        {
+            let orphans: Vec<(i64, Option<i64>)> = tx
+                .prepare_cached(
+                    "DELETE FROM message WHERE folder_id = ?1 AND uid IS NULL
+                       AND NOT EXISTS (SELECT 1 FROM pending_action a WHERE a.message_id = message.id AND a.state IN ('queued', 'running'))
+                     RETURNING id, thread_id",
+                )?
+                .query_map([folder_id], |r| Ok((r.get(0)?, r.get(1)?)))?
+                .collect::<std::result::Result<_, _>>()?;
+            for (id, thread) in orphans {
+                changes.messages.insert((id, thread));
+                threads.extend(thread);
+            }
         }
         tx.execute(
             "UPDATE folder SET uidvalidity = ?2, uidnext = coalesce(?3, uidnext), highestmodseq = ?4, date_last_sync = unixepoch()
@@ -550,6 +578,24 @@ impl Store {
                 |r| Ok((r.get(0)?, MissingBody { id: r.get(1)?, folder_id: r.get(2)?, path: r.get(3)?, uid: r.get(4)?, size: r.get(5)? })),
             )
             .optional()?)
+    }
+
+    /// The UIDs of a folder that moves of the spool, not sent yet, take
+    /// away: the server still shows them there, the database already has
+    /// the message elsewhere. The synchronization ignores them, rather than
+    /// insert the message again (`modele de donnees.md`, section 6).
+    pub fn pending_source_uids(&self, folder_id: i64) -> Result<BTreeSet<u32>> {
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT json_extract(payload, '$.from_uid') FROM pending_action
+              WHERE kind = 'move' AND state IN ('queued', 'running') AND json_extract(payload, '$.from_folder_id') = ?1
+                AND json_extract(payload, '$.from_uid') IS NOT NULL",
+        )?;
+        let rows = stmt.query_map([folder_id], |r| r.get::<_, i64>(0))?;
+        let mut out = BTreeSet::new();
+        for r in rows {
+            out.insert(r? as u32);
+        }
+        Ok(out)
     }
 
     /// The complete messages of a folder with their raw file, by UID, and
@@ -698,11 +744,32 @@ fn moved_here(
     Ok(Some(MovedFrom { id, folder: from, uid, thread }))
 }
 
+/// A row of `folder_id` without UID with the `Message-ID` of `a`, the
+/// oldest first: `(id, thread)`.
+fn attach_here(tx: &Transaction, folder_id: i64, a: &Arrival) -> Result<Option<(i64, Option<i64>)>> {
+    let Some(msgid) = a.headers.message_id.as_deref() else { return Ok(None) };
+    Ok(tx
+        .prepare_cached("SELECT id, thread_id FROM message WHERE folder_id = ?1 AND uid IS NULL AND message_id_hdr = ?2 ORDER BY id LIMIT 1")?
+        .query_row(params![folder_id, msgid], |r| Ok((r.get(0)?, r.get(1)?)))
+        .optional()?)
+}
+
+/// Whether a message has a flag change not sent yet.
+fn pending_flags(tx: &Transaction, id: i64) -> Result<bool> {
+    Ok(tx
+        .prepare_cached("SELECT EXISTS (SELECT 1 FROM pending_action WHERE message_id = ?1 AND kind = 'set_flags' AND state IN ('queued', 'running'))")?
+        .query_row([id], |r| r.get(0))?)
+}
+
 /// Writes the flags and keywords of a message; returns whether anything
 /// changed. A change from the server is a modification of the mail
 /// (`tracabilite.md`): `date_modified`, `modified_by = 'imap'`, unless
 /// `new` (a row just inserted, already dated).
-fn write_flags(tx: &Transaction, id: i64, f: &ServerFlags, new: bool) -> Result<bool> {
+///
+/// `keywords_local`: the folder keeps no keyword (`PERMANENTFLAGS` without
+/// `\*`): tags and marks stay local, the server's (empty) list of
+/// keywords does not replace them.
+fn write_flags(tx: &Transaction, id: i64, f: &ServerFlags, new: bool, keywords_local: bool) -> Result<bool> {
     let n = tx
         .prepare_cached(
             "UPDATE message SET is_seen = ?2, is_flagged = ?3, is_answered = ?4, is_draft = ?5, is_deleted = ?6,
@@ -715,7 +782,8 @@ fn write_flags(tx: &Transaction, id: i64, f: &ServerFlags, new: bool) -> Result<
         .prepare_cached("SELECT keyword FROM message_keyword WHERE message_id = ?1 ORDER BY keyword COLLATE NOCASE")?
         .query_map([id], |r| r.get(0))?
         .collect::<std::result::Result<_, _>>()?;
-    let same = current.len() == f.keywords.len() && current.iter().zip(&f.keywords).all(|(a, b)| a.eq_ignore_ascii_case(b));
+    let same = keywords_local
+        || current.len() == f.keywords.len() && current.iter().zip(&f.keywords).all(|(a, b)| a.eq_ignore_ascii_case(b));
     if !same {
         tx.prepare_cached("DELETE FROM message_keyword WHERE message_id = ?1")?.execute([id])?;
         for k in &f.keywords {
@@ -739,29 +807,6 @@ fn refresh_threads_after_delete(tx: &Transaction, threads: &BTreeSet<i64>, chang
         if empty {
             tx.execute("DELETE FROM thread WHERE id = ?1", [t])?;
         }
-    }
-    Ok(())
-}
-
-/// Commands that change mail are refused on the mail of a synchronized
-/// IMAP account until the spool sends the changes to its server (phase 5):
-/// the next synchronization would undo them otherwise.
-///
-/// Which accounts: those the core synchronizes, the IMAP accounts of
-/// `config.toml` ([`Store::set_server_accounts`]). The fake accounts of
-/// `make seed`, absent from the file, and the archive accounts stay
-/// editable.
-pub(crate) fn refuse_imap_thread(store_accounts: &BTreeSet<i64>, conn: &rusqlite::Connection, thread_id: i64) -> Result<()> {
-    if store_accounts.is_empty() {
-        return Ok(());
-    }
-    let account: Option<i64> = conn.query_row("SELECT account_id FROM thread WHERE id = ?1", [thread_id], |r| r.get(0)).optional()?;
-    if account.is_some_and(|a| store_accounts.contains(&a)) {
-        return Err(StoreError::ReadOnly(
-            "the mail of IMAP accounts cannot be changed yet: changes are not sent to the server before phase 5 \
-             of plan-imap.md"
-                .into(),
-        ));
     }
     Ok(())
 }

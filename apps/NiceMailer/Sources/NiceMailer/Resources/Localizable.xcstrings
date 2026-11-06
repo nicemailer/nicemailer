@@ -949,6 +949,26 @@
         }
       }
     },
+    "The server refused the change": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le serveur a refusé la modification"
+          }
+        }
+      }
+    },
+    "The server refused the move": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le serveur a refusé le déplacement"
+          }
+        }
+      }
+    },
     "Theme": {
       "localizations": {
         "fr": {
@@ -2016,6 +2036,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "annuler le dernier déplacement ou la dernière décision"
+          }
+        }
+      }
+    },
+    "undone: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "annulé : %@"
           }
         }
       }

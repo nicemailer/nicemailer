@@ -336,8 +336,6 @@ impl Store {
             .query_row("SELECT account_id FROM thread WHERE id = ?1", [thread_id], |r| r.get(0))
             .optional()?
             .ok_or_else(|| StoreError::NotFound(format!("conversation {thread_id}")))?;
-        // Tags are IMAP keywords: refused on an IMAP account until phase 5.
-        crate::sync::refuse_imap_thread(&self.server_accounts, &tx, thread_id)?;
         // Names are compared without case in Rust: SQLite's NOCASE only folds
         // ASCII, so "Équipe" and "équipe" would be two tags. An account has
         // few tags, reading them all is cheap.
@@ -403,6 +401,8 @@ impl Store {
             )?;
             let op = if remove { "remove" } else { "add" };
             audit(&tx, source, "message", message_id, "set_tags", serde_json::json!({op: name, "tag": name}))?;
+            // A tag is an IMAP keyword: the server gets it through the spool.
+            crate::spool::enqueue_flag(&tx, message_id, &keyword, !remove, source.as_str(), &mut changes)?;
             changes.messages.insert((message_id, Some(thread_id)));
             changes.folders.insert(folder_id);
         }

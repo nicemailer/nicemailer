@@ -438,6 +438,15 @@ final class AppModel {
         case "ThreadChanged":
             if let t = e.params["thread_id"]?.int { dirtyThreads.insert(t) }
             for f in e.params["folder_ids"]?.ints ?? [] { dirtyFolders.insert(f) }
+        case "ActionReverted":
+            // The server refused a change made here; the core has undone it
+            // (`modele de donnees.md`, section 6). Said in the status bar,
+            // without stopping the user; the lists follow from the
+            // `ThreadChanged` and `FolderChanged` that come with it.
+            if case .string(let kind)? = e.params["kind"], case .string(let reason)? = e.params["reason"] {
+                flash = AppModel.revertedFlash(kind: kind, reason: reason)
+            }
+            return
         default:
             // MessageChanged is always followed by ThreadChanged, which is
             // enough for what the app displays.
@@ -456,6 +465,13 @@ final class AppModel {
         case gap(Position)
 
         nonisolated var isGap: Bool { if case .gap = self { return true } else { return false } }
+    }
+
+    /// The status bar message of an `ActionReverted` event: what the server
+    /// refused, and its answer.
+    nonisolated static func revertedFlash(kind: String, reason: String) -> String {
+        let what = kind == "move" ? L("The server refused the move") : L("The server refused the change")
+        return what + " · " + L("undone: %@", reason)
     }
 
     nonisolated static func order(of e: CoreClient.Event, after last: Position?) -> EventOrder {

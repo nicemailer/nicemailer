@@ -46,6 +46,7 @@ use nm_store::insert::Inserter;
 
 use super::bodies::Bodies;
 use super::pass::{self, Ctx, Mode, PassError};
+use super::spool;
 use super::{AccountSpec, Control, SyncHost, Worker, unix_now};
 use crate::probe::imap_spec;
 use crate::secrets::{self, Refusal, Secrets};
@@ -284,6 +285,8 @@ async fn work_loop(w: &Shared) {
     let mut announced = Announced(None);
     let mut last_full: Option<Instant> = None;
     let mut refused = 0u64;
+    // Whether each folder keeps keywords, learnt by the spool's SELECTs.
+    let mut keywords: std::collections::HashMap<String, bool> = std::collections::HashMap::new();
     'connect: loop {
         if w.control.stopped() {
             return;
@@ -322,7 +325,31 @@ async fn work_loop(w: &Shared) {
         let mut full = true;
         loop {
             set(&w.status, "syncing", None);
-            let mut ctx = Ctx { host: w.host.as_ref(), account_id: w.spec.account_id, control: &w.control, inserter: &mut inserter, namespace: namespace.clone() };
+            // What NiceMailer changed first, then what the server changed:
+            // the pass then sees the moves done, and attaches their UIDs.
+            w.control.spool.store(false, Ordering::SeqCst);
+            match spool::run(&mut s, w.host.as_ref(), w.spec.account_id, &mut keywords).await {
+                Ok(r) => {
+                    if r.done + r.reverted + r.retried > 0 {
+                        eprintln!("sync {}: spool: {} done, {} undone, {} to retry", w.spec.key, r.done, r.reverted, r.retried);
+                    }
+                }
+                Err(PassError::Stopped) => return,
+                Err(e) => {
+                    let error = e.to_string();
+                    announced.error(w, &error);
+                    retry_later(w, &mut backoff, error).await;
+                    continue 'connect;
+                }
+            }
+            let mut ctx = Ctx {
+                host: w.host.as_ref(),
+                account_id: w.spec.account_id,
+                control: &w.control,
+                inserter: &mut inserter,
+                namespace: namespace.clone(),
+                keywords: &keywords,
+            };
             match pass::run(&mut s, &mut ctx, full).await {
                 Ok(report) => {
                     backoff.reset();
@@ -415,7 +442,8 @@ async fn work_loop(w: &Shared) {
                 Woken::Timeout => due(last_full, poll) || w.control.take_now(),
                 Woken::Signal => {
                     w.control.take_kick();
-                    w.control.take_now() || due(last_full, poll)
+                    // Woken for the spool alone: a quick pass after it.
+                    w.control.take_now() || (due(last_full, poll) && !w.control.spool.load(Ordering::SeqCst))
                 }
             };
         }

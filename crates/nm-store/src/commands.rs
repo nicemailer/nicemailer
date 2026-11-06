@@ -40,9 +40,6 @@ impl Store {
             .query_row("SELECT account_id FROM thread WHERE id = ?1", [thread_id], |r| r.get(0))
             .optional()?
             .ok_or_else(|| StoreError::NotFound(format!("conversation {thread_id}")))?;
-        // Every command that changes a thread goes through here: refused on
-        // an IMAP account until phase 5 (`sync.rs`, `refuse_imap_thread`).
-        crate::sync::refuse_imap_thread(&self.server_accounts, &self.conn, thread_id)?;
         Ok(id)
     }
 
@@ -191,7 +188,7 @@ impl Store {
             }
             let before = record_decision(&tx, RuleKind::Address, address_id, Some(d), Some(trigger), None, source)?;
             let mut folders = HashMap::new();
-            out.filed = file_address(&tx, &self.server_accounts, address_id, d, false, source, &mut folders, &mut out.changes, &mut threads)?;
+            out.filed = file_address(&tx, address_id, d, false, source, &mut folders, &mut out.changes, &mut threads)?;
             out.decision = Some(DecisionChange { kind: RuleKind::Address, name: addr, before, after: Some(d) });
         }
 
@@ -296,6 +293,8 @@ fn finish_flag_change(
     }
     // Distinct folders touched by the change.
     let folders: BTreeSet<i64> = changed.iter().map(|(_, f)| *f).collect();
+    // The IMAP flag of the column, for the spool.
+    let imap_flag = if flag == "is_seen" { "\\Seen" } else { "\\Flagged" };
     for (message_id, _) in changed {
         tx.execute(
             "INSERT INTO audit_log (created_by, entity, entity_id, action, detail)
@@ -303,6 +302,7 @@ fn finish_flag_change(
                      json_object('before', json_object(?4, ?5), 'after', json_object(?4, ?6)))",
             params![source.as_str(), message_id, action, flag, !value, value],
         )?;
+        crate::spool::enqueue_flag(tx, *message_id, imap_flag, value, source.as_str(), &mut changes)?;
         changes.messages.insert((*message_id, Some(thread_id)));
     }
     let thread_folders = refresh_thread(tx, thread_id)?;

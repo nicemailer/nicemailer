@@ -78,6 +78,26 @@ impl Phone {
         self.rt.block_on(self.s.uid_expunge(&Uids::Set(UidSet::from_uids([uid])))).unwrap();
     }
 
+    /// The flags of `uid` in `folder`.
+    fn flags(&mut self, folder: &str, uid: u32) -> Vec<String> {
+        self.select(folder);
+        let items = nm_proto::imap::FetchItems { flags: true, ..Default::default() };
+        let got = self.rt.block_on(self.s.uid_fetch(&Uids::Set(UidSet::from_uids([uid])), &items)).unwrap();
+        got.into_iter().next().and_then(|f| f.flags).unwrap_or_default()
+    }
+
+    fn uids(&mut self, folder: &str) -> Vec<u32> {
+        self.select(folder);
+        self.rt.block_on(self.s.uid_search(&nm_proto::imap::SearchKey::All)).unwrap()
+    }
+
+    /// Whether `folder` holds the mail `id` (by Message-ID).
+    fn has(&mut self, folder: &str, id: &str) -> bool {
+        self.select(folder);
+        let key = nm_proto::imap::SearchKey::Header("Message-ID".into(), format!("<{id}@test.nicemailer>"));
+        !self.rt.block_on(self.s.uid_search(&key)).unwrap().is_empty()
+    }
+
     /// Moves `uid` of the selected folder to `to`: `MOVE` where the server
     /// has it, else copy, `\Deleted`, expunge (the minimal server).
     fn move_to(&mut self, uid: u32, to: &str) {
@@ -105,7 +125,7 @@ fn settled(c: &mut Client, passes: u64) -> u64 {
     loop {
         let a = account(c);
         let n = a["passes"].as_u64().unwrap_or(0);
-        if n > passes && a["state"] == "idle" && a["bodies_missing"] == 0 {
+        if n > passes && a["state"] == "idle" && a["bodies_missing"] == 0 && a["actions_pending"] == 0 {
             return n;
         }
         assert!(Instant::now() < deadline, "not settled: {a}");
@@ -212,12 +232,24 @@ fn follows_the_phone(port: u16) {
     assert_eq!(folder(&r, "INBOX")["local_messages"], 1, "b alone");
     let _ = passes;
 
-    // Commands that change mail are refused on this account (phase 5).
+    // What NiceMailer changes reaches the server (phase 5): read, flagged,
+    // tagged, moved; the phone sees it, and the message keeps its id.
+    let (b_id, _, _) = message_id_of(dir.path(), "b");
     let thread: i64 = db(dir.path())
         .query_row("SELECT thread_id FROM message WHERE message_id_hdr = 'b@test.nicemailer'", [], |r| r.get(0))
         .unwrap();
-    let err = c.call("set_thread_seen", json!({"thread_id": thread, "seen": true})).unwrap_err();
-    assert_eq!(err["code"], 1010, "{err}");
+    let before = account(&mut c)["passes"].as_u64().unwrap();
+    c.call("set_thread_seen", json!({"thread_id": thread, "seen": true})).unwrap();
+    c.call("tag_thread", json!({"thread_id": thread, "name": "Chantier"})).unwrap();
+    c.call("move_thread", json!({"thread_id": thread, "target": "archive"})).unwrap();
+    settled(&mut c, before);
+    let (id, path, uid) = message_id_of(dir.path(), "b");
+    assert_eq!((id, path.as_str()), (b_id, "Archive"));
+    let flags = phone.flags("Archive", uid);
+    assert!(flags.iter().any(|f| f == "\\Seen") && flags.iter().any(|f| f == "\\Flagged"), "{flags:?}");
+    assert!(flags.iter().any(|f| f.eq_ignore_ascii_case("chantier")), "the tag is a keyword: {flags:?}");
+    assert!(phone.uids("INBOX").is_empty() || !phone.has("INBOX", "b"), "gone from the Inbox");
+    verify_ok(&mut c);
 }
 
 #[test]
@@ -394,5 +426,121 @@ fn a_refused_login_waits_for_a_new_password() {
     // The right password: it starts again at once.
     c.call("set_password", json!({"account": "dovecot", "password": "nicemailer"})).unwrap();
     settled(&mut c, 0);
+    verify_ok(&mut c);
+}
+
+/// The core started with `env` set (the crash point of the spool).
+fn start_with(dir: &Path, env: &[(&str, &str)]) -> std::process::Child {
+    let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_nicemailer-core"));
+    cmd.arg("--data-dir").arg(dir).arg("--config").arg(dir.join("config.toml")).arg("--keychain").arg(dir.join("test.keychain-db"));
+    for (k, v) in env {
+        cmd.env(k, v);
+    }
+    cmd.spawn().unwrap()
+}
+
+#[test]
+#[ignore = "needs the test servers: make imap-up, then make imap-test"]
+fn a_move_the_server_refuses_is_undone_and_announced() {
+    let dir = tempfile::tempdir().unwrap();
+    let user = new_user();
+    let mut phone = Phone::open(FULL, &user);
+    phone.create("Archive");
+    phone.deliver("INBOX", "r", &[]);
+    let (_core, mut c) = core(dir.path(), FULL, &user, "");
+    settled(&mut c, 0);
+    c.call("subscribe", json!({})).unwrap();
+    // The phone takes the Archive away; the core does not know yet.
+    raw_command(&user, "RENAME Archive Elsewhere");
+    let (id, _, _) = message_id_of(dir.path(), "r");
+    let thread: i64 = db(dir.path()).query_row("SELECT thread_id FROM message WHERE id = ?1", [id], |r| r.get(0)).unwrap();
+    c.clear_events();
+    c.call("move_thread", json!({"thread_id": thread, "target": "archive"})).unwrap();
+    let e = c.event("ActionReverted", 30);
+    assert_eq!(e["message_id"], id);
+    assert_eq!(e["kind"], "move");
+    assert!(e["reason"].as_str().unwrap().contains("doesn't exist"), "the server's answer: {e}");
+    let (_, path, uid) = message_id_of(dir.path(), "r");
+    assert_eq!(path, "INBOX", "back where it was");
+    assert!(uid > 0);
+    sync(&mut c);
+    verify_ok(&mut c);
+}
+
+#[test]
+#[ignore = "needs the test servers: make imap-up, then make imap-test"]
+fn two_cores_moving_the_same_mail_agree() {
+    let user = new_user();
+    let mut phone = Phone::open(FULL, &user);
+    phone.create("Archive");
+    phone.create("Todo");
+    phone.deliver("INBOX", "both", &[]);
+    let (a_dir, b_dir) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let (_a, mut a) = core(a_dir.path(), FULL, &user, "");
+    let (_b, mut b) = core(b_dir.path(), FULL, &user, "");
+    settled(&mut a, 0);
+    settled(&mut b, 0);
+    let thread = |dir: &Path| -> i64 { db(dir).query_row("SELECT thread_id FROM message", [], |r| r.get(0)).unwrap() };
+    // Two Macs on one mailbox file the same mail differently, at once.
+    let (ta, tb) = (thread(a_dir.path()), thread(b_dir.path()));
+    let pa = account(&mut a)["passes"].as_u64().unwrap();
+    let pb = account(&mut b)["passes"].as_u64().unwrap();
+    a.call("move_thread", json!({"thread_id": ta, "target": "archive"})).unwrap();
+    b.call("move_thread", json!({"thread_id": tb, "target": "todo"})).unwrap();
+    settled(&mut a, pa);
+    settled(&mut b, pb);
+    sync(&mut a);
+    sync(&mut b);
+    // Neither is an error for the user, the mail is not lost, and both
+    // databases agree with the server. Two moves at the very same moment
+    // may leave two copies on the server (each MOVE saw the mail before the
+    // other expunged it): no client can prevent it, and NiceMailer then
+    // shows both, as the server has them.
+    let places: Vec<&str> = ["INBOX", "Archive", "Todo"].into_iter().filter(|f| phone.has(f, "both")).collect();
+    assert!(!places.is_empty() && !places.contains(&"INBOX"), "{places:?}");
+    for (dir, c) in [(a_dir.path(), &mut a), (b_dir.path(), &mut b)] {
+        verify_ok(c);
+        let n: i64 = db(dir).query_row("SELECT count(*) FROM message", [], |r| r.get(0)).unwrap();
+        assert_eq!(n as usize, places.len());
+        let reverted: i64 = db(dir).query_row("SELECT count(*) FROM pending_action WHERE state = 'reverted'", [], |r| r.get(0)).unwrap();
+        assert_eq!(reverted, 0, "a mail moved by the other Mac is not a failure");
+    }
+}
+
+#[test]
+#[ignore = "needs the test servers: make imap-up, then make imap-test"]
+fn a_crash_between_the_move_and_done_is_replayed() {
+    let dir = tempfile::tempdir().unwrap();
+    let user = new_user();
+    let mut phone = Phone::open(FULL, &user);
+    phone.create("Archive");
+    phone.deliver("INBOX", "crash", &[]);
+    let (core1, mut c) = core(dir.path(), FULL, &user, "");
+    settled(&mut c, 0);
+    let (id, _, _) = message_id_of(dir.path(), "crash");
+    let thread: i64 = db(dir.path()).query_row("SELECT thread_id FROM message WHERE id = ?1", [id], |r| r.get(0)).unwrap();
+    drop(c);
+    drop(core1);
+    // A core that dies right after the server moved the mail, before
+    // marking the action done.
+    let mut dying = start_with(dir.path(), &[("NICEMAILER_TEST_CRASH_AFTER_MOVE", "1")]);
+    let mut c = Client::connect(dir.path());
+    settled(&mut c, 0);
+    let _ = c.call("move_thread", json!({"thread_id": thread, "target": "archive"}));
+    let status = dying.wait().unwrap();
+    assert!(!status.success(), "the core died at the crash point");
+    assert!(phone.has("Archive", "crash"), "the server did move it");
+    let state: String = db(dir.path()).query_row("SELECT state FROM pending_action", [], |r| r.get(0)).unwrap();
+    assert_eq!(state, "running", "not marked done");
+    // Started again: the action is queued again, finds the UID gone from
+    // the Inbox, the mail in Archive, and ends done.
+    let _core = start(dir.path());
+    let mut c = Client::connect(dir.path());
+    settled(&mut c, 0);
+    let (id2, path, uid) = message_id_of(dir.path(), "crash");
+    assert_eq!((id2, path.as_str()), (id, "Archive"));
+    assert!(uid > 0);
+    let state: String = db(dir.path()).query_row("SELECT state FROM pending_action", [], |r| r.get(0)).unwrap();
+    assert_eq!(state, "done");
     verify_ok(&mut c);
 }

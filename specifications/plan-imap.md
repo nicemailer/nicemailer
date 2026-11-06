@@ -1,6 +1,6 @@
 # NiceMailer : plan de travail du back-end IMAP
 
-Statut : en cours. Phases 0 à 4 terminées (novembre 2026).
+Statut : en cours. Phases 0 à 5 terminées (novembre 2026).
 
 Ce document n'est pas une spécification : c'est le plan de réalisation du back-end qui communique avec les serveurs IMAP, récupère les mails, synchronise les dossiers, trie les mails entrants et importe un compte. Les règles restent dans les spécifications citées ; quand ce plan tranche une question qu'elles laissaient ouverte, la décision est reportée dans la spécification concernée au moment où la phase qui l'implémente est livrée.
 
@@ -175,7 +175,7 @@ Réalisé (novembre 2026), détail dans `docs/sync.md` :
 - Tests : `nm-store/tests/sync.rs` (11, sans serveur) ; `nm-daemon/tests/sync_rpc.rs` (6, `make imap-test`) : le vrai noyau contre les deux Dovecot, une seconde connexion jouant le téléphone (arrivée annoncée, flags, déplacement avec et sans `MOVE` gardant l'identité, suppression, commandes refusées), une seule connexion, `UIDVALIDITY` changé, mot de passe refusé sans nouvelle tentative, coupures réseau (connexion, liste, corps) sans perte, doublon ni fichier partiel ; `sync verify` vert après chaque étape.
 - Reste pour plus tard : la reprise d'un brut corrompu ou absent depuis le serveur (phase 8), le GC des blobs des messages supprimés (phase 8).
 
-### Phase 5 : spool (base vers serveur)
+### Phase 5 : spool (base vers serveur) — terminée
 
 - Les commandes existantes créent leurs actions dans la même transaction que la modification locale (`modele de donnees.md`, section 6) : `move`, `set_flags`, tags (mots-clés), `delete`.
 - Exécuteur sur la connexion de travail : fusion, exécution en série par message, regroupement en un `UID MOVE` par couple de dossiers, COPYUID, rattachement par `Message-ID` sans UIDPLUS ; erreur temporaire (recul) ou définitive (restauration depuis `undo`, actions suivantes annulées, `ActionReverted`) ; message disparu = succès ; reprise des actions `running` au démarrage ; purge.
@@ -184,6 +184,21 @@ Réalisé (novembre 2026), détail dans `docs/sync.md` :
 - Valeurs validées par l'utilisateur (5 novembre 2026) pour ce que la spécification laisse ouvert : 8 tentatives au plus, recul de 30 s doublé à chaque échec et plafonné à 1 h, purge des actions terminées après 7 jours.
 
 Tests : `modele de donnees.md`, section 6, scénario par scénario ; deux noyaux qui déplacent le même mail ; plantage simulé entre le MOVE et le passage à `done`.
+
+Réalisé (novembre 2026), détail dans `docs/spool.md` :
+
+- Les commandes passent toutes par trois points de `nm-store` (`move_message`, la fin des commandes de flags, `tag_thread`), qui écrivent l'action dans la transaction de la modification : déplacements, rangements après une décision, annulation (`z`), lu, drapeau, tags. Seuls les comptes de `config.toml` ont des actions (table temporaire `server_account` de la connexion d'écriture) ; les faux comptes de `make seed` et les comptes d'archives restent locaux. Le refus de la phase 4 (code `1010`) disparaît.
+- `delete` n'est pas créé : aucune commande ne supprime un mail du serveur ; « supprimer » est un déplacement vers Deleted.
+- Exécuteur sur la connexion de travail, avant chaque passe et dès qu'une commande crée une action (le travailleur sort d'IDLE). `SELECT` pour lui seul ; la synchronisation garde `EXAMINE`.
+- Écart : une action `set_flags` retient le dossier et l'UID du message au moment où le flag change. Sans cela, un tag suivi d'un déplacement s'attendaient mutuellement (le tag cherchait l'UID que seul le déplacement, placé après lui, donne) : interblocage constaté par le test contre Dovecot.
+- Un refus (`NO`) d'un `UID MOVE` est vérifié : les UID partis entre la recherche et le déplacement (un autre Mac) sont traités comme « message disparu », pas comme un échec. Constaté avec deux noyaux sur la même boîte.
+- Deux déplacements simultanés par deux Mac peuvent laisser deux copies sur le serveur (chaque `MOVE` voit le mail avant que l'autre l'efface) : aucun client ne peut l'empêcher ; les deux bases reflètent alors le serveur.
+- La synchronisation ignore désormais une arrivée dont l'UID est déjà connu dans le dossier (message déplacé par le spool avec son `COPYUID`) : sans cela, insertion en double refusée par `UNIQUE (folder_id, uid)`, constatée sur le Dovecot complet.
+- Correction de la phase 4 : les changements vus sur le serveur (déplacements faits ailleurs, suppressions, purge après `UIDVALIDITY`) ne sont plus écrits dans `audit_log`, conformément à `tracabilite.md` ; seule l'attribution de rôle d'un dossier y reste.
+- Valeurs appliquées telles que validées : 8 tentatives, 30 s doublées, plafond d'1 h, purge après 7 jours. Remarque : avec 8 tentatives, le plus long délai est de 32 min ; le plafond d'1 h n'est jamais atteint, et l'ensemble des tentatives tient en une heure environ.
+- L'app affiche `ActionReverted` dans sa barre d'état ; pas de scénario d'interface : les scénarios tournent sur les faux comptes, sans serveur, où rien ne peut être refusé.
+- Limite : un serveur sans `MOVE` ni `UIDPLUS` ne peut effacer que les messages déplacés ; ils restent marqués `\Deleted` dans le dossier source jusqu'à ce qu'un autre client les efface.
+- Tests : `nm-store/tests/spool.rs` (12, sans serveur) ; dans `nm-daemon/tests/sync_rpc.rs` (9 en tout, `make imap-test`), lu, tag et déplacement arrivant sur les deux serveurs, déplacement vers un dossier disparu annulé et annoncé, deux noyaux sur le même mail, plantage juste après le `MOVE` rejoué au redémarrage.
 
 ### Phase 6 : screening à la réception
 

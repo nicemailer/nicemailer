@@ -1,14 +1,14 @@
 # Synchronization of the IMAP accounts
 
-The core keeps the database in line with the server of every IMAP account of `config.toml`: new mail, flags, deletions, moves made on the phone or the webmail. This is phase 4 of `specifications/plan-imap.md`: **server to database only**. Nothing is sent to the server yet; the spool, which will send moves, flags and tags made in NiceMailer, is phase 5.
+The core keeps the database in line with the server of every IMAP account of `config.toml`: new mail, flags, deletions, moves made on the phone or the webmail. This is phase 4 of `specifications/plan-imap.md`: **server to database**. The other direction, the moves, flags and tags made in NiceMailer, goes through the spool ([spool.md](spool.md), phase 5).
 
 The code is in `crates/nm-engine/src/sync/` (the connections and the passes) and `crates/nm-store/src/sync.rs` (what is written in the database, testable without a server).
 
 ## Read-only towards the server
 
-Until phase 5, the synchronization cannot change anything on the server, even by mistake: every folder is opened with `EXAMINE` (the read-only `SELECT`), and every fetch is a `PEEK`, which never marks a mail read.
+The synchronization itself cannot change anything on the server, even by mistake: every folder is opened with `EXAMINE` (the read-only `SELECT`), and every fetch is a `PEEK`, which never marks a mail read. Only the spool writes ([spool.md](spool.md)), before each pass on the same connection, and the pass does not undo what waits in it (moves not sent, flags not sent).
 
-The commands that change mail are refused on the accounts the core synchronizes, with the error `1010` (`READ_ONLY`): moving a thread, marking it read or flagged, tags. A change made locally would be undone by the next synchronization. A decision on a sender (`set_address_screening`, `set_domain_screening`, or a move from an archive account) is still recorded, but it files no mail of these accounts. The fake accounts of `make seed` and the archive accounts of mbox imports are not concerned: the core gives the store the list of the accounts of `config.toml` (`Store::set_server_accounts`).
+(In phase 4 alone, before the spool, the commands that changed mail were refused on these accounts; that refusal is gone.)
 
 ## Connections
 
@@ -44,7 +44,7 @@ The plan had a third connection for IDLE alone. The work connection leaves IDLE 
 4. **Arrivals.** The headers, flags, date and size of the new UIDs (`BODY.PEEK[HEADER]`), 100 per command and per transaction ([ingestion.md](ingestion.md), first step). `uidnext` advances with each batch.
 5. **End of each folder.** Flags, deletions and the new `UIDVALIDITY`, `UIDNEXT`, `HIGHESTMODSEQ`, in one transaction.
 
-`UIDVALIDITY` changed: the UIDs of the folder name other messages, so its messages are dropped (`audit_log`, `purge`) and the folder is fetched again from the start (`modele de donnees.md`, section 5).
+`UIDVALIDITY` changed: the UIDs of the folder name other messages, so its messages are dropped and the folder is fetched again from the start (`modele de donnees.md`, section 5).
 
 ### Crash safety
 
@@ -58,7 +58,7 @@ A mail moved by the phone from Inbox to Archive vanishes from the Inbox and appe
 - of the same size (RFC822.SIZE, or the bytes stored once the body came);
 - whose UID vanished in this pass.
 
-The row then moves (`folder_id`, `uid`, flags; `audit_log`, `move`, reason `elsewhere`) and keeps everything else. Anything else is a new row: a copy (the original stayed), or a move that cannot be told from one.
+The row then moves (`folder_id`, `uid`, flags, `modified_by = 'imap'`) and keeps everything else. Like every change seen on the server, it is not journaled in `audit_log` (`tracabilite.md`, "Ce qui n'est pas journalisé"). Anything else is a new row: a copy (the original stayed), or a move that cannot be told from one.
 
 After IDLE reports a change, the pass waits 1.5 s. A client that moves a mail without `MOVE` copies it, marks it `\Deleted`, then expunges it, in three commands; a pass started at the first would see a new mail and the original still there. The delay also gathers a burst of new mail into one pass.
 
@@ -120,6 +120,6 @@ Same on both sides (0.1 s)
 
 | Test | What it checks |
 | --- | --- |
-| `crates/nm-store/tests/sync.rs` | folder listing (roles of the first listing only, a rename found by `UIDVALIDITY`, a role folder gone kept), flags and keywords, a move made elsewhere kept, a copy or an uncertain move inserted, flags and deletions in one transaction applied twice harmlessly, `uidnext` per batch, a duplicate refused, purge, the order of bodies, the commands refused |
-| `crates/nm-daemon/tests/sync_rpc.rs` (`make imap-test`) | the real core against Dovecot, a second connection playing the phone. On both servers: first synchronization, new mail seen by IDLE and announced, flags, a move (with `MOVE`, and copy-delete-expunge on the minimal server) keeping the message's id, a deletion, the commands refused; `sync_verify` clean after each step. Also: one connection doing everything; a folder replaced (new `UIDVALIDITY`); a refused login waiting for a new password; network cuts at several moments (login, listing, bodies) without loss, duplicate or partial file |
+| `crates/nm-store/tests/sync.rs` | folder listing (roles of the first listing only, a rename found by `UIDVALIDITY`, a role folder gone kept), flags and keywords, a move made elsewhere kept, a copy or an uncertain move inserted, flags and deletions in one transaction applied twice harmlessly, `uidnext` per batch, a UID already known not inserted twice, purge, nothing of it journaled (`tracabilite.md`), the order of bodies |
+| `crates/nm-daemon/tests/sync_rpc.rs` (`make imap-test`) | the real core against Dovecot, a second connection playing the phone. On both servers: first synchronization, new mail seen by IDLE and announced, flags, a move (with `MOVE`, and copy-delete-expunge on the minimal server) keeping the message's id, a deletion, changes made in NiceMailer reaching the server ([spool.md](spool.md)); `sync_verify` clean after each step. Also: one connection doing everything; a folder replaced (new `UIDVALIDITY`); a refused login waiting for a new password; network cuts at several moments (login, listing, bodies) without loss, duplicate or partial file |
 | `apps/NiceMailer/Tests/NiceMailerTests/EventOrderTests.swift` | a transient event neither reloads the app nor moves its position in the sequence |

@@ -41,6 +41,7 @@
 mod account;
 mod bodies;
 mod pass;
+mod spool;
 pub mod verify;
 
 use std::collections::{BTreeMap, HashSet, VecDeque};
@@ -138,6 +139,8 @@ pub(crate) struct Control {
     bodies: Notify,
     /// The body queue must be read again: a pass brought new messages.
     reload: AtomicBool,
+    /// A command queued actions in the spool: send them now.
+    spool: AtomicBool,
     /// Bodies the user is waiting for (a message opened), first served.
     priority: Mutex<VecDeque<i64>>,
     /// Bodies refused this run (size other than announced): not tried
@@ -240,6 +243,20 @@ impl Syncer {
             }
         }
         found
+    }
+
+    /// Commands queued actions for these accounts: their workers send them
+    /// now, leaving IDLE (`spool.rs`).
+    pub fn wake(&self, account_ids: &std::collections::BTreeSet<i64>) {
+        if account_ids.is_empty() {
+            return;
+        }
+        for w in self.workers.lock().unwrap().values() {
+            if account_ids.contains(&w.spec.account_id) {
+                w.control.spool.store(true, Ordering::SeqCst);
+                w.control.work.notify_one();
+            }
+        }
     }
 
     /// The bodies of `message_ids` of `account_id` are wanted now (the user

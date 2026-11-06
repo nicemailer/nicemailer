@@ -130,7 +130,7 @@ La table `message` est modifiée directement, et l'action garde de quoi l'annule
 2. **Exécution par le spool** : `UID MOVE` (RFC 6851). Sans l'extension MOVE, la même action exécute `UID COPY`, `UID STORE +FLAGS (\Deleted)` puis `UID EXPUNGE` : c'est toujours un seul ordre logique du spool.
 3. **Succès** : le nouvel UID est donné par la réponse `COPYUID` (UIDPLUS) et enregistré par `UPDATE message SET uid = …`. Sans UIDPLUS, `uid` reste NULL et la synchro du dossier cible rattache le message (voir « Synchro et spool »).
 
-Les autres actions (`set_flags`, `delete`…) suivent le même schéma : modification locale et action dans la même transaction, `undo` contenant les valeurs précédentes.
+Les autres actions (`set_flags`, `delete`…) suivent le même schéma : modification locale et action dans la même transaction, `undo` contenant les valeurs précédentes. Une action `set_flags` retient le dossier et l'UID du message au moment du changement (`{flag, set, folder_id, uid}`) : elle s'exécute là, à son tour, sans attendre l'UID qu'un déplacement demandé après elle donnera.
 
 ### Erreurs temporaires et définitives
 
@@ -143,14 +143,16 @@ Les autres actions (`set_flags`, `delete`…) suivent le même schéma : modific
 - **Fusion** : si une action `move` est encore `queued` quand un nouveau déplacement du même message est demandé, les deux sont fusionnées. Par exemple, Inbox → Todo puis Todo → Archive devient Inbox → Archive. L'action fusionnée garde le `undo` de la première ; la seconde n'est pas créée.
 - **Exécution en série** : les actions d'un même message s'exécutent dans l'ordre de leur `id`, une à la fois.
 - **Regroupement** : les actions `move` en file d'un même compte, avec les mêmes dossiers source et cible, sont exécutées en un seul `UID MOVE` sur un ensemble d'UID. La réponse `COPYUID` donne le nouvel UID de chacun. C'est le cas du rangement des anciens mails d'un expéditeur (`dossiers.md`, « Décision sur un expéditeur »).
-- **Annulation en série** : un échec définitif annule l'action fautive et toutes les suivantes sur ce message (`cancelled`), puis restaure l'état antérieur à l'action fautive.
+- **Annulation en série** : un échec définitif annule l'action fautive et toutes les suivantes sur ce message (`cancelled`), puis restaure l'état antérieur à l'action fautive, en défaisant les actions de la plus récente à la plus ancienne.
+- **Refus après un départ** : un `NO` sur un `UID MOVE` peut venir d'un message parti entre la recherche et le déplacement (autre Mac). Les UID sont donc revérifiés : ceux qui ne sont plus là suivent la règle « Message disparu du serveur ».
+- **Deux Mac au même instant** : deux `MOVE` simultanés du même message peuvent laisser deux copies sur le serveur. Aucun client ne peut l'empêcher ; chaque base reflète alors les deux copies.
 
 ### Synchro et spool
 
 La synchro consulte le spool (index `idx_pending_action_message`) pour ne pas défaire une action locale :
 
 - **Dossier source** : tant qu'un `move` est en attente, le serveur montre encore `from_uid` dans le dossier source. La synchro ignore tout UID référencé par une action `queued` ou `running` : elle ne le réinsère pas comme un nouveau message.
-- **Dossier cible** : un UID inconnu est d'abord rapproché des lignes du même dossier dont `uid` est NULL et dont le `message_id_hdr` est identique ; s'il y a correspondance, `uid` est renseigné au lieu d'insérer un doublon.
+- **Dossier cible** : un UID déjà connu dans le dossier (donné par `COPYUID`) n'est pas un nouveau message. Un UID inconnu est d'abord rapproché des lignes du même dossier dont `uid` est NULL et dont le `message_id_hdr` est identique ; s'il y a correspondance, `uid` est renseigné au lieu d'insérer un doublon.
 - **Flags** : un changement de flags venant du serveur sur un message qui a une action `set_flags` en attente ne remplace pas la valeur locale avant l'exécution de l'action.
 
 ### Reprise après plantage
@@ -159,7 +161,7 @@ Au démarrage, les actions `running` repassent à `queued`. Chaque action doit p
 
 ### Purge
 
-Les actions `done`, `reverted` et `cancelled` sont supprimées après un délai (paramètre à fixer), pour que la table reste petite.
+Les actions `done`, `reverted` et `cancelled` sont supprimées après 7 jours, pour que la table reste petite. Erreurs temporaires : 8 tentatives au plus, recul de 30 s doublé à chaque échec, plafonné à 1 h (valeurs validées le 5 novembre 2026 ; avec 8 tentatives, le plus long délai est de 32 min).
 
 ## 5. Synchronisation IMAP : `uidvalidity`, `uidnext`, `highestmodseq`
 

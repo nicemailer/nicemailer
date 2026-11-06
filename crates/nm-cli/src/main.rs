@@ -184,6 +184,7 @@ fn print_sync_status(st: &nm_api::SyncStatus) {
         if let Some(e) = &a.error {
             println!("  error: {e}");
         }
+        println!("  changes to send to the server: {}", a.actions_pending);
         println!("  bodies left to download: {}{}", a.bodies_missing, if a.bodies_refused > 0 {
             format!(", {} refused (size other than announced)", a.bodies_refused)
         } else {
