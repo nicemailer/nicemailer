@@ -32,6 +32,7 @@
 //! `impl Store` blocks still add public methods to `Store`.
 
 pub mod accounts;
+pub mod auth;
 pub mod attachments;
 mod commands;
 pub mod clean;
@@ -48,6 +49,7 @@ mod migrations;
 pub mod pool;
 mod queries;
 pub mod raw;
+pub mod reception;
 pub mod reindex;
 pub mod remote_images;
 pub mod screening;

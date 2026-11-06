@@ -41,7 +41,7 @@ The plan had a third connection for IDLE alone. The work connection leaves IDLE 
    | neither | `UID SEARCH ALL` compared with the database | `UID FETCH 1:* (FLAGS)` compared with the database: the Inbox at every pass, the other folders at each `poll_interval_secs` |
 
    New UIDs: `UID SEARCH UID <uidnext>:*` with QRESYNC; the UIDs of the server not in the database otherwise (which also repairs a gap).
-4. **Arrivals.** The headers, flags, date and size of the new UIDs (`BODY.PEEK[HEADER]`), 100 per command and per transaction ([ingestion.md](ingestion.md), first step). `uidnext` advances with each batch.
+4. **Arrivals.** The headers, flags, date and size of the new UIDs (`BODY.PEEK[HEADER]`), 100 per command and per transaction ([ingestion.md](ingestion.md), first step). `uidnext` advances with each batch. In the same transaction, each new mail gets its authentication verdict and, in the Inbox, is screened ([screening.md](screening.md)); the actions the screening queues are sent right after the pass.
 5. **End of each folder.** Flags, deletions and the new `UIDVALIDITY`, `UIDNEXT`, `HIGHESTMODSEQ`, in one transaction.
 
 `UIDVALIDITY` changed: the UIDs of the folder name other messages, so its messages are dropped and the folder is fetched again from the start (`modele de donnees.md`, section 5).

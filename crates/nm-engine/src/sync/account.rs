@@ -287,6 +287,11 @@ async fn work_loop(w: &Shared) {
     let mut refused = 0u64;
     // Whether each folder keeps keywords, learnt by the spool's SELECTs.
     let mut keywords: std::collections::HashMap<String, bool> = std::collections::HashMap::new();
+    // The user's own addresses: their mail is not screened, and they get
+    // no decision when they are among the recipients of a sent mail.
+    let cfg = &w.spec.config;
+    let own: Vec<String> = std::iter::once(cfg.email.to_lowercase()).chain(cfg.identities.iter().map(|i| i.email.to_lowercase())).collect();
+    let mut detect_tried: Option<Instant> = None;
     'connect: loop {
         if w.control.stopped() {
             return;
@@ -349,6 +354,9 @@ async fn work_loop(w: &Shared) {
                 inserter: &mut inserter,
                 namespace: namespace.clone(),
                 keywords: &keywords,
+                own: &own,
+                authserv_config: cfg.authserv_id.as_deref(),
+                detect_tried: &mut detect_tried,
             };
             match pass::run(&mut s, &mut ctx, full).await {
                 Ok(report) => {
@@ -378,13 +386,29 @@ async fn work_loop(w: &Shared) {
                     }
                     if report.inserted + report.moved + report.deleted > 0 {
                         eprintln!(
-                            "sync {}: {} new, {} moved elsewhere, {} deleted",
-                            w.spec.key, report.inserted, report.moved, report.deleted
+                            "sync {}: {} new ({} screened out of the Inbox), {} moved elsewhere, {} deleted",
+                            w.spec.key, report.inserted, report.screened, report.moved, report.deleted
                         );
                     }
                     // The body queue has new messages, maybe before its rest.
                     w.control.reload.store(true, Ordering::SeqCst);
                     w.control.bodies.notify_one();
+                    // The pass itself may have queued actions (the screening
+                    // of new mail, a conversation brought back): sent now,
+                    // not at the next pass.
+                    match spool::run(&mut s, w.host.as_ref(), w.spec.account_id, &mut keywords).await {
+                        Ok(r) if r.done + r.reverted + r.retried > 0 => {
+                            eprintln!("sync {}: spool: {} done, {} undone, {} to retry", w.spec.key, r.done, r.reverted, r.retried);
+                        }
+                        Ok(_) => {}
+                        Err(PassError::Stopped) => return,
+                        Err(e) => {
+                            let error = e.to_string();
+                            announced.error(w, &error);
+                            retry_later(w, &mut backoff, error).await;
+                            continue 'connect;
+                        }
+                    }
                 }
                 Err(PassError::Stopped) => return,
                 Err(e) => {

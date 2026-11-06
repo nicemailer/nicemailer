@@ -6,6 +6,7 @@ User and developer documentation, in English. It is written together with the co
 | --- | --- |
 | [import-mbox.md](import-mbox.md) | Importing a whole mailbox from an mbox file into an archive account |
 | [sync.md](sync.md) | The synchronization of the IMAP accounts, server to database: passes, moves made elsewhere, IDLE, failures, `nicemailer sync status | now | verify` |
+| [screening.md](screening.md) | New mail sorted at reception: authentication verdict (`Authentication-Results`, Public Suffix List), routing, conversations back from Todo/Waiting, mail found in Sent |
 | [spool.md](spool.md) | The changes made in NiceMailer sent to the server: actions, merging, grouping, retries, refusals undone, crash recovery, two Macs on one mailbox |
 | [ingestion.md](ingestion.md) | How a message enters the database, from an mbox or IMAP: headers then body, threads, streaming writes of large messages, failures |
 | [geek-ui.md](geek-ui.md) | The geek theme of the app: layout, keys, menus and pickers |

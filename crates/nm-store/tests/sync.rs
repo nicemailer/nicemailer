@@ -10,6 +10,7 @@ use nm_store::ingest::parse_headers;
 use nm_store::insert::Inserter;
 use nm_store::sync::{Arrival, FlagUpdate, FolderState, ListedFolder, ServerFlags};
 use nm_store::Store;
+use nm_store::reception::Reception;
 
 fn store() -> (Store, i64) {
     let store = Store::open_in_memory().unwrap();
@@ -81,7 +82,7 @@ fn a_folder_renamed_on_the_server_keeps_its_row_and_its_mail() {
     let archive = folder_id(&s, "Archive");
     s.conn().execute("UPDATE folder SET uidvalidity = 2 WHERE id = ?1", [archive]).unwrap();
     let mut ins = Inserter::new(Source::Imap, None);
-    s.insert_arrivals(&mut ins, acc, archive, &[arrival(1, "a@x", 100, &[])], &mut BTreeMap::new(), false, false).unwrap();
+    s.insert_arrivals(&mut ins, acc, archive, &[arrival(1, "a@x", 100, &[])], &mut BTreeMap::new(), &Reception::plain(false)).unwrap();
 
     let mut renamed = standard();
     renamed[1] = listed("Archives 2026", Some("archive"), 2);
@@ -118,7 +119,7 @@ fn with_one_mail() -> (Store, i64, i64, i64, Inserter) {
     s.sync_folder_list(acc, &standard()).unwrap();
     let (inbox, archive) = (folder_id(&s, "INBOX"), folder_id(&s, "Archive"));
     let mut ins = Inserter::new(Source::Imap, None);
-    let (got, _) = s.insert_arrivals(&mut ins, acc, inbox, &[arrival(7, "m1@x", 1000, &["$Projet"])], &mut BTreeMap::new(), false, false).unwrap();
+    let (got, _) = s.insert_arrivals(&mut ins, acc, inbox, &[arrival(7, "m1@x", 1000, &["$Projet"])], &mut BTreeMap::new(), &Reception::plain(false)).unwrap();
     assert_eq!(got.inserted, 1);
     (s, acc, inbox, archive, ins)
 }
@@ -130,7 +131,7 @@ fn a_move_made_elsewhere_keeps_the_message() {
     // The phone moved it: UID 7 vanished from the Inbox, UID 3 appeared in
     // Archive, in the same pass.
     let mut deletions = BTreeMap::from([(inbox, BTreeSet::from([7]))]);
-    let (got, changes) = s.insert_arrivals(&mut ins, acc, archive, &[arrival(3, "m1@x", 1000, &["\\Seen"])], &mut deletions, true, false).unwrap();
+    let (got, changes) = s.insert_arrivals(&mut ins, acc, archive, &[arrival(3, "m1@x", 1000, &["\\Seen"])], &mut deletions, &Reception::plain(true)).unwrap();
     assert_eq!((got.moved, got.inserted), (1, 0));
     assert!(deletions[&inbox].is_empty(), "no longer a deletion");
     assert!(changes.arrived.is_empty(), "a move is not new mail");
@@ -152,7 +153,7 @@ fn a_move_made_elsewhere_keeps_the_message() {
 fn a_copy_or_an_uncertain_move_is_a_new_message() {
     // The original stayed (no deletion): a copy.
     let (mut s, acc, inbox, archive, mut ins) = with_one_mail();
-    let (got, changes) = s.insert_arrivals(&mut ins, acc, archive, &[arrival(3, "m1@x", 1000, &[])], &mut BTreeMap::new(), true, false).unwrap();
+    let (got, changes) = s.insert_arrivals(&mut ins, acc, archive, &[arrival(3, "m1@x", 1000, &[])], &mut BTreeMap::new(), &Reception::plain(true)).unwrap();
     assert_eq!((got.moved, got.inserted), (0, 1));
     assert_eq!(changes.arrived.len(), 1);
     let threads = count(&s, "SELECT count(DISTINCT thread_id) FROM message");
@@ -161,7 +162,7 @@ fn a_copy_or_an_uncertain_move_is_a_new_message() {
     // Another size: not the same message, whatever its Message-ID says.
     let (mut s, acc, inbox2, archive, mut ins) = with_one_mail();
     let mut deletions = BTreeMap::from([(inbox2, BTreeSet::from([7]))]);
-    let (got, _) = s.insert_arrivals(&mut ins, acc, archive, &[arrival(3, "m1@x", 999, &[])], &mut deletions, true, false).unwrap();
+    let (got, _) = s.insert_arrivals(&mut ins, acc, archive, &[arrival(3, "m1@x", 999, &[])], &mut deletions, &Reception::plain(true)).unwrap();
     assert_eq!((got.moved, got.inserted), (0, 1));
     assert_eq!(deletions[&inbox2].len(), 1, "still to delete");
     let _ = inbox;
@@ -170,7 +171,7 @@ fn a_copy_or_an_uncertain_move_is_a_new_message() {
 #[test]
 fn flags_deletions_and_state_in_one_transaction() {
     let (mut s, acc, inbox, _, mut ins) = with_one_mail();
-    s.insert_arrivals(&mut ins, acc, inbox, &[arrival(8, "m2@x", 10, &[])], &mut BTreeMap::new(), true, false).unwrap();
+    s.insert_arrivals(&mut ins, acc, inbox, &[arrival(8, "m2@x", 10, &[])], &mut BTreeMap::new(), &Reception::plain(true)).unwrap();
     assert_eq!(count(&s, "SELECT unread_count FROM folder WHERE path = 'INBOX'"), 2);
     let flags = [FlagUpdate { uid: 8, flags: ServerFlags::parse(&["\\Seen", "\\Flagged", "Urgent"]), modseq: Some(40) }];
     let changes = s
@@ -198,14 +199,14 @@ fn arrivals_advance_uidnext_and_announce_only_after_the_first_sync() {
     s.sync_folder_list(acc, &standard()).unwrap();
     let inbox = folder_id(&s, "INBOX");
     let mut ins = Inserter::new(Source::Imap, None);
-    let (_, first) = s.insert_arrivals(&mut ins, acc, inbox, &[arrival(1, "a@x", 1, &[]), arrival(5, "b@x", 1, &[])], &mut BTreeMap::new(), false, false).unwrap();
+    let (_, first) = s.insert_arrivals(&mut ins, acc, inbox, &[arrival(1, "a@x", 1, &[]), arrival(5, "b@x", 1, &[])], &mut BTreeMap::new(), &Reception::plain(false)).unwrap();
     assert!(first.arrived.is_empty());
     assert_eq!(count(&s, "SELECT uidnext FROM folder WHERE id = (SELECT id FROM folder WHERE path = 'INBOX')"), 6);
-    let (_, later) = s.insert_arrivals(&mut ins, acc, inbox, &[arrival(6, "c@x", 1, &[])], &mut BTreeMap::new(), true, false).unwrap();
+    let (_, later) = s.insert_arrivals(&mut ins, acc, inbox, &[arrival(6, "c@x", 1, &[])], &mut BTreeMap::new(), &Reception::plain(true)).unwrap();
     assert_eq!(later.arrived.len(), 1);
     // The same UID again (a pass after a crash, or a message the spool
     // moved here with its UID): nothing new, never two rows.
-    let (again, changes) = s.insert_arrivals(&mut ins, acc, inbox, &[arrival(6, "c@x", 1, &[])], &mut BTreeMap::new(), true, false).unwrap();
+    let (again, changes) = s.insert_arrivals(&mut ins, acc, inbox, &[arrival(6, "c@x", 1, &[])], &mut BTreeMap::new(), &Reception::plain(true)).unwrap();
     assert_eq!(again.inserted, 0);
     assert!(changes.arrived.is_empty());
     assert_eq!(count(&s, "SELECT count(*) FROM message"), 3);
@@ -228,7 +229,7 @@ fn a_new_uidvalidity_purges_the_folder() {
 #[test]
 fn bodies_are_fetched_inbox_first_then_newest_first() {
     let (mut s, acc, inbox, archive, mut ins) = with_one_mail();
-    s.insert_arrivals(&mut ins, acc, archive, &[arrival(1, "old@x", 1, &[]), arrival(2, "new@x", 1, &[])], &mut BTreeMap::new(), false, false)
+    s.insert_arrivals(&mut ins, acc, archive, &[arrival(1, "old@x", 1, &[]), arrival(2, "new@x", 1, &[])], &mut BTreeMap::new(), &Reception::plain(false))
         .unwrap();
     let order: Vec<(i64, u32)> = s.bodies_missing(acc).unwrap().iter().map(|b| (b.folder_id, b.uid)).collect();
     assert_eq!(order, [(inbox, 7), (archive, 2), (archive, 1)]);

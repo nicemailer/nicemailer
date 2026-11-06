@@ -32,6 +32,7 @@ use nm_api::Event;
 use nm_proto::imap::{FetchItems, ImapError, ListEntry, MailboxName, MailboxStatus, Namespace, QresyncParams, SearchKey, Session, UidSet, Uids};
 use nm_store::ingest::parse_headers;
 use nm_store::insert::Inserter;
+use nm_store::reception::Reception;
 use nm_store::sync::{Arrival, FlagUpdate, FolderState, ListedFolder, ServerFlags, SyncFolder};
 use nm_store::StoreError;
 
@@ -115,6 +116,14 @@ pub(crate) struct Ctx<'a> {
     /// by the spool said (`spool.rs`). A folder that keeps none keeps its
     /// tags locally: the server's empty list must not erase them.
     pub keywords: &'a HashMap<String, bool>,
+    /// The user's own addresses, lowercase (the account's and its
+    /// identities): their mail is not screened.
+    pub own: &'a [String],
+    /// The `authserv_id` of `config.toml`, which wins over the detection.
+    pub authserv_config: Option<&'a str>,
+    /// When the detection of the `authserv-id` was last tried: at most once
+    /// an hour while none is found (`authentification-expediteur.md`).
+    pub detect_tried: &'a mut Option<Instant>,
 }
 
 /// What a pass did.
@@ -125,6 +134,8 @@ pub(crate) struct PassReport {
     pub moved: u64,
     pub deleted: u64,
     pub folders_synced: u64,
+    /// New mails the screening moved out of the Inbox.
+    pub screened: u64,
     /// Role folders the server no longer lists.
     pub missing: Vec<String>,
     /// Problems with one folder, which did not stop the pass.
@@ -245,6 +256,12 @@ pub(crate) async fn run(s: &mut Session, ctx: &mut Ctx<'_>, full: bool) -> Resul
         }
     }
 
+    // The account's `authserv-id`: the file's, else the one detected.
+    let mut authserv: Option<String> = match ctx.authserv_config {
+        Some(id) => Some(id.to_string()),
+        None => read(ctx.host, |st| st.account_authserv_id(account_id))?,
+    };
+
     // 4. Arrivals.
     for w in &works {
         if w.new_uids.is_empty() {
@@ -258,6 +275,28 @@ pub(crate) async fn run(s: &mut Session, ctx: &mut Ctx<'_>, full: bool) -> Resul
             report.problems.push(format!("{}: {e}", w.folder.path));
             continue;
         }
+        if w.folder.role == "inbox"
+            && authserv.is_none()
+            && ctx.detect_tried.is_none_or(|t| t.elapsed() >= std::time::Duration::from_secs(3600))
+        {
+            *ctx.detect_tried = Some(Instant::now());
+            if let Some(id) = detect_authserv(s, ctx.host, w).await? {
+                write(ctx.host, |st| Ok(((), {
+                    st.set_account_authserv_id(account_id, &id)?;
+                    nm_store::ChangeSet::default()
+                })))?;
+                report.problems.push(format!("authserv-id detected: {id}"));
+                authserv = Some(id);
+            }
+        }
+        let rc = Reception {
+            role: &w.folder.role,
+            announce: w.announce,
+            keywords_local: ctx.keywords.get(&w.folder.path) == Some(&false),
+            authserv_id: authserv.as_deref(),
+            own: ctx.own,
+            screen_from_uid: if w.folder.role == "inbox" { w.folder.screening_start } else { None },
+        };
         let items = FetchItems { flags: true, internal_date: true, size: true, modseq: mode != Mode::None, header: true, ..FetchItems::default() };
         let total = w.new_uids.len() as u64;
         let mut done = 0u64;
@@ -290,11 +329,10 @@ pub(crate) async fn run(s: &mut Session, ctx: &mut Ctx<'_>, full: bool) -> Resul
             }
             batch.sort_by_key(|a| a.uid);
             let folder_id = w.folder.id;
-            let announce = w.announce;
-            let keywords_local = ctx.keywords.get(&w.folder.path) == Some(&false);
             let inserter = &mut *ctx.inserter;
             let deletions = &mut deletions;
-            let got = write(ctx.host, |st| st.insert_arrivals(inserter, account_id, folder_id, &batch, deletions, announce, keywords_local))?;
+            let got = write(ctx.host, |st| st.insert_arrivals(inserter, account_id, folder_id, &batch, deletions, &rc))?;
+            report.screened += got.screened as u64;
             report.inserted += got.inserted as u64;
             report.moved += got.moved as u64;
             done += chunk.len() as u64;
@@ -308,11 +346,11 @@ pub(crate) async fn run(s: &mut Session, ctx: &mut Ctx<'_>, full: bool) -> Resul
     // 5. End of each folder.
     for w in works {
         let gone = deletions.remove(&w.folder.id).unwrap_or_default();
-        report.deleted += gone.len() as u64;
         let state = FolderState { uidvalidity: w.uidvalidity, uidnext: w.uidnext, highestmodseq: w.modseq };
         let folder_id = w.folder.id;
         let keywords_local = ctx.keywords.get(&w.folder.path) == Some(&false);
-        write(ctx.host, |st| Ok(((), st.finish_folder(folder_id, &w.flags, &gone, state, keywords_local)?)))?;
+        let n = write(ctx.host, |st| st.finish_folder_counted(folder_id, &w.flags, &gone, state, keywords_local).map(|(c, n)| (n, c)))?;
+        report.deleted += n as u64;
         report.folders_synced += 1;
     }
     // What the server said on its own during the pass is in the database
@@ -364,10 +402,20 @@ async fn discover(
         reset = true;
     }
     let folder_id = f.id;
+    // The Inbox's screening boundary, the first time (provisional until the
+    // account creation of phase 7): what is there now was there before
+    // NiceMailer, and is not screened; what comes next is.
+    let boundary = if f.role == "inbox" && f.screening_start.is_none() { sel.uid_next } else { None };
     write(host, |st| Ok(((), {
         st.start_folder(folder_id, uv)?;
+        if let Some(b) = boundary {
+            st.set_screening_start(folder_id, b)?;
+        }
         nm_store::ChangeSet::default()
     })))?;
+    if boundary.is_some() {
+        f.screening_start = boundary;
+    }
     let modseq = if mode != Mode::None && !sel.no_modseq { sel.highest_modseq } else { None };
 
     let mut gone = BTreeSet::new();
@@ -429,4 +477,26 @@ async fn discover(
     let new_uids: Vec<u32> = new_uids.into_iter().filter(|u| !leaving.contains(u)).collect();
     let uidnext = sel.uid_next.or_else(|| new_uids.last().map(|u| u + 1)).or(f.uidnext);
     Ok(Some((Work { folder: f, uidvalidity: uv, uidnext, modseq, new_uids, flags, announce }, gone)))
+}
+
+/// Detects the account's `authserv-id` from the first `Authentication-Results`
+/// of the 50 most recent mails of the Inbox (the highest UIDs), the Inbox
+/// being selected (`authentification-expediteur.md`, "Détection").
+async fn detect_authserv(s: &mut Session, host: &dyn SyncHost, w: &Work) -> Result<Option<String>, PassError> {
+    let folder_id = w.folder.id;
+    let mut uids: BTreeSet<u32> = w.new_uids.iter().rev().take(50).copied().collect();
+    if uids.len() < 50 {
+        uids.extend(read(host, |st| st.top_uids(folder_id, 50))?);
+    }
+    let uids: Vec<u32> = uids.into_iter().rev().take(50).collect();
+    if uids.is_empty() {
+        return Ok(None);
+    }
+    let items = FetchItems { header: true, ..FetchItems::default() };
+    let fetched = s.uid_fetch(&Uids::Set(UidSet::from_uids(uids.iter().copied())), &items).await?;
+    let firsts: Vec<Option<String>> = fetched
+        .iter()
+        .map(|f| nm_store::auth::first_authserv_id(&parse_headers(f.header.as_deref().unwrap_or(b"")).auth_results))
+        .collect();
+    Ok(nm_store::auth::detect_authserv_id(&firsts))
 }

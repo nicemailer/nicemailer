@@ -81,6 +81,8 @@ pub struct SyncFolder {
     pub highestmodseq: Option<u64>,
     /// Messages of the folder in the database.
     pub messages: u32,
+    /// `uid_screening_start` (Inbox): the mails at or above it are screened.
+    pub screening_start: Option<u32>,
     /// Synchronized completely at least once (`date_last_sync`): its new
     /// mail is new for the user (`MessageArrived`). A first
     /// synchronization interrupted and resumed is still a first one.
@@ -180,6 +182,8 @@ pub struct Arrived {
     pub moved: u32,
     /// Rows moved by NiceMailer that got their UID in this folder.
     pub attached: u32,
+    /// New rows the screening moved out of the Inbox.
+    pub screened: u32,
 }
 
 /// A message of a folder in the database, for comparisons with the server.
@@ -285,6 +289,32 @@ impl Store {
         Ok((folders, change, changes))
     }
 
+    /// The Inbox's screening boundary, set once (provisional until the
+    /// account creation of phase 7): its `UIDNEXT` when its synchronization
+    /// first starts, so that the mails already there are not screened and
+    /// the next ones are (`import-initial.md`, section 5).
+    pub fn set_screening_start(&mut self, folder_id: i64, uid: u32) -> Result<()> {
+        self.conn.execute("UPDATE folder SET uid_screening_start = ?2 WHERE id = ?1 AND uid_screening_start IS NULL", params![folder_id, uid])?;
+        Ok(())
+    }
+
+    /// The highest UIDs of a folder, at most `n`.
+    pub fn top_uids(&self, folder_id: i64, n: u32) -> Result<Vec<u32>> {
+        let mut stmt = self.conn.prepare_cached("SELECT uid FROM message WHERE folder_id = ?1 AND uid IS NOT NULL ORDER BY uid DESC LIMIT ?2")?;
+        let rows = stmt.query_map(params![folder_id, n], |r| r.get(0))?.collect::<std::result::Result<_, _>>()?;
+        Ok(rows)
+    }
+
+    /// The `authserv-id` detected for an account (`auth.rs`).
+    pub fn account_authserv_id(&self, account_id: i64) -> Result<Option<String>> {
+        Ok(self.conn.query_row("SELECT authserv_id FROM account WHERE id = ?1", [account_id], |r| r.get(0)).optional()?.flatten())
+    }
+
+    pub fn set_account_authserv_id(&mut self, account_id: i64, id: &str) -> Result<()> {
+        self.conn.execute("UPDATE account SET authserv_id = ?2 WHERE id = ?1", params![account_id, id])?;
+        Ok(())
+    }
+
     /// The synchronization of a folder starts: records its `UIDVALIDITY` if
     /// the database has none yet (first synchronization). From then on its
     /// mail counts as server mail (`refuse_imap_thread`).
@@ -343,8 +373,11 @@ impl Store {
         };
         let threads: BTreeSet<i64> = ids.iter().filter_map(|(_, t)| *t).collect();
         tx.execute("DELETE FROM message WHERE folder_id = ?1", [folder_id])?;
+        // `uid_screening_start` too: what is there now counts as imported
+        // (`import-initial.md`, section 5); the pass sets it again.
         tx.execute(
-            "UPDATE folder SET uidvalidity = ?2, uidnext = NULL, highestmodseq = NULL, date_last_sync = NULL WHERE id = ?1",
+            "UPDATE folder SET uidvalidity = ?2, uidnext = NULL, highestmodseq = NULL, date_last_sync = NULL,
+                    uid_screening_start = NULL WHERE id = ?1",
             params![folder_id, uidvalidity],
         )?;
         changes.folders.insert(folder_id);
@@ -379,9 +412,9 @@ impl Store {
         folder_id: i64,
         batch: &[Arrival],
         deletions: &mut BTreeMap<i64, BTreeSet<u32>>,
-        announce: bool,
-        keywords_local: bool,
+        rc: &crate::reception::Reception,
     ) -> Result<(Arrived, ChangeSet)> {
+        let keywords_local = rc.keywords_local;
         let mut changes = ChangeSet::default();
         let mut arrived = Arrived::default();
         let tx = self.transaction()?;
@@ -424,6 +457,16 @@ impl Store {
                     if let Some(set) = deletions.get_mut(&from) {
                         set.remove(&from_uid);
                     }
+                    // A mail marked as back from Todo or Waiting that left
+                    // the Inbox elsewhere loses its mark, else it would show
+                    // again, wrongly, if it came back one day (`dossiers.md`).
+                    let from_inbox: bool = tx
+                        .prepare_cached("SELECT role = 'inbox' FROM folder WHERE id = ?1")?
+                        .query_row([from], |r| r.get::<_, Option<bool>>(0))?
+                        .unwrap_or(false);
+                    if from_inbox && rc.role != "inbox" {
+                        crate::reception::clear_return_marks(&tx, &[id], nm_core::Source::Core, &mut changes)?;
+                    }
                     changes.folders.insert(from);
                     changes.messages.insert((id, thread));
                     threads.extend(thread);
@@ -438,12 +481,19 @@ impl Store {
                     size: a.size,
                     modseq: a.modseq,
                     flags: a.flags.flags,
+                    auth: crate::reception::verdict_of(a, rc),
                     headers: &a.headers,
                 };
                 let id = inserter.insert(&tx, &m, None, &mut changes)?;
                 write_flags(&tx, id, &a.flags, true, false)?;
-                if announce {
-                    changes.arrived.insert((id, folder_id));
+                // Screening, return of a conversation, effects of Sent
+                // (`reception.rs`), in this same transaction.
+                let to = crate::reception::after_insert(&tx, rc, account_id, folder_id, id, a, m.auth.0, &mut changes, &mut threads)?;
+                if to != folder_id {
+                    arrived.screened += 1;
+                }
+                if rc.announce {
+                    changes.arrived.insert((id, to));
                 }
                 arrived.inserted += 1;
             }
@@ -482,6 +532,20 @@ impl Store {
         state: FolderState,
         keywords_local: bool,
     ) -> Result<ChangeSet> {
+        Ok(self.finish_folder_counted(folder_id, flags, deleted, state, keywords_local)?.0)
+    }
+
+    /// [`Store::finish_folder`], with the number of rows deleted: the UIDs
+    /// gone include those of messages NiceMailer itself moved away, whose
+    /// rows already followed them.
+    pub fn finish_folder_counted(
+        &mut self,
+        folder_id: i64,
+        flags: &[FlagUpdate],
+        deleted: &BTreeSet<u32>,
+        state: FolderState,
+        keywords_local: bool,
+    ) -> Result<(ChangeSet, u32)> {
         let tx = self.transaction()?;
         let mut changes = ChangeSet::default();
         let mut threads = BTreeSet::new();
@@ -519,7 +583,6 @@ impl Store {
                 gone += 1;
             }
         }
-        let _ = gone;
         // Rows of this folder still without UID and without action pending:
         // their move was done, but the message was not found here (moved
         // or deleted elsewhere meanwhile). It shows again through the
@@ -547,7 +610,7 @@ impl Store {
         changes.folders.insert(folder_id);
         refresh_threads_after_delete(&tx, &threads, &mut changes)?;
         tx.commit()?;
-        Ok(changes)
+        Ok((changes, gone as u32))
     }
 
     /// The messages of an account still without body, in the order they
@@ -622,7 +685,7 @@ impl Store {
         let mut stmt = self.conn.prepare(
             "SELECT f.id, f.path, f.role, f.uidvalidity, f.uidnext, f.highestmodseq,
                     (SELECT count(*) FROM message m WHERE m.folder_id = f.id), f.date_last_sync IS NOT NULL, f.date_last_sync,
-                    (SELECT count(*) FROM message m WHERE m.folder_id = f.id AND m.body_state = 0)
+                    (SELECT count(*) FROM message m WHERE m.folder_id = f.id AND m.body_state = 0), f.uid_screening_start
                FROM folder f WHERE f.account_id = ?1 AND f.role IS NOT NULL AND f.role <> 'config'",
         )?;
         let mut out: Vec<(SyncFolder, Option<i64>, u64)> = stmt
@@ -637,6 +700,7 @@ impl Store {
                         highestmodseq: r.get::<_, Option<i64>>(5)?.map(|m| m as u64),
                         messages: r.get(6)?,
                         synced: r.get(7)?,
+                        screening_start: r.get(10)?,
                     },
                     r.get(8)?,
                     r.get(9)?,
@@ -681,7 +745,7 @@ pub struct MissingBody {
 fn role_folders(tx: &Transaction, account_id: i64, listed: &BTreeSet<&str>, change: &FolderListChange) -> Result<Vec<SyncFolder>> {
     let mut stmt = tx.prepare(
         "SELECT f.id, f.path, f.role, f.uidvalidity, f.uidnext, f.highestmodseq,
-                (SELECT count(*) FROM message m WHERE m.folder_id = f.id), f.date_last_sync IS NOT NULL
+                (SELECT count(*) FROM message m WHERE m.folder_id = f.id), f.date_last_sync IS NOT NULL, f.uid_screening_start
            FROM folder f WHERE f.account_id = ?1 AND f.role IS NOT NULL AND f.role <> 'config'",
     )?;
     let mut out: Vec<SyncFolder> = stmt
@@ -695,6 +759,7 @@ fn role_folders(tx: &Transaction, account_id: i64, listed: &BTreeSet<&str>, chan
                 highestmodseq: r.get::<_, Option<i64>>(5)?.map(|m| m as u64),
                 messages: r.get(6)?,
                 synced: r.get(7)?,
+                screening_start: r.get(8)?,
             })
         })?
         .collect::<std::result::Result<_, _>>()?;

@@ -170,6 +170,7 @@ fn a_150_mb_message_in_pieces_with_bounded_memory() {
         size: Some(size),
         modseq: None,
         flags: Flags::default(),
+        auth: (nm_core::AuthResult::Unknown, None),
         headers: &parsed,
     };
     ins.insert(&tx, &m, Some(Body { written: &f.written, parsed: &parsed }), &mut changes).unwrap();

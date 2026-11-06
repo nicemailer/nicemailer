@@ -81,6 +81,10 @@ pub struct NewMessage<'a> {
     /// CONDSTORE modification sequence, if the server has one.
     pub modseq: Option<u64>,
     pub flags: Flags,
+    /// The authentication verdict and its source (`auth.rs`): `unknown`
+    /// without source for an mbox import, which cannot tell which header
+    /// to trust (`import-initial.md`, section 9).
+    pub auth: (nm_core::AuthResult, Option<&'static str>),
     /// The headers ([`crate::ingest::parse_headers`]), or the whole message
     /// parsed ([`crate::ingest::parse`]): only the header fields are read.
     pub headers: &'a ParsedMessage,
@@ -157,9 +161,9 @@ impl Inserter {
             "INSERT INTO message (account_id, folder_id, uid, thread_id, message_id_hdr, in_reply_to, subject,
                 from_address_id, from_name, from_addr, date_sent, date_received, size, snippet,
                 is_seen, is_flagged, is_answered, is_draft, is_deleted, has_attachments, auth_result, modseq,
-                body_state, raw_hash, created_by, modified_by)
+                body_state, raw_hash, created_by, modified_by, auth_source)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14,
-                     ?15, ?16, ?17, ?18, ?19, ?20, 'unknown', ?21, ?22, ?23, ?24, ?24)",
+                     ?15, ?16, ?17, ?18, ?19, ?20, ?25, ?21, ?22, ?23, ?24, ?24, ?26)",
         )?
         .execute(params![
             m.account_id,
@@ -189,6 +193,8 @@ impl Inserter {
             raw_hash.is_some(),
             raw_hash,
             self.source.as_str(),
+            m.auth.0.as_str(),
+            m.auth.1,
         ])?;
         let message_id = tx.last_insert_rowid();
 

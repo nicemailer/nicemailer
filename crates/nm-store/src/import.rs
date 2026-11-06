@@ -478,6 +478,7 @@ impl Writer {
             modseq: None,
             // Archived mail has been dealt with: read.
             flags: Flags { seen: true, ..Flags::default() },
+            auth: (nm_core::AuthResult::Unknown, None),
             headers: m,
         };
         self.inserter.insert(tx, &message, Some(Body { written: &p.written, parsed: m }), changes)?;

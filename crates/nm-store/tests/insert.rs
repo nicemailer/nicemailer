@@ -66,6 +66,7 @@ impl Env {
                 size: Some(raw.len() as u64),
                 modseq: Some(10 + *uid as u64),
                 flags: Flags { seen: *uid % 2 == 0, flagged: *uid == 3, ..Flags::default() },
+                auth: (nm_core::AuthResult::Unknown, None),
                 headers: &h,
             };
             ids.push(ins.insert(&tx, &m, None, &mut changes).unwrap());
@@ -250,6 +251,7 @@ fn a_batch_rolled_back_leaves_nothing_and_its_addresses_are_forgotten() {
             size: None,
             modseq: None,
             flags: Flags::default(),
+            auth: (nm_core::AuthResult::Unknown, None),
             headers: &h,
         };
         ins.insert(&tx, &m, None, &mut ChangeSet::default()).unwrap();

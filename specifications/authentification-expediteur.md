@@ -58,7 +58,7 @@ L'alignement est l'alignement relâché de DMARC : même domaine organisationnel
 
 À l'ajout d'un compte, le noyau examine le premier en-tête `Authentication-Results` des 50 derniers mails de l'INBOX. Si un même `authserv-id` apparaît en tête dans au moins 90 % d'entre eux, il est enregistré dans `account.authserv_id`. Sinon, la colonne reste NULL.
 
-Tant qu'elle est NULL, la détection est refaite périodiquement sur les nouveaux mails, au cas où le serveur se mettrait à ajouter l'en-tête. La valeur détectée est visible dans les réglages avancés du compte. La modifier écrit la clé `authserv_id` du compte dans `config.toml`, qui prend alors le pas sur la détection (`configuration.md`, section 6).
+Tant qu'elle est NULL, la détection est refaite périodiquement sur les nouveaux mails, au cas où le serveur se mettrait à ajouter l'en-tête : à une passe de synchronisation qui apporte des mails à l'Inbox, sur ses 50 UID les plus hauts, au plus une fois par heure (phase 6 de `plan-imap.md`). La valeur détectée est visible dans les réglages avancés du compte. La modifier écrit la clé `authserv_id` du compte dans `config.toml`, qui prend alors le pas sur la détection (`configuration.md`, section 6).
 
 ### Moment du calcul
 

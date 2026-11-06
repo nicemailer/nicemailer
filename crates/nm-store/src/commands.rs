@@ -15,7 +15,7 @@
 
 use std::collections::{BTreeSet, HashMap};
 
-use nm_core::{FolderRole, KW_WAS_TODO, KW_WAS_WAITING, ScreeningTarget, Source};
+use nm_core::{FolderRole, ScreeningTarget, Source};
 // `OptionalExtension` adds `.optional()` to query results: it turns the
 // "no row" error into `Ok(None)`. `params!` builds a list of SQL parameters
 // of different types.
@@ -170,12 +170,12 @@ impl Store {
         // Any command clears the "came back from Todo/Waiting" mark, even when
         // nothing moved: by acting on the thread, the user has dealt with it.
         // `COLLATE NOCASE` because IMAP keywords are case-insensitive.
-        let unmarked = tx.execute(
-            "DELETE FROM message_keyword
-              WHERE keyword COLLATE NOCASE IN (?2, ?3)
-                AND message_id IN (SELECT id FROM message WHERE thread_id = ?1)",
-            params![thread_id, KW_WAS_TODO, KW_WAS_WAITING],
-        )?;
+        // The marks are IMAP keywords: removed on the server too (spool).
+        let ids: Vec<i64> = tx
+            .prepare("SELECT id FROM message WHERE thread_id = ?1")?
+            .query_map([thread_id], |r| r.get(0))?
+            .collect::<std::result::Result<_, _>>()?;
+        let unmarked = crate::reception::clear_return_marks(&tx, &ids, source, &mut out.changes)?;
         if unmarked > 0 {
             threads.insert(thread_id);
         }

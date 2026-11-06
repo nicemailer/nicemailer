@@ -100,6 +100,13 @@ pub struct ParsedMessage {
     pub attachments: Vec<ParsedAttachment>,
     /// How to unsubscribe from the list the message comes from, if it says.
     pub unsubscribe: Option<crate::unsubscribe::Unsubscribe>,
+    /// The values of the `Authentication-Results` headers, top first, for
+    /// the authentication verdict (`auth.rs`). Read from the headers, so
+    /// known before the body is downloaded.
+    pub auth_results: Vec<String>,
+    /// How many mailboxes `From` holds: a mail with several has no sender
+    /// a rule can apply to (`authentification-expediteur.md`, section 4).
+    pub from_count: usize,
     /// `false` when `mail-parser` could not make sense of the bytes at all.
     /// The raw file is kept anyway, and `reindex` can retry later
     /// (`stockage-brut.md`, section 5, "Échec de l'analyse MIME").
@@ -208,7 +215,17 @@ pub fn parse(raw: &[u8]) -> ParsedMessage {
         text.as_deref(),
     );
 
+    let auth_results: Vec<String> = m
+        .headers()
+        .iter()
+        .filter(|h| h.name().as_str().eq_ignore_ascii_case("Authentication-Results"))
+        .map(|h| String::from_utf8_lossy(h.raw_value()).trim().to_string())
+        .collect();
+    let from_count = m.from().map(|l| l.mailboxes().count()).unwrap_or(0);
+
     ParsedMessage {
+        auth_results,
+        from_count,
         message_id: message_id.filter(|s| !s.is_empty()),
         in_reply_to: in_reply_to.filter(|s| !s.is_empty()),
         references,

@@ -13,6 +13,7 @@ use nm_store::screening::MoveOptions;
 use nm_store::spool::{ActionKind, MAX_ATTEMPTS};
 use nm_store::sync::{Arrival, FlagUpdate, FolderState, ListedFolder, ServerFlags};
 use nm_store::Store;
+use nm_store::reception::Reception;
 
 struct Env {
     s: Store,
@@ -44,7 +45,7 @@ fn env() -> Env {
     let id = |s: &Store, p: &str| -> i64 { s.conn().query_row("SELECT id FROM folder WHERE path = ?1", [p], |r| r.get(0)).unwrap() };
     let (inbox, archive, todo) = (id(&s, "INBOX"), id(&s, "Archive"), id(&s, "Todo"));
     let mut ins = Inserter::new(Source::Imap, None);
-    s.insert_arrivals(&mut ins, acc, inbox, &[arrival(7, "m1@x")], &mut BTreeMap::new(), false, false).unwrap();
+    s.insert_arrivals(&mut ins, acc, inbox, &[arrival(7, "m1@x")], &mut BTreeMap::new(), &Reception::plain(false)).unwrap();
     s.set_server_accounts(BTreeSet::from([acc])).unwrap();
     let (thread, message): (i64, i64) = s.conn().query_row("SELECT thread_id, id FROM message", [], |r| Ok((r.get(0)?, r.get(1)?))).unwrap();
     Env { s, acc, inbox, archive, todo, thread, message }
@@ -152,7 +153,7 @@ fn a_flag_on_a_message_without_uid_waits() {
     assert!(e.s.spool_claim(e.acc, 10).unwrap().is_empty());
     // The pass attaches the UID: now it can.
     let mut ins = Inserter::new(Source::Imap, None);
-    let (got, _) = e.s.insert_arrivals(&mut ins, e.acc, e.archive, &[arrival(5, "m1@x")], &mut BTreeMap::new(), true, false).unwrap();
+    let (got, _) = e.s.insert_arrivals(&mut ins, e.acc, e.archive, &[arrival(5, "m1@x")], &mut BTreeMap::new(), &Reception::plain(true)).unwrap();
     assert_eq!((got.attached, got.inserted), (1, 0));
     assert_eq!(place(&e.s, e.message), (e.archive, Some(5)));
     assert_eq!(e.s.spool_claim(e.acc, 10).unwrap().len(), 1);
@@ -241,7 +242,7 @@ fn the_synchronization_does_not_undo_what_waits_in_the_spool() {
     // The move is done (no COPYUID): the pass attaches the UID in Archive.
     let id = e.s.spool_claim(e.acc, 10).unwrap()[0].id;
     e.s.spool_done(id, None).unwrap();
-    e.s.insert_arrivals(&mut ins, e.acc, e.archive, &[arrival(4, "m1@x")], &mut BTreeMap::new(), true, false).unwrap();
+    e.s.insert_arrivals(&mut ins, e.acc, e.archive, &[arrival(4, "m1@x")], &mut BTreeMap::new(), &Reception::plain(true)).unwrap();
     let unseen = [FlagUpdate { uid: 4, flags: ServerFlags::default(), modseq: None }];
     e.s.finish_folder(e.archive, &unseen, &BTreeSet::new(), FolderState { uidvalidity: 2, uidnext: Some(5), highestmodseq: None }, false).unwrap();
     assert_eq!(count(&e.s, "SELECT is_seen FROM message"), 1, "the local value stays until sent");

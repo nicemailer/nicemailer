@@ -345,6 +345,16 @@ impl AuthResult {
             _ => AuthResult::Unknown,
         }
     }
+
+    /// The value stored in `message.auth_result`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            AuthResult::Pass => "pass",
+            AuthResult::Fail => "fail",
+            AuthResult::None => "none",
+            AuthResult::Unknown => "unknown",
+        }
+    }
 }
 
 /// The user's authentication policy for an address (`address.auth_policy`).

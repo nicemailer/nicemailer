@@ -92,6 +92,7 @@ async fn insert_headers(s: &mut Session, env: &mut Env, ins: &mut Inserter, uid:
         size: f.size.map(u64::from),
         modseq: f.modseq,
         flags: Flags { seen: flags.iter().any(|f| f == "\\Seen"), flagged: flags.iter().any(|f| f == "\\Flagged"), ..Flags::default() },
+        auth: (nm_core::AuthResult::Unknown, None),
         headers: &headers,
     };
     let mut changes = ChangeSet::default();

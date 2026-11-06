@@ -82,6 +82,12 @@ pub async fn status(core: &Arc<Core>, p: SyncAccountParams) -> Result<SyncStatus
             return Err(RpcError::new(error_code::NOT_FOUND, format!("account {key} is not synchronized")));
         }
     }
+    // Read before borrowing a reading connection: no lock of the core is
+    // taken while one is held.
+    let configured: std::collections::BTreeMap<String, String> = {
+        let engine = core.engine.lock().unwrap();
+        engine.config().accounts.iter().filter_map(|(k, c)| c.authserv_id.clone().map(|id| (k.clone(), id))).collect()
+    };
     let core2 = core.clone();
     tokio::task::spawn_blocking(move || {
         core2.readers.read(|s| {
@@ -102,6 +108,10 @@ pub async fn status(core: &Arc<Core>, p: SyncAccountParams) -> Result<SyncStatus
                     .collect();
                 a.bodies_missing = a.folders.iter().map(|f| f.bodies_missing).sum();
                 a.actions_pending = s.spool_pending(a.account_id)?;
+                a.authserv_id = match configured.get(&a.key) {
+                    Some(id) => Some(id.clone()),
+                    None => s.account_authserv_id(a.account_id)?,
+                };
             }
             Ok(SyncStatus { accounts })
         })

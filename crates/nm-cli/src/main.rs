@@ -185,6 +185,10 @@ fn print_sync_status(st: &nm_api::SyncStatus) {
             println!("  error: {e}");
         }
         println!("  changes to send to the server: {}", a.actions_pending);
+        match &a.authserv_id {
+            Some(id) => println!("  trusted Authentication-Results: {id}"),
+            None => println!("  trusted Authentication-Results: none found yet (every verdict is unknown)"),
+        }
         println!("  bodies left to download: {}{}", a.bodies_missing, if a.bodies_refused > 0 {
             format!(", {} refused (size other than announced)", a.bodies_refused)
         } else {

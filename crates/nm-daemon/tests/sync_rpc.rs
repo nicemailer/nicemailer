@@ -544,3 +544,88 @@ fn a_crash_between_the_move_and_done_is_replayed() {
     assert_eq!(state, "done");
     verify_ok(&mut c);
 }
+
+impl Phone {
+    /// Delivers a raw mail (headers and body as given) to `folder`.
+    fn deliver_raw(&mut self, folder: &str, raw: &str) -> u32 {
+        self.rt.block_on(self.s.append(&MailboxName::new(folder), &[], None, raw.as_bytes().to_vec())).unwrap().unwrap().uid
+    }
+}
+
+/// A mail as the receiving server leaves it: its `Authentication-Results`
+/// on top (the test Dovecot adds none, so the test writes the one a
+/// receiving server `mx.test.nicemailer` would have).
+fn received(id: &str, from: &str, auth: &str, extra: &str) -> String {
+    format!(
+        "Authentication-Results: mx.test.nicemailer; {auth}\r\nFrom: {from}\r\nTo: me@example.com\r\nSubject: Mail {id}\r\n\
+         Message-ID: <{id}@test.nicemailer>\r\nDate: Thu, 05 Nov 2026 10:00:00 +0000\r\n{extra}\r\nBody of {id}.\r\n"
+    )
+}
+
+#[test]
+#[ignore = "needs the test servers: make imap-up, then make imap-test"]
+fn new_mail_is_screened_on_arrival() {
+    let dir = tempfile::tempdir().unwrap();
+    let user = new_user();
+    let mut phone = Phone::open(FULL, &user);
+    for f in ["Archive", "Quarantine", "Newsletter", "Todo", "Sent"] {
+        phone.create(f);
+    }
+    // Mails there before NiceMailer: never screened. They also teach the
+    // core the id of the receiving server.
+    for i in 0..5 {
+        phone.deliver_raw("INBOX", &received(&format!("old{i}"), "stranger@far.example", "dmarc=pass", ""));
+    }
+    let (_core, mut c) = core(dir.path(), FULL, &user, "");
+    let mut passes = settled(&mut c, 0);
+    assert_eq!(account(&mut c)["authserv_id"], "mx.test.nicemailer", "detected on the Inbox");
+    assert_eq!(phone.uids("INBOX").len(), 5, "the mails already there stay");
+
+    // An unknown sender: Quarantine, on the server too.
+    phone.deliver_raw("INBOX", &received("new1", "stranger@far.example", "dmarc=pass", ""));
+    passes = settled(&mut c, passes);
+    assert!(phone.has("Quarantine", "new1") && !phone.has("INBOX", "new1"));
+    assert_eq!(message_id_of(dir.path(), "new1").1, "Quarantine");
+
+    // An accepted sender, then a forgery of them with a fake `dmarc=pass`
+    // written under the server's `fail`.
+    c.call("set_address_screening", json!({"addr": "alice@a.example", "target": "inbox"})).unwrap();
+    phone.deliver_raw("INBOX", &received("real", "alice@a.example", "dmarc=pass", ""));
+    let forged = format!(
+        "Authentication-Results: mx.test.nicemailer; dmarc=fail header.from=a.example\r\n{}",
+        received("forged", "alice@a.example", "dmarc=pass", "")
+    );
+    phone.deliver_raw("INBOX", &forged);
+    passes = settled(&mut c, passes);
+    assert!(phone.has("INBOX", "real"));
+    assert!(phone.has("Quarantine", "forged"), "the server's verdict wins");
+    let suspect: i64 = db(dir.path())
+        .query_row("SELECT auth_suspect FROM message WHERE message_id_hdr = 'forged@test.nicemailer'", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(suspect, 1);
+
+    // Alice's conversation waits in Todo; her answer brings it back,
+    // marked on the server.
+    let thread: i64 = db(dir.path()).query_row("SELECT thread_id FROM message WHERE message_id_hdr = 'real@test.nicemailer'", [], |r| r.get(0)).unwrap();
+    c.call("move_thread", json!({"thread_id": thread, "target": "todo"})).unwrap();
+    passes = settled(&mut c, passes);
+    assert!(phone.has("Todo", "real"));
+    phone.deliver_raw("INBOX", &received("answer", "alice@a.example", "dmarc=pass", "In-Reply-To: <real@test.nicemailer>\r\n"));
+    passes = settled(&mut c, passes);
+    let (_, path, uid) = message_id_of(dir.path(), "real");
+    assert_eq!(path, "INBOX");
+    let flags = phone.flags("INBOX", uid);
+    assert!(flags.iter().any(|f| f.eq_ignore_ascii_case("$NmWasTodo")), "{flags:?}");
+
+    // Sent from the phone to the stranger: accepted, out of Quarantine.
+    phone.deliver_raw(
+        "Sent",
+        "From: me@example.com\r\nTo: stranger@far.example\r\nSubject: hello\r\nMessage-ID: <sent1@test.nicemailer>\r\n\r\nHi.\r\n",
+    );
+    c.call("sync_now", json!({"account": "dovecot"})).unwrap();
+    settled(&mut c, passes);
+    // Its filing went through the spool: one more round to be sure.
+    sync(&mut c);
+    assert!(phone.has("INBOX", "new1"), "the stranger's mail left the Quarantine");
+    verify_ok(&mut c);
+}

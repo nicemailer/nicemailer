@@ -1,6 +1,6 @@
 # NiceMailer : plan de travail du back-end IMAP
 
-Statut : en cours. Phases 0 à 5 terminées (novembre 2026).
+Statut : en cours. Phases 0 à 6 terminées (novembre 2026).
 
 Ce document n'est pas une spécification : c'est le plan de réalisation du back-end qui communique avec les serveurs IMAP, récupère les mails, synchronise les dossiers, trie les mails entrants et importe un compte. Les règles restent dans les spécifications citées ; quand ce plan tranche une question qu'elles laissaient ouverte, la décision est reportée dans la spécification concernée au moment où la phase qui l'implémente est livrée.
 
@@ -200,7 +200,7 @@ Réalisé (novembre 2026), détail dans `docs/spool.md` :
 - Limite : un serveur sans `MOVE` ni `UIDPLUS` ne peut effacer que les messages déplacés ; ils restent marqués `\Deleted` dans le dossier source jusqu'à ce qu'un autre client les efface.
 - Tests : `nm-store/tests/spool.rs` (12, sans serveur) ; dans `nm-daemon/tests/sync_rpc.rs` (9 en tout, `make imap-test`), lu, tag et déplacement arrivant sur les deux serveurs, déplacement vers un dossier disparu annulé et annoncé, deux noyaux sur le même mail, plantage juste après le `MOVE` rejoué au redémarrage.
 
-### Phase 6 : screening à la réception
+### Phase 6 : screening à la réception — terminée
 
 - Lecture d'`Authentication-Results` (RFC 8601), choix de l'en-tête de confiance, traduction en verdict, alignement par domaine organisationnel (Public Suffix List embarquée, crate `psl` ou liste versionnée comme `public-domains.txt`) ; détection d'`authserv_id` sur les 50 derniers mails de l'Inbox (`authentification-expediteur.md`).
 - Algorithme de routage (section 4 du même document), conversation connue, `auth_seen`, `auth_suspect`, ligne `screen` dans `audit_log`, déplacement par le spool, `uid_screening_start`.
@@ -209,6 +209,20 @@ Réalisé (novembre 2026), détail dans `docs/spool.md` :
 - Correction de `modele de donnees.md` sur les sous-domaines.
 
 Tests : `authentification-expediteur.md`, section 8 ; `dossiers.md` (retour de Todo/Waiting, mail placé ailleurs, mail de l'utilisateur) ; mail arrivé pendant la synchronisation initiale.
+
+Réalisé (novembre 2026), détail dans `docs/screening.md` :
+
+- `nm-store/src/auth.rs` (pur) : lecture des en-têtes `Authentication-Results` (commentaires imbriqués, repliement, guillemets), choix de l'en-tête de confiance, traduction en verdict, alignement par domaine organisationnel. Public Suffix List officielle embarquée telle quelle (`data/public-suffix/`, MPL 2.0, version du 4 novembre 2026, sections ICANN et privée), lue par 40 lignes de code : pas de nouvelle dépendance.
+- `nm-store/src/reception.rs`, dans la transaction d'insertion des arrivées : verdict de tout mail reçu, `auth_seen` ; screening des arrivées de l'Inbox à partir de `uid_screening_start` (algorithme de la section 4, `auth_suspect`, ligne `screen`, déplacement par le spool de source `core`) ; retour d'une conversation de Todo ou Waiting avec `$NmWasTodo` / `$NmWasWaiting` ; mails découverts dans Sent (décision `inbox` des destinataires sans décision, raison `sent_to`, rangement de leurs mails de Quarantine ; rangement de la conversation d'une réponse selon la présélection, marques retirées).
+- Retrait des marques : par `move_thread` (déjà local, désormais envoyé au serveur par le spool) et quand la synchronisation voit un mail marqué quitter l'Inbox ailleurs.
+- Provisoire jusqu'à la phase 7 : `uid_screening_start` prend le `UIDNEXT` de l'Inbox à sa première synchronisation (et après un changement d'`UIDVALIDITY`) : les mails déjà là ne sont pas triés, les suivants le sont. Un compte déjà synchronisé en phase 4 reçoit sa frontière à la passe suivante.
+- Détection d'`authserv_id` : sur les 50 UID les plus hauts de l'Inbox, quand l'Inbox a de nouveaux mails, au plus une fois par heure tant qu'aucun n'est trouvé ; la valeur détectée (ou celle du fichier) est montrée par `nicemailer sync status`.
+- Un mail de l'utilisateur lui-même (son adresse ou une identité) reste dans l'Inbox (règle `self`) et ne fait revenir aucune conversation.
+- Un dossier cible absent du compte (Quarantine, Newsletter… que la phase 7 créera) : le mail reste dans l'Inbox, la ligne `screen` le dit (`folder_missing`).
+- Correction de la phase 5 : une passe qui crée des actions (screening, retour) les envoie aussitôt, sans attendre la passe suivante ; constaté par le test contre Dovecot.
+- Correction de `modele de donnees.md` sur les sous-domaines.
+- Tests : `auth.rs` (6 : table de traduction, faux en-tête, autre `authserv-id`, `From` absent ou multiple, suffixes publics et exceptions, seuil de 90 %) ; `nm-store/tests/reception.rs` (10 : exemples de la section 4, règles d'adresse et de domaine, conversation connue, frontière d'UID, retour de Todo/Waiting et ses exclusions, Sent, marque retirée ailleurs) ; contre Dovecot, un scénario complet (détection, Quarantine, faux en-tête, retour de Todo marqué sur le serveur, envoi depuis le téléphone qui sort un expéditeur de Quarantine).
+- Limites : les domaines internationalisés sont comparés tels qu'écrits (pas de conversion punycode) ; question ouverte 1 de `authentification-expediteur.md` (Microsoft sans `authserv-id`) inchangée.
 
 ### Phase 7 : création d'un compte et import initial
 

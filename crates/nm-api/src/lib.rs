@@ -1333,6 +1333,10 @@ pub struct AccountSync {
     pub bodies_missing: u64,
     /// Changes made in NiceMailer not sent to the server yet (spool).
     pub actions_pending: u64,
+    /// The `authserv-id` whose `Authentication-Results` are trusted: the
+    /// file's, else the one detected; `None`: every verdict is `unknown`
+    /// (`authentification-expediteur.md`).
+    pub authserv_id: Option<String>,
     /// Bodies refused this run: their size differs from what the server
     /// announced (`stockage-brut.md`, section 5, step 2). Tried again at
     /// the next start of the core.

@@ -61,7 +61,7 @@ La frontière est un UID, pas une date : `folder.uid_screening_start` de l'Inbox
 - UID supérieur ou égal : nouveau mail, trié normalement. Un mail arrivé pendant que l'utilisateur remplit l'écran d'import est donc trié.
 - Si l'`UIDVALIDITY` de l'Inbox change avant la fin de la synchronisation initiale (cas rare), tout le contenu présent est considéré comme importé : `uid_screening_start` reprend le nouveau `UIDNEXT`.
 
-Tant que `uid_screening_start` est NULL (compte en cours de création), le screening de ce compte est suspendu.
+Tant que `uid_screening_start` est NULL (compte en cours de création), le screening de ce compte est suspendu. Provisoirement, jusqu'à l'écran d'import de la phase 7 (`plan-imap.md`), la synchronisation le fixe elle-même au `UIDNEXT` de l'Inbox lu à sa première synchronisation.
 
 ## 6. Archivage côté serveur
 
