@@ -831,7 +831,7 @@ private struct GeekReaderColumn: View {
                 summary += " &nbsp;<img src=\"\(Self.symbolDataURI("paperclip"))\">\(m.attachments.count)"
             }
             // A single mail: its line does not fold it (`single`).
-            html += "<details\(unfolded ? " open" : "")\(conversation ? "" : " class=\"single\"")><summary>\(summary)</summary>"
+            html += "<details id=\"nm-message-\(m.id)\"\(unfolded ? " open" : "")\(conversation ? "" : " class=\"single\"")><summary>\(summary)</summary>"
             if let body = m.bodyHtml {
                 let loading = RemoteImages.loads(m, mode: mode, unfolded: unfolded, once: once)
                 if loading { images.formUnion(RemoteImages.sources(in: body)) }
@@ -1142,6 +1142,21 @@ private struct TextReader: NSViewRepresentable {
             }
         }
         controller.readerSkip = (quotes, texts)
+        // The top of each message's header (its first fold link), for
+        // ctrl-k / ctrl-j, which scroll there once the reader is laid out.
+        var headers: [Int: Double] = [:]
+        if let storage = text.textStorage {
+            storage.enumerateAttribute(.link, in: NSRange(location: 0, length: storage.length)) { value, range, _ in
+                guard let url = value as? URL, url.scheme == "nm", url.host == "fold",
+                      let id = Int(url.lastPathComponent), headers[id] == nil else { return }
+                headers[id] = Double(rect(range).minY)
+            }
+        }
+        controller.readerHeaders = headers
+        if let message = controller.pendingMessageScroll, headers[message] != nil {
+            controller.pendingMessageScroll = nil
+            controller.scrollToMessage(message)
+        }
         guard UIScript.isActive, let storage = text.textStorage else { return }
         UIScript.readerText = storage.string
         var n = 0, files = 0, senders = 0
@@ -1250,6 +1265,13 @@ private struct HTMLReader: NSViewRepresentable {
         /// of the first `<font face>`, the width of the first table with a
         /// width, and whether the Content Security Policy is in the page.
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            // ctrl-k / ctrl-j: the message to show, once the page is there.
+            MainActor.assumeIsolated {
+                if let message = controller?.pendingMessageScroll {
+                    controller?.pendingMessageScroll = nil
+                    controller?.scrollToMessage(message)
+                }
+            }
             guard UIScript.isActive else { return }
             // The messages are in shadow roots (`MailFrame`): each query
             // looks in the page and in every frame.

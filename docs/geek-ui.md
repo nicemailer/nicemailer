@@ -164,6 +164,7 @@ Actions apply to the **marked** mails if any (`J` / `K`), otherwise to the mail 
 | `g` | group picker: adds the sender to a group (new name: the group is created) |
 | `T` | show everything in the thread (folded mails, quotes, signatures) or go back to the simplified view |
 | `S` | skip to the text after the next quoted block |
+| `ctrl-k` / `ctrl-j` | previous / next message of the conversation: the current one folds, the other unfolds and is scrolled to (`thread-display.md`) |
 | `u` | read / unread |
 | `z` | undo the last move or decision, then the one before (see "Moves and decisions") |
 | ⌘U | unsubscribe from the list of the mail (see "Unsubscribing") |

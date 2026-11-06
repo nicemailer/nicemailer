@@ -22,6 +22,31 @@ enum ThreadDisplay {
         var folding: [Int: Bool] = [:]
         /// Hidden segments shown anyway, as "messageId:segmentIndex".
         var revealed: Set<String> = []
+        /// The message `ctrl-k` / `ctrl-j` start from (`step`); nil: the
+        /// last unfolded one.
+        var current: Int? = nil
+    }
+
+    /// `ctrl-k` (`delta` -1) / `ctrl-j` (+1): the message before or after
+    /// the current one in a conversation (`ui.md`). The current one is
+    /// folded and the other unfolded, unless `T` shows everything. Returns
+    /// the new state and the message to scroll to; nil at either end (or
+    /// for a single mail).
+    static func step(_ thread: ThreadView, _ state: State, by delta: Int) -> (state: State, message: Int)? {
+        let ids = thread.messages.map(\.id)
+        guard ids.count > 1 else { return nil }
+        let unfolded = { (m: MessageView) in state.showAll || (state.folding[m.id] ?? m.expanded) }
+        let current = state.current.flatMap { ids.firstIndex(of: $0) }
+            ?? thread.messages.lastIndex(where: unfolded) ?? ids.count - 1
+        let target = current + delta
+        guard ids.indices.contains(target) else { return nil }
+        var s = state
+        if !s.showAll {
+            s.folding[ids[current]] = false
+            s.folding[ids[target]] = true
+        }
+        s.current = ids[target]
+        return (s, ids[target])
     }
 
     enum Block: Hashable {

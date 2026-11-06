@@ -56,3 +56,17 @@ expect filters ~ bob@example.org
 expect flash ~ Mails from bob@example.org
 key esc
 expect filters = 
+# ctrl-k / ctrl-j: up and down the conversation, one message open at a
+# time. The last header clicked was the first message's: nothing above it.
+key ctrl-k
+expect flash ~ First message of the conversation
+key ctrl-j
+expect reader_text ~ ▾ me@example.com
+expect reader_text ~ ▸ Alice · 30 oct. 11:00
+key ctrl-j
+expect reader_text ~ ▾ Alice · 30 oct. 13:00
+expect reader_text ~ ▸ me@example.com
+key ctrl-j
+key ctrl-j
+expect flash ~ Last message of the conversation
+expect reader_text ~ ▾ Bob

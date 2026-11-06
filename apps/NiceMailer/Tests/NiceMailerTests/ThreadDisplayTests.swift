@@ -77,6 +77,32 @@ struct ThreadDisplayTests {
         #expect(address == nil && !foldable)
     }
 
+    @Test func ctrlKAndCtrlJGoUpAndDownTheConversation() throws {
+        // Messages 1 (folded), 2 (unfolded, the last unfolded), 3 (folded).
+        let t = thread
+        // Up from the last unfolded: 2 folds, 1 unfolds.
+        let up = try #require(ThreadDisplay.step(t, .init(), by: -1))
+        #expect(up.message == 1 && up.state.current == 1)
+        #expect(up.state.folding == [2: false, 1: true])
+        // No further up.
+        #expect(ThreadDisplay.step(t, up.state, by: -1) == nil)
+        // Down twice: 2, then 3; then the end.
+        let down = try #require(ThreadDisplay.step(t, up.state, by: 1))
+        #expect(down.message == 2 && down.state.folding == [1: false, 2: true])
+        let last = try #require(ThreadDisplay.step(t, down.state, by: 1))
+        #expect(last.message == 3 && last.state.folding[3] == true && last.state.folding[2] == false)
+        #expect(ThreadDisplay.step(t, last.state, by: 1) == nil)
+        // With T, nothing folds: only the current message moves.
+        let all = try #require(ThreadDisplay.step(t, .init(showAll: true), by: -1))
+        #expect(all.message == 2 && all.state.folding.isEmpty)
+    }
+
+    @Test func aSingleMailHasNowhereToGo() {
+        let one = ThreadView(id: 1, subject: "S", messages: [thread.messages[0]], asOf: Position(epoch: "e", seq: 0))
+        #expect(ThreadDisplay.step(one, .init(), by: -1) == nil)
+        #expect(ThreadDisplay.step(one, .init(), by: 1) == nil)
+    }
+
     @Test func theDomainsASendersNameShows() {
         #expect(ThreadDisplay.domain("Alice@Atelier.FR") == "atelier.fr")
         #expect(ThreadDisplay.domain("nobody") == nil)

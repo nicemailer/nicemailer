@@ -41,6 +41,7 @@ Headers are light: sender and date ("14:05", "yesterday 14:05", "3 Nov 14:05", "
 | --- | --- |
 | `T` | Shows everything in this thread (all messages open, every hidden segment shown), or goes back to the simplified view. Per thread, for the session. |
 | `S` | Scrolls to the text after the next quoted block. |
+| `ctrl-k` / `ctrl-j` | Up to the previous message of the conversation / down to the next, one open at a time: the current message folds, the other unfolds and the reader scrolls to its header. It starts from the last unfolded message, or from the last header clicked; it stops at either end, and the status bar says so. With `T`, nothing folds: it only goes from header to header. A single mail has nowhere to go. |
 | Click on a header | Folds or unfolds that message. |
 | Click on a "···" line | Shows that part only. |
 

@@ -263,6 +263,46 @@ final class GeekController {
         model.flash = s.showAll ? L("Whole conversation shown (T)") : L("Simplified conversation (T)")
     }
 
+    /// The message the reader scrolls to once laid out (`stepMessage`);
+    /// the reader clears it.
+    @ObservationIgnored var pendingMessageScroll: Int?
+    /// Top of each message's header in the text reader, by message id, set
+    /// after layout.
+    @ObservationIgnored var readerHeaders: [Int: Double] = [:]
+
+    /// `ctrl-k` / `ctrl-j`: up to the previous message of the conversation,
+    /// or down to the next (`ThreadDisplay.step`); the reader scrolls to
+    /// its header. Stops at either end, and says so.
+    func stepMessage(_ delta: Int) {
+        guard let thread = model.openThread else { return }
+        guard thread.messages.count > 1 else {
+            model.flash = L("A single mail: no other message")
+            return
+        }
+        guard let (state, message) = ThreadDisplay.step(thread, readerState, by: delta) else {
+            model.flash = delta < 0 ? L("First message of the conversation") : L("Last message of the conversation")
+            return
+        }
+        readerState = state
+        // Scrolled now if the reader is laid out already (`T`: nothing
+        // folds), and again once laid out anew.
+        pendingMessageScroll = message
+        scrollToMessage(message)
+    }
+
+    /// Scrolls the reader to the header of `message`.
+    func scrollToMessage(_ message: Int) {
+        if model.bodyFormat != "text", let web = readerWeb {
+            web.evaluateJavaScript("document.getElementById('nm-message-\(message)')?.scrollIntoView()")
+            return
+        }
+        guard let y = readerHeaders[message], let scroll = readerScroll, let doc = scroll.documentView else { return }
+        let clip = scroll.contentView
+        let maxY = max(0, doc.frame.height - clip.bounds.height)
+        clip.scroll(to: NSPoint(x: 0, y: min(maxY, max(0, CGFloat(y) - 8))))
+        scroll.reflectScrolledClipView(clip)
+    }
+
     /// `S` (like mutt's skip-quoted): scrolls to the text after the next
     /// quoted block.
     func skipQuoted() {
@@ -294,6 +334,8 @@ final class GeekController {
                let m = model.openThread?.messages.first(where: { $0.id == id }) {
                 let unfolded = s.folding[id] ?? m.expanded
                 s.folding[id] = !unfolded
+                // The message clicked is where ctrl-k / ctrl-j go on from.
+                s.current = id
             }
         case "reveal":
             if parts.count == 2 { s.revealed.insert("\(parts[0]):\(parts[1])") }
@@ -510,6 +552,10 @@ final class GeekController {
             case "u" where screen == .mail: moveCursor(-halfPage)
             // Other screens: used, but nothing to do (no beep).
             case "d", "u": break
+            // ctrl-k / ctrl-j: the previous / next message of the
+            // conversation, as k / j move in the list.
+            case "k" where screen == .mail: stepMessage(-1)
+            case "j" where screen == .mail: stepMessage(1)
             case "f": scrollReader(pages: 1)
             case "b": scrollReader(pages: -1)
             default: return false
@@ -921,6 +967,7 @@ final class GeekController {
             ("⌘U", L("unsubscribe from the list")),
             ("T", L("show / hide quotes, signatures, folded mails")),
             ("S", L("skip to the text after the next quote")),
+            ("^k ^j", L("previous / next message of the conversation")),
             ("/", L("search everywhere: words anywhere, addresses included, in Everything")),
             (";…", L("go to a folder or a screen")),
             ("s…", L("save")),

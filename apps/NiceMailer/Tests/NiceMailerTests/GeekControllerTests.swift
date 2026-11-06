@@ -528,9 +528,10 @@ struct GeekControllerTests {
         press("l"); type("devis"); press("ret")
         #expect(await eventually { FileManager.default.fileExists(atPath: dir.appendingPathComponent("devis.pdf").path) })
         #expect(core.calls("get_attachment").first?["attachment_id"] as? Int == 41)
-        // The user's copy is writable, unlike the core's.
-        let mode = try FileManager.default.attributesOfItem(atPath: dir.appendingPathComponent("devis.pdf").path)[.posixPermissions] as? Int
-        #expect(mode == 0o644)
+        // The user's copy is writable, unlike the core's: its permissions
+        // are set a moment after the copy appears.
+        let mode = { (try? FileManager.default.attributesOfItem(atPath: dir.appendingPathComponent("devis.pdf").path))?[.posixPermissions] as? Int }
+        #expect(await eventually { mode() == 0o644 })
         // Said once the copy is done, a moment after the file appears.
         #expect(await eventually { model.flash?.contains("devis.pdf") == true })
         // A second save: "devis (2).pdf".
@@ -1014,6 +1015,35 @@ struct GeekControllerTests {
         #expect(ids == [10, 20, 30])
         #expect(core.calls("export_message").allSatisfy { $0["format"] as? String == "txt" })
         #expect(await eventually { model.flash?.contains("3") == true })
+    }
+
+    @Test func ctrlKAndCtrlJStepThroughTheConversation() async {
+        // A single mail: nowhere to go.
+        press("ctrl-k")
+        #expect(model.flash == L("A single mail: no other message"))
+        // Thread 2: two messages, the second unfolded.
+        core.handler = { method, params in
+            guard method == "get_thread", params["thread_id"] as? Int == 2 else { return Fixture.answer(method, params) }
+            var thread = Fixture.threadView(2)
+            var first = (thread["messages"] as! [[String: Any]])[0]
+            var second = first
+            first["id"] = 21
+            first["expanded"] = false
+            second["id"] = 22
+            thread["messages"] = [first, second]
+            return thread
+        }
+        model.selectedThreadId = 2
+        _ = await eventually { model.openThread?.messages.count == 2 }
+        press("ctrl-k")
+        #expect(controller.readerState.folding == [22: false, 21: true])
+        #expect(controller.readerState.current == 21)
+        press("ctrl-k")
+        #expect(model.flash == L("First message of the conversation"))
+        press("ctrl-j")
+        #expect(controller.readerState.folding == [21: false, 22: true])
+        press("ctrl-j")
+        #expect(model.flash == L("Last message of the conversation"))
     }
 
     @Test func aClickOnTheSendersAddressCopiesItAndCommandFiltersOnIt() {

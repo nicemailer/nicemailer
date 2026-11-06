@@ -299,6 +299,16 @@
         }
       }
     },
+    "A single mail: no other message": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un mail seul : pas d'autre message"
+          }
+        }
+      }
+    },
     "Account": {
       "localizations": {
         "fr": {
@@ -489,6 +499,16 @@
         }
       }
     },
+    "First message of the conversation": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Premier message de la conversation"
+          }
+        }
+      }
+    },
     "Folder": {
       "localizations": {
         "fr": {
@@ -595,6 +615,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Touches"
+          }
+        }
+      }
+    },
+    "Last message of the conversation": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dernier message de la conversation"
           }
         }
       }
@@ -1812,6 +1842,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "pixels bloqués : %lld"
+          }
+        }
+      }
+    },
+    "previous / next message of the conversation": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "message précédent / suivant de la conversation"
           }
         }
       }
