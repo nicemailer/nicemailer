@@ -781,6 +781,18 @@ struct GeekControllerTests {
         #expect(!controller.reading && selectedIndex == 1)
     }
 
+    @Test func theStatusBarShowsTheAppIconInTheNormalModeOnly() {
+        #expect(controller.modeLabel == "NOR" && controller.showsAppIcon)
+        // The image is in the app's resources.
+        #expect(AppIcon.statusImage != nil)
+        press("v")
+        #expect(controller.modeLabel == "v" && !controller.showsAppIcon)
+        press("esc")
+        #expect(controller.showsAppIcon)
+        press("@")
+        #expect(controller.modeLabel == "PCK" && !controller.showsAppIcon)
+    }
+
     @Test func controlCommandFTogglesFullScreenEverywhere() {
         var toggles = 0
         controller.toggleFullScreen = { toggles += 1 }

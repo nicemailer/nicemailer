@@ -436,6 +436,12 @@ final class GeekController {
         }
     }
 
+    /// Whether the status bar shows the app's icon in place of the mode:
+    /// in the normal mode (NOR), which needs no reminder. The other modes
+    /// (EDT, a prefix waiting for its key, PCK, ASK) stay written: they say
+    /// what the next key will do.
+    var showsAppIcon: Bool { modeLabel == "NOR" }
+
     /// "account · folder", or the tag, group or contact listed.
     var locationLabel: String {
         switch screen {

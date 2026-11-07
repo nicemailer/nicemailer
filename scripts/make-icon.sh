@@ -35,3 +35,12 @@ for size in 16 32 128 256 512; do
 done
 iconutil -c icns "$SET" -o "$SRC/AppIcon.icns"
 echo "Built $SRC/AppIcon.icns"
+
+# The icon of the status bar, in place of the mode NOR (docs/geek-ui.md):
+# the small-size drawing, cropped to its rounded square (the .icns keeps
+# Apple's margin around it), at 64 px for a 16 pt image on Retina screens.
+STATUS="$ROOT/apps/NiceMailer/Sources/NiceMailer/Resources/Icon"
+mkdir -p "$STATUS"
+sed 's/viewBox="0 0 1024 1024"/viewBox="100 100 824 824"/' "$SRC/AppIcon-32.svg" > "$(dirname "$SET")/status.svg"
+rsvg-convert -w 64 -h 64 "$(dirname "$SET")/status.svg" -o "$STATUS/StatusIcon.png"
+echo "Built $STATUS/StatusIcon.png"

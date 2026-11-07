@@ -461,6 +461,7 @@ private final class Runner {
             "screen": "\(c.screen)",
             "overlay": "\(c.overlay)",
             "mode": c.modeLabel,
+            "mode_icon": "\(c.showsAppIcon && AppIcon.statusImage != nil)",
             "location": c.locationLabel,
             "flash": m.flash ?? "",
             "error": m.lastError ?? "",

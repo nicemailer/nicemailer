@@ -24,6 +24,8 @@ let package = Package(
                 .copy("Resources/Fonts"),
                 // Dark Reader, run in the HTML reader (`DarkMode.swift`).
                 .copy("Resources/DarkReader"),
+                // The app's icon for the status bar (`scripts/make-icon.sh`).
+                .copy("Resources/Icon"),
                 .process("Resources/Localizable.xcstrings"),
             ],
             // Swift 5 language mode: Swift 6's strict concurrency checking

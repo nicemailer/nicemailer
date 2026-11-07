@@ -819,6 +819,16 @@
         }
       }
     },
+    "NiceMailer, normal mode": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "NiceMailer, mode normal"
+          }
+        }
+      }
+    },
     "No account": {
       "localizations": {
         "fr": {

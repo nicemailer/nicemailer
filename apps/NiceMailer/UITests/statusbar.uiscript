@@ -2,6 +2,16 @@
 # key and by click, and the unified account "all".
 expect account = all
 expect folder = Inbox
+# The normal mode shows the app's icon at the left; the other modes are
+# written (a prefix waiting for its key: its letter).
+expect mode = NOR
+expect mode_icon = true
+snap mode-icon
+key v
+expect mode = v
+expect mode_icon = false
+key esc
+expect mode_icon = true
 # The account picker: @, or a click on the account. "all" comes first.
 key @
 expect overlay = picker(NiceMailer.GeekController.PickerKind.accounts)

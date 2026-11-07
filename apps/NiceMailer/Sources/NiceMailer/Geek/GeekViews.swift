@@ -216,10 +216,19 @@ struct GeekStatusBar: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Text(" \(controller.modeLabel) ")
-                .font(.geek(11, weight: .bold))
-                .foregroundStyle(Palette.background)
-                .background(Palette.accentText)
+            if controller.showsAppIcon, let icon = AppIcon.statusImage {
+                // The normal mode: the app's icon, as tall as the text.
+                Image(nsImage: icon)
+                    .resizable()
+                    .interpolation(.high)
+                    .frame(width: scaled(15), height: scaled(15))
+                    .accessibilityLabel(L("NiceMailer, normal mode"))
+            } else {
+                Text(" \(controller.modeLabel) ")
+                    .font(.geek(11, weight: .bold))
+                    .foregroundStyle(Palette.background)
+                    .background(Palette.accentText)
+            }
             let listsMail = controller.screen == .mail && (model.listFilter != nil || !model.listedFolderIds.isEmpty)
             if listsMail, model.listFilter == nil {
                 // Account ("all" for the unified view) and folder, each with
