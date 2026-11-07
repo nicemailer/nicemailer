@@ -954,6 +954,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "libc",
  "nm-api",
  "nm-core",
  "nm-engine",

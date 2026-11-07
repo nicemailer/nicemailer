@@ -52,8 +52,8 @@ use std::sync::{Arc, Mutex};
 
 // `anyhow` provides a catch-all error type for applications: any error can
 // be converted into `anyhow::Error` with `?`, and `.context(...)` adds an
-// explanation. `bail!(...)` returns early with an error message.
-use anyhow::{Context, bail};
+// explanation.
+use anyhow::Context;
 use clap::Parser;
 use nm_api::{
     AttachmentFileView, CommandResult, DEFAULT_LIMIT, Event, ExportMessageParams, ExportResult, FolderList,
@@ -82,6 +82,28 @@ use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::{broadcast, mpsc};
 
 use events::{EventLog, Replay};
+
+/// Sends the standard error of the core (every message it prints) to
+/// `path`, appended; a log larger than 10 MB is renamed `core.log.1` first,
+/// so that it never grows without bound.
+fn log_to_file(path: &Path) {
+    if fs::metadata(path).is_ok_and(|m| m.len() > 10 << 20) {
+        let _ = fs::rename(path, path.with_extension("log.1"));
+    }
+    let Ok(file) = fs::OpenOptions::new().create(true).append(true).open(path) else { return };
+    // Rust note: `dup2` is a C function of the system: it makes file
+    // descriptor 2 (standard error) point to the log file. `unsafe`
+    // because the compiler cannot check C code; both descriptors are valid.
+    use std::os::fd::AsRawFd;
+    unsafe {
+        libc::dup2(file.as_raw_fd(), 2);
+    }
+    eprintln!(
+        "--- nicemailer-core {} started at {} ---",
+        env!("CARGO_PKG_VERSION"),
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+    );
+}
 
 /// Command-line arguments. `clap` generates the parser (and `--help`) from
 /// this struct: each field becomes an option, and the `///` comment
@@ -161,7 +183,17 @@ async fn main() -> anyhow::Result<()> {
     // never block a restart. `lock` is kept alive until the end of `main`.
     let lock = File::create(data_dir.join("lock"))?;
     if lock.try_lock().is_err() {
-        bail!("un autre noyau utilise déjà {}", data_dir.display());
+        // Another core serves this directory: nothing to do, and not a
+        // failure. Code 0, so that launchd does not start this one again
+        // and again (`KeepAlive` restarts only a failed exit,
+        // `docs/app-bundle.md`).
+        eprintln!("un autre noyau utilise déjà {} : rien à faire", data_dir.display());
+        return Ok(());
+    }
+    // Started by the agent of NiceMailer.app, the core has no terminal:
+    // its messages go to `core.log` in its data directory.
+    if std::env::var_os("NICEMAILER_LOG_IN_DATA_DIR").is_some() {
+        log_to_file(&data_dir.join("core.log"));
     }
 
     let db_path = data_dir.join(nm_api::paths::DATABASE);

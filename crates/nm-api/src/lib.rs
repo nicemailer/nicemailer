@@ -1427,20 +1427,64 @@ pub mod paths {
     // `PathBuf` is an owned file system path (like `String` for text).
     use std::path::PathBuf;
 
-    /// Data directory: `~/Library/Application Support/NiceMailer`, or the
-    /// value of `NICEMAILER_DATA_DIR` when set (useful in development to
-    /// keep a separate test database).
-    pub fn data_dir() -> PathBuf {
-        // `if let Some(x) = ...` runs the block only when the Option holds
-        // a value, and binds it to `x`. `var_os` returns `None` when the
-        // variable is not set.
-        if let Some(dir) = std::env::var_os("NICEMAILER_DATA_DIR") {
-            return PathBuf::from(dir);
-        }
+    /// The default data directory: `~/Library/Application Support/NiceMailer`.
+    pub fn default_data_dir() -> PathBuf {
         // `map` transforms the value inside the Option if there is one;
         // `unwrap_or_else` provides a fallback when there is none.
         let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
         home.join("Library/Application Support/NiceMailer")
+    }
+
+    /// File of the default data directory naming the data directory chosen
+    /// in the app ("Change Mailbox…", like Photos' libraries,
+    /// `docs/app-bundle.md`): one line, an absolute path. Absent: the
+    /// default directory itself.
+    pub const CHOICE_FILE: &str = "data-dir";
+
+    /// Data directory of the core and its clients, in this order:
+    /// 1. `NICEMAILER_DATA_DIR`, when set (development, tests): it always
+    ///    wins, so that a test never uses the mailbox chosen in the app;
+    /// 2. the directory chosen in the app, named by [`CHOICE_FILE`] in the
+    ///    default directory: the core started by launchd has no variable,
+    ///    and the CLI follows the same choice;
+    /// 3. the default directory.
+    pub fn data_dir() -> PathBuf {
+        let default = default_data_dir();
+        let chosen = std::fs::read_to_string(default.join(CHOICE_FILE)).ok();
+        resolve(std::env::var_os("NICEMAILER_DATA_DIR").map(PathBuf::from), chosen.as_deref(), default)
+    }
+
+    /// The rule of [`data_dir`], as a pure function: the variable, else the
+    /// choice (an absolute path, spaces around it ignored), else the
+    /// default. A choice that is empty or relative is ignored.
+    pub fn resolve(env: Option<PathBuf>, choice: Option<&str>, default: PathBuf) -> PathBuf {
+        // `if let Some(x) = ...` runs the block only when the Option holds
+        // a value, and binds it to `x`.
+        if let Some(dir) = env.filter(|d| !d.as_os_str().is_empty()) {
+            return dir;
+        }
+        match choice.map(str::trim) {
+            Some(c) if c.starts_with('/') => PathBuf::from(c),
+            _ => default,
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn the_variable_then_the_choice_then_the_default() {
+            let d = PathBuf::from("/home/Library/Application Support/NiceMailer");
+            let env = Some(PathBuf::from("/tmp/test"));
+            assert_eq!(resolve(env.clone(), Some("/Users/me/Archive"), d.clone()), PathBuf::from("/tmp/test"));
+            assert_eq!(resolve(None, Some("  /Users/me/Archive\n"), d.clone()), PathBuf::from("/Users/me/Archive"));
+            assert_eq!(resolve(None, None, d.clone()), d);
+            // A broken choice is ignored rather than followed.
+            assert_eq!(resolve(None, Some(""), d.clone()), d);
+            assert_eq!(resolve(None, Some("relative/dir"), d.clone()), d);
+            assert_eq!(resolve(Some(PathBuf::new()), None, d.clone()), d);
+        }
     }
 
     /// SQLite database file name, inside the data directory.
