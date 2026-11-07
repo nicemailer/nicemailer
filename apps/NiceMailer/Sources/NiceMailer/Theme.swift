@@ -175,15 +175,26 @@ enum Palette {
     /// The dark background and text, also given to Dark Reader so that a
     /// mail it darkens takes the theme's own colours (`DarkMode`).
     static let darkBackground: UInt32 = 0x1B1D23
-    static let darkText: UInt32 = 0xD5D8DE
+    /// A soft white, a little dimmed and warmed towards the green of the
+    /// accent: the bright #D5D8DE glared on the dark background. Still
+    /// 9.8:1 on it.
+    static let darkText: UInt32 = 0xC3C6C1
 
     static let background = dynamic(dark: darkBackground, light: 0xFAFAF8)
     static let text = dynamic(dark: darkText, light: 0x24262B)
     static let muted = dynamic(dark: 0x6E7380, light: 0x8A8D94)
-    /// Accent, Helix's lilac.
-    static let accent = dynamic(dark: 0xA4A0E8, light: 0x6B5FD6)
-    /// Row under the cursor.
-    static let cursor = dynamic(dark: 0x2E3140, light: 0xE7E5F7)
+    /// Accent: the green of the app's icon, rgb(138 165 129)
+    /// (`design/icon/README.md`), for what is not text (a frame).
+    static let accent = dynamic(dark: 0x8AA581, light: 0x8AA581)
+    /// The accent for text and small marks (keys of the menus, tags, the
+    /// mode, the caret): the icon's green in the dark theme (6.2:1 on its
+    /// background), a darker green of the same hue in the light one, where
+    /// the icon's would read at 2.6:1 only; this one reads at 5.3:1.
+    static let accentText = dynamic(dark: 0x8AA581, light: 0x56704E)
+    /// Row under the cursor: a green of the accent's hue, a little more
+    /// apart from the background than a plain tint (text on it 11:1 light,
+    /// 7.4:1 dark).
+    static let cursor = dynamic(dark: 0x33432F, light: 0xD3E0CE)
     /// Rows marked for a grouped action.
     static let marked = dynamic(dark: 0x3A2E45, light: 0xF3E3EE)
     static let markedBar = dynamic(dark: 0xE08AC0, light: 0xC2408F)

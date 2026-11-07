@@ -28,7 +28,7 @@ struct ComposerView: View {
                         headerLine(L("Cc"), Compose.recipients(c.draft.cc))
                     }
                     if let after = Compose.afterSendLine(c.draft.afterSendTarget) {
-                        Text(after).foregroundStyle(Palette.accent).lineLimit(1)
+                        Text(after).foregroundStyle(Palette.accentText).lineLimit(1)
                     }
                 }
                 .font(.geek(12))
@@ -106,7 +106,7 @@ struct ComposerTextView: NSViewRepresentable {
         }
         let length = (text as NSString).length
         view.caret = min(cursor, length)
-        view.caretColor = NSColor(Palette.accent)
+        view.caretColor = NSColor(Palette.accentText)
         // The selection, highlighted with a temporary attribute of the
         // layout: it changes no character, and no layout is redone.
         // While something is selected, there is no caret, as in macOS.

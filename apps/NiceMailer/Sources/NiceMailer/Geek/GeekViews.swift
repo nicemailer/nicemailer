@@ -219,7 +219,7 @@ struct GeekStatusBar: View {
             Text(" \(controller.modeLabel) ")
                 .font(.geek(11, weight: .bold))
                 .foregroundStyle(Palette.background)
-                .background(Palette.accent)
+                .background(Palette.accentText)
             let listsMail = controller.screen == .mail && (model.listFilter != nil || !model.listedFolderIds.isEmpty)
             if listsMail, model.listFilter == nil {
                 // Account ("all" for the unified view) and folder, each with
@@ -248,7 +248,7 @@ struct GeekStatusBar: View {
                 ForEach(model.attributes.chips) { chip in
                     Text(chip.label + " ×")
                         .lineLimit(1)
-                        .foregroundStyle(Palette.accent)
+                        .foregroundStyle(Palette.accentText)
                         .padding(.horizontal, scaled(4))
                         .overlay(Rectangle().stroke(Palette.accent.opacity(0.5), lineWidth: 1))
                         .contentShape(Rectangle())
@@ -274,7 +274,7 @@ struct GeekStatusBar: View {
                     Text("/")
                     CaretText(line: controller.contactsLine)
                 }
-                .foregroundStyle(Palette.accent)
+                .foregroundStyle(Palette.accentText)
             }
             Spacer(minLength: 8)
             if let error = model.lastError {
@@ -573,7 +573,7 @@ private struct GeekThreadRow: View {
             // cut first.
             HStack(spacing: layout.char) {
                 Text(thread.subject.isEmpty ? L("(no subject)") : thread.subject).layoutPriority(1)
-                ForEach(thread.tags, id: \.self) { Text("#\($0)").foregroundStyle(Palette.accent) }
+                ForEach(thread.tags, id: \.self) { Text("#\($0)").foregroundStyle(Palette.accentText) }
                 Spacer(minLength: 0)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -709,7 +709,7 @@ private struct GeekReaderColumn: View {
     @ViewBuilder
     private func titleControls(_ state: ThreadDisplay.State) -> some View {
         if state.showAll {
-            Text("T").foregroundStyle(Palette.accent)
+            Text("T").foregroundStyle(Palette.accentText)
         }
         // Unsubscribe, left of text | html (`ui.md`,
         // "Désabonnement"); "unsubscribed on …" once done.
@@ -722,7 +722,7 @@ private struct GeekReaderColumn: View {
                     Text(label.text)
                     if let symbol = label.symbol { Image(systemName: symbol) }
                 }
-                .foregroundStyle(offer.source == "body" ? Palette.muted : Palette.accent)
+                .foregroundStyle(offer.source == "body" ? Palette.muted : Palette.accentText)
                 .padding(.horizontal, scaled(4))
                 .overlay(Rectangle().stroke(Palette.separator, lineWidth: 1))
                 .contentShape(Rectangle())
@@ -1427,10 +1427,10 @@ private struct KeyMenu: View {
         // Width of the key column: the longest key, in monospace characters.
         let keyWidth = CGFloat(entries.map(\.key.count).max() ?? 1) * Fonts.charWidth(12 * TextSize.shared.scale) + 4
         VStack(alignment: .leading, spacing: 2) {
-            Text(title).foregroundStyle(Palette.accent).padding(.bottom, 2)
+            Text(title).foregroundStyle(Palette.accentText).padding(.bottom, 2)
             ForEach(Array(entries.enumerated()), id: \.offset) { i, e in
                 HStack(spacing: 10) {
-                    Text(e.key).foregroundStyle(Palette.accent).frame(width: keyWidth, alignment: .leading)
+                    Text(e.key).foregroundStyle(Palette.accentText).frame(width: keyWidth, alignment: .leading)
                     Text(e.label).foregroundStyle(e.muted ? Palette.muted : Palette.text)
                     // Pushes the detail to the right end; at least a gap
                     // of two characters after the longest label.
@@ -1492,7 +1492,7 @@ struct PickerPopup: View {
         let current = controller.pickerIndex
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 6) {
-                Text(title).foregroundStyle(Palette.accent)
+                Text(title).foregroundStyle(Palette.accentText)
                 // The caret is drawn where the cursor is (`LineEdit`); a
                 // selected text (the current words of Subject…, Text…) is
                 // highlighted, since typing will replace it.
@@ -1673,7 +1673,7 @@ private struct ContactsScreen: View {
                         .frame(width: scaled(110), alignment: .leading)
                 }
                 Text("\(c.messageCount)").foregroundStyle(Palette.muted).frame(width: scaled(60), alignment: .trailing)
-                Text(c.groups.map { "@" + $0 }.joined(separator: " ")).foregroundStyle(Palette.accent)
+                Text(c.groups.map { "@" + $0 }.joined(separator: " ")).foregroundStyle(Palette.accentText)
             }
             .lineLimit(1)
         }
@@ -1692,7 +1692,7 @@ private struct HistoryScreen: View {
             let e = controller.history[i]
             HStack(spacing: 8) {
                 Text(Format.longDate(e.date)).foregroundStyle(Palette.muted).frame(width: scaled(230), alignment: .leading)
-                Text(e.source).foregroundStyle(Palette.accent).frame(width: scaled(50), alignment: .leading)
+                Text(e.source).foregroundStyle(Palette.accentText).frame(width: scaled(50), alignment: .leading)
                 Text(e.action).frame(width: scaled(110), alignment: .leading)
                 Text(e.summary).lineLimit(1)
             }
