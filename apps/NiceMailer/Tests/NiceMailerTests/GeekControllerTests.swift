@@ -759,11 +759,13 @@ struct GeekControllerTests {
     @Test func theDisplayMenuChangesAndRemembersTheLayout() {
         press("v"); press("3")
         #expect(controller.columns == 3)
-        press("v"); press("s")
+        // At the top by default (the title bar is hidden); `vs` hides it.
         #expect(controller.statusPosition == .top)
+        press("v"); press("s")
+        #expect(controller.statusPosition == .hidden)
         // A new controller reads the remembered choices.
         let again = GeekController(model: model, defaults: defaults)
-        #expect(again.columns == 3 && again.statusPosition == .top)
+        #expect(again.columns == 3 && again.statusPosition == .hidden)
     }
 
     @Test func returnReadsTheMailInOneColumnAndEscapeGoesBackToTheList() {

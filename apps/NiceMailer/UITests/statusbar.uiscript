@@ -24,6 +24,14 @@ key ret
 expect account = fixture
 # Same role (Inbox) in the other account.
 expect folder = Inbox
+# The status bar is at the top by default; at the bottom first (v s twice:
+# top, hidden, bottom).
+expect status_position = top
+key v
+key s
+key v
+key s
+expect status_position = bottom
 # The ; menu: a click on the folder; folders of this account only. It drops
 # down on the left, from the folder block: just above the bar at the
 # bottom (window height 900, origin at the bottom).

@@ -33,6 +33,12 @@ struct NiceMailerApp: App {
                 }
             }
             .environment(model)
+            // The title bar, hidden or shown as `config.toml` says. Hidden,
+            // the content goes up to the top edge: SwiftUI otherwise keeps
+            // the height of the bar as a safe area, an empty white strip.
+            .ignoresSafeArea(.container, edges: model.titleBarHidden ? .top : [])
+            .background(WindowChrome(hidden: model.titleBarHidden,
+                                     title: model.mailboxName == "NiceMailer" ? "NiceMailer" : "NiceMailer — \(model.mailboxName)"))
             .frame(minWidth: 700, minHeight: 420)
             // A deep link `nicemailer://m/<id>` (`DeepLink`), clicked in a
             // note: macOS gives it to the app (its bundle declares the
@@ -52,8 +58,6 @@ struct NiceMailerApp: App {
                       model.agentState != .notBundled else { return }
                 Task { await model.connect() }
             }
-            // The mailbox in use, when it is not the default one.
-            .navigationTitle(model.mailboxName == "NiceMailer" ? "NiceMailer" : "NiceMailer — \(model.mailboxName)")
             // `.task` starts async work when the view appears.
             .task {
                 guard !UIScript.isActive else { return }

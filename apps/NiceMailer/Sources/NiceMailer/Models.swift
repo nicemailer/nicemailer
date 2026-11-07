@@ -231,6 +231,17 @@ struct CommandResult: Decodable {
     let changed: Int
 }
 
+/// What the app reads of `config_status`: the settings of `[ui]` it
+/// applies itself (`WindowChrome`).
+struct ConfigStatusView: Decodable {
+    let ui: UIConfig?
+}
+
+struct UIConfig: Decodable {
+    /// `hidden` or `shown`.
+    let titleBar: String
+}
+
 /// A screening decision taken, changed or removed by a command: on an
 /// address or a domain, from `before` to `after` (`nil`: no decision).
 struct DecisionView: Decodable, Hashable {

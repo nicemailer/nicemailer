@@ -75,6 +75,10 @@ final class AppModel {
     /// suspected of spoofing (`authentification-expediteur.md`, section 5).
     var suspectMove: SuspectMove?
 
+    /// `ui.title_bar` of `config.toml`: the title bar of the window is
+    /// hidden (the default), or shown (`WindowChrome`).
+    var titleBarHidden = true
+
     /// The agent of the core, when the app carries it (`CoreAgent`).
     var agentState: CoreAgent.State = .notBundled
     /// The core was stopped from the menu in this session: coming back to
@@ -444,11 +448,21 @@ final class AppModel {
             // Listen to events in a separate task, which runs as long as the
             // connection lives, while this function goes on.
             Task { await listen(c) }
+            await loadUISettings()
             await reloadAll()
             openPendingDeepLink()
         } catch {
             // Inside `catch`, the error is implicitly named `error`.
             status = .failed(error.localizedDescription)
+        }
+    }
+
+    /// Reads the settings of `[ui]` the app applies itself. A core that
+    /// does not give them leaves the defaults.
+    func loadUISettings() async {
+        guard let client else { return }
+        if let status: ConfigStatusView = try? await client.call("config_status", [:]), let ui = status.ui {
+            titleBarHidden = ui.titleBar != "shown"
         }
     }
 
@@ -563,6 +577,10 @@ final class AppModel {
         case "ThreadChanged":
             if let t = e.params["thread_id"]?.int { dirtyThreads.insert(t) }
             for f in e.params["folder_ids"]?.ints ?? [] { dirtyFolders.insert(f) }
+        case "ConfigChanged":
+            // `config.toml` applied: its `[ui]` may have changed.
+            Task { await loadUISettings() }
+            return
         case "DraftSent", "SendFailed", "SendPartial":
             draftEvent(e.method, e.params)
             return

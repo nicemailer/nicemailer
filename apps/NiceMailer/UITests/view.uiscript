@@ -51,9 +51,8 @@ expect folder = Inbox
 key v
 key 2
 expect columns = 2
-# Status bar position.
-key v
-key s
+# Status bar position: at the top by default, then hidden, at the bottom,
+# and back at the top.
 expect status_position = top
 key v
 key s
@@ -61,6 +60,9 @@ expect status_position = hidden
 key v
 key s
 expect status_position = bottom
+key v
+key s
+expect status_position = top
 # Sort.
 key v
 key m

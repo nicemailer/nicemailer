@@ -64,6 +64,9 @@ enum UIScript {
     static var pickerWidth: CGFloat = 0
     /// Lines of the reply's text as drawn (`ComposerTextView`).
     static var composeLines = 0
+    /// Measures again where the text reader's links and tiles are, in the
+    /// window (`TextReader`): before a click on one of them.
+    static var remeasureReader: (() -> Void)?
 
     private static var started = false
     /// The test window and its model, kept alive while the script runs.
@@ -367,6 +370,9 @@ private final class Runner {
     func locate(_ target: String) async -> CGPoint? {
         let parts = target.split(separator: ":", maxSplits: 1).map(String.init)
         guard parts.count == 2 else { return nil }
+        if ["attachment", "reader-link", "reader-sender"].contains(parts[0]) {
+            UIScript.remeasureReader?()
+        }
         let id: String
         switch parts[0] {
         case "thread":

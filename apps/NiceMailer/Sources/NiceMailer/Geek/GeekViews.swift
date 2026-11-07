@@ -292,7 +292,9 @@ struct GeekStatusBar: View {
         .font(.geek(11))
         .padding(.horizontal, 6)
         .frame(height: scaled(20))
-        .background(Palette.statusBar)
+        // Its empty parts move the window, as a title bar does: the title
+        // bar is hidden by default (`WindowChrome`).
+        .background(ZStack { Palette.statusBar; WindowDragArea() })
     }
 }
 
@@ -992,6 +994,14 @@ private struct TextReader: NSViewRepresentable {
         text.textStorage?.setAttributedString(string)
         if !sameThread { text.scrollToBeginningOfDocument(nil) }
         measure(text, kinds: kinds)
+        // UI scripts: the positions of the reader's links are measured
+        // again just before a click, the reader may have moved since (the
+        // status bar moved above it), the text not.
+        if UIScript.isActive {
+            UIScript.remeasureReader = { [weak text] in
+                if let text { measure(text, kinds: kinds) }
+            }
+        }
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }

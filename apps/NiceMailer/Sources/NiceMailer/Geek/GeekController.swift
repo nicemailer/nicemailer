@@ -400,7 +400,9 @@ final class GeekController {
         self.defaults = defaults
         self.textSize = textSize ?? .shared
         columns = defaults.object(forKey: "geek.columns") as? Int ?? 2
-        statusPosition = StatusPosition(rawValue: defaults.string(forKey: "geek.status") ?? "") ?? .bottom
+        // At the top by default: with the title bar hidden, it takes its
+        // place, and moves the window.
+        statusPosition = StatusPosition(rawValue: defaults.string(forKey: "geek.status") ?? "") ?? .top
         listFraction = defaults.object(forKey: "geek.listFraction") as? Double ?? 0.32
         // Swift note: `didSet` does not run for assignments made in `init`,
         // so the model is told here about the remembered layout.
