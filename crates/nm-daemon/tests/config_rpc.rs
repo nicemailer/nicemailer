@@ -37,6 +37,23 @@ fn without_a_file_the_core_starts_with_no_account() {
     assert_eq!(status["exists"], false);
     assert!(status["error"].is_null());
     assert!(status["path"].as_str().unwrap().ends_with("config.toml"));
+    // The window's title bar: hidden by default.
+    assert_eq!(status["ui"]["title_bar"], "hidden");
+}
+
+#[test]
+fn the_title_bar_setting_reaches_the_app_and_follows_the_file() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("config.toml"), "[ui]\ntitle_bar = \"shown\"\n").unwrap();
+    let _core = start(dir.path());
+    let mut c = Client::connect(dir.path());
+    assert_eq!(c.call("config_status", json!({})).unwrap()["ui"]["title_bar"], "shown");
+    c.call("subscribe", json!({})).unwrap();
+    std::thread::sleep(Duration::from_millis(500));
+    save(&mut c, dir.path(), "[ui]\ntitle_bar = \"hidden\"\n");
+    let e = c.event("ConfigChanged", 15);
+    assert!(e["keys"].as_array().unwrap().contains(&json!("ui.title_bar")), "{e}");
+    assert_eq!(c.call("config_status", json!({})).unwrap()["ui"]["title_bar"], "hidden");
 }
 
 #[test]

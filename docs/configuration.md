@@ -227,6 +227,7 @@ A key the core does not know is a warning, not an error, so a file written by a 
 | `raw.gc_grace_secs` | 86400 | 0 to 30 days | no (phase 8) |
 | `raw.verify_on_read` | true | | no (phase 3) |
 | `ui.view_threshold_ms` | 2000 | 0 to 60000 | no |
+| `ui.title_bar` | `hidden` | `hidden`, `shown` | yes: the app applies it at once (`geek-ui.md`, "Window") |
 | `audit.retention_days` | 365 | 1 to 36500 | no |
 
 "At start": the value is read when the core starts; a change is accepted and announced, and applies at the next start. Every key is validated today, so a file valid now stays valid when the key starts being used.

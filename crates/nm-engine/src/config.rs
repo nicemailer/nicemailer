@@ -177,15 +177,35 @@ impl Default for RawSettings {
     }
 }
 
-/// `[ui]` (`tracabilite.md`).
+/// `[ui]` (`tracabilite.md`; `docs/geek-ui.md`).
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct UiSettings {
     pub view_threshold_ms: u64,
+    /// The title bar of the window (its title and the red, orange and
+    /// green buttons): hidden by default, the content up to the top edge.
+    pub title_bar: TitleBar,
 }
 
 impl Default for UiSettings {
     fn default() -> Self {
-        UiSettings { view_threshold_ms: 2_000 }
+        UiSettings { view_threshold_ms: 2_000, title_bar: TitleBar::Hidden }
+    }
+}
+
+/// `ui.title_bar`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TitleBar {
+    Hidden,
+    Shown,
+}
+
+impl TitleBar {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            TitleBar::Hidden => "hidden",
+            TitleBar::Shown => "shown",
+        }
     }
 }
 
@@ -669,6 +689,10 @@ impl<'t> Reader<'t> {
             Some(mut t) => {
                 let u = UiSettings {
                     view_threshold_ms: self.int(&mut t, "view_threshold_ms", d.ui.view_threshold_ms, 0..=60_000)?,
+                    title_bar: match self.choice(&mut t, "title_bar", &["hidden", "shown"])? {
+                        Some("shown") => TitleBar::Shown,
+                        _ => TitleBar::Hidden,
+                    },
                 };
                 self.finish(t);
                 u
@@ -1002,6 +1026,10 @@ verify_on_read = {verify_on_read}
 [ui]
 # Milliseconds a mail must stay on screen to count as viewed.
 view_threshold_ms = {view_threshold_ms}
+# The title bar of the window (title, red, orange and green buttons):
+# "hidden", the content up to the top edge (move the window by the status
+# bar, quit with Cmd-Q), or "shown". Applied at once.
+title_bar = "{title_bar}"
 
 [audit]
 # Days the history of changes is kept.
@@ -1062,6 +1090,7 @@ undo_send_seconds = {undo_send_seconds}
         gc_grace_secs = d.raw.gc_grace_secs,
         verify_on_read = d.raw.verify_on_read,
         view_threshold_ms = d.ui.view_threshold_ms,
+        title_bar = d.ui.title_bar.as_str(),
         retention_days = d.audit.retention_days,
         undo_send_seconds = d.compose.undo_send_seconds,
     )

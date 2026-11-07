@@ -1413,7 +1413,19 @@ pub struct ConfigStatus {
     /// Warnings about the file applied: unknown keys, passwords in clear
     /// text, keys clashing with an archive account.
     pub warnings: Vec<ConfigProblem>,
+    /// The settings of `[ui]` the app applies itself.
+    #[serde(default)]
+    pub ui: UiConfig,
     pub as_of: Position,
+}
+
+/// The settings of `[ui]` of `config.toml` the app applies itself
+/// (`docs/geek-ui.md`): sent with `config_status`, read again after
+/// `ConfigChanged`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UiConfig {
+    /// `hidden` (the default) or `shown`.
+    pub title_bar: String,
 }
 
 /// A plain list with the event position of the read.

@@ -357,3 +357,11 @@ fn compose_and_save_sent() {
     let p = refused(&EXAMPLE.replace("config_sync = false", "config_sync = false\nsave_sent = \"sometimes\""));
     assert_eq!(p.key.as_deref(), Some("accounts.perso.save_sent"));
 }
+
+#[test]
+fn the_title_bar_is_hidden_unless_asked() {
+    assert_eq!(parse("").unwrap().config.ui.title_bar, config::TitleBar::Hidden);
+    assert_eq!(parse("[ui]\ntitle_bar = \"shown\"\n").unwrap().config.ui.title_bar, config::TitleBar::Shown);
+    let p = refused("[ui]\ntitle_bar = \"maybe\"\n");
+    assert_eq!(p.key.as_deref(), Some("ui.title_bar"));
+}

@@ -1037,6 +1037,7 @@ async fn dispatch(core: &Arc<Core>, session: &mut Session, req: Request) -> Resu
                 exists: engine.path().exists(),
                 error: engine.error().map(nm_engine::problem_view),
                 warnings: engine.warnings().iter().map(nm_engine::problem_view).collect(),
+                ui: nm_api::UiConfig { title_bar: engine.config().ui.title_bar.as_str().into() },
                 as_of,
             })
         }
