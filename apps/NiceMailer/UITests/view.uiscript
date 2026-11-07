@@ -46,6 +46,10 @@ key space
 expect reading = true
 key esc
 expect reading = false
+# ⌃⌘F asks for full screen (counted only: the test window stays off screen).
+expect fullscreen_toggles = 0
+key ctrl-cmd-f
+expect fullscreen_toggles = 1
 key v
 key 3
 expect columns = 3

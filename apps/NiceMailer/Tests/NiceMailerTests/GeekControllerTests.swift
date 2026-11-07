@@ -45,6 +45,7 @@ struct GeekControllerTests {
         case "up": chars = "\u{F700}"; code = KeyCode.up
         case "shift-down": chars = "\u{F701}"; code = KeyCode.down; mods = .shift
         case "cmd-ret": chars = "\r"; code = KeyCode.returnKey; mods = .command
+        case "ctrl-cmd-f": chars = "\u{6}"; code = 3; mods = [.control, .command]
         case "shift-up": chars = "\u{F700}"; code = KeyCode.up; mods = .shift
         case "left": chars = "\u{F702}"; code = KeyCode.left; mods = .function
         case "right": chars = "\u{F703}"; code = KeyCode.right; mods = .function
@@ -778,6 +779,24 @@ struct GeekControllerTests {
         #expect(controller.reading && selectedIndex == 1)
         press("esc")
         #expect(!controller.reading && selectedIndex == 1)
+    }
+
+    @Test func controlCommandFTogglesFullScreenEverywhere() {
+        var toggles = 0
+        controller.toggleFullScreen = { toggles += 1 }
+        press("ctrl-cmd-f")
+        #expect(toggles == 1)
+        // Not taken for the f of the list (find), even in a menu.
+        press("v")
+        press("ctrl-cmd-f")
+        #expect(toggles == 2)
+        press("esc")
+        // ⌘F alone is not it: left to AppKit.
+        let commandF = NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: .command, timestamp: 0, windowNumber: 0, context: nil,
+            characters: "f", charactersIgnoringModifiers: "f", isARepeat: false, keyCode: 3)!
+        #expect(!controller.handle(commandF))
+        #expect(toggles == 2)
     }
 
     @Test func spaceOpensTheMailInOneColumnThenScrollsIt() {

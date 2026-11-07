@@ -174,6 +174,7 @@ Actions apply to the **marked** mails if any (`J` / `K`), otherwise to the mail 
 | `u` | read / unread |
 | `z` | undo the last move or decision, then the one before (see "Moves and decisions") |
 | ⌘U | unsubscribe from the list of the mail (see "Unsubscribing") |
+| ⌃⌘F | full screen, and back; works everywhere, even while writing a reply or in a menu |
 | `*` | flag |
 | `/` | search everywhere: words anywhere, addresses included, in Everything (see [Search](#search-)); Escape goes back |
 | `;` + key | go to a folder or a screen (see below) |

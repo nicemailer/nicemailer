@@ -183,6 +183,7 @@ z annule le dernier déplacement ou la dernière décision (les mails reviennent
 / chercher partout : des mots n'importe où, adresses comprises, dans Everything (voir le sélecteur d'attributs) ; échap revient au dossier de départ
 ? liste des touches
 échap annule un préfixe, ferme un panneau, démarque, puis revient du tag, groupe ou contact listé au dossier
+⌃⌘F met la fenêtre en plein écran et l'en sort, partout (liste, menu, réponse en cours d'écriture), que la barre de titre soit masquée ou non
 en une colonne, sur la liste, espace ouvre le mail comme entrée ; mail affiché, espace et ctrl-f le font défiler d'une page vers le bas, maj-espace et ctrl-b vers le haut, en texte comme en HTML
 
 Le prefix ";" permet de changer d’écran

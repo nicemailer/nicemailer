@@ -243,6 +243,13 @@ final class GeekController {
     /// set by the reader after layout, for `S`.
     @ObservationIgnored var readerSkip: (quotes: [(Double, Double)], texts: [Double]) = ([], [])
 
+    /// Puts the window in full screen or takes it out (⌃⌘F). Replaced in
+    /// the tests and in UI script mode, whose window must never fill the
+    /// user's screen.
+    @ObservationIgnored var toggleFullScreen: () -> Void = {
+        (NSApp.keyWindow ?? NSApp.mainWindow)?.toggleFullScreen(nil)
+    }
+
     /// The text view of the reply (`ComposerTextView`), to move the
     /// cursor by the lines as drawn (↑ ↓ in a wrapped paragraph). `nil` in
     /// the unit tests: the lines of the text are used then.
@@ -453,6 +460,17 @@ final class GeekController {
     /// goes no further), `false` to let AppKit process it (⌘ shortcuts).
     func handle(_ event: NSEvent) -> Bool {
         let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        // ⌃⌘F: full screen, and back, wherever the keys go (the list, a
+        // panel, a reply being written). Handled here rather than left to
+        // the View menu, whose shortcut macOS now shows as fn-F.
+        // The key is known by its place (keyCode 3, the F of QWERTY and
+        // AZERTY alike) or by its letter: with ⌃ held, AppKit may give the
+        // control character 0x06 rather than "f".
+        if mods.contains(.command), mods.contains(.control),
+           event.keyCode == 3 || event.charactersIgnoringModifiers?.lowercased() == "f" {
+            toggleFullScreen()
+            return true
+        }
         // ⌘-Return in a picker: the row's command action (a file of `l`:
         // saved and opened), or its usual one.
         if mods.contains(.command), event.keyCode == KeyCode.returnKey, case .picker(let kind) = overlay {

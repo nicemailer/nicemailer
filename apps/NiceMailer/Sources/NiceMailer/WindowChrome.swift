@@ -83,6 +83,8 @@ struct WindowChrome: NSViewRepresentable {
     /// so the status bar under it gets them all.
     static func apply(hidden: Bool, to window: NSWindow) {
         window.styleMask.insert(.fullSizeContentView)
+        // Full screen (⌃⌘F) whether the title bar is shown or not.
+        window.collectionBehavior.insert(.fullScreenPrimary)
         // No toolbar: its background would be drawn over the content.
         if hidden { window.toolbar = nil }
         window.titlebarAppearsTransparent = hidden
@@ -97,6 +99,7 @@ struct WindowChrome: NSViewRepresentable {
     /// then nothing is done.
     static func matches(hidden: Bool, _ window: NSWindow) -> Bool {
         window.styleMask.contains(.fullSizeContentView)
+            && window.collectionBehavior.contains(.fullScreenPrimary)
             && window.titlebarAppearsTransparent == hidden
             && (window.titleVisibility == .hidden) == hidden
             && (window.standardWindowButton(.closeButton)?.isHidden ?? hidden) == hidden

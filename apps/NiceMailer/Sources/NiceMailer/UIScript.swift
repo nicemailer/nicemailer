@@ -62,6 +62,8 @@ enum UIScript {
     static var titleLines = 0
     /// Width of the open picker panel, in points (`PickerPopup.width`).
     static var pickerWidth: CGFloat = 0
+    /// Times ⌃⌘F asked for full screen (never applied in UI script mode).
+    static var fullScreenToggles = 0
     /// Lines of the reply's text as drawn (`ComposerTextView`).
     static var composeLines = 0
     /// Measures again where the text reader's links and tiles are, in the
@@ -105,6 +107,8 @@ enum UIScript {
         // ⌘V reads a private pasteboard filled by `clipboard`: the user's
         // clipboard is never read nor overwritten.
         controller.pasteboard = NSPasteboard(name: NSPasteboard.Name("NiceMailer-UIScript-\(ProcessInfo.processInfo.processIdentifier)"))
+        // Full screen would take the user's screen: only counted.
+        controller.toggleFullScreen = { fullScreenToggles += 1 }
         Task { @MainActor in
             let runner = Runner(model: model, controller: controller)
             let failures = await runner.run(path: path)
@@ -314,6 +318,8 @@ private final class Runner {
         case "shift-cmd-down": chars = "\u{F701}"; code = KeyCode.down; mods = [.function, .shift, .command]
         case "cmd-up": chars = "\u{F700}"; code = KeyCode.up; mods = [.function, .command]
         case "cmd-down": chars = "\u{F701}"; code = KeyCode.down; mods = [.function, .command]
+        // Full screen: AppKit gives ⌃F as the control character 0x06.
+        case "ctrl-cmd-f": chars = "\u{6}"; code = 3; mods = [.control, .command]
         default:
             if name.hasPrefix("ctrl-") {
                 mods = .control
@@ -599,6 +605,7 @@ private final class Runner {
             "compose_selection": (m.composer?.buffer.selectedText ?? "").replacingOccurrences(of: "\n", with: "\\n"),
             "compose_lines": "\(UIScript.composeLines)",
             "sending_count": "\(m.sending.count)",
+            "fullscreen_toggles": "\(UIScript.fullScreenToggles)",
             // What the accessibility API gives another app (Kerlig): the
             // focused element is the reply's text, and its selected text.
             "ax_focused": "\(controller.composerView.map { $0.window?.firstResponder === $0 } ?? false)",
