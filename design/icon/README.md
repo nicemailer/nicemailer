@@ -17,6 +17,20 @@ Each SVG is 1024 x 1024 with the macOS template: the shape is 824 x 824 at (100,
 | `1c-envol-un-nanometre.svg` | 1, a dimension line measures its flight: 1 nm |
 | `1d-envol-barre-echelle.svg` | 1, with the scale bar of a micrograph in the corner |
 
-The letters are text in Space Grotesk (DM Serif Display for 3): they render as designed only where the font is installed. The final icon will have its letters converted to outlines, and an `.icns` made for the bundle (`make bundle`).
+The letters are text in Space Grotesk (DM Serif Display for 3): they render as designed only where the font is installed.
+
+## The icon chosen: 1D
+
+`1d-envol-barre-echelle.svg` is the icon of the app. `app/` holds it with its letters outlined, so that it depends on no font, and a simpler drawing for each small size, as Apple's icons do: at 128 px the "nm" of the scale bar goes, at 64 px the trail too, at 32 and 16 px only Nm and the bar stay.
+
+| File | Used for |
+| --- | --- |
+| `app/AppIcon.svg` | 256 to 1024 px |
+| `app/AppIcon-128.svg` | 128 px |
+| `app/AppIcon-64.svg` | 64 px |
+| `app/AppIcon-32.svg` | 16 and 32 px |
+| `app/AppIcon.icns` | the icon of NiceMailer.app (`make bundle` copies it) |
+
+To change it: edit the SVG with text, outline it with `scripts/outline-icon.py <SpaceGrotesk.ttf> <in.svg> <out.svg>` (fontTools, and the variable font of Google Fonts, OFL), then `scripts/make-icon.sh` (rsvg-convert, iconutil) makes the `.icns`.
 
 The canvas where they were drawn, with their renderings at 128, 64 and 32 px: https://claude.ai/artifact/HztkR3vg6Tw7g4FR6irvRA (private).

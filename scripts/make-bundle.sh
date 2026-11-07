@@ -64,6 +64,8 @@ PLIST
 plutil -lint "$APP/Contents/Library/LaunchAgents/eu.nicemailer.core.plist" >/dev/null
 # Fonts and translations (AppResources.bundle looks here first).
 cp -R "$BIN_DIR/NiceMailer_NiceMailer.bundle" "$APP/Contents/Resources/"
+# The icon (design/icon/README.md; scripts/make-icon.sh makes it).
+cp "$ROOT/design/icon/app/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 
 VERSION="$(git -C "$ROOT" describe --always --dirty 2>/dev/null || echo dev)"
 
@@ -76,6 +78,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleName</key><string>NiceMailer</string>
   <key>CFBundleDisplayName</key><string>NiceMailer</string>
   <key>CFBundleExecutable</key><string>NiceMailer</string>
+  <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>0.1</string>
   <key>CFBundleVersion</key><string>${VERSION}</string>

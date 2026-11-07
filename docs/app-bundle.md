@@ -4,6 +4,7 @@
 
 ```
 NiceMailer.app/Contents/
+├── Resources/AppIcon.icns                        the icon (design/icon/README.md)
 ├── MacOS/NiceMailer                              the app
 ├── Helpers/nicemailer-core                       the core
 ├── Helpers/nicemailer                            the CLI
