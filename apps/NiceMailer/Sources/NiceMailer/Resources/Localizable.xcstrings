@@ -245,6 +245,16 @@
         }
       }
     },
+    "+%lld": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "+%lld"
+          }
+        }
+      }
+    },
     "/ filter · m: decision · M: domain decision · return: their mails · esc: back": {
       "localizations": {
         "fr": {
@@ -339,6 +349,16 @@
         }
       }
     },
+    "After sending: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Après l'envoi : %@"
+          }
+        }
+      }
+    },
     "Already in %@": {
       "localizations": {
         "fr": {
@@ -379,12 +399,32 @@
         }
       }
     },
+    "Cannot send: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Envoi impossible : %@"
+          }
+        }
+      }
+    },
     "Card of %@": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "Fiche de %@"
+          }
+        }
+      }
+    },
+    "Cc": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cc"
           }
         }
       }
@@ -515,6 +555,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Dossier"
+          }
+        }
+      }
+    },
+    "From": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "De"
           }
         }
       }
@@ -809,6 +859,16 @@
         }
       }
     },
+    "No mail to answer": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucun mail auquel répondre"
+          }
+        }
+      }
+    },
     "No more quoted text": {
       "localizations": {
         "fr": {
@@ -859,16 +919,6 @@
         }
       }
     },
-    "Not available yet: writing mail needs SMTP": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pas encore disponible : écrire un mail demande SMTP"
-          }
-        }
-      }
-    },
     "Not moved: %@": {
       "localizations": {
         "fr": {
@@ -879,12 +929,32 @@
         }
       }
     },
+    "Not sent: %@ · r on the mail to reopen the reply": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Non envoyé : %@ · r sur le mail pour rouvrir la réponse"
+          }
+        }
+      }
+    },
     "Nothing to undo": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "Rien à annuler"
+          }
+        }
+      }
+    },
+    "On %@, at %@, %@ wrote:": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le %1$@ à %2$@, %3$@ a écrit :"
           }
         }
       }
@@ -959,6 +1029,46 @@
         }
       }
     },
+    "Reply abandoned · z to restore it": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Réponse abandonnée · z pour la restaurer"
+          }
+        }
+      }
+    },
+    "Reply kept as a draft · r to resume": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Réponse gardée en brouillon · r pour la reprendre"
+          }
+        }
+      }
+    },
+    "Reply restored": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Réponse restaurée"
+          }
+        }
+      }
+    },
+    "Reply resumed": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Réponse reprise"
+          }
+        }
+      }
+    },
     "Save": {
       "localizations": {
         "fr": {
@@ -995,6 +1105,56 @@
           "stringUnit": {
             "state": "translated",
             "value": "Chercher partout"
+          }
+        }
+      }
+    },
+    "Sending cancelled: the reply is open again": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Envoi annulé : la réponse est rouverte"
+          }
+        }
+      }
+    },
+    "Sending in %lld s · z to cancel": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Envoi dans %lld s · z pour annuler"
+          }
+        }
+      }
+    },
+    "Sending…": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Envoi…"
+          }
+        }
+      }
+    },
+    "Sent": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Envoyé"
+          }
+        }
+      }
+    },
+    "Sent, but the server refused: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Envoyé, mais le serveur a refusé : %@"
           }
         }
       }
@@ -1159,12 +1319,62 @@
         }
       }
     },
+    "This mail is still downloading: try again in a moment": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce mail est encore en téléchargement : réessayez dans un instant"
+          }
+        }
+      }
+    },
+    "This reply is being sent · z to cancel": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cette réponse est en cours d'envoi · z pour annuler"
+          }
+        }
+      }
+    },
+    "This reply was changed elsewhere: close it and reopen it": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cette réponse a été modifiée ailleurs : fermez-la et rouvrez-la"
+          }
+        }
+      }
+    },
+    "To": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "À"
+          }
+        }
+      }
+    },
     "To: %@": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "À : %@"
+          }
+        }
+      }
+    },
+    "Too late: the mail is leaving": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Trop tard : le mail est en train de partir"
           }
         }
       }
@@ -1521,6 +1731,26 @@
         }
       }
     },
+    "filed in %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "rangé dans %@"
+          }
+        }
+      }
+    },
+    "filing of the reply": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "rangement de la réponse"
+          }
+        }
+      }
+    },
     "filter by attributes": {
       "localizations": {
         "fr": {
@@ -1537,6 +1767,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "drapeau"
+          }
+        }
+      }
+    },
+    "forward": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "transférer"
           }
         }
       }
@@ -1947,6 +2187,26 @@
         }
       }
     },
+    "reply abandoned": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "réponse abandonnée"
+          }
+        }
+      }
+    },
+    "reply to the sender only": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "répondre à l'expéditeur seul"
+          }
+        }
+      }
+    },
     "reply, reply all, forward (not yet)": {
       "localizations": {
         "fr": {
@@ -2008,6 +2268,16 @@
         }
       }
     },
+    "sending of the reply": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "envoi de la réponse"
+          }
+        }
+      }
+    },
     "show / hide quotes, signatures, folded mails": {
       "localizations": {
         "fr": {
@@ -2034,6 +2304,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "aller au texte après la citation suivante"
+          }
+        }
+      }
+    },
+    "someone": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "quelqu'un"
           }
         }
       }
@@ -2342,6 +2622,16 @@
         }
       }
     },
+    "z: undo the filing": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "z : annuler le rangement"
+          }
+        }
+      }
+    },
     "··· %lld quoted lines": {
       "localizations": {
         "fr": {
@@ -2388,6 +2678,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "« %1$@ » déplacé dans %2$@"
+          }
+        }
+      }
+    },
+    "⌘↩ send · Esc keep · ⌘⌫ abandon": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "⌘↩ envoyer · Échap garder · ⌘⌫ abandonner"
           }
         }
       }

@@ -178,7 +178,8 @@ Actions apply to the **marked** mails if any (`J` / `K`), otherwise to the mail 
 | `ctrl-f` `ctrl-b` | same, a page down / up in the mail |
 | `?` | list of keys |
 | Escape | cancel a prefix, close a panel, leave the full-window mail (`v1`), unmark, then go back from a tag, group or contact list to the folder |
-| `r` `R` `f` | reply, reply all, forward: not available yet (writing mail needs SMTP) |
+| `r` | reply to all to the mail under the reader's cursor: the reply takes the reader's place, mode `EDT`, every key is text; ⌘↩ sends (`z` cancels during 5 s), Escape keeps the draft, ⌘⌫ abandons it (see [sending.md](sending.md)) |
+| `R` `f` | reply to the sender only, forward: not available yet |
 
 After a prefix (`;`, `m`, `s`, `v`), a menu lists the possible second keys, as in Helix. Each prefix has a block in the status bar: the folder for `;` (folders, Everything, screens), and an icon with its key for `m` (move, arrow), `s` (save, tray) and `v` (display, eye). The blocks form three groups set apart by a wide gap: what the list shows (`@`, `;`, `F` and the chips), the display preference (`v`), and actions on the current mail (`m`, `s`). The menu drops down from its block: under it when the bar is at the top, above it when the bar is at the bottom; a click on the block opens it, and its rows can be clicked. The arrows highlight a row (down starts on the first one, up on the last, both turn around) and Return goes to it; a key still acts at once, and Return with nothing highlighted closes the menu. With the status bar hidden, menus appear in the bottom-right corner.
 
@@ -234,7 +235,7 @@ The same small menu chooses a decision on the contacts screen (`m`, `M`); the cu
 
 ## Not available yet
 
-- The "edition" context: replying, forwarding, writing a new mail.
+- In the "edition" context: forwarding, writing a new mail, editing the recipients, attachments ([sending.md](sending.md)).
 - Saving as PDF (`sp`).
 - A dark/light override independent of macOS (the palette follows the system appearance).
 

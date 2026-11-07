@@ -34,7 +34,7 @@ mod convert;
 mod encode;
 mod error;
 mod session;
-mod transport;
+pub(crate) mod transport;
 mod types;
 pub mod utf7;
 

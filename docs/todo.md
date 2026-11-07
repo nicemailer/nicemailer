@@ -49,3 +49,13 @@ Done in the folder workflow change: a suspect sender is never banned and needs a
 ## Several senders in a conversation
 
 The user chose to decide on the sender of the latest received mail (`dossiers.md`, "Décision sur l'expéditeur"). If a colleague in copy is ever banned this way, revisit: the earlier spec asked the user which senders the decision concerns.
+
+## Replying: what v1 leaves out
+
+`specifications/reponse.md` (section 2) delivers the reply to all, plain text, sent through SMTP with an undo delay. Left for later, each its own change:
+
+- **Drafts on the server** (`brouillons.md`, sections 5 and 6): `append_draft` at the closing of the reply, adoption and conflicts between devices. The drafts of v1 have `server_revision` NULL: the first closing after that change sends them.
+- **Local drafts in the Drafts folder**: a draft has no `message` row yet, so the list of Drafts does not show it; it is found again by `r` on the mail it answers.
+- **`R` (reply to the sender only), `f` (forward), a new mail**, editable To / Cc / Bcc lines, the choice of the filing at sending (`after_send` is already in `send_draft`), attachments (`draft_attachment`, `outgoing.noindex`), signatures.
+- **Never twice, fully**: a crash between the SMTP server's acceptance and `send_accepted` sends again where the provider does not copy to Sent (`brouillons.md`, "Double envoi"). A test of the restart after `data_sent` against the test servers is missing too.
+- **`nicemailer reply`**: a CLI bench of the contract, for agents later.

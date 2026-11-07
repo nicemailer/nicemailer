@@ -121,6 +121,23 @@ pub mod method {
     pub const REMOVE_ACCOUNT: &str = "remove_account";
     /// Runs the garbage collector of the raw store now.
     pub const RAW_GC: &str = "raw_gc";
+    /// Starts a reply to all to a message, or gives back the reply already
+    /// started (`reponse.md`, section 4): recipients, subject and
+    /// quotation prepared by the core.
+    pub const CREATE_DRAFT: &str = "create_draft";
+    /// The latest version of a draft, marked open.
+    pub const OPEN_DRAFT: &str = "open_draft";
+    /// Saves the body typed, at each pause (`reponse.md`, section 5).
+    pub const UPDATE_DRAFT: &str = "update_draft";
+    /// The draft window closed.
+    pub const CLOSE_DRAFT: &str = "close_draft";
+    /// Abandons a draft; returns it, so that the client can restore it.
+    pub const DISCARD_DRAFT: &str = "discard_draft";
+    /// Queues the draft for sending, after the undo delay (`reponse.md`,
+    /// section 7).
+    pub const SEND_DRAFT: &str = "send_draft";
+    /// Cancels a send during the undo delay: the draft is editable again.
+    pub const CANCEL_SEND: &str = "cancel_send";
 }
 
 /// Stable error codes. Negative codes are the ones defined by the JSON-RPC
@@ -168,6 +185,19 @@ pub mod error_code {
     /// The raw file of the mail is corrupt or missing: set aside, and the
     /// mail downloaded again from its server; try again later.
     pub const RAW_DAMAGED: i64 = 1011;
+    /// `update_draft` or `send_draft` with a revision that is not the
+    /// draft's current one: another window or client changed it.
+    pub const REVISION_CONFLICT: i64 = 1012;
+    /// The draft is being sent and cannot be changed (`cancel_send` first).
+    pub const DRAFT_SENDING: i64 = 1013;
+    /// `cancel_send` too late: the mail is leaving, or has left.
+    pub const SEND_ALREADY_STARTED: i64 = 1014;
+    /// The account cannot send: no `[smtp]` in `config.toml`, read-only, an
+    /// archive account, or a draft without recipient. The message says which.
+    pub const CANNOT_SEND: i64 = 1015;
+    /// The body of the mail answered is not downloaded yet: it is asked
+    /// for first, try again in a moment.
+    pub const BODY_PENDING: i64 = 1016;
 }
 
 // ---------------------------------------------------------------------------
@@ -321,6 +351,17 @@ pub enum Event {
     /// of the same message (`modele de donnees.md`, section 6). `reason` is
     /// the server's answer.
     ActionReverted { message_id: i64, kind: String, reason: String },
+    /// A draft was sent: the server accepted it (`reponse.md`, section 7).
+    /// `message_id` is the mail in Sent; `moved_to` the folder its
+    /// conversation was filed in (absent: it stayed); `undo` cancels that
+    /// filing and the decisions taken on the recipients, not the sending.
+    DraftSent { draft_id: i64, message_id: i64, thread_id: Option<i64>, moved_to: Option<FolderRole>, undo: Option<String> },
+    /// A draft could not be sent, for good: it is editable again, and
+    /// `reply_to` is the mail it answers (the next `r` on it reopens it).
+    SendFailed { draft_id: i64, reply_to: Option<i64>, reason: String },
+    /// A draft was sent, but the server refused some recipients (each with
+    /// its answer); the others received it.
+    SendPartial { draft_id: i64, refused: Vec<String> },
 }
 
 // ---------------------------------------------------------------------------
@@ -715,7 +756,7 @@ pub struct Page<T> {
 }
 
 /// An email address with its optional display name.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AddressView {
     pub addr: String,
     pub name: Option<String>,
@@ -891,6 +932,98 @@ pub struct SearchResult {
 pub struct CommandResult {
     /// Number of messages modified. `0` means the command was a no-op.
     pub changed: usize,
+}
+
+// ---------------------------------------------------------------------------
+// Drafts and sending (`reponse.md`)
+// ---------------------------------------------------------------------------
+
+/// Params of `create_draft`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateDraftParams {
+    /// The message replied to; its account sends the reply.
+    pub reply_to: i64,
+    /// The line introducing the quotation, written by the client in its
+    /// language ("On Nov 7, 2026, at 10:12, Alice <a@x> wrote:").
+    #[serde(default)]
+    pub quote_header: String,
+    /// The body to start with instead of the quotation: restores a draft
+    /// abandoned by mistake (`z` after `discard_draft`).
+    #[serde(default)]
+    pub body: Option<String>,
+}
+
+/// Params of `open_draft`, `close_draft`, `discard_draft`, `cancel_send`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DraftIdParams {
+    pub id: i64,
+}
+
+/// Params of `update_draft`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateDraftParams {
+    pub id: i64,
+    /// The revision the client edited: refused if it is not the current
+    /// one (`REVISION_CONFLICT`).
+    pub revision: i64,
+    pub body: String,
+}
+
+/// Params of `send_draft`: the last body typed is saved with it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SendDraftParams {
+    pub id: i64,
+    pub revision: i64,
+    pub body: String,
+    /// Where to file the conversation after sending; absent: the core's
+    /// preselection (the only choice of the app in v1).
+    #[serde(default)]
+    pub after_send: Option<FolderRole>,
+}
+
+/// A draft, as the reply screen shows it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DraftView {
+    pub id: i64,
+    pub account_id: i64,
+    pub from: AddressView,
+    pub to: Vec<AddressView>,
+    pub cc: Vec<AddressView>,
+    pub subject: String,
+    pub body: String,
+    pub revision: i64,
+    /// `editing` or `sending`.
+    pub state: String,
+    /// The message replied to.
+    pub reply_to: Option<i64>,
+    /// Its conversation.
+    pub thread_id: Option<i64>,
+    /// Where the conversation goes once the mail is sent, as preselected
+    /// now (`reponse.md`, section 8); absent when it stays.
+    pub after_send_target: Option<FolderRole>,
+    /// When a draft `sending` leaves, Unix seconds.
+    pub send_at: Option<i64>,
+}
+
+/// Result of `create_draft`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateDraftResult {
+    pub draft: DraftView,
+    /// The draft already existed (a reply to this message was started).
+    pub reused: bool,
+}
+
+/// Result of `update_draft`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateDraftResult {
+    pub revision: i64,
+}
+
+/// Result of `send_draft`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SendDraftResult {
+    /// When the mail leaves, Unix seconds; until then `cancel_send` stops it.
+    pub send_at: i64,
 }
 
 /// File locations shared by the core and its clients (`stockage-brut.md`).
@@ -1174,6 +1307,10 @@ pub struct SetPasswordParams {
     /// Key of the account in `config.toml`.
     pub account: String,
     pub password: String,
+    /// The password of the SMTP server, when it differs from the IMAP one
+    /// (`reponse.md`, section 7); absent: the IMAP password.
+    #[serde(default)]
+    pub smtp: bool,
 }
 
 /// Rust note: `Debug` is written by hand rather than derived, so that
@@ -1181,7 +1318,7 @@ pub struct SetPasswordParams {
 /// password.
 impl std::fmt::Debug for SetPasswordParams {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("SetPasswordParams").field("account", &self.account).field("password", &"***").finish()
+        f.debug_struct("SetPasswordParams").field("account", &self.account).field("password", &"***").field("smtp", &self.smtp).finish()
     }
 }
 

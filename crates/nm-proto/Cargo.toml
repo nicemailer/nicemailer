@@ -1,11 +1,12 @@
 [package]
 name = "nm-proto"
-description = "Network adapters: IMAP client, one-click unsubscribe (RFC 8058); SMTP will come here"
+description = "Network adapters: IMAP and SMTP clients, one-click unsubscribe (RFC 8058)"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
 
 [dependencies]
+nm-core.workspace = true
 ureq.workspace = true
 thiserror.workspace = true
 imap-codec.workspace = true

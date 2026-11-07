@@ -209,9 +209,10 @@ struct GeekControllerTests {
         #expect(await eventually { !core.calls("set_thread_seen").isEmpty })
     }
 
-    @Test func replyIsNotAvailableYet() {
-        press("r")
-        #expect(model.flash?.contains("SMTP") == true)
+    /// `r` replies (`ComposeTests`); `R` and `f` are not there yet.
+    @Test func replyToTheSenderIsNotAvailableYet() {
+        press("R")
+        #expect(model.flash == L("Not available yet: %@", L("reply to the sender only")))
     }
 
     @Test func helpOpensAndAnyKeyClosesIt() {

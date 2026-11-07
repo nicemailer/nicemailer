@@ -165,6 +165,7 @@ pub async fn verify(core: &Arc<Core>, p: SyncVerifyParams) -> Result<SyncVerifyR
 pub fn wake(core: &Core, changes: &ChangeSet) {
     if let Some(syncer) = core.syncer.get() {
         syncer.wake(&changes.spooled);
+        syncer.wake_send(&changes.sending);
     }
 }
 

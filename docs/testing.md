@@ -7,7 +7,7 @@
 | `make swift-test` | Swift unit tests only | |
 | `make ui-test` | scripted UI tests of the app | builds the core; starts its own cores on temporary data |
 | `make imap-up`, `make imap-down` | start and stop the test IMAP servers (Dovecot, see below) | OrbStack or Docker |
-| `make imap-test` | the tests that talk to the test IMAP servers: the IMAP client on both servers, `probe_account` end to end, a large body streamed from the server into the raw store ([ingestion.md](ingestion.md)), the synchronization end to end against a second connection playing the phone, with network cuts ([sync.md](sync.md)), the spool: changes reaching the server, refusals, two cores, a crash after a MOVE ([spool.md](spool.md)), the screening of new mail ([screening.md](screening.md)), and the creation of an account with its initial import ([accounts.md](accounts.md)) | `make imap-up` |
+| `make imap-test` | the tests that talk to the test IMAP servers: the IMAP client on both servers, `probe_account` end to end, a large body streamed from the server into the raw store ([ingestion.md](ingestion.md)), the synchronization end to end against a second connection playing the phone, with network cuts ([sync.md](sync.md)), the spool: changes reaching the server, refusals, two cores, a crash after a MOVE ([spool.md](spool.md)), the screening of new mail ([screening.md](screening.md)), the sending of replies through the test SMTP servers ([sending.md](sending.md)), and the creation of an account with its initial import ([accounts.md](accounts.md)) | `make imap-up` |
 | `make volume-test` | the volume test: a generated mailbox of `NM_VOLUME` mails (100,000) synchronized from nothing by the real core; durations, memory, latency of the lists during the sync ([sync.md](sync.md), "Volume") | `make imap-up` |
 | `make bench` | times every thread list (folders, Everything, search, each filter) through the socket on 100,000 generated conversations, or on `BENCH_DATA_DIR` | starts its own core |
 
@@ -29,6 +29,8 @@ Speed is tested by the plans of the queries rather than by timing them, which wo
 | --- | --- | --- |
 | `full` | 31143 (STARTTLS), 31993 (TLS) | every extension of Dovecot: CONDSTORE, QRESYNC, MOVE, ESEARCH, SPECIAL-USE… |
 | `minimal` | 32143 (STARTTLS), 32993 (TLS) | `IMAP4rev1 UIDPLUS IDLE LITERAL+` only: a plain server without the sync extensions, to test the fallbacks |
+
+Two Mailpit servers play SMTP for the sending tests: `smtp` (STARTTLS on 31587, any password, recipients outside `@example.com` and `@ok.example` refused with 550) and `smtps` (TLS on 31465, user `nicemailer`, password `smtp-secret`). What they received is read on their API (38025 and 38026). They use the same test certificate.
 
 The core only uses what a server announces, so the minimal server exercises the fallbacks (no MOVE, no CONDSTORE, no SPECIAL-USE) that many real servers need. Any user name logs in with the password `nicemailer`, and a new user starts with an empty mailbox: a test picks a random user and needs no setup or cleanup. Mail is kept in memory and lost when the servers stop.
 

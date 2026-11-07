@@ -88,6 +88,16 @@ private let localizedBundle: Bundle = {
     return AppResources.bundle
 }()
 
+/// The locale of the language the app shows (`localizedBundle`), for the
+/// texts it writes into a mail in that language: the line introducing a
+/// quotation ("Le 7 nov. 2026 à 10:12, Alice a écrit :") must have its
+/// date in the same language as its words, whatever the Mac's region.
+let appLocale: Locale = {
+    let available = AppResources.bundle.localizations
+    let lang = Bundle.preferredLocalizations(from: available, forPreferences: Locale.preferredLanguages).first ?? "en"
+    return Locale(identifier: lang)
+}()
+
 /// Same, with values inserted: `L("%lld marked", n)`. The catalog stores the
 /// format with its placeholders (`%@` for text, `%lld` for integers).
 func L(_ key: String, _ args: CVarArg...) -> String {

@@ -32,7 +32,7 @@ security = "tls"                  # tls (default), starttls, or none (localhost 
 username = "me"                   # default: the email
 ca_file = "~/certs/my-ca.pem"     # extra certificate authority for this server
 
-[accounts.perso.smtp]             # read and checked; sending is not implemented yet
+[accounts.perso.smtp]             # the server mail is sent through (sending.md)
 host = "smtp.example.com"         # ports: 465 tls, 587 starttls, 25 none
 
 [[accounts.perso.identities]]

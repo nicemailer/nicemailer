@@ -75,6 +75,17 @@ final class AppModel {
     /// suspected of spoofing (`authentification-expediteur.md`, section 5).
     var suspectMove: SuspectMove?
 
+    /// The reply being written (`AppModel+Compose.swift`); nil when the
+    /// reader shows the mail.
+    var composer: Composer?
+    /// The pending save of the reply's text, restarted at each key.
+    @ObservationIgnored var composeSaveTask: Task<Void, Never>?
+    /// The save in progress, which the next one waits for.
+    @ObservationIgnored var composeSaving: Task<Void, Never>?
+    /// Mails waiting for their undo delay or for the server, by draft id:
+    /// the subject, for the status bar when they leave.
+    @ObservationIgnored var sending: [Int: String] = [:]
+
     /// Selected folder. `didSet` is a property observer: it runs after each
     /// assignment, with the previous value in `oldValue`. Changing folder
     /// clears the thread selection and loads the new list.
@@ -460,6 +471,9 @@ final class AppModel {
         case "ThreadChanged":
             if let t = e.params["thread_id"]?.int { dirtyThreads.insert(t) }
             for f in e.params["folder_ids"]?.ints ?? [] { dirtyFolders.insert(f) }
+        case "DraftSent", "SendFailed", "SendPartial":
+            draftEvent(e.method, e.params)
+            return
         case "ActionReverted":
             // The server refused a change made here; the core has undone it
             // (`modele de donnees.md`, section 6). Said in the status bar,

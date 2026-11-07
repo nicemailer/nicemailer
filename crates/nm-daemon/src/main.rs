@@ -38,6 +38,7 @@
 //! Funnelling responses and events through one channel guarantees that two
 //! lines are never interleaved on the socket.
 
+mod drafts;
 mod events;
 mod setup;
 mod sync;
@@ -220,6 +221,13 @@ async fn main() -> anyhow::Result<()> {
         if requeued > 0 {
             eprintln!("spool : {requeued} action(s) interrompue(s) remise(s) en file");
         }
+        // Pretended sending (`drafts.rs`): archive accounts may answer.
+        store.set_fake_sending(drafts::fake_network());
+        // A draft left frozen without its sending action is editable again.
+        let repaired = store.repair_drafts()?;
+        if repaired > 0 {
+            eprintln!("brouillons : {repaired} brouillon(s) en cours d'envoi sans action, remis en rédaction");
+        }
         sync::apply(&core, &mut store);
     }
     // Kept alive until the end of `main`: dropping it stops the watch. A
@@ -378,6 +386,15 @@ fn store_error(e: StoreError) -> RpcError {
         StoreError::InvalidParams(_) => error_code::INVALID_PARAMS,
         StoreError::ReadOnly(_) => error_code::READ_ONLY,
         StoreError::RawDamaged(_) => error_code::RAW_DAMAGED,
+        StoreError::CannotSend(_) => error_code::CANNOT_SEND,
+        StoreError::BodyPending => error_code::BODY_PENDING,
+        StoreError::DraftSending => error_code::DRAFT_SENDING,
+        StoreError::SendStarted => error_code::SEND_ALREADY_STARTED,
+        StoreError::RevisionConflict { current } => {
+            let mut err = RpcError::new(error_code::REVISION_CONFLICT, e.to_string());
+            err.data = Some(serde_json::json!({ "revision": current }));
+            return err;
+        }
         // The client needs the address and the verdict to ask the user.
         StoreError::ConfirmationRequired { ref addr, ref verdict } => {
             let mut err = RpcError::new(error_code::CONFIRMATION_REQUIRED, e.to_string());
@@ -459,7 +476,16 @@ async fn set_password(core: &Arc<Core>, p: SetPasswordParams, source: Source) ->
         let Some(id) = engine.account_id(&p.account) else {
             return Err(RpcError::new(error_code::NOT_FOUND, format!("account {} is not in the database", p.account)));
         };
-        (engine.secrets(), nm_engine::secrets::Binding::of(account), id)
+        // The SMTP password saved apart is bound to the SMTP server
+        // (`reponse.md`, section 7).
+        let binding = if p.smtp {
+            nm_engine::secrets::smtp_binding(account).ok_or_else(|| {
+                RpcError::new(error_code::INVALID_PARAMS, format!("account {} has no [smtp] server in config.toml", p.account))
+            })?
+        } else {
+            nm_engine::secrets::Binding::of(account)
+        };
+        (engine.secrets(), binding, id)
     };
     // The Keychain call runs on a blocking thread, without any lock held.
     let credential = nm_engine::secrets::Credential {
@@ -467,7 +493,8 @@ async fn set_password(core: &Arc<Core>, p: SetPasswordParams, source: Source) ->
         secret: nm_engine::config::SecretString::new(p.password),
     };
     let key = p.account.clone();
-    tokio::task::spawn_blocking(move || secrets.set_imap(&key, &credential))
+    let smtp = p.smtp;
+    tokio::task::spawn_blocking(move || if smtp { secrets.set_smtp(&key, &credential) } else { secrets.set_imap(&key, &credential) })
         .await
         .map_err(|e| RpcError::new(error_code::INTERNAL_ERROR, e.to_string()))?
         .map_err(|e| RpcError::new(error_code::SECRETS, e))?;
@@ -922,6 +949,19 @@ async fn dispatch(core: &Arc<Core>, session: &mut Session, req: Request) -> Resu
             setup::remove_account(core, p, source).await?;
             to_value(CommandResult { changed: 0 })
         }
+        method::CREATE_DRAFT => to_value(drafts::create(core, params(req.params)?, source).await?),
+        method::OPEN_DRAFT => to_value(drafts::open(core, params(req.params)?).await?),
+        method::UPDATE_DRAFT => to_value(drafts::update(core, params(req.params)?, source).await?),
+        // v1: a draft is never sent to the server, closing it does nothing
+        // more (`reponse.md`, section 5).
+        method::CLOSE_DRAFT => {
+            let p: nm_api::DraftIdParams = params(req.params)?;
+            with_reader(core, move |s| s.get_draft(p.id)).await?;
+            to_value(CommandResult { changed: 0 })
+        }
+        method::DISCARD_DRAFT => to_value(drafts::discard(core, params(req.params)?, source).await?),
+        method::SEND_DRAFT => to_value(drafts::send(core, params(req.params)?, source).await?),
+        method::CANCEL_SEND => to_value(drafts::cancel(core, params(req.params)?, source).await?),
         method::RAW_GC => {
             let core2 = core.clone();
             let r = tokio::task::spawn_blocking(move || sync::run_gc(&core2))

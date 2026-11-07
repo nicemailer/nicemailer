@@ -61,6 +61,7 @@ pub struct Config {
     pub raw: RawSettings,
     pub ui: UiSettings,
     pub audit: AuditSettings,
+    pub compose: ComposeSettings,
     /// IMAP accounts, by key (`[accounts.<key>]`).
     ///
     /// Rust note: a `BTreeMap` is a map sorted by key, so accounts are
@@ -80,6 +81,7 @@ impl Default for Config {
             raw: RawSettings::default(),
             ui: UiSettings::default(),
             audit: AuditSettings::default(),
+            compose: ComposeSettings::default(),
             accounts: BTreeMap::new(),
         }
     }
@@ -199,6 +201,40 @@ impl Default for AuditSettings {
     }
 }
 
+/// `[compose]` (`reponse.md`, section 12).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct ComposeSettings {
+    /// Seconds a mail waits after `⌘↩` before it leaves, during which `z`
+    /// cancels it; 0: at once, no cancelling.
+    pub undo_send_seconds: u64,
+}
+
+impl Default for ComposeSettings {
+    fn default() -> Self {
+        ComposeSettings { undo_send_seconds: nm_core::compose::UNDO_SEND_DEFAULT_SECS }
+    }
+}
+
+/// `save_sent` of an account (`reponse.md`, section 9).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SaveSent {
+    /// Copy to Sent, unless the provider does it itself (Gmail, Fastmail).
+    Auto,
+    Always,
+    Never,
+}
+
+impl SaveSent {
+    pub fn rule(self) -> nm_core::compose::SaveSent {
+        match self {
+            SaveSent::Auto => nm_core::compose::SaveSent::Auto,
+            SaveSent::Always => nm_core::compose::SaveSent::Always,
+            SaveSent::Never => nm_core::compose::SaveSent::Never,
+        }
+    }
+}
+
 /// One `[accounts.<key>]` table.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct AccountConfig {
@@ -218,8 +254,12 @@ pub struct AccountConfig {
     /// detected one (`configuration.md`, section 6).
     pub authserv_id: Option<String>,
     pub imap: ServerConfig,
-    /// Not used before sending is implemented.
+    /// The server mail is sent through; without it, the account cannot
+    /// send (`reponse.md`, section 3).
     pub smtp: Option<ServerConfig>,
+    /// Whether NiceMailer copies a sent mail to Sent (`reponse.md`,
+    /// section 9).
+    pub save_sent: SaveSent,
     /// Other sending addresses of the account.
     pub identities: Vec<Identity>,
     /// General `[sync]` settings, overridden by `[accounts.<key>.sync]`.
@@ -645,6 +685,22 @@ impl<'t> Reader<'t> {
             }
         };
 
+        let compose = match self.table(&mut s, "compose")? {
+            None => d.compose,
+            Some(mut t) => {
+                let c = ComposeSettings {
+                    undo_send_seconds: self.int(
+                        &mut t,
+                        "undo_send_seconds",
+                        d.compose.undo_send_seconds,
+                        0..=nm_core::compose::UNDO_SEND_MAX_SECS,
+                    )?,
+                };
+                self.finish(t);
+                c
+            }
+        };
+
         let mut accounts = BTreeMap::new();
         if let Some(all) = self.table(&mut s, "accounts")? {
             // Every key of `[accounts]` is an account: none is "unknown".
@@ -670,7 +726,7 @@ impl<'t> Reader<'t> {
             // was read above as an account, none can be unknown.
         }
         self.finish(s);
-        Ok(Config { version, core, sync, config_sync, events, import, raw, ui, audit, accounts })
+        Ok(Config { version, core, sync, config_sync, events, import, raw, ui, audit, compose, accounts })
     }
 
     /// `[sync]`, or an account's override starting from `base`.
@@ -714,6 +770,11 @@ impl<'t> Reader<'t> {
             None => None,
         };
         let identities = self.identities(&mut s)?;
+        let save_sent = match self.choice(&mut s, "save_sent", &["auto", "always", "never"])? {
+            Some("always") => SaveSent::Always,
+            Some("never") => SaveSent::Never,
+            _ => SaveSent::Auto,
+        };
         let sync = match self.table(&mut s, "sync")? {
             Some(t) => self.sync(t, sync)?,
             None => sync.clone(),
@@ -723,7 +784,7 @@ impl<'t> Reader<'t> {
             None => import.clone(),
         };
         self.finish(s);
-        Ok(AccountConfig { email, display_name, auth, config_sync, read_only, authserv_id, imap, smtp, identities, sync, import })
+        Ok(AccountConfig { email, display_name, auth, config_sync, read_only, authserv_id, imap, smtp, save_sent, identities, sync, import })
     }
 
     fn server(&mut self, mut s: Section, email: &str, protocol: Protocol) -> R<ServerConfig> {
@@ -946,6 +1007,11 @@ view_threshold_ms = {view_threshold_ms}
 # Days the history of changes is kept.
 retention_days = {retention_days}
 
+[compose]
+# Seconds a mail waits after Cmd-Return before it leaves, during which
+# z cancels it. 0 to 30; 0 sends at once.
+undo_send_seconds = {undo_send_seconds}
+
 # An account. The key ("perso") names it; renaming it by hand creates a
 # new account and disables the old one, whose data is kept.
 #
@@ -956,6 +1022,8 @@ retention_days = {retention_days}
 # config_sync = false
 # read_only = false              # true: never change anything on the server
 # authserv_id = "mx.example.com"   # only to replace the detected one
+# save_sent = "auto"           # copy sent mail to Sent: auto (not on Gmail
+#                              # and Fastmail, which do it), always, never
 #
 # [accounts.perso.imap]
 # host = "imap.example.com"
@@ -964,10 +1032,13 @@ retention_days = {retention_days}
 # username = "me"              # default: the email
 # ca_file = "~/certs/my-ca.pem"    # extra authority for this server
 #
-# [accounts.perso.smtp]
+# [accounts.perso.smtp]            # without it, the account cannot send
 # host = "smtp.example.com"
-# port = 465
+# port = 465                   # default: 465 for tls, 587 for starttls
 # security = "tls"
+# username = "me"              # default: the email
+# # The password: the account's SMTP one if saved
+# # (nicemailer account password perso --smtp), else the IMAP one.
 #
 # [[accounts.perso.identities]]
 # email = "contact@example.com"
@@ -992,5 +1063,6 @@ retention_days = {retention_days}
         verify_on_read = d.raw.verify_on_read,
         view_threshold_ms = d.ui.view_threshold_ms,
         retention_days = d.audit.retention_days,
+        undo_send_seconds = d.compose.undo_send_seconds,
     )
 }

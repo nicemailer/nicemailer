@@ -62,6 +62,8 @@ enum UIScript {
     static var titleLines = 0
     /// Width of the open picker panel, in points (`PickerPopup.width`).
     static var pickerWidth: CGFloat = 0
+    /// Lines of the reply's text as drawn (`ComposerTextView`).
+    static var composeLines = 0
 
     private static var started = false
     /// The test window and its model, kept alive while the script runs.
@@ -236,6 +238,20 @@ private final class Runner {
                 try? await Task.sleep(for: .milliseconds(50))
                 click(at: point, modifiers: mods, count: 2)
             }
+        case "axselect", "axreplace":
+            // What an app such as Kerlig does through the accessibility
+            // API: select a range of the reply ("axselect 6 5"), or write
+            // the text that replaces the selection.
+            guard let view = controller.composerView else {
+                fail(lineNumber, line, "no reply open")
+                return
+            }
+            if command == "axselect" {
+                let n = arg.split(separator: " ").compactMap { Int($0) }
+                if n.count == 2 { view.setAccessibilitySelectedTextRange(NSRange(location: n[0], length: n[1])) }
+            } else {
+                view.setAccessibilitySelectedText(arg)
+            }
         case "resize":
             let wh = arg.split(separator: "x").compactMap { Double($0) }
             if wh.count == 2, let w = window {
@@ -284,6 +300,17 @@ private final class Runner {
         case "fdel": chars = "\u{F728}"; code = KeyCode.forwardDelete; mods = .function
         case "alt-del": chars = "\u{7f}"; code = KeyCode.delete; mods = .option
         case "cmd-del": chars = "\u{7f}"; code = KeyCode.delete; mods = .command
+        // Selecting in the text of a reply: Shift with the moves.
+        case "shift-left": chars = "\u{F702}"; code = KeyCode.left; mods = [.function, .shift]
+        case "shift-right": chars = "\u{F703}"; code = KeyCode.right; mods = [.function, .shift]
+        case "shift-alt-left": chars = "\u{F702}"; code = KeyCode.left; mods = [.function, .shift, .option]
+        case "shift-alt-right": chars = "\u{F703}"; code = KeyCode.right; mods = [.function, .shift, .option]
+        case "shift-cmd-left": chars = "\u{F702}"; code = KeyCode.left; mods = [.function, .shift, .command]
+        case "shift-cmd-right": chars = "\u{F703}"; code = KeyCode.right; mods = [.function, .shift, .command]
+        case "shift-cmd-up": chars = "\u{F700}"; code = KeyCode.up; mods = [.function, .shift, .command]
+        case "shift-cmd-down": chars = "\u{F701}"; code = KeyCode.down; mods = [.function, .shift, .command]
+        case "cmd-up": chars = "\u{F700}"; code = KeyCode.up; mods = [.function, .command]
+        case "cmd-down": chars = "\u{F701}"; code = KeyCode.down; mods = [.function, .command]
         default:
             if name.hasPrefix("ctrl-") {
                 mods = .control
@@ -546,6 +573,31 @@ private final class Runner {
             "contact_decision": c.contacts.indices.contains(c.screenIndex)
                 ? c.contacts[c.screenIndex].screeningTarget ?? c.contacts[c.screenIndex].domainTarget.map { "@" + $0 } ?? ""
                 : "",
+            // The reply being written (`reponse.md`): whether one is open,
+            // what the core prepared, the text with `|` at the caret (line
+            // breaks as `\n`), its lines as drawn, and the mails waiting
+            // to leave.
+            "composing": "\(m.composer != nil)",
+            "compose_from": m.composer?.draft.from.addr ?? "",
+            "compose_to": m.composer.map { $0.draft.to.map(\.addr).joined(separator: ",") } ?? "",
+            "compose_cc": m.composer.map { $0.draft.cc.map(\.addr).joined(separator: ",") } ?? "",
+            "compose_subject": m.composer?.draft.subject ?? "",
+            "compose_after": m.composer?.draft.afterSendTarget ?? "",
+            "compose_text": m.composer.map { c in
+                let t = c.buffer.text
+                let i = t.index(t.startIndex, offsetBy: c.buffer.cursor)
+                return (t[..<i] + "|" + t[i...]).replacingOccurrences(of: "\n", with: "\\n")
+            } ?? "",
+            "compose_saved": m.composer.map { "\(!$0.isDirty)" } ?? "",
+            // The text selected in the reply (line breaks as `\n`).
+            "compose_selection": (m.composer?.buffer.selectedText ?? "").replacingOccurrences(of: "\n", with: "\\n"),
+            "compose_lines": "\(UIScript.composeLines)",
+            "sending_count": "\(m.sending.count)",
+            // What the accessibility API gives another app (Kerlig): the
+            // focused element is the reply's text, and its selected text.
+            "ax_focused": "\(controller.composerView.map { $0.window?.firstResponder === $0 } ?? false)",
+            "ax_selected_text": controller.composerView?.accessibilitySelectedText() ?? "",
+            "ax_settable": "\(controller.composerView?.isAccessibilitySelectorAllowed(#selector(NSView.setAccessibilitySelectedText(_:))) ?? false)",
         ]
     }
 }

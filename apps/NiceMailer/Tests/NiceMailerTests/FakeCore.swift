@@ -114,9 +114,39 @@ enum Fixture {
         return ["id": id, "subject": "Subject \(id)", "messages": [message], "as_of": position]
     }
 
+    /// The draft of a reply to the message `replyTo` (thread × 10 in the
+    /// fixture), as the core prepares it: to its sender, the quotation
+    /// under two empty lines (`reponse.md`, section 4).
+    static func draft(replyTo: Int, body: String? = nil, revision: Int = 1, state: String = "editing") -> [String: Any] {
+        let thread = replyTo / 10
+        return [
+            "id": 900 + thread, "account_id": 1,
+            "from": ["addr": "me@example.org", "name": "Me"],
+            "to": [["addr": "sender\(thread)@example.org", "name": "Sender \(thread)"]],
+            "cc": thread == 2 ? [["addr": "carol@example.org", "name": NSNull()]] : [],
+            "subject": "Re: Subject \(thread)",
+            "body": body ?? "\n\nOn Nov 7, Sender \(thread) wrote:\n> Hello",
+            "revision": revision, "state": state, "reply_to": replyTo, "thread_id": thread,
+            "after_send_target": "archive", "send_at": state == "sending" ? 1_790_000_005 : NSNull(),
+        ]
+    }
+
     /// The default answers of the fake core.
     static func answer(_ method: String, _ params: [String: Any]) -> Any {
         switch method {
+        case "create_draft":
+            let replyTo = params["reply_to"] as? Int ?? 10
+            return ["draft": draft(replyTo: replyTo, body: params["body"] as? String), "reused": false]
+        case "update_draft":
+            return ["revision": (params["revision"] as? Int ?? 1) + 1]
+        case "send_draft":
+            return ["send_at": Int(Date().timeIntervalSince1970) + 5]
+        case "cancel_send":
+            let id = params["id"] as? Int ?? 901
+            return draft(replyTo: (id - 900) * 10, body: "Merci", revision: 3)
+        case "discard_draft":
+            let id = params["id"] as? Int ?? 901
+            return draft(replyTo: (id - 900) * 10)
         case "list_folders":
             return ["items": folders, "as_of": position]
         case "list_threads":

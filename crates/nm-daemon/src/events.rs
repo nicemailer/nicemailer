@@ -138,6 +138,23 @@ impl EventLog {
         for (message_id, kind, reason) in &changes.reverted {
             self.push(Event::ActionReverted { message_id: *message_id, kind: kind.clone(), reason: reason.clone() });
         }
+        // After the messages and folders: a client that shows the status
+        // "sent, filed in Archive" finds the lists already refreshed.
+        for s in &changes.sent {
+            self.push(Event::DraftSent {
+                draft_id: s.draft_id,
+                message_id: s.message_id,
+                thread_id: s.thread_id,
+                moved_to: s.moved_to,
+                undo: s.undo.clone(),
+            });
+        }
+        for (draft_id, refused) in &changes.send_partial {
+            self.push(Event::SendPartial { draft_id: *draft_id, refused: refused.clone() });
+        }
+        for (draft_id, reply_to, reason) in &changes.send_failed {
+            self.push(Event::SendFailed { draft_id: *draft_id, reply_to: *reply_to, reason: reason.clone() });
+        }
     }
 
     /// Broadcasts a transient event (`SyncProgress`, `evenements.md`): no

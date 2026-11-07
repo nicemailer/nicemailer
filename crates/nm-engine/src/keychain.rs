@@ -95,14 +95,16 @@ impl Keychain {
         Ok(Keychain { file: Some(kc) })
     }
 
-    fn account(key: &str) -> String {
-        format!("imap:{key}")
+    /// The account name of an item: `imap:<key>`, or `smtp:<key>` for the
+    /// SMTP password saved apart (`reponse.md`, section 7).
+    fn account(proto: Proto, key: &str) -> String {
+        format!("{}:{key}", proto.prefix())
     }
 
     /// A search for the item of `key`.
-    fn search(&self, key: &str) -> ItemSearchOptions {
+    fn search(&self, proto: Proto, key: &str) -> ItemSearchOptions {
         let mut s = ItemSearchOptions::new();
-        s.class(ItemClass::generic_password()).service(SERVICE).account(&Self::account(key));
+        s.class(ItemClass::generic_password()).service(SERVICE).account(&Self::account(proto, key));
         if let Some(kc) = &self.file {
             s.keychains(std::slice::from_ref(kc));
         }
@@ -111,8 +113,8 @@ impl Keychain {
 
     /// The attributes (and the data, if `data`) of the item of `key`, as
     /// strings by attribute name (`icmt` comment, `v_Data` data).
-    fn find(&self, key: &str, data: bool) -> Result<Option<std::collections::HashMap<String, String>>, String> {
-        let mut s = self.search(key);
+    fn find(&self, proto: Proto, key: &str, data: bool) -> Result<Option<std::collections::HashMap<String, String>>, String> {
+        let mut s = self.search(proto, key);
         s.load_attributes(true).load_data(data);
         match s.search() {
             Ok(items) => Ok(items.first().and_then(SearchResult::simplify_dict)),
@@ -143,32 +145,51 @@ fn describe(e: Error) -> String {
     }
 }
 
-impl Secrets for Keychain {
-    fn remove_imap(&self, key: &str) -> Result<(), String> {
-        match self.search(key).delete() {
+/// Which password of an account an item holds.
+#[derive(Debug, Clone, Copy)]
+enum Proto {
+    Imap,
+    Smtp,
+}
+
+impl Proto {
+    fn prefix(self) -> &'static str {
+        match self {
+            Proto::Imap => "imap",
+            Proto::Smtp => "smtp",
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Proto::Imap => "IMAP",
+            Proto::Smtp => "SMTP",
+        }
+    }
+}
+
+impl Keychain {
+    fn remove(&self, proto: Proto, key: &str) -> Result<(), String> {
+        match self.search(proto, key).delete() {
             Ok(()) => Ok(()),
             Err(e) if e.code() == NOT_FOUND => Ok(()),
             Err(e) => Err(describe(e)),
         }
     }
 
-    fn imap_binding(&self, key: &str) -> Result<Option<Binding>, String> {
-        self.find(key, false)?.map(|a| binding_of(&a)).transpose()
-    }
-
-    fn imap(&self, key: &str) -> Result<Option<Credential>, String> {
-        let Some(attrs) = self.find(key, true)? else { return Ok(None) };
+    fn get(&self, proto: Proto, key: &str) -> Result<Option<Credential>, String> {
+        let Some(attrs) = self.find(proto, key, true)? else { return Ok(None) };
         let binding = binding_of(&attrs)?;
         let secret = attrs.get("v_Data").ok_or("Keychain item without a password: save it again")?;
         Ok(Some(Credential { binding, secret: SecretString::new(secret.clone()) }))
     }
 
-    fn set_imap(&self, key: &str, credential: &Credential) -> Result<(), String> {
+    fn set(&self, proto: Proto, key: &str, credential: &Credential) -> Result<(), String> {
         // Replace: delete the old item, then add the new one. Deleting
         // needs the item's permission, which the core has for the items it
         // created; an item saved by another build is refused, and the
         // message says what to do.
-        match self.search(key).delete() {
+        match self.search(proto, key).delete() {
             Ok(()) => {}
             Err(e) if e.code() == NOT_FOUND => {}
             Err(e) => return Err(describe(e)),
@@ -177,8 +198,8 @@ impl Secrets for Keychain {
         let data = CFData::from_buffer(credential.secret.expose().as_bytes());
         let mut add = ItemAddOptions::new(ItemAddValue::Data { class: ItemClass::generic_password(), data });
         add.set_service(SERVICE)
-            .set_account_name(Self::account(key))
-            .set_label(format!("NiceMailer: {key} (IMAP)"))
+            .set_account_name(Self::account(proto, key))
+            .set_label(format!("NiceMailer: {key} ({})", proto.label()))
             .set_comment(comment);
         add.set_location(match &self.file {
             Some(kc) => Location::FileKeychain(kc.clone()),
@@ -189,5 +210,35 @@ impl Secrets for Keychain {
             Err(e) if e.code() == DUPLICATE => Err("the Keychain already has this item and refused to replace it".into()),
             Err(e) => Err(describe(e)),
         }
+    }
+}
+
+impl Secrets for Keychain {
+    fn remove_imap(&self, key: &str) -> Result<(), String> {
+        self.remove(Proto::Imap, key)
+    }
+
+    fn imap_binding(&self, key: &str) -> Result<Option<Binding>, String> {
+        self.find(Proto::Imap, key, false)?.map(|a| binding_of(&a)).transpose()
+    }
+
+    fn imap(&self, key: &str) -> Result<Option<Credential>, String> {
+        self.get(Proto::Imap, key)
+    }
+
+    fn set_imap(&self, key: &str, credential: &Credential) -> Result<(), String> {
+        self.set(Proto::Imap, key, credential)
+    }
+
+    fn smtp(&self, key: &str) -> Result<Option<Credential>, String> {
+        self.get(Proto::Smtp, key)
+    }
+
+    fn set_smtp(&self, key: &str, credential: &Credential) -> Result<(), String> {
+        self.set(Proto::Smtp, key, credential)
+    }
+
+    fn remove_smtp(&self, key: &str) -> Result<(), String> {
+        self.remove(Proto::Smtp, key)
     }
 }

@@ -588,11 +588,18 @@ impl Store {
         // or deleted elsewhere meanwhile). It shows again through the
         // folder it really is in (`modele de donnees.md`, section 6,
         // "Message disparu du serveur").
+        //
+        // Except a mail NiceMailer sent less than an hour ago (`created_by`
+        // a client, not `imap`): its copy in Sent may not be there yet (a
+        // provider that copies it itself, a server without UIDPLUS); the
+        // pass that sees it attaches the row by its Message-ID
+        // (`reponse.md`, section 9).
         {
             let orphans: Vec<(i64, Option<i64>)> = tx
                 .prepare_cached(
                     "DELETE FROM message WHERE folder_id = ?1 AND uid IS NULL
                        AND NOT EXISTS (SELECT 1 FROM pending_action a WHERE a.message_id = message.id AND a.state IN ('queued', 'running'))
+                       AND NOT (created_by <> 'imap' AND date_created > unixepoch() - 3600)
                      RETURNING id, thread_id",
                 )?
                 .query_map([folder_id], |r| Ok((r.get(0)?, r.get(1)?)))?

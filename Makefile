@@ -75,7 +75,8 @@ imap-up:
 	docker compose -f dev/dovecot/compose.yaml up -d --wait --force-recreate
 
 # The tests that need the test IMAP servers (make imap-up first): the IMAP
-# client against both Dovecot servers, and probe_account end to end. They
+# client against both Dovecot servers, probe_account end to end, and the
+# sending of replies through the test SMTP servers (Mailpit). They
 # are #[ignore] in the other tests, so that make test needs no server.
 imap-test:
 	cargo test -p nm-proto --test dovecot -- --ignored
@@ -83,6 +84,7 @@ imap-test:
 	cargo test -p nm-engine --test ingest_imap -- --ignored
 	cargo test -p nm-daemon --test sync_rpc -- --ignored
 	cargo test -p nm-daemon --test setup_rpc -- --ignored
+	cargo test -p nm-daemon --test send_rpc -- --ignored
 
 # The volume test of plan-imap.md, phase 8: a generated mailbox of
 # NM_VOLUME mails (100,000 by default) synchronized from nothing; prints

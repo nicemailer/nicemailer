@@ -339,3 +339,21 @@ fn the_defaults_file_is_valid_and_complete() {
     assert_eq!(parsed.config.accounts["perso"].identities.len(), 1);
     assert!(parsed.warnings.is_empty(), "{:?}", parsed.warnings);
 }
+
+#[test]
+fn compose_and_save_sent() {
+    // Defaults: 5 s to cancel, Sent copied unless the provider does it.
+    let c = parse(EXAMPLE).unwrap().config;
+    assert_eq!(c.compose.undo_send_seconds, 5);
+    assert_eq!(c.accounts["perso"].save_sent, config::SaveSent::Auto);
+    let c = parse(&format!("[compose]\nundo_send_seconds = 0\n{}", EXAMPLE.replace("config_sync = false", "config_sync = false\nsave_sent = \"never\"")))
+        .unwrap()
+        .config;
+    assert_eq!(c.compose.undo_send_seconds, 0);
+    assert_eq!(c.accounts["perso"].save_sent, config::SaveSent::Never);
+    // Out of range, or not a choice: refused with the line.
+    let p = refused("[compose]\nundo_send_seconds = 31\n");
+    assert_eq!(p.line, Some(2));
+    let p = refused(&EXAMPLE.replace("config_sync = false", "config_sync = false\nsave_sent = \"sometimes\""));
+    assert_eq!(p.key.as_deref(), Some("accounts.perso.save_sent"));
+}

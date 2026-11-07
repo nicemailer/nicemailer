@@ -138,7 +138,7 @@ La règle de rangement s'applique donc aussi depuis la Quarantine : c'est elle q
 
 ### Répondre à une conversation
 
-Répondre fait souvent avancer le traitement d'une conversation, mais le noyau ne peut pas deviner vers quoi : une réponse peut clore l'échange (« merci, c'est noté »), relancer l'attente (une nouvelle question) ou laisser un travail à faire. L'écran de réponse demande donc **où ranger la conversation après l'envoi**, parmi trois cibles : **Archive**, **Waiting** ou **Todo**. La cible la plus probable est présélectionnée, et l'utilisateur n'a rien à faire dans le cas courant.
+Répondre fait souvent avancer le traitement d'une conversation, mais le noyau ne peut pas deviner vers quoi : une réponse peut clore l'échange (« merci, c'est noté »), relancer l'attente (une nouvelle question) ou laisser un travail à faire. L'écran de réponse demande donc **où ranger la conversation après l'envoi** (la v1 de `reponse.md` affiche la présélection sans permettre de la changer), parmi trois cibles : **Archive**, **Waiting** ou **Todo**. La cible la plus probable est présélectionnée, et l'utilisateur n'a rien à faire dans le cas courant.
 
 | Dossier de la conversation | Cible présélectionnée | Raison |
 | --- | --- | --- |

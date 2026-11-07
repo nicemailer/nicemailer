@@ -1,0 +1,112 @@
+# Replying to a mail (`reponse.md`): `r` on the mail of the Inbox (account
+# perso), the text typed above the quotation, Escape keeps the draft and `r`
+# resumes it, ⌘⌫ abandons it and `z` gives it back, ⌘↩ queues it and `z`
+# cancels it during the undo delay, then ⌘↩ sends it for good: the
+# conversation is filed in Archive, and `z` puts it back. The core of the
+# UI tests sends nothing anywhere (NICEMAILER_FAKE_NETWORK).
+expect folder = Inbox
+expect composing = false
+key r
+expect composing = true
+expect mode = EDT
+expect compose_subject ~ Re:
+expect compose_to ~ @
+expect compose_from = alex@moreau-conseil.fr
+expect compose_after = archive
+# The cursor at the start, above the line introducing the quotation.
+expect compose_text ~ |\n\n
+expect compose_text ~ wrote:
+expect compose_text ~ \n> 
+snap reply-open
+# Letters are text, not commands: `d` does not archive, `j` does not move.
+type Merci d'avance, je regarde
+expect compose_text ~ Merci d'avance, je regarde|
+expect selected = 0
+key ret
+type Achille
+expect compose_text ~ je regarde\nAchille|
+key del
+expect compose_text ~ \nAchill|
+key left
+key left
+expect compose_text ~ \nAchi|ll
+key up
+expect compose_text ~ Merc|i
+key cmd-right
+expect compose_text ~ je regarde|\n
+# Shift with the arrows selects, as in any macOS text view: by word with
+# ⌥, to the start of the line with ⌘; → ends the selection at its end.
+key shift-alt-left
+expect compose_selection = regarde
+snap reply-selection
+key shift-cmd-left
+expect compose_selection = Merci d'avance, je regarde
+key right
+expect compose_selection = 
+expect compose_text ~ je regarde|\n
+# ⌘A selects everything, → leaves the cursor at the end.
+key cmd-a
+expect compose_selection ~ wrote:
+key right
+expect compose_selection = 
+# Another app (Kerlig, a grammar checker) works on the selected text
+# through the accessibility API: the reply's text is the focused element,
+# its selection is readable, and what the app writes back replaces it.
+key shift-alt-left
+expect ax_focused = true
+expect ax_settable = true
+expect compose_selection = Victor\n
+expect ax_selected_text ~ Victor
+axselect 8 6
+expect compose_selection = avance
+expect ax_selected_text = avance
+axreplace AVANCE
+expect compose_text ~ Merci d'AVANCE|, je regarde
+expect compose_saved = true
+axselect 8 6
+axreplace avance
+expect compose_text ~ Merci d'avance|, je regarde
+# Saved after a pause of typing.
+expect compose_saved = true
+expect compose_lines > 3
+snap reply-typed
+# Escape: back to the mail, the draft kept; `r` resumes it.
+key esc
+expect composing = false
+expect mode = NOR
+expect flash ~ kept as a draft
+key r
+expect composing = true
+expect flash ~ resumed
+expect compose_text ~ je regarde\nAchill
+# ⌘⌫ abandons it, `z` gives it back with its text.
+key cmd-del
+expect composing = false
+expect flash ~ abandoned
+key z
+expect composing = true
+expect compose_text ~ je regarde\nAchill
+# ⌘↩: the mail waits for the undo delay; `z` cancels it.
+key cmd-ret
+expect composing = false
+expect flash ~ Sending in
+expect sending_count = 1
+expect undo_count = 1
+key z
+expect composing = true
+expect flash ~ Sending cancelled
+expect sending_count = 0
+# ⌘↩ again, and the delay goes by: sent, the conversation filed in Archive.
+key cmd-ret
+expect composing = false
+wait 4500
+expect flash ~ Sent · filed in Archive
+expect sending_count = 0
+expect undo_count = 1
+snap sent
+# `z` undoes the filing, not the sending.
+key z
+expect flash ~ Undone: filing of the reply
+# Reply to the sender only and forward: not yet.
+key R
+expect flash ~ Not available yet

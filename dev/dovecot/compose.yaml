@@ -9,6 +9,15 @@
 # - minimal: the same server announcing only IMAP4rev1 UIDPLUS IDLE LITERAL+,
 #            on 127.0.0.1:32143 and 32993.
 #
+# - smtp:     Mailpit, the SMTP server of the sending tests (reponse.md):
+#            STARTTLS on 127.0.0.1:31587, any user name and password
+#            accepted, recipients outside @example.com and @ok.example
+#            refused (550), what it received readable on its API,
+#            http://127.0.0.1:38025/api/v1/;
+# - smtps:   Mailpit with TLS from the first byte on 127.0.0.1:31465, and a
+#            real password: user "nicemailer", password "smtp-secret"
+#            (smtp-users.txt); its API on http://127.0.0.1:38026/api/v1/.
+#
 # Mail lives in tmpfs: stopping the servers deletes it. The certificate is
 # made by make-tls.sh, signed by a test authority (tls/ca.crt).
 services:
@@ -37,3 +46,33 @@ services:
       - ./tls/server.crt:/etc/dovecot/ssl/tls.crt:ro
       - ./tls/server.key:/etc/dovecot/ssl/tls.key:ro
       - ./minimal.conf:/etc/dovecot/conf.d/zz-minimal.conf:ro
+  smtp:
+    image: axllent/mailpit:v1.27
+    command:
+      - --smtp-tls-cert=/tls/server.crt
+      - --smtp-tls-key=/tls/server.key
+      - --smtp-require-starttls
+      - --smtp-auth-accept-any
+      - --smtp-allowed-recipients=@(example\.com|ok\.example)$$
+      - --max=0
+    ports:
+      - "127.0.0.1:31587:1025"
+      - "127.0.0.1:38025:8025"
+    volumes:
+      - ./tls/server.crt:/tls/server.crt:ro
+      - ./tls/server.key:/tls/server.key:ro
+  smtps:
+    image: axllent/mailpit:v1.27
+    command:
+      - --smtp-tls-cert=/tls/server.crt
+      - --smtp-tls-key=/tls/server.key
+      - --smtp-require-tls
+      - --smtp-auth-file=/smtp-users.txt
+      - --max=0
+    ports:
+      - "127.0.0.1:31465:1025"
+      - "127.0.0.1:38026:8025"
+    volumes:
+      - ./tls/server.crt:/tls/server.crt:ro
+      - ./tls/server.key:/tls/server.key:ro
+      - ./smtp-users.txt:/smtp-users.txt:ro

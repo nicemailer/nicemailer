@@ -99,6 +99,12 @@ impl Client {
 /// create-keychain` does not add it to the user's search list), never the
 /// login keychain.
 pub fn start(dir: &Path) -> Core {
+    start_with(dir, &[])
+}
+
+/// The same, with these environment variables given to the core
+/// (`NICEMAILER_FAKE_NETWORK`…).
+pub fn start_with(dir: &Path, env: &[(&str, &str)]) -> Core {
     let keychain = dir.join("test.keychain-db");
     if !keychain.exists() {
         for args in [["create-keychain", "-p", "test"], ["unlock-keychain", "-p", "test"]] {
@@ -118,6 +124,7 @@ pub fn start(dir: &Path) -> Core {
             .arg(dir.join("config.toml"))
             .arg("--keychain")
             .arg(&keychain)
+            .envs(env.iter().copied())
             .spawn()
             .unwrap(),
     )

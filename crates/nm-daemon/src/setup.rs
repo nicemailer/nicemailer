@@ -325,6 +325,11 @@ pub async fn rename_account(core: &Arc<Core>, p: RenameAccountParams, source: So
             secrets.set_imap(&to, &c)?;
             secrets.remove_imap(&from)?;
         }
+        // The SMTP password saved apart follows the account too.
+        if let Some(c) = secrets.smtp(&from)? {
+            secrets.set_smtp(&to, &c)?;
+            secrets.remove_smtp(&from)?;
+        }
         Ok(())
     })
     .await
@@ -359,7 +364,7 @@ pub async fn remove_account(core: &Arc<Core>, p: RemoveAccountParams, source: So
     })
     .await?;
     let key = p.account.clone();
-    tokio::task::spawn_blocking(move || secrets.remove_imap(&key))
+    tokio::task::spawn_blocking(move || secrets.remove_imap(&key).and_then(|()| secrets.remove_smtp(&key)))
         .await
         .map_err(|e| RpcError::new(error_code::INTERNAL_ERROR, e.to_string()))?
         .map_err(|e| RpcError::new(error_code::SECRETS, e))

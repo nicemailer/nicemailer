@@ -337,7 +337,7 @@ private struct MailColumns: View {
             let rest = geo.size.width - folderWidth
             let listWidth = controller.columns == 1 ? rest : max(220, min(rest - 260, rest * controller.listFraction))
             HStack(spacing: 0) {
-                if controller.columns == 1, controller.reading, model.selectedThreadId != nil {
+                if controller.columns == 1, controller.reading, model.selectedThreadId != nil || model.composer != nil {
                     // One column, Return pressed: the mail takes the whole
                     // window until Escape. j / k still move the cursor of
                     // the hidden list, so the next mail is one key away.
@@ -667,7 +667,11 @@ private struct GeekReaderColumn: View {
     let controller: GeekController
 
     var body: some View {
-        if let thread = model.openThread, thread.id == model.selectedThreadId {
+        if model.composer != nil {
+            // The reply being written takes the reader's place
+            // (`reponse.md`, section 6); Escape brings the mail back.
+            ComposerView(controller: controller)
+        } else if let thread = model.openThread, thread.id == model.selectedThreadId {
             let state = controller.readerState
             let blocks = ThreadDisplay.blocks(thread, state)
             VStack(spacing: 0) {

@@ -7,10 +7,23 @@ import Foundation
 // what the core did and keeps the tokens that undo it.
 
 /// One step of `z`: the undo tokens of a command given on one or several
-/// threads, and what to call it in the message.
+/// threads, and what to call it in the message. Or, for a reply
+/// (`AppModel+Compose.swift`): a mail waiting for its undo delay, whose
+/// sending `z` cancels; a draft abandoned, which `z` gives back.
 struct UndoStep: Equatable {
     let tokens: [String]
     let label: String
+    /// The draft whose sending `z` cancels (`cancel_send`).
+    var cancelSend: Int? = nil
+    /// The draft abandoned with ⌘⌫: `z` starts it again with its text.
+    var restoreDraft: DiscardedDraft? = nil
+}
+
+/// What it takes to give back an abandoned draft: the mail it answers and
+/// its text.
+struct DiscardedDraft: Equatable {
+    let replyTo: Int
+    let body: String
 }
 
 /// A move the core refused until the user confirms it.
@@ -79,6 +92,14 @@ extension AppModel {
         guard let client = core else { return }
         guard let step = undoStack.popLast() else {
             flash = L("Nothing to undo")
+            return
+        }
+        if let draft = step.cancelSend {
+            await cancelSend(draft)
+            return
+        }
+        if let d = step.restoreDraft {
+            await restoreDraft(d)
             return
         }
         var moved = 0

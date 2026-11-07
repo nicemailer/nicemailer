@@ -15,6 +15,10 @@
 //!     first, newest first, so that 200,000 bodies to download never delay
 //!     the arrival of a mail. A body the user opens goes first.
 //!
+//!   - the **sender** (`send.rs`), for an account with `[smtp]`, sends
+//!     the mails queued by `send_draft` and copies them to Sent, with
+//!     connections of its own (`reponse.md`).
+//!
 //!   With `sync.max_connections = 1`, both jobs share the work connection.
 //!   The plan had a third connection for IDLE alone: the work connection
 //!   leaves IDLE in a few milliseconds when it has something to do, so a
@@ -41,6 +45,7 @@
 mod account;
 mod bodies;
 mod pass;
+mod send;
 mod spool;
 pub mod verify;
 
@@ -137,6 +142,8 @@ pub(crate) struct Control {
     work: Notify,
     /// Wakes the body connection: stop, new messages, a body asked for.
     bodies: Notify,
+    /// Wakes the sender: stop, a mail queued or cancelled (`send.rs`).
+    send: Notify,
     /// The body queue must be read again: a pass brought new messages.
     reload: AtomicBool,
     /// A command queued actions in the spool: send them now.
@@ -159,6 +166,7 @@ impl Control {
         // never lost between a check and the wait that follows it.
         self.work.notify_one();
         self.bodies.notify_one();
+        self.send.notify_one();
     }
 
     /// Takes the "now" request, if any.
@@ -255,6 +263,19 @@ impl Syncer {
             if account_ids.contains(&w.spec.account_id) {
                 w.control.spool.store(true, Ordering::SeqCst);
                 w.control.work.notify_one();
+            }
+        }
+    }
+
+    /// Mails were queued for sending, or a send cancelled, on these
+    /// accounts: their senders look at their queue again (`send.rs`).
+    pub fn wake_send(&self, account_ids: &std::collections::BTreeSet<i64>) {
+        if account_ids.is_empty() {
+            return;
+        }
+        for w in self.workers.lock().unwrap().values() {
+            if account_ids.contains(&w.spec.account_id) {
+                w.control.send.notify_one();
             }
         }
     }

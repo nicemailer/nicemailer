@@ -9,6 +9,8 @@
 //! crate), while `///` comments document the item that follows them. Both
 //! are rendered by `cargo doc`.
 
+pub mod compose;
+
 use serde::{Deserialize, Serialize};
 
 /// Role of a folder in the workflow (the `folder.role` column).
@@ -424,6 +426,22 @@ pub enum Source {
 }
 
 impl Source {
+    /// The source of an identifier stored in the database; `None` for an
+    /// unknown one.
+    pub fn parse(s: &str) -> Option<Source> {
+        Some(match s {
+            "core" => Source::Core,
+            "app" => Source::App,
+            "cli" => Source::Cli,
+            "tui" => Source::Tui,
+            "web" => Source::Web,
+            "mcp" => Source::Mcp,
+            "config_sync" => Source::ConfigSync,
+            "imap" => Source::Imap,
+            _ => return None,
+        })
+    }
+
     /// Identifier stored in the database.
     pub fn as_str(self) -> &'static str {
         match self {

@@ -30,6 +30,7 @@ The password is asked without echo, or read from the standard input (`printf %s 
 | Correspondents | The recipients of the mails of Sent without decision, and who never had one, get the decision `inbox` (`created_by = 'core'`, reason `sent_correspondent`), unless `--no-correspondents`; unknown ones are created with `imported_from = 'imap_initial'` |
 | Archiving | One spool action `initial_archive` on the account, with the criteria, if dates were given |
 | Password | In the Keychain, bound to this server (host and user) |
+| SMTP password | The IMAP one by default, when the SMTP server is of the same provider; else saved apart with `nicemailer account password <key> --smtp` ([sending.md](sending.md)) |
 | File | `[accounts.<key>]` added to `config.toml` (below), then applied at once: the worker starts |
 
 ### The archiving on the server

@@ -78,6 +78,12 @@ pub trait Secrets: Send + Sync {
     /// Deletes the IMAP secret of account `key` (`account remove`,
     /// `account rename`); nothing stored is not an error.
     fn remove_imap(&self, key: &str) -> Result<(), String>;
+    /// The SMTP secret of account `key`, saved apart when the SMTP server
+    /// wants another password than the IMAP one (`reponse.md`, section 7).
+    /// Same rule as [`Secrets::imap`]: only to log in, never with a lock held.
+    fn smtp(&self, key: &str) -> Result<Option<Credential>, String>;
+    fn set_smtp(&self, key: &str, credential: &Credential) -> Result<(), String>;
+    fn remove_smtp(&self, key: &str) -> Result<(), String>;
 }
 
 /// Why the core will not authenticate an account.
@@ -92,6 +98,14 @@ pub enum Refusal {
     ServerChanged { stored: Binding },
     /// The store of secrets failed (Keychain locked, access refused…).
     Unavailable(String),
+    /// The account has no `[smtp]`: it cannot send.
+    NoSmtp,
+    /// The SMTP password saved apart was entered for another server than
+    /// the one the file names now.
+    SmtpServerChanged { stored: Binding },
+    /// No SMTP password saved apart, and the SMTP server is not of the
+    /// IMAP server's provider: the IMAP password is not sent there.
+    SmtpPasswordNeeded,
 }
 
 impl Refusal {
@@ -106,6 +120,20 @@ impl Refusal {
                 stored.username, stored.host, account.imap.username, account.imap.host
             ),
             Refusal::Unavailable(e) => e.clone(),
+            Refusal::NoSmtp => "this account has no [smtp] server in config.toml: it cannot send".into(),
+            Refusal::SmtpServerChanged { stored } => format!(
+                "the SMTP password was saved for {} on {}, the file now says {}: save it again to confirm the new \
+                 server (nicemailer account password {key} --smtp)",
+                stored.username,
+                stored.host,
+                account.smtp.as_ref().map(|s| format!("{} on {}", s.username, s.host)).unwrap_or_default()
+            ),
+            Refusal::SmtpPasswordNeeded => format!(
+                "the SMTP server {} is not of the same provider as the IMAP server {}: NiceMailer does not send it the \
+                 IMAP password. Save its own: nicemailer account password {key} --smtp",
+                account.smtp.as_ref().map(|s| s.host.as_str()).unwrap_or(""),
+                account.imap.host
+            ),
         }
     }
 }
@@ -139,10 +167,50 @@ pub fn imap_password(secrets: &dyn Secrets, key: &str, account: &AccountConfig) 
     Ok(credential.secret)
 }
 
+/// The SMTP password of an account (`reponse.md`, section 7, "SMTP"): the
+/// one saved apart for the SMTP server (`smtp:<key>`), if any, checked
+/// against the server the file names now; else the IMAP password, but only
+/// when the SMTP server is of the same provider as the IMAP server (the
+/// same host, or the same organizational domain: `smtp.gmail.com` and
+/// `imap.gmail.com`). Without that rule, a file changed to point `[smtp]`
+/// elsewhere would send the IMAP password to that server.
+///
+/// Rust note: `fn(&str) -> String` is a plain function pointer: the
+/// caller passes the rule that computes an organizational domain (the
+/// public suffix list lives in `nm-store`), which keeps this file free of it.
+pub fn smtp_password(
+    secrets: &dyn Secrets,
+    key: &str,
+    account: &AccountConfig,
+    organizational_domain: fn(&str) -> String,
+) -> Result<SecretString, Refusal> {
+    if account.auth == AuthMethod::Oauth2 {
+        return Err(Refusal::OauthUnsupported);
+    }
+    let smtp = account.smtp.as_ref().ok_or(Refusal::NoSmtp)?;
+    if let Some(c) = secrets.smtp(key).map_err(Refusal::Unavailable)? {
+        if !(c.binding.host.eq_ignore_ascii_case(&smtp.host) && c.binding.username == smtp.username) {
+            return Err(Refusal::SmtpServerChanged { stored: c.binding });
+        }
+        return Ok(c.secret);
+    }
+    let same = smtp.host.eq_ignore_ascii_case(&account.imap.host)
+        || organizational_domain(&smtp.host.to_lowercase()) == organizational_domain(&account.imap.host.to_lowercase());
+    if !same {
+        return Err(Refusal::SmtpPasswordNeeded);
+    }
+    imap_password(secrets, key, account)
+}
+
+/// The binding of the SMTP password of an account: its SMTP server.
+pub fn smtp_binding(account: &AccountConfig) -> Option<Binding> {
+    account.smtp.as_ref().map(|s| Binding { host: s.host.clone(), username: s.username.clone() })
+}
+
 /// Secrets in memory, for tests: the same behavior as the Keychain, without
 /// touching it.
 #[derive(Default)]
-pub struct MemorySecrets(Mutex<BTreeMap<String, Credential>>);
+pub struct MemorySecrets(Mutex<BTreeMap<String, Credential>>, Mutex<BTreeMap<String, Credential>>);
 
 impl Secrets for MemorySecrets {
     fn imap_binding(&self, key: &str) -> Result<Option<Binding>, String> {
@@ -160,6 +228,20 @@ impl Secrets for MemorySecrets {
 
     fn remove_imap(&self, key: &str) -> Result<(), String> {
         self.0.lock().unwrap().remove(key);
+        Ok(())
+    }
+
+    fn smtp(&self, key: &str) -> Result<Option<Credential>, String> {
+        Ok(self.1.lock().unwrap().get(key).cloned())
+    }
+
+    fn set_smtp(&self, key: &str, credential: &Credential) -> Result<(), String> {
+        self.1.lock().unwrap().insert(key.to_string(), credential.clone());
+        Ok(())
+    }
+
+    fn remove_smtp(&self, key: &str) -> Result<(), String> {
+        self.1.lock().unwrap().remove(key);
         Ok(())
     }
 }

@@ -121,6 +121,35 @@ pub(super) fn start(spec: AccountSpec, host: Arc<dyn SyncHost>, secrets: Arc<dyn
             })
             .expect("thread"),
     );
+    // The sender, for an account that can send (`send.rs`): never on a
+    // read-only account, whose server must not change.
+    if spec.config.smtp.is_some() && !spec.config.read_only {
+        let sender = shared.clone();
+        threads.push(
+            std::thread::Builder::new()
+                .name(format!("nm-send-{}", spec.key))
+                .spawn(move || {
+                    // Not before the previous worker of the account has
+                    // ended, like the body thread: two senders of one
+                    // account would claim the same queue.
+                    {
+                        let (lock, cv) = &*sender.ready;
+                        let mut ready = lock.lock().unwrap();
+                        while !*ready {
+                            ready = cv.wait(ready).unwrap();
+                        }
+                    }
+                    let sx = super::send::Sender {
+                        spec: &sender.spec,
+                        host: sender.host.as_ref(),
+                        secrets: sender.secrets.as_ref(),
+                        control: &sender.control,
+                    };
+                    runtime().block_on(super::send::run(sx));
+                })
+                .expect("thread"),
+        );
+    }
     if spec.config.sync.max_connections >= 2 {
         let bodies = shared.clone();
         threads.push(

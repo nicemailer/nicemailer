@@ -301,6 +301,7 @@ enum JSONValue: Sendable, Equatable {
     case int(Int)
     case string(String)
     case ints([Int])
+    case strings([String])
     case other
 
     /// Failable initializer (`init?`): may return nil. `case let i as Int`
@@ -310,6 +311,7 @@ enum JSONValue: Sendable, Equatable {
         case let i as Int: self = .int(i)
         case let s as String: self = .string(s)
         case let a as [Int]: self = .ints(a)
+        case let a as [String]: self = .strings(a)
         default: self = .other
         }
     }
@@ -318,4 +320,8 @@ enum JSONValue: Sendable, Equatable {
     var int: Int? { if case .int(let i) = self { return i } else { return nil } }
     /// The integer list, or an empty list.
     var ints: [Int] { if case .ints(let a) = self { return a } else { return [] } }
+    /// The text, if this value is one.
+    var string: String? { if case .string(let s) = self { return s } else { return nil } }
+    /// The list of texts, or an empty list.
+    var strings: [String] { if case .strings(let a) = self { return a } else { return [] } }
 }

@@ -1,6 +1,6 @@
 # NiceMailer : brouillons
 
-Statut : validé pour la v1. Complète `dossiers.md` (dossier Drafts, réponse et rangement), `schema.sql`, `modele de donnees.md` et `stockage-brut.md`.
+Statut : validé pour la v1. La première version réalisée de la réponse (`reponse.md`) n'en applique qu'une partie : brouillon local sans copie dans Drafts, délai d'annulation de l'envoi. Complète `dossiers.md` (dossier Drafts, réponse et rangement), `schema.sql`, `modele de donnees.md` et `stockage-brut.md`.
 
 ## 1. Objet
 

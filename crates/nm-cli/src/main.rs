@@ -284,6 +284,10 @@ enum AccountAction {
     Password {
         /// Account key, as in [accounts.<key>].
         key: String,
+        /// Save the password of the SMTP server instead, when it differs
+        /// from the IMAP one (by default, sending uses the IMAP password).
+        #[arg(long)]
+        smtp: bool,
     },
     /// Create an IMAP account: try the server, show its folders and the
     /// roles proposed, then create the missing folders, archive the old
@@ -502,12 +506,13 @@ fn main() -> anyhow::Result<()> {
             Ok(())
         }
         Command::Config { action } => run_config(action),
-        Command::Account { action: AccountAction::Password { key } } => {
+        Command::Account { action: AccountAction::Password { key, smtp } } => {
             // Connect first: no point asking for a password the core
             // cannot receive.
             let mut client = Client::connect(&data_dir)?;
-            let password = read_password(&format!("IMAP password of {key}: "))?;
-            client.call("set_password", json!({ "account": key, "password": password }))?;
+            let what = if smtp { "SMTP" } else { "IMAP" };
+            let password = read_password(&format!("{what} password of {key}: "))?;
+            client.call("set_password", json!({ "account": key, "password": password, "smtp": smtp }))?;
             let result = client.call("list_accounts", Value::Null)?;
             let account = result["items"].as_array().into_iter().flatten().find(|a| a["key"] == key.as_str());
             match account.and_then(|a| a["error"].as_str()) {

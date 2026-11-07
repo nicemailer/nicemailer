@@ -168,8 +168,8 @@ Avec une majuscule (JK), ou maj + flèche bas / haut, on passe au mail suivant e
 
 
 Les opérations classiques sur un mail sont (elles s'appliquent aux mails marqués avec J/K, sinon au mail sélectionné) : 
-r répondre (pas encore : contexte édition)
-R répondre à tous (pas encore)
+r répondre à tous (`reponse.md`) : contexte édition, ⌘↩ envoie, échap garde le brouillon, ⌘⌫ l'abandonne
+R répondre à l'expéditeur seul (pas encore)
 f forwarder (pas encore)
 d mark done (archiver)
 m move (déplacer), puis choisir le dossier. mt déplacer dans le dossier Todo, md déplacer dans le dossier Deleted. Le menu ne propose que les cibles permises depuis le dossier du mail.

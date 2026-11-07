@@ -299,7 +299,8 @@ pub(crate) fn clear_return_marks(tx: &Transaction, message_ids: &[i64], source: 
 }
 
 /// A mail found in Sent, sent since the last pass (from the phone, the
-/// webmail): what sending from NiceMailer will do too.
+/// webmail): what sending from NiceMailer does too (`nm-store`,
+/// `drafts.rs`).
 /// - Its recipients without decision get the decision `inbox` ("Écrire à
 ///   quelqu'un vaut décision Inbox"): their mails still in Quarantine go
 ///   to the Inbox.
@@ -314,6 +315,24 @@ fn sent_effects(
     changes: &mut ChangeSet,
     threads: &mut BTreeSet<i64>,
 ) -> Result<()> {
+    accept_recipients(tx, rc.own, message_id, Source::Imap, changes, threads)?;
+    file_reply(tx, account_id, message_id, changes, threads)
+}
+
+/// "Écrire à quelqu'un vaut décision Inbox" (`dossiers.md`): the
+/// recipients (To, Cc, Bcc) of the sent mail `message_id` that have no
+/// decision get `inbox`, and their mails still in Quarantine go to the
+/// Inbox. An existing decision is kept, a decision removed too (its date
+/// stays: the user chose to have none). `own`: the account's addresses,
+/// lowercase, never decided on. Returns how many addresses were decided.
+pub(crate) fn accept_recipients(
+    tx: &Transaction,
+    own: &[String],
+    message_id: i64,
+    source: Source,
+    changes: &mut ChangeSet,
+    threads: &mut BTreeSet<i64>,
+) -> Result<usize> {
     let recipients: Vec<(i64, String)> = tx
         .prepare_cached(
             "SELECT DISTINCT a.id, a.addr FROM message_address ma JOIN address a ON a.id = ma.address_id
@@ -323,24 +342,26 @@ fn sent_effects(
         .query_map([message_id], |r| Ok((r.get(0)?, r.get(1)?)))?
         .collect::<std::result::Result<_, _>>()?;
     let mut folders = HashMap::new();
+    let mut n = 0;
     for (id, addr) in recipients {
-        if rc.own.contains(&addr) {
+        if own.contains(&addr) {
             continue;
         }
         tx.prepare_cached(
             "UPDATE address SET screening_target = 'inbox', date_screening_modified = unixepoch(),
-                    date_modified = unixepoch(), modified_by = 'imap' WHERE id = ?1",
+                    date_modified = unixepoch(), modified_by = ?2 WHERE id = ?1",
         )?
-        .execute([id])?;
+        .execute(params![id, source.as_str()])?;
         tx.prepare_cached(
             "INSERT INTO audit_log (created_by, entity, entity_id, action, detail)
-             VALUES ('imap', 'address', ?1, 'screening',
+             VALUES (?3, 'address', ?1, 'screening',
                      json_object('before', NULL, 'after', 'inbox', 'reason', 'sent_to', 'message_id', ?2))",
         )?
-        .execute(params![id, message_id])?;
-        file_address(tx, id, ScreeningTarget::Inbox, false, Source::Imap, &mut folders, changes, threads)?;
+        .execute(params![id, message_id, source.as_str()])?;
+        file_address(tx, id, ScreeningTarget::Inbox, false, source, &mut folders, changes, threads)?;
+        n += 1;
     }
-    file_reply(tx, account_id, message_id, changes, threads)
+    Ok(n)
 }
 
 /// A reply sent elsewhere files its conversation as preselected: the
@@ -358,7 +379,20 @@ fn file_reply(tx: &Transaction, account_id: i64, sent: i64, changes: &mut Change
         .optional()?
         .flatten();
     let Some(thread) = thread else { return Ok(()) };
-    let open: Vec<(i64, i64, String, bool, bool)> = tx
+    file_reply_thread(tx, account_id, thread, sent, None, Source::Core, "reply_elsewhere", changes, threads)?;
+    Ok(())
+}
+
+type OpenMails = Vec<(i64, i64, String, bool, bool)>;
+
+/// Where a conversation of `account_id` is, for the filing of a reply:
+/// its mails in the Inbox, Todo and Waiting, with their return marks, and
+/// the folder whose rule applies (`dossiers.md`, "Répondre à une
+/// conversation"): the Inbox if any mail is there (with where it came back
+/// from), else Todo, else Waiting. `None`: the conversation is in none of
+/// them, and stays where it is.
+fn reply_position(conn: &rusqlite::Connection, account_id: i64, thread: i64) -> Result<Option<(OpenMails, FolderRole, Option<FolderRole>)>> {
+    let open: OpenMails = conn
         .prepare_cached(
             "SELECT m.id, m.folder_id, f.role,
                     EXISTS (SELECT 1 FROM message_keyword k WHERE k.message_id = m.id AND k.keyword = '$NmWasTodo' COLLATE NOCASE),
@@ -384,18 +418,49 @@ fn file_reply(tx: &Transaction, account_id: i64, sent: i64, changes: &mut Change
     } else if open.iter().any(|m| m.2 == "waiting") {
         (FolderRole::Waiting, None)
     } else {
-        return Ok(());
+        return Ok(None);
     };
-    let Some(target) = here.reply_target(returned_from) else { return Ok(()) };
-    let Some(to) = folder_of_role(tx, account_id, target)? else { return Ok(()) };
+    Ok(Some((open, here, returned_from)))
+}
+
+/// The folder a reply would file the conversation in, as preselected now
+/// (`ThreadSummary.reply_target`, the "after sending" line of the reply
+/// screen); `None` when it stays where it is.
+pub(crate) fn reply_preselection(conn: &rusqlite::Connection, account_id: i64, thread: i64) -> Result<Option<FolderRole>> {
+    Ok(reply_position(conn, account_id, thread)?.and_then(|(_, here, back)| here.reply_target(back)))
+}
+
+/// Files the conversation `thread` after the reply `sent` (`dossiers.md`,
+/// "Répondre à une conversation"): to `target`, or to the preselection when
+/// `None`; its mails in the Inbox, Todo and Waiting follow. Filing is a
+/// command: it removes the return marks, even when nothing moved (a
+/// reminder from Waiting). Returns the folder the conversation went to,
+/// `None` when nothing moved.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn file_reply_thread(
+    tx: &Transaction,
+    account_id: i64,
+    thread: i64,
+    sent: i64,
+    target: Option<FolderRole>,
+    source: Source,
+    reason: &str,
+    changes: &mut ChangeSet,
+    threads: &mut BTreeSet<i64>,
+) -> Result<Option<FolderRole>> {
+    let Some((open, here, returned_from)) = reply_position(tx, account_id, thread)? else { return Ok(None) };
+    let Some(target) = target.or_else(|| here.reply_target(returned_from)) else { return Ok(None) };
+    let Some(to) = folder_of_role(tx, account_id, target)? else { return Ok(None) };
+    let mut moved = false;
     for (id, folder, ..) in &open {
         if *folder != to {
-            move_message(tx, *id, Some(thread), *folder, to, Source::Core, &json!({"reason": "reply_elsewhere", "message_id": sent}), changes, threads)?;
+            move_message(tx, *id, Some(thread), *folder, to, source, &json!({"reason": reason, "message_id": sent}), changes, threads)?;
+            moved = true;
         }
     }
-    // Filing is a command: it removes the return marks, even when nothing
-    // moved (a reminder from Waiting).
     let ids: Vec<i64> = open.iter().map(|m| m.0).collect();
-    clear_return_marks(tx, &ids, Source::Core, changes)?;
-    Ok(())
+    if clear_return_marks(tx, &ids, source, changes)? > 0 {
+        threads.insert(thread);
+    }
+    Ok(moved.then_some(target))
 }

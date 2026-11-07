@@ -9,6 +9,7 @@
 //! - `queries.rs`: read-only queries returning API views,
 //! - `clean.rs`: simplified display of a thread (quotes, signatures, copies),
 //! - `commands.rs`: write commands (move, read/unread, flag),
+//! - `drafts.rs`: replies being written, and their sending (`reponse.md`),
 //! - `screening.rs`: decisions on senders, filing of their mails, undo,
 //! - `raw.rs`: immutable raw message files (`stockage-brut.md`),
 //! - `mbox.rs`: streaming reader of mbox files,
@@ -36,6 +37,7 @@ pub mod auth;
 pub mod attachments;
 mod commands;
 pub mod clean;
+pub mod drafts;
 pub mod css;
 pub mod encoded_words;
 pub mod gc;
@@ -142,6 +144,23 @@ pub enum StoreError {
     /// A file operation failed (raw message storage, mbox file).
     #[error("fichier : {0}")]
     Io(String),
+    /// This mail cannot be answered or this draft sent: an archive
+    /// account, a draft answered, no recipient (`reponse.md`, section 3).
+    #[error("{0}")]
+    CannotSend(String),
+    /// The body of the mail answered is not downloaded yet.
+    #[error("the body of this mail is not downloaded yet: it is asked for, try again in a moment")]
+    BodyPending,
+    /// `update_draft` or `send_draft` on another revision than the current
+    /// one: another window or client changed the draft.
+    #[error("this draft was changed elsewhere (revision {current}): reload it")]
+    RevisionConflict { current: i64 },
+    /// The draft is being sent and cannot be changed.
+    #[error("this draft is being sent: cancel the sending first")]
+    DraftSending,
+    /// `cancel_send` too late.
+    #[error("too late to cancel: the mail is leaving, or has left")]
+    SendStarted,
 }
 
 /// Shorthand used throughout the crate: `Result<T>` means
@@ -180,6 +199,17 @@ pub struct ChangeSet {
     /// Local changes undone after the server refused them for good, as
     /// `(message_id, kind, reason)` (`ActionReverted`).
     pub reverted: Vec<(i64, String, String)>,
+    /// Accounts with a mail queued for sending, or a send cancelled: their
+    /// sender looks at its queue again (`drafts.rs`).
+    pub sending: BTreeSet<i64>,
+    /// Drafts the server accepted (`DraftSent`).
+    pub sent: Vec<drafts::SentDraft>,
+    /// Drafts that could not be sent, for good, as `(draft_id, reply_to,
+    /// reason)` (`SendFailed`).
+    pub send_failed: Vec<(i64, Option<i64>, String)>,
+    /// Drafts sent to some recipients only, with the others and the
+    /// server's answer for each (`SendPartial`).
+    pub send_partial: Vec<(i64, Vec<String>)>,
 }
 
 impl ChangeSet {
@@ -198,6 +228,9 @@ pub struct Store {
     /// IMAP accounts synchronized by the core, whose changes go to the
     /// spool (`spool.rs`, `set_server_accounts`).
     server_accounts: BTreeSet<i64>,
+    /// Sending is pretended (`NICEMAILER_FAKE_NETWORK`, `drafts.rs`): the
+    /// archive accounts may then answer too.
+    fake_sending: bool,
 }
 
 impl Store {
@@ -240,7 +273,7 @@ impl Store {
         if version != SCHEMA_VERSION {
             return Err(StoreError::ReaderVersion { found: version, expected: SCHEMA_VERSION });
         }
-        Ok(Store { conn, server_accounts: BTreeSet::new() })
+        Ok(Store { conn, server_accounts: BTreeSet::new(), fake_sending: false })
     }
 
     /// In-memory database, used by tests: fast and thrown away at the end.
@@ -302,7 +335,7 @@ impl Store {
             "CREATE TEMP TABLE IF NOT EXISTS server_account (id INTEGER PRIMARY KEY);
              CREATE TEMP TABLE IF NOT EXISTS read_only_account (id INTEGER PRIMARY KEY);",
         )?;
-        Ok(Store { conn, server_accounts: BTreeSet::new() })
+        Ok(Store { conn, server_accounts: BTreeSet::new(), fake_sending: false })
     }
 
     /// Updates the planner statistics after a large change (an import adds

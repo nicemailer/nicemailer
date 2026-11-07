@@ -24,3 +24,5 @@ rand.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+# Reads what the test SMTP server (Mailpit) received (`tests/send_rpc.rs`).
+ureq = { workspace = true, features = ["json"] }

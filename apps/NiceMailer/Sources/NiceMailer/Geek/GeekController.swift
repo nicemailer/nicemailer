@@ -243,6 +243,14 @@ final class GeekController {
     /// set by the reader after layout, for `S`.
     @ObservationIgnored var readerSkip: (quotes: [(Double, Double)], texts: [Double]) = ([], [])
 
+    /// The text view of the reply (`ComposerTextView`), to move the
+    /// cursor by the lines as drawn (↑ ↓ in a wrapped paragraph). `nil` in
+    /// the unit tests: the lines of the text are used then.
+    weak var composerView: ComposerNSTextView?
+    /// Horizontal position ↑ and ↓ aim for in the drawn lines, kept while
+    /// moving vertically.
+    @ObservationIgnored var composeGoalX: CGFloat?
+
     /// Display choices of the open thread.
     var readerState: ThreadDisplay.State {
         get { model.openThread.flatMap { readerStates[$0.id] } ?? ThreadDisplay.State() }
@@ -408,6 +416,8 @@ final class GeekController {
     var modeLabel: String {
         // A suspect move asks without an overlay of its own.
         if model.suspectMove != nil { return "ASK" }
+        // The "edition" context of `ui.md`: the keys are text.
+        if model.composer != nil, screen == .mail, overlay == .none { return "EDT" }
         return switch overlay {
         case .none, .help: "NOR"
         case .menu(let p): p.rawValue
@@ -464,6 +474,11 @@ final class GeekController {
         // This comes before the other ⌘ shortcuts, which do not apply there.
         if mods.contains(.command), let edited = editTypedLine(event, mods: mods) {
             return edited
+        }
+        // The reply being written takes every key (`reponse.md`, section
+        // 6): the letters are text, not commands.
+        if model.composer != nil, screen == .mail, overlay == .none, activeChoice == nil {
+            return handleComposeKey(event, mods: mods)
         }
         // ⌘U: unsubscribe from the list of the open mail (`ui.md`,
         // "Désabonnement"), with ⌘ because it cannot be undone and `u` alone
@@ -667,8 +682,12 @@ final class GeekController {
         case "S": skipQuoted()
         case "g": openPicker(.group)
         case "/": openPicker(.search)
-        case "r", "R", "f":
-            model.flash = L("Not available yet: writing mail needs SMTP")
+        case "r":
+            // A reply to all (`reponse.md`): `R` will be the reply to the
+            // sender alone.
+            startReply()
+        case "R", "f":
+            model.flash = L("Not available yet: %@", key == "R" ? L("reply to the sender only") : L("forward"))
         case "m", "s", "v":
             if let p = Prefix(rawValue: key) { overlay = .menu(p) }
         default:
@@ -1370,6 +1389,201 @@ final class GeekController {
     private func pickerTextChanged(_ kind: PickerKind) {
         pickerIndex = 0
         if kind == .attributeValue(.from) || kind == .attributeValue(.to) { loadSuggestions() }
+    }
+
+    // MARK: - Reply
+
+    /// `r`: the reply to all to the mail under the reader's cursor. One
+    /// column shows it in the whole window, as the mail.
+    func startReply() {
+        guard model.openThread != nil else {
+            model.flash = L("No mail to answer")
+            return
+        }
+        let current = readerState.current
+        Task {
+            await model.startReply(current: current)
+            if model.composer != nil, columns == 1 { reading = true }
+        }
+    }
+
+    /// A key while the reply is written (`reponse.md`, section 6): ⌘↩
+    /// sends, Escape goes back to the mail and keeps the draft, ⌘⌫
+    /// abandons it; the other keys edit the text, with the shortcuts of
+    /// every macOS text view. Returns `false` for the ⌘ shortcuts of the
+    /// menus (⌘Q…), which go on as usual.
+    private func handleComposeKey(_ event: NSEvent, mods: NSEvent.ModifierFlags) -> Bool {
+        let command = mods.contains(.command), option = mods.contains(.option), control = mods.contains(.control)
+        let code = event.keyCode
+        model.flash = nil
+        model.lastError = nil
+        if code == KeyCode.returnKey, command {
+            Task { await model.sendComposer() }
+            return true
+        }
+        if code == KeyCode.escape {
+            model.leaveComposer()
+            return true
+        }
+        if code == KeyCode.delete, command {
+            Task { await model.discardComposer() }
+            return true
+        }
+        guard var c = model.composer else { return true }
+        let shift = mods.contains(.shift)
+        var changed = false
+        var vertical = false
+        // A move key: with Shift it extends the selection; without, it ends
+        // it, ← and → by going to its start or end and no further, the
+        // other moves from there (`TextBuffer`, "Selection").
+        func navigate(towardStart: Bool, collapseOnly: Bool = false, _ move: (inout TextBuffer) -> Void) {
+            if shift {
+                c.buffer.extend(move)
+            } else if c.buffer.collapse(toStart: towardStart) {
+                if !collapseOnly { move(&c.buffer) }
+            } else {
+                move(&c.buffer)
+            }
+        }
+        switch code {
+        case KeyCode.returnKey:
+            c.buffer.newline(); changed = true
+        case KeyCode.delete:
+            if option { c.buffer.deleteWordBackward() } else { c.buffer.deleteBackward() }
+            changed = true
+        case KeyCode.forwardDelete:
+            c.buffer.deleteForward(); changed = true
+        case KeyCode.left:
+            if command {
+                navigate(towardStart: true) { $0.moveToLineStart() }
+            } else if option {
+                navigate(towardStart: true) { $0.moveWordLeft() }
+            } else {
+                navigate(towardStart: true, collapseOnly: true) { $0.moveLeft() }
+            }
+        case KeyCode.right:
+            if command {
+                navigate(towardStart: false) { $0.moveToLineEnd() }
+            } else if option {
+                navigate(towardStart: false) { $0.moveWordRight() }
+            } else {
+                navigate(towardStart: false, collapseOnly: true) { $0.moveRight() }
+            }
+        case KeyCode.up, KeyCode.down:
+            let delta = code == KeyCode.up ? -1 : 1
+            if command {
+                navigate(towardStart: delta < 0) { if delta < 0 { $0.moveToStart() } else { $0.moveToEnd() } }
+            } else if option {
+                // ⌥↑ ⌥↓: the start of the line, or the end, as in macOS.
+                navigate(towardStart: delta < 0) { if delta < 0 { $0.moveToLineStart() } else { $0.moveToLineEnd() } }
+            } else {
+                navigate(towardStart: delta < 0) { self.moveComposeVertically(&$0, delta) }
+                vertical = true
+            }
+        case KeyCode.home:
+            navigate(towardStart: true) { $0.moveToLineStart() }
+        case KeyCode.end:
+            navigate(towardStart: false) { $0.moveToLineEnd() }
+        default:
+            let key = event.charactersIgnoringModifiers ?? ""
+            if command {
+                switch key.lowercased() {
+                case "v":
+                    c.buffer.insert(pasteboard.string(forType: .string) ?? "")
+                    changed = true
+                case "a":
+                    c.buffer.selectAll()
+                case "c", "x":
+                    // Copy (and cut) the selection; nothing selected:
+                    // nothing copied, as in every macOS text view.
+                    let selected = c.buffer.selectedText
+                    guard !selected.isEmpty else { break }
+                    pasteboard.clearContents()
+                    pasteboard.setString(selected, forType: .string)
+                    if key.lowercased() == "x" {
+                        c.buffer.deleteBackward()
+                        changed = true
+                    }
+                case "+", "=":
+                    textSize.bigger()
+                case "-":
+                    textSize.smaller()
+                case "0":
+                    textSize.reset()
+                default:
+                    // The menus' shortcuts (⌘Q, ⌘W…).
+                    return false
+                }
+            } else if control {
+                switch key {
+                case "a": navigate(towardStart: true) { $0.moveToLineStart() }
+                case "e": navigate(towardStart: false) { $0.moveToLineEnd() }
+                default: break
+                }
+            } else if let text = event.characters, LineEdit.isTypable(text) || text == "\t" {
+                c.buffer.insert(text)
+                changed = true
+            }
+        }
+        if !vertical { composeGoalX = nil }
+        model.composer = c
+        if changed { model.composerChanged() }
+        return true
+    }
+
+    /// ↑ ↓ in the reply: by the lines as drawn when the view is there (a
+    /// long paragraph wraps on several), else by the lines of the text.
+    private func moveComposeVertically(_ buffer: inout TextBuffer, _ delta: Int) {
+        if let view = composerView,
+           let (utf16, x) = view.verticalMove(from: buffer.utf16Cursor, delta: delta, goalX: composeGoalX) {
+            buffer.moveTo(buffer.position(fromUTF16: utf16))
+            composeGoalX = x
+        } else {
+            buffer.moveVertically(delta)
+        }
+    }
+
+    /// Text written into the reply by another app (Kerlig, a Service,
+    /// through the accessibility API): it replaces the selection, as if
+    /// typed, and is saved like typing. An empty text deletes the selection.
+    func replaceComposeSelection(_ text: String) {
+        guard var c = model.composer else { return }
+        if text.isEmpty {
+            guard c.buffer.selection != nil else { return }
+            c.buffer.deleteBackward()
+        } else {
+            c.buffer.insert(text)
+        }
+        composeGoalX = nil
+        model.composer = c
+        model.composerChanged()
+    }
+
+    /// Another app selects a range of the reply, in UTF-16 units.
+    func selectCompose(utf16 range: NSRange) {
+        guard var c = model.composer else { return }
+        let start = c.buffer.position(fromUTF16: range.location)
+        let end = c.buffer.position(fromUTF16: NSMaxRange(range))
+        c.buffer.clearSelection()
+        c.buffer.moveTo(start)
+        c.buffer.extend { $0.moveTo(end) }
+        composeGoalX = nil
+        model.composer = c
+    }
+
+    /// A click in the text of the reply: the cursor goes there; with
+    /// Shift, the selection extends to there, as in every macOS text view.
+    func clickCompose(utf16 offset: Int, extend: Bool = false) {
+        guard var c = model.composer else { return }
+        let position = c.buffer.position(fromUTF16: offset)
+        if extend {
+            c.buffer.extend { $0.moveTo(position) }
+        } else {
+            c.buffer.clearSelection()
+            c.buffer.moveTo(position)
+        }
+        composeGoalX = nil
+        model.composer = c
     }
 
     // MARK: - Line editing

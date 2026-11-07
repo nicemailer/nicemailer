@@ -42,9 +42,12 @@ expect flash ~ y
 key m
 key z
 expect flash ~ mz
-# Reply is not available yet.
-key r
-expect flash ~ SMTP
+# Reply to the sender only and forward are not available yet (r replies
+# to all: compose.uiscript).
+key R
+expect flash ~ Not available yet: reply to the sender only
+key f
+expect flash ~ Not available yet: forward
 # Help.
 key ?
 expect overlay = help
