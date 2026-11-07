@@ -126,8 +126,39 @@ pub async fn update(core: &Arc<Core>, p: UpdateDraftParams, source: Source) -> R
 
 pub async fn discard(core: &Arc<Core>, p: DraftIdParams, source: Source) -> Result<DraftView, RpcError> {
     human(source)?;
-    with_store(core, move |s| s.discard_draft(p.id)).await
+    let core2 = core.clone();
+    with_store(core, move |s| {
+        let (view, changes) = s.discard_draft(p.id, source)?;
+        core2.events.lock().unwrap().emit(&changes);
+        sync::wake(&core2, &changes);
+        Ok(view)
+    })
+    .await
 }
+
+/// `close_draft`: the reply was left (Escape). If it changed since its last
+/// copy, it becomes the row of Drafts, and goes to the server's Drafts
+/// (`nm-store`, `draft_copies.rs`).
+pub async fn close(core: &Arc<Core>, p: DraftIdParams, source: Source) -> Result<(), RpcError> {
+    human(source)?;
+    let core2 = core.clone();
+    with_store(core, move |s| close_now(&core2, s, p.id, source)).await
+}
+
+/// Closes a draft with the store's lock held: its MIME message in the raw
+/// store, then the row of Drafts and the copy queued. Also used at start
+/// for the drafts left open by a stop or a crash.
+pub fn close_now(core: &Core, s: &mut nm_store::Store, id: i64, source: Source) -> Result<(), nm_store::StoreError> {
+    let Some(mime) = s.draft_to_close(id, USER_AGENT)? else { return Ok(()) };
+    let written = core.raw.write(&mime).and_then(|w| core.raw.barrier().map(|()| w)).map_err(|e| nm_store::StoreError::Io(e.to_string()))?;
+    let changes = s.close_draft(id, &written, &mime, source)?;
+    core.events.lock().unwrap().emit(&changes);
+    sync::wake(core, &changes);
+    Ok(())
+}
+
+/// The `User-Agent` of the mails and drafts written by NiceMailer.
+pub const USER_AGENT: &str = concat!("NiceMailer/", env!("CARGO_PKG_VERSION"));
 
 /// `send_draft`: queued, due after `compose.undo_send_seconds`; the
 /// account's sender is woken to sleep until then.
@@ -138,7 +169,7 @@ pub async fn send(core: &Arc<Core>, p: SendDraftParams, source: Source) -> Resul
     // Checked again now: the file may have changed since the draft began.
     let s = sendable(core, account).await?;
     let delay = core.engine.lock().unwrap().config().compose.undo_send_seconds;
-    let ua = concat!("NiceMailer/", env!("CARGO_PKG_VERSION"));
+    let ua = USER_AGENT;
     let core2 = core.clone();
     let send_at = with_store(core, move |s| {
         let (at, changes) = s.send_draft(p.id, p.revision, &p.body, p.after_send, delay, ua, source)?;

@@ -76,16 +76,24 @@ extension AppModel {
         }
     }
 
-    /// Escape: back to the mail; the draft is kept (saved now if needed),
-    /// and the next `r` on the mail reopens it.
+    /// Escape: back to the mail; the draft is kept (saved now if needed)
+    /// and closed: the core files it in Drafts, here and on the server
+    /// (`brouillons.md`, section 4). The next `r` on the mail, or on the
+    /// draft in Drafts, reopens it.
     func leaveComposer() {
-        guard composer != nil else { return }
+        guard let id = composer?.draft.id else { return }
         composeSaveTask?.cancel()
         Task {
             await saveComposer()
             composer = nil
+            guard let client = core else { return }
+            do {
+                let _: CommandResult = try await client.call("close_draft", ["id": id])
+            } catch {
+                flash = Self.composeErrorFlash(error)
+            }
         }
-        flash = L("Reply kept as a draft · r to resume")
+        flash = L("Reply kept in Drafts · r to resume")
     }
 
     /// ⌘⌫: the draft is abandoned; `z` gives it back with its text.

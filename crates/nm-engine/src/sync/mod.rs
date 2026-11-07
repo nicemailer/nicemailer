@@ -44,6 +44,7 @@
 
 mod account;
 mod bodies;
+mod drafts;
 mod pass;
 mod send;
 mod spool;

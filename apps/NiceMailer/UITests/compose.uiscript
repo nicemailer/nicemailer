@@ -74,7 +74,23 @@ snap reply-typed
 key esc
 expect composing = false
 expect mode = NOR
-expect flash ~ kept as a draft
+expect flash ~ kept in Drafts
+# The reply is in Drafts now; Return there reopens it.
+key ;
+key r
+expect folder = Drafts
+expect selected_subject ~ La facture de mars
+snap drafts
+key ret
+expect composing = true
+expect flash ~ resumed
+expect compose_text ~ je regarde\nAchill
+key esc
+expect composing = false
+# Back to the Inbox: `r` on the mail resumes it too.
+key ;
+key i
+expect folder = Inbox
 key r
 expect composing = true
 expect flash ~ resumed

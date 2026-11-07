@@ -1039,12 +1039,12 @@
         }
       }
     },
-    "Reply kept as a draft · r to resume": {
+    "Reply kept in Drafts · r to resume": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Réponse gardée en brouillon · r pour la reprendre"
+            "value": "Réponse rangée dans Drafts · r pour la reprendre"
           }
         }
       }

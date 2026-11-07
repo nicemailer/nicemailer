@@ -616,6 +616,11 @@ impl Store {
         )?;
         changes.folders.insert(folder_id);
         refresh_threads_after_delete(&tx, &threads, &mut changes)?;
+        // Drafts whose copy went from the server, not changed here since:
+        // deleted or sent elsewhere (`draft_copies.rs`).
+        if gone > 0 {
+            crate::draft_copies::gone_elsewhere(&tx, &mut changes)?;
+        }
         tx.commit()?;
         Ok((changes, gone as u32))
     }

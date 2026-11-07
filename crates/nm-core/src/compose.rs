@@ -357,6 +357,10 @@ pub struct Outgoing<'a> {
     pub in_reply_to: Option<&'a str>,
     pub references: &'a [String],
     pub user_agent: &'a str,
+    /// The revision of a draft copied to the Drafts folder of the server
+    /// (`brouillons.md`, section 5): written in `X-NiceMailer-Draft-Revision`,
+    /// never in the mail sent.
+    pub draft_revision: Option<i64>,
 }
 
 /// The MIME message of a text mail (`reponse.md`, section 7): RFC 5322
@@ -386,6 +390,9 @@ pub fn build_message(h: &Outgoing, body: &str) -> Vec<u8> {
     }
     header(&mut out, "MIME-Version", "1.0");
     header(&mut out, "User-Agent", &clean(h.user_agent));
+    if let Some(rev) = h.draft_revision {
+        header(&mut out, "X-NiceMailer-Draft-Revision", &rev.to_string());
+    }
     let text = flowed(body);
     let plain = text.is_ascii() && text.split("\r\n").all(|l| l.len() <= 998);
     header(&mut out, "Content-Type", "text/plain; charset=utf-8; format=flowed");
@@ -857,6 +864,7 @@ mod tests {
             in_reply_to: Some("p@a"),
             references: &refs,
             user_agent: "NiceMailer/0.1.0",
+            draft_revision: None,
         };
         let m = String::from_utf8(build_message(&h, "Merci !\n\n> Hi")).unwrap();
         assert!(m.contains("From: Achille Moi <me@x.fr>\r\n"), "{m}");
@@ -869,6 +877,9 @@ mod tests {
         assert!(m.contains("Content-Type: text/plain; charset=utf-8; format=flowed\r\n"));
         assert!(m.contains("Content-Transfer-Encoding: 7bit\r\n\r\nMerci !\r\n\r\n> Hi\r\n"));
         assert!(!m.to_lowercase().contains("bcc"));
+        assert!(!m.contains("X-NiceMailer-Draft-Revision"));
+        let draft = String::from_utf8(build_message(&Outgoing { draft_revision: Some(7), ..h.clone() }, "x")).unwrap();
+        assert!(draft.contains("X-NiceMailer-Draft-Revision: 7\r\n"), "{draft}");
         assert!(m.split("\r\n").all(|l| l.len() <= 998));
         assert!(!m.replace("\r\n", "").contains('\n'), "bare LF");
     }
@@ -888,6 +899,7 @@ mod tests {
             in_reply_to: None,
             references: &[],
             user_agent: "NiceMailer",
+            draft_revision: None,
         };
         let m = String::from_utf8(build_message(&h, "Très bien, à lundi.")).unwrap();
         assert!(m.is_ascii());
@@ -913,6 +925,7 @@ mod tests {
             in_reply_to: Some("bad\r\nid"),
             references: &[],
             user_agent: "NiceMailer",
+            draft_revision: None,
         };
         let m = String::from_utf8(build_message(&h, "x")).unwrap();
         assert!(!m.contains("\r\nBcc:"), "{m}");

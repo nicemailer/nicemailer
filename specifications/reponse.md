@@ -84,9 +84,7 @@ La v1 applique la section 4 de `brouillons.md` sans le serveur :
 - **Abandon** : `⌘⌫` dans la zone de saisie abandonne le brouillon (`discard_draft`) et ramène au mail. `z` le restaure, avec son texte, tant que l'app n'a pas été quittée : l'app garde le texte abandonné et recrée le brouillon (`create_draft` avec `body`), qui reçoit un nouveau `Message-ID`.
 - **Plantage** : le brouillon est en base à la dernière pause de frappe ; rien n'est perdu au-delà de 0,5 s de frappe.
 
-**Pas de copie sur le serveur en v1.** Aucune action `append_draft` n'est mise en file, et `close_draft` ne fait que marquer le brouillon fermé. Le téléphone ne voit donc pas les brouillons de NiceMailer. Les brouillons sont reconnaissables à `server_revision` NULL : la version suivante, qui fera `append_draft`, les enverra au serveur à leur première fermeture.
-
-**Drafts en local.** Un brouillon local n'a pas de ligne `message` en v1. La liste du dossier Drafts n'affiche donc pas encore les brouillons locaux ; on les retrouve par `r` sur le mail auquel ils répondent. C'est une limite assumée de la v1.
+**Fermeture : le dossier Drafts** (ajouté après la v1, novembre 2026). Échap ferme le brouillon (`close_draft`) : il devient une ligne du dossier Drafts, complète, dans la conversation du mail auquel il répond, et une action `append_draft` le copie dans le dossier Drafts du serveur (`brouillons.md`, sections 4 et 5). Le noyau qui redémarre ferme de même les brouillons modifiés depuis leur dernière copie. Dans Drafts, `r` ou Entrée rouvre le brouillon. Envoyé ou abandonné, il quitte Drafts, ici et sur le serveur. Des modifications faites ailleurs (section 6 de `brouillons.md`), seuls les cas simples sont traités : copie supprimée ou envoyée ailleurs. Les brouillons écrits sur le téléphone restent en lecture seule. Le détail est dans `docs/sending.md`, « Drafts ».
 
 ## 6. Écran de réponse
 

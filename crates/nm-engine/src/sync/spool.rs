@@ -65,6 +65,8 @@ pub(crate) async fn run(
     let mut report = SpoolReport::default();
     write(host, |st| Ok((st.spool_purge()?, ChangeSet::default())))?;
     initial_archive(s, host, account_id, &mut report).await?;
+    // The copies of the drafts in Drafts (`drafts.rs`).
+    super::drafts::run(s, host, account_id, &mut report).await?;
     loop {
         let actions = write(host, |st| Ok((st.spool_claim(account_id, ROUND)?, ChangeSet::default())))?;
         if actions.is_empty() {

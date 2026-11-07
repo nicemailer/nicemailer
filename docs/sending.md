@@ -9,7 +9,7 @@ How a reply is written in the app and sent by the core. The rules are those of `
 | `r` | a mail | reply to all to the mail under the reader's cursor (`ctrl-j` / `ctrl-k` move it); if a reply to that mail was started, it is resumed |
 | `R`, `f` | a mail | reply to the sender only, forward: not available yet |
 | ⌘↩ | the reply | send, after the undo delay (5 s); the status bar says "Sending in 5 s · z to cancel" |
-| Escape | the reply | back to the mail; the reply stays as a draft, and `r` reopens it |
+| Escape | the reply | back to the mail; the reply goes to Drafts (here and on the server), and `r` on the mail, or `r` / Return on the draft in Drafts, reopens it |
 | ⌘⌫ | the reply | abandon the reply; `z` gives it back with its text |
 | `z` | after ⌘↩ | during the delay: the mail does not leave, and the reply opens again; once sent: undoes the filing of the conversation (not the sending) |
 
@@ -35,7 +35,19 @@ Then the status bar says what happened: "Sent · filed in Archive · z: undo the
 - **In-Reply-To / References**: the mail's `Message-ID`, after its references (20 at most, the first kept).
 - **Text**: two empty lines, the line of the client, the mail's text quoted with `> ` (`>>` for a line already quoted), 1,000 lines at most.
 
-The draft lives in the `draft` table only: no copy goes to the server's Drafts folder in v1, so the phone does not see it.
+## Drafts
+
+While the reply is open, the draft lives in the `draft` table only: each pause of typing writes there. When it is closed (Escape, or the core starting again after a stop or a crash with a draft changed since its last copy), `close_draft` (`nm-store`, `draft_copies.rs`):
+
+1. writes its MIME message, with `X-NiceMailer-Draft-Revision`, in the raw store;
+2. replaces its row of the Drafts folder by a new one, complete, read, flagged `\Draft`, in the conversation of the mail it answers: the app lists it in Drafts at once;
+3. on an account with a server, queues an action `append_draft`. The work connection (`nm-engine`, `sync/drafts.rs`) writes the version (`APPEND`, `\Draft \Seen`), records its UID, then removes every other copy of the same `Message-ID` from Drafts: the previous version, or a copy left by a crash. Replayed, the action leaves exactly one copy. Closed twice before the copy is made, the draft is copied once.
+
+Sent or abandoned, the draft leaves Drafts: its row goes, and an action `delete` removes its copies from the server.
+
+Changes made elsewhere, the simple cases: a copy deleted (or sent) on the phone takes the draft, if it was not changed here since its copy; changed here, its text is kept, and its next closing looks for the mail in Sent first (sent elsewhere: the draft goes), else writes it back as a new copy. The adoption of a version changed on the phone, and the conflicts kept as two drafts, come later; so does resuming a draft written on the phone (it is shown, read-only).
+
+An account without server (archive, `seed`) keeps its drafts in Drafts locally only.
 
 ## Sending
 

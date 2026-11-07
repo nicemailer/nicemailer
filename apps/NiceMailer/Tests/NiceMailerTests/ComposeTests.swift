@@ -332,9 +332,11 @@ struct ComposeControllerTests {
         type("Merci")
         press("esc")
         #expect(await eventually { model.composer == nil })
-        #expect(model.flash == L("Reply kept as a draft · r to resume"))
-        // Saved at once, without waiting for the pause.
+        #expect(model.flash == L("Reply kept in Drafts · r to resume"))
+        // Saved at once, without waiting for the pause, then closed: the
+        // core files it in Drafts.
         #expect(await eventually { core.calls("update_draft").count == 1 })
+        #expect(await eventually { core.calls("close_draft").first?["id"] as? Int == 901 })
         // Keys are commands again.
         press("j")
         #expect(model.selectedThreadId == model.threads[1].id)

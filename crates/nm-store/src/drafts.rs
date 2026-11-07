@@ -126,7 +126,7 @@ pub fn local_offset(t: i64) -> i32 {
     if ok { tm.tm_gmtoff as i32 } else { 0 }
 }
 
-fn now() -> i64 {
+pub(crate) fn now() -> i64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0)
 }
 
@@ -235,8 +235,14 @@ impl Store {
         source: Source,
     ) -> Result<(DraftView, bool)> {
         let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        // The reply to this mail already started, or, `reply_to` being the
+        // draft's own row of Drafts, that draft (`r` in the Drafts folder).
         let existing: Option<i64> = tx
-            .query_row("SELECT id FROM draft WHERE reply_to_message_id = ?1 ORDER BY id LIMIT 1", [reply_to], |r| r.get(0))
+            .query_row(
+                "SELECT id FROM draft WHERE reply_to_message_id = ?1 OR message_id = ?1 ORDER BY message_id = ?1 DESC, id LIMIT 1",
+                [reply_to],
+                |r| r.get(0),
+            )
             .optional()?;
         if let Some(id) = existing {
             let view = draft_view(&tx, id)?;
@@ -332,15 +338,18 @@ impl Store {
     /// Abandons a draft, and returns it as it was: the client keeps it to
     /// restore it (`z`, through `create_reply_draft` with its body). A
     /// draft being sent is refused: `cancel_send` first.
-    pub fn discard_draft(&mut self, id: i64) -> Result<DraftView> {
+    pub fn discard_draft(&mut self, id: i64, source: Source) -> Result<(DraftView, ChangeSet)> {
         let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let view = draft_view(&tx, id)?;
         if view.state == "sending" {
             return Err(StoreError::DraftSending);
         }
+        // Its row of Drafts goes, and its copy on the server.
+        let mut changes = ChangeSet::default();
+        crate::draft_copies::forget_copies(&tx, id, source, &mut changes)?;
         tx.execute("DELETE FROM draft WHERE id = ?1", [id])?;
         tx.commit()?;
-        Ok(view)
+        Ok((view, changes))
     }
 
     /// Queues the draft for sending, due in `delay_secs` (the undo delay,
@@ -365,40 +374,10 @@ impl Store {
         let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let rev = editable(&tx, id, revision)?;
         save_body(&tx, id, rev, body, source)?;
-        type Row = (i64, String, Option<String>, String, String, String, String, Option<i64>);
-        let (account_id, from_addr, from_name, recipients, subject, body, msgid, reply_to): Row = tx.query_row(
-            "SELECT account_id, from_addr, from_name, recipients, subject, body, message_id_hdr, reply_to_message_id
-               FROM draft WHERE id = ?1",
-            [id],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?, r.get(7)?)),
-        )?;
-        let (to, cc, bcc) = recipients_of(&recipients);
-        let rcpt: Vec<String> = to.iter().chain(&cc).chain(&bcc).map(|m| m.addr.clone()).collect();
+        let Built { account_id, from_addr, rcpt, mime, msgid, date: t } = build_draft(&tx, id, user_agent, None)?;
         if rcpt.is_empty() {
             return Err(StoreError::CannotSend("this draft has no recipient".into()));
         }
-        // The conversation headers, from the mail answered as it is now.
-        let (in_reply_to, references) = match reply_to {
-            Some(p) => parent_ids(&tx, p)?,
-            None => (None, Vec::new()),
-        };
-        let t = now();
-        let from = Mailbox { addr: from_addr.clone(), name: from_name };
-        let mime = compose::build_message(
-            &compose::Outgoing {
-                from: &from,
-                to: &to,
-                cc: &cc,
-                subject: &subject,
-                date: t,
-                tz_offset_secs: local_offset(t),
-                message_id: &msgid,
-                in_reply_to: in_reply_to.as_deref(),
-                references: &references,
-                user_agent,
-            },
-            &body,
-        );
         let send_at = t + delay_secs as i64;
         let payload = json!({
             "draft_id": id,
@@ -618,6 +597,8 @@ impl Store {
                 [action_id],
             )?;
         }
+        // Its row of Drafts goes, and its copy on the server.
+        crate::draft_copies::forget_copies(&tx, draft_id, source, &mut changes)?;
         tx.execute("DELETE FROM draft WHERE id = ?1", [draft_id])?;
         crate::screening::refresh_all(&tx, &threads, &mut changes)?;
         let undo = undo_token(&tx, mark)?;
@@ -736,6 +717,65 @@ impl Store {
             |r| r.get(0),
         )?)
     }
+}
+
+/// A draft made a MIME message: what `send_draft` queues and what
+/// `close_draft` copies to Drafts.
+struct Built {
+    account_id: i64,
+    from_addr: String,
+    /// Every recipient, To, Cc and Bcc: the SMTP envelope.
+    rcpt: Vec<String>,
+    mime: Vec<u8>,
+    msgid: String,
+    date: i64,
+}
+
+/// The MIME message of a draft as it is now, its conversation headers from
+/// the mail it answers. `draft_revision`: for a copy in Drafts
+/// (`X-NiceMailer-Draft-Revision`), `None` for the mail sent.
+fn build_draft(conn: &Connection, id: i64, user_agent: &str, draft_revision: Option<i64>) -> Result<Built> {
+    type Row = (i64, String, Option<String>, String, String, String, String, Option<i64>);
+    let (account_id, from_addr, from_name, recipients, subject, body, msgid, reply_to): Row = conn
+        .query_row(
+            "SELECT account_id, from_addr, from_name, recipients, subject, body, message_id_hdr, reply_to_message_id
+               FROM draft WHERE id = ?1",
+            [id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?, r.get(7)?)),
+        )
+        .optional()?
+        .ok_or_else(|| StoreError::NotFound(format!("brouillon {id}")))?;
+    let (to, cc, bcc) = recipients_of(&recipients);
+    let rcpt: Vec<String> = to.iter().chain(&cc).chain(&bcc).map(|m| m.addr.clone()).collect();
+    // The conversation headers, from the mail answered as it is now.
+    let (in_reply_to, references) = match reply_to {
+        Some(p) => parent_ids(conn, p)?,
+        None => (None, Vec::new()),
+    };
+    let t = now();
+    let from = Mailbox { addr: from_addr.clone(), name: from_name };
+    let mime = compose::build_message(
+        &compose::Outgoing {
+            from: &from,
+            to: &to,
+            cc: &cc,
+            subject: &subject,
+            date: t,
+            tz_offset_secs: local_offset(t),
+            message_id: &msgid,
+            in_reply_to: in_reply_to.as_deref(),
+            references: &references,
+            user_agent,
+            draft_revision,
+        },
+        &body,
+    );
+    Ok(Built { account_id, from_addr, rcpt, mime, msgid, date: t })
+}
+
+/// The MIME message of a draft as a copy for Drafts.
+pub(crate) fn build_draft_mime(conn: &Connection, id: i64, user_agent: &str, revision: Option<i64>) -> Result<Vec<u8>> {
+    Ok(build_draft(conn, id, user_agent, revision)?.mime)
 }
 
 /// The `send` row of `audit_log`, on the mail sent (or, without Sent

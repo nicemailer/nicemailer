@@ -10,6 +10,7 @@
 //! - `clean.rs`: simplified display of a thread (quotes, signatures, copies),
 //! - `commands.rs`: write commands (move, read/unread, flag),
 //! - `drafts.rs`: replies being written, and their sending (`reponse.md`),
+//! - `draft_copies.rs`: their copies in the Drafts folder, local and on the server,
 //! - `screening.rs`: decisions on senders, filing of their mails, undo,
 //! - `raw.rs`: immutable raw message files (`stockage-brut.md`),
 //! - `mbox.rs`: streaming reader of mbox files,
@@ -37,6 +38,7 @@ pub mod auth;
 pub mod attachments;
 mod commands;
 pub mod clean;
+pub mod draft_copies;
 pub mod drafts;
 pub mod css;
 pub mod encoded_words;

@@ -229,6 +229,15 @@ async fn main() -> anyhow::Result<()> {
             eprintln!("brouillons : {repaired} brouillon(s) en cours d'envoi sans action, remis en rédaction");
         }
         sync::apply(&core, &mut store);
+        // Drafts changed since their last copy (the app quit, or the core
+        // stopped, with a reply open): closed now, so that they reach the
+        // Drafts folder (`brouillons.md`, section 4, "Plantage"). After
+        // `apply`, which tells which accounts have a server.
+        for id in store.drafts_to_close()? {
+            if let Err(e) = drafts::close_now(&core, &mut store, id, Source::Core) {
+                eprintln!("brouillons : {id} non copié dans Drafts : {e}");
+            }
+        }
     }
     // Kept alive until the end of `main`: dropping it stops the watch. A
     // watch that cannot start is not fatal: the file is then read at the
@@ -952,11 +961,8 @@ async fn dispatch(core: &Arc<Core>, session: &mut Session, req: Request) -> Resu
         method::CREATE_DRAFT => to_value(drafts::create(core, params(req.params)?, source).await?),
         method::OPEN_DRAFT => to_value(drafts::open(core, params(req.params)?).await?),
         method::UPDATE_DRAFT => to_value(drafts::update(core, params(req.params)?, source).await?),
-        // v1: a draft is never sent to the server, closing it does nothing
-        // more (`reponse.md`, section 5).
         method::CLOSE_DRAFT => {
-            let p: nm_api::DraftIdParams = params(req.params)?;
-            with_reader(core, move |s| s.get_draft(p.id)).await?;
+            drafts::close(core, params(req.params)?, source).await?;
             to_value(CommandResult { changed: 0 })
         }
         method::DISCARD_DRAFT => to_value(drafts::discard(core, params(req.params)?, source).await?),

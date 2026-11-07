@@ -1,6 +1,6 @@
 # NiceMailer : brouillons
 
-Statut : validé pour la v1. La première version réalisée de la réponse (`reponse.md`) n'en applique qu'une partie : brouillon local sans copie dans Drafts, délai d'annulation de l'envoi. Complète `dossiers.md` (dossier Drafts, réponse et rangement), `schema.sql`, `modele de donnees.md` et `stockage-brut.md`.
+Statut : validé pour la v1. Réalisé (novembre 2026, `reponse.md`, `docs/sending.md`) : sections 3 à 5, 8 et 9, et de la section 6 la copie disparue sans remplaçant ; restent l'adoption, le conflit à deux versions, le brouillon ouvert pendant une modification ailleurs, et la reprise d'un brouillon créé ailleurs. Écarts : la ligne `message` d'un brouillon est remplacée à chaque copie (nouvel identifiant) et son brut est écrit en local, pour que le lecteur l'affiche sans le retélécharger. Complète `dossiers.md` (dossier Drafts, réponse et rangement), `schema.sql`, `modele de donnees.md` et `stockage-brut.md`.
 
 ## 1. Objet
 

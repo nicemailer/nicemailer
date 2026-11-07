@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use common::{Client, start};
-use nm_proto::imap::{MailboxName, SearchKey, Security, ServerSpec, Session, Timeouts};
+use nm_proto::imap::{MailboxName, SearchKey, Security, ServerSpec, Session, StoreOp, Timeouts, UidSet, Uids};
 use serde_json::{Value, json};
 
 const FULL: u16 = 31993;
@@ -73,6 +73,14 @@ impl Phone {
              Bonjour,\r\nvoici le devis.\r\n"
         );
         self.rt.block_on(self.s.append(&MailboxName::inbox(), &[], None, mail.into_bytes())).unwrap();
+    }
+
+    /// Deletes the mail `uid` of `folder`, as the phone would.
+    fn delete(&mut self, folder: &str, uid: u32) {
+        self.rt.block_on(self.s.select(&MailboxName::new(folder), None)).unwrap();
+        let set = Uids::Set(UidSet::from_uids([uid]));
+        self.rt.block_on(self.s.uid_store(&set, StoreOp::Add, &["\\Deleted"], true, None)).unwrap();
+        self.rt.block_on(self.s.uid_expunge(&set)).unwrap();
     }
 
     /// The UIDs of the mails of `folder` with this `Message-ID`.
@@ -325,4 +333,82 @@ fn an_agent_cannot_send() {
     let m = message(dir.path(), "g1");
     let e = agent.call("create_draft", json!({"reply_to": m, "quote_header": "x"})).unwrap_err();
     assert_eq!(e["code"], 1007, "{e}");
+}
+
+/// Escape files the draft in Drafts, on the server too; a second version
+/// replaces the first (one copy); a copy deleted on the phone takes the
+/// draft; a draft sent leaves Drafts (`brouillons.md`, sections 4 to 6).
+fn drafts_follow_the_server(port: u16) {
+    let dir = tempfile::tempdir().unwrap();
+    let user = new_user();
+    let mut phone = Phone::open(port, &user);
+    phone.create("Sent");
+    phone.create("Drafts");
+    phone.deliver(&user, "d1", "");
+    phone.deliver(&user, "d2", "");
+    let (_core, mut c) = core(dir.path(), port, &user, &starttls(), 1);
+    let hdr_of = |dir: &Path, id: i64| -> String {
+        db(dir).query_row("SELECT message_id_hdr FROM draft WHERE id = ?1", [id], |r| r.get(0)).unwrap()
+    };
+
+    // Escape: in Drafts, here and on the server.
+    let m = message(dir.path(), "d1");
+    let d = c.call("create_draft", json!({"reply_to": m, "quote_header": "x"})).unwrap()["draft"].clone();
+    let id = d["id"].as_i64().unwrap();
+    let r = c.call("update_draft", json!({"id": id, "revision": d["revision"], "body": "Première version"})).unwrap();
+    c.call("close_draft", json!({"id": id})).unwrap();
+    let hdr = hdr_of(dir.path(), id);
+    wait_until("the copy in Drafts", 30, || phone.find("Drafts", &hdr).len() == 1);
+    let first = phone.find("Drafts", &hdr)[0];
+    wait_until("the UID recorded", 30, || {
+        db(dir.path()).query_row("SELECT m.uid FROM draft d JOIN message m ON m.id = d.message_id WHERE d.id = ?1", [id], |r| r.get::<_, Option<u32>>(0)).unwrap() == Some(first)
+    });
+    // A second version: one copy, the new one.
+    c.call("update_draft", json!({"id": id, "revision": r["revision"], "body": "Deuxième version"})).unwrap();
+    c.call("close_draft", json!({"id": id})).unwrap();
+    wait_until("one new copy", 30, || {
+        let found = phone.find("Drafts", &hdr);
+        found.len() == 1 && found[0] != first
+    });
+    sync(&mut c);
+    let v = c.call("sync_verify", json!({"account": "dovecot"})).unwrap();
+    assert_eq!(v["ok"], true, "{v:#}");
+    let rows: i64 = db(dir.path()).query_row(
+        "SELECT count(*) FROM message m JOIN folder f ON f.id = m.folder_id WHERE f.role = 'drafts'", [], |r| r.get(0)).unwrap();
+    assert_eq!(rows, 1);
+    // Deleted on the phone, not changed here since: the draft goes.
+    let copy = phone.find("Drafts", &hdr)[0];
+    phone.delete("Drafts", copy);
+    sync(&mut c);
+    wait_until("the draft gone", 30, || {
+        db(dir.path()).query_row("SELECT count(*) FROM draft", [], |r| r.get::<_, i64>(0)).unwrap() == 0
+    });
+
+    // A draft in Drafts, then sent: it leaves Drafts on the server.
+    let m2 = message(dir.path(), "d2");
+    let d2 = c.call("create_draft", json!({"reply_to": m2, "quote_header": "x"})).unwrap()["draft"].clone();
+    let id2 = d2["id"].as_i64().unwrap();
+    c.call("close_draft", json!({"id": id2})).unwrap();
+    let hdr2 = hdr_of(dir.path(), id2);
+    wait_until("the copy in Drafts", 30, || phone.find("Drafts", &hdr2).len() == 1);
+    // `r` on the row of Drafts reopens the same draft.
+    let row: i64 = db(dir.path()).query_row("SELECT message_id FROM draft WHERE id = ?1", [id2], |r| r.get(0)).unwrap();
+    let again = c.call("create_draft", json!({"reply_to": row, "quote_header": "x"})).unwrap();
+    assert_eq!((again["reused"].as_bool(), again["draft"]["id"].as_i64()), (Some(true), Some(id2)));
+    c.call("send_draft", json!({"id": id2, "revision": again["draft"]["revision"], "body": "Envoyé"})).unwrap();
+    c.event("DraftSent", 60);
+    wait_until("the copy gone from Drafts", 30, || phone.find("Drafts", &hdr2).is_empty());
+    wait_until("the mail in Sent", 30, || phone.find("Sent", &hdr2).len() == 1);
+}
+
+#[test]
+#[ignore]
+fn drafts_follow_the_server_full() {
+    drafts_follow_the_server(FULL);
+}
+
+#[test]
+#[ignore]
+fn drafts_follow_the_server_minimal() {
+    drafts_follow_the_server(MINIMAL);
 }

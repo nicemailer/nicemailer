@@ -629,6 +629,11 @@ final class GeekController {
     private func handleMailKey(key: String, code: UInt16, shift: Bool = false) {
         switch code {
         case KeyCode.returnKey:
+            // In Drafts, Return reopens the draft, as `r` does.
+            if model.currentRole == "drafts" {
+                startReply()
+                return
+            }
             // One column shows the list only: Return reads the mail under
             // the cursor in the whole window (`ui.md`, `v1`). With two or
             // three columns the mail is already shown: nothing to do.

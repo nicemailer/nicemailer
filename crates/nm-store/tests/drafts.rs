@@ -35,7 +35,7 @@ fn env() -> Env {
     let mut s = Store::open_in_memory().unwrap();
     s.conn().execute("INSERT INTO account (config_key, kind, created_by, modified_by) VALUES ('perso', 'imap', 'core', 'core')", []).unwrap();
     let acc = s.conn().last_insert_rowid();
-    let roles = ["inbox", "quarantine", "todo", "waiting", "archive", "sent", "newsletter"];
+    let roles = ["inbox", "quarantine", "todo", "waiting", "archive", "sent", "newsletter", "drafts"];
     let listed: Vec<ListedFolder> = roles
         .iter()
         .enumerate()
@@ -211,7 +211,7 @@ fn sending_waits_for_the_undo_delay_and_can_be_cancelled() {
     assert_eq!(v.send_at, Some(send_at));
     // Frozen while it is being sent.
     assert!(matches!(e.s.update_draft(d.id, v.revision, "x", Source::App), Err(StoreError::DraftSending)));
-    assert!(matches!(e.s.discard_draft(d.id), Err(StoreError::DraftSending)));
+    assert!(matches!(e.s.discard_draft(d.id, Source::App), Err(StoreError::DraftSending)));
     // Not due yet: the sender claims nothing.
     assert!(e.s.send_claim(e.acc).unwrap().is_empty());
     assert_eq!(e.s.send_next_due(e.acc).unwrap(), Some(send_at));
@@ -469,7 +469,7 @@ fn a_discarded_draft_can_be_restored_with_its_text() {
     let m = e.deliver("inbox", &alice("m1@a.example"));
     let d = e.reply(m);
     e.s.update_draft(d.id, d.revision, "Mon texte", Source::App).unwrap();
-    let gone = e.s.discard_draft(d.id).unwrap();
+    let (gone, _) = e.s.discard_draft(d.id, Source::App).unwrap();
     assert_eq!(gone.body, "Mon texte");
     assert_eq!(e.int("SELECT count(*) FROM draft"), 0);
     assert!(e.s.find_reply_draft(m).unwrap().is_none());
@@ -507,4 +507,178 @@ fn pretended_sending_lets_an_archive_account_answer() {
     e.send_now(&d, None);
     assert_eq!(e.int("SELECT count(*) FROM message m JOIN folder f ON f.id = m.folder_id WHERE f.role = 'sent'"), 1);
     assert_eq!(e.role_of(m), "archive");
+}
+
+// ---------------------------------------------------------------------------
+// The copies in Drafts (`draft_copies.rs`)
+// ---------------------------------------------------------------------------
+
+impl Env {
+    /// Escape: the draft closed, as the daemon does it.
+    fn close(&mut self, id: i64) -> nm_store::ChangeSet {
+        let Some(mime) = self.s.draft_to_close(id, "NiceMailer/test").unwrap() else { return Default::default() };
+        let written = self.raw.write(&mime).unwrap();
+        self.s.close_draft(id, &written, &mime, Source::App).unwrap()
+    }
+
+    fn drafts_rows(&self) -> i64 {
+        self.int("SELECT count(*) FROM message m JOIN folder f ON f.id = m.folder_id WHERE f.role = 'drafts'")
+    }
+
+    fn queued(&self, kind: &str) -> i64 {
+        self.s.conn().query_row("SELECT count(*) FROM pending_action WHERE kind = ?1 AND state = 'queued'", [kind], |r| r.get(0)).unwrap()
+    }
+}
+
+#[test]
+fn a_closed_draft_is_a_mail_of_drafts_queued_for_the_server() {
+    let mut e = env();
+    let m = e.deliver("inbox", &alice("m1@a.example"));
+    let d = e.reply(m);
+    e.s.update_draft(d.id, d.revision, "Merci\n\n> Bonjour", Source::App).unwrap();
+    let changes = e.close(d.id);
+    assert!(changes.spooled.contains(&e.acc));
+    // A complete row of Drafts, read, flagged draft, in the conversation.
+    assert_eq!(e.drafts_rows(), 1);
+    let row: i64 = e.int("SELECT message_id FROM draft");
+    assert_eq!(e.int(&format!("SELECT is_draft + is_seen + body_state FROM message WHERE id = {row}")), 3);
+    let thread: i64 = e.int(&format!("SELECT thread_id FROM message WHERE id = {m}"));
+    assert_eq!(e.int(&format!("SELECT thread_id FROM message WHERE id = {row}")), thread);
+    let text: String = e.s.conn().query_row("SELECT text_plain FROM message_body WHERE message_id = ?1", [row], |r| r.get(0)).unwrap();
+    assert!(text.starts_with("Merci"), "{text}");
+    assert_eq!(e.queued("append_draft"), 1);
+    // Closed again without a change since: nothing more.
+    let work = e.s.draft_work_claim(e.acc).unwrap();
+    assert_eq!(work.len(), 1);
+    let nm_store::draft_copies::DraftWork::Append { action_id, revision, raw_hash, previous_uid, .. } = work[0].clone() else { panic!() };
+    assert_eq!(previous_uid, None);
+    // Its MIME carries the revision, for the copy on the server.
+    let mime = String::from_utf8(e.raw.read(&raw_hash).unwrap()).unwrap();
+    assert!(mime.contains(&format!("X-NiceMailer-Draft-Revision: {revision}")), "{mime}");
+    e.s.draft_appended(action_id, Some(5)).unwrap();
+    assert_eq!(e.int(&format!("SELECT uid FROM message WHERE id = {row}")), 5);
+    assert!(e.s.draft_to_close(d.id, "t").unwrap().is_none());
+    assert!(e.s.drafts_to_close().unwrap().is_empty());
+    // Changed and closed again: a new row, the previous UID carried.
+    let v = e.s.get_draft(d.id).unwrap();
+    e.s.update_draft(d.id, v.revision, "Merci beaucoup", Source::App).unwrap();
+    assert_eq!(e.s.drafts_to_close().unwrap(), vec![d.id]);
+    e.close(d.id);
+    assert_eq!(e.drafts_rows(), 1);
+    let work = e.s.draft_work_claim(e.acc).unwrap();
+    assert!(matches!(work[..], [nm_store::draft_copies::DraftWork::Append { previous_uid: Some(5), .. }]), "{work:?}");
+}
+
+#[test]
+fn closing_twice_before_the_copy_leaves_one_copy_to_make() {
+    let mut e = env();
+    let m = e.deliver("inbox", &alice("m1@a.example"));
+    let d = e.reply(m);
+    e.close(d.id);
+    let v = e.s.get_draft(d.id).unwrap();
+    e.s.update_draft(d.id, v.revision, "Autre", Source::App).unwrap();
+    e.close(d.id);
+    assert_eq!(e.queued("append_draft"), 1);
+    assert_eq!(e.drafts_rows(), 1);
+    // `r` on the row of Drafts reopens the same draft.
+    let row: i64 = e.int("SELECT message_id FROM draft");
+    let (again, reused) = e.s.create_reply_draft(row, &e.ids, "", None, Source::App).unwrap();
+    assert!(reused);
+    assert_eq!(again.id, d.id);
+}
+
+#[test]
+fn sent_or_abandoned_the_draft_leaves_drafts_and_the_server() {
+    let mut e = env();
+    // Abandoned after its copy reached the server: removed there too.
+    let m = e.deliver("inbox", &alice("m1@a.example"));
+    let d = e.reply(m);
+    e.close(d.id);
+    let a = e.s.draft_work_claim(e.acc).unwrap()[0].action_id();
+    e.s.draft_appended(a, Some(5)).unwrap();
+    let (_, changes) = e.s.discard_draft(d.id, Source::App).unwrap();
+    assert!(changes.spooled.contains(&e.acc));
+    assert_eq!(e.drafts_rows(), 0);
+    assert_eq!(e.queued("delete"), 1);
+    let work = e.s.draft_work_claim(e.acc).unwrap();
+    assert!(matches!(&work[..], [nm_store::draft_copies::DraftWork::Remove { .. }]));
+    e.s.draft_work_done(work[0].action_id(), None).unwrap();
+    // Abandoned before any copy: nothing to remove on the server, the
+    // copy not made is cancelled.
+    let m2 = e.deliver("inbox", &alice("m2@a.example"));
+    let d2 = e.reply(m2);
+    e.close(d2.id);
+    e.s.discard_draft(d2.id, Source::App).unwrap();
+    assert_eq!(e.queued("append_draft") + e.queued("delete"), 0);
+    // Sent: its row goes, its copy too.
+    let m3 = e.deliver("inbox", &alice("m3@a.example"));
+    let d3 = e.reply(m3);
+    e.close(d3.id);
+    let a3 = e.s.draft_work_claim(e.acc).unwrap()[0].action_id();
+    e.s.draft_appended(a3, Some(6)).unwrap();
+    let v = e.s.get_draft(d3.id).unwrap();
+    e.send_now(&v, None);
+    assert_eq!(e.drafts_rows(), 0);
+    assert_eq!(e.queued("delete"), 1);
+}
+
+#[test]
+fn a_copy_deleted_elsewhere_takes_the_draft_unless_changed_here() {
+    let mut e = env();
+    let drafts = folder(&e.s, "drafts");
+    let state = FolderState { uidvalidity: 8, uidnext: Some(20), highestmodseq: None };
+    // Not changed here since its copy: deleted on the phone, deleted here.
+    let m = e.deliver("inbox", &alice("m1@a.example"));
+    let d = e.reply(m);
+    e.close(d.id);
+    let a = e.s.draft_work_claim(e.acc).unwrap()[0].action_id();
+    e.s.draft_appended(a, Some(5)).unwrap();
+    e.s.finish_folder(drafts, &[], &BTreeSet::from([5]), state.clone(), false).unwrap();
+    assert_eq!(e.int("SELECT count(*) FROM draft"), 0);
+    assert_eq!(e.int("SELECT count(*) FROM audit_log WHERE action = 'draft_removed'"), 1);
+    // Changed here since: the text is kept, and goes back at its closing.
+    let m2 = e.deliver("inbox", &alice("m2@a.example"));
+    let d2 = e.reply(m2);
+    e.close(d2.id);
+    let a2 = e.s.draft_work_claim(e.acc).unwrap()[0].action_id();
+    e.s.draft_appended(a2, Some(6)).unwrap();
+    let v = e.s.get_draft(d2.id).unwrap();
+    e.s.update_draft(d2.id, v.revision, "Nouveau texte", Source::App).unwrap();
+    e.s.finish_folder(drafts, &[], &BTreeSet::from([6]), state, false).unwrap();
+    assert_eq!(e.s.get_draft(d2.id).unwrap().body, "Nouveau texte");
+    assert_eq!(e.s.drafts_to_close().unwrap(), vec![d2.id]);
+    // Sent elsewhere (found in Sent by the engine): the draft goes.
+    e.close(d2.id);
+    let a3 = e.s.draft_work_claim(e.acc).unwrap()[0].action_id();
+    e.s.draft_sent_elsewhere(a3, d2.id).unwrap();
+    assert_eq!(e.int("SELECT count(*) FROM draft"), 0);
+    assert_eq!(e.drafts_rows(), 0);
+}
+
+#[test]
+fn an_account_without_server_keeps_its_drafts_here_only() {
+    let mut e = env();
+    e.s.set_server_accounts(BTreeSet::new()).unwrap();
+    let m = e.deliver("inbox", &alice("m1@a.example"));
+    let d = e.reply(m);
+    e.close(d.id);
+    assert_eq!(e.drafts_rows(), 1);
+    assert_eq!(e.int("SELECT count(*) FROM pending_action"), 0);
+    assert!(e.s.draft_to_close(d.id, "t").unwrap().is_none());
+}
+
+#[test]
+fn a_failed_copy_is_tried_again_then_given_up() {
+    let mut e = env();
+    let m = e.deliver("inbox", &alice("m1@a.example"));
+    let d = e.reply(m);
+    e.close(d.id);
+    let a = e.s.draft_work_claim(e.acc).unwrap()[0].action_id();
+    e.s.draft_work_retry(a, "connection lost").unwrap();
+    assert_eq!(e.queued("append_draft"), 1);
+    e.s.conn().execute("UPDATE pending_action SET attempts = 7", []).unwrap();
+    e.s.draft_work_retry(a, "connection lost").unwrap();
+    assert_eq!(e.int("SELECT count(*) FROM pending_action WHERE state = 'reverted'"), 1);
+    // The draft and its row stay here.
+    assert_eq!(e.drafts_rows(), 1);
 }
