@@ -38,6 +38,14 @@ expect reading = true
 expect selected = 4
 key esc
 expect reading = false
+# Space opens the mail too, then scrolls it; Escape goes back.
+key space
+expect reading = true
+expect selected = 4
+key space
+expect reading = true
+key esc
+expect reading = false
 key v
 key 3
 expect columns = 3

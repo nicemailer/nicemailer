@@ -183,7 +183,7 @@ z annule le dernier déplacement ou la dernière décision (les mails reviennent
 / chercher partout : des mots n'importe où, adresses comprises, dans Everything (voir le sélecteur d'attributs) ; échap revient au dossier de départ
 ? liste des touches
 échap annule un préfixe, ferme un panneau, démarque, puis revient du tag, groupe ou contact listé au dossier
-espace et ctrl-f font défiler le mail d'une page vers le bas, maj-espace et ctrl-b vers le haut, en texte comme en HTML
+en une colonne, sur la liste, espace ouvre le mail comme entrée ; mail affiché, espace et ctrl-f le font défiler d'une page vers le bas, maj-espace et ctrl-b vers le haut, en texte comme en HTML
 
 Le prefix ";" permet de changer d’écran
 ; aller à un dossier. Le menu (et la colonne des dossiers) les range en blocs cohérents, séparés par une ligne vide : ce qui est à traiter, ce qui est classé, ce qui a été écrit, ce qui a été jeté ; puis Everything, les écrans Contacts, Tags, Groups, et History à part. Les dossiers propres à l'utilisateur forment un bloc après les dossiers classés. Le nombre de mails non lus de chaque dossier est aligné à l'extrémité droite de sa ligne.

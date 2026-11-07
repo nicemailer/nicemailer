@@ -780,6 +780,22 @@ struct GeekControllerTests {
         #expect(!controller.reading && selectedIndex == 1)
     }
 
+    @Test func spaceOpensTheMailInOneColumnThenScrollsIt() {
+        press("v"); press("1")
+        #expect(!controller.reading)
+        press(" ")
+        #expect(controller.reading)
+        // Open: Space scrolls the mail, it does not close it.
+        press(" ")
+        #expect(controller.reading)
+        press("esc")
+        #expect(!controller.reading)
+        // Two columns: the mail is on screen, Space scrolls it.
+        press("v"); press("2")
+        press(" ")
+        #expect(!controller.reading)
+    }
+
     @Test func escapeLeavesTheReaderBeforeUnmarking() {
         press("v"); press("1")
         press("J")

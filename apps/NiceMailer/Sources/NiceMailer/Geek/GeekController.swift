@@ -680,7 +680,14 @@ final class GeekController {
         case "@": openPicker(.accounts)
         case "F": openPicker(.attributes)
         case "l": openPicker(.links)
-        case " ": scrollReader(pages: shift ? -1 : 1)
+        case " ":
+            // One column, on the list: Space opens the mail, as Return
+            // does. With the mail on screen, it scrolls it (shift: up).
+            if columns == 1, !reading, !shift {
+                openReader()
+            } else {
+                scrollReader(pages: shift ? -1 : 1)
+            }
         case "d": model.moveTargets(to: "archive")
         case "u": model.toggleSeenTargets()
         case "*": model.toggleFlagTargets()
