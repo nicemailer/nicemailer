@@ -75,6 +75,14 @@ final class AppModel {
     /// suspected of spoofing (`authentification-expediteur.md`, section 5).
     var suspectMove: SuspectMove?
 
+    /// The agent of the core, when the app carries it (`CoreAgent`).
+    var agentState: CoreAgent.State = .notBundled
+    /// The core was stopped from the menu in this session: coming back to
+    /// the app does not start it again; a new launch, or "Try Again", does.
+    var coreStoppedByUser = false
+    /// The mailbox in use (`DataDirectory`), for the window's title.
+    var mailboxName: String { DataDirectory.displayName(DataDirectory.current) }
+
     /// The reply being written (`AppModel+Compose.swift`); nil when the
     /// reader shows the mail.
     var composer: Composer?
@@ -415,8 +423,15 @@ final class AppModel {
         status = .connecting
         // `?.` calls the method only if `client` is not nil.
         connection?.disconnect()
+        // NiceMailer.app carries the core: its agent is registered, and
+        // launchd starts it (`CoreAgent`).
+        agentState = CoreAgent.register()
+        if agentState == .requiresApproval {
+            status = .failed(L("NiceMailer needs your permission to run its core: allow it in System Settings > General > Login Items"))
+            return
+        }
         do {
-            let c = try CoreClient()
+            let c = try await openSocket()
             connection = c
             client = c
             let hello: HelloResult = try await c.call("hello", ["protocol_version": CoreClient.protocolVersion, "client": "app"])
@@ -437,6 +452,83 @@ final class AppModel {
         }
     }
 
+    /// Opens the socket of the core. With the agent, a core that does not
+    /// answer is started (`launchctl kickstart`), and waited for a few
+    /// seconds, the time to open its database (`architecture.md`, section
+    /// 6, "Démarrage à la demande").
+    private func openSocket() async throws -> CoreClient {
+        let deadline = Date().addingTimeInterval(8)
+        var lastKick: Date?
+        var delay = 0.05
+        while true {
+            do {
+                return try CoreClient()
+            } catch {
+                guard agentState == .enabled, Date() < deadline else {
+                    CoreAgent.log.error("no core: \(error.localizedDescription, privacy: .public)")
+                    throw error
+                }
+                // Asked again every 2 s: a request lost, or refused while
+                // launchd was still noting the previous core's exit, is
+                // not the end of it.
+                if lastKick.map({ Date().timeIntervalSince($0) > 2 }) ?? true {
+                    CoreAgent.kickstart()
+                    lastKick = Date()
+                }
+                try? await Task.sleep(for: .seconds(delay))
+                delay = min(delay * 2, 0.5)
+            }
+        }
+    }
+
+    /// Uses the mailbox in `url` from now on (`DataDirectory`): the choice
+    /// is recorded, the core started again on it, and everything reloaded.
+    /// Without the agent, the core started by hand must be restarted.
+    func changeMailbox(to url: URL) async {
+        if DataDirectory.environment != nil {
+            lastError = L("NICEMAILER_DATA_DIR is set: it decides the mailbox; launch the app without it to choose one")
+            return
+        }
+        do {
+            try DataDirectory.choose(url)
+        } catch {
+            report(error)
+            return
+        }
+        connection?.disconnect()
+        connection = nil
+        client = nil
+        // Nothing of the previous mailbox is kept: its ids mean nothing in
+        // the next one.
+        composer = nil
+        undoStack = []
+        sending = [:]
+        threads = []
+        folders = []
+        openThread = nil
+        unifiedRole = nil
+        everything = nil
+        selectedFolderId = nil
+        lastEvent = nil
+        if CoreAgent.register() == .enabled {
+            CoreAgent.kickstart(restart: true)
+            await connect()
+        } else {
+            status = .failed(L("Mailbox changed to %@: restart the core on it (make core)", url.path))
+        }
+    }
+
+    /// The menu "Stop the Core": the core finishes its work and leaves; it
+    /// starts again at the next launch of the app.
+    func stopCore() {
+        guard CoreAgent.register() == .enabled else {
+            flash = L("The core was started by hand: stop it where it runs (Ctrl-C)")
+            return
+        }
+        coreStoppedByUser = true
+        CoreAgent.stop()
+    }
+
     /// Consumes the event stream until the connection closes.
     private func listen(_ c: CoreClient) async {
         for await event in c.events {
@@ -445,7 +537,7 @@ final class AppModel {
         // The stream ended: the connection is lost, unless the user already
         // reconnected (then `client` is a newer object; `===` compares
         // object identity).
-        if connection === c { status = .failed("Connexion au noyau perdue.") }
+        if connection === c { status = .failed(L("Connection to the core lost")) }
     }
 
     /// Records what an event invalidates and schedules a refresh. If an

@@ -1,22 +1,27 @@
 #!/bin/bash
-# Builds NiceMailer.app and installs it (`make bundle`, docs/deep-links.md).
+# Builds NiceMailer.app and installs it (`make bundle`, docs/app-bundle.md).
 #
-# `swift run` starts a bare executable: macOS gives it no URL, since only an
-# app bundle can declare a URL scheme. This script wraps the release build
-# in NiceMailer.app, whose Info.plist declares `nicemailer://`, so that a
-# link nicemailer://m/<id> clicked in a note opens the mail.
+# The app carries its core and the CLI (Contents/Helpers), and the launch
+# agent that declares the core (Contents/Library/LaunchAgents): at its
+# launch the app registers the agent, and launchd starts the core, keeps it
+# running when the app quits, and starts it at each session. The Info.plist
+# declares `nicemailer://`, so that a link nicemailer://m/<id> clicked in a
+# note opens the mail (docs/deep-links.md).
 #
-# Usage: scripts/make-bundle.sh [--open] [install dir]   (default: ~/Applications)
+# Usage: scripts/make-bundle.sh [--open] [install dir]   (default: /Applications)
 # --open (`make open`): once built, quits the installed app if it runs,
 # installs the new one and launches it.
-# NICEMAILER_DATA_DIR, if set, is written into the bundle (LSEnvironment):
-# an app opened by Finder or by a link gets no variable from a shell.
+# NICEMAILER_DATA_DIR, if set, becomes the mailbox chosen (the file
+# `data-dir` of ~/Library/Application Support/NiceMailer), as "Change
+# Mailbox…" in the app would.
+# NICEMAILER_FAKE_NETWORK, if set, is given to the core of the agent:
+# sending is pretended (docs/sending.md).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OPEN=0
 if [ "${1:-}" = "--open" ]; then OPEN=1; shift; fi
-DEST="${1:-$HOME/Applications}"
+DEST="${1:-/Applications}"
 XCODE="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
 PKG="$ROOT/apps/NiceMailer"
 
@@ -24,19 +29,43 @@ echo "Building the app (release)…"
 (cd "$PKG" && DEVELOPER_DIR="$XCODE" swift build -c release --product NiceMailer)
 BIN_DIR="$(cd "$PKG" && DEVELOPER_DIR="$XCODE" swift build -c release --show-bin-path)"
 
+echo "Building the core and the CLI (release)…"
+cargo build --release --quiet --manifest-path "$ROOT/Cargo.toml" --bin nicemailer-core --bin nicemailer
+
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
 APP="$STAGE/NiceMailer.app"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Helpers" "$APP/Contents/Library/LaunchAgents"
 cp "$BIN_DIR/NiceMailer" "$APP/Contents/MacOS/NiceMailer"
+cp "$ROOT/target/release/nicemailer-core" "$ROOT/target/release/nicemailer" "$APP/Contents/Helpers/"
+
+# The agent of the core (architecture.md, section 6): started at once when
+# the app registers it, at each session, and again after a crash; a stop
+# with code 0 (Stop the Core, `make core-stop`) is not restarted.
+AGENT_ENV="<key>NICEMAILER_LOG_IN_DATA_DIR</key><string>1</string>"
+if [ -n "${NICEMAILER_FAKE_NETWORK:-}" ]; then
+  AGENT_ENV="$AGENT_ENV<key>NICEMAILER_FAKE_NETWORK</key><string>1</string>"
+fi
+cat > "$APP/Contents/Library/LaunchAgents/eu.nicemailer.core.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>eu.nicemailer.core</string>
+  <key>BundleProgram</key><string>Contents/Helpers/nicemailer-core</string>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
+  <key>AssociatedBundleIdentifiers</key><array><string>eu.nicemailer.NiceMailer</string></array>
+  <key>EnvironmentVariables</key><dict>${AGENT_ENV}</dict>
+  <key>ProcessType</key><string>Background</string>
+</dict>
+</plist>
+PLIST
+plutil -lint "$APP/Contents/Library/LaunchAgents/eu.nicemailer.core.plist" >/dev/null
 # Fonts and translations (AppResources.bundle looks here first).
 cp -R "$BIN_DIR/NiceMailer_NiceMailer.bundle" "$APP/Contents/Resources/"
 
 VERSION="$(git -C "$ROOT" describe --always --dirty 2>/dev/null || echo dev)"
-ENVIRONMENT=""
-if [ -n "${NICEMAILER_DATA_DIR:-}" ]; then
-  ENVIRONMENT="<key>LSEnvironment</key><dict><key>NICEMAILER_DATA_DIR</key><string>${NICEMAILER_DATA_DIR}</string></dict>"
-fi
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -63,7 +92,6 @@ cat > "$APP/Contents/Info.plist" <<PLIST
       <key>CFBundleURLSchemes</key><array><string>nicemailer</string></array>
     </dict>
   </array>
-  ${ENVIRONMENT}
 </dict>
 </plist>
 PLIST
@@ -76,9 +104,16 @@ cat > "$APP/Contents/Resources/fr.lproj/InfoPlist.strings" <<'STRINGS'
 STRINGS
 plutil -lint "$APP/Contents/Resources/fr.lproj/InfoPlist.strings" >/dev/null
 
-# An ad-hoc signature: enough to run on this Mac (Apple Silicon requires
-# signed code), not to distribute.
-codesign --force --sign - "$APP" >/dev/null
+# Signed with the Apple Development identity, as `make core` signs the
+# core (scripts/sign-core.sh): the Keychain then sees the core of the app
+# and the one of `make core` as the same program, and the passwords saved
+# by either are readable by both. The helpers first, then the app around
+# them. Without that identity, an ad-hoc signature: it runs on this Mac,
+# but the core cannot read the passwords saved by another build.
+"$ROOT/scripts/sign-core.sh" "$APP/Contents/Helpers/nicemailer-core"
+IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null | awk '/"Apple Development: / { print $2; exit }')"
+codesign --force --sign "${IDENTITY:--}" --identifier org.nicemailer.cli "$APP/Contents/Helpers/nicemailer" >/dev/null
+codesign --force --sign "${IDENTITY:--}" "$APP" >/dev/null
 
 # Built: only now is the running app quit, so that it stays usable during
 # the build. SIGTERM rather than an Apple Event "quit", which would make
@@ -102,13 +137,29 @@ fi
 mkdir -p "$DEST"
 rm -rf "$DEST/NiceMailer.app"
 cp -R "$APP" "$DEST/"
+# An earlier build in ~/Applications (the default before the app carried
+# its core): removed, so that a single NiceMailer.app answers links and
+# runs the agent.
+OLD="$HOME/Applications/NiceMailer.app"
+if [ "$DEST" = "/Applications" ] && [ -d "$OLD" ]; then
+  /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -u "$OLD" 2>/dev/null || true
+  rm -rf "$OLD"
+  echo "Removed the earlier build $OLD."
+fi
+# The mailbox given at build time, chosen as "Change Mailbox…" would.
+if [ -n "${NICEMAILER_DATA_DIR:-}" ]; then
+  mkdir -p "$HOME/Library/Application Support/NiceMailer"
+  printf '%s\n' "$NICEMAILER_DATA_DIR" > "$HOME/Library/Application Support/NiceMailer/data-dir"
+fi
+# The core of the agent, if it runs, is the previous build: started again
+# from the new one (and on the mailbox chosen).
+launchctl kickstart -k "gui/$(id -u)/eu.nicemailer.core" 2>/dev/null || true
 # Tell Launch Services about the app now, so that nicemailer:// links
 # open it without launching it by hand first.
 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$DEST/NiceMailer.app"
 echo "Installed $DEST/NiceMailer.app (nicemailer:// links open it)."
-if [ -n "${NICEMAILER_DATA_DIR:-}" ]; then
-  echo "Data directory: $NICEMAILER_DATA_DIR"
-fi
+echo "Mailbox: $(cat "$HOME/Library/Application Support/NiceMailer/data-dir" 2>/dev/null || echo "$HOME/Library/Application Support/NiceMailer")"
+echo "Core log: <mailbox>/core.log; stop the core: make core-stop (or the menu Stop the Core)." 
 if [ "$OPEN" = 1 ]; then
   open "$DEST/NiceMailer.app"
 fi

@@ -96,12 +96,26 @@ struct ConnectionErrorView: View {
         VStack(spacing: 12) {
             Image(systemName: "bolt.horizontal.circle").font(.largeTitle).foregroundStyle(.secondary)
             Text(message).multilineTextAlignment(.center)
-            Text("cargo run --release --bin nicemailer-core")
+            // The mailbox the app looks for (`DataDirectory`).
+            Text(DataDirectory.current.path)
                 .font(.system(.body, design: .monospaced))
                 .textSelection(.enabled)
                 .foregroundStyle(.secondary)
-            Button("Réessayer") { Task { await model.connect() } }
-                .keyboardShortcut(.defaultAction)
+            if model.agentState == .notBundled {
+                // Started by hand in development (`make core`).
+                Text(L("Start the core: make core"))
+                    .foregroundStyle(.secondary)
+            }
+            HStack {
+                if model.agentState == .requiresApproval {
+                    Button(L("Open Login Items")) { CoreAgent.openLoginItemsSettings() }
+                }
+                Button(L("Try Again")) {
+                    model.coreStoppedByUser = false
+                    Task { await model.connect() }
+                }
+                    .keyboardShortcut(.defaultAction)
+            }
         }
         .padding(40)
         .frame(maxWidth: .infinity, maxHeight: .infinity)

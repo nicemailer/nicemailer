@@ -11,7 +11,7 @@ XCODE ?= /Applications/Xcode.app/Contents/Developer
 THREADS ?= 2500
 
 # These targets are commands, not files to produce.
-.PHONY: dev-cert build test swift-test ui-test bench seed core app bundle open imap-up imap-down imap-test volume-test
+.PHONY: dev-cert build test swift-test ui-test bench seed core core-stop core-start app bundle open imap-up imap-down imap-test volume-test
 
 build:
 	cargo build --release
@@ -96,14 +96,24 @@ volume-test:
 imap-down:
 	docker compose -f dev/dovecot/compose.yaml down
 
-# Build NiceMailer.app and install it in ~/Applications, so that deep links
+# Build NiceMailer.app, with its core, its CLI and the launch agent of the
+# core, and install it in /Applications (docs/app-bundle.md). Deep links
 # nicemailer://m/<id> open it (docs/deep-links.md). NICEMAILER_DATA_DIR, if
-# set, is written into the app.
+# set, becomes the mailbox chosen; NICEMAILER_FAKE_NETWORK, if set, makes
+# its core pretend to send.
 bundle:
 	DEVELOPER_DIR=$(XCODE) scripts/make-bundle.sh
 
-# Same, then quit the installed app if it runs and launch the new one: the
-# way to run the app when deep links are needed (the core still runs with
-# `make core`).
+# Same, then quit the installed app if it runs and launch the new one. Its
+# core is started by launchd: no `make core` needed.
 open:
 	DEVELOPER_DIR=$(XCODE) scripts/make-bundle.sh --open
+
+# Stops the core started by the agent of NiceMailer.app: it finishes its
+# work and leaves with code 0, which launchd does not restart. It starts
+# again at the next launch of the app or session (or `make core-start`).
+core-stop:
+	launchctl kill SIGTERM gui/$$(id -u)/eu.nicemailer.core
+
+core-start:
+	launchctl kickstart gui/$$(id -u)/eu.nicemailer.core

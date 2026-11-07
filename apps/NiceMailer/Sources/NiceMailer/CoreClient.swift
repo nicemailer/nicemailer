@@ -82,16 +82,10 @@ final class CoreClient: @unchecked Sendable {
     private var closed = false
 
     /// `<data dir>/core.sock`, with the same data directory as the core
-    /// (`NICEMAILER_DATA_DIR`, otherwise `~/Library/Application Support/NiceMailer`).
+    /// (`DataDirectory`: `NICEMAILER_DATA_DIR`, else the mailbox chosen in
+    /// the app, else `~/Library/Application Support/NiceMailer`).
     static var defaultSocketPath: String {
-        let dir: String
-        if let env = ProcessInfo.processInfo.environment["NICEMAILER_DATA_DIR"] {
-            dir = env
-        } else {
-            dir = FileManager.default.homeDirectoryForCurrentUser
-                .appendingPathComponent("Library/Application Support/NiceMailer").path
-        }
-        return (dir as NSString).appendingPathComponent("core.sock")
+        DataDirectory.current.appendingPathComponent("core.sock").path
     }
 
     /// Connects to the socket and starts the reader thread. `throws`: the

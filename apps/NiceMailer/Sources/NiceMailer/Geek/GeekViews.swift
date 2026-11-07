@@ -70,6 +70,15 @@ private struct GeekWindow: View {
     }
 
     @ViewBuilder private var content: some View {
+        if case .failed(let message) = model.status, !UIScript.isActive {
+            // No core: what to do, and the button that allows it.
+            ConnectionErrorView(message: message).font(.geek(12))
+        } else {
+            screenContent
+        }
+    }
+
+    @ViewBuilder private var screenContent: some View {
         switch controller.screen {
         case .mail:
             MailColumns(controller: controller)

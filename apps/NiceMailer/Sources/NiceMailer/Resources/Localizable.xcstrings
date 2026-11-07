@@ -309,6 +309,16 @@
         }
       }
     },
+    "A folder of NiceMailer data (with nicemailer.db), or an empty folder for a new mailbox": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un dossier de données de NiceMailer (avec nicemailer.db), ou un dossier vide pour une nouvelle base"
+          }
+        }
+      }
+    },
     "A single mail: no other message": {
       "localizations": {
         "fr": {
@@ -439,12 +449,42 @@
         }
       }
     },
+    "Change Mailbox…": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changer de base…"
+          }
+        }
+      }
+    },
+    "Choose a Mailbox": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choisir une base"
+          }
+        }
+      }
+    },
     "Classic": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "Classique"
+          }
+        }
+      }
+    },
+    "Connection to the core lost": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connexion au noyau perdue"
           }
         }
       }
@@ -709,6 +749,16 @@
         }
       }
     },
+    "Mailbox changed to %@: restart the core on it (make core)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Base changée pour %@ : relancez le noyau sur elle (make core)"
+          }
+        }
+      }
+    },
     "Mails from %@": {
       "localizations": {
         "fr": {
@@ -739,12 +789,32 @@
         }
       }
     },
+    "NICEMAILER_DATA_DIR is set: it decides the mailbox; launch the app without it to choose one": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "NICEMAILER_DATA_DIR est défini : c'est lui qui fixe la base ; lancez l'app sans lui pour en choisir une"
+          }
+        }
+      }
+    },
     "NiceMailer may not read Contacts: allow it in System Settings, Privacy & Security, Contacts": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "NiceMailer n'a pas accès aux Contacts : autorisez-le dans Réglages Système, Confidentialité et sécurité, Contacts"
+          }
+        }
+      }
+    },
+    "NiceMailer needs your permission to run its core: allow it in System Settings > General > Login Items": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "NiceMailer a besoin de votre autorisation pour faire tourner son noyau : autorisez-le dans Réglages Système > Général > Ouverture"
           }
         }
       }
@@ -969,6 +1039,16 @@
         }
       }
     },
+    "Open Login Items": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ouvrir les réglages d'ouverture"
+          }
+        }
+      }
+    },
     "Opens the unsubscribe link found in the text of the mail, in the browser (⌘U)": {
       "localizations": {
         "fr": {
@@ -1179,6 +1259,26 @@
         }
       }
     },
+    "Start the core: make core": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lancez le noyau : make core"
+          }
+        }
+      }
+    },
+    "Stop the Core": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arrêter le noyau"
+          }
+        }
+      }
+    },
     "Subject…": {
       "localizations": {
         "fr": {
@@ -1245,6 +1345,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Texte…"
+          }
+        }
+      }
+    },
+    "The core was started by hand: stop it where it runs (Ctrl-C)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le noyau a été lancé à la main : arrêtez-le là où il tourne (Ctrl-C)"
           }
         }
       }
@@ -1399,6 +1509,16 @@
         }
       }
     },
+    "Try Again": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Réessayer"
+          }
+        }
+      }
+    },
     "Type a name": {
       "localizations": {
         "fr": {
@@ -1465,6 +1585,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Désabonne aussitôt, sans rien ouvrir (⌘U)"
+          }
+        }
+      }
+    },
+    "Use This Mailbox": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Utiliser cette base"
           }
         }
       }

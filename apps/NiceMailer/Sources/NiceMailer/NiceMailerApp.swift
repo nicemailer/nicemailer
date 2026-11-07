@@ -45,15 +45,37 @@ struct NiceMailerApp: App {
             // each URL it receives; this sends every URL to the window
             // already open instead.
             .handlesExternalEvents(preferring: ["*"], allowing: ["*"])
+            // Back to the app without a core (stopped by the menu, the app
+            // reopened before it had quit): it is started again at once.
+            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+                guard !UIScript.isActive, !model.coreStoppedByUser, case .failed = model.status,
+                      model.agentState != .notBundled else { return }
+                Task { await model.connect() }
+            }
+            // The mailbox in use, when it is not the default one.
+            .navigationTitle(model.mailboxName == "NiceMailer" ? "NiceMailer" : "NiceMailer — \(model.mailboxName)")
             // `.task` starts async work when the view appears.
             .task {
                 guard !UIScript.isActive else { return }
                 // The geek theme opens on the unified view "all".
                 model.startUnified = theme == .geek
+                // ⌥ held at launch: choose the mailbox first, like Photos.
+                if AppDelegate.optionAtLaunch, let url = MailboxChooser.choose() {
+                    await model.changeMailbox(to: url)
+                    return
+                }
                 await model.connect()
             }
         }
         .commands {
+            // The mailbox and the core (`docs/app-bundle.md`), in the app's
+            // menu, after "About".
+            CommandGroup(after: .appInfo) {
+                Button(L("Change Mailbox…")) {
+                    if let url = MailboxChooser.choose() { Task { await model.changeMailbox(to: url) } }
+                }
+                Button(L("Stop the Core")) { model.stopCore() }
+            }
             // Adds a "Reload" item (⌘R) to the View menu.
             CommandGroup(after: .toolbar) {
                 Button(L("Reload")) { Task { await model.reloadAll() } }
@@ -82,8 +104,12 @@ struct NiceMailerApp: App {
 
 /// AppKit delegate, for launch-time setup.
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    /// ⌥ was held when the app opened: the mailbox is chosen first.
+    @MainActor static var optionAtLaunch = false
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         Fonts.register()
+        AppDelegate.optionAtLaunch = NSEvent.modifierFlags.contains(.option)
         // UI script mode (automated tests): never take the keyboard or the
         // screen from the user. `.accessory` = no Dock icon, not activated.
         if UIScript.isActive {
@@ -101,4 +127,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Quit when the window is closed (macOS apps otherwise keep running).
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+}
+
+/// The panel that chooses a mailbox: a folder holding the data of NiceMailer
+/// (`nicemailer.db`), or an empty one for a new mailbox.
+@MainActor
+enum MailboxChooser {
+    static func choose() -> URL? {
+        let panel = NSOpenPanel()
+        panel.title = L("Choose a Mailbox")
+        panel.message = L("A folder of NiceMailer data (with nicemailer.db), or an empty folder for a new mailbox")
+        panel.prompt = L("Use This Mailbox")
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.directoryURL = DataDirectory.current.deletingLastPathComponent()
+        NSApp.activate(ignoringOtherApps: true)
+        return panel.runModal() == .OK ? panel.url : nil
+    }
 }

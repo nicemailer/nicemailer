@@ -166,6 +166,8 @@ Le noyau est un LaunchAgent embarqué dans le bundle, enregistré par l'app via 
 | C. Démon installé à part      | Service séparé (Homebrew, pkg)                                              | Exclut le grand public                                                    |
 | D. Hybride FFI + socket       | App liée au noyau via UniFFI, socket pour les autres                        | Deux chemins, comportements qui divergent                                 |
 
+Réalisé en développement (novembre 2026, `docs/app-bundle.md`) : le bundle avec le noyau et le CLI, l'agent enregistré par `SMAppService`, le démarrage à la demande par l'app, l'arrêt (menu « Arrêter le noyau », code 0), et le choix de la base dans l'app (⌥ à l'ouverture, « Changer de base… »), mémorisé dans le fichier `data-dir` du dossier par défaut, que le noyau et le CLI lisent aussi. L'identifiant de l'app reste `eu.nicemailer.NiceMailer`. Restent l'option de tri en arrière-plan, le déplacement dans `/Applications`, les liens du CLI, la désinstallation, la TUI et le MCP.
+
 ### Structure du bundle
 
 ```

@@ -35,7 +35,7 @@ macOS gives a URL only to an app bundle that declares its scheme. `make app` (`s
 make bundle
 ```
 
-It builds the app in release mode, wraps it in `NiceMailer.app` (its `Info.plist` declares the `nicemailer` scheme, and why the app reads Contacts: `docs/geek-ui.md`, "Senders in the address book"), signs it ad hoc (enough for this Mac), installs it in `~/Applications` and registers it with Launch Services. Run it again after pulling new code.
+It builds the app in release mode, wraps it in `NiceMailer.app` (its `Info.plist` declares the `nicemailer` scheme, and why the app reads Contacts: `docs/geek-ui.md`, "Senders in the address book"), signs it, installs it in `/Applications` with its core ([app-bundle.md](app-bundle.md)) and registers it with Launch Services. Run it again after pulling new code.
 
 `make open` does the same, then launches the app: once built, it quits the installed app if it runs (a SIGTERM, waiting 5 s at most; it keeps nothing unsaved, the core holds the data), installs the new one and opens it. An app started by `make app` is left alone. With the core in another terminal, the two commands to run the app with links are:
 
@@ -70,6 +70,6 @@ nicemailer call locate_message '{"message_id": 48213}'
 - `DeepLinkTests`: the URL of a message, reading it back, URLs refused, the Markdown link with brackets, line breaks and an empty subject.
 - `GeekControllerTests`: the first row of `l` copies the Markdown link (Return) and the URL (⌘-Return) to a private pasteboard; a link opens the mail in its folder, closes the panels and, in one column, shows the mail; a missing mail and a foreign URL are reported.
 - `deeplinks.uiscript`: in the app, copy the link of the newsletter, go to another folder with the help open, open the link (`openurl clipboard`): the newsletter is back, in Archive; the same in one column; a missing mail and a foreign URL.
-- The app of `NiceMailer.app` can play the scenarios: `NICEMAILER_UI_BIN=~/Applications/NiceMailer.app/Contents/MacOS/NiceMailer scripts/ui-test.sh deeplinks.uiscript` (it finds its fonts and translations in `Contents/Resources`, `resources_bundle`).
+- The app of `NiceMailer.app` can play the scenarios: `NICEMAILER_UI_BIN=/Applications/NiceMailer.app/Contents/MacOS/NiceMailer scripts/ui-test.sh deeplinks.uiscript` (it finds its fonts and translations in `Contents/Resources`, `resources_bundle`).
 
 Launch Services itself (a click in Obsidian reaching the app) is not covered by the automated tests: it would open the app on the user's screen.

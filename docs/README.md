@@ -18,6 +18,7 @@ User and developer documentation, in English. It is written together with the co
 | [configuration.md](configuration.md) | Settings and accounts in `config.toml`: where it is, what is checked, how changes apply while the core runs, passwords in development, the read pool |
 | [imap.md](imap.md) | The IMAP client of the core: connection, certificates, login, commands and their fallbacks, large messages, failures, IDLE, `nicemailer imap probe` |
 | [deep-links.md](deep-links.md) | The URL of each mail, `nicemailer://m/<id>`: copying it from `l` (Markdown for Obsidian), opening it, `make bundle` |
+| [app-bundle.md](app-bundle.md) | `NiceMailer.app` in `/Applications`: its core run by a launch agent, stopping it, choosing the mailbox (⌥ at launch, Change Mailbox…), `make bundle` |
 | [sending.md](sending.md) | Replying to a mail: the reply screen, what the core prepares, sending through SMTP with an undo delay, the copy in Sent, the filing, failures, the SMTP password |
 | [core-library.md](core-library.md) | Core methods behind the screens: sort by modification, text/HTML per sender, export, history, tags, groups, contacts |
 
