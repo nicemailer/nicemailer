@@ -21,7 +21,7 @@ Le produit s'adresse à des individus et à de petites structures. La synchronis
 ## 2. Principes
 
 - **La configuration est stockée sur le serveur IMAP de chaque boîte**, dans un dossier dédié. Aucun service tiers, aucun compte Apple ou NiceMailer n'est nécessaire.
-- **Activation explicite par compte** (clé `config_sync` du compte dans `config.toml`), désactivée par défaut : on écrit sur le serveur une donnée que lisent tous ceux qui ont accès à la boîte, administrateur compris.
+- **Activation explicite par compte** (clé `config_sync` du compte dans `accounts.toml`), désactivée par défaut : on écrit sur le serveur une donnée que lisent tous ceux qui ont accès à la boîte, administrateur compris.
 - **La dernière modification l'emporte, entrée par entrée.** Chaque entrée (une adresse, un domaine, un rôle de dossier, un tag…) porte la date de sa dernière modification. Il n'y a ni poste principal, ni mode lecture seule, ni résolution manuelle des conflits.
 - **Les décisions de screening ont une portée globale.** Une adresse a la même décision sur toutes les boîtes (`address` et `domain` restent communes à tous les comptes). Une décision prise sur une boîte partagée s'applique donc aussi aux boîtes personnelles, et inversement. Une adresse classée différemment selon la boîte est un cas jugé marginal pour la cible du produit.
 - **Confidentialité : une boîte ne reçoit que les décisions sur des adresses qu'elle a déjà vues** (section 6). Le carnet d'adresses complet n'est jamais divulgué à une boîte où l'on collabore ponctuellement.
@@ -42,7 +42,7 @@ Le produit s'adresse à des individus et à de petites structures. La synchronis
 | Non synchronisé | Raison |
 | --- | --- |
 | Identifiants, serveurs, références Keychain | Secrets et paramètres propres au poste |
-| Réglages de `config.toml` (généraux et par compte) | Le noyau n'écrit jamais ce fichier de lui-même : un fichier que l'utilisateur versionne dans Git ne doit pas changer sans lui. Les mêmes réglages sur plusieurs Mac s'obtiennent en versionnant le fichier (`configuration.md`, section 8) |
+| Réglages de `config.toml` et d'`accounts.toml` (généraux et par compte) | Le noyau ne modifie jamais ces fichiers de lui-même (il ne fait que créer ceux qui manquent au démarrage) : un fichier que l'utilisateur versionne dans Git ne doit pas changer sans lui. Les mêmes réglages sur plusieurs Mac s'obtiennent en versionnant `config.toml` (`configuration.md`, section 8) |
 | `auth_seen` | Se recalcule à partir des messages, qui sont les mêmes sur tous les Mac |
 | Signature, nom d'affichage de l'expéditeur | Propres à chaque personne sur une boîte partagée |
 | Option « continuer à trier mes mails quand NiceMailer est fermé », préférences d'affichage | Propres au poste |
@@ -189,7 +189,7 @@ Plusieurs Mac peuvent trier la même Inbox en même temps.
 ## 10. Données
 
 ```sql
--- account : l'activation est la clé config_sync du compte dans config.toml
+-- account : l'activation est la clé config_sync du compte dans accounts.toml
 -- (faux par défaut), pas une colonne (configuration.md).
 
 -- folder : nouveau rôle 'config' (dossier nicemailer-sync) ;

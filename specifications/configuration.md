@@ -8,21 +8,46 @@ Ce document spécifie où et comment sont stockés les réglages de NiceMailer e
 
 ## 2. Principes
 
-- **La configuration est un fichier texte TOML.** L'app offre une interface pour que l'utilisateur novice n'ait jamais à l'ouvrir. Le fichier texte permet à l'utilisateur avancé de le versionner dans Git et de le partager entre ses Mac, et à un agent de le modifier simplement.
-- **Le fichier contient les intentions de l'utilisateur, la base contient l'état.** Ce que l'utilisateur choisit (un serveur, un intervalle, une identité) est dans le fichier. Ce qui est détecté (`authserv_id`), calculé ou décidé au fil de l'eau (screening, tags) est en base.
-- **Le noyau seul lit et écrit le fichier.** Les clients passent par le contrat ; l'utilisateur et les agents peuvent aussi l'éditer directement.
-- **Aucun secret dans le fichier.** Les mots de passe et les jetons sont dans le Keychain.
+- **La configuration est en deux fichiers texte TOML** : `config.toml` pour les réglages de l'application, `accounts.toml` pour les comptes. L'app offre une interface pour que l'utilisateur novice n'ait jamais à l'ouvrir. Les fichiers texte permettent à l'utilisateur avancé de les versionner dans Git et de les partager entre ses Mac, et à un agent de les modifier simplement.
+- **Les fichiers contiennent les intentions de l'utilisateur, la base contient l'état.** Ce que l'utilisateur choisit (un serveur, un intervalle, une identité) est dans les fichiers. Ce qui est détecté (`authserv_id`), calculé ou décidé au fil de l'eau (screening, tags) est en base.
+- **Le noyau seul lit et écrit les fichiers.** Les clients passent par le contrat ; l'utilisateur et les agents peuvent aussi les éditer directement.
+- **Aucun secret dans les fichiers.** Les mots de passe et les jetons sont dans le Keychain.
 
 ## 3. Emplacement et forme
 
-Le fichier est `~/.config/nicemailer/config.toml`. Ce chemin est celui des outils en ligne de commande et des dépôts de dotfiles ; `~/Library/Application Support`, où vit la base, n'est pas un endroit où l'on pense à chercher un fichier à versionner. La variable d'environnement `NICEMAILER_CONFIG` permet d'en désigner un autre.
+Les fichiers sont `~/.config/nicemailer/config.toml` et `~/.config/nicemailer/accounts.toml`. Ce chemin est celui des outils en ligne de commande et des dépôts de dotfiles ; `~/Library/Application Support`, où vit la base, n'est pas un endroit où l'on pense à chercher un fichier à versionner. La variable d'environnement `NICEMAILER_CONFIG` permet de désigner un autre `config.toml` ; `accounts.toml` est toujours dans le même dossier que lui. Une seule variable déplace ainsi les deux fichiers : un noyau de test ne peut pas lire les vrais comptes par erreur.
 
-- **Le fichier ne contient que ce qui diffère des valeurs par défaut.** Une clé absente prend sa valeur par défaut. Un fichier absent équivaut à un fichier vide : NiceMailer démarre sans compte.
-- **Les noms de paramètres des spécifications sont des clés TOML.** `sync.poll_interval_secs` est la clé `poll_interval_secs` de la table `[sync]`.
-- **Réglages par compte.** Un compte est une table `[accounts.<clé>]`. Un réglage général peut y être redéfini pour ce compte (`[accounts.perso.sync]`) ; la valeur du compte l'emporte.
-- **Version du format.** La clé `version` (1) permet de migrer le fichier si son format change.
+### Deux fichiers
 
-Exemple :
+- **`config.toml`** contient tous les réglages de l'application (catalogue, section 11).
+- **`accounts.toml`** contient les comptes (section 6) et rien d'autre.
+
+Les réglages généraux sont les mêmes d'un Mac à l'autre et peuvent être publiés dans un dépôt de dotfiles ; les comptes (adresses, serveurs, identifiants) sont personnels et diffèrent d'un Mac à l'autre. Les séparer permet de partager les uns sans les autres.
+
+Une table `[accounts…]` dans `config.toml` est une **erreur** et non un avertissement : le fichier est refusé, et le message indique de déplacer la table dans `accounts.toml`. L'ignorer ferait démarrer le noyau sans les comptes de l'utilisateur, sans rien dire.
+
+### Création au démarrage
+
+Au démarrage, le noyau vérifie la présence des deux fichiers et **crée celui qui manque**. Même si l'utilisateur laisse tous les réglages à leur valeur par défaut, il voit ainsi ce qu'il peut modifier :
+
+- `config.toml` est créé avec **toutes les clés, commentées, avec leur valeur par défaut et leur rôle** : le texte de `nicemailer config defaults`, chaque ligne `clé = valeur` précédée de `# `. Les en-têtes de tables (`[sync]`) ne sont pas commentés : pour changer un réglage, il suffit d'enlever le `# ` de sa ligne.
+- `accounts.toml` est créé sans compte, avec un exemple de compte commenté.
+
+Commentées plutôt qu'écrites : une valeur écrite dans le fichier est un choix de l'utilisateur et resterait figée si une version ultérieure de NiceMailer changeait la valeur par défaut. Une ligne commentée montre la clé sans rien imposer. Les fichiers créés donnent donc exactement les valeurs par défaut.
+
+- **Un fichier existant n'est jamais modifié**, même vide ou invalide. Un lien symbolique compte comme existant, même si sa cible manque (dépôt de dotfiles pas encore cloné).
+- **Complet ou absent.** Le fichier est écrit sous un nom temporaire puis reçoit son nom par un lien (`link`), qui échoue si le nom est pris : un fichier créé entre-temps est conservé, et aucun lecteur ne voit un fichier à moitié écrit.
+- **Au démarrage seulement.** Un fichier supprimé pendant que le noyau tourne reste supprimé jusqu'au démarrage suivant.
+- Un échec de création (dossier en lecture seule) n'empêche pas le démarrage : le noyau le journalise et démarre avec les valeurs par défaut.
+
+### Forme
+
+- **Une clé absente prend sa valeur par défaut.** Un fichier absent équivaut à un fichier vide : un `config.toml` absent donne toutes les valeurs par défaut, un `accounts.toml` absent aucun compte.
+- **Les noms de paramètres des spécifications sont des clés TOML.** `sync.poll_interval_secs` est la clé `poll_interval_secs` de la table `[sync]` de `config.toml`.
+- **Réglages par compte.** Un compte est une table `[accounts.<clé>]` d'`accounts.toml`. Le préfixe `accounts.` est gardé : les clés sont ainsi les mêmes partout (erreurs, `ConfigChanged`, `audit_log`). Un réglage général peut y être redéfini pour ce compte (`[accounts.perso.sync]`) ; la valeur du compte l'emporte, et les autres clés viennent du `[sync]` de `config.toml`.
+- **Version du format.** Chaque fichier a sa clé `version` (1), qui permet de le migrer si son format change.
+
+Exemple, `config.toml` :
 
 ```toml
 version = 1
@@ -32,6 +57,12 @@ background_sorting = true
 
 [sync]
 poll_interval_secs = 300
+```
+
+`accounts.toml` :
+
+```toml
+version = 1
 
 [accounts.perso]
 email = "prenom@exemple.fr"
@@ -59,31 +90,33 @@ name = "Prénom Nom"
 
 ## 4. Lecture et application
 
-- **Au démarrage**, le noyau lit le fichier et le valide.
-- **En cours de route**, il le surveille (FSEvents) et applique les changements sans redémarrage.
-- **Fichier invalide** (syntaxe, type, valeur hors limites) : il est refusé en entier. Le noyau garde la configuration précédente, émet l'événement `ConfigError {line, message}` et l'app affiche un bandeau qui renvoie à la ligne fautive. Au démarrage, sans configuration précédente, le noyau démarre avec les valeurs par défaut et sans compte, et signale l'erreur de la même façon. Appliquer une partie seulement d'un fichier invalide produirait un état que personne n'a écrit.
+- **Au démarrage**, le noyau crée les fichiers absents (section 3), puis les lit et les valide.
+- **En cours de route**, il les surveille (FSEvents) et applique les changements sans redémarrage. Les deux fichiers sont relus ensemble au changement de l'un d'eux : les réglages d'un compte partent du `[sync]` de `config.toml`.
+- **Fichier invalide** (syntaxe, type, valeur hors limites) : il est refusé en entier, **avec l'autre fichier**. Le noyau garde la configuration précédente, émet l'événement `ConfigError {file, line, message}` et l'app affiche un bandeau qui renvoie au fichier et à la ligne fautive. Au démarrage, sans configuration précédente, le noyau démarre avec les valeurs par défaut et sans compte, et signale l'erreur de la même façon. Appliquer une partie seulement d'un fichier invalide produirait un état que personne n'a écrit.
 - **Clé inconnue** : avertissement, pas erreur. Un fichier écrit par une version plus récente de NiceMailer reste ainsi lisible par une plus ancienne.
 
 ## 5. Écriture par l'interface
 
-Les réglages modifiés dans l'app, la TUI ou le CLI le sont par des commandes du contrat (`set_config`, `add_account`…). Le noyau écrit alors le fichier :
+Les réglages modifiés dans l'app, la TUI ou le CLI le sont par des commandes du contrat (`set_config`, `add_account`…). Le noyau écrit alors le fichier concerné :
 
 - **en préservant commentaires, ordre et mise en forme** (bibliothèque `toml_edit`) : un fichier versionné par l'utilisateur ne doit pas être réécrit de fond en comble pour une clé ;
 - **de façon atomique** : fichier temporaire, puis `rename` ;
 - **sans écraser une édition manuelle** : si le fichier a changé sur le disque depuis sa dernière lecture, le noyau le relit d'abord, puis n'applique que la clé modifiée ;
 - **sans écrire de valeur par défaut** : remettre un réglage à sa valeur par défaut supprime la clé.
 
-Le noyau n'écrit jamais le fichier de sa propre initiative, seulement à la demande d'un client. En particulier, la synchronisation entre Mac ne le modifie pas (section 8).
+Les commandes de comptes (`add_account`, `rename_account`, `remove_account`) écrivent `accounts.toml`, jamais `config.toml`.
+
+En dehors de la création d'un fichier absent au démarrage (section 3), le noyau ne modifie jamais un fichier de sa propre initiative, seulement à la demande d'un client. En particulier, la synchronisation entre Mac ne les modifie pas (section 8).
 
 ## 6. Comptes
 
-Les paramètres d'un compte sont dans le fichier : adresse, nom affiché, serveurs IMAP et SMTP avec leurs identifiants, mode d'authentification, synchronisation de la configuration et identités.
+Les paramètres d'un compte sont dans `accounts.toml` : adresse, nom affiché, serveurs IMAP et SMTP avec leurs identifiants, mode d'authentification, synchronisation de la configuration et identités.
 
 ### Identité d'un compte
 
-Un compte est identifié par sa clé, `perso` dans `[accounts.perso]`. La table `account` de la base associe cette clé (`config_key`) à l'identifiant interne référencé par les dossiers, messages et conversations. Les comptes d'archives, créés par un import mbox, sont l'exception : ils n'ont pas de serveur et ne figurent pas dans `config.toml` (`import-initial.md`, section 9).
+Un compte est identifié par sa clé, `perso` dans `[accounts.perso]`. La table `account` de la base associe cette clé (`config_key`) à l'identifiant interne référencé par les dossiers, messages et conversations. Les comptes d'archives, créés par un import mbox, sont l'exception : ils n'ont pas de serveur et ne figurent pas dans `accounts.toml` (`import-initial.md`, section 9).
 
-- **Renommer la clé à la main crée un nouveau compte**, et l'ancien est désactivé (ci-dessous). Pour renommer un compte en gardant ses données, il faut passer par l'app ou par `nicemailer account rename`, qui modifie le fichier et la base ensemble.
+- **Renommer la clé à la main crée un nouveau compte**, et l'ancien est désactivé (ci-dessous). Pour renommer un compte en gardant ses données, il faut passer par l'app ou par `nicemailer account rename`, qui modifie `accounts.toml` et la base ensemble.
 - **Changer l'adresse ou les serveurs** sous la même clé garde le compte. Si la boîte n'est plus la même, la synchronisation le constate par le changement d'`uidvalidity` des dossiers et les retélécharge (`modele de donnees.md`, section 5).
 
 ### Un compte absent du fichier est désactivé, pas supprimé
@@ -94,11 +127,11 @@ Supprimer les données d'un compte demande une commande explicite (app, ou `nice
 
 ### Secrets liés au serveur
 
-Les secrets sont dans le Keychain, sous un nom dérivé de la clé du compte. Chaque entrée enregistre **l'hôte et l'identifiant pour lesquels elle a été créée**. Si le fichier désigne un autre hôte ou un autre identifiant, le noyau refuse de s'authentifier, émet `AccountError` et l'app demande à l'utilisateur de confirmer le nouveau serveur en ressaisissant le mot de passe ou en refaisant l'autorisation OAuth.
+Les secrets sont dans le Keychain, sous un nom dérivé de la clé du compte. Chaque entrée enregistre **l'hôte et l'identifiant pour lesquels elle a été créée**. Si `accounts.toml` désigne un autre hôte ou un autre identifiant, le noyau refuse de s'authentifier, émet `AccountError` et l'app demande à l'utilisateur de confirmer le nouveau serveur en ressaisissant le mot de passe ou en refaisant l'autorisation OAuth.
 
-Sans cette règle, toute personne ou tout programme capable de modifier le fichier, y compris un agent manipulé par un mail piégé, pourrait rediriger un compte vers son propre serveur et recevoir le mot de passe à la connexion suivante.
+Sans cette règle, toute personne ou tout programme capable de modifier `accounts.toml`, y compris un agent manipulé par un mail piégé, pourrait rediriger un compte vers son propre serveur et recevoir le mot de passe à la connexion suivante.
 
-**Ajout d'un compte.** Un compte peut être déclaré à la main ou par un agent dans le fichier, mais son secret ne peut être saisi que dans l'app ou le CLI. Tant qu'il manque, le compte est en erreur d'authentification.
+**Ajout d'un compte.** Un compte peut être déclaré à la main ou par un agent dans `accounts.toml`, mais son secret ne peut être saisi que dans l'app ou le CLI. Tant qu'il manque, le compte est en erreur d'authentification.
 
 ### Identités
 
@@ -118,7 +151,7 @@ L'identifiant de serveur reconnu dans `Authentication-Results` est détecté aut
 
 ## 7. Réglages protégés
 
-Certains réglages ne sont **pas** dans le fichier :
+Certains réglages ne sont **pas** dans les fichiers :
 
 | Réglage | Raison |
 | --- | --- |
@@ -129,7 +162,7 @@ Ils sont stockés en base (table `protected_setting`) et **ne sont modifiables q
 
 Limite assumée, comme pour la confirmation des envois : un programme qui a les droits de l'utilisateur peut toujours modifier la base directement. La protection vise les agents qui écrivent des fichiers ou passent par le contrat, pas un logiciel malveillant local.
 
-## 8. Ce qui n'est pas dans le fichier
+## 8. Ce qui n'est pas dans les fichiers
 
 | Donnée | Stockage | Raison |
 | --- | --- | --- |
@@ -139,25 +172,26 @@ Limite assumée, comme pour la confirmation des envois : un programme qui a les 
 | Valeurs détectées (`authserv_id`) | Base (`account`) | État, pas intention |
 | Réglages protégés | Base (`protected_setting`) | Section 7 |
 
-**Les réglages du fichier ne sont pas synchronisés par `nicemailer-sync`.** Le noyau n'écrit jamais le fichier de lui-même, et un fichier suivi par Git ne doit pas changer sans que son propriétaire l'ait voulu. L'utilisateur qui veut les mêmes réglages sur plusieurs Mac versionne son fichier. Sur une boîte partagée, chaque personne garde ses propres réglages, comme elle garde déjà sa signature.
+**Les réglages des fichiers ne sont pas synchronisés par `nicemailer-sync`.** Le noyau ne modifie jamais un fichier existant de lui-même, et un fichier suivi par Git ne doit pas changer sans que son propriétaire l'ait voulu. L'utilisateur qui veut les mêmes réglages sur plusieurs Mac versionne son `config.toml`. Sur une boîte partagée, chaque personne garde ses propres réglages, comme elle garde déjà sa signature.
 
 ## 9. Commandes
 
 | Commande | Effet |
 | --- | --- |
-| `nicemailer config check` | Valide le fichier, sans l'appliquer |
-| `nicemailer config defaults` | Affiche le fichier complet, avec toutes les clés, leurs valeurs par défaut et leur rôle en commentaire |
-| `nicemailer config path` | Affiche le chemin du fichier utilisé |
-| `nicemailer account password <clé>` | Enregistre le mot de passe IMAP du compte dans le trousseau, pour le serveur que nomme le fichier ; le refaire confirme un nouveau serveur |
+| `nicemailer config check` | Valide les deux fichiers, sans les appliquer |
+| `nicemailer config defaults` | Affiche le `config.toml` complet, avec toutes les clés, leurs valeurs par défaut et leur rôle en commentaire |
+| `nicemailer config defaults --accounts` | Affiche le modèle d'`accounts.toml`, avec un exemple de compte commenté |
+| `nicemailer config path` | Affiche les chemins des deux fichiers utilisés |
+| `nicemailer account password <clé>` | Enregistre le mot de passe IMAP du compte dans le trousseau, pour le serveur que nomme `accounts.toml` ; le refaire confirme un nouveau serveur |
 | `nicemailer account rename <ancienne> <nouvelle>` | Renomme la clé d'un compte en gardant ses données |
 | `nicemailer account remove <clé>` | Supprime un compte, ses données et ses secrets, après confirmation |
-| `nicemailer account add <clé> --email … --host …` | Crée un compte : connexion d'essai, rôles des dossiers, import initial, mot de passe, table du fichier (`import-initial.md`) |
+| `nicemailer account add <clé> --email … --host …` | Crée un compte : connexion d'essai, rôles des dossiers, import initial, mot de passe, table d'`accounts.toml` (`import-initial.md`) |
 | `nicemailer account roles <clé> rôle=dossier…` | Change le rôle de dossiers du compte, en créant au besoin ceux qui manquent |
 
 ## 10. Traçabilité
 
 - Une modification faite par une commande du contrat est inscrite dans `audit_log` (entité `config`, action `update`), avec la source du client, la clé, l'ancienne et la nouvelle valeur.
-- Une modification faite directement dans le fichier est constatée au rechargement : action `reload`, source `core`, avec la liste des clés changées. Le noyau ne peut pas savoir qui a édité le fichier ; l'historique Git de l'utilisateur le dit.
+- Une modification faite directement dans un fichier est constatée au rechargement : action `reload`, source `core`, avec la liste des clés changées. Le noyau ne peut pas savoir qui a édité le fichier ; l'historique Git de l'utilisateur le dit.
 - La désactivation et la suppression d'un compte sont inscrites sur l'entité `account` (`disable`, `remove`).
 
 ## 11. Catalogue des paramètres
@@ -190,11 +224,15 @@ Un nouveau paramètre est ajouté à la fois dans la spécification qui l'utilis
 
 ## 12. Tests exigés
 
-- Fichier absent : démarrage sans compte, valeurs par défaut.
-- Fichier invalide au démarrage, puis en cours de route : configuration précédente conservée, `ConfigError` émis avec la bonne ligne.
+- Fichiers absents au démarrage : créés, `config.toml` avec toutes les clés commentées, `accounts.toml` sans compte ; ils donnent les valeurs par défaut et aucun compte. Décommenter n'importe quelle ligne donne un fichier valide.
+- Fichier existant, même vide ou invalide, ou lien symbolique sans cible : jamais modifié.
+- Fichier supprimé en cours de route : valeurs par défaut (ou aucun compte), pas de recréation avant le démarrage suivant.
+- Table `[accounts…]` dans `config.toml` : refusée, avec un message qui renvoie à `accounts.toml`.
+- `accounts.toml` invalide avec un `config.toml` valide : les deux refusés, `ConfigError` nomme `accounts.toml`.
+- Fichier invalide au démarrage, puis en cours de route : configuration précédente conservée, `ConfigError` émis avec le bon fichier et la bonne ligne.
 - Clé inconnue : avertissement, le reste du fichier est appliqué.
 - Écriture par `set_config` : commentaires et ordre préservés ; une édition manuelle concurrente n'est pas écrasée.
 - Compte retiré du fichier puis remis : données intactes, synchronisation reprise.
-- Hôte IMAP modifié dans le fichier : aucune authentification envoyée au nouvel hôte avant confirmation dans l'app.
+- Hôte IMAP modifié dans `accounts.toml` : aucune authentification envoyée au nouvel hôte avant confirmation dans l'app.
 - `protected_setting` modifié par le CLI ou l'agent MCP : refusé.
 - Brouillon avec une adresse d'expédition hors des identités : refusé.

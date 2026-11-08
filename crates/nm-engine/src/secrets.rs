@@ -4,7 +4,7 @@
 //!
 //! Secrets live in the macOS Keychain ([`crate::keychain`]), entered only in
 //! the app or the CLI, and sent to the core, which alone reads and writes
-//! them. There is no secret in `config.toml`.
+//! them. There is no secret in `config.toml` or `accounts.toml`.
 //!
 //! # The binding to the server
 //!
@@ -120,7 +120,7 @@ impl Refusal {
                 stored.username, stored.host, account.imap.username, account.imap.host
             ),
             Refusal::Unavailable(e) => e.clone(),
-            Refusal::NoSmtp => "this account has no [smtp] server in config.toml: it cannot send".into(),
+            Refusal::NoSmtp => "this account has no [smtp] server in accounts.toml: it cannot send".into(),
             Refusal::SmtpServerChanged { stored } => format!(
                 "the SMTP password was saved for {} on {}, the file now says {}: save it again to confirm the new \
                  server (nicemailer account password {key} --smtp)",

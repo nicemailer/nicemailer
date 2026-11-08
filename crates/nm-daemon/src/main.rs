@@ -25,9 +25,10 @@
 //!
 //! # Settings
 //!
-//! The core reads `config.toml` at start and watches it (`nm-engine`): a
-//! valid change is applied at once, an invalid file is refused whole and
-//! reported (`configuration.md`, section 4).
+//! The core creates `config.toml` and `accounts.toml` at start when they
+//! are missing, reads them and watches them (`nm-engine`): a valid change
+//! is applied at once, an invalid file is refused whole and reported
+//! (`configuration.md`, sections 3 and 4).
 //!
 //! Per connection there are:
 //! - a reading loop (`serve`) that handles one request at a time,
@@ -114,7 +115,8 @@ struct Args {
     /// Dossier de données (base, socket, verrou).
     #[arg(long, env = "NICEMAILER_DATA_DIR")]
     data_dir: Option<PathBuf>,
-    /// Fichier de réglages (par défaut ~/.config/nicemailer/config.toml).
+    /// Fichier de réglages (par défaut ~/.config/nicemailer/config.toml) ;
+    /// les comptes sont dans accounts.toml, à côté.
     #[arg(long, env = "NICEMAILER_CONFIG")]
     config: Option<PathBuf>,
     /// Trousseau des mots de passe : un fichier de trousseau déverrouillé,
@@ -214,6 +216,20 @@ async fn main() -> anyhow::Result<()> {
         None => Arc::new(nm_engine::keychain::Keychain::login()),
     };
     let config_path = args.config.unwrap_or_else(nm_engine::config::default_path);
+    // The files are created when missing, before they are read: a user
+    // who changes nothing still finds every setting listed, commented out,
+    // with its default (`configuration.md`, section 3). Failing to create
+    // them (a read-only folder) is not fatal: missing files mean the
+    // defaults and no account.
+    match nm_engine::config_write::create_missing(&config_path) {
+        Ok(created) => {
+            for path in created {
+                eprintln!("config : {} créé", path.display());
+            }
+        }
+        Err(e) => eprintln!("config : création impossible ({e}) ; valeurs par défaut"),
+    }
+    let accounts_path = nm_engine::config::accounts_path(&config_path);
     let mut engine = Engine::new(config_path.clone(), secrets);
     let startup_events = engine.reload(&mut store, true)?;
     log_config(&engine);
@@ -276,10 +292,10 @@ async fn main() -> anyhow::Result<()> {
     // next start only.
     let _watch = {
         let core = core.clone();
-        match nm_engine::watch::watch(&config_path, move || reload_config(&core)) {
+        match nm_engine::watch::watch(&[&config_path, &accounts_path], move || reload_config(&core)) {
             Ok(w) => Some(w),
             Err(e) => {
-                eprintln!("config : surveillance impossible ({e}) ; le fichier sera relu au prochain démarrage");
+                eprintln!("config : surveillance impossible ({e}) ; les fichiers seront relus au prochain démarrage");
                 None
             }
         }
@@ -512,7 +528,7 @@ async fn set_password(core: &Arc<Core>, p: SetPasswordParams, source: Source) ->
     let (secrets, binding, account_id) = {
         let engine = core.engine.lock().unwrap();
         let Some(account) = engine.config().accounts.get(&p.account) else {
-            return Err(RpcError::new(error_code::NOT_FOUND, format!("no account {} in config.toml", p.account)));
+            return Err(RpcError::new(error_code::NOT_FOUND, format!("no account {} in accounts.toml", p.account)));
         };
         let Some(id) = engine.account_id(&p.account) else {
             return Err(RpcError::new(error_code::NOT_FOUND, format!("account {} is not in the database", p.account)));
@@ -521,7 +537,7 @@ async fn set_password(core: &Arc<Core>, p: SetPasswordParams, source: Source) ->
         // (`reponse.md`, section 7).
         let binding = if p.smtp {
             nm_engine::secrets::smtp_binding(account).ok_or_else(|| {
-                RpcError::new(error_code::INVALID_PARAMS, format!("account {} has no [smtp] server in config.toml", p.account))
+                RpcError::new(error_code::INVALID_PARAMS, format!("account {} has no [smtp] server in accounts.toml", p.account))
             })?
         } else {
             nm_engine::secrets::Binding::of(account)
@@ -567,7 +583,7 @@ async fn probe_account(core: &Arc<Core>, p: ProbeAccountParams) -> Result<ProbeR
     let (secrets, account) = {
         let engine = core.engine.lock().unwrap();
         let Some(account) = engine.config().accounts.get(&p.account) else {
-            return Err(RpcError::new(error_code::NOT_FOUND, format!("no account {} in config.toml", p.account)));
+            return Err(RpcError::new(error_code::NOT_FOUND, format!("no account {} in accounts.toml", p.account)));
         };
         (engine.secrets(), account.clone())
     };
@@ -591,7 +607,8 @@ async fn probe_account(core: &Arc<Core>, p: ProbeAccountParams) -> Result<ProbeR
         .map_err(|e| RpcError::new(error_code::SERVER, e.to_string()))
 }
 
-/// Reads `config.toml` again after a change seen by the watch, and emits
+/// Reads `config.toml` and `accounts.toml` again after a change seen by the
+/// watch (or written by an account command), and emits
 /// what it changed. Runs on the thread of the watch: it may block on the
 /// store while a command or an import batch finishes.
 fn reload_config(core: &Arc<Core>) {
@@ -630,10 +647,10 @@ fn reload_config(core: &Arc<Core>) {
 
 /// Prints the state of the settings on the core's standard error.
 fn log_config(engine: &Engine) {
-    let path = engine.path().display();
+    let (path, accounts) = (engine.path().display(), engine.accounts_path());
     match engine.error() {
-        Some(p) => eprintln!("config : {path} refusé, réglages précédents conservés : {p}"),
-        None => eprintln!("config : {path}, {} compte(s)", engine.config().accounts.len()),
+        Some(p) => eprintln!("config : refusée, réglages précédents conservés : {p}"),
+        None => eprintln!("config : {path}, {} : {} compte(s)", accounts.display(), engine.config().accounts.len()),
     }
     for w in engine.warnings() {
         eprintln!("config : avertissement : {w}");
@@ -1035,6 +1052,8 @@ async fn dispatch(core: &Arc<Core>, session: &mut Session, req: Request) -> Resu
             to_value(ConfigStatus {
                 path: engine.path().display().to_string(),
                 exists: engine.path().exists(),
+                accounts_path: engine.accounts_path().display().to_string(),
+                accounts_exists: engine.accounts_path().exists(),
                 error: engine.error().map(nm_engine::problem_view),
                 warnings: engine.warnings().iter().map(nm_engine::problem_view).collect(),
                 ui: nm_api::UiConfig { title_bar: engine.config().ui.title_bar.as_str().into() },

@@ -119,7 +119,7 @@ pub(crate) struct Ctx<'a> {
     /// The user's own addresses, lowercase (the account's and its
     /// identities): their mail is not screened.
     pub own: &'a [String],
-    /// The `authserv_id` of `config.toml`, which wins over the detection.
+    /// The `authserv_id` of `accounts.toml`, which wins over the detection.
     pub authserv_config: Option<&'a str>,
     /// When the detection of the `authserv-id` was last tried: at most once
     /// an hour while none is found (`authentification-expediteur.md`).

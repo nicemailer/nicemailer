@@ -1,5 +1,5 @@
-//! Watching `config.toml` (FSEvents): an edit, a file created later, the
-//! target of a symbolic link.
+//! Watching `config.toml` and `accounts.toml` (FSEvents): an edit, a file
+//! created later, the target of a symbolic link.
 
 use std::path::Path;
 use std::sync::mpsc;
@@ -9,8 +9,12 @@ use nm_engine::watch::{Watcher, watch};
 
 /// Starts a watch on `path` that reports each call on a channel.
 fn watched(path: &Path) -> (Watcher, mpsc::Receiver<()>) {
+    watched_all(&[path])
+}
+
+fn watched_all(paths: &[&Path]) -> (Watcher, mpsc::Receiver<()>) {
     let (tx, rx) = mpsc::channel();
-    let w = watch(path, move || {
+    let w = watch(paths, move || {
         let _ = tx.send(());
     })
     .unwrap();
@@ -87,4 +91,20 @@ fn other_files_of_the_directory_are_ignored() {
     let (_w, rx) = watched(&path);
     std::fs::write(dir.path().join("notes.txt"), "hello").unwrap();
     assert!(rx.recv_timeout(Duration::from_secs(2)).is_err());
+}
+
+#[test]
+fn both_files_are_watched() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("config.toml");
+    let accounts = dir.path().join("accounts.toml");
+    std::fs::write(&config, "version = 1\n").unwrap();
+    let (_w, rx) = watched_all(&[&config, &accounts]);
+    // `accounts.toml` created after the watch started, then edited.
+    std::fs::write(&accounts, "version = 1\n").unwrap();
+    assert!(changed(&rx), "accounts.toml created");
+    std::thread::sleep(Duration::from_millis(400));
+    while rx.try_recv().is_ok() {}
+    std::fs::write(&config, "version = 1\n# edited\n").unwrap();
+    assert!(changed(&rx), "config.toml edited");
 }

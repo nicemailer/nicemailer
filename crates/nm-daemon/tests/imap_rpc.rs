@@ -23,7 +23,7 @@ fn account(port: u16, security: &str, user: &str) -> String {
 fn probe_refuses_what_it_cannot_do_and_says_why() {
     let dir = tempfile::tempdir().unwrap();
     // Port 1 on this machine: nothing listens there.
-    std::fs::write(dir.path().join("config.toml"), account(1, "none", "alice")).unwrap();
+    std::fs::write(dir.path().join("accounts.toml"), account(1, "none", "alice")).unwrap();
     let _core = start(dir.path());
     let mut c = Client::connect(dir.path());
 
@@ -48,7 +48,7 @@ fn probe_refuses_what_it_cannot_do_and_says_why() {
 fn probe_reports_capabilities_folders_and_roles() {
     let dir = tempfile::tempdir().unwrap();
     let user = format!("p{:x}", std::process::id());
-    std::fs::write(dir.path().join("config.toml"), account(31993, "tls", &user)).unwrap();
+    std::fs::write(dir.path().join("accounts.toml"), account(31993, "tls", &user)).unwrap();
     let _core = start(dir.path());
     let mut c = Client::connect(dir.path());
     c.call("set_password", json!({"account": "dovecot", "password": "nicemailer"})).unwrap();

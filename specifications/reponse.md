@@ -30,7 +30,7 @@ Statut : validé pour la v1 (7 novembre 2026). Cette spécification décrit la p
 
 `r` ne fait rien (message dans la barre d'état) quand :
 
-- le compte n'a pas de serveur SMTP dans `config.toml`, ou est en lecture seule (`read_only`) ;
+- le compte n'a pas de serveur SMTP dans `accounts.toml`, ou est en lecture seule (`read_only`) ;
 - le compte est un compte d'archive (import mbox) ;
 - le mail est un brouillon, ou n'a pas encore de corps téléchargé (le corps est demandé en priorité, `r` fonctionne dès qu'il est arrivé).
 
@@ -42,7 +42,7 @@ Tout est calculé par le noyau (`create_draft(account, reply_to)`), conformémen
 
 ### Adresse d'expédition
 
-La première des identités du compte (adresse principale, puis identités de `config.toml`, section 6) qui figure parmi les destinataires du mail (To, puis Cc ; `Delivered-To` n'est pas conservé en base). À défaut, l'adresse principale du compte. Le nom affiché est celui de l'identité, ou à défaut celui du compte.
+La première des identités du compte (adresse principale, puis identités d'`accounts.toml`, `configuration.md`, section 6) qui figure parmi les destinataires du mail (To, puis Cc ; `Delivered-To` n'est pas conservé en base). À défaut, l'adresse principale du compte. Le nom affiché est celui de l'identité, ou à défaut celui du compte.
 
 ### Destinataires (réponse à tous)
 
@@ -133,7 +133,7 @@ Le délai est un réglage (`compose.undo_send_seconds`, de 0 à 30, 5 par défau
 ### SMTP
 
 - Le serveur est celui de `[accounts.<clé>.smtp]` (`configuration.md`). Sécurité `tls` (465), `starttls` (587) ou `none` (25, refusé hors `localhost`, comme pour IMAP).
-- **Mot de passe** : l'élément `smtp:<clé>` du trousseau s'il existe, lié au serveur SMTP comme l'est celui d'IMAP ; sinon le mot de passe IMAP du compte (`imap:<clé>`), **seulement si le serveur SMTP est le serveur IMAP ou du même domaine organisationnel** (`smtp.gmail.com` et `imap.gmail.com`). Sans cette règle, un `config.toml` modifié pour diriger `[smtp]` ailleurs enverrait le mot de passe IMAP à ce serveur. Ailleurs, l'envoi est refusé avec un message qui demande `nicemailer account password <clé> --smtp`.
+- **Mot de passe** : l'élément `smtp:<clé>` du trousseau s'il existe, lié au serveur SMTP comme l'est celui d'IMAP ; sinon le mot de passe IMAP du compte (`imap:<clé>`), **seulement si le serveur SMTP est le serveur IMAP ou du même domaine organisationnel** (`smtp.gmail.com` et `imap.gmail.com`). Sans cette règle, un `accounts.toml` modifié pour diriger `[smtp]` ailleurs enverrait le mot de passe IMAP à ce serveur. Ailleurs, l'envoi est refusé avec un message qui demande `nicemailer account password <clé> --smtp`.
 - **Identifiant** : `username` de la section `smtp`, sinon l'adresse du compte.
 - Authentification `AUTH PLAIN` ou `LOGIN`, après TLS seulement.
 - Enveloppe : `MAIL FROM` = adresse d'expédition, `RCPT TO` = tous les destinataires (À, Cc, Cci).
@@ -226,7 +226,7 @@ Ces décisions font partie de la même commande que le rangement : `z` après l'
 
 Ces commandes sont réservées à l'app, à la TUI et au CLI : un agent (MCP) ou le serveur web reçoit `FORBIDDEN`, en attendant la confirmation des envois d'agents dans l'app (`architecture.md`, section 9).
 
-**Envoi simulé.** Avec `NICEMAILER_FAKE_NETWORK` (scénarios `make ui-test`, essais sur une base réelle), un compte absent de `config.toml` (le faux courrier de `seed`, ou un compte d'archives importé d'un mbox) répond depuis son adresse, et ses mails sont enregistrés comme acceptés à l'échéance, sans aucun réseau. Les comptes déclarés dans `config.toml` envoient réellement.
+**Envoi simulé.** Avec `NICEMAILER_FAKE_NETWORK` (scénarios `make ui-test`, essais sur une base réelle), un compte absent d'`accounts.toml` (le faux courrier de `seed`, ou un compte d'archives importé d'un mbox) répond depuis son adresse, et ses mails sont enregistrés comme acceptés à l'échéance, sans aucun réseau. Les comptes déclarés dans `accounts.toml` envoient réellement.
 
 ## 12. Réglages
 

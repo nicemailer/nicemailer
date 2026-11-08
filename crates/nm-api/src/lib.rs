@@ -81,8 +81,8 @@ pub mod method {
     pub const UNDO: &str = "undo";
     /// Every account, IMAP and archive, with its state (`AccountView`).
     pub const LIST_ACCOUNTS: &str = "list_accounts";
-    /// State of `config.toml`: path, error refusing it, warnings
-    /// (`ConfigStatus`).
+    /// State of `config.toml` and `accounts.toml`: paths, error refusing
+    /// them, warnings (`ConfigStatus`).
     pub const CONFIG_STATUS: &str = "config_status";
     /// Changes the display order of the accounts (account picker, sidebar).
     pub const SET_ACCOUNT_ORDER: &str = "set_account_order";
@@ -111,7 +111,7 @@ pub mod method {
     /// Exact count of the mails the initial archiving would move.
     pub const COUNT_ARCHIVE: &str = "count_archive";
     /// Creates an IMAP account: folders, roles, initial import, password,
-    /// `config.toml`.
+    /// `accounts.toml`.
     pub const ADD_ACCOUNT: &str = "add_account";
     /// Changes the workflow roles of the folders of an account.
     pub const SET_FOLDER_ROLES: &str = "set_folder_roles";
@@ -180,7 +180,7 @@ pub mod error_code {
     /// the message holds its answer.
     pub const SERVER: i64 = 1009;
     /// A command that changes the mail of a read-only account
-    /// (`read_only = true` in `config.toml`).
+    /// (`read_only = true` in `accounts.toml`).
     pub const READ_ONLY: i64 = 1010;
     /// The raw file of the mail is corrupt or missing: set aside, and the
     /// mail downloaded again from its server; try again later.
@@ -192,7 +192,7 @@ pub mod error_code {
     pub const DRAFT_SENDING: i64 = 1013;
     /// `cancel_send` too late: the mail is leaving, or has left.
     pub const SEND_ALREADY_STARTED: i64 = 1014;
-    /// The account cannot send: no `[smtp]` in `config.toml`, read-only, an
+    /// The account cannot send: no `[smtp]` in `accounts.toml`, read-only, an
     /// archive account, or a draft without recipient. The message says which.
     pub const CANNOT_SEND: i64 = 1015;
     /// The body of the mail answered is not downloaded yet: it is asked
@@ -330,14 +330,23 @@ pub enum Event {
     /// state stays available in `list_accounts` until it is resolved,
     /// which is announced by `AccountChanged`.
     AccountError { account_id: i64, error: String },
-    /// `config.toml` was applied with these changed keys (dotted, sorted).
-    /// Empty `keys` after a `ConfigError`: the file is valid again,
+    /// `config.toml` and `accounts.toml` were applied with these changed
+    /// keys (dotted, sorted; those of the accounts start with `accounts.`).
+    /// Empty `keys` after a `ConfigError`: the files are valid again,
     /// without any change to the settings applied.
     ConfigChanged { keys: Vec<String> },
-    /// `config.toml` is invalid and was refused whole: the previous
-    /// settings stay applied (`configuration.md`, section 4). `line` (from
-    /// 1) and `key` locate the problem when known.
-    ConfigError { line: Option<u32>, key: Option<String>, message: String },
+    /// `config.toml` or `accounts.toml` is invalid and both were refused
+    /// whole: the previous settings stay applied (`configuration.md`,
+    /// section 4). `file` names the file at fault (`config.toml` or
+    /// `accounts.toml`); `line` (from 1) and `key` locate the problem when
+    /// known.
+    ConfigError {
+        #[serde(default)]
+        file: String,
+        line: Option<u32>,
+        key: Option<String>,
+        message: String,
+    },
     /// New mail, found by the synchronization in `folder_id`; what the app
     /// turns into a notification. Not sent for the first synchronization
     /// of a folder, whose every mail would be "new".
@@ -1279,7 +1288,7 @@ pub struct ContactView {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AccountView {
     pub id: i64,
-    /// Key in `config.toml` (`[accounts.<key>]`), or name of the archive
+    /// Key in `accounts.toml` (`[accounts.<key>]`), or name of the archive
     /// account.
     pub key: String,
     /// `imap` or `archive`.
@@ -1288,7 +1297,7 @@ pub struct AccountView {
     /// the file, which no longer has it.
     pub email: Option<String>,
     pub display_name: Option<String>,
-    /// `false` when the key of an IMAP account left `config.toml`: it is no
+    /// `false` when the key of an IMAP account left `accounts.toml`: it is no
     /// longer synchronized, its mail is kept (`configuration.md`, section 6).
     pub enabled: bool,
     /// Why the account cannot connect, if known. `None` does not mean
@@ -1304,7 +1313,7 @@ pub struct AccountView {
 /// the account's state is announced by `AccountChanged` or `AccountError`.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct SetPasswordParams {
-    /// Key of the account in `config.toml`.
+    /// Key of the account in `accounts.toml`.
     pub account: String,
     pub password: String,
     /// The password of the SMTP server, when it differs from the IMAP one
@@ -1325,7 +1334,7 @@ impl std::fmt::Debug for SetPasswordParams {
 /// Params of `probe_account`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProbeAccountParams {
-    /// Key of the account in `config.toml`.
+    /// Key of the account in `accounts.toml`.
     pub account: String,
 }
 
@@ -1389,9 +1398,13 @@ pub struct SetAccountOrderParams {
     pub account_ids: Vec<i64>,
 }
 
-/// A problem of `config.toml`: why it was refused, or a warning.
+/// A problem of `config.toml` or `accounts.toml`: why it was refused, or a
+/// warning.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ConfigProblem {
+    /// The file: `config.toml` or `accounts.toml`.
+    #[serde(default)]
+    pub file: String,
     /// Line, from 1.
     pub line: Option<u32>,
     /// Dotted key, e.g. `accounts.perso.imap.port`.
@@ -1402,16 +1415,23 @@ pub struct ConfigProblem {
 /// Result of `config_status`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ConfigStatus {
-    /// Path of the file read by the core.
+    /// Path of the `config.toml` read by the core.
     pub path: String,
-    /// Whether the file exists. A missing file is valid: no account, every
-    /// setting at its default.
+    /// Whether it exists. A missing file is valid: every setting at its
+    /// default. The core creates it at its start when it is missing, so
+    /// it is missing only if it was deleted since, or could not be created.
     pub exists: bool,
-    /// Why the current file is refused; the previous settings (or the
-    /// defaults, at start) stay applied. `None` when it is applied.
+    /// Path of the `accounts.toml` read by the core, next to `path`.
+    #[serde(default)]
+    pub accounts_path: String,
+    /// Whether it exists; missing, it means no account.
+    #[serde(default)]
+    pub accounts_exists: bool,
+    /// Why the current files are refused; the previous settings (or the
+    /// defaults, at start) stay applied. `None` when they are applied.
     pub error: Option<ConfigProblem>,
-    /// Warnings about the file applied: unknown keys, passwords in clear
-    /// text, keys clashing with an archive account.
+    /// Warnings about the files applied: unknown keys, and keys clashing
+    /// with an archive account.
     pub warnings: Vec<ConfigProblem>,
     /// The settings of `[ui]` the app applies itself.
     #[serde(default)]
@@ -1510,7 +1530,7 @@ pub mod paths {
 // ---------------------------------------------------------------------------
 
 /// Params of `sync_status` and `sync_now`: one account (its key in
-/// `config.toml`), or every account.
+/// `accounts.toml`), or every account.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SyncAccountParams {
     #[serde(default)]
@@ -1639,7 +1659,7 @@ pub struct FolderVerify {
 // Creating an account (`plan-imap.md`, phase 7)
 // ---------------------------------------------------------------------------
 
-/// The server of an account, as `config.toml` will say it.
+/// The server of an account, as `accounts.toml` will say it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ImapParams {
     pub host: String,

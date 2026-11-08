@@ -5,8 +5,9 @@
 //! 1): the daemon drives it and turns what it reports into events. Phase 1
 //! of `specifications/plan-imap.md` brings its foundations:
 //!
-//! - `config.rs`: reading and validating `config.toml`,
-//! - `watch.rs`: watching the file to apply it without a restart,
+//! - `config.rs`: reading and validating `config.toml` and `accounts.toml`,
+//! - `config_write.rs`: creating them when missing, and changing accounts,
+//! - `watch.rs`: watching the files to apply them without a restart,
 //! - `secrets.rs`: the secrets of the accounts, bound to their server,
 //! - `keychain.rs`: the macOS Keychain, where they are kept,
 //! - `folders.rs`: the workflow role proposed for each server folder,
@@ -46,15 +47,17 @@ use secrets::Secrets;
 /// blocking thread of the daemon, with the store's lock held, so the events
 /// they return are emitted in the order of the writes.
 pub struct Engine {
+    /// `config.toml`; `accounts.toml` is next to it.
     path: PathBuf,
     /// Shared with the daemon, which saves passwords without holding the
     /// engine's lock (the Keychain may be slow).
     secrets: Arc<dyn Secrets>,
     /// Settings applied: the last valid file, or the defaults.
     config: Config,
-    /// Text of the last file read, valid or not (`None`: no file). Used to
-    /// ignore events that did not change the file.
-    last_text: Option<Option<String>>,
+    /// Texts of the last files read, valid or not (`None`: no file), as
+    /// `(config.toml, accounts.toml)`. Used to ignore events that changed
+    /// neither file.
+    last_text: Option<(Option<String>, Option<String>)>,
     /// Why the current file is refused; `None` when it is the one applied.
     error: Option<Problem>,
     /// Warnings about the file applied.
@@ -67,7 +70,8 @@ pub struct Engine {
 
 impl Engine {
     /// An engine with the default settings and no account, until
-    /// [`Engine::reload`] reads the file at `path`.
+    /// [`Engine::reload`] reads the `config.toml` at `path` and the
+    /// `accounts.toml` next to it.
     pub fn new(path: PathBuf, secrets: Arc<dyn Secrets>) -> Engine {
         Engine {
             path,
@@ -81,8 +85,14 @@ impl Engine {
         }
     }
 
+    /// Path of `config.toml`.
     pub fn path(&self) -> &Path {
         &self.path
+    }
+
+    /// Path of `accounts.toml`, the file the account commands write.
+    pub fn accounts_path(&self) -> PathBuf {
+        config::accounts_path(&self.path)
     }
 
     /// Id of the account of the file `key`, if it has one.
@@ -108,16 +118,17 @@ impl Engine {
         &self.warnings
     }
 
-    /// Reads the file again and applies it if it is valid; returns the
+    /// Reads the files again and applies them if they are valid; returns the
     /// events to emit, in order. `startup` is true for the first read: it
     /// is not recorded as a change (there is nothing to compare it with)
     /// and announces nothing but a refusal.
     ///
-    /// An invalid file is refused whole and the settings applied stay
-    /// (`configuration.md`, section 4). Reading the same text again does
-    /// nothing, so the several events of one save cost one parse.
+    /// An invalid file is refused whole, with the other one, and the
+    /// settings applied stay (`configuration.md`, section 4). Reading the
+    /// same texts again does nothing, so the several events of one save
+    /// cost one parse.
     pub fn reload(&mut self, store: &mut Store, startup: bool) -> Result<Vec<Event>, StoreError> {
-        let text = match config::read(&self.path) {
+        let text = match config::read_both(&self.path) {
             Ok(t) => t,
             Err(p) => {
                 // Forget the last text: once the file is readable again,
@@ -130,7 +141,8 @@ impl Engine {
             return Ok(Vec::new());
         }
         self.last_text = Some(text.clone());
-        let parsed = match config::parse(text.as_deref().unwrap_or("")) {
+        let (config_text, accounts_text) = &text;
+        let parsed = match config::parse(config_text.as_deref().unwrap_or(""), accounts_text.as_deref().unwrap_or("")) {
             Ok(p) => p,
             Err(p) => return Ok(self.refuse(p)),
         };
@@ -160,7 +172,12 @@ impl Engine {
             return Vec::new();
         }
         self.error = Some(problem.clone());
-        vec![Event::ConfigError { line: problem.line, key: problem.key, message: problem.message }]
+        vec![Event::ConfigError {
+            file: problem.file.to_string(),
+            line: problem.line,
+            key: problem.key,
+            message: problem.message,
+        }]
     }
 
     /// Brings the accounts of the database in line with the file, and works
@@ -169,6 +186,7 @@ impl Engine {
         let names: Vec<&str> = self.config.accounts.keys().map(String::as_str).collect();
         let sync = store.sync_config_accounts(&names)?;
         self.warnings.extend(sync.clashes.iter().map(|k| Problem {
+            file: config::ACCOUNTS_FILE,
             line: None,
             key: Some(format!("accounts.{k}")),
             message: "this name is already used by an archive account: this account is ignored until one of \
@@ -257,5 +275,5 @@ impl Engine {
 
 /// A [`Problem`] in the shape of the contract.
 pub fn problem_view(p: &Problem) -> ConfigProblem {
-    ConfigProblem { line: p.line, key: p.key.clone(), message: p.message.clone() }
+    ConfigProblem { file: p.file.to_string(), line: p.line, key: p.key.clone(), message: p.message.clone() }
 }

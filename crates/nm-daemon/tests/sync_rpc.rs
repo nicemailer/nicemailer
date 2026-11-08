@@ -107,7 +107,7 @@ impl Phone {
 
 /// The core on a fresh data directory, with the account's password saved.
 fn core(dir: &Path, port: u16, user: &str, extra: &str) -> (common::Core, Client) {
-    std::fs::write(dir.join("config.toml"), config(port, user, extra)).unwrap();
+    std::fs::write(dir.join("accounts.toml"), config(port, user, extra)).unwrap();
     let core = start(dir);
     let mut c = Client::connect(dir);
     c.call("set_password", json!({"account": "dovecot", "password": "nicemailer"})).unwrap();
@@ -386,7 +386,7 @@ fn cuts_at_every_step_lose_nothing_and_duplicate_nothing() {
     // Cuts during the login, the listing, the headers, the bodies (both
     // connections draw from the same list, in the order they connect).
     let port = cutting_proxy(vec![3_000, 20_000, 60_000, 400_000, 1_500_000, 3_000_000]);
-    std::fs::write(dir.path().join("config.toml"), config(port, &user, "")).unwrap();
+    std::fs::write(dir.path().join("accounts.toml"), config(port, &user, "")).unwrap();
     let _core = start(dir.path());
     let mut c = Client::connect(dir.path());
     c.call("set_password", json!({"account": "dovecot", "password": "nicemailer"})).unwrap();
@@ -410,7 +410,7 @@ fn a_refused_login_waits_for_a_new_password() {
     let dir = tempfile::tempdir().unwrap();
     let user = new_user();
     Phone::open(FULL, &user).deliver("INBOX", "one", &[]);
-    std::fs::write(dir.path().join("config.toml"), config(FULL, &user, "")).unwrap();
+    std::fs::write(dir.path().join("accounts.toml"), config(FULL, &user, "")).unwrap();
     let _core = start(dir.path());
     let mut c = Client::connect(dir.path());
     c.call("subscribe", json!({})).unwrap();

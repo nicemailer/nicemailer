@@ -4,7 +4,7 @@
 //! # Who does what
 //!
 //! - [`Syncer`] (this file) starts one *worker* per IMAP account of
-//!   `config.toml`, restarts it when the account's settings change, stops
+//!   `accounts.toml`, restarts it when the account's settings change, stops
 //!   it when the account goes away.
 //! - A worker has two connections to the server, each on a thread of its
 //!   own (`account.rs`):
@@ -117,7 +117,7 @@ pub(crate) fn read<T>(host: &dyn SyncHost, f: impl FnOnce(&Store) -> Result<T, S
 /// One IMAP account to synchronize.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AccountSpec {
-    /// Its key in `config.toml`.
+    /// Its key in `accounts.toml`.
     pub key: String,
     pub account_id: i64,
     pub config: AccountConfig,

@@ -1,7 +1,7 @@
-//! Watching `config.toml` to apply it without a restart
-//! (`configuration.md`, section 4).
+//! Watching `config.toml` and `accounts.toml` to apply them without a
+//! restart (`configuration.md`, section 4).
 //!
-//! The directory of the file is watched, not the file itself: editors save
+//! The directory of each file is watched, not the file itself: editors save
 //! by writing a new file and renaming it over the old one, and a watch on
 //! the old file would stop at the first save. The directory also sees the
 //! file appear when it did not exist.
@@ -32,27 +32,34 @@ pub struct Watcher {
     _inner: notify::RecommendedWatcher,
 }
 
-/// Starts watching `path`; `on_change` runs on a thread of its own after
-/// each group of changes. Creates the directory of the file if it is
-/// missing, so that the file can be created later and still be seen (the
-/// core never creates the file itself).
-pub fn watch(path: &Path, on_change: impl Fn() + Send + 'static) -> Result<Watcher, String> {
+/// Starts watching `paths`; `on_change` runs on a thread of its own after
+/// each group of changes to any of them (one callback for a save that
+/// touches both). Creates the directory of each file if it is missing, so
+/// that a file deleted, or created later, is still seen.
+///
+/// The names are matched without their directory: `config.toml` and
+/// `accounts.toml` live in the same one, and an event about another file
+/// of that name in a watched directory only costs a read that finds
+/// nothing changed.
+pub fn watch(paths: &[&Path], on_change: impl Fn() + Send + 'static) -> Result<Watcher, String> {
     let mut dirs: BTreeSet<PathBuf> = BTreeSet::new();
     let mut names: BTreeSet<OsString> = BTreeSet::new();
-    let dir = path.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new(".")).to_path_buf();
-    std::fs::create_dir_all(&dir).map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
-    dirs.insert(dir);
-    if let Some(n) = path.file_name() {
-        names.insert(n.to_os_string());
-    }
-    // Rust note: `if let … && let …` chains two pattern matches; the block
-    // runs only if both succeed.
-    if let Ok(target) = std::fs::canonicalize(path)
-        && target != path
-        && let (Some(d), Some(n)) = (target.parent(), target.file_name())
-    {
-        dirs.insert(d.to_path_buf());
-        names.insert(n.to_os_string());
+    for path in paths {
+        let dir = path.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new(".")).to_path_buf();
+        std::fs::create_dir_all(&dir).map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
+        dirs.insert(dir);
+        if let Some(n) = path.file_name() {
+            names.insert(n.to_os_string());
+        }
+        // Rust note: `if let … && let …` chains two pattern matches; the
+        // block runs only if both succeed.
+        if let Ok(target) = std::fs::canonicalize(path)
+            && target != *path
+            && let (Some(d), Some(n)) = (target.parent(), target.file_name())
+        {
+            dirs.insert(d.to_path_buf());
+            names.insert(n.to_os_string());
+        }
     }
 
     // The watcher calls its handler on a thread of `notify`; the handler

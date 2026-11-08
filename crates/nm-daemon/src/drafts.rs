@@ -1,7 +1,7 @@
 //! Replies and their sending, on the socket (`specifications/reponse.md`,
 //! section 11). The rules are in `nm-core` (`compose.rs`) and `nm-store`
 //! (`drafts.rs`); this module adds what only the core knows: the account
-//! of `config.toml` the mail belongs to (its addresses, whether it has an
+//! of `accounts.toml` the mail belongs to (its addresses, whether it has an
 //! SMTP server), the undo delay, and waking the account's sender.
 //!
 //! Sending is refused to agents (MCP) and to the web server in v1: a mail
@@ -30,7 +30,7 @@ use nm_store::drafts::Identities;
 
 use crate::{Core, sync, with_reader, with_store};
 
-/// What the core knows of the account of a mail, from `config.toml`.
+/// What the core knows of the account of a mail, from `accounts.toml`.
 struct Sendable {
     identities: Identities,
     /// A fake account of the UI tests (see the header of this file).
@@ -41,7 +41,7 @@ pub fn fake_network() -> bool {
     std::env::var_os("NICEMAILER_FAKE_NETWORK").is_some()
 }
 
-/// The account of `account_id` as `config.toml` declares it, if it can
+/// The account of `account_id` as `accounts.toml` declares it, if it can
 /// send: an IMAP account of the file, with `[smtp]`, not read-only.
 async fn sendable(core: &Arc<Core>, account_id: i64) -> Result<Sendable, RpcError> {
     if fake_network() {
@@ -65,13 +65,13 @@ async fn sendable(core: &Arc<Core>, account_id: i64) -> Result<Sendable, RpcErro
     let engine = core.engine.lock().unwrap();
     let found = engine.config().accounts.iter().find(|(key, _)| engine.account_id(key) == Some(account_id));
     let Some((_, cfg)) = found else {
-        return Err(RpcError::new(error_code::CANNOT_SEND, "this mail is not in an account of config.toml (an archive account?): it cannot be answered from here"));
+        return Err(RpcError::new(error_code::CANNOT_SEND, "this mail is not in an account of accounts.toml (an archive account?): it cannot be answered from here"));
     };
     if cfg.read_only {
-        return Err(RpcError::new(error_code::CANNOT_SEND, "this account is read-only (read_only = true in config.toml): it cannot send"));
+        return Err(RpcError::new(error_code::CANNOT_SEND, "this account is read-only (read_only = true in accounts.toml): it cannot send"));
     }
     if cfg.smtp.is_none() {
-        return Err(RpcError::new(error_code::CANNOT_SEND, "this account has no [smtp] server in config.toml: it cannot send"));
+        return Err(RpcError::new(error_code::CANNOT_SEND, "this account has no [smtp] server in accounts.toml: it cannot send"));
     }
     let main_name = cfg.display_name.as_deref();
     let list = std::iter::once(Mailbox::new(&cfg.email, main_name))

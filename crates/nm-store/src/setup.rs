@@ -6,7 +6,7 @@
 //! Order of a creation (`nm-daemon`, `setup.rs`): the account row, the
 //! roles of its folders, the screening boundary of its Inbox, the
 //! decisions on its correspondents, the server-side archiving queued, then
-//! the password, then `config.toml`, which starts the account's worker. The
+//! the password, then `accounts.toml`, which starts the account's worker. The
 //! worker sends the archiving first, and waits for it before the Inbox
 //! (`Store::pending_initial_archive`): each old mail is fetched once,
 //! straight into its final folder.

@@ -5,14 +5,14 @@
 //! (app, CLI, TUI) may call them, never an agent (`configuration.md`,
 //! section 6). No lock of the core is held while the server answers.
 //!
-//! `add_account`, in this order, so that the worker that `config.toml`
+//! `add_account`, in this order, so that the worker that `accounts.toml`
 //! starts finds everything ready:
 //! 1. log in; list the folders; create those the roles need;
 //! 2. read the boundary of the screening and the recipients of Sent;
 //! 3. database: the account, the roles, the boundary, the correspondents'
 //!    decisions, the server-side archiving queued;
 //! 4. the password in the Keychain, bound to this server;
-//! 5. `config.toml`, read again and written atomically; then applied at
+//! 5. `accounts.toml`, read again and written atomically; then applied at
 //!    once (the worker starts, sends the archiving, then synchronizes).
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -118,9 +118,9 @@ pub async fn add_account(core: &Arc<Core>, p: AddAccountParams, source: Source) 
     let (config_path, secrets, import) = {
         let engine = core.engine.lock().unwrap();
         if engine.config().accounts.contains_key(&p.key) {
-            return Err(invalid(format!("config.toml already has an account {}", p.key)));
+            return Err(invalid(format!("accounts.toml already has an account {}", p.key)));
         }
-        (engine.path().to_path_buf(), engine.secrets(), engine.config().import.clone())
+        (engine.accounts_path(), engine.secrets(), engine.config().import.clone())
     };
     for d in [&p.archive_read_before, &p.archive_unread_before].into_iter().flatten() {
         setup::parse_day(d).ok_or_else(|| invalid(format!("date {d:?}: YYYY-MM-DD expected")))?;
@@ -307,12 +307,12 @@ pub async fn rename_account(core: &Arc<Core>, p: RenameAccountParams, source: So
     let (path, secrets) = {
         let engine = core.engine.lock().unwrap();
         if !engine.config().accounts.contains_key(&p.from) {
-            return Err(RpcError::new(error_code::NOT_FOUND, format!("no account {} in config.toml", p.from)));
+            return Err(RpcError::new(error_code::NOT_FOUND, format!("no account {} in accounts.toml", p.from)));
         }
         if engine.config().accounts.contains_key(&p.to) {
-            return Err(invalid(format!("config.toml already has an account {}", p.to)));
+            return Err(invalid(format!("accounts.toml already has an account {}", p.to)));
         }
-        (engine.path().to_path_buf(), engine.secrets())
+        (engine.accounts_path(), engine.secrets())
     };
     if let Some(syncer) = core.syncer.get() {
         syncer.stop_and_join(&p.from, Duration::from_secs(5));
@@ -346,9 +346,9 @@ pub async fn remove_account(core: &Arc<Core>, p: RemoveAccountParams, source: So
     let (path, secrets) = {
         let engine = core.engine.lock().unwrap();
         if !engine.config().accounts.contains_key(&p.account) {
-            return Err(RpcError::new(error_code::NOT_FOUND, format!("no account {} in config.toml", p.account)));
+            return Err(RpcError::new(error_code::NOT_FOUND, format!("no account {} in accounts.toml", p.account)));
         }
-        (engine.path().to_path_buf(), engine.secrets())
+        (engine.accounts_path(), engine.secrets())
     };
     if let Some(syncer) = core.syncer.get() {
         syncer.stop_and_join(&p.account, Duration::from_secs(5));

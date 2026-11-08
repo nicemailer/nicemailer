@@ -17,13 +17,13 @@ Responses are parsed by [`imap-codec`](https://crates.io/crates/imap-codec), pin
 
 ## Connecting
 
-`imap.security` in `config.toml` ([configuration.md](configuration.md)) chooses how:
+`imap.security` of the account in `accounts.toml` ([configuration.md](configuration.md)) chooses how:
 
 | `security` | Connection |
 | --- | --- |
 | `tls` | TLS from the first byte (port 993) |
 | `starttls` | Clear text, then `STARTTLS` before anything else (port 143). If the server refuses, the connection fails: there is never a fallback to clear text |
-| `none` | Clear text, allowed only to `localhost`, `127.0.0.1` or `::1`. The client checks it again, on top of the check of `config.toml` |
+| `none` | Clear text, allowed only to `localhost`, `127.0.0.1` or `::1`. The client checks it again, on top of the check of `accounts.toml` |
 
 **Certificates are checked by macOS** (crate `rustls-platform-verifier`, which asks the Security framework): the same trust as Mail and Safari, including authorities the user added and the system's revocation checks. `imap.ca_file` adds one authority (a PEM file) on top of those, for a self-hosted server or the test servers. There is no way to turn the check off. macOS also applies its own rules to server certificates, even from an authority the user trusts: valid 825 days at most, with the "server authentication" usage. A certificate that breaks them fails with "not standards compliant".
 
@@ -136,7 +136,7 @@ Each role goes to one folder at most: the attribute wins over the name, then the
 
 | Code | When |
 | --- | --- |
-| `1001` NOT_FOUND | no such account in `config.toml` |
+| `1001` NOT_FOUND | no such account in `accounts.toml` |
 | `1008` ACCOUNT_NOT_READY | no password saved, the server changed since it was saved, or `auth = "oauth2"`: the message says what to do |
 | `1006` SECRETS | the Keychain refused the password |
 | `1009` SERVER | the server could not be reached, refused the login, or failed: the message holds its answer |

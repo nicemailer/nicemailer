@@ -36,12 +36,12 @@ Le serveur de réception vérifie SPF, DKIM et DMARC et écrit son verdict dans 
 
 **Choix de l'en-tête de confiance.** Un expéditeur malveillant peut inclure lui-même un faux `Authentication-Results: dmarc=pass`. Le noyau ne retient donc que :
 
-1. les en-têtes dont l'identifiant de serveur (`authserv-id`) est égal à l'`authserv_id` du compte : la clé `authserv_id` de `config.toml` si elle est présente, sinon `account.authserv_id` détecté ;
+1. les en-têtes dont l'identifiant de serveur (`authserv-id`) est égal à l'`authserv_id` du compte : la clé `authserv_id` du compte dans `accounts.toml` si elle est présente, sinon `account.authserv_id` détecté ;
 2. parmi eux, le premier en partant du haut du message, c'est-à-dire le dernier ajouté.
 
 Un serveur conforme supprime à la réception les en-têtes qui portent déjà son identifiant (RFC 8601, section 5). Le premier en-tête retenu est donc le sien.
 
-Si le compte n'a pas d'`authserv_id` (ni dans `config.toml`, ni détecté), aucun en-tête n'est retenu et le verdict est `unknown`.
+Si le compte n'a pas d'`authserv_id` (ni dans `accounts.toml`, ni détecté), aucun en-tête n'est retenu et le verdict est `unknown`.
 
 **Traduction en verdict**, à partir des méthodes de l'en-tête retenu :
 
@@ -58,7 +58,7 @@ L'alignement est l'alignement relâché de DMARC : même domaine organisationnel
 
 À l'ajout d'un compte, le noyau examine le premier en-tête `Authentication-Results` des 50 derniers mails de l'INBOX. Si un même `authserv-id` apparaît en tête dans au moins 90 % d'entre eux, il est enregistré dans `account.authserv_id`. Sinon, la colonne reste NULL.
 
-Tant qu'elle est NULL, la détection est refaite périodiquement sur les nouveaux mails, au cas où le serveur se mettrait à ajouter l'en-tête : à une passe de synchronisation qui apporte des mails à l'Inbox, sur ses 50 UID les plus hauts, au plus une fois par heure (phase 6 de `plan-imap.md`). La valeur détectée est visible dans les réglages avancés du compte. La modifier écrit la clé `authserv_id` du compte dans `config.toml`, qui prend alors le pas sur la détection (`configuration.md`, section 6).
+Tant qu'elle est NULL, la détection est refaite périodiquement sur les nouveaux mails, au cas où le serveur se mettrait à ajouter l'en-tête : à une passe de synchronisation qui apporte des mails à l'Inbox, sur ses 50 UID les plus hauts, au plus une fois par heure (phase 6 de `plan-imap.md`). La valeur détectée est visible dans les réglages avancés du compte. La modifier écrit la clé `authserv_id` du compte dans `accounts.toml`, qui prend alors le pas sur la détection (`configuration.md`, section 6).
 
 ### Moment du calcul
 
@@ -127,7 +127,7 @@ Un mail sans `From`, ou avec plusieurs adresses dans `From`, a le verdict `unkno
 ```sql
 -- account
 authserv_id  TEXT,      -- authserv-id détecté ; NULL = aucun détecté
-                        -- (la clé authserv_id de config.toml le remplace)
+                        -- (la clé authserv_id d'accounts.toml le remplace)
 
 -- message
 auth_result  TEXT NOT NULL DEFAULT 'unknown'

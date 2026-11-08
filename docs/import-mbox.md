@@ -35,7 +35,7 @@ Pressing Ctrl-C only stops the CLI from following the import: the import itself 
 
 ## What the import does
 
-- **Archive account.** The account has no IMAP or SMTP server, now or later, and does not appear in `config.toml`. It gets every workflow folder, so imported mail can be filed like any other (Todo, Paperwork, Deleted…). Moves only change the local database.
+- **Archive account.** The account has no IMAP or SMTP server, now or later, and does not appear in `accounts.toml`. It gets every workflow folder, so imported mail can be filed like any other (Todo, Paperwork, Deleted…). Moves only change the local database.
 - **Filing.** A message whose `From` is the account address (case-insensitive) goes to Sent; every other message goes to Archive. All are marked as read. Nothing goes through screening or to Quarantine.
 - **Dates.** The reception date is the date of the mbox `From ` separator line (when the exporting server received the message), or the `Date` header if that line has no date. Some export tools write the time of the export in that line instead (Python's `mailbox` module does when it is not given a date), which would make every message look received on the export day. So the `From ` line date is ignored, and the `Date` header used, when it cannot be a delivery date: it is after the start of the import, or more than 7 days after the `Date` header (SMTP servers stop retrying after about 5 days). A message with neither date gets 1970 and sorts last.
 - **Answered.** A received message that one of your sent messages replies to is marked as answered.

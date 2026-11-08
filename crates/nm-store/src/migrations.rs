@@ -80,7 +80,7 @@ fn to_3(conn: &Connection) -> Result<()> {
 
 /// Version 4, two columns of `account`, added at the end of a small table:
 /// instant.
-/// - `disabled_at`, set when the key of an IMAP account leaves `config.toml`
+/// - `disabled_at`, set when the key of an IMAP account leaves `accounts.toml`
 ///   (`configuration.md`, section 6: an account missing from the file is
 ///   disabled, not deleted). Every existing account starts active; the core
 ///   disables the ones missing from the file when it reads it, right after.

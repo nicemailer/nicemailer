@@ -107,7 +107,7 @@ fn a_mailbox_of_a_hundred_thousand_mails() {
 
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(
-        dir.path().join("config.toml"),
+        dir.path().join("accounts.toml"),
         format!(
             "[accounts.vol]\nemail = \"{user}@example.com\"\n[accounts.vol.imap]\nhost = \"127.0.0.1\"\nport = 31993\nusername = \"{user}\"\nca_file = \"{}\"\n",
             ca().display()

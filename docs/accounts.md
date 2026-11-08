@@ -31,7 +31,7 @@ The password is asked without echo, or read from the standard input (`printf %s 
 | Archiving | One spool action `initial_archive` on the account, with the criteria, if dates were given |
 | Password | In the Keychain, bound to this server (host and user) |
 | SMTP password | The IMAP one by default, when the SMTP server is of the same provider; else saved apart with `nicemailer account password <key> --smtp` ([sending.md](sending.md)) |
-| File | `[accounts.<key>]` added to `config.toml` (below), then applied at once: the worker starts |
+| File | `[accounts.<key>]` added to `accounts.toml` (below), then applied at once: the worker starts |
 
 ### The archiving on the server
 
@@ -46,7 +46,7 @@ The mails already in the mailbox are synchronized without screening (below the b
 
 ## Trying NiceMailer on a mailbox in production
 
-To look at a real mailbox without any risk to it, in a data directory and a settings file of their own, apart from the everyday ones:
+To look at a real mailbox without any risk to it, in a data directory and settings files of their own, apart from the everyday ones (the core creates `~/nm-trial/config.toml` and `~/nm-trial/accounts.toml` at its start):
 
 ```sh
 # Terminal 1: a core of its own.
@@ -68,13 +68,13 @@ sqlite3 ~/nm-trial/nicemailer.db "SELECT json_extract(detail, '$.folder'), json_
 
 `nicemailer sync status` also shows the `authserv-id` detected on the server's `Authentication-Results` (open question 3 of `plan-imap.md`). Removing the trial afterwards: `nicemailer account remove trial` (the server is not touched), then delete `~/nm-trial`.
 
-## Writing `config.toml`
+## Writing `accounts.toml`
 
-The file belongs to the user (`configuration.md`, section 5), so the core writes it only at a client's request, and:
+The account commands write `accounts.toml`, never `config.toml` ([configuration.md](configuration.md)). The file belongs to the user (`configuration.md`, section 5), so the core changes it only at a client's request (it creates it, at its start, only when it is missing), and:
 
-- edits it in place with `toml_edit`: comments, order and formatting stay, only the account's tables change. Comments at the end of the file stay above the new account;
+- edits it in place with `toml_edit`: comments, order and formatting stay, only the account's tables change. Comments at the end of the file stay above the new account: an account added to the created file goes after its commented example;
 - reads it again right before the change, so that an edit made by hand meanwhile is kept;
-- refuses a result the core would refuse (`config::parse`);
+- refuses a result the core would refuse (`config::parse_accounts`);
 - writes it atomically: a temporary file next to it, then `rename`;
 - writes no default value: `username` only when it is not the address.
 
@@ -104,7 +104,7 @@ Stops the account's worker and waits for it, removes its tables from the file, d
 
 ## Accounts declared by hand
 
-An account written in `config.toml` by hand (or by an agent: its password can still only be entered in the app or the CLI) skips the creation steps. Its first synchronization then gives each folder the proposed role and sets the Inbox's boundary to its `UIDNEXT`, without archiving or correspondents ([sync.md](sync.md)).
+An account written in `accounts.toml` by hand (or by an agent: its password can still only be entered in the app or the CLI) skips the creation steps. Its first synchronization then gives each folder the proposed role and sets the Inbox's boundary to its `UIDNEXT`, without archiving or correspondents ([sync.md](sync.md)).
 
 ## Tests
 

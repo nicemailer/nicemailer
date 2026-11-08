@@ -32,14 +32,16 @@ else
   "$CLI" --data-dir "$DIR" seed --threads "$THREADS" > /dev/null
 fi
 
-# A settings file of its own (missing: no account), never the user's,
-# whose accounts the core would start to synchronize.
-"$CORE" --data-dir "$DIR" --config "$DIR.config.toml" > "$DIR.core.log" 2>&1 &
+# Settings files of their own, in a directory of their own (the core
+# creates config.toml and accounts.toml there, with no account), never the
+# user's, whose accounts the core would start to synchronize.
+"$CORE" --data-dir "$DIR" --config "$DIR.config/config.toml" > "$DIR.core.log" 2>&1 &
 CORE_PID=$!
 cleanup() {
   kill -INT $CORE_PID 2> /dev/null || true
   wait $CORE_PID 2> /dev/null || true
   rm -f "$DIR.core.log"
+  rm -rf "$DIR.config"
   [[ -z ${BENCH_DATA_DIR:-} ]] && rm -rf "$DIR"
 }
 trap cleanup EXIT

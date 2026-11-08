@@ -5,7 +5,7 @@ User and developer documentation, in English. It is written together with the co
 | Page | Content |
 | --- | --- |
 | [import-mbox.md](import-mbox.md) | Importing a whole mailbox from an mbox file into an archive account |
-| [accounts.md](accounts.md) | Creating an IMAP account with its initial import (archiving on the server, correspondents), folder roles, renaming and removing an account, how `config.toml` is written |
+| [accounts.md](accounts.md) | Creating an IMAP account with its initial import (archiving on the server, correspondents), folder roles, renaming and removing an account, how `accounts.toml` is written |
 | [sync.md](sync.md) | The synchronization of the IMAP accounts, server to database: passes, moves made elsewhere, IDLE, failures, `nicemailer sync status | now | verify` |
 | [screening.md](screening.md) | New mail sorted at reception: authentication verdict (`Authentication-Results`, Public Suffix List), routing, conversations back from Todo/Waiting, mail found in Sent |
 | [spool.md](spool.md) | The changes made in NiceMailer sent to the server: actions, merging, grouping, retries, refusals undone, crash recovery, two Macs on one mailbox |
@@ -15,7 +15,7 @@ User and developer documentation, in English. It is written together with the co
 | [testing.md](testing.md) | How the core and the app are tested: Rust tests, Swift unit tests, scripted UI tests |
 | [folder-workflow.md](folder-workflow.md) | Moving mail: the decision on the sender, filing its other mails, authentication, domain decisions, undo |
 | [migrations.md](migrations.md) | Upgrading a database: schema migrations at opening, reinterpretation of stored mail after a parser change, and how to add either |
-| [configuration.md](configuration.md) | Settings and accounts in `config.toml`: where it is, what is checked, how changes apply while the core runs, passwords in development, the read pool |
+| [configuration.md](configuration.md) | Settings in `config.toml` and accounts in `accounts.toml`: where they are, how they are created at the first start, what is checked, how changes apply while the core runs, passwords in development, the read pool |
 | [imap.md](imap.md) | The IMAP client of the core: connection, certificates, login, commands and their fallbacks, large messages, failures, IDLE, `nicemailer imap probe` |
 | [deep-links.md](deep-links.md) | The URL of each mail, `nicemailer://m/<id>`: copying it from `l` (Markdown for Obsidian), opening it, `make bundle` |
 | [app-bundle.md](app-bundle.md) | `NiceMailer.app` in `/Applications`: its core run by a launch agent, stopping it, choosing the mailbox (⌥ at launch, Change Mailbox…), `make bundle` |

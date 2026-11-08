@@ -30,10 +30,10 @@ fn ca() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../dev/dovecot/tls/ca.crt")
 }
 
-fn config(port: u16, user: &str, smtp: &str, delay: u64) -> String {
+/// The test account, for `accounts.toml`.
+fn accounts(port: u16, user: &str, smtp: &str) -> String {
     format!(
-        "[compose]\nundo_send_seconds = {delay}\n\
-         [accounts.dovecot]\nemail = \"{user}@example.com\"\ndisplay_name = \"Test User\"\n\
+        "[accounts.dovecot]\nemail = \"{user}@example.com\"\ndisplay_name = \"Test User\"\n\
          [accounts.dovecot.imap]\nhost = \"127.0.0.1\"\nport = {port}\nsecurity = \"tls\"\nusername = \"{user}\"\nca_file = \"{ca}\"\n\
          [accounts.dovecot.smtp]\nhost = \"127.0.0.1\"\nca_file = \"{ca}\"\n{smtp}",
         ca = ca().display()
@@ -162,7 +162,8 @@ fn wait_until(what: &str, secs: u64, mut f: impl FnMut() -> bool) {
 /// The core with the account's IMAP password saved, synchronized once,
 /// subscribed to the events.
 fn core(dir: &Path, port: u16, user: &str, smtp: &str, delay: u64) -> (common::Core, Client) {
-    std::fs::write(dir.join("config.toml"), config(port, user, smtp, delay)).unwrap();
+    std::fs::write(dir.join("config.toml"), format!("[compose]\nundo_send_seconds = {delay}\n")).unwrap();
+    std::fs::write(dir.join("accounts.toml"), accounts(port, user, smtp)).unwrap();
     let core = start(dir);
     let mut c = Client::connect(dir);
     c.call("set_password", json!({"account": "dovecot", "password": "nicemailer"})).unwrap();

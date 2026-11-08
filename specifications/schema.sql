@@ -37,30 +37,30 @@ PRAGMA user_version = 4;   -- migrations : comparer à la version attendue au d�
 
 -- ------------------------------------------------------------
 -- Comptes : état seulement. Les paramètres (adresse, serveurs, identifiants,
--- identités, config_sync) sont dans config.toml, table [accounts.<config_key>] ;
+-- identités, config_sync) sont dans accounts.toml, table [accounts.<config_key>] ;
 -- les secrets dans le Keychain (voir configuration.md).
 -- Un compte absent du fichier est désactivé, jamais supprimé par ce seul fait.
 -- Exception : un compte d'archives (kind = 'archive') n'a ni serveur IMAP ni
--- SMTP et n'est pas dans config.toml. Il est créé par un import mbox
+-- SMTP et n'est pas dans accounts.toml. Il est créé par un import mbox
 -- (import-initial.md, section 9) ; config_key est le nom donné à l'import et
 -- address l'adresse de la boîte archivée.
 -- ------------------------------------------------------------
 CREATE TABLE account (
     id            INTEGER PRIMARY KEY,
-    config_key    TEXT NOT NULL UNIQUE,   -- clé du compte dans config.toml, ou nom du compte d'archives
+    config_key    TEXT NOT NULL UNIQUE,   -- clé du compte dans accounts.toml, ou nom du compte d'archives
     kind          TEXT NOT NULL DEFAULT 'imap' CHECK (kind IN ('imap','archive')),
     -- Adresse de la boîte, pour un compte d'archives seulement (en minuscules) ;
-    -- NULL pour un compte IMAP, dont l'adresse est dans config.toml.
+    -- NULL pour un compte IMAP, dont l'adresse est dans accounts.toml.
     address       TEXT,
     -- authserv-id de confiance des en-têtes Authentication-Results, détecté.
     -- NULL = aucun détecté : verdicts 'unknown' (voir authentification-expediteur.md).
-    -- La clé authserv_id du compte dans config.toml, si présente, le remplace.
+    -- La clé authserv_id du compte dans accounts.toml, si présente, le remplace.
     authserv_id   TEXT,
     date_created  INTEGER NOT NULL DEFAULT (unixepoch()),
     date_modified INTEGER NOT NULL DEFAULT (unixepoch()),
     created_by    TEXT NOT NULL CHECK (created_by  IN ('core','app','cli','tui','web','mcp','config_sync','imap')),
     modified_by   TEXT NOT NULL CHECK (modified_by IN ('core','app','cli','tui','web','mcp','config_sync','imap')),
-    -- (version 4) Date à laquelle la clé du compte a disparu de config.toml :
+    -- (version 4) Date à laquelle la clé du compte a disparu d'accounts.toml :
     -- le compte n'est plus synchronisé, ses données restent. NULL = actif.
     -- Remis à NULL quand la clé revient (configuration.md, section 6).
     -- Toujours NULL pour un compte d'archives, absent du fichier par nature.
@@ -68,7 +68,7 @@ CREATE TABLE account (
     -- (version 4) Rang d'affichage du compte : sélecteur de compte (@), barre
     -- latérale, vue unifiée. Croissant ; à égalité, le plus ancien (id) d'abord.
     -- Un nouveau compte se place après les autres (max + 1). État de l'interface
-    -- modifié par set_account_order, donc en base et pas dans config.toml.
+    -- modifié par set_account_order, donc en base et pas dans accounts.toml.
     position      INTEGER NOT NULL DEFAULT 0
 ) STRICT;
 
@@ -685,7 +685,7 @@ CREATE INDEX idx_audit_log_entity ON audit_log (entity, entity_id, date_created)
 CREATE INDEX idx_audit_log_date   ON audit_log (date_created);
 
 -- ------------------------------------------------------------
--- Réglages protégés : hors de config.toml, modifiables seulement par l'app
+-- Réglages protégés : hors de config.toml et d'accounts.toml, modifiables seulement par l'app
 -- (client vérifié par sa signature). Voir configuration.md, section 7.
 -- Clés : 'mcp.allow_modify', 'web.enabled'. Valeur JSON.
 -- ------------------------------------------------------------

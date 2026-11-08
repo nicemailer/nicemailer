@@ -1,5 +1,6 @@
-//! The engine applies `config.toml`: reloads, refusals, accounts enabled and
-//! disabled, secrets bound to their server (`configuration.md`, section 12).
+//! The engine applies `config.toml` and `accounts.toml`: reloads, refusals,
+//! accounts enabled and disabled, secrets bound to their server
+//! (`configuration.md`, section 12).
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -10,9 +11,10 @@ use nm_engine::config::SecretString;
 use nm_engine::secrets::{self, Binding, Credential, MemorySecrets, Refusal, Secrets};
 use nm_store::Store;
 
-/// A file of the test, and a store in memory.
+/// The files of the test, and a store in memory.
 struct Setup {
     _dir: tempfile::TempDir,
+    /// `config.toml`; `accounts.toml` is next to it.
     path: PathBuf,
     store: Store,
 }
@@ -24,8 +26,14 @@ impl Setup {
         Setup { _dir: dir, path, store: Store::open_in_memory().unwrap() }
     }
 
+    /// Writes `config.toml`.
     fn write(&self, text: &str) {
         std::fs::write(&self.path, text).unwrap();
+    }
+
+    /// Writes `accounts.toml`.
+    fn accounts(&self, text: &str) {
+        std::fs::write(nm_engine::config::accounts_path(&self.path), text).unwrap();
     }
 
     fn engine(&self, secrets: Arc<dyn Secrets>) -> Engine {
@@ -77,17 +85,19 @@ fn no_file_means_no_account_and_the_defaults() {
 #[test]
 fn an_invalid_file_at_startup_keeps_the_defaults_and_says_where() {
     let mut s = Setup::new();
-    s.write(&format!("{}[sync]\npoll_interval_secs = 1\n", account("perso", "h")));
+    s.accounts(&account("perso", "h"));
+    s.write("version = 1\n[sync]\npoll_interval_secs = 1\n");
     let mut engine = s.engine(stored("perso", "h"));
     let events = engine.reload(&mut s.store, true).unwrap();
     match &events[..] {
-        [Event::ConfigError { line, key, .. }] => {
-            assert_eq!(*line, Some(6));
+        [Event::ConfigError { file, line, key, .. }] => {
+            assert_eq!(file, "config.toml");
+            assert_eq!(*line, Some(3));
             assert_eq!(key.as_deref(), Some("sync.poll_interval_secs"));
         }
         other => panic!("{other:?}"),
     }
-    // Nothing of the file is applied, not even its valid account.
+    // Nothing is applied, not even the valid accounts.toml.
     assert!(engine.config().accounts.is_empty());
     assert!(s.store.list_account_rows().unwrap().is_empty());
 }
@@ -95,14 +105,17 @@ fn an_invalid_file_at_startup_keeps_the_defaults_and_says_where() {
 #[test]
 fn an_invalid_file_later_keeps_the_previous_settings() {
     let mut s = Setup::new();
-    s.write(&format!("[sync]\npoll_interval_secs = 60\n{}", account("perso", "h")));
+    s.write("[sync]\npoll_interval_secs = 60\n");
+    s.accounts(&account("perso", "h"));
     let mut engine = s.engine(stored("perso", "h"));
     engine.reload(&mut s.store, true).unwrap();
     assert_eq!(engine.config().sync.poll_interval_secs, 60);
 
-    s.write("[sync]\npoll_interval_secs = 90\n[accounts.perso]\nemail = \"oops\"\n");
+    // A valid config.toml, an invalid accounts.toml: both refused.
+    s.write("[sync]\npoll_interval_secs = 90\n");
+    s.accounts("[accounts.perso]\nemail = \"oops\"\n");
     let events = engine.reload(&mut s.store, false).unwrap();
-    assert_eq!(names(&events), vec!["ConfigError"]);
+    assert!(matches!(&events[..], [Event::ConfigError { file, line: Some(2), .. }] if file == "accounts.toml"), "{events:?}");
     assert_eq!(engine.config().sync.poll_interval_secs, 60, "previous settings kept");
     assert!(engine.config().accounts.contains_key("perso"));
     assert!(s.store.list_account_rows().unwrap().iter().all(|r| !r.disabled), "the account is not disabled");
@@ -111,7 +124,7 @@ fn an_invalid_file_later_keeps_the_previous_settings() {
     assert!(engine.reload(&mut s.store, false).unwrap().is_empty());
 
     // Fixed: applied, and announced.
-    s.write(&format!("[sync]\npoll_interval_secs = 90\n{}", account("perso", "h")));
+    s.accounts(&account("perso", "h"));
     let events = engine.reload(&mut s.store, false).unwrap();
     match &events[..] {
         // The account's effective interval changed with the general one.
@@ -128,12 +141,12 @@ fn an_invalid_file_later_keeps_the_previous_settings() {
 fn fixing_a_file_back_to_the_applied_one_clears_the_error() {
     let mut s = Setup::new();
     let good = account("perso", "h");
-    s.write(&good);
+    s.accounts(&good);
     let mut engine = s.engine(stored("perso", "h"));
     engine.reload(&mut s.store, true).unwrap();
-    s.write("not toml at all = = =");
+    s.accounts("not toml at all = = =");
     assert_eq!(names(&engine.reload(&mut s.store, false).unwrap()), vec!["ConfigError"]);
-    s.write(&good);
+    s.accounts(&good);
     match &engine.reload(&mut s.store, false).unwrap()[..] {
         [Event::ConfigChanged { keys }] => assert!(keys.is_empty()),
         other => panic!("{other:?}"),
@@ -144,10 +157,11 @@ fn fixing_a_file_back_to_the_applied_one_clears_the_error() {
 #[test]
 fn the_same_text_twice_does_nothing() {
     let mut s = Setup::new();
-    s.write(&account("perso", "h"));
+    s.accounts(&account("perso", "h"));
     let mut engine = s.engine(stored("perso", "h"));
     engine.reload(&mut s.store, true).unwrap();
-    s.write(&format!("{}\n# a comment\n", account("perso", "h")));
+    s.accounts(&format!("{}\n# a comment\n", account("perso", "h")));
+    s.write("# a comment in config.toml too\n");
     // A new text, but the same settings: no change to announce.
     assert!(engine.reload(&mut s.store, false).unwrap().is_empty());
     assert!(engine.reload(&mut s.store, false).unwrap().is_empty());
@@ -156,7 +170,8 @@ fn the_same_text_twice_does_nothing() {
 #[test]
 fn an_unknown_key_is_a_warning_and_the_rest_applies() {
     let mut s = Setup::new();
-    s.write(&format!("{}[sync]\npoll_interval_secs = 45\nwhatever = 1\n", account("perso", "h")));
+    s.accounts(&account("perso", "h"));
+    s.write("[sync]\npoll_interval_secs = 45\nwhatever = 1\n");
     let mut engine = s.engine(stored("perso", "h"));
     engine.reload(&mut s.store, true).unwrap();
     assert!(engine.error().is_none());
@@ -167,14 +182,14 @@ fn an_unknown_key_is_a_warning_and_the_rest_applies() {
 #[test]
 fn a_change_is_recorded_and_announced() {
     let mut s = Setup::new();
-    s.write(&account("perso", "h"));
+    s.accounts(&account("perso", "h"));
     let mut engine = s.engine(stored("perso", "h"));
     let events = engine.reload(&mut s.store, true).unwrap();
     // At startup: the account is created, nothing else is announced.
     assert_eq!(names(&events), vec!["AccountChanged"]);
     assert_eq!(audit(&s.store), vec![("account".into(), "create".into())]);
 
-    s.write(&format!("{}[sync]\npoll_interval_secs = 600\n", account("perso", "h")));
+    s.write("[sync]\npoll_interval_secs = 600\n");
     let events = engine.reload(&mut s.store, false).unwrap();
     // The account's effective setting changed too, so it is announced.
     assert_eq!(names(&events), vec!["ConfigChanged", "AccountChanged"]);
@@ -190,7 +205,7 @@ fn a_change_is_recorded_and_announced() {
 #[test]
 fn an_account_removed_then_restored_keeps_its_data() {
     let mut s = Setup::new();
-    s.write(&format!("{}{}", account("perso", "h"), account("pro", "h2")));
+    s.accounts(&format!("{}{}", account("perso", "h"), account("pro", "h2")));
     let mut engine = s.engine(stored("perso", "h"));
     engine.reload(&mut s.store, true).unwrap();
     let rows = s.store.list_account_rows().unwrap();
@@ -201,7 +216,7 @@ fn an_account_removed_then_restored_keeps_its_data() {
         .execute("INSERT INTO folder (account_id, path, role, created_by, modified_by) VALUES (?1, 'INBOX', 'inbox', 'core', 'core')", [perso])
         .unwrap();
 
-    s.write(&account("pro", "h2"));
+    s.accounts(&account("pro", "h2"));
     let events = engine.reload(&mut s.store, false).unwrap();
     assert!(matches!(events[..], [Event::ConfigChanged { .. }, Event::AccountChanged { account_id }] if account_id == perso), "{events:?}");
     let row = s.store.list_account_rows().unwrap().into_iter().find(|r| r.id == perso).unwrap();
@@ -213,7 +228,7 @@ fn an_account_removed_then_restored_keeps_its_data() {
     assert!(!v.enabled);
     assert_eq!(v.email, None);
 
-    s.write(&format!("{}{}", account("perso", "h"), account("pro", "h2")));
+    s.accounts(&format!("{}{}", account("perso", "h"), account("pro", "h2")));
     engine.reload(&mut s.store, false).unwrap();
     let rows = s.store.list_account_rows().unwrap();
     let row = rows.iter().find(|r| r.config_key == "perso").unwrap();
@@ -229,7 +244,7 @@ fn an_account_removed_then_restored_keeps_its_data() {
 fn an_archive_account_is_never_disabled_and_its_name_cannot_be_taken() {
     let mut s = Setup::new();
     s.store.prepare_archive_account("old", "old@example.com", nm_core::Source::Cli).unwrap();
-    s.write(&account("old", "h"));
+    s.accounts(&account("old", "h"));
     let mut engine = s.engine(stored("perso", "h"));
     engine.reload(&mut s.store, true).unwrap();
     let rows = s.store.list_account_rows().unwrap();
@@ -240,7 +255,7 @@ fn an_archive_account_is_never_disabled_and_its_name_cannot_be_taken() {
     let views = engine.account_views(rows);
     assert_eq!(views[0].email.as_deref(), Some("old@example.com"));
 
-    s.write("");
+    s.accounts("");
     engine.reload(&mut s.store, false).unwrap();
     assert!(!s.store.list_account_rows().unwrap()[0].disabled, "an archive account stays enabled");
 }
@@ -248,13 +263,13 @@ fn an_archive_account_is_never_disabled_and_its_name_cannot_be_taken() {
 #[test]
 fn a_new_imap_host_gets_no_password_before_confirmation() {
     let mut s = Setup::new();
-    s.write(&account("perso", "imap.example.com"));
+    s.accounts(&account("perso", "imap.example.com"));
     let mut engine = s.engine(stored("perso", "imap.example.com"));
     let events = engine.reload(&mut s.store, true).unwrap();
     assert_eq!(names(&events), vec!["AccountChanged"], "no error: the secret matches");
 
     // Someone points the account at another server.
-    s.write(&account("perso", "imap.attacker.example"));
+    s.accounts(&account("perso", "imap.attacker.example"));
     let events = engine.reload(&mut s.store, false).unwrap();
     assert_eq!(names(&events), vec!["ConfigChanged", "AccountChanged", "AccountError"]);
     let Event::AccountError { error, .. } = &events[2] else { unreachable!() };
@@ -268,7 +283,7 @@ fn a_new_imap_host_gets_no_password_before_confirmation() {
     assert!(matches!(refusal, Refusal::ServerChanged { ref stored } if stored.host == "imap.example.com"));
 
     // Back to the right server: the error goes away, announced as a change.
-    s.write(&account("perso", "imap.example.com"));
+    s.accounts(&account("perso", "imap.example.com"));
     let events = engine.reload(&mut s.store, false).unwrap();
     assert_eq!(names(&events), vec!["ConfigChanged", "AccountChanged"]);
     assert!(engine.account_views(s.store.list_account_rows().unwrap())[0].error.is_none());
@@ -276,7 +291,7 @@ fn a_new_imap_host_gets_no_password_before_confirmation() {
 
 #[test]
 fn a_changed_username_is_a_changed_server_too() {
-    let config = nm_engine::config::parse(&format!("{}username = \"someone-else\"\n", account("perso", "h")))
+    let config = nm_engine::config::parse("", &format!("{}username = \"someone-else\"\n", account("perso", "h")))
         .unwrap()
         .config
         .accounts["perso"]
@@ -288,7 +303,7 @@ fn a_changed_username_is_a_changed_server_too() {
 #[test]
 fn a_missing_password_is_an_error_until_it_is_saved() {
     let mut s = Setup::new();
-    s.write(&account("perso", "imap.example.com"));
+    s.accounts(&account("perso", "imap.example.com"));
     let secrets = none();
     let mut engine = s.engine(secrets.clone());
     let events = engine.reload(&mut s.store, true).unwrap();
@@ -309,11 +324,11 @@ fn a_missing_password_is_an_error_until_it_is_saved() {
 #[test]
 fn saving_again_confirms_a_new_server() {
     let mut s = Setup::new();
-    s.write(&account("perso", "imap.example.com"));
+    s.accounts(&account("perso", "imap.example.com"));
     let secrets = stored("perso", "imap.example.com");
     let mut engine = s.engine(secrets.clone());
     engine.reload(&mut s.store, true).unwrap();
-    s.write(&account("perso", "imap.new.example"));
+    s.accounts(&account("perso", "imap.new.example"));
     let events = engine.reload(&mut s.store, false).unwrap();
     assert!(names(&events).contains(&"AccountError".to_string()));
     // The user saves the password again: it is now bound to the new server.
@@ -328,7 +343,7 @@ fn the_login_checks_the_binding_again() {
     // `check` passed when the file was read; the file changed since, and
     // the secret was replaced by one for another server: the login, which
     // reads the item itself, refuses.
-    let config = nm_engine::config::parse(&account("perso", "imap.example.com")).unwrap().config.accounts["perso"].clone();
+    let config = nm_engine::config::parse("", &account("perso", "imap.example.com")).unwrap().config.accounts["perso"].clone();
     let secrets = stored("perso", "imap.example.com");
     assert!(secrets::check(secrets.as_ref(), "perso", &config).is_ok());
     let other = stored("perso", "imap.attacker.example");
@@ -338,7 +353,7 @@ fn the_login_checks_the_binding_again() {
 #[test]
 fn oauth2_is_reported_as_unsupported() {
     let mut s = Setup::new();
-    s.write("[accounts.g]\nemail = \"g@example.com\"\nauth = \"oauth2\"\n[accounts.g.imap]\nhost = \"imap.gmail.com\"\n");
+    s.accounts("[accounts.g]\nemail = \"g@example.com\"\nauth = \"oauth2\"\n[accounts.g.imap]\nhost = \"imap.gmail.com\"\n");
     let mut engine = s.engine(stored("perso", "h"));
     engine.reload(&mut s.store, true).unwrap();
     let views = engine.account_views(s.store.list_account_rows().unwrap());
@@ -349,7 +364,8 @@ fn oauth2_is_reported_as_unsupported() {
 fn an_unreadable_file_is_an_error_until_it_is_readable() {
     use std::os::unix::fs::PermissionsExt;
     let mut s = Setup::new();
-    s.write(&account("perso", "h"));
+    s.write("");
+    s.accounts(&account("perso", "h"));
     let mut engine = s.engine(stored("perso", "h"));
     engine.reload(&mut s.store, true).unwrap();
     std::fs::set_permissions(&s.path, std::fs::Permissions::from_mode(0o000)).unwrap();
@@ -360,4 +376,39 @@ fn an_unreadable_file_is_an_error_until_it_is_readable() {
     // Readable again, unchanged: the error is cleared.
     assert_eq!(names(&engine.reload(&mut s.store, false).unwrap()), vec!["ConfigChanged"]);
     assert!(engine.error().is_none());
+}
+
+#[test]
+fn an_edit_of_either_file_is_applied() {
+    let mut s = Setup::new();
+    s.write("[sync]\npoll_interval_secs = 60\n");
+    s.accounts(&account("perso", "h"));
+    let mut engine = s.engine(stored("perso", "h"));
+    engine.reload(&mut s.store, true).unwrap();
+    assert_eq!(engine.config().accounts["perso"].sync.poll_interval_secs, 60, "the account inherits config.toml");
+    // accounts.toml alone: an account's override.
+    s.accounts(&format!("{}[accounts.perso.sync]\npoll_interval_secs = 120\n", account("perso", "h")));
+    match &engine.reload(&mut s.store, false).unwrap()[..] {
+        [Event::ConfigChanged { keys }, Event::AccountChanged { .. }] => assert_eq!(keys, &["accounts.perso.sync.poll_interval_secs"]),
+        other => panic!("{other:?}"),
+    }
+    // config.toml alone: the override stays.
+    s.write("[sync]\npoll_interval_secs = 90\n");
+    match &engine.reload(&mut s.store, false).unwrap()[..] {
+        [Event::ConfigChanged { keys }] => assert_eq!(keys, &["sync.poll_interval_secs"]),
+        other => panic!("{other:?}"),
+    }
+    assert_eq!(engine.config().accounts["perso"].sync.poll_interval_secs, 120);
+}
+
+#[test]
+fn accounts_left_in_config_toml_are_refused_not_ignored() {
+    let mut s = Setup::new();
+    s.write(&account("perso", "h"));
+    let mut engine = s.engine(stored("perso", "h"));
+    let events = engine.reload(&mut s.store, true).unwrap();
+    assert!(
+        matches!(&events[..], [Event::ConfigError { file, message, .. }] if file == "config.toml" && message.contains("accounts.toml")),
+        "{events:?}"
+    );
 }

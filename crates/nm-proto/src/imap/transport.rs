@@ -100,7 +100,7 @@ pub(crate) fn is_loopback(host: &str) -> bool {
 /// Opens the TCP connection, and TLS on it for [`Security::Tls`].
 pub(crate) async fn open(spec: &ServerSpec, timeouts: &Timeouts) -> Result<Conn> {
     if spec.security == Security::None && !is_loopback(&spec.host) {
-        // config.toml already refuses it; checked again here, since a
+        // accounts.toml already refuses it; checked again here, since a
         // password must never travel in clear text over a network.
         return Err(ImapError::Tls(format!("clear text is only allowed to this machine, not to {}", spec.host)));
     }

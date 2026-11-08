@@ -78,7 +78,7 @@ At start, the core queues the interrupted actions again and makes editable any d
 
 ## Password
 
-The sender uses the SMTP password of the account if one was saved (`nicemailer account password <key> --smtp`, item `smtp:<key>` of the Keychain, bound to the SMTP server), else the IMAP password, **only** when the SMTP server is the IMAP server or of the same organizational domain (`smtp.gmail.com` and `imap.gmail.com`). Otherwise the sending is refused with a message saying to save the SMTP password: a `config.toml` changed to point `[smtp]` elsewhere must not receive the IMAP password.
+The sender uses the SMTP password of the account if one was saved (`nicemailer account password <key> --smtp`, item `smtp:<key>` of the Keychain, bound to the SMTP server), else the IMAP password, **only** when the SMTP server is the IMAP server or of the same organizational domain (`smtp.gmail.com` and `imap.gmail.com`). Otherwise the sending is refused with a message saying to save the SMTP password: an `accounts.toml` changed to point `[smtp]` elsewhere must not receive the IMAP password.
 
 ## Who may send
 
@@ -116,10 +116,10 @@ The app, the TUI and the CLI. An agent (MCP) or the web server get `FORBIDDEN`: 
 
 ## Pretending to send
 
-With `NICEMAILER_FAKE_NETWORK=1` in the core's environment, an account that `config.toml` does not declare (the fake mail of `seed`, or an archive account imported from mbox) can reply, from its own address, and its mails "leave" without any network: once the undo delay is over, the core records them as accepted (the mail in Sent, the filing, the decisions on the recipients), exactly as after a real SMTP server. The UI tests use it, and it lets you try replying on a real mailbox imported from mbox:
+With `NICEMAILER_FAKE_NETWORK=1` in the core's environment, an account that `accounts.toml` does not declare (the fake mail of `seed`, or an archive account imported from mbox) can reply, from its own address, and its mails "leave" without any network: once the undo delay is over, the core records them as accepted (the mail in Sent, the filing, the decisions on the recipients), exactly as after a real SMTP server. The UI tests use it, and it lets you try replying on a real mailbox imported from mbox:
 
 ```sh
 NICEMAILER_FAKE_NETWORK=1 NICEMAILER_DATA_DIR="$HOME/Library/Application Support/NiceMailer-archive" make core
 ```
 
-The accounts declared in `config.toml` are not affected: one with `[smtp]` sends for real. The changes are real in the database: the reply in Sent, and the decision `inbox` given to recipients without one (`z` undoes the filing and the decisions).
+The accounts declared in `accounts.toml` are not affected: one with `[smtp]` sends for real. The changes are real in the database: the reply in Sent, and the decision `inbox` given to recipients without one (`z` undoes the filing and the decisions).

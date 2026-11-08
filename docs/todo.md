@@ -28,7 +28,7 @@ Work identified but left for later, one section per ticket. A ticket says what i
 
 Done in the folder workflow change: a suspect sender is never banned and needs a confirmation for a favorable decision; Quarantine is never a target. Still to check in the commands, once the features exist:
 
-- a decision on an address of the account itself (its identities from `config.toml`, not only `account.address`): refuse rather than ignore;
+- a decision on an address of the account itself (its identities from `accounts.toml`, not only `account.address`): refuse rather than ignore;
 - a move from a folder without a role (the user's own folders): today allowed to any command target, the spec says nothing;
 - a decision whose domain has the opposite decision (address `inbox`, domain `banned`): allowed, the address wins, but the app could say so.
 
@@ -40,7 +40,7 @@ Done in the folder workflow change: a suspect sender is never banned and needs a
 
 ## Settings: what phase 1 left out
 
-- **The app shows nothing of `config.toml` yet**: no banner for `ConfigError` pointing at the line (`configuration.md`, section 4), no list of accounts. The core gives everything needed: `config_status`, `list_accounts`, the events `ConfigError`, `ConfigChanged`, `AccountChanged`, `AccountError`.
+- **The app shows nothing of `config.toml` and `accounts.toml` yet**: no banner for `ConfigError` pointing at the file and line (`configuration.md`, section 4), no list of accounts. The core gives everything needed: `config_status`, `list_accounts`, the events `ConfigError`, `ConfigChanged`, `AccountChanged`, `AccountError`.
 - **`set_config`, `nicemailer account rename` and `account remove`** (`configuration.md`, sections 5 and 9): writing the file with `toml_edit`, keeping comments; renaming a key in the file and the database together. The plan puts the writing with `add_account` (phase 7).
 - **Settings read at start only** (`events.*`) are accepted while the core runs and apply at the next start; the others are validated but not used yet (table in `docs/configuration.md`).
 - **The Keychain item of an account** is not deleted or renamed yet: it should be by `account remove` and `account rename`.

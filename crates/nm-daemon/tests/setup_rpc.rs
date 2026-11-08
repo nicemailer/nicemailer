@@ -129,6 +129,8 @@ fn a_small_inbox_stays_and_the_people_written_to_are_accepted() {
     phone.deliver("INBOX", "a", "stranger@far.example", &me, &[], 3);
     phone.deliver("INBOX", "b", "carol@c.example", &me, &["\\Seen"], 2);
     phone.deliver("Sent", "s", &me, &format!("bob@b.example, {me}"), &["\\Seen"], 1);
+    // An accounts.toml of the user's, with a comment.
+    std::fs::write(dir.path().join("accounts.toml"), "# My accounts.\n").unwrap();
     let (_core, mut c) = core(dir.path(), "# My settings.\n");
 
     let r = c.call("test_account", json!({"email": me, "imap": imap(&user), "password": "nicemailer"})).unwrap();
@@ -152,9 +154,11 @@ fn a_small_inbox_stays_and_the_people_written_to_are_accepted() {
     assert_eq!(res["correspondents"], 1);
     settled(&mut c, "dovecot");
 
-    // The file has the account, its comment kept.
-    let file = std::fs::read_to_string(dir.path().join("config.toml")).unwrap();
-    assert!(file.starts_with("# My settings.") && file.contains("[accounts.dovecot]"), "{file}");
+    // accounts.toml has the account, its comment kept; config.toml is
+    // not touched.
+    let file = std::fs::read_to_string(dir.path().join("accounts.toml")).unwrap();
+    assert!(file.starts_with("# My accounts.") && file.contains("[accounts.dovecot]"), "{file}");
+    assert_eq!(std::fs::read_to_string(dir.path().join("config.toml")).unwrap(), "# My settings.\n");
     // The old mails stay, unscreened; the new one was screened.
     assert!(phone.has("INBOX", "a") && phone.has("INBOX", "b"));
     assert!(phone.has("Quarantine", "during"));
@@ -302,7 +306,7 @@ fn an_account_is_renamed_with_its_data_and_removed_with_them() {
     let id = int(dir.path(), "SELECT id FROM account WHERE config_key = 'dovecot'");
 
     c.call("rename_account", json!({"from": "dovecot", "to": "mail"})).unwrap();
-    let file = std::fs::read_to_string(dir.path().join("config.toml")).unwrap();
+    let file = std::fs::read_to_string(dir.path().join("accounts.toml")).unwrap();
     assert!(file.contains("[accounts.mail]") && !file.contains("accounts.dovecot"), "{file}");
     assert_eq!(int(dir.path(), "SELECT id FROM account WHERE config_key = 'mail'"), id, "same account");
     let item = |key: &str| {
@@ -318,7 +322,7 @@ fn an_account_is_renamed_with_its_data_and_removed_with_them() {
     verify_ok(&mut c, "mail");
 
     c.call("remove_account", json!({"account": "mail"})).unwrap();
-    let file = std::fs::read_to_string(dir.path().join("config.toml")).unwrap();
+    let file = std::fs::read_to_string(dir.path().join("accounts.toml")).unwrap();
     assert!(!file.contains("accounts.mail"), "{file}");
     assert_eq!(int(dir.path(), "SELECT count(*) FROM account") + int(dir.path(), "SELECT count(*) FROM message"), 0);
     assert!(!item("mail"));
@@ -394,7 +398,7 @@ fn a_read_only_account_changes_nothing_on_its_server() {
     assert_eq!(res["created"], json!([]), "no folder created");
     settled(&mut c, "prod");
     assert_eq!(status(&mut c, "prod")["read_only"], true);
-    let file = std::fs::read_to_string(dir.path().join("config.toml")).unwrap();
+    let file = std::fs::read_to_string(dir.path().join("accounts.toml")).unwrap();
     assert!(file.contains("read_only = true"), "{file}");
 
     // New mail: screened dry, left where it is.

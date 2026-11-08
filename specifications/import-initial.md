@@ -106,7 +106,7 @@ Statut : implémenté (CLI seulement). Un fichier mbox (export de Apple Mail, de
 
 ### Compte d'archives
 
-- Un compte d'archives (`account.kind = 'archive'`) n'a **jamais** de serveur IMAP ni SMTP. Il n'est pas dans `config.toml` : son nom (`account.config_key`) et l'adresse de la boîte archivée (`account.address`) sont donnés à l'import.
+- Un compte d'archives (`account.kind = 'archive'`) n'a **jamais** de serveur IMAP ni SMTP. Il n'est pas dans `accounts.toml` : son nom (`account.config_key`) et l'adresse de la boîte archivée (`account.address`) sont donnés à l'import.
 - Il reçoit tous les dossiers du workflow. Les mails importés peuvent être rangés comme les autres (Todo, Paperwork, Deleted…) ; les déplacements ne modifient que la base locale et ne créent aucune action de spool.
 - Un nom déjà pris par un compte IMAP est refusé. Un compte d'archives existant est réutilisé si l'adresse est la même, refusé sinon : l'adresse décide de ce qui va dans Sent et ne peut pas changer d'un import à l'autre.
 

@@ -1,6 +1,6 @@
 //! The synchronization in the core (`nm-engine`, `sync/`): the workers get
 //! the store and the events through [`CoreHost`], are brought in line with
-//! `config.toml` by [`apply`], and answer `sync_status`, `sync_now` and
+//! `accounts.toml` by [`apply`], and answer `sync_status`, `sync_now` and
 //! `sync_verify`.
 
 use std::collections::BTreeSet;

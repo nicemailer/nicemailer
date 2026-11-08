@@ -15,7 +15,7 @@ The `From` header is free text. The receiving server checks SPF, DKIM and DMARC 
 
 **Which header is trusted.** A sender can write a fake `Authentication-Results: … dmarc=pass` into its mail. Only the headers whose `authserv-id` (their first word) is the account's are read, and of those the first from the top, the one the server added last: a conforming server removes incoming headers that carry its own id (RFC 8601, section 5).
 
-**The account's `authserv-id`.** The key `authserv_id` of the account in `config.toml` if present, else the one detected: the id that tops the first `Authentication-Results` of at least 90 % of the 50 most recent mails of the Inbox (highest UIDs). The detection runs when a pass brings mail to the Inbox, at most once an hour while none is found, and the result is kept in `account.authserv_id`. `nicemailer sync status` shows the id trusted ("trusted Authentication-Results"), or that none was found, in which case every verdict is `unknown`.
+**The account's `authserv-id`.** The key `authserv_id` of the account in `accounts.toml` if present, else the one detected: the id that tops the first `Authentication-Results` of at least 90 % of the 50 most recent mails of the Inbox (highest UIDs). The detection runs when a pass brings mail to the Inbox, at most once an hour while none is found, and the result is kept in `account.authserv_id`. `nicemailer sync status` shows the id trusted ("trusted Authentication-Results"), or that none was found, in which case every verdict is `unknown`.
 
 **Alignment.** DMARC's relaxed alignment: the same *organizational domain*, the registrable domain under a public suffix. `mail.exemple.fr` is aligned on `exemple.fr`; `a.co.uk` is not aligned on `b.co.uk`, since `co.uk` is a public suffix. The suffixes come from the Public Suffix List (https://publicsuffix.org, MPL 2.0), embedded in the binary from `data/public-suffix/public_suffix_list.dat`, both its ICANN and private sections, wildcard and exception rules included. Refresh it by downloading the file again; its header carries its version.
 
@@ -23,7 +23,7 @@ The verdict is computed once, at reception, from the headers alone: it does not 
 
 ## Routing
 
-Only the mails of the Inbox at or above `folder.uid_screening_start` are screened: those below were there before NiceMailer (`import-initial.md`, section 5). `add_account` sets it to the `UIDNEXT` read by the test connection ([accounts.md](accounts.md)); for an account declared by hand in `config.toml`, the synchronization sets it to the `UIDNEXT` of the Inbox at its first synchronization. After the Inbox's `UIDVALIDITY` changes, it is set again to the new `UIDNEXT`: what is there counts as imported. While it is NULL, the account is not screened.
+Only the mails of the Inbox at or above `folder.uid_screening_start` are screened: those below were there before NiceMailer (`import-initial.md`, section 5). `add_account` sets it to the `UIDNEXT` read by the test connection ([accounts.md](accounts.md)); for an account declared by hand in `accounts.toml`, the synchronization sets it to the `UIDNEXT` of the Inbox at its first synchronization. After the Inbox's `UIDVALIDITY` changes, it is set again to the new `UIDNEXT`: what is there counts as imported. While it is NULL, the account is not screened.
 
 For a mail from address `A`, of domain `D`:
 

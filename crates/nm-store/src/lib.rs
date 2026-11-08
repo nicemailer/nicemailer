@@ -26,7 +26,7 @@
 //! - `library.rs`: history, export, tags, groups, contacts, display preference,
 //! - `seed.rs`: generator of fake mail for development,
 //! - `pool.rs`: read-only connections, so queries never wait for a write,
-//! - `accounts.rs`: accounts of `config.toml` in the database (enable, disable),
+//! - `accounts.rs`: accounts of `accounts.toml` in the database (enable, disable),
 //! - `migrations.rs`: upgrade of a database created by an earlier version.
 //!
 //! Rust note: `mod queries;` tells the compiler to include `src/queries.rs`
@@ -84,7 +84,7 @@ pub use rusqlite;
 /// 2: indexes for large mailboxes, `thread.date_last_modified`, repaired
 /// encoded words (`migrations.rs`).
 /// 3: remote images (`address.remote_images`, `message_body.tracking_pixels`).
-/// 4: `account.disabled_at`, accounts whose key left `config.toml`, and
+/// 4: `account.disabled_at`, accounts whose key left `accounts.toml`, and
 ///    `account.position`, their display order.
 pub const SCHEMA_VERSION: i64 = 4;
 
@@ -332,7 +332,7 @@ impl Store {
         conn.execute_batch("PRAGMA optimize = 0x10002;")?;
         // The accounts whose changes go to the spool (`spool.rs`,
         // `set_server_accounts`): a table of this connection only, gone
-        // when it closes, filled by the core from `config.toml`.
+        // when it closes, filled by the core from `accounts.toml`.
         conn.execute_batch(
             "CREATE TEMP TABLE IF NOT EXISTS server_account (id INTEGER PRIMARY KEY);
              CREATE TEMP TABLE IF NOT EXISTS read_only_account (id INTEGER PRIMARY KEY);",

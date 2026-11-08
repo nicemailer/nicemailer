@@ -20,7 +20,7 @@ Ce document justifie le schéma de `schema.sql` (version 1) et reprend les point
 | **Corps séparés de la table de liste** | Les corps (`message_body`), volumineux, vivent à part pour que la liste reste légère. |
 | **Hors-ligne d'abord** | Toute action est appliquée localement tout de suite et enregistrée dans le spool `pending_action`, qui la rejoue vers le serveur et l'annule en cas d'échec définitif (section 6). |
 | **Aucun secret en base** | Les mots de passe et jetons sont dans le Keychain, sous un nom dérivé de la clé du compte (`configuration.md`). |
-| **Configuration hors de la base** | Les réglages et les paramètres des comptes sont dans `config.toml` ; la base ne garde que l'état (`configuration.md`). |
+| **Configuration hors de la base** | Les réglages sont dans `config.toml`, les paramètres des comptes dans `accounts.toml` ; la base ne garde que l'état (`configuration.md`). |
 | **Typage strict** | Tables `STRICT`, contraintes `CHECK` sur les booléens et les énumérations, `WITHOUT ROWID` sur les tables de liaison. |
 | **Traçabilité** | Les entités (`account`, `folder`, `address`, `domain`, `tag`, `message`) portent `date_created`, `date_modified`, `created_by` et `modified_by` ; `audit_log` garde l'historique complet (voir `tracabilite.md`). |
 | **Dates préfixées** | Toutes les colonnes de date commencent par `date_` (`date_received`, `date_screening_modified`, `date_run_after`…). |
@@ -28,7 +28,7 @@ Ce document justifie le schéma de `schema.sql` (version 1) et reprend les point
 ## 3. Les tables et leur justification
 
 ### `account`
-L'état d'un compte, pas ses paramètres. Adresse, serveurs IMAP et SMTP, identifiants, mode d'authentification, identités et activation de la synchronisation de la configuration sont dans `config.toml`, sous la clé `[accounts.<config_key>]` ; les secrets sont dans le Keychain (`configuration.md`). La table associe `config_key` à l'identifiant interne référencé par les dossiers, messages et conversations, et garde `authserv_id`, l'identifiant de serveur détecté dans les en-têtes `Authentication-Results` (`authentification-expediteur.md`). Un compte dont la clé disparaît du fichier est désactivé mais garde sa ligne et ses données ; seule une suppression explicite efface la ligne, et ses dossiers, messages et conversations avec elle (suppression en cascade).
+L'état d'un compte, pas ses paramètres. Adresse, serveurs IMAP et SMTP, identifiants, mode d'authentification, identités et activation de la synchronisation de la configuration sont dans `accounts.toml`, sous la clé `[accounts.<config_key>]` ; les secrets sont dans le Keychain (`configuration.md`). La table associe `config_key` à l'identifiant interne référencé par les dossiers, messages et conversations, et garde `authserv_id`, l'identifiant de serveur détecté dans les en-têtes `Authentication-Results` (`authentification-expediteur.md`). Un compte dont la clé disparaît du fichier est désactivé mais garde sa ligne et ses données ; seule une suppression explicite efface la ligne, et ses dossiers, messages et conversations avec elle (suppression en cascade).
 
 ### `protected_setting`
 Les réglages qui ne doivent pas dépendre d'un fichier modifiable par n'importe quel programme : droit de modification de l'agent MCP, activation du serveur web. Seule l'app peut les modifier, ce que la contrainte `modified_by = 'app'` rappelle (`configuration.md`, section 7).

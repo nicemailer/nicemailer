@@ -72,7 +72,7 @@ pub struct SentDraft {
 }
 
 /// What the store needs to know of the account to write a reply: its
-/// addresses, main one first, with their names (`config.toml`).
+/// addresses, main one first, with their names (`accounts.toml`).
 #[derive(Debug, Clone)]
 pub struct Identities {
     pub list: Vec<Mailbox>,

@@ -1,6 +1,6 @@
 //! Pretended sending (`NICEMAILER_FAKE_NETWORK`, `src/drafts.rs`): on a
 //! base of archive accounts imported from mbox, without any server in
-//! `config.toml`, a reply can be written and "sent": recorded in Sent as
+//! `accounts.toml`, a reply can be written and "sent": recorded in Sent as
 //! after a real SMTP server, without any network. Without the variable, an
 //! archive account cannot answer.
 

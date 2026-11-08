@@ -18,7 +18,7 @@
 //!   and `ActionReverted` tells the user.
 //!
 //! Only the accounts the core synchronizes get actions: the IMAP accounts
-//! of `config.toml`, listed in the temporary table `server_account` of the
+//! of `accounts.toml`, listed in the temporary table `server_account` of the
 //! writing connection ([`Store::set_server_accounts`]). The fake accounts
 //! of `make seed` and the archive accounts change locally only.
 //!
@@ -216,7 +216,7 @@ pub(crate) fn enqueue_flag(conn: &Connection, message_id: i64, flag: &str, set: 
 
 impl Store {
     /// The accounts the core synchronizes (the IMAP accounts of
-    /// `config.toml`): their changes go to the spool. Kept in a temporary
+    /// `accounts.toml`): their changes go to the spool. Kept in a temporary
     /// table of the writing connection, so that the SQL of every command
     /// can tell, without a parameter passed everywhere.
     pub fn set_server_accounts(&mut self, ids: BTreeSet<i64>) -> Result<()> {
@@ -235,7 +235,7 @@ impl Store {
     }
 
     /// The accounts whose server must never be changed (`read_only = true`
-    /// in `config.toml`): no action is queued for them (they are not among
+    /// in `accounts.toml`): no action is queued for them (they are not among
     /// [`Store::set_server_accounts`]), and the commands that change their
     /// mail are refused, since the next synchronization would undo a local
     /// change.
@@ -498,7 +498,7 @@ pub(crate) fn refuse_read_only(conn: &Connection, thread_id: i64) -> Result<()> 
         .prepare_cached("SELECT EXISTS (SELECT 1 FROM thread t JOIN temp.read_only_account r ON r.id = t.account_id WHERE t.id = ?1)")?
         .query_row([thread_id], |r| r.get(0))?;
     if ro {
-        return Err(crate::StoreError::ReadOnly("this account is read-only (read_only = true in config.toml): nothing is changed".into()));
+        return Err(crate::StoreError::ReadOnly("this account is read-only (read_only = true in accounts.toml): nothing is changed".into()));
     }
     Ok(())
 }

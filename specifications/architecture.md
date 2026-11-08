@@ -323,7 +323,7 @@ En développement, les builds signés ad hoc ne satisfont pas l'exigence. Une ex
 | Serveur web | oui     | oui                                                        | oui                                | non                 |
 | MCP (agent) | oui     | désactivé par défaut, activable dans l'app seulement (réglage protégé) | **toujours soumis à confirmation** | non                 |
 
-Les réglages qui étendent les droits d'un client (modification par l'agent MCP, activation du serveur web) sont des **réglages protégés** : ils ne sont pas dans `config.toml`, que n'importe quel programme peut modifier, mais en base, et seule l'app peut les changer (`configuration.md`, section 7). Les autres réglages et les comptes sont dans `config.toml` ; la colonne « Comptes et réglages » désigne leur modification par le contrat.
+Les réglages qui étendent les droits d'un client (modification par l'agent MCP, activation du serveur web) sont des **réglages protégés** : ils ne sont pas dans `config.toml` ni `accounts.toml`, que n'importe quel programme peut modifier, mais en base, et seule l'app peut les changer (`configuration.md`, section 7). Les autres réglages sont dans `config.toml`, les comptes dans `accounts.toml` ; la colonne « Comptes et réglages » désigne leur modification par le contrat.
 
 L'identité vérifiée du client sert aussi à la traçabilité : le noyau inscrit lui-même la source de chaque création et modification (`created_by`, `modified_by`, `audit_log`), sans jamais la demander au client. Seuls l'app, la TUI et le serveur web peuvent marquer un message comme consulté (`mark_viewed`). Voir `tracabilite.md`.
 

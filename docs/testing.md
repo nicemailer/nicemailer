@@ -13,7 +13,7 @@
 
 ## Rust
 
-Unit tests live next to the code (`#[cfg(test)]`), integration tests in `crates/*/tests/`. `crates/nm-daemon/tests/import_rpc.rs` starts the real core binary and talks to it over its socket. The harness (`tests/common/mod.rs`) gives the core `--config <temporary dir>/config.toml`, and `scripts/ui-test.sh` and `scripts/bench.sh` set a settings file of their own too: a test must never read the settings of the machine, whose accounts the core would start to synchronize.
+Unit tests live next to the code (`#[cfg(test)]`), integration tests in `crates/*/tests/`. `crates/nm-daemon/tests/import_rpc.rs` starts the real core binary and talks to it over its socket. The harness (`tests/common/mod.rs`) gives the core `--config <temporary dir>/config.toml` (so its `accounts.toml` is in that directory too; the core creates both at its start), and `scripts/ui-test.sh` and `scripts/bench.sh` set settings files of their own, in a directory of their own, too: a test must never read the settings of the machine, whose accounts the core would start to synchronize.
 
 Nor its Keychain: the harness creates a throwaway keychain file in the test's directory (`security create-keychain`, which does not add it to the user's search list) and gives it to the core with `--keychain`; `crates/nm-engine/tests/keychain.rs` does the same. No test ever reads or writes the login keychain, and the core never shows a Keychain dialog (see [configuration.md](configuration.md), "Passwords").
 

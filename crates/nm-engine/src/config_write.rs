@@ -1,21 +1,24 @@
-//! Writing `config.toml` for a command (`configuration.md`, section 5):
-//! adding, renaming and removing an account.
+//! Writing the settings files (`configuration.md`, sections 3 and 5):
+//! creating them when they are missing, and adding, renaming and removing
+//! an account in `accounts.toml` for a command.
 //!
-//! The file belongs to the user, who may keep it in Git, with comments.
+//! The files belong to the user, who may keep them in Git, with comments.
 //! So:
 //! - it is edited in place by `toml_edit`, which keeps comments, order and
 //!   formatting: only the account's tables change;
 //! - it is read again right before the change, so that an edit made by
 //!   hand meanwhile is kept, and only the account's tables are touched;
-//! - the result must be a valid file (`config::parse`), else nothing is
-//!   written;
+//! - the result must be a valid file (`config::parse_accounts`), else
+//!   nothing is written;
 //! - it is written atomically: a temporary file next to it, then `rename`.
 //!   A crash leaves the old file or the new one, never half of one.
 //!
-//! The core never writes the file on its own, only at a client's request.
+//! The core writes a file on its own only to create it, at its start, when
+//! it is missing ([`create_missing`]); it never changes an existing file
+//! but at a client's request.
 
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use toml_edit::{DocumentMut, Item, Table, value};
 
@@ -36,8 +39,11 @@ pub struct NewAccount {
     pub read_only: bool,
 }
 
+/// The name of the file the account commands write, for their messages.
+const FILE: &str = config::ACCOUNTS_FILE;
+
 fn doc(text: &str) -> Result<DocumentMut, String> {
-    text.parse::<DocumentMut>().map_err(|e| format!("config.toml cannot be read: {e}"))
+    text.parse::<DocumentMut>().map_err(|e| format!("{FILE} cannot be read: {e}"))
 }
 
 /// The `[accounts]` table, created (implicit: no `[accounts]` header of its
@@ -48,7 +54,7 @@ fn accounts(doc: &mut DocumentMut) -> Result<&mut Table, String> {
         t.set_implicit(true);
         doc.insert("accounts", Item::Table(t));
     }
-    doc["accounts"].as_table_mut().ok_or_else(|| "accounts is not a table in config.toml".to_string())
+    doc["accounts"].as_table_mut().ok_or_else(|| format!("accounts is not a table in {FILE}"))
 }
 
 /// An account key: what the file and the Keychain item name can hold
@@ -60,12 +66,12 @@ pub fn check_key(key: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// The file with a new account added at its end.
+/// The text of `accounts.toml` with a new account added at its end.
 pub fn add_account(text: &str, a: &NewAccount) -> Result<String, String> {
     check_key(&a.key)?;
     let mut doc = doc(text)?;
     if accounts(&mut doc)?.contains_key(&a.key) {
-        return Err(format!("config.toml already has an account {}", a.key));
+        return Err(format!("{FILE} already has an account {}", a.key));
     }
     let mut t = Table::new();
     t["email"] = value(&a.email);
@@ -112,9 +118,9 @@ pub fn rename_account(text: &str, from: &str, to: &str) -> Result<String, String
     let mut doc = doc(text)?;
     let accounts = accounts(&mut doc)?;
     if accounts.contains_key(to) {
-        return Err(format!("config.toml already has an account {to}"));
+        return Err(format!("{FILE} already has an account {to}"));
     }
-    let item = accounts.remove(from).ok_or_else(|| format!("config.toml has no account {from}"))?;
+    let item = accounts.remove(from).ok_or_else(|| format!("{FILE} has no account {from}"))?;
     // The tables keep their `position`: they are written back where they
     // were, under the new name.
     accounts.insert(to, item);
@@ -125,14 +131,14 @@ pub fn rename_account(text: &str, from: &str, to: &str) -> Result<String, String
 pub fn remove_account(text: &str, key: &str) -> Result<String, String> {
     let mut doc = doc(text)?;
     let accounts = accounts(&mut doc)?;
-    accounts.remove(key).ok_or_else(|| format!("config.toml has no account {key}"))?;
+    accounts.remove(key).ok_or_else(|| format!("{FILE} has no account {key}"))?;
     finish(doc)
 }
 
 /// The new text, refused if the core would refuse it.
 fn finish(doc: DocumentMut) -> Result<String, String> {
     let text = doc.to_string();
-    config::parse(&text).map_err(|p| format!("the file would be invalid: {p}"))?;
+    config::parse_accounts(&text).map_err(|p| format!("the file would be invalid: {p}"))?;
     Ok(text)
 }
 
@@ -154,7 +160,7 @@ pub fn update(path: &Path, change: impl FnOnce(&str) -> Result<String, String>) 
 fn write_atomic(path: &Path, text: &str) -> Result<(), String> {
     let dir = path.parent().filter(|d| !d.as_os_str().is_empty()).unwrap_or(Path::new("."));
     std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
-    let tmp = dir.join(format!(".config.toml.{:016x}", rand::random::<u64>()));
+    let tmp = temp_path(dir, path);
     let result = (|| -> std::io::Result<()> {
         let mut f = std::fs::File::create(&tmp)?;
         if let Ok(meta) = std::fs::metadata(path) {
@@ -171,11 +177,74 @@ fn write_atomic(path: &Path, text: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// A temporary file next to `path`, hidden, with a random suffix: two
+/// writers never share one.
+fn temp_path(dir: &Path, path: &Path) -> PathBuf {
+    let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    dir.join(format!(".{name}.{:016x}", rand::random::<u64>()))
+}
+
+/// Creates `config.toml` at `config_path` and `accounts.toml` next to it,
+/// from their templates (`config::config_template`,
+/// `config::accounts_template`), when they are missing. Returns the files
+/// created. Called once, at the start of the core
+/// (`configuration.md`, section 3): even a user who changes nothing finds
+/// every setting listed, with its default and its role.
+///
+/// - **An existing file is never touched**, even empty or invalid: it is
+///   the user's. A symbolic link counts as existing even if its target is
+///   missing (a dotfiles repository not cloned yet): creating a file in
+///   its place would hide the link's intent.
+/// - **The file appears complete or not at all.** It is written to a
+///   temporary file, then given its name by `hard_link`, which, unlike
+///   `rename`, fails if the name is taken: a file created meanwhile by the
+///   user (or another core) is kept, and a reader never sees half a file.
+/// - Only at the start: a file the user deletes while the core runs stays
+///   deleted (meaning "the defaults", or "no account") until the next one.
+pub fn create_missing(config_path: &Path) -> Result<Vec<PathBuf>, String> {
+    let accounts_path = config::accounts_path(config_path);
+    let mut created = Vec::new();
+    for (path, template) in [(config_path.to_path_buf(), config::config_template()), (accounts_path, config::accounts_template())] {
+        if create_if_missing(&path, &template)? {
+            created.push(path);
+        }
+    }
+    Ok(created)
+}
+
+/// Creates `path` with `text` unless something is already there; returns
+/// whether it did.
+fn create_if_missing(path: &Path, text: &str) -> Result<bool, String> {
+    // `symlink_metadata` looks at the link itself, not at its target.
+    match std::fs::symlink_metadata(path) {
+        Ok(_) => return Ok(false),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(format!("{}: {e}", path.display())),
+    }
+    let dir = path.parent().filter(|d| !d.as_os_str().is_empty()).unwrap_or(Path::new("."));
+    std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    let tmp = temp_path(dir, path);
+    let result = (|| -> std::io::Result<bool> {
+        let mut f = std::fs::File::create(&tmp)?;
+        f.write_all(text.as_bytes())?;
+        f.sync_all()?;
+        match std::fs::hard_link(&tmp, path) {
+            Ok(()) => Ok(true),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => Ok(false),
+            Err(e) => Err(e),
+        }
+    })();
+    // The temporary name goes in every case; on success the file stays
+    // under its real name.
+    let _ = std::fs::remove_file(&tmp);
+    result.map_err(|e| format!("{}: {e}", path.display()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    const FILE: &str = "# My settings, in Git.\nversion = 1\n\n[sync]\npoll_interval_secs = 120 # faster\n\n\
+    const TEXT: &str = "# My accounts, in Git.\nversion = 1\n\n\
 # The personal account.\n[accounts.perso]\nemail = \"me@example.fr\"\n[accounts.perso.imap]\nhost = \"imap.example.fr\"\n\
 port = 993\nsecurity = \"tls\"\n\n# Work.\n[accounts.pro]\nemail = \"me@work.example\"\n[accounts.pro.imap]\nhost = \"imap.work.example\"\n\
 port = 993\nsecurity = \"tls\"\n";
@@ -196,16 +265,15 @@ port = 993\nsecurity = \"tls\"\n";
 
     #[test]
     fn adding_keeps_comments_and_order_and_writes_no_default() {
-        let out = add_account(FILE, &new("bob")).unwrap();
-        assert!(out.starts_with(FILE.trim_end()), "the existing text is untouched:\n{out}");
+        let out = add_account(TEXT, &new("bob")).unwrap();
+        assert!(out.starts_with(TEXT.trim_end()), "the existing text is untouched:\n{out}");
         assert!(out.contains("[accounts.bob]\nemail = \"bob@example.org\"\ndisplay_name = \"Bob\""), "{out}");
         assert!(out.contains("[accounts.bob.imap]\nhost = \"imap.example.org\"\nport = 993\nsecurity = \"tls\"\nusername = \"bob\""), "{out}");
-        let parsed = config::parse(&out).unwrap();
-        assert_eq!(parsed.config.accounts.len(), 3);
+        assert_eq!(config::parse_accounts(&out).unwrap().len(), 3);
         // A file of comments only keeps them on top.
         let out = add_account("# My settings.\n", &new("bob")).unwrap();
         assert!(out.starts_with("# My settings.\n\n[accounts.bob]"), "{out}");
-        let out = add_account(&format!("{FILE}\n# The end.\n"), &new("bob")).unwrap();
+        let out = add_account(&format!("{TEXT}\n# The end.\n"), &new("bob")).unwrap();
         assert!(out.find("# The end.").unwrap() < out.find("[accounts.bob]").unwrap(), "{out}");
         // Into an empty file, too.
         let out = add_account("", &new("bob")).unwrap();
@@ -216,29 +284,29 @@ port = 993\nsecurity = \"tls\"\n";
 
     #[test]
     fn renaming_keeps_the_tables_where_they_were() {
-        let out = rename_account(FILE, "perso", "home").unwrap();
+        let out = rename_account(TEXT, "perso", "home").unwrap();
         assert!(out.contains("# The personal account.\n[accounts.home]\nemail = \"me@example.fr\"\n[accounts.home.imap]"), "{out}");
         assert!(out.find("[accounts.home]").unwrap() < out.find("[accounts.pro]").unwrap());
-        assert!(out.contains("poll_interval_secs = 120 # faster"));
-        assert!(rename_account(FILE, "perso", "pro").is_err());
-        assert!(rename_account(FILE, "nobody", "x").is_err());
+        assert!(out.contains("# My accounts, in Git.\nversion = 1\n"));
+        assert!(rename_account(TEXT, "perso", "pro").is_err());
+        assert!(rename_account(TEXT, "nobody", "x").is_err());
     }
 
     #[test]
     fn removing_takes_only_the_account() {
-        let out = remove_account(FILE, "pro").unwrap();
+        let out = remove_account(TEXT, "pro").unwrap();
         assert!(!out.contains("accounts.pro"));
-        assert!(out.contains("[accounts.perso.imap]") && out.contains("# My settings, in Git."));
-        assert_eq!(config::parse(&out).unwrap().config.accounts.len(), 1);
+        assert!(out.contains("[accounts.perso.imap]") && out.contains("# My accounts, in Git."));
+        assert_eq!(config::parse_accounts(&out).unwrap().len(), 1);
     }
 
     #[test]
     fn the_file_is_written_atomically_and_read_again_first() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("config.toml");
-        std::fs::write(&path, FILE).unwrap();
+        let path = dir.path().join("accounts.toml");
+        std::fs::write(&path, TEXT).unwrap();
         // An edit by hand after the core last read the file is kept.
-        std::fs::write(&path, format!("{FILE}\n# added by hand\n")).unwrap();
+        std::fs::write(&path, format!("{TEXT}\n# added by hand\n")).unwrap();
         update(&path, |t| add_account(t, &new("bob"))).unwrap();
         let text = std::fs::read_to_string(&path).unwrap();
         assert!(text.contains("# added by hand") && text.contains("[accounts.bob]"));
@@ -248,5 +316,63 @@ port = 993\nsecurity = \"tls\"\n";
         assert_eq!(std::fs::read_to_string(&path).unwrap(), before);
         // No temporary file is left.
         assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn missing_files_are_created_from_the_templates() {
+        let dir = tempfile::tempdir().unwrap();
+        // A directory that does not exist yet, like ~/.config/nicemailer
+        // on a new Mac.
+        let path = dir.path().join("nicemailer/config.toml");
+        let created = create_missing(&path).unwrap();
+        assert_eq!(created, vec![path.clone(), dir.path().join("nicemailer/accounts.toml")]);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), config::config_template());
+        assert_eq!(std::fs::read_to_string(&created[1]).unwrap(), config::accounts_template());
+        // No temporary file is left.
+        assert_eq!(std::fs::read_dir(path.parent().unwrap()).unwrap().count(), 2);
+        // The created files give the defaults and no account.
+        let parsed = config::parse(&config::config_template(), &config::accounts_template()).unwrap();
+        assert_eq!(parsed.config, config::Config::default());
+        // Once there, nothing is created again.
+        assert!(create_missing(&path).unwrap().is_empty());
+    }
+
+    #[test]
+    fn an_account_added_to_the_created_file_goes_after_its_comments() {
+        // The `accounts.toml` the core creates ends with the commented
+        // example: the new account comes after it, not inside it.
+        let template = config::accounts_template();
+        let out = add_account(&template, &new("bob")).unwrap();
+        assert!(out.starts_with(template.trim_end()), "the template is kept whole:\n{out}");
+        assert!(out.find("# poll_interval_secs = 600").unwrap() < out.find("[accounts.bob]").unwrap(), "{out}");
+        assert!(!out.contains("[accounts]\n"), "no empty [accounts] header: {out}");
+        assert_eq!(config::parse_accounts(&out).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn an_existing_file_is_never_touched() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        // Empty, or invalid: still the user's.
+        std::fs::write(&path, "").unwrap();
+        std::fs::write(dir.path().join("accounts.toml"), "not toml [").unwrap();
+        assert!(create_missing(&path).unwrap().is_empty());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "");
+        assert_eq!(std::fs::read_to_string(dir.path().join("accounts.toml")).unwrap(), "not toml [");
+        // Only the missing one of the two is created.
+        std::fs::remove_file(dir.path().join("accounts.toml")).unwrap();
+        assert_eq!(create_missing(&path).unwrap(), vec![dir.path().join("accounts.toml")]);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "");
+    }
+
+    #[test]
+    fn a_dangling_link_is_left_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        // A dotfiles repository not cloned yet: the link points nowhere.
+        std::os::unix::fs::symlink(dir.path().join("dotfiles/config.toml"), &path).unwrap();
+        assert_eq!(create_missing(&path).unwrap(), vec![dir.path().join("accounts.toml")]);
+        assert!(std::fs::symlink_metadata(&path).unwrap().file_type().is_symlink());
+        assert!(!dir.path().join("dotfiles").exists());
     }
 }

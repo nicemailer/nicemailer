@@ -1,4 +1,4 @@
-//! Accounts of `config.toml` in the database (`configuration.md`, section 6).
+//! Accounts of `accounts.toml` in the database (`configuration.md`, section 6).
 //!
 //! The file holds the user's intentions (addresses, servers), the database
 //! holds the state (folders, messages, detected values). The `account` table
@@ -37,7 +37,7 @@ use crate::{ChangeSet, Result, Store, StoreError};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AccountRow {
     pub id: i64,
-    /// Key in `config.toml`, or name of the archive account.
+    /// Key in `accounts.toml`, or name of the archive account.
     pub config_key: String,
     /// `imap` or `archive`.
     pub kind: String,
@@ -226,7 +226,7 @@ impl Store {
         Ok(())
     }
 
-    /// Records a change of `config.toml` seen when reloading it
+    /// Records a change of `config.toml` or `accounts.toml` seen when reloading it
     /// (`configuration.md`, section 10): action `reload`, source `core`,
     /// with the keys that changed. Only the keys: the values may include a
     /// password (development builds), which never goes to the database.

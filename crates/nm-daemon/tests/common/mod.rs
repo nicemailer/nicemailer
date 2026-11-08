@@ -93,8 +93,9 @@ impl Client {
 
 /// Starts the core on `dir`; it is killed when the returned value drops.
 ///
-/// The core gets nothing of the machine: its settings file is
-/// `dir/config.toml`, missing unless the test writes it, and its keychain a
+/// The core gets nothing of the machine: its settings files are
+/// `dir/config.toml` and `dir/accounts.toml`, created from the templates
+/// at its start unless the test writes them first, and its keychain a
 /// throwaway file `dir/test.keychain-db` (created unlocked; `security
 /// create-keychain` does not add it to the user's search list), never the
 /// login keychain.

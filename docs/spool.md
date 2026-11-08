@@ -15,7 +15,7 @@ A moved message has no UID until the server gives the new one: the UID of an IMA
 
 Every command goes through the same three places of `nm-store`, so none can forget the spool: `move_message` (moves, filings after a decision, undo), the end of the flag commands (`set_thread_seen`, `set_thread_flagged`), `tag_thread`.
 
-Only the accounts the core synchronizes get actions: the IMAP accounts of `config.toml`, which the core gives the store (`Store::set_server_accounts`, kept in a temporary table of the writing connection so that the SQL of the commands can tell). The fake accounts of `make seed` and the archive accounts of mbox imports change locally only.
+Only the accounts the core synchronizes get actions: the IMAP accounts of `accounts.toml`, which the core gives the store (`Store::set_server_accounts`, kept in a temporary table of the writing connection so that the SQL of the commands can tell). The fake accounts of `make seed` and the archive accounts of mbox imports change locally only.
 
 ### Merging
 

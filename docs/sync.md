@@ -1,6 +1,6 @@
 # Synchronization of the IMAP accounts
 
-The core keeps the database in line with the server of every IMAP account of `config.toml`: new mail, flags, deletions, moves made on the phone or the webmail. This is phase 4 of `specifications/plan-imap.md`: **server to database**. The other direction, the moves, flags and tags made in NiceMailer, goes through the spool ([spool.md](spool.md), phase 5).
+The core keeps the database in line with the server of every IMAP account of `accounts.toml`: new mail, flags, deletions, moves made on the phone or the webmail. This is phase 4 of `specifications/plan-imap.md`: **server to database**. The other direction, the moves, flags and tags made in NiceMailer, goes through the spool ([spool.md](spool.md), phase 5).
 
 The code is in `crates/nm-engine/src/sync/` (the connections and the passes) and `crates/nm-store/src/sync.rs` (what is written in the database, testable without a server).
 
@@ -39,7 +39,7 @@ The plan had a third connection for IDLE alone. The work connection leaves IDLE 
 
 1. **The folders.** `LIST`, with `LIST-STATUS` when the server has it, else one `STATUS` per folder to synchronize. The `folder` rows follow the server:
    - a new folder gets a row, **without role**: NiceMailer manages only the folders of its workflow (`dossiers.md`);
-   - except the first listing of an account, which has no role at all: each folder then gets the role NiceMailer proposes for it (INBOX, the special-use attribute, then the usual names; the rules of `nicemailer imap probe`). This applies to an account declared by hand in `config.toml`; an account created by `nicemailer account add` (`add_account`) has its roles confirmed by the user ([accounts.md](accounts.md)). Recorded in `audit_log` (`role`, reason `proposed`);
+   - except the first listing of an account, which has no role at all: each folder then gets the role NiceMailer proposes for it (INBOX, the special-use attribute, then the usual names; the rules of `nicemailer imap probe`). This applies to an account declared by hand in `accounts.toml`; an account created by `nicemailer account add` (`add_account`) has its roles confirmed by the user ([accounts.md](accounts.md)). Recorded in `audit_log` (`role`, reason `proposed`);
    - a folder with a role that the server no longer lists, while a new folder has its `UIDVALIDITY`, was renamed on the server: the row follows, with its mail and its role;
    - a folder with a role that is no longer listed, and not renamed, is kept with its mail, and not synchronized (`sync status` says "no longer on the server"). A folder deleted by mistake, or a server that lists badly for a moment, must not delete thousands of mails;
    - a folder without role no longer listed is deleted (it holds no mail).

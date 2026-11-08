@@ -55,7 +55,7 @@ Trois mécanismes y répondent :
 | `tag` | Nom, couleur, suppression | |
 | `contact_group` | Nom, couleur, position, suppression | |
 | `contact_group_member` | Ajout, retrait | |
-| `account` | Renommage de la clé (`config_key`) | `authserv_id` détecté automatiquement ; les paramètres du compte sont dans `config.toml` (`configuration.md`) |
+| `account` | Renommage de la clé (`config_key`) | `authserv_id` détecté automatiquement ; les paramètres du compte sont dans `accounts.toml` (`configuration.md`) |
 
 C'est le code Rust qui renseigne la date et la source, dans la même requête que la modification. Un trigger ne conviendrait pas : il ne connaît pas la source et se déclencherait aussi sur les colonnes techniques.
 
@@ -127,9 +127,9 @@ CREATE TABLE audit_log (
 | `folder` | `role` | Avant, après |
 | `tag` | `create`, `update`, `delete` | Avant, après |
 | `contact_group` | `create`, `update`, `delete`, `add_member`, `remove_member` | Avant, après ; pour les membres, l'adresse (`groupes.md`) |
-| `account` | `create`, `rename`, `disable`, `remove` | Clé du compte ; pour `disable`, compte absent de `config.toml` ; jamais de secret |
+| `account` | `create`, `rename`, `disable`, `remove` | Clé du compte ; pour `disable`, compte absent d'`accounts.toml` ; jamais de secret |
 | `config` | `update` | Modification par une commande du contrat : clé, avant, après (`configuration.md`, section 10) |
-| `config` | `reload` | Édition directe de `config.toml` constatée au rechargement, source `core` : clés changées |
+| `config` | `reload` | Édition directe de `config.toml` ou d'`accounts.toml` constatée au rechargement, source `core` : clés changées |
 | `account` | `initial_archive` | Critères et nombre de mails archivés à l'import initial (`import-initial.md`) |
 | `message` | `screen` | Dossier cible, règle appliquée (adresse, domaine, conversation connue, aucune), verdict d'authentification |
 | `message` | `move`, `set_flags`, `set_tags`, `delete`, `send` | Avant, après ; pour un rangement déclenché par une décision, l'adresse ou le domaine concerné ; pour un retour de Todo ou de Waiting dans l'Inbox, le mail reçu qui l'a déclenché ; pour un rangement dans Archive après une réponse, le mail envoyé |

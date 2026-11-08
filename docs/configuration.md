@@ -1,25 +1,53 @@
-# Settings and accounts: `config.toml`
+# Settings and accounts: `config.toml` and `accounts.toml`
 
-The settings of NiceMailer and the accounts are in a TOML text file that the core reads at start and watches while it runs. The specification is `specifications/configuration.md`; this page describes what is implemented (phase 1 of `specifications/plan-imap.md`).
+The settings of NiceMailer are in two TOML text files that the core reads at start and watches while it runs:
 
-## Where the file is
+- **`config.toml`**: every setting of the application (intervals, sizes, display);
+- **`accounts.toml`**: the accounts, their servers and identities.
 
-`~/.config/nicemailer/config.toml`, or the file named by `NICEMAILER_CONFIG`. The core also takes `--config <file>`.
+The specification is `specifications/configuration.md`; this page describes what is implemented (phase 1 of `specifications/plan-imap.md`).
+
+Two files rather than one: the general settings can be shared between Macs, or published in a dotfiles repository, without the addresses and servers of the accounts, which are personal and differ from one Mac to the next. Neither file holds a password.
+
+## Where the files are
+
+`~/.config/nicemailer/config.toml`, or the file named by `NICEMAILER_CONFIG` (the core also takes `--config <file>`). `accounts.toml` is always **next to it**, in the same directory, whatever the name of the first one: one variable moves both, so a test core can never read the real accounts with its own settings.
 
 ```sh
-nicemailer config path        # the file the core reads
-nicemailer config defaults    # a complete file, every key at its default, with comments
-nicemailer config check       # validate the file without applying it (status 1 if refused)
-nicemailer config check other.toml
+nicemailer config path                # the two files the core reads
+nicemailer config defaults            # a complete config.toml, every key at its default, with comments
+nicemailer config defaults --accounts # the model of accounts.toml, with an example account
+nicemailer config check               # validate both files without applying them (status 1 if refused)
+nicemailer config check other/config.toml   # ... and other/accounts.toml
 ```
 
-A missing file is an empty file: the core starts with every default and no account. The file needs only the keys that differ from the defaults.
+### Created at the first start
+
+When a file is missing at the start of the core, the core creates it:
+
+- `config.toml` lists **every setting, commented out, with its default value and its role** (the same text as `nicemailer config defaults`, each `key = value` behind a `# `). A user who changes nothing still sees what can be changed. To change a setting, remove the `# ` in front of it: the table headers (`[sync]`, `[ui]`…) are not commented, so the line is already in the right table.
+- `accounts.toml` holds no account, only a commented example of one.
+
+Commented out rather than written: a value written in the file is the user's choice and stays when a later NiceMailer changes its default, whereas a commented line changes nothing. The created files therefore give exactly the defaults.
+
+The rules of the creation (`config_write::create_missing`):
+
+- **An existing file is never touched**, even empty or invalid. A symbolic link counts as existing even when its target is missing (a dotfiles repository not cloned yet).
+- **Complete or not at all.** The file is written under a temporary name, then given its name with `hard_link`, which fails if the name is taken: a file created meanwhile is kept, and no reader sees half a file.
+- **Only at the start.** A file deleted while the core runs stays deleted until the next start: a missing `config.toml` means every default, a missing `accounts.toml` means no account.
+- A file that cannot be created (a read-only directory) is not fatal: the core logs it and runs with the defaults.
+
+A key absent from a file takes its default value.
 
 ## Accounts
 
-An account is a table `[accounts.<key>]`. The key (letters, digits, `-`, `_`, `.`; 64 at most) names it, and is what the database links its folders and mail to.
+An account is a table `[accounts.<key>]` of `accounts.toml`. The key (letters, digits, `-`, `_`, `.`; 64 at most) names it, and is what the database links its folders and mail to. The tables keep their `accounts.` prefix in the file of accounts: keys stay the same everywhere (errors, `ConfigChanged`, `audit_log`), and a table can be copied from an older single file as it is.
+
+An `[accounts…]` table in `config.toml` is an **error**, not a warning: the file is refused, and the message says to move the table to `accounts.toml`. Ignoring it would start the core without the user's accounts, silently.
 
 ```toml
+version = 1
+
 [accounts.perso]
 email = "me@example.com"          # required
 display_name = "My Name"
@@ -43,13 +71,15 @@ name = "My Name"
 poll_interval_secs = 60
 ```
 
+- **`email` and `identities`.** `email` is the main address: required, the login name unless `username` is set, and the default sender. `[[accounts.<key>.identities]]` (double brackets: an item of a list, repeated once per address) are the other addresses the mailbox sends from, aliases or other domains. They are never used to log in; with the main address they are the only senders a draft accepts, a reply goes from the one the mail was sent to, and they count as the user's own addresses (writing from one does not make it a correspondent). NiceMailer does not check that the SMTP server allows them: an address it refuses fails at sending.
+- **`config_sync`** (default `false`) will share the decisions of the mailbox (screening, folder roles, tags, groups) with the other Macs or people using it, through a folder `nicemailer-sync` on its server (`synchronisation-configuration.md`). Off by default because anyone who can open the mailbox can read that folder. Not implemented yet: the key is validated and has no effect.
 - **`security = "none"`** is refused unless the host is `localhost`, `127.0.0.1` or `::1`: elsewhere it would send the password in clear text.
 - **`ca_file`** adds an authority to the system's, for a self-hosted server or the test servers (`dev/dovecot/tls/ca.crt`). There is no way to turn certificate checks off. Certificates are checked by macOS, with its own rules (at most 825 days, "server authentication" usage): see [imap.md](imap.md), "Connecting".
-- **Per-account overrides.** `[accounts.<key>.sync]` and `[accounts.<key>.import]` start from the general `[sync]` and `[import]` and replace the keys they set. The other tables are global.
+- **Per-account overrides.** `[accounts.<key>.sync]` and `[accounts.<key>.import]` start from the general `[sync]` and `[import]` of `config.toml` and replace the keys they set. The other tables are global. A `[sync]` at the root of `accounts.toml` is an unknown key (a warning): it has no effect.
 
 ### What happens to the database
 
-The core keeps the `account` table in line with the keys of the file (`nm-store`, `accounts.rs`), each time it reads it:
+The core keeps the `account` table in line with the keys of `accounts.toml` (`nm-store`, `accounts.rs`), each time it reads it:
 
 | In the file | In the database |
 | --- | --- |
@@ -58,7 +88,7 @@ The core keeps the `account` table in line with the keys of the file (`nm-store`
 | A disabled key that comes back | The same account, same id, enabled again, with all its mail (`enable`) |
 | A key equal to the name of an archive account | Ignored, with a warning: rename one of the two |
 
-Disabling instead of deleting is the rule of the specification: going back to an older version of the file in Git, or taking the file of another Mac, must not erase gigabytes of cached mail. Renaming a key by hand therefore creates a new account and disables the old one; `nicemailer account rename` does it while keeping the data, and `nicemailer account add` writes a new account into the file without touching the rest ([accounts.md](accounts.md)).
+Disabling instead of deleting is the rule of the specification: going back to an older version of the file in Git, or taking the file of another Mac, must not erase gigabytes of cached mail. Renaming a key by hand therefore creates a new account and disables the old one; `nicemailer account rename` does it while keeping the data, and `nicemailer account add` writes a new account into `accounts.toml` without touching the rest ([accounts.md](accounts.md)). Account commands never write `config.toml`.
 
 Archive accounts, created by an mbox import ([import-mbox.md](import-mbox.md)), are never in the file and never disabled.
 
@@ -68,7 +98,7 @@ Disabled accounts are still listed, and their mail is still shown (the user's ch
 
 `account.position` orders the accounts: `list_accounts` lists them by position (then id), and so does `list_folders`, whose order the app's account picker (`@`) and sidebar follow. A new account, from the file or from an mbox import, goes after the others; accounts created by the same reading of the file come in the order of their keys. A disabled account keeps its place.
 
-The order is a state of the interface, not an intention about the servers, so it is in the database, not in `config.toml`. It is changed by `set_account_order {account_ids: [...]}`: the accounts given come first, in this order, the others after them in their current order, and positions become 1, 2, 3… An unknown or repeated id is refused. Each account that moved gets an `audit_log` line (`reorder`, before and after), an `AccountChanged`, and a `FolderChanged` for each of its folders, which makes the app reload its folder list.
+The order is a state of the interface, not an intention about the servers, so it is in the database, not in `accounts.toml`. It is changed by `set_account_order {account_ids: [...]}`: the accounts given come first, in this order, the others after them in their current order, and positions become 1, 2, 3… An unknown or repeated id is refused. Each account that moved gets an `audit_log` line (`reorder`, before and after), an `AccountChanged`, and a `FolderChanged` for each of its folders, which makes the app reload its folder list.
 
 ```sh
 nicemailer account order pro perso    # pro first, then perso, then the others
@@ -80,14 +110,14 @@ nicemailer account order pro perso    # pro first, then perso, then the others
 nicemailer accounts
   1  perso        imap     me@example.com                 ok
   2  old          archive  old@example.com                ok
-  3  pro          imap     -                              disabled (no longer in config.toml, mail kept)
+  3  pro          imap     -                              disabled (no longer in accounts.toml, mail kept)
 ```
 
 `list_accounts` returns, for each account in display order: `id`, `key`, `kind` (`imap` or `archive`), `email`, `display_name`, `enabled`, `position`, and `error`, the reason it cannot connect if one is known. `error: null` does not mean connected: there is no connection yet in this phase.
 
 ## Passwords
 
-Passwords are in the macOS Keychain, never in the file (`configuration.md`, section 2). A `password` key in `config.toml` is an error: the file is refused, and the message says how to save the password instead. It is refused rather than ignored, so that a password does not stay, in clear text, in a file the specification invites to keep in Git.
+Passwords are in the macOS Keychain, never in a file (`configuration.md`, section 2). A `password` key in `accounts.toml` is an error: the file is refused, and the message says how to save the password instead. It is refused rather than ignored, so that a password does not stay, in clear text, in a file the specification invites to keep in Git.
 
 ```sh
 nicemailer account password perso                 # asked without echo
@@ -173,7 +203,9 @@ nicemailer imap probe dovecot    # what the server offers (docs/imap.md)
 
 ## Changes while the core runs
 
-The core watches the directory of the file (FSEvents, crate `notify`), not the file itself, because editors save by renaming a new file over the old one. If the file is a symbolic link (a dotfiles repository), the directory of its target is watched too. The events of one save are grouped (150 ms of quiet), and a text equal to the last one read is ignored.
+The core watches the directory of the files (FSEvents, crate `notify`), not the files themselves, because editors save by renaming a new file over the old one. If a file is a symbolic link (a dotfiles repository), the directory of its target is watched too. The events of one save are grouped (150 ms of quiet), and texts equal to the last ones read are ignored.
+
+The two files are read **together** at each change of either: an account's overrides start from the `[sync]` of `config.toml`, and an invalid file is refused **with the other one**: applying `config.toml` while refusing `accounts.toml` would produce a state nobody wrote.
 
 On each change:
 
@@ -181,19 +213,21 @@ On each change:
 | --- | --- | --- |
 | Valid, settings changed | Applies it whole; `audit_log`: `config` / `reload` with the changed keys | `ConfigChanged {keys}`, then `AccountChanged` for each account created, disabled, enabled or whose settings changed, then `AccountError` for each new error |
 | Valid, same settings (a comment changed) | Nothing | None |
-| Invalid (syntax, type, value out of range, missing key, unreadable) | Refuses it **whole**: the previous settings stay | `ConfigError {line, key, message}`, once per problem |
+| Invalid (syntax, type, value out of range, missing key, unreadable) | Refuses both files **whole**: the previous settings stay | `ConfigError {file, line, key, message}`, once per problem |
 | Valid again after a refusal | Applies it | `ConfigChanged` (empty `keys` if the settings are those already applied) |
 
-`line` starts at 1; `key` is dotted (`accounts.perso.imap.port`); both are `null` when they do not apply (an unreadable file).
+`file` is `config.toml` or `accounts.toml`; `line` starts at 1, in that file; `key` is dotted (`accounts.perso.imap.port`); `line` and `key` are `null` when they do not apply (an unreadable file). Every problem, warnings included, names its file the same way, and prints as `accounts.toml, line 5: accounts.perso.imap.port: must be between 1 and 65535`.
 
-At start, the file is read before the core accepts clients. An invalid file does not stop it: it runs with the defaults and no account, and the refusal is in `config_status`. The first reading is not recorded in `audit_log`: there is nothing to compare it with, so edits made while the core was stopped are not traced (the user's Git history has them).
+At start, the files are created if missing, then read before the core accepts clients. An invalid file does not stop it: it runs with the defaults and no account, and the refusal is in `config_status`. The first reading is not recorded in `audit_log`: there is nothing to compare it with, so edits made while the core was stopped are not traced (the user's Git history has them).
 
 ### `config_status`
 
 ```json
 {"path": "/Users/me/.config/nicemailer/config.toml", "exists": true,
- "error": {"line": 12, "key": "sync.poll_interval_secs", "message": "must be between 30 and 86400"},
- "warnings": [{"line": 4, "key": "core.turbo", "message": "unknown key, ignored"}],
+ "accounts_path": "/Users/me/.config/nicemailer/accounts.toml", "accounts_exists": true,
+ "error": {"file": "config.toml", "line": 12, "key": "sync.poll_interval_secs", "message": "must be between 30 and 86400"},
+ "warnings": [{"file": "config.toml", "line": 4, "key": "core.turbo", "message": "unknown key, ignored"}],
+ "ui": {"title_bar": "hidden"},
  "as_of": {"epoch": "e_…", "seq": 7}}
 ```
 
@@ -201,11 +235,11 @@ What `ConfigError` announces is also available here, as the rule of `evenements.
 
 ### Unknown keys
 
-A key the core does not know is a warning, not an error, so a file written by a newer NiceMailer stays readable by an older one. The rest of the file applies. A newer format (`version = 2`) is refused.
+A key the core does not know is a warning, not an error, so a file written by a newer NiceMailer stays readable by an older one. The rest of the file applies. A newer format (`version = 2`, in either file: each has its own `version`) is refused.
 
 ## The settings
 
-`nicemailer config defaults` prints them all. Ranges are checked; a value outside is an error on its line.
+They are all in `config.toml`; `nicemailer config defaults` prints them all. Ranges are checked; a value outside is an error on its line.
 
 | Key | Default | Range | Used today |
 | --- | --- | --- | --- |
@@ -229,6 +263,7 @@ A key the core does not know is a warning, not an error, so a file written by a 
 | `ui.view_threshold_ms` | 2000 | 0 to 60000 | no |
 | `ui.title_bar` | `hidden` | `hidden`, `shown` | yes: the app applies it at once (`geek-ui.md`, "Window") |
 | `audit.retention_days` | 365 | 1 to 36500 | no |
+| `compose.undo_send_seconds` | 5 | 0 to 30 | yes: the delay before a mail leaves ([sending.md](sending.md)) |
 
 "At start": the value is read when the core starts; a change is accepted and announced, and applies at the next start. Every key is validated today, so a file valid now stays valid when the key starts being used.
 
@@ -240,22 +275,25 @@ Also part of this phase: the queries of the contract (`list_threads`, `get_threa
 
 | Where | What |
 | --- | --- |
-| `crates/nm-engine/src/config.rs` | The settings, the reader (lines of errors, unknown keys, overrides), `changed_keys`, `defaults_file` |
-| `crates/nm-engine/src/watch.rs` | The watch of the file |
+| `crates/nm-engine/src/config.rs` | The settings, the reader of both files (files and lines of errors, unknown keys, overrides), `changed_keys`, `defaults_file`, `config_template`, `accounts_template` |
+| `crates/nm-engine/src/config_write.rs` | `create_missing` (the files created at start), and the account commands' writes to `accounts.toml` |
+| `crates/nm-engine/src/watch.rs` | The watch of the files |
 | `crates/nm-engine/src/secrets.rs` | `Secrets`, `check` and `imap_password` (the binding to the server), `MemorySecrets` for tests |
 | `crates/nm-engine/src/keychain.rs` | The Keychain: items, `never_prompt` |
 | `scripts/sign-core.sh`, `scripts/dev-cert.sh` | The signature of `make core` (Apple Development, else the self-signed fallback) |
 | `crates/nm-engine/src/lib.rs` | `Engine`: reload, refusals, accounts and their errors, events |
 | `crates/nm-store/src/accounts.rs` | `sync_config_accounts`, `list_account_rows`, `set_account_order`, `record_config_reload` |
 | `crates/nm-store/src/pool.rs` | `ReadPool` |
-| `crates/nm-daemon/src/main.rs` | Reading at start, `reload_config`, `list_accounts`, `config_status`, `with_reader` |
+| `crates/nm-daemon/src/main.rs` | Creating and reading at start, `reload_config`, `list_accounts`, `config_status`, `with_reader` |
 
 ## Tests
 
-- `crates/nm-engine/tests/config.rs`: the example of the specification, a password in the file refused, defaults per security, lines of syntax, type and range errors, duplicate keys, unknown keys (general, account, server), required keys, account keys, `security = "none"`, newer format, overrides, identities in both forms, `~/` paths, passwords hidden, `changed_keys`, and the defaults file parsing back to the defaults with every key present.
-- `crates/nm-engine/tests/engine.rs`: no file; invalid file at start then later (previous settings kept, one `ConfigError`, cleared when fixed, even back to the same text); unreadable file; same text twice; unknown key; reload recorded in `audit_log`; account removed then restored with its data and id; archive account clash; a missing password, then saved; a new IMAP host or user refused until the password is saved again; the login checks the binding again; OAuth2.
+- `crates/nm-engine/tests/config.rs`: the example of the specification, a password in the file refused, accounts in `config.toml` refused, every problem naming its file, a valid `config.toml` refused with an invalid `accounts.toml`, each file's `version`, `accounts.toml` next to `config.toml`, the created `config.toml` giving the defaults with every key commented out (and valid with any line uncommented), the created `accounts.toml` with no account and a valid example, defaults per security, lines of syntax, type and range errors, duplicate keys, unknown keys (general, account, server), required keys, account keys, `security = "none"`, newer format, overrides, identities in both forms, `~/` paths, passwords hidden, `changed_keys`, and the defaults file parsing back to the defaults with every key present.
+- `crates/nm-engine/src/config_write.rs` (unit tests): missing files created from the templates in a missing directory, nothing created twice, an existing file (empty, invalid) never touched, only the missing one of the two created, a dangling symbolic link left alone, an account added after the comments of the created `accounts.toml`.
+- `crates/nm-engine/tests/engine.rs`: no file; invalid file at start then later (previous settings kept, one `ConfigError`, cleared when fixed, even back to the same text); unreadable file; same text twice; unknown key; reload recorded in `audit_log`; account removed then restored with its data and id; archive account clash; a missing password, then saved; a new IMAP host or user refused until the password is saved again; the login checks the binding again; OAuth2; an edit of either file applied with the right keys; accounts left in `config.toml` refused.
+- `crates/nm-daemon/tests/config_rpc.rs`: end to end, the files created at start (equal to the templates, `config_status` reporting both), an existing file kept as it is, problems with their file, reloads of either file.
 - `crates/nm-engine/tests/keychain.rs`, on a throwaway keychain file (never the login keychain, never a dialog): a password saved and read back with its server (UTF-8, spaces); saving again replaces it; the item as Keychain Access shows it; an item saved by another program gives its server but not its password; a locked keychain refuses without a dialog and still gives the server.
-- `crates/nm-engine/tests/watch.rs`: an edit, a save by rename (twice), a file created in a missing directory, the target of a symbolic link, other files ignored.
+- `crates/nm-engine/tests/watch.rs`: an edit, a save by rename (twice), a file created in a missing directory, the target of a symbolic link, other files ignored, both files watched.
 - `crates/nm-store/tests/accounts.rs`: a new account goes last, a reorder moves the accounts and the folder list (the picker's order), audit lines and announced changes, the same order twice changes nothing, unknown and repeated ids refused, a disabled account keeps its place.
 - `crates/nm-store/tests/pool.rs`: a read during a write held 2 s returns at once and sees the committed state; one snapshot per read; readers cannot write; a panic gives the connection back; six threads on three connections; wrong schema version.
 - `crates/nm-daemon/tests/config_rpc.rs`, end to end on the real binary: no file; accounts listed, then an invalid file, its fix, an account removed and restored, an archive account placed last then moved first with `set_account_order`, seen through events, `config_status`, `list_accounts`, `list_folders` and `list_history`; an invalid file at start; `set_password` refused to an agent and for an unknown account, then saved in the core's keychain, the account's error cleared, refused again when the file changes server, traced without the password.

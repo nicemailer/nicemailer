@@ -100,7 +100,7 @@ enum Command {
     },
     /// Undo a move or a decision, from the token it printed.
     Undo { token: String },
-    /// The settings file, config.toml.
+    /// The settings files, config.toml and accounts.toml.
     Config {
         #[command(subcommand)]
         action: ConfigAction,
@@ -191,7 +191,7 @@ fn when(t: Option<i64>) -> String {
 /// The report of `nicemailer sync status`, for a terminal.
 fn print_sync_status(st: &nm_api::SyncStatus) {
     if st.accounts.is_empty() {
-        println!("No IMAP account is synchronized (config.toml has none).");
+        println!("No IMAP account is synchronized (accounts.toml has none).");
     }
     for a in &st.accounts {
         print!("{} ({}{}): {}", a.key, a.mode.as_deref().unwrap_or("not connected yet"), if a.read_only { ", read-only" } else { "" }, a.state);
@@ -279,7 +279,7 @@ enum ImapAction {
 #[derive(Subcommand)]
 enum AccountAction {
     /// Save the IMAP password of an account in the Keychain, for the server
-    /// config.toml names now. Asked without echo; read from the standard
+    /// accounts.toml names now. Asked without echo; read from the standard
     /// input when it is not a terminal (`printf %s "$PW" | nicemailer …`).
     Password {
         /// Account key, as in [accounts.<key>].
@@ -292,7 +292,7 @@ enum AccountAction {
     /// Create an IMAP account: try the server, show its folders and the
     /// roles proposed, then create the missing folders, archive the old
     /// mail of the Inbox on the server if asked, accept the people you
-    /// wrote to, save the password and add the account to config.toml.
+    /// wrote to, save the password and add the account to accounts.toml.
     /// The password is asked without echo, or read from the standard input.
     Add {
         /// Key of the account, as in [accounts.<key>].
@@ -351,11 +351,11 @@ enum AccountAction {
         #[arg(long)]
         create_missing: bool,
     },
-    /// Rename the key of an account in config.toml, keeping its mail, its
+    /// Rename the key of an account in accounts.toml, keeping its mail, its
     /// history and its password.
     Rename { from: String, to: String },
     /// Delete an account: its mail in NiceMailer, its password, its table
-    /// of config.toml. The mail on the server is not touched.
+    /// of accounts.toml. The mail on the server is not touched.
     Remove {
         key: String,
         /// Do not ask to type the key again.
@@ -401,17 +401,24 @@ fn print_probe(r: &nm_api::ProbeReport) {
 /// `nicemailer config …`: works on the file directly, without the core.
 #[derive(Subcommand)]
 enum ConfigAction {
-    /// Check the file without applying it: errors (with their line) and
-    /// warnings. Exits with status 1 if the core would refuse it.
+    /// Check config.toml and the accounts.toml next to it without applying
+    /// them: errors (with their file and line) and warnings. Exits with
+    /// status 1 if the core would refuse them.
     Check {
-        /// File to check; by default the one the core reads.
+        /// config.toml to check (with the accounts.toml next to it); by
+        /// default the one the core reads.
         file: Option<PathBuf>,
     },
-    /// Print a complete file: every key at its default value, with what it
-    /// does in a comment.
-    Defaults,
-    /// Print the path of the file: $NICEMAILER_CONFIG, or
-    /// ~/.config/nicemailer/config.toml.
+    /// Print a complete config.toml: every key at its default value, with
+    /// what it does in a comment.
+    Defaults {
+        /// Print the model of accounts.toml instead: an example account,
+        /// commented out.
+        #[arg(long)]
+        accounts: bool,
+    },
+    /// Print the paths of the files: config.toml ($NICEMAILER_CONFIG, or
+    /// ~/.config/nicemailer/config.toml), then accounts.toml, next to it.
     Path,
 }
 
@@ -709,11 +716,14 @@ fn main() -> anyhow::Result<()> {
             let result = client.call("list_accounts", Value::Null)?;
             let items = result["items"].as_array().cloned().unwrap_or_default();
             if items.is_empty() {
-                println!("No account. Declare one in {} (see `nicemailer config defaults`).", nm_engine::config::default_path().display());
+                println!(
+                    "No account. Add one with `nicemailer account add`, or declare one in {}.",
+                    nm_engine::config::accounts_path(&nm_engine::config::default_path()).display()
+                );
             }
             for a in items {
                 let state = match (a["enabled"].as_bool(), a["error"].as_str()) {
-                    (Some(false), _) => "disabled (no longer in config.toml, mail kept)".to_string(),
+                    (Some(false), _) => "disabled (no longer in accounts.toml, mail kept)".to_string(),
                     (_, Some(e)) => format!("error: {e}"),
                     _ => "ok".to_string(),
                 };
@@ -812,31 +822,39 @@ fn read_password(prompt: &str) -> anyhow::Result<String> {
 fn run_config(action: ConfigAction) -> anyhow::Result<()> {
     use nm_engine::config;
     match action {
-        ConfigAction::Path => println!("{}", config::default_path().display()),
-        ConfigAction::Defaults => print!("{}", config::defaults_file()),
+        ConfigAction::Path => {
+            let path = config::default_path();
+            println!("{}", path.display());
+            println!("{}", config::accounts_path(&path).display());
+        }
+        ConfigAction::Defaults { accounts: false } => print!("{}", config::defaults_file()),
+        ConfigAction::Defaults { accounts: true } => print!("{}", config::accounts_template()),
         ConfigAction::Check { file } => {
             let path = file.unwrap_or_else(config::default_path);
-            let text = match config::read(&path) {
-                Ok(Some(t)) => t,
-                Ok(None) => {
-                    println!("{}: no file; the core starts with the defaults and no account", path.display());
-                    return Ok(());
-                }
-                Err(p) => bail!("{}: {p}", path.display()),
+            let dir = path.parent().filter(|d| !d.as_os_str().is_empty()).unwrap_or(Path::new("."));
+            // Each problem names its file; the directory says where both are.
+            let (settings, accounts) = match config::read_both(&path) {
+                Ok(texts) => texts,
+                Err(p) => bail!("{}: {p}", dir.display()),
             };
-            match config::parse(&text) {
+            for (text, name) in [(&settings, path.display().to_string()), (&accounts, config::accounts_path(&path).display().to_string())] {
+                if text.is_none() {
+                    println!("{name}: no file (the core creates it at its start)");
+                }
+            }
+            match config::parse(settings.as_deref().unwrap_or(""), accounts.as_deref().unwrap_or("")) {
                 Ok(parsed) => {
                     for w in &parsed.warnings {
-                        println!("{}: warning: {w}", path.display());
+                        println!("{}: warning: {w}", dir.display());
                     }
                     let n = parsed.config.accounts.len();
-                    println!("{}: valid, {n} account{}", path.display(), if n == 1 { "" } else { "s" });
+                    println!("{}: valid, {n} account{}", dir.display(), if n == 1 { "" } else { "s" });
                 }
                 // `std::process::exit` rather than an error: the message is
                 // the whole output, without anyhow's "Error:" prefix, and
                 // the status says "refused" to scripts.
                 Err(p) => {
-                    println!("{}: refused: {p}", path.display());
+                    println!("{}: refused: {p}", dir.display());
                     std::process::exit(1);
                 }
             }
