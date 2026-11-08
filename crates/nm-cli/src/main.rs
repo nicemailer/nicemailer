@@ -201,7 +201,14 @@ fn print_sync_status(st: &nm_api::SyncStatus) {
         println!("No IMAP account is synchronized (accounts.toml has none).");
     }
     for a in &st.accounts {
-        print!("{} ({}{}): {}", a.key, a.mode.as_deref().unwrap_or("not connected yet"), if a.read_only { ", read-only" } else { "" }, a.state);
+        // How the connection is kept, when the server forced a change:
+        // "IDLE renewed every 23 s", "polled every 10 min".
+        let hold = match a.hold.as_deref().and_then(|h| h.split_once(' ')) {
+            Some(("renew", n)) => format!(", IDLE renewed every {n} s"),
+            Some(("poll", n)) => format!(", polled every {} min", n.parse::<u64>().unwrap_or(0) / 60),
+            _ => String::new(),
+        };
+        print!("{} ({}{}{hold}): {}", a.key, a.mode.as_deref().unwrap_or("not connected yet"), if a.read_only { ", read-only" } else { "" }, a.state);
         if let Some(t) = a.next_retry {
             print!(", next attempt {}", when(Some(t)));
         }

@@ -22,11 +22,24 @@
 //!
 //! A server without IDLE is polled every minute instead.
 //!
+//! # Pace (`pace.rs`)
+//!
+//! - At most `pace::LOGINS_PER_HOUR` logins per account over any hour,
+//!   both connections together: past it, the next connection waits.
+//! - A server that cuts a connection left in IDLE: IDLE is renewed at half
+//!   the time it allowed, and the account keeps one connection only (the
+//!   bodies are fetched on it). If the server cuts it even so, the account
+//!   is polled: a connection per pass, at most every 10 minutes, closed
+//!   after it. Such a cut is not announced as an error: the mail goes on
+//!   arriving.
+//!
 //! # Failures
 //!
 //! - Connection lost, server unreachable, time limit: new attempt after a
-//!   delay doubled at each failure, 5 s to 5 min, reset by a pass that
-//!   succeeds.
+//!   delay doubled at each failure, 5 s to 30 min, reset only by a
+//!   connection that lived `pace::STABLE` (10 min). A pass that succeeds
+//!   is not enough: a server that cut every connection a minute after its
+//!   pass was otherwise logged into once a minute.
 //! - Login refused: no new attempt until the password is saved again or the
 //!   file changes (`Syncer::kick`, `apply`): a client that retries a wrong
 //!   password gets the account locked by the server. `AccountError` is
@@ -34,7 +47,7 @@
 //! - No password, or a password saved for another server: the same, without
 //!   trying to connect.
 
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant, SystemTime};
@@ -45,6 +58,7 @@ use nm_proto::imap::{IDLE_MAX, IdleEnd, ImapError, MailboxName, Namespace, Sessi
 use nm_store::insert::Inserter;
 
 use super::bodies::Bodies;
+use super::pace::{self, IdleHold, LoginBudget};
 use super::pass::{self, Ctx, Mode, PassError};
 use super::spool;
 use super::{AccountSpec, Control, SyncHost, Worker, unix_now};
@@ -53,7 +67,7 @@ use crate::secrets::{self, Refusal, Secrets};
 
 /// First delay after a failure; doubled at each one, up to [`BACKOFF_MAX`].
 const BACKOFF_MIN: Duration = Duration::from_secs(5);
-const BACKOFF_MAX: Duration = Duration::from_secs(300);
+const BACKOFF_MAX: Duration = Duration::from_secs(30 * 60);
 /// Polling of a server without IDLE.
 const NO_IDLE_POLL: Duration = Duration::from_secs(60);
 /// After IDLE reports a change, the pass waits this long: another client
@@ -81,6 +95,11 @@ struct Shared {
     /// The work thread has waited for the previous worker of the account:
     /// the body thread may start.
     ready: Arc<(std::sync::Mutex<bool>, std::sync::Condvar)>,
+    /// The logins of the last hour, both connections together.
+    logins: Mutex<LoginBudget>,
+    /// The server cuts connections left idle: the body connection closes
+    /// and the work connection fetches the bodies (`pace.rs`).
+    one_connection: AtomicBool,
 }
 
 /// Starts the worker of `spec`, once the threads of `wait` (the previous
@@ -101,6 +120,8 @@ pub(super) fn start(spec: AccountSpec, host: Arc<dyn SyncHost>, secrets: Arc<dyn
         control: control.clone(),
         status: status.clone(),
         ready: Arc::new((std::sync::Mutex::new(false), std::sync::Condvar::new())),
+        logins: Mutex::new(LoginBudget::default()),
+        one_connection: AtomicBool::new(false),
     });
     let mut threads = Vec::new();
     let work = shared.clone();
@@ -204,11 +225,40 @@ async fn connect(w: &Shared) -> Result<(Session, Option<Namespace>), NoSession> 
         return Err(NoSession::Stopped);
     }
     let cfg = &w.spec.config;
+    // The budget of logins (`pace.rs`): checked before anything reaches
+    // the server, and not shortened by `sync_now`.
+    loop {
+        let d = w.logins.lock().unwrap().wait(Instant::now());
+        if d.is_zero() {
+            break;
+        }
+        eprintln!(
+            "sync {}: {} logins in the last hour, the most allowed: next one in {} s",
+            w.spec.key,
+            pace::LOGINS_PER_HOUR,
+            d.as_secs()
+        );
+        {
+            let mut st = w.status.lock().unwrap();
+            st.state = "waiting".into();
+            st.next_retry = Some(unix_now() + d.as_secs() as i64);
+        }
+        tokio::select! {
+            _ = tokio::time::sleep(d) => {}
+            _ = w.control.work.notified() => {}
+        }
+        if w.control.stopped() {
+            return Err(NoSession::Stopped);
+        }
+    }
     let password = match secrets::imap_password(w.secrets.as_ref(), &w.spec.key, cfg) {
         Ok(p) => p,
         Err(r @ Refusal::Unavailable(_)) => return Err(NoSession::Retry(r.message(&w.spec.key, cfg))),
         Err(r) => return Err(NoSession::Blocked { state: "stopped", error: r.message(&w.spec.key, cfg) }),
     };
+    // Counted before connecting: an attempt that fails is seen by the
+    // server all the same.
+    w.logins.lock().unwrap().record(Instant::now());
     let mut s = Session::connect(&imap_spec(cfg), Timeouts::default()).await.map_err(|e| NoSession::Retry(e.to_string()))?;
     // A read-only account: the session itself refuses any writing command,
     // whatever the rest of NiceMailer asks.
@@ -312,7 +362,11 @@ enum Woken {
 }
 
 async fn work_loop(w: &Shared) {
-    let single = w.spec.config.sync.max_connections < 2;
+    let configured_single = w.spec.config.sync.max_connections < 2;
+    // How the connection is kept between passes, learnt from the server's
+    // cuts (`pace.rs`). For the life of the worker: a restart of the core
+    // learns it again, at the cost of one or two cuts.
+    let mut hold = IdleHold::Unknown;
     let poll = Duration::from_secs(w.spec.config.sync.poll_interval_secs);
     let mut inserter = Inserter::new(Source::Imap, None);
     let mut bodies = Bodies::new();
@@ -359,6 +413,9 @@ async fn work_loop(w: &Shared) {
         };
         let mode = Mode::of(&s);
         w.status.lock().unwrap().mode = Some(mode.as_str().into());
+        // Since when this connection works: a failure after `STABLE` starts
+        // the delays again from their minimum, one sooner doubles them.
+        let connected_at = Instant::now();
         bodies.new_session();
         // The first pass of a connection is full: what happened while
         // disconnected may be anywhere.
@@ -379,6 +436,9 @@ async fn work_loop(w: &Shared) {
                 Err(e) => {
                     let error = e.to_string();
                     announced.error(w, &error);
+                    if connected_at.elapsed() >= pace::STABLE {
+                        backoff.reset();
+                    }
                     retry_later(w, &mut backoff, error).await;
                     continue 'connect;
                 }
@@ -397,7 +457,9 @@ async fn work_loop(w: &Shared) {
             };
             match pass::run(&mut s, &mut ctx, full).await {
                 Ok(report) => {
-                    backoff.reset();
+                    // Not `backoff.reset()`: a pass that succeeds on a
+                    // connection the server cuts a minute later must not
+                    // bring the next login back to 5 s (`pace.rs`).
                     announced.clear(w);
                     if full {
                         last_full = Some(Instant::now());
@@ -443,6 +505,9 @@ async fn work_loop(w: &Shared) {
                         Err(e) => {
                             let error = e.to_string();
                             announced.error(w, &error);
+                            if connected_at.elapsed() >= pace::STABLE {
+                                backoff.reset();
+                            }
                             retry_later(w, &mut backoff, error).await;
                             continue 'connect;
                         }
@@ -452,10 +517,14 @@ async fn work_loop(w: &Shared) {
                 Err(e) => {
                     let error = e.to_string();
                     announced.error(w, &error);
+                    if connected_at.elapsed() >= pace::STABLE {
+                        backoff.reset();
+                    }
                     retry_later(w, &mut backoff, error).await;
                     continue 'connect;
                 }
             }
+            let single = configured_single || w.one_connection.load(Ordering::SeqCst);
             if single {
                 set(&w.status, "syncing", None);
                 let deadline = Some(Instant::now() + BODY_SLICE);
@@ -472,18 +541,60 @@ async fn work_loop(w: &Shared) {
                     Err(e) => {
                         let error = e.to_string();
                         announced.error(w, &error);
+                        if connected_at.elapsed() >= pace::STABLE {
+                            backoff.reset();
+                        }
                         retry_later(w, &mut backoff, error).await;
                         continue 'connect;
                     }
                 }
             }
+            if hold == IdleHold::Poll {
+                // No connection kept with this server: closed now, a new one
+                // for the next pass, within the budget of logins.
+                s.logout().await;
+                set(&w.status, "idle", None);
+                let d = poll.max(pace::POLL_FLOOR).saturating_sub(last_full.map_or(Duration::ZERO, |t| t.elapsed()));
+                pause(&w.control, d).await;
+                if w.control.stopped() {
+                    return;
+                }
+                continue 'connect;
+            }
             set(&w.status, "idle", None);
             let until_full = last_full.map_or(Duration::ZERO, |t| poll.saturating_sub(t.elapsed()));
-            let woken = match wait(&mut s, &w.control, until_full).await {
+            let woken = match wait(&mut s, &w.control, until_full, hold.renew_every()).await {
                 Ok(woken) => woken,
-                Err(e) => {
-                    let error = e.to_string();
+                Err(WaitError { error, idled }) => {
+                    // Cut by the server while in IDLE, after a pass that
+                    // worked: its limit on idle connections, not a failure
+                    // to announce. Learnt, and the connection is not
+                    // counted as a good one (`connected_at`), so the delay
+                    // still grows if it happens again.
+                    if let Some(idled) = idled.filter(|_| error.is_fatal() && !matches!(error, ImapError::Timeout(_))) {
+                        hold = hold.after_cut(idled);
+                        w.one_connection.store(true, Ordering::SeqCst);
+                        w.status.lock().unwrap().hold = Some(match hold {
+                            IdleHold::Renew(d) => format!("renew {}", d.as_secs()),
+                            _ => format!("poll {}", poll.max(pace::POLL_FLOOR).as_secs()),
+                        });
+                        w.control.bodies.notify_one();
+                        let next = match hold {
+                            IdleHold::Renew(d) => format!("IDLE renewed every {} s from now on", d.as_secs()),
+                            _ => format!(
+                                "the account is polled from now on, one connection per {} min at most",
+                                poll.max(pace::POLL_FLOOR).as_secs() / 60
+                            ),
+                        };
+                        eprintln!("sync {}: the server closed the connection after {} s in IDLE ({error}); {next}", w.spec.key, idled.as_secs());
+                        retry_later_quietly(w, &mut backoff).await;
+                        continue 'connect;
+                    }
+                    let error = error.to_string();
                     announced.error(w, &error);
+                    if connected_at.elapsed() >= pace::STABLE {
+                        backoff.reset();
+                    }
                     retry_later(w, &mut backoff, error).await;
                     continue 'connect;
                 }
@@ -533,9 +644,37 @@ async fn retry_later(w: &Shared, backoff: &mut Backoff, error: String) {
     w.control.take_kick();
 }
 
+/// Waits `backoff`'s next delay after a cut the worker understands (the
+/// server's limit on IDLE): the state says "waiting", without an error.
+async fn retry_later_quietly(w: &Shared, backoff: &mut Backoff) {
+    let d = backoff.next();
+    {
+        let mut st = w.status.lock().unwrap();
+        st.state = "waiting".into();
+        st.next_retry = Some(unix_now() + d.as_secs() as i64);
+    }
+    pause(&w.control, d).await;
+    w.control.take_kick();
+}
+
+/// A wait that failed: the error, and how long the current IDLE command
+/// had run when it came (`None`: not in IDLE).
+struct WaitError {
+    error: ImapError,
+    idled: Option<Duration>,
+}
+
+impl From<ImapError> for WaitError {
+    fn from(error: ImapError) -> WaitError {
+        WaitError { error, idled: None }
+    }
+}
+
 /// The wait between two passes: IDLE on the Inbox, or a plain timer for a
-/// server without IDLE.
-async fn wait(s: &mut Session, control: &Control, until_full: Duration) -> Result<Woken, ImapError> {
+/// server without IDLE. `renew`: the longest IDLE command this server
+/// keeps (`IdleHold::Renew`); IDLE is ended and started again at that
+/// interval until the wait is over.
+async fn wait(s: &mut Session, control: &Control, until_full: Duration, renew: Option<Duration>) -> Result<Woken, WaitError> {
     if !s.capabilities().has("IDLE") {
         let d = until_full.min(NO_IDLE_POLL).max(Duration::from_secs(1));
         return Ok(tokio::select! {
@@ -547,8 +686,9 @@ async fn wait(s: &mut Session, control: &Control, until_full: Duration) -> Resul
     // IDLE watches the selected mailbox: the Inbox, read-only.
     s.examine(&MailboxName::inbox(), None).await?;
     let max = until_full.clamp(Duration::from_secs(1), IDLE_MAX);
+    let deadline = Instant::now() + max;
     let end = tokio::select! {
-        r = s.idle(max, control.work.notified()) => Some(r?),
+        r = idle_until(s, control, deadline, renew) => Some(r?),
         _ = slept() => None,
     };
     s.take_unsolicited();
@@ -560,12 +700,34 @@ async fn wait(s: &mut Session, control: &Control, until_full: Duration) -> Resul
     })
 }
 
+/// IDLE until `deadline`, each command at most `renew` long: one ended by
+/// its time limit before the deadline is started again at once (`DONE`,
+/// then `IDLE`), which the server sees as activity.
+async fn idle_until(s: &mut Session, control: &Control, deadline: Instant, renew: Option<Duration>) -> Result<IdleEnd, WaitError> {
+    loop {
+        let left = deadline.saturating_duration_since(Instant::now()).max(Duration::from_secs(1));
+        let slice = renew.map_or(left, |r| r.min(left));
+        let started = Instant::now();
+        match s.idle(slice, control.work.notified()).await {
+            Ok(IdleEnd::Timeout) if Instant::now() + Duration::from_secs(1) < deadline => continue,
+            Ok(end) => return Ok(end),
+            Err(error) => return Err(WaitError { error, idled: Some(started.elapsed()) }),
+        }
+    }
+}
+
 /// The body connection (`sync.max_connections = 2`).
 async fn body_loop(w: &Shared) {
     let mut bodies = Bodies::new();
     let mut backoff = Backoff(BACKOFF_MIN);
     let mut refused = 0u64;
     'connect: loop {
+        // The server cuts idle connections: the work connection fetches
+        // the bodies from now on, this one stays closed (`pace.rs`).
+        if w.one_connection.load(Ordering::SeqCst) {
+            parked_bodies(w).await;
+            return;
+        }
         // Not before the work connection has logged in and made its first
         // pass: there is no body to fetch before, and a wrong password is
         // tried once, not twice.
@@ -607,6 +769,10 @@ async fn body_loop(w: &Shared) {
                         s.logout().await;
                         return;
                     }
+                    if w.one_connection.load(Ordering::SeqCst) {
+                        s.logout().await;
+                        continue 'connect;
+                    }
                     if !alive {
                         continue 'connect;
                     }
@@ -618,6 +784,17 @@ async fn body_loop(w: &Shared) {
                     continue 'connect;
                 }
             }
+        }
+    }
+}
+
+/// The body thread with nothing to do until the worker stops: the work
+/// connection fetches the bodies (`Shared::one_connection`).
+async fn parked_bodies(w: &Shared) {
+    while !w.control.stopped() {
+        tokio::select! {
+            _ = w.control.bodies.notified() => {}
+            _ = tokio::time::sleep(Duration::from_secs(5)) => {}
         }
     }
 }

@@ -90,6 +90,20 @@ After a pass, the work connection waits with IDLE on the Inbox, which ends:
 
 A server without IDLE is polled every minute. The first pass of each connection is full.
 
+## Pace of the connections
+
+A server sees every login, and one that sees too many locks the account. Orange did on 8 November 2026: its IMAP server closes a connection left in IDLE after 45 to 60 seconds (RFC 2177 lets a client wait 29 minutes), without a TLS goodbye (`peer closed connection without sending TLS close_notify`). Each cut was followed by a new connection 5 s later, because the pass made on it succeeded and reset the delay: about a login a minute on the work connection, as many on the body connection, for twenty minutes, and the account was locked, webmail and phone included. Three rules now make that impossible (`crates/nm-engine/src/sync/pace.rs`):
+
+| Rule | What it does |
+| --- | --- |
+| A budget of logins | At most 10 per account over any hour, both connections together, attempts that fail included. Past it, the next connection waits until the oldest login of the hour leaves it, whatever happens (`sync_now` does not shorten it). The core logs `N logins in the last hour, the most allowed: next one in … s` |
+| A delay a short connection does not reset | After a failure, the delay doubles from 5 s up to 30 min, and goes back to 5 s only after a connection that lived 10 minutes. A pass that succeeds is not enough |
+| IDLE adapted to the server | A connection cut while in IDLE teaches how long the server keeps one: IDLE is then ended and started again (`DONE`, `IDLE`) at half that time, and the account keeps one connection only (the body connection closes; bodies are fetched on the work connection, 30 s at a time). If the server cuts it even so, or cut within 10 s, the account is **polled**: a connection per pass, at most every 10 minutes (`sync.poll_interval_secs` if longer), closed after its pass |
+
+Such a cut is not an error: the mail goes on arriving, so it is not announced (`AccountError`) and the state is `waiting`, without error, until the next connection. The core logs it: `the server closed the connection after 47 s in IDLE (…); IDLE renewed every 23 s from now on`, or `the account is polled from now on, one connection per 10 min at most`. `nicemailer sync status` shows the mode next to the account (`IDLE renewed every 23 s`, `polled every 10 min`; `hold` in `sync_status`: `renew N`, `poll N`).
+
+What is learnt lasts as long as the worker: a restart of the core, or a change of the account in `accounts.toml`, learns it again, at the cost of one or two cuts. Whether Orange counts a renewed IDLE as activity is not known yet: if it does not, the account ends up polled.
+
 ## Bodies
 
 On the body connection: first the bodies the user is waiting for (a thread opened by `get_thread` whose mails have no body yet), then the Inbox, the most recent first, then the other folders. Each body is streamed into the raw store and completed in the database in batches ([ingestion.md](ingestion.md)).
@@ -100,7 +114,8 @@ A body whose size differs from the `RFC822.SIZE` the server announced is refused
 
 | Failure | What happens |
 | --- | --- |
-| Connection lost, server unreachable, time limit | New attempt after 5 s, doubled at each failure up to 5 min, with a little randomness; reset by a pass that succeeds. The body connection waits while the work connection does |
+| Connection lost, server unreachable, time limit | New attempt after 5 s, doubled at each failure up to 30 min, with a little randomness; back to 5 s only after a connection that lived 10 minutes, and never more than 10 logins an hour ("Pace of the connections"). The body connection waits while the work connection does |
+| Connection cut by the server while in IDLE | Not an error: learnt, IDLE renewed sooner or the account polled ("Pace of the connections") |
 | Login refused | `AccountError`, state `auth_failed`, and no new attempt until the password is saved again (`nicemailer account password`) or the file changes: a client that keeps sending a wrong password may get the account locked by the server |
 | No password, or one saved for another server | State `stopped`; the error is the account's (`list_accounts`), and the worker starts once the password is saved |
 | A folder cannot be opened | The pass goes on with the others; the problem is printed on the core's standard error |
@@ -134,6 +149,8 @@ Same on both sides (0.1 s)
 | --- | --- |
 | `crates/nm-store/tests/sync.rs` | folder listing (roles of the first listing only, a rename found by `UIDVALIDITY`, a role folder gone kept), flags and keywords, a move made elsewhere kept, a copy or an uncertain move inserted, flags and deletions in one transaction applied twice harmlessly, `uidnext` per batch, a UID already known not inserted twice, purge, nothing of it journaled (`tracabilite.md`), the order of bodies |
 | `crates/nm-daemon/tests/sync_rpc.rs` (`make imap-test`) | the real core against Dovecot, a second connection playing the phone. On both servers: first synchronization, new mail seen by IDLE and announced, flags, a move (with `MOVE`, and copy-delete-expunge on the minimal server) keeping the message's id, a deletion, changes made in NiceMailer reaching the server ([spool.md](spool.md)); `sync_verify` clean after each step. Also: one connection doing everything; a folder replaced (new `UIDVALIDITY`); a refused login waiting for a new password; network cuts at several moments (login, listing, bodies) without loss, duplicate or partial file |
+| `crates/nm-engine/src/sync/pace.rs` (unit tests) | the budget of logins (ten an hour, then the wait; a login a minute for an hour impossible); what a cut in IDLE teaches (renewal at half, then polling; polling at once for a cut within 10 s) |
+| `crates/nm-daemon/tests/pace_rpc.rs` (`make imap-test`) | the real core against Dovecot through a proxy that cuts connections as Orange did, without a TLS goodbye, counting them: cut after 12 s of silence, IDLE renewed every 6 s, no new connection for 30 s, a new mail still seen by IDLE and its body fetched on the same connection, no error shown; cut after 20 s whatever happens, polling chosen after the second cut, no connection before the next poll |
 | `apps/NiceMailer/Tests/NiceMailerTests/EventOrderTests.swift` | a transient event neither reloads the app nor moves its position in the sequence |
 
 ## Volume

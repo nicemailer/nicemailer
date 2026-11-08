@@ -85,6 +85,7 @@ imap-test:
 	cargo test -p nm-daemon --test sync_rpc -- --ignored
 	cargo test -p nm-daemon --test setup_rpc -- --ignored
 	cargo test -p nm-daemon --test send_rpc -- --ignored
+	cargo test -p nm-daemon --test pace_rpc -- --ignored
 
 # The volume test of plan-imap.md, phase 8: a generated mailbox of
 # NM_VOLUME mails (100,000 by default) synchronized from nothing; prints

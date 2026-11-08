@@ -1600,6 +1600,13 @@ pub struct AccountSync {
     /// How the server is followed: `qresync`, `condstore` or `none` (full
     /// comparisons), once connected.
     pub mode: Option<String>,
+    /// How the connection is kept between passes, once the server cut one
+    /// left idle (`docs/sync.md`, "Pace of the connections"): `renew N`
+    /// (IDLE renewed every N seconds, one connection only) or `poll N`
+    /// (a connection per pass, every N seconds at most). `None`: IDLE as
+    /// usual.
+    #[serde(default)]
+    pub hold: Option<String>,
     /// End of the last complete pass, Unix seconds.
     pub last_pass: Option<i64>,
     /// Passes completed since the core started: a client (or a test) that

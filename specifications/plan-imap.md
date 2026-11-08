@@ -153,6 +153,7 @@ Réalisé (novembre 2026), détail dans `docs/ingestion.md` :
 - **Rythme** : IDLE sur l'Inbox ; autres dossiers toutes les `sync.poll_interval_secs` (300 s) ; `sync_now` pour forcer.
 - **Téléchargement des corps** dans l'ordre de la section 2.
 - **Pannes** : recul exponentiel par compte, plafonné ; reconnexion après une veille du Mac (repérée par un saut de l'horloge) ; `AccountError` en cas d'erreur d'authentification, sans nouvelle tentative avant un changement de configuration (pour ne pas faire verrouiller le compte par le serveur).
+- **Rythme des connexions** (ajouté le 8 novembre 2026, après le verrouillage d'un compte Orange) : au plus 10 connexions par compte et par heure glissante, les deux connexions comprises ; le recul ne revient à son minimum qu'après une connexion qui a tenu 10 minutes, pas après une passe réussie ; une connexion coupée par le serveur pendant IDLE n'est pas une erreur : IDLE est renouvelé à la moitié du temps constaté, sur une seule connexion, et si le serveur coupe encore, le compte est interrogé (une connexion par passe, toutes les 10 minutes au plus). Détail dans `docs/sync.md`, « Pace of the connections ».
 - `SyncProgress`, `MessageArrived`, `FolderChanged`, `ThreadChanged`.
 - Tant que la phase 5 n'est pas livrée, les commandes qui modifient des mails sont refusées sur les comptes IMAP (sinon la synchronisation suivante les déferait).
 - `nicemailer sync status | now | verify`.
