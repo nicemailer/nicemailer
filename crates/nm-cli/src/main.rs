@@ -105,6 +105,13 @@ enum Command {
         #[command(subcommand)]
         action: ConfigAction,
     },
+    /// A mailbox folder (a data directory): what its database is, and
+    /// upgrading it to this version. Works on the folder directly, without
+    /// the core.
+    Mailbox {
+        #[command(subcommand)]
+        action: MailboxAction,
+    },
     /// List the accounts and their state, as the core sees them, in their
     /// display order.
     Accounts,
@@ -398,6 +405,27 @@ fn print_probe(r: &nm_api::ProbeReport) {
     }
 }
 
+/// `nicemailer mailbox …` (`docs/migrations.md`, "Choosing a mailbox").
+#[derive(Subcommand)]
+enum MailboxAction {
+    /// Say what the database of a mailbox folder is: new, current, of an
+    /// earlier version (upgradable), or one this version cannot open.
+    /// Changes nothing.
+    Check {
+        /// The mailbox folder (the one holding nicemailer.db).
+        dir: PathBuf,
+        /// Print JSON (what the app reads).
+        #[arg(long)]
+        json: bool,
+    },
+    /// Upgrade the database of a mailbox folder to this version. Cannot be
+    /// undone: older versions of NiceMailer will refuse it. No core may be
+    /// using the folder.
+    Upgrade {
+        dir: PathBuf,
+    },
+}
+
 /// `nicemailer config …`: works on the file directly, without the core.
 #[derive(Subcommand)]
 enum ConfigAction {
@@ -513,6 +541,7 @@ fn main() -> anyhow::Result<()> {
             Ok(())
         }
         Command::Config { action } => run_config(action),
+        Command::Mailbox { action } => run_mailbox(action),
         Command::Account { action: AccountAction::Password { key, smtp } } => {
             // Connect first: no point asking for a password the core
             // cannot receive.
@@ -861,6 +890,93 @@ fn run_config(action: ConfigAction) -> anyhow::Result<()> {
         }
     }
     Ok(())
+}
+
+/// What `mailbox check --json` prints: the folder, its database's state,
+/// and whether a core holds the folder.
+fn mailbox_report(dir: &Path) -> Value {
+    let state = nm_store::inspect::inspect(&dir.join(paths::DATABASE));
+    let mut report = serde_json::to_value(&state).expect("plain enum");
+    report["path"] = json!(dir.display().to_string());
+    report["in_use"] = json!(in_use(dir));
+    report
+}
+
+/// Whether a core holds the single-instance lock of `dir`. The lock file is
+/// not created if missing: checking changes nothing.
+fn in_use(dir: &Path) -> bool {
+    match fs::OpenOptions::new().write(true).open(dir.join("lock")) {
+        // `try_lock` fails if another process holds it; ours is released
+        // when `f` is dropped, at the end of this function.
+        Ok(f) => f.try_lock().is_err(),
+        Err(_) => false,
+    }
+}
+
+/// `nicemailer mailbox check | upgrade`.
+fn run_mailbox(action: MailboxAction) -> anyhow::Result<()> {
+    use nm_store::inspect::DatabaseState as S;
+    match action {
+        MailboxAction::Check { dir, json } => {
+            let report = mailbox_report(&dir);
+            if json {
+                println!("{report}");
+                return Ok(());
+            }
+            let state = nm_store::inspect::inspect(&dir.join(paths::DATABASE));
+            let what = match state {
+                S::New => "no database yet: a new mailbox".to_string(),
+                S::Current => format!("current (schema version {})", nm_store::SCHEMA_VERSION),
+                S::Upgradable { from, to } => {
+                    format!("schema version {from}, upgradable to {to}: nicemailer mailbox upgrade {}", dir.display())
+                }
+                S::Outdated { missing } => format!("an early development database ({missing} missing): it cannot be upgraded"),
+                S::TooNew { found, expected } => {
+                    format!("schema version {found}, written by a newer NiceMailer (this one reads {expected})")
+                }
+                S::Unreadable { message } => format!("unreadable: {message}"),
+            };
+            let busy = if report["in_use"] == true { " (in use by a core)" } else { "" };
+            println!("{}: {what}{busy}", dir.display());
+            Ok(())
+        }
+        MailboxAction::Upgrade { dir } => {
+            let db = dir.join(paths::DATABASE);
+            match nm_store::inspect::inspect(&db) {
+                S::Upgradable { .. } => {}
+                S::Current => {
+                    println!("{}: already current, nothing to do", dir.display());
+                    return Ok(());
+                }
+                S::New => bail!("{}: no database to upgrade", dir.display()),
+                S::Outdated { missing } => {
+                    bail!("{}: an early development database ({missing} missing): it cannot be upgraded", dir.display())
+                }
+                S::TooNew { found, expected } => {
+                    bail!("{}: schema version {found} is newer than this NiceMailer's ({expected})", dir.display())
+                }
+                S::Unreadable { message } => bail!("{}: {message}", dir.display()),
+            }
+            // The core is the only owner of a database it uses: take its lock
+            // for the time of the upgrade, as `seed` does.
+            let lock = File::create(dir.join("lock"))?;
+            if lock.try_lock().is_err() {
+                bail!("a core is using {}: choose this mailbox in the app, or stop that core first", dir.display());
+            }
+            let start = Instant::now();
+            // `Store::open` migrates, one version per transaction
+            // (`migrations.rs`): interrupted, the database stays at the
+            // last version reached, consistent, and upgrading again goes on.
+            drop(Store::open(&db).with_context(|| format!("upgrading {}", db.display()))?);
+            println!(
+                "{}: upgraded to schema version {} in {:.1} s",
+                dir.display(),
+                nm_store::SCHEMA_VERSION,
+                start.elapsed().as_secs_f64()
+            );
+            Ok(())
+        }
+    }
 }
 
 /// `nicemailer seed`: fills the database with fake mail, directly through

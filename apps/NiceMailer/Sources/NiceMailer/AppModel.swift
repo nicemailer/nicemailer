@@ -86,6 +86,19 @@ final class AppModel {
     var coreStoppedByUser = false
     /// The mailbox in use (`DataDirectory`), for the window's title.
     var mailboxName: String { DataDirectory.displayName(DataDirectory.current) }
+    /// Checks and upgrades a mailbox before the app switches to it
+    /// (`MailboxCheck.swift`): the CLI the app carries; nil without one
+    /// (`swift run`), and then the folder is used unchecked, as before.
+    @ObservationIgnored var mailboxTool: (any MailboxTool)? = CLIMailboxTool.find()
+    /// A mailbox of an earlier data format, waiting for the user's answer:
+    /// upgrade it and use it, or keep the current mailbox.
+    var pendingUpgrade: PendingUpgrade?
+    /// The mailbox being upgraded, while the CLI works.
+    var upgradingMailbox: URL?
+    /// Replaces the switch itself (recording the choice, restarting the
+    /// core) in the unit tests and the UI scenarios, which must never
+    /// change the user's mailbox; it receives the folder chosen.
+    @ObservationIgnored var switchMailboxOverride: ((URL) async -> Void)?
 
     /// The reply being written (`AppModel+Compose.swift`); nil when the
     /// reader shows the mail.
@@ -452,9 +465,18 @@ final class AppModel {
             await reloadAll()
             openPendingDeepLink()
         } catch {
-            // Inside `catch`, the error is implicitly named `error`.
-            status = .failed(error.localizedDescription)
+            // Inside `catch`, the error is implicitly named `error`. A core
+            // that stopped on an error said why in its folder: that reason
+            // is more useful than "unreachable".
+            status = .failed(Self.noCoreMessage(error.localizedDescription,
+                                                report: StartupErrorReport.read(in: DataDirectory.current)))
         }
+    }
+
+    /// What the screen without a core says: the reason the core left in its
+    /// folder (`StartupErrorReport`), else the connection's error.
+    nonisolated static func noCoreMessage(_ connectionError: String, report: StartupErrorReport?) -> String {
+        report?.userMessage ?? connectionError
     }
 
     /// Reads the settings of `[ui]` the app applies itself. A core that
@@ -495,10 +517,86 @@ final class AppModel {
         }
     }
 
+    /// "Change Mailbox…": checks the folder first (`MailboxReport.decision`).
+    /// A database the core would refuse is refused here, and the current
+    /// mailbox stays; one of an earlier data format waits for the user's
+    /// answer (`pendingUpgrade`); otherwise the app switches to it.
+    func changeMailbox(to url: URL) async {
+        // A new choice: what was said about the previous one no longer
+        // applies (a refusal left in the status bar beside a new question).
+        lastError = nil
+        if DataDirectory.environment != nil, switchMailboxOverride == nil {
+            lastError = L("NICEMAILER_DATA_DIR is set: it decides the mailbox; launch the app without it to choose one")
+            return
+        }
+        guard let tool = mailboxTool else {
+            await switchMailbox(to: url)
+            return
+        }
+        let report: MailboxReport
+        do {
+            report = try await tool.check(url)
+        } catch {
+            lastError = L("This folder cannot be checked (%@). The current mailbox is kept.", error.localizedDescription)
+            return
+        }
+        switch report.decision {
+        case .use:
+            await switchMailbox(to: url)
+        case .askUpgrade(let from, let to):
+            pendingUpgrade = PendingUpgrade(url: url, from: from, to: to)
+        case .refuse(let message):
+            lastError = message
+        }
+    }
+
+    /// The answer "upgrade": the CLI migrates the database, then the app
+    /// switches to it. The current mailbox stays in use meanwhile, and if
+    /// the upgrade fails. The upgrade is done before the switch rather than
+    /// by the core at its start: the app waits a few seconds only for a
+    /// core to answer, and a large mailbox takes longer.
+    ///
+    /// The question is answered at once, before the returned task runs: a
+    /// dialog that closes right after its button (SwiftUI's) then finds
+    /// nothing left to cancel. The task is returned for the tests.
+    @discardableResult
+    func confirmMailboxUpgrade() -> Task<Void, Never>? {
+        guard let p = pendingUpgrade, let tool = mailboxTool else { return nil }
+        pendingUpgrade = nil
+        upgradingMailbox = p.url
+        return Task { await upgrade(p, with: tool) }
+    }
+
+    private func upgrade(_ p: PendingUpgrade, with tool: any MailboxTool) async {
+        flash = L("Upgrading %@ to the data format %lld…", DataDirectory.displayName(p.url), p.to)
+        do {
+            try await tool.upgrade(p.url)
+        } catch {
+            upgradingMailbox = nil
+            flash = nil
+            lastError = L("The mailbox could not be upgraded (%@). The current mailbox is kept.", error.localizedDescription)
+            return
+        }
+        upgradingMailbox = nil
+        flash = L("%@ upgraded", DataDirectory.displayName(p.url))
+        await switchMailbox(to: p.url)
+    }
+
+    /// The answer "cancel": nothing changes.
+    func cancelMailboxUpgrade() {
+        guard let p = pendingUpgrade else { return }
+        pendingUpgrade = nil
+        flash = L("%@ not upgraded: the current mailbox is kept", DataDirectory.displayName(p.url))
+    }
+
     /// Uses the mailbox in `url` from now on (`DataDirectory`): the choice
     /// is recorded, the core started again on it, and everything reloaded.
     /// Without the agent, the core started by hand must be restarted.
-    func changeMailbox(to url: URL) async {
+    private func switchMailbox(to url: URL) async {
+        if let switchMailboxOverride {
+            await switchMailboxOverride(url)
+            return
+        }
         if DataDirectory.environment != nil {
             lastError = L("NICEMAILER_DATA_DIR is set: it decides the mailbox; launch the app without it to choose one")
             return

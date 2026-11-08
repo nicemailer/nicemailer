@@ -64,6 +64,10 @@ enum UIScript {
     static var pickerWidth: CGFloat = 0
     /// Times ⌃⌘F asked for full screen (never applied in UI script mode).
     static var fullScreenToggles = 0
+    /// The mailbox folders "Change Mailbox…" switched to, in order
+    /// (`mailbox`): the switch itself is never made in UI script mode, which
+    /// must not change the user's mailbox nor restart a core.
+    static var mailboxesSwitched: [String] = []
     /// Lines of the reply's text as drawn (`ComposerTextView`).
     static var composeLines = 0
     /// Measures again where the text reader's links and tiles are, in the
@@ -109,6 +113,9 @@ enum UIScript {
         controller.pasteboard = NSPasteboard(name: NSPasteboard.Name("NiceMailer-UIScript-\(ProcessInfo.processInfo.processIdentifier)"))
         // Full screen would take the user's screen: only counted.
         controller.toggleFullScreen = { fullScreenToggles += 1 }
+        // Switching the mailbox would write the user's choice file and
+        // restart a core: only recorded, by folder name.
+        model.switchMailboxOverride = { url in mailboxesSwitched.append(url.lastPathComponent) }
         Task { @MainActor in
             let runner = Runner(model: model, controller: controller)
             let failures = await runner.run(path: path)
@@ -228,6 +235,12 @@ private final class Runner {
                 "denied": .denied, "unavailable": .unavailable, "authorized": .authorized, "undetermined": .notDetermined,
             ]
             if let book = model.addressBook as? FixtureAddressBook, let value = access[arg] { book.setAccess(value) }
+        case "mailbox":
+            // "Change Mailbox…" with this folder, as the panel would give
+            // it: a path relative to the scenario's data directory
+            // (`scripts/ui-test.sh` makes `mailboxes/old`, `early`…).
+            let base = DataDirectory.environment.map { URL(fileURLWithPath: $0) } ?? FileManager.default.temporaryDirectory
+            await model.changeMailbox(to: base.appendingPathComponent(arg))
         case "clipboard":
             controller.pasteboard.clearContents()
             controller.pasteboard.setString(arg.replacingOccurrences(of: "\\n", with: "\n"), forType: .string)
@@ -542,6 +555,9 @@ private final class Runner {
             } ?? "",
             "reader_attachments": "\(UIScript.readerAttachments)",
             "opened_file": UIScript.openedFile,
+            "mailbox_switched": UIScript.mailboxesSwitched.joined(separator: ","),
+            "mailbox_question": m.pendingUpgrade.map { "\($0.url.lastPathComponent) \($0.from)->\($0.to)" } ?? "",
+            "mailbox_upgrading": m.upgradingMailbox?.lastPathComponent ?? "",
             "sticky": m.stickyThreadId.map(String.init) ?? "",
             "reader_folder": m.selectedThreadFolderLabel ?? "",
             "list_rows": "\(c.listVisibleRows)",

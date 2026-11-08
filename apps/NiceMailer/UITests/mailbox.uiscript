@@ -1,0 +1,46 @@
+# "Change Mailbox…" checks the folder before switching to it
+# (`docs/app-bundle.md`, "Choosing the mailbox"). The folders are made by
+# scripts/ui-test.sh in the scenario's data directory; the switch itself is
+# only recorded (`mailbox_switched`), never made.
+expect mailbox_switched =
+# An early development database: refused, the current mailbox kept.
+mailbox mailboxes/early
+expect error ~ early development version
+expect error ~ account.kind
+expect mailbox_switched =
+expect choice =
+# A database of a newer NiceMailer: refused too.
+mailbox mailboxes/newer
+expect error ~ newer version of NiceMailer
+expect error ~ 99
+expect mailbox_switched =
+# An empty folder: a new mailbox, used at once.
+mailbox mailboxes/empty
+expect mailbox_switched = empty
+# An earlier data format: a question first, nothing done before the answer.
+mailbox mailboxes/old
+expect mailbox_question = old 1->4
+expect error =
+expect mode = ASK
+expect choice ~ older data format
+snap question
+# Other keys wait for the answer.
+key j
+expect mailbox_question = old 1->4
+# Escape keeps the current mailbox.
+key esc
+expect mailbox_question =
+expect flash ~ not upgraded
+expect mailbox_switched = empty
+# Asked again, and answered with a click on "upgrade it": upgraded by the
+# CLI, then used.
+mailbox mailboxes/old
+expect mailbox_question = old 1->4
+click menu:0
+expect mailbox_switched = empty,old
+expect flash ~ old upgraded
+expect mailbox_upgrading =
+# Now current: used without a question.
+mailbox mailboxes/old
+expect mailbox_question =
+expect mailbox_switched = empty,old,old

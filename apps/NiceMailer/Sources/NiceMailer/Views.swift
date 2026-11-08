@@ -55,6 +55,22 @@ struct ContentView: View {
         // The alert is shown while `lastError` is not nil. `isPresented`
         // needs a `Binding<Bool>`, built here by hand from the optional:
         // `get` says whether there is an error, `set(false)` clears it.
+        // A mailbox of an earlier data format chosen: upgrade it or not
+        // (the geek theme asks the same in its status bar, `Choice`).
+        .confirmationDialog(
+            model.pendingUpgrade.map {
+                L("The mailbox %@ uses an older data format (%lld; this NiceMailer uses %lld)", DataDirectory.displayName($0.url), $0.from, $0.to)
+            } ?? "",
+            isPresented: Binding(
+                get: { model.pendingUpgrade != nil },
+                set: { if !$0, model.pendingUpgrade != nil { model.cancelMailboxUpgrade() } }
+            )
+        ) {
+            Button(L("Upgrade and Use It")) { model.confirmMailboxUpgrade() }
+            Button(L("Keep the Current Mailbox"), role: .cancel) { model.cancelMailboxUpgrade() }
+        } message: {
+            Text(L("Older versions of NiceMailer will no longer open it: copy the folder first to keep them able to."))
+        }
         .alert("Erreur", isPresented: Binding(
             get: { model.lastError != nil },
             set: { if !$0 { model.lastError = nil } }
@@ -109,6 +125,12 @@ struct ConnectionErrorView: View {
             HStack {
                 if model.agentState == .requiresApproval {
                     Button(L("Open Login Items")) { CoreAgent.openLoginItemsSettings() }
+                }
+                // The way out when the core refuses this mailbox (an old
+                // database, a wrong folder chosen): another one, checked
+                // before the switch (`AppModel.changeMailbox`).
+                Button(L("Change Mailbox…")) {
+                    if let url = MailboxChooser.choose() { Task { await model.changeMailbox(to: url) } }
                 }
                 Button(L("Try Again")) {
                     model.coreStoppedByUser = false

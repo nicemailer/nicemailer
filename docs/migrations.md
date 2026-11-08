@@ -59,6 +59,20 @@ So each version is applied entirely or not at all. A crash, a full disk, or an e
 
 Before the first release, version 1 was edited in place: development databases created early may lack tables or columns added since. Such a database cannot be migrated (the migrations assume a complete version 1), so `check_schema` probes it first: each check prepares a query on a table or column (`SELECT kind, address FROM account`, `SELECT one_click FROM message_unsubscribe`…), which fails without running anything if it is missing, and the database is refused with `OutdatedSchema` ("base créée par une version de développement antérieure (… absent) : recréez-la"). The old trigger `message_fts_ai`, from a time when a trigger filled the search index, is refused too: with it, every new mail would be indexed twice. From version 2 on, `check_schema` also requires what each version added (`thread.date_last_modified` for 2).
 
+### Choosing a mailbox: `nicemailer mailbox check` and `upgrade`
+
+The core migrates its own database at its start, without asking: after an update of NiceMailer, the mailbox in use simply goes on. Another folder chosen in the app ("Change Mailbox…") is different: the user may not want an old mailbox upgraded, since an older NiceMailer will then refuse it. So the app asks first ([app-bundle.md](app-bundle.md), "The folder is checked before the switch"), through two commands of the CLI that work on a folder without the core:
+
+```sh
+nicemailer mailbox check <folder>          # what its database is; changes nothing
+nicemailer mailbox check <folder> --json   # what the app reads
+nicemailer mailbox upgrade <folder>        # migrates it to this version
+```
+
+`check` (`nm_store::inspect`) applies the rules of `Store::open` without writing: the file is opened without the right to create it, the connection is `query_only`, and the answer is one of `new` (no file, an empty one, or version 0 without tables), `current`, `upgradable {from, to}`, `outdated {missing}` (what `check_schema` finds missing: an incomplete version 1, below), `too_new {found, expected}`, or `unreadable {message}`. The JSON adds `path` and `in_use` (a core holds the folder's lock).
+
+`upgrade` refuses anything but `upgradable`, takes the folder's lock as a core would (it fails if a core uses the folder), and opens the database with `Store::open`, which migrates it one version per transaction, as at a core's start.
+
 ### Limits
 
 - **A migration is one-way.** Once migrated, the database is refused by the previous core (`SchemaTooNew`). Before the first start of a new core on a mailbox that matters, copy the database; on APFS the copy is instant and takes no space until the files differ:

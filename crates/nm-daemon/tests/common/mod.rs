@@ -23,6 +23,19 @@ impl Core {
     pub fn pid(&self) -> u32 {
         self.0.id()
     }
+
+    /// Waits for the core to stop by itself (a start that fails), at most
+    /// `secs` seconds; its exit status.
+    pub fn exit_status(&mut self, secs: u64) -> std::process::ExitStatus {
+        let deadline = Instant::now() + Duration::from_secs(secs);
+        loop {
+            if let Some(status) = self.0.try_wait().unwrap() {
+                return status;
+            }
+            assert!(Instant::now() < deadline, "the core did not stop within {secs} s");
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    }
 }
 
 impl Drop for Core {

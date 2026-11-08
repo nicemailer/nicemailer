@@ -56,6 +56,26 @@ Which directory, for the app, the core and the CLI alike (`nm_api::paths::data_d
 
 So `nicemailer` and `make core` without the variable follow the mailbox chosen in the app.
 
+### The folder is checked before the switch
+
+Choosing a folder the core cannot open used to restart the core on it, and leave the app without any core. The app now asks first, through the CLI it carries (`Contents/Helpers/nicemailer mailbox check --json <folder>`, [migrations.md](migrations.md), "Choosing a mailbox"), which reads the database without changing it:
+
+| The database | The app |
+| --- | --- |
+| None yet (an empty folder), or current | Switches to it |
+| An earlier data format, which the migrations upgrade | Asks: **upgrade it and use it**, or keep the current mailbox. In the geek theme the question is in the status bar (`ASK`; `y` upgrades, Escape cancels, or a click on the answer); in the classic one, a dialog |
+| An early development database (it lacks what the migrations assume), one written by a newer NiceMailer, or a file that is not a database | Refuses it, says why, and keeps the current mailbox |
+
+The upgrade is made by the CLI (`nicemailer mailbox upgrade <folder>`) **before** the switch, while the current mailbox stays in use: the app waits only a few seconds for a core to answer, and a large mailbox takes longer to migrate. It cannot be undone: an older NiceMailer refuses the result, which the question says (copy the folder first to keep the old version able to open it). If it fails (a core already holds that folder, say), the current mailbox stays and the error is shown.
+
+An app without its CLI (`swift run`) uses the folder unchecked, as before; `NICEMAILER_CLI=<path>` names one (the UI scenarios do).
+
+## When the core cannot start
+
+A core that stops on an error writes why to `core-error.json` in its folder (`nm_api::StartupError`: `kind` `outdated`, `too_new` or `other`, the message, and what is missing or the versions), and removes it once a core starts there. When no core answers, the app shows that reason, in the user's language, instead of "unreachable", with a **Change Mailbox…** button beside "Try Again": the way out when the folder chosen is one the core refuses.
+
+The core still exits with a failure there, so launchd starts it again every 10 seconds (`KeepAlive` restarts a failed exit); each attempt fails the same way and rewrites the file. Harmless, if useless, until another mailbox is chosen.
+
 ## Signature
 
 The app and its helpers are signed with the Apple Development identity of the Mac, as `make core` signs its core (`scripts/sign-core.sh`, identifier `org.nicemailer.core`): the Keychain sees both cores as the same program, and the passwords saved by one are readable by the other ([configuration.md](configuration.md), "Passwords"). Without that identity the bundle is signed ad hoc: it runs, but its core cannot read the passwords saved by another build.
@@ -68,4 +88,4 @@ The app and its helpers are signed with the Apple Development identity of the Ma
 
 ## Tests
 
-`crates/nm-api` (`paths::resolve`), `crates/nm-daemon/tests/agent_rpc.rs` (a second core leaves with code 0; `core.log` written), `DataDirectoryTests` (the same rule in the app; no agent outside a bundle). The registration with launchd and the stop were checked by hand on this Mac: `launchctl print gui/$UID/eu.nicemailer.core` shows the core running, then `not running`, `last exit code = 0` after `make core-stop`.
+`crates/nm-api` (`paths::resolve`), `crates/nm-daemon/tests/agent_rpc.rs` (a second core leaves with code 0; `core.log` written), `crates/nm-daemon/tests/startup_rpc.rs` (`core-error.json` written for an early development database and for a newer one, removed at the next start), `DataDirectoryTests` (the same rule in the app; no agent outside a bundle), `MailboxCheckTests` (what each answer of the CLI makes the app do, the question and its keys, a failed upgrade, the reason shown without a core), and the scenario `mailbox.uiscript` (refusals, a new folder, the question answered by Escape then by a click, the upgraded mailbox used without a question). The registration with launchd and the stop were checked by hand on this Mac: `launchctl print gui/$UID/eu.nicemailer.core` shows the core running, then `not running`, `last exit code = 0` after `make core-stop`.

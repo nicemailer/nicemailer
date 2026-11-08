@@ -82,6 +82,9 @@ final class GeekController {
         /// `m` / `M` on the contacts screen: the decision on the address,
         /// or on its domain.
         case decision(name: String, domain: Bool, current: String?)
+        /// "Change Mailbox…" chose a mailbox of an earlier data format:
+        /// upgrade it, or keep the current one (`AppModel.pendingUpgrade`).
+        case mailboxUpgrade(PendingUpgrade)
     }
 
     /// One row of a menu or a picker.
@@ -423,8 +426,9 @@ final class GeekController {
 
     /// Short mode name for the status bar, like Helix's "NOR".
     var modeLabel: String {
-        // A suspect move asks without an overlay of its own.
-        if model.suspectMove != nil { return "ASK" }
+        // A suspect move, or a mailbox to upgrade, asks without an
+        // overlay of its own.
+        if model.suspectMove != nil || model.pendingUpgrade != nil { return "ASK" }
         // The "edition" context of `ui.md`: the keys are text.
         if model.composer != nil, screen == .mail, overlay == .none { return "EDT" }
         return switch overlay {
@@ -1804,6 +1808,9 @@ final class GeekController {
     /// arrives from the core without a key; then a choice opened by a key.
     var activeChoice: Choice? {
         if let s = model.suspectMove { return .suspect(s) }
+        // Asked by a menu, not by a key: like a suspect move, it comes
+        // before anything the keys opened.
+        if let u = model.pendingUpgrade { return .mailboxUpgrade(u) }
         if case .choice(let c) = overlay { return c }
         return nil
     }
@@ -1812,6 +1819,8 @@ final class GeekController {
         switch c {
         case .suspect(let s): L("Probable spoofing of %@ (verdict %@)", s.addr, s.verdict)
         case .decision(let name, let domain, _): domain ? L("Decision on the domain %@", name) : L("Decision on %@", name)
+        case .mailboxUpgrade(let u):
+            L("The mailbox %@ uses an older data format (%lld; this NiceMailer uses %lld)", DataDirectory.displayName(u.url), u.from, u.to)
         }
     }
 
@@ -1838,6 +1847,13 @@ final class GeekController {
                 self?.decide(name, domain: domain, target: nil)
             })
             return entries
+        case .mailboxUpgrade:
+            return [
+                Entry(key: "y", label: L("upgrade it and use it (older versions of NiceMailer will no longer open it: copy the folder first to keep them able to)")) {
+                    [model] in model.confirmMailboxUpgrade()
+                },
+                Entry(key: "esc", label: L("cancel: keep the current mailbox")) { [model] in model.cancelMailboxUpgrade() },
+            ]
         }
     }
 
@@ -1863,6 +1879,7 @@ final class GeekController {
         case KeyCode.escape:
             closeChoice()
             if case .suspect = c { model.cancelSuspect() }
+            if case .mailboxUpgrade = c { model.cancelMailboxUpgrade() }
             return
         default:
             break

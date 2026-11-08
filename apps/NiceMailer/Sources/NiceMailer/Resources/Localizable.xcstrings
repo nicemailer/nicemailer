@@ -1,6 +1,16 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "%@ not upgraded: the current mailbox is kept": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ non mise à jour : la base actuelle est conservée"
+          }
+        }
+      }
+    },
     "%@ saved to %@": {
       "localizations": {
         "fr": {
@@ -27,6 +37,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "%1$@ affiché en %2$@"
+          }
+        }
+      }
+    },
+    "%@ upgraded": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ mise à jour"
           }
         }
       }
@@ -699,6 +719,16 @@
         }
       }
     },
+    "Keep the Current Mailbox": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Garder la base actuelle"
+          }
+        }
+      }
+    },
     "Keys": {
       "localizations": {
         "fr": {
@@ -1025,6 +1055,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Rien à annuler"
+          }
+        }
+      }
+    },
+    "Older versions of NiceMailer will no longer open it: copy the folder first to keep them able to.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les versions plus anciennes de NiceMailer ne l’ouvriront plus : copiez d’abord le dossier pour les garder capables de l’ouvrir."
           }
         }
       }
@@ -1359,12 +1399,72 @@
         }
       }
     },
+    "The core cannot open this mailbox: it was created by an early development version of NiceMailer (%@ missing) and cannot be upgraded. Choose another mailbox.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le noyau ne peut pas ouvrir cette base : elle a été créée par une version de développement ancienne de NiceMailer (%@ absent) et ne peut pas être mise à jour. Choisissez une autre base."
+          }
+        }
+      }
+    },
+    "The core cannot open this mailbox: it was written by a newer version of NiceMailer (data format %lld; this one reads %lld). Update NiceMailer, or choose another mailbox.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le noyau ne peut pas ouvrir cette base : elle a été écrite par une version plus récente de NiceMailer (format de données %1$lld ; celle-ci lit le %2$lld). Mettez NiceMailer à jour, ou choisissez une autre base."
+          }
+        }
+      }
+    },
+    "The core stopped on this error: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le noyau s’est arrêté sur cette erreur : %@"
+          }
+        }
+      }
+    },
     "The core was started by hand: stop it where it runs (Ctrl-C)": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "Le noyau a été lancé à la main : arrêtez-le là où il tourne (Ctrl-C)"
+          }
+        }
+      }
+    },
+    "The database of this folder cannot be read (%@). The current mailbox is kept.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La base de données de ce dossier est illisible (%@). La base actuelle est conservée."
+          }
+        }
+      }
+    },
+    "The mailbox %@ uses an older data format (%lld; this NiceMailer uses %lld)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La base %1$@ utilise un format de données plus ancien (%2$lld ; ce NiceMailer utilise le %3$lld)"
+          }
+        }
+      }
+    },
+    "The mailbox could not be upgraded (%@). The current mailbox is kept.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La base n’a pas pu être mise à jour (%@). La base actuelle est conservée."
           }
         }
       }
@@ -1395,6 +1495,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Thème"
+          }
+        }
+      }
+    },
+    "This folder cannot be checked (%@). The current mailbox is kept.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce dossier ne peut pas être vérifié (%@). La base actuelle est conservée."
           }
         }
       }
@@ -1445,6 +1555,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ce mail est encore en téléchargement : réessayez dans un instant"
+          }
+        }
+      }
+    },
+    "This mailbox was created by an early development version of NiceMailer (%@ missing): it cannot be upgraded. The current mailbox is kept.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cette base a été créée par une version de développement ancienne de NiceMailer (%@ absent) : elle ne peut pas être mise à jour. La base actuelle est conservée."
+          }
+        }
+      }
+    },
+    "This mailbox was written by a newer version of NiceMailer (data format %lld; this one reads %lld): update NiceMailer to open it. The current mailbox is kept.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cette base a été écrite par une version plus récente de NiceMailer (format de données %1$lld ; celle-ci lit le %2$lld) : mettez NiceMailer à jour pour l’ouvrir. La base actuelle est conservée."
           }
         }
       }
@@ -1595,6 +1725,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Désabonne aussitôt, sans rien ouvrir (⌘U)"
+          }
+        }
+      }
+    },
+    "Upgrade and Use It": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mettre à jour et utiliser"
+          }
+        }
+      }
+    },
+    "Upgrading %@ to the data format %lld…": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mise à jour de %1$@ au format de données %2$lld…"
           }
         }
       }
@@ -1755,6 +1905,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "annuler, démarquer, revenir"
+          }
+        }
+      }
+    },
+    "cancel: keep the current mailbox": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "annuler : garder la base actuelle"
           }
         }
       }
@@ -2666,6 +2826,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "désabonné le %@"
+          }
+        }
+      }
+    },
+    "upgrade it and use it (older versions of NiceMailer will no longer open it: copy the folder first to keep them able to)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "la mettre à jour et l’utiliser (les versions plus anciennes de NiceMailer ne l’ouvriront plus : copiez d’abord le dossier pour les garder capables de l’ouvrir)"
           }
         }
       }

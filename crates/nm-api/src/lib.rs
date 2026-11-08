@@ -1448,6 +1448,29 @@ pub struct UiConfig {
     pub title_bar: String,
 }
 
+/// Why the core could not run on a data directory: written by the core to
+/// `paths::STARTUP_ERROR` when it stops on an error, read by the app when
+/// no core answers (`docs/app-bundle.md`, "When the core cannot start").
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StartupError {
+    /// `outdated` (an early development database, which cannot be
+    /// upgraded), `too_new` (written by a newer NiceMailer), or `other`.
+    pub kind: String,
+    /// The error and its causes, as the core logged it (in French, the
+    /// language of the core's messages): what the app shows for `other`.
+    pub message: String,
+    /// `outdated`: what the database lacks.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub missing: Option<String>,
+    /// `too_new`: the schema version of the database, and this core's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub found: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected: Option<i64>,
+    /// When, in seconds since 1970.
+    pub at: u64,
+}
+
 /// A plain list with the event position of the read.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Items<T> {
@@ -1523,6 +1546,10 @@ pub mod paths {
     pub const DATABASE: &str = "nicemailer.db";
     /// Unix socket file name, inside the data directory.
     pub const SOCKET: &str = "core.sock";
+    /// Why the core could not start or stopped on an error
+    /// (`StartupError`, JSON), inside the data directory. Removed once a
+    /// core runs there.
+    pub const STARTUP_ERROR: &str = "core-error.json";
 }
 
 // ---------------------------------------------------------------------------

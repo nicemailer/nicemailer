@@ -45,6 +45,13 @@ for script in "${scripts[@]}"; do
     NICEMAILER_DATA_DIR="$dir" "$CLI" seed --threads 300 --seed 1 >/dev/null
     # No request leaves the machine (one-click unsubscribe).
     NICEMAILER_DATA_DIR="$dir" NICEMAILER_CONFIG="$dir/config.toml" NICEMAILER_FAKE_NETWORK=1 "$CORE" 2>"$dir/core.log" &
+    # Mailboxes for "Change Mailbox…" (mailbox.uiscript): one of an earlier
+    # data format, an early development one, one of a newer version, an
+    # empty folder. The app checks and upgrades them with this CLI.
+    mkdir -p "$dir/mailboxes/old" "$dir/mailboxes/early" "$dir/mailboxes/newer" "$dir/mailboxes/empty"
+    sqlite3 "$dir/mailboxes/old/nicemailer.db" < "$ROOT/crates/nm-store/tests/fixtures/schema_v1.sql" >/dev/null
+    sqlite3 "$dir/mailboxes/early/nicemailer.db" "CREATE TABLE account (id INTEGER PRIMARY KEY); PRAGMA user_version = 1;"
+    sqlite3 "$dir/mailboxes/newer/nicemailer.db" "PRAGMA user_version = 99;"
     core=$!
     for _ in $(seq 50); do [ -S "$dir/core.sock" ] && break; sleep 0.1; done
     NICEMAILER_DATA_DIR="$dir" "$CLI" import-mbox "$APP/UITests/fixtures/sample.mbox" \
@@ -53,7 +60,7 @@ for script in "${scripts[@]}"; do
     # perl's alarm gives the app 120 s at most (macOS has no `timeout`).
     # `-AppleLanguages (en)`: English UI whatever the machine's language, so
     # that expected messages do not depend on it.
-    if NICEMAILER_DATA_DIR="$dir" NICEMAILER_UI_SCRIPT="$script" NICEMAILER_UI_OUT="$OUT/$name" \
+    if NICEMAILER_DATA_DIR="$dir" NICEMAILER_CLI="$CLI" NICEMAILER_UI_SCRIPT="$script" NICEMAILER_UI_OUT="$OUT/$name" \
         NICEMAILER_EXPORT_DIR="$dir/exports" perl -e 'alarm shift; exec @ARGV' 120 "$BIN" -AppleLanguages "(en)" 2>"$OUT/$name.log"; then
         echo "PASS $name"
     else

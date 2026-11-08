@@ -27,7 +27,9 @@
 //! - `seed.rs`: generator of fake mail for development,
 //! - `pool.rs`: read-only connections, so queries never wait for a write,
 //! - `accounts.rs`: accounts of `accounts.toml` in the database (enable, disable),
-//! - `migrations.rs`: upgrade of a database created by an earlier version.
+//! - `migrations.rs`: upgrade of a database created by an earlier version,
+//! - `inspect.rs`: what a database file is (new, current, to upgrade,
+//!   unusable), without changing it.
 //!
 //! Rust note: `mod queries;` tells the compiler to include `src/queries.rs`
 //! as a module. Without `pub`, the module is private to this crate; its
@@ -45,6 +47,7 @@ pub mod encoded_words;
 pub mod gc;
 pub mod html_text;
 pub mod import;
+pub mod inspect;
 pub mod insert;
 pub mod ingest;
 pub mod library;

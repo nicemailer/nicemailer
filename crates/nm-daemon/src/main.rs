@@ -172,7 +172,7 @@ struct ImportState {
 async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
     // `--data-dir` (or the env variable) if given, otherwise the default.
-    let data_dir = args.data_dir.unwrap_or_else(nm_api::paths::data_dir);
+    let data_dir = args.data_dir.clone().unwrap_or_else(nm_api::paths::data_dir);
     fs::create_dir_all(&data_dir).with_context(|| format!("création de {}", data_dir.display()))?;
     // 0o700: only the current user can enter the directory (the `0o` prefix
     // is octal, as with chmod).
@@ -197,7 +197,22 @@ async fn main() -> anyhow::Result<()> {
     if std::env::var_os("NICEMAILER_LOG_IN_DATA_DIR").is_some() {
         log_to_file(&data_dir.join("core.log"));
     }
+    // Whatever stops the core from here on is also written where the app
+    // finds it (`startup_error`): a core started by launchd has no
+    // terminal, and the app, which can only see that no core answers,
+    // would otherwise say nothing more useful than "unreachable".
+    let result = run(args, &data_dir).await;
+    if let Err(e) = &result {
+        write_startup_error(&data_dir, e);
+    }
+    drop(lock);
+    result
+}
 
+/// The core itself, once it holds its directory: settings, database,
+/// socket, then the clients until it is asked to stop.
+async fn run(args: Args, data_dir: &Path) -> anyhow::Result<()> {
+    let data_dir = data_dir.to_path_buf();
     let db_path = data_dir.join(nm_api::paths::DATABASE);
     let mut store = Store::open(&db_path).with_context(|| format!("ouverture de {}", db_path.display()))?;
     // Opened after the writing store, which creates or migrates the
@@ -306,6 +321,8 @@ async fn main() -> anyhow::Result<()> {
     // the lock above, we know no other core is using it.
     let _ = fs::remove_file(&socket_path);
     let listener = UnixListener::bind(&socket_path)?;
+    // Started: a reason left by a previous failed start no longer applies.
+    let _ = fs::remove_file(data_dir.join(nm_api::paths::STARTUP_ERROR));
     // 0o600: only the current user can connect.
     fs::set_permissions(&socket_path, fs::Permissions::from_mode(0o600))?;
     eprintln!("nicemailer-core : base {}, socket {}", db_path.display(), socket_path.display());
@@ -339,8 +356,45 @@ async fn main() -> anyhow::Result<()> {
         syncer.stop_all(std::time::Duration::from_secs(2));
     }
     cleanup(&socket_path);
-    drop(lock);
     Ok(())
+}
+
+/// Writes why the core could not run to `core-error.json` of its data
+/// directory (`nm_api::StartupError`), for the app's screen without a core.
+/// Atomic (a temporary file, then `rename`), so the app never reads half a
+/// file. Failing to write it is only logged: the reason is in `core.log`
+/// anyway.
+fn write_startup_error(data_dir: &Path, error: &anyhow::Error) {
+    let report = startup_error(error);
+    let path = data_dir.join(nm_api::paths::STARTUP_ERROR);
+    let tmp = data_dir.join(format!(".{}.tmp", nm_api::paths::STARTUP_ERROR));
+    let text = serde_json::to_string(&report).expect("plain struct");
+    if let Err(e) = fs::write(&tmp, text).and_then(|()| fs::rename(&tmp, &path)) {
+        eprintln!("{} : écriture impossible ({e})", path.display());
+    }
+}
+
+/// The report of `error`: its kind, found in the chain of causes (`anyhow`
+/// keeps them; the store's error is the innermost one), and its message.
+fn startup_error(error: &anyhow::Error) -> nm_api::StartupError {
+    use nm_store::StoreError;
+    // Rust note: `chain()` walks the error and its causes; `downcast_ref`
+    // asks whether one of them is a `StoreError`, and borrows it if so.
+    let store = error.chain().find_map(|c| c.downcast_ref::<StoreError>());
+    let (kind, missing, found, expected) = match store {
+        Some(StoreError::OutdatedSchema(what)) => ("outdated", Some(what.to_string()), None, None),
+        Some(StoreError::SchemaTooNew { found, expected }) => ("too_new", None, Some(*found), Some(*expected)),
+        _ => ("other", None, None, None),
+    };
+    nm_api::StartupError {
+        kind: kind.into(),
+        // `{:#}` prints the whole chain on one line: "ouverture de …: base …".
+        message: format!("{error:#}"),
+        missing,
+        found,
+        expected,
+        at: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0),
+    }
 }
 
 /// Removes the socket file on shutdown, so clients get "no such file"
