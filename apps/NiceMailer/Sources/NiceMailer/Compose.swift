@@ -23,7 +23,11 @@ struct DraftView: Decodable, Equatable {
     let revision: Int
     /// `editing` or `sending`.
     let state: String
+    /// `reply`, `forward` or `new`.
+    let kind: String
     let replyTo: Int?
+    /// The mail a forward carries.
+    let forwardOf: Int?
     let threadId: Int?
     /// Where the conversation goes once the mail is sent, as preselected
     /// by the core; nil: it stays, and no filing is offered.
@@ -38,6 +42,16 @@ struct DraftView: Decodable, Equatable {
 struct CreateDraftResult: Decodable {
     let draft: DraftView
     let reused: Bool
+    /// A forward whose files could not all be taken: which.
+    let warning: String?
+}
+
+/// What a draft starts as (`create_draft`'s `kind`): `r`, `R`, `f`, `c`.
+enum DraftKind: String {
+    case replyAll = "reply_all"
+    case replySender = "reply_sender"
+    case forward
+    case new
 }
 
 struct UpdateDraftResult: Decodable {
@@ -162,6 +176,16 @@ struct Composer: Equatable {
         subjectLine = LineEdit(draft.subject)
         showsBcc = !draft.bcc.isEmpty
         attachments = draft.attachments
+        // A forward or a new mail starts with whom it goes to; a reply is
+        // addressed already, the keys go to the text.
+        if draft.kind != "reply", draft.to.isEmpty { focus = .to }
+    }
+
+    /// A new mail with nothing in it: the core drops it rather than keep
+    /// it in Drafts (`drop_if_blank`).
+    var isBlank: Bool {
+        draft.kind == "new" && headers.all.isEmpty && headers.subject.trimmingCharacters(in: .whitespaces).isEmpty
+            && buffer.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachments.isEmpty && line.text.isEmpty
     }
 
     var isDirty: Bool { buffer.text != saved || headers != savedHeaders }
@@ -282,6 +306,43 @@ enum Compose {
     /// `;` separate addresses, as in every mail app.
     static func endsAddress(_ key: String) -> Bool {
         key == "," || key == ";"
+    }
+
+    /// The block that introduces a mail forwarded, in the app's language
+    /// (`reponse.md`, `f`): the core puts it between the user's text and
+    /// the mail's.
+    static func forwardHeader(_ m: MessageView, locale: Locale = appLocale, timeZone: TimeZone = .current) -> String {
+        let when = Date(timeIntervalSince1970: TimeInterval(m.dateSent ?? m.dateReceived))
+        let date = DateFormatter()
+        date.locale = locale
+        date.timeZone = timeZone
+        date.dateStyle = .medium
+        date.timeStyle = .short
+        let from: String
+        switch (m.fromName?.trimmingCharacters(in: .whitespaces), m.fromAddr) {
+        case let (name?, addr?) where !name.isEmpty: from = "\(name) <\(addr)>"
+        case let (_, addr?): from = addr
+        default: from = m.fromName ?? ""
+        }
+        var lines = [
+            L("---------- Forwarded message ---------"),
+            L("From: %@", from),
+            L("Date: %@", date.string(from: when)),
+            L("Subject: %@", m.subject),
+        ]
+        if !m.to.isEmpty { lines.append(L("To: %@", m.to.map(label).joined(separator: ", "))) }
+        if !m.cc.isEmpty { lines.append(L("Cc: %@", m.cc.map(label).joined(separator: ", "))) }
+        return lines.joined(separator: "\n")
+    }
+
+    /// What the status bar says when a draft is left with Escape.
+    static func keptFlash(_ c: Composer) -> String {
+        if c.isBlank { return L("Empty mail dropped") }
+        switch c.draft.kind {
+        case "forward": return L("Forward kept in Drafts · f to resume")
+        case "new": return L("Mail kept in Drafts")
+        default: return L("Reply kept in Drafts · r to resume")
+        }
     }
 
     /// A list of recipients on one line, cut after `limit` characters with

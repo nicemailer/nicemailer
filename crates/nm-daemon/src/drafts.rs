@@ -21,7 +21,7 @@
 use std::sync::Arc;
 
 use nm_api::{
-    AddDraftAttachmentParams, AddDraftAttachmentResult, AddressView, CreateDraftParams, RemoveDraftAttachmentParams, CreateDraftResult, DraftIdParams, DraftView, ParseAddressesParams, ParseAddressesResult, RpcError,
+    AddDraftAttachmentParams, AddDraftAttachmentResult, AddressView, CreateDraftParams, DraftKind, RemoveDraftAttachmentParams, CreateDraftResult, DraftIdParams, DraftView, ParseAddressesParams, ParseAddressesResult, RpcError,
     SendDraftParams, SendDraftResult, SuggestRecipientsParams, SuggestRecipientsResult, UpdateDraftParams, UpdateDraftResult, error_code,
 };
 use nm_core::Source;
@@ -89,10 +89,23 @@ fn human(source: Source) -> Result<(), RpcError> {
     }
 }
 
-/// `create_draft`: a reply to all to a message, or the one already started.
+/// `create_draft`: a reply (to all, `r`, or to the sender, `R`), a forward
+/// (`f`) or a new mail (`c`); for a reply or a forward, the one already
+/// started to the same mail if any.
 pub async fn create(core: &Arc<Core>, p: CreateDraftParams, source: Source) -> Result<CreateDraftResult, RpcError> {
     human(source)?;
-    let reply_to = p.reply_to;
+    if p.kind == DraftKind::New {
+        let account_id = match p.account {
+            Some(a) => a,
+            None => default_account(core).await?,
+        };
+        let s = sendable(core, account_id).await?;
+        let draft = with_store(core, move |st| st.create_new_draft(account_id, &s.identities, p.body.as_deref(), source)).await?;
+        return Ok(CreateDraftResult { draft, reused: false, warning: None });
+    }
+    let Some(reply_to) = p.reply_to else {
+        return Err(RpcError::new(error_code::INVALID_PARAMS, "reply_to: the mail answered or forwarded"));
+    };
     let account: Option<i64> = with_reader(core, move |s| {
         Ok(s.conn().query_row("SELECT account_id FROM message WHERE id = ?1", [reply_to], |r| r.get(0)).ok())
     })
@@ -101,15 +114,51 @@ pub async fn create(core: &Arc<Core>, p: CreateDraftParams, source: Source) -> R
         return Err(RpcError::new(error_code::NOT_FOUND, format!("no message {reply_to}")));
     };
     let s = sendable(core, account_id).await?;
-    let result = with_store(core, move |st| st.create_reply_draft(reply_to, &s.identities, &p.quote_header, p.body.as_deref(), source)).await;
+    let raw = core.raw.clone();
+    let result = with_store(core, move |st| match p.kind {
+        DraftKind::Forward => st.create_forward_draft(reply_to, &s.identities, &p.quote_header, p.body.as_deref(), &raw, source),
+        kind => st
+            .create_reply_draft(reply_to, kind == DraftKind::ReplySender, &s.identities, &p.quote_header, p.body.as_deref(), source)
+            .map(|(d, reused)| (d, reused, Vec::new())),
+    })
+    .await;
     if let Err(e) = &result
         && e.code == error_code::BODY_PENDING
     {
-        // The body the reply quotes: downloaded first.
+        // The body the draft quotes: downloaded first.
         sync::prioritize(core, vec![(account_id, reply_to)]);
     }
-    let (draft, reused) = result?;
-    Ok(CreateDraftResult { draft, reused })
+    let (draft, reused, missing) = result?;
+    let warning = (!missing.is_empty()).then(|| format!("not forwarded (not downloaded): {}", missing.join(", ")));
+    Ok(CreateDraftResult { draft, reused, warning })
+}
+
+/// The account a new mail is sent from when the client names none: the
+/// first account of `accounts.toml` that can send; with the fake network
+/// (UI tests), the first account of the database.
+async fn default_account(core: &Arc<Core>) -> Result<i64, RpcError> {
+    let declared = {
+        let engine = core.engine.lock().unwrap();
+        engine
+            .config()
+            .accounts
+            .iter()
+            .find(|(_, a)| a.smtp.is_some() && !a.read_only)
+            .and_then(|(key, _)| engine.account_id(key))
+    };
+    if let Some(a) = declared {
+        return Ok(a);
+    }
+    if fake_network() {
+        let first: Option<i64> = with_reader(core, |s| {
+            Ok(s.conn().query_row("SELECT id FROM account ORDER BY position, id LIMIT 1", [], |r| r.get(0)).ok())
+        })
+        .await?;
+        if let Some(a) = first {
+            return Ok(a);
+        }
+    }
+    Err(RpcError::new(error_code::CANNOT_SEND, "no account of accounts.toml can send: add an [smtp] server to one"))
 }
 
 /// `open_draft`: the latest version of a draft. (v1: nothing to mark, the
@@ -195,6 +244,10 @@ pub async fn close(core: &Arc<Core>, p: DraftIdParams, source: Source) -> Result
 /// store, then the row of Drafts and the copy queued. Also used at start
 /// for the drafts left open by a stop or a crash.
 pub fn close_now(core: &Core, s: &mut nm_store::Store, id: i64, source: Source) -> Result<(), nm_store::StoreError> {
+    // A new mail left empty is not worth a place in Drafts.
+    if s.drop_if_blank(id)? {
+        return Ok(());
+    }
     let Some(mime) = s.draft_to_close(id, USER_AGENT)? else { return Ok(()) };
     let written = core.raw.write(&mime).and_then(|w| core.raw.barrier().map(|()| w)).map_err(|e| nm_store::StoreError::Io(e.to_string()))?;
     let changes = s.close_draft(id, &written, &mime, source)?;

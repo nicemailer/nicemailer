@@ -22,8 +22,12 @@ struct UndoStep: Equatable {
 /// What it takes to give back an abandoned draft: the mail it answers and
 /// its text.
 struct DiscardedDraft: Equatable {
-    let replyTo: Int
+    /// The mail answered or forwarded; nil for a new mail.
+    let replyTo: Int?
     let body: String
+    var kind: DraftKind = .replyAll
+    /// The account of a new mail.
+    var account: Int? = nil
 }
 
 /// A move the core refused until the user confirms it.

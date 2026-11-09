@@ -275,6 +275,16 @@
         }
       }
     },
+    "---------- Forwarded message ---------": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "---------- Message transféré ---------"
+          }
+        }
+      }
+    },
     "/ filter · m: decision · M: domain decision · return: their mails · esc: back": {
       "localizations": {
         "fr": {
@@ -689,6 +699,16 @@
         }
       }
     },
+    "Empty mail dropped": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mail vide abandonné"
+          }
+        }
+      }
+    },
     "Files": {
       "localizations": {
         "fr": {
@@ -725,6 +745,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Dossier"
+          }
+        }
+      }
+    },
+    "Forward kept in Drafts · f to resume": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transfert gardé dans Drafts · f pour le reprendre"
+          }
+        }
+      }
+    },
+    "Forward resumed": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transfert repris"
           }
         }
       }
@@ -905,6 +945,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Liens"
+          }
+        }
+      }
+    },
+    "Mail kept in Drafts": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mail gardé dans Drafts"
           }
         }
       }
@@ -1115,6 +1165,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Aucun mail auquel répondre"
+          }
+        }
+      }
+    },
+    "No mail to forward": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucun mail à transférer"
           }
         }
       }
@@ -1515,6 +1575,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Objet"
+          }
+        }
+      }
+    },
+    "Subject: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Objet : %@"
           }
         }
       }
@@ -2321,16 +2391,6 @@
         }
       }
     },
-    "forward (not yet)": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "transférer (pas encore)"
-          }
-        }
-      }
-    },
     "from: %@": {
       "localizations": {
         "fr": {
@@ -2817,16 +2877,6 @@
         }
       }
     },
-    "reply to the sender only (not yet)": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "répondre à l'expéditeur seul (pas encore)"
-          }
-        }
-      }
-    },
     "return: their mails · esc: back": {
       "localizations": {
         "fr": {
@@ -3247,6 +3297,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "mots : sujet, expéditeur, destinataires ou texte"
+          }
+        }
+      }
+    },
+    "write a new mail": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "écrire un nouveau mail"
           }
         }
       }

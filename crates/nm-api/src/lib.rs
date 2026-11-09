@@ -964,13 +964,37 @@ pub struct CommandResult {
 // Drafts and sending (`reponse.md`)
 // ---------------------------------------------------------------------------
 
+/// What a new draft is (`reponse.md`): `r`, `R`, `f` or `c`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DraftKind {
+    /// `r`: to the sender and every recipient.
+    #[default]
+    ReplyAll,
+    /// `R`: to the sender only.
+    ReplySender,
+    /// `f`: the mail and its files, to recipients chosen by the user.
+    Forward,
+    /// `c`: a new mail, from scratch.
+    New,
+}
+
 /// Params of `create_draft`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateDraftParams {
-    /// The message replied to; its account sends the reply.
-    pub reply_to: i64,
+    #[serde(default)]
+    pub kind: DraftKind,
+    /// The message replied to or forwarded; its account sends. Absent for
+    /// a new mail.
+    #[serde(default)]
+    pub reply_to: Option<i64>,
+    /// A new mail: the account that sends it; absent, the first account
+    /// of `accounts.toml` that can send.
+    #[serde(default)]
+    pub account: Option<i64>,
     /// The line introducing the quotation, written by the client in its
-    /// language ("On Nov 7, 2026, at 10:12, Alice <a@x> wrote:").
+    /// language ("On Nov 7, 2026, at 10:12, Alice <a@x> wrote:"); for a
+    /// forward, the block introducing the mail forwarded.
     #[serde(default)]
     pub quote_header: String,
     /// The body to start with instead of the quotation: restores a draft
@@ -1115,8 +1139,13 @@ pub struct DraftView {
     pub revision: i64,
     /// `editing` or `sending`.
     pub state: String,
+    /// `reply`, `forward` or `new`.
+    pub kind: String,
     /// The message replied to.
     pub reply_to: Option<i64>,
+    /// The message forwarded.
+    #[serde(default)]
+    pub forward_of: Option<i64>,
     /// Its conversation.
     pub thread_id: Option<i64>,
     /// Where the conversation goes once the mail is sent, as preselected
@@ -1137,6 +1166,10 @@ pub struct CreateDraftResult {
     pub draft: DraftView,
     /// The draft already existed (a reply to this message was started).
     pub reused: bool,
+    /// A forward whose files could not all be taken (a mail whose raw file
+    /// is not here): which. The text is forwarded all the same.
+    #[serde(default)]
+    pub warning: Option<String>,
 }
 
 /// Result of `update_draft`.

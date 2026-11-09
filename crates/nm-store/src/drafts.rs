@@ -195,18 +195,32 @@ fn send_action(conn: &Connection, draft_id: i64) -> Result<Option<(i64, String, 
 /// The view of a draft, with its preselected filing and, if it is being
 /// sent, when it leaves.
 pub(crate) fn draft_view(conn: &Connection, id: i64) -> Result<DraftView> {
-    type Row = (i64, String, Option<String>, String, String, String, Option<i64>, i64, String, Option<i64>, Option<String>);
+    type Row = (i64, String, Option<String>, String, String, String, Option<i64>, i64, String, Option<i64>, Option<String>, Option<i64>);
     let row: Option<Row> = conn
         .prepare_cached(
             "SELECT d.account_id, d.from_addr, d.from_name, d.recipients, d.subject, d.body, d.reply_to_message_id,
-                    d.revision, d.state, m.thread_id, d.after_send
+                    d.revision, d.state, m.thread_id, d.after_send, d.forward_of_message_id
                FROM draft d LEFT JOIN message m ON m.id = d.reply_to_message_id WHERE d.id = ?1",
         )?
         .query_row([id], |r| {
-            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?, r.get(7)?, r.get(8)?, r.get(9)?, r.get(10)?))
+            Ok((
+                r.get(0)?,
+                r.get(1)?,
+                r.get(2)?,
+                r.get(3)?,
+                r.get(4)?,
+                r.get(5)?,
+                r.get(6)?,
+                r.get(7)?,
+                r.get(8)?,
+                r.get(9)?,
+                r.get(10)?,
+                r.get(11)?,
+            ))
         })
         .optional()?;
-    let Some((account_id, from_addr, from_name, recipients, subject, body, reply_to, revision, state, thread_id, after_send)) = row else {
+    let Some((account_id, from_addr, from_name, recipients, subject, body, reply_to, revision, state, thread_id, after_send, forward_of)) = row
+    else {
         return Err(StoreError::NotFound(format!("brouillon {id}")));
     };
     let (to, cc, bcc) = recipients_of(&recipients);
@@ -228,7 +242,16 @@ pub(crate) fn draft_view(conn: &Connection, id: i64) -> Result<DraftView> {
         attachments,
         revision,
         state,
+        kind: if reply_to.is_some() {
+            "reply"
+        } else if forward_of.is_some() {
+            "forward"
+        } else {
+            "new"
+        }
+        .to_string(),
         reply_to,
+        forward_of,
         thread_id,
         after_send_target,
         after_send: after_send.as_deref().and_then(AfterSend::parse),
@@ -366,9 +389,15 @@ impl Store {
     ///
     /// Refused: a message of an archive account (`CannotSend`), a draft,
     /// a message whose body is not downloaded (`BodyPending`).
+    ///
+    /// `sender_only`: `R`, the reply to the sender alone
+    /// (`compose::reply_sender`). A reply already started to the mail is
+    /// given back whatever its kind: one reply per mail.
+    #[allow(clippy::too_many_arguments)]
     pub fn create_reply_draft(
         &mut self,
         reply_to: i64,
+        sender_only: bool,
         identities: &Identities,
         quote_header: &str,
         body: Option<&str>,
@@ -415,7 +444,7 @@ impl Store {
         let from = from_addr.map(|a| Mailbox { addr: a, name: from_name });
         let original = Original { from: from.as_ref(), reply_to: &rt, to: &to, cc: &cc };
         let own = identities.own();
-        let (r_to, r_cc) = compose::reply_all(&original, &own);
+        let (r_to, r_cc) = if sender_only { (compose::reply_sender(&original, &own), Vec::new()) } else { compose::reply_all(&original, &own) };
         let sender = compose::sender_identity(&identities.list, &original);
         if sender.addr.is_empty() {
             return Err(StoreError::CannotSend("the account has no address to send from".into()));
@@ -448,6 +477,139 @@ impl Store {
         let view = draft_view(&tx, id)?;
         tx.commit()?;
         Ok((view, false))
+    }
+
+    /// Starts a forward of the message `message` (`f`), or gives back the
+    /// one already started: no recipient, the subject with `Fwd: `, the
+    /// block `header` written by the client then the mail's text, and the
+    /// mail's files (not its inline images) copied into `outgoing.noindex`
+    /// (`brouillons.md`, section 7). A forward is not a reply: no
+    /// `In-Reply-To`, nothing filed (`dossiers.md`).
+    ///
+    /// Returns the draft, whether it existed, and the names of the files
+    /// that could not be taken (a mail without raw file): the text is
+    /// forwarded all the same, and the user told.
+    pub fn create_forward_draft(
+        &mut self,
+        message: i64,
+        identities: &Identities,
+        header: &str,
+        body: Option<&str>,
+        raw: &crate::raw::RawStore,
+        source: Source,
+    ) -> Result<(DraftView, bool, Vec<String>)> {
+        let outgoing = self.outgoing()?.clone();
+        let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let existing: Option<i64> =
+            tx.query_row("SELECT id FROM draft WHERE forward_of_message_id = ?1 ORDER BY id LIMIT 1", [message], |r| r.get(0)).optional()?;
+        if let Some(id) = existing {
+            let view = draft_view(&tx, id)?;
+            tx.commit()?;
+            return Ok((view, true, Vec::new()));
+        }
+        type Row = (i64, String, bool, i64, String, Option<String>, Option<String>, Option<Vec<u8>>);
+        let row: Option<Row> = tx
+            .query_row(
+                "SELECT m.account_id, a.kind, m.is_draft, m.body_state, m.subject, m.from_addr, m.from_name, m.raw_hash
+                   FROM message m JOIN account a ON a.id = m.account_id WHERE m.id = ?1",
+                [message],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?, r.get(7)?)),
+            )
+            .optional()?;
+        let Some((account_id, kind, is_draft, body_state, subject, from_addr, from_name, raw_hash)) = row else {
+            return Err(StoreError::NotFound(format!("message {message}")));
+        };
+        if kind == "archive" && !self.fake_sending {
+            return Err(StoreError::CannotSend("this mail is in an archive account, which cannot send".into()));
+        }
+        if is_draft {
+            return Err(StoreError::CannotSend("a draft cannot be forwarded".into()));
+        }
+        if body.is_none() && body_state == 0 {
+            return Err(StoreError::BodyPending);
+        }
+        let (to, cc, rt) = message_addresses(&tx, message)?;
+        let from = from_addr.map(|a| Mailbox { addr: a, name: from_name });
+        let original = Original { from: from.as_ref(), reply_to: &rt, to: &to, cc: &cc };
+        let sender = compose::sender_identity(&identities.list, &original);
+        if sender.addr.is_empty() {
+            return Err(StoreError::CannotSend("the account has no address to send from".into()));
+        }
+        let text = match body {
+            Some(b) => b.to_string(),
+            None => compose::forward_body(header, &message_text(&tx, message)?),
+        };
+        let message_id_hdr = compose::new_message_id(rand::random::<u128>(), &sender.addr);
+        tx.execute(
+            "INSERT INTO draft (account_id, from_addr, from_name, recipients, subject, body, body_format,
+                                forward_of_message_id, message_id_hdr, created_by, modified_by)
+             VALUES (?1, ?2, ?3, '[]', ?4, ?5, 'text', ?6, ?7, ?8, ?8)",
+            params![account_id, sender.addr, sender.name, compose::forward_subject(&subject), text, message, message_id_hdr, source.as_str()],
+        )?;
+        let id = tx.last_insert_rowid();
+        // The files of the mail: read from its raw file, kept like files
+        // the user attached.
+        let files: Vec<(String, Option<String>, String)> = tx
+            .prepare("SELECT part_id, filename, mime_type FROM attachment WHERE message_id = ?1 AND is_inline = 0 ORDER BY id")?
+            .query_map([message], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+            .collect::<std::result::Result<_, _>>()?;
+        let mut missing = Vec::new();
+        let raw_bytes = match raw_hash.as_deref().and_then(|h| <crate::raw::Hash>::try_from(h).ok()) {
+            Some(h) if !files.is_empty() => raw.read(&h).ok(),
+            _ => None,
+        };
+        let mut total = 0u64;
+        for (position, (part_id, filename, mime_type)) in files.iter().enumerate() {
+            let name = crate::attachments::safe_name(filename.as_deref(), mime_type, part_id);
+            let content = raw_bytes.as_deref().and_then(|b| crate::attachments::part_content(b, part_id));
+            let Some(content) = content.filter(|c| total + c.len() as u64 <= compose::ATTACHMENTS_MAX) else {
+                missing.push(name);
+                continue;
+            };
+            total += content.len() as u64;
+            let hash = outgoing.write(&content).map_err(|e| StoreError::Io(e.to_string()))?;
+            tx.execute("INSERT OR IGNORE INTO outgoing_blob (hash, size) VALUES (?1, ?2)", params![&hash[..], content.len() as i64])?;
+            tx.execute(
+                "INSERT INTO draft_attachment (draft_id, hash, filename, mime_type, position) VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![id, &hash[..], compose::clean_filename(&name), compose::clean_mime_type(mime_type), position as i64],
+            )?;
+        }
+        let view = draft_view(&tx, id)?;
+        tx.commit()?;
+        Ok((view, false, missing))
+    }
+
+    /// Starts a new mail (`c`) from the account's main address: nothing
+    /// else, the user writes it all. `body`: a new mail abandoned by
+    /// mistake, restored.
+    pub fn create_new_draft(&mut self, account_id: i64, identities: &Identities, body: Option<&str>, source: Source) -> Result<DraftView> {
+        let Some(sender) = identities.list.first().filter(|m| !m.addr.is_empty()) else {
+            return Err(StoreError::CannotSend("the account has no address to send from".into()));
+        };
+        let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let message_id_hdr = compose::new_message_id(rand::random::<u128>(), &sender.addr);
+        tx.execute(
+            "INSERT INTO draft (account_id, from_addr, from_name, recipients, subject, body, body_format, message_id_hdr, created_by, modified_by)
+             VALUES (?1, ?2, ?3, '[]', '', ?4, 'text', ?5, ?6, ?6)",
+            params![account_id, sender.addr, sender.name, body.unwrap_or(""), message_id_hdr, source.as_str()],
+        )?;
+        let view = draft_view(&tx, tx.last_insert_rowid())?;
+        tx.commit()?;
+        Ok(view)
+    }
+
+    /// A new mail left without anything in it (no recipient, subject, text
+    /// nor file, never copied to Drafts) is deleted instead of being kept
+    /// in Drafts: `c` then Escape leaves nothing behind. Returns whether
+    /// it was.
+    pub fn drop_if_blank(&mut self, id: i64) -> Result<bool> {
+        Ok(self.conn.execute(
+            "DELETE FROM draft WHERE id = ?1 AND reply_to_message_id IS NULL AND forward_of_message_id IS NULL
+                AND message_id IS NULL AND state = 'editing' AND recipients = '[]' AND trim(subject) = ''
+                AND trim(body, ' ' || char(10) || char(13) || char(9)) = ''
+                AND NOT EXISTS (SELECT 1 FROM draft_attachment WHERE draft_id = ?1)",
+            [id],
+        )? > 0)
     }
 
     /// A draft, as the reply screen shows it.

@@ -188,7 +188,7 @@ Actions apply to the **marked** mails if any (`J` / `K`), otherwise to the mail 
 | `?` | list of keys, grouped by use (Navigate, Read, Select, Act on mails, Write, Find and go, Window), one key per line, in a centered panel of up to three columns: fewer when the window is narrow. Commands not available yet are grayed out. Any key or a click outside closes it |
 | Escape | cancel a prefix, close a panel, leave the full-window mail (`v1`), unmark, then go back from a tag, group or contact list to the folder |
 | `r` | reply to all to the mail under the reader's cursor: the reply takes the reader's place, mode `EDT`, every key is text; ⌘↩ sends (`z` cancels during 5 s), Escape keeps the draft, ⌘⌫ abandons it (see [sending.md](sending.md)) |
-| `R` `f` | reply to the sender only, forward: not available yet |
+| `R` `f` `c` | reply to the sender only, forward, write a new mail ([sending.md](sending.md)) |
 
 After a prefix (`;`, `m`, `s`, `v`), a menu lists the possible second keys, as in Helix. Each prefix has a block in the status bar: the folder for `;` (folders, Everything, screens), and an icon with its key for `m` (move, arrow), `s` (save, tray) and `v` (display, eye). The blocks form three groups set apart by a wide gap: what the list shows (`@`, `;`, `F` and the chips), the display preference (`v`), and actions on the current mail (`m`, `s`). The menu drops down from its block: under it when the bar is at the top, above it when the bar is at the bottom; a click on the block opens it, and its rows can be clicked. The arrows highlight a row (down starts on the first one, up on the last, both turn around) and Return goes to it; a key still acts at once, and Return with nothing highlighted closes the menu. With the status bar hidden, menus appear in the bottom-right corner.
 
@@ -249,7 +249,7 @@ In Quarantine the only thing to do with a mail is to decide where it goes, so th
 - **The status bar shows the targets** at its right end, just before `?`, in place of the `m` and `s` blocks: the move arrow, then each target with its key, `Inbox i  Newsletter n  Paperwork p  Junk x  Banned b  Deleted d` (the core's `move_targets` for the folder of the mail under the cursor). On the right they stay in the same place whatever the account, the folder and the chips on the left; a message (the result of a move) comes before them and is cut first when the bar is short. A click on one moves as its key does.
 - **One key moves**: `i` does what `mi` does elsewhere, for the marked mails or the one under the cursor. The cursor goes to the next mail, as after any move, and `z` undoes. `d` moves to **Deleted** here (Archive is not a target from Quarantine), while it archives everywhere else.
 - **`m`** opens no menu: the status bar says which keys to press.
-- **Refused**: `u` `U` (read state), `t` (tag), `g` (group), `r` (reply: writing to the sender would accept it) and `s` (save: its block leaves the status bar; the mail is to be sorted, not kept). The status bar says "In Quarantine, a mail can only be moved or flagged".
+- **Refused**: `u` `U` (read state), `t` (tag), `g` (group), `r` `R` (reply: writing to the sender would accept it), `f` (forward: sort the mail first) and `s` (save: its block leaves the status bar; the mail is to be sorted, not kept). The status bar says "In Quarantine, a mail can only be moved or flagged".
 - **Still available**: `*` (flag), the navigation and marks, `v` (display), `l` (links), `z`, Delete, and the keys of every screen.
 - **Never read by viewing**: see "When a mail becomes read". The core itself does not refuse `set_thread_seen`: the CLI can still mark a mail of Quarantine read when asked to.
 
@@ -257,7 +257,7 @@ This holds while a Quarantine folder is listed (of an account, or of "all"). In 
 
 ## Not available yet
 
-- In the "edition" context: forwarding, writing a new mail, editing the recipients, attachments ([sending.md](sending.md)).
+- In the "edition" context: signatures, choosing the sending address ([sending.md](sending.md)).
 - Saving as PDF (`sp`).
 - A dark/light override independent of macOS (the palette follows the system appearance).
 

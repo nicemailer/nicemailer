@@ -19,14 +19,14 @@ mailbox mailboxes/empty
 expect mailbox_switched = empty
 # An earlier data format: a question first, nothing done before the answer.
 mailbox mailboxes/old
-expect mailbox_question = old 1->5
+expect mailbox_question = old 1->6
 expect error =
 expect mode = ASK
 expect choice ~ older data format
 snap question
 # Other keys wait for the answer.
 key j
-expect mailbox_question = old 1->5
+expect mailbox_question = old 1->6
 # Escape keeps the current mailbox.
 key esc
 expect mailbox_question =
@@ -35,7 +35,7 @@ expect mailbox_switched = empty
 # Asked again, and answered with a click on "upgrade it": upgraded by the
 # CLI, then used.
 mailbox mailboxes/old
-expect mailbox_question = old 1->5
+expect mailbox_question = old 1->6
 click menu:0
 expect mailbox_switched = empty,old
 expect flash ~ old upgraded

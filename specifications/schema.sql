@@ -33,7 +33,7 @@ PRAGMA temp_store = MEMORY;
 -- Une base existante est mise à jour par les migrations du noyau
 -- (crates/nm-store/src/migrations.rs) ; ce fichier crée directement la
 -- dernière version.
-PRAGMA user_version = 5;   -- migrations : comparer à la version attendue au démarrage
+PRAGMA user_version = 6;   -- migrations : comparer à la version attendue au démarrage
 
 -- ------------------------------------------------------------
 -- Comptes : état seulement. Les paramètres (adresse, serveurs, identifiants,
@@ -560,6 +560,9 @@ CREATE TABLE draft (
     date_modified       INTEGER NOT NULL DEFAULT (unixepoch()),
     created_by          TEXT NOT NULL CHECK (created_by  IN ('core','app','cli','tui','web','mcp','config_sync','imap')),
     modified_by         TEXT NOT NULL CHECK (modified_by IN ('core','app','cli','tui','web','mcp','config_sync','imap')),
+    -- Le mail transféré (f) ; NULL pour une réponse ou un nouveau mail.
+    -- Un transfert n'a pas de reply_to_message_id : il ne range rien.
+    forward_of_message_id INTEGER REFERENCES message(id) ON DELETE SET NULL,
     UNIQUE (message_id_hdr)
 ) STRICT;
 

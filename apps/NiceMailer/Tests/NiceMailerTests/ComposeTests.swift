@@ -540,6 +540,8 @@ struct ComposeControllerTests {
         press("esc")
         #expect(model.composer?.suggestions.isEmpty == true)
         #expect(model.composer != nil)
+        // `b` is not an address: the line is emptied before leaving.
+        press("del")
         press("esc")
         #expect(await eventually { model.composer == nil })
     }
@@ -668,11 +670,81 @@ struct ComposeControllerTests {
         #expect(model.composer == nil)
     }
 
-    @Test func replyToTheSenderAndForwardAreNotThereYet() {
+    /// `R`: a reply to the sender alone, the keys in the text.
+    @Test func capitalRRepliesToTheSenderOnly() async {
         press("R")
-        #expect(model.flash == L("Not available yet: %@", L("reply to the sender only")))
+        #expect(await eventually { model.composer != nil })
+        #expect(core.calls("create_draft").first?["kind"] as? String == "reply_sender")
+        #expect(model.composer?.focus == .body)
+    }
+
+    /// `f`: a forward, with the block that introduces the mail in the
+    /// app's language; the keys go to To, empty.
+    @Test func fForwardsTheMail() async {
+        core.handler = { method, params in
+            guard method == "create_draft" else { return Fixture.answer(method, params) }
+            var d = Fixture.draft(replyTo: params["reply_to"] as? Int ?? 10)
+            d["kind"] = "forward"
+            d["reply_to"] = NSNull()
+            d["forward_of"] = params["reply_to"] ?? NSNull()
+            d["to"] = []
+            d["after_send_target"] = NSNull()
+            return ["draft": d, "reused": false, "warning": NSNull()]
+        }
         press("f")
-        #expect(model.flash == L("Not available yet: %@", L("forward")))
+        #expect(await eventually { model.composer != nil })
+        let call = core.calls("create_draft").first
+        #expect(call?["kind"] as? String == "forward")
+        let header = call?["quote_header"] as? String ?? ""
+        #expect(header.hasPrefix(L("---------- Forwarded message ---------")))
+        #expect(header.contains(L("Subject: %@", "Subject 1")))
+        #expect(model.composer?.focus == .to)
+        type("x")
+        #expect(model.composer?.line.text == "x")
+        // Not an address: Escape keeps the draft open, to correct it.
+        press("esc")
+        #expect(await eventually { model.flash == L("Not an address: %@", "x") })
+        #expect(model.composer != nil)
+        press("del")
+        type("dan@example.org")
+        press("esc")
+        #expect(await eventually { model.composer == nil })
+        #expect(model.flash == L("Forward kept in Drafts · f to resume"))
+    }
+
+    /// `c`: a new mail from the account of the view; left empty, Escape
+    /// says it is dropped.
+    @Test func cWritesANewMail() async {
+        core.handler = { method, params in
+            guard method == "create_draft" else { return Fixture.answer(method, params) }
+            var d = Fixture.draft(replyTo: 10)
+            d["kind"] = "new"
+            d["reply_to"] = NSNull()
+            d["to"] = []
+            d["cc"] = []
+            d["subject"] = ""
+            d["body"] = ""
+            d["thread_id"] = NSNull()
+            d["after_send_target"] = NSNull()
+            return ["draft": d, "reused": false]
+        }
+        press("c")
+        #expect(await eventually { model.composer != nil })
+        let call = core.calls("create_draft").first
+        #expect(call?["kind"] as? String == "new")
+        #expect(call?["account"] as? Int == 1)
+        #expect(call?["reply_to"] == nil)
+        #expect(model.composer?.focus == .to)
+        #expect(model.composer?.isBlank == true)
+        press("esc")
+        #expect(await eventually { model.composer == nil })
+        #expect(model.flash == L("Empty mail dropped"))
+    }
+
+    /// Quarantine refuses `R` and `f` like `r`.
+    @Test func quarantineRefusesTheRepliesAndTheForward() {
+        #expect(GeekController.quarantineRefused.isSuperset(of: ["r", "R", "f"]))
+        #expect(!GeekController.quarantineRefused.contains("c"))
     }
 
     @Test func oneColumnShowsTheReplyInTheWholeWindow() async {

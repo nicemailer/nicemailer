@@ -161,3 +161,27 @@ fn a_staged_file_is_attached_and_sent() {
     let has: i64 = db.query_row("SELECT has_attachments FROM message WHERE id = ?1", [sent["message_id"].as_i64().unwrap()], |r| r.get(0)).unwrap();
     assert_eq!(has, 1);
 }
+
+/// `R`, `f` and `c` through the socket: the kind of a draft, a new mail
+/// from the default account, and a new mail left empty dropped at closing.
+#[test]
+fn the_kinds_of_draft_go_through_the_socket() {
+    let dir = tempfile::tempdir().unwrap();
+    let _core = start_with(dir.path(), &[("NICEMAILER_FAKE_NETWORK", "1")]);
+    let mut c = Client::connect_as(dir.path(), "app");
+    import(dir.path(), &mut c);
+    let m = message(dir.path());
+    let r = c.call("create_draft", json!({"kind": "reply_sender", "reply_to": m, "quote_header": "x"})).unwrap()["draft"].clone();
+    assert_eq!(r["to"].as_array().unwrap().len(), 1);
+    assert_eq!(r["cc"], json!([]));
+    let f = c.call("create_draft", json!({"kind": "forward", "reply_to": m, "quote_header": "--- Forwarded ---"})).unwrap();
+    assert_eq!(f["draft"]["kind"], "forward");
+    assert_eq!(f["draft"]["subject"], "Fwd: Devis");
+    let e = c.call("create_draft", json!({"kind": "forward"})).unwrap_err();
+    assert_eq!(e["code"], -32602, "{e}");
+    let n = c.call("create_draft", json!({"kind": "new"})).unwrap()["draft"].clone();
+    assert_eq!((n["kind"].as_str(), n["from"]["addr"].as_str()), (Some("new"), Some("me@hey.example")));
+    c.call("close_draft", json!({"id": n["id"]})).unwrap();
+    let e = c.call("open_draft", json!({"id": n["id"]})).unwrap_err();
+    assert_eq!(e["code"], 1001, "{e}");
+}

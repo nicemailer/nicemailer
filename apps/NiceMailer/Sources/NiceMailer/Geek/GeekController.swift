@@ -732,11 +732,18 @@ final class GeekController {
         case "g": openPicker(.group)
         case "/": openPicker(.search)
         case "r":
-            // A reply to all (`reponse.md`): `R` will be the reply to the
-            // sender alone.
+            // A reply to all (`reponse.md`); `R` to the sender alone; `f` a
+            // forward; `c` a new mail.
             startReply()
-        case "R", "f":
-            model.flash = L("Not available yet: %@", key == "R" ? L("reply to the sender only") : L("forward"))
+        case "R":
+            startReply(kind: .replySender)
+        case "f":
+            startReply(kind: .forward)
+        case "c":
+            Task {
+                await model.startNewMail()
+                if model.composer != nil, columns == 1 { reading = true }
+            }
         case "m", "s", "v":
             if let p = Prefix(rawValue: key) { overlay = .menu(p) }
         default:
@@ -773,12 +780,13 @@ final class GeekController {
     /// moving it or flagging it. Reading state (`u` `U`: viewing never marks
     /// read there, so marking by hand would only blur which mails still wait
     /// for a decision), tags and groups (the sender is not accepted yet),
-    /// and the reply (writing to the sender would accept it, `dossiers.md`,
-    /// "Écrire à quelqu'un vaut décision Inbox", outside the workflow of the
-    /// folder), and saving (`s`: its block leaves the status bar, the mail
+    /// the replies (`r`, `R`: writing to the sender would accept it,
+    /// `dossiers.md`, "Écrire à quelqu'un vaut décision Inbox", outside the
+    /// workflow of the folder), the forward (`f`: a mail not sorted yet is
+    /// not passed on; move it first), and saving (`s`: its block leaves the status bar, the mail
     /// is to be sorted, not kept). What stays: navigation, display, links,
     /// `*`, `z`.
-    static let quarantineRefused: Set<String> = ["u", "U", "t", "g", "r", "s"]
+    static let quarantineRefused: Set<String> = ["u", "U", "t", "g", "r", "R", "f", "s"]
 
     /// A key pressed while Quarantine is listed: a target's letter moves the
     /// marked mails (or the one under the cursor) there; `m` and the refused
@@ -1492,14 +1500,14 @@ final class GeekController {
 
     /// `r`: the reply to all to the mail under the reader's cursor. One
     /// column shows it in the whole window, as the mail.
-    func startReply() {
+    func startReply(kind: DraftKind = .replyAll) {
         guard model.openThread != nil else {
-            model.flash = L("No mail to answer")
+            model.flash = kind == .forward ? L("No mail to forward") : L("No mail to answer")
             return
         }
         let current = readerState.current
         Task {
-            await model.startReply(current: current)
+            await model.startReply(current: current, kind: kind)
             if model.composer != nil, columns == 1 { reading = true }
         }
     }

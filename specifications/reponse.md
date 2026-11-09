@@ -15,7 +15,7 @@ Statut : validé pour la v1 (7 novembre 2026). Cette spécification décrit la p
 
 | Dans la v1 | Plus tard |
 | --- | --- |
-| Réponse à tous (`r`) | Réponse à l'expéditeur seul (`R`, réservé), transfert (`f`), nouveau mail |
+| Réponse à tous (`r`) ; réponse à l'expéditeur seul (`R`), transfert (`f`), nouveau mail (`c`) ajoutés en novembre 2026 (section 4 bis) | |
 | Texte seul, sans mise en forme | Mise en forme, HTML |
 | Brouillon enregistré en local (table `draft`) | Copie dans Drafts sur le serveur, `append_draft`, conflits entre appareils (`brouillons.md`, sections 5 et 6) |
 | Destinataires calculés par le noyau, puis lignes À, Cc et Cci éditables, objet éditable (ajoutés en novembre 2026, section 6) | |
@@ -73,6 +73,15 @@ Le corps initial est : une ligne vide (où se place le curseur), une ligne vide,
 - **Limite** : au-delà de 1 000 lignes, la citation est tronquée et se termine par `> […]`. Une citation énorme ralentirait l'éditeur sans servir personne.
 
 La citation fait partie du texte éditable : l'utilisateur peut la raccourcir ou écrire entre les lignes citées.
+
+## 4 bis. Répondre à l'expéditeur, transférer, écrire (ajouté en novembre 2026)
+
+- **`R` : réponse à l'expéditeur seul.** Comme `r` (même mail visé, même adresse d'expédition, objet, citation), mais À reçoit `Reply-To` ou, à défaut, l'expéditeur ; une réponse à son propre mail va à son À. Jamais de Cc (`compose::reply_sender`). Une réponse déjà commencée au même mail est rouverte, quelle que soit sa sorte : une seule réponse par mail.
+- **`f` : transfert.** Aucun destinataire (les touches vont à la ligne À), l'objet précédé de `Fwd: ` (sauf préfixe de transfert déjà présent : `Fwd:`, `Fw:`, `TR:`, `WG:`, `RV:`…), puis deux lignes vides, le bloc qui présente le mail transféré, écrit par l'app dans sa langue (« ---------- Message transféré --------- », De, Date, Objet, À, Cc), une ligne vide et le texte du mail **tel quel**, non cité par `>`. Les fichiers du mail (pas ses images insérées) sont repris, lus dans son brut et gardés dans `outgoing.noindex` comme des pièces jointes ajoutées ; ceux qui ne peuvent l'être (mail sans brut) sont nommés dans la barre d'état, et le texte part quand même. Un transfert n'est pas une réponse : pas d'`In-Reply-To`, rien n'est rangé (`dossiers.md`), `⇧⌘↩` le dit. Le transfert lie le brouillon au mail par `draft.forward_of_message_id` ; un second `f` sur le même mail le rouvre.
+- **`c` : nouveau mail**, dans le contexte navigation, depuis la liste ou un mail. Il part du compte de la vue (dans la vue de tous les comptes, celui du mail sélectionné ; sinon, le premier compte d'`accounts.toml` qui peut envoyer), de son adresse principale. Tout est vide ; les touches vont à À. **Laissé vide** (aucun destinataire, objet, texte ni fichier), Échap l'abandonne au lieu de le garder dans Drafts (« Mail vide abandonné »).
+- **Quarantine** refuse `R` et `f` comme `r` : on range d'abord.
+- **Échap avec un texte qui n'est pas une adresse** dans une ligne de destinataires laisse le brouillon ouvert, pour corriger plutôt que perdre.
+- `z` après `⌘⌫` recrée un transfert ou un nouveau mail avec son texte, comme une réponse.
 
 ## 5. Brouillon (v1)
 
@@ -230,7 +239,7 @@ Ces décisions font partie de la même commande que le rangement : `z` après l'
 
 | Commande | Paramètres | Résultat |
 | --- | --- | --- |
-| `create_draft` | `reply_to` (id de message, qui désigne aussi le compte), `quote_header` (ligne d'introduction mise en forme par le client), `body?` (texte d'un brouillon abandonné à restaurer) | `{draft, reused}` ; si un brouillon de réponse à ce mail existe, c'est lui (`reused: true`) ; `BODY_PENDING` si le corps du mail n'est pas encore téléchargé (il est demandé en priorité), `CANNOT_SEND` pour un compte qui ne peut pas envoyer |
+| `create_draft` | `kind` (`reply_all` par défaut, `reply_sender`, `forward`, `new`), `reply_to?` (id du mail répondu ou transféré, qui désigne aussi le compte), `account?` (nouveau mail), `quote_header` (pour un transfert, le bloc de présentation) (ligne d'introduction mise en forme par le client), `body?` (texte d'un brouillon abandonné à restaurer) | `{draft, reused, warning}` (`warning` : fichiers non repris d'un transfert) ; si un brouillon de réponse (ou de transfert) à ce mail existe, c'est lui (`reused: true`) ; `BODY_PENDING` si le corps du mail n'est pas encore téléchargé (il est demandé en priorité), `CANNOT_SEND` pour un compte qui ne peut pas envoyer |
 | `open_draft` | `id` | `Draft` |
 | `update_draft` | `id`, `revision`, et ce qui a changé : `body?`, `subject?`, `to?`, `cc?`, `bcc?` (listes entières de `{addr, name}`) | `{revision}` ; `INVALID_PARAMS` pour une adresse invalide ; erreur `REVISION_CONFLICT` si la révision n'est pas la courante, `DRAFT_SENDING` si le brouillon est `sending` |
 | `parse_addresses` | `text` | `{addresses, invalid}` : les adresses comprises, chacune une fois, et les morceaux qui n'en sont pas, tels que tapés |
@@ -242,7 +251,7 @@ Ces décisions font partie de la même commande que le rangement : `z` après l'
 | `send_draft` | `id`, `revision`, `body`, `after_send?` (`archive`, `waiting`, `todo`, `stay` ; enregistré dans le brouillon ; absent : le choix enregistré, sinon la présélection) | `{send_at}` : heure prévue de l'envoi ; `CANNOT_SEND` sans destinataire ou sans `[smtp]` |
 | `cancel_send` | `id` | `Draft` remis à `editing` ; erreur `SEND_ALREADY_STARTED` |
 
-`Draft` : `id`, `account_id`, `from` (`{addr, name}`), `to`, `cc`, `bcc` (listes de `{addr, name}`), `attachments` (`{id, filename, mime_type, size}`), `subject`, `body`, `revision`, `state`, `reply_to`, `after_send_target` (présélection, absente quand rien n'est rangé), `after_send` (choix de l'utilisateur, absent s'il n'y en a pas), `send_at` (si `sending`).
+`Draft` : `id`, `account_id`, `from` (`{addr, name}`), `to`, `cc`, `bcc` (listes de `{addr, name}`), `attachments` (`{id, filename, mime_type, size}`), `kind` (`reply`, `forward`, `new`), `forward_of`, `subject`, `body`, `revision`, `state`, `reply_to`, `after_send_target` (présélection, absente quand rien n'est rangé), `after_send` (choix de l'utilisateur, absent s'il n'y en a pas), `send_at` (si `sending`).
 
 `quote_header` est mis en forme par le client parce que la langue et le format de date sont ceux de l'app ; le noyau ne la modifie pas. Les clients sans langue (CLI) passent une ligne anglaise.
 

@@ -18,22 +18,48 @@ enum ComposeError {
 
 extension AppModel {
     /// `r`: a reply to all to the mail under the reader's cursor
-    /// (`Compose.replyTarget`), or the reply already started to it.
-    func startReply(current: Int?) async {
+    /// (`Compose.replyTarget`), or the reply already started to it; `R` to
+    /// its sender alone, `f` a forward of it.
+    func startReply(current: Int?, kind: DraftKind = .replyAll) async {
         guard composer == nil else { return }
         guard let client = core, let thread = openThread, let m = Compose.replyTarget(thread, current: current) else {
-            flash = L("No mail to answer")
+            flash = kind == .forward ? L("No mail to forward") : L("No mail to answer")
             return
         }
+        let header = kind == .forward ? Compose.forwardHeader(m) : Compose.quoteHeader(m)
         do {
-            let r: CreateDraftResult = try await client.call("create_draft", ["reply_to": m.id, "quote_header": Compose.quoteHeader(m)])
+            let r: CreateDraftResult = try await client.call(
+                "create_draft", ["kind": kind.rawValue, "reply_to": m.id, "quote_header": header])
             if r.draft.state == "sending" {
                 // Already on its way: `z` cancels it while it can.
                 flash = L("This reply is being sent · z to cancel")
                 return
             }
             composer = Composer(draft: r.draft)
-            flash = r.reused ? L("Reply resumed") : nil
+            if let w = r.warning {
+                flash = w
+            } else if r.reused {
+                flash = r.draft.kind == "forward" ? L("Forward resumed") : L("Reply resumed")
+            } else {
+                flash = nil
+            }
+        } catch {
+            flash = Self.composeErrorFlash(error)
+        }
+    }
+
+    /// `c`: a new mail, from the account of the view (in the view of all
+    /// accounts, the one of the mail selected; else the core's default).
+    func startNewMail() async {
+        guard composer == nil, let client = core else { return }
+        var params: [String: Any] = ["kind": DraftKind.new.rawValue]
+        let folder = threads.first { $0.id == selectedThreadId }?.folderId
+        let selected = folders.first { $0.id == folder }?.accountId
+        if let account = scopeAccountId ?? selected { params["account"] = account }
+        do {
+            let r: CreateDraftResult = try await client.call("create_draft", params)
+            composer = Composer(draft: r.draft)
+            flash = nil
         } catch {
             flash = Self.composeErrorFlash(error)
         }
@@ -273,11 +299,13 @@ extension AppModel {
     /// (`brouillons.md`, section 4). The next `r` on the mail, or on the
     /// draft in Drafts, reopens it.
     func leaveComposer() {
-        guard let id = composer?.draft.id else { return }
+        guard let c = composer else { return }
+        let id = c.draft.id
         composeSaveTask?.cancel()
         Task {
-            // An address typed but not yet made one is kept.
-            await commitRecipientLine()
+            // An address typed but not yet made one is kept; a text that is
+            // not one keeps the draft open, to be corrected rather than lost.
+            guard await commitRecipientLine() else { return }
             await saveComposer()
             composer = nil
             guard let client = core else { return }
@@ -287,7 +315,7 @@ extension AppModel {
                 flash = Self.composeErrorFlash(error)
             }
         }
-        flash = L("Reply kept in Drafts · r to resume")
+        flash = Compose.keptFlash(c)
     }
 
     /// ⌘⌫: the draft is abandoned; `z` gives it back with its text.
@@ -298,8 +326,10 @@ extension AppModel {
         do {
             let _: DraftView = try await client.call("discard_draft", ["id": c.draft.id])
             composer = nil
-            if let replyTo = c.draft.replyTo {
-                pushUndo(UndoStep(tokens: [], label: L("reply abandoned"), restoreDraft: DiscardedDraft(replyTo: replyTo, body: c.buffer.text)))
+            let kind: DraftKind = c.draft.kind == "forward" ? .forward : c.draft.kind == "new" ? .new : .replyAll
+            if c.draft.replyTo != nil || c.draft.forwardOf != nil || kind == .new {
+                let gone = DiscardedDraft(replyTo: c.draft.replyTo ?? c.draft.forwardOf, body: c.buffer.text, kind: kind, account: c.draft.accountId)
+                pushUndo(UndoStep(tokens: [], label: L("reply abandoned"), restoreDraft: gone))
             }
             flash = L("Reply abandoned · z to restore it")
         } catch {
@@ -359,7 +389,10 @@ extension AppModel {
     func restoreDraft(_ d: DiscardedDraft) async {
         guard let client = core else { return }
         do {
-            let r: CreateDraftResult = try await client.call("create_draft", ["reply_to": d.replyTo, "body": d.body])
+            var params: [String: Any] = ["kind": d.kind.rawValue, "body": d.body]
+            if let replyTo = d.replyTo { params["reply_to"] = replyTo }
+            if d.kind == .new, let account = d.account { params["account"] = account }
+            let r: CreateDraftResult = try await client.call("create_draft", params)
             composer = Composer(draft: r.draft)
             flash = L("Reply restored")
         } catch {

@@ -210,12 +210,6 @@ struct GeekControllerTests {
         #expect(await eventually { !core.calls("set_thread_seen").isEmpty })
     }
 
-    /// `r` replies (`ComposeTests`); `R` and `f` are not there yet.
-    @Test func replyToTheSenderIsNotAvailableYet() {
-        press("R")
-        #expect(model.flash == L("Not available yet: %@", L("reply to the sender only")))
-    }
-
     @Test func theHelpBlockOfTheStatusBarOpensAndClosesTheHelp() {
         model.flash = "something"
         controller.toggleHelpFromStatusBar()

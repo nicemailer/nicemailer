@@ -1,0 +1,58 @@
+# Writing other than replying to all (`reponse.md`): `R` replies to the
+# sender alone; `f` forwards the mail (no recipient, `Fwd:`, the block that
+# introduces the mail, the keys in To), and the conversation stays where
+# it is; `c` writes a new mail (left empty, it is dropped; written, sent
+# and found in Sent).
+expect folder = Inbox
+key R
+expect composing = true
+expect compose_to ~ @
+expect compose_cc = 
+expect compose_focus = body
+key cmd-del
+expect composing = false
+# A forward.
+key f
+expect composing = true
+expect compose_focus = to
+expect compose_to = 
+expect compose_subject ~ Fwd:
+expect compose_text ~ Forwarded message
+snap forward
+type dan@exemple.fr
+key ret
+expect compose_to = dan@exemple.fr
+key cmd-ret
+expect composing = false
+wait 4500
+expect flash ~ Sent
+expect flash !~ filed
+expect selected_subject ~ La facture de mars
+# A new mail, left empty: dropped.
+key c
+expect composing = true
+expect compose_focus = to
+expect compose_subject = 
+key esc
+expect composing = false
+expect flash ~ Empty mail dropped
+# Written and sent.
+key c
+type eve@exemple.fr
+key tab
+expect compose_focus = cc
+key tab
+expect compose_focus = subject
+type Un nouveau sujet
+key ret
+expect compose_focus = body
+type Bonjour Eve.
+snap new-mail
+key cmd-ret
+expect composing = false
+wait 4500
+expect flash ~ Sent
+key ;
+key s
+expect folder = Sent
+expect selected_subject ~ Un nouveau sujet

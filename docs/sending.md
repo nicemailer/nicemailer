@@ -7,7 +7,9 @@ How a reply is written in the app and sent by the core. The rules are those of `
 | Key | Where | Effect |
 | --- | --- | --- |
 | `r` | a mail | reply to all to the mail under the reader's cursor (`ctrl-j` / `ctrl-k` move it); if a reply to that mail was started, it is resumed |
-| `R`, `f` | a mail | reply to the sender only, forward: not available yet |
+| `R` | a mail | reply to the sender only (`Reply-To` or the sender, never a Cc); a reply already started to the mail is resumed |
+| `f` | a mail | forward it with its files: no recipient (the keys go to To), `Fwd:`, the block "---------- Forwarded message ---------" in the app's language, then the mail's text as it is; nothing is filed |
+| `c` | anywhere in the list | a new mail from the account of the view; left empty, Escape drops it |
 | ⌘↩ | the reply | send, after the undo delay (5 s); the status bar says "Sending in 5 s · z to cancel" |
 | ⇧⌘↩ | the reply | "Send, then file the conversation in": `a` Archive, `w` Waiting, `t` Todo, `s` leave it where it is (trial); the key (or a click) sends, Escape goes back to the text |
 | Escape | the reply | back to the mail; the reply goes to Drafts (here and on the server), and `r` on the mail, or `r` / Return on the draft in Drafts, reopens it |
@@ -61,6 +63,14 @@ Then the status bar says what happened: "Sent · filed in Archive · z: undo the
 - `s` leave it where it is, a **trial** option shown only in this menu: the mail is sent and its recipients get their decision, but the conversation is not touched at all: nothing moves, and its return mark ("↩ Todo") stays.
 
 The choice is sent as `after_send` and saved in the draft (`draft.after_send`): `z` during the undo delay gives the reply back with it ("After sending: Waiting", or "stays where it is"), and the next `⌘↩` applies it. It wins over the preselection, which is worked out again when the server accepts the mail; but nothing moves a conversation that is no longer in the Inbox, Todo or Waiting by then. Where the core offers no filing (a conversation in Archive, Newsletter…), `⇧⌘↩` says so and sends nothing.
+
+## Forward and new mail
+
+A forward (`create_draft` with `kind: forward`) is linked to the mail by `draft.forward_of_message_id` (schema version 6): `f` again on the mail reopens it. The core takes the mail's files (not its inline images) from its raw file into `outgoing.noindex`, as if the user had attached them; those it cannot take (a mail whose raw file is not here) are named in `warning`, and the text is forwarded all the same. No `In-Reply-To`: a forward is not a reply and files nothing.
+
+A new mail (`kind: new`) is sent from the main address of the account the app names (the account of the view, or of the selected mail in the view of all accounts), else from the first account of `accounts.toml` that can send. `close_draft` deletes a new mail left blank (no recipient, subject, text nor file) instead of copying it to Drafts.
+
+Escape with a text that is not an address in a recipient line keeps the draft open, to be corrected. Quarantine refuses `R` and `f`, as it refuses `r`.
 
 ## What the core prepares
 
@@ -125,7 +135,7 @@ The app, the TUI and the CLI. An agent (MCP) or the web server get `FORBIDDEN`: 
 
 | Method | Parameters | Result |
 | --- | --- | --- |
-| `create_draft` | `reply_to`, `quote_header`, `body?` (restores an abandoned text) | `{draft, reused}` |
+| `create_draft` | `kind?` (`reply_all`, `reply_sender`, `forward`, `new`), `reply_to?`, `account?` (a new mail), `quote_header`, `body?` (restores an abandoned text) | `{draft, reused, warning}` |
 | `open_draft`, `close_draft` | `id` | `DraftView`, nothing |
 | `update_draft` | `id`, `revision`, and what changed: `body?`, `subject?`, `to?`, `cc?`, `bcc?` (whole lists of `{addr, name}`) | `{revision}`; `REVISION_CONFLICT` (1012), `DRAFT_SENDING` (1013), `INVALID_PARAMS` for an address that is not one |
 | `add_draft_attachment` | `id`, `revision`, `staged`, `filename`, `mime_type?` | `{revision, attachment, warning}`; `INVALID_PARAMS` (not a staged file, beyond 100 MB) |
@@ -148,12 +158,12 @@ The app, the TUI and the CLI. An agent (MCP) or the web server get `FORBIDDEN`: 
 
 ## Tests
 
-- `nm-core` (`compose.rs`): attachments in `multipart/mixed` (names in RFC 2231, short lines, the same bytes twice, a text holding the boundary), file names and types cleaned, the address lists typed or pasted, cleaning the edited recipients and subject, `Bcc` only in the copy, recipients, identity, subject, references, quotation, `format=flowed` read back as typed, MIME headers and encodings, header injection, dates, providers.
+- `nm-core` (`compose.rs`): reply to the sender, forward subject and body, attachments in `multipart/mixed` (names in RFC 2231, short lines, the same bytes twice, a text holding the boundary), file names and types cleaned, the address lists typed or pasted, cleaning the edited recipients and subject, `Bcc` only in the copy, recipients, identity, subject, references, quotation, `format=flowed` read back as typed, MIME headers and encodings, header injection, dates, providers.
 - `nm-proto` (`smtp.rs`): a scripted server: PLAIN and LOGIN, refused login, no password without TLS, recipients refused in part or all, `SIZE`, `5xx` / `4xx` to the message, hostile addresses, broken servers, dot-stuffing.
-- `nm-store` (`tests/drafts.rs`): the draft prepared, reused, revisions, the filing chosen (kept after `cancel_send`, winning over the preselection, `stay` touching nothing), recipients and subject edited (one revision, refused addresses), Bcc in the envelope and the copy only (and its decision), suggestions by use, files attached and removed (refusals, sizes), a mail with files sent and its files collected, orphans swept after the grace delay; `outgoing.rs`: a staged file taken once by its content, only a plain name taken, the undo delay and `cancel_send`, `data_sent`, the acceptance in one transaction (Sent row, filing, decisions, undo), replay, the copy's UID and the attachment by the synchronization, a fresh Sent row kept by a pass, failures, partial refusals, restore, repair.
+- `nm-store` (`tests/drafts.rs`): the draft prepared, reused, revisions, the filing chosen (kept after `cancel_send`, winning over the preselection, `stay` touching nothing), recipients and subject edited (one revision, refused addresses), Bcc in the envelope and the copy only (and its decision), suggestions by use, files attached and removed (refusals, sizes), a mail with files sent and its files collected, orphans swept after the grace delay, `R`, a forward with its files (and without raw file), a new mail dropped when blank; `outgoing.rs`: a staged file taken once by its content, only a plain name taken, the undo delay and `cancel_send`, `data_sent`, the acceptance in one transaction (Sent row, filing, decisions, undo), replay, the copy's UID and the attachment by the synchronization, a fresh Sent row kept by a pass, failures, partial refusals, restore, repair.
 - `nm-daemon` (`tests/send_rpc.rs`, `make imap-test`): the real core against Dovecot and Mailpit: a reply sent, copied to Sent, filed on the server, nothing twice after a pass, undo, on both servers; a send cancelled in time; a refused recipient; a refused login then the SMTP password saved; an agent refused.
-- `nm-daemon` (`tests/fake_send_rpc.rs`): an archive account refused, then pretending to send with `NICEMAILER_FAKE_NETWORK`; `after_send` through the socket (`stay` saved, `inbox` refused); `parse_addresses`, `suggest_recipients`, headers saved by `update_draft`; a staged file attached and sent.
-- App: `TextBufferTests`, `ComposeTests` (pure rules, and the keys through `GeekController` against `FakeCore`), `UITests/compose.uiscript`, `UITests/recipients.uiscript` and `UITests/attachments.uiscript`.
+- `nm-daemon` (`tests/fake_send_rpc.rs`): an archive account refused, then pretending to send with `NICEMAILER_FAKE_NETWORK`; `after_send` through the socket (`stay` saved, `inbox` refused); `parse_addresses`, `suggest_recipients`, headers saved by `update_draft`; a staged file attached and sent; the kinds of draft (`R`, `f`, `c`, a blank new mail dropped at closing).
+- App: `TextBufferTests`, `ComposeTests` (pure rules, and the keys through `GeekController` against `FakeCore`), `UITests/compose.uiscript`, `UITests/recipients.uiscript`, `UITests/attachments.uiscript` and `UITests/writing.uiscript`.
 
 ## Pretending to send
 

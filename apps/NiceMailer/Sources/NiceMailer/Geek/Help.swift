@@ -78,8 +78,9 @@ enum Help {
             ]),
             HelpGroup(title: L("Write"), entries: [
                 HelpEntry(key: "r", label: L("reply to all")),
-                HelpEntry(key: "R", label: L("reply to the sender only (not yet)"), notYet: true),
-                HelpEntry(key: "f", label: L("forward (not yet)"), notYet: true),
+                HelpEntry(key: "R", label: L("reply to the sender only")),
+                HelpEntry(key: "f", label: L("forward")),
+                HelpEntry(key: "c", label: L("write a new mail")),
             ]),
             HelpGroup(title: L("Find and go"), entries: [
                 HelpEntry(key: "/", label: L("search everywhere, in Everything")),

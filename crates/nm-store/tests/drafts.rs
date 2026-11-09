@@ -96,7 +96,7 @@ impl Env {
     }
 
     fn reply(&mut self, to: i64) -> nm_api::DraftView {
-        self.s.create_reply_draft(to, &self.ids, "On Nov 7, Alice wrote:", None, Source::App).unwrap().0
+        self.s.create_reply_draft(to, false, &self.ids, "On Nov 7, Alice wrote:", None, Source::App).unwrap().0
     }
 
     /// The draft sent and accepted by the server at once.
@@ -135,7 +135,7 @@ fn a_reply_to_all_is_prepared_by_the_core() {
     assert_eq!(d.after_send_target, Some(FolderRole::Archive));
     assert_eq!(d.send_at, None);
     // `r` again: the same draft, not a second one.
-    let (again, reused) = e.s.create_reply_draft(m, &e.ids, "ignored", None, Source::App).unwrap();
+    let (again, reused) = e.s.create_reply_draft(m, false, &e.ids, "ignored", None, Source::App).unwrap();
     assert!(reused);
     assert_eq!(again.id, d.id);
     assert_eq!(e.int("SELECT count(*) FROM draft"), 1);
@@ -176,13 +176,13 @@ fn what_cannot_be_answered() {
     let tx = e.s.transaction().unwrap();
     let id = e.ins.insert(&tx, &m, None, &mut changes).unwrap();
     e.ins.commit(tx, &mut changes).unwrap();
-    assert!(matches!(e.s.create_reply_draft(id, &e.ids, "", None, Source::App), Err(StoreError::BodyPending)));
+    assert!(matches!(e.s.create_reply_draft(id, false, &e.ids, "", None, Source::App), Err(StoreError::BodyPending)));
     // A message that does not exist.
-    assert!(matches!(e.s.create_reply_draft(12345, &e.ids, "", None, Source::App), Err(StoreError::NotFound(_))));
+    assert!(matches!(e.s.create_reply_draft(12345, false, &e.ids, "", None, Source::App), Err(StoreError::NotFound(_))));
     // An archive account.
     e.s.conn().execute("UPDATE account SET kind = 'archive' WHERE id = ?1", [e.acc]).unwrap();
     let m = e.deliver("inbox", &alice("m9@a.example"));
-    assert!(matches!(e.s.create_reply_draft(m, &e.ids, "", None, Source::App), Err(StoreError::CannotSend(_))));
+    assert!(matches!(e.s.create_reply_draft(m, false, &e.ids, "", None, Source::App), Err(StoreError::CannotSend(_))));
 }
 
 #[test]
@@ -531,7 +531,7 @@ fn a_discarded_draft_can_be_restored_with_its_text() {
     assert_eq!(gone.body, "Mon texte");
     assert_eq!(e.int("SELECT count(*) FROM draft"), 0);
     assert!(e.s.find_reply_draft(m).unwrap().is_none());
-    let (back, reused) = e.s.create_reply_draft(m, &e.ids, "", Some(&gone.body), Source::App).unwrap();
+    let (back, reused) = e.s.create_reply_draft(m, false, &e.ids, "", Some(&gone.body), Source::App).unwrap();
     assert!(!reused);
     assert_eq!(back.body, "Mon texte");
 }
@@ -559,7 +559,7 @@ fn pretended_sending_lets_an_archive_account_answer() {
     let mut e = env();
     e.s.conn().execute("UPDATE account SET kind = 'archive' WHERE id = ?1", [e.acc]).unwrap();
     let m = e.deliver("inbox", &alice("m1@a.example"));
-    assert!(matches!(e.s.create_reply_draft(m, &e.ids, "", None, Source::App), Err(StoreError::CannotSend(_))));
+    assert!(matches!(e.s.create_reply_draft(m, false, &e.ids, "", None, Source::App), Err(StoreError::CannotSend(_))));
     e.s.set_fake_sending(true);
     let d = e.reply(m);
     e.send_now(&d, None);
@@ -640,7 +640,7 @@ fn closing_twice_before_the_copy_leaves_one_copy_to_make() {
     assert_eq!(e.drafts_rows(), 1);
     // `r` on the row of Drafts reopens the same draft.
     let row: i64 = e.int("SELECT message_id FROM draft");
-    let (again, reused) = e.s.create_reply_draft(row, &e.ids, "", None, Source::App).unwrap();
+    let (again, reused) = e.s.create_reply_draft(row, false, &e.ids, "", None, Source::App).unwrap();
     assert!(reused);
     assert_eq!(again.id, d.id);
 }
@@ -976,4 +976,101 @@ fn big_attachments_are_warned_then_refused() {
     assert!(matches!(e.s.add_draft_attachment(d.id, rev, &staged, "b.bin", None, Source::App), Err(StoreError::InvalidParams(_))));
     assert_eq!(e.outgoing().kept().len(), 1);
     assert_eq!(e.s.get_draft(d.id).unwrap().revision, rev);
+}
+
+/// `R` (`reponse.md`, section 4): to the sender alone, no Cc; a reply
+/// already started to the mail is given back whatever its kind.
+#[test]
+fn a_reply_to_the_sender_only() {
+    let mut e = env();
+    let m = e.deliver("inbox", &alice("m@a.example"));
+    let (d, reused) = e.s.create_reply_draft(m, true, &e.ids, "x", None, Source::App).unwrap();
+    assert!(!reused);
+    assert_eq!(d.kind, "reply");
+    assert_eq!(d.to.iter().map(|a| a.addr.as_str()).collect::<Vec<_>>(), ["alice@a.example"]);
+    assert!(d.cc.is_empty());
+    let (again, reused) = e.s.create_reply_draft(m, false, &e.ids, "x", None, Source::App).unwrap();
+    assert!(reused);
+    assert_eq!(again.id, d.id);
+}
+
+/// A mail with a file, as it arrives.
+fn with_file(id: &str) -> String {
+    format!(
+        "Message-ID: <{id}>\r\nFrom: Alice <alice@a.example>\r\nTo: {ME}\r\nSubject: Devis\r\nMIME-Version: 1.0\r\n\
+         Content-Type: multipart/mixed; boundary=\"b\"\r\n\r\n--b\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nLe devis.\r\n\
+         --b\r\nContent-Type: application/pdf; name=\"devis.pdf\"\r\nContent-Disposition: attachment; filename=\"devis.pdf\"\r\n\
+         Content-Transfer-Encoding: base64\r\n\r\nJVBERi0xLjQ=\r\n--b--\r\n"
+    )
+}
+
+/// `f`: no recipient, `Fwd:`, the client's block then the text as it is,
+/// the mail's files taken along; sent, it files nothing and has no
+/// `In-Reply-To`.
+#[test]
+fn a_forward_carries_the_mail_and_its_files() {
+    let mut e = env();
+    let m = e.deliver("inbox", &with_file("f@a.example"));
+    let raw = e.raw.clone();
+    let (d, reused, missing) =
+        e.s.create_forward_draft(m, &e.ids, "---------- Forwarded message ---------\nFrom: Alice", None, &raw, Source::App).unwrap();
+    assert!(!reused && missing.is_empty());
+    assert_eq!((d.kind.as_str(), d.forward_of, d.reply_to, d.thread_id), ("forward", Some(m), None, None));
+    assert!(d.to.is_empty() && d.cc.is_empty());
+    assert_eq!(d.subject, "Fwd: Devis");
+    assert!(d.body.starts_with("\n\n---------- Forwarded message ---------\nFrom: Alice\n\nLe devis."), "{:?}", d.body);
+    assert_eq!(d.attachments.len(), 1);
+    assert_eq!((d.attachments[0].filename.as_str(), d.attachments[0].size), ("devis.pdf", 8));
+    assert_eq!(d.after_send_target, None);
+    // `f` again: the same forward.
+    let (again, reused, _) = e.s.create_forward_draft(m, &e.ids, "x", None, &raw, Source::App).unwrap();
+    assert!(reused && again.id == d.id);
+    use nm_store::drafts::DraftEdit;
+    let rev = e.s.edit_draft(d.id, d.revision, &DraftEdit { to: Some(vec![mb("dan@d.example", None)]), ..Default::default() }, Source::App).unwrap();
+    e.s.send_draft(d.id, rev, &d.body, None, 0, "t", Source::App).unwrap();
+    let jobs = e.s.send_claim(e.acc).unwrap();
+    let parsed = parse(&jobs[0].mime);
+    assert!(parsed.in_reply_to.is_none());
+    assert_eq!(parsed.attachments[0].filename.as_deref(), Some("devis.pdf"));
+    let written = e.raw.write(&jobs[0].copy).unwrap();
+    let c = e.s.send_accepted(jobs[0].action_id, &written, &[], &e.ids.own()).unwrap();
+    assert_eq!(c.sent[0].moved_to, None);
+    assert_eq!(e.role_of(m), "inbox");
+}
+
+/// A forward of a mail whose raw file is not here: the text goes, the
+/// files it could not take are named.
+#[test]
+fn a_forward_without_raw_file_says_which_files_stay_behind() {
+    let mut e = env();
+    let m = e.deliver("inbox", &with_file("g@a.example"));
+    e.s.conn().execute("UPDATE message SET raw_hash = NULL WHERE id = ?1", [m]).unwrap();
+    let raw = e.raw.clone();
+    let (d, _, missing) = e.s.create_forward_draft(m, &e.ids, "x", None, &raw, Source::App).unwrap();
+    assert_eq!(missing, ["devis.pdf"]);
+    assert!(d.attachments.is_empty());
+    assert!(d.body.contains("Le devis."));
+}
+
+/// `c`: from the main address, empty; left empty, it is dropped rather
+/// than kept in Drafts.
+#[test]
+fn a_new_mail_starts_empty_and_is_dropped_when_left_empty() {
+    let mut e = env();
+    let d = e.s.create_new_draft(e.acc, &e.ids, None, Source::App).unwrap();
+    assert_eq!((d.kind.as_str(), d.from.addr.as_str(), d.subject.as_str(), d.body.as_str()), ("new", ME, "", ""));
+    assert!(d.to.is_empty() && d.reply_to.is_none() && d.forward_of.is_none());
+    assert!(e.s.drop_if_blank(d.id).unwrap());
+    assert!(e.s.get_draft(d.id).is_err());
+    // Written in: kept.
+    let d = e.s.create_new_draft(e.acc, &e.ids, None, Source::App).unwrap();
+    e.s.update_draft(d.id, d.revision, "  \n", Source::App).unwrap();
+    assert!(e.s.drop_if_blank(d.id).unwrap());
+    let d = e.s.create_new_draft(e.acc, &e.ids, Some("Bonjour"), Source::App).unwrap();
+    assert!(!e.s.drop_if_blank(d.id).unwrap());
+    // A reply is never dropped, even emptied.
+    let m = e.deliver("inbox", &alice("m@a.example"));
+    let r = e.reply(m);
+    e.s.update_draft(r.id, r.revision, "", Source::App).unwrap();
+    assert!(!e.s.drop_if_blank(r.id).unwrap());
 }

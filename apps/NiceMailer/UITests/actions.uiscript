@@ -51,17 +51,13 @@ expect flash ~ y
 key m
 key z
 expect flash ~ mz
-# Reply to the sender only and forward are not available yet (r replies
-# to all: compose.uiscript).
-key R
-expect flash ~ Not available yet: reply to the sender only
-key f
-expect flash ~ Not available yet: forward
+# `R`, `f` and `c` open a reply, a forward, a new mail
+# (compose.uiscript, writing.uiscript).
 # Help.
 key ?
 expect overlay = help
 # Grouped keys, in three columns in a wide window.
-expect help_columns = Navigate,Read,Select | Act on mails,Write | Find and go,Window
+expect help_columns = Navigate,Read,Select | Act on mails | Write,Find and go,Window
 snap help
 key j
 expect overlay = none

@@ -256,6 +256,35 @@ pub fn reply_all(original: &Original, own: &[String]) -> (Vec<Mailbox>, Vec<Mail
     (to, cc)
 }
 
+/// The recipient of a reply to the sender only (`R`, `reponse.md`, section
+/// 4): `Reply-To` when present, else the sender; a reply to one's own mail
+/// goes to its To (a reminder). The account's addresses, duplicates and
+/// invalid addresses are removed; nobody left: the sender, even if it is
+/// an address of the account. Never a Cc.
+pub fn reply_sender(original: &Original, own: &[String]) -> Vec<Mailbox> {
+    let only_to = Original { cc: &[], to: if original.from.is_some_and(|f| own.iter().any(|o| o.eq_ignore_ascii_case(&f.addr))) { original.to } else { &[] }, ..*original };
+    reply_all(&only_to, own).0
+}
+
+/// The subject of a forward: `Fwd: ` and the subject, unless it already
+/// starts with a forward prefix (`Fwd:`, `Fw:`, `TR:`, `WG:`, `RV:`…).
+pub fn forward_subject(subject: &str) -> String {
+    let s = subject.trim();
+    const WORDS: &[&str] = &["fwd", "fw", "tr", "wg", "rv", "enc", "doorst", "vs", "vb"];
+    let word: String = s.chars().take_while(|c| c.is_alphabetic()).collect();
+    let prefixed = WORDS.contains(&word.to_lowercase().as_str()) && s[word.len()..].trim_start().starts_with(':');
+    if prefixed { s.to_string() } else { format!("Fwd: {s}") }
+}
+
+/// The body of a forward (`reponse.md`, section 4): two empty lines for
+/// the user's words, the block that introduces the mail forwarded (written
+/// by the client in its language: "---------- Forwarded message ---------",
+/// From, Date, Subject, To), an empty line, then the mail's text as it is,
+/// not quoted with `>`: it is given, not answered.
+pub fn forward_body(header: &str, text: &str) -> String {
+    format!("\n\n{}\n\n{}", header.trim_end(), text.trim_end())
+}
+
 /// The address the reply is sent from (`reponse.md`, section 4, "Adresse
 /// d'expédition"): the first identity of the account (main address first)
 /// among the recipients of the mail answered, else the main address.
@@ -1416,5 +1445,35 @@ mod tests {
         assert_eq!(clean_mime_type("nonsense"), "application/octet-stream");
         assert_eq!(encoded_size(57), 78);
         assert_eq!(encoded_size(0), 0);
+    }
+
+    #[test]
+    fn a_reply_to_the_sender_goes_to_one_person() {
+        let from = mb("alice@a.fr");
+        let to = [mb("me@x.fr"), mb("bob@b.fr")];
+        let cc = [mb("carol@c.fr")];
+        let own = ["me@x.fr".to_string()];
+        let o = Original { from: Some(&from), reply_to: &[], to: &to, cc: &cc };
+        assert_eq!(addrs(&reply_sender(&o, &own)), ["alice@a.fr"]);
+        // Reply-To wins.
+        let rt = [mb("list@l.fr")];
+        assert_eq!(addrs(&reply_sender(&Original { reply_to: &rt, ..o }, &own)), ["list@l.fr"]);
+        // One's own mail: its To, never its Cc.
+        let me = mb("me@x.fr");
+        let to = [mb("bob@b.fr")];
+        assert_eq!(addrs(&reply_sender(&Original { from: Some(&me), reply_to: &[], to: &to, cc: &cc }, &own)), ["bob@b.fr"]);
+        // Only to oneself: the sender.
+        assert_eq!(addrs(&reply_sender(&Original { from: Some(&me), reply_to: &[], to: &[], cc: &[] }, &own)), ["me@x.fr"]);
+    }
+
+    #[test]
+    fn a_forward_has_its_subject_and_body() {
+        assert_eq!(forward_subject("Devis"), "Fwd: Devis");
+        assert_eq!(forward_subject("TR: Devis"), "TR: Devis");
+        assert_eq!(forward_subject("fw:Devis"), "fw:Devis");
+        assert_eq!(forward_subject("Re: Devis"), "Fwd: Re: Devis");
+        assert_eq!(forward_subject("Trajet"), "Fwd: Trajet");
+        assert_eq!(forward_subject(""), "Fwd: ");
+        assert_eq!(forward_body("--- Forwarded ---\nFrom: A\n", "Bonjour\n> cité\n\n"), "\n\n--- Forwarded ---\nFrom: A\n\nBonjour\n> cité");
     }
 }

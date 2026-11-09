@@ -29,6 +29,7 @@ pub(crate) fn migrate(conn: &mut Connection, mut version: i64) -> Result<()> {
             2 => to_3(&tx)?,
             3 => to_4(&tx)?,
             4 => to_5(&tx)?,
+            5 => to_6(&tx)?,
             _ => unreachable!("aucune migration depuis la version {version}"),
         }
         version += 1;
@@ -143,6 +144,14 @@ fn to_5(conn: &Connection) -> Result<()> {
          INSERT INTO draft_attachment SELECT * FROM temp.draft_attachment_kept;
          DROP TABLE temp.draft_attachment_kept;",
     )?;
+    Ok(())
+}
+
+/// Version 6: `draft.forward_of_message_id`, the mail a forward carries
+/// (`reponse.md`, `f`). A column added at the end of a small table:
+/// instant. Existing drafts are replies or nothing: NULL.
+fn to_6(conn: &Connection) -> Result<()> {
+    conn.execute_batch("ALTER TABLE draft ADD COLUMN forward_of_message_id INTEGER REFERENCES message(id) ON DELETE SET NULL;")?;
     Ok(())
 }
 

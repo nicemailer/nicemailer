@@ -91,7 +91,8 @@ pub use rusqlite;
 /// 4: `account.disabled_at`, accounts whose key left `accounts.toml`, and
 ///    `account.position`, their display order.
 /// 5: `draft.after_send` accepts `stay` (the table is made again).
-pub const SCHEMA_VERSION: i64 = 5;
+/// 6: `draft.forward_of_message_id`, the mail a forward carries.
+pub const SCHEMA_VERSION: i64 = 6;
 
 /// Full text of the schema, at the latest version. `include_str!` reads the
 /// file at compile time and embeds it in the binary as a `&'static str`; the
@@ -400,6 +401,9 @@ fn check_schema(conn: &Connection, version: i64) -> Result<()> {
     }
     if version >= 4 {
         checks.push(("SELECT disabled_at, position FROM account", "account.disabled_at, account.position"));
+    }
+    if version >= 6 {
+        checks.push(("SELECT forward_of_message_id FROM draft", "draft.forward_of_message_id"));
     }
     for (sql, what) in checks {
         if conn.prepare(sql).is_err() {

@@ -24,6 +24,7 @@ Rule of thumb: a migration does what the code cannot work without (a new column,
 | 3 | Remote images: `address.remote_images` (the sender's mails are shown with their remote images) and `message_body.tracking_pixels`. Two columns added at the end of their tables, instant. The bodies get their `nm-remote:` sources and pixel counts from the reinterpretation (`PARSER_VERSION` 8), in the background: bodies without remote image are only marked, the others (about two in three on a real mailbox) are read again from their raw file. |
 | 4 | Accounts: `account.disabled_at`, the date the key of an IMAP account left `accounts.toml` (`config.toml` before the accounts had a file of their own) (`NULL` while it is there), and `account.position`, the display order of the accounts, set to the id of each existing account so the order stays the creation order. Two columns added at the end of a small table, instant. |
 | 5 | `draft.after_send` accepts `stay`, the trial option "leave the conversation where it is" of the filing chosen at sending. SQLite cannot change a `CHECK` in place, so `draft` is made again (new table, rows copied, old one dropped, new one renamed); the rows of `draft_attachment`, which the drop would delete through `ON DELETE CASCADE`, are kept aside and put back. A few rows: instant. |
+| 6 | `draft.forward_of_message_id`, the mail a forward carries (`f`). A column added at the end of a small table: instant. |
 
 The reasons for the indexes of version 2, with measurements, are in `specifications/modele de donnees.md`, section 11.
 

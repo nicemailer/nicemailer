@@ -160,6 +160,3 @@ expect flash ~ Sent
 expect flash !~ filed
 expect folder = Inbox
 expect selected_subject ~ Rappel : le déménagement
-# Reply to the sender only and forward: not yet.
-key R
-expect flash ~ Not available yet

@@ -182,8 +182,9 @@ Avec une majuscule (JK), ou maj + flèche bas / haut, on passe au mail suivant e
 
 Les opérations classiques sur un mail sont (elles s'appliquent aux mails marqués avec J/K, sinon au mail sélectionné) : 
 r répondre à tous (`reponse.md`) : contexte édition, ⌘↩ envoie, ⇧⌘↩ choisit où ranger la conversation puis envoie, échap garde le brouillon, ⌘⌫ l'abandonne ; ⇥ et ⇧⇥ passent de champ en champ (À, Cc, Cci, Objet, texte), ⌥⌘B ouvre la ligne Cci
-R répondre à l'expéditeur seul (pas encore)
-f forwarder (pas encore)
+R répondre à l'expéditeur seul (`reponse.md`, section 4 bis)
+f forwarder : transférer le mail et ses fichiers
+c écrire un nouveau mail
 d mark done (archiver)
 m move (déplacer), puis choisir le dossier. mt déplacer dans le dossier Todo, md déplacer dans le dossier Deleted. Le menu ne propose que les cibles permises depuis le dossier du mail. En Quarantine, la lettre seule suffit (`i`, `n`, `p`, `x`, `b`, `d`) : voir « Quarantine ».
 del supprimer (déplacer dans Deleted)

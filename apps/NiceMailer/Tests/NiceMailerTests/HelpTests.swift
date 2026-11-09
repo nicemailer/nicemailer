@@ -24,8 +24,9 @@ struct HelpTests {
     @Test func whatIsNotThereYetIsMarkedSo() {
         let entries = Help.groups.flatMap(\.entries)
         #expect(entries.first { $0.key == "r" }?.notYet == false)
-        #expect(entries.first { $0.key == "R" }?.notYet == true)
-        #expect(entries.first { $0.key == "f" }?.notYet == true)
+        for key in ["R", "f", "c"] {
+            #expect(entries.first { $0.key == key }?.notYet == false, "\(key)")
+        }
     }
 
     // MARK: Columns
