@@ -58,6 +58,8 @@ enum UIScript {
     /// mode nothing is opened, so as not to launch Preview or Word on the
     /// user's screen.
     static var openedFile = ""
+    /// What the open panel of ⇧⌘A answers (`files`).
+    static var chosenFiles: [URL] = []
     /// Lines of the reader's title line, 1 or 2 (`ReaderTitleBar`).
     static var titleLines = 0
     /// Titles of the help's groups, column by column (`HelpPanel`).
@@ -110,6 +112,9 @@ enum UIScript {
         // Opening a file would launch an app on the user's screen: only
         // record its name.
         model.openFile = { openedFile = $0.isFileURL ? $0.lastPathComponent : $0.absoluteString }
+        // ⇧⌘A would show the open panel: the scenario names the files
+        // (`files`), taken from `UITests/fixtures/files`.
+        model.chooseFiles = { UIScript.chosenFiles }
         // ⌘V reads a private pasteboard filled by `clipboard`: the user's
         // clipboard is never read nor overwritten.
         controller.pasteboard = NSPasteboard(name: NSPasteboard.Name("NiceMailer-UIScript-\(ProcessInfo.processInfo.processIdentifier)"))
@@ -243,6 +248,18 @@ private final class Runner {
             // (`scripts/ui-test.sh` makes `mailboxes/old`, `early`…).
             let base = DataDirectory.environment.map { URL(fileURLWithPath: $0) } ?? FileManager.default.temporaryDirectory
             await model.changeMailbox(to: base.appendingPathComponent(arg))
+        case "files", "clipfiles":
+            // Files of `UITests/fixtures/files`, by name, comma-separated:
+            // what the open panel answers next (`files`), or file URLs on
+            // the private pasteboard, as the Finder's ⌘C puts them.
+            let dir = URL(fileURLWithPath: UIScript.path ?? "").deletingLastPathComponent().appendingPathComponent("fixtures/files")
+            let urls = arg.split(separator: ",").map { dir.appendingPathComponent(String($0).trimmingCharacters(in: .whitespaces)) }
+            if command == "files" {
+                UIScript.chosenFiles = urls
+            } else {
+                controller.pasteboard.clearContents()
+                controller.pasteboard.writeObjects(urls as [NSURL])
+            }
         case "clipboard":
             controller.pasteboard.clearContents()
             controller.pasteboard.setString(arg.replacingOccurrences(of: "\\n", with: "\n"), forType: .string)
@@ -314,6 +331,7 @@ private final class Runner {
         case "tab": chars = "\t"; code = KeyCode.tab
         case "shift-tab": chars = "\u{19}"; code = KeyCode.tab; mods = .shift
         case "alt-cmd-b": chars = "b"; code = 11; mods = [.command, .option]
+        case "shift-cmd-a": chars = "A"; code = 0; mods = [.command, .shift]
         // Editing keys of a typed line (`LineEdit`).
         case "left": chars = "\u{F702}"; code = KeyCode.left; mods = .function
         case "right": chars = "\u{F703}"; code = KeyCode.right; mods = .function
@@ -628,6 +646,8 @@ private final class Runner {
             "compose_focus": m.composer?.focus.rawValue ?? "",
             "compose_line": m.composer.map { $0.line.beforeCursor + "|" + String($0.line.text.dropFirst($0.line.cursor)) } ?? "",
             "compose_suggestions": m.composer.map { $0.suggestions.map(\.addr).joined(separator: ",") } ?? "",
+            "compose_attachments": m.composer.map { $0.attachments.map(\.filename).joined(separator: ",") } ?? "",
+            "compose_attachment_index": m.composer.map { String($0.attachmentIndex) } ?? "",
             "compose_suggestion_index": m.composer?.suggestionIndex.map(String.init) ?? "",
             "compose_after": m.composer.flatMap { Compose.afterSend($0.draft) } ?? "",
             "compose_after_line": m.composer.flatMap { Compose.afterSendLine($0.draft) } ?? "",

@@ -1544,6 +1544,11 @@ final class GeekController {
             Task { await model.discardComposer() }
             return true
         }
+        // ⇧⌘A: attach files (as in Mail).
+        if command, mods.contains(.shift), event.charactersIgnoringModifiers?.lowercased() == "a" {
+            Task { await model.chooseAttachments() }
+            return true
+        }
         // ⌥⌘B: the Bcc line, shown and focused (as in Mail).
         if command, option, event.charactersIgnoringModifiers?.lowercased() == "b" {
             model.composer?.showsBcc = true
@@ -1561,6 +1566,9 @@ final class GeekController {
         switch c.focus {
         case .subject:
             handleSubjectKey(event, mods: mods)
+            return true
+        case .attachments:
+            handleAttachmentKey(event)
             return true
         case .to, .cc, .bcc:
             handleRecipientKey(event, mods: mods)
@@ -1626,6 +1634,13 @@ final class GeekController {
             if command {
                 switch key.lowercased() {
                 case "v":
+                    // Files copied in the Finder are attached, not pasted
+                    // as their names.
+                    let files = (pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL]) ?? []
+                    if !files.isEmpty {
+                        Task { await model.attach(files) }
+                        return true
+                    }
                     c.buffer.insert(pasteboard.string(forType: .string) ?? "")
                     changed = true
                 case "a":
@@ -1743,6 +1758,35 @@ final class GeekController {
         c.line.insert(text)
         model.composer = c
         model.suggestRecipients()
+    }
+
+    /// A key in the line of files: ← → select one, ⌫ removes it, Return
+    /// goes to the text.
+    private func handleAttachmentKey(_ event: NSEvent) {
+        guard var c = model.composer, !c.attachments.isEmpty else { return }
+        switch event.keyCode {
+        case KeyCode.left:
+            c.attachmentIndex = max(0, c.attachmentIndex - 1)
+        case KeyCode.right:
+            c.attachmentIndex = min(c.attachments.count - 1, c.attachmentIndex + 1)
+        case KeyCode.delete, KeyCode.forwardDelete:
+            let id = c.attachments[min(c.attachmentIndex, c.attachments.count - 1)].id
+            Task { await model.removeAttachment(id) }
+            return
+        case KeyCode.returnKey:
+            focusCompose(.body)
+            return
+        default:
+            return
+        }
+        model.composer = c
+    }
+
+    /// A click on a file of the reply: the line of files takes the keys,
+    /// with that file selected.
+    func clickAttachment(_ index: Int) {
+        focusCompose(.attachments)
+        model.composer?.attachmentIndex = index
     }
 
     /// A key in the subject: a one-line text field; Return goes to the text.

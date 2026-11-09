@@ -136,6 +136,10 @@ pub mod method {
     /// Saves what was typed, at each pause (`reponse.md`, section 5): the
     /// body, and the recipients or the subject when they changed.
     pub const UPDATE_DRAFT: &str = "update_draft";
+    /// Attaches a file the app put in `incoming.noindex` (`brouillons.md`,
+    /// section 7).
+    pub const ADD_DRAFT_ATTACHMENT: &str = "add_draft_attachment";
+    pub const REMOVE_DRAFT_ATTACHMENT: &str = "remove_draft_attachment";
     /// Reads the addresses typed or pasted in a recipient line (`reponse.md`,
     /// section 6): the ones understood, and the pieces that are not one.
     pub const PARSE_ADDRESSES: &str = "parse_addresses";
@@ -1005,6 +1009,47 @@ pub struct UpdateDraftParams {
     pub bcc: Option<Vec<AddressView>>,
 }
 
+/// A file attached to a draft.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DraftAttachmentView {
+    pub id: i64,
+    pub filename: String,
+    pub mime_type: String,
+    /// Bytes of the file (base64 makes it a third bigger in the mail).
+    pub size: i64,
+}
+
+/// Params of `add_draft_attachment`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AddDraftAttachmentParams {
+    pub id: i64,
+    pub revision: i64,
+    /// The name of the file in `incoming.noindex` (letters, digits, `-`).
+    pub staged: String,
+    /// The name shown and sent.
+    pub filename: String,
+    /// `type/subtype`; absent or unknown: `application/octet-stream`.
+    #[serde(default)]
+    pub mime_type: Option<String>,
+}
+
+/// Result of `add_draft_attachment`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AddDraftAttachmentResult {
+    pub revision: i64,
+    pub attachment: DraftAttachmentView,
+    /// The mail is now bigger than most providers accept: said, not refused.
+    pub warning: Option<String>,
+}
+
+/// Params of `remove_draft_attachment`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RemoveDraftAttachmentParams {
+    pub id: i64,
+    pub revision: i64,
+    pub attachment_id: i64,
+}
+
 /// Params of `parse_addresses`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ParseAddressesParams {
@@ -1065,6 +1110,8 @@ pub struct DraftView {
     pub bcc: Vec<AddressView>,
     pub subject: String,
     pub body: String,
+    #[serde(default)]
+    pub attachments: Vec<DraftAttachmentView>,
     pub revision: i64,
     /// `editing` or `sending`.
     pub state: String,
@@ -2043,4 +2090,8 @@ pub struct RawGcResult {
     /// Files without row older than `raw.gc_grace_secs`.
     pub orphans: u64,
     pub attachment_dirs: u64,
+    /// Files of `outgoing.noindex` no draft and no mail waiting to leave
+    /// referred to, deleted.
+    #[serde(default)]
+    pub outgoing: u64,
 }

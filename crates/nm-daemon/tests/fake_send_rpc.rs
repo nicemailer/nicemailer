@@ -129,3 +129,35 @@ fn recipients_are_parsed_suggested_and_saved() {
     let e = c.call("update_draft", json!({"id": d["id"], "revision": r["revision"], "to": [{"addr": "nope", "name": null}]})).unwrap_err();
     assert_eq!(e["code"], -32602, "{e}");
 }
+
+/// Attachments through the socket (`brouillons.md`, section 7): the app
+/// stages a file in `incoming.noindex`, the core takes it; the mail sent
+/// carries it.
+#[test]
+fn a_staged_file_is_attached_and_sent() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("config.toml"), "[compose]\nundo_send_seconds = 1\n").unwrap();
+    let _core = start_with(dir.path(), &[("NICEMAILER_FAKE_NETWORK", "1")]);
+    let mut c = Client::connect_as(dir.path(), "app");
+    import(dir.path(), &mut c);
+    let d = c.call("create_draft", json!({"reply_to": message(dir.path()), "quote_header": "x"})).unwrap()["draft"].clone();
+    std::fs::write(dir.path().join("incoming.noindex").join("A1B2"), b"%PDF devis").unwrap();
+    let r = c
+        .call("add_draft_attachment", json!({"id": d["id"], "revision": d["revision"], "staged": "A1B2", "filename": "devis.pdf", "mime_type": "application/pdf"}))
+        .unwrap();
+    assert_eq!(r["attachment"]["filename"], "devis.pdf");
+    assert_eq!(r["attachment"]["size"], 10);
+    assert!(r["warning"].is_null());
+    // A path instead of a staged name: refused.
+    let e = c
+        .call("add_draft_attachment", json!({"id": d["id"], "revision": r["revision"], "staged": "../nicemailer.db", "filename": "x"}))
+        .unwrap_err();
+    assert_eq!(e["code"], -32602, "{e}");
+    let v = c.call("open_draft", json!({"id": d["id"]})).unwrap();
+    assert_eq!(v["attachments"][0]["mime_type"], "application/pdf");
+    c.call("send_draft", json!({"id": d["id"], "revision": r["revision"], "body": "Ci-joint"})).unwrap();
+    let sent = c.event("DraftSent", 15);
+    let db = nm_store::rusqlite::Connection::open_with_flags(dir.path().join("nicemailer.db"), nm_store::rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+    let has: i64 = db.query_row("SELECT has_attachments FROM message WHERE id = ?1", [sent["message_id"].as_i64().unwrap()], |r| r.get(0)).unwrap();
+    assert_eq!(has, 1);
+}

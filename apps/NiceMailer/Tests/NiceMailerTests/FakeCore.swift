@@ -125,6 +125,7 @@ enum Fixture {
             "to": [["addr": "sender\(thread)@example.org", "name": "Sender \(thread)"]],
             "cc": thread == 2 ? [["addr": "carol@example.org", "name": NSNull()]] : [],
             "bcc": [],
+            "attachments": [],
             "subject": "Re: Subject \(thread)",
             "body": body ?? "\n\nOn Nov 7, Sender \(thread) wrote:\n> Hello",
             "revision": revision, "state": state, "reply_to": replyTo, "thread_id": thread,
@@ -140,6 +141,13 @@ enum Fixture {
             let replyTo = params["reply_to"] as? Int ?? 10
             return ["draft": draft(replyTo: replyTo, body: params["body"] as? String), "reused": false]
         case "update_draft":
+            return ["revision": (params["revision"] as? Int ?? 1) + 1]
+        case "add_draft_attachment":
+            let name = params["filename"] as? String ?? "file"
+            return ["revision": (params["revision"] as? Int ?? 1) + 1,
+                    "attachment": ["id": 70 + name.count, "filename": name, "mime_type": params["mime_type"] ?? "application/octet-stream", "size": 1234],
+                    "warning": NSNull()]
+        case "remove_draft_attachment":
             return ["revision": (params["revision"] as? Int ?? 1) + 1]
         case "parse_addresses":
             // A small stand-in for `compose::parse_address_list`: pieces

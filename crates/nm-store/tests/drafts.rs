@@ -48,6 +48,7 @@ fn env() -> Env {
         .collect();
     s.sync_folder_list(acc, &listed).unwrap();
     s.set_server_accounts(BTreeSet::from([acc])).unwrap();
+    s.set_outgoing(nm_store::outgoing::OutgoingStore::open(dir.path()).unwrap());
     let ids = Identities { list: vec![Mailbox::new(ME, Some("Me")), Mailbox::new("contact@hey.example", Some("Contact"))] };
     Env { s, raw, _dir: dir, acc, ins: Inserter::new(Source::Imap, None), ids, next_uid: 1 }
 }
@@ -851,4 +852,128 @@ fn recipients_are_suggested_by_use() {
     assert!(!names("me").contains(&ME.to_string()));
     assert!(names("  ").is_empty());
     assert!(names("%").is_empty());
+}
+
+
+impl Env {
+    /// A file put in `incoming.noindex` by "the app": its staged name.
+    fn stage(&self, name: &str, bytes: &[u8]) -> String {
+        std::fs::write(self._dir.path().join("incoming.noindex").join(name), bytes).unwrap();
+        name.to_string()
+    }
+
+    fn outgoing(&self) -> nm_store::outgoing::OutgoingStore {
+        nm_store::outgoing::OutgoingStore::open(self._dir.path()).unwrap()
+    }
+}
+
+/// Attaching (`brouillons.md`, section 7): the file the app staged is
+/// taken by the core, kept by its content, listed in the draft; each
+/// change is a revision.
+#[test]
+fn files_are_attached_and_removed() {
+    let mut e = env();
+    let m = e.deliver("inbox", &alice("m@a.example"));
+    let d = e.reply(m);
+    let staged = e.stage("f1", b"%PDF-1.4 devis");
+    let (rev, a, warning) = e.s.add_draft_attachment(d.id, d.revision, &staged, "/Users/me/Devis mars.pdf", Some("application/pdf"), Source::App).unwrap();
+    assert_eq!(rev, d.revision + 1);
+    assert_eq!((a.filename.as_str(), a.mime_type.as_str(), a.size), ("Devis mars.pdf", "application/pdf", 14));
+    assert!(warning.is_none());
+    assert!(!e._dir.path().join("incoming.noindex/f1").exists());
+    // The same content again, under another name: one file kept.
+    let staged = e.stage("f2", b"%PDF-1.4 devis");
+    let (rev, b, _) = e.s.add_draft_attachment(d.id, rev, &staged, "copie.pdf", Some("nonsense"), Source::App).unwrap();
+    assert_eq!(b.mime_type, "application/octet-stream");
+    assert_eq!(e.outgoing().kept().len(), 1);
+    let v = e.s.get_draft(d.id).unwrap();
+    assert_eq!(v.attachments.iter().map(|a| a.filename.as_str()).collect::<Vec<_>>(), ["Devis mars.pdf", "copie.pdf"]);
+    // Refused: a stale revision, a name that is not a staged file.
+    let staged = e.stage("f3", b"x");
+    assert!(matches!(e.s.add_draft_attachment(d.id, rev - 1, &staged, "x", None, Source::App), Err(StoreError::RevisionConflict { .. })));
+    assert!(matches!(e.s.add_draft_attachment(d.id, rev, "../nicemailer.db", "x", None, Source::App), Err(StoreError::InvalidParams(_))));
+    let rev = e.s.remove_draft_attachment(d.id, rev, b.id, Source::App).unwrap();
+    assert_eq!(e.s.get_draft(d.id).unwrap().attachments.len(), 1);
+    assert!(matches!(e.s.remove_draft_attachment(d.id, rev, b.id, Source::App), Err(StoreError::NotFound(_))));
+}
+
+/// A mail with attachments: `multipart/mixed`, the files read back with
+/// their names (RFC 2231 for the accented one), the message kept as files
+/// rather than in the payload; once sent and copied, the garbage collector
+/// removes what nobody needs any more.
+#[test]
+fn a_mail_with_attachments_is_sent_then_its_files_collected() {
+    let mut e = env();
+    let m = e.deliver("inbox", &alice("m@a.example"));
+    let d = e.reply(m);
+    let data: Vec<u8> = (0..=255u8).cycle().take(70_000).collect();
+    let staged = e.stage("f1", &data);
+    let (rev, _, _) = e.s.add_draft_attachment(d.id, d.revision, &staged, "Résumé été.bin", Some("application/octet-stream"), Source::App).unwrap();
+    // A copy for Drafts carries the file.
+    let draft_copy = e.s.draft_to_close(d.id, "t").unwrap().unwrap();
+    assert_eq!(parse(&draft_copy).attachments.len(), 1);
+    e.s.send_draft(d.id, rev, "Ci-joint.", None, 0, "NiceMailer/test", Source::App).unwrap();
+    assert_eq!(e.int("SELECT count(*) FROM pending_action WHERE kind = 'send' AND json_extract(payload, '$.mime') IS NULL AND json_extract(payload, '$.mime_blob') IS NOT NULL"), 1);
+    let jobs = e.s.send_claim(e.acc).unwrap();
+    let j = &jobs[0];
+    let parsed = parse(&j.mime);
+    assert_eq!(parsed.attachments.len(), 1);
+    assert_eq!(parsed.attachments[0].filename.as_deref(), Some("Résumé été.bin"));
+    assert_eq!(parsed.attachments[0].size, 70_000);
+    assert!(parsed.text.unwrap_or_default().contains("Ci-joint."));
+    // While the mail waits, its files stay.
+    let store = std::sync::Mutex::new(std::mem::replace(&mut e.s, Store::open_in_memory().unwrap()));
+    assert_eq!(nm_store::gc::collect_outgoing(&store, &e.outgoing(), std::time::Duration::from_secs(3600)).unwrap(), 0);
+    // The file attached, and the message (sent and kept are the same
+    // bytes without Bcc: one file).
+    assert_eq!(e.outgoing().kept().len(), 2);
+    e.s = store.into_inner().unwrap();
+    let written = e.raw.write(&j.copy).unwrap();
+    e.s.send_accepted(j.action_id, &written, &[], &e.ids.own()).unwrap();
+    assert_eq!(e.int("SELECT has_attachments FROM message m JOIN folder f ON f.id = m.folder_id WHERE f.role = 'sent'"), 1);
+    e.s.send_copied(j.action_id, Some(77)).unwrap();
+    // Sent: the draft, its attachment and the action's files are gone.
+    let store = std::sync::Mutex::new(std::mem::replace(&mut e.s, Store::open_in_memory().unwrap()));
+    assert_eq!(nm_store::gc::collect_outgoing(&store, &e.outgoing(), std::time::Duration::from_secs(3600)).unwrap(), 2);
+    assert!(e.outgoing().kept().is_empty());
+    e.s = store.into_inner().unwrap();
+    assert_eq!(e.int("SELECT count(*) FROM outgoing_blob"), 0);
+}
+
+/// A file of `outgoing.noindex` without a row (a crash between the file
+/// and its row) goes after the grace delay; a file still attached never.
+#[test]
+fn the_collector_sweeps_orphans_after_the_grace_delay() {
+    let mut e = env();
+    let m = e.deliver("inbox", &alice("m@a.example"));
+    let d = e.reply(m);
+    let staged = e.stage("f1", b"attached");
+    e.s.add_draft_attachment(d.id, d.revision, &staged, "a.txt", None, Source::App).unwrap();
+    e.outgoing().write(b"orphan").unwrap();
+    let store = std::sync::Mutex::new(std::mem::replace(&mut e.s, Store::open_in_memory().unwrap()));
+    assert_eq!(nm_store::gc::collect_outgoing(&store, &e.outgoing(), std::time::Duration::from_secs(3600)).unwrap(), 0);
+    assert_eq!(nm_store::gc::collect_outgoing(&store, &e.outgoing(), std::time::Duration::ZERO).unwrap(), 1);
+    assert_eq!(e.outgoing().kept().len(), 1);
+}
+
+/// Beyond 25 MB once encoded, a warning; beyond 100 MB of files, refused,
+/// and the file taken is not kept.
+#[test]
+fn big_attachments_are_warned_then_refused() {
+    let mut e = env();
+    let m = e.deliver("inbox", &alice("m@a.example"));
+    let d = e.reply(m);
+    let big = |e: &Env, name: &str, bytes: u64| -> String {
+        let f = std::fs::File::create(e._dir.path().join("incoming.noindex").join(name)).unwrap();
+        // A sparse file: no disk used, read as zeros.
+        f.set_len(bytes).unwrap();
+        name.to_string()
+    };
+    let staged = big(&e, "big1", 20 << 20);
+    let (rev, _, warning) = e.s.add_draft_attachment(d.id, d.revision, &staged, "a.bin", None, Source::App).unwrap();
+    assert!(warning.unwrap().contains("25 MB"));
+    let staged = big(&e, "big2", 81 << 20);
+    assert!(matches!(e.s.add_draft_attachment(d.id, rev, &staged, "b.bin", None, Source::App), Err(StoreError::InvalidParams(_))));
+    assert_eq!(e.outgoing().kept().len(), 1);
+    assert_eq!(e.s.get_draft(d.id).unwrap().revision, rev);
 }

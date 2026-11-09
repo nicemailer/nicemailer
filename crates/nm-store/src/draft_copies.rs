@@ -180,7 +180,7 @@ impl Store {
         if state == "sending" || (message.is_some() && server_revision == Some(revision)) {
             return Ok(None);
         }
-        Ok(Some(crate::drafts::build_draft_mime(&self.conn, id, user_agent, Some(revision))?))
+        Ok(Some(crate::drafts::build_draft_mime(&self.conn, id, user_agent, Some(revision), self.outgoing.as_ref())?))
     }
 
     /// The drafts changed since their last copy: at start, nothing is open,

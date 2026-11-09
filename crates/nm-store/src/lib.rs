@@ -54,6 +54,7 @@ pub mod library;
 pub mod links;
 pub mod phones;
 pub mod mbox;
+pub mod outgoing;
 mod migrations;
 pub mod pool;
 mod queries;
@@ -237,6 +238,10 @@ pub struct Store {
     /// Sending is pretended (`NICEMAILER_FAKE_NETWORK`, `drafts.rs`): the
     /// archive accounts may then answer too.
     fake_sending: bool,
+    /// The files of mails to send (`outgoing.rs`), set by the core: a
+    /// store without it (the CLI's `seed`) cannot attach files nor send
+    /// a mail that has some.
+    outgoing: Option<outgoing::OutgoingStore>,
 }
 
 impl Store {
@@ -279,7 +284,7 @@ impl Store {
         if version != SCHEMA_VERSION {
             return Err(StoreError::ReaderVersion { found: version, expected: SCHEMA_VERSION });
         }
-        Ok(Store { conn, server_accounts: BTreeSet::new(), fake_sending: false })
+        Ok(Store { conn, server_accounts: BTreeSet::new(), fake_sending: false, outgoing: None })
     }
 
     /// In-memory database, used by tests: fast and thrown away at the end.
@@ -341,7 +346,7 @@ impl Store {
             "CREATE TEMP TABLE IF NOT EXISTS server_account (id INTEGER PRIMARY KEY);
              CREATE TEMP TABLE IF NOT EXISTS read_only_account (id INTEGER PRIMARY KEY);",
         )?;
-        Ok(Store { conn, server_accounts: BTreeSet::new(), fake_sending: false })
+        Ok(Store { conn, server_accounts: BTreeSet::new(), fake_sending: false, outgoing: None })
     }
 
     /// Updates the planner statistics after a large change (an import adds

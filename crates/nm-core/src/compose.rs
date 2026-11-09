@@ -497,13 +497,62 @@ pub struct Outgoing<'a> {
     pub draft_revision: Option<i64>,
 }
 
-/// The MIME message of a text mail (`reponse.md`, section 7): RFC 5322
+/// A file attached to a mail to send (`brouillons.md`, section 7).
+#[derive(Debug, Clone, Copy)]
+pub struct Attachment<'a> {
+    /// The name shown and sent; cleaned by [`clean_filename`].
+    pub filename: &'a str,
+    /// `type/subtype`; checked by [`clean_mime_type`].
+    pub mime_type: &'a str,
+    pub data: &'a [u8],
+}
+
+/// Most bytes of attachments a draft may carry, all files together.
+/// Mail providers refuse far less (25 MB is common, [`ATTACHMENTS_WARN`]);
+/// beyond this, the mail would not leave anyway, and building it in
+/// memory would cost for nothing.
+pub const ATTACHMENTS_MAX: u64 = 100 << 20;
+/// Size of a mail (attachments encoded in base64, a third bigger) beyond
+/// which most providers refuse it: the user is warned when attaching.
+pub const ATTACHMENTS_WARN: u64 = 25 << 20;
+
+/// The size of `bytes` of attachment once encoded in base64, lines
+/// included: what it weighs in the mail.
+pub fn encoded_size(bytes: u64) -> u64 {
+    let b64 = bytes.div_ceil(3) * 4;
+    b64 + b64.div_ceil(76) * 2
+}
+
+/// A file name as sent: no path (only what follows the last `/` or `\`),
+/// no control character, no surrounding spaces or dots that would hide
+/// it, at most 255 characters; `attachment` if nothing is left.
+pub fn clean_filename(name: &str) -> String {
+    let base = name.rsplit(['/', '\\']).next().unwrap_or("");
+    let cleaned: String = base.chars().filter(|c| !c.is_control()).take(255).collect();
+    let cleaned = cleaned.trim().trim_start_matches('.').trim();
+    if cleaned.is_empty() { "attachment".to_string() } else { cleaned.to_string() }
+}
+
+/// A MIME type as `type/subtype` of token characters (RFC 2045), in
+/// lowercase; `application/octet-stream` for anything else.
+pub fn clean_mime_type(t: &str) -> String {
+    let token = |s: &str| !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || "!#$&^_.+-".contains(c));
+    match t.trim().split_once('/') {
+        Some((a, b)) if token(a) && token(b) && t.len() <= 127 => t.trim().to_ascii_lowercase(),
+        _ => "application/octet-stream".to_string(),
+    }
+}
+
+/// The MIME message of a mail (`reponse.md`, section 7): RFC 5322
 /// headers, a `text/plain; charset=utf-8; format=flowed` body in `7bit`
 /// when it is ASCII with short lines, in `quoted-printable` otherwise.
+/// With attachments, a `multipart/mixed` message: the text first, then
+/// each file in base64, its name in RFC 2231 when it is not plain ASCII.
 /// Lines end with CRLF. `Bcc` is written when `h.bcc` is not empty: the
 /// caller gives an empty list for the mail sent.
-pub fn build_message(h: &Outgoing, body: &str) -> Vec<u8> {
-    let mut out = String::with_capacity(body.len() + 1024);
+pub fn build_message(h: &Outgoing, body: &str, attachments: &[Attachment]) -> Vec<u8> {
+    let files: usize = attachments.iter().map(|a| encoded_size(a.data.len() as u64) as usize + 512).sum();
+    let mut out = String::with_capacity(body.len() + 1024 + files);
     header(&mut out, "From", &mailbox(h.from));
     if !h.to.is_empty() {
         address_list(&mut out, "To", h.to);
@@ -532,19 +581,104 @@ pub fn build_message(h: &Outgoing, body: &str) -> Vec<u8> {
         header(&mut out, "X-NiceMailer-Draft-Revision", &rev.to_string());
     }
     let text = flowed(body);
-    let plain = text.is_ascii() && text.split("\r\n").all(|l| l.len() <= 998);
-    header(&mut out, "Content-Type", "text/plain; charset=utf-8; format=flowed");
-    header(&mut out, "Content-Transfer-Encoding", if plain { "7bit" } else { "quoted-printable" });
+    // The boundary between the parts: from the Message-ID, so that the
+    // same draft gives the same bytes. Base64 and quoted-printable never
+    // hold `=_`; a text sent as is that holds it goes in quoted-printable.
+    let boundary = format!("=_nm_{}", &hex_digest(h.message_id)[..24]);
+    let plain = text.is_ascii() && text.split("\r\n").all(|l| l.len() <= 998) && !(!attachments.is_empty() && text.contains(&boundary));
+    if attachments.is_empty() {
+        text_part(&mut out, &text, plain);
+        return out.into_bytes();
+    }
+    header(&mut out, "Content-Type", &format!("multipart/mixed; boundary=\"{boundary}\""));
+    out.push_str("\r\n");
+    let _ = write!(out, "--{boundary}\r\n");
+    text_part(&mut out, &text, plain);
+    for a in attachments {
+        let _ = write!(out, "--{boundary}\r\n");
+        let name = clean_filename(a.filename);
+        let (param, display) = filename_params(&name);
+        // `name` on a line of its own when it is encoded: lines stay short.
+        let sep = if display.starts_with("\"=?") { ";\r\n " } else { "; " };
+        header(&mut out, "Content-Type", &format!("{}{sep}name={display}", clean_mime_type(a.mime_type)));
+        header(&mut out, "Content-Disposition", &format!("attachment;{param}"));
+        header(&mut out, "Content-Transfer-Encoding", "base64");
+        out.push_str("\r\n");
+        let encoded = base64(a.data);
+        // Rust note: `as_bytes().chunks(76)` cuts the ASCII text in slices
+        // of 76 bytes without copying; each is valid UTF-8 (ASCII).
+        for line in encoded.as_bytes().chunks(76) {
+            out.push_str(std::str::from_utf8(line).unwrap_or_default());
+            out.push_str("\r\n");
+        }
+    }
+    let _ = write!(out, "--{boundary}--\r\n");
+    out.into_bytes()
+}
+
+/// The headers and the text of the body part.
+fn text_part(out: &mut String, text: &str, plain: bool) {
+    header(out, "Content-Type", "text/plain; charset=utf-8; format=flowed");
+    header(out, "Content-Transfer-Encoding", if plain { "7bit" } else { "quoted-printable" });
     out.push_str("\r\n");
     if plain {
-        out.push_str(&text);
+        out.push_str(text);
     } else {
-        quoted_printable(&mut out, &text);
+        quoted_printable(out, text);
     }
     if !out.ends_with("\r\n") {
         out.push_str("\r\n");
     }
-    out.into_bytes()
+}
+
+/// The name of an attached file in the headers of its part: the
+/// parameters of `Content-Disposition` (with a leading space or folded
+/// lines) and the value of `name` for `Content-Type`.
+///
+/// A plain ASCII name goes in quotes. Any other is written as RFC 2231
+/// says (`filename*=utf-8''caf%C3%A9.pdf`), cut in numbered pieces
+/// (`filename*0*=…; filename*1*=…`) so that no line grows long, and as an
+/// RFC 2047 encoded word in `name`, which older readers understand.
+fn filename_params(name: &str) -> (String, String) {
+    let simple = name.is_ascii() && !name.chars().any(|c| c.is_control() || c == '"' || c == '\\') && name.len() <= 60;
+    if simple {
+        return (format!(" filename=\"{name}\""), format!("\"{name}\""));
+    }
+    let mut encoded = String::new();
+    for b in name.bytes() {
+        if b.is_ascii_alphanumeric() || b"!#$&+-.^_`|~".contains(&b) {
+            encoded.push(b as char);
+        } else {
+            let _ = write!(encoded, "%{b:02X}");
+        }
+    }
+    // Pieces of at most 50 characters, never cutting a `%XX` in two.
+    let mut pieces = Vec::new();
+    let mut rest = encoded.as_str();
+    while !rest.is_empty() {
+        let mut end = rest.len().min(50);
+        while end < rest.len() && end > 0 && (rest.as_bytes()[end - 1] == b'%' || (end >= 2 && rest.as_bytes()[end - 2] == b'%')) {
+            end -= 1;
+        }
+        pieces.push(&rest[..end]);
+        rest = &rest[end..];
+    }
+    let param = pieces
+        .iter()
+        .enumerate()
+        .map(|(i, p)| if i == 0 { format!("\r\n filename*0*=utf-8''{p}") } else { format!("\r\n filename*{i}*={p}") })
+        .collect::<Vec<_>>()
+        .join(";");
+    (param, format!("\"{}\"", encoded_words(name)))
+}
+
+/// SHA-256 of a text, in hexadecimal.
+fn hex_digest(s: &str) -> String {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(s.as_bytes()).iter().fold(String::with_capacity(64), |mut out, b| {
+        let _ = write!(out, "{b:02x}");
+        out
+    })
 }
 
 /// A header line. The value is already encoded and folded.
@@ -1005,7 +1139,7 @@ mod tests {
             user_agent: "NiceMailer/0.1.0",
             draft_revision: None,
         };
-        let m = String::from_utf8(build_message(&h, "Merci !\n\n> Hi")).unwrap();
+        let m = String::from_utf8(build_message(&h, "Merci !\n\n> Hi", &[])).unwrap();
         assert!(m.contains("From: Achille Moi <me@x.fr>\r\n"), "{m}");
         assert!(m.contains("To: Alice Martin <alice@a.fr>\r\n"));
         assert!(m.contains("Cc: \"Dupont, Bob\" <bob@b.fr>, carol@c.fr\r\n"));
@@ -1017,7 +1151,7 @@ mod tests {
         assert!(m.contains("Content-Transfer-Encoding: 7bit\r\n\r\nMerci !\r\n\r\n> Hi\r\n"));
         assert!(!m.to_lowercase().contains("bcc"));
         assert!(!m.contains("X-NiceMailer-Draft-Revision"));
-        let draft = String::from_utf8(build_message(&Outgoing { draft_revision: Some(7), ..h.clone() }, "x")).unwrap();
+        let draft = String::from_utf8(build_message(&Outgoing { draft_revision: Some(7), ..h.clone() }, "x", &[])).unwrap();
         assert!(draft.contains("X-NiceMailer-Draft-Revision: 7\r\n"), "{draft}");
         assert!(m.split("\r\n").all(|l| l.len() <= 998));
         assert!(!m.replace("\r\n", "").contains('\n'), "bare LF");
@@ -1041,7 +1175,7 @@ mod tests {
             user_agent: "NiceMailer",
             draft_revision: None,
         };
-        let m = String::from_utf8(build_message(&h, "Très bien, à lundi.")).unwrap();
+        let m = String::from_utf8(build_message(&h, "Très bien, à lundi.", &[])).unwrap();
         assert!(m.is_ascii());
         assert!(m.contains("From: =?UTF-8?B?SMOpbMOobmU=?= <me@x.fr>\r\n"), "{m}");
         assert!(m.contains("Subject: =?UTF-8?B?"));
@@ -1068,7 +1202,7 @@ mod tests {
             user_agent: "NiceMailer",
             draft_revision: None,
         };
-        let m = String::from_utf8(build_message(&h, "x")).unwrap();
+        let m = String::from_utf8(build_message(&h, "x", &[])).unwrap();
         assert!(!m.contains("\r\nBcc:"), "{m}");
         assert!(!m.contains("In-Reply-To"));
     }
@@ -1208,10 +1342,79 @@ mod tests {
             user_agent: "t",
             draft_revision: None,
         };
-        let kept = String::from_utf8(build_message(&h, "x")).unwrap();
+        let kept = String::from_utf8(build_message(&h, "x", &[])).unwrap();
         assert!(kept.contains("\r\nBcc: Secret <secret@x.fr>\r\n"), "{kept}");
-        let sent = String::from_utf8(build_message(&Outgoing { bcc: &[], ..h }, "x")).unwrap();
+        let sent = String::from_utf8(build_message(&Outgoing { bcc: &[], ..h }, "x", &[])).unwrap();
         assert!(!sent.to_lowercase().contains("bcc"), "{sent}");
         assert!(!sent.contains("secret"));
+    }
+
+    fn headers<'a>(from: &'a Mailbox, to: &'a [Mailbox]) -> Outgoing<'a> {
+        Outgoing {
+            from,
+            to,
+            cc: &[],
+            bcc: &[],
+            subject: "S",
+            date: 0,
+            tz_offset_secs: 0,
+            message_id: "id@x.fr",
+            in_reply_to: None,
+            references: &[],
+            user_agent: "t",
+            draft_revision: None,
+        }
+    }
+
+    #[test]
+    fn attachments_make_a_multipart_message() {
+        let from = Mailbox::new("me@x.fr", None);
+        let to = [Mailbox::new("a@x.fr", None)];
+        let data: Vec<u8> = (0..=255u8).cycle().take(1000).collect();
+        let files = [
+            Attachment { filename: "devis.pdf", mime_type: "application/pdf", data: &data },
+            Attachment { filename: "../../café ☕ très long nom de fichier pour voir la découpe en morceaux.txt", mime_type: "Text/Plain", data: b"hi" },
+        ];
+        let mime = String::from_utf8(build_message(&headers(&from, &to), "Bonjour", &files)).unwrap();
+        let boundary = format!("=_nm_{}", &hex_digest("id@x.fr")[..24]);
+        assert!(mime.contains(&format!("Content-Type: multipart/mixed; boundary=\"{boundary}\"\r\n")), "{mime}");
+        assert_eq!(mime.matches(&format!("--{boundary}\r\n")).count(), 3);
+        assert!(mime.ends_with(&format!("--{boundary}--\r\n")));
+        assert!(mime.contains("Content-Type: application/pdf; name=\"devis.pdf\"\r\nContent-Disposition: attachment; filename=\"devis.pdf\"\r\n"));
+        // The name: no path, RFC 2231 in pieces, never a long line.
+        assert!(mime.contains("filename*0*=utf-8''caf%C3%A9"), "{mime}");
+        assert!(mime.contains("filename*1*="));
+        assert!(!mime.contains(".."));
+        assert!(mime.contains("Content-Type: text/plain;\r\n name=\"=?UTF-8?B?"));
+        assert!(mime.split("\r\n").all(|l| l.len() <= 78), "{mime}");
+        // The base64 of the file, read back.
+        let start = mime.find("Content-Transfer-Encoding: base64\r\n\r\n").unwrap() + 37;
+        let b64: String = mime[start..].split("\r\n--").next().unwrap().replace("\r\n", "");
+        assert_eq!(b64, base64(&data));
+        // The same draft, the same bytes.
+        assert_eq!(build_message(&headers(&from, &to), "Bonjour", &files), build_message(&headers(&from, &to), "Bonjour", &files));
+    }
+
+    #[test]
+    fn a_text_holding_the_boundary_goes_in_quoted_printable() {
+        let from = Mailbox::new("me@x.fr", None);
+        let boundary = format!("=_nm_{}", &hex_digest("id@x.fr")[..24]);
+        let file = [Attachment { filename: "a.txt", mime_type: "text/plain", data: b"x" }];
+        let mime = String::from_utf8(build_message(&headers(&from, &[]), &format!("--{boundary}"), &file)).unwrap();
+        assert_eq!(mime.matches(&format!("--{boundary}")).count(), 3, "{mime}");
+    }
+
+    #[test]
+    fn file_names_and_types_are_cleaned() {
+        assert_eq!(clean_filename("/Users/a/Documents/devis.pdf"), "devis.pdf");
+        assert_eq!(clean_filename("C:\\dir\\x.doc"), "x.doc");
+        assert_eq!(clean_filename("  ..hidden\n"), "hidden");
+        assert_eq!(clean_filename(""), "attachment");
+        assert_eq!(clean_filename(&"é".repeat(300)).chars().count(), 255);
+        assert_eq!(clean_mime_type("Image/PNG"), "image/png");
+        assert_eq!(clean_mime_type("text/plain; charset=x"), "application/octet-stream");
+        assert_eq!(clean_mime_type("nonsense"), "application/octet-stream");
+        assert_eq!(encoded_size(57), 78);
+        assert_eq!(encoded_size(0), 0);
     }
 }

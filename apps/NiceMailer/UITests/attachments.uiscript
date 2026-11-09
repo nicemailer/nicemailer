@@ -1,0 +1,43 @@
+# Attaching files to a reply (`brouillons.md`, section 7): ⇧⌘A and the
+# files the open panel would give (`files`, from fixtures/files), the line
+# of files reached with ⇧Tab, ← → and ⌫ there, files copied in the Finder
+# pasted with ⌘V, a click on a file; kept in the draft (Escape, then `r`),
+# then sent.
+expect folder = Inbox
+key r
+expect composing = true
+files devis.pdf, notes été.txt
+key shift-cmd-a
+expect compose_attachments = devis.pdf,notes été.txt
+expect flash ~ Attached notes été.txt
+snap attachments
+# The line of files is a field: ⇧Tab from the text reaches it.
+key shift-tab
+expect compose_focus = attachments
+key right
+expect compose_attachment_index = 1
+key del
+expect compose_attachments = devis.pdf
+key ret
+expect compose_focus = body
+# Files copied in the Finder, pasted in the text: attached, not typed.
+clipfiles notes été.txt
+key cmd-v
+expect compose_attachments = devis.pdf,notes été.txt
+expect compose_text !~ notes
+click compose:file-0
+expect compose_focus = attachments
+expect compose_attachment_index = 0
+key ret
+type Ci-joint le devis.
+expect compose_saved = true
+# Kept in the draft.
+key esc
+expect composing = false
+key r
+expect composing = true
+expect compose_attachments = devis.pdf,notes été.txt
+key cmd-ret
+expect composing = false
+wait 4500
+expect flash ~ Sent

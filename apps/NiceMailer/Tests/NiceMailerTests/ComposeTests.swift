@@ -202,6 +202,7 @@ struct ComposeControllerTests {
         case "shift-cmd-up": chars = "\u{F700}"; code = KeyCode.up; mods = [.function, .shift, .command]
         case "shift-down": chars = "\u{F701}"; code = KeyCode.down; mods = [.function, .shift]
         case "cmd-q": chars = "q"; mods = .command
+        case "cmd-A": chars = "A"; mods = [.command, .shift]
         case "tab": chars = "\t"; code = KeyCode.tab
         case "shift-tab": chars = "\u{19}"; code = KeyCode.tab; mods = .shift
         case "alt-cmd-b": chars = "b"; code = 11; mods = [.command, .option]
@@ -541,6 +542,60 @@ struct ComposeControllerTests {
         #expect(model.composer != nil)
         press("esc")
         #expect(await eventually { model.composer == nil })
+    }
+
+    /// A temporary folder standing for `incoming.noindex`, and a file to
+    /// attach outside it.
+    func attachmentFixture() throws -> (incoming: URL, file: URL) {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("nm-attach-\(UUID().uuidString)")
+        let incoming = root.appendingPathComponent("incoming.noindex")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let file = root.appendingPathComponent("devis été.pdf")
+        try Data("%PDF".utf8).write(to: file)
+        model.incomingDirectory = incoming
+        return (incoming, file)
+    }
+
+    /// ⇧⌘A (`brouillons.md`, section 7): the file chosen is copied into
+    /// `incoming.noindex` under a plain name, then given to the core; Tab
+    /// reaches the line of files, ⌫ removes the one selected.
+    @Test func filesAreAttachedAndRemoved() async throws {
+        let (incoming, file) = try attachmentFixture()
+        model.chooseFiles = { [file] }
+        await reply()
+        press("cmd-A")
+        #expect(await eventually { model.composer?.attachments.count == 1 })
+        let call = core.calls("add_draft_attachment").first
+        #expect(call?["filename"] as? String == "devis été.pdf")
+        #expect(call?["mime_type"] as? String == "application/pdf")
+        #expect(call?["revision"] as? Int == 1)
+        let staged = try #require(call?["staged"] as? String)
+        #expect(staged.allSatisfy { $0.isLetter || $0.isNumber || $0 == "-" })
+        #expect(FileManager.default.fileExists(atPath: incoming.appendingPathComponent(staged).path))
+        #expect(model.composer?.revision == 2)
+        #expect(model.flash == L("Attached %@", "devis été.pdf"))
+        // The line of files is a field: ⇧Tab from the text reaches it.
+        press("shift-tab")
+        #expect(model.composer?.focus == .attachments)
+        press("del")
+        #expect(await eventually { model.composer?.attachments.isEmpty == true })
+        #expect(core.calls("remove_draft_attachment").first?["revision"] as? Int == 2)
+        #expect(model.composer?.focus == .body)
+    }
+
+    /// Files copied in the Finder and pasted with ⌘V in the text are
+    /// attached, not typed; a folder is refused.
+    @Test func pastedFilesAreAttachedAndFoldersRefused() async throws {
+        let (incoming, file) = try attachmentFixture()
+        await reply()
+        controller.pasteboard.clearContents()
+        controller.pasteboard.writeObjects([file as NSURL])
+        press("cmd-v")
+        #expect(await eventually { model.composer?.attachments.count == 1 })
+        #expect(model.composer?.buffer.text.hasPrefix("\n") == true)
+        await model.attach([incoming.deletingLastPathComponent()])
+        #expect(model.flash == L("A folder cannot be attached: %@", incoming.deletingLastPathComponent().lastPathComponent))
+        #expect(core.calls("add_draft_attachment").count == 1)
     }
 
     @Test func tooLateToCancel() async {

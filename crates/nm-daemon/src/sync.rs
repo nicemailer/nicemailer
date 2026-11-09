@@ -249,11 +249,8 @@ pub fn start_gc(core: &Arc<Core>) {
 
 /// One collection, with the grace delay of `raw.gc_grace_secs`.
 pub fn run_gc(core: &Core) -> Result<nm_store::gc::GcReport, StoreError> {
-    let grace = core.engine.lock().unwrap().config().raw.gc_grace_secs;
-    nm_store::gc::collect_garbage(
-        &core.store,
-        &core.raw,
-        Some(core.attachments.root()),
-        std::time::Duration::from_secs(grace),
-    )
+    let grace = std::time::Duration::from_secs(core.engine.lock().unwrap().config().raw.gc_grace_secs);
+    let mut report = nm_store::gc::collect_garbage(&core.store, &core.raw, Some(core.attachments.root()), grace)?;
+    report.outgoing = nm_store::gc::collect_outgoing(&core.store, &core.outgoing, grace)?;
+    Ok(report)
 }

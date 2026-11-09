@@ -56,6 +56,20 @@ final class AppModel {
     /// while it stays open, until another display is chosen. Forgotten when
     /// another conversation is opened; never stored.
     var remoteImagesOnce: Int?
+    /// Where the app puts the files to attach, for the core to take them
+    /// (`brouillons.md`, section 7): `incoming.noindex` of the data
+    /// directory. Unit tests use a directory of their own.
+    @ObservationIgnored var incomingDirectory: URL = DataDirectory.current.appendingPathComponent("incoming.noindex")
+    /// Asks the user for files to attach: the open panel. Replaced in UI
+    /// script mode (the scenario names the files) and in unit tests.
+    @ObservationIgnored var chooseFiles: @MainActor () async -> [URL] = {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = true
+        panel.prompt = L("Attach")
+        return await panel.begin() == .OK ? panel.urls : []
+    }
     /// The Mac's address book (`AddressBook.swift`). The UI scenarios get
     /// a book of their own: the user's cards are never read in script mode.
     @ObservationIgnored var addressBook: any AddressBook =

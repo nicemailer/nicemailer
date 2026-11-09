@@ -150,6 +150,9 @@ struct Core {
     raw: RawStore,
     /// Attachments extracted from them on demand (`attachments.rs`).
     attachments: AttachmentFiles,
+    /// Files of the mails to send: attachments of drafts, mails with
+    /// attachments waiting to leave (`nm_store::outgoing`).
+    outgoing: nm_store::outgoing::OutgoingStore,
     /// The running mbox import, or the last one.
     import: Mutex<ImportState>,
     /// The synchronization of the IMAP accounts (`sync.rs`). Set once the
@@ -253,6 +256,9 @@ async fn run(args: Args, data_dir: &Path) -> anyhow::Result<()> {
     let raw = RawStore::open(&data_dir).with_context(|| format!("stockage brut dans {}", data_dir.display()))?;
     let attachments = AttachmentFiles::open(&data_dir)
         .with_context(|| format!("pièces jointes dans {}", data_dir.display()))?;
+    let outgoing = nm_store::outgoing::OutgoingStore::open(&data_dir)
+        .with_context(|| format!("fichiers à envoyer dans {}", data_dir.display()))?;
+    store.set_outgoing(outgoing.clone());
     let mut events = EventLog::new(settings.replay_buffer as usize, settings.client_queue as usize);
     for e in startup_events {
         events.push(e);
@@ -267,6 +273,7 @@ async fn run(args: Args, data_dir: &Path) -> anyhow::Result<()> {
         client_queue: settings.client_queue as usize,
         raw,
         attachments,
+        outgoing,
         import: Mutex::new(ImportState::default()),
         syncer: std::sync::OnceLock::new(),
     });
@@ -1072,6 +1079,8 @@ async fn dispatch(core: &Arc<Core>, session: &mut Session, req: Request) -> Resu
         method::CREATE_DRAFT => to_value(drafts::create(core, params(req.params)?, source).await?),
         method::OPEN_DRAFT => to_value(drafts::open(core, params(req.params)?).await?),
         method::UPDATE_DRAFT => to_value(drafts::update(core, params(req.params)?, source).await?),
+        method::ADD_DRAFT_ATTACHMENT => to_value(drafts::add_attachment(core, params(req.params)?, source).await?),
+        method::REMOVE_DRAFT_ATTACHMENT => to_value(drafts::remove_attachment(core, params(req.params)?, source).await?),
         method::PARSE_ADDRESSES => to_value(drafts::parse_addresses(params(req.params)?)),
         method::SUGGEST_RECIPIENTS => to_value(drafts::suggest(core, params(req.params)?).await?),
         method::CLOSE_DRAFT => {
@@ -1087,7 +1096,7 @@ async fn dispatch(core: &Arc<Core>, session: &mut Session, req: Request) -> Resu
                 .await
                 .map_err(|e| RpcError::new(error_code::INTERNAL_ERROR, e.to_string()))?
                 .map_err(store_error)?;
-            to_value(nm_api::RawGcResult { blobs: r.blobs, temporary: r.temporary, orphans: r.orphans, attachment_dirs: r.attachment_dirs })
+            to_value(nm_api::RawGcResult { blobs: r.blobs, temporary: r.temporary, orphans: r.orphans, attachment_dirs: r.attachment_dirs, outgoing: r.outgoing })
         }
         method::SYNC_STATUS => {
             let p: nm_api::SyncAccountParams = params(req.params)?;

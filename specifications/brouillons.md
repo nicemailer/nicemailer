@@ -104,19 +104,27 @@ IMAP n'a pas de verrou : on ne peut pas empêcher deux appareils de modifier le 
 
 ## 7. Pièces jointes à envoyer
 
+Réalisé en novembre 2026 (`docs/sending.md`, « Attachments »).
+
 Attacher un fichier (`add_draft_attachment`) le **copie aussitôt** dans la zone de stockage privée du noyau :
 
 ```
 <data_dir>/
-  outgoing.noindex/        ← pièces jointes des brouillons
+  incoming.noindex/        ← fichiers déposés par l'app, à prendre par le noyau
+  outgoing.noindex/        ← pièces jointes des brouillons, mails avec pièces jointes en attente d'envoi
     ab/
       abcdef…0123          ← hash SHA-256 du contenu, sans compression
 ```
 
+- **C'est l'app qui lit le fichier.** Le noyau, lancé par launchd, n'a pas accès aux dossiers de l'utilisateur (Bureau, Documents, Téléchargements sont protégés par macOS), et il ne lit rien hors de son dossier de données. L'app, à qui l'utilisateur a donné le fichier (panneau d'ouverture, glisser-déposer, `⌘V` d'un fichier copié dans le Finder), le copie dans `incoming.noindex` sous un nom neutre (un UUID ; un clone APFS, instantané), puis appelle `add_draft_attachment` avec ce nom, le nom du fichier et son type MIME. Le noyau n'accepte qu'un nom simple (lettres, chiffres, `-`), jamais un chemin ni un lien symbolique, lit le fichier une fois pour le hacher, puis le déplace (renommage, même volume) dans `outgoing.noindex`.
+- **Mail en attente d'envoi.** Avec des pièces jointes, le MIME du mail (quelques mégaoctets) n'est pas mis dans la charge de l'action `send` : il est gardé dans `outgoing.noindex` et la charge ne porte que son hash (`mime_blob`, `copy_blob`). Les requêtes qui lisent les charges de `pending_action` restent légères.
+- **Limites.** Un avertissement au-delà de 25 Mo une fois encodé (base64 grossit d'un tiers) ; un refus au-delà de 100 Mo de fichiers par brouillon : le mail est construit en mémoire, et aucun fournisseur ne l'accepterait.
+- **Copie dans Drafts.** La copie du brouillon porte ses fichiers. Elle n'est réécrite que si le brouillon a changé depuis la précédente (révision) ; chaque ajout ou retrait d'un fichier est une révision. La version précédente quitte le stockage brut avec sa ligne de Drafts : aucune version intermédiaire n'y reste.
+
 - **Adressage par le contenu**, comme le brut : un même fichier joint à deux brouillons n'est stocké qu'une fois. Les fichiers sont en `0400`, les dossiers en `0700`. Pas de compression : les pièces jointes courantes (PDF, images, archives) se compressent mal.
 - **Indépendance du fichier d'origine.** Un brouillon peut vivre des jours ; le fichier d'origine peut être déplacé, modifié ou supprimé entre-temps sans effet sur le brouillon.
 - **Contrôle de taille.** À l'ajout, le noyau compare la taille totale à la limite annoncée par le serveur SMTP (extension `SIZE`) et avertit si elle est dépassée.
-- **Durée de vie.** Un fichier est supprimé quand plus aucun `draft_attachment` ne le référence, c'est-à-dire après l'envoi ou l'abandon du brouillon. Après l'envoi, les pièces jointes vivent dans le brut du mail envoyé, rangé dans Sent. Le ramasse-miettes de `stockage-brut.md` (section 7) traite aussi ce dossier, avec le même verrou.
+- **Durée de vie.** Un fichier est supprimé quand plus aucun `draft_attachment` ne le référence et qu'aucune action `send` en attente n'en est faite, c'est-à-dire après l'envoi ou l'abandon du brouillon. Après l'envoi, les pièces jointes vivent dans le brut du mail envoyé, rangé dans Sent. Le ramasse-miettes de `stockage-brut.md` (section 7) traite aussi ce dossier, sous le verrou de la base (`gc::collect_outgoing`) : lignes de `outgoing_blob` inutilisées, fichiers sans ligne plus vieux que le délai de grâce, fichiers laissés dans `incoming.noindex` depuis un jour.
 - **Brouillon créé ailleurs.** Ses pièces jointes sont extraites du brut et copiées dans `outgoing.noindex` à l'ouverture du brouillon.
 
 ## 8. Commandes du contrat

@@ -19,6 +19,7 @@ struct DraftView: Decodable, Equatable {
     let bcc: [AddressView]
     let subject: String
     let body: String
+    let attachments: [DraftAttachmentView]
     let revision: Int
     /// `editing` or `sending`.
     let state: String
@@ -47,6 +48,20 @@ struct SendDraftResult: Decodable {
     let sendAt: Int
 }
 
+/// A file attached to a draft.
+struct DraftAttachmentView: Decodable, Equatable, Hashable {
+    let id: Int
+    let filename: String
+    let mimeType: String
+    let size: Int
+}
+
+struct AddDraftAttachmentResult: Decodable {
+    let revision: Int
+    let attachment: DraftAttachmentView
+    let warning: String?
+}
+
 /// What `parse_addresses` understood of a recipient line.
 struct ParseAddressesResult: Decodable {
     let addresses: [AddressView]
@@ -61,7 +76,7 @@ struct SuggestRecipientsResult: Decodable {
 /// line, the subject, or the text. Tab and ⇧Tab go from one to the next,
 /// in this order.
 enum ComposeField: String, CaseIterable {
-    case to, cc, bcc, subject, body
+    case to, cc, bcc, subject, attachments, body
 
     var isRecipients: Bool { self == .to || self == .cc || self == .bcc }
 }
@@ -126,6 +141,10 @@ struct Composer: Equatable {
     var subjectLine: LineEdit
     /// The Bcc line is shown: it has addresses, or ⌥⌘B opened it.
     var showsBcc: Bool
+    /// The files attached, as the core last listed them, and the one
+    /// selected while the line of files has the keys (← → and ⌫).
+    var attachments: [DraftAttachmentView]
+    var attachmentIndex = 0
     /// Addresses suggested for the text typed (`suggest_recipients`), and
     /// the one ↑ ↓ highlighted.
     var suggestions: [AddressView] = []
@@ -142,13 +161,15 @@ struct Composer: Equatable {
         savedHeaders = headers
         subjectLine = LineEdit(draft.subject)
         showsBcc = !draft.bcc.isEmpty
+        attachments = draft.attachments
     }
 
     var isDirty: Bool { buffer.text != saved || headers != savedHeaders }
 
-    /// The fields Tab goes through, in order: Bcc only when shown.
+    /// The fields Tab goes through, in order: Bcc only when shown, the
+    /// line of files only when there are some.
     var fields: [ComposeField] {
-        ComposeField.allCases.filter { $0 != .bcc || showsBcc }
+        ComposeField.allCases.filter { ($0 != .bcc || showsBcc) && ($0 != .attachments || !attachments.isEmpty) }
     }
 
     /// The next field (Tab) or the previous one (⇧Tab), turning around.
@@ -224,6 +245,17 @@ enum Compose {
         default: who = L("someone")
         }
         return L("On %@, at %@, %@ wrote:", day.string(from: when), time.string(from: when), who)
+    }
+
+    /// A file in the line of attachments: "devis.pdf (240 KB)".
+    static func attachmentLabel(_ a: DraftAttachmentView) -> String {
+        "\(a.filename) (\(ByteCountFormatter.string(fromByteCount: Int64(a.size), countStyle: .file)))"
+    }
+
+    /// The name under which a file is staged in `incoming.noindex`: what
+    /// the core accepts (letters, digits, `-`), never a path.
+    static func stagedName() -> String {
+        UUID().uuidString
     }
 
     /// An address as shown in a recipient line: "Alice <alice@x.fr>", or

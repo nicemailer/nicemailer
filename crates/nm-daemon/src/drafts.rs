@@ -21,7 +21,7 @@
 use std::sync::Arc;
 
 use nm_api::{
-    AddressView, CreateDraftParams, CreateDraftResult, DraftIdParams, DraftView, ParseAddressesParams, ParseAddressesResult, RpcError,
+    AddDraftAttachmentParams, AddDraftAttachmentResult, AddressView, CreateDraftParams, RemoveDraftAttachmentParams, CreateDraftResult, DraftIdParams, DraftView, ParseAddressesParams, ParseAddressesResult, RpcError,
     SendDraftParams, SendDraftResult, SuggestRecipientsParams, SuggestRecipientsResult, UpdateDraftParams, UpdateDraftResult, error_code,
 };
 use nm_core::Source;
@@ -125,6 +125,23 @@ pub async fn update(core: &Arc<Core>, p: UpdateDraftParams, source: Source) -> R
     let list = |l: Option<Vec<AddressView>>| l.map(|l| l.into_iter().map(|a| Mailbox { addr: a.addr, name: a.name }).collect());
     let edit = DraftEdit { body: p.body, subject: p.subject, to: list(p.to), cc: list(p.cc), bcc: list(p.bcc) };
     let revision = with_store(core, move |s| s.edit_draft(p.id, p.revision, &edit, source)).await?;
+    Ok(UpdateDraftResult { revision })
+}
+
+/// `add_draft_attachment`: the file the app put in `incoming.noindex`,
+/// taken by the core (`nm_store::outgoing`).
+pub async fn add_attachment(core: &Arc<Core>, p: AddDraftAttachmentParams, source: Source) -> Result<AddDraftAttachmentResult, RpcError> {
+    human(source)?;
+    let (revision, attachment, warning) = with_store(core, move |s| {
+        s.add_draft_attachment(p.id, p.revision, &p.staged, &p.filename, p.mime_type.as_deref(), source)
+    })
+    .await?;
+    Ok(AddDraftAttachmentResult { revision, attachment, warning })
+}
+
+pub async fn remove_attachment(core: &Arc<Core>, p: RemoveDraftAttachmentParams, source: Source) -> Result<UpdateDraftResult, RpcError> {
+    human(source)?;
+    let revision = with_store(core, move |s| s.remove_draft_attachment(p.id, p.revision, p.attachment_id, source)).await?;
     Ok(UpdateDraftResult { revision })
 }
 

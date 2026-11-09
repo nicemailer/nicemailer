@@ -14,6 +14,7 @@ How a reply is written in the app and sent by the core. The rules are those of `
 | ⌘⌫ | the reply | abandon the reply; `z` gives it back with its text |
 | ⇥ ⇧⇥ | the reply | next / previous field: To, Cc, Bcc (when shown), Subject, the text; in the text ⇥ is typed, ⇧⇥ goes up to the subject |
 | ⌥⌘B | the reply | show the Bcc line and go to it |
+| ⇧⌘A | the reply | attach files (the open panel); a drop on the reply, or ⌘V of files copied in the Finder, attaches too |
 | `z` | after ⌘↩ | during the delay: the mail does not leave, and the reply opens again; once sent: undoes the filing of the conversation (not the sending) |
 
 The reply takes the reader's place (the whole window with one column), with the mode `EDT` in the status bar. From the top: the sending address, To, Cc and Bcc (Bcc only when it has addresses or ⌥⌘B opened it), one tag per address, wrapping when long, the subject, "After sending: Archive" when the conversation will be filed, then the text. The cursor starts at the top, above the line introducing the quotation ("On Nov 7, 2026, at 10:12, Alice <alice@x.fr> wrote:", in the app's language) and the quoted mail.
@@ -31,6 +32,20 @@ In a recipient line, the text typed has the editing keys of a text field. Return
 From the first letter typed, up to 8 suggestions show under the line (`suggest_recipients`): addresses whose address, domain, name or a word of the name starts with the text, those the user wrote to most first (mails in Sent), then those they receive most from; never a banned sender, an address of an account, or one already a recipient. ↓ ↑ choose, Return or a click takes one, Escape closes the list (a second Escape leaves the reply). The query scans `address` and counts through indexes: under 0.1 s for one letter on a mailbox of 275,000 mails. The Mac's Contacts are not searched yet.
 
 The subject is a line of text; Return goes to the text. What changed is saved at the pause of typing, with the text: `update_draft` gets only the parts that changed (the body, a whole recipient list, the subject), in one revision; the core checks each address again (`compose::clean_recipients`: valid, once across the three lists, 500 at most) and refuses the save otherwise.
+
+## Attachments
+
+`⇧⌘A` opens the panel to choose files; files dropped on the reply, or copied in the Finder and pasted with ⌘V in the text, are attached too. A line "Files" lists them under the subject ("devis.pdf (240 KB)"); it is a field like the others (⇧Tab from the text reaches it, a click on a file too): ← → select a file, ⌫ removes it, Return goes back to the text. A folder is refused.
+
+**Who reads the file.** The core runs as a launch agent and reads nothing outside its data directory: macOS protects Desktop, Documents and Downloads, and only the app was given the file. So the app copies it into `<data_dir>/incoming.noindex/` under a UUID (an APFS clone: instant, no space used until one of the two changes), off the main thread, then calls `add_draft_attachment` with that name, the file's name and its MIME type (from its extension). The core (`nm_store::outgoing`) accepts only a plain name (letters, digits, `-`), never a path nor a symbolic link, hashes the file while reading it once, and moves it into `outgoing.noindex/ab/<sha256>` (read-only, kept once whatever the number of drafts). From then on the draft no longer depends on the user's file. A refused file is deleted from `incoming.noindex` by the app.
+
+**Limits.** Past 25 MB once encoded (base64 makes a file a third bigger), the status bar warns that many servers refuse such a mail; past 100 MB of files on a draft, the core refuses (the mail is built in memory).
+
+**The mail.** With files, `build_message` writes a `multipart/mixed` message: the text, then each file in base64 (lines of 76 characters), its name in quotes when it is plain ASCII, else in RFC 2231 (`filename*0*=utf-8''caf%C3%A9…`, in pieces so that no line is long) and as an RFC 2047 word in `name` for older readers. The boundary comes from the `Message-ID`: the same draft gives the same bytes. The `send` action keeps such a message in `outgoing.noindex` and names it in its payload (`mime_blob`, `copy_blob`), so that reading the payloads of `pending_action` stays light.
+
+**Drafts.** Adding or removing a file is a revision: the copy in Drafts carries the files, and is written again only when the draft changed since the last one. The previous copy leaves the raw store with its row of Drafts.
+
+**Clean-up.** `raw_gc` also runs `gc::collect_outgoing`, under the database's lock: rows of `outgoing_blob` that no draft attaches and no queued or running `send` action is made of go, with their files; files without a row older than `raw.gc_grace_secs`; files left in `incoming.noindex` for a day.
 
 **Bcc.** The hidden recipients are in the SMTP envelope, never in the mail given to the server. The copy the user keeps has a `Bcc` header, to know who got it: the raw file, the row and the copy in Sent, the copy in Drafts. The core builds the MIME twice (same `Message-ID`), and the `send` action carries the second one (`mime_copy`) only when there are hidden recipients.
 
@@ -113,6 +128,8 @@ The app, the TUI and the CLI. An agent (MCP) or the web server get `FORBIDDEN`: 
 | `create_draft` | `reply_to`, `quote_header`, `body?` (restores an abandoned text) | `{draft, reused}` |
 | `open_draft`, `close_draft` | `id` | `DraftView`, nothing |
 | `update_draft` | `id`, `revision`, and what changed: `body?`, `subject?`, `to?`, `cc?`, `bcc?` (whole lists of `{addr, name}`) | `{revision}`; `REVISION_CONFLICT` (1012), `DRAFT_SENDING` (1013), `INVALID_PARAMS` for an address that is not one |
+| `add_draft_attachment` | `id`, `revision`, `staged`, `filename`, `mime_type?` | `{revision, attachment, warning}`; `INVALID_PARAMS` (not a staged file, beyond 100 MB) |
+| `remove_draft_attachment` | `id`, `revision`, `attachment_id` | `{revision}` |
 | `parse_addresses` | `text` | `{addresses, invalid}` |
 | `suggest_recipients` | `query`, `limit?` (8, at most 50) | `{items}` of `{addr, name}` |
 | `discard_draft` | `id` | the `DraftView` abandoned |
@@ -131,12 +148,12 @@ The app, the TUI and the CLI. An agent (MCP) or the web server get `FORBIDDEN`: 
 
 ## Tests
 
-- `nm-core` (`compose.rs`): the address lists typed or pasted, cleaning the edited recipients and subject, `Bcc` only in the copy, recipients, identity, subject, references, quotation, `format=flowed` read back as typed, MIME headers and encodings, header injection, dates, providers.
+- `nm-core` (`compose.rs`): attachments in `multipart/mixed` (names in RFC 2231, short lines, the same bytes twice, a text holding the boundary), file names and types cleaned, the address lists typed or pasted, cleaning the edited recipients and subject, `Bcc` only in the copy, recipients, identity, subject, references, quotation, `format=flowed` read back as typed, MIME headers and encodings, header injection, dates, providers.
 - `nm-proto` (`smtp.rs`): a scripted server: PLAIN and LOGIN, refused login, no password without TLS, recipients refused in part or all, `SIZE`, `5xx` / `4xx` to the message, hostile addresses, broken servers, dot-stuffing.
-- `nm-store` (`tests/drafts.rs`): the draft prepared, reused, revisions, the filing chosen (kept after `cancel_send`, winning over the preselection, `stay` touching nothing), recipients and subject edited (one revision, refused addresses), Bcc in the envelope and the copy only (and its decision), suggestions by use, the undo delay and `cancel_send`, `data_sent`, the acceptance in one transaction (Sent row, filing, decisions, undo), replay, the copy's UID and the attachment by the synchronization, a fresh Sent row kept by a pass, failures, partial refusals, restore, repair.
+- `nm-store` (`tests/drafts.rs`): the draft prepared, reused, revisions, the filing chosen (kept after `cancel_send`, winning over the preselection, `stay` touching nothing), recipients and subject edited (one revision, refused addresses), Bcc in the envelope and the copy only (and its decision), suggestions by use, files attached and removed (refusals, sizes), a mail with files sent and its files collected, orphans swept after the grace delay; `outgoing.rs`: a staged file taken once by its content, only a plain name taken, the undo delay and `cancel_send`, `data_sent`, the acceptance in one transaction (Sent row, filing, decisions, undo), replay, the copy's UID and the attachment by the synchronization, a fresh Sent row kept by a pass, failures, partial refusals, restore, repair.
 - `nm-daemon` (`tests/send_rpc.rs`, `make imap-test`): the real core against Dovecot and Mailpit: a reply sent, copied to Sent, filed on the server, nothing twice after a pass, undo, on both servers; a send cancelled in time; a refused recipient; a refused login then the SMTP password saved; an agent refused.
-- `nm-daemon` (`tests/fake_send_rpc.rs`): an archive account refused, then pretending to send with `NICEMAILER_FAKE_NETWORK`; `after_send` through the socket (`stay` saved, `inbox` refused); `parse_addresses`, `suggest_recipients`, headers saved by `update_draft`.
-- App: `TextBufferTests`, `ComposeTests` (pure rules, and the keys through `GeekController` against `FakeCore`), `UITests/compose.uiscript` and `UITests/recipients.uiscript`.
+- `nm-daemon` (`tests/fake_send_rpc.rs`): an archive account refused, then pretending to send with `NICEMAILER_FAKE_NETWORK`; `after_send` through the socket (`stay` saved, `inbox` refused); `parse_addresses`, `suggest_recipients`, headers saved by `update_draft`; a staged file attached and sent.
+- App: `TextBufferTests`, `ComposeTests` (pure rules, and the keys through `GeekController` against `FakeCore`), `UITests/compose.uiscript`, `UITests/recipients.uiscript` and `UITests/attachments.uiscript`.
 
 ## Pretending to send
 

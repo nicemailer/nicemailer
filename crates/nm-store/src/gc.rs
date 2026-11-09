@@ -56,6 +56,8 @@ pub struct GcReport {
     pub orphans: u64,
     /// Directories of extracted attachments removed.
     pub attachment_dirs: u64,
+    /// Files of `outgoing.noindex` deleted ([`collect_outgoing`]).
+    pub outgoing: u64,
 }
 
 /// Temporary files are kept this long: a write in progress is never this
@@ -208,4 +210,56 @@ impl Store {
         tx.commit()?;
         Ok(out)
     }
+}
+
+/// The garbage collector of `outgoing.noindex` (`brouillons.md`, section 7,
+/// "Durée de vie"): a file is deleted when no draft attaches it and no mail
+/// waiting to leave (`send` action queued or running) is made of it.
+///
+/// 1. Under the store's lock, the rows of `outgoing_blob` nobody refers to
+///    are deleted, then their files.
+/// 2. The sweep, under the same lock (a file taken by
+///    `add_draft_attachment` gets its row in the same locked call, so it
+///    is never seen without one): files without a row, older than `grace`
+///    (a crash between writing a file and its row).
+/// 3. Files left in `incoming.noindex` for a day: an app that stopped
+///    between its copy and the core taking the file.
+pub fn collect_outgoing(store: &Mutex<Store>, outgoing: &crate::outgoing::OutgoingStore, grace: Duration) -> Result<u64> {
+    let st = store.lock().unwrap();
+    let tx = st.conn().unchecked_transaction()?;
+    let unused: Vec<Vec<u8>> = tx
+        .prepare(
+            "SELECT hash FROM outgoing_blob b
+              WHERE NOT EXISTS (SELECT 1 FROM draft_attachment a WHERE a.hash = b.hash)
+                AND NOT EXISTS (SELECT 1 FROM pending_action p
+                                 WHERE p.kind = 'send' AND p.state IN ('queued', 'running')
+                                   AND lower(hex(b.hash)) IN (json_extract(p.payload, '$.mime_blob'), json_extract(p.payload, '$.copy_blob')))",
+        )?
+        .query_map([], |r| r.get(0))?
+        .collect::<std::result::Result<_, _>>()?;
+    for h in &unused {
+        tx.execute("DELETE FROM outgoing_blob WHERE hash = ?1", [h])?;
+    }
+    tx.commit()?;
+    let mut n = 0;
+    for h in &unused {
+        if let Ok(hash) = <Hash>::try_from(h.as_slice()) {
+            outgoing.remove(&hash);
+            n += 1;
+        }
+    }
+    let now = SystemTime::now();
+    for (hash, path) in outgoing.kept() {
+        let known: bool = st.conn().query_row("SELECT EXISTS (SELECT 1 FROM outgoing_blob WHERE hash = ?1)", [&hash[..]], |r| r.get(0))?;
+        let old = std::fs::metadata(&path).and_then(|m| m.modified()).is_ok_and(|t| now.duration_since(t).unwrap_or_default() >= grace);
+        if !known && old && std::fs::remove_file(&path).is_ok() {
+            n += 1;
+        }
+    }
+    for path in outgoing.stale_incoming(TMP_GRACE) {
+        if std::fs::remove_file(&path).is_ok() {
+            n += 1;
+        }
+    }
+    Ok(n)
 }

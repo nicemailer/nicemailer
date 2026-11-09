@@ -50,13 +50,14 @@
 
 use std::collections::BTreeSet;
 
-use nm_api::{AddressView, DraftView};
+use nm_api::{AddressView, DraftAttachmentView, DraftView};
 use nm_core::compose::{self, Mailbox, Original};
 use nm_core::{AfterSend, AuthResult, FolderRole, Source};
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 use serde_json::{Value, json};
 
 use crate::insert::{Body, Flags, Inserter, NewMessage};
+use crate::outgoing::{OutgoingStore, parse_hex};
 use crate::raw::Written;
 use crate::screening::{audit_mark, undo_token};
 use crate::{ChangeSet, Result, Store, StoreError};
@@ -214,6 +215,7 @@ pub(crate) fn draft_view(conn: &Connection, id: i64) -> Result<DraftView> {
         None => None,
     };
     let send_at = if state == "sending" { send_action(conn, id)?.map(|(_, _, _, at)| at) } else { None };
+    let attachments = draft_attachments(conn, id)?.into_iter().map(|(view, _)| view).collect();
     Ok(DraftView {
         id,
         account_id,
@@ -223,6 +225,7 @@ pub(crate) fn draft_view(conn: &Connection, id: i64) -> Result<DraftView> {
         bcc: bcc.iter().map(view_of).collect(),
         subject,
         body,
+        attachments,
         revision,
         state,
         reply_to,
@@ -233,7 +236,118 @@ pub(crate) fn draft_view(conn: &Connection, id: i64) -> Result<DraftView> {
     })
 }
 
+/// The attachments of a draft, in order, with the hash of their file.
+fn draft_attachments(conn: &Connection, id: i64) -> Result<Vec<(DraftAttachmentView, crate::raw::Hash)>> {
+    let rows: Vec<(i64, String, String, i64, Vec<u8>)> = conn
+        .prepare_cached(
+            "SELECT a.id, a.filename, a.mime_type, b.size, a.hash FROM draft_attachment a JOIN outgoing_blob b ON b.hash = a.hash
+              WHERE a.draft_id = ?1 ORDER BY a.position, a.id",
+        )?
+        .query_map([id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)))?
+        .collect::<std::result::Result<_, _>>()?;
+    Ok(rows
+        .into_iter()
+        .filter_map(|(id, filename, mime_type, size, hash)| {
+            let hash = <crate::raw::Hash>::try_from(hash.as_slice()).ok()?;
+            Some((DraftAttachmentView { id, filename, mime_type, size }, hash))
+        })
+        .collect())
+}
+
 impl Store {
+    /// The files of mails to send (`outgoing.rs`): set by the core at start.
+    pub fn set_outgoing(&mut self, outgoing: OutgoingStore) {
+        self.outgoing = Some(outgoing);
+    }
+
+    fn outgoing(&self) -> Result<&OutgoingStore> {
+        self.outgoing.as_ref().ok_or_else(|| StoreError::Io("no store for the files to send".into()))
+    }
+
+    /// Attaches the file `staged`, put in `incoming.noindex` by the app
+    /// (`brouillons.md`, section 7): the file is taken into
+    /// `outgoing.noindex` ([`OutgoingStore::take`]), then the row of
+    /// `draft_attachment` is added, a new revision of the draft (its next
+    /// copy to Drafts carries the file). Returns the revision, the
+    /// attachment, and a warning when the mail grows beyond what most
+    /// providers accept.
+    ///
+    /// Refused: a draft being sent, a stale revision, attachments beyond
+    /// `compose::ATTACHMENTS_MAX` together (the file taken is then deleted,
+    /// unless another draft has it).
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_draft_attachment(
+        &mut self,
+        id: i64,
+        revision: i64,
+        staged: &str,
+        filename: &str,
+        mime_type: Option<&str>,
+        source: Source,
+    ) -> Result<(i64, DraftAttachmentView, Option<String>)> {
+        let outgoing = self.outgoing()?.clone();
+        let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let rev = editable(&tx, id, revision)?;
+        let (hash, size) = outgoing.take(staged).map_err(|e| match e.kind() {
+            std::io::ErrorKind::InvalidInput | std::io::ErrorKind::NotFound => StoreError::InvalidParams(e.to_string()),
+            _ => StoreError::Io(e.to_string()),
+        })?;
+        let (total, body_len): (i64, i64) = tx.query_row(
+            "SELECT coalesce((SELECT sum(b.size) FROM draft_attachment a JOIN outgoing_blob b ON b.hash = a.hash WHERE a.draft_id = ?1), 0),
+                    (SELECT length(CAST(body AS BLOB)) FROM draft WHERE id = ?1)",
+            [id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )?;
+        let total = total as u64 + size;
+        if total > compose::ATTACHMENTS_MAX {
+            let kept: bool = tx.query_row("SELECT EXISTS (SELECT 1 FROM outgoing_blob WHERE hash = ?1)", [&hash[..]], |r| r.get(0))?;
+            if !kept {
+                outgoing.remove(&hash);
+            }
+            return Err(StoreError::InvalidParams(format!(
+                "the attachments would weigh {} MB: {} MB at most",
+                total >> 20,
+                compose::ATTACHMENTS_MAX >> 20
+            )));
+        }
+        let filename = compose::clean_filename(filename);
+        let mime_type = compose::clean_mime_type(mime_type.unwrap_or(""));
+        tx.execute("INSERT OR IGNORE INTO outgoing_blob (hash, size) VALUES (?1, ?2)", params![&hash[..], size as i64])?;
+        tx.execute(
+            "INSERT INTO draft_attachment (draft_id, hash, filename, mime_type, position)
+             VALUES (?1, ?2, ?3, ?4, (SELECT coalesce(max(position) + 1, 0) FROM draft_attachment WHERE draft_id = ?1))",
+            params![id, &hash[..], filename, mime_type],
+        )?;
+        let attachment_id = tx.last_insert_rowid();
+        tx.execute(
+            "UPDATE draft SET revision = revision + 1, date_modified = unixepoch(), modified_by = ?2 WHERE id = ?1",
+            params![id, source.as_str()],
+        )?;
+        tx.commit()?;
+        let weight = compose::encoded_size(total) + body_len as u64;
+        let warning = (weight > compose::ATTACHMENTS_WARN).then(|| {
+            format!("this mail weighs {} MB: many servers refuse more than {} MB", weight >> 20, compose::ATTACHMENTS_WARN >> 20)
+        });
+        Ok((rev + 1, DraftAttachmentView { id: attachment_id, filename, mime_type, size: size as i64 }, warning))
+    }
+
+    /// Removes an attachment from a draft: a new revision. Its file stays
+    /// until the garbage collector finds nobody needs it.
+    pub fn remove_draft_attachment(&mut self, id: i64, revision: i64, attachment_id: i64, source: Source) -> Result<i64> {
+        let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let rev = editable(&tx, id, revision)?;
+        let n = tx.execute("DELETE FROM draft_attachment WHERE id = ?1 AND draft_id = ?2", params![attachment_id, id])?;
+        if n == 0 {
+            return Err(StoreError::NotFound(format!("pièce jointe {attachment_id}")));
+        }
+        tx.execute(
+            "UPDATE draft SET revision = revision + 1, date_modified = unixepoch(), modified_by = ?2 WHERE id = ?1",
+            params![id, source.as_str()],
+        )?;
+        tx.commit()?;
+        Ok(rev + 1)
+    }
+
     /// Pretended sending (`NICEMAILER_FAKE_NETWORK`, set by the core): an
     /// archive account (an mbox import, no server) may answer too, so that
     /// the reply can be tried on a real mailbox without sending anything.
@@ -491,25 +605,41 @@ impl Store {
             tx.execute("UPDATE draft SET after_send = ?2 WHERE id = ?1", params![id, choice.as_str()])?;
         }
         let after_send: Option<String> = tx.query_row("SELECT after_send FROM draft WHERE id = ?1", [id], |r| r.get(0))?;
-        let Built { account_id, from_addr, rcpt, mime, copy, msgid, date: t } = build_draft(&tx, id, user_agent, None)?;
+        let Built { account_id, from_addr, rcpt, mime, copy, msgid, date: t, attached } = build_draft(&tx, id, user_agent, None, self.outgoing.as_ref())?;
         if rcpt.is_empty() {
             return Err(StoreError::CannotSend("this draft has no recipient".into()));
         }
         let send_at = t + delay_secs as i64;
-        let payload = json!({
+        let mut payload = json!({
             "draft_id": id,
             "phase": "smtp",
             "from": from_addr,
             "rcpt": rcpt,
-            // The MIME message is ASCII (`build_message` encodes the rest).
-            "mime": String::from_utf8_lossy(&mime),
-            // The copy kept by the user (raw store, Sent), with `Bcc`; only
-            // when it differs from the mail sent.
-            "mime_copy": (copy != mime).then(|| String::from_utf8_lossy(&copy).into_owned()),
             "message_id_hdr": msgid,
             "after_send": after_send,
             "data_sent": false,
         });
+        if attached {
+            // With files, the message can weigh megabytes: kept as files of
+            // `outgoing.noindex`, named in the payload, so that the queries
+            // reading the payloads of `pending_action` stay light.
+            let o = self.outgoing.as_ref().ok_or_else(|| StoreError::Io("no store for the files to send".into()))?;
+            let keep = |bytes: &[u8]| -> Result<String> {
+                let h = o.write(bytes).map_err(|e| StoreError::Io(e.to_string()))?;
+                tx.execute("INSERT OR IGNORE INTO outgoing_blob (hash, size) VALUES (?1, ?2)", params![&h[..], bytes.len() as i64])?;
+                Ok(crate::raw::hex(&h))
+            };
+            payload["mime_blob"] = json!(keep(&mime)?);
+            payload["copy_blob"] = json!(keep(&copy)?);
+        } else {
+            // The MIME message is ASCII (`build_message` encodes the rest).
+            payload["mime"] = json!(String::from_utf8_lossy(&mime));
+            // The copy kept by the user (raw store, Sent), with `Bcc`; only
+            // when it differs from the mail sent.
+            if copy != mime {
+                payload["mime_copy"] = json!(String::from_utf8_lossy(&copy));
+            }
+        }
         tx.execute(
             "INSERT INTO pending_action (account_id, kind, message_id, payload, created_by, date_run_after)
              VALUES (?1, 'send', NULL, ?2, ?3, ?4)",
@@ -569,6 +699,9 @@ impl Store {
 
     /// The `send` actions of `account_id` due now, marked `running`.
     pub fn send_claim(&mut self, account_id: i64) -> Result<Vec<SendJob>> {
+        // Rust note: cloned first (two paths): `self.transaction()` borrows
+        // the whole store mutably, so no field can be read while it lives.
+        let outgoing = self.outgoing.clone();
         let tx = self.transaction()?;
         let rows: Vec<(i64, String, i64)> = tx
             .prepare(
@@ -581,11 +714,16 @@ impl Store {
         let mut jobs = Vec::new();
         for (id, payload, attempts) in rows {
             let p: Value = serde_json::from_str(&payload).unwrap_or(Value::Null);
-            let (Some(draft_id), Some(from), Some(mime), Some(msgid)) =
-                (p["draft_id"].as_i64(), p["from"].as_str(), p["mime"].as_str(), p["message_id_hdr"].as_str())
+            let messages = message_bytes(&p, outgoing.as_ref());
+            let (Some(draft_id), Some(from), Some((mime, copy)), Some(msgid)) =
+                (p["draft_id"].as_i64(), p["from"].as_str(), messages, p["message_id_hdr"].as_str())
             else {
-                // Unreadable: never sent, never claimed again.
+                // Unreadable (or its files gone): never sent, never claimed
+                // again; the draft is editable again.
                 tx.execute("UPDATE pending_action SET state = 'reverted', last_error = 'unreadable payload' WHERE id = ?1", [id])?;
+                if let Some(d) = p["draft_id"].as_i64() {
+                    tx.execute("UPDATE draft SET state = 'editing', modified_by = 'core' WHERE id = ?1 AND state = 'sending'", [d])?;
+                }
                 continue;
             };
             tx.execute("UPDATE pending_action SET state = 'running', date_modified = unixepoch() WHERE id = ?1", [id])?;
@@ -596,8 +734,8 @@ impl Store {
                 phase: if p["phase"] == "append" { SendPhase::Append } else { SendPhase::Smtp },
                 from: from.to_string(),
                 rcpt: p["rcpt"].as_array().into_iter().flatten().filter_map(|v| v.as_str().map(str::to_string)).collect(),
-                mime: mime.as_bytes().to_vec(),
-                copy: p["mime_copy"].as_str().unwrap_or(mime).as_bytes().to_vec(),
+                mime,
+                copy,
                 message_id_hdr: msgid.to_string(),
                 data_sent: p["data_sent"] == true,
                 attempts,
@@ -661,7 +799,7 @@ impl Store {
             tx.query_row("SELECT reply_to_message_id FROM draft WHERE id = ?1", [draft_id], |r| r.get(0)).optional()?.flatten();
         // The copy kept, with its `Bcc`: the row of Sent lists the hidden
         // recipients, and they get their decision like the others.
-        let mime = p["mime_copy"].as_str().or(p["mime"].as_str()).unwrap_or("").as_bytes().to_vec();
+        let mime = message_bytes(&p, self.outgoing.as_ref()).map(|(_, copy)| copy).unwrap_or_default();
         let parsed = crate::ingest::parse(&mime);
         let sent_folder: Option<i64> = tx
             .query_row("SELECT id FROM folder WHERE account_id = ?1 AND role = 'sent'", [account_id], |r| r.get(0))
@@ -862,12 +1000,25 @@ struct Built {
     copy: Vec<u8>,
     msgid: String,
     date: i64,
+    /// The draft has attachments.
+    attached: bool,
+}
+
+/// The mail sent and the copy kept, from the payload of a `send` action:
+/// inline, or files of `outgoing.noindex` for a mail with attachments.
+fn message_bytes(p: &Value, outgoing: Option<&OutgoingStore>) -> Option<(Vec<u8>, Vec<u8>)> {
+    if let (Some(m), Some(c)) = (p["mime_blob"].as_str(), p["copy_blob"].as_str()) {
+        let o = outgoing?;
+        return Some((o.read(&parse_hex(m)?).ok()?, o.read(&parse_hex(c)?).ok()?));
+    }
+    let mime = p["mime"].as_str()?;
+    Some((mime.as_bytes().to_vec(), p["mime_copy"].as_str().unwrap_or(mime).as_bytes().to_vec()))
 }
 
 /// The MIME message of a draft as it is now, its conversation headers from
 /// the mail it answers. `draft_revision`: for a copy in Drafts
 /// (`X-NiceMailer-Draft-Revision`), `None` for the mail sent.
-fn build_draft(conn: &Connection, id: i64, user_agent: &str, draft_revision: Option<i64>) -> Result<Built> {
+fn build_draft(conn: &Connection, id: i64, user_agent: &str, draft_revision: Option<i64>, outgoing: Option<&OutgoingStore>) -> Result<Built> {
     type Row = (i64, String, Option<String>, String, String, String, String, Option<i64>);
     let (account_id, from_addr, from_name, recipients, subject, body, msgid, reply_to): Row = conn
         .query_row(
@@ -901,15 +1052,36 @@ fn build_draft(conn: &Connection, id: i64, user_agent: &str, draft_revision: Opt
         user_agent,
         draft_revision,
     };
-    let copy = compose::build_message(&headers, &body);
-    let mime = if bcc.is_empty() { copy.clone() } else { compose::build_message(&compose::Outgoing { bcc: &[], ..headers }, &body) };
-    Ok(Built { account_id, from_addr, rcpt, mime, copy, msgid, date: t })
+    // The files, read from `outgoing.noindex`: a file missing there is an
+    // error, never a mail sent without it.
+    let listed = draft_attachments(conn, id)?;
+    let mut data = Vec::with_capacity(listed.len());
+    if !listed.is_empty() {
+        let o = outgoing.ok_or_else(|| StoreError::Io("no store for the files to send".into()))?;
+        for (a, hash) in &listed {
+            data.push(o.read(hash).map_err(|e| StoreError::Io(format!("{}: {e}", a.filename)))?);
+        }
+    }
+    let files: Vec<compose::Attachment> = listed
+        .iter()
+        .zip(&data)
+        .map(|((a, _), bytes)| compose::Attachment { filename: &a.filename, mime_type: &a.mime_type, data: bytes })
+        .collect();
+    let copy = compose::build_message(&headers, &body, &files);
+    let mime = if bcc.is_empty() { copy.clone() } else { compose::build_message(&compose::Outgoing { bcc: &[], ..headers }, &body, &files) };
+    Ok(Built { account_id, from_addr, rcpt, mime, copy, msgid, date: t, attached: !files.is_empty() })
 }
 
 /// The MIME message of a draft as a copy for Drafts: with its `Bcc`, so
-/// that the draft resumed on another device still has them.
-pub(crate) fn build_draft_mime(conn: &Connection, id: i64, user_agent: &str, revision: Option<i64>) -> Result<Vec<u8>> {
-    Ok(build_draft(conn, id, user_agent, revision)?.copy)
+/// that the draft resumed on another device still has them, and its files.
+pub(crate) fn build_draft_mime(
+    conn: &Connection,
+    id: i64,
+    user_agent: &str,
+    revision: Option<i64>,
+    outgoing: Option<&OutgoingStore>,
+) -> Result<Vec<u8>> {
+    Ok(build_draft(conn, id, user_agent, revision, outgoing)?.copy)
 }
 
 /// The `send` row of `audit_log`, on the mail sent (or, without Sent

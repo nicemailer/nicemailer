@@ -20,7 +20,7 @@ Statut : validé pour la v1 (7 novembre 2026). Cette spécification décrit la p
 | Brouillon enregistré en local (table `draft`) | Copie dans Drafts sur le serveur, `append_draft`, conflits entre appareils (`brouillons.md`, sections 5 et 6) |
 | Destinataires calculés par le noyau, puis lignes À, Cc et Cci éditables, objet éditable (ajoutés en novembre 2026, section 6) | |
 | Rangement présélectionné par le noyau, affiché ; choix manuel à l'envoi par `⇧⌘↩` (ajouté en novembre 2026, section 8) | |
-| Envoi par le spool, délai d'annulation de 5 s | Pièces jointes, signature |
+| Envoi par le spool, délai d'annulation de 5 s ; pièces jointes (ajoutées en novembre 2026, `brouillons.md` section 7) | Signature |
 | Copie dans Sent | Commande CLI `nicemailer reply` |
 | Écrire à quelqu'un vaut décision Inbox | |
 
@@ -235,12 +235,14 @@ Ces décisions font partie de la même commande que le rangement : `z` après l'
 | `update_draft` | `id`, `revision`, et ce qui a changé : `body?`, `subject?`, `to?`, `cc?`, `bcc?` (listes entières de `{addr, name}`) | `{revision}` ; `INVALID_PARAMS` pour une adresse invalide ; erreur `REVISION_CONFLICT` si la révision n'est pas la courante, `DRAFT_SENDING` si le brouillon est `sending` |
 | `parse_addresses` | `text` | `{addresses, invalid}` : les adresses comprises, chacune une fois, et les morceaux qui n'en sont pas, tels que tapés |
 | `suggest_recipients` | `query`, `limit?` (8 par défaut, 50 au plus) | `{items}` : des `{addr, name}` |
+| `add_draft_attachment` | `id`, `revision`, `staged` (nom du fichier dans `incoming.noindex`), `filename`, `mime_type?` | `{revision, attachment, warning}` ; `INVALID_PARAMS` pour un nom qui n'est pas un fichier déposé ou au-delà de 100 Mo |
+| `remove_draft_attachment` | `id`, `revision`, `attachment_id` | `{revision}` |
 | `close_draft` | `id` | — |
 | `discard_draft` | `id` | `Draft` abandonné, que le client garde pour le restaurer |
 | `send_draft` | `id`, `revision`, `body`, `after_send?` (`archive`, `waiting`, `todo`, `stay` ; enregistré dans le brouillon ; absent : le choix enregistré, sinon la présélection) | `{send_at}` : heure prévue de l'envoi ; `CANNOT_SEND` sans destinataire ou sans `[smtp]` |
 | `cancel_send` | `id` | `Draft` remis à `editing` ; erreur `SEND_ALREADY_STARTED` |
 
-`Draft` : `id`, `account_id`, `from` (`{addr, name}`), `to`, `cc`, `bcc` (listes de `{addr, name}`), `subject`, `body`, `revision`, `state`, `reply_to`, `after_send_target` (présélection, absente quand rien n'est rangé), `after_send` (choix de l'utilisateur, absent s'il n'y en a pas), `send_at` (si `sending`).
+`Draft` : `id`, `account_id`, `from` (`{addr, name}`), `to`, `cc`, `bcc` (listes de `{addr, name}`), `attachments` (`{id, filename, mime_type, size}`), `subject`, `body`, `revision`, `state`, `reply_to`, `after_send_target` (présélection, absente quand rien n'est rangé), `after_send` (choix de l'utilisateur, absent s'il n'y en a pas), `send_at` (si `sending`).
 
 `quote_header` est mis en forme par le client parce que la langue et le format de date sont ceux de l'app ; le noyau ne la modifie pas. Les clients sans langue (CLI) passent une ligne anglaise.
 

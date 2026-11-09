@@ -329,6 +329,16 @@
         }
       }
     },
+    "A folder cannot be attached: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un dossier ne peut pas être joint : %@"
+          }
+        }
+      }
+    },
     "A folder of NiceMailer data (with nicemailer.db), or an empty folder for a new mailbox": {
       "localizations": {
         "fr": {
@@ -439,6 +449,36 @@
         }
       }
     },
+    "Attach": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Joindre"
+          }
+        }
+      }
+    },
+    "Attached %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ joint"
+          }
+        }
+      }
+    },
+    "Attached %@ · %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ joint · %2$@"
+          }
+        }
+      }
+    },
     "Attributes": {
       "localizations": {
         "fr": {
@@ -465,6 +505,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Texte plus grand"
+          }
+        }
+      }
+    },
+    "Cannot attach %@: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossible de joindre %1$@ : %2$@"
           }
         }
       }
@@ -635,6 +685,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Affichage"
+          }
+        }
+      }
+    },
+    "Files": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fichiers"
           }
         }
       }

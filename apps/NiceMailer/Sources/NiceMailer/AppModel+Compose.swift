@@ -1,4 +1,5 @@
 import Foundation
+import UniformTypeIdentifiers
 
 // The reply, seen from the model (`specifications/reponse.md`): `r` asks
 // the core for a draft (`create_draft`), the text typed is saved after
@@ -137,6 +138,92 @@ extension AppModel {
     func commitRecipientLine() async -> Bool {
         guard let (field, text) = takePendingLine() else { return true }
         return await commitRecipients(text, to: field)
+    }
+
+    /// ⇧⌘A: the open panel, then the files chosen are attached.
+    func chooseAttachments() async {
+        guard composer != nil else { return }
+        let urls = await chooseFiles()
+        await attach(urls)
+    }
+
+    /// Attaches files (the open panel, a drop, a paste): each is copied
+    /// into `incoming.noindex` (a clone on APFS: instant, no space taken),
+    /// then taken by the core (`add_draft_attachment`), which reads nothing
+    /// outside its data directory. One file at a time, in the order of the
+    /// saves, so that each call has the revision the previous one gave.
+    func attach(_ urls: [URL]) async {
+        let files = urls.filter { $0.isFileURL }
+        guard !files.isEmpty, composer != nil else { return }
+        let previous = composeSaving
+        let task = Task { @MainActor in
+            await previous?.value
+            for url in files { await self.attachOne(url) }
+        }
+        composeSaving = task
+        await task.value
+    }
+
+    private func attachOne(_ url: URL) async {
+        guard let client = core, let c = composer else { return }
+        let isDirectory = (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
+        if isDirectory {
+            flash = L("A folder cannot be attached: %@", url.lastPathComponent)
+            return
+        }
+        let staged = Compose.stagedName()
+        let destination = incomingDirectory.appendingPathComponent(staged)
+        let dir = incomingDirectory
+        // Swift note: `Task.detached` runs the copy away from the main
+        // actor, so that a big file does not freeze the window; `try await
+        // ….value` waits for it and passes its error on.
+        do {
+            try await Task.detached {
+                try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+                try FileManager.default.copyItem(at: url, to: destination)
+            }.value
+        } catch {
+            flash = L("Cannot attach %@: %@", url.lastPathComponent, error.localizedDescription)
+            return
+        }
+        let mime = UTType(filenameExtension: url.pathExtension)?.preferredMIMEType ?? "application/octet-stream"
+        do {
+            let r: AddDraftAttachmentResult = try await client.call(
+                "add_draft_attachment",
+                ["id": c.draft.id, "revision": composer?.revision ?? c.revision, "staged": staged,
+                 "filename": url.lastPathComponent, "mime_type": mime])
+            guard composer?.draft.id == c.draft.id else { return }
+            composer?.revision = r.revision
+            composer?.attachments.append(r.attachment)
+            flash = r.warning.map { L("Attached %@ · %@", r.attachment.filename, $0) } ?? L("Attached %@", r.attachment.filename)
+        } catch {
+            // Refused: the copy is no use; the core took nothing.
+            try? FileManager.default.removeItem(at: destination)
+            flash = Self.composeErrorFlash(error)
+        }
+    }
+
+    /// ⌫ on a file of the line of attachments: it leaves the draft.
+    func removeAttachment(_ id: Int) async {
+        let previous = composeSaving
+        let task = Task { @MainActor in
+            await previous?.value
+            guard let client = self.core, let c = self.composer else { return }
+            do {
+                let r: UpdateDraftResult = try await client.call(
+                    "remove_draft_attachment", ["id": c.draft.id, "revision": c.revision, "attachment_id": id])
+                guard self.composer?.draft.id == c.draft.id else { return }
+                self.composer?.revision = r.revision
+                self.composer?.attachments.removeAll { $0.id == id }
+                let left = self.composer?.attachments.count ?? 0
+                if let i = self.composer?.attachmentIndex, i >= left { self.composer?.attachmentIndex = max(0, left - 1) }
+                if left == 0 { self.composer?.focus = .body }
+            } catch {
+                self.flash = Self.composeErrorFlash(error)
+            }
+        }
+        composeSaving = task
+        await task.value
     }
 
     /// The addresses to suggest for the text typed in a recipient line,

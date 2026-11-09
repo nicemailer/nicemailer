@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// The reply being written, in place of the reader (`reponse.md`,
 /// section 6): who it goes to, its subject, where the conversation goes
@@ -39,6 +40,22 @@ struct ComposerView: View {
                     .contentShape(Rectangle())
                     .onTapGesture { controller.focusCompose(.subject) }
                     .uiTarget("compose-subject")
+                    if !c.attachments.isEmpty {
+                        headerLine(L("Files"), focused: c.focus == .attachments) {
+                            FlowLayout(spacing: scaled(4)) {
+                                ForEach(Array(c.attachments.enumerated()), id: \.element.id) { i, a in
+                                    let selected = c.focus == .attachments && i == c.attachmentIndex
+                                    Label(Compose.attachmentLabel(a), systemImage: "paperclip")
+                                        .lineLimit(1)
+                                        .padding(.horizontal, scaled(4))
+                                        .background(RoundedRectangle(cornerRadius: 3).fill(selected ? Palette.accent.opacity(0.45) : Palette.cursor))
+                                        .contentShape(Rectangle())
+                                        .onTapGesture { controller.clickAttachment(i) }
+                                        .uiTarget("compose-file-\(i)")
+                                }
+                            }
+                        }
+                    }
                     if let after = Compose.afterSendLine(c.draft) {
                         Text(after).foregroundStyle(Palette.accentText).lineLimit(1)
                     }
@@ -50,6 +67,23 @@ struct ComposerView: View {
                 ComposerTextView(text: c.buffer.text, cursor: c.buffer.utf16Cursor, selection: c.buffer.utf16Selection,
                                  focused: c.focus == .body, controller: controller)
                     .uiTarget("compose-text")
+            }
+            // Files dropped anywhere on the reply are attached.
+            //
+            // Swift note: `onDrop` hands `NSItemProvider`s; each file URL is
+            // loaded asynchronously, then all are attached together.
+            .onDrop(of: [.fileURL], isTargeted: nil) { providers in
+                Task { @MainActor in
+                    var urls: [URL] = []
+                    for p in providers {
+                        if let url = try? await p.loadItem(forTypeIdentifier: UTType.fileURL.identifier) as? Data,
+                           let u = URL(dataRepresentation: url, relativeTo: nil) {
+                            urls.append(u)
+                        }
+                    }
+                    await model.attach(urls)
+                }
+                return true
             }
         }
     }
