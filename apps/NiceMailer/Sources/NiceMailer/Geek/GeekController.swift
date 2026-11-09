@@ -1531,6 +1531,12 @@ final class GeekController {
             return true
         }
         if code == KeyCode.escape {
+            // Suggestions shown: Escape closes them, and only them.
+            if model.composer?.suggestions.isEmpty == false {
+                model.composer?.suggestions = []
+                model.composer?.suggestionIndex = nil
+                return true
+            }
             model.leaveComposer()
             return true
         }
@@ -1538,8 +1544,30 @@ final class GeekController {
             Task { await model.discardComposer() }
             return true
         }
+        // ⌥⌘B: the Bcc line, shown and focused (as in Mail).
+        if command, option, event.charactersIgnoringModifiers?.lowercased() == "b" {
+            model.composer?.showsBcc = true
+            focusCompose(.bcc)
+            return true
+        }
         guard var c = model.composer else { return true }
         let shift = mods.contains(.shift)
+        // Tab and ⇧Tab go from field to field (`Composer.fields`); in the
+        // text, Tab is typed (an indent), ⇧Tab goes back to the subject.
+        if code == KeyCode.tab, !command, !control, c.focus != .body || shift {
+            focusCompose(c.field(after: c.focus, backward: shift))
+            return true
+        }
+        switch c.focus {
+        case .subject:
+            handleSubjectKey(event, mods: mods)
+            return true
+        case .to, .cc, .bcc:
+            handleRecipientKey(event, mods: mods)
+            return true
+        case .body:
+            break
+        }
         var changed = false
         var vertical = false
         // A move key: with Shift it extends the selection; without, it ends
@@ -1640,6 +1668,107 @@ final class GeekController {
         return true
     }
 
+    /// Moves the keys to another field of the reply. The text typed in the
+    /// recipient line left becomes addresses (`AppModel.commitRecipients`).
+    func focusCompose(_ field: ComposeField) {
+        guard var c = model.composer, c.focus != field else { return }
+        let pending = model.takePendingLine()
+        c = model.composer ?? c
+        c.focus = field
+        c.line = LineEdit()
+        c.suggestions = []
+        c.suggestionIndex = nil
+        if field == .bcc { c.showsBcc = true }
+        if field == .subject { c.subjectLine = LineEdit(c.headers.subject) }
+        model.composer = c
+        if let pending { Task { await model.commitRecipients(pending.text, to: pending.field) } }
+    }
+
+    /// A key in a recipient line (`reponse.md`, section 6): the text typed
+    /// with the editing keys of a text field; Return, `,` or `;` make it an
+    /// address; ↑ ↓ choose among the suggestions, Return or Tab takes one;
+    /// ⌫ on an empty line takes the last address back to be corrected.
+    private func handleRecipientKey(_ event: NSEvent, mods: NSEvent.ModifierFlags) {
+        guard var c = model.composer else { return }
+        let key = event.charactersIgnoringModifiers ?? ""
+        let code = event.keyCode
+        let command = mods.contains(.command)
+        switch code {
+        case KeyCode.down where !c.suggestions.isEmpty:
+            c.suggestionIndex = c.suggestionIndex.map { Self.stepDown($0, count: c.suggestions.count) } ?? 0
+            model.composer = c
+            return
+        case KeyCode.up where !c.suggestions.isEmpty:
+            c.suggestionIndex = c.suggestionIndex.map { Self.stepUp($0, count: c.suggestions.count) } ?? c.suggestions.count - 1
+            model.composer = c
+            return
+        case KeyCode.returnKey:
+            if let i = c.suggestionIndex {
+                model.chooseSuggestion(i)
+            } else if c.line.text.trimmingCharacters(in: .whitespaces).isEmpty {
+                // Nothing typed: on to the next field.
+                focusCompose(c.field(after: c.focus, backward: false))
+            } else {
+                Task { await model.commitRecipientLine() }
+            }
+            return
+        case KeyCode.delete where !command && c.line.text.isEmpty:
+            let field = c.focus
+            if c.takeBackLast(of: field) {
+                model.composer = c
+                model.composerChanged()
+                model.suggestRecipients()
+            }
+            return
+        default:
+            break
+        }
+        if command, key.lowercased() == "v" {
+            // A pasted list becomes addresses at once.
+            c.line.insert(LineEdit.pasted(pasteboard.string(forType: .string) ?? ""))
+            model.composer = c
+            Task { await model.commitRecipientLine() }
+            return
+        }
+        if let change = Self.edit(&c.line, key: key, code: code, mods: mods) {
+            model.composer = c
+            if change == .text { model.suggestRecipients() }
+            return
+        }
+        guard !command, !mods.contains(.control), let text = event.characters, LineEdit.isTypable(text) else { return }
+        if Compose.endsAddress(text) {
+            Task { await model.commitRecipientLine() }
+            return
+        }
+        c.line.insert(text)
+        model.composer = c
+        model.suggestRecipients()
+    }
+
+    /// A key in the subject: a one-line text field; Return goes to the text.
+    private func handleSubjectKey(_ event: NSEvent, mods: NSEvent.ModifierFlags) {
+        guard var c = model.composer else { return }
+        let key = event.charactersIgnoringModifiers ?? ""
+        let command = mods.contains(.command)
+        if event.keyCode == KeyCode.returnKey {
+            focusCompose(.body)
+            return
+        }
+        if command, key.lowercased() == "v" {
+            c.subjectLine.insert(LineEdit.pasted(pasteboard.string(forType: .string) ?? ""))
+        } else if Self.edit(&c.subjectLine, key: key, code: event.keyCode, mods: mods) == nil {
+            guard !command, !mods.contains(.control), let text = event.characters, LineEdit.isTypable(text) else { return }
+            c.subjectLine.insert(text)
+        }
+        guard c.subjectLine.text != c.headers.subject else {
+            model.composer = c
+            return
+        }
+        c.headers.subject = c.subjectLine.text
+        model.composer = c
+        model.composerChanged()
+    }
+
     /// ↑ ↓ in the reply: by the lines as drawn when the view is there (a
     /// long paragraph wraps on several), else by the lines of the text.
     private func moveComposeVertically(_ buffer: inout TextBuffer, _ delta: Int) {
@@ -1683,6 +1812,7 @@ final class GeekController {
     /// A click in the text of the reply: the cursor goes there; with
     /// Shift, the selection extends to there, as in every macOS text view.
     func clickCompose(utf16 offset: Int, extend: Bool = false) {
+        focusCompose(.body)
         guard var c = model.composer else { return }
         let position = c.buffer.position(fromUTF16: offset)
         if extend {
@@ -2168,4 +2298,5 @@ enum KeyCode {
     static let right: UInt16 = 124
     static let down: UInt16 = 125
     static let up: UInt16 = 126
+    static let tab: UInt16 = 48
 }

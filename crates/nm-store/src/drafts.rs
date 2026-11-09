@@ -104,7 +104,11 @@ pub struct SendJob {
     /// The envelope: sender and every recipient.
     pub from: String,
     pub rcpt: Vec<String>,
+    /// The mail given to the SMTP server: no `Bcc` header.
     pub mime: Vec<u8>,
+    /// The copy the user keeps (raw store, Sent folder of the server): the
+    /// same, with `Bcc` when there are hidden recipients.
+    pub copy: Vec<u8>,
     pub message_id_hdr: String,
     /// The server may have the mail already (see the header of this file).
     pub data_sent: bool,
@@ -131,9 +135,27 @@ pub(crate) fn now() -> i64 {
 }
 
 /// The JSON of the recipients column: `[{kind, addr, name}]`.
-fn recipients_json(to: &[Mailbox], cc: &[Mailbox]) -> String {
+fn recipients_json(to: &[Mailbox], cc: &[Mailbox], bcc: &[Mailbox]) -> String {
     let item = |kind: &str, m: &Mailbox| json!({"kind": kind, "addr": m.addr, "name": m.name});
-    Value::Array(to.iter().map(|m| item("to", m)).chain(cc.iter().map(|m| item("cc", m))).collect()).to_string()
+    Value::Array(
+        to.iter()
+            .map(|m| item("to", m))
+            .chain(cc.iter().map(|m| item("cc", m)))
+            .chain(bcc.iter().map(|m| item("bcc", m)))
+            .collect(),
+    )
+    .to_string()
+}
+
+/// What the user changed in a draft ([`Store::edit_draft`]); `None`: left
+/// as it is. Each recipient list is given whole.
+#[derive(Debug, Clone, Default)]
+pub struct DraftEdit {
+    pub body: Option<String>,
+    pub subject: Option<String>,
+    pub to: Option<Vec<Mailbox>>,
+    pub cc: Option<Vec<Mailbox>>,
+    pub bcc: Option<Vec<Mailbox>>,
 }
 
 /// The recipients of a draft, `(to, cc, bcc)`.
@@ -186,7 +208,7 @@ pub(crate) fn draft_view(conn: &Connection, id: i64) -> Result<DraftView> {
     let Some((account_id, from_addr, from_name, recipients, subject, body, reply_to, revision, state, thread_id, after_send)) = row else {
         return Err(StoreError::NotFound(format!("brouillon {id}")));
     };
-    let (to, cc, _) = recipients_of(&recipients);
+    let (to, cc, bcc) = recipients_of(&recipients);
     let after_send_target = match thread_id {
         Some(t) => crate::reception::reply_preselection(conn, account_id, t)?,
         None => None,
@@ -198,6 +220,7 @@ pub(crate) fn draft_view(conn: &Connection, id: i64) -> Result<DraftView> {
         from: AddressView { addr: from_addr, name: from_name },
         to: to.iter().map(view_of).collect(),
         cc: cc.iter().map(view_of).collect(),
+        bcc: bcc.iter().map(view_of).collect(),
         subject,
         body,
         revision,
@@ -299,7 +322,7 @@ impl Store {
                 account_id,
                 sender.addr,
                 sender.name,
-                recipients_json(&r_to, &r_cc),
+                recipients_json(&r_to, &r_cc, &[]),
                 compose::reply_subject(&subject),
                 text,
                 reply_to,
@@ -331,11 +354,96 @@ impl Store {
     /// (`RevisionConflict` otherwise); a body unchanged changes nothing.
     /// Returns the new revision.
     pub fn update_draft(&mut self, id: i64, revision: i64, body: &str, source: Source) -> Result<i64> {
+        self.edit_draft(id, revision, &DraftEdit { body: Some(body.to_string()), ..DraftEdit::default() }, source)
+    }
+
+    /// Saves what the user changed: the body, the subject, the recipients
+    /// (`reponse.md`, sections 5 and 6). One new revision for the whole
+    /// change, none if nothing changed. The recipients are cleaned by
+    /// `compose::clean_recipients` (each address once across To, Cc and
+    /// Bcc); an address that is not one is refused (`InvalidParams`), and
+    /// nothing is saved. Returns the revision.
+    pub fn edit_draft(&mut self, id: i64, revision: i64, edit: &DraftEdit, source: Source) -> Result<i64> {
         let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let rev = editable(&tx, id, revision)?;
-        let rev = save_body(&tx, id, rev, body, source)?;
+        let (recipients, subject, body): (String, String, String) =
+            tx.query_row("SELECT recipients, subject, body FROM draft WHERE id = ?1", [id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+        let new_recipients = if edit.to.is_some() || edit.cc.is_some() || edit.bcc.is_some() {
+            let (to, cc, bcc) = recipients_of(&recipients);
+            let to = edit.to.as_ref().unwrap_or(&to);
+            let cc = edit.cc.as_ref().unwrap_or(&cc);
+            let bcc = edit.bcc.as_ref().unwrap_or(&bcc);
+            let [to, cc, bcc] = compose::clean_recipients([to, cc, bcc])
+                .map_err(|bad| StoreError::InvalidParams(format!("not an address: {bad}")))?;
+            recipients_json(&to, &cc, &bcc)
+        } else {
+            recipients
+        };
+        let new_subject = edit.subject.as_deref().map(compose::clean_subject).unwrap_or(subject);
+        let new_body = edit.body.as_deref().unwrap_or(&body);
+        // Rust note: `params!` borrows each value; the `UPDATE` only
+        // happens when something differs, so a save of what is already
+        // there keeps the revision (and the draft is not "changed here").
+        let n = tx.execute(
+            "UPDATE draft SET recipients = ?2, subject = ?3, body = ?4, revision = revision + 1,
+                    date_modified = unixepoch(), modified_by = ?5
+              WHERE id = ?1 AND (recipients <> ?2 OR subject <> ?3 OR body <> ?4)",
+            params![id, new_recipients, new_subject, new_body, source.as_str()],
+        )?;
         tx.commit()?;
-        Ok(rev)
+        Ok(if n > 0 { rev + 1 } else { rev })
+    }
+
+    /// The addresses to suggest for `query` in a recipient line, those the
+    /// user wrote to most first, then those they receive most from
+    /// (`reponse.md`, section 6). An address matches when it starts with
+    /// the text, or its domain does, or its name, or a word of its name.
+    /// Banned senders, the addresses of `own` and those of the accounts
+    /// (an archive account's too) are never suggested.
+    ///
+    /// The candidates are found by a scan of `address`, at most
+    /// `CANDIDATES`; each is then counted through the indexes
+    /// `idx_message_address_address` and `idx_message_from`. Measured on a
+    /// mailbox of 275,000 mails and 49,000 addresses: under 0.1 s for one
+    /// letter, much less for more. With one letter, a frequent
+    /// correspondent beyond the first 2,000 matches can be missed; a second
+    /// letter finds them.
+    pub fn suggest_recipients(&self, query: &str, limit: u32, own: &[String]) -> Result<Vec<AddressView>> {
+        const CANDIDATES: i64 = 2000;
+        let q = query.trim().replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
+        if q.is_empty() {
+            return Ok(Vec::new());
+        }
+        let rows: Vec<(String, Option<String>)> = self
+            .conn
+            .prepare_cached(
+                "WITH cand AS (
+                     SELECT id, addr, name FROM address
+                      WHERE (addr LIKE ?1 ESCAPE '\\' OR addr LIKE ?2 ESCAPE '\\'
+                             OR name LIKE ?1 ESCAPE '\\' OR name LIKE ?3 ESCAPE '\\')
+                        AND (screening_target IS NULL OR screening_target <> 'banned')
+                        AND addr NOT IN (SELECT address FROM account WHERE address IS NOT NULL)
+                      LIMIT ?4)
+                 SELECT c.addr, c.name FROM cand c
+                  ORDER BY (SELECT count(*) FROM message_address ma
+                              JOIN message m ON m.id = ma.message_id
+                              JOIN folder f ON f.id = m.folder_id
+                             WHERE ma.address_id = c.id AND ma.role IN ('to', 'cc', 'bcc') AND f.role = 'sent') DESC,
+                           (SELECT count(*) FROM message m WHERE m.from_address_id = c.id) DESC,
+                           c.addr
+                  LIMIT ?5",
+            )?
+            .query_map(
+                params![format!("{q}%"), format!("%@{q}%"), format!("% {q}%"), CANDIDATES, i64::from(limit) + own.len() as i64],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )?
+            .collect::<std::result::Result<_, _>>()?;
+        Ok(rows
+            .into_iter()
+            .filter(|(addr, _)| compose::valid_addr(addr) && !own.iter().any(|o| o.eq_ignore_ascii_case(addr)))
+            .take(limit as usize)
+            .map(|(addr, name)| AddressView { addr: addr.to_lowercase(), name: name.filter(|n| !n.trim().is_empty()) })
+            .collect())
     }
 
     /// Abandons a draft, and returns it as it was: the client keeps it to
@@ -383,7 +491,7 @@ impl Store {
             tx.execute("UPDATE draft SET after_send = ?2 WHERE id = ?1", params![id, choice.as_str()])?;
         }
         let after_send: Option<String> = tx.query_row("SELECT after_send FROM draft WHERE id = ?1", [id], |r| r.get(0))?;
-        let Built { account_id, from_addr, rcpt, mime, msgid, date: t } = build_draft(&tx, id, user_agent, None)?;
+        let Built { account_id, from_addr, rcpt, mime, copy, msgid, date: t } = build_draft(&tx, id, user_agent, None)?;
         if rcpt.is_empty() {
             return Err(StoreError::CannotSend("this draft has no recipient".into()));
         }
@@ -395,6 +503,9 @@ impl Store {
             "rcpt": rcpt,
             // The MIME message is ASCII (`build_message` encodes the rest).
             "mime": String::from_utf8_lossy(&mime),
+            // The copy kept by the user (raw store, Sent), with `Bcc`; only
+            // when it differs from the mail sent.
+            "mime_copy": (copy != mime).then(|| String::from_utf8_lossy(&copy).into_owned()),
             "message_id_hdr": msgid,
             "after_send": after_send,
             "data_sent": false,
@@ -486,6 +597,7 @@ impl Store {
                 from: from.to_string(),
                 rcpt: p["rcpt"].as_array().into_iter().flatten().filter_map(|v| v.as_str().map(str::to_string)).collect(),
                 mime: mime.as_bytes().to_vec(),
+                copy: p["mime_copy"].as_str().unwrap_or(mime).as_bytes().to_vec(),
                 message_id_hdr: msgid.to_string(),
                 data_sent: p["data_sent"] == true,
                 attempts,
@@ -547,7 +659,9 @@ impl Store {
         let draft_id = p["draft_id"].as_i64().unwrap_or(0);
         let reply_to: Option<i64> =
             tx.query_row("SELECT reply_to_message_id FROM draft WHERE id = ?1", [draft_id], |r| r.get(0)).optional()?.flatten();
-        let mime = p["mime"].as_str().unwrap_or("").as_bytes().to_vec();
+        // The copy kept, with its `Bcc`: the row of Sent lists the hidden
+        // recipients, and they get their decision like the others.
+        let mime = p["mime_copy"].as_str().or(p["mime"].as_str()).unwrap_or("").as_bytes().to_vec();
         let parsed = crate::ingest::parse(&mime);
         let sent_folder: Option<i64> = tx
             .query_row("SELECT id FROM folder WHERE account_id = ?1 AND role = 'sent'", [account_id], |r| r.get(0))
@@ -741,7 +855,11 @@ struct Built {
     from_addr: String,
     /// Every recipient, To, Cc and Bcc: the SMTP envelope.
     rcpt: Vec<String>,
+    /// The mail sent: no `Bcc` header.
     mime: Vec<u8>,
+    /// The copy kept by the user, with `Bcc` (equal to `mime` without
+    /// hidden recipients).
+    copy: Vec<u8>,
     msgid: String,
     date: i64,
 }
@@ -769,28 +887,29 @@ fn build_draft(conn: &Connection, id: i64, user_agent: &str, draft_revision: Opt
     };
     let t = now();
     let from = Mailbox { addr: from_addr.clone(), name: from_name };
-    let mime = compose::build_message(
-        &compose::Outgoing {
-            from: &from,
-            to: &to,
-            cc: &cc,
-            subject: &subject,
-            date: t,
-            tz_offset_secs: local_offset(t),
-            message_id: &msgid,
-            in_reply_to: in_reply_to.as_deref(),
-            references: &references,
-            user_agent,
-            draft_revision,
-        },
-        &body,
-    );
-    Ok(Built { account_id, from_addr, rcpt, mime, msgid, date: t })
+    let headers = compose::Outgoing {
+        from: &from,
+        to: &to,
+        cc: &cc,
+        bcc: &bcc,
+        subject: &subject,
+        date: t,
+        tz_offset_secs: local_offset(t),
+        message_id: &msgid,
+        in_reply_to: in_reply_to.as_deref(),
+        references: &references,
+        user_agent,
+        draft_revision,
+    };
+    let copy = compose::build_message(&headers, &body);
+    let mime = if bcc.is_empty() { copy.clone() } else { compose::build_message(&compose::Outgoing { bcc: &[], ..headers }, &body) };
+    Ok(Built { account_id, from_addr, rcpt, mime, copy, msgid, date: t })
 }
 
-/// The MIME message of a draft as a copy for Drafts.
+/// The MIME message of a draft as a copy for Drafts: with its `Bcc`, so
+/// that the draft resumed on another device still has them.
 pub(crate) fn build_draft_mime(conn: &Connection, id: i64, user_agent: &str, revision: Option<i64>) -> Result<Vec<u8>> {
-    Ok(build_draft(conn, id, user_agent, revision)?.mime)
+    Ok(build_draft(conn, id, user_agent, revision)?.copy)
 }
 
 /// The `send` row of `audit_log`, on the mail sent (or, without Sent

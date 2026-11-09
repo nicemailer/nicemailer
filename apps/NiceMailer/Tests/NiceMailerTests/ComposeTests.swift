@@ -91,6 +91,50 @@ struct ComposeRulesTests {
         #expect(chosen.filter(\.current).map(\.key) == ["s"])
     }
 
+    /// Tab goes through To, Cc, (Bcc when shown), Subject and the text,
+    /// turning around; ⇧Tab the other way.
+    @Test func tabGoesFromFieldToField() throws {
+        var c = Composer(draft: try draft(target: "archive", chosen: nil))
+        #expect(c.focus == .body)
+        #expect(c.fields == [.to, .cc, .subject, .body])
+        #expect(c.field(after: .body, backward: false) == .to)
+        #expect(c.field(after: .to, backward: true) == .body)
+        #expect(c.field(after: .cc, backward: false) == .subject)
+        c.showsBcc = true
+        #expect(c.field(after: .cc, backward: false) == .bcc)
+    }
+
+    /// An address is in one line only; ⌫ on an empty line takes the last
+    /// one back as text.
+    @Test func addressesAreAddedOnceAndTakenBack() throws {
+        var c = Composer(draft: try draft(target: "archive", chosen: nil))
+        let sender = c.headers.to[0]
+        let already = c.add([AddressView(addr: sender.addr.uppercased(), name: nil), AddressView(addr: "new@x.fr", name: nil)], to: .cc)
+        #expect(already.map(\.addr) == [sender.addr.uppercased()])
+        #expect(c.headers.cc.map(\.addr) == ["new@x.fr"])
+        #expect(c.isDirty)
+        let took = c.takeBackLast(of: .cc)
+        #expect(took)
+        #expect(c.line.text == "new@x.fr")
+        #expect(c.headers.cc.isEmpty)
+        let none = c.takeBackLast(of: .bcc)
+        #expect(!none)
+    }
+
+    /// `update_draft` carries the body, and the headers only when edited.
+    @Test func onlyWhatChangedIsSaved() throws {
+        var c = Composer(draft: try draft(target: "archive", chosen: nil))
+        #expect(Set(Compose.saveParams(c).keys) == ["id", "revision"])
+        c.buffer.insert("x")
+        #expect(Set(Compose.saveParams(c).keys) == ["id", "revision", "body"])
+        c.saved = c.buffer.text
+        c.headers.bcc = [AddressView(addr: "b@x.fr", name: "B")]
+        c.headers.subject = "Autre"
+        let p = Compose.saveParams(c)
+        #expect(Set(p.keys) == ["id", "revision", "bcc", "subject"])
+        #expect((p["bcc"] as? [[String: Any]])?.first?["addr"] as? String == "b@x.fr")
+    }
+
     @Test func theLinesOfTheStatusBar() {
         #expect(Compose.sendingFlash(seconds: 5) == L("Sending in %lld s · z to cancel", 5))
         #expect(Compose.sendingFlash(seconds: 0) == L("Sending…"))
@@ -158,6 +202,10 @@ struct ComposeControllerTests {
         case "shift-cmd-up": chars = "\u{F700}"; code = KeyCode.up; mods = [.function, .shift, .command]
         case "shift-down": chars = "\u{F701}"; code = KeyCode.down; mods = [.function, .shift]
         case "cmd-q": chars = "q"; mods = .command
+        case "tab": chars = "\t"; code = KeyCode.tab
+        case "shift-tab": chars = "\u{19}"; code = KeyCode.tab; mods = .shift
+        case "alt-cmd-b": chars = "b"; code = 11; mods = [.command, .option]
+        case "cmd-v": chars = "v"; mods = .command
         default:
             if name.hasPrefix("cmd-") { mods = .command; chars = String(name.dropFirst(4)) }
             if name.hasPrefix("ctrl-") { mods = .control; chars = String(name.dropFirst(5)) }
@@ -400,6 +448,99 @@ struct ComposeControllerTests {
         #expect(controller.activeChoice == nil)
         #expect(model.flash == L("This conversation stays where it is: nothing to choose · ⌘↩ to send"))
         #expect(core.calls("send_draft").isEmpty)
+    }
+
+    /// The recipient lines (`reponse.md`, section 6): typed text becomes
+    /// an address on Return or a comma, the suggestions are chosen with the
+    /// arrows, ⌫ takes the last one back, what is not an address stays.
+    @Test func recipientsAreTypedAndSuggested() async {
+        await reply()
+        press("shift-tab")
+        press("shift-tab")
+        press("shift-tab")
+        #expect(model.composer?.focus == .to)
+        // Letters are text of the line, not commands nor the body.
+        type("al")
+        #expect(model.composer?.line.text == "al")
+        #expect(await eventually { model.composer?.suggestions.map(\.addr) == ["alice@example.org", "albert@example.org"] })
+        #expect(model.composer?.suggestionIndex == 0)
+        press("down")
+        press("ret")
+        #expect(model.composer?.headers.to.last?.addr == "albert@example.org")
+        #expect(model.composer?.line.text == "")
+        // A typed address, ended by a comma.
+        type("carl@example.org,")
+        #expect(await eventually { model.composer?.headers.to.last?.addr == "carl@example.org" })
+        // Not an address: it stays, said in the status bar.
+        type("nope")
+        press("ret")
+        #expect(await eventually { model.flash == L("Not an address: %@", "nope") })
+        #expect(model.composer?.line.text == "nope")
+        // ⌫ until the line is empty, then once more: carl comes back.
+        for _ in 0..<5 { press("del") }
+        #expect(model.composer?.line.text == "carl@example.org")
+        #expect(model.composer?.headers.to.last?.addr == "albert@example.org")
+        // Saved with the next pause: the whole To line.
+        #expect(await eventually { core.calls("update_draft").contains { ($0["to"] as? [[String: Any]])?.count == 2 } })
+        #expect(core.calls("update_draft").allSatisfy { $0["body"] == nil })
+    }
+
+    /// ⌥⌘B shows the Bcc line; an address typed and not ended is sent
+    /// with the mail: saved before `send_draft`.
+    @Test func bccAndAPendingAddressGoWithTheMail() async {
+        await reply()
+        press("alt-cmd-b")
+        #expect(model.composer?.showsBcc == true)
+        #expect(model.composer?.focus == .bcc)
+        type("boss@example.org")
+        press("cmd-ret")
+        #expect(await eventually { core.calls("send_draft").count == 1 })
+        let update = core.calls("update_draft").last
+        #expect((update?["bcc"] as? [[String: Any]])?.first?["addr"] as? String == "boss@example.org")
+    }
+
+    /// A text that is not an address stops the sending.
+    @Test func aWrongAddressStopsTheSending() async {
+        await reply()
+        press("shift-tab")
+        press("shift-tab")
+        press("shift-tab")
+        type("nope")
+        press("cmd-ret")
+        #expect(await eventually { model.flash == L("Not an address: %@", "nope") })
+        #expect(core.calls("send_draft").isEmpty)
+        #expect(model.composer != nil)
+    }
+
+    /// The subject is a line of its own: ⇧Tab from the text, Return back
+    /// to the text, saved like the rest.
+    @Test func theSubjectIsEdited() async {
+        await reply()
+        press("shift-tab")
+        #expect(model.composer?.focus == .subject)
+        #expect(model.composer?.subjectLine.text == "Re: Subject 1")
+        type(" (suite)")
+        #expect(model.composer?.headers.subject == "Re: Subject 1 (suite)")
+        press("ret")
+        #expect(model.composer?.focus == .body)
+        type("x")
+        #expect(model.composer?.buffer.text.hasPrefix("x") == true)
+        #expect(await eventually { core.calls("update_draft").last?["subject"] as? String == "Re: Subject 1 (suite)" })
+    }
+
+    /// Escape closes the suggestions first, then leaves the reply.
+    @Test func escapeClosesTheSuggestionsFirst() async {
+        await reply()
+        press("shift-tab")
+        press("shift-tab")
+        press("shift-tab")
+        type("b")
+        #expect(await eventually { model.composer?.suggestions.isEmpty == false })
+        press("esc")
+        #expect(model.composer?.suggestions.isEmpty == true)
+        #expect(model.composer != nil)
+        press("esc")
+        #expect(await eventually { model.composer == nil })
     }
 
     @Test func tooLateToCancel() async {

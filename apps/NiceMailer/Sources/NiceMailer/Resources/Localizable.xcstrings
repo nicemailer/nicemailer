@@ -409,6 +409,16 @@
         }
       }
     },
+    "Already a recipient: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Déjà destinataire : %@"
+          }
+        }
+      }
+    },
     "Already in %@": {
       "localizations": {
         "fr": {
@@ -435,6 +445,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Attributs"
+          }
+        }
+      }
+    },
+    "Bcc": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cci"
           }
         }
       }
@@ -1079,6 +1099,16 @@
         }
       }
     },
+    "Not an address: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pas une adresse : %@"
+          }
+        }
+      }
+    },
     "Not available yet: %@": {
       "localizations": {
         "fr": {
@@ -1415,6 +1445,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Arrêter le noyau"
+          }
+        }
+      }
+    },
+    "Subject": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Objet"
           }
         }
       }
@@ -2478,6 +2518,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "aucune décision"
+          }
+        }
+      }
+    },
+    "no recipient": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "aucun destinataire"
           }
         }
       }

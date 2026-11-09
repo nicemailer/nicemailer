@@ -16,17 +16,29 @@ struct ComposerView: View {
     var body: some View {
         if let c = model.composer {
             VStack(alignment: .leading, spacing: 0) {
-                ReaderTitleBar(subject: c.draft.subject) {
+                ReaderTitleBar(subject: c.headers.subject) {
                     Text(L("⌘↩ send · ⇧⌘↩ send then… · Esc keep · ⌘⌫ abandon")).foregroundStyle(Palette.muted).lineLimit(1)
                 }
                 Palette.separator.frame(height: 1)
                 VStack(alignment: .leading, spacing: scaled(2)) {
-                    headerLine(L("From"), c.draft.from.name.map { "\($0) <\(c.draft.from.addr)>" } ?? c.draft.from.addr)
-                    headerLine(L("To"), Compose.recipients(c.draft.to))
-                        .uiTarget("compose-to")
-                    if !c.draft.cc.isEmpty {
-                        headerLine(L("Cc"), Compose.recipients(c.draft.cc))
+                    headerLine(L("From"), focused: false) {
+                        Text(c.draft.from.name.map { "\($0) <\(c.draft.from.addr)>" } ?? c.draft.from.addr).lineLimit(1)
                     }
+                    recipientLine(.to, L("To"), c)
+                    recipientLine(.cc, L("Cc"), c)
+                    if c.showsBcc {
+                        recipientLine(.bcc, L("Bcc"), c)
+                    }
+                    headerLine(L("Subject"), focused: c.focus == .subject) {
+                        if c.focus == .subject {
+                            CaretText(line: c.subjectLine).lineLimit(1)
+                        } else {
+                            Text(c.headers.subject).lineLimit(1).truncationMode(.tail)
+                        }
+                    }
+                    .contentShape(Rectangle())
+                    .onTapGesture { controller.focusCompose(.subject) }
+                    .uiTarget("compose-subject")
                     if let after = Compose.afterSendLine(c.draft) {
                         Text(after).foregroundStyle(Palette.accentText).lineLimit(1)
                     }
@@ -36,17 +48,117 @@ struct ComposerView: View {
                 .padding(.vertical, scaled(6))
                 Palette.separator.frame(height: 1)
                 ComposerTextView(text: c.buffer.text, cursor: c.buffer.utf16Cursor, selection: c.buffer.utf16Selection,
-                                 controller: controller)
+                                 focused: c.focus == .body, controller: controller)
                     .uiTarget("compose-text")
             }
         }
     }
 
-    private func headerLine(_ label: String, _ value: String) -> some View {
+    /// A line of the headers: its label (in the accent colour while it has
+    /// the keys), then its content.
+    private func headerLine(_ label: String, focused: Bool, @ViewBuilder content: () -> some View) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: scaled(6)) {
-            Text(label).foregroundStyle(Palette.muted).frame(width: scaled(44), alignment: .leading)
-            Text(value).lineLimit(1).truncationMode(.tail)
+            Text(label)
+                .foregroundStyle(focused ? Palette.accentText : Palette.muted)
+                .frame(width: scaled(52), alignment: .leading)
+            content()
+            Spacer(minLength: 0)
         }
+    }
+
+    /// To, Cc or Bcc: an address per tag, then, while the line has the
+    /// keys, the text typed with its caret, and the suggestions under it.
+    /// A click gives the line the keys.
+    @ViewBuilder private func recipientLine(_ field: ComposeField, _ label: String, _ c: Composer) -> some View {
+        let focused = c.focus == field
+        headerLine(label, focused: focused) {
+            FlowLayout(spacing: scaled(4)) {
+                ForEach(Array(c.headers[field].enumerated()), id: \.offset) { _, a in
+                    Text(Compose.label(a))
+                        .lineLimit(1)
+                        .padding(.horizontal, scaled(4))
+                        .background(RoundedRectangle(cornerRadius: 3).fill(Palette.cursor))
+                }
+                if focused {
+                    CaretText(line: c.line).lineLimit(1)
+                }
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { controller.focusCompose(field) }
+        .uiTarget("compose-\(field.rawValue)")
+        if focused, !c.suggestions.isEmpty {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(c.suggestions.enumerated()), id: \.offset) { i, a in
+                    Text(Compose.label(a))
+                        .lineLimit(1)
+                        .padding(.horizontal, scaled(4))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(i == c.suggestionIndex ? Palette.cursor : Color.clear)
+                        .contentShape(Rectangle())
+                        .onTapGesture { model.chooseSuggestion(i) }
+                        .uiTarget("suggestion-\(i)")
+                }
+            }
+            .padding(scaled(2))
+            .background(RoundedRectangle(cornerRadius: 4).fill(Palette.popup))
+            .overlay(RoundedRectangle(cornerRadius: 4).stroke(Palette.separator))
+            .padding(.leading, scaled(58))
+            .frame(maxWidth: scaled(520), alignment: .leading)
+        }
+    }
+}
+
+/// Lays its children out left to right, going to the next line when the
+/// width is used up: the addresses of a recipient line.
+///
+/// Swift note: `Layout` (macOS 13) is SwiftUI's protocol for a container
+/// that places its children itself: `sizeThatFits` measures, then
+/// `placeSubviews` puts each child at its point.
+struct FlowLayout: Layout {
+    var spacing: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let rows = arrange(subviews, width: proposal.width ?? .infinity)
+        let width = rows.map { $0.width }.max() ?? 0
+        let height = rows.map { $0.height }.reduce(0, +) + spacing / 2 * CGFloat(max(0, rows.count - 1))
+        return CGSize(width: proposal.width ?? width, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var y = bounds.minY
+        for row in arrange(subviews, width: bounds.width) {
+            var x = bounds.minX
+            for i in row.items {
+                let size = subviews[i].sizeThatFits(.unspecified)
+                subviews[i].place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(width: min(size.width, bounds.width), height: size.height))
+                x += size.width + spacing
+            }
+            y += row.height + spacing / 2
+        }
+    }
+
+    private struct Row {
+        var items: [Int] = []
+        var width: CGFloat = 0
+        var height: CGFloat = 0
+    }
+
+    private func arrange(_ subviews: Subviews, width: CGFloat) -> [Row] {
+        var rows: [Row] = [Row()]
+        for (i, view) in subviews.enumerated() {
+            let size = view.sizeThatFits(.unspecified)
+            let needed = rows[rows.count - 1].items.isEmpty ? size.width : rows[rows.count - 1].width + spacing + size.width
+            if needed > width, !rows[rows.count - 1].items.isEmpty {
+                rows.append(Row())
+            }
+            var row = rows[rows.count - 1]
+            row.width = row.items.isEmpty ? size.width : row.width + spacing + size.width
+            row.height = max(row.height, size.height)
+            row.items.append(i)
+            rows[rows.count - 1] = row
+        }
+        return rows
     }
 }
 
@@ -58,6 +170,8 @@ struct ComposerTextView: NSViewRepresentable {
     let cursor: Int
     /// The text selected, in UTF-16 units; drawn highlighted, without caret.
     let selection: NSRange?
+    /// The text has the keys: its caret is drawn.
+    var focused = true
     let controller: GeekController
 
     func makeNSView(context: Context) -> NSScrollView {
@@ -116,7 +230,7 @@ struct ComposerTextView: NSViewRepresentable {
                 lm.addTemporaryAttribute(.backgroundColor, value: NSColor(Palette.cursor), forCharacterRange: sel)
             }
         }
-        view.showsCaret = selection == nil
+        view.showsCaret = selection == nil && focused
         // The view's own selection follows the reply's, and the view is the
         // window's focused element: what an app such as Kerlig reads.
         let own = selection.flatMap { NSMaxRange($0) <= length ? $0 : nil } ?? NSRange(location: view.caret, length: 0)

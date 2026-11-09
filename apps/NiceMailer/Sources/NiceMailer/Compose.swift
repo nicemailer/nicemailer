@@ -15,6 +15,8 @@ struct DraftView: Decodable, Equatable {
     let from: AddressView
     let to: [AddressView]
     let cc: [AddressView]
+    /// Hidden recipients: never in the mail sent, kept in the user's copies.
+    let bcc: [AddressView]
     let subject: String
     let body: String
     let revision: Int
@@ -45,8 +47,65 @@ struct SendDraftResult: Decodable {
     let sendAt: Int
 }
 
-/// The reply being written: the draft as the core last saw it, and the
-/// text as typed.
+/// What `parse_addresses` understood of a recipient line.
+struct ParseAddressesResult: Decodable {
+    let addresses: [AddressView]
+    let invalid: [String]
+}
+
+struct SuggestRecipientsResult: Decodable {
+    let items: [AddressView]
+}
+
+/// Where the keys go in the reply (`reponse.md`, section 6): a recipient
+/// line, the subject, or the text. Tab and ⇧Tab go from one to the next,
+/// in this order.
+enum ComposeField: String, CaseIterable {
+    case to, cc, bcc, subject, body
+
+    var isRecipients: Bool { self == .to || self == .cc || self == .bcc }
+}
+
+/// The headers of a draft as edited: what `update_draft` saves when it
+/// differs from what was saved last.
+struct ComposeHeaders: Equatable {
+    var to: [AddressView]
+    var cc: [AddressView]
+    var bcc: [AddressView]
+    var subject: String
+
+    init(_ d: DraftView) {
+        to = d.to
+        cc = d.cc
+        bcc = d.bcc
+        subject = d.subject
+    }
+
+    subscript(field: ComposeField) -> [AddressView] {
+        get {
+            switch field {
+            case .to: to
+            case .cc: cc
+            case .bcc: bcc
+            default: []
+            }
+        }
+        set {
+            switch field {
+            case .to: to = newValue
+            case .cc: cc = newValue
+            case .bcc: bcc = newValue
+            default: break
+            }
+        }
+    }
+
+    /// Every recipient, To then Cc then Bcc.
+    var all: [AddressView] { to + cc + bcc }
+}
+
+/// The reply being written: the draft as the core last saw it, and what
+/// the user typed since.
 struct Composer: Equatable {
     var draft: DraftView
     var buffer: TextBuffer
@@ -55,6 +114,22 @@ struct Composer: Equatable {
     var revision: Int
     /// The text last saved, to save only what changed.
     var saved: String
+    /// The recipients and the subject as edited, and as last saved.
+    var headers: ComposeHeaders
+    var savedHeaders: ComposeHeaders
+    /// Where the keys go.
+    var focus: ComposeField = .body
+    /// The text typed in the focused recipient line, not yet made an
+    /// address (Return, a comma, Tab or leaving the line does).
+    var line = LineEdit()
+    /// The subject as edited, with its cursor.
+    var subjectLine: LineEdit
+    /// The Bcc line is shown: it has addresses, or ⌥⌘B opened it.
+    var showsBcc: Bool
+    /// Addresses suggested for the text typed (`suggest_recipients`), and
+    /// the one ↑ ↓ highlighted.
+    var suggestions: [AddressView] = []
+    var suggestionIndex: Int?
 
     init(draft: DraftView) {
         self.draft = draft
@@ -63,9 +138,50 @@ struct Composer: Equatable {
         buffer = TextBuffer(draft.body, cursor: 0)
         revision = draft.revision
         saved = buffer.text
+        headers = ComposeHeaders(draft)
+        savedHeaders = headers
+        subjectLine = LineEdit(draft.subject)
+        showsBcc = !draft.bcc.isEmpty
     }
 
-    var isDirty: Bool { buffer.text != saved }
+    var isDirty: Bool { buffer.text != saved || headers != savedHeaders }
+
+    /// The fields Tab goes through, in order: Bcc only when shown.
+    var fields: [ComposeField] {
+        ComposeField.allCases.filter { $0 != .bcc || showsBcc }
+    }
+
+    /// The next field (Tab) or the previous one (⇧Tab), turning around.
+    func field(after f: ComposeField, backward: Bool) -> ComposeField {
+        let list = fields
+        guard let i = list.firstIndex(of: f) else { return .body }
+        let n = list.count
+        return list[(i + (backward ? n - 1 : 1)) % n]
+    }
+
+    /// Adds addresses to a recipient line, each once across the three
+    /// lines: an address already in another line stays where it is.
+    /// Returns those that were already there.
+    @discardableResult
+    mutating func add(_ addresses: [AddressView], to field: ComposeField) -> [AddressView] {
+        var already: [AddressView] = []
+        for a in addresses {
+            if headers.all.contains(where: { $0.addr.caseInsensitiveCompare(a.addr) == .orderedSame }) {
+                already.append(a)
+            } else {
+                headers[field].append(a)
+            }
+        }
+        return already
+    }
+
+    /// ⌫ on an empty recipient line: its last address goes back to the
+    /// line as text, to be corrected or deleted.
+    mutating func takeBackLast(of field: ComposeField) -> Bool {
+        guard let last = headers[field].popLast() else { return false }
+        line = LineEdit(last.addr)
+        return true
+    }
 }
 
 /// Rules and texts of the reply screen, as pure functions (tested without
@@ -108,6 +224,32 @@ enum Compose {
         default: who = L("someone")
         }
         return L("On %@, at %@, %@ wrote:", day.string(from: when), time.string(from: when), who)
+    }
+
+    /// An address as shown in a recipient line: "Alice <alice@x.fr>", or
+    /// the address alone.
+    static func label(_ a: AddressView) -> String {
+        a.name.map { "\($0) <\(a.addr)>" } ?? a.addr
+    }
+
+    /// The parameters of `update_draft` for what changed since the last
+    /// save: the body, and the recipients or the subject only when edited.
+    static func saveParams(_ c: Composer) -> [String: Any] {
+        var p: [String: Any] = ["id": c.draft.id, "revision": c.revision]
+        if c.buffer.text != c.saved { p["body"] = c.buffer.text }
+        let h = c.headers, s = c.savedHeaders
+        let list = { (l: [AddressView]) -> [[String: Any]] in l.map { ["addr": $0.addr, "name": $0.name ?? NSNull()] } }
+        if h.to != s.to { p["to"] = list(h.to) }
+        if h.cc != s.cc { p["cc"] = list(h.cc) }
+        if h.bcc != s.bcc { p["bcc"] = list(h.bcc) }
+        if h.subject != s.subject { p["subject"] = h.subject }
+        return p
+    }
+
+    /// Whether a key typed in a recipient line ends the address: `,` and
+    /// `;` separate addresses, as in every mail app.
+    static func endsAddress(_ key: String) -> Bool {
+        key == "," || key == ";"
     }
 
     /// A list of recipients on one line, cut after `limit` characters with

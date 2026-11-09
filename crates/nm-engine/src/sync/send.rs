@@ -178,7 +178,8 @@ async fn smtp(sx: &Sender<'_>, job: &SendJob) -> Step {
 /// The server has the mail: its raw file, then the database.
 fn accepted(sx: &Sender<'_>, job: &SendJob, refused: &[String]) -> Step {
     let raw = sx.host.raw();
-    let written = match raw.write(&job.mime).and_then(|w| raw.barrier().map(|()| w)) {
+    // The copy the user keeps, with its `Bcc` (`SendJob::copy`).
+    let written = match raw.write(&job.copy).and_then(|w| raw.barrier().map(|()| w)) {
         Ok(w) => w,
         Err(e) => {
             // The mail left; without its file, it is not recorded here.
@@ -247,7 +248,7 @@ async fn copy_to_sent(sx: &Sender<'_>, job: &SendJob) {
             let found = if replay { search(&mut s, &mailbox, &job.message_id_hdr).await? } else { None };
             match found {
                 Some(uid) => Some(uid),
-                None => match s.append(&mailbox, &["\\Seen"], Some(unix_now()), job.mime.clone()).await {
+                None => match s.append(&mailbox, &["\\Seen"], Some(unix_now()), job.copy.clone()).await {
                     Ok(a) => a.map(|a| a.uid),
                     // Refused (no such folder, quota): the mail is sent,
                     // and stays without copy on the server.

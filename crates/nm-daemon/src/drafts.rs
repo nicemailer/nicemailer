@@ -21,12 +21,12 @@
 use std::sync::Arc;
 
 use nm_api::{
-    CreateDraftParams, CreateDraftResult, DraftIdParams, DraftView, RpcError, SendDraftParams, SendDraftResult,
-    UpdateDraftParams, UpdateDraftResult, error_code,
+    AddressView, CreateDraftParams, CreateDraftResult, DraftIdParams, DraftView, ParseAddressesParams, ParseAddressesResult, RpcError,
+    SendDraftParams, SendDraftResult, SuggestRecipientsParams, SuggestRecipientsResult, UpdateDraftParams, UpdateDraftResult, error_code,
 };
 use nm_core::Source;
 use nm_core::compose::Mailbox;
-use nm_store::drafts::Identities;
+use nm_store::drafts::{DraftEdit, Identities};
 
 use crate::{Core, sync, with_reader, with_store};
 
@@ -118,10 +118,39 @@ pub async fn open(core: &Arc<Core>, p: DraftIdParams) -> Result<DraftView, RpcEr
     with_reader(core, move |s| s.get_draft(p.id)).await
 }
 
+/// `update_draft`: what changed since the last save, the body at each pause,
+/// the recipients and the subject when edited.
 pub async fn update(core: &Arc<Core>, p: UpdateDraftParams, source: Source) -> Result<UpdateDraftResult, RpcError> {
     human(source)?;
-    let revision = with_store(core, move |s| s.update_draft(p.id, p.revision, &p.body, source)).await?;
+    let list = |l: Option<Vec<AddressView>>| l.map(|l| l.into_iter().map(|a| Mailbox { addr: a.addr, name: a.name }).collect());
+    let edit = DraftEdit { body: p.body, subject: p.subject, to: list(p.to), cc: list(p.cc), bcc: list(p.bcc) };
+    let revision = with_store(core, move |s| s.edit_draft(p.id, p.revision, &edit, source)).await?;
     Ok(UpdateDraftResult { revision })
+}
+
+/// `parse_addresses`: a pure function of the text (`compose::parse_address_list`),
+/// on the socket so that the app does not repeat the rule.
+pub fn parse_addresses(p: ParseAddressesParams) -> ParseAddressesResult {
+    let (addresses, invalid) = nm_core::compose::parse_address_list(&p.text);
+    ParseAddressesResult { addresses: addresses.into_iter().map(|m| AddressView { addr: m.addr, name: m.name }).collect(), invalid }
+}
+
+/// `suggest_recipients`: the addresses of every account of `accounts.toml`
+/// are left out (one does not write to oneself).
+pub async fn suggest(core: &Arc<Core>, p: SuggestRecipientsParams) -> Result<SuggestRecipientsResult, RpcError> {
+    let own: Vec<String> = {
+        let engine = core.engine.lock().unwrap();
+        engine
+            .config()
+            .accounts
+            .values()
+            .flat_map(|a| std::iter::once(a.email.clone()).chain(a.identities.iter().map(|i| i.email.clone())))
+            .map(|a| a.to_lowercase())
+            .collect()
+    };
+    let limit = p.limit.clamp(1, 50);
+    let items = with_reader(core, move |s| s.suggest_recipients(&p.query, limit, &own)).await?;
+    Ok(SuggestRecipientsResult { items })
 }
 
 pub async fn discard(core: &Arc<Core>, p: DraftIdParams, source: Source) -> Result<DraftView, RpcError> {
@@ -194,7 +223,7 @@ fn fake_delivery(core: Arc<Core>, account_id: i64, own: Vec<String>, send_at: i6
             let mut store = core.store.lock().unwrap();
             let Ok(jobs) = store.send_claim(account_id) else { return };
             for job in jobs {
-                let Ok(written) = core.raw.write(&job.mime) else { continue };
+                let Ok(written) = core.raw.write(&job.copy) else { continue };
                 if let Ok(changes) = store.send_accepted(job.action_id, &written, &[], &own) {
                     core.events.lock().unwrap().emit(&changes);
                 }

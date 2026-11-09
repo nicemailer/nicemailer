@@ -7,6 +7,9 @@
 //! - who the reply goes to ([`reply_all`]) and from which address
 //!   ([`sender_identity`]), section 4, "Destinataires" and "Adresse
 //!   d'expédition";
+//! - the addresses typed or pasted in a recipient line
+//!   ([`parse_address_list`]), the recipients and the subject as edited
+//!   ([`clean_recipients`], [`clean_subject`]), section 6;
 //! - its subject ([`reply_subject`]) and its conversation headers
 //!   ([`references`]), section 4, "Objet" and "En-têtes de conversation";
 //! - the quotation of the mail it answers ([`quote`], [`initial_body`]),
@@ -63,6 +66,132 @@ pub fn valid_addr(addr: &str) -> bool {
         && (domain.contains('.') || domain.eq_ignore_ascii_case("localhost"))
         && !addr.chars().any(|c| c.is_whitespace() || c.is_control() || "<>()[],;:\\\"".contains(c))
         && !domain.contains('@')
+}
+
+/// Most recipients a draft may have, To, Cc and Bcc together: far more
+/// than a person writes to, few enough that a paste of a whole text by
+/// mistake does not make a mail to thousands.
+pub const RECIPIENTS_MAX: usize = 500;
+
+/// The addresses typed or pasted in a recipient line (`reponse.md`,
+/// section 6), in order, each once (without case): `(addresses, invalid)`,
+/// where `invalid` keeps the pieces that are not an address, as typed, for
+/// the user to correct.
+///
+/// Understood: `alice@x.fr`, `Alice <alice@x.fr>`, `"Dupont, J." <j@x.fr>`,
+/// `Alice Martin alice@x.fr` (a name then the address, as some lists are
+/// pasted), `<alice@x.fr>`, `mailto:alice@x.fr`, separated by commas,
+/// semicolons or line breaks. A comma inside quotes or angle brackets does
+/// not separate.
+pub fn parse_address_list(text: &str) -> (Vec<Mailbox>, Vec<String>) {
+    let mut out: Vec<Mailbox> = Vec::new();
+    let mut invalid = Vec::new();
+    for piece in split_addresses(text) {
+        let piece = piece.trim();
+        if piece.is_empty() {
+            continue;
+        }
+        match parse_mailbox(piece) {
+            Some(m) => {
+                if !out.iter().any(|o| o.addr.eq_ignore_ascii_case(&m.addr)) {
+                    out.push(m);
+                }
+            }
+            None => invalid.push(piece.to_string()),
+        }
+    }
+    (out, invalid)
+}
+
+/// Splits a list of addresses on `,`, `;` and line breaks outside quotes
+/// and angle brackets.
+fn split_addresses(text: &str) -> Vec<&str> {
+    let mut pieces = Vec::new();
+    let (mut start, mut quoted, mut angle, mut escaped) = (0, false, false, false);
+    // Rust note: `char_indices` gives each character with its byte offset,
+    // so the pieces are slices of `text`, never copies.
+    for (i, c) in text.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match c {
+            '\\' if quoted => escaped = true,
+            '"' => quoted = !quoted,
+            '<' if !quoted => angle = true,
+            '>' if !quoted => angle = false,
+            ',' | ';' | '\n' | '\r' if !quoted && !angle => {
+                pieces.push(&text[start..i]);
+                start = i + c.len_utf8();
+            }
+            _ => {}
+        }
+    }
+    pieces.push(&text[start..]);
+    pieces
+}
+
+/// One address with its optional name, or `None` if it is not one.
+fn parse_mailbox(piece: &str) -> Option<Mailbox> {
+    let bare = |s: &str| -> Option<String> {
+        let s = s.trim();
+        let s = s.strip_prefix("mailto:").or_else(|| s.strip_prefix("MAILTO:")).unwrap_or(s);
+        valid_addr(s).then(|| s.to_lowercase())
+    };
+    let unquote = |name: &str| -> Option<String> {
+        let name = name.trim();
+        let name = match name.strip_prefix('"').and_then(|n| n.strip_suffix('"')) {
+            Some(inner) => inner.replace("\\\"", "\"").replace("\\\\", "\\"),
+            None => name.to_string(),
+        };
+        let name = name.trim().to_string();
+        (!name.is_empty()).then_some(name)
+    };
+    if let (Some(open), true) = (piece.rfind('<'), piece.ends_with('>')) {
+        let addr = bare(&piece[open + 1..piece.len() - 1])?;
+        return Some(Mailbox { addr, name: unquote(&piece[..open]) });
+    }
+    if let Some(addr) = bare(piece) {
+        return Some(Mailbox { addr, name: None });
+    }
+    // "Alice Martin alice@x.fr": a name, then the address.
+    let (name, last) = piece.rsplit_once(char::is_whitespace)?;
+    let addr = bare(last)?;
+    Some(Mailbox { addr, name: unquote(name) })
+}
+
+/// The recipients of a draft as the user edited them: each address once
+/// across the three lists (To first, then Cc, then Bcc, without case), the
+/// names trimmed. `Err` names the first address that is not one: the
+/// client sends only what [`parse_address_list`] accepted, so this guards
+/// the database, not the user.
+pub fn clean_recipients(lists: [&[Mailbox]; 3]) -> Result<[Vec<Mailbox>; 3], String> {
+    let mut seen: Vec<String> = Vec::new();
+    let mut out: [Vec<Mailbox>; 3] = Default::default();
+    for (i, list) in lists.into_iter().enumerate() {
+        for m in list {
+            let addr = m.addr.trim().to_lowercase();
+            if !valid_addr(&addr) {
+                return Err(m.addr.clone());
+            }
+            if seen.contains(&addr) {
+                continue;
+            }
+            seen.push(addr.clone());
+            let name = m.name.as_deref().map(str::trim).filter(|n| !n.is_empty()).map(clean);
+            out[i].push(Mailbox { addr, name });
+        }
+    }
+    if seen.len() > RECIPIENTS_MAX {
+        return Err(format!("more than {RECIPIENTS_MAX} recipients"));
+    }
+    Ok(out)
+}
+
+/// A subject as typed: one line, without control characters, at most
+/// 998 characters (the longest line of a mail).
+pub fn clean_subject(subject: &str) -> String {
+    clean(subject).chars().filter(|c| !c.is_control()).take(998).collect::<String>().trim().to_string()
 }
 
 /// What the reply rules read of the mail answered.
@@ -347,6 +476,11 @@ pub struct Outgoing<'a> {
     pub from: &'a Mailbox,
     pub to: &'a [Mailbox],
     pub cc: &'a [Mailbox],
+    /// Written as a `Bcc` header only in the copies kept by the user (Sent,
+    /// Drafts, the raw store), for the record; the mail given to the SMTP
+    /// server is built with none, so that no recipient learns of them
+    /// (`reponse.md`, section 7).
+    pub bcc: &'a [Mailbox],
     pub subject: &'a str,
     /// Unix seconds, and the offset of the Mac's time zone, in seconds
     /// east of UTC: the `Date` is written in local time.
@@ -366,7 +500,8 @@ pub struct Outgoing<'a> {
 /// The MIME message of a text mail (`reponse.md`, section 7): RFC 5322
 /// headers, a `text/plain; charset=utf-8; format=flowed` body in `7bit`
 /// when it is ASCII with short lines, in `quoted-printable` otherwise.
-/// Lines end with CRLF. No `Bcc` header is ever written.
+/// Lines end with CRLF. `Bcc` is written when `h.bcc` is not empty: the
+/// caller gives an empty list for the mail sent.
 pub fn build_message(h: &Outgoing, body: &str) -> Vec<u8> {
     let mut out = String::with_capacity(body.len() + 1024);
     header(&mut out, "From", &mailbox(h.from));
@@ -375,6 +510,9 @@ pub fn build_message(h: &Outgoing, body: &str) -> Vec<u8> {
     }
     if !h.cc.is_empty() {
         address_list(&mut out, "Cc", h.cc);
+    }
+    if !h.bcc.is_empty() {
+        address_list(&mut out, "Bcc", h.bcc);
     }
     header(&mut out, "Subject", &unstructured(h.subject));
     header(&mut out, "Date", &rfc5322_date(h.date, h.tz_offset_secs));
@@ -857,6 +995,7 @@ mod tests {
             from: &from,
             to: &to,
             cc: &cc,
+            bcc: &[],
             subject: "Re: Devis",
             date: 1_793_960_000,
             tz_offset_secs: 3600,
@@ -892,6 +1031,7 @@ mod tests {
             from: &from,
             to: &to,
             cc: &[],
+            bcc: &[],
             subject: "Re: Réunion de lundi, ordre du jour détaillé et très long à n'en plus finir",
             date: 0,
             tz_offset_secs: 0,
@@ -918,6 +1058,7 @@ mod tests {
             from: &from,
             to: &to,
             cc: &[],
+            bcc: &[],
             subject: "Hi\r\nBcc: victim@v.fr",
             date: 0,
             tz_offset_secs: 0,
@@ -991,5 +1132,86 @@ mod tests {
         for bad in ["", "a", "a@", "@b.fr", "a b@c.fr", "a@b", "<a@b.fr>", "a@b.fr>\r\nRCPT TO:<x@y.fr", "a,b@c.fr"] {
             assert!(!valid_addr(bad), "{bad:?}");
         }
+    }
+
+    #[test]
+    fn a_typed_or_pasted_list_of_addresses_is_read() {
+        let (ok, bad) = parse_address_list(
+            "alice@x.fr, Bob <BOB@y.fr>; \"Dupont, J.\" <j@z.fr>\nCarol Martin carol@c.fr, <d@d.fr>, mailto:e@e.fr",
+        );
+        let got: Vec<(&str, Option<&str>)> = ok.iter().map(|m| (m.addr.as_str(), m.name.as_deref())).collect();
+        assert_eq!(
+            got,
+            [
+                ("alice@x.fr", None),
+                ("bob@y.fr", Some("Bob")),
+                ("j@z.fr", Some("Dupont, J.")),
+                ("carol@c.fr", Some("Carol Martin")),
+                ("d@d.fr", None),
+                ("e@e.fr", None),
+            ]
+        );
+        assert!(bad.is_empty());
+    }
+
+    #[test]
+    fn what_is_not_an_address_is_given_back_as_typed() {
+        let (ok, bad) = parse_address_list("alice@x.fr, alice, bob@, ALICE@x.fr, , Evil <a@b.fr>\r\nBcc: c@d.fr");
+        // The line break separates: what would have been an injected header
+        // is only one more recipient in the line, seen by the user, named
+        // "Bcc:" by the rule "a name, then the address".
+        assert_eq!(ok.iter().map(|m| m.addr.as_str()).collect::<Vec<_>>(), ["alice@x.fr", "a@b.fr", "c@d.fr"]);
+        assert_eq!(ok[2].name.as_deref(), Some("Bcc:"));
+        assert_eq!(bad, ["alice", "bob@"]);
+        assert_eq!(parse_address_list("  ").0, []);
+        // A quoted name with an escaped quote.
+        let (ok, _) = parse_address_list(r#""Al \"Bo\" C" <a@b.fr>"#);
+        assert_eq!(ok[0].name.as_deref(), Some(r#"Al "Bo" C"#));
+    }
+
+    #[test]
+    fn recipients_are_cleaned_across_the_three_lists() {
+        let to = [Mailbox::new("A@x.fr", Some("  Alice ")), Mailbox::new("b@x.fr", Some(""))];
+        let cc = [Mailbox::new("a@x.fr", None), Mailbox::new("c@x.fr", Some("C\r\nBcc: z@z.fr"))];
+        let bcc = [Mailbox::new("c@x.fr", None), Mailbox::new("d@x.fr", None)];
+        let [to, cc, bcc] = clean_recipients([&to, &cc, &bcc]).unwrap();
+        assert_eq!(to, [Mailbox::new("a@x.fr", Some("Alice")), Mailbox::new("b@x.fr", None)]);
+        assert_eq!(cc, [Mailbox::new("c@x.fr", Some("C  Bcc: z@z.fr"))]);
+        assert_eq!(bcc, [Mailbox::new("d@x.fr", None)]);
+        assert_eq!(clean_recipients([&[Mailbox::new("nope", None)], &[], &[]]), Err("nope".to_string()));
+        let many: Vec<Mailbox> = (0..=RECIPIENTS_MAX).map(|i| Mailbox::new(&format!("p{i}@x.fr"), None)).collect();
+        assert!(clean_recipients([&many, &[], &[]]).is_err());
+    }
+
+    #[test]
+    fn a_subject_is_one_clean_line() {
+        assert_eq!(clean_subject("  Devis\r\nBcc: x@y.fr\u{7} "), "Devis  Bcc: x@y.fr");
+        assert_eq!(clean_subject(&"é".repeat(2000)).chars().count(), 998);
+    }
+
+    #[test]
+    fn bcc_is_written_only_when_given() {
+        let from = Mailbox::new("me@x.fr", None);
+        let to = [Mailbox::new("a@x.fr", None)];
+        let bcc = [Mailbox::new("secret@x.fr", Some("Secret"))];
+        let h = Outgoing {
+            from: &from,
+            to: &to,
+            cc: &[],
+            bcc: &bcc,
+            subject: "S",
+            date: 0,
+            tz_offset_secs: 0,
+            message_id: "id@x.fr",
+            in_reply_to: None,
+            references: &[],
+            user_agent: "t",
+            draft_revision: None,
+        };
+        let kept = String::from_utf8(build_message(&h, "x")).unwrap();
+        assert!(kept.contains("\r\nBcc: Secret <secret@x.fr>\r\n"), "{kept}");
+        let sent = String::from_utf8(build_message(&Outgoing { bcc: &[], ..h }, "x")).unwrap();
+        assert!(!sent.to_lowercase().contains("bcc"), "{sent}");
+        assert!(!sent.contains("secret"));
     }
 }

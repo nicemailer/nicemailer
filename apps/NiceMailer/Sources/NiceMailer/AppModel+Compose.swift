@@ -63,17 +63,122 @@ extension AppModel {
 
     private func performSave() async {
         guard let client = core, let c = composer, c.isDirty else { return }
-        let text = c.buffer.text
+        // What is sent: the text and the headers as they are now. Typing
+        // may go on during the call; what is typed meanwhile stays dirty
+        // and goes with the next save.
+        let text = c.buffer.text, headers = c.headers
         do {
-            let r: UpdateDraftResult = try await client.call("update_draft", ["id": c.draft.id, "revision": c.revision, "body": text])
+            let r: UpdateDraftResult = try await client.call("update_draft", Compose.saveParams(c))
             // The user may have left, or started another reply, meanwhile.
             if composer?.draft.id == c.draft.id {
                 composer?.revision = r.revision
                 composer?.saved = text
+                composer?.savedHeaders = headers
             }
         } catch {
             flash = Self.composeErrorFlash(error)
         }
+    }
+
+    /// Takes the text typed in the focused recipient line, not yet made
+    /// addresses, and empties the line: synchronously, before the focus
+    /// moves, so that the text is read for the line it was typed in.
+    func takePendingLine() -> (field: ComposeField, text: String)? {
+        guard var c = composer, c.focus.isRecipients else { return nil }
+        let text = c.line.text.trimmingCharacters(in: .whitespaces)
+        guard !text.isEmpty else { return nil }
+        c.line = LineEdit()
+        c.suggestions = []
+        c.suggestionIndex = nil
+        composer = c
+        return (c.focus, text)
+    }
+
+    /// Makes addresses of a text typed in a recipient line (Return, `,`,
+    /// Tab, leaving the line, sending): the core reads it (`parse_addresses`,
+    /// the same rules for every client). What is not an address goes back
+    /// to its line, which takes the focus again, for the user to correct.
+    /// Returns false when some text could not be read.
+    @discardableResult
+    func commitRecipients(_ text: String, to field: ComposeField) async -> Bool {
+        guard let client = core, let id = composer?.draft.id else { return true }
+        do {
+            let r: ParseAddressesResult = try await client.call("parse_addresses", ["text": text])
+            guard composer?.draft.id == id else { return true }
+            let already = composer?.add(r.addresses, to: field) ?? []
+            if !r.invalid.isEmpty {
+                giveBack(r.invalid.joined(separator: ", "), to: field)
+                flash = L("Not an address: %@", r.invalid.joined(separator: ", "))
+            } else if let first = already.first {
+                flash = L("Already a recipient: %@", first.addr)
+            }
+            composerChanged()
+            return r.invalid.isEmpty
+        } catch {
+            giveBack(text, to: field)
+            flash = Self.composeErrorFlash(error)
+            return false
+        }
+    }
+
+    /// A text that did not become addresses goes back to its line, before
+    /// what was typed there since.
+    private func giveBack(_ text: String, to field: ComposeField) {
+        guard var c = composer else { return }
+        let typed = c.focus == field ? c.line.text : ""
+        c.focus = field
+        c.line = LineEdit(typed.isEmpty ? text : text + ", " + typed)
+        composer = c
+    }
+
+    /// The pending text of the focused recipient line made addresses now
+    /// (before sending or leaving). False when some of it is not one.
+    @discardableResult
+    func commitRecipientLine() async -> Bool {
+        guard let (field, text) = takePendingLine() else { return true }
+        return await commitRecipients(text, to: field)
+    }
+
+    /// The addresses to suggest for the text typed in a recipient line,
+    /// those the user writes to most first, without those already there.
+    func suggestRecipients() {
+        guard let client = core, let c = composer, c.focus.isRecipients else { return }
+        let query = c.line.text.trimmingCharacters(in: .whitespaces)
+        guard !query.isEmpty else {
+            composer?.suggestions = []
+            composer?.suggestionIndex = nil
+            return
+        }
+        Task {
+            guard let r: SuggestRecipientsResult = try? await client.call("suggest_recipients", ["query": query, "limit": 8]) else { return }
+            // Only for the text still typed: an older answer arriving late
+            // is dropped.
+            guard let now = composer, now.focus.isRecipients, now.line.text.trimmingCharacters(in: .whitespaces) == query else { return }
+            let present = Set(now.headers.all.map { $0.addr.lowercased() })
+            // Swift note: in `composer?.x = …`, the write to `composer`
+            // starts before the right side is evaluated; reading `composer`
+            // there is a conflict of access, a crash at run time. The
+            // value is made first.
+            let shown = r.items.filter { !present.contains($0.addr.lowercased()) }
+            composer?.suggestions = shown
+            composer?.suggestionIndex = shown.isEmpty ? nil : 0
+        }
+    }
+
+    /// A suggestion chosen (Return, Tab or a click): it becomes an address
+    /// of the focused line.
+    func chooseSuggestion(_ index: Int) {
+        guard var c = composer, c.focus.isRecipients, c.suggestions.indices.contains(index) else { return }
+        // Swift note: `c.add(…, to: c.focus)` would read `c` while the
+        // mutating call writes it, which Swift's exclusivity rule forbids
+        // (a crash at run time): the values are read first.
+        let field = c.focus, chosen = c.suggestions[index]
+        c.add([chosen], to: field)
+        c.line = LineEdit()
+        c.suggestions = []
+        c.suggestionIndex = nil
+        composer = c
+        composerChanged()
     }
 
     /// Escape: back to the mail; the draft is kept (saved now if needed)
@@ -84,6 +189,8 @@ extension AppModel {
         guard let id = composer?.draft.id else { return }
         composeSaveTask?.cancel()
         Task {
+            // An address typed but not yet made one is kept.
+            await commitRecipientLine()
             await saveComposer()
             composer = nil
             guard let client = core else { return }
@@ -119,15 +226,24 @@ extension AppModel {
     /// the core's preselection.
     func sendComposer(afterSend: String? = nil) async {
         guard let client = core, composer != nil else { return }
+        // An address still typed in a line goes with the mail; a text that
+        // is not one stops the sending, to be corrected.
+        guard await commitRecipientLine() else { return }
         composeSaveTask?.cancel()
         await composeSaving?.value
+        // The headers are saved first: `send_draft` takes the body only.
+        if composer.map({ $0.headers != $0.savedHeaders }) == true { await saveComposer() }
         guard let c = composer else { return }
+        if c.headers.all.isEmpty {
+            flash = L("Cannot send: %@", L("no recipient"))
+            return
+        }
         do {
             var params: [String: Any] = ["id": c.draft.id, "revision": c.revision, "body": c.buffer.text]
             if let afterSend { params["after_send"] = afterSend }
             let r: SendDraftResult = try await client.call("send_draft", params)
             composer = nil
-            sending[c.draft.id] = c.draft.subject
+            sending[c.draft.id] = c.headers.subject
             pushUndo(UndoStep(tokens: [], label: L("sending of the reply"), cancelSend: c.draft.id))
             let seconds = max(0, r.sendAt - Int(Date().timeIntervalSince1970))
             flash = Compose.sendingFlash(seconds: seconds)

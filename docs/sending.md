@@ -12,15 +12,27 @@ How a reply is written in the app and sent by the core. The rules are those of `
 | ⇧⌘↩ | the reply | "Send, then file the conversation in": `a` Archive, `w` Waiting, `t` Todo, `s` leave it where it is (trial); the key (or a click) sends, Escape goes back to the text |
 | Escape | the reply | back to the mail; the reply goes to Drafts (here and on the server), and `r` on the mail, or `r` / Return on the draft in Drafts, reopens it |
 | ⌘⌫ | the reply | abandon the reply; `z` gives it back with its text |
+| ⇥ ⇧⇥ | the reply | next / previous field: To, Cc, Bcc (when shown), Subject, the text; in the text ⇥ is typed, ⇧⇥ goes up to the subject |
+| ⌥⌘B | the reply | show the Bcc line and go to it |
 | `z` | after ⌘↩ | during the delay: the mail does not leave, and the reply opens again; once sent: undoes the filing of the conversation (not the sending) |
 
-The reply takes the reader's place (the whole window with one column), with the mode `EDT` in the status bar. From the top: the sending address, To and Cc (one line each, cut with "+3" when long), the subject, "After sending: Archive" when the conversation will be filed, then the text. The cursor starts at the top, above the line introducing the quotation ("On Nov 7, 2026, at 10:12, Alice <alice@x.fr> wrote:", in the app's language) and the quoted mail.
+The reply takes the reader's place (the whole window with one column), with the mode `EDT` in the status bar. From the top: the sending address, To, Cc and Bcc (Bcc only when it has addresses or ⌥⌘B opened it), one tag per address, wrapping when long, the subject, "After sending: Archive" when the conversation will be filed, then the text. The cursor starts at the top, above the line introducing the quotation ("On Nov 7, 2026, at 10:12, Alice <alice@x.fr> wrote:", in the app's language) and the quoted mail.
 
 While the reply is open every key is text: letters, Return, Delete (⌥ a word), ⌦, the arrows (⌥ by word, ⌘ to the ends of the line, ⌘↑ ⌘↓ to the ends of the text, ⌥↑ ⌥↓ to the ends of the line), Home, End, `ctrl-a`, `ctrl-e`, ⌘V, and a click in the text puts the cursor there.
 
 As in any macOS text view, **Shift with any of these moves selects** (⇧←, ⇧⌥→ a word, ⇧⌘← to the start of the line, ⇧↓, ⇧⌘↓ to the end of the text…), as does a Shift-click; ⌘A selects everything. The selection is highlighted and the caret hidden. Typing or pasting replaces it, Delete removes it, ⌘C copies it, ⌘X cuts it; ← and → without Shift end it at its start or its end. Selecting by dragging the mouse is not there yet.
 
-**Other apps** that work on the selected text of the front app (Kerlig, a grammar checker, the Services menu) see the reply as any macOS text: its text view is the window's focused element, its selection is the reply's, and what the app writes back (through the accessibility API, a Service, or ⌘V) replaces the selection as if typed, and is saved. The view is not editable by AppKit (the keys stay the controller's): it hands what it receives to `GeekController.replaceComposeSelection`. ↑ and ↓ follow the lines as drawn, so they move inside a long wrapped paragraph. The recipients and the subject are not editable yet.
+**Other apps** that work on the selected text of the front app (Kerlig, a grammar checker, the Services menu) see the reply as any macOS text: its text view is the window's focused element, its selection is the reply's, and what the app writes back (through the accessibility API, a Service, or ⌘V) replaces the selection as if typed, and is saved. The view is not editable by AppKit (the keys stay the controller's): it hands what it receives to `GeekController.replaceComposeSelection`. ↑ and ↓ follow the lines as drawn, so they move inside a long wrapped paragraph. ## Recipients and subject
+
+The keys go to one field at a time; the label of that field is in the accent colour, and a click on a line gives it the keys. The reply opens with the keys in the text.
+
+In a recipient line, the text typed has the editing keys of a text field. Return, `,` or `;` make an address of it, and so do Tab, a click elsewhere, ⌘↩ and Escape. The core reads it (`parse_addresses`): `alice@x.fr`, `Alice <alice@x.fr>`, `"Dupont, J." <j@x.fr>`, `Alice Martin alice@x.fr`, `mailto:alice@x.fr`, several separated by commas, semicolons or line breaks; ⌘V reads a pasted list at once. What is not an address stays in its line, which takes the keys back, and the status bar says "Not an address: …"; ⌘↩ then sends nothing. An address already in To, Cc or Bcc is not added twice. ⌫ in an empty line takes its last address back as text, to correct it.
+
+From the first letter typed, up to 8 suggestions show under the line (`suggest_recipients`): addresses whose address, domain, name or a word of the name starts with the text, those the user wrote to most first (mails in Sent), then those they receive most from; never a banned sender, an address of an account, or one already a recipient. ↓ ↑ choose, Return or a click takes one, Escape closes the list (a second Escape leaves the reply). The query scans `address` and counts through indexes: under 0.1 s for one letter on a mailbox of 275,000 mails. The Mac's Contacts are not searched yet.
+
+The subject is a line of text; Return goes to the text. What changed is saved at the pause of typing, with the text: `update_draft` gets only the parts that changed (the body, a whole recipient list, the subject), in one revision; the core checks each address again (`compose::clean_recipients`: valid, once across the three lists, 500 at most) and refuses the save otherwise.
+
+**Bcc.** The hidden recipients are in the SMTP envelope, never in the mail given to the server. The copy the user keeps has a `Bcc` header, to know who got it: the raw file, the row and the copy in Sent, the copy in Drafts. The core builds the MIME twice (same `Message-ID`), and the `send` action carries the second one (`mime_copy`) only when there are hidden recipients.
 
 The text is saved by the core after each half-second without typing: a crash loses at most that much.
 
@@ -100,7 +112,9 @@ The app, the TUI and the CLI. An agent (MCP) or the web server get `FORBIDDEN`: 
 | --- | --- | --- |
 | `create_draft` | `reply_to`, `quote_header`, `body?` (restores an abandoned text) | `{draft, reused}` |
 | `open_draft`, `close_draft` | `id` | `DraftView`, nothing |
-| `update_draft` | `id`, `revision`, `body` | `{revision}`; `REVISION_CONFLICT` (1012), `DRAFT_SENDING` (1013) |
+| `update_draft` | `id`, `revision`, and what changed: `body?`, `subject?`, `to?`, `cc?`, `bcc?` (whole lists of `{addr, name}`) | `{revision}`; `REVISION_CONFLICT` (1012), `DRAFT_SENDING` (1013), `INVALID_PARAMS` for an address that is not one |
+| `parse_addresses` | `text` | `{addresses, invalid}` |
+| `suggest_recipients` | `query`, `limit?` (8, at most 50) | `{items}` of `{addr, name}` |
 | `discard_draft` | `id` | the `DraftView` abandoned |
 | `send_draft` | `id`, `revision`, `body`, `after_send?` (`archive`, `waiting`, `todo`, `stay`; saved in the draft; absent: the one saved, else the preselection) | `{send_at}`; `CANNOT_SEND` (1015) |
 | `cancel_send` | `id` | `DraftView`, editable; `SEND_ALREADY_STARTED` (1014) |
@@ -117,12 +131,12 @@ The app, the TUI and the CLI. An agent (MCP) or the web server get `FORBIDDEN`: 
 
 ## Tests
 
-- `nm-core` (`compose.rs`): recipients, identity, subject, references, quotation, `format=flowed` read back as typed, MIME headers and encodings, header injection, dates, providers.
+- `nm-core` (`compose.rs`): the address lists typed or pasted, cleaning the edited recipients and subject, `Bcc` only in the copy, recipients, identity, subject, references, quotation, `format=flowed` read back as typed, MIME headers and encodings, header injection, dates, providers.
 - `nm-proto` (`smtp.rs`): a scripted server: PLAIN and LOGIN, refused login, no password without TLS, recipients refused in part or all, `SIZE`, `5xx` / `4xx` to the message, hostile addresses, broken servers, dot-stuffing.
-- `nm-store` (`tests/drafts.rs`): the draft prepared, reused, revisions, the filing chosen (kept after `cancel_send`, winning over the preselection, `stay` touching nothing), the undo delay and `cancel_send`, `data_sent`, the acceptance in one transaction (Sent row, filing, decisions, undo), replay, the copy's UID and the attachment by the synchronization, a fresh Sent row kept by a pass, failures, partial refusals, restore, repair.
+- `nm-store` (`tests/drafts.rs`): the draft prepared, reused, revisions, the filing chosen (kept after `cancel_send`, winning over the preselection, `stay` touching nothing), recipients and subject edited (one revision, refused addresses), Bcc in the envelope and the copy only (and its decision), suggestions by use, the undo delay and `cancel_send`, `data_sent`, the acceptance in one transaction (Sent row, filing, decisions, undo), replay, the copy's UID and the attachment by the synchronization, a fresh Sent row kept by a pass, failures, partial refusals, restore, repair.
 - `nm-daemon` (`tests/send_rpc.rs`, `make imap-test`): the real core against Dovecot and Mailpit: a reply sent, copied to Sent, filed on the server, nothing twice after a pass, undo, on both servers; a send cancelled in time; a refused recipient; a refused login then the SMTP password saved; an agent refused.
-- `nm-daemon` (`tests/fake_send_rpc.rs`): an archive account refused, then pretending to send with `NICEMAILER_FAKE_NETWORK`; `after_send` through the socket (`stay` saved, `inbox` refused).
-- App: `TextBufferTests`, `ComposeTests` (pure rules, and the keys through `GeekController` against `FakeCore`), and `UITests/compose.uiscript`.
+- `nm-daemon` (`tests/fake_send_rpc.rs`): an archive account refused, then pretending to send with `NICEMAILER_FAKE_NETWORK`; `after_send` through the socket (`stay` saved, `inbox` refused); `parse_addresses`, `suggest_recipients`, headers saved by `update_draft`.
+- App: `TextBufferTests`, `ComposeTests` (pure rules, and the keys through `GeekController` against `FakeCore`), `UITests/compose.uiscript` and `UITests/recipients.uiscript`.
 
 ## Pretending to send
 

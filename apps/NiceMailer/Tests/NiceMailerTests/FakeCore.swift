@@ -124,6 +124,7 @@ enum Fixture {
             "from": ["addr": "me@example.org", "name": "Me"],
             "to": [["addr": "sender\(thread)@example.org", "name": "Sender \(thread)"]],
             "cc": thread == 2 ? [["addr": "carol@example.org", "name": NSNull()]] : [],
+            "bcc": [],
             "subject": "Re: Subject \(thread)",
             "body": body ?? "\n\nOn Nov 7, Sender \(thread) wrote:\n> Hello",
             "revision": revision, "state": state, "reply_to": replyTo, "thread_id": thread,
@@ -140,6 +141,20 @@ enum Fixture {
             return ["draft": draft(replyTo: replyTo, body: params["body"] as? String), "reused": false]
         case "update_draft":
             return ["revision": (params["revision"] as? Int ?? 1) + 1]
+        case "parse_addresses":
+            // A small stand-in for `compose::parse_address_list`: pieces
+            // separated by commas, an address when it has an `@`.
+            let pieces = (params["text"] as? String ?? "").split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+            let ok = pieces.filter { $0.contains("@") }.map { ["addr": $0.lowercased(), "name": NSNull()] as [String: Any] }
+            return ["addresses": ok, "invalid": pieces.filter { !$0.isEmpty && !$0.contains("@") }]
+        case "suggest_recipients":
+            let q = (params["query"] as? String ?? "").lowercased()
+            let book: [[String: Any]] = [
+                ["addr": "alice@example.org", "name": "Alice Martin"],
+                ["addr": "albert@example.org", "name": NSNull()],
+                ["addr": "bob@example.org", "name": "Bob"],
+            ]
+            return ["items": book.filter { ($0["addr"] as! String).hasPrefix(q) || (($0["name"] as? String)?.lowercased().hasPrefix(q) ?? false) }]
         case "send_draft":
             return ["send_at": Int(Date().timeIntervalSince1970) + 5]
         case "cancel_send":

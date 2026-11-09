@@ -56,7 +56,9 @@ The user chose to decide on the sender of the latest received mail (`dossiers.md
 
 - **Drafts changed on another device** (`brouillons.md`, section 6): the adoption of a version changed on the phone (today its copy disappearing is seen as a deletion, or written over by a version changed here), conflicts kept as two drafts with a warning, a draft open while changed elsewhere. Drafts are checked at each pass of Drafts, not at the opening of a draft.
 - **Resuming a draft written on the phone**: shown in Drafts, read-only; resuming it means reading its MIME into a `draft` row, with editable recipients.
-- **`R` (reply to the sender only), `f` (forward), a new mail**, editable To / Cc / Bcc lines, attachments (`draft_attachment`, `outgoing.noindex`), signatures.
+- **`R` (reply to the sender only), `f` (forward), a new mail**, attachments (`draft_attachment`, `outgoing.noindex`), signatures.
+- **Suggestions from the Mac's Contacts**: `suggest_recipients` knows the addresses of the mailbox only. The app's `AddressBook` can only look cards up by address; a search by name (`CNContact.predicateForContacts(matchingName:)`) would add the people never written to.
+- **Choosing the sending identity** (From) in the reply: fixed by the core today (`reponse.md`, section 4).
 - **The trial option "leave it where it is"** of `⇧⌘↩` (`reponse.md`, section 8): to keep, drop, or write into `dossiers.md` once tried.
 - **Never twice, fully**: a crash between the SMTP server's acceptance and `send_accepted` sends again where the provider does not copy to Sent (`brouillons.md`, "Double envoi"). A test of the restart after `data_sent` against the test servers is missing too.
 - **`nicemailer reply`**: a CLI bench of the contract, for agents later.

@@ -1072,6 +1072,8 @@ async fn dispatch(core: &Arc<Core>, session: &mut Session, req: Request) -> Resu
         method::CREATE_DRAFT => to_value(drafts::create(core, params(req.params)?, source).await?),
         method::OPEN_DRAFT => to_value(drafts::open(core, params(req.params)?).await?),
         method::UPDATE_DRAFT => to_value(drafts::update(core, params(req.params)?, source).await?),
+        method::PARSE_ADDRESSES => to_value(drafts::parse_addresses(params(req.params)?)),
+        method::SUGGEST_RECIPIENTS => to_value(drafts::suggest(core, params(req.params)?).await?),
         method::CLOSE_DRAFT => {
             drafts::close(core, params(req.params)?, source).await?;
             to_value(CommandResult { changed: 0 })

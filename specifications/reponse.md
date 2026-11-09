@@ -18,7 +18,7 @@ Statut : validé pour la v1 (7 novembre 2026). Cette spécification décrit la p
 | Réponse à tous (`r`) | Réponse à l'expéditeur seul (`R`, réservé), transfert (`f`), nouveau mail |
 | Texte seul, sans mise en forme | Mise en forme, HTML |
 | Brouillon enregistré en local (table `draft`) | Copie dans Drafts sur le serveur, `append_draft`, conflits entre appareils (`brouillons.md`, sections 5 et 6) |
-| Destinataires calculés par le noyau, affichés | Lignes À, Cc et Cci éditables |
+| Destinataires calculés par le noyau, puis lignes À, Cc et Cci éditables, objet éditable (ajoutés en novembre 2026, section 6) | |
 | Rangement présélectionné par le noyau, affiché ; choix manuel à l'envoi par `⇧⌘↩` (ajouté en novembre 2026, section 8) | |
 | Envoi par le spool, délai d'annulation de 5 s | Pièces jointes, signature |
 | Copie dans Sent | Commande CLI `nicemailer reply` |
@@ -91,8 +91,8 @@ La v1 applique la section 4 de `brouillons.md` sans le serveur :
 La zone de réponse **remplace le lecteur**, dans la même fenêtre. De haut en bas :
 
 1. **De** : adresse d'expédition, non modifiable.
-2. **À** et **Cc** : les destinataires calculés, non modifiables, sur une ligne chacun (tronquée avec le nombre de destinataires cachés, « +3 »). Cc est masqué s'il est vide.
-3. **Objet**, non modifiable.
+2. **À**, **Cc** et **Cci** : une étiquette par adresse, qui passent à la ligne quand la largeur est remplie. Cci n'est affichée que si elle a des adresses ou si `⌥⌘B` l'a ouverte.
+3. **Objet**, modifiable.
 4. **Après l'envoi** : la cible du rangement (« Après l'envoi : Archive »), discrète. Absente quand la conversation reste en place (section 8).
 5. **La zone de saisie** : texte seul, police à chasse fixe de l'app, retour à la ligne visuel à la largeur de la zone, sans coupure dans le texte. Le curseur est en tête.
 
@@ -110,6 +110,17 @@ Raccourcis de la zone de réponse (contexte « edition » de `ui.md`) :
 Les touches d'une lettre (navigation, dossiers) sont du texte tapé dans ce contexte : aucune ne déclenche de commande.
 
 Un envoi refusé (`⌘↩` sans destinataire, compte sans SMTP) laisse la zone ouverte et affiche la raison dans la barre d'état.
+
+### Édition des destinataires et de l'objet (ajoutée en novembre 2026)
+
+- **Champs.** Les touches vont à un champ à la fois : À, Cc, Cci (si affichée), Objet, texte. `⇥` passe au suivant, `⇧⇥` au précédent, en boucle. Dans le texte, `⇥` reste du texte (une tabulation) et `⇧⇥` remonte à l'objet. Un clic sur une ligne lui donne les touches. Le libellé du champ actif est de la couleur d'accent. À l'ouverture d'une réponse, les touches vont au texte.
+- **Saisie d'une adresse.** Une ligne de destinataires a les touches d'édition d'un champ de texte (`LineEdit`). `↩`, `,` ou `;` font une adresse du texte tapé ; `⇥`, un clic ailleurs, `⌘↩` ou Échap aussi. Le texte est lu par le noyau (`parse_addresses`, `compose::parse_address_list`) : `alice@x.fr`, `Alice <alice@x.fr>`, `"Dupont, J." <j@x.fr>`, `Alice Martin alice@x.fr`, `mailto:`, séparés par virgules, points-virgules ou retours à la ligne. Ce qui n'est pas une adresse reste dans la ligne, qui reprend les touches, avec « Pas une adresse : … » dans la barre d'état. Un `⌘V` est lu aussitôt : une liste collée devient des adresses.
+- **Une adresse n'est qu'à un endroit.** Une adresse déjà dans À, Cc ou Cci n'est pas ajoutée une seconde fois (« Déjà destinataire »). Le noyau le vérifie aussi à l'enregistrement (`compose::clean_recipients`), qui refuse une adresse invalide (`INVALID_PARAMS`), et borne le nombre de destinataires à 500.
+- **Corriger.** `⌫` dans une ligne vide reprend la dernière adresse comme texte, pour la corriger ou l'effacer.
+- **Suggestions.** Dès la première lettre, le noyau propose jusqu'à 8 adresses (`suggest_recipients`) : celles dont l'adresse, le domaine, le nom ou un mot du nom commence par le texte tapé, d'abord celles auxquelles l'utilisateur a le plus écrit (mails de Sent), puis celles dont il reçoit le plus. Jamais un expéditeur banni, une adresse d'un compte, ni une adresse déjà destinataire. `↓` `↑` choisissent, `↩` ou un clic prend la suggestion, Échap ferme la liste (un second Échap quitte la réponse). Le carnet d'adresses du Mac n'est pas encore consulté (`docs/todo.md`).
+- **Objet.** Une ligne de texte ; `↩` passe au texte. Il est enregistré sur une ligne, sans caractère de contrôle, 998 caractères au plus (`compose::clean_subject`).
+- **Enregistrement.** À la pause de frappe, comme le texte : `update_draft` ne reçoit que ce qui a changé (le corps, une liste entière de destinataires, l'objet), en une seule révision.
+- **Envoi.** `⌘↩` fait d'abord une adresse du texte encore tapé dans une ligne ; s'il n'en est pas une, l'envoi n'a pas lieu. Sans aucun destinataire, il est refusé.
 
 ## 7. Envoi
 
@@ -129,7 +140,7 @@ Le délai est un réglage (`compose.undo_send_seconds`, de 0 à 30, 5 par défau
 - `text/plain; charset=utf-8; format=flowed` (RFC 3676), en `quoted-printable` si le texte contient autre chose que de l'ASCII ou des lignes de plus de 998 octets, sinon en `7bit`.
 - Les lignes sont coupées à 72 caractères **à l'envoi seulement**, par des espaces de fin de ligne (`format=flowed`) : le texte tapé n'est jamais modifié. Les lignes citées (`>`) gardent leur préfixe sur chaque morceau. Une ligne qui se termine par une espace dans le texte d'origine voit cette espace retirée (sinon elle serait lue comme une ligne coupée).
 - En-têtes : `From`, `To`, `Cc` (si non vide), `Subject`, `Date` (heure locale, RFC 5322), `Message-ID` (le `Message-ID` stable du brouillon, `<uuid@domaine-de-l-adresse-d-expédition>`), `In-Reply-To`, `References`, `MIME-Version`, `User-Agent: NiceMailer/<version>`. Les noms et l'objet non ASCII sont encodés (RFC 2047).
-- Jamais d'en-tête `Bcc` dans le message.
+- Jamais d'en-tête `Bcc` dans le message envoyé. **Cci et traçabilité** : la copie que garde l'utilisateur (stockage brut, ligne et copie dans Sent, copie dans Drafts) porte l'en-tête `Bcc`, pour savoir à qui le mail est parti. Le noyau construit donc deux versions du MIME, de même `Message-ID` : sans `Bcc` pour SMTP, avec `Bcc` pour les copies. Sans Cci, ce sont les mêmes octets, et l'action `send` ne les porte qu'une fois.
 
 ### SMTP
 
@@ -221,13 +232,15 @@ Ces décisions font partie de la même commande que le rangement : `z` après l'
 | --- | --- | --- |
 | `create_draft` | `reply_to` (id de message, qui désigne aussi le compte), `quote_header` (ligne d'introduction mise en forme par le client), `body?` (texte d'un brouillon abandonné à restaurer) | `{draft, reused}` ; si un brouillon de réponse à ce mail existe, c'est lui (`reused: true`) ; `BODY_PENDING` si le corps du mail n'est pas encore téléchargé (il est demandé en priorité), `CANNOT_SEND` pour un compte qui ne peut pas envoyer |
 | `open_draft` | `id` | `Draft` |
-| `update_draft` | `id`, `revision`, `body` | `{revision}` ; erreur `REVISION_CONFLICT` si la révision n'est pas la courante, `DRAFT_SENDING` si le brouillon est `sending` |
+| `update_draft` | `id`, `revision`, et ce qui a changé : `body?`, `subject?`, `to?`, `cc?`, `bcc?` (listes entières de `{addr, name}`) | `{revision}` ; `INVALID_PARAMS` pour une adresse invalide ; erreur `REVISION_CONFLICT` si la révision n'est pas la courante, `DRAFT_SENDING` si le brouillon est `sending` |
+| `parse_addresses` | `text` | `{addresses, invalid}` : les adresses comprises, chacune une fois, et les morceaux qui n'en sont pas, tels que tapés |
+| `suggest_recipients` | `query`, `limit?` (8 par défaut, 50 au plus) | `{items}` : des `{addr, name}` |
 | `close_draft` | `id` | — |
 | `discard_draft` | `id` | `Draft` abandonné, que le client garde pour le restaurer |
 | `send_draft` | `id`, `revision`, `body`, `after_send?` (`archive`, `waiting`, `todo`, `stay` ; enregistré dans le brouillon ; absent : le choix enregistré, sinon la présélection) | `{send_at}` : heure prévue de l'envoi ; `CANNOT_SEND` sans destinataire ou sans `[smtp]` |
 | `cancel_send` | `id` | `Draft` remis à `editing` ; erreur `SEND_ALREADY_STARTED` |
 
-`Draft` : `id`, `account_id`, `from` (`{addr, name}`), `to`, `cc` (listes de `{addr, name}`), `subject`, `body`, `revision`, `state`, `reply_to`, `after_send_target` (présélection, absente quand rien n'est rangé), `after_send` (choix de l'utilisateur, absent s'il n'y en a pas), `send_at` (si `sending`).
+`Draft` : `id`, `account_id`, `from` (`{addr, name}`), `to`, `cc`, `bcc` (listes de `{addr, name}`), `subject`, `body`, `revision`, `state`, `reply_to`, `after_send_target` (présélection, absente quand rien n'est rangé), `after_send` (choix de l'utilisateur, absent s'il n'y en a pas), `send_at` (si `sending`).
 
 `quote_header` est mis en forme par le client parce que la langue et le format de date sont ceux de l'app ; le noyau ne la modifie pas. Les clients sans langue (CLI) passent une ligne anglaise.
 

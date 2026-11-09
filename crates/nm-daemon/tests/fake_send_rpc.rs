@@ -95,3 +95,37 @@ fn the_filing_chosen_goes_through_the_socket() {
     assert_eq!(v["after_send"], "stay");
     assert_eq!(v["state"], "editing");
 }
+
+/// The recipient lines through the socket (`reponse.md`, section 6): a
+/// text read into addresses, suggestions, and the edited headers saved.
+#[test]
+fn recipients_are_parsed_suggested_and_saved() {
+    let dir = tempfile::tempdir().unwrap();
+    let _core = start_with(dir.path(), &[("NICEMAILER_FAKE_NETWORK", "1")]);
+    let mut c = Client::connect_as(dir.path(), "app");
+    import(dir.path(), &mut c);
+    let r = c.call("parse_addresses", json!({"text": "Bob <BOB@b.example>, nope; carol@c.example"})).unwrap();
+    assert_eq!(r["addresses"], json!([{"addr": "bob@b.example", "name": "Bob"}, {"addr": "carol@c.example", "name": null}]));
+    assert_eq!(r["invalid"], json!(["nope"]));
+    // Alice wrote: she is suggested; the archive account's own address never.
+    let s = c.call("suggest_recipients", json!({"query": "al"})).unwrap();
+    assert_eq!(s["items"][0]["addr"], "alice@a.example");
+    let s = c.call("suggest_recipients", json!({"query": "me@"})).unwrap();
+    assert_eq!(s["items"], json!([]));
+    let d = c.call("create_draft", json!({"reply_to": message(dir.path()), "quote_header": "x"})).unwrap()["draft"].clone();
+    let r = c
+        .call(
+            "update_draft",
+            json!({"id": d["id"], "revision": d["revision"], "subject": "Autre objet",
+                   "bcc": [{"addr": "boss@b.example", "name": "Boss"}]}),
+        )
+        .unwrap();
+    assert_eq!(r["revision"], d["revision"].as_i64().unwrap() + 1);
+    let v = c.call("open_draft", json!({"id": d["id"]})).unwrap();
+    assert_eq!(v["subject"], "Autre objet");
+    assert_eq!(v["bcc"][0]["addr"], "boss@b.example");
+    // The body was left out: kept.
+    assert_eq!(v["body"], d["body"]);
+    let e = c.call("update_draft", json!({"id": d["id"], "revision": r["revision"], "to": [{"addr": "nope", "name": null}]})).unwrap_err();
+    assert_eq!(e["code"], -32602, "{e}");
+}

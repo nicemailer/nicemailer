@@ -739,3 +739,116 @@ fn a_failed_copy_is_tried_again_then_given_up() {
     // The draft and its row stay here.
     assert_eq!(e.drafts_rows(), 1);
 }
+
+fn mb(addr: &str, name: Option<&str>) -> Mailbox {
+    Mailbox::new(addr, name)
+}
+
+/// The recipients and the subject are edited (`reponse.md`, section 6):
+/// one revision for the whole change, none for a change that changes
+/// nothing, each address once across the three lists.
+#[test]
+fn recipients_and_subject_are_edited() {
+    use nm_store::drafts::DraftEdit;
+    let mut e = env();
+    let m = e.deliver("inbox", &alice("m@a.example"));
+    let d = e.reply(m);
+    let edit = DraftEdit {
+        subject: Some("Devis signé\r\n".into()),
+        to: Some(vec![mb("Alice@A.example", Some("Alice")), mb("dan@d.example", None)]),
+        cc: Some(vec![mb("alice@a.example", None)]),
+        bcc: Some(vec![mb("boss@b.example", Some("Boss"))]),
+        ..DraftEdit::default()
+    };
+    let rev = e.s.edit_draft(d.id, d.revision, &edit, Source::App).unwrap();
+    assert_eq!(rev, d.revision + 1);
+    let v = e.s.get_draft(d.id).unwrap();
+    assert_eq!(v.subject, "Devis signé");
+    assert_eq!(v.to.iter().map(|a| a.addr.as_str()).collect::<Vec<_>>(), ["alice@a.example", "dan@d.example"]);
+    assert!(v.cc.is_empty());
+    assert_eq!(v.bcc.iter().map(|a| a.addr.as_str()).collect::<Vec<_>>(), ["boss@b.example"]);
+    // The same again: nothing changes, not even the revision.
+    assert_eq!(e.s.edit_draft(d.id, rev, &edit, Source::App).unwrap(), rev);
+    // Only Cc given: To and Bcc stay.
+    let rev = e.s.edit_draft(d.id, rev, &DraftEdit { cc: Some(vec![mb("eve@e.example", None)]), ..Default::default() }, Source::App).unwrap();
+    let v = e.s.get_draft(d.id).unwrap();
+    assert_eq!((v.to.len(), v.cc.len(), v.bcc.len()), (2, 1, 1));
+    // An address that is not one: refused, nothing saved.
+    let bad = DraftEdit { to: Some(vec![mb("nope", None)]), body: Some("changed".into()), ..Default::default() };
+    assert!(matches!(e.s.edit_draft(d.id, rev, &bad, Source::App), Err(StoreError::InvalidParams(_))));
+    assert_eq!(e.s.get_draft(d.id).unwrap().revision, rev);
+    // A stale revision: refused.
+    assert!(matches!(e.s.edit_draft(d.id, rev - 1, &DraftEdit::default(), Source::App), Err(StoreError::RevisionConflict { .. })));
+}
+
+/// The hidden recipients get the mail but never appear in it; the copy the
+/// user keeps (raw store, Sent row) lists them, and they get their decision
+/// like the others (`reponse.md`, sections 7 and 10).
+#[test]
+fn bcc_is_in_the_envelope_and_the_copy_only() {
+    use nm_store::drafts::DraftEdit;
+    let mut e = env();
+    let m = e.deliver("inbox", &alice("m@a.example"));
+    let d = e.reply(m);
+    let edit = DraftEdit { bcc: Some(vec![mb("boss@b.example", Some("Boss"))]), ..DraftEdit::default() };
+    let rev = e.s.edit_draft(d.id, d.revision, &edit, Source::App).unwrap();
+    e.s.send_draft(d.id, rev, "Merci", None, 0, "NiceMailer/test", Source::App).unwrap();
+    let jobs = e.s.send_claim(e.acc).unwrap();
+    let j = &jobs[0];
+    assert!(j.rcpt.contains(&"boss@b.example".to_string()));
+    let sent = String::from_utf8(j.mime.clone()).unwrap();
+    assert!(!sent.contains("boss@b.example"), "{sent}");
+    let copy = String::from_utf8(j.copy.clone()).unwrap();
+    assert!(copy.contains("Bcc: Boss <boss@b.example>\r\n"), "{copy}");
+    let written = e.raw.write(&j.copy).unwrap();
+    e.s.send_accepted(j.action_id, &written, &[], &e.ids.own()).unwrap();
+    assert_eq!(
+        e.int("SELECT count(*) FROM message_address ma JOIN address a ON a.id = ma.address_id WHERE ma.role = 'bcc' AND a.addr = 'boss@b.example'"),
+        1
+    );
+    assert_eq!(e.decision("boss@b.example").as_deref(), Some("inbox"));
+}
+
+/// Without hidden recipients, the copy is the mail sent: the payload does
+/// not carry it twice.
+#[test]
+fn without_bcc_the_copy_is_the_mail() {
+    let mut e = env();
+    let m = e.deliver("inbox", &alice("m@a.example"));
+    let d = e.reply(m);
+    e.s.send_draft(d.id, d.revision, "Merci", None, 0, "NiceMailer/test", Source::App).unwrap();
+    assert_eq!(e.int("SELECT count(*) FROM pending_action WHERE json_extract(payload, '$.mime_copy') IS NOT NULL"), 0);
+    let jobs = e.s.send_claim(e.acc).unwrap();
+    assert_eq!(jobs[0].copy, jobs[0].mime);
+}
+
+/// Suggestions (`reponse.md`, section 6): by the start of the address, of
+/// its domain, of the name or a word of it; those written to most first;
+/// never a banned sender nor one's own address.
+#[test]
+fn recipients_are_suggested_by_use() {
+    let mut e = env();
+    // Alice wrote once, Dora three times; I wrote twice to Dan Martin.
+    e.deliver("inbox", &alice("m@a.example"));
+    for i in 0..3 {
+        e.deliver("inbox", &format!("Message-ID: <r{i}@d.example>\r\nFrom: Dora <dora@d.example>\r\nTo: {ME}\r\nSubject: x\r\n\r\nx\r\n"));
+    }
+    for i in 0..2 {
+        e.deliver("sent", &format!("Message-ID: <s{i}@hey.example>\r\nFrom: {ME}\r\nTo: Dan Martin <dan@d.example>\r\nSubject: x\r\n\r\nx\r\n"));
+    }
+    e.deliver("inbox", "Message-ID: <z@z.example>\r\nFrom: Dark <dark@z.example>\r\nTo: me@hey.example\r\nSubject: x\r\n\r\nx\r\n");
+    e.s.conn().execute("UPDATE address SET screening_target = 'banned' WHERE addr = 'dark@z.example'", []).unwrap();
+    let names = |q: &str| -> Vec<String> {
+        e.s.suggest_recipients(q, 8, &[ME.to_string()]).unwrap().into_iter().map(|a| a.addr).collect()
+    };
+    // `d`: Dan (written to) before Dora (received from); Dark, banned, never.
+    assert_eq!(names("d"), ["dan@d.example", "dora@d.example"]);
+    // A word of the name, the domain, case.
+    assert_eq!(names("mart"), ["dan@d.example"]);
+    assert!(names("A.EXAMPLE").contains(&"alice@a.example".to_string()));
+    assert!(names("Ali").contains(&"alice@a.example".to_string()));
+    // One's own address, nothing typed, LIKE wildcards taken literally.
+    assert!(!names("me").contains(&ME.to_string()));
+    assert!(names("  ").is_empty());
+    assert!(names("%").is_empty());
+}

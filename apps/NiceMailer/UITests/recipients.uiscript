@@ -1,0 +1,80 @@
+# Editing the recipients and the subject of a reply (`reponse.md`, section
+# 6): ⇧Tab and Tab from field to field, an address typed and ended by a
+# comma, suggestions (Escape closes them), what is not an address kept in
+# the line, ⌫ taking the last address back, a pasted list, ⌥⌘B for Bcc, the
+# subject, a click on a line; kept in the draft (Escape, then `r`), sent.
+expect folder = Inbox
+key r
+expect composing = true
+expect compose_focus = body
+key shift-tab
+expect compose_focus = subject
+key shift-tab
+expect compose_focus = cc
+key shift-tab
+expect compose_focus = to
+# Letters are text of the line: `l` does not open the links.
+type luc
+expect compose_line = luc|
+expect compose_suggestions ~ @
+snap recipients-suggestions
+key esc
+expect compose_suggestions = 
+expect composing = true
+key del
+key del
+key del
+type marc@exemple.fr,
+expect compose_to ~ marc@exemple.fr
+expect compose_line = |
+# Not an address: kept in the line, said in the status bar.
+type pas une adresse
+key ret
+expect flash ~ Not an address
+expect compose_line ~ pas une adresse
+key alt-del
+key alt-del
+key alt-del
+expect compose_line = |
+# ⌫ on the empty line: the last address comes back as text.
+key del
+expect compose_line = marc@exemple.fr|
+expect compose_to !~ marc@exemple.fr
+key ret
+expect compose_to ~ marc@exemple.fr
+# A click on Cc, and a pasted list.
+click compose:cc
+expect compose_focus = cc
+clipboard Anne Leroy <anne@exemple.fr>, bob@exemple.fr
+key cmd-v
+expect compose_cc ~ anne@exemple.fr,bob@exemple.fr
+# ⌥⌘B: the Bcc line.
+expect compose_bcc_shown = false
+key alt-cmd-b
+expect compose_bcc_shown = true
+expect compose_focus = bcc
+type chef@exemple.fr
+key tab
+expect compose_focus = subject
+expect compose_bcc = chef@exemple.fr
+type  (suite)
+expect compose_subject ~ (suite)
+key ret
+expect compose_focus = body
+type Bonjour à tous
+snap recipients-edited
+expect compose_saved = true
+# Kept in the draft.
+key esc
+expect composing = false
+key r
+expect composing = true
+expect compose_bcc = chef@exemple.fr
+expect compose_bcc_shown = true
+expect compose_cc ~ anne@exemple.fr
+expect compose_subject ~ (suite)
+# Sent: the conversation filed as usual.
+key cmd-ret
+expect composing = false
+wait 4500
+expect flash ~ Sent

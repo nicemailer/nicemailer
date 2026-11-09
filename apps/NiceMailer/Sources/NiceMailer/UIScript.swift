@@ -311,6 +311,9 @@ private final class Runner {
         case "shift-down": chars = "\u{F701}"; code = KeyCode.down; mods = .shift
         case "cmd-ret": chars = "\r"; code = KeyCode.returnKey; mods = .command
         case "shift-cmd-ret": chars = "\r"; code = KeyCode.returnKey; mods = [.command, .shift]
+        case "tab": chars = "\t"; code = KeyCode.tab
+        case "shift-tab": chars = "\u{19}"; code = KeyCode.tab; mods = .shift
+        case "alt-cmd-b": chars = "b"; code = 11; mods = [.command, .option]
         // Editing keys of a typed line (`LineEdit`).
         case "left": chars = "\u{F702}"; code = KeyCode.left; mods = .function
         case "right": chars = "\u{F703}"; code = KeyCode.right; mods = .function
@@ -617,9 +620,15 @@ private final class Runner {
             // to leave.
             "composing": "\(m.composer != nil)",
             "compose_from": m.composer?.draft.from.addr ?? "",
-            "compose_to": m.composer.map { $0.draft.to.map(\.addr).joined(separator: ",") } ?? "",
-            "compose_cc": m.composer.map { $0.draft.cc.map(\.addr).joined(separator: ",") } ?? "",
-            "compose_subject": m.composer?.draft.subject ?? "",
+            "compose_to": m.composer.map { $0.headers.to.map(\.addr).joined(separator: ",") } ?? "",
+            "compose_cc": m.composer.map { $0.headers.cc.map(\.addr).joined(separator: ",") } ?? "",
+            "compose_bcc": m.composer.map { $0.headers.bcc.map(\.addr).joined(separator: ",") } ?? "",
+            "compose_bcc_shown": "\(m.composer?.showsBcc ?? false)",
+            "compose_subject": m.composer?.headers.subject ?? "",
+            "compose_focus": m.composer?.focus.rawValue ?? "",
+            "compose_line": m.composer.map { $0.line.beforeCursor + "|" + String($0.line.text.dropFirst($0.line.cursor)) } ?? "",
+            "compose_suggestions": m.composer.map { $0.suggestions.map(\.addr).joined(separator: ",") } ?? "",
+            "compose_suggestion_index": m.composer?.suggestionIndex.map(String.init) ?? "",
             "compose_after": m.composer.flatMap { Compose.afterSend($0.draft) } ?? "",
             "compose_after_line": m.composer.flatMap { Compose.afterSendLine($0.draft) } ?? "",
             "compose_text": m.composer.map { c in

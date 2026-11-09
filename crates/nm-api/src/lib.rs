@@ -133,8 +133,15 @@ pub mod method {
     pub const CREATE_DRAFT: &str = "create_draft";
     /// The latest version of a draft, marked open.
     pub const OPEN_DRAFT: &str = "open_draft";
-    /// Saves the body typed, at each pause (`reponse.md`, section 5).
+    /// Saves what was typed, at each pause (`reponse.md`, section 5): the
+    /// body, and the recipients or the subject when they changed.
     pub const UPDATE_DRAFT: &str = "update_draft";
+    /// Reads the addresses typed or pasted in a recipient line (`reponse.md`,
+    /// section 6): the ones understood, and the pieces that are not one.
+    pub const PARSE_ADDRESSES: &str = "parse_addresses";
+    /// The addresses to suggest for the text typed in a recipient line,
+    /// those the user writes to most first.
+    pub const SUGGEST_RECIPIENTS: &str = "suggest_recipients";
     /// The draft window closed.
     pub const CLOSE_DRAFT: &str = "close_draft";
     /// Abandons a draft; returns it, so that the client can restore it.
@@ -974,14 +981,62 @@ pub struct DraftIdParams {
     pub id: i64,
 }
 
-/// Params of `update_draft`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Params of `update_draft`. Each field left out stays as it is: the
+/// client sends the body at each pause, the recipients and the subject only
+/// when they changed.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct UpdateDraftParams {
     pub id: i64,
     /// The revision the client edited: refused if it is not the current
     /// one (`REVISION_CONFLICT`).
     pub revision: i64,
-    pub body: String,
+    #[serde(default)]
+    pub body: Option<String>,
+    #[serde(default)]
+    pub subject: Option<String>,
+    /// The recipients, each list whole. An address that is not one is
+    /// refused (`INVALID_PARAMS`): the client sends what `parse_addresses`
+    /// accepted.
+    #[serde(default)]
+    pub to: Option<Vec<AddressView>>,
+    #[serde(default)]
+    pub cc: Option<Vec<AddressView>>,
+    #[serde(default)]
+    pub bcc: Option<Vec<AddressView>>,
+}
+
+/// Params of `parse_addresses`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ParseAddressesParams {
+    pub text: String,
+}
+
+/// Result of `parse_addresses`: the addresses understood, in order, each
+/// once; the pieces that are not an address, as typed.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ParseAddressesResult {
+    pub addresses: Vec<AddressView>,
+    pub invalid: Vec<String>,
+}
+
+/// Params of `suggest_recipients`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SuggestRecipientsParams {
+    /// What is typed: the start of an address, of a name, of a word of a
+    /// name, or of a domain.
+    pub query: String,
+    #[serde(default = "default_suggestions")]
+    pub limit: u32,
+}
+
+fn default_suggestions() -> u32 {
+    8
+}
+
+/// Result of `suggest_recipients`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SuggestRecipientsResult {
+    pub items: Vec<AddressView>,
 }
 
 /// Params of `send_draft`: the last body typed is saved with it.
@@ -1005,6 +1060,9 @@ pub struct DraftView {
     pub from: AddressView,
     pub to: Vec<AddressView>,
     pub cc: Vec<AddressView>,
+    /// Never in the mail sent; kept in the copies of the user (Sent, Drafts).
+    #[serde(default)]
+    pub bcc: Vec<AddressView>,
     pub subject: String,
     pub body: String,
     pub revision: i64,
