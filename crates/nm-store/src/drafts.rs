@@ -52,7 +52,7 @@ use std::collections::BTreeSet;
 
 use nm_api::{AddressView, DraftView};
 use nm_core::compose::{self, Mailbox, Original};
-use nm_core::{AuthResult, FolderRole, Source};
+use nm_core::{AfterSend, AuthResult, FolderRole, Source};
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 use serde_json::{Value, json};
 
@@ -172,16 +172,18 @@ fn send_action(conn: &Connection, draft_id: i64) -> Result<Option<(i64, String, 
 /// The view of a draft, with its preselected filing and, if it is being
 /// sent, when it leaves.
 pub(crate) fn draft_view(conn: &Connection, id: i64) -> Result<DraftView> {
-    type Row = (i64, String, Option<String>, String, String, String, Option<i64>, i64, String, Option<i64>);
+    type Row = (i64, String, Option<String>, String, String, String, Option<i64>, i64, String, Option<i64>, Option<String>);
     let row: Option<Row> = conn
         .prepare_cached(
             "SELECT d.account_id, d.from_addr, d.from_name, d.recipients, d.subject, d.body, d.reply_to_message_id,
-                    d.revision, d.state, m.thread_id
+                    d.revision, d.state, m.thread_id, d.after_send
                FROM draft d LEFT JOIN message m ON m.id = d.reply_to_message_id WHERE d.id = ?1",
         )?
-        .query_row([id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?, r.get(7)?, r.get(8)?, r.get(9)?)))
+        .query_row([id], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?, r.get(7)?, r.get(8)?, r.get(9)?, r.get(10)?))
+        })
         .optional()?;
-    let Some((account_id, from_addr, from_name, recipients, subject, body, reply_to, revision, state, thread_id)) = row else {
+    let Some((account_id, from_addr, from_name, recipients, subject, body, reply_to, revision, state, thread_id, after_send)) = row else {
         return Err(StoreError::NotFound(format!("brouillon {id}")));
     };
     let (to, cc, _) = recipients_of(&recipients);
@@ -203,6 +205,7 @@ pub(crate) fn draft_view(conn: &Connection, id: i64) -> Result<DraftView> {
         reply_to,
         thread_id,
         after_send_target,
+        after_send: after_send.as_deref().and_then(AfterSend::parse),
         send_at,
     })
 }
@@ -356,24 +359,30 @@ impl Store {
     /// `reponse.md`, section 7). The body is saved first, at `revision`.
     /// The MIME message is built now: it is what will leave, whatever
     /// happens to the draft. Returns when it leaves.
+    ///
+    /// `after_send`, the filing chosen by the user (`⇧⌘↩`), is saved with
+    /// the draft: a send cancelled with `z` keeps it for the next `⌘↩`.
+    /// `None` sends with the choice saved earlier, if any; without one, the
+    /// preselection is worked out when the server accepts the mail
+    /// (`send_accepted`), the conversation having maybe moved meanwhile.
+    #[allow(clippy::too_many_arguments)]
     pub fn send_draft(
         &mut self,
         id: i64,
         revision: i64,
         body: &str,
-        after_send: Option<FolderRole>,
+        after_send: Option<AfterSend>,
         delay_secs: u64,
         user_agent: &str,
         source: Source,
     ) -> Result<(i64, ChangeSet)> {
-        if let Some(t) = after_send
-            && !matches!(t, FolderRole::Archive | FolderRole::Waiting | FolderRole::Todo)
-        {
-            return Err(StoreError::InvalidParams(format!("after_send: archive, waiting or todo, not {}", t.as_str())));
-        }
         let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let rev = editable(&tx, id, revision)?;
         save_body(&tx, id, rev, body, source)?;
+        if let Some(choice) = after_send {
+            tx.execute("UPDATE draft SET after_send = ?2 WHERE id = ?1", params![id, choice.as_str()])?;
+        }
+        let after_send: Option<String> = tx.query_row("SELECT after_send FROM draft WHERE id = ?1", [id], |r| r.get(0))?;
         let Built { account_id, from_addr, rcpt, mime, msgid, date: t } = build_draft(&tx, id, user_agent, None)?;
         if rcpt.is_empty() {
             return Err(StoreError::CannotSend("this draft has no recipient".into()));
@@ -387,7 +396,7 @@ impl Store {
             // The MIME message is ASCII (`build_message` encodes the rest).
             "mime": String::from_utf8_lossy(&mime),
             "message_id_hdr": msgid,
-            "after_send": after_send.map(|r| r.as_str()),
+            "after_send": after_send,
             "data_sent": false,
         });
         tx.execute(
@@ -576,9 +585,15 @@ impl Store {
             };
             // A reply without `In-Reply-To` (the mail answered had no
             // Message-ID) files nothing (`dossiers.md`).
-            if let Some(t) = parent_thread.or(thread).filter(|_| parsed.in_reply_to.is_some()) {
-                let after = p["after_send"].as_str().and_then(FolderRole::parse);
-                moved_to = crate::reception::file_reply_thread(&tx, account_id, t, id, after, source, "reply", &mut changes, &mut threads)?;
+            // The filing chosen wins over the preselection; `stay` touches
+            // nothing, not even the return marks: the conversation is left
+            // as the reply found it.
+            let after = p["after_send"].as_str().and_then(AfterSend::parse);
+            if let Some(t) = parent_thread.or(thread).filter(|_| parsed.in_reply_to.is_some())
+                && after != Some(AfterSend::Stay)
+            {
+                let target = after.and_then(AfterSend::folder);
+                moved_to = crate::reception::file_reply_thread(&tx, account_id, t, id, target, source, "reply", &mut changes, &mut threads)?;
             }
             crate::reception::accept_recipients(&tx, own, id, source, &mut changes, &mut threads)?;
             tx.execute(

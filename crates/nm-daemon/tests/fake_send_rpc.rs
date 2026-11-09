@@ -75,3 +75,23 @@ fn with_the_fake_network_an_archive_account_pretends_to_send() {
     assert!(same_thread);
     assert_eq!(db.query_row("SELECT count(*) FROM draft", [], |r| r.get::<_, i64>(0)).unwrap(), 0);
 }
+
+/// `send_draft` takes the filing chosen with `⇧⌘↩` (`reponse.md`, section
+/// 8): one of the four choices, saved with the draft and given back by
+/// `cancel_send`; anything else is refused before the draft is touched.
+#[test]
+fn the_filing_chosen_goes_through_the_socket() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("config.toml"), "[compose]\nundo_send_seconds = 30\n").unwrap();
+    let _core = start_with(dir.path(), &[("NICEMAILER_FAKE_NETWORK", "1")]);
+    let mut c = Client::connect_as(dir.path(), "app");
+    import(dir.path(), &mut c);
+    let d = c.call("create_draft", json!({"reply_to": message(dir.path()), "quote_header": "x"})).unwrap()["draft"].clone();
+    assert!(d["after_send"].is_null());
+    let e = c.call("send_draft", json!({"id": d["id"], "revision": d["revision"], "body": "Merci", "after_send": "inbox"})).unwrap_err();
+    assert_eq!(e["code"], -32602, "{e}");
+    c.call("send_draft", json!({"id": d["id"], "revision": d["revision"], "body": "Merci", "after_send": "stay"})).unwrap();
+    let v = c.call("cancel_send", json!({"id": d["id"]})).unwrap();
+    assert_eq!(v["after_send"], "stay");
+    assert_eq!(v["state"], "editing");
+}

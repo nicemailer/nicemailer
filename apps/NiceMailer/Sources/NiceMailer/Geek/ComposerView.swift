@@ -17,7 +17,7 @@ struct ComposerView: View {
         if let c = model.composer {
             VStack(alignment: .leading, spacing: 0) {
                 ReaderTitleBar(subject: c.draft.subject) {
-                    Text(L("⌘↩ send · Esc keep · ⌘⌫ abandon")).foregroundStyle(Palette.muted).lineLimit(1)
+                    Text(L("⌘↩ send · ⇧⌘↩ send then… · Esc keep · ⌘⌫ abandon")).foregroundStyle(Palette.muted).lineLimit(1)
                 }
                 Palette.separator.frame(height: 1)
                 VStack(alignment: .leading, spacing: scaled(2)) {
@@ -27,7 +27,7 @@ struct ComposerView: View {
                     if !c.draft.cc.isEmpty {
                         headerLine(L("Cc"), Compose.recipients(c.draft.cc))
                     }
-                    if let after = Compose.afterSendLine(c.draft.afterSendTarget) {
+                    if let after = Compose.afterSendLine(c.draft) {
                         Text(after).foregroundStyle(Palette.accentText).lineLimit(1)
                     }
                 }

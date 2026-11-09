@@ -185,3 +185,41 @@ fn a_newer_database_is_refused() {
     Connection::open(&path).unwrap().execute_batch(&format!("PRAGMA user_version = {};", SCHEMA_VERSION + 1)).unwrap();
     assert!(matches!(Store::open(&path), Err(StoreError::SchemaTooNew { .. })));
 }
+
+/// Version 5 makes `draft` again: its rows, their attachments and their
+/// index survive, and `after_send` accepts `stay`.
+#[test]
+fn version_5_keeps_the_drafts_and_accepts_stay() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("old.db");
+    version_1(&path);
+    Connection::open(&path)
+        .unwrap()
+        .execute_batch(
+            "INSERT INTO draft (id, account_id, from_addr, subject, body, reply_to_message_id, after_send, message_id_hdr,
+                                message_id, revision, created_by, modified_by)
+                  VALUES (7, 1, 'me@x.org', 'Re: 2ème rappel', 'Merci', 1, 'waiting', '<d7@x.org>', 2, 3, 'app', 'app');
+             INSERT INTO outgoing_blob (hash, size) VALUES (x'00', 4);
+             INSERT INTO draft_attachment (id, draft_id, hash, filename, mime_type, position)
+                  VALUES (1, 7, x'00', 'a.pdf', 'application/pdf', 0);",
+        )
+        .unwrap();
+    let store = Store::open(&path).unwrap();
+    let conn = store.conn();
+    let row: (String, String, i64, i64) = conn
+        .query_row("SELECT body, after_send, revision, message_id FROM draft WHERE id = 7", [], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+        })
+        .unwrap();
+    assert_eq!(row, ("Merci".into(), "waiting".into(), 3, 2));
+    let attachments: i64 = conn.query_row("SELECT count(*) FROM draft_attachment WHERE draft_id = 7", [], |r| r.get(0)).unwrap();
+    assert_eq!(attachments, 1);
+    conn.execute("UPDATE draft SET after_send = 'stay' WHERE id = 7", []).unwrap();
+    assert!(conn.execute("UPDATE draft SET after_send = 'inbox' WHERE id = 7", []).is_err());
+    // The attachments still follow their draft.
+    conn.execute("DELETE FROM draft WHERE id = 7", []).unwrap();
+    let attachments: i64 = conn.query_row("SELECT count(*) FROM draft_attachment", [], |r| r.get(0)).unwrap();
+    assert_eq!(attachments, 0);
+    let integrity: String = conn.query_row("PRAGMA foreign_key_check", [], |r| r.get(0)).unwrap_or_else(|_| "ok".into());
+    assert_eq!(integrity, "ok");
+}

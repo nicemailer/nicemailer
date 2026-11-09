@@ -89,7 +89,8 @@ pub use rusqlite;
 /// 3: remote images (`address.remote_images`, `message_body.tracking_pixels`).
 /// 4: `account.disabled_at`, accounts whose key left `accounts.toml`, and
 ///    `account.position`, their display order.
-pub const SCHEMA_VERSION: i64 = 4;
+/// 5: `draft.after_send` accepts `stay` (the table is made again).
+pub const SCHEMA_VERSION: i64 = 5;
 
 /// Full text of the schema, at the latest version. `include_str!` reads the
 /// file at compile time and embeds it in the binary as a `&'static str`; the

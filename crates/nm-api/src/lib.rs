@@ -17,7 +17,7 @@
 
 use std::collections::BTreeMap;
 
-use nm_core::{AuthPolicy, FolderCategory, FolderRole, ScreeningTarget};
+use nm_core::{AfterSend, AuthPolicy, FolderCategory, FolderRole, ScreeningTarget};
 use serde::{Deserialize, Serialize};
 // `Value` is serde_json's type for "any JSON value" (object, array, string...).
 // It is used where the shape is not known in advance, e.g. request params
@@ -990,10 +990,11 @@ pub struct SendDraftParams {
     pub id: i64,
     pub revision: i64,
     pub body: String,
-    /// Where to file the conversation after sending; absent: the core's
-    /// preselection (the only choice of the app in v1).
+    /// Where to file the conversation after sending (`⇧⌘↩`), saved with
+    /// the draft. Absent: the choice saved earlier, if any (a send
+    /// cancelled with `z`), else the core's preselection.
     #[serde(default)]
-    pub after_send: Option<FolderRole>,
+    pub after_send: Option<AfterSend>,
 }
 
 /// A draft, as the reply screen shows it.
@@ -1014,8 +1015,13 @@ pub struct DraftView {
     /// Its conversation.
     pub thread_id: Option<i64>,
     /// Where the conversation goes once the mail is sent, as preselected
-    /// now (`reponse.md`, section 8); absent when it stays.
+    /// now (`reponse.md`, section 8); absent when it stays, and then no
+    /// choice is offered.
     pub after_send_target: Option<FolderRole>,
+    /// The filing the user chose (`⇧⌘↩`), which wins over the
+    /// preselection; absent: none chosen.
+    #[serde(default)]
+    pub after_send: Option<AfterSend>,
     /// When a draft `sending` leaves, Unix seconds.
     pub send_at: Option<i64>,
 }

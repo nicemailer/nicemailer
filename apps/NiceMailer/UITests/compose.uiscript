@@ -112,17 +112,54 @@ key z
 expect composing = true
 expect flash ~ Sending cancelled
 expect sending_count = 0
-# ⌘↩ again, and the delay goes by: sent, the conversation filed in Archive.
+# ⇧⌘↩ asks where the conversation goes, the preselection marked; Escape
+# goes back to the text without sending.
+key shift-cmd-ret
+expect overlay ~ choice
+expect choice ~ Send, then file the conversation in
+snap reply-send-then
+key esc
+expect composing = true
+expect overlay = none
+expect sending_count = 0
+# A click on Waiting (the second row): sent after the delay; `z` cancels
+# it, and the reply comes back with its choice.
+key shift-cmd-ret
+click menu:1
+expect composing = false
+expect flash ~ Sending in
+key z
+expect composing = true
+expect compose_after = waiting
+expect compose_after_line ~ After sending: Waiting
+# ⌘↩ keeps that choice; the delay goes by: sent, filed in Waiting.
 key cmd-ret
 expect composing = false
 wait 4500
-expect flash ~ Sent · filed in Archive
+expect flash ~ Sent · filed in Waiting
 expect sending_count = 0
 expect undo_count = 1
 snap sent
 # `z` undoes the filing, not the sending.
 key z
 expect flash ~ Undone: filing of the reply
+# The trial option, on the conversation now selected (back in the Inbox
+# from Todo, so preselected for Todo): sent with ⇧⌘↩ then `s`, it stays
+# in the Inbox.
+expect folder = Inbox
+expect selected_subject ~ Rappel : le déménagement
+key r
+expect composing = true
+expect compose_after = todo
+type Une précision
+key shift-cmd-ret
+key s
+expect composing = false
+wait 4500
+expect flash ~ Sent
+expect flash !~ filed
+expect folder = Inbox
+expect selected_subject ~ Rappel : le déménagement
 # Reply to the sender only and forward: not yet.
 key R
 expect flash ~ Not available yet

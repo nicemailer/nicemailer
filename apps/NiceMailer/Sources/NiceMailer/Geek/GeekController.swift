@@ -85,6 +85,9 @@ final class GeekController {
         /// "Change Mailbox…" chose a mailbox of an earlier data format:
         /// upgrade it, or keep the current one (`AppModel.pendingUpgrade`).
         case mailboxUpgrade(PendingUpgrade)
+        /// ⇧⌘↩ in the reply: send it, then file the conversation where the
+        /// key says (`reponse.md`, section 8). Escape goes back to the text.
+        case sendThen
     }
 
     /// One row of a menu or a picker.
@@ -1511,6 +1514,18 @@ final class GeekController {
         let code = event.keyCode
         model.flash = nil
         model.lastError = nil
+        // ⇧⌘↩: choose where the conversation goes, then send. Only when
+        // the core offers a filing: a conversation outside the Inbox, Todo
+        // and Waiting stays where it is whatever the choice.
+        if code == KeyCode.returnKey, command, mods.contains(.shift) {
+            if model.composer?.draft.afterSendTarget == nil {
+                model.flash = L("This conversation stays where it is: nothing to choose · ⌘↩ to send")
+            } else {
+                choiceIndex = nil
+                overlay = .choice(.sendThen)
+            }
+            return true
+        }
         if code == KeyCode.returnKey, command {
             Task { await model.sendComposer() }
             return true
@@ -1873,6 +1888,7 @@ final class GeekController {
         case .decision(let name, let domain, _): domain ? L("Decision on the domain %@", name) : L("Decision on %@", name)
         case .mailboxUpgrade(let u):
             L("The mailbox %@ uses an older data format (%lld; this NiceMailer uses %lld)", DataDirectory.displayName(u.url), u.from, u.to)
+        case .sendThen: L("Send, then file the conversation in")
         }
     }
 
@@ -1906,6 +1922,18 @@ final class GeekController {
                 },
                 Entry(key: "esc", label: L("cancel: keep the current mailbox")) { [model] in model.cancelMailboxUpgrade() },
             ]
+        case .sendThen:
+            guard let d = model.composer?.draft else { return [] }
+            var entries = Compose.sendChoices(d).map { choice in
+                Entry(key: choice.key, label: choice.label, detail: choice.current ? "•" : nil) { [model] in
+                    Task { await model.sendComposer(afterSend: choice.afterSend) }
+                }
+            }
+            // The trial option apart, after a gap: it is not one of the
+            // filings of the workflow (`dossiers.md`).
+            if let i = entries.firstIndex(where: { $0.key == "s" }) { entries[i].gapBefore = true }
+            entries.append(Entry(key: "esc", label: L("cancel: back to the reply")) {})
+            return entries
         }
     }
 

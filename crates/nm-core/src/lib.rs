@@ -239,6 +239,53 @@ impl FolderRole {
     }
 }
 
+/// What becomes of the conversation once a reply is sent, when the user
+/// chose it (`⇧⌘↩`, `reponse.md`, section 8). Without a choice the core
+/// applies its preselection ([`FolderRole::reply_target`]).
+///
+/// The three filing targets of `dossiers.md` ("Répondre à une
+/// conversation"), and `Stay`, a trial option: the conversation is left
+/// where it is, as if the reply had not been sent (nothing moved, the
+/// return marks kept). It serves the reply that answers a question but
+/// leaves the conversation to be handled in the Inbox.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AfterSend {
+    Archive,
+    Waiting,
+    Todo,
+    Stay,
+}
+
+impl AfterSend {
+    pub const ALL: [AfterSend; 4] = [AfterSend::Archive, AfterSend::Waiting, AfterSend::Todo, AfterSend::Stay];
+
+    /// Identifier stored in the database (`draft.after_send`) and in the
+    /// payload of a `send` action.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            AfterSend::Archive => "archive",
+            AfterSend::Waiting => "waiting",
+            AfterSend::Todo => "todo",
+            AfterSend::Stay => "stay",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<AfterSend> {
+        AfterSend::ALL.into_iter().find(|a| a.as_str() == s)
+    }
+
+    /// The folder the conversation goes to; `None` for `Stay`.
+    pub fn folder(self) -> Option<FolderRole> {
+        match self {
+            AfterSend::Archive => Some(FolderRole::Archive),
+            AfterSend::Waiting => Some(FolderRole::Waiting),
+            AfterSend::Todo => Some(FolderRole::Todo),
+            AfterSend::Stay => None,
+        }
+    }
+}
+
 /// Screening decision on an address or a domain (`address.screening_target`,
 /// `domain.screening_target`): where the next mails of that sender go.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -550,6 +597,18 @@ mod tests {
         // Domain rules always want pass.
         assert!(domain_rule_accepts(V::Pass));
         assert!(!domain_rule_accepts(V::Unknown));
+    }
+
+    #[test]
+    fn after_send_round_trips_and_names_its_folder() {
+        for a in AfterSend::ALL {
+            assert_eq!(AfterSend::parse(a.as_str()), Some(a));
+            // The JSON of the contract is the identifier of the database.
+            assert_eq!(serde_json::to_value(a).unwrap(), a.as_str());
+        }
+        assert_eq!(AfterSend::parse("inbox"), None);
+        assert_eq!(AfterSend::Waiting.folder(), Some(FolderRole::Waiting));
+        assert_eq!(AfterSend::Stay.folder(), None);
     }
 
     #[test]

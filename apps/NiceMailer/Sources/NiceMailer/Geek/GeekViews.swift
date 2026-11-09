@@ -121,7 +121,7 @@ private struct GeekWindow: View {
         // comes before any other panel, in the bottom-right corner.
         if let choice = controller.activeChoice {
             KeyMenu(title: controller.choiceTitle(choice),
-                    entries: controller.choiceEntries(choice).map { .init(key: $0.key, label: $0.label, detail: $0.detail) },
+                    entries: controller.choiceEntries(choice).map { .init(key: $0.key, label: $0.label, gapBefore: $0.gapBefore, detail: $0.detail) },
                     highlighted: controller.choiceIndex,
                     onSelect: { controller.chooseChoiceEntry($0) })
                 .padding(12)

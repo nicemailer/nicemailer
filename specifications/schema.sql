@@ -33,7 +33,7 @@ PRAGMA temp_store = MEMORY;
 -- Une base existante est mise à jour par les migrations du noyau
 -- (crates/nm-store/src/migrations.rs) ; ce fichier crée directement la
 -- dernière version.
-PRAGMA user_version = 4;   -- migrations : comparer à la version attendue au démarrage
+PRAGMA user_version = 5;   -- migrations : comparer à la version attendue au démarrage
 
 -- ------------------------------------------------------------
 -- Comptes : état seulement. Les paramètres (adresse, serveurs, identifiants,
@@ -548,8 +548,9 @@ CREATE TABLE draft (
     body                TEXT NOT NULL DEFAULT '',
     body_format         TEXT NOT NULL DEFAULT 'text' CHECK (body_format IN ('text','html')),
     reply_to_message_id INTEGER REFERENCES message(id) ON DELETE SET NULL,
-    -- Rangement de la conversation après l'envoi (dossiers.md) ; NULL = présélection.
-    after_send          TEXT CHECK (after_send IN ('archive','waiting','todo')),
+    -- Rangement de la conversation après l'envoi (dossiers.md), choisi par
+    -- ⇧⌘↩ ; 'stay' : laissée en place (option d'essai, reponse.md) ; NULL = présélection.
+    after_send          TEXT CHECK (after_send IN ('archive','waiting','todo','stay')),
     message_id_hdr      TEXT NOT NULL,    -- Message-ID stable, généré à la création
     message_id          INTEGER REFERENCES message(id) ON DELETE SET NULL,
     revision            INTEGER NOT NULL DEFAULT 1,

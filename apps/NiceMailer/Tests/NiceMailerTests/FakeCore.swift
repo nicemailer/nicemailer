@@ -127,7 +127,8 @@ enum Fixture {
             "subject": "Re: Subject \(thread)",
             "body": body ?? "\n\nOn Nov 7, Sender \(thread) wrote:\n> Hello",
             "revision": revision, "state": state, "reply_to": replyTo, "thread_id": thread,
-            "after_send_target": "archive", "send_at": state == "sending" ? 1_790_000_005 : NSNull(),
+            "after_send_target": "archive", "after_send": NSNull(),
+            "send_at": state == "sending" ? 1_790_000_005 : NSNull(),
         ]
     }
 

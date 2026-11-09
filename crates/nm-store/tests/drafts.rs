@@ -8,7 +8,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use nm_core::compose::Mailbox;
-use nm_core::{FolderRole, ScreeningTarget, Source};
+use nm_core::{AfterSend, FolderRole, ScreeningTarget, Source};
 use nm_store::drafts::{Identities, SendPhase};
 use nm_store::ingest::parse;
 use nm_store::insert::{Body, Flags, Inserter, NewMessage};
@@ -99,7 +99,7 @@ impl Env {
     }
 
     /// The draft sent and accepted by the server at once.
-    fn send_now(&mut self, draft: &nm_api::DraftView, after: Option<FolderRole>) -> nm_store::ChangeSet {
+    fn send_now(&mut self, draft: &nm_api::DraftView, after: Option<AfterSend>) -> nm_store::ChangeSet {
         let (_, _) = self.s.send_draft(draft.id, draft.revision, &format!("Merci.{}", draft.body), after, 0, "NiceMailer/test", Source::App).unwrap();
         let jobs = self.s.send_claim(self.acc).unwrap();
         assert_eq!(jobs.len(), 1);
@@ -383,7 +383,7 @@ fn the_filing_follows_the_folder_and_its_marks() {
     // An explicit choice wins over the preselection.
     let i = e.deliver("inbox", &alice("i@a.example"));
     let d = e.reply(i);
-    let c = e.send_now(&d, Some(FolderRole::Todo));
+    let c = e.send_now(&d, Some(AfterSend::Todo));
     assert_eq!(e.role_of(i), "todo");
     assert_eq!(c.sent[0].moved_to, Some(FolderRole::Todo));
     // The conversation moved while the reply was written: recomputed at
@@ -394,6 +394,63 @@ fn the_filing_follows_the_folder_and_its_marks() {
     e.s.move_thread(thread, FolderRole::Todo, None, Default::default(), Source::App).unwrap();
     e.send_now(&d, None);
     assert_eq!(e.role_of(k), "archive");
+}
+
+/// `⇧⌘↩` (`reponse.md`, section 8): the filing chosen is saved with the
+/// draft, survives a send cancelled with `z`, and wins over the
+/// preselection when the server accepts the mail.
+#[test]
+fn the_filing_chosen_is_kept_and_wins() {
+    let mut e = env();
+    let m = e.deliver("inbox", &alice("m@a.example"));
+    let d = e.reply(m);
+    assert_eq!((d.after_send_target, d.after_send), (Some(FolderRole::Archive), None));
+    let (_, _) = e.s.send_draft(d.id, d.revision, "Merci", Some(AfterSend::Waiting), 5, "NiceMailer/test", Source::App).unwrap();
+    // `z`: the draft comes back with its choice, the preselection unchanged.
+    let (v, _) = e.s.cancel_send(d.id, Source::App).unwrap();
+    assert_eq!((v.after_send_target, v.after_send), (Some(FolderRole::Archive), Some(AfterSend::Waiting)));
+    // `⌘↩` without a choice: the one saved.
+    let c = e.send_now(&v, None);
+    assert_eq!(e.role_of(m), "waiting");
+    assert_eq!(c.sent[0].moved_to, Some(FolderRole::Waiting));
+    // A choice made later replaces the earlier one.
+    let n = e.deliver("inbox", &alice("n@a.example"));
+    let d = e.reply(n);
+    e.s.send_draft(d.id, d.revision, "Merci", Some(AfterSend::Todo), 5, "NiceMailer/test", Source::App).unwrap();
+    let (v, _) = e.s.cancel_send(d.id, Source::App).unwrap();
+    e.send_now(&v, Some(AfterSend::Archive));
+    assert_eq!(e.role_of(n), "archive");
+}
+
+/// The trial option `stay`: nothing moves, and the conversation keeps its
+/// return mark, as if the reply had not been sent.
+#[test]
+fn stay_leaves_the_conversation_as_it_was() {
+    let mut e = env();
+    let m = e.deliver("inbox", &alice("m@a.example"));
+    e.s.conn().execute("INSERT INTO message_keyword (message_id, keyword) VALUES (?1, '$NmWasTodo')", [m]).unwrap();
+    let d = e.reply(m);
+    assert_eq!(d.after_send_target, Some(FolderRole::Todo));
+    let c = e.send_now(&d, Some(AfterSend::Stay));
+    assert_eq!(e.role_of(m), "inbox");
+    assert_eq!(c.sent[0].moved_to, None);
+    assert_eq!(e.int(&format!("SELECT count(*) FROM message_keyword WHERE message_id = {m}")), 1);
+    assert_eq!(e.int("SELECT count(*) FROM audit_log WHERE action = 'move'"), 0);
+    // The mail is sent all the same, and its recipients accepted.
+    assert_eq!(e.int("SELECT count(*) FROM message m JOIN folder f ON f.id = m.folder_id WHERE f.role = 'sent'"), 1);
+    assert_eq!(e.decision("alice@a.example").as_deref(), Some("inbox"));
+}
+
+/// The choice never moves a conversation the preselection leaves alone:
+/// one in Archive or in a filing folder stays where it is.
+#[test]
+fn a_choice_does_not_move_a_conversation_outside_the_work_folders() {
+    let mut e = env();
+    let n = e.deliver("newsletter", &alice("n@a.example"));
+    let d = e.reply(n);
+    let c = e.send_now(&d, Some(AfterSend::Todo));
+    assert_eq!(e.role_of(n), "newsletter");
+    assert_eq!(c.sent[0].moved_to, None);
 }
 
 #[test]
@@ -457,10 +514,10 @@ fn a_draft_without_recipient_is_not_sent() {
     e.s.conn().execute("UPDATE draft SET recipients = '[]'", []).unwrap();
     assert!(matches!(e.s.send_draft(d.id, d.revision, "x", None, 0, "t", Source::App), Err(StoreError::CannotSend(_))));
     assert_eq!(e.s.get_draft(d.id).unwrap().state, "editing");
-    assert!(matches!(
-        e.s.send_draft(d.id, d.revision, "x", Some(FolderRole::Inbox), 0, "t", Source::App),
-        Err(StoreError::InvalidParams(_))
-    ));
+    // A refused send saves nothing, not even the filing chosen. (A target
+    // outside the four choices cannot be asked: `AfterSend` has none.)
+    assert!(e.s.send_draft(d.id, d.revision, "x", Some(AfterSend::Todo), 0, "t", Source::App).is_err());
+    assert_eq!(e.s.get_draft(d.id).unwrap().after_send, None);
 }
 
 #[test]

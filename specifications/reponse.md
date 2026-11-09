@@ -19,7 +19,7 @@ Statut : validé pour la v1 (7 novembre 2026). Cette spécification décrit la p
 | Texte seul, sans mise en forme | Mise en forme, HTML |
 | Brouillon enregistré en local (table `draft`) | Copie dans Drafts sur le serveur, `append_draft`, conflits entre appareils (`brouillons.md`, sections 5 et 6) |
 | Destinataires calculés par le noyau, affichés | Lignes À, Cc et Cci éditables |
-| Rangement présélectionné par le noyau, affiché | Choix manuel Archive, Waiting ou Todo à l'envoi |
+| Rangement présélectionné par le noyau, affiché ; choix manuel à l'envoi par `⇧⌘↩` (ajouté en novembre 2026, section 8) | |
 | Envoi par le spool, délai d'annulation de 5 s | Pièces jointes, signature |
 | Copie dans Sent | Commande CLI `nicemailer reply` |
 | Écrire à quelqu'un vaut décision Inbox | |
@@ -102,7 +102,8 @@ Raccourcis de la zone de réponse (contexte « edition » de `ui.md`) :
 
 | Touche | Effet |
 | --- | --- |
-| `⌘↩` | Envoyer |
+| `⌘↩` | Envoyer, avec le rangement affiché |
+| `⇧⌘↩` | Choisir le rangement, puis envoyer (section 8) |
 | `Échap` | Revenir au mail, garder le brouillon |
 | `⌘⌫` | Abandonner le brouillon |
 
@@ -167,7 +168,7 @@ Les étapes 2 à 5 sont faites dans une seule transaction.
 
 ## 8. Rangement après l'envoi
 
-La règle est celle de `dossiers.md`, « Répondre à une conversation », sans le choix manuel :
+La règle est celle de `dossiers.md`, « Répondre à une conversation ». Le choix manuel a été ajouté après la v1 (novembre 2026, fin de section). La présélection :
 
 | Dossier de la conversation | Rangement |
 | --- | --- |
@@ -183,6 +184,14 @@ La règle est celle de `dossiers.md`, « Répondre à une conversation », sans 
 - C'est une commande ordinaire de déplacement de conversation (`move_thread`), avec la source du client qui a envoyé, une ligne `move` dans `audit_log` qui cite le mail envoyé, et le retrait des marques `$NmWasTodo` et `$NmWasWaiting`.
 - **Annulation** : la barre d'état affiche « Envoyé · rangé dans Archive · z pour annuler ». `z` annule le **rangement**, pas l'envoi (le mail est parti). Le jeton d'annulation est porté par l'événement `DraftSent`.
 - Une réponse sans `In-Reply-To` (mail d'origine sans `Message-ID`) ne range rien.
+
+### Choix manuel (`⇧⌘↩`)
+
+- `⌘↩` envoie avec le rangement affiché. `⇧⌘↩` ouvre un petit menu « Envoyer, puis ranger la conversation dans » : `a` Archive, `w` Waiting, `t` Todo, puis, séparée, `s` « la laisser en place (essai) ». La présélection y est marquée. La touche choisie envoie aussitôt ; un clic sur une ligne aussi. Échap revient au texte sans rien envoyer.
+- Le menu n'est proposé que si le noyau propose un rangement (`after_send_target` présent : conversation dans Inbox, Todo ou Waiting). Ailleurs, `⇧⌘↩` le dit dans la barre d'état et n'envoie rien.
+- **Le choix explicite l'emporte** sur la présélection recalculée à l'envoi. Il ne déplace pourtant jamais une conversation sortie entre-temps d'Inbox, Todo et Waiting (archivée ailleurs, par exemple) : rien n'est rangé, comme pour la présélection.
+- Le choix est **enregistré dans le brouillon** (`draft.after_send`) : un envoi annulé par `z` rouvre la réponse avec lui (« Après l'envoi : Waiting »), et `⌘↩` l'applique. Un nouveau `⇧⌘↩` le remplace.
+- **Option d'essai « laisser en place »** (`stay`), visible seulement dans ce menu : la réponse part, les destinataires reçoivent leur décision (section 10), mais la conversation n'est pas touchée : aucun déplacement, et les marques `$NmWasTodo` / `$NmWasWaiting` restent (ce n'est pas une commande sur la conversation). Elle sert la réponse qui laisse la conversation à traiter dans l'Inbox. À évaluer à l'usage : à garder, à retirer, ou à intégrer à `dossiers.md`.
 
 ## 9. Copie dans Sent
 
@@ -215,10 +224,10 @@ Ces décisions font partie de la même commande que le rangement : `z` après l'
 | `update_draft` | `id`, `revision`, `body` | `{revision}` ; erreur `REVISION_CONFLICT` si la révision n'est pas la courante, `DRAFT_SENDING` si le brouillon est `sending` |
 | `close_draft` | `id` | — |
 | `discard_draft` | `id` | `Draft` abandonné, que le client garde pour le restaurer |
-| `send_draft` | `id`, `revision`, `body`, `after_send?` | `{send_at}` : heure prévue de l'envoi ; `CANNOT_SEND` sans destinataire ou sans `[smtp]` |
+| `send_draft` | `id`, `revision`, `body`, `after_send?` (`archive`, `waiting`, `todo`, `stay` ; enregistré dans le brouillon ; absent : le choix enregistré, sinon la présélection) | `{send_at}` : heure prévue de l'envoi ; `CANNOT_SEND` sans destinataire ou sans `[smtp]` |
 | `cancel_send` | `id` | `Draft` remis à `editing` ; erreur `SEND_ALREADY_STARTED` |
 
-`Draft` : `id`, `account_id`, `from` (`{addr, name}`), `to`, `cc` (listes de `{addr, name}`), `subject`, `body`, `revision`, `state`, `reply_to`, `after_send_target` (présélection, absente quand rien n'est rangé), `send_at` (si `sending`).
+`Draft` : `id`, `account_id`, `from` (`{addr, name}`), `to`, `cc` (listes de `{addr, name}`), `subject`, `body`, `revision`, `state`, `reply_to`, `after_send_target` (présélection, absente quand rien n'est rangé), `after_send` (choix de l'utilisateur, absent s'il n'y en a pas), `send_at` (si `sending`).
 
 `quote_header` est mis en forme par le client parce que la langue et le format de date sont ceux de l'app ; le noyau ne la modifie pas. Les clients sans langue (CLI) passent une ligne anglaise.
 

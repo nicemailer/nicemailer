@@ -28,6 +28,7 @@ pub(crate) fn migrate(conn: &mut Connection, mut version: i64) -> Result<()> {
             1 => to_2(&tx)?,
             2 => to_3(&tx)?,
             3 => to_4(&tx)?,
+            4 => to_5(&tx)?,
             _ => unreachable!("aucune migration depuis la version {version}"),
         }
         version += 1;
@@ -92,6 +93,55 @@ fn to_4(conn: &Connection) -> Result<()> {
         "ALTER TABLE account ADD COLUMN disabled_at INTEGER;
          ALTER TABLE account ADD COLUMN position INTEGER NOT NULL DEFAULT 0;
          UPDATE account SET position = id;",
+    )?;
+    Ok(())
+}
+
+/// Version 5: `draft.after_send` accepts `stay`, the trial option "leave
+/// the conversation where it is" of the filing chosen at sending
+/// (`reponse.md`, section 8).
+///
+/// SQLite cannot change a `CHECK` constraint in place: the table is made
+/// again, by the procedure of its documentation ("Making Other Kinds Of
+/// Table Schema Changes"): a new table, the rows copied, the old one
+/// dropped, the new one renamed. `draft` holds a few rows (the replies being
+/// written), so this is instant.
+///
+/// The foreign keys stay on (they cannot be switched off inside a
+/// transaction), so dropping `draft` deletes the rows of `draft_attachment`
+/// that point to it (`ON DELETE CASCADE`): they are kept aside in a
+/// temporary table and put back once the new `draft` has the same ids.
+fn to_5(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "CREATE TABLE draft_new (
+             id                  INTEGER PRIMARY KEY,
+             account_id          INTEGER NOT NULL REFERENCES account(id) ON DELETE CASCADE,
+             from_addr           TEXT NOT NULL,
+             from_name           TEXT,
+             recipients          TEXT NOT NULL DEFAULT '[]',
+             subject             TEXT NOT NULL DEFAULT '',
+             body                TEXT NOT NULL DEFAULT '',
+             body_format         TEXT NOT NULL DEFAULT 'text' CHECK (body_format IN ('text','html')),
+             reply_to_message_id INTEGER REFERENCES message(id) ON DELETE SET NULL,
+             after_send          TEXT CHECK (after_send IN ('archive','waiting','todo','stay')),
+             message_id_hdr      TEXT NOT NULL,
+             message_id          INTEGER REFERENCES message(id) ON DELETE SET NULL,
+             revision            INTEGER NOT NULL DEFAULT 1,
+             server_revision     INTEGER,
+             state               TEXT NOT NULL DEFAULT 'editing' CHECK (state IN ('editing','sending')),
+             date_created        INTEGER NOT NULL DEFAULT (unixepoch()),
+             date_modified       INTEGER NOT NULL DEFAULT (unixepoch()),
+             created_by          TEXT NOT NULL CHECK (created_by  IN ('core','app','cli','tui','web','mcp','config_sync','imap')),
+             modified_by         TEXT NOT NULL CHECK (modified_by IN ('core','app','cli','tui','web','mcp','config_sync','imap')),
+             UNIQUE (message_id_hdr)
+         ) STRICT;
+         INSERT INTO draft_new SELECT * FROM draft;
+         CREATE TEMP TABLE draft_attachment_kept AS SELECT * FROM draft_attachment;
+         DROP TABLE draft;
+         ALTER TABLE draft_new RENAME TO draft;
+         CREATE INDEX idx_draft_message ON draft (message_id) WHERE message_id IS NOT NULL;
+         INSERT INTO draft_attachment SELECT * FROM temp.draft_attachment_kept;
+         DROP TABLE temp.draft_attachment_kept;",
     )?;
     Ok(())
 }

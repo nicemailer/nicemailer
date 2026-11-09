@@ -58,9 +58,40 @@ struct ComposeRulesTests {
         #expect(Compose.recipients([]) == "")
     }
 
+    func draft(target: String?, chosen: String?) throws -> DraftView {
+        var json = Fixture.draft(replyTo: 10)
+        json["after_send_target"] = target ?? NSNull()
+        json["after_send"] = chosen ?? NSNull()
+        return try CoreClient.decoder.decode(DraftView.self, from: JSONSerialization.data(withJSONObject: json))
+    }
+
+    /// The filing that applies (`reponse.md`, section 8): the one chosen
+    /// with ⇧⌘↩ wins over the preselection, `stay` leaves the conversation,
+    /// and nothing applies where the core offers no filing.
+    @Test func theFilingChosenWinsOverThePreselection() throws {
+        #expect(Compose.afterSend(try draft(target: "archive", chosen: nil)) == "archive")
+        #expect(Compose.afterSend(try draft(target: "archive", chosen: "waiting")) == "waiting")
+        #expect(Compose.afterSend(try draft(target: "archive", chosen: "stay")) == nil)
+        #expect(Compose.afterSend(try draft(target: nil, chosen: "todo")) == nil)
+        #expect(Compose.afterSendLine(try draft(target: nil, chosen: nil)) == nil)
+        #expect(Compose.afterSendLine(try draft(target: "archive", chosen: nil)) == L("After sending: %@", Role.name("archive")))
+        #expect(Compose.afterSendLine(try draft(target: "archive", chosen: "todo")) == L("After sending: %@", Role.name("todo")))
+        #expect(Compose.afterSendLine(try draft(target: "archive", chosen: "stay")) == L("After sending: stays where it is"))
+    }
+
+    /// The answers of ⇧⌘↩: the three filings, then the trial option, the
+    /// one ⌘↩ would apply marked.
+    @Test func theChoicesOfSendThen() throws {
+        let choices = Compose.sendChoices(try draft(target: "waiting", chosen: nil))
+        #expect(choices.map(\.key) == ["a", "w", "t", "s"])
+        #expect(choices.map(\.afterSend) == ["archive", "waiting", "todo", "stay"])
+        #expect(choices.filter(\.current).map(\.key) == ["w"])
+        #expect(choices.last?.label == L("leave it where it is (trial)"))
+        let chosen = Compose.sendChoices(try draft(target: "waiting", chosen: "stay"))
+        #expect(chosen.filter(\.current).map(\.key) == ["s"])
+    }
+
     @Test func theLinesOfTheStatusBar() {
-        #expect(Compose.afterSendLine(nil) == nil)
-        #expect(Compose.afterSendLine("archive") == L("After sending: %@", Role.name("archive")))
         #expect(Compose.sendingFlash(seconds: 5) == L("Sending in %lld s · z to cancel", 5))
         #expect(Compose.sendingFlash(seconds: 0) == L("Sending…"))
         #expect(Compose.sentFlash(movedTo: "archive", undo: true) == L("Sent") + " · " + L("filed in %@", Role.name("archive")) + " · " + L("z: undo the filing"))
@@ -111,6 +142,7 @@ struct ComposeControllerTests {
         case "esc": chars = "\u{1b}"; code = KeyCode.escape
         case "ret": chars = "\r"; code = KeyCode.returnKey
         case "cmd-ret": chars = "\r"; code = KeyCode.returnKey; mods = .command
+        case "shift-cmd-ret": chars = "\r"; code = KeyCode.returnKey; mods = [.command, .shift]
         case "del": chars = "\u{7f}"; code = KeyCode.delete
         case "cmd-del": chars = "\u{7f}"; code = KeyCode.delete; mods = .command
         case "alt-del": chars = "\u{7f}"; code = KeyCode.delete; mods = .option
@@ -313,6 +345,61 @@ struct ComposeControllerTests {
         #expect(core.calls("cancel_send").first?["id"] as? Int == 901)
         #expect(model.composer?.buffer.text == "Merci")
         #expect(model.flash == L("Sending cancelled: the reply is open again"))
+    }
+
+    /// ⇧⌘↩ asks where the conversation goes, then sends with that choice;
+    /// Escape goes back to the text without sending.
+    @Test func shiftCommandReturnChoosesTheFilingThenSends() async {
+        await reply()
+        type("Merci")
+        press("shift-cmd-ret")
+        #expect(controller.activeChoice == .sendThen)
+        #expect(controller.modeLabel == "ASK")
+        // The current filing marked; the trial option apart.
+        let entries = controller.choiceEntries(.sendThen)
+        #expect(entries.map(\.key) == ["a", "w", "t", "s", "esc"])
+        #expect(entries.first?.detail == "•")
+        #expect(entries[3].gapBefore)
+        // Escape: back to the text, nothing sent, letters are text again.
+        press("esc")
+        #expect(controller.activeChoice == nil)
+        #expect(model.composer != nil)
+        type("!")
+        #expect(model.composer?.buffer.text.hasPrefix("Merci!") == true)
+        #expect(core.calls("send_draft").isEmpty)
+        // `w`: sent, the conversation to go to Waiting.
+        press("shift-cmd-ret")
+        press("w")
+        #expect(await eventually { model.composer == nil })
+        let send = core.calls("send_draft")
+        #expect(send.count == 1)
+        #expect(send.first?["after_send"] as? String == "waiting")
+        #expect((send.first?["body"] as? String)?.hasPrefix("Merci!") == true)
+    }
+
+    /// ⌘↩ sends without a choice: the core keeps the one made earlier, or
+    /// applies its preselection.
+    @Test func commandReturnSendsWithoutAChoice() async {
+        await reply()
+        press("cmd-ret")
+        #expect(await eventually { core.calls("send_draft").count == 1 })
+        #expect(core.calls("send_draft").first?["after_send"] == nil)
+    }
+
+    /// No filing offered (a conversation in Archive, Newsletter…): ⇧⌘↩
+    /// says so and sends nothing.
+    @Test func nothingToChooseOutsideTheWorkFolders() async {
+        core.handler = { method, params in
+            guard method == "create_draft" else { return Fixture.answer(method, params) }
+            var d = Fixture.draft(replyTo: params["reply_to"] as? Int ?? 10)
+            d["after_send_target"] = NSNull()
+            return ["draft": d, "reused": false]
+        }
+        await reply()
+        press("shift-cmd-ret")
+        #expect(controller.activeChoice == nil)
+        #expect(model.flash == L("This conversation stays where it is: nothing to choose · ⌘↩ to send"))
+        #expect(core.calls("send_draft").isEmpty)
     }
 
     @Test func tooLateToCancel() async {

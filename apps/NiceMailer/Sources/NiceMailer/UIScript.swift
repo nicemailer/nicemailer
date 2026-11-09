@@ -158,7 +158,7 @@ extension View {
 ///
 /// | Command | Effect |
 /// | --- | --- |
-/// | `key K` | one key: a character, or `esc` `ret` `del` `up` `down` `space` `shift-space` `shift-up` `shift-down` `cmd-ret`, or `ctrl-X` / `cmd-X` |
+/// | `key K` | one key: a character, or `esc` `ret` `del` `up` `down` `space` `shift-space` `shift-up` `shift-down` `cmd-ret` `shift-cmd-ret`, or `ctrl-X` / `cmd-X` |
 /// | `type TEXT` | each character of TEXT as a key |
 /// | `clipboard TEXT` | puts TEXT (`\n` for a line break) on the pasteboard ⌘V reads |
 /// | `click TARGET [cmd] [shift]` | a mouse click on a row |
@@ -310,6 +310,7 @@ private final class Runner {
         case "shift-up": chars = "\u{F700}"; code = KeyCode.up; mods = .shift
         case "shift-down": chars = "\u{F701}"; code = KeyCode.down; mods = .shift
         case "cmd-ret": chars = "\r"; code = KeyCode.returnKey; mods = .command
+        case "shift-cmd-ret": chars = "\r"; code = KeyCode.returnKey; mods = [.command, .shift]
         // Editing keys of a typed line (`LineEdit`).
         case "left": chars = "\u{F702}"; code = KeyCode.left; mods = .function
         case "right": chars = "\u{F703}"; code = KeyCode.right; mods = .function
@@ -619,7 +620,8 @@ private final class Runner {
             "compose_to": m.composer.map { $0.draft.to.map(\.addr).joined(separator: ",") } ?? "",
             "compose_cc": m.composer.map { $0.draft.cc.map(\.addr).joined(separator: ",") } ?? "",
             "compose_subject": m.composer?.draft.subject ?? "",
-            "compose_after": m.composer?.draft.afterSendTarget ?? "",
+            "compose_after": m.composer.flatMap { Compose.afterSend($0.draft) } ?? "",
+            "compose_after_line": m.composer.flatMap { Compose.afterSendLine($0.draft) } ?? "",
             "compose_text": m.composer.map { c in
                 let t = c.buffer.text
                 let i = t.index(t.startIndex, offsetBy: c.buffer.cursor)

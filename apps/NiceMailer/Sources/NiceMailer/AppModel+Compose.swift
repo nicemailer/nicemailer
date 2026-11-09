@@ -114,15 +114,18 @@ extension AppModel {
     }
 
     /// ⌘↩: the last text is sent with the draft; the mail leaves after the
-    /// undo delay, which `z` can cancel.
-    func sendComposer() async {
+    /// undo delay, which `z` can cancel. `afterSend`: the filing chosen with
+    /// ⇧⌘↩ (`Compose.sendChoices`); nil keeps the one chosen earlier, else
+    /// the core's preselection.
+    func sendComposer(afterSend: String? = nil) async {
         guard let client = core, composer != nil else { return }
         composeSaveTask?.cancel()
         await composeSaving?.value
         guard let c = composer else { return }
         do {
-            let r: SendDraftResult = try await client.call(
-                "send_draft", ["id": c.draft.id, "revision": c.revision, "body": c.buffer.text])
+            var params: [String: Any] = ["id": c.draft.id, "revision": c.revision, "body": c.buffer.text]
+            if let afterSend { params["after_send"] = afterSend }
+            let r: SendDraftResult = try await client.call("send_draft", params)
             composer = nil
             sending[c.draft.id] = c.draft.subject
             pushUndo(UndoStep(tokens: [], label: L("sending of the reply"), cancelSend: c.draft.id))

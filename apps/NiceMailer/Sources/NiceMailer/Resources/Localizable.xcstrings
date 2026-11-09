@@ -399,6 +399,16 @@
         }
       }
     },
+    "After sending: stays where it is": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Après l'envoi : reste en place"
+          }
+        }
+      }
+    },
     "Already in %@": {
       "localizations": {
         "fr": {
@@ -1309,6 +1319,16 @@
         }
       }
     },
+    "Send, then file the conversation in": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Envoyer, puis ranger la conversation dans"
+          }
+        }
+      }
+    },
     "Sending cancelled: the reply is open again": {
       "localizations": {
         "fr": {
@@ -1565,6 +1585,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Thème"
+          }
+        }
+      }
+    },
+    "This conversation stays where it is: nothing to choose · ⌘↩ to send": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cette conversation reste en place : rien à choisir · ⌘↩ pour envoyer"
           }
         }
       }
@@ -1999,6 +2029,16 @@
         }
       }
     },
+    "cancel: back to the reply": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "annuler : revenir à la réponse"
+          }
+        }
+      }
+    },
     "cancel: keep the current mailbox": {
       "localizations": {
         "fr": {
@@ -2297,6 +2337,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "7 derniers jours"
+          }
+        }
+      }
+    },
+    "leave it where it is (trial)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "la laisser en place (essai)"
           }
         }
       }
@@ -3182,12 +3232,12 @@
         }
       }
     },
-    "⌘↩ send · Esc keep · ⌘⌫ abandon": {
+    "⌘↩ send · ⇧⌘↩ send then… · Esc keep · ⌘⌫ abandon": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "⌘↩ envoyer · Échap garder · ⌘⌫ abandonner"
+            "value": "⌘↩ envoyer · ⇧⌘↩ envoyer puis… · Échap garder · ⌘⌫ abandonner"
           }
         }
       }

@@ -22,8 +22,12 @@ struct DraftView: Decodable, Equatable {
     let state: String
     let replyTo: Int?
     let threadId: Int?
-    /// Where the conversation goes once the mail is sent; nil: it stays.
+    /// Where the conversation goes once the mail is sent, as preselected
+    /// by the core; nil: it stays, and no filing is offered.
     let afterSendTarget: String?
+    /// The filing the user chose with ⇧⌘↩ (`archive`, `waiting`, `todo` or
+    /// `stay`), which wins over the preselection; nil: none chosen.
+    let afterSend: String?
     /// When a draft being sent leaves, Unix seconds.
     let sendAt: Int?
 }
@@ -122,10 +126,41 @@ enum Compose {
         return shown.joined(separator: ", ")
     }
 
-    /// The line "After sending: Archive", or nil when the conversation
-    /// stays where it is.
-    static func afterSendLine(_ target: String?) -> String? {
-        target.map { L("After sending: %@", Role.name($0)) }
+    /// The filing that will apply: the one chosen, else the preselection.
+    /// Nil when the conversation stays where it is, because the core offers
+    /// no filing for it (it is not in the Inbox, Todo or Waiting) or because
+    /// the user chose `stay`.
+    static func afterSend(_ d: DraftView) -> String? {
+        guard d.afterSendTarget != nil else { return nil }
+        let chosen = d.afterSend ?? d.afterSendTarget
+        return chosen == "stay" ? nil : chosen
+    }
+
+    /// The line "After sending: Archive", "After sending: stays where it
+    /// is" when the user chose to leave it, or nil when no filing applies.
+    static func afterSendLine(_ d: DraftView) -> String? {
+        guard d.afterSendTarget != nil else { return nil }
+        if d.afterSend == "stay" { return L("After sending: stays where it is") }
+        return afterSend(d).map { L("After sending: %@", Role.name($0)) }
+    }
+
+    /// The answers of ⇧⌘↩ "Send, then…" (`reponse.md`, section 8): the
+    /// three filings of `dossiers.md`, then the trial option `stay`, shown
+    /// only here. `current` marks the one ⌘↩ would apply.
+    struct SendChoice: Equatable {
+        let key: String
+        /// What `send_draft` receives as `after_send`.
+        let afterSend: String
+        let label: String
+        let current: Bool
+    }
+
+    static func sendChoices(_ d: DraftView) -> [SendChoice] {
+        let current = d.afterSend ?? d.afterSendTarget
+        return [("a", "archive"), ("w", "waiting"), ("t", "todo"), ("s", "stay")].map { key, value in
+            let label = value == "stay" ? L("leave it where it is (trial)") : Role.name(value)
+            return SendChoice(key: key, afterSend: value, label: label, current: value == current)
+        }
     }
 
     /// The status bar while a mail waits for its undo delay.

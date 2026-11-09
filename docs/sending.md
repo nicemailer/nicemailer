@@ -9,6 +9,7 @@ How a reply is written in the app and sent by the core. The rules are those of `
 | `r` | a mail | reply to all to the mail under the reader's cursor (`ctrl-j` / `ctrl-k` move it); if a reply to that mail was started, it is resumed |
 | `R`, `f` | a mail | reply to the sender only, forward: not available yet |
 | ⌘↩ | the reply | send, after the undo delay (5 s); the status bar says "Sending in 5 s · z to cancel" |
+| ⇧⌘↩ | the reply | "Send, then file the conversation in": `a` Archive, `w` Waiting, `t` Todo, `s` leave it where it is (trial); the key (or a click) sends, Escape goes back to the text |
 | Escape | the reply | back to the mail; the reply goes to Drafts (here and on the server), and `r` on the mail, or `r` / Return on the draft in Drafts, reopens it |
 | ⌘⌫ | the reply | abandon the reply; `z` gives it back with its text |
 | `z` | after ⌘↩ | during the delay: the mail does not leave, and the reply opens again; once sent: undoes the filing of the conversation (not the sending) |
@@ -19,11 +20,20 @@ While the reply is open every key is text: letters, Return, Delete (⌥ a word),
 
 As in any macOS text view, **Shift with any of these moves selects** (⇧←, ⇧⌥→ a word, ⇧⌘← to the start of the line, ⇧↓, ⇧⌘↓ to the end of the text…), as does a Shift-click; ⌘A selects everything. The selection is highlighted and the caret hidden. Typing or pasting replaces it, Delete removes it, ⌘C copies it, ⌘X cuts it; ← and → without Shift end it at its start or its end. Selecting by dragging the mouse is not there yet.
 
-**Other apps** that work on the selected text of the front app (Kerlig, a grammar checker, the Services menu) see the reply as any macOS text: its text view is the window's focused element, its selection is the reply's, and what the app writes back (through the accessibility API, a Service, or ⌘V) replaces the selection as if typed, and is saved. The view is not editable by AppKit (the keys stay the controller's): it hands what it receives to `GeekController.replaceComposeSelection`. ↑ and ↓ follow the lines as drawn, so they move inside a long wrapped paragraph. The recipients, the subject and the filing are not editable in v1.
+**Other apps** that work on the selected text of the front app (Kerlig, a grammar checker, the Services menu) see the reply as any macOS text: its text view is the window's focused element, its selection is the reply's, and what the app writes back (through the accessibility API, a Service, or ⌘V) replaces the selection as if typed, and is saved. The view is not editable by AppKit (the keys stay the controller's): it hands what it receives to `GeekController.replaceComposeSelection`. ↑ and ↓ follow the lines as drawn, so they move inside a long wrapped paragraph. The recipients and the subject are not editable yet.
 
 The text is saved by the core after each half-second without typing: a crash loses at most that much.
 
 Then the status bar says what happened: "Sent · filed in Archive · z: undo the filing", "Sent, but the server refused: bad@x.fr (550 …)", or "Not sent: … · r on the mail to reopen the reply" (the draft is editable again, with its text).
+
+## Choosing the filing
+
+`⌘↩` files the conversation as the line "After sending: …" says: the core's preselection (`dossiers.md`, "Répondre à une conversation"). `⇧⌘↩` asks first, in a small menu with the preselection marked:
+
+- `a` Archive, `w` Waiting, `t` Todo;
+- `s` leave it where it is, a **trial** option shown only in this menu: the mail is sent and its recipients get their decision, but the conversation is not touched at all: nothing moves, and its return mark ("↩ Todo") stays.
+
+The choice is sent as `after_send` and saved in the draft (`draft.after_send`): `z` during the undo delay gives the reply back with it ("After sending: Waiting", or "stays where it is"), and the next `⌘↩` applies it. It wins over the preselection, which is worked out again when the server accepts the mail; but nothing moves a conversation that is no longer in the Inbox, Todo or Waiting by then. Where the core offers no filing (a conversation in Archive, Newsletter…), `⇧⌘↩` says so and sends nothing.
 
 ## What the core prepares
 
@@ -92,7 +102,7 @@ The app, the TUI and the CLI. An agent (MCP) or the web server get `FORBIDDEN`: 
 | `open_draft`, `close_draft` | `id` | `DraftView`, nothing |
 | `update_draft` | `id`, `revision`, `body` | `{revision}`; `REVISION_CONFLICT` (1012), `DRAFT_SENDING` (1013) |
 | `discard_draft` | `id` | the `DraftView` abandoned |
-| `send_draft` | `id`, `revision`, `body`, `after_send?` (`archive`, `waiting`, `todo`) | `{send_at}`; `CANNOT_SEND` (1015) |
+| `send_draft` | `id`, `revision`, `body`, `after_send?` (`archive`, `waiting`, `todo`, `stay`; saved in the draft; absent: the one saved, else the preselection) | `{send_at}`; `CANNOT_SEND` (1015) |
 | `cancel_send` | `id` | `DraftView`, editable; `SEND_ALREADY_STARTED` (1014) |
 
 `create_draft` returns `BODY_PENDING` (1016) when the mail's body is not downloaded yet; the core asks for it first. Events: `DraftSent {draft_id, message_id, thread_id, moved_to, undo}`, `SendFailed {draft_id, reply_to, reason}`, `SendPartial {draft_id, refused}`.
@@ -109,9 +119,9 @@ The app, the TUI and the CLI. An agent (MCP) or the web server get `FORBIDDEN`: 
 
 - `nm-core` (`compose.rs`): recipients, identity, subject, references, quotation, `format=flowed` read back as typed, MIME headers and encodings, header injection, dates, providers.
 - `nm-proto` (`smtp.rs`): a scripted server: PLAIN and LOGIN, refused login, no password without TLS, recipients refused in part or all, `SIZE`, `5xx` / `4xx` to the message, hostile addresses, broken servers, dot-stuffing.
-- `nm-store` (`tests/drafts.rs`): the draft prepared, reused, revisions, the undo delay and `cancel_send`, `data_sent`, the acceptance in one transaction (Sent row, filing, decisions, undo), replay, the copy's UID and the attachment by the synchronization, a fresh Sent row kept by a pass, failures, partial refusals, restore, repair.
+- `nm-store` (`tests/drafts.rs`): the draft prepared, reused, revisions, the filing chosen (kept after `cancel_send`, winning over the preselection, `stay` touching nothing), the undo delay and `cancel_send`, `data_sent`, the acceptance in one transaction (Sent row, filing, decisions, undo), replay, the copy's UID and the attachment by the synchronization, a fresh Sent row kept by a pass, failures, partial refusals, restore, repair.
 - `nm-daemon` (`tests/send_rpc.rs`, `make imap-test`): the real core against Dovecot and Mailpit: a reply sent, copied to Sent, filed on the server, nothing twice after a pass, undo, on both servers; a send cancelled in time; a refused recipient; a refused login then the SMTP password saved; an agent refused.
-- `nm-daemon` (`tests/fake_send_rpc.rs`): an archive account refused, then pretending to send with `NICEMAILER_FAKE_NETWORK`.
+- `nm-daemon` (`tests/fake_send_rpc.rs`): an archive account refused, then pretending to send with `NICEMAILER_FAKE_NETWORK`; `after_send` through the socket (`stay` saved, `inbox` refused).
 - App: `TextBufferTests`, `ComposeTests` (pure rules, and the keys through `GeekController` against `FakeCore`), and `UITests/compose.uiscript`.
 
 ## Pretending to send

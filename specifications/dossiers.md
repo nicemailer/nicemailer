@@ -138,7 +138,7 @@ La règle de rangement s'applique donc aussi depuis la Quarantine : c'est elle q
 
 ### Répondre à une conversation
 
-Répondre fait souvent avancer le traitement d'une conversation, mais le noyau ne peut pas deviner vers quoi : une réponse peut clore l'échange (« merci, c'est noté »), relancer l'attente (une nouvelle question) ou laisser un travail à faire. L'écran de réponse demande donc **où ranger la conversation après l'envoi** (la v1 de `reponse.md` affiche la présélection sans permettre de la changer), parmi trois cibles : **Archive**, **Waiting** ou **Todo**. La cible la plus probable est présélectionnée, et l'utilisateur n'a rien à faire dans le cas courant.
+Répondre fait souvent avancer le traitement d'une conversation, mais le noyau ne peut pas deviner vers quoi : une réponse peut clore l'échange (« merci, c'est noté »), relancer l'attente (une nouvelle question) ou laisser un travail à faire. L'écran de réponse demande donc **où ranger la conversation après l'envoi** (`⌘↩` applique la présélection, `⇧⌘↩` la fait choisir, `reponse.md` section 8), parmi trois cibles : **Archive**, **Waiting** ou **Todo**. La cible la plus probable est présélectionnée, et l'utilisateur n'a rien à faire dans le cas courant.
 
 | Dossier de la conversation | Cible présélectionnée | Raison |
 | --- | --- | --- |
@@ -147,6 +147,8 @@ Répondre fait souvent avancer le traitement d'une conversation, mais le noyau n
 | Inbox, revenue de Todo (`$NmWasTodo`) | Todo | Le travail existait avant le nouveau mail ; une réponse le termine rarement |
 | Todo | Archive | Répondre depuis Todo, c'est en général faire ce qui était à faire |
 | Waiting | Waiting | Répondre depuis Waiting est une relance : on attend toujours |
+
+Une quatrième option, à l'essai, « laisser en place », envoie sans toucher à la conversation (`reponse.md`, section 8).
 
 Le choix n'est pas proposé pour les autres dossiers, où la conversation reste en place :
 
