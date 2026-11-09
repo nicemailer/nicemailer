@@ -2,7 +2,8 @@
 //! base of archive accounts imported from mbox, without any server in
 //! `accounts.toml`, a reply can be written and "sent": recorded in Sent as
 //! after a real SMTP server, without any network. Without the variable, an
-//! archive account cannot answer.
+//! archive account cannot answer by itself: an account of `accounts.toml`
+//! that can send answers for it.
 
 mod common;
 
@@ -184,4 +185,63 @@ fn the_kinds_of_draft_go_through_the_socket() {
     c.call("close_draft", json!({"id": n["id"]})).unwrap();
     let e = c.call("open_draft", json!({"id": n["id"]})).unwrap_err();
     assert_eq!(e["code"], 1001, "{e}");
+}
+
+/// An account of `accounts.toml` that can send (`[smtp]`), on servers that
+/// do not answer: nothing is ever sent, only queued.
+const WORK: &str = "[accounts.work]\nemail = \"me@work.example\"\ndisplay_name = \"Me at work\"\n\
+                    [[accounts.work.identities]]\nemail = \"sales@work.example\"\nname = \"Sales\"\n\
+                    [accounts.work.imap]\nhost = \"127.0.0.1\"\nport = 9\n\
+                    [accounts.work.smtp]\nhost = \"127.0.0.1\"\nport = 9\n";
+
+/// A mail of an archive account is answered from an account that can send
+/// (`reponse.md`, section 4 ter), and the sender of any draft can be
+/// chosen among the addresses of `list_senders`; an account that cannot
+/// send, or an address that is not the account's, is refused.
+#[test]
+fn an_archive_mail_is_answered_from_an_account_that_can_send() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("config.toml"), "[compose]\nundo_send_seconds = 30\n").unwrap();
+    std::fs::write(dir.path().join("accounts.toml"), WORK).unwrap();
+    let _core = start(dir.path());
+    let mut c = Client::connect_as(dir.path(), "app");
+    import(dir.path(), &mut c);
+    // Only `work` can send: the archive account is not offered.
+    let senders = c.call("list_senders", json!({})).unwrap()["items"].clone();
+    let work = senders[0]["account_id"].as_i64().unwrap();
+    assert_eq!(
+        senders,
+        json!([
+            {"account_id": work, "account": "work", "addr": "me@work.example", "name": "Me at work"},
+            {"account_id": work, "account": "work", "addr": "sales@work.example", "name": "Sales"},
+        ])
+    );
+    let m = message(dir.path());
+    let d = c.call("create_draft", json!({"kind": "reply_sender", "reply_to": m, "quote_header": "x"})).unwrap()["draft"].clone();
+    let hey = d["account_id"].as_i64().unwrap();
+    assert_ne!(hey, work);
+    assert_eq!(d["send_account_id"], work);
+    assert_eq!(d["from"], json!({"addr": "me@work.example", "name": "Me at work"}));
+    assert_eq!(d["to"][0]["addr"], "alice@a.example");
+    // Another address of `work`: saved, with its name from the file.
+    let r = c.call("update_draft", json!({"id": d["id"], "revision": d["revision"], "from": {"account_id": work, "addr": "SALES@work.example"}})).unwrap();
+    let v = c.call("open_draft", json!({"id": d["id"]})).unwrap();
+    assert_eq!(v["from"], json!({"addr": "sales@work.example", "name": "Sales"}));
+    // Refused: the archive account, an address `work` does not have.
+    let e = c.call("update_draft", json!({"id": d["id"], "revision": r["revision"], "from": {"account_id": hey, "addr": "me@hey.example"}})).unwrap_err();
+    assert_eq!(e["code"], 1015, "{e}");
+    let e = c.call("update_draft", json!({"id": d["id"], "revision": r["revision"], "from": {"account_id": work, "addr": "boss@work.example"}})).unwrap_err();
+    assert_eq!(e["code"], -32602, "{e}");
+    // Sent: queued on `work`, the account that sends.
+    c.call("send_draft", json!({"id": d["id"], "revision": r["revision"], "body": "Merci"})).unwrap();
+    let db = nm_store::rusqlite::Connection::open_with_flags(dir.path().join("nicemailer.db"), nm_store::rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+    let (account, from): (i64, String) = db
+        .query_row("SELECT account_id, json_extract(payload, '$.from') FROM pending_action WHERE kind = 'send'", [], |r| Ok((r.get(0)?, r.get(1)?)))
+        .unwrap();
+    assert_eq!((account, from.as_str()), (work, "sales@work.example"));
+    let v = c.call("cancel_send", json!({"id": d["id"]})).unwrap();
+    assert_eq!(v["state"], "editing");
+    // A new mail asked from the archive account: from `work`.
+    let n = c.call("create_draft", json!({"kind": "new", "account": hey})).unwrap()["draft"].clone();
+    assert_eq!((n["account_id"].as_i64(), n["from"]["addr"].as_str()), (Some(work), Some("me@work.example")));
 }

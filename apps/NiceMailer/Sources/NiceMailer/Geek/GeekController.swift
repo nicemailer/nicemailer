@@ -88,6 +88,9 @@ final class GeekController {
         /// ⇧⌘↩ in the reply: send it, then file the conversation where the
         /// key says (`reponse.md`, section 8). Escape goes back to the text.
         case sendThen
+        /// ⌥⌘F in the reply, or a click on "From": the address, and so the
+        /// account, it is sent from (`reponse.md`, section 4 ter).
+        case sendFrom
     }
 
     /// One row of a menu or a picker.
@@ -1557,6 +1560,11 @@ final class GeekController {
             Task { await model.chooseAttachments() }
             return true
         }
+        // ⌥⌘F: the address, and the account, the mail is sent from.
+        if command, option, event.charactersIgnoringModifiers?.lowercased() == "f" {
+            chooseSender()
+            return true
+        }
         // ⌥⌘B: the Bcc line, shown and focused (as in Mail).
         if command, option, event.charactersIgnoringModifiers?.lowercased() == "b" {
             model.composer?.showsBcc = true
@@ -2071,6 +2079,7 @@ final class GeekController {
         case .mailboxUpgrade(let u):
             L("The mailbox %@ uses an older data format (%lld; this NiceMailer uses %lld)", DataDirectory.displayName(u.url), u.from, u.to)
         case .sendThen: L("Send, then file the conversation in")
+        case .sendFrom: L("Send from")
         }
     }
 
@@ -2116,7 +2125,31 @@ final class GeekController {
             if let i = entries.firstIndex(where: { $0.key == "s" }) { entries[i].gapBefore = true }
             entries.append(Entry(key: "esc", label: L("cancel: back to the reply")) {})
             return entries
+        case .sendFrom:
+            guard let h = model.composer?.headers else { return [] }
+            var entries = Compose.senderChoices(model.senders, current: h).map { choice in
+                Entry(key: choice.key, label: choice.label, detail: choice.current ? "•" : nil) { [model] in
+                    model.chooseSender(choice.sender)
+                }
+            }
+            entries.append(Entry(key: "esc", label: L("cancel: back to the reply")) {})
+            return entries
         }
+    }
+
+    /// ⌥⌘F or a click on "From": the choice of the address to send from,
+    /// among those of every account that can send. With a single one,
+    /// there is nothing to choose, and the status bar says so.
+    func chooseSender() {
+        guard model.composer != nil else { return }
+        guard model.canChooseSender else {
+            model.flash = model.senders.isEmpty
+                ? L("No account can send: add an [smtp] server to one in accounts.toml")
+                : L("Only one address can send: %@", model.senders.map(Compose.senderLabel).joined())
+            return
+        }
+        choiceIndex = nil
+        overlay = .choice(.sendFrom)
     }
 
     private func decide(_ name: String, domain: Bool, target: String?) {

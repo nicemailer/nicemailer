@@ -135,6 +135,47 @@ struct ComposeRulesTests {
         #expect((p["bcc"] as? [[String: Any]])?.first?["addr"] as? String == "b@x.fr")
     }
 
+    /// "Send from" (`reponse.md`, section 4 ter): every address of every
+    /// account that can send, keyed 1 to 9, the current one marked; the
+    /// sender changed goes with the next save, with its account.
+    @Test func theSenderIsChosenAmongTheAccountsThatCanSend() throws {
+        let senders = try CoreClient.decoder.decode([SenderView].self, from: JSONSerialization.data(withJSONObject: Fixture.senders))
+        var c = Composer(draft: try draft(target: "archive", chosen: nil))
+        let choices = Compose.senderChoices(senders, current: c.headers)
+        #expect(choices.map(\.key) == ["1", "2", "3"])
+        #expect(choices.filter(\.current).map(\.sender.addr) == ["me@example.org"])
+        #expect(choices[1].label == "Me at work <me@work.example> · work")
+        #expect(choices[2].label == "sales@work.example · work")
+        #expect(Compose.fromLine(c.headers, senders: senders) == "Me <me@example.org> · perso")
+        #expect(Compose.fromLine(c.headers, senders: []) == "Me <me@example.org>")
+        c.headers.from = AddressView(addr: "sales@work.example", name: nil)
+        c.headers.sendAccountId = 2
+        #expect(c.isDirty)
+        let p = Compose.saveParams(c)
+        #expect(Set(p.keys) == ["id", "revision", "from"])
+        let from = try #require(p["from"] as? [String: Any])
+        #expect(from["account_id"] as? Int == 2)
+        #expect(from["addr"] as? String == "sales@work.example")
+        #expect(Compose.senderChoices(senders, current: c.headers).filter(\.current).map(\.key) == ["3"])
+    }
+
+    /// A reply the core started from another account than the mail's (it
+    /// cannot send) says so; a reply from its own account, or a new mail,
+    /// says nothing.
+    @Test func aReplyFromAnotherAccountSaysSo() throws {
+        let senders = try CoreClient.decoder.decode([SenderView].self, from: JSONSerialization.data(withJSONObject: Fixture.senders))
+        #expect(Compose.otherSenderFlash(try draft(target: "archive", chosen: nil), senders: senders) == nil)
+        var json = Fixture.draft(replyTo: 10)
+        json["account_id"] = 7
+        json["send_account_id"] = 2
+        json["from"] = ["addr": "me@work.example", "name": "Me at work"]
+        let d = try CoreClient.decoder.decode(DraftView.self, from: JSONSerialization.data(withJSONObject: json))
+        #expect(Compose.otherSenderFlash(d, senders: senders) == L("This account cannot send: from %@ · ⌥⌘F to change", "Me at work <me@work.example> · work"))
+        json["kind"] = "new"
+        let n = try CoreClient.decoder.decode(DraftView.self, from: JSONSerialization.data(withJSONObject: json))
+        #expect(Compose.otherSenderFlash(n, senders: senders) == nil)
+    }
+
     @Test func theLinesOfTheStatusBar() {
         #expect(Compose.sendingFlash(seconds: 5) == L("Sending in %lld s · z to cancel", 5))
         #expect(Compose.sendingFlash(seconds: 0) == L("Sending…"))
@@ -206,6 +247,7 @@ struct ComposeControllerTests {
         case "tab": chars = "\t"; code = KeyCode.tab
         case "shift-tab": chars = "\u{19}"; code = KeyCode.tab; mods = .shift
         case "alt-cmd-b": chars = "b"; code = 11; mods = [.command, .option]
+        case "alt-cmd-f": chars = "f"; code = 3; mods = [.command, .option]
         case "cmd-v": chars = "v"; mods = .command
         default:
             if name.hasPrefix("cmd-") { mods = .command; chars = String(name.dropFirst(4)) }
@@ -659,6 +701,63 @@ struct ComposeControllerTests {
         #expect(model.flash == L("Not sent: %@ · r on the mail to reopen the reply", "550 no such user"))
         model.draftEvent("SendPartial", ["draft_id": .int(903), "refused": .strings(["bad@x.fr (550 unknown)"])])
         #expect(model.flash == L("Sent, but the server refused: %@", "bad@x.fr (550 unknown)"))
+    }
+
+    /// ⌥⌘F: "Send from", the addresses of every account that can send;
+    /// a key chooses one, saved with the draft and sent with it. A click
+    /// on "From" opens the same choice; Escape leaves the sender as it was.
+    @Test func commandOptionFChoosesTheSender() async {
+        await reply()
+        #expect(await eventually { model.senders.count == 3 })
+        press("alt-cmd-f")
+        #expect(controller.activeChoice == .sendFrom)
+        let entries = controller.choiceEntries(.sendFrom)
+        #expect(entries.map(\.key) == ["1", "2", "3", "esc"])
+        #expect(entries.first?.detail == "•")
+        press("esc")
+        #expect(controller.activeChoice == nil)
+        #expect(model.composer?.headers.sendAccountId == 1)
+        controller.chooseSender()
+        press("2")
+        #expect(controller.activeChoice == nil)
+        #expect(model.composer?.headers.from.addr == "me@work.example")
+        #expect(model.composer?.headers.sendAccountId == 2)
+        #expect(model.flash == L("Sending from %@", "Me at work <me@work.example> · work"))
+        // Letters are text again.
+        type("x")
+        #expect(model.composer?.buffer.text.hasPrefix("x") == true)
+        press("cmd-ret")
+        #expect(await eventually { core.calls("send_draft").count == 1 })
+        let from = core.calls("update_draft").compactMap { $0["from"] as? [String: Any] }.last
+        #expect(from?["account_id"] as? Int == 2)
+        #expect(from?["addr"] as? String == "me@work.example")
+    }
+
+    /// A single address that can send: nothing to choose, the status bar
+    /// says which.
+    @Test func withOneSenderThereIsNothingToChoose() async {
+        core.handler = { method, params in
+            method == "list_senders" ? ["items": [Fixture.senders[0]]] : Fixture.answer(method, params)
+        }
+        await reply()
+        #expect(await eventually { model.senders.count == 1 })
+        press("alt-cmd-f")
+        #expect(controller.activeChoice == nil)
+        #expect(model.flash == L("Only one address can send: %@", "Me <me@example.org> · perso"))
+    }
+
+    /// `r` on a mail of an account that cannot send: the core chose another
+    /// account, and the status bar says from which.
+    @Test func aReplyFromAnotherAccountIsAnnounced() async {
+        core.handler = { method, params in
+            guard method == "create_draft" else { return Fixture.answer(method, params) }
+            var d = Fixture.draft(replyTo: params["reply_to"] as? Int ?? 10)
+            d["send_account_id"] = 2
+            d["from"] = ["addr": "me@work.example", "name": "Me at work"]
+            return ["draft": d, "reused": false]
+        }
+        await reply()
+        #expect(await eventually { model.flash == L("This account cannot send: from %@ · ⌥⌘F to change", "Me at work <me@work.example> · work") })
     }
 
     @Test func aMailThatCannotBeAnsweredSaysWhy() async {

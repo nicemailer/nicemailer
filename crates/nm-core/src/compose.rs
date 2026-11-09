@@ -6,7 +6,8 @@
 //!
 //! - who the reply goes to ([`reply_all`]) and from which address
 //!   ([`sender_identity`]), section 4, "Destinataires" and "Adresse
-//!   d'expédition";
+//!   d'expédition"; the account that sends for one that cannot
+//!   ([`choose_sender`]), section 4 ter;
 //! - the addresses typed or pasted in a recipient line
 //!   ([`parse_address_list`]), the recipients and the subject as edited
 //!   ([`clean_recipients`], [`clean_subject`]), section 6;
@@ -292,6 +293,22 @@ pub fn forward_body(header: &str, text: &str) -> String {
 pub fn sender_identity(identities: &[Mailbox], original: &Original) -> Mailbox {
     let addressed = |i: &&Mailbox| original.to.iter().chain(original.cc).any(|r| r.addr.trim().eq_ignore_ascii_case(&i.addr));
     identities.iter().find(addressed).or(identities.first()).cloned().unwrap_or_default()
+}
+
+/// The account that sends a reply or a forward of a mail whose own account
+/// cannot (an archive account, an account without `[smtp]`; `reponse.md`,
+/// section 4 ter): among `accounts` (each its identities, main address
+/// first), the first one with an identity among the recipients of the mail,
+/// with that identity; else the first account, from its main address.
+/// Returns its index in `accounts`; `None` when no account has an address.
+pub fn choose_sender(accounts: &[&[Mailbox]], original: &Original) -> Option<(usize, Mailbox)> {
+    let addressed = |i: &Mailbox| original.to.iter().chain(original.cc).any(|r| r.addr.trim().eq_ignore_ascii_case(&i.addr));
+    accounts
+        .iter()
+        .enumerate()
+        .find_map(|(n, ids)| ids.iter().find(|i| addressed(i)).map(|m| (n, m.clone())))
+        .or_else(|| accounts.first().and_then(|ids| ids.first()).map(|m| (0, m.clone())))
+        .filter(|(_, m)| !m.addr.is_empty())
 }
 
 /// The subject of the reply: `Re: ` and the subject, unless it already
@@ -1061,6 +1078,25 @@ mod tests {
         let o = Original { from: Some(&from), reply_to: &[], to: &to, cc: &[] };
         assert_eq!(sender_identity(&ids, &o).addr, "me@x.fr");
         assert_eq!(sender_identity(&[], &o), Mailbox::default());
+    }
+
+    #[test]
+    fn the_account_the_mail_was_sent_to_sends_for_an_account_that_cannot() {
+        let perso = [Mailbox::new("me@perso.fr", None)];
+        let work = [Mailbox::new("me@work.fr", Some("Me")), Mailbox::new("sales@work.fr", Some("Sales"))];
+        let from = mb("a@a.fr");
+        // Sent to an identity of the second account: that account, that identity.
+        let to = [mb("old@hey.fr")];
+        let cc = [mb("Sales@Work.fr")];
+        let o = Original { from: Some(&from), reply_to: &[], to: &to, cc: &cc };
+        let (i, m) = choose_sender(&[&perso, &work], &o).unwrap();
+        assert_eq!((i, m.addr.as_str(), m.name.as_deref()), (1, "sales@work.fr", Some("Sales")));
+        // Sent to none of them: the first account, its main address.
+        let o = Original { from: Some(&from), reply_to: &[], to: &to, cc: &[] };
+        assert_eq!(choose_sender(&[&perso, &work], &o).map(|(i, m)| (i, m.addr)), Some((0, "me@perso.fr".to_string())));
+        // No account, or one without address: nobody.
+        assert_eq!(choose_sender(&[], &o), None);
+        assert_eq!(choose_sender(&[&[]], &o), None);
     }
 
     #[test]

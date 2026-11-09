@@ -11,7 +11,13 @@ import Foundation
 /// A draft, as the core gives it (`DraftView` of the contract).
 struct DraftView: Decodable, Equatable {
     let id: Int
+    /// The account of the draft: of the mail answered, whose conversation
+    /// and Drafts folder keep it.
     let accountId: Int
+    /// The account that sends it (its SMTP server, its Sent folder): the
+    /// draft's own, or another one when the draft's cannot send
+    /// (`reponse.md`, section 4 ter).
+    let sendAccountId: Int
     let from: AddressView
     let to: [AddressView]
     let cc: [AddressView]
@@ -86,6 +92,20 @@ struct SuggestRecipientsResult: Decodable {
     let items: [AddressView]
 }
 
+/// An address a mail can be sent from (`list_senders`): every account that
+/// can send, each with its main address first, then its identities.
+struct SenderView: Decodable, Equatable {
+    let accountId: Int
+    /// The key of the account (`accounts.toml`).
+    let account: String
+    let addr: String
+    let name: String?
+}
+
+struct ListSendersResult: Decodable {
+    let items: [SenderView]
+}
+
 /// Where the keys go in the reply (`reponse.md`, section 6): a recipient
 /// line, the subject, or the text. Tab and ⇧Tab go from one to the next,
 /// in this order.
@@ -102,12 +122,17 @@ struct ComposeHeaders: Equatable {
     var cc: [AddressView]
     var bcc: [AddressView]
     var subject: String
+    /// Who sends: the address, and the account it belongs to.
+    var from: AddressView
+    var sendAccountId: Int
 
     init(_ d: DraftView) {
         to = d.to
         cc = d.cc
         bcc = d.bcc
         subject = d.subject
+        from = d.from
+        sendAccountId = d.sendAccountId
     }
 
     subscript(field: ComposeField) -> [AddressView] {
@@ -299,7 +324,48 @@ enum Compose {
         if h.cc != s.cc { p["cc"] = list(h.cc) }
         if h.bcc != s.bcc { p["bcc"] = list(h.bcc) }
         if h.subject != s.subject { p["subject"] = h.subject }
+        if h.from != s.from || h.sendAccountId != s.sendAccountId {
+            p["from"] = ["account_id": h.sendAccountId, "addr": h.from.addr]
+        }
         return p
+    }
+
+    /// The answers of ⌥⌘F "Send from" (`reponse.md`, section 4 ter): every
+    /// address of `list_senders`, keyed 1 to 9 then by letter, the current
+    /// one marked.
+    struct SenderChoice: Equatable {
+        let key: String
+        let sender: SenderView
+        let label: String
+        let current: Bool
+    }
+
+    static func senderChoices(_ senders: [SenderView], current h: ComposeHeaders) -> [SenderChoice] {
+        let keys = Array("123456789abcdefghijklmnopqrstuvwxy").map(String.init)
+        return zip(keys, senders).map { key, s in
+            let current = s.accountId == h.sendAccountId && s.addr.caseInsensitiveCompare(h.from.addr) == .orderedSame
+            return SenderChoice(key: key, sender: s, label: senderLabel(s), current: current)
+        }
+    }
+
+    /// An address to send from, with its account: "Me <me@x.fr> · perso".
+    static func senderLabel(_ s: SenderView) -> String {
+        label(AddressView(addr: s.addr, name: s.name)) + " · " + s.account
+    }
+
+    /// The line "From" of the reply: the address, and the key of the
+    /// account that sends when the app knows it.
+    static func fromLine(_ h: ComposeHeaders, senders: [SenderView]) -> String {
+        let account = senders.first { $0.accountId == h.sendAccountId }?.account
+        return label(h.from) + (account.map { " · " + $0 } ?? "")
+    }
+
+    /// The status bar when a reply starts from another account than the
+    /// mail's, which cannot send: which one sends, and how to change it.
+    static func otherSenderFlash(_ d: DraftView, senders: [SenderView]) -> String? {
+        guard d.sendAccountId != d.accountId, d.kind != "new" else { return nil }
+        let h = ComposeHeaders(d)
+        return L("This account cannot send: from %@ · ⌥⌘F to change", fromLine(h, senders: senders))
     }
 
     /// Whether a key typed in a recipient line ends the address: `,` and

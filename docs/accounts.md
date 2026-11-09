@@ -95,7 +95,7 @@ Then, once the IMAP server accepted the password, `test_smtp` tries the SMTP ser
 | `no_login` | the server answered but offers no login: a relay, not a server to send from | no |
 | `failed` | no connection, TLS refused, login refused: the reason is printed | no |
 
-Nothing is sent: the connection ends with `QUIT`. When no server works, the account is created without `[smtp]` and the command says it cannot send until one is added.
+Nothing is sent: the connection ends with `QUIT`. When no server works, the account is created without `[smtp]` and the command says it cannot send until one is added; meanwhile its mails are answered from another account that can ([sending.md](sending.md), "Choosing the sender").
 
 ### The archiving on the server
 

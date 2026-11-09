@@ -245,6 +245,47 @@ fn a_reply_goes_out_and_files_its_conversation_minimal() {
     a_reply_goes_out_and_files_its_conversation(MINIMAL);
 }
 
+/// A reply to a mail of an archive account (an mbox import, no server)
+/// leaves from the IMAP account that can send (`reponse.md`, section 4
+/// ter): its address in From, through its SMTP server, copied to its Sent
+/// folder on the server; the archive account keeps nothing of it but the
+/// mail answered.
+#[test]
+#[ignore]
+fn a_mail_of_an_archive_account_is_answered_from_the_imap_account() {
+    let dir = tempfile::tempdir().unwrap();
+    let user = new_user();
+    let mut phone = Phone::open(FULL, &user);
+    phone.create("Sent");
+    let (_core, mut c) = core(dir.path(), FULL, &user, &starttls(), 1);
+    let mbox = dir.path().join("old.mbox");
+    std::fs::write(
+        &mbox,
+        "From a@x Tue Jun 23 19:20:56 2020\nFrom: Alice <alice@example.com>\nTo: old@hey.example\n\
+         Subject: Ancien devis\nMessage-ID: <arch1@test.nicemailer>\n\nBonjour.\n",
+    )
+    .unwrap();
+    c.call("import_mbox", json!({"path": mbox.to_str().unwrap(), "account": "hey", "address": "old@hey.example"})).unwrap();
+    c.event("ImportFinished", 30);
+    let m = message(dir.path(), "arch1");
+    let d = c.call("create_draft", json!({"reply_to": m, "quote_header": "x"})).unwrap()["draft"].clone();
+    assert_eq!(d["from"]["addr"], format!("{user}@example.com"));
+    assert_ne!(d["send_account_id"], d["account_id"]);
+    c.call("send_draft", json!({"id": d["id"], "revision": d["revision"], "body": "Toujours valable ?"})).unwrap();
+    let sent = c.event("DraftSent", 60);
+    let (hdr, account): (String, i64) = db(dir.path())
+        .query_row("SELECT message_id_hdr, account_id FROM message WHERE id = ?1", [sent["message_id"].as_i64().unwrap()], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })
+        .unwrap();
+    assert_eq!(account, d["send_account_id"].as_i64().unwrap());
+    let got = received(SMTP_API, &hdr);
+    assert_eq!(got.len(), 1, "{got:?}");
+    assert!(got[0].contains(&format!("From: Test User <{user}@example.com>")), "{}", got[0]);
+    assert!(got[0].contains("In-Reply-To: <arch1@test.nicemailer>"), "{}", got[0]);
+    wait_until("the copy in Sent", 30, || phone.find("Sent", &hdr).len() == 1);
+}
+
 #[test]
 #[ignore]
 fn a_send_cancelled_in_time_never_leaves() {

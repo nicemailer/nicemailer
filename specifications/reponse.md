@@ -23,15 +23,17 @@ Statut : validé pour la v1 (7 novembre 2026). Cette spécification décrit la p
 | Envoi par le spool, délai d'annulation de 5 s ; pièces jointes (ajoutées en novembre 2026, `brouillons.md` section 7) | Signature |
 | Copie dans Sent | Commande CLI `nicemailer reply` |
 | Écrire à quelqu'un vaut décision Inbox | |
+| Choix du compte d'envoi pour tout mail ; réponse depuis un autre compte à un mail d'un compte qui ne peut pas envoyer (ajoutés en novembre 2026, section 4 ter) | |
 
 ## 3. Le mail auquel on répond
 
 `r` répond au **mail sous le curseur** du lecteur. À l'ouverture d'une conversation, c'est le dernier mail reçu, pas un mail de l'utilisateur. Dans la liste, sans lecteur ouvert, `r` répond au mail que le lecteur aurait mis en évidence.
 
+Un mail d'un compte qui ne peut pas envoyer (compte d'archive importé d'un mbox, compte sans serveur SMTP dans `accounts.toml`, compte en lecture seule) reçoit sa réponse d'un autre compte (section 4 ter).
+
 `r` ne fait rien (message dans la barre d'état) quand :
 
-- le compte n'a pas de serveur SMTP dans `accounts.toml`, ou est en lecture seule (`read_only`) ;
-- le compte est un compte d'archive (import mbox) ;
+- aucun compte ne peut envoyer ;
 - le mail est un brouillon, ou n'a pas encore de corps téléchargé (le corps est demandé en priorité, `r` fonctionne dès qu'il est arrivé).
 
 **Brouillon existant.** S'il existe déjà un brouillon de réponse au même mail, `r` le rouvre au lieu d'en créer un second.
@@ -83,6 +85,16 @@ La citation fait partie du texte éditable : l'utilisateur peut la raccourcir ou
 - **Échap avec un texte qui n'est pas une adresse** dans une ligne de destinataires laisse le brouillon ouvert, pour corriger plutôt que perdre.
 - `z` après `⌘⌫` recrée un transfert ou un nouveau mail avec son texte, comme une réponse.
 
+## 4 ter. Le compte d'envoi (ajouté en novembre 2026)
+
+**Tout mail peut partir de n'importe quel compte actif**, c'est-à-dire d'un compte qui peut envoyer : déclaré dans `accounts.toml`, avec `[smtp]`, pas en lecture seule (avec `NICEMAILER_FAKE_NETWORK`, aussi les comptes que le fichier ne déclare pas). Le choix porte sur une adresse : l'adresse principale d'un compte ou l'une de ses identités.
+
+- **Choisir.** Dans la zone de réponse, `⌥⌘F` ou un clic sur la ligne « De » ouvre « Envoyer depuis » : toutes les adresses des comptes qui peuvent envoyer, compte par compte dans l'ordre des comptes, l'adresse principale puis les identités, avec la clé du compte (« Moi <moi@x.fr> · perso »). Les touches `1` à `9` puis les lettres choisissent, un clic aussi ; l'adresse actuelle est marquée ; Échap revient au texte. Avec une seule adresse, rien à choisir : la barre d'état le dit.
+- **Enregistré dans le brouillon.** Le choix part avec la pause de frappe suivante (`update_draft` avec `from`) ; le noyau vérifie que le compte peut envoyer et que l'adresse est la sienne, et reprend le nom que lui donne `accounts.toml`. Il est gardé par Échap, par l'annulation d'un envoi (`z`), et rouvert par `r`.
+- **Le mail d'un compte qui ne peut pas envoyer.** `r`, `R` et `f` ne sont plus refusés : le noyau prépare la réponse depuis le premier compte, dans l'ordre des comptes, dont une adresse figure parmi les destinataires du mail (To, puis Cc), avec cette adresse ; à défaut, depuis le premier compte qui peut envoyer, avec son adresse principale (`compose::choose_sender`). La barre d'état le dit : « Ce compte ne peut pas envoyer : depuis moi@travail.fr · travail · ⌥⌘F pour changer ». `c` dans la vue d'un tel compte écrit depuis le premier compte qui peut envoyer.
+- **Où vont les choses.** Le brouillon reste dans le compte du mail auquel il répond : sa conversation, sa ligne de Drafts, sa copie dans le Drafts de ce serveur s'il en a un. Le compte qui envoie est noté dans `draft.send_account_id` (NULL quand c'est celui du brouillon). À l'envoi, l'action `send` est mise en file sur le compte qui envoie : son serveur SMTP envoie, le mail devient une ligne de son dossier Sent et est copié dans le Sent de son serveur (section 9). La conversation à laquelle on répond est rangée dans son propre compte, selon la section 8 (un mail d'archive est dans Archive : il y reste). Les adresses des deux comptes sont retirées des destinataires.
+- Le `Message-ID` du brouillon, formé sur l'adresse d'expédition de départ, ne change pas avec l'expéditeur : ses copies dans Drafts sont retrouvées par lui.
+
 ## 5. Brouillon (v1)
 
 La v1 applique la section 4 de `brouillons.md` sans le serveur :
@@ -99,7 +111,7 @@ La v1 applique la section 4 de `brouillons.md` sans le serveur :
 
 La zone de réponse **remplace le lecteur**, dans la même fenêtre. De haut en bas :
 
-1. **De** : adresse d'expédition, non modifiable.
+1. **De** : adresse d'expédition, suivie de la clé du compte qui envoie ; modifiable par `⌥⌘F` ou un clic (section 4 ter).
 2. **À**, **Cc** et **Cci** : une étiquette par adresse, qui passent à la ligne quand la largeur est remplie. Cci n'est affichée que si elle a des adresses ou si `⌥⌘B` l'a ouverte.
 3. **Objet**, modifiable.
 4. **Après l'envoi** : la cible du rangement (« Après l'envoi : Archive »), discrète. Absente quand la conversation reste en place (section 8).
@@ -113,6 +125,7 @@ Raccourcis de la zone de réponse (contexte « edition » de `ui.md`) :
 | --- | --- |
 | `⌘↩` | Envoyer, avec le rangement affiché |
 | `⇧⌘↩` | Choisir le rangement, puis envoyer (section 8) |
+| `⌥⌘F` | Choisir l'adresse, donc le compte, d'envoi (section 4 ter) |
 | `Échap` | Revenir au mail, garder le brouillon |
 | `⌘⌫` | Abandonner le brouillon |
 
@@ -153,7 +166,7 @@ Le délai est un réglage (`compose.undo_send_seconds`, de 0 à 30, 5 par défau
 
 ### SMTP
 
-- Le serveur est celui de `[accounts.<clé>.smtp]` (`configuration.md`). Sécurité `tls` (465), `starttls` (587) ou `none` (25, refusé hors `localhost`, comme pour IMAP).
+- Le serveur est celui de `[accounts.<clé>.smtp]` du compte qui envoie (`configuration.md`, section 4 ter). Sécurité `tls` (465), `starttls` (587) ou `none` (25, refusé hors `localhost`, comme pour IMAP).
 - **Mot de passe** : l'élément `smtp:<clé>` du trousseau s'il existe, lié au serveur SMTP comme l'est celui d'IMAP ; sinon le mot de passe IMAP du compte (`imap:<clé>`), **seulement si le serveur SMTP est le serveur IMAP ou du même domaine organisationnel** (`smtp.gmail.com` et `imap.gmail.com`). Sans cette règle, un `accounts.toml` modifié pour diriger `[smtp]` ailleurs enverrait le mot de passe IMAP à ce serveur. Ailleurs, l'envoi est refusé avec un message qui demande `nicemailer account password <clé> --smtp`.
 - **Identifiant** : `username` de la section `smtp`, sinon l'adresse du compte.
 - Authentification `AUTH PLAIN` ou `LOGIN`, après TLS seulement.
@@ -215,7 +228,7 @@ La règle est celle de `dossiers.md`, « Répondre à une conversation ». Le ch
 
 ## 9. Copie dans Sent
 
-Le mail envoyé est copié dans le dossier de rôle Sent du compte par `APPEND`, avec le flag `\Seen`, **sauf** quand le fournisseur fait lui-même cette copie, ce qui la doublerait :
+Le mail envoyé est copié dans le dossier de rôle Sent du compte qui envoie par `APPEND`, avec le flag `\Seen`, **sauf** quand le fournisseur fait lui-même cette copie, ce qui la doublerait :
 
 | Fournisseur | Détection |
 | --- | --- |
@@ -239,11 +252,12 @@ Ces décisions font partie de la même commande que le rangement : `z` après l'
 
 | Commande | Paramètres | Résultat |
 | --- | --- | --- |
-| `create_draft` | `kind` (`reply_all` par défaut, `reply_sender`, `forward`, `new`), `reply_to?` (id du mail répondu ou transféré, qui désigne aussi le compte), `account?` (nouveau mail), `quote_header` (pour un transfert, le bloc de présentation) (ligne d'introduction mise en forme par le client), `body?` (texte d'un brouillon abandonné à restaurer) | `{draft, reused, warning}` (`warning` : fichiers non repris d'un transfert) ; si un brouillon de réponse (ou de transfert) à ce mail existe, c'est lui (`reused: true`) ; `BODY_PENDING` si le corps du mail n'est pas encore téléchargé (il est demandé en priorité), `CANNOT_SEND` pour un compte qui ne peut pas envoyer |
+| `create_draft` | `kind` (`reply_all` par défaut, `reply_sender`, `forward`, `new`), `reply_to?` (id du mail répondu ou transféré, qui désigne aussi le compte, ou un autre compte s'il ne peut pas envoyer), `account?` (nouveau mail ; à défaut, ou s'il ne peut pas envoyer, le premier compte qui peut), `quote_header` (pour un transfert, le bloc de présentation) (ligne d'introduction mise en forme par le client), `body?` (texte d'un brouillon abandonné à restaurer) | `{draft, reused, warning}` (`warning` : fichiers non repris d'un transfert) ; si un brouillon de réponse (ou de transfert) à ce mail existe, c'est lui (`reused: true`) ; `BODY_PENDING` si le corps du mail n'est pas encore téléchargé (il est demandé en priorité), `CANNOT_SEND` pour un compte qui ne peut pas envoyer |
 | `open_draft` | `id` | `Draft` |
-| `update_draft` | `id`, `revision`, et ce qui a changé : `body?`, `subject?`, `to?`, `cc?`, `bcc?` (listes entières de `{addr, name}`) | `{revision}` ; `INVALID_PARAMS` pour une adresse invalide ; erreur `REVISION_CONFLICT` si la révision n'est pas la courante, `DRAFT_SENDING` si le brouillon est `sending` |
+| `update_draft` | `id`, `revision`, et ce qui a changé : `body?`, `subject?`, `to?`, `cc?`, `bcc?` (listes entières de `{addr, name}`), `from?` (`{account_id, addr}`, une adresse de `list_senders`) | `{revision}` ; `INVALID_PARAMS` pour une adresse invalide, ou qui n'est pas celle du compte ; `CANNOT_SEND` pour un compte qui ne peut pas envoyer ; erreur `REVISION_CONFLICT` si la révision n'est pas la courante, `DRAFT_SENDING` si le brouillon est `sending` |
 | `parse_addresses` | `text` | `{addresses, invalid}` : les adresses comprises, chacune une fois, et les morceaux qui n'en sont pas, tels que tapés |
 | `suggest_recipients` | `query`, `limit?` (8 par défaut, 50 au plus) | `{items}` : des `{addr, name}` |
+| `list_senders` | — | `{items}` : des `{account_id, account, addr, name}`, toutes les adresses des comptes qui peuvent envoyer, dans l'ordre des comptes |
 | `add_draft_attachment` | `id`, `revision`, `staged` (nom du fichier dans `incoming.noindex`), `filename`, `mime_type?` | `{revision, attachment, warning}` ; `INVALID_PARAMS` pour un nom qui n'est pas un fichier déposé ou au-delà de 100 Mo |
 | `remove_draft_attachment` | `id`, `revision`, `attachment_id` | `{revision}` |
 | `close_draft` | `id` | — |
@@ -251,7 +265,7 @@ Ces décisions font partie de la même commande que le rangement : `z` après l'
 | `send_draft` | `id`, `revision`, `body`, `after_send?` (`archive`, `waiting`, `todo`, `stay` ; enregistré dans le brouillon ; absent : le choix enregistré, sinon la présélection) | `{send_at}` : heure prévue de l'envoi ; `CANNOT_SEND` sans destinataire ou sans `[smtp]` |
 | `cancel_send` | `id` | `Draft` remis à `editing` ; erreur `SEND_ALREADY_STARTED` |
 
-`Draft` : `id`, `account_id`, `from` (`{addr, name}`), `to`, `cc`, `bcc` (listes de `{addr, name}`), `attachments` (`{id, filename, mime_type, size}`), `kind` (`reply`, `forward`, `new`), `forward_of`, `subject`, `body`, `revision`, `state`, `reply_to`, `after_send_target` (présélection, absente quand rien n'est rangé), `after_send` (choix de l'utilisateur, absent s'il n'y en a pas), `send_at` (si `sending`).
+`Draft` : `id`, `account_id` (compte du brouillon : sa conversation, son Drafts), `send_account_id` (compte qui envoie), `from` (`{addr, name}`), `to`, `cc`, `bcc` (listes de `{addr, name}`), `attachments` (`{id, filename, mime_type, size}`), `kind` (`reply`, `forward`, `new`), `forward_of`, `subject`, `body`, `revision`, `state`, `reply_to`, `after_send_target` (présélection, absente quand rien n'est rangé), `after_send` (choix de l'utilisateur, absent s'il n'y en a pas), `send_at` (si `sending`).
 
 `quote_header` est mis en forme par le client parce que la langue et le format de date sont ceux de l'app ; le noyau ne la modifie pas. Les clients sans langue (CLI) passent une ligne anglaise.
 
@@ -270,8 +284,8 @@ Ces commandes sont réservées à l'app, à la TUI et au CLI : un agent (MCP) ou
 
 ## 13. Tests
 
-- **`nm-core`** : destinataires (Reply-To, réponse à son propre mail, identités retirées, doublons et casse, À vide, personne), adresse d'expédition, objet (préfixes, numéros, langues, vide), `References` (bornage, racine gardée), citation (niveaux, lignes vides, troncature), `format=flowed` (coupure, citations, espaces de fin), détection du fournisseur, présélection.
-- **`nm-store`** : cycle de vie du brouillon (création, réutilisation, révision, abandon et restauration, `sending` non modifiable), fin d'envoi en une transaction (ligne Sent, rangement, décisions, suppression du brouillon), rejouée sans doublon.
+- **`nm-core`** : compte qui envoie pour un compte qui ne le peut pas (celui à qui le mail a été écrit, sinon le premier), destinataires (Reply-To, réponse à son propre mail, identités retirées, doublons et casse, À vide, personne), adresse d'expédition, objet (préfixes, numéros, langues, vide), `References` (bornage, racine gardée), citation (niveaux, lignes vides, troncature), `format=flowed` (coupure, citations, espaces de fin), détection du fournisseur, présélection.
+- **`nm-store`** : cycle de vie du brouillon (création, réutilisation, révision, abandon et restauration, `sending` non modifiable), réponse depuis un autre compte (file, Sent et rangement chacun dans son compte), expéditeur changé, fin d'envoi en une transaction (ligne Sent, rangement, décisions, suppression du brouillon), rejouée sans doublon.
 - **`nm-engine`**, contre le Dovecot de `dev/` avec un service de soumission SMTP : envoi réel, copie dans Sent avec `APPENDUID`, rattachement par la synchronisation sans doublon, échec temporaire puis reprise, `5xx` définitif, destinataire refusé, délai d'annulation et `cancel_send`, plantage pendant le délai.
 - **`nm-daemon`** : les commandes par le socket, erreurs et événements.
 - **App** : tests unitaires (`GeekController` contre `FakeCore` : `r`, Échap, `⌘↩`, `⌘⌫`, `z` pendant le délai et après) et scénario `.uiscript` (répondre, taper, envoyer, voir la conversation rangée).

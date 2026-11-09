@@ -146,6 +146,10 @@ pub mod method {
     /// The addresses to suggest for the text typed in a recipient line,
     /// those the user writes to most first.
     pub const SUGGEST_RECIPIENTS: &str = "suggest_recipients";
+    /// The addresses a mail can be sent from: those of every account that
+    /// can send (`[smtp]`, not read-only), for the "From" of any draft
+    /// (`reponse.md`, section 4 ter).
+    pub const LIST_SENDERS: &str = "list_senders";
     /// The draft window closed.
     pub const CLOSE_DRAFT: &str = "close_draft";
     /// Abandons a draft; returns it, so that the client can restore it.
@@ -984,12 +988,13 @@ pub enum DraftKind {
 pub struct CreateDraftParams {
     #[serde(default)]
     pub kind: DraftKind,
-    /// The message replied to or forwarded; its account sends. Absent for
-    /// a new mail.
+    /// The message replied to or forwarded; its account sends, if it can,
+    /// else an account that can (by preference one the mail was sent to).
+    /// Absent for a new mail.
     #[serde(default)]
     pub reply_to: Option<i64>,
-    /// A new mail: the account that sends it; absent, the first account
-    /// of `accounts.toml` that can send.
+    /// A new mail: the account that sends it; absent, or an account that
+    /// cannot send, the first account that can.
     #[serde(default)]
     pub account: Option<i64>,
     /// The line introducing the quotation, written by the client in its
@@ -1031,6 +1036,36 @@ pub struct UpdateDraftParams {
     pub cc: Option<Vec<AddressView>>,
     #[serde(default)]
     pub bcc: Option<Vec<AddressView>>,
+    /// The address to send from, one of `list_senders`: its account sends
+    /// the mail (its SMTP server, its Sent folder). Refused (`CANNOT_SEND`)
+    /// for an account that cannot send, `INVALID_PARAMS` for an address
+    /// that is not one of the account's.
+    #[serde(default)]
+    pub from: Option<DraftSender>,
+}
+
+/// The address a draft is sent from, and the account it belongs to.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DraftSender {
+    pub account_id: i64,
+    pub addr: String,
+}
+
+/// An address a mail can be sent from, in `list_senders`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SenderView {
+    pub account_id: i64,
+    /// Key of the account in `accounts.toml` (or name of the account).
+    pub account: String,
+    pub addr: String,
+    pub name: Option<String>,
+}
+
+/// Result of `list_senders`: the accounts in display order, each with its
+/// main address first, then its identities.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ListSendersResult {
+    pub items: Vec<SenderView>,
 }
 
 /// A file attached to a draft.
@@ -1125,7 +1160,15 @@ pub struct SendDraftParams {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DraftView {
     pub id: i64,
+    /// The account of the draft: of the mail answered or forwarded, whose
+    /// conversation it joins and whose Drafts folder keeps it.
     pub account_id: i64,
+    /// The account that sends it (its SMTP server, its Sent folder):
+    /// `account_id`, unless the draft is sent from another account, as a
+    /// reply to a mail of an account that cannot send (`reponse.md`,
+    /// section 4 ter).
+    #[serde(default)]
+    pub send_account_id: i64,
     pub from: AddressView,
     pub to: Vec<AddressView>,
     pub cc: Vec<AddressView>,

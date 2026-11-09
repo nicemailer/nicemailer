@@ -120,7 +120,7 @@ enum Fixture {
     static func draft(replyTo: Int, body: String? = nil, revision: Int = 1, state: String = "editing") -> [String: Any] {
         let thread = replyTo / 10
         return [
-            "id": 900 + thread, "account_id": 1,
+            "id": 900 + thread, "account_id": 1, "send_account_id": 1,
             "from": ["addr": "me@example.org", "name": "Me"],
             "to": [["addr": "sender\(thread)@example.org", "name": "Sender \(thread)"]],
             "cc": thread == 2 ? [["addr": "carol@example.org", "name": NSNull()]] : [],
@@ -133,6 +133,14 @@ enum Fixture {
             "send_at": state == "sending" ? 1_790_000_005 : NSNull(),
         ]
     }
+
+    /// The addresses `list_senders` gives: the account of the fixture, and
+    /// a second account with two addresses.
+    static let senders: [[String: Any]] = [
+        ["account_id": 1, "account": "perso", "addr": "me@example.org", "name": "Me"],
+        ["account_id": 2, "account": "work", "addr": "me@work.example", "name": "Me at work"],
+        ["account_id": 2, "account": "work", "addr": "sales@work.example", "name": NSNull()],
+    ]
 
     /// The default answers of the fake core.
     static func answer(_ method: String, _ params: [String: Any]) -> Any {
@@ -163,6 +171,8 @@ enum Fixture {
                 ["addr": "bob@example.org", "name": "Bob"],
             ]
             return ["items": book.filter { ($0["addr"] as! String).hasPrefix(q) || (($0["name"] as? String)?.lowercased().hasPrefix(q) ?? false) }]
+        case "list_senders":
+            return ["items": senders]
         case "send_draft":
             return ["send_at": Int(Date().timeIntervalSince1970) + 5]
         case "cancel_send":

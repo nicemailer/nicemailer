@@ -61,7 +61,7 @@ The user chose to decide on the sender of the latest received mail (`dossiers.md
 - **Streaming the mail to SMTP and IMAP**: a mail with files is built in memory (100 MB of files at most); writing it to the server from its file would remove that bound.
 - **Attachments of a draft written on the phone**: `brouillons.md`, section 7, "Brouillon créé ailleurs".
 - **Suggestions from the Mac's Contacts**: `suggest_recipients` knows the addresses of the mailbox only. The app's `AddressBook` can only look cards up by address; a search by name (`CNContact.predicateForContacts(matchingName:)`) would add the people never written to.
-- **Choosing the sending identity** (From) in the reply: fixed by the core today (`reponse.md`, section 4).
+- **A reply sent from another account in its conversation**: a reply to a mail of an archive account (or of an account without `[smtp]`) sent from another account is kept in the Sent folder of the account that sent it, so in a conversation of that account; the conversation answered, in the other account, does not show it. Showing it there means a local copy in the archive account (for an IMAP account, a copy in its Sent on the server, or the view of all accounts joining conversations across accounts) (`reponse.md`, section 4 ter).
 - **The trial option "leave it where it is"** of `⇧⌘↩` (`reponse.md`, section 8): to keep, drop, or write into `dossiers.md` once tried.
 - **Never twice, fully**: a crash between the SMTP server's acceptance and `send_accepted` sends again where the provider does not copy to Sent (`brouillons.md`, "Double envoi"). A test of the restart after `data_sent` against the test servers is missing too.
 - **`nicemailer reply`**: a CLI bench of the contract, for agents later.

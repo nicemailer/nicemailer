@@ -124,6 +124,9 @@ final class AppModel {
     /// Mails waiting for their undo delay or for the server, by draft id:
     /// the subject, for the status bar when they leave.
     @ObservationIgnored var sending: [Int: String] = [:]
+    /// The addresses a mail can be sent from (`list_senders`), loaded when
+    /// a reply opens: the line "From" and ⌥⌘F "Send from".
+    var senders: [SenderView] = []
 
     /// Selected folder. `didSet` is a property observer: it runs after each
     /// assignment, with the previous value in `oldValue`. Changing folder

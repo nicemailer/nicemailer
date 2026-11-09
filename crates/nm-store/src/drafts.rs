@@ -86,6 +86,33 @@ impl Identities {
     }
 }
 
+/// An account that can send, with its addresses.
+#[derive(Debug, Clone)]
+pub struct Sender {
+    pub account_id: i64,
+    pub identities: Identities,
+}
+
+/// Who sends a reply or a forward (`reponse.md`, section 4 ter), as the
+/// daemon found it in `accounts.toml`.
+#[derive(Debug, Clone)]
+pub struct Sending {
+    /// The addresses of the account of the mail, never recipients of the
+    /// reply. That account may be none of `senders` (an archive account).
+    pub own: Vec<String>,
+    /// The accounts that may send it, by preference: the mail's own account
+    /// alone when it can send; else every account that can, the first one
+    /// the mail was sent to winning (`compose::choose_sender`).
+    pub senders: Vec<Sender>,
+}
+
+impl Sending {
+    /// The mail's own account sends it.
+    pub fn own_account(account_id: i64, identities: Identities) -> Sending {
+        Sending { own: identities.own(), senders: vec![Sender { account_id, identities }] }
+    }
+}
+
 /// Where a `send` action is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SendPhase {
@@ -157,6 +184,9 @@ pub struct DraftEdit {
     pub to: Option<Vec<Mailbox>>,
     pub cc: Option<Vec<Mailbox>>,
     pub bcc: Option<Vec<Mailbox>>,
+    /// The account that sends, and the address, checked by the daemon
+    /// against `accounts.toml` (`reponse.md`, section 4 ter).
+    pub from: Option<(i64, Mailbox)>,
 }
 
 /// The recipients of a draft, `(to, cc, bcc)`.
@@ -195,11 +225,12 @@ fn send_action(conn: &Connection, draft_id: i64) -> Result<Option<(i64, String, 
 /// The view of a draft, with its preselected filing and, if it is being
 /// sent, when it leaves.
 pub(crate) fn draft_view(conn: &Connection, id: i64) -> Result<DraftView> {
-    type Row = (i64, String, Option<String>, String, String, String, Option<i64>, i64, String, Option<i64>, Option<String>, Option<i64>);
+    type Row = (i64, String, Option<String>, String, String, String, Option<i64>, i64, String, Option<i64>, Option<String>, Option<i64>, i64);
     let row: Option<Row> = conn
         .prepare_cached(
             "SELECT d.account_id, d.from_addr, d.from_name, d.recipients, d.subject, d.body, d.reply_to_message_id,
-                    d.revision, d.state, m.thread_id, d.after_send, d.forward_of_message_id
+                    d.revision, d.state, m.thread_id, d.after_send, d.forward_of_message_id,
+                    coalesce(d.send_account_id, d.account_id)
                FROM draft d LEFT JOIN message m ON m.id = d.reply_to_message_id WHERE d.id = ?1",
         )?
         .query_row([id], |r| {
@@ -216,10 +247,25 @@ pub(crate) fn draft_view(conn: &Connection, id: i64) -> Result<DraftView> {
                 r.get(9)?,
                 r.get(10)?,
                 r.get(11)?,
+                r.get(12)?,
             ))
         })
         .optional()?;
-    let Some((account_id, from_addr, from_name, recipients, subject, body, reply_to, revision, state, thread_id, after_send, forward_of)) = row
+    let Some((
+        account_id,
+        from_addr,
+        from_name,
+        recipients,
+        subject,
+        body,
+        reply_to,
+        revision,
+        state,
+        thread_id,
+        after_send,
+        forward_of,
+        send_account_id,
+    )) = row
     else {
         return Err(StoreError::NotFound(format!("brouillon {id}")));
     };
@@ -233,6 +279,7 @@ pub(crate) fn draft_view(conn: &Connection, id: i64) -> Result<DraftView> {
     Ok(DraftView {
         id,
         account_id,
+        send_account_id,
         from: AddressView { addr: from_addr, name: from_name },
         to: to.iter().map(view_of).collect(),
         cc: cc.iter().map(view_of).collect(),
@@ -393,12 +440,17 @@ impl Store {
     /// `sender_only`: `R`, the reply to the sender alone
     /// (`compose::reply_sender`). A reply already started to the mail is
     /// given back whatever its kind: one reply per mail.
+    ///
+    /// `sending`: the accounts that may send it (`reponse.md`, section 4
+    /// ter); when the mail's own account is not one of them, the draft
+    /// keeps the mail's account (its conversation, its Drafts folder) and
+    /// records the account that sends (`draft.send_account_id`).
     #[allow(clippy::too_many_arguments)]
     pub fn create_reply_draft(
         &mut self,
         reply_to: i64,
         sender_only: bool,
-        identities: &Identities,
+        sending: &Sending,
         quote_header: &str,
         body: Option<&str>,
         source: Source,
@@ -428,12 +480,9 @@ impl Store {
                 |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?, r.get(7)?, r.get(8)?)),
             )
             .optional()?;
-        let Some((account_id, kind, is_draft, body_state, _msgid, _irt, subject, from_addr, from_name)) = parent else {
+        let Some((account_id, _kind, is_draft, body_state, _msgid, _irt, subject, from_addr, from_name)) = parent else {
             return Err(StoreError::NotFound(format!("message {reply_to}")));
         };
-        if kind == "archive" && !self.fake_sending {
-            return Err(StoreError::CannotSend("this mail is in an archive account, which cannot send".into()));
-        }
         if is_draft {
             return Err(StoreError::CannotSend("a draft cannot be answered".into()));
         }
@@ -443,12 +492,8 @@ impl Store {
         let (to, cc, rt) = message_addresses(&tx, reply_to)?;
         let from = from_addr.map(|a| Mailbox { addr: a, name: from_name });
         let original = Original { from: from.as_ref(), reply_to: &rt, to: &to, cc: &cc };
-        let own = identities.own();
+        let (send_account, sender, own) = pick_sender(&tx, sending, &original, self.fake_sending)?;
         let (r_to, r_cc) = if sender_only { (compose::reply_sender(&original, &own), Vec::new()) } else { compose::reply_all(&original, &own) };
-        let sender = compose::sender_identity(&identities.list, &original);
-        if sender.addr.is_empty() {
-            return Err(StoreError::CannotSend("the account has no address to send from".into()));
-        }
         let text = match body {
             Some(b) => b.to_string(),
             None => {
@@ -459,8 +504,8 @@ impl Store {
         let message_id_hdr = compose::new_message_id(rand::random::<u128>(), &sender.addr);
         tx.execute(
             "INSERT INTO draft (account_id, from_addr, from_name, recipients, subject, body, body_format,
-                                reply_to_message_id, message_id_hdr, created_by, modified_by)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'text', ?7, ?8, ?9, ?9)",
+                                reply_to_message_id, message_id_hdr, created_by, modified_by, send_account_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'text', ?7, ?8, ?9, ?9, ?10)",
             params![
                 account_id,
                 sender.addr,
@@ -470,7 +515,8 @@ impl Store {
                 text,
                 reply_to,
                 message_id_hdr,
-                source.as_str()
+                source.as_str(),
+                (send_account != account_id).then_some(send_account)
             ],
         )?;
         let id = tx.last_insert_rowid();
@@ -492,7 +538,7 @@ impl Store {
     pub fn create_forward_draft(
         &mut self,
         message: i64,
-        identities: &Identities,
+        sending: &Sending,
         header: &str,
         body: Option<&str>,
         raw: &crate::raw::RawStore,
@@ -516,12 +562,9 @@ impl Store {
                 |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?, r.get(7)?)),
             )
             .optional()?;
-        let Some((account_id, kind, is_draft, body_state, subject, from_addr, from_name, raw_hash)) = row else {
+        let Some((account_id, _kind, is_draft, body_state, subject, from_addr, from_name, raw_hash)) = row else {
             return Err(StoreError::NotFound(format!("message {message}")));
         };
-        if kind == "archive" && !self.fake_sending {
-            return Err(StoreError::CannotSend("this mail is in an archive account, which cannot send".into()));
-        }
         if is_draft {
             return Err(StoreError::CannotSend("a draft cannot be forwarded".into()));
         }
@@ -531,10 +574,7 @@ impl Store {
         let (to, cc, rt) = message_addresses(&tx, message)?;
         let from = from_addr.map(|a| Mailbox { addr: a, name: from_name });
         let original = Original { from: from.as_ref(), reply_to: &rt, to: &to, cc: &cc };
-        let sender = compose::sender_identity(&identities.list, &original);
-        if sender.addr.is_empty() {
-            return Err(StoreError::CannotSend("the account has no address to send from".into()));
-        }
+        let (send_account, sender, _) = pick_sender(&tx, sending, &original, self.fake_sending)?;
         let text = match body {
             Some(b) => b.to_string(),
             None => compose::forward_body(header, &message_text(&tx, message)?),
@@ -542,9 +582,19 @@ impl Store {
         let message_id_hdr = compose::new_message_id(rand::random::<u128>(), &sender.addr);
         tx.execute(
             "INSERT INTO draft (account_id, from_addr, from_name, recipients, subject, body, body_format,
-                                forward_of_message_id, message_id_hdr, created_by, modified_by)
-             VALUES (?1, ?2, ?3, '[]', ?4, ?5, 'text', ?6, ?7, ?8, ?8)",
-            params![account_id, sender.addr, sender.name, compose::forward_subject(&subject), text, message, message_id_hdr, source.as_str()],
+                                forward_of_message_id, message_id_hdr, created_by, modified_by, send_account_id)
+             VALUES (?1, ?2, ?3, '[]', ?4, ?5, 'text', ?6, ?7, ?8, ?8, ?9)",
+            params![
+                account_id,
+                sender.addr,
+                sender.name,
+                compose::forward_subject(&subject),
+                text,
+                message,
+                message_id_hdr,
+                source.as_str(),
+                (send_account != account_id).then_some(send_account)
+            ],
         )?;
         let id = tx.last_insert_rowid();
         // The files of the mail: read from its raw file, kept like files
@@ -642,8 +692,12 @@ impl Store {
     pub fn edit_draft(&mut self, id: i64, revision: i64, edit: &DraftEdit, source: Source) -> Result<i64> {
         let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let rev = editable(&tx, id, revision)?;
-        let (recipients, subject, body): (String, String, String) =
-            tx.query_row("SELECT recipients, subject, body FROM draft WHERE id = ?1", [id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+        type Row = (String, String, String, i64, String, Option<String>, Option<i64>);
+        let (recipients, subject, body, account_id, from_addr, from_name, send_account): Row = tx.query_row(
+            "SELECT recipients, subject, body, account_id, from_addr, from_name, send_account_id FROM draft WHERE id = ?1",
+            [id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?)),
+        )?;
         let new_recipients = if edit.to.is_some() || edit.cc.is_some() || edit.bcc.is_some() {
             let (to, cc, bcc) = recipients_of(&recipients);
             let to = edit.to.as_ref().unwrap_or(&to);
@@ -657,14 +711,23 @@ impl Store {
         };
         let new_subject = edit.subject.as_deref().map(compose::clean_subject).unwrap_or(subject);
         let new_body = edit.body.as_deref().unwrap_or(&body);
+        // The sender: NULL in `send_account_id` when the draft's own
+        // account sends, so that the column only says "another account".
+        let (new_send, new_from) = match &edit.from {
+            Some((a, m)) => ((*a != account_id).then_some(*a), m.clone()),
+            None => (send_account, Mailbox { addr: from_addr, name: from_name }),
+        };
         // Rust note: `params!` borrows each value; the `UPDATE` only
         // happens when something differs, so a save of what is already
         // there keeps the revision (and the draft is not "changed here").
+        // `IS NOT` compares NULLs too (`<>` with a NULL is never true).
         let n = tx.execute(
             "UPDATE draft SET recipients = ?2, subject = ?3, body = ?4, revision = revision + 1,
-                    date_modified = unixepoch(), modified_by = ?5
-              WHERE id = ?1 AND (recipients <> ?2 OR subject <> ?3 OR body <> ?4)",
-            params![id, new_recipients, new_subject, new_body, source.as_str()],
+                    date_modified = unixepoch(), modified_by = ?5,
+                    send_account_id = ?6, from_addr = ?7, from_name = ?8
+              WHERE id = ?1 AND (recipients <> ?2 OR subject <> ?3 OR body <> ?4
+                                 OR send_account_id IS NOT ?6 OR from_addr <> ?7 OR from_name IS NOT ?8)",
+            params![id, new_recipients, new_subject, new_body, source.as_str(), new_send, new_from.addr, new_from.name],
         )?;
         tx.commit()?;
         Ok(if n > 0 { rev + 1 } else { rev })
@@ -839,7 +902,7 @@ impl Store {
         let view = draft_view(&tx, id)?;
         tx.commit()?;
         let mut changes = ChangeSet::default();
-        changes.sending.insert(view.account_id);
+        changes.sending.insert(view.send_account_id);
         Ok((view, changes))
     }
 
@@ -993,21 +1056,26 @@ impl Store {
             let thread: Option<i64> = tx.query_row("SELECT thread_id FROM message WHERE id = ?1", [id], |r| r.get(0))?;
             // The conversation of the mail answered: the reply joined it by
             // its references, unless the mail answered had no Message-ID.
-            let parent_thread: Option<i64> = match reply_to {
-                Some(r) => tx.query_row("SELECT thread_id FROM message WHERE id = ?1", [r], |r| r.get(0)).optional()?.flatten(),
+            // It may be of another account than the one that sent: a reply
+            // to a mail of an archive account, sent from an account with a
+            // server (`reponse.md`, section 4 ter). That conversation is
+            // the one filed, in its own account.
+            let parent: Option<(Option<i64>, i64)> = match reply_to {
+                Some(r) => tx.query_row("SELECT thread_id, account_id FROM message WHERE id = ?1", [r], |r| Ok((r.get(0)?, r.get(1)?))).optional()?,
                 None => None,
             };
+            let parent_thread = parent.and_then(|(t, a)| t.map(|t| (t, a)));
             // A reply without `In-Reply-To` (the mail answered had no
             // Message-ID) files nothing (`dossiers.md`).
             // The filing chosen wins over the preselection; `stay` touches
             // nothing, not even the return marks: the conversation is left
             // as the reply found it.
             let after = p["after_send"].as_str().and_then(AfterSend::parse);
-            if let Some(t) = parent_thread.or(thread).filter(|_| parsed.in_reply_to.is_some())
+            if let Some((t, thread_account)) = parent_thread.or(thread.map(|t| (t, account_id))).filter(|_| parsed.in_reply_to.is_some())
                 && after != Some(AfterSend::Stay)
             {
                 let target = after.and_then(AfterSend::folder);
-                moved_to = crate::reception::file_reply_thread(&tx, account_id, t, id, target, source, "reply", &mut changes, &mut threads)?;
+                moved_to = crate::reception::file_reply_thread(&tx, thread_account, t, id, target, source, "reply", &mut changes, &mut threads)?;
             }
             crate::reception::accept_recipients(&tx, own, id, source, &mut changes, &mut threads)?;
             tx.execute(
@@ -1151,6 +1219,7 @@ impl Store {
 /// A draft made a MIME message: what `send_draft` queues and what
 /// `close_draft` copies to Drafts.
 struct Built {
+    /// The account that sends: its SMTP server, its Sent folder.
     account_id: i64,
     from_addr: String,
     /// Every recipient, To, Cc and Bcc: the SMTP envelope.
@@ -1184,7 +1253,8 @@ fn build_draft(conn: &Connection, id: i64, user_agent: &str, draft_revision: Opt
     type Row = (i64, String, Option<String>, String, String, String, String, Option<i64>);
     let (account_id, from_addr, from_name, recipients, subject, body, msgid, reply_to): Row = conn
         .query_row(
-            "SELECT account_id, from_addr, from_name, recipients, subject, body, message_id_hdr, reply_to_message_id
+            "SELECT coalesce(send_account_id, account_id), from_addr, from_name, recipients, subject, body, message_id_hdr,
+                    reply_to_message_id
                FROM draft WHERE id = ?1",
             [id],
             |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?, r.get(7)?)),
@@ -1261,6 +1331,26 @@ fn send_audit(tx: &Transaction, source: Source, entity: i64, p: &Value, refused:
         ],
     )?;
     Ok(())
+}
+
+/// Who sends a reply or a forward of `original` (`compose::choose_sender`):
+/// the account and the address, and the addresses never to answer (those
+/// of the mail's account and of the sender). An archive account has no
+/// server and never sends, except with the fake network
+/// (`Store::set_fake_sending`).
+fn pick_sender(tx: &Transaction, sending: &Sending, original: &Original, fake: bool) -> Result<(i64, Mailbox, Vec<String>)> {
+    let lists: Vec<&[Mailbox]> = sending.senders.iter().map(|s| s.identities.list.as_slice()).collect();
+    let Some((i, from)) = compose::choose_sender(&lists, original) else {
+        return Err(StoreError::CannotSend("no account can send this mail: add an [smtp] server to one in accounts.toml".into()));
+    };
+    let sender = &sending.senders[i];
+    let kind: Option<String> = tx.query_row("SELECT kind FROM account WHERE id = ?1", [sender.account_id], |r| r.get(0)).optional()?;
+    if kind.as_deref() == Some("archive") && !fake {
+        return Err(StoreError::CannotSend("this mail is in an archive account, which cannot send".into()));
+    }
+    let mut own = sending.own.clone();
+    own.extend(sender.identities.own());
+    Ok((sender.account_id, from, own))
 }
 
 /// The revision of an editable draft, checked against the client's.

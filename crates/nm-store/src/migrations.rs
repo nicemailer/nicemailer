@@ -30,6 +30,7 @@ pub(crate) fn migrate(conn: &mut Connection, mut version: i64) -> Result<()> {
             3 => to_4(&tx)?,
             4 => to_5(&tx)?,
             5 => to_6(&tx)?,
+            6 => to_7(&tx)?,
             _ => unreachable!("aucune migration depuis la version {version}"),
         }
         version += 1;
@@ -152,6 +153,16 @@ fn to_5(conn: &Connection) -> Result<()> {
 /// instant. Existing drafts are replies or nothing: NULL.
 fn to_6(conn: &Connection) -> Result<()> {
     conn.execute_batch("ALTER TABLE draft ADD COLUMN forward_of_message_id INTEGER REFERENCES message(id) ON DELETE SET NULL;")?;
+    Ok(())
+}
+
+/// Version 7: `draft.send_account_id`, the account that sends a draft when
+/// it is not the draft's own (`reponse.md`, section 4 ter: a reply to a
+/// mail of an archive account, or of an account without `[smtp]`, sent
+/// from another account). A column added at the end of a small table:
+/// instant. Existing drafts are sent by their own account: NULL.
+fn to_7(conn: &Connection) -> Result<()> {
+    conn.execute_batch("ALTER TABLE draft ADD COLUMN send_account_id INTEGER REFERENCES account(id) ON DELETE SET NULL;")?;
     Ok(())
 }
 

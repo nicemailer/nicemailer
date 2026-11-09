@@ -9,7 +9,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use nm_core::compose::Mailbox;
 use nm_core::{AfterSend, FolderRole, ScreeningTarget, Source};
-use nm_store::drafts::{Identities, SendPhase};
+use nm_store::drafts::{Identities, SendPhase, Sender, Sending};
 use nm_store::ingest::parse;
 use nm_store::insert::{Body, Flags, Inserter, NewMessage};
 use nm_store::raw::RawStore;
@@ -53,8 +53,9 @@ fn env() -> Env {
     Env { s, raw, _dir: dir, acc, ins: Inserter::new(Source::Imap, None), ids, next_uid: 1 }
 }
 
+/// The folder of `role` of the first account (the tests' `perso`).
 fn folder(s: &Store, role: &str) -> i64 {
-    s.conn().query_row("SELECT id FROM folder WHERE role = ?1", [role], |r| r.get(0)).unwrap()
+    s.conn().query_row("SELECT id FROM folder WHERE role = ?1 ORDER BY id LIMIT 1", [role], |r| r.get(0)).unwrap()
 }
 
 impl Env {
@@ -95,8 +96,13 @@ impl Env {
         self.s.conn().query_row("SELECT screening_target FROM address WHERE addr = ?1", [addr], |r| r.get(0)).unwrap()
     }
 
+    /// The account of the mail sends.
+    fn sending(&self) -> Sending {
+        Sending::own_account(self.acc, self.ids.clone())
+    }
+
     fn reply(&mut self, to: i64) -> nm_api::DraftView {
-        self.s.create_reply_draft(to, false, &self.ids, "On Nov 7, Alice wrote:", None, Source::App).unwrap().0
+        self.s.create_reply_draft(to, false, &self.sending(), "On Nov 7, Alice wrote:", None, Source::App).unwrap().0
     }
 
     /// The draft sent and accepted by the server at once.
@@ -135,7 +141,7 @@ fn a_reply_to_all_is_prepared_by_the_core() {
     assert_eq!(d.after_send_target, Some(FolderRole::Archive));
     assert_eq!(d.send_at, None);
     // `r` again: the same draft, not a second one.
-    let (again, reused) = e.s.create_reply_draft(m, false, &e.ids, "ignored", None, Source::App).unwrap();
+    let (again, reused) = e.s.create_reply_draft(m, false, &e.sending(), "ignored", None, Source::App).unwrap();
     assert!(reused);
     assert_eq!(again.id, d.id);
     assert_eq!(e.int("SELECT count(*) FROM draft"), 1);
@@ -176,13 +182,13 @@ fn what_cannot_be_answered() {
     let tx = e.s.transaction().unwrap();
     let id = e.ins.insert(&tx, &m, None, &mut changes).unwrap();
     e.ins.commit(tx, &mut changes).unwrap();
-    assert!(matches!(e.s.create_reply_draft(id, false, &e.ids, "", None, Source::App), Err(StoreError::BodyPending)));
+    assert!(matches!(e.s.create_reply_draft(id, false, &e.sending(), "", None, Source::App), Err(StoreError::BodyPending)));
     // A message that does not exist.
-    assert!(matches!(e.s.create_reply_draft(12345, false, &e.ids, "", None, Source::App), Err(StoreError::NotFound(_))));
+    assert!(matches!(e.s.create_reply_draft(12345, false, &e.sending(), "", None, Source::App), Err(StoreError::NotFound(_))));
     // An archive account.
     e.s.conn().execute("UPDATE account SET kind = 'archive' WHERE id = ?1", [e.acc]).unwrap();
     let m = e.deliver("inbox", &alice("m9@a.example"));
-    assert!(matches!(e.s.create_reply_draft(m, false, &e.ids, "", None, Source::App), Err(StoreError::CannotSend(_))));
+    assert!(matches!(e.s.create_reply_draft(m, false, &e.sending(), "", None, Source::App), Err(StoreError::CannotSend(_))));
 }
 
 #[test]
@@ -531,7 +537,7 @@ fn a_discarded_draft_can_be_restored_with_its_text() {
     assert_eq!(gone.body, "Mon texte");
     assert_eq!(e.int("SELECT count(*) FROM draft"), 0);
     assert!(e.s.find_reply_draft(m).unwrap().is_none());
-    let (back, reused) = e.s.create_reply_draft(m, false, &e.ids, "", Some(&gone.body), Source::App).unwrap();
+    let (back, reused) = e.s.create_reply_draft(m, false, &e.sending(), "", Some(&gone.body), Source::App).unwrap();
     assert!(!reused);
     assert_eq!(back.body, "Mon texte");
 }
@@ -559,7 +565,7 @@ fn pretended_sending_lets_an_archive_account_answer() {
     let mut e = env();
     e.s.conn().execute("UPDATE account SET kind = 'archive' WHERE id = ?1", [e.acc]).unwrap();
     let m = e.deliver("inbox", &alice("m1@a.example"));
-    assert!(matches!(e.s.create_reply_draft(m, false, &e.ids, "", None, Source::App), Err(StoreError::CannotSend(_))));
+    assert!(matches!(e.s.create_reply_draft(m, false, &e.sending(), "", None, Source::App), Err(StoreError::CannotSend(_))));
     e.s.set_fake_sending(true);
     let d = e.reply(m);
     e.send_now(&d, None);
@@ -640,7 +646,7 @@ fn closing_twice_before_the_copy_leaves_one_copy_to_make() {
     assert_eq!(e.drafts_rows(), 1);
     // `r` on the row of Drafts reopens the same draft.
     let row: i64 = e.int("SELECT message_id FROM draft");
-    let (again, reused) = e.s.create_reply_draft(row, false, &e.ids, "", None, Source::App).unwrap();
+    let (again, reused) = e.s.create_reply_draft(row, false, &e.sending(), "", None, Source::App).unwrap();
     assert!(reused);
     assert_eq!(again.id, d.id);
 }
@@ -984,12 +990,12 @@ fn big_attachments_are_warned_then_refused() {
 fn a_reply_to_the_sender_only() {
     let mut e = env();
     let m = e.deliver("inbox", &alice("m@a.example"));
-    let (d, reused) = e.s.create_reply_draft(m, true, &e.ids, "x", None, Source::App).unwrap();
+    let (d, reused) = e.s.create_reply_draft(m, true, &e.sending(), "x", None, Source::App).unwrap();
     assert!(!reused);
     assert_eq!(d.kind, "reply");
     assert_eq!(d.to.iter().map(|a| a.addr.as_str()).collect::<Vec<_>>(), ["alice@a.example"]);
     assert!(d.cc.is_empty());
-    let (again, reused) = e.s.create_reply_draft(m, false, &e.ids, "x", None, Source::App).unwrap();
+    let (again, reused) = e.s.create_reply_draft(m, false, &e.sending(), "x", None, Source::App).unwrap();
     assert!(reused);
     assert_eq!(again.id, d.id);
 }
@@ -1013,7 +1019,7 @@ fn a_forward_carries_the_mail_and_its_files() {
     let m = e.deliver("inbox", &with_file("f@a.example"));
     let raw = e.raw.clone();
     let (d, reused, missing) =
-        e.s.create_forward_draft(m, &e.ids, "---------- Forwarded message ---------\nFrom: Alice", None, &raw, Source::App).unwrap();
+        e.s.create_forward_draft(m, &e.sending(), "---------- Forwarded message ---------\nFrom: Alice", None, &raw, Source::App).unwrap();
     assert!(!reused && missing.is_empty());
     assert_eq!((d.kind.as_str(), d.forward_of, d.reply_to, d.thread_id), ("forward", Some(m), None, None));
     assert!(d.to.is_empty() && d.cc.is_empty());
@@ -1023,7 +1029,7 @@ fn a_forward_carries_the_mail_and_its_files() {
     assert_eq!((d.attachments[0].filename.as_str(), d.attachments[0].size), ("devis.pdf", 8));
     assert_eq!(d.after_send_target, None);
     // `f` again: the same forward.
-    let (again, reused, _) = e.s.create_forward_draft(m, &e.ids, "x", None, &raw, Source::App).unwrap();
+    let (again, reused, _) = e.s.create_forward_draft(m, &e.sending(), "x", None, &raw, Source::App).unwrap();
     assert!(reused && again.id == d.id);
     use nm_store::drafts::DraftEdit;
     let rev = e.s.edit_draft(d.id, d.revision, &DraftEdit { to: Some(vec![mb("dan@d.example", None)]), ..Default::default() }, Source::App).unwrap();
@@ -1046,7 +1052,7 @@ fn a_forward_without_raw_file_says_which_files_stay_behind() {
     let m = e.deliver("inbox", &with_file("g@a.example"));
     e.s.conn().execute("UPDATE message SET raw_hash = NULL WHERE id = ?1", [m]).unwrap();
     let raw = e.raw.clone();
-    let (d, _, missing) = e.s.create_forward_draft(m, &e.ids, "x", None, &raw, Source::App).unwrap();
+    let (d, _, missing) = e.s.create_forward_draft(m, &e.sending(), "x", None, &raw, Source::App).unwrap();
     assert_eq!(missing, ["devis.pdf"]);
     assert!(d.attachments.is_empty());
     assert!(d.body.contains("Le devis."));
@@ -1073,4 +1079,122 @@ fn a_new_mail_starts_empty_and_is_dropped_when_left_empty() {
     let r = e.reply(m);
     e.s.update_draft(r.id, r.revision, "", Source::App).unwrap();
     assert!(!e.s.drop_if_blank(r.id).unwrap());
+}
+
+/// A second account, `key`, with the folders of the workflow, synchronized
+/// with a server: the account that sends for one that cannot.
+fn second_account(e: &mut Env, key: &str) -> i64 {
+    e.s.conn().execute("INSERT INTO account (config_key, kind, created_by, modified_by) VALUES (?1, 'imap', 'core', 'core')", [key]).unwrap();
+    let acc = e.s.conn().last_insert_rowid();
+    let listed: Vec<ListedFolder> = ["inbox", "archive", "sent", "drafts"]
+        .iter()
+        .enumerate()
+        .map(|(i, r)| ListedFolder {
+            path: if *r == "inbox" { "INBOX".into() } else { r.to_string() },
+            delimiter: Some("/".into()),
+            proposed_role: Some(r),
+            uidvalidity: Some(100 + i as u32),
+        })
+        .collect();
+    e.s.sync_folder_list(acc, &listed).unwrap();
+    e.s.set_server_accounts(BTreeSet::from([e.acc, acc])).unwrap();
+    acc
+}
+
+/// A mail of an account that cannot send (`reponse.md`, section 4 ter):
+/// the reply is sent by another account, by preference one the mail was
+/// sent to, from that address; the draft stays in the mail's account and
+/// conversation; the mail leaves from the account that sends and is kept
+/// in its Sent folder; the conversation answered is filed in its own
+/// account.
+#[test]
+fn a_mail_of_an_account_that_cannot_send_is_answered_from_another() {
+    let mut e = env();
+    let work = second_account(&mut e, "work");
+    let sales = second_account(&mut e, "sales");
+    let m = e.deliver("inbox", &alice("m1@a.example"));
+    // `perso` cannot send; `work` was not written to, `sales` was (Carol,
+    // in Cc, is one of its addresses).
+    let sending = Sending {
+        own: e.ids.own(),
+        senders: vec![
+            Sender { account_id: work, identities: Identities { list: vec![Mailbox::new("me@work.example", Some("Me at work"))] } },
+            Sender {
+                account_id: sales,
+                identities: Identities { list: vec![Mailbox::new("team@sales.example", None), Mailbox::new("carol@c.example", Some("Carol"))] },
+            },
+        ],
+    };
+    let (d, _) = e.s.create_reply_draft(m, false, &sending, "x", None, Source::App).unwrap();
+    assert_eq!((d.account_id, d.send_account_id), (e.acc, sales));
+    assert_eq!((d.from.addr.as_str(), d.from.name.as_deref()), ("carol@c.example", Some("Carol")));
+    // Neither the mail's account nor the sender's addresses are answered.
+    assert_eq!(d.to.iter().map(|a| a.addr.as_str()).collect::<Vec<_>>(), ["alice@a.example"]);
+    assert_eq!(d.cc.iter().map(|a| a.addr.as_str()).collect::<Vec<_>>(), ["bob@b.example"]);
+    // Filed in the mail's account, as any reply.
+    assert_eq!(d.after_send_target, Some(FolderRole::Archive));
+    // Sent to none of them: the first account, from its main address.
+    let other = e.deliver("inbox", "Message-ID: <o@a>\r\nFrom: a@a.example\r\nTo: list@l.example\r\nSubject: x\r\n\r\nHi\r\n");
+    let (o, _) = e.s.create_reply_draft(other, false, &sending, "x", None, Source::App).unwrap();
+    assert_eq!((o.send_account_id, o.from.addr.as_str()), (work, "me@work.example"));
+    // No account at all: refused.
+    let none = Sending { own: e.ids.own(), senders: vec![] };
+    let third = e.deliver("inbox", &alice("m3@a.example"));
+    assert!(matches!(e.s.create_reply_draft(third, false, &none, "x", None, Source::App), Err(StoreError::CannotSend(_))));
+
+    // Sending: queued on the account that sends, which alone claims it.
+    e.s.send_draft(d.id, d.revision, "Merci.", None, 0, "NiceMailer/test", Source::App).unwrap();
+    assert_eq!(e.int("SELECT account_id FROM pending_action WHERE kind = 'send'"), sales);
+    assert!(e.s.send_claim(e.acc).unwrap().is_empty());
+    let jobs = e.s.send_claim(sales).unwrap();
+    assert_eq!((jobs.len(), jobs[0].account_id, jobs[0].from.as_str()), (1, sales, "carol@c.example"));
+    let written = e.raw.write(&jobs[0].copy).unwrap();
+    let c = e.s.send_accepted(jobs[0].action_id, &written, &[], &["carol@c.example".to_string()]).unwrap();
+    // In the Sent folder of the account that sent; the conversation
+    // answered filed in Archive of its own account.
+    let sent = c.sent[0].message_id;
+    let (acc, role): (i64, String) = e
+        .s
+        .conn()
+        .query_row("SELECT m.account_id, f.role FROM message m JOIN folder f ON f.id = m.folder_id WHERE m.id = ?1", [sent], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })
+        .unwrap();
+    assert_eq!((acc, role.as_str()), (sales, "sent"));
+    assert_eq!(c.sent[0].moved_to, Some(FolderRole::Archive));
+    assert_eq!(e.role_of(m), "archive");
+    let archive: i64 = e.s.conn().query_row("SELECT folder_id FROM message WHERE id = ?1", [m], |r| r.get(0)).unwrap();
+    assert_eq!(e.int(&format!("SELECT account_id FROM folder WHERE id = {archive}")), e.acc);
+    assert_eq!(e.int(&format!("SELECT count(*) FROM draft WHERE id = {}", d.id)), 0);
+}
+
+/// The sender changed in any draft (`update_draft` with `from`): one
+/// revision, none when it is the same; back to the draft's own account,
+/// `send_account_id` is NULL again. A send cancelled wakes the account
+/// that sends.
+#[test]
+fn the_sender_of_a_draft_can_be_changed() {
+    use nm_store::drafts::DraftEdit;
+    let mut e = env();
+    let work = second_account(&mut e, "work");
+    let m = e.deliver("inbox", &alice("m1@a.example"));
+    let d = e.reply(m);
+    assert_eq!((d.account_id, d.send_account_id), (e.acc, e.acc));
+    let to_work = DraftEdit { from: Some((work, Mailbox::new("me@work.example", Some("Me at work")))), ..Default::default() };
+    let rev = e.s.edit_draft(d.id, d.revision, &to_work, Source::App).unwrap();
+    assert_eq!(rev, d.revision + 1);
+    let v = e.s.get_draft(d.id).unwrap();
+    assert_eq!((v.send_account_id, v.from.addr.as_str(), v.from.name.as_deref()), (work, "me@work.example", Some("Me at work")));
+    // The same again: nothing changes.
+    assert_eq!(e.s.edit_draft(d.id, rev, &to_work, Source::App).unwrap(), rev);
+    // The mail sent carries the new From, queued on `work`.
+    e.s.send_draft(d.id, rev, "Merci.", None, 30, "t", Source::App).unwrap();
+    assert_eq!(e.int("SELECT account_id FROM pending_action WHERE kind = 'send'"), work);
+    let (v, changes) = e.s.cancel_send(d.id, Source::App).unwrap();
+    assert_eq!(changes.sending, BTreeSet::from([work]));
+    // Back to its own account.
+    let back = DraftEdit { from: Some((e.acc, Mailbox::new(ME, Some("Me")))), ..Default::default() };
+    let rev2 = e.s.edit_draft(d.id, v.revision, &back, Source::App).unwrap();
+    assert_eq!(rev2, v.revision + 1);
+    assert_eq!(e.int(&format!("SELECT count(*) FROM draft WHERE id = {} AND send_account_id IS NULL AND from_addr = '{ME}'", d.id)), 1);
 }

@@ -18,13 +18,18 @@ struct ComposerView: View {
         if let c = model.composer {
             VStack(alignment: .leading, spacing: 0) {
                 ReaderTitleBar(subject: c.headers.subject) {
-                    Text(L("⌘↩ send · ⇧⌘↩ send then… · Esc keep · ⌘⌫ abandon")).foregroundStyle(Palette.muted).lineLimit(1)
+                    Text(L("⌘↩ send · ⇧⌘↩ send then… · ⌥⌘F from · Esc keep · ⌘⌫ abandon")).foregroundStyle(Palette.muted).lineLimit(1)
                 }
                 Palette.separator.frame(height: 1)
                 VStack(alignment: .leading, spacing: scaled(2)) {
+                    // Who sends, and from which account; a click (or ⌥⌘F)
+                    // chooses another address of an account that can send.
                     headerLine(L("From"), focused: false) {
-                        Text(c.draft.from.name.map { "\($0) <\(c.draft.from.addr)>" } ?? c.draft.from.addr).lineLimit(1)
+                        Text(Compose.fromLine(c.headers, senders: model.senders)).lineLimit(1)
                     }
+                    .contentShape(Rectangle())
+                    .onTapGesture { controller.chooseSender() }
+                    .uiTarget("compose-from")
                     recipientLine(.to, L("To"), c)
                     recipientLine(.cc, L("Cc"), c)
                     if c.showsBcc {

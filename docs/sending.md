@@ -16,10 +16,11 @@ How a reply is written in the app and sent by the core. The rules are those of `
 | ⌘⌫ | the reply | abandon the reply; `z` gives it back with its text |
 | ⇥ ⇧⇥ | the reply | next / previous field: To, Cc, Bcc (when shown), Subject, the text; in the text ⇥ is typed, ⇧⇥ goes up to the subject |
 | ⌥⌘B | the reply | show the Bcc line and go to it |
+| ⌥⌘F | the reply | "Send from": choose the address, and so the account, the mail leaves from (a click on the line "From" too); below |
 | ⇧⌘A | the reply | attach files (the open panel); a drop on the reply, or ⌘V of files copied in the Finder, attaches too |
 | `z` | after ⌘↩ | during the delay: the mail does not leave, and the reply opens again; once sent: undoes the filing of the conversation (not the sending) |
 
-The reply takes the reader's place (the whole window with one column), with the mode `EDT` in the status bar. From the top: the sending address, To, Cc and Bcc (Bcc only when it has addresses or ⌥⌘B opened it), one tag per address, wrapping when long, the subject, "After sending: Archive" when the conversation will be filed, then the text. The cursor starts at the top, above the line introducing the quotation ("On Nov 7, 2026, at 10:12, Alice <alice@x.fr> wrote:", in the app's language) and the quoted mail.
+The reply takes the reader's place (the whole window with one column), with the mode `EDT` in the status bar. From the top: the sending address with the key of the account that sends ("Me <me@x.fr> · perso"), To, Cc and Bcc (Bcc only when it has addresses or ⌥⌘B opened it), one tag per address, wrapping when long, the subject, "After sending: Archive" when the conversation will be filed, then the text. The cursor starts at the top, above the line introducing the quotation ("On Nov 7, 2026, at 10:12, Alice <alice@x.fr> wrote:", in the app's language) and the quoted mail.
 
 While the reply is open every key is text: letters, Return, Delete (⌥ a word), ⌦, the arrows (⌥ by word, ⌘ to the ends of the line, ⌘↑ ⌘↓ to the ends of the text, ⌥↑ ⌥↓ to the ends of the line), Home, End, `ctrl-a`, `ctrl-e`, ⌘V, and a click in the text puts the cursor there.
 
@@ -64,11 +65,21 @@ Then the status bar says what happened: "Sent · filed in Archive · z: undo the
 
 The choice is sent as `after_send` and saved in the draft (`draft.after_send`): `z` during the undo delay gives the reply back with it ("After sending: Waiting", or "stays where it is"), and the next `⌘↩` applies it. It wins over the preselection, which is worked out again when the server accepts the mail; but nothing moves a conversation that is no longer in the Inbox, Todo or Waiting by then. Where the core offers no filing (a conversation in Archive, Newsletter…), `⇧⌘↩` says so and sends nothing.
 
+## Choosing the sender
+
+Any mail can be sent from any account that can send: an account of `accounts.toml` with `[smtp]`, not read-only (with `NICEMAILER_FAKE_NETWORK`, the accounts the file does not declare too). `⌥⌘F`, or a click on the line "From", opens "Send from": every address of those accounts, each account's main address then its identities, in the order of the accounts, keyed `1` to `9` then by letter, the current one marked. A key (or a click) chooses; Escape goes back to the text. The status bar says "Sending from Sales <sales@work.fr> · work". With a single address there is nothing to choose, and the status bar says which it is.
+
+The choice is saved with the draft at the next pause, like the other headers (`update_draft` with `from: {account_id, addr}`): the core checks that the account can send and that the address is one of its own, and takes the name `accounts.toml` gives it. Escape then `r` gives the reply back from the address chosen.
+
+**A mail of an account that cannot send.** `r`, `R` and `f` on a mail of an archive account (an mbox import), of an IMAP account without `[smtp]`, or of a read-only one, no longer refuse: the core starts the reply from another account (`compose::choose_sender`), the first, in the order of the accounts, with an address among the To and Cc of the mail (that address), else the first account that can send, from its main address. The status bar says "This account cannot send: from me@work.fr · work · ⌥⌘F to change". Only when no account at all can send is the reply refused, with the reason. `c` in the view of such an account writes from the first account that can send.
+
+**Where everything goes.** The draft stays in the account of the mail answered: its conversation, its row of Drafts and, for an IMAP account, its copy in the Drafts of that server. The account that sends is recorded in `draft.send_account_id` (schema version 7; NULL when it is the draft's own) and shown as `send_account_id` in `DraftView`. At sending, the `send` action is queued on the account that sends: its sender takes it, its SMTP server sends it, the mail becomes a row of its Sent folder and is copied to its Sent folder on the server. The conversation answered is filed in its own account, by the usual rules (an archive account's mail is in Archive: it stays there). The recipients are cleaned of the addresses of both accounts. The `Message-ID` of the draft, made from the address it started from, stays the same when the sender changes: its copies in Drafts are found by it.
+
 ## Forward and new mail
 
 A forward (`create_draft` with `kind: forward`) is linked to the mail by `draft.forward_of_message_id` (schema version 6): `f` again on the mail reopens it. The core takes the mail's files (not its inline images) from its raw file into `outgoing.noindex`, as if the user had attached them; those it cannot take (a mail whose raw file is not here) are named in `warning`, and the text is forwarded all the same. No `In-Reply-To`: a forward is not a reply and files nothing.
 
-A new mail (`kind: new`) is sent from the main address of the account the app names (the account of the view, or of the selected mail in the view of all accounts), else from the first account of `accounts.toml` that can send. `close_draft` deletes a new mail left blank (no recipient, subject, text nor file) instead of copying it to Drafts.
+A new mail (`kind: new`) is sent from the main address of the account the app names (the account of the view, or of the selected mail in the view of all accounts) if it can send, else from the first account that can (above). `close_draft` deletes a new mail left blank (no recipient, subject, text nor file) instead of copying it to Drafts.
 
 Escape with a text that is not an address in a recipient line keeps the draft open, to be corrected. Quarantine refuses `R` and `f`, as it refuses `r`.
 
@@ -137,13 +148,14 @@ The app, the TUI and the CLI. An agent (MCP) or the web server get `FORBIDDEN`: 
 | --- | --- | --- |
 | `create_draft` | `kind?` (`reply_all`, `reply_sender`, `forward`, `new`), `reply_to?`, `account?` (a new mail), `quote_header`, `body?` (restores an abandoned text) | `{draft, reused, warning}` |
 | `open_draft`, `close_draft` | `id` | `DraftView`, nothing |
-| `update_draft` | `id`, `revision`, and what changed: `body?`, `subject?`, `to?`, `cc?`, `bcc?` (whole lists of `{addr, name}`) | `{revision}`; `REVISION_CONFLICT` (1012), `DRAFT_SENDING` (1013), `INVALID_PARAMS` for an address that is not one |
+| `update_draft` | `id`, `revision`, and what changed: `body?`, `subject?`, `to?`, `cc?`, `bcc?` (whole lists of `{addr, name}`), `from?` (`{account_id, addr}`, one of `list_senders`) | `{revision}`; `REVISION_CONFLICT` (1012), `DRAFT_SENDING` (1013), `INVALID_PARAMS` for an address that is not one (or not the account's), `CANNOT_SEND` (1015) for an account that cannot send |
 | `add_draft_attachment` | `id`, `revision`, `staged`, `filename`, `mime_type?` | `{revision, attachment, warning}`; `INVALID_PARAMS` (not a staged file, beyond 100 MB) |
 | `remove_draft_attachment` | `id`, `revision`, `attachment_id` | `{revision}` |
 | `parse_addresses` | `text` | `{addresses, invalid}` |
 | `suggest_recipients` | `query`, `limit?` (8, at most 50) | `{items}` of `{addr, name}` |
+| `list_senders` | none | `{items}` of `{account_id, account, addr, name}`: every address of every account that can send, in the order of the accounts |
 | `discard_draft` | `id` | the `DraftView` abandoned |
-| `send_draft` | `id`, `revision`, `body`, `after_send?` (`archive`, `waiting`, `todo`, `stay`; saved in the draft; absent: the one saved, else the preselection) | `{send_at}`; `CANNOT_SEND` (1015) |
+| `send_draft` | `id`, `revision`, `body`, `after_send?` (`archive`, `waiting`, `todo`, `stay`; saved in the draft; absent: the one saved, else the preselection) | `{send_at}`; `CANNOT_SEND` (1015), also when the account that sends no longer can (`accounts.toml` changed) |
 | `cancel_send` | `id` | `DraftView`, editable; `SEND_ALREADY_STARTED` (1014) |
 
 `create_draft` returns `BODY_PENDING` (1016) when the mail's body is not downloaded yet; the core asks for it first. Events: `DraftSent {draft_id, message_id, thread_id, moved_to, undo}`, `SendFailed {draft_id, reply_to, reason}`, `SendPartial {draft_id, refused}`.
@@ -154,16 +166,16 @@ The app, the TUI and the CLI. An agent (MCP) or the web server get `FORBIDDEN`: 
 | --- | --- | --- |
 | `compose.undo_send_seconds` | 5 | 0 to 30; 0 sends at once |
 | `accounts.<key>.save_sent` | `auto` | `always`, `never` |
-| `accounts.<key>.smtp` | none | without it the account cannot send |
+| `accounts.<key>.smtp` | none | without it the account cannot send; its mails are answered from another account |
 
 ## Tests
 
-- `nm-core` (`compose.rs`): reply to the sender, forward subject and body, attachments in `multipart/mixed` (names in RFC 2231, short lines, the same bytes twice, a text holding the boundary), file names and types cleaned, the address lists typed or pasted, cleaning the edited recipients and subject, `Bcc` only in the copy, recipients, identity, subject, references, quotation, `format=flowed` read back as typed, MIME headers and encodings, header injection, dates, providers.
+- `nm-core` (`compose.rs`): the account that sends for one that cannot (the one the mail was sent to, else the first), reply to the sender, forward subject and body, attachments in `multipart/mixed` (names in RFC 2231, short lines, the same bytes twice, a text holding the boundary), file names and types cleaned, the address lists typed or pasted, cleaning the edited recipients and subject, `Bcc` only in the copy, recipients, identity, subject, references, quotation, `format=flowed` read back as typed, MIME headers and encodings, header injection, dates, providers.
 - `nm-proto` (`smtp.rs`): a scripted server: PLAIN and LOGIN, refused login, no password without TLS, recipients refused in part or all, `SIZE`, `5xx` / `4xx` to the message, hostile addresses, broken servers, dot-stuffing.
-- `nm-store` (`tests/drafts.rs`): the draft prepared, reused, revisions, the filing chosen (kept after `cancel_send`, winning over the preselection, `stay` touching nothing), recipients and subject edited (one revision, refused addresses), Bcc in the envelope and the copy only (and its decision), suggestions by use, files attached and removed (refusals, sizes), a mail with files sent and its files collected, orphans swept after the grace delay, `R`, a forward with its files (and without raw file), a new mail dropped when blank; `outgoing.rs`: a staged file taken once by its content, only a plain name taken, the undo delay and `cancel_send`, `data_sent`, the acceptance in one transaction (Sent row, filing, decisions, undo), replay, the copy's UID and the attachment by the synchronization, a fresh Sent row kept by a pass, failures, partial refusals, restore, repair.
-- `nm-daemon` (`tests/send_rpc.rs`, `make imap-test`): the real core against Dovecot and Mailpit: a reply sent, copied to Sent, filed on the server, nothing twice after a pass, undo, on both servers; a send cancelled in time; a refused recipient; a refused login then the SMTP password saved; an agent refused.
-- `nm-daemon` (`tests/fake_send_rpc.rs`): an archive account refused, then pretending to send with `NICEMAILER_FAKE_NETWORK`; `after_send` through the socket (`stay` saved, `inbox` refused); `parse_addresses`, `suggest_recipients`, headers saved by `update_draft`; a staged file attached and sent; the kinds of draft (`R`, `f`, `c`, a blank new mail dropped at closing).
-- App: `TextBufferTests`, `ComposeTests` (pure rules, and the keys through `GeekController` against `FakeCore`), `UITests/compose.uiscript`, `UITests/recipients.uiscript`, `UITests/attachments.uiscript` and `UITests/writing.uiscript`.
+- `nm-store` (`tests/drafts.rs`): the draft prepared, reused, revisions, the filing chosen (kept after `cancel_send`, winning over the preselection, `stay` touching nothing), recipients and subject edited (one revision, refused addresses), Bcc in the envelope and the copy only (and its decision), suggestions by use, files attached and removed (refusals, sizes), a mail with files sent and its files collected, orphans swept after the grace delay, `R`, a forward with its files (and without raw file), a new mail dropped when blank, a mail of an account that cannot send answered from another (the account the mail was sent to preferred, queued and claimed on the account that sends, kept in its Sent, the conversation filed in its own account), the sender changed (one revision, back to the draft's own account); `outgoing.rs`: a staged file taken once by its content, only a plain name taken, the undo delay and `cancel_send`, `data_sent`, the acceptance in one transaction (Sent row, filing, decisions, undo), replay, the copy's UID and the attachment by the synchronization, a fresh Sent row kept by a pass, failures, partial refusals, restore, repair.
+- `nm-daemon` (`tests/send_rpc.rs`, `make imap-test`): the real core against Dovecot and Mailpit: a reply sent, copied to Sent, filed on the server, nothing twice after a pass, undo, on both servers; a mail of an archive account answered from the IMAP account (its From, its SMTP server, its Sent on the server); a send cancelled in time; a refused recipient; a refused login then the SMTP password saved; an agent refused.
+- `nm-daemon` (`tests/fake_send_rpc.rs`): an archive account refused, then pretending to send with `NICEMAILER_FAKE_NETWORK`; `after_send` through the socket (`stay` saved, `inbox` refused); `parse_addresses`, `suggest_recipients`, headers saved by `update_draft`; a staged file attached and sent; the kinds of draft (`R`, `f`, `c`, a blank new mail dropped at closing); an archive mail answered from an account of `accounts.toml` (`list_senders`, the sender changed, an archive account and a foreign address refused, the `send` queued on the account that sends, a new mail asked from the archive account).
+- App: `TextBufferTests`, `ComposeTests` (pure rules, and the keys through `GeekController` against `FakeCore`), `UITests/compose.uiscript`, `UITests/recipients.uiscript`, `UITests/attachments.uiscript`, `UITests/writing.uiscript` and `UITests/sender.uiscript`.
 
 ## Pretending to send
 
@@ -173,4 +185,4 @@ With `NICEMAILER_FAKE_NETWORK=1` in the core's environment, an account that `acc
 NICEMAILER_FAKE_NETWORK=1 NICEMAILER_DATA_DIR="$HOME/Library/Application Support/NiceMailer-archive" make core
 ```
 
-The accounts declared in `accounts.toml` are not affected: one with `[smtp]` sends for real. The changes are real in the database: the reply in Sent, and the decision `inbox` given to recipients without one (`z` undoes the filing and the decisions).
+The accounts declared in `accounts.toml` are not affected: one with `[smtp]` sends for real, and is offered in "Send from" with the others. The changes are real in the database: the reply in Sent, and the decision `inbox` given to recipients without one (`z` undoes the filing and the decisions).

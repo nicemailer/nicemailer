@@ -35,13 +35,15 @@ extension AppModel {
                 flash = L("This reply is being sent · z to cancel")
                 return
             }
-            composer = Composer(draft: r.draft)
+            await openComposer(r.draft)
             if let w = r.warning {
                 flash = w
             } else if r.reused {
                 flash = r.draft.kind == "forward" ? L("Forward resumed") : L("Reply resumed")
             } else {
-                flash = nil
+                // The mail's account cannot send (an archive, no SMTP): the
+                // core chose another; the user is told, and how to change it.
+                flash = Compose.otherSenderFlash(r.draft, senders: senders)
             }
         } catch {
             flash = Self.composeErrorFlash(error)
@@ -58,11 +60,39 @@ extension AppModel {
         if let account = scopeAccountId ?? selected { params["account"] = account }
         do {
             let r: CreateDraftResult = try await client.call("create_draft", params)
-            composer = Composer(draft: r.draft)
+            await openComposer(r.draft)
             flash = nil
         } catch {
             flash = Self.composeErrorFlash(error)
         }
+    }
+
+    /// Opens the reply on a draft, with the addresses it can be sent from
+    /// (`list_senders`: the accounts that can send may change with
+    /// `accounts.toml`, so they are asked again each time). The reply opens
+    /// even if the list does not come: only the account's key and ⌥⌘F
+    /// miss it.
+    func openComposer(_ draft: DraftView) async {
+        composer = Composer(draft: draft)
+        guard let client = core else { return }
+        if let r: ListSendersResult = try? await client.call("list_senders", [:]) {
+            senders = r.items
+        }
+    }
+
+    /// ⌥⌘F, or a click on the line "From": the choice of the address to
+    /// send from, when there is one to make.
+    var canChooseSender: Bool { senders.count > 1 }
+
+    /// An address of "Send from" chosen: the account that sends, and the
+    /// From, saved with the next pause like the other headers. The core
+    /// checks it again (`update_draft`).
+    func chooseSender(_ s: SenderView) {
+        guard composer != nil else { return }
+        composer?.headers.from = AddressView(addr: s.addr, name: s.name)
+        composer?.headers.sendAccountId = s.accountId
+        flash = L("Sending from %@", Compose.senderLabel(s))
+        composerChanged()
     }
 
     /// The text typed changed: saved after `Compose.saveDelay` without
@@ -376,7 +406,7 @@ extension AppModel {
         do {
             let d: DraftView = try await client.call("cancel_send", ["id": draftId])
             sending[draftId] = nil
-            composer = Composer(draft: d)
+            await openComposer(d)
             flash = L("Sending cancelled: the reply is open again")
         } catch let e as CoreClient.RPCError where e.code == ComposeError.sendStarted {
             flash = L("Too late: the mail is leaving")
@@ -393,7 +423,7 @@ extension AppModel {
             if let replyTo = d.replyTo { params["reply_to"] = replyTo }
             if d.kind == .new, let account = d.account { params["account"] = account }
             let r: CreateDraftResult = try await client.call("create_draft", params)
-            composer = Composer(draft: r.draft)
+            await openComposer(r.draft)
             flash = L("Reply restored")
         } catch {
             flash = Self.composeErrorFlash(error)

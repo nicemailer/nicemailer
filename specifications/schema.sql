@@ -33,7 +33,7 @@ PRAGMA temp_store = MEMORY;
 -- Une base existante est mise à jour par les migrations du noyau
 -- (crates/nm-store/src/migrations.rs) ; ce fichier crée directement la
 -- dernière version.
-PRAGMA user_version = 6;   -- migrations : comparer à la version attendue au démarrage
+PRAGMA user_version = 7;   -- migrations : comparer à la version attendue au démarrage
 
 -- ------------------------------------------------------------
 -- Comptes : état seulement. Les paramètres (adresse, serveurs, identifiants,
@@ -563,6 +563,11 @@ CREATE TABLE draft (
     -- Le mail transféré (f) ; NULL pour une réponse ou un nouveau mail.
     -- Un transfert n'a pas de reply_to_message_id : il ne range rien.
     forward_of_message_id INTEGER REFERENCES message(id) ON DELETE SET NULL,
+    -- Le compte qui envoie (son SMTP, son dossier Sent), quand ce n'est pas
+    -- account_id : réponse à un mail d'un compte qui ne peut pas envoyer
+    -- (archive, IMAP sans [smtp]), ou expéditeur changé (reponse.md, 4 ter).
+    -- NULL = account_id. Le brouillon reste dans la conversation d'account_id.
+    send_account_id     INTEGER REFERENCES account(id) ON DELETE SET NULL,
     UNIQUE (message_id_hdr)
 ) STRICT;
 

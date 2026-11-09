@@ -1059,6 +1059,16 @@
         }
       }
     },
+    "No account can send: add an [smtp] server to one in accounts.toml": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucun compte ne peut envoyer : ajoutez un serveur [smtp] à l'un d'eux dans accounts.toml"
+          }
+        }
+      }
+    },
     "No attachment to save": {
       "localizations": {
         "fr": {
@@ -1299,6 +1309,16 @@
         }
       }
     },
+    "Only one address can send: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Une seule adresse peut envoyer : %@"
+          }
+        }
+      }
+    },
     "Open Login Items": {
       "localizations": {
         "fr": {
@@ -1469,6 +1489,16 @@
         }
       }
     },
+    "Send from": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Envoyer depuis"
+          }
+        }
+      }
+    },
     "Send, then file the conversation in": {
       "localizations": {
         "fr": {
@@ -1485,6 +1515,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Envoi annulé : la réponse est rouverte"
+          }
+        }
+      }
+    },
+    "Sending from %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Envoi depuis %@"
           }
         }
       }
@@ -1755,6 +1795,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Thème"
+          }
+        }
+      }
+    },
+    "This account cannot send: from %@ · ⌥⌘F to change": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce compte ne peut pas envoyer : depuis %@ · ⌥⌘F pour changer"
           }
         }
       }
@@ -3402,12 +3452,12 @@
         }
       }
     },
-    "⌘↩ send · ⇧⌘↩ send then… · Esc keep · ⌘⌫ abandon": {
+    "⌘↩ send · ⇧⌘↩ send then… · ⌥⌘F from · Esc keep · ⌘⌫ abandon": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "⌘↩ envoyer · ⇧⌘↩ envoyer puis… · Échap garder · ⌘⌫ abandonner"
+            "value": "⌘↩ envoyer · ⇧⌘↩ envoyer puis… · ⌥⌘F expéditeur · Échap garder · ⌘⌫ abandonner"
           }
         }
       }

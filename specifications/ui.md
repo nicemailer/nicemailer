@@ -181,7 +181,7 @@ Avec une majuscule (JK), ou maj + flèche bas / haut, on passe au mail suivant e
 
 
 Les opérations classiques sur un mail sont (elles s'appliquent aux mails marqués avec J/K, sinon au mail sélectionné) : 
-r répondre à tous (`reponse.md`) : contexte édition, ⌘↩ envoie, ⇧⌘↩ choisit où ranger la conversation puis envoie, échap garde le brouillon, ⌘⌫ l'abandonne ; ⇥ et ⇧⇥ passent de champ en champ (À, Cc, Cci, Objet, texte), ⌥⌘B ouvre la ligne Cci
+r répondre à tous (`reponse.md`) : contexte édition, ⌘↩ envoie, ⇧⌘↩ choisit où ranger la conversation puis envoie, échap garde le brouillon, ⌘⌫ l'abandonne ; ⇥ et ⇧⇥ passent de champ en champ (À, Cc, Cci, Objet, texte), ⌥⌘B ouvre la ligne Cci, ⌥⌘F choisit l'adresse (donc le compte) d'envoi
 R répondre à l'expéditeur seul (`reponse.md`, section 4 bis)
 f forwarder : transférer le mail et ses fichiers
 c écrire un nouveau mail

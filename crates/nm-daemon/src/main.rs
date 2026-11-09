@@ -1083,6 +1083,7 @@ async fn dispatch(core: &Arc<Core>, session: &mut Session, req: Request) -> Resu
         method::REMOVE_DRAFT_ATTACHMENT => to_value(drafts::remove_attachment(core, params(req.params)?, source).await?),
         method::PARSE_ADDRESSES => to_value(drafts::parse_addresses(params(req.params)?)),
         method::SUGGEST_RECIPIENTS => to_value(drafts::suggest(core, params(req.params)?).await?),
+        method::LIST_SENDERS => to_value(drafts::list_senders(core).await?),
         method::CLOSE_DRAFT => {
             drafts::close(core, params(req.params)?, source).await?;
             to_value(CommandResult { changed: 0 })

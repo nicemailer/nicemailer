@@ -1,0 +1,40 @@
+# The address, and the account, a mail is sent from (`reponse.md`, section
+# 4 ter): the line "From" names the account; ⌥⌘F or a click on "From" asks
+# "Send from" among every account that can send (here `perso`, the fake
+# mail, and `fixture`, the archive account, both sending with the fake
+# network); the choice is kept in the draft and the mail leaves from it.
+expect folder = Inbox
+key r
+expect composing = true
+expect compose_from_account = perso
+expect compose_senders ~ me@example.com
+key alt-cmd-f
+expect overlay ~ choice
+expect choice = Send from
+snap send-from
+# Escape: back to the text, the sender unchanged, letters are text.
+key esc
+expect overlay = none
+expect composing = true
+expect compose_from_account = perso
+# A click on "From", then the second address: the archive account's.
+click compose:from
+expect choice = Send from
+key 2
+expect overlay = none
+expect compose_from = me@example.com
+expect compose_from_account = fixture
+expect flash ~ Sending from me@example.com · fixture
+type Merci.
+expect compose_text ~ Merci.|
+# Kept in the draft: Escape, then `r`, gives it back from `fixture`.
+key esc
+expect composing = false
+key r
+expect composing = true
+expect compose_from = me@example.com
+expect compose_from_account = fixture
+key cmd-ret
+expect composing = false
+wait 4500
+expect flash ~ Sent

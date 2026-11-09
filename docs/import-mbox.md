@@ -1,6 +1,6 @@
 # Importing an mbox file
 
-NiceMailer can import a whole mailbox exported as an mbox file (HEY, Gmail Takeout, Thunderbird, Apple Mail…) into an **archive account**. For now the import is only available from the command line.
+NiceMailer can import a whole mailbox exported as an mbox file (HEY, Gmail Takeout, Thunderbird, Apple Mail…) into an **archive account**. For now the import is only available from the command line. An archive account has no server: `r`, `R` and `f` on its mails answer from an account of `accounts.toml` that can send ([sending.md](sending.md), "Choosing the sender").
 
 The specification (in French) is `specifications/import-initial.md`, section 9.
 

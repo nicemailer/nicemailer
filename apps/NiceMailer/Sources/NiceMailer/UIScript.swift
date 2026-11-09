@@ -331,6 +331,7 @@ private final class Runner {
         case "tab": chars = "\t"; code = KeyCode.tab
         case "shift-tab": chars = "\u{19}"; code = KeyCode.tab; mods = .shift
         case "alt-cmd-b": chars = "b"; code = 11; mods = [.command, .option]
+        case "alt-cmd-f": chars = "f"; code = 3; mods = [.command, .option]
         case "shift-cmd-a": chars = "A"; code = 0; mods = [.command, .shift]
         // Editing keys of a typed line (`LineEdit`).
         case "left": chars = "\u{F702}"; code = KeyCode.left; mods = .function
@@ -637,7 +638,9 @@ private final class Runner {
             // breaks as `\n`), its lines as drawn, and the mails waiting
             // to leave.
             "composing": "\(m.composer != nil)",
-            "compose_from": m.composer?.draft.from.addr ?? "",
+            "compose_from": m.composer?.headers.from.addr ?? "",
+            "compose_from_account": m.composer.flatMap { c in m.senders.first { $0.accountId == c.headers.sendAccountId }?.account } ?? "",
+            "compose_senders": m.senders.map(\.addr).joined(separator: ","),
             "compose_to": m.composer.map { $0.headers.to.map(\.addr).joined(separator: ",") } ?? "",
             "compose_cc": m.composer.map { $0.headers.cc.map(\.addr).joined(separator: ",") } ?? "",
             "compose_bcc": m.composer.map { $0.headers.bcc.map(\.addr).joined(separator: ",") } ?? "",
