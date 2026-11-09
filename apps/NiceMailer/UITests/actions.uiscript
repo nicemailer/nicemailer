@@ -29,6 +29,15 @@ key *
 expect selected_flagged = true
 key *
 expect selected_flagged = false
+# U marks read whatever the state; u toggles.
+key U
+expect selected_unread = 0
+key U
+expect selected_unread = 0
+key u
+expect selected_unread > 0
+key U
+expect selected_unread = 0
 # ⌘A marks every mail of the list; Escape unmarks.
 key cmd-a
 expect marked_count > 2
@@ -51,6 +60,8 @@ expect flash ~ Not available yet: forward
 # Help.
 key ?
 expect overlay = help
+# Grouped keys, in three columns in a wide window.
+expect help_columns = Navigate,Read | Select,Act on mails | Write,Find and go,Window
 snap help
 key j
 expect overlay = none

@@ -359,6 +359,16 @@
         }
       }
     },
+    "Act on mails": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agir sur les mails"
+          }
+        }
+      }
+    },
     "Actual Size": {
       "localizations": {
         "fr": {
@@ -599,6 +609,16 @@
         }
       }
     },
+    "Find and go": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chercher et aller"
+          }
+        }
+      }
+    },
     "First message of the conversation": {
       "localizations": {
         "fr": {
@@ -825,6 +845,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "NICEMAILER_DATA_DIR est défini : c'est lui qui fixe la base ; lancez l'app sans lui pour en choisir une"
+          }
+        }
+      }
+    },
+    "Navigate": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Naviguer"
           }
         }
       }
@@ -1149,6 +1179,16 @@
         }
       }
     },
+    "Read": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lire"
+          }
+        }
+      }
+    },
     "Reload": {
       "localizations": {
         "fr": {
@@ -1235,6 +1275,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Chercher partout"
+          }
+        }
+      }
+    },
+    "Select": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sélectionner"
           }
         }
       }
@@ -1769,6 +1819,26 @@
         }
       }
     },
+    "Window": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fenêtre"
+          }
+        }
+      }
+    },
+    "Write": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Écrire"
+          }
+        }
+      }
+    },
     "a name, an address or @domain; -value to exclude": {
       "localizations": {
         "fr": {
@@ -2061,6 +2131,16 @@
         }
       }
     },
+    "flag": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "drapeau"
+          }
+        }
+      }
+    },
     "flagged": {
       "localizations": {
         "fr": {
@@ -2081,12 +2161,32 @@
         }
       }
     },
+    "forward (not yet)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "transférer (pas encore)"
+          }
+        }
+      }
+    },
     "from: %@": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "de : %@"
+          }
+        }
+      }
+    },
+    "full screen": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "plein écran"
           }
         }
       }
@@ -2187,6 +2287,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "marquer et avancer (sélection multiple)"
+          }
+        }
+      }
+    },
+    "mark as read": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "marquer lu"
           }
         }
       }
@@ -2436,12 +2546,12 @@
         }
       }
     },
-    "read / unread, flag": {
+    "read / unread": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "lu / non lu, drapeau"
+            "value": "lu / non lu"
           }
         }
       }
@@ -2497,6 +2607,16 @@
         }
       }
     },
+    "reply to all": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "répondre à tous"
+          }
+        }
+      }
+    },
     "reply to the sender only": {
       "localizations": {
         "fr": {
@@ -2507,12 +2627,12 @@
         }
       }
     },
-    "reply, reply all, forward (not yet)": {
+    "reply to the sender only (not yet)": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "répondre, répondre à tous, transférer (pas encore)"
+            "value": "répondre à l'expéditeur seul (pas encore)"
           }
         }
       }
@@ -2537,22 +2657,32 @@
         }
       }
     },
-    "scroll the mail": {
+    "scroll the mail a page down": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "faire défiler le mail"
+            "value": "faire défiler le mail d'une page vers le bas"
           }
         }
       }
     },
-    "search everywhere: words anywhere, addresses included, in Everything": {
+    "scroll the mail a page up": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "chercher partout : des mots n'importe où, adresses comprises, dans Everything"
+            "value": "faire défiler le mail d'une page vers le haut"
+          }
+        }
+      }
+    },
+    "search everywhere, in Everything": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "chercher partout, dans Everything"
           }
         }
       }
@@ -2688,6 +2818,16 @@
         }
       }
     },
+    "text size: bigger, smaller, default": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "taille du texte : plus grand, plus petit, par défaut"
+          }
+        }
+      }
+    },
     "text words body": {
       "comment": "Hidden search words of the Text… attribute in the F selector, separated by spaces.",
       "localizations": {
@@ -2705,6 +2845,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "texte : %@"
+          }
+        }
+      }
+    },
+    "the same, with the arrows": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "idem, avec les flèches"
+          }
+        }
+      }
+    },
+    "this list of keys": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "cette liste des touches"
           }
         }
       }

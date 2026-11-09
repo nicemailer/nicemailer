@@ -298,6 +298,44 @@ struct ReadingTests {
         #expect(model.stickyThreadId == nil)
     }
 
+    // MARK: Marking read with U
+
+    /// `(thread_id, seen)` of every `set_thread_seen` sent so far.
+    var seenRequests: [(Int, Bool)] {
+        core.calls("set_thread_seen").compactMap { c in
+            (c["thread_id"] as? Int).flatMap { id in (c["seen"] as? Bool).map { (id, $0) } }
+        }
+    }
+
+    @Test func capitalUMarksReadAndNeverUnread() async {
+        // The first mail, selected by the app, is unread: U marks it read.
+        press("U")
+        #expect(await eventually { seenRequests.map(\.0) == [1] && seenRequests[0].1 })
+        await refresh()
+        #expect(model.selectedThread?.unreadCount == 0)
+        // Read already: U again sends nothing, where u would make it unread.
+        press("U")
+        await pause()
+        #expect(seenRequests.count == 1 && model.selectedThread?.unreadCount == 0)
+        press("u")
+        #expect(await eventually { seenRequests.count == 2 && !seenRequests[1].1 })
+        await refresh()
+        // Unread again: U marks it read once more.
+        press("U")
+        #expect(await eventually { seenRequests.count == 3 && seenRequests[2].1 })
+    }
+
+    @Test func capitalUMarksEveryMarkedMailReadAndSkipsTheReadOnes() async {
+        box.setSeen(2, true)
+        await refresh()
+        model.marked = [1, 2, 3]
+        press("U")
+        #expect(await eventually { Set(seenRequests.map(\.0)) == [1, 3] })
+        await pause()
+        // No request for mail 2, already read, and none to make one unread.
+        #expect(seenRequests.count == 2 && seenRequests.allSatisfy(\.1))
+    }
+
     // MARK: keepingSelected
 
     func row(_ id: Int) -> ThreadSummary {

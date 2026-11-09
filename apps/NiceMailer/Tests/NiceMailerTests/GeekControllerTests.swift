@@ -216,6 +216,18 @@ struct GeekControllerTests {
         #expect(model.flash == L("Not available yet: %@", L("reply to the sender only")))
     }
 
+    @Test func theHelpBlockOfTheStatusBarOpensAndClosesTheHelp() {
+        model.flash = "something"
+        controller.toggleHelpFromStatusBar()
+        #expect(controller.overlay == .help && model.flash == nil)
+        controller.toggleHelpFromStatusBar()
+        #expect(controller.overlay == .none)
+        // From an open menu, the help takes its place.
+        press("m")
+        controller.toggleHelpFromStatusBar()
+        #expect(controller.overlay == .help)
+    }
+
     @Test func helpOpensAndAnyKeyClosesIt() {
         press("?")
         #expect(controller.overlay == .help)

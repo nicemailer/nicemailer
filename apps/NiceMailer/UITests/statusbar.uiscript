@@ -94,3 +94,13 @@ key esc
 click status:s
 expect overlay = menu(NiceMailer.GeekController.Prefix.save)
 key esc
+# The ? block at the right end opens the list of keys; a second click
+# closes it, as does any key.
+click status:help
+expect overlay = help
+snap help-from-status-bar
+click status:help
+expect overlay = none
+click status:help
+key j
+expect overlay = none

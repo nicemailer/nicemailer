@@ -60,6 +60,8 @@ enum UIScript {
     static var openedFile = ""
     /// Lines of the reader's title line, 1 or 2 (`ReaderTitleBar`).
     static var titleLines = 0
+    /// Titles of the help's groups, column by column (`HelpPanel`).
+    static var helpColumns: [[String]] = []
     /// Width of the open picker panel, in points (`PickerPopup.width`).
     static var pickerWidth: CGFloat = 0
     /// Times ⌃⌘F asked for full screen (never applied in UI script mode).
@@ -473,6 +475,9 @@ private final class Runner {
         return [
             "screen": "\(c.screen)",
             "overlay": "\(c.overlay)",
+            // `Move,Read | Select,Act on mails | …`: the help's columns.
+            "help_columns": c.overlay == .help
+                ? UIScript.helpColumns.map { $0.joined(separator: ",") }.joined(separator: " | ") : "",
             "mode": c.modeLabel,
             "mode_icon": "\(c.showsAppIcon && AppIcon.statusImage != nil)",
             "location": c.locationLabel,

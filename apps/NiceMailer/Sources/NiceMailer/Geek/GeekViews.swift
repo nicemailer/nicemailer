@@ -108,8 +108,8 @@ private struct GeekWindow: View {
                 .contentShape(Rectangle())
                 .onTapGesture { controller.clickOutsideOverlay() }
                 // For the UI scripts: a spot in the top-right corner,
-                // which no panel covers (pickers are centered, menus drop
-                // from the status bar's left part, help sits bottom-right).
+                // which no panel covers (pickers and help are centered,
+                // with a margin; menus drop from the status bar's left part).
                 .overlay(alignment: .topTrailing) {
                     Color.clear.frame(width: 16, height: 16).padding(8).uiTarget("outside-panel")
                 }
@@ -156,8 +156,7 @@ private struct GeekWindow: View {
                 menu.padding(12)
             }
         case .help:
-            KeyMenu(title: L("Keys"), entries: controller.helpLines.map { .init(key: $0.0, label: $0.1) }, onSelect: nil)
-                .padding(12)
+            HelpPanel(groups: Help.groups)
         case .picker(let kind):
             // Swift note: a `GeometryReader` gives its content the size it
             // is offered, here the window's content: the links panel takes
@@ -208,8 +207,9 @@ extension View {
 
 // MARK: - Status bar
 
-/// Compact status bar (`ui.md`). Each element opens with one key: the mode
-/// with `?` (the keys), the location with `h` (the folders).
+/// Compact status bar (`ui.md`). Each element opens with one key and a
+/// click: the account with `@`, the folder with `;`, the menus `v` `m` `s`,
+/// and, at the right end, the list of keys with `?`.
 struct GeekStatusBar: View {
     @Environment(AppModel.self) private var model
     let controller: GeekController
@@ -297,6 +297,13 @@ struct GeekStatusBar: View {
                 Text(L("%lld marked", model.marked.count)).foregroundStyle(Palette.markedBar)
             }
             if model.sort == "modified" { Text(L("by modification")).foregroundStyle(Palette.muted) }
+            // The list of keys, last at the right end and on every screen:
+            // a reminder that `?` exists, for whoever has not learned it
+            // yet; a click opens it too.
+            StatusBlock(icon: "questionmark.circle", text: "", key: "?")
+                .onTapGesture { controller.toggleHelpFromStatusBar() }
+                .help(L("Keys"))
+                .uiTarget("status-help")
         }
         .font(.geek(11))
         .padding(.horizontal, 6)
@@ -1466,6 +1473,76 @@ private struct KeyMenu: View {
         .padding(10)
         .background(Palette.popup)
         .overlay(Rectangle().stroke(Palette.separator, lineWidth: 1))
+    }
+}
+
+/// The list of keys (`?`, `ui.md`): the groups of `Help.groups` side by
+/// side in up to three columns, centered, so that every key is seen at
+/// once, without scrolling. The window's width decides the number of
+/// columns (`Help.columnCount`); `Help.columns` balances them.
+private struct HelpPanel: View {
+    let groups: [HelpGroup]
+
+    /// Inner margin of the panel, and margin around it in the window.
+    private var padding: CGFloat { scaled(14) }
+    private var margin: CGFloat { scaled(12) }
+
+    var body: some View {
+        let charWidth = Fonts.charWidth(12 * TextSize.shared.scale)
+        GeometryReader { geometry in
+            let count = Help.columnCount(groups, available: geometry.size.width - 2 * margin,
+                                         charWidth: charWidth, padding: padding)
+            let columns = Help.columns(groups, count: count)
+            VStack(alignment: .leading, spacing: scaled(10)) {
+                Text(L("Keys")).foregroundStyle(Palette.accentText)
+                // Swift note: `ViewThatFits` shows the first of its views
+                // that fits in the space offered. The columns alone almost
+                // always fit; in a very short window they scroll instead of
+                // being cut.
+                ViewThatFits(in: .vertical) {
+                    columnsView(columns, charWidth: charWidth)
+                    ScrollView { columnsView(columns, charWidth: charWidth) }
+                }
+            }
+            .fixedSize(horizontal: true, vertical: false)
+            .padding(padding)
+            .background(Palette.popup)
+            .overlay(Rectangle().stroke(Palette.separator, lineWidth: 1))
+            .padding(margin)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .onAppear { if UIScript.isActive { UIScript.helpColumns = columns.map { $0.map(\.title) } } }
+            .onChange(of: count) { _, _ in
+                if UIScript.isActive { UIScript.helpColumns = columns.map { $0.map(\.title) } }
+            }
+        }
+    }
+
+    private func columnsView(_ columns: [[HelpGroup]], charWidth: CGFloat) -> some View {
+        HStack(alignment: .top, spacing: CGFloat(Help.columnGap) * charWidth) {
+            ForEach(Array(columns.enumerated()), id: \.offset) { _, column in
+                // One key width for the whole column: the labels of its
+                // groups line up, as in a single table.
+                let keyWidth = CGFloat(Help.keyWidth(column)) * charWidth + 4
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(Array(column.enumerated()), id: \.offset) { g, group in
+                        Text(group.title)
+                            .bold()
+                            .foregroundStyle(Palette.text)
+                            .padding(.bottom, 2)
+                            // A blank line between two groups.
+                            .padding(.top, g == 0 ? 0 : scaled(10))
+                        ForEach(Array(group.entries.enumerated()), id: \.offset) { _, e in
+                            HStack(spacing: CGFloat(Help.keyGap) * charWidth) {
+                                Text(e.key).foregroundStyle(Palette.accentText)
+                                    .frame(width: keyWidth, alignment: .leading)
+                                Text(e.label).foregroundStyle(e.notYet ? Palette.muted : Palette.text)
+                                    .lineLimit(1)
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

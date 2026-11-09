@@ -87,12 +87,25 @@ extension AppModel {
         }
     }
 
-    /// Read / unread for the target threads: all become read if one of them
-    /// is unread, else all become unread.
+    /// Read / unread for the target threads (`u`): all become read if one of
+    /// them is unread, else all become unread.
     func toggleSeenTargets() {
-        guard let client = core else { return }
         let targets = targetThreads
-        let seen = targets.contains { $0.unreadCount > 0 }
+        setSeen(targets.contains { $0.unreadCount > 0 }, of: targets)
+    }
+
+    /// Marks the target threads read (`U`), whatever their state: unlike `u`,
+    /// pressing it on a read mail does not make it unread, so the key can be
+    /// pressed without first looking at the unread dot (`ui.md`).
+    func markTargetsSeen() {
+        // Threads already read are left out: no request for nothing.
+        setSeen(true, of: targetThreads.filter { $0.unreadCount > 0 })
+    }
+
+    /// Sends `set_thread_seen` for each thread. Not optimistic, as for the
+    /// flag: the list updates when the core's event arrives.
+    private func setSeen(_ seen: Bool, of targets: [ThreadSummary]) {
+        guard let client = core, !targets.isEmpty else { return }
         Task {
             for t in targets {
                 do {

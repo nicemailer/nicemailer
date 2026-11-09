@@ -20,7 +20,7 @@ The title bar of the window (its title and the red, orange and green buttons) is
 With several accounts, the app opens on **all**, the unified view: each folder (Inbox, Archive, Todo…) gathers the folders of the same role in every account, with their unread counts added up, and lists their mails together, newest first. Choose another view with `@` (or a click on the account in the status bar or on the title of the folder column): **all** comes first, then each account. Each row shows its unread count at the right end, as in the `;` menu. Changing view keeps the folder role (Archive to Archive), or falls back to the Inbox.
 
 The `;` menu and the folder column only show the folders of the current view: the account is chosen with `@`. At the foot of the list, the virtual folder **Everything** (`;e`) lists every folder of the view together (all accounts in "all"), to search everywhere with the attributes; a conversation present in several folders (Inbox and Sent) appears once, in the folder of its latest mail. Since the list mixes every folder, each row shows its folder in a muted column before the message count, and the reader shows it at the right end of the subject line. In "all", the account follows the folder ("Archive · perso"): always in the reader, and in the list only when the subject keeps at least 30 characters (a wide list, one column), otherwise the folder alone. Moves and other actions apply to each mail in its own account.
-- The **status bar** shows the mode: the app's icon in the normal mode, otherwise the mode written (`EDT` while writing a reply, the prefix waiting for its second key such as `m`, `PCK` in a picker, `ASK` for a question), then the account (`@` icon) and the folder (folder icon), each followed by the key that opens it: `@` for the account picker, `;` for the menu of folders and screens. A click on either opens the same; the rows of a menu can be clicked too. While a tag, group or contact is listed, it shows that instead. Messages (result of an action, errors) appear on the right and disappear at the next key. A move names the mail and the folder: “Devis toiture” moved to Archive (the subject is cut at 50 characters); several mails give their number instead: 3 threads moved to Archive. `vs` moves it to the top, hides it, or brings it back to the bottom.
+- The **status bar** shows the mode: the app's icon in the normal mode, otherwise the mode written (`EDT` while writing a reply, the prefix waiting for its second key such as `m`, `PCK` in a picker, `ASK` for a question), then the account (`@` icon) and the folder (folder icon), each followed by the key that opens it: `@` for the account picker, `;` for the menu of folders and screens. A click on either opens the same; the rows of a menu can be clicked too. While a tag, group or contact is listed, it shows that instead. Messages (result of an action, errors) appear on the right and disappear at the next key. A move names the mail and the folder: “Devis toiture” moved to Archive (the subject is cut at 50 characters); several mails give their number instead: 3 threads moved to Archive. At its right end, a `?` block (a question mark in a circle) opens the list of keys, as the `?` key does; a second click closes it. `vs` moves it to the top, hides it, or brings it back to the bottom.
 - When a list opens, its first mail is selected, so the reading pane always shows something.
 
 Layout choices (columns, status bar position, list width) are remembered.
@@ -149,7 +149,7 @@ A one-click attempt the server refuses opens the page instead, and says why. The
 
 - A mail you select (`j` `k`, a click, the next mail after a move) is marked read once shown for one second. Browsing quickly with `j` / `k` marks nothing. With one column the list alone shows no content, so staying on a row marks nothing; opening the mail (Return, double-click) marks it read at once, and inside the open mail `j` / `k` follow the one-second rule.
 - The mail selected for you, the first one when a list opens or the one that replaces a mail that left the list, is not marked read by itself. It is marked read when you move from it to another mail of the list after at least one second. Moving it (`d`, `m`) or changing folder does not mark it.
-- In a filtered list (unread, flagged…), the selected mail that stops matching (read after one second, `u`, `*`) stays under the cursor, shown with its new state, until you leave it; it then leaves the list. As in Gmail's unread view: without this, a list of unread mails would empty itself, one mail per second.
+- In a filtered list (unread, flagged…), the selected mail that stops matching (read after one second, `u`, `U`, `*`) stays under the cursor, shown with its new state, until you leave it; it then leaves the list. As in Gmail's unread view: without this, a list of unread mails would empty itself, one mail per second.
 
 ## Keys
 
@@ -171,7 +171,8 @@ Actions apply to the **marked** mails if any (`J` / `K`), otherwise to the mail 
 | `T` | show everything in the thread (folded mails, quotes, signatures) or go back to the simplified view |
 | `S` | skip to the text after the next quoted block |
 | `ctrl-k` / `ctrl-j` | previous / next message of the conversation: the current one folds, the other unfolds and is scrolled to (`thread-display.md`) |
-| `u` | read / unread |
+| `u` | read / unread: all the targets become read if one of them is unread, else all become unread |
+| `U` | mark read, whatever the current state (a read mail stays read) |
 | `z` | undo the last move or decision, then the one before (see "Moves and decisions") |
 | ⌘U | unsubscribe from the list of the mail (see "Unsubscribing") |
 | ⌃⌘F | full screen, and back; works everywhere, even while writing a reply or in a menu |
@@ -183,7 +184,7 @@ Actions apply to the **marked** mails if any (`J` / `K`), otherwise to the mail 
 | Return | with one column (`v1`), read the mail in the whole window and mark it read; Escape goes back to the list |
 | Space, shift-Space | with one column, on the list: Space reads the mail, as Return; with the mail on screen, scroll it a page down / up, as text or as HTML |
 | `ctrl-f` `ctrl-b` | same, a page down / up in the mail |
-| `?` | list of keys |
+| `?` | list of keys, grouped by use (Navigate, Read, Select, Act on mails, Write, Find and go, Window), one key per line, in a centered panel of up to three columns: fewer when the window is narrow. Commands not available yet are grayed out. Any key or a click outside closes it |
 | Escape | cancel a prefix, close a panel, leave the full-window mail (`v1`), unmark, then go back from a tag, group or contact list to the folder |
 | `r` | reply to all to the mail under the reader's cursor: the reply takes the reader's place, mode `EDT`, every key is text; ⌘↩ sends (`z` cancels during 5 s), Escape keeps the draft, ⌘⌫ abandons it (see [sending.md](sending.md)) |
 | `R` `f` | reply to the sender only, forward: not available yet |

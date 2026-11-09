@@ -718,6 +718,7 @@ final class GeekController {
             }
         case "d": model.moveTargets(to: "archive")
         case "u": model.toggleSeenTargets()
+        case "U": model.markTargetsSeen()
         case "*": model.toggleFlagTargets()
         case "t": openPicker(.tag)
         case "T": toggleShowAll()
@@ -1024,38 +1025,6 @@ final class GeekController {
         model.selectedFolderId = id
     }
 
-    /// Main keys, for `?`.
-    var helpLines: [(String, String)] {
-        [
-            ("j k", L("next / previous mail")),
-            ("^d ^u", L("half a page down / up in the list")),
-            ("J K", L("mark and move (multiple selection)")),
-            ("⌘A", L("mark every mail of the list")),
-            ("@", L("go to an account")),
-            ("F", L("filter by attributes")),
-            ("l", L("links of the mail")),
-            ("d", L("done (archive)")),
-            ("m…", L("move to a folder")),
-            ("del", L("delete")),
-            ("t", L("tag")),
-            ("g", L("add the sender to a group")),
-            ("u  *", L("read / unread, flag")),
-            ("z", L("undo the last move or decision")),
-            ("⌘U", L("unsubscribe from the list")),
-            ("T", L("show / hide quotes, signatures, folded mails")),
-            ("S", L("skip to the text after the next quote")),
-            ("^k ^j", L("previous / next message of the conversation")),
-            ("/", L("search everywhere: words anywhere, addresses included, in Everything")),
-            (";…", L("go to a folder or a screen")),
-            ("s…", L("save")),
-            ("v…", L("display")),
-            ("ret", L("read the mail in the whole window (one column)")),
-            ("space ⇧space  ^f ^b", L("scroll the mail")),
-            ("r R f", L("reply, reply all, forward (not yet)")),
-            ("esc", L("cancel, unmark, back")),
-        ]
-    }
-
     // MARK: - Pickers
 
     private func openPicker(_ kind: PickerKind) {
@@ -1120,6 +1089,17 @@ final class GeekController {
     }
 
     /// Opens a picker from a click in the status bar (`@`, `F`).
+    /// A click on the `?` block at the right end of the status bar: opens
+    /// the list of keys, or closes it when it is open (the status bar is
+    /// not under the click catcher, so the same block closes what it
+    /// opened). A question waiting for its answer (a suspect move) keeps
+    /// the screen: the help would hide it.
+    func toggleHelpFromStatusBar() {
+        guard activeChoice == nil else { return }
+        model.flash = nil
+        overlay = overlay == .help ? .none : .help
+    }
+
     func openPickerFromStatusBar(_ kind: PickerKind) {
         model.flash = nil
         if screen != .mail { screen = .mail }
