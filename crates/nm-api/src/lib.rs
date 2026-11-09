@@ -110,6 +110,12 @@ pub mod method {
     pub const TEST_ACCOUNT: &str = "test_account";
     /// Exact count of the mails the initial archiving would move.
     pub const COUNT_ARCHIVE: &str = "count_archive";
+    /// Finds the servers of an address before the account is created: the
+    /// provider (by its domain, else by its MX), the IMAP server, the SMTP
+    /// servers to try (`docs/accounts.md`, "Finding the servers").
+    pub const DISCOVER_ACCOUNT: &str = "discover_account";
+    /// Tries SMTP servers in order, until one accepts the login.
+    pub const TEST_SMTP: &str = "test_smtp";
     /// Creates an IMAP account: folders, roles, initial import, password,
     /// `accounts.toml`.
     pub const ADD_ACCOUNT: &str = "add_account";
@@ -1807,6 +1813,10 @@ pub struct AddAccountParams {
     /// created, no archiving, screening dry.
     #[serde(default)]
     pub read_only: bool,
+    /// The SMTP server, written to `[accounts.<key>.smtp]`; none: the
+    /// account cannot send until one is added.
+    #[serde(default)]
+    pub smtp: Option<ImapParams>,
 }
 
 fn yes() -> bool {
@@ -1824,6 +1834,116 @@ pub struct AddAccountResult {
     pub correspondents: u64,
     /// The server-side archiving is queued; `sync status` follows it.
     pub archive_queued: bool,
+}
+
+/// Params of `discover_account`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiscoverAccountParams {
+    pub email: String,
+    /// The IMAP server the user gave (`--host`); none: it is looked for.
+    #[serde(default)]
+    pub imap: Option<ImapParams>,
+}
+
+/// What `discover_account` found, and how: every step is reported, so
+/// that the client can say exactly what was done (nothing is guessed
+/// silently). Nothing is written, no server is contacted but DNS.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DiscoveryReport {
+    /// The account key proposed (`docs/accounts.md`, "The key"): the name
+    /// of the domain for its first account (`pierre.dupont@toto-mail.com`:
+    /// `toto-mail`), else the whole address
+    /// (`pierre_dupont_toto_mail_com`).
+    pub key: String,
+    /// How `key` was made: `domain` or `address`.
+    pub key_source: String,
+    /// The name of the domain, the key of a first account of it.
+    pub domain_key: String,
+    /// The key of an account of the same domain, if one exists: why the
+    /// whole address is used. `key_source` is `address` without it when
+    /// `domain_key` is the key of an account of another domain.
+    pub domain_account: Option<String>,
+    /// The domain of the address, lower case.
+    pub domain: String,
+    /// The provider listing the domain itself, if any.
+    pub by_domain: Option<ProviderMatch>,
+    /// The MX servers of the domain, by preference; looked up only when the
+    /// domain is not listed. Empty when there is none, or when not looked up.
+    pub mx: Vec<String>,
+    /// Whether the MX were looked up.
+    pub mx_looked_up: bool,
+    /// The DNS failure, if the lookup failed.
+    pub mx_error: Option<String>,
+    /// The provider recognized from an MX server, if any.
+    pub by_mx: Option<ProviderMatch>,
+    /// The IMAP server to use: the one given, else the provider's. None:
+    /// nothing found, the user must give it.
+    pub imap: Option<ServerCandidate>,
+    /// The SMTP servers to try, in order (`test_smtp`).
+    pub smtp: Vec<ServerCandidate>,
+}
+
+/// A provider of the database (`data/providers/`), and why it matched.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProviderMatch {
+    /// Its file name (`infomaniak`, `googlemail.com`).
+    pub id: String,
+    pub name: String,
+    /// `local` (data/providers/local/, ours) or `thunderbird`.
+    pub source: String,
+    /// The domain found in its list: the address's domain, or the domain
+    /// of the MX server.
+    pub matched: String,
+    /// The MX server that led to it, when found by MX.
+    pub mx_host: Option<String>,
+    /// Its IMAP servers need a login NiceMailer does not support (OAuth2
+    /// only): it cannot be used.
+    pub imap_unsupported: bool,
+}
+
+/// A server to use or to try.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServerCandidate {
+    pub server: ImapParams,
+    /// Where it comes from: `given` (the user), `provider` (the database),
+    /// `smtp_name` (the IMAP host with `imap` replaced by `smtp`),
+    /// `same_host` (the IMAP host itself). The last two are guesses, made
+    /// for a server the user gave, or for a provider that lists no SMTP
+    /// server.
+    pub origin: String,
+}
+
+/// Params of `test_smtp`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TestSmtpParams {
+    pub email: String,
+    /// The IMAP server of the account: its password is tried only on an
+    /// SMTP server of the same host or organization.
+    pub imap: ImapParams,
+    pub password: String,
+    /// Tried in this order; the first that works is chosen.
+    pub candidates: Vec<ServerCandidate>,
+}
+
+/// What `test_smtp` did: each attempt, and the server chosen.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SmtpTestReport {
+    pub attempts: Vec<SmtpAttempt>,
+    /// Index in `attempts` of the server chosen, if one worked.
+    pub chosen: Option<usize>,
+}
+
+/// One SMTP server tried.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SmtpAttempt {
+    pub candidate: ServerCandidate,
+    /// `logged_in`: the password was accepted; `reachable`: the server
+    /// answered, the password was not tried (another organization than the
+    /// IMAP server: it will need its own password); `no_login`: the server
+    /// offers no login (a relay, not a submission server); `failed`.
+    pub outcome: String,
+    /// The server's answer or the network error, for `failed`.
+    pub detail: Option<String>,
 }
 
 /// Params of `set_folder_roles`.

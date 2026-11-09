@@ -554,7 +554,7 @@ async fn with_store<T: Send + 'static>(
 
 /// Runs the query `f` on a connection of the read pool, on a blocking
 /// thread. Unlike `with_store`, it never waits for a write in progress.
-async fn with_reader<T: Send + 'static>(
+pub(crate) async fn with_reader<T: Send + 'static>(
     core: &Arc<Core>,
     f: impl FnOnce(&Store) -> Result<T, StoreError> + Send + 'static,
 ) -> Result<T, RpcError> {
@@ -1038,6 +1038,14 @@ async fn dispatch(core: &Arc<Core>, session: &mut Session, req: Request) -> Resu
         method::TEST_ACCOUNT => {
             let p: nm_api::TestAccountParams = params(req.params)?;
             to_value(setup::test_account(core, p, source).await?)
+        }
+        method::DISCOVER_ACCOUNT => {
+            let p: nm_api::DiscoverAccountParams = params(req.params)?;
+            to_value(setup::discover_account(core, p, source).await?)
+        }
+        method::TEST_SMTP => {
+            let p: nm_api::TestSmtpParams = params(req.params)?;
+            to_value(setup::test_smtp(p, source).await?)
         }
         method::COUNT_ARCHIVE => {
             let p: nm_api::CountArchiveParams = params(req.params)?;

@@ -1,5 +1,6 @@
 //! Network adapters of NiceMailer (`architecture.md`, crate `nm-proto`).
 //!
+//! - `dns`: the MX servers of a domain;
 //! - `imap`: the IMAP client;
 //! - `smtp`: the SMTP client, to send a mail (`reponse.md`);
 //! - `unsubscribe`: the one-click unsubscribe of RFC 8058.
@@ -8,6 +9,7 @@
 //! database: it talks to servers, and `nm-engine` and `nm-daemon` decide
 //! what to do with the answers.
 
+pub mod dns;
 pub mod imap;
 pub mod smtp;
 pub mod unsubscribe;

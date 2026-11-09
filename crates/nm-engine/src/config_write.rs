@@ -37,6 +37,18 @@ pub struct NewAccount {
     pub ca_file: Option<String>,
     /// `read_only = true`: nothing is ever changed on the server.
     pub read_only: bool,
+    /// `[accounts.<key>.smtp]`; none: the account cannot send.
+    pub smtp: Option<NewServer>,
+}
+
+/// The SMTP server of a new account.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NewServer {
+    pub host: String,
+    pub port: u16,
+    pub security: Security,
+    pub username: String,
+    pub ca_file: Option<String>,
 }
 
 /// The name of the file the account commands write, for their messages.
@@ -81,22 +93,17 @@ pub fn add_account(text: &str, a: &NewAccount) -> Result<String, String> {
     if a.read_only {
         t["read_only"] = value(true);
     }
-    let mut imap = Table::new();
-    imap["host"] = value(&a.host);
-    imap["port"] = value(a.port as i64);
-    imap["security"] = value(match a.security {
-        Security::Tls => "tls",
-        Security::Starttls => "starttls",
-        Security::None => "none",
-    });
-    // The user name only when it is not the address (the default).
-    if a.username != a.email {
-        imap["username"] = value(&a.username);
+    let imap = NewServer {
+        host: a.host.clone(),
+        port: a.port,
+        security: a.security,
+        username: a.username.clone(),
+        ca_file: a.ca_file.clone(),
+    };
+    t.insert("imap", Item::Table(server_table(&imap, &a.email)));
+    if let Some(smtp) = &a.smtp {
+        t.insert("smtp", Item::Table(server_table(smtp, &a.email)));
     }
-    if let Some(ca) = &a.ca_file {
-        imap["ca_file"] = value(ca);
-    }
-    t.insert("imap", Item::Table(imap));
     // What follows the last table of the file (comments, or the whole file
     // when it holds only comments) is the document's "trailing" text in
     // `toml_edit`, written after every table, the new one included: it
@@ -109,6 +116,26 @@ pub fn add_account(text: &str, a: &NewAccount) -> Result<String, String> {
     }
     accounts(&mut doc)?.insert(&a.key, Item::Table(t));
     finish(doc)
+}
+
+/// `[accounts.<key>.imap]` or `.smtp`: no default value written.
+fn server_table(s: &NewServer, email: &str) -> Table {
+    let mut t = Table::new();
+    t["host"] = value(&s.host);
+    t["port"] = value(s.port as i64);
+    t["security"] = value(match s.security {
+        Security::Tls => "tls",
+        Security::Starttls => "starttls",
+        Security::None => "none",
+    });
+    // The user name only when it is not the address (the default).
+    if s.username != email {
+        t["username"] = value(&s.username);
+    }
+    if let Some(ca) = &s.ca_file {
+        t["ca_file"] = value(ca);
+    }
+    t
 }
 
 /// The file with the account `from` renamed `to`, its tables where they
@@ -260,7 +287,28 @@ port = 993\nsecurity = \"tls\"\n";
             username: "bob".into(),
             ca_file: None,
             read_only: false,
+            smtp: None,
         }
+    }
+
+    #[test]
+    fn the_smtp_server_gets_its_table() {
+        let mut a = new("bob");
+        a.smtp = Some(NewServer {
+            host: "smtp.example.org".into(),
+            port: 587,
+            security: Security::Starttls,
+            username: "bob@example.org".into(),
+            ca_file: None,
+        });
+        let out = add_account("", &a).unwrap();
+        assert!(
+            out.contains("[accounts.bob.smtp]\nhost = \"smtp.example.org\"\nport = 587\nsecurity = \"starttls\"\n"),
+            "the address as user name is the default, not written: {out}"
+        );
+        let parsed = config::parse_accounts(&out).unwrap();
+        let smtp = parsed["bob"].smtp.as_ref().unwrap();
+        assert_eq!((smtp.host.as_str(), smtp.port, smtp.username.as_str()), ("smtp.example.org", 587, "bob@example.org"));
     }
 
     #[test]

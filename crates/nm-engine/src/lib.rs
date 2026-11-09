@@ -12,6 +12,9 @@
 //! - `keychain.rs`: the macOS Keychain, where they are kept,
 //! - `folders.rs`: the workflow role proposed for each server folder,
 //! - `probe.rs`: what an account's server offers (`probe_account`),
+//! - `providers.rs`, `discover.rs`: the servers of an address, from the
+//!   database of mail providers and the MX of its domain, before an account
+//!   is added,
 //! - [`Engine`] (this file): the settings applied, and the accounts they
 //!   declare, kept in line with the database.
 //!
@@ -21,9 +24,11 @@
 
 pub mod config;
 pub mod config_write;
+pub mod discover;
 pub mod folders;
 pub mod keychain;
 pub mod probe;
+pub mod providers;
 pub mod secrets;
 pub mod setup;
 pub mod sync;

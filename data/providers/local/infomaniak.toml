@@ -1,0 +1,24 @@
+# Infomaniak: not in Thunderbird's database.
+# Source: Infomaniak's help ("Réception (IMAP)" / "Envoi (SMTP)"): the user
+# name is the whole address, the password the one generated for it; LOGIN
+# or PLAIN ("normal password").
+name = "Infomaniak"
+
+# Addresses of these domains are hosted by Infomaniak.
+domains = ["infomaniak.com", "ik.me", "ikmail.com", "etik.com"]
+
+# The MX servers of a domain hosted by Infomaniak (mta-gw.infomaniak.ch):
+# an address of any domain whose MX is under infomaniak.ch is theirs too.
+mx = ["infomaniak.ch"]
+
+[imap]
+host = "mail.infomaniak.com"
+port = 993
+security = "tls"
+username = "%EMAILADDRESS%"
+
+[smtp]
+host = "mail.infomaniak.com"
+port = 587
+security = "starttls"
+username = "%EMAILADDRESS%"

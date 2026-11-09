@@ -20,11 +20,13 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use nm_api::{
-    AddAccountParams, AddAccountResult, ArchiveCount, CountArchiveParams, RemoveAccountParams, RenameAccountParams,
-    RpcError, SetFolderRolesParams, TestAccountParams, TestAccountReport, error_code,
+    AddAccountParams, AddAccountResult, ArchiveCount, CountArchiveParams, DiscoverAccountParams, DiscoveryReport,
+    RemoveAccountParams, RenameAccountParams, RpcError, SetFolderRolesParams, SmtpTestReport, TestAccountParams,
+    TestAccountReport, TestSmtpParams, error_code,
 };
 use nm_core::{FolderRole, Source};
-use nm_engine::config_write::{self, NewAccount};
+use nm_engine::config_write::{self, NewAccount, NewServer};
+use nm_engine::providers::Existing;
 use nm_engine::secrets::{Binding, Credential};
 use nm_engine::setup;
 use nm_store::setup::{ArchiveCriteria, RoleAssignment};
@@ -64,6 +66,52 @@ pub async fn test_account(core: &Arc<Core>, p: TestAccountParams, source: Source
     let user = setup::username_of(&p.imap, &p.email);
     let import = core.engine.lock().unwrap().config().import.clone();
     setup::test_account(&spec, &user, &p.password, &own(&p.email, &p.identities), &import, now()).await.map_err(server)
+}
+
+/// `discover_account`: the servers of an address, from the database of
+/// providers and the MX of its domain (`docs/accounts.md`, "Finding the
+/// servers"). Nothing is written, no mail server is contacted.
+pub async fn discover_account(core: &Arc<Core>, p: DiscoverAccountParams, source: Source) -> Result<DiscoveryReport, RpcError> {
+    human(source)?;
+    if let Some(imap) = &p.imap {
+        setup::spec_of(imap).map_err(invalid)?;
+    }
+    // Every account the core has, for the key proposed: those of the
+    // database (IMAP, disabled ones too, and archives), as `list_accounts`
+    // gives them, and those of the file the database has not seen yet.
+    let rows = crate::with_reader(core, |s| s.list_account_rows()).await?;
+    let existing: Vec<Existing> = {
+        let engine = core.engine.lock().unwrap();
+        let mut v: Vec<Existing> =
+            engine.account_views(rows).into_iter().map(|a| Existing { key: a.key, email: a.email }).collect();
+        for (key, a) in &engine.config().accounts {
+            if !v.iter().any(|e| &e.key == key) {
+                v.push(Existing { key: key.clone(), email: Some(a.email.clone()) });
+            }
+        }
+        v
+    };
+    nm_engine::discover::discover(&p.email, &existing, p.imap.as_ref()).await.map_err(invalid)
+}
+
+/// `test_smtp`: the candidates tried in order, the first that works
+/// chosen. The IMAP password goes only to a server of the IMAP server's
+/// organization (`nm_engine::discover::test_smtp`).
+pub async fn test_smtp(p: TestSmtpParams, source: Source) -> Result<SmtpTestReport, RpcError> {
+    human(source)?;
+    for c in &p.candidates {
+        setup::spec_of(&c.server).map_err(invalid)?;
+    }
+    Ok(nm_engine::discover::test_smtp(&p.email, &p.imap, &p.password, &p.candidates).await)
+}
+
+/// The `security` of `accounts.toml` from the client's word, checked.
+fn security_of(p: &nm_api::ImapParams) -> Result<nm_engine::config::Security, RpcError> {
+    Ok(match setup::spec_of(p).map_err(invalid)?.security {
+        nm_proto::imap::Security::Tls => nm_engine::config::Security::Tls,
+        nm_proto::imap::Security::Starttls => nm_engine::config::Security::Starttls,
+        nm_proto::imap::Security::None => nm_engine::config::Security::None,
+    })
 }
 
 /// `count_archive`: the exact count of the import screen.
@@ -131,6 +179,18 @@ pub async fn add_account(core: &Arc<Core>, p: AddAccountParams, source: Source) 
     let spec = setup::spec_of(&p.imap).map_err(invalid)?;
     let user = setup::username_of(&p.imap, &p.email);
     let own = own(&p.email, &[]);
+    // Checked before anything is done: a wrong SMTP server must not leave
+    // an account half created.
+    let smtp = match &p.smtp {
+        Some(s) => Some(NewServer {
+            host: s.host.clone(),
+            port: s.port,
+            security: security_of(s)?,
+            username: setup::username_of(s, &p.email),
+            ca_file: s.ca_file.clone(),
+        }),
+        None => None,
+    };
 
     // 1 and 2: the server.
     let mut s = setup::open(&spec, &user, &p.password).await.map_err(server)?;
@@ -214,14 +274,11 @@ pub async fn add_account(core: &Arc<Core>, p: AddAccountParams, source: Source) 
         display_name: p.display_name.clone(),
         host: p.imap.host.clone(),
         port: p.imap.port,
-        security: match spec.security {
-            nm_proto::imap::Security::Tls => nm_engine::config::Security::Tls,
-            nm_proto::imap::Security::Starttls => nm_engine::config::Security::Starttls,
-            nm_proto::imap::Security::None => nm_engine::config::Security::None,
-        },
+        security: security_of(&p.imap)?,
         username: user,
         ca_file: p.imap.ca_file.clone(),
         read_only: p.read_only,
+        smtp,
     };
     write_file(core, move |t| config_write::add_account(t, &new), &config_path).await?;
     Ok(AddAccountResult {

@@ -453,3 +453,82 @@ fn a_read_only_account_changes_nothing_on_its_server() {
     }
     assert_eq!(after, before, "nothing changed on the server");
 }
+
+/// Mailpit with TLS from the first byte and a real password
+/// (`dev/dovecot/compose.yaml`, `smtps`).
+const SMTPS: u16 = 31465;
+
+fn smtps(username: &str) -> Value {
+    json!({ "host": "127.0.0.1", "port": SMTPS, "security": "tls", "username": username, "ca_file": ca().display().to_string() })
+}
+
+/// `docs/accounts.md`, "Finding the servers": the SMTP servers tried in
+/// order, the first that works kept, the IMAP password sent only to a
+/// server of the IMAP server's organization; then `add_account` writes
+/// the server kept.
+#[test]
+#[ignore = "needs the test servers: make imap-up, then make imap-test"]
+fn smtp_servers_are_tried_in_order_and_the_one_that_works_is_written() {
+    let dir = tempfile::tempdir().unwrap();
+    let user = new_user();
+    let me = email(&user);
+    let (_core, mut c) = core(dir.path(), "");
+    let nothing = json!({ "host": "127.0.0.1", "port": 1, "security": "tls" });
+    let candidates = json!([
+        { "server": nothing, "origin": "same_host" },
+        { "server": smtps("nicemailer"), "origin": "same_host" },
+        { "server": smtps("nicemailer"), "origin": "same_host" },
+    ]);
+
+    // Nothing listens on port 1; the next one accepts the password; the
+    // third is not tried.
+    let r = c.call("test_smtp", json!({"email": me, "imap": imap(&user), "password": "smtp-secret", "candidates": candidates})).unwrap();
+    let outcomes: Vec<&str> = r["attempts"].as_array().unwrap().iter().map(|a| a["outcome"].as_str().unwrap()).collect();
+    assert_eq!(outcomes, ["failed", "logged_in"], "{r:#}");
+    assert_eq!(r["chosen"], 1);
+
+    // A wrong password: refused, nothing chosen.
+    let r = c
+        .call("test_smtp", json!({"email": me, "imap": imap(&user), "password": "wrong", "candidates": [{"server": smtps("nicemailer"), "origin": "given"}]}))
+        .unwrap();
+    assert_eq!(r["attempts"][0]["outcome"], "failed");
+    assert!(r["attempts"][0]["detail"].as_str().unwrap().contains("refused the login"), "{r:#}");
+    assert_eq!(r["chosen"], Value::Null);
+
+    // An IMAP server of another organization: the password is not tried,
+    // the server is kept as reachable.
+    let other = json!({ "host": "imap.other.example", "port": 993, "security": "tls" });
+    let r = c
+        .call("test_smtp", json!({"email": me, "imap": other, "password": "wrong", "candidates": [{"server": smtps("nicemailer"), "origin": "given"}]}))
+        .unwrap();
+    assert_eq!((r["attempts"][0]["outcome"].as_str(), r["chosen"].as_u64()), (Some("reachable"), Some(0)), "{r:#}");
+
+    // The server the user gave, with its SMTP guesses.
+    let r = c.call("discover_account", json!({"email": me, "imap": imap(&user)})).unwrap();
+    assert_eq!(r["imap"]["origin"], "given");
+    let smtp: Vec<String> = r["smtp"].as_array().unwrap().iter().map(|s| format!("{}:{}", s["server"]["host"].as_str().unwrap(), s["server"]["port"])).collect();
+    assert_eq!(smtp, ["127.0.0.1:465", "127.0.0.1:587"]);
+    // The first account of example.com: named after the domain.
+    assert_eq!((r["key"].as_str(), r["key_source"].as_str()), (Some("example"), Some("domain")), "{r:#}");
+
+    // The account created with the server kept: [smtp] in the file.
+    c.call(
+        "add_account",
+        json!({"key": "dovecot", "email": me, "imap": imap(&user), "password": "nicemailer", "smtp": smtps("nicemailer")}),
+    )
+    .unwrap();
+    // A second address of example.com: the whole address, because of it.
+    let r = c.call("discover_account", json!({"email": "other@example.com", "imap": imap(&user)})).unwrap();
+    assert_eq!((r["key"].as_str(), r["domain_account"].as_str()), (Some("other_example_com"), Some("dovecot")), "{r:#}");
+    let file = std::fs::read_to_string(dir.path().join("accounts.toml")).unwrap();
+    assert!(file.contains(&format!("[accounts.dovecot.smtp]\nhost = \"127.0.0.1\"\nport = {SMTPS}\nsecurity = \"tls\"\nusername = \"nicemailer\"\n")), "{file}");
+
+    // An agent may not.
+    let mut agent = Client::connect_as(dir.path(), "mcp");
+    for (method, params) in [
+        ("discover_account", json!({"email": me})),
+        ("test_smtp", json!({"email": me, "imap": imap(&user), "password": "x", "candidates": []})),
+    ] {
+        assert_eq!(agent.call(method, params).unwrap_err()["code"], 1007, "{method}");
+    }
+}

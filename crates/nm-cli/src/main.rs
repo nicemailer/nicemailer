@@ -303,29 +303,42 @@ enum AccountAction {
         #[arg(long)]
         smtp: bool,
     },
-    /// Create an IMAP account: try the server, show its folders and the
-    /// roles proposed, then create the missing folders, archive the old
-    /// mail of the Inbox on the server if asked, accept the people you
-    /// wrote to, save the password and add the account to accounts.toml.
-    /// The password is asked without echo, or read from the standard input.
+    /// Create an IMAP account: find its servers (unless --host is given),
+    /// try them, show the folders and the roles proposed, then create the
+    /// missing folders, archive the old mail of the Inbox on the server if
+    /// asked, accept the people you wrote to, save the password and add the
+    /// account to accounts.toml, with its SMTP server when one worked.
+    /// Every step is printed. The password is asked without echo, or read
+    /// from the standard input.
     Add {
-        /// Key of the account, as in [accounts.<key>].
-        key: String,
+        /// Key of the account, as in [accounts.<key>]. Default: the name of
+        /// the domain for its first account (pierre.dupont@toto-mail.com:
+        /// toto-mail), else the whole address (pierre_dupont_toto_mail_com).
+        key: Option<String>,
         #[arg(long)]
         email: String,
+        /// The IMAP server. Default: found from the address, in the
+        /// database of mail providers (Thunderbird's and ours), else from
+        /// the MX servers of its domain.
         #[arg(long)]
-        host: String,
-        #[arg(long, default_value_t = 993)]
-        port: u16,
-        /// tls, starttls, or none (loopback only).
-        #[arg(long, default_value = "tls")]
-        security: String,
-        /// Default: the email address.
-        #[arg(long)]
+        host: Option<String>,
+        /// With --host; default 993.
+        #[arg(long, requires = "host")]
+        port: Option<u16>,
+        /// With --host: tls (default), starttls, or none (loopback only).
+        #[arg(long, requires = "host")]
+        security: Option<String>,
+        /// With --host. Default: the email address.
+        #[arg(long, requires = "host")]
         username: Option<String>,
-        /// An authority to trust besides the system's (self-hosted server).
-        #[arg(long)]
+        /// With --host: an authority to trust besides the system's
+        /// (self-hosted server).
+        #[arg(long, requires = "host")]
         ca_file: Option<PathBuf>,
+        /// Do not look for an SMTP server: the account cannot send until
+        /// [smtp] is added to accounts.toml.
+        #[arg(long)]
+        no_smtp: bool,
         #[arg(long)]
         display_name: Option<String>,
         /// The folder of a role, e.g. `--role sent="Sent Items"`; repeat it.
@@ -386,6 +399,96 @@ enum AccountAction {
 }
 
 /// The report of `nicemailer imap probe`, for a terminal.
+/// `host:port (security)`.
+fn server_label(s: &nm_api::ImapParams) -> String {
+    format!("{}:{} ({})", s.host, s.port, s.security)
+}
+
+/// Where a server comes from, in words.
+fn origin_words(c: &nm_api::ServerCandidate, d: &nm_api::DiscoveryReport) -> String {
+    let provider = d.by_domain.as_ref().or(d.by_mx.as_ref()).map(|p| p.name.as_str()).unwrap_or("the provider");
+    match c.origin.as_str() {
+        "given" => "given with --host".into(),
+        "provider" => format!("from {provider}"),
+        "smtp_name" => "the IMAP host with \"imap\" replaced by \"smtp\"".into(),
+        "same_host" => "the IMAP host itself".into(),
+        other => other.into(),
+    }
+}
+
+/// Which database a provider comes from, in words.
+fn source_words(p: &nm_api::ProviderMatch) -> &'static str {
+    if p.source == "local" { "our own list, data/providers/local" } else { "Thunderbird's database" }
+}
+
+/// The steps of `discover_account`, one line each: what was looked up,
+/// what was found, and what will be used.
+fn discovery_lines(d: &nm_api::DiscoveryReport) -> Vec<String> {
+    let mut out = Vec::new();
+    match &d.by_domain {
+        Some(p) => out.push(format!("{} is listed by {} ({}).", d.domain, p.name, source_words(p))),
+        None => out.push(format!("{} is not in the database of mail providers.", d.domain)),
+    }
+    if d.mx_looked_up {
+        match (&d.mx_error, d.mx.is_empty()) {
+            (Some(e), _) => out.push(format!("MX of {}: lookup failed ({e}).", d.domain)),
+            (None, true) => out.push(format!("MX of {}: none.", d.domain)),
+            (None, false) => out.push(format!("MX of {}: {}.", d.domain, d.mx.join(", "))),
+        }
+        match &d.by_mx {
+            Some(p) => out.push(format!(
+                "{} is under {}, listed by {} ({}): the domain is hosted there.",
+                p.mx_host.as_deref().unwrap_or("?"),
+                p.matched,
+                p.name,
+                source_words(p)
+            )),
+            None if !d.mx.is_empty() => out.push("No MX server is under a domain of the database.".into()),
+            None => {}
+        }
+    }
+    if let Some(p) = d.by_domain.as_ref().or(d.by_mx.as_ref())
+        && p.imap_unsupported
+    {
+        out.push(format!("{} only accepts OAuth2 logins, which NiceMailer does not support yet.", p.name));
+    }
+    match &d.imap {
+        Some(c) => out.push(format!("IMAP: {}, {}.", server_label(&c.server), origin_words(c, d))),
+        None => out.push("IMAP: no server found.".into()),
+    }
+    if !d.smtp.is_empty() {
+        out.push("SMTP servers to try, in order:".into());
+        for c in &d.smtp {
+            out.push(format!("  {}, {}", server_label(&c.server), origin_words(c, d)));
+        }
+    }
+    out
+}
+
+/// The key proposed by `discover_account`, and the rule that made it.
+fn key_line(d: &nm_api::DiscoveryReport) -> String {
+    let why = match (d.key_source.as_str(), &d.domain_account) {
+        ("domain", _) => format!("the name of the domain: no account of {} yet", d.domain),
+        (_, Some(other)) => format!("the whole address: {} has an account already, {other}", d.domain),
+        _ => format!("the whole address: the key {} is another account's", d.domain_key),
+    };
+    format!("Account key: {} ({why}; give a key after `add` to choose another)", d.key)
+}
+
+/// One SMTP attempt of `test_smtp`, in words.
+fn smtp_attempt_line(a: &nm_api::SmtpAttempt, key: &str) -> String {
+    let what = match a.outcome.as_str() {
+        "logged_in" => "logged in with the IMAP password.".to_string(),
+        "reachable" => format!(
+            "answers. The IMAP password was not tried: this server is not of the IMAP server's organization \
+             (save its own password after the creation: nicemailer account password {key} --smtp)."
+        ),
+        "no_login" => "answers but offers no login: a relay, not a server to send from.".into(),
+        _ => format!("failed: {}.", a.detail.as_deref().unwrap_or("?")),
+    };
+    format!("{}: {what}", server_label(&a.candidate.server))
+}
+
 fn print_probe(r: &nm_api::ProbeReport) {
     println!(
         "Server {} ({}): connected in {} ms, logged in in {} ms, folders listed in {} ms",
@@ -581,13 +684,48 @@ fn main() -> anyhow::Result<()> {
                     no_archive,
                     no_correspondents,
                     read_only,
+                    no_smtp,
                     yes,
                 },
         } => {
             let mut client = Client::connect(&data_dir)?;
             let roles = parse_roles(&roles)?;
-            let ca_file = ca_file.map(|p| std::path::absolute(&p).unwrap_or(p).display().to_string());
-            let imap = json!({ "host": host, "port": port, "security": security, "username": username, "ca_file": ca_file });
+            let given = host.map(|host| nm_api::ImapParams {
+                host,
+                port: port.unwrap_or(993),
+                security: security.unwrap_or_else(|| "tls".into()),
+                username,
+                ca_file: ca_file.map(|p| std::path::absolute(&p).unwrap_or(p).display().to_string()),
+            });
+
+            // Where the servers come from, before any password is asked.
+            let d: nm_api::DiscoveryReport =
+                serde_json::from_value(client.call("discover_account", json!({ "email": email, "imap": given }))?)?;
+            println!("Finding the servers of {email}");
+            let key = match key {
+                Some(k) => k,
+                None => {
+                    println!("  {}", key_line(&d));
+                    d.key.clone()
+                }
+            };
+            let accounts = client.call("list_accounts", Value::Null)?["items"].as_array().cloned().unwrap_or_default();
+            if accounts.iter().any(|a| a["key"].as_str() == Some(key.as_str())) {
+                bail!("an account {key} exists already: give another key after `add`");
+            }
+            for line in discovery_lines(&d) {
+                println!("  {line}");
+            }
+            let Some(imap_candidate) = d.imap.clone() else {
+                if let Some(p) = d.by_domain.as_ref().or(d.by_mx.as_ref()).filter(|p| p.imap_unsupported) {
+                    bail!("{} needs OAuth2, which NiceMailer does not support yet: the account cannot be added", p.name);
+                }
+                bail!("no IMAP server found for {email}: give it with --host (and --port, --security if needed)");
+            };
+            let imap = imap_candidate.server.clone();
+            let host = imap.host.clone();
+            println!();
+
             let password = read_password(&format!("IMAP password of {email}: "))?;
             eprintln!("Trying {host}…");
             let r: nm_api::TestAccountReport =
@@ -631,6 +769,49 @@ fn main() -> anyhow::Result<()> {
             } else {
                 println!("The other senders go through the Quarantine with their next mail.");
             }
+
+            // The SMTP server: tried now, so that the summary says exactly
+            // what accounts.toml will hold.
+            println!();
+            let smtp = if read_only {
+                println!("SMTP: not looked for, a read-only account does not send.");
+                None
+            } else if no_smtp {
+                println!("SMTP: not looked for (--no-smtp); the account cannot send until [smtp] is added to accounts.toml.");
+                None
+            } else if d.smtp.is_empty() {
+                println!("SMTP: no server to try; the account cannot send until [smtp] is added to accounts.toml.");
+                None
+            } else {
+                println!("Trying the SMTP servers, in order (the first that works is kept):");
+                eprintln!("  …");
+                let t: nm_api::SmtpTestReport = serde_json::from_value(client.call(
+                    "test_smtp",
+                    json!({ "email": email, "imap": imap, "password": password, "candidates": d.smtp }),
+                )?)?;
+                for (i, a) in t.attempts.iter().enumerate() {
+                    println!("  {}{}", smtp_attempt_line(a, &key), if t.chosen == Some(i) { " Kept." } else { "" });
+                }
+                let left = d.smtp.len() - t.attempts.len();
+                if t.chosen.is_some() && left > 0 {
+                    println!("  ({left} other candidate{} not tried.)", if left > 1 { "s" } else { "" });
+                }
+                match t.chosen.map(|i| &t.attempts[i]) {
+                    Some(a) => {
+                        println!(
+                            "SMTP: {} will be written to [accounts.{key}.smtp]{}.",
+                            server_label(&a.candidate.server),
+                            if a.outcome == "logged_in" { ", sending with the IMAP password" } else { "" }
+                        );
+                        // Second: whether it needs its own password.
+                        Some((a.candidate.server.clone(), a.outcome == "reachable"))
+                    }
+                    None => {
+                        println!("SMTP: no server worked; the account is created without [smtp] and cannot send until one is added to accounts.toml.");
+                        None
+                    }
+                }
+            };
             if !yes && !confirm("Create the account? [y/N] ")? {
                 bail!("nothing created");
             }
@@ -638,12 +819,16 @@ fn main() -> anyhow::Result<()> {
                 "add_account",
                 json!({ "key": key, "email": email, "display_name": display_name, "imap": imap, "password": password,
                         "roles": roles, "uidnext": r.inbox_uidnext, "archive_read_before": read_before,
-                        "archive_unread_before": unread_before, "correspondents": !no_correspondents, "read_only": read_only }),
+                        "archive_unread_before": unread_before, "correspondents": !no_correspondents, "read_only": read_only,
+                        "smtp": smtp.as_ref().map(|s| &s.0) }),
             )?)?;
             if !res.created.is_empty() {
                 println!("Folders created on the server: {}", res.created.join(", "));
             }
             println!("Account {key} created; {} correspondents accepted.", res.correspondents);
+            if smtp.as_ref().is_some_and(|s| s.1) {
+                println!("Save the password of its SMTP server with: nicemailer account password {key} --smtp");
+            }
             println!("Follow the import with: nicemailer sync status {key}");
             Ok(())
         }
@@ -1170,5 +1355,116 @@ impl Client {
             }
             return Ok(r.result.unwrap_or(Value::Null));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn server(host: &str, port: u16, security: &str) -> nm_api::ImapParams {
+        nm_api::ImapParams { host: host.into(), port, security: security.into(), username: None, ca_file: None }
+    }
+
+    fn candidate(host: &str, port: u16, security: &str, origin: &str) -> nm_api::ServerCandidate {
+        nm_api::ServerCandidate { server: server(host, port, security), origin: origin.into() }
+    }
+
+    fn google(mx_host: Option<&str>) -> nm_api::ProviderMatch {
+        nm_api::ProviderMatch {
+            id: "googlemail.com".into(),
+            name: "Google Mail".into(),
+            source: "thunderbird".into(),
+            matched: if mx_host.is_some() { "google.com".into() } else { "gmail.com".into() },
+            mx_host: mx_host.map(Into::into),
+            imap_unsupported: false,
+        }
+    }
+
+    fn report() -> nm_api::DiscoveryReport {
+        nm_api::DiscoveryReport {
+            key: "my-company".into(),
+            key_source: "domain".into(),
+            domain_key: "my-company".into(),
+            domain_account: None,
+            domain: "my-company.fr".into(),
+            by_domain: None,
+            mx: vec!["aspmx.l.google.com".into()],
+            mx_looked_up: true,
+            mx_error: None,
+            by_mx: Some(google(Some("aspmx.l.google.com"))),
+            imap: Some(candidate("imap.gmail.com", 993, "tls", "provider")),
+            smtp: vec![candidate("smtp.gmail.com", 465, "tls", "provider")],
+        }
+    }
+
+    /// Every step is said: the domain not listed, the MX, the provider
+    /// found through it and from which database, the servers and where
+    /// they come from.
+    #[test]
+    fn the_discovery_says_each_step() {
+        assert_eq!(
+            discovery_lines(&report()),
+            [
+                "my-company.fr is not in the database of mail providers.",
+                "MX of my-company.fr: aspmx.l.google.com.",
+                "aspmx.l.google.com is under google.com, listed by Google Mail (Thunderbird's database): the domain is hosted there.",
+                "IMAP: imap.gmail.com:993 (tls), from Google Mail.",
+                "SMTP servers to try, in order:",
+                "  smtp.gmail.com:465 (tls), from Google Mail",
+            ]
+        );
+    }
+
+    #[test]
+    fn a_listed_domain_skips_the_mx_and_a_failed_lookup_is_said() {
+        let mut d = report();
+        d.by_domain = Some(google(None));
+        d.by_mx = None;
+        d.mx = vec![];
+        d.mx_looked_up = false;
+        let lines = discovery_lines(&d);
+        assert_eq!(lines[0], "my-company.fr is listed by Google Mail (Thunderbird's database).");
+        assert!(lines.iter().all(|l| !l.starts_with("MX")), "{lines:?}");
+
+        let mut d = report();
+        d.by_mx = None;
+        d.mx = vec![];
+        d.mx_error = Some("the domain my-company.fr does not exist".into());
+        d.imap = Some(candidate("imap.my-company.fr", 993, "tls", "given"));
+        d.smtp = vec![candidate("smtp.my-company.fr", 465, "tls", "smtp_name"), candidate("imap.my-company.fr", 587, "starttls", "same_host")];
+        let lines = discovery_lines(&d);
+        assert!(lines.contains(&"MX of my-company.fr: lookup failed (the domain my-company.fr does not exist).".to_string()));
+        assert!(lines.contains(&"IMAP: imap.my-company.fr:993 (tls), given with --host.".to_string()));
+        assert!(lines.contains(&"  smtp.my-company.fr:465 (tls), the IMAP host with \"imap\" replaced by \"smtp\"".to_string()));
+        assert!(lines.contains(&"  imap.my-company.fr:587 (starttls), the IMAP host itself".to_string()));
+    }
+
+    #[test]
+    fn the_key_says_its_rule() {
+        let mut d = report();
+        assert_eq!(
+            key_line(&d),
+            "Account key: my-company (the name of the domain: no account of my-company.fr yet; give a key after `add` to choose another)"
+        );
+        d.key = "me_my_company_fr".into();
+        d.key_source = "address".into();
+        d.domain_account = Some("work".into());
+        assert!(key_line(&d).contains("(the whole address: my-company.fr has an account already, work;"));
+        d.domain_account = None;
+        assert!(key_line(&d).contains("(the whole address: the key my-company is another account's;"));
+    }
+
+    #[test]
+    fn each_smtp_outcome_is_explained() {
+        let a = |outcome: &str, detail: Option<&str>| nm_api::SmtpAttempt {
+            candidate: candidate("smtp.x.fr", 465, "tls", "provider"),
+            outcome: outcome.into(),
+            detail: detail.map(Into::into),
+        };
+        assert_eq!(smtp_attempt_line(&a("logged_in", None), "k"), "smtp.x.fr:465 (tls): logged in with the IMAP password.");
+        assert!(smtp_attempt_line(&a("reachable", None), "k").contains("nicemailer account password k --smtp"));
+        assert!(smtp_attempt_line(&a("no_login", None), "k").contains("offers no login"));
+        assert_eq!(smtp_attempt_line(&a("failed", Some("cannot connect to smtp.x.fr")), "k"), "smtp.x.fr:465 (tls): failed: cannot connect to smtp.x.fr.");
     }
 }

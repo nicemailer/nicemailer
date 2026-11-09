@@ -11,7 +11,7 @@ XCODE ?= /Applications/Xcode.app/Contents/Developer
 THREADS ?= 2500
 
 # These targets are commands, not files to produce.
-.PHONY: dev-cert build test swift-test ui-test bench seed core core-stop core-start app bundle open imap-up imap-down imap-test volume-test
+.PHONY: dev-cert build test swift-test ui-test bench seed autoconfig core core-stop core-start app bundle open imap-up imap-down imap-test volume-test
 
 build:
 	cargo build --release
@@ -38,6 +38,13 @@ ui-test:
 # with BENCH_DATA_DIR=<dir> (see scripts/bench.sh).
 bench:
 	scripts/bench.sh
+
+# Downloads Thunderbird's database of mail providers and converts it to
+# data/providers/thunderbird.json, which `nicemailer account add` reads to
+# find the servers of an address (docs/accounts.md). Our own providers are
+# in data/providers/local/, by hand. Commit the result.
+autoconfig:
+	scripts/update-autoconfig.py
 
 # Recreate the database with fake mail (the core must be stopped first,
 # since it holds the database lock).

@@ -57,6 +57,11 @@ imap-codec = { version = "=2.0.0-alpha.10", features = ["ext_condstore_qresync",
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12", "logging"] }
 rustls-platform-verifier = "0.6"
 rustls-pki-types = { version = "1", features = ["std"] }
+# DNS of nm-proto (`dns.rs`): the MX of an address's domain, to recognize
+# the provider hosting it when an account is added (`docs/accounts.md`).
+# Only what reading the system's resolvers takes: no DNS over TLS/HTTPS,
+# no DNSSEC.
+hickory-resolver = { version = "0.26", default-features = false, features = ["tokio", "system-config"] }
 
 # The tests build in debug mode, where hashing and MIME parsing are 10 to
 # 50 times slower than in release: the test of a 150 MB message
