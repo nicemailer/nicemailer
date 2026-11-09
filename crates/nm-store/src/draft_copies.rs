@@ -107,6 +107,31 @@ fn draft_actions(conn: &Connection, draft_id: i64) -> Result<Vec<(i64, String, S
         .collect())
 }
 
+/// A row of Drafts put in Deleted (`del`, `Store::move_thread`): if it is
+/// a draft of NiceMailer, its row of `draft` goes, else the next closing
+/// would write it back to Drafts. The row of Drafts, moved to Deleted
+/// like any mail (here and on the server), keeps its text: it was written
+/// when the draft was last closed, and a draft open in the reply screen is
+/// not in the list where `del` is pressed. `z` brings it back to Drafts as
+/// a draft of another client (shown, not editable).
+///
+/// Refused, changing nothing (the caller's transaction is dropped): a draft
+/// being sent, and a draft whose copy to the server is still to be made
+/// (its row has no UID yet, and the copy would bring it back).
+pub(crate) fn release_for_deletion(tx: &Transaction, message_id: i64) -> Result<()> {
+    let row: Option<(i64, String)> =
+        tx.query_row("SELECT id, state FROM draft WHERE message_id = ?1", [message_id], |r| Ok((r.get(0)?, r.get(1)?))).optional()?;
+    let Some((id, state)) = row else { return Ok(()) };
+    if state == "sending" {
+        return Err(StoreError::DraftSending);
+    }
+    if !draft_actions(tx, id)?.is_empty() {
+        return Err(StoreError::InvalidMove("this draft is being copied to the server: try again in a moment".into()));
+    }
+    tx.execute("DELETE FROM draft WHERE id = ?1", [id])?;
+    Ok(())
+}
+
 /// The row of the draft in Drafts deleted, with its thread and folder
 /// refreshed.
 fn delete_row(tx: &Transaction, message_id: i64, changes: &mut ChangeSet) -> Result<()> {

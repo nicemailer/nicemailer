@@ -35,7 +35,7 @@ fn env() -> Env {
     let mut s = Store::open_in_memory().unwrap();
     s.conn().execute("INSERT INTO account (config_key, kind, created_by, modified_by) VALUES ('perso', 'imap', 'core', 'core')", []).unwrap();
     let acc = s.conn().last_insert_rowid();
-    let roles = ["inbox", "quarantine", "todo", "waiting", "archive", "sent", "newsletter", "drafts"];
+    let roles = ["inbox", "quarantine", "todo", "waiting", "archive", "sent", "newsletter", "drafts", "deleted"];
     let listed: Vec<ListedFolder> = roles
         .iter()
         .enumerate()
@@ -1324,4 +1324,95 @@ fn a_new_mail_is_proposed_without_writing() {
     assert_eq!(as_proposed(d), p);
     let none = Identities { list: vec![] };
     assert!(matches!(read_only(&e, |s| s.prepare_new_draft(e.acc, &none, None)), Err(StoreError::CannotSend(_))));
+}
+
+// ---------------------------------------------------------------------------
+// `del` in Drafts (`dossiers.md`, "Sent et Drafts"): a draft goes to
+// Deleted, alone; the conversation it answers stays where it is.
+// ---------------------------------------------------------------------------
+
+/// `del` from Drafts on a conversation: `move_thread` to Deleted, given
+/// from the folder Drafts.
+fn delete_from_drafts(e: &mut Env, thread: i64) -> Result<nm_store::screening::Outcome, StoreError> {
+    let drafts = folder(&e.s, "drafts");
+    e.s.move_thread(thread, FolderRole::Deleted, Some(drafts), nm_store::screening::MoveOptions::default(), Source::App)
+}
+
+fn thread_of(e: &Env, m: i64) -> i64 {
+    e.int(&format!("SELECT thread_id FROM message WHERE id = {m}"))
+}
+
+/// A draft written by another client (Spark, the phone), in a conversation
+/// otherwise archived: as the one of the production mailbox that `del`
+/// could not remove.
+#[test]
+fn a_draft_of_another_client_goes_to_deleted_alone() {
+    let mut e = env();
+    let a = e.deliver("archive", &alice("pd1@a.example"));
+    let foreign = e.deliver(
+        "drafts",
+        &format!("Message-ID: <x@Spark>\r\nIn-Reply-To: <pd1@a.example>\r\nReferences: <root-pd1@a.example> <pd1@a.example>\r\nFrom: {ME}\r\nTo: alice@a.example\r\nSubject: Re: Devis\r\n\r\nPas fini\r\n"),
+    );
+    let thread = thread_of(&e, a);
+    assert_eq!(thread_of(&e, foreign), thread);
+    // Archive is not a target from Drafts: nothing moves.
+    let drafts = folder(&e.s, "drafts");
+    let refused = e.s.move_thread(thread, FolderRole::Archive, Some(drafts), Default::default(), Source::App);
+    assert!(matches!(refused, Err(StoreError::InvalidMove(_))), "{refused:?}");
+    let out = delete_from_drafts(&mut e, thread).unwrap();
+    assert_eq!(out.moved, 1);
+    assert_eq!(e.role_of(foreign), "deleted");
+    assert_eq!(e.role_of(a), "archive");
+    // On the server too, through the spool.
+    assert_eq!(e.queued("move"), 1);
+    // `z`: back in Drafts.
+    e.s.undo(&out.undo.unwrap(), Source::App).unwrap();
+    assert_eq!(e.role_of(foreign), "drafts");
+}
+
+/// A draft of NiceMailer, closed and copied: its row of Drafts goes to
+/// Deleted with its text, and its row of `draft` goes, else the next
+/// closing would bring it back.
+#[test]
+fn a_draft_of_nicemailer_goes_to_deleted_and_is_forgotten() {
+    let mut e = env();
+    let m = e.deliver("archive", &alice("pd2@a.example"));
+    let d = e.reply(m);
+    e.s.update_draft(d.id, d.revision, "Merci", Source::App).unwrap();
+    e.close(d.id);
+    let row: i64 = e.int("SELECT message_id FROM draft");
+    let thread = thread_of(&e, m);
+    // Its copy to the server still to make: refused, nothing changes.
+    assert!(matches!(delete_from_drafts(&mut e, thread), Err(StoreError::InvalidMove(_))));
+    assert_eq!(e.role_of(row), "drafts");
+    assert_eq!(e.int("SELECT count(*) FROM draft"), 1);
+    // Copied: deleted.
+    let work = e.s.draft_work_claim(e.acc).unwrap();
+    let nm_store::draft_copies::DraftWork::Append { action_id, .. } = work[0].clone() else { panic!() };
+    e.s.draft_appended(action_id, Some(7)).unwrap();
+    delete_from_drafts(&mut e, thread).unwrap();
+    assert_eq!(e.role_of(row), "deleted");
+    assert_eq!(e.role_of(m), "archive");
+    assert_eq!(e.int("SELECT count(*) FROM draft"), 0);
+    assert!(e.s.drafts_to_close().unwrap().is_empty());
+    let text: String = e.s.conn().query_row("SELECT text_plain FROM message_body WHERE message_id = ?1", [row], |r| r.get(0)).unwrap();
+    assert!(text.starts_with("Merci"), "{text}");
+}
+
+/// A draft being sent stays: `z` cancels the sending first.
+#[test]
+fn a_draft_being_sent_is_not_deleted() {
+    let mut e = env();
+    let m = e.deliver("archive", &alice("pd3@a.example"));
+    let d = e.reply(m);
+    e.close(d.id);
+    let work = e.s.draft_work_claim(e.acc).unwrap();
+    let nm_store::draft_copies::DraftWork::Append { action_id, .. } = work[0].clone() else { panic!() };
+    e.s.draft_appended(action_id, Some(8)).unwrap();
+    let v = e.s.get_draft(d.id).unwrap();
+    e.s.send_draft(d.id, v.revision, "Merci", None, 30, "t", Source::App).unwrap();
+    let row: i64 = e.int("SELECT message_id FROM draft");
+    let thread = thread_of(&e, m);
+    assert!(matches!(delete_from_drafts(&mut e, thread), Err(StoreError::DraftSending)));
+    assert_eq!(e.role_of(row), "drafts");
 }

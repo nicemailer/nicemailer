@@ -15,6 +15,17 @@ extension AppModel {
         return selectedThread.map { [$0] } ?? []
     }
 
+    /// Why a move is refused, and what to do instead (`dossiers.md`,
+    /// "Sent et Drafts"): a draft only goes to Deleted (Delete), a sent
+    /// mail stays in Sent. A pure function, tested alone.
+    nonisolated static func refusedMoveFlash(from: String?, to role: String) -> String {
+        switch from {
+        case "drafts": return L("A draft is not moved: Delete puts it in %@", Role.name("deleted"))
+        case "sent": return L("A sent mail stays in Sent")
+        default: return L("Not a target from this folder: %@", Role.name(role))
+        }
+    }
+
     /// Moves the target threads to the folder with `role` (`d` = archive,
     /// `m` + letter, Delete). Threads for which the move is not allowed from
     /// their folder are skipped and reported.
@@ -28,7 +39,8 @@ extension AppModel {
             if from?.moveTargets.contains(role) == true { allowed.append(t) }
         }
         guard !allowed.isEmpty else {
-            flash = L("Not a target from this folder: %@", Role.name(role))
+            let from = folders.first { $0.id == targets[0].folderId }?.role
+            flash = AppModel.refusedMoveFlash(from: from, to: role)
             return
         }
         // Optimistic update: the threads leave a folder list at once, and

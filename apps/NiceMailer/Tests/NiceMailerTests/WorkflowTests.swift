@@ -80,6 +80,15 @@ struct WorkflowTests {
 
     // MARK: Moves and undo
 
+    /// A move refused says what to do instead (`dossiers.md`, "Sent et
+    /// Drafts"): a draft is deleted, not moved; a sent mail stays.
+    @Test func aRefusedMoveSaysWhatToDo() {
+        #expect(AppModel.refusedMoveFlash(from: "drafts", to: "archive") == L("A draft is not moved: Delete puts it in %@", Role.name("deleted")))
+        #expect(AppModel.refusedMoveFlash(from: "sent", to: "deleted") == L("A sent mail stays in Sent"))
+        #expect(AppModel.refusedMoveFlash(from: "quarantine", to: "archive") == L("Not a target from this folder: %@", Role.name("archive")))
+        #expect(AppModel.refusedMoveFlash(from: nil, to: "todo") == L("Not a target from this folder: %@", Role.name("todo")))
+    }
+
     @Test func aMoveThatDecidesSaysSoAndCanBeUndone() async {
         press("m"); press("n")
         #expect(await eventually { model.flash?.contains("sender1@example.org") == true })

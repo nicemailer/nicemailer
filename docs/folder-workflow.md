@@ -37,6 +37,14 @@ Never moved: Todo, Waiting, Sent, Drafts, Deleted and Junk (your own commands), 
 
 `set_domain_screening` records a decision on a domain (`domain.screening_target`). It applies to the addresses of the domain, and of its subdomains (`news.shop.fr` belongs to `shop.fr`), that have no decision of their own; an address's own decision always wins. A favorable domain decision only files `pass` mails.
 
+## Drafts and Sent
+
+Sent has no target: sent mails stay where the phone finds them. Drafts has one, Deleted (`FolderRole::move_targets`; `dossiers.md`, "Cibles proposées"): Delete in Drafts puts the conversation's drafts in Deleted, here and on the server through the spool, and nothing else of the conversation, which stays where it is filed (`move_thread`, the scope narrowed to the folder of the command). This is how a draft written by another client (Spark, the phone), which NiceMailer cannot open yet, is removed.
+
+A draft of NiceMailer loses its row of `draft` on the way (`draft_copies::release_for_deletion`), or its next closing would write it back; the mail in Deleted keeps the text of its last closing. Refused, nothing changing: a draft being sent (`DRAFT_SENDING`), and a draft whose copy to the server is still to be made (`INVALID_MOVE`, "being copied to the server"). `z` brings the mail back to Drafts, as a draft of another client.
+
+In the app, any other move from Drafts or Sent says what to do instead (`AppModel.refusedMoveFlash`): "A draft is not moved: Delete puts it in Deleted", "A sent mail stays in Sent".
+
 ## Undo
 
 Every command that moves or decides returns an `undo` token. `undo {token}` puts each mail back in the folder it left, and each decision and policy back to its previous value. A change made since by someone else wins: a mail moved again, or a decision changed again, is left alone, so undoing twice is harmless.
@@ -70,4 +78,4 @@ See `geek-ui.md`: the message after a move, `z`, the confirmation of a suspect s
 
 ## Tests
 
-`nm-core` tests the rule tables (decisions by move, folders filed, authentication policies). `crates/nm-store/tests/screening.rs` builds small mailboxes by hand and covers every row of the tables, the sender chosen in a conversation, the flagged Inbox mails, the authentication rules and archive accounts, the suspect sender, removal, `config_sync`, domain decisions and subdomains, and undo (decision, policy, a mail moved since, twice, bad tokens). `crates/nm-daemon/tests/workflow_rpc.rs` goes through the socket: results, the `1005` error and its data.
+`nm-core` tests the rule tables (decisions by move, folders filed, authentication policies). `crates/nm-store/tests/screening.rs` builds small mailboxes by hand and covers every row of the tables, the sender chosen in a conversation, the flagged Inbox mails, the authentication rules and archive accounts, the suspect sender, removal, `config_sync`, domain decisions and subdomains, and undo (decision, policy, a mail moved since, twice, bad tokens). `crates/nm-daemon/tests/workflow_rpc.rs` goes through the socket: results, the `1005` error and its data. `crates/nm-store/tests/drafts.rs` covers Delete in Drafts: a draft of another client in an archived conversation goes to Deleted alone (Archive refused, the move spooled, `z`), a draft of NiceMailer refused until copied then deleted and forgotten, a draft being sent refused. `WorkflowTests.aRefusedMoveSaysWhatToDo` and `UITests/drafts.uiscript` (in the app: `d` refused with its message, Delete, `z`, the conversation still in the Inbox, the draft in Deleted).

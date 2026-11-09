@@ -1,0 +1,46 @@
+# Deleting a draft (`dossiers.md`, "Sent et Drafts"): a draft is not moved,
+# only deleted. In Drafts, `d` (archive) is refused and says so; Delete
+# puts the draft in Deleted, alone: the conversation it answers stays in
+# the Inbox. `z` brings it back. (The fake mail has 7 conversations in
+# Drafts; the reply's conversation keeps the subject of the mail answered.)
+expect folder = Inbox
+expect selected_subject ~ La facture de mars
+key r
+expect composing = true
+type Brouillon à jeter
+key esc
+expect composing = false
+expect flash ~ Reply kept in Drafts
+key ;
+key r
+expect folder = Drafts
+expect thread_count = 8
+expect selected_subject ~ La facture de mars
+key d
+expect flash ~ A draft is not moved: Delete puts it in Deleted
+expect thread_count = 8
+key del
+expect thread_count = 7
+key z
+expect thread_count = 8
+# `z` does not put the cursor back on what it restores: Drafts opened
+# again, the draft is the first row.
+key ;
+key i
+key ;
+key r
+expect selected_subject ~ La facture de mars
+key del
+expect thread_count = 7
+# The conversation answered is still in the Inbox.
+key ;
+key i
+expect folder = Inbox
+expect selected_subject ~ La facture de mars
+# The draft is in Deleted: one conversation more than the 12 of the fake
+# mail, the draft's.
+key ;
+key d
+expect folder = Deleted
+expect thread_count = 13
+snap deleted

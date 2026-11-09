@@ -54,6 +54,12 @@ impl Store {
     /// copies in Sent never move, and a message the user deleted stays in
     /// Deleted unless the user is restoring it from there.
     ///
+    /// From Drafts (only to Deleted), only the drafts move: deleting an old
+    /// draft must not put the conversation it answers in the bin. A draft
+    /// of NiceMailer loses its row of `draft` on the way
+    /// (`draft_copies::release_for_deletion`): its row of Drafts, in
+    /// Deleted, keeps its text.
+    ///
     /// When the move decides (`ScreeningTarget::for_move`), the decision is
     /// recorded on the thread's sender (`screening::thread_sender`) and the
     /// sender's other mails are filed, in the same transaction. A sender
@@ -140,16 +146,18 @@ impl Store {
         // scope are passed as separate parameters (?3 to ?8); `-1` stands
         // for "no from_folder" since no folder has that id.
         let scope: Vec<&str> = FolderRole::CONVERSATION_SCOPE.iter().map(|r| r.as_str()).collect();
+        // From Drafts, the folder of the command only (see above): ?10 off.
+        let whole_conversation = from_role != Some(FolderRole::Drafts);
         let moved: Vec<(i64, i64)> = {
             let mut stmt = tx.prepare(
                 "SELECT m.id, m.folder_id FROM message m JOIN folder f ON f.id = m.folder_id
                   WHERE m.thread_id = ?1 AND m.folder_id <> ?2
-                    AND (f.role IN (?3, ?4, ?5, ?6, ?7, ?8) OR m.folder_id = ?9)",
+                    AND ((?10 AND f.role IN (?3, ?4, ?5, ?6, ?7, ?8)) OR m.folder_id = ?9)",
             )?;
             stmt.query_map(
                 params![
                     thread_id, target_id, scope[0], scope[1], scope[2], scope[3], scope[4], scope[5],
-                    from_folder_id.unwrap_or(-1)
+                    from_folder_id.unwrap_or(-1), whole_conversation
                 ],
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )?
@@ -157,6 +165,12 @@ impl Store {
             // stops at the first error, which the final `?` propagates.
             .collect::<std::result::Result<_, _>>()?
         };
+
+        if !whole_conversation {
+            for (message_id, _) in &moved {
+                crate::draft_copies::release_for_deletion(&tx, *message_id)?;
+            }
+        }
 
         let mut out = Outcome { moved: moved.len(), ..Outcome::default() };
         out.changes.folders.insert(target_id);

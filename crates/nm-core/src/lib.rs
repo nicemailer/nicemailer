@@ -202,7 +202,12 @@ impl FolderRole {
     pub fn move_targets(self) -> Vec<FolderRole> {
         use FolderRole::*;
         match self {
-            Sent | Drafts => vec![],
+            // Sent mails stay where the phone finds them.
+            Sent => vec![],
+            // A draft only goes to Deleted (`del`): a draft of another
+            // client (Spark, the phone), which NiceMailer cannot open, could
+            // not be removed otherwise (`dossiers.md`, "Sent et Drafts").
+            Drafts => vec![Deleted],
             Quarantine => vec![Inbox, Newsletter, Paperwork, Junk, Banned, Deleted],
             // `_` matches every case not handled above.
             _ => [
@@ -534,6 +539,7 @@ mod tests {
     #[test]
     fn move_targets_follow_spec() {
         assert!(FolderRole::Sent.move_targets().is_empty());
+        assert_eq!(FolderRole::Drafts.move_targets(), [FolderRole::Deleted]);
         assert!(!FolderRole::Inbox.move_targets().contains(&FolderRole::Inbox));
         assert!(!FolderRole::Quarantine.move_targets().contains(&FolderRole::Todo));
         assert!(FolderRole::Deleted.move_targets().contains(&FolderRole::Inbox));

@@ -339,6 +339,16 @@
         }
       }
     },
+    "A draft is not moved: Delete puts it in %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un brouillon ne se déplace pas : Suppr le met dans %@"
+          }
+        }
+      }
+    },
     "A folder cannot be attached: %@": {
       "localizations": {
         "fr": {
@@ -355,6 +365,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Un dossier de données de NiceMailer (avec nicemailer.db), ou un dossier vide pour une nouvelle base"
+          }
+        }
+      }
+    },
+    "A sent mail stays in Sent": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un mail envoyé reste dans Sent"
           }
         }
       }
