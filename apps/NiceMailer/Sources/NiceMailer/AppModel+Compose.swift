@@ -528,7 +528,7 @@ extension AppModel {
             // Its sending can no longer be cancelled; its filing can be.
             undoStack.removeAll { $0.cancelSend == id }
             let undo = params["undo"]?.string
-            if let undo { pushUndo(UndoStep(tokens: [undo], label: L("filing of the reply"))) }
+            if let undo { pushUndo(UndoStep(tokens: [undo], label: L("filing of the reply"), threads: params["thread_id"]?.int.map { [$0] } ?? [])) }
             flash = Compose.sentFlash(movedTo: params["moved_to"]?.string, undo: undo != nil)
         case "SendFailed":
             sending[id] = nil

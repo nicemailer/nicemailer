@@ -236,7 +236,7 @@ A click outside an open picker, prefix menu or the help closes it, like Escape. 
 
 Moving a mail to Newsletter, Paperwork or Banned, or out of Quarantine to the Inbox, also decides where its sender's next mails go and files the mails already received from it (`folder-workflow.md`). The message says so: "“Promo” moved to Newsletter · next mails of news@shop.fr too · 12 other mails filed · z: undo".
 
-`z` undoes the last move or decision: the mails go back where they were and the previous decision returns. Each `z` goes one step further back (50 steps, for the session); a move of several marked mails is one step. A mail moved again since stays where it is.
+`z` undoes the last move or decision: the mails go back where they were and the previous decision returns. Each `z` goes one step further back (50 steps, for the session); a move of several marked mails is one step. A mail moved again since stays where it is. The cursor goes back to the conversation brought back (the first of the list, for several): the move had taken it to the next one, where a second Delete after `z` would have hit another conversation (`Workflow.cursorAfterUndo`).
 
 When the sender's mail is suspected of spoofing, the core refuses the move and the app asks, in a small menu (mode `ASK`) with the mail under the cursor: `y` moves it anyway, `t` moves it and accepts this sender's mail without authentication from now on (a sender whose tool is badly configured), Escape leaves it where it is. Every other key waits for the answer. Moving such a mail to Banned concerns that mail only and asks nothing.
 

@@ -84,10 +84,10 @@ extension AppModel {
                     report(error)
                 }
             }
-            if !tokens.isEmpty {
-                pushUndo(UndoStep(tokens: tokens, label: L("move to %@", Role.name(role))))
-            }
             let moved = allowed.filter { t in suspectMove?.threadId != t.id }
+            if !tokens.isEmpty {
+                pushUndo(UndoStep(tokens: tokens, label: L("move to %@", Role.name(role)), threads: moved.map(\.id)))
+            }
             if let s = suspectMove {
                 flash = L("Probable spoofing of %@: confirm or cancel", s.addr)
             } else if decision != nil || filed > 0 {

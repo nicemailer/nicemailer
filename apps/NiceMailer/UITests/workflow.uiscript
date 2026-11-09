@@ -17,12 +17,16 @@ expect flash ~ Undone: move to Newsletter
 expect undo_count = 0
 key z
 expect flash = Nothing to undo
-# A move that does not decide is undone too.
+# A move that does not decide is undone too, and the cursor goes back
+# to the mail brought back (the move had taken it to the next one).
+expect selected_subject ~ La facture de mars
 key d
 expect undo_count = 1
 expect flash !~ next mails of
+expect selected_subject !~ La facture de mars
 key z
 expect flash ~ Undone: move to Archive
+expect selected_subject ~ La facture de mars
 # Quarantine: accepting a sender takes the decision inbox (`i`, without
 # `m`: quarantine.uiscript).
 key ;

@@ -23,12 +23,8 @@ key del
 expect thread_count = 7
 key z
 expect thread_count = 8
-# `z` does not put the cursor back on what it restores: Drafts opened
-# again, the draft is the first row.
-key ;
-key i
-key ;
-key r
+# The cursor is back on the draft: Delete again deletes it, not the
+# conversation the cursor had moved to.
 expect selected_subject ~ La facture de mars
 key del
 expect thread_count = 7

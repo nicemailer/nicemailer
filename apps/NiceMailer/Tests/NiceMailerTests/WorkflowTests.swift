@@ -93,7 +93,7 @@ struct WorkflowTests {
         press("m"); press("n")
         #expect(await eventually { model.flash?.contains("sender1@example.org") == true })
         #expect(model.flash?.contains("2") == true)
-        #expect(model.undoStack == [UndoStep(tokens: ["1:1"], label: L("move to %@", "Newsletter"))])
+        #expect(model.undoStack == [UndoStep(tokens: ["1:1"], label: L("move to %@", "Newsletter"), threads: [1])])
 
         press("z")
         #expect(await eventually { core.calls("undo").count == 1 })
@@ -122,6 +122,28 @@ struct WorkflowTests {
         press("z")
         #expect(await eventually { core.calls("undo").count == 3 })
         #expect(core.calls("undo").map { $0["token"] as? String } == ["5:5", "4:4", "3:3"])
+    }
+
+    /// `z` puts the cursor back on the thread it brings back: the move had
+    /// taken it to the next one, where a second Delete would have hit the
+    /// wrong thread.
+    @Test func zPutsTheCursorBackOnTheThreadBroughtBack() async {
+        press("j"); press("j")
+        #expect(model.selectedThreadId == 3)
+        press("d")
+        #expect(model.selectedThreadId == 4)
+        #expect(await eventually { model.undoStack.last?.threads == [3] })
+        press("z")
+        #expect(await eventually { core.calls("undo").count == 1 })
+        #expect(await eventually { model.selectedThreadId == 3 })
+    }
+
+    /// The pure rule: the first of the list the command acted on, else
+    /// where the cursor was (nothing came back here: another folder).
+    @Test func theCursorAfterUndo() {
+        #expect(Workflow.cursorAfterUndo(restored: [5, 3], listed: [1, 3, 4, 5], current: 4) == 3)
+        #expect(Workflow.cursorAfterUndo(restored: [9], listed: [1, 3, 4], current: 4) == 4)
+        #expect(Workflow.cursorAfterUndo(restored: [], listed: [1, 3], current: nil) == nil)
     }
 
     @Test func theUndoStackKeepsTheMostRecentSteps() {

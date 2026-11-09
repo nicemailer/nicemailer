@@ -140,12 +140,15 @@ expect flash ~ Sent · filed in Waiting
 expect sending_count = 0
 expect undo_count = 1
 snap sent
-# `z` undoes the filing, not the sending.
+# `z` undoes the filing, not the sending; the cursor goes back to the
+# conversation brought back.
 key z
 expect flash ~ Undone: filing of the reply
-# The trial option, on the conversation now selected (back in the Inbox
-# from Todo, so preselected for Todo): sent with ⇧⌘↩ then `s`, it stays
-# in the Inbox.
+expect selected_subject ~ La facture de mars
+# The trial option, on the next conversation (back in the Inbox from
+# Todo, so preselected for Todo): sent with ⇧⌘↩ then `s`, it stays in
+# the Inbox.
+key j
 expect folder = Inbox
 expect selected_subject ~ Rappel : le déménagement
 key r

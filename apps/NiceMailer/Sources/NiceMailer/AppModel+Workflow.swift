@@ -13,6 +13,9 @@ import Foundation
 struct UndoStep: Equatable {
     let tokens: [String]
     let label: String
+    /// The threads the command acted on: `z` puts the cursor back on the
+    /// first of them still listed (`Workflow.cursorAfterUndo`).
+    var threads: [Int] = []
     /// The draft whose sending `z` cancels (`cancel_send`).
     var cancelSend: Int? = nil
     /// The draft abandoned with ⌘⌫: `z` starts it again with its text.
@@ -43,6 +46,17 @@ struct SuspectMove: Equatable {
 
 /// Texts of the workflow, as pure functions (tested without a core).
 enum Workflow {
+    /// Where the cursor goes once `z` has put mails back: on the first
+    /// thread of the list the command acted on, else where it was.
+    ///
+    /// Why: the move had taken the cursor to the next thread; left there,
+    /// a second Delete after `z` hit that other thread instead of the one
+    /// brought back. A pure function, tested alone.
+    static func cursorAfterUndo(restored: [Int], listed: [Int], current: Int?) -> Int? {
+        let back = Set(restored)
+        return listed.first { back.contains($0) } ?? current
+    }
+
     /// Most steps `z` keeps; older ones are forgotten.
     static let undoDepth = 50
 
@@ -118,6 +132,7 @@ extension AppModel {
         }
         flash = L("Undone: %@ (%lld mails put back)", step.label, moved)
         await reloadThreads(keepDepth: true)
+        selectedThreadId = Workflow.cursorAfterUndo(restored: step.threads, listed: threads.map(\.id), current: selectedThreadId)
     }
 
     /// The user confirmed the suspect move: it is sent again with the
@@ -136,7 +151,7 @@ extension AppModel {
         Task {
             do {
                 let r: WorkflowResult = try await client.call("move_thread", params)
-                if let u = r.undo { pushUndo(UndoStep(tokens: [u], label: L("move to %@", Role.name(s.target)))) }
+                if let u = r.undo { pushUndo(UndoStep(tokens: [u], label: L("move to %@", Role.name(s.target)), threads: [s.threadId])) }
                 flash = Workflow.moveFlash(subjects: [s.subject], folder: Role.name(s.target), decision: r.decision, filed: r.filed)
             } catch {
                 report(error)
