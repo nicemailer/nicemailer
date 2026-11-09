@@ -1198,3 +1198,130 @@ fn the_sender_of_a_draft_can_be_changed() {
     assert_eq!(rev2, v.revision + 1);
     assert_eq!(e.int(&format!("SELECT count(*) FROM draft WHERE id = {} AND send_account_id IS NULL AND from_addr = '{ME}'", d.id)), 1);
 }
+
+// ---------------------------------------------------------------------------
+// The draft proposed before it is written (`reponse.md`, section 5): `r`,
+// `R`, `f` and `c` open the screen from a proposal computed on a reading
+// connection, so that they never wait for the store's write lock.
+// ---------------------------------------------------------------------------
+
+/// Runs `f` with the connection made read-only (`PRAGMA query_only`): any
+/// write in it fails, which proves `prepare_*` writes nothing.
+fn read_only<T>(e: &Env, f: impl FnOnce(&Store) -> T) -> T {
+    e.s.conn().execute_batch("PRAGMA query_only = ON").unwrap();
+    let out = f(&e.s);
+    e.s.conn().execute_batch("PRAGMA query_only = OFF").unwrap();
+    out
+}
+
+/// The view of a draft written, with the id and the revision of a
+/// proposal: what was proposed must be what is written.
+fn as_proposed(mut d: nm_api::DraftView) -> nm_api::DraftView {
+    d.id = 0;
+    d.revision = 0;
+    d
+}
+
+#[test]
+fn a_reply_is_proposed_without_writing_then_written_as_proposed() {
+    let mut e = env();
+    let m = e.deliver("inbox", &alice("p1@a.example"));
+    let sending = e.sending();
+    let (p, reused) = read_only(&e, |s| s.prepare_reply_draft(m, false, &sending, "On Nov 7, Alice wrote:", None, false)).unwrap();
+    assert!(!reused);
+    assert_eq!((p.id, p.revision, p.state.as_str(), p.kind.as_str()), (0, 0, "editing", "reply"));
+    assert_eq!(e.int("SELECT count(*) FROM draft"), 0);
+    // Written as it was proposed, the recipients, the subject, the
+    // quotation, the filing preselected and the thread included.
+    let d = e.reply(m);
+    assert_eq!(as_proposed(d.clone()), p);
+    // Proposed again: the draft written, reused.
+    let (again, reused) = read_only(&e, |s| s.prepare_reply_draft(m, false, &sending, "x", None, false)).unwrap();
+    assert!(reused);
+    assert_eq!(again, d);
+    // `R` proposes the sender alone.
+    let m2 = e.deliver("inbox", &alice("p2@a.example"));
+    let (p, _) = read_only(&e, |s| s.prepare_reply_draft(m2, true, &sending, "x", None, false)).unwrap();
+    assert_eq!(p.to.iter().map(|a| a.addr.as_str()).collect::<Vec<_>>(), ["alice@a.example"]);
+    assert!(p.cc.is_empty());
+}
+
+/// The text typed in a proposal goes with its first save (`body`): the
+/// row written has it, not the quotation.
+#[test]
+fn the_first_save_writes_the_text_typed() {
+    let mut e = env();
+    let m = e.deliver("inbox", &alice("p3@a.example"));
+    let (d, reused) = e.s.create_reply_draft(m, false, &e.sending(), "x", Some("Merci !\n\n> cité"), Source::App).unwrap();
+    assert!(!reused);
+    assert_eq!(d.body, "Merci !\n\n> cité");
+    assert_eq!(d.subject, "Re: Devis");
+}
+
+#[test]
+fn a_proposal_is_refused_as_the_draft_would_be() {
+    let mut e = env();
+    let sending = e.sending();
+    assert!(matches!(
+        read_only(&e, |s| s.prepare_reply_draft(12345, false, &sending, "", None, false)),
+        Err(StoreError::NotFound(_))
+    ));
+    e.s.conn().execute("UPDATE account SET kind = 'archive' WHERE id = ?1", [e.acc]).unwrap();
+    let m = e.deliver("inbox", &alice("p4@a.example"));
+    assert!(matches!(read_only(&e, |s| s.prepare_reply_draft(m, false, &sending, "", None, false)), Err(StoreError::CannotSend(_))));
+    // The fake network lets an archive account answer, as the writing
+    // store does with `set_fake_sending`.
+    assert!(read_only(&e, |s| s.prepare_reply_draft(m, false, &sending, "", None, true)).is_ok());
+}
+
+#[test]
+fn a_forward_is_proposed_with_the_files_it_will_take() {
+    let mut e = env();
+    let m = e.deliver("inbox", &with_file("pf@a.example"));
+    let raw = e.raw.clone();
+    let sending = e.sending();
+    let (p, reused, missing) = read_only(&e, |s| s.prepare_forward_draft(m, &sending, "Fwd block", None, &raw, false)).unwrap();
+    assert!(!reused && missing.is_empty());
+    assert_eq!((p.id, p.kind.as_str(), p.subject.as_str()), (0, "forward", "Fwd: Devis"));
+    // Listed, not copied: a negative id, nothing in `outgoing.noindex`.
+    assert_eq!(p.attachments.len(), 1);
+    assert_eq!((p.attachments[0].id, p.attachments[0].filename.as_str()), (-1, "devis.pdf"));
+    assert_eq!(e.int("SELECT count(*) FROM outgoing_blob") + e.int("SELECT count(*) FROM draft"), 0);
+    // Written: the same text and the same file, copied now.
+    let (d, _, _) = e.s.create_forward_draft(m, &e.sending(), "Fwd block", None, &raw, Source::App).unwrap();
+    let mut written = as_proposed(d.clone());
+    assert_eq!(written.attachments.iter().map(|a| (&a.filename, &a.mime_type)).collect::<Vec<_>>(),
+               p.attachments.iter().map(|a| (&a.filename, &a.mime_type)).collect::<Vec<_>>());
+    // The size as recorded at reception: the file's own, decoded.
+    assert_eq!(p.attachments[0].size, d.attachments[0].size);
+    written.attachments = p.attachments.clone();
+    assert_eq!(written, p);
+    let (again, reused, _) = read_only(&e, |s| s.prepare_forward_draft(m, &sending, "x", None, &raw, false)).unwrap();
+    assert!(reused);
+    assert_eq!(again, d);
+}
+
+#[test]
+fn a_forward_proposed_without_raw_file_says_which_files_stay_behind() {
+    let mut e = env();
+    let m = e.deliver("inbox", &with_file("pg@a.example"));
+    e.s.conn().execute("UPDATE message SET raw_hash = NULL WHERE id = ?1", [m]).unwrap();
+    let raw = e.raw.clone();
+    let sending = e.sending();
+    let (p, _, missing) = read_only(&e, |s| s.prepare_forward_draft(m, &sending, "x", None, &raw, false)).unwrap();
+    assert_eq!(missing, ["devis.pdf"]);
+    assert!(p.attachments.is_empty());
+}
+
+#[test]
+fn a_new_mail_is_proposed_without_writing() {
+    let mut e = env();
+    let ids = e.ids.clone();
+    let p = read_only(&e, |s| s.prepare_new_draft(e.acc, &ids, None)).unwrap();
+    assert_eq!((p.id, p.kind.as_str(), p.from.addr.as_str(), p.body.as_str()), (0, "new", ME, ""));
+    assert_eq!(e.int("SELECT count(*) FROM draft"), 0);
+    let d = e.s.create_new_draft(e.acc, &e.ids, None, Source::App).unwrap();
+    assert_eq!(as_proposed(d), p);
+    let none = Identities { list: vec![] };
+    assert!(matches!(read_only(&e, |s| s.prepare_new_draft(e.acc, &none, None)), Err(StoreError::CannotSend(_))));
+}

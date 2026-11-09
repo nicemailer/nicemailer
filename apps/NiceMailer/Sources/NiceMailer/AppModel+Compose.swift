@@ -2,10 +2,13 @@ import Foundation
 import UniformTypeIdentifiers
 
 // The reply, seen from the model (`specifications/reponse.md`): `r` asks
-// the core for a draft (`create_draft`), the text typed is saved after
-// each pause (`update_draft`), ⌘↩ queues it (`send_draft`), `z` cancels it
-// during the undo delay (`cancel_send`), and the core's events say how it
-// ended (`DraftSent`, `SendFailed`, `SendPartial`).
+// the core what to open (`prepare_draft`, which writes nothing, so that the
+// screen never waits for the database while an import writes to it), the
+// draft is written at the first pause (`create_draft`, `ensureWritten`),
+// the text typed is saved after each pause (`update_draft`), ⌘↩ queues it
+// (`send_draft`), `z` cancels it during the undo delay (`cancel_send`),
+// and the core's events say how it ended (`DraftSent`, `SendFailed`,
+// `SendPartial`).
 
 /// Error codes of the core the reply screen tells apart (`nm_api::error_code`).
 enum ComposeError {
@@ -27,23 +30,26 @@ extension AppModel {
             return
         }
         let header = kind == .forward ? Compose.forwardHeader(m) : Compose.quoteHeader(m)
+        let mark = flashCount
         do {
+            // A proposal, or the draft already started: nothing is written
+            // until the user writes something (`ensureWritten`).
             let r: CreateDraftResult = try await client.call(
-                "create_draft", ["kind": kind.rawValue, "reply_to": m.id, "quote_header": header])
+                "prepare_draft", ["kind": kind.rawValue, "reply_to": m.id, "quote_header": header])
             if r.draft.state == "sending" {
                 // Already on its way: `z` cancels it while it can.
                 flash = L("This reply is being sent · z to cancel")
                 return
             }
-            await openComposer(r.draft)
+            let opened = await openComposer(r.draft, kind: kind, quoteHeader: header)
             if let w = r.warning {
-                flash = w
+                sayOpening(w, for: opened, since: mark)
             } else if r.reused {
-                flash = r.draft.kind == "forward" ? L("Forward resumed") : L("Reply resumed")
+                sayOpening(r.draft.kind == "forward" ? L("Forward resumed") : L("Reply resumed"), for: opened, since: mark)
             } else {
                 // The mail's account cannot send (an archive, no SMTP): the
                 // core chose another; the user is told, and how to change it.
-                flash = Compose.otherSenderFlash(r.draft, senders: senders)
+                sayOpening(Compose.otherSenderFlash(r.draft, senders: senders), for: opened, since: mark)
             }
         } catch {
             flash = Self.composeErrorFlash(error)
@@ -58,10 +64,11 @@ extension AppModel {
         let folder = threads.first { $0.id == selectedThreadId }?.folderId
         let selected = folders.first { $0.id == folder }?.accountId
         if let account = scopeAccountId ?? selected { params["account"] = account }
+        let mark = flashCount
         do {
-            let r: CreateDraftResult = try await client.call("create_draft", params)
-            await openComposer(r.draft)
-            flash = nil
+            let r: CreateDraftResult = try await client.call("prepare_draft", params)
+            let opened = await openComposer(r.draft, kind: .new)
+            sayOpening(nil, for: opened, since: mark)
         } catch {
             flash = Self.composeErrorFlash(error)
         }
@@ -72,12 +79,29 @@ extension AppModel {
     /// `accounts.toml`, so they are asked again each time). The reply opens
     /// even if the list does not come: only the account's key and ⌥⌘F
     /// miss it.
-    func openComposer(_ draft: DraftView) async {
-        composer = Composer(draft: draft)
-        guard let client = core else { return }
+    ///
+    /// Returns which opening it is (`Composer.opened`): the caller's message
+    /// in the status bar is for it only, not for a screen the user already
+    /// left while the senders came.
+    @discardableResult
+    func openComposer(_ draft: DraftView, kind: DraftKind? = nil, quoteHeader: String = "") async -> UUID {
+        let c = Composer(draft: draft, kind: kind, quoteHeader: quoteHeader)
+        composer = c
+        guard let client = core else { return c.opened }
         if let r: ListSendersResult = try? await client.call("list_senders", [:]) {
             senders = r.items
         }
+        return c.opened
+    }
+
+    /// The message of the reply screen `opened`, once it is open: said only
+    /// if the user is still on that screen and nothing newer was said
+    /// since `mark` (`flashCount` when the opening began). Escape pressed
+    /// while the senders came says "kept" or "nothing written": that must
+    /// stay, not be replaced by the opening's message arriving late.
+    func sayOpening(_ text: String?, for opened: UUID, since mark: Int) {
+        guard composer?.opened == opened, flashCount == mark else { return }
+        flash = text
     }
 
     /// ⌥⌘F, or a click on the line "From": the choice of the address to
@@ -119,6 +143,10 @@ extension AppModel {
     }
 
     private func performSave() async {
+        guard composer?.isDirty == true else { return }
+        // A proposal is written first, with the text typed: often all
+        // there is to save.
+        guard await ensureWritten() else { return }
         guard let client = core, let c = composer, c.isDirty else { return }
         // What is sent: the text and the headers as they are now. Typing
         // may go on during the call; what is typed meanwhile stays dirty
@@ -127,13 +155,47 @@ extension AppModel {
         do {
             let r: UpdateDraftResult = try await client.call("update_draft", Compose.saveParams(c))
             // The user may have left, or started another reply, meanwhile.
-            if composer?.draft.id == c.draft.id {
+            if composer?.opened == c.opened {
                 composer?.revision = r.revision
                 composer?.saved = text
                 composer?.savedHeaders = headers
             }
         } catch {
             flash = Self.composeErrorFlash(error)
+        }
+    }
+
+    /// Writes the draft if it is only proposed (`prepare_draft`): with
+    /// `create_draft`, the text typed as its body. True when the draft is
+    /// written (now or before), false when it could not be (the flash says
+    /// why) or the user left meanwhile.
+    ///
+    /// Called before anything that needs the draft's id: a save, a file
+    /// attached or removed, the sending. One writing at a time: a second
+    /// caller waits for the one in progress, so that a new mail, which the
+    /// core cannot recognize as "the same", is never written twice.
+    func ensureWritten() async -> Bool {
+        guard let c = composer else { return false }
+        if c.isWritten { return true }
+        if let writing = composeWriting { return await writing.value }
+        let task = Task { @MainActor in await self.write(c) }
+        composeWriting = task
+        let ok = await task.value
+        composeWriting = nil
+        return ok
+    }
+
+    private func write(_ c: Composer) async -> Bool {
+        guard let client = core else { return false }
+        do {
+            let r: CreateDraftResult = try await client.call("create_draft", Compose.createParams(c))
+            guard composer?.opened == c.opened else { return false }
+            composer?.written(r.draft)
+            if let w = r.warning { flash = w }
+            return true
+        } catch {
+            flash = Self.composeErrorFlash(error)
+            return false
         }
     }
 
@@ -158,10 +220,10 @@ extension AppModel {
     /// Returns false when some text could not be read.
     @discardableResult
     func commitRecipients(_ text: String, to field: ComposeField) async -> Bool {
-        guard let client = core, let id = composer?.draft.id else { return true }
+        guard let client = core, let opened = composer?.opened else { return true }
         do {
             let r: ParseAddressesResult = try await client.call("parse_addresses", ["text": text])
-            guard composer?.draft.id == id else { return true }
+            guard composer?.opened == opened else { return true }
             let already = composer?.add(r.addresses, to: field) ?? []
             if !r.invalid.isEmpty {
                 giveBack(r.invalid.joined(separator: ", "), to: field)
@@ -221,7 +283,7 @@ extension AppModel {
     }
 
     private func attachOne(_ url: URL) async {
-        guard let client = core, let c = composer else { return }
+        guard let client = core, composer != nil else { return }
         let isDirectory = (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
         if isDirectory {
             flash = L("A folder cannot be attached: %@", url.lastPathComponent)
@@ -243,12 +305,17 @@ extension AppModel {
             return
         }
         let mime = UTType(filenameExtension: url.pathExtension)?.preferredMIMEType ?? "application/octet-stream"
+        // The file goes into a draft written: a proposal is written first.
+        guard await ensureWritten(), let c = composer else {
+            try? FileManager.default.removeItem(at: destination)
+            return
+        }
         do {
             let r: AddDraftAttachmentResult = try await client.call(
                 "add_draft_attachment",
-                ["id": c.draft.id, "revision": composer?.revision ?? c.revision, "staged": staged,
+                ["id": c.draft.id, "revision": c.revision, "staged": staged,
                  "filename": url.lastPathComponent, "mime_type": mime])
-            guard composer?.draft.id == c.draft.id else { return }
+            guard composer?.opened == c.opened else { return }
             composer?.revision = r.revision
             composer?.attachments.append(r.attachment)
             flash = r.warning.map { L("Attached %@ · %@", r.attachment.filename, $0) } ?? L("Attached %@", r.attachment.filename)
@@ -264,13 +331,19 @@ extension AppModel {
         let previous = composeSaving
         let task = Task { @MainActor in
             await previous?.value
-            guard let client = self.core, let c = self.composer else { return }
+            guard let client = self.core, let before = self.composer else { return }
+            // A file of a forward proposed (negative id) is in the draft
+            // once written: the same place in the list, its real id.
+            let index = before.attachments.firstIndex { $0.id == id }
+            guard await self.ensureWritten(), let c = self.composer else { return }
+            let target = before.isWritten ? id : index.flatMap { c.attachments.indices.contains($0) ? c.attachments[$0].id : nil }
+            guard let target else { return }
             do {
                 let r: UpdateDraftResult = try await client.call(
-                    "remove_draft_attachment", ["id": c.draft.id, "revision": c.revision, "attachment_id": id])
-                guard self.composer?.draft.id == c.draft.id else { return }
+                    "remove_draft_attachment", ["id": c.draft.id, "revision": c.revision, "attachment_id": target])
+                guard self.composer?.opened == c.opened else { return }
                 self.composer?.revision = r.revision
-                self.composer?.attachments.removeAll { $0.id == id }
+                self.composer?.attachments.removeAll { $0.id == target }
                 let left = self.composer?.attachments.count ?? 0
                 if let i = self.composer?.attachmentIndex, i >= left { self.composer?.attachmentIndex = max(0, left - 1) }
                 if left == 0 { self.composer?.focus = .body }
@@ -330,15 +403,16 @@ extension AppModel {
     /// draft in Drafts, reopens it.
     func leaveComposer() {
         guard let c = composer else { return }
-        let id = c.draft.id
         composeSaveTask?.cancel()
         Task {
             // An address typed but not yet made one is kept; a text that is
             // not one keeps the draft open, to be corrected rather than lost.
             guard await commitRecipientLine() else { return }
             await saveComposer()
+            // A proposal left as it was is written nowhere: nothing to close.
+            let id = composer?.isWritten == true ? composer?.draft.id : nil
             composer = nil
-            guard let client = core else { return }
+            guard let client = core, let id else { return }
             do {
                 let _: CommandResult = try await client.call("close_draft", ["id": id])
             } catch {
@@ -354,7 +428,10 @@ extension AppModel {
         composeSaveTask?.cancel()
         await composeSaving?.value
         do {
-            let _: DraftView = try await client.call("discard_draft", ["id": c.draft.id])
+            // A proposal never written: nothing to discard in the core.
+            if let written = composer, written.isWritten {
+                let _: DraftView = try await client.call("discard_draft", ["id": written.draft.id])
+            }
             composer = nil
             let kind: DraftKind = c.draft.kind == "forward" ? .forward : c.draft.kind == "new" ? .new : .replyAll
             if c.draft.replyTo != nil || c.draft.forwardOf != nil || kind == .new {
@@ -380,11 +457,13 @@ extension AppModel {
         await composeSaving?.value
         // The headers are saved first: `send_draft` takes the body only.
         if composer.map({ $0.headers != $0.savedHeaders }) == true { await saveComposer() }
-        guard let c = composer else { return }
-        if c.headers.all.isEmpty {
+        guard let unsent = composer else { return }
+        if unsent.headers.all.isEmpty {
             flash = L("Cannot send: %@", L("no recipient"))
             return
         }
+        // A reply sent as proposed, without a word typed, is written now.
+        guard await ensureWritten(), let c = composer else { return }
         do {
             var params: [String: Any] = ["id": c.draft.id, "revision": c.revision, "body": c.buffer.text]
             if let afterSend { params["after_send"] = afterSend }
@@ -403,11 +482,12 @@ extension AppModel {
     /// is open again with its text.
     func cancelSend(_ draftId: Int) async {
         guard let client = core else { return }
+        let mark = flashCount
         do {
             let d: DraftView = try await client.call("cancel_send", ["id": draftId])
             sending[draftId] = nil
-            await openComposer(d)
-            flash = L("Sending cancelled: the reply is open again")
+            let opened = await openComposer(d)
+            sayOpening(L("Sending cancelled: the reply is open again"), for: opened, since: mark)
         } catch let e as CoreClient.RPCError where e.code == ComposeError.sendStarted {
             flash = L("Too late: the mail is leaving")
         } catch {
@@ -422,9 +502,18 @@ extension AppModel {
             var params: [String: Any] = ["kind": d.kind.rawValue, "body": d.body]
             if let replyTo = d.replyTo { params["reply_to"] = replyTo }
             if d.kind == .new, let account = d.account { params["account"] = account }
-            let r: CreateDraftResult = try await client.call("create_draft", params)
-            await openComposer(r.draft)
-            flash = L("Reply restored")
+            // Proposed with its text, open at once, then written at the
+            // pause like a text typed: the text given back is kept even if
+            // the user leaves without typing.
+            let mark = flashCount
+            let r: CreateDraftResult = try await client.call("prepare_draft", params)
+            let opened = await openComposer(r.draft, kind: d.kind)
+            guard composer?.opened == opened else { return }
+            if composer?.isWritten == false {
+                composer?.saved = ""
+                composerChanged()
+            }
+            sayOpening(L("Reply restored"), for: opened, since: mark)
         } catch {
             flash = Self.composeErrorFlash(error)
         }

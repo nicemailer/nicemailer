@@ -245,3 +245,46 @@ fn an_archive_mail_is_answered_from_an_account_that_can_send() {
     let n = c.call("create_draft", json!({"kind": "new", "account": hey})).unwrap()["draft"].clone();
     assert_eq!((n["account_id"].as_i64(), n["from"]["addr"].as_str()), (Some(work), Some("me@work.example")));
 }
+
+/// `prepare_draft` (`r`, `reponse.md`, section 5): the reply proposed
+/// without writing anything, so without waiting for a write in progress
+/// (here made slow, as the batches of an import are); `create_draft`
+/// writes it at the first pause, with the text typed.
+#[test]
+fn a_reply_is_proposed_without_waiting_for_a_write() {
+    use std::time::{Duration, Instant};
+    let dir = tempfile::tempdir().unwrap();
+    let _core = start_with(dir.path(), &[("NICEMAILER_FAKE_NETWORK", "1"), ("NICEMAILER_TEST_WRITE_DELAY_MS", "1500")]);
+    let mut c = Client::connect_as(dir.path(), "app");
+    import(dir.path(), &mut c);
+    let m = message(dir.path());
+    let write = c.send("set_address_screening", json!({"addr": "zed@z.example", "target": "inbox"}));
+    let start = Instant::now();
+    let prepare = c.send("prepare_draft", json!({"reply_to": m, "quote_header": "On Jun 23, Alice wrote:"}));
+    let (id, r) = c.response();
+    assert_eq!(id, prepare, "prepare_draft must not wait for the write");
+    assert!(start.elapsed() < Duration::from_millis(1500), "{:?}", start.elapsed());
+    let r = r.unwrap();
+    let d = &r["draft"];
+    assert_eq!((d["id"].as_i64(), d["revision"].as_i64(), r["reused"].as_bool()), (Some(0), Some(0), Some(false)));
+    assert_eq!(d["to"][0]["addr"], "alice@a.example");
+    assert!(d["body"].as_str().unwrap().contains("On Jun 23, Alice wrote:"));
+    assert_eq!(c.response().0, write);
+    let db = nm_store::rusqlite::Connection::open_with_flags(dir.path().join("nicemailer.db"), nm_store::rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+    assert_eq!(db.query_row("SELECT count(*) FROM draft", [], |r| r.get::<_, i64>(0)).unwrap(), 0);
+    // The first pause: written with the text typed.
+    let created = c.call("create_draft", json!({"reply_to": m, "quote_header": "x", "body": "Merci !"})).unwrap();
+    assert_eq!(created["reused"], false);
+    assert_eq!(created["draft"]["body"], "Merci !");
+    assert_eq!(created["draft"]["to"], d["to"]);
+    // `r` again: the draft written.
+    let again = c.call("prepare_draft", json!({"reply_to": m, "quote_header": "x"})).unwrap();
+    assert_eq!(again["reused"], true);
+    assert_eq!(again["draft"]["id"], created["draft"]["id"]);
+    // A new mail too is proposed without a row.
+    let new = c.call("prepare_draft", json!({"kind": "new"})).unwrap();
+    assert_eq!((new["draft"]["id"].as_i64(), new["draft"]["kind"].as_str()), (Some(0), Some("new")));
+    // Agents may not prepare one either (sending is the user's, in v1).
+    let mut agent = Client::connect_as(dir.path(), "mcp");
+    assert_eq!(agent.call("prepare_draft", json!({"reply_to": m})).unwrap_err()["code"], 1007);
+}

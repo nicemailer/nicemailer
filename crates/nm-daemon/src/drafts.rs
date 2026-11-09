@@ -188,34 +188,50 @@ fn human(source: Source) -> Result<(), RpcError> {
     }
 }
 
+/// `prepare_draft`: what `r`, `R`, `f` or `c` opens, computed on a
+/// connection of the read pool, without writing anything (`reponse.md`,
+/// section 5): the draft already started to the mail (`reused`), or the
+/// one the core proposes, `id` 0, which no row holds yet. The client
+/// writes it with `create_draft` when there is something to keep (the
+/// first pause of typing, a file, the sending).
+///
+/// Why: `create_draft` waits for the store's write lock, which the
+/// synchronization takes batch after batch; during the import of an
+/// account, the reply screen took ten seconds to open. A read never waits
+/// for a write (SQLite in WAL mode).
+pub async fn prepare(core: &Arc<Core>, p: CreateDraftParams, source: Source) -> Result<CreateDraftResult, RpcError> {
+    human(source)?;
+    let fake = fake_network();
+    if p.kind == DraftKind::New {
+        let (account_id, s) = new_mail_account(core, p.account).await?;
+        let draft = with_reader(core, move |st| st.prepare_new_draft(account_id, &s.identities, p.body.as_deref())).await?;
+        return Ok(CreateDraftResult { draft, reused: false, warning: None });
+    }
+    let (reply_to, account_id) = mail_account(core, p.reply_to).await?;
+    let sending = sending_for(core, account_id).await?;
+    let raw = core.raw.clone();
+    let result = with_reader(core, move |st| match p.kind {
+        DraftKind::Forward => st.prepare_forward_draft(reply_to, &sending, &p.quote_header, p.body.as_deref(), &raw, fake),
+        kind => st
+            .prepare_reply_draft(reply_to, kind == DraftKind::ReplySender, &sending, &p.quote_header, p.body.as_deref(), fake)
+            .map(|(d, reused)| (d, reused, Vec::new())),
+    })
+    .await;
+    finish(core, account_id, reply_to, result)
+}
+
 /// `create_draft`: a reply (to all, `r`, or to the sender, `R`), a forward
 /// (`f`) or a new mail (`c`); for a reply or a forward, the one already
-/// started to the same mail if any.
+/// started to the same mail if any. The app calls it at the first save of
+/// a draft `prepare_draft` proposed, with the text typed in `body`.
 pub async fn create(core: &Arc<Core>, p: CreateDraftParams, source: Source) -> Result<CreateDraftResult, RpcError> {
     human(source)?;
     if p.kind == DraftKind::New {
-        // The account of the view, if it can send; else the first that can.
-        let chosen = match p.account {
-            Some(a) => sendable(core, a).await.ok().map(|s| (a, s)),
-            None => None,
-        };
-        let (account_id, s) = match chosen {
-            Some(c) => c,
-            None => default_account(core).await?,
-        };
+        let (account_id, s) = new_mail_account(core, p.account).await?;
         let draft = with_store(core, move |st| st.create_new_draft(account_id, &s.identities, p.body.as_deref(), source)).await?;
         return Ok(CreateDraftResult { draft, reused: false, warning: None });
     }
-    let Some(reply_to) = p.reply_to else {
-        return Err(RpcError::new(error_code::INVALID_PARAMS, "reply_to: the mail answered or forwarded"));
-    };
-    let account: Option<i64> = with_reader(core, move |s| {
-        Ok(s.conn().query_row("SELECT account_id FROM message WHERE id = ?1", [reply_to], |r| r.get(0)).ok())
-    })
-    .await?;
-    let Some(account_id) = account else {
-        return Err(RpcError::new(error_code::NOT_FOUND, format!("no message {reply_to}")));
-    };
+    let (reply_to, account_id) = mail_account(core, p.reply_to).await?;
     let sending = sending_for(core, account_id).await?;
     let raw = core.raw.clone();
     let result = with_store(core, move |st| match p.kind {
@@ -225,10 +241,49 @@ pub async fn create(core: &Arc<Core>, p: CreateDraftParams, source: Source) -> R
             .map(|(d, reused)| (d, reused, Vec::new())),
     })
     .await;
+    finish(core, account_id, reply_to, result)
+}
+
+/// The account a new mail is sent from: the account of the view, if it
+/// can send; else the first that can.
+async fn new_mail_account(core: &Arc<Core>, account: Option<i64>) -> Result<(i64, Sendable), RpcError> {
+    let chosen = match account {
+        Some(a) => sendable(core, a).await.ok().map(|s| (a, s)),
+        None => None,
+    };
+    match chosen {
+        Some(c) => Ok(c),
+        None => default_account(core).await,
+    }
+}
+
+/// The mail answered or forwarded, and its account.
+async fn mail_account(core: &Arc<Core>, reply_to: Option<i64>) -> Result<(i64, i64), RpcError> {
+    let Some(reply_to) = reply_to else {
+        return Err(RpcError::new(error_code::INVALID_PARAMS, "reply_to: the mail answered or forwarded"));
+    };
+    let account: Option<i64> = with_reader(core, move |s| {
+        Ok(s.conn().query_row("SELECT account_id FROM message WHERE id = ?1", [reply_to], |r| r.get(0)).ok())
+    })
+    .await?;
+    match account {
+        Some(account_id) => Ok((reply_to, account_id)),
+        None => Err(RpcError::new(error_code::NOT_FOUND, format!("no message {reply_to}"))),
+    }
+}
+
+/// The result of `prepare_draft` or `create_draft` for a reply or a
+/// forward. A body not downloaded yet is asked for first: the user is
+/// waiting for it.
+fn finish(
+    core: &Arc<Core>,
+    account_id: i64,
+    reply_to: i64,
+    result: Result<(DraftView, bool, Vec<String>), RpcError>,
+) -> Result<CreateDraftResult, RpcError> {
     if let Err(e) = &result
         && e.code == error_code::BODY_PENDING
     {
-        // The body the draft quotes: downloaded first.
         sync::prioritize(core, vec![(account_id, reply_to)]);
     }
     let (draft, reused, missing) = result?;
@@ -388,7 +443,7 @@ fn fake_delivery(core: Arc<Core>, account_id: i64, own: Vec<String>, send_at: i6
         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0);
         tokio::time::sleep(std::time::Duration::from_millis(((send_at - now).max(0) * 1000 + 300) as u64)).await;
         let _ = tokio::task::spawn_blocking(move || {
-            let mut store = core.store.lock().unwrap();
+            let mut store = core.lock_store("fake delivery");
             let Ok(jobs) = store.send_claim(account_id) else { return };
             for job in jobs {
                 let Ok(written) = core.raw.write(&job.copy) else { continue };

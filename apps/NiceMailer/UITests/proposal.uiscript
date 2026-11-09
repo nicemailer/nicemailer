@@ -1,0 +1,52 @@
+# The reply is proposed before it is written (`reponse.md`, section 5): `r`
+# opens the screen without the core writing anything, so that it never
+# waits for an import writing to the database; Escape then leaves nothing.
+# The first pause writes the draft with the text typed, and `r` resumes it.
+# A forward proposed shows the files of the mail before they are copied,
+# and keeps them once written.
+expect folder = Inbox
+key r
+expect composing = true
+expect compose_written = false
+expect compose_to ~ @
+key esc
+expect composing = false
+expect flash ~ Nothing written
+# Written at the first pause.
+key r
+expect composing = true
+expect compose_written = false
+type Merci
+expect compose_written = true
+expect compose_saved = true
+key esc
+expect composing = false
+expect flash ~ Reply kept in Drafts
+key r
+expect compose_written = true
+expect flash ~ Reply resumed
+expect compose_text ~ Merci
+key cmd-del
+expect composing = false
+# A forward of the newsletter of the archive account, with its files.
+key @
+type fixture
+key ret
+key ;
+key a
+expect selected_subject = La lettre de novembre
+key f
+expect composing = true
+expect compose_written = false
+expect compose_attachments ~ devis.pdf
+expect compose_attachments ~ budget.xlsx
+snap forward-proposed
+type dan@exemple.fr
+key ret
+expect compose_to = dan@exemple.fr
+expect compose_written = true
+expect compose_attachments ~ devis.pdf
+expect compose_attachments ~ budget.xlsx
+key esc
+expect composing = false
+expect flash ~ Forward kept in Drafts

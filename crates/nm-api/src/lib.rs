@@ -127,9 +127,15 @@ pub mod method {
     pub const REMOVE_ACCOUNT: &str = "remove_account";
     /// Runs the garbage collector of the raw store now.
     pub const RAW_GC: &str = "raw_gc";
+    /// What `r`, `R`, `f` or `c` opens, without writing anything
+    /// (`reponse.md`, section 5): the draft already started to the mail,
+    /// or the one the core proposes (`DraftView.id` 0), which
+    /// `create_draft` writes at its first save. Never waits for a write.
+    pub const PREPARE_DRAFT: &str = "prepare_draft";
     /// Starts a reply to all to a message, or gives back the reply already
     /// started (`reponse.md`, section 4): recipients, subject and
-    /// quotation prepared by the core.
+    /// quotation prepared by the core. Written: the app calls it at the
+    /// first save of a draft `prepare_draft` proposed, with the text typed.
     pub const CREATE_DRAFT: &str = "create_draft";
     /// The latest version of a draft, marked open.
     pub const OPEN_DRAFT: &str = "open_draft";
@@ -983,7 +989,7 @@ pub enum DraftKind {
     New,
 }
 
-/// Params of `create_draft`.
+/// Params of `prepare_draft` and `create_draft`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateDraftParams {
     #[serde(default)]
@@ -1159,6 +1165,9 @@ pub struct SendDraftParams {
 /// A draft, as the reply screen shows it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DraftView {
+    /// 0 for a draft `prepare_draft` proposes, which no row holds yet: the
+    /// client writes it with `create_draft` before any call that takes an
+    /// id. A real draft's id is never 0 (SQLite row ids start at 1).
     pub id: i64,
     /// The account of the draft: of the mail answered or forwarded, whose
     /// conversation it joins and whose Drafts folder keeps it.
@@ -1177,8 +1186,12 @@ pub struct DraftView {
     pub bcc: Vec<AddressView>,
     pub subject: String,
     pub body: String,
+    /// In a forward proposed by `prepare_draft`, the files of the mail it
+    /// will take, each with a negative id: they are copied, and get their
+    /// real id, when `create_draft` writes the forward.
     #[serde(default)]
     pub attachments: Vec<DraftAttachmentView>,
+    /// 0 for a draft proposed (see `id`).
     pub revision: i64,
     /// `editing` or `sending`.
     pub state: String,
@@ -1203,7 +1216,7 @@ pub struct DraftView {
     pub send_at: Option<i64>,
 }
 
-/// Result of `create_draft`.
+/// Result of `prepare_draft` and `create_draft`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateDraftResult {
     pub draft: DraftView,

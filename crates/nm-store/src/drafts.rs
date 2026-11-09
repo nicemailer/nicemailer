@@ -3,7 +3,9 @@
 //!
 //! # The draft
 //!
-//! A reply is a row of `draft`, written by [`Store::create_reply_draft`]:
+//! A reply is first a proposal, computed without writing
+//! ([`Store::prepare_reply_draft`]), then a row of `draft`, written by
+//! [`Store::create_reply_draft`] at the first pause of typing:
 //! the recipients, the subject and the quotation are prepared here, by the
 //! rules of `nm_core::compose`, from what the database knows of the mail
 //! answered (its headers, its addresses, its references, its text). The
@@ -426,13 +428,50 @@ impl Store {
         self.fake_sending = on;
     }
 
+    /// What `r` (or `R`) on the message `reply_to` opens, without writing
+    /// anything: the reply already started to it (`true`: reused), or the
+    /// reply the core proposes, a [`DraftView`] with `id` 0 and `revision`
+    /// 0 that no row of `draft` holds yet (`reponse.md`, section 5).
+    ///
+    /// Why a proposal rather than a draft: opening the reply screen must
+    /// not wait for the store's write lock, which a synchronization or an
+    /// import takes batch after batch, for seconds in all while tens of
+    /// thousands of mails come in. Nothing needs writing to show a reply:
+    /// the row is written by [`Store::create_reply_draft`] when there is
+    /// something to keep (the first pause of typing, a file attached, the
+    /// sending). This runs on a connection of the read pool.
+    ///
+    /// The same rules as [`Store::create_reply_draft`] (one computation,
+    /// [`reply_plan`]), so the draft written later is the one proposed.
+    /// `fake`: the fake network ([`Store::set_fake_sending`]), a setting of
+    /// the writing store that the readers do not carry.
+    #[allow(clippy::too_many_arguments)]
+    pub fn prepare_reply_draft(
+        &self,
+        reply_to: i64,
+        sender_only: bool,
+        sending: &Sending,
+        quote_header: &str,
+        body: Option<&str>,
+        fake: bool,
+    ) -> Result<(DraftView, bool)> {
+        if let Some(id) = existing_reply(&self.conn, reply_to)? {
+            return Ok((draft_view(&self.conn, id)?, true));
+        }
+        let plan = reply_plan(&self.conn, reply_to, sender_only, sending, quote_header, body, fake)?;
+        Ok((plan.view(&self.conn, Vec::new())?, false))
+    }
+
     /// Starts a reply to all to the message `reply_to`, or gives back the
     /// one already started (`reused`), so that `r` twice never makes two
-    /// drafts (`reponse.md`, section 3).
+    /// drafts (`reponse.md`, section 3). The check and the insertion are in
+    /// one write transaction: two clients writing their first pause of the
+    /// same reply at once get the same draft.
     ///
     /// `quote_header` is the line introducing the quotation, in the
     /// client's language; `body`, when given, replaces the quotation (a
-    /// draft abandoned by mistake, restored).
+    /// draft abandoned by mistake, restored; the text typed in a reply
+    /// proposed by [`Store::prepare_reply_draft`], at its first save).
     ///
     /// Refused: a message of an archive account (`CannotSend`), a draft,
     /// a message whose body is not downloaded (`BodyPending`).
@@ -455,74 +494,65 @@ impl Store {
         body: Option<&str>,
         source: Source,
     ) -> Result<(DraftView, bool)> {
+        let fake = self.fake_sending;
         let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         // The reply to this mail already started, or, `reply_to` being the
         // draft's own row of Drafts, that draft (`r` in the Drafts folder).
-        let existing: Option<i64> = tx
-            .query_row(
-                "SELECT id FROM draft WHERE reply_to_message_id = ?1 OR message_id = ?1 ORDER BY message_id = ?1 DESC, id LIMIT 1",
-                [reply_to],
-                |r| r.get(0),
-            )
-            .optional()?;
-        if let Some(id) = existing {
+        if let Some(id) = existing_reply(&tx, reply_to)? {
             let view = draft_view(&tx, id)?;
             tx.commit()?;
             return Ok((view, true));
         }
-        type Parent = (i64, String, bool, i64, Option<String>, Option<String>, String, Option<String>, Option<String>);
-        let parent: Option<Parent> = tx
-            .query_row(
-                "SELECT m.account_id, a.kind, m.is_draft, m.body_state, m.message_id_hdr, m.in_reply_to, m.subject,
-                        m.from_addr, m.from_name
-                   FROM message m JOIN account a ON a.id = m.account_id WHERE m.id = ?1",
-                [reply_to],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?, r.get(7)?, r.get(8)?)),
-            )
-            .optional()?;
-        let Some((account_id, _kind, is_draft, body_state, _msgid, _irt, subject, from_addr, from_name)) = parent else {
-            return Err(StoreError::NotFound(format!("message {reply_to}")));
-        };
-        if is_draft {
-            return Err(StoreError::CannotSend("a draft cannot be answered".into()));
-        }
-        if body.is_none() && body_state == 0 {
-            return Err(StoreError::BodyPending);
-        }
-        let (to, cc, rt) = message_addresses(&tx, reply_to)?;
-        let from = from_addr.map(|a| Mailbox { addr: a, name: from_name });
-        let original = Original { from: from.as_ref(), reply_to: &rt, to: &to, cc: &cc };
-        let (send_account, sender, own) = pick_sender(&tx, sending, &original, self.fake_sending)?;
-        let (r_to, r_cc) = if sender_only { (compose::reply_sender(&original, &own), Vec::new()) } else { compose::reply_all(&original, &own) };
-        let text = match body {
-            Some(b) => b.to_string(),
-            None => {
-                let quoted = compose::quote(&message_text(&tx, reply_to)?, compose::QUOTE_MAX_LINES);
-                compose::initial_body(quote_header, &quoted)
-            }
-        };
-        let message_id_hdr = compose::new_message_id(rand::random::<u128>(), &sender.addr);
-        tx.execute(
-            "INSERT INTO draft (account_id, from_addr, from_name, recipients, subject, body, body_format,
-                                reply_to_message_id, message_id_hdr, created_by, modified_by, send_account_id)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'text', ?7, ?8, ?9, ?9, ?10)",
-            params![
-                account_id,
-                sender.addr,
-                sender.name,
-                recipients_json(&r_to, &r_cc, &[]),
-                compose::reply_subject(&subject),
-                text,
-                reply_to,
-                message_id_hdr,
-                source.as_str(),
-                (send_account != account_id).then_some(send_account)
-            ],
-        )?;
-        let id = tx.last_insert_rowid();
+        let plan = reply_plan(&tx, reply_to, sender_only, sending, quote_header, body, fake)?;
+        let id = plan.insert(&tx, source)?;
         let view = draft_view(&tx, id)?;
         tx.commit()?;
         Ok((view, false))
+    }
+
+    /// What `f` on the message `message` opens, without writing anything:
+    /// the forward already started, or the one proposed (`id` 0, as
+    /// [`Store::prepare_reply_draft`]). Its files are listed from the
+    /// database, each with a negative `id` (it is not a row of
+    /// `draft_attachment` yet): they are copied into `outgoing.noindex`
+    /// only when the forward is written ([`Store::create_forward_draft`]).
+    ///
+    /// Returns the draft, whether it existed, and the names of the files
+    /// that will not be forwarded (the raw file of the mail is not here,
+    /// or they go beyond `compose::ATTACHMENTS_MAX`).
+    #[allow(clippy::too_many_arguments)]
+    pub fn prepare_forward_draft(
+        &self,
+        message: i64,
+        sending: &Sending,
+        header: &str,
+        body: Option<&str>,
+        raw: &crate::raw::RawStore,
+        fake: bool,
+    ) -> Result<(DraftView, bool, Vec<String>)> {
+        if let Some(id) = existing_forward(&self.conn, message)? {
+            return Ok((draft_view(&self.conn, id)?, true, Vec::new()));
+        }
+        let (plan, raw_hash) = forward_plan(&self.conn, message, sending, header, body, fake)?;
+        // The raw file is only looked for (a `stat`), never read: listing
+        // the files must stay as fast as the rest of the proposal.
+        let here = raw_hash.is_some_and(|h| raw.path(&h).exists());
+        let (mut shown, mut missing, mut total) = (Vec::new(), Vec::new(), 0u64);
+        for (i, f) in forward_files(&self.conn, message)?.into_iter().enumerate() {
+            let size = f.size.max(0) as u64;
+            if !here || total + size > compose::ATTACHMENTS_MAX {
+                missing.push(f.name);
+                continue;
+            }
+            total += size;
+            shown.push(DraftAttachmentView {
+                id: -(i as i64 + 1),
+                filename: compose::clean_filename(&f.name),
+                mime_type: compose::clean_mime_type(&f.mime_type),
+                size: size as i64,
+            });
+        }
+        Ok((plan.view(&self.conn, shown)?, false, missing))
     }
 
     /// Starts a forward of the message `message` (`f`), or gives back the
@@ -545,75 +575,28 @@ impl Store {
         source: Source,
     ) -> Result<(DraftView, bool, Vec<String>)> {
         let outgoing = self.outgoing()?.clone();
+        let fake = self.fake_sending;
         let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let existing: Option<i64> =
-            tx.query_row("SELECT id FROM draft WHERE forward_of_message_id = ?1 ORDER BY id LIMIT 1", [message], |r| r.get(0)).optional()?;
-        if let Some(id) = existing {
+        if let Some(id) = existing_forward(&tx, message)? {
             let view = draft_view(&tx, id)?;
             tx.commit()?;
             return Ok((view, true, Vec::new()));
         }
-        type Row = (i64, String, bool, i64, String, Option<String>, Option<String>, Option<Vec<u8>>);
-        let row: Option<Row> = tx
-            .query_row(
-                "SELECT m.account_id, a.kind, m.is_draft, m.body_state, m.subject, m.from_addr, m.from_name, m.raw_hash
-                   FROM message m JOIN account a ON a.id = m.account_id WHERE m.id = ?1",
-                [message],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?, r.get(7)?)),
-            )
-            .optional()?;
-        let Some((account_id, _kind, is_draft, body_state, subject, from_addr, from_name, raw_hash)) = row else {
-            return Err(StoreError::NotFound(format!("message {message}")));
-        };
-        if is_draft {
-            return Err(StoreError::CannotSend("a draft cannot be forwarded".into()));
-        }
-        if body.is_none() && body_state == 0 {
-            return Err(StoreError::BodyPending);
-        }
-        let (to, cc, rt) = message_addresses(&tx, message)?;
-        let from = from_addr.map(|a| Mailbox { addr: a, name: from_name });
-        let original = Original { from: from.as_ref(), reply_to: &rt, to: &to, cc: &cc };
-        let (send_account, sender, _) = pick_sender(&tx, sending, &original, self.fake_sending)?;
-        let text = match body {
-            Some(b) => b.to_string(),
-            None => compose::forward_body(header, &message_text(&tx, message)?),
-        };
-        let message_id_hdr = compose::new_message_id(rand::random::<u128>(), &sender.addr);
-        tx.execute(
-            "INSERT INTO draft (account_id, from_addr, from_name, recipients, subject, body, body_format,
-                                forward_of_message_id, message_id_hdr, created_by, modified_by, send_account_id)
-             VALUES (?1, ?2, ?3, '[]', ?4, ?5, 'text', ?6, ?7, ?8, ?8, ?9)",
-            params![
-                account_id,
-                sender.addr,
-                sender.name,
-                compose::forward_subject(&subject),
-                text,
-                message,
-                message_id_hdr,
-                source.as_str(),
-                (send_account != account_id).then_some(send_account)
-            ],
-        )?;
-        let id = tx.last_insert_rowid();
+        let (plan, raw_hash) = forward_plan(&tx, message, sending, header, body, fake)?;
+        let id = plan.insert(&tx, source)?;
         // The files of the mail: read from its raw file, kept like files
         // the user attached.
-        let files: Vec<(String, Option<String>, String)> = tx
-            .prepare("SELECT part_id, filename, mime_type FROM attachment WHERE message_id = ?1 AND is_inline = 0 ORDER BY id")?
-            .query_map([message], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
-            .collect::<std::result::Result<_, _>>()?;
+        let files = forward_files(&tx, message)?;
         let mut missing = Vec::new();
-        let raw_bytes = match raw_hash.as_deref().and_then(|h| <crate::raw::Hash>::try_from(h).ok()) {
+        let raw_bytes = match raw_hash {
             Some(h) if !files.is_empty() => raw.read(&h).ok(),
             _ => None,
         };
         let mut total = 0u64;
-        for (position, (part_id, filename, mime_type)) in files.iter().enumerate() {
-            let name = crate::attachments::safe_name(filename.as_deref(), mime_type, part_id);
-            let content = raw_bytes.as_deref().and_then(|b| crate::attachments::part_content(b, part_id));
+        for (position, f) in files.into_iter().enumerate() {
+            let content = raw_bytes.as_deref().and_then(|b| crate::attachments::part_content(b, &f.part_id));
             let Some(content) = content.filter(|c| total + c.len() as u64 <= compose::ATTACHMENTS_MAX) else {
-                missing.push(name);
+                missing.push(f.name);
                 continue;
             };
             total += content.len() as u64;
@@ -621,7 +604,7 @@ impl Store {
             tx.execute("INSERT OR IGNORE INTO outgoing_blob (hash, size) VALUES (?1, ?2)", params![&hash[..], content.len() as i64])?;
             tx.execute(
                 "INSERT INTO draft_attachment (draft_id, hash, filename, mime_type, position) VALUES (?1, ?2, ?3, ?4, ?5)",
-                params![id, &hash[..], compose::clean_filename(&name), compose::clean_mime_type(mime_type), position as i64],
+                params![id, &hash[..], compose::clean_filename(&f.name), compose::clean_mime_type(&f.mime_type), position as i64],
             )?;
         }
         let view = draft_view(&tx, id)?;
@@ -629,21 +612,23 @@ impl Store {
         Ok((view, false, missing))
     }
 
+    /// What `c` opens, without writing anything: a new mail from the
+    /// account's main address, proposed (`id` 0, as
+    /// [`Store::prepare_reply_draft`]). `body`: a new mail abandoned by
+    /// mistake, restored.
+    pub fn prepare_new_draft(&self, account_id: i64, identities: &Identities, body: Option<&str>) -> Result<DraftView> {
+        new_plan(account_id, identities, body)?.view(&self.conn, Vec::new())
+    }
+
     /// Starts a new mail (`c`) from the account's main address: nothing
     /// else, the user writes it all. `body`: a new mail abandoned by
-    /// mistake, restored.
+    /// mistake, restored, or the text typed in a new mail proposed by
+    /// [`Store::prepare_new_draft`], at its first save.
     pub fn create_new_draft(&mut self, account_id: i64, identities: &Identities, body: Option<&str>, source: Source) -> Result<DraftView> {
-        let Some(sender) = identities.list.first().filter(|m| !m.addr.is_empty()) else {
-            return Err(StoreError::CannotSend("the account has no address to send from".into()));
-        };
+        let plan = new_plan(account_id, identities, body)?;
         let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let message_id_hdr = compose::new_message_id(rand::random::<u128>(), &sender.addr);
-        tx.execute(
-            "INSERT INTO draft (account_id, from_addr, from_name, recipients, subject, body, body_format, message_id_hdr, created_by, modified_by)
-             VALUES (?1, ?2, ?3, '[]', '', ?4, 'text', ?5, ?6, ?6)",
-            params![account_id, sender.addr, sender.name, body.unwrap_or(""), message_id_hdr, source.as_str()],
-        )?;
-        let view = draft_view(&tx, tx.last_insert_rowid())?;
+        let id = plan.insert(&tx, source)?;
+        let view = draft_view(&tx, id)?;
         tx.commit()?;
         Ok(view)
     }
@@ -1333,12 +1318,261 @@ fn send_audit(tx: &Transaction, source: Source, entity: i64, p: &Value, refused:
     Ok(())
 }
 
+/// A draft as the core computes it from the mail answered or forwarded,
+/// before any row exists: what [`Store::prepare_reply_draft`] shows and
+/// [`Store::create_reply_draft`] writes. One computation for both, so that
+/// the draft written at the first pause is exactly the one proposed.
+struct Plan {
+    /// The account of the draft: the mail's (its conversation, its Drafts).
+    account_id: i64,
+    /// The account that sends it; `account_id` unless that one cannot.
+    send_account: i64,
+    sender: Mailbox,
+    to: Vec<Mailbox>,
+    cc: Vec<Mailbox>,
+    subject: String,
+    body: String,
+    reply_to: Option<i64>,
+    forward_of: Option<i64>,
+}
+
+impl Plan {
+    /// Writes the row of `draft`, with a new `Message-ID`; returns its id.
+    /// Inside the caller's transaction.
+    fn insert(&self, tx: &Transaction, source: Source) -> Result<i64> {
+        let message_id_hdr = compose::new_message_id(rand::random::<u128>(), &self.sender.addr);
+        tx.execute(
+            "INSERT INTO draft (account_id, from_addr, from_name, recipients, subject, body, body_format,
+                                reply_to_message_id, forward_of_message_id, message_id_hdr, created_by, modified_by,
+                                send_account_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'text', ?7, ?8, ?9, ?10, ?10, ?11)",
+            params![
+                self.account_id,
+                self.sender.addr,
+                self.sender.name,
+                recipients_json(&self.to, &self.cc, &[]),
+                self.subject,
+                self.body,
+                self.reply_to,
+                self.forward_of,
+                message_id_hdr,
+                source.as_str(),
+                (self.send_account != self.account_id).then_some(self.send_account)
+            ],
+        )?;
+        Ok(tx.last_insert_rowid())
+    }
+
+    /// The draft proposed, as [`draft_view`] would show it once written:
+    /// `id` 0 and `revision` 0 say that no row holds it yet.
+    fn view(&self, conn: &Connection, attachments: Vec<DraftAttachmentView>) -> Result<DraftView> {
+        // The conversation of the mail answered, as `draft_view` reads it
+        // through `reply_to_message_id` (a forward files nothing: none).
+        let thread_id: Option<i64> = match self.reply_to {
+            Some(m) => conn.query_row("SELECT thread_id FROM message WHERE id = ?1", [m], |r| r.get(0)).optional()?.flatten(),
+            None => None,
+        };
+        let after_send_target = match thread_id {
+            Some(t) => crate::reception::reply_preselection(conn, self.account_id, t)?,
+            None => None,
+        };
+        let kind = if self.reply_to.is_some() {
+            "reply"
+        } else if self.forward_of.is_some() {
+            "forward"
+        } else {
+            "new"
+        };
+        Ok(DraftView {
+            id: 0,
+            account_id: self.account_id,
+            send_account_id: self.send_account,
+            from: view_of(&self.sender),
+            to: self.to.iter().map(view_of).collect(),
+            cc: self.cc.iter().map(view_of).collect(),
+            bcc: Vec::new(),
+            subject: self.subject.clone(),
+            body: self.body.clone(),
+            attachments,
+            revision: 0,
+            state: "editing".into(),
+            kind: kind.into(),
+            reply_to: self.reply_to,
+            forward_of: self.forward_of,
+            thread_id,
+            after_send_target,
+            after_send: None,
+            send_at: None,
+        })
+    }
+}
+
+/// The reply already started to `reply_to`, or, `reply_to` being the
+/// draft's own row of Drafts, that draft (`r` in the Drafts folder).
+fn existing_reply(conn: &Connection, reply_to: i64) -> Result<Option<i64>> {
+    Ok(conn
+        .query_row(
+            "SELECT id FROM draft WHERE reply_to_message_id = ?1 OR message_id = ?1 ORDER BY message_id = ?1 DESC, id LIMIT 1",
+            [reply_to],
+            |r| r.get(0),
+        )
+        .optional()?)
+}
+
+/// The forward of `message` already started.
+fn existing_forward(conn: &Connection, message: i64) -> Result<Option<i64>> {
+    Ok(conn.query_row("SELECT id FROM draft WHERE forward_of_message_id = ?1 ORDER BY id LIMIT 1", [message], |r| r.get(0)).optional()?)
+}
+
+/// The mail a reply or a forward starts from, refused when it cannot be:
+/// `(account_id, subject, from, raw file)`.
+fn source_message(conn: &Connection, id: i64, body: Option<&str>, what: &str) -> Result<(i64, String, Option<Mailbox>, Option<crate::raw::Hash>)> {
+    type Row = (i64, bool, i64, String, Option<String>, Option<String>, Option<Vec<u8>>);
+    let row: Option<Row> = conn
+        .query_row(
+            "SELECT account_id, is_draft, body_state, subject, from_addr, from_name, raw_hash FROM message WHERE id = ?1",
+            [id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?)),
+        )
+        .optional()?;
+    let Some((account_id, is_draft, body_state, subject, from_addr, from_name, raw_hash)) = row else {
+        return Err(StoreError::NotFound(format!("message {id}")));
+    };
+    if is_draft {
+        return Err(StoreError::CannotSend(format!("a draft cannot be {what}")));
+    }
+    // The text quoted is the mail's: without its body, nothing to quote.
+    // A restored body needs none.
+    if body.is_none() && body_state == 0 {
+        return Err(StoreError::BodyPending);
+    }
+    let from = from_addr.map(|a| Mailbox { addr: a, name: from_name });
+    let raw_hash = raw_hash.as_deref().and_then(|h| <crate::raw::Hash>::try_from(h).ok());
+    Ok((account_id, subject, from, raw_hash))
+}
+
+/// The reply to `reply_to` (`reponse.md`, sections 3 and 4): sender,
+/// recipients (`compose::reply_all` or `compose::reply_sender`), subject
+/// and quotation. Only reads.
+#[allow(clippy::too_many_arguments)]
+fn reply_plan(
+    conn: &Connection,
+    reply_to: i64,
+    sender_only: bool,
+    sending: &Sending,
+    quote_header: &str,
+    body: Option<&str>,
+    fake: bool,
+) -> Result<Plan> {
+    let (account_id, subject, from, _) = source_message(conn, reply_to, body, "answered")?;
+    let (to, cc, rt) = message_addresses(conn, reply_to)?;
+    let original = Original { from: from.as_ref(), reply_to: &rt, to: &to, cc: &cc };
+    let (send_account, sender, own) = pick_sender(conn, sending, &original, fake)?;
+    let (r_to, r_cc) = if sender_only { (compose::reply_sender(&original, &own), Vec::new()) } else { compose::reply_all(&original, &own) };
+    let body = match body {
+        Some(b) => b.to_string(),
+        None => {
+            let quoted = compose::quote(&message_text(conn, reply_to)?, compose::QUOTE_MAX_LINES);
+            compose::initial_body(quote_header, &quoted)
+        }
+    };
+    Ok(Plan {
+        account_id,
+        send_account,
+        sender,
+        to: r_to,
+        cc: r_cc,
+        subject: compose::reply_subject(&subject),
+        body,
+        reply_to: Some(reply_to),
+        forward_of: None,
+    })
+}
+
+/// The forward of `message`: no recipient, `Fwd: `, the block `header`
+/// then the mail's text. Also returns the raw file of the mail, where its
+/// files are. Only reads.
+fn forward_plan(
+    conn: &Connection,
+    message: i64,
+    sending: &Sending,
+    header: &str,
+    body: Option<&str>,
+    fake: bool,
+) -> Result<(Plan, Option<crate::raw::Hash>)> {
+    let (account_id, subject, from, raw_hash) = source_message(conn, message, body, "forwarded")?;
+    let (to, cc, rt) = message_addresses(conn, message)?;
+    let original = Original { from: from.as_ref(), reply_to: &rt, to: &to, cc: &cc };
+    let (send_account, sender, _) = pick_sender(conn, sending, &original, fake)?;
+    let body = match body {
+        Some(b) => b.to_string(),
+        None => compose::forward_body(header, &message_text(conn, message)?),
+    };
+    let plan = Plan {
+        account_id,
+        send_account,
+        sender,
+        to: Vec::new(),
+        cc: Vec::new(),
+        subject: compose::forward_subject(&subject),
+        body,
+        reply_to: None,
+        forward_of: Some(message),
+    };
+    Ok((plan, raw_hash))
+}
+
+/// A new mail from the account's main address.
+fn new_plan(account_id: i64, identities: &Identities, body: Option<&str>) -> Result<Plan> {
+    let Some(sender) = identities.list.first().filter(|m| !m.addr.is_empty()) else {
+        return Err(StoreError::CannotSend("the account has no address to send from".into()));
+    };
+    Ok(Plan {
+        account_id,
+        send_account: account_id,
+        sender: sender.clone(),
+        to: Vec::new(),
+        cc: Vec::new(),
+        subject: String::new(),
+        body: body.unwrap_or("").to_string(),
+        reply_to: None,
+        forward_of: None,
+    })
+}
+
+/// A file a forward takes from the mail (not its inline images).
+struct ForwardFile {
+    part_id: String,
+    /// The name it is sent under (`attachments::safe_name`).
+    name: String,
+    mime_type: String,
+    /// Bytes, as recorded at reception (0 when unknown).
+    size: i64,
+}
+
+fn forward_files(conn: &Connection, message: i64) -> Result<Vec<ForwardFile>> {
+    let rows: Vec<(String, Option<String>, String, i64)> = conn
+        .prepare_cached(
+            "SELECT part_id, filename, mime_type, coalesce(size, 0) FROM attachment
+              WHERE message_id = ?1 AND is_inline = 0 ORDER BY id",
+        )?
+        .query_map([message], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
+        .collect::<std::result::Result<_, _>>()?;
+    Ok(rows
+        .into_iter()
+        .map(|(part_id, filename, mime_type, size)| {
+            let name = crate::attachments::safe_name(filename.as_deref(), &mime_type, &part_id);
+            ForwardFile { part_id, name, mime_type, size }
+        })
+        .collect())
+}
+
 /// Who sends a reply or a forward of `original` (`compose::choose_sender`):
 /// the account and the address, and the addresses never to answer (those
 /// of the mail's account and of the sender). An archive account has no
 /// server and never sends, except with the fake network
 /// (`Store::set_fake_sending`).
-fn pick_sender(tx: &Transaction, sending: &Sending, original: &Original, fake: bool) -> Result<(i64, Mailbox, Vec<String>)> {
+fn pick_sender(tx: &Connection, sending: &Sending, original: &Original, fake: bool) -> Result<(i64, Mailbox, Vec<String>)> {
     let lists: Vec<&[Mailbox]> = sending.senders.iter().map(|s| s.identities.list.as_slice()).collect();
     let Some((i, from)) = compose::choose_sender(&lists, original) else {
         return Err(StoreError::CannotSend("no account can send this mail: add an [smtp] server to one in accounts.toml".into()));

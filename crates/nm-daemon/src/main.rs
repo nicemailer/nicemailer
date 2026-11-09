@@ -80,7 +80,9 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
 // Two kinds of channels: `mpsc` (multi-producer, single-consumer) is a queue
 // with one reader; `broadcast` delivers each message to every receiver.
-use tokio::sync::{broadcast, mpsc};
+use std::time::{Duration, Instant};
+
+use tokio::sync::{OwnedSemaphorePermit, Semaphore, broadcast, mpsc};
 
 use events::{EventLog, Replay};
 
@@ -138,9 +140,20 @@ struct Args {
 /// held only to lend or take back a connection, never while waiting for
 /// another lock.
 struct Core {
+    /// The writing store. Taken through [`Core::lock_store`], which times
+    /// the wait and the hold.
     store: Mutex<Store>,
-    /// Read-only connections for the queries.
+    /// Read-only connections for the queries of the clients.
     readers: ReadPool,
+    /// Read-only connections for the synchronization workers
+    /// (`CoreHost::read`). A pool of their own: the reads of the workers
+    /// (the bodies to download, the folders to compare) are long during an
+    /// import, and must never take every connection the app's lists need.
+    sync_readers: ReadPool,
+    /// `NICEMAILER_TEST_WRITE_DELAY_MS`: each write holds the store's lock
+    /// that much longer. Only for the tests of the core, which need a slow
+    /// write to check that reads do not wait for it (`tests/parallel_rpc.rs`).
+    test_write_delay: Option<Duration>,
     /// Settings applied and state of the accounts (`nm-engine`).
     engine: Mutex<Engine>,
     events: Mutex<EventLog>,
@@ -219,9 +232,14 @@ async fn run(args: Args, data_dir: &Path) -> anyhow::Result<()> {
     let db_path = data_dir.join(nm_api::paths::DATABASE);
     let mut store = Store::open(&db_path).with_context(|| format!("ouverture de {}", db_path.display()))?;
     // Opened after the writing store, which creates or migrates the
-    // database. Four connections: the app rarely has more queries running
-    // at once (a list, a thread, a search), and each is short.
-    let readers = ReadPool::open(&db_path, 4).with_context(|| format!("lecture de {}", db_path.display()))?;
+    // database. Six connections for the clients: since the requests of a
+    // connection run in parallel (`serve`), the app may have a list, a
+    // thread, a search and a reply being prepared at once, and the CLI,
+    // the TUI or an agent theirs. Three for the synchronization workers,
+    // apart (see `Core::sync_readers`). A connection costs its page cache
+    // (32 MB at most, `Store::open_reader`), filled only when used.
+    let readers = ReadPool::open(&db_path, 6).with_context(|| format!("lecture de {}", db_path.display()))?;
+    let sync_readers = ReadPool::open(&db_path, 3).with_context(|| format!("lecture de {}", db_path.display()))?;
 
     // Settings, before the event log, whose sizes they give. An invalid
     // file does not stop the core: it starts with the defaults and no
@@ -268,6 +286,11 @@ async fn run(args: Args, data_dir: &Path) -> anyhow::Result<()> {
     let core = Arc::new(Core {
         store: Mutex::new(store),
         readers,
+        sync_readers,
+        test_write_delay: std::env::var("NICEMAILER_TEST_WRITE_DELAY_MS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .map(Duration::from_millis),
         engine: Mutex::new(engine),
         events: Mutex::new(events),
         client_queue: settings.client_queue as usize,
@@ -284,7 +307,7 @@ async fn run(args: Args, data_dir: &Path) -> anyhow::Result<()> {
         let secrets = core.engine.lock().unwrap().secrets();
         let host: Arc<dyn nm_engine::sync::SyncHost> = Arc::new(sync::CoreHost(core.clone()));
         let _ = core.syncer.set(nm_engine::sync::Syncer::new(host, secrets));
-        let mut store = core.store.lock().unwrap();
+        let mut store = core.lock_store("startup");
         // Actions that were being sent when the core stopped: sent again
         // (each can be replayed, `nm-store`, `spool.rs`).
         let requeued = store.spool_requeue_running()?;
@@ -422,7 +445,123 @@ struct Session {
     subscribed: bool,
 }
 
+/// A wait for, or a hold of, the store's lock longer than this is written
+/// to `core.log` (`Core::lock_store`).
+const SLOW_LOCK: Duration = Duration::from_millis(250);
+
+impl Core {
+    /// The store's write lock, timed: a wait or a hold longer than
+    /// [`SLOW_LOCK`] is written to `core.log` with who took it (`request`,
+    /// `sync`, `draft`…). One writer at a time is the design (SQLite has a
+    /// single writer anyway); these lines say who keeps the others waiting,
+    /// and for how long.
+    ///
+    /// `unwrap` on `lock()`: it fails only if another thread panicked while
+    /// holding the lock ("poisoned" mutex), a bug we do not try to recover
+    /// from.
+    pub(crate) fn lock_store(&self, who: &'static str) -> StoreLock<'_> {
+        let asked = Instant::now();
+        let guard = self.store.lock().unwrap();
+        let waited = asked.elapsed();
+        if waited >= SLOW_LOCK {
+            eprintln!("store lock: {who} waited {} ms", waited.as_millis());
+        }
+        if let Some(d) = self.test_write_delay {
+            std::thread::sleep(d);
+        }
+        StoreLock { guard, who, since: Instant::now() }
+    }
+}
+
+/// The store, locked for writing; logs on release if it was held long.
+///
+/// Rust note: `Deref` and `DerefMut` make `StoreLock` usable where a
+/// `&Store` or a `&mut Store` is expected (`&mut lock` becomes
+/// `&mut Store` by "deref coercion"), as the `MutexGuard` it wraps is.
+/// `Drop` runs when the value goes out of scope: that is when the lock is
+/// released, and when the hold is measured.
+pub(crate) struct StoreLock<'a> {
+    guard: std::sync::MutexGuard<'a, Store>,
+    who: &'static str,
+    since: Instant,
+}
+
+impl std::ops::Deref for StoreLock<'_> {
+    type Target = Store;
+    fn deref(&self) -> &Store {
+        &self.guard
+    }
+}
+
+impl std::ops::DerefMut for StoreLock<'_> {
+    fn deref_mut(&mut self) -> &mut Store {
+        &mut self.guard
+    }
+}
+
+impl Drop for StoreLock<'_> {
+    fn drop(&mut self) {
+        let held = self.since.elapsed();
+        if held >= SLOW_LOCK {
+            eprintln!("store lock: {} held {} ms", self.who, held.as_millis());
+        }
+    }
+}
+
+/// Requests of one connection running or waiting at once. Beyond, the core
+/// stops reading the connection until one ends: a client that floods the
+/// socket gets slower, it cannot make the core's memory grow.
+const IN_FLIGHT: usize = 64;
+
+/// Whether a method only reads, and so may run alongside the other
+/// requests of its connection.
+///
+/// Why: the requests of a connection used to run one after the other. The
+/// app has a single connection; during the import of an account, each
+/// batch written sends events, the app reloads its lists, and a request
+/// the user waits for (`r`) queued behind those reloads, for seconds. A
+/// read now never waits for another request of its connection.
+///
+/// Everything else keeps the order in which the client sent it, among
+/// themselves (`move_thread` then `undo`, the saves of a draft): those run
+/// one after the other, in a task of the connection. A method missing from
+/// this list is ordered: the safe side, at worst slower.
+fn runs_in_parallel(method: &str) -> bool {
+    matches!(
+        method,
+        method::LIST_FOLDERS
+            | method::LIST_THREADS
+            | method::GET_THREAD
+            | method::LOCATE_MESSAGE
+            | method::SEARCH
+            | method::IMPORT_STATUS
+            | method::LIST_HISTORY
+            | method::LIST_TAGS
+            | method::LIST_GROUPS
+            | method::LIST_CONTACTS
+            | method::LIST_ACCOUNTS
+            | method::PREPARE_DRAFT
+            | method::OPEN_DRAFT
+            | method::PARSE_ADDRESSES
+            | method::SUGGEST_RECIPIENTS
+            | method::LIST_SENDERS
+            | method::SYNC_STATUS
+            | method::CONFIG_STATUS
+    )
+}
+
 /// Handles one client connection until it closes.
+///
+/// Three kinds of requests (`architecture.md`, "Protocole"):
+/// - those of the connection itself (`ping`, `hello`, `subscribe`) are
+///   answered here, in the order read: they change the session;
+/// - reads ([`runs_in_parallel`]) each run in a task of their own;
+/// - the others run one after the other, in the order read, in the task
+///   `ordered`.
+///
+/// So responses may come back in another order than the requests: the
+/// client matches them by `id`, as JSON-RPC allows. A client that needs a
+/// read to see a write waits for the write's response before sending it.
 async fn serve(core: Arc<Core>, stream: UnixStream) -> anyhow::Result<()> {
     // Split the socket into a reading half and a writing half, so that they
     // can be used by different tasks.
@@ -441,6 +580,25 @@ async fn serve(core: Arc<Core>, stream: UnixStream) -> anyhow::Result<()> {
         }
     });
 
+    // Rust note: a `Semaphore` hands out a fixed number of permits;
+    // `acquire_owned` waits while none is left. Each request holds one
+    // until its response is queued (the permit is dropped with the task's
+    // variables), which bounds the requests in flight.
+    let in_flight = Arc::new(Semaphore::new(IN_FLIGHT));
+    // The ordered requests, with the source of the session when read and
+    // their permit.
+    let (ordered_tx, mut ordered_rx) = mpsc::channel::<(Request, Source, OwnedSemaphorePermit)>(IN_FLIGHT);
+    let ordered = {
+        let (core, out) = (core.clone(), out.clone());
+        tokio::spawn(async move {
+            while let Some((req, source, _permit)) = ordered_rx.recv().await {
+                if respond(&out, answer(&core, source, req).await).await.is_err() {
+                    break;
+                }
+            }
+        })
+    };
+
     // The source defaults to CLI until `hello` says otherwise.
     let mut session = Session { hello: false, source: Source::Cli, out: out.clone(), subscribed: false };
     // `BufReader` buffers the reads; `lines()` splits the stream on newlines.
@@ -450,37 +608,90 @@ async fn serve(core: Arc<Core>, stream: UnixStream) -> anyhow::Result<()> {
         if line.trim().is_empty() {
             continue;
         }
-        let response = match serde_json::from_str::<Request>(&line) {
+        let req = match serde_json::from_str::<Request>(&line) {
+            Ok(req) => req,
             // Invalid JSON: the id is unknown, so the JSON-RPC spec says to
             // answer with `id: null`.
-            Err(e) => Some(Response::err(Value::Null, RpcError::new(error_code::PARSE_ERROR, e.to_string()))),
-            Ok(req) => {
-                let id = req.id.clone();
-                let result = dispatch(&core, &mut session, req).await;
-                // No id: the request is a client notification and gets no
-                // response. `id.map(...)` builds a response only if there is
-                // an id.
-                id.map(|id| match result {
-                    Ok(v) => Response::ok(id, v),
-                    Err(e) => Response::err(id, e),
-                })
+            Err(e) => {
+                let r = Response::err(Value::Null, RpcError::new(error_code::PARSE_ERROR, e.to_string()));
+                if respond(&out, Some(r)).await.is_err() {
+                    break;
+                }
+                continue;
             }
         };
-        // Rust note: this `if let ... && ...` is a *let chain* (Rust 2024):
-        // the body runs only if there is a response AND sending it failed,
-        // which means the writer task stopped (socket closed).
-        if let Some(r) = response
-            && out.send(Arc::new(serde_json::to_string(&r)?)).await.is_err()
-        {
+        if let Some(result) = session_call(&core, &mut session, &req) {
+            if respond(&out, req.id.map(|id| reply(id, result))).await.is_err() {
+                break;
+            }
+            continue;
+        }
+        let timer = Instant::now();
+        let permit = in_flight.clone().acquire_owned().await.expect("the semaphore is never closed");
+        // Waiting for a permit means the client has IN_FLIGHT requests
+        // pending: worth knowing when a response is late.
+        let waited = timer.elapsed();
+        if waited >= SLOW_WAIT {
+            eprintln!("connection: {} ms before a request could start ({IN_FLIGHT} in flight)", waited.as_millis());
+        }
+        let source = session.source;
+        if runs_in_parallel(&req.method) {
+            let (core, out) = (core.clone(), out.clone());
+            tokio::spawn(async move {
+                let _permit = permit;
+                let _ = respond(&out, answer(&core, source, req).await).await;
+            });
+        } else if ordered_tx.send((req, source, permit)).await.is_err() {
             break;
         }
     }
-    // Drop every sender of the queue (the session holds a clone) so that the
-    // writer task sees the end of the queue, then wait for it to flush.
+    // The ordered requests already read are answered, then the queue is
+    // closed: drop every sender (the session holds a clone) so that the
+    // writer task sees its end, and wait for it to flush. The reads still
+    // running hold a sender each: the writer waits for them too.
+    drop(ordered_tx);
+    let _ = ordered.await;
     drop(session);
     drop(out);
     let _ = writer.await;
     Ok(())
+}
+
+/// Queues a response for the writer task; an error means the connection
+/// closed. `None` (a notification) sends nothing.
+async fn respond(out: &mpsc::Sender<Arc<String>>, response: Option<Response>) -> anyhow::Result<()> {
+    if let Some(r) = response {
+        out.send(Arc::new(serde_json::to_string(&r)?)).await?;
+    }
+    Ok(())
+}
+
+fn reply(id: Value, result: Result<Value, RpcError>) -> Response {
+    match result {
+        Ok(v) => Response::ok(id, v),
+        Err(e) => Response::err(id, e),
+    }
+}
+
+/// A request that is slower than this is written to `core.log`, with its
+/// method and its duration: the numbers to look at when the app feels
+/// slow, rather than guesses.
+const SLOW_REQUEST: Duration = Duration::from_millis(500);
+/// The same for a wait (a permit, the store's lock).
+const SLOW_WAIT: Duration = Duration::from_millis(100);
+
+/// Runs a request that is not one of the session's, and builds its
+/// response (`None` for a notification, which has no `id`).
+async fn answer(core: &Arc<Core>, source: Source, req: Request) -> Option<Response> {
+    let id = req.id.clone();
+    let method = req.method.clone();
+    let timer = Instant::now();
+    let result = call(core, source, req).await;
+    let took = timer.elapsed();
+    if took >= SLOW_REQUEST {
+        eprintln!("slow request: {method} took {} ms", took.as_millis());
+    }
+    id.map(|id| reply(id, result))
 }
 
 /// Deserializes the params of a request into the expected type `T`.
@@ -546,10 +757,7 @@ async fn with_store<T: Send + 'static>(
 ) -> Result<T, RpcError> {
     let core = core.clone();
     tokio::task::spawn_blocking(move || {
-        // `unwrap` on `lock()`: it fails only if another thread panicked
-        // while holding the lock ("poisoned" mutex), a bug we do not try to
-        // recover from.
-        let mut store = core.store.lock().unwrap();
+        let mut store = core.lock_store("request");
         f(&mut store)
     })
     .await
@@ -676,7 +884,7 @@ fn reload_config(core: &Arc<Core>) {
     // Lock order: store, engine, events. The events are emitted with the
     // store's lock held, like those of the commands, so their order is the
     // order of the writes.
-    let mut store = core.store.lock().unwrap();
+    let mut store = core.lock_store("config");
     let mut engine = core.engine.lock().unwrap();
     let changed = match engine.reload(&mut store, false) {
         Ok(events) => {
@@ -764,17 +972,20 @@ fn limit(l: Option<u32>) -> u32 {
     l.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT)
 }
 
-/// Routes a request to the code of its method.
-async fn dispatch(core: &Arc<Core>, session: &mut Session, req: Request) -> Result<Value, RpcError> {
+/// The requests of the connection itself, answered at once, in the order
+/// read: `ping`, `hello` (which sets the session's source), `subscribe`,
+/// and the refusal of everything before `hello`. `None`: another method,
+/// for [`call`].
+fn session_call(core: &Arc<Core>, session: &mut Session, req: &Request) -> Option<Result<Value, RpcError>> {
     if req.jsonrpc != "2.0" {
-        return Err(RpcError::new(error_code::INVALID_REQUEST, "jsonrpc doit valoir \"2.0\""));
+        return Some(Err(RpcError::new(error_code::INVALID_REQUEST, "jsonrpc doit valoir \"2.0\"")));
     }
     // First match: methods available before the handshake (`ping`, `hello`),
     // and refusal of everything else until `hello` succeeds.
-    match req.method.as_str() {
-        method::PING => return Ok(Value::String("pong".into())),
-        method::HELLO => {
-            let p: HelloParams = params(req.params)?;
+    Some(match req.method.as_str() {
+        method::PING => Ok(Value::String("pong".into())),
+        method::HELLO => (|| {
+            let p: HelloParams = params(req.params.clone())?;
             if p.protocol_version != PROTOCOL_VERSION {
                 return Err(RpcError::new(
                     error_code::PROTOCOL_VERSION,
@@ -791,27 +1002,16 @@ async fn dispatch(core: &Arc<Core>, session: &mut Session, req: Request) -> Resu
                 _ => Source::Cli,
             };
             session.hello = true;
-            return to_value(HelloResult {
+            to_value(HelloResult {
                 protocol_version: PROTOCOL_VERSION,
                 // `env!` reads a variable at compile time; Cargo sets
                 // CARGO_PKG_VERSION to the crate's version.
                 core_version: env!("CARGO_PKG_VERSION").into(),
-            });
-        }
-        _ if !session.hello => {
-            return Err(RpcError::new(error_code::PROTOCOL_VERSION, "poignée de main `hello` attendue"));
-        }
-        _ => {}
-    }
-
-    // Event position, read *before* running a query and returned as `as_of`.
-    // Any event with a higher seq may not be reflected in the data, so the
-    // client knows it must apply it.
-    let as_of = || core.events.lock().unwrap().position();
-    let source = session.source;
-    match req.method.as_str() {
-        method::SUBSCRIBE => {
-            let p: SubscribeParams = params(req.params)?;
+            })
+        })(),
+        _ if !session.hello => Err(RpcError::new(error_code::PROTOCOL_VERSION, "poignée de main `hello` attendue")),
+        method::SUBSCRIBE => (|| {
+            let p: SubscribeParams = params(req.params.clone())?;
             if session.subscribed {
                 return Err(RpcError::new(error_code::INVALID_REQUEST, "déjà abonné"));
             }
@@ -828,7 +1028,20 @@ async fn dispatch(core: &Arc<Core>, session: &mut Session, req: Request) -> Resu
             let out = session.out.clone();
             tokio::spawn(forward(core.clone(), rx, out, replay, resync));
             to_value(SubscribeResult { epoch: pos.epoch, seq: pos.seq, replayed })
-        }
+        })(),
+        _ => return None,
+    })
+}
+
+/// Routes a request to the code of its method. Runs in a task of its own
+/// or in the ordered task of the connection (see [`serve`]): it gets the
+/// session's source, never the session.
+async fn call(core: &Arc<Core>, source: Source, req: Request) -> Result<Value, RpcError> {
+    // Event position, read *before* running a query and returned as `as_of`.
+    // Any event with a higher seq may not be reflected in the data, so the
+    // client knows it must apply it.
+    let as_of = || core.events.lock().unwrap().position();
+    match req.method.as_str() {
         method::LIST_FOLDERS => {
             let as_of = as_of();
             let items = with_reader(core, |s| s.list_folders()).await?;
@@ -1076,6 +1289,7 @@ async fn dispatch(core: &Arc<Core>, session: &mut Session, req: Request) -> Resu
             setup::remove_account(core, p, source).await?;
             to_value(CommandResult { changed: 0 })
         }
+        method::PREPARE_DRAFT => to_value(drafts::prepare(core, params(req.params)?, source).await?),
         method::CREATE_DRAFT => to_value(drafts::create(core, params(req.params)?, source).await?),
         method::OPEN_DRAFT => to_value(drafts::open(core, params(req.params)?).await?),
         method::UPDATE_DRAFT => to_value(drafts::update(core, params(req.params)?, source).await?),
@@ -1274,7 +1488,7 @@ fn start_reindex(core: &Arc<Core>) -> anyhow::Result<()> {
     // main thread must reach the loop that accepts connections at once
     // (a slow check here once left the app unanswered for 30 s).
     std::thread::Builder::new().name("nicemailer-reindex".into()).spawn(move || {
-        let pending = match nm_store::reindex::pending(&core.store.lock().unwrap()) {
+        let pending = match nm_store::reindex::pending(&core.lock_store("reindex")) {
             Ok(0) => return,
             Ok(n) => n,
             Err(e) => return eprintln!("reindex : {e}"),

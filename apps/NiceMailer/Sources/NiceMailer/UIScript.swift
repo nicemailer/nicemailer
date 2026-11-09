@@ -660,6 +660,7 @@ private final class Runner {
                 return (t[..<i] + "|" + t[i...]).replacingOccurrences(of: "\n", with: "\\n")
             } ?? "",
             "compose_saved": m.composer.map { "\(!$0.isDirty)" } ?? "",
+            "compose_written": m.composer.map { "\($0.isWritten)" } ?? "",
             // The text selected in the reply (line breaks as `\n`).
             "compose_selection": (m.composer?.buffer.selectedText ?? "").replacingOccurrences(of: "\n", with: "\\n"),
             "compose_lines": "\(UIScript.composeLines)",

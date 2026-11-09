@@ -135,6 +135,75 @@ struct ComposeRulesTests {
         #expect((p["bcc"] as? [[String: Any]])?.first?["addr"] as? String == "b@x.fr")
     }
 
+    func decode(_ json: [String: Any]) throws -> DraftView {
+        try CoreClient.decoder.decode(DraftView.self, from: JSONSerialization.data(withJSONObject: json))
+    }
+
+    /// A proposal (`prepare_draft`, id 0) is written with what it was
+    /// opened as and the text typed: the mail answered for a reply, the
+    /// mail forwarded for a forward, the account for a new mail.
+    @Test func aProposalIsWrittenWithWhatItWasOpenedAs() throws {
+        let proposal = try decode(Fixture.opened("prepare_draft", Fixture.draft(replyTo: 10)))
+        var c = Composer(draft: proposal, kind: .replySender, quoteHeader: "On Nov 7, Sender 1 wrote:")
+        #expect(!c.isWritten)
+        c.buffer.insert("Merci ")
+        let p = Compose.createParams(c)
+        #expect(p["kind"] as? String == "reply_sender")
+        #expect(p["reply_to"] as? Int == 10)
+        #expect(p["quote_header"] as? String == "On Nov 7, Sender 1 wrote:")
+        #expect(p["body"] as? String == c.buffer.text)
+        #expect(p["account"] == nil)
+        var forward = Fixture.draft(replyTo: 10)
+        forward["kind"] = "forward"
+        forward["reply_to"] = NSNull()
+        forward["forward_of"] = 10
+        let f = Compose.createParams(Composer(draft: try decode(Fixture.opened("prepare_draft", forward))))
+        #expect(f["kind"] as? String == "forward")
+        #expect(f["reply_to"] as? Int == 10)
+        var new = Fixture.draft(replyTo: 10)
+        new["kind"] = "new"
+        new["reply_to"] = NSNull()
+        let n = Compose.createParams(Composer(draft: try decode(Fixture.opened("prepare_draft", new))))
+        #expect(n["kind"] as? String == "new")
+        #expect(n["account"] as? Int == 1)
+        #expect(n["reply_to"] == nil)
+    }
+
+    /// Written, the composer takes the draft's id, revision and files; the
+    /// text and the headers typed meanwhile stay, still to save.
+    @Test func writtenTheComposerKeepsWhatWasTyped() throws {
+        var forward = Fixture.draft(replyTo: 10)
+        forward["kind"] = "forward"
+        forward["attachments"] = [["id": 77, "filename": "devis.pdf", "mime_type": "application/pdf", "size": 8]]
+        var c = Composer(draft: try decode(Fixture.opened("prepare_draft", forward)))
+        #expect(c.attachments.map(\.id) == [-1])
+        c.buffer.insert("Voici")
+        let typed = c.buffer.text
+        // The core wrote "Voi": the start of the text, typed before the call.
+        c.written(try decode(forward.merging(["body": "Voi"]) { $1 }))
+        #expect(c.isWritten && c.draft.id == 901 && c.revision == 1)
+        #expect(c.attachments.map(\.id) == [77])
+        #expect(c.buffer.text == typed)
+        // "ci" typed while `create_draft` ran: saved next.
+        #expect(c.isDirty)
+    }
+
+    /// Escape on a proposal left as it was: nothing was ever written.
+    @Test func escapeOnAProposalSaysNothingWasKept() throws {
+        let c = Composer(draft: try decode(Fixture.opened("prepare_draft", Fixture.draft(replyTo: 10))))
+        #expect(Compose.keptFlash(c) == L("Nothing written: no draft kept"))
+        var typed = c
+        typed.buffer.insert("x")
+        #expect(Compose.keptFlash(typed) == L("Reply kept in Drafts · r to resume"))
+        let written = Composer(draft: try decode(Fixture.draft(replyTo: 10)))
+        #expect(Compose.keptFlash(written) == L("Reply kept in Drafts · r to resume"))
+        // An address still typed in a line is kept on the way out.
+        var pending = c
+        pending.focus = .cc
+        pending.line = LineEdit("bob@x.fr")
+        #expect(Compose.keptFlash(pending) == L("Reply kept in Drafts · r to resume"))
+    }
+
     /// "Send from" (`reponse.md`, section 4 ter): every address of every
     /// account that can send, keyed 1 to 9, the current one marked; the
     /// sender changed goes with the next save, with its account.
@@ -271,7 +340,10 @@ struct ComposeControllerTests {
 
     @Test func rOpensAReplyToTheMailUnderTheCursor() async throws {
         await reply()
-        let calls = core.calls("create_draft")
+        // Proposed, not written (`reponse.md`, section 5).
+        #expect(core.calls("create_draft").isEmpty)
+        #expect(model.composer?.isWritten == false)
+        let calls = core.calls("prepare_draft")
         #expect(calls.count == 1)
         #expect(calls.first?["reply_to"] as? Int == 10)
         let header = try #require(calls.first?["quote_header"] as? String)
@@ -281,7 +353,7 @@ struct ComposeControllerTests {
         #expect(c.buffer.cursor == 0)
         // `r` again while writing: a letter of the text, not a second draft.
         press("r")
-        #expect(core.calls("create_draft").count == 1)
+        #expect(core.calls("prepare_draft").count == 1)
         #expect(model.composer?.buffer.text.hasPrefix("r") == true)
     }
 
@@ -394,8 +466,9 @@ struct ComposeControllerTests {
         controller.replaceComposeSelection("beaucoup")
         #expect(model.composer?.buffer.text.hasPrefix("Merci beaucoup\n") == true)
         #expect(model.composer?.buffer.cursor == 14)
-        // Saved like typing.
-        #expect(await eventually { core.calls("update_draft").last?["body"] as? String == model.composer?.buffer.text })
+        // Saved like typing: the first save writes the draft with it.
+        let saved = { (core.calls("update_draft").last ?? core.calls("create_draft").last)?["body"] as? String }
+        #expect(await eventually { saved() == model.composer?.buffer.text })
         // An empty text deletes the selection, and nothing without one.
         controller.selectCompose(utf16: NSRange(location: 0, length: 6))
         controller.replaceComposeSelection("")
@@ -404,19 +477,27 @@ struct ComposeControllerTests {
         #expect(model.composer?.buffer.text.hasPrefix("beaucoup\n") == true)
     }
 
+    /// The first pause writes the draft proposed, with the text typed
+    /// (`create_draft`); the next ones save it (`update_draft`).
     @Test func theTextIsSavedAfterAPause() async {
         await reply()
         type("Merci")
+        #expect(core.calls("create_draft").isEmpty)
+        #expect(await eventually { core.calls("create_draft").count == 1 })
+        let write = core.calls("create_draft")[0]
+        #expect(write["kind"] as? String == "reply_all")
+        #expect(write["reply_to"] as? Int == 10)
+        #expect((write["body"] as? String)?.hasPrefix("Merci\n\n") == true)
+        #expect(await eventually { model.composer?.isWritten == true && model.composer?.isDirty == false })
+        #expect(model.composer?.draft.id == 901)
+        #expect(model.composer?.revision == 1)
         #expect(core.calls("update_draft").isEmpty)
-        #expect(await eventually { core.calls("update_draft").count == 1 })
-        let save = core.calls("update_draft")[0]
-        #expect(save["revision"] as? Int == 1)
-        #expect((save["body"] as? String)?.hasPrefix("Merci\n\n") == true)
-        #expect(await eventually { model.composer?.revision == 2 && model.composer?.isDirty == false })
-        // The next save sends the new revision.
+        // The next save sends the revision of the draft written.
         type("!")
-        #expect(await eventually { core.calls("update_draft").count == 2 })
-        #expect(core.calls("update_draft")[1]["revision"] as? Int == 2)
+        #expect(await eventually { core.calls("update_draft").count == 1 })
+        #expect(core.calls("update_draft")[0]["revision"] as? Int == 1)
+        #expect(await eventually { model.composer?.revision == 2 })
+        #expect(core.calls("create_draft").count == 1)
     }
 
     @Test func commandReturnSendsAndZCancelsDuringTheDelay() async {
@@ -481,10 +562,10 @@ struct ComposeControllerTests {
     /// says so and sends nothing.
     @Test func nothingToChooseOutsideTheWorkFolders() async {
         core.handler = { method, params in
-            guard method == "create_draft" else { return Fixture.answer(method, params) }
+            guard method == "create_draft" || method == "prepare_draft" else { return Fixture.answer(method, params) }
             var d = Fixture.draft(replyTo: params["reply_to"] as? Int ?? 10)
             d["after_send_target"] = NSNull()
-            return ["draft": d, "reused": false]
+            return ["draft": Fixture.opened(method, d), "reused": false]
         }
         await reply()
         press("shift-cmd-ret")
@@ -660,9 +741,10 @@ struct ComposeControllerTests {
         press("esc")
         #expect(await eventually { model.composer == nil })
         #expect(model.flash == L("Reply kept in Drafts · r to resume"))
-        // Saved at once, without waiting for the pause, then closed: the
+        // Written at once, without waiting for the pause, then closed: the
         // core files it in Drafts.
-        #expect(await eventually { core.calls("update_draft").count == 1 })
+        #expect(await eventually { core.calls("create_draft").count == 1 })
+        #expect((core.calls("create_draft").first?["body"] as? String)?.hasPrefix("Merci") == true)
         #expect(await eventually { core.calls("close_draft").first?["id"] as? Int == 901 })
         // Keys are commands again.
         press("j")
@@ -672,15 +754,88 @@ struct ComposeControllerTests {
     @Test func commandDeleteAbandonsAndZRestores() async {
         await reply()
         type("Mon texte")
+        // Written at the pause, then abandoned: the core drops it.
+        #expect(await eventually { core.calls("create_draft").count == 1 })
         press("cmd-del")
         #expect(await eventually { model.composer == nil })
         #expect(core.calls("discard_draft").first?["id"] as? Int == 901)
         #expect(model.flash == L("Reply abandoned · z to restore it"))
+        // `z`: proposed again with its text, open at once, written at the
+        // pause even if nothing more is typed.
         press("z")
         #expect(await eventually { model.composer != nil })
-        let restore = core.calls("create_draft").last
+        let restore = core.calls("prepare_draft").last
         #expect(restore?["reply_to"] as? Int == 10)
         #expect((restore?["body"] as? String)?.hasPrefix("Mon texte") == true)
+        #expect(await eventually { core.calls("create_draft").count == 2 })
+        #expect((core.calls("create_draft").last?["body"] as? String)?.hasPrefix("Mon texte") == true)
+    }
+
+    /// Abandoned before the pause: never written, nothing to discard in
+    /// the core; `z` gives the text back all the same.
+    @Test func aReplyAbandonedBeforeThePauseWasNeverWritten() async {
+        await reply()
+        type("Vite")
+        press("cmd-del")
+        #expect(await eventually { model.composer == nil })
+        #expect(core.calls("create_draft").isEmpty)
+        #expect(core.calls("discard_draft").isEmpty)
+        #expect(model.flash == L("Reply abandoned · z to restore it"))
+        press("z")
+        #expect(await eventually { model.composer?.buffer.text.hasPrefix("Vite") == true })
+    }
+
+    /// `r` then Escape without a word: nothing written, nothing closed,
+    /// and the status bar says so. During an import, `r` never waits for
+    /// the database (`reponse.md`, section 5).
+    @Test func aReplyLeftAsProposedLeavesNothing() async {
+        await reply()
+        press("esc")
+        #expect(await eventually { model.composer == nil })
+        #expect(model.flash == L("Nothing written: no draft kept"))
+        try? await Task.sleep(for: .milliseconds(700))
+        #expect(core.calls("create_draft").isEmpty)
+        #expect(core.calls("update_draft").isEmpty)
+        #expect(core.calls("close_draft").isEmpty)
+    }
+
+    /// Sent without a word typed: written first, then sent, the id of the
+    /// draft written.
+    @Test func aProposalSentIsWrittenFirst() async {
+        await reply()
+        press("cmd-ret")
+        #expect(await eventually { core.calls("send_draft").count == 1 })
+        let order = core.calls.map(\.method).filter { ["create_draft", "send_draft"].contains($0) }
+        #expect(order == ["create_draft", "send_draft"])
+        #expect(core.calls("send_draft").first?["id"] as? Int == 901)
+        #expect(core.calls("send_draft").first?["revision"] as? Int == 1)
+    }
+
+    /// Several things need the draft written at once (a file dropped while
+    /// the pause saves): it is written once, the others wait for it.
+    @Test func theDraftIsWrittenOnce() async {
+        await reply()
+        model.composer?.buffer = TextBuffer("Merci", cursor: 5)
+        async let a = model.ensureWritten()
+        async let b = model.ensureWritten()
+        let (x, y) = await (a, b)
+        #expect(x && y)
+        #expect(core.calls("create_draft").count == 1)
+        #expect(model.composer?.draft.id == 901)
+    }
+
+    /// The core cannot write it (the mail's body is gone…): the reply stays
+    /// open with its text, the status bar says why, nothing else is called.
+    @Test func aDraftThatCannotBeWrittenStaysOpen() async {
+        core.handler = { method, params in
+            method == "create_draft" ? CoreClient.RPCError(code: ComposeError.cannotSend, message: "no [smtp]") : Fixture.answer(method, params)
+        }
+        await reply()
+        type("Merci")
+        #expect(await eventually { model.flash == L("Cannot send: %@", "no [smtp]") })
+        #expect(model.composer?.isWritten == false)
+        #expect(model.composer?.buffer.text.hasPrefix("Merci") == true)
+        #expect(core.calls("update_draft").isEmpty)
     }
 
     @Test func theEventsOfTheSending() async {
@@ -750,11 +905,11 @@ struct ComposeControllerTests {
     /// account, and the status bar says from which.
     @Test func aReplyFromAnotherAccountIsAnnounced() async {
         core.handler = { method, params in
-            guard method == "create_draft" else { return Fixture.answer(method, params) }
+            guard method == "create_draft" || method == "prepare_draft" else { return Fixture.answer(method, params) }
             var d = Fixture.draft(replyTo: params["reply_to"] as? Int ?? 10)
             d["send_account_id"] = 2
             d["from"] = ["addr": "me@work.example", "name": "Me at work"]
-            return ["draft": d, "reused": false]
+            return ["draft": Fixture.opened(method, d), "reused": false]
         }
         await reply()
         #expect(await eventually { model.flash == L("This account cannot send: from %@ · ⌥⌘F to change", "Me at work <me@work.example> · work") })
@@ -762,7 +917,7 @@ struct ComposeControllerTests {
 
     @Test func aMailThatCannotBeAnsweredSaysWhy() async {
         core.handler = { method, params in
-            method == "create_draft" ? CoreClient.RPCError(code: ComposeError.cannotSend, message: "no [smtp]") : Fixture.answer(method, params)
+            method == "prepare_draft" ? CoreClient.RPCError(code: ComposeError.cannotSend, message: "no [smtp]") : Fixture.answer(method, params)
         }
         press("r")
         #expect(await eventually { model.flash == L("Cannot send: %@", "no [smtp]") })
@@ -773,7 +928,7 @@ struct ComposeControllerTests {
     @Test func capitalRRepliesToTheSenderOnly() async {
         press("R")
         #expect(await eventually { model.composer != nil })
-        #expect(core.calls("create_draft").first?["kind"] as? String == "reply_sender")
+        #expect(core.calls("prepare_draft").first?["kind"] as? String == "reply_sender")
         #expect(model.composer?.focus == .body)
     }
 
@@ -781,18 +936,18 @@ struct ComposeControllerTests {
     /// app's language; the keys go to To, empty.
     @Test func fForwardsTheMail() async {
         core.handler = { method, params in
-            guard method == "create_draft" else { return Fixture.answer(method, params) }
+            guard method == "create_draft" || method == "prepare_draft" else { return Fixture.answer(method, params) }
             var d = Fixture.draft(replyTo: params["reply_to"] as? Int ?? 10)
             d["kind"] = "forward"
             d["reply_to"] = NSNull()
             d["forward_of"] = params["reply_to"] ?? NSNull()
             d["to"] = []
             d["after_send_target"] = NSNull()
-            return ["draft": d, "reused": false, "warning": NSNull()]
+            return ["draft": Fixture.opened(method, d), "reused": false, "warning": NSNull()]
         }
         press("f")
         #expect(await eventually { model.composer != nil })
-        let call = core.calls("create_draft").first
+        let call = core.calls("prepare_draft").first
         #expect(call?["kind"] as? String == "forward")
         let header = call?["quote_header"] as? String ?? ""
         #expect(header.hasPrefix(L("---------- Forwarded message ---------")))
@@ -809,13 +964,19 @@ struct ComposeControllerTests {
         press("esc")
         #expect(await eventually { model.composer == nil })
         #expect(model.flash == L("Forward kept in Drafts · f to resume"))
+        // Written as a forward of the mail, then given its recipient.
+        let written = core.calls("create_draft").first
+        #expect(written?["kind"] as? String == "forward")
+        #expect(written?["reply_to"] as? Int == 10)
+        #expect(written?["quote_header"] as? String == header)
+        #expect(await eventually { (core.calls("update_draft").first?["to"] as? [[String: Any]])?.first?["addr"] as? String == "dan@example.org" })
     }
 
     /// `c`: a new mail from the account of the view; left empty, Escape
     /// says it is dropped.
     @Test func cWritesANewMail() async {
         core.handler = { method, params in
-            guard method == "create_draft" else { return Fixture.answer(method, params) }
+            guard method == "create_draft" || method == "prepare_draft" else { return Fixture.answer(method, params) }
             var d = Fixture.draft(replyTo: 10)
             d["kind"] = "new"
             d["reply_to"] = NSNull()
@@ -825,11 +986,11 @@ struct ComposeControllerTests {
             d["body"] = ""
             d["thread_id"] = NSNull()
             d["after_send_target"] = NSNull()
-            return ["draft": d, "reused": false]
+            return ["draft": Fixture.opened(method, d), "reused": false]
         }
         press("c")
         #expect(await eventually { model.composer != nil })
-        let call = core.calls("create_draft").first
+        let call = core.calls("prepare_draft").first
         #expect(call?["kind"] as? String == "new")
         #expect(call?["account"] as? Int == 1)
         #expect(call?["reply_to"] == nil)
@@ -838,6 +999,9 @@ struct ComposeControllerTests {
         press("esc")
         #expect(await eventually { model.composer == nil })
         #expect(model.flash == L("Empty mail dropped"))
+        // Never written: nothing to write, nothing to close.
+        #expect(core.calls("create_draft").isEmpty)
+        #expect(core.calls("close_draft").isEmpty)
     }
 
     /// Quarantine refuses `R` and `f` like `r`.

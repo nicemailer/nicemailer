@@ -52,7 +52,7 @@ Un brouillon envoyé au serveur est aussi représenté par **une seule ligne `me
 
 ## 4. Cycle de vie
 
-1. **Création** (`create_draft`) : une ligne `draft`, avec un `Message-ID` neuf. Pour une réponse, les destinataires, l'objet et la citation sont préparés par le noyau.
+1. **Création** (`create_draft`) : une ligne `draft`, avec un `Message-ID` neuf. Pour une réponse, les destinataires, l'objet et la citation sont préparés par le noyau. Depuis novembre 2026, l'écran s'ouvre d'abord sur une proposition calculée sans écriture (`prepare_draft`, `reponse.md`, section 5) ; la ligne n'est créée qu'à la première pause de frappe, à l'ajout d'un fichier ou à l'envoi.
 2. **Rédaction** : le client ouvre le brouillon (`open_draft`), puis envoie ses modifications (`update_draft`) à chaque pause de frappe. Elles sont écrites dans `draft` ; rien ne part sur le serveur.
 3. **Fermeture** (`close_draft`) : si le brouillon a été modifié localement, le noyau met en file une action `append_draft` (section 5).
 4. **Reprise** : rouvrir un brouillon fermé, depuis NiceMailer ou après l'avoir retrouvé dans le dossier Drafts, reprend les étapes 2 et 3.
@@ -131,6 +131,7 @@ Attacher un fichier (`add_draft_attachment`) le **copie aussitôt** dans la zone
 
 | Commande | Effet |
 | --- | --- |
+| `prepare_draft(account, reply_to?)` | Calcule le brouillon sans l'écrire (identifiant 0), ou renvoie celui déjà commencé |
 | `create_draft(account, reply_to?)` | Crée un brouillon, renvoie son identifiant et son contenu initial |
 | `open_draft(id)` | Marque le brouillon ouvert, renvoie sa dernière version |
 | `update_draft(id, revision, champs)` | Enregistre une modification. Refusée si `revision` n'est pas la révision courante : deux fenêtres, ou l'app et le CLI, ne s'écrasent pas |

@@ -145,6 +145,33 @@ pub fn start_with(dir: &Path, env: &[(&str, &str)]) -> Core {
 }
 
 impl Client {
+    /// Sends a request without waiting for its response; returns its id.
+    /// With `response`, to send several at once and see the order in which
+    /// the core answers them.
+    pub fn send(&mut self, method: &str, params: Value) -> u64 {
+        let id = self.next_id;
+        self.next_id += 1;
+        writeln!(self.stream, "{}", json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params})).unwrap();
+        id
+    }
+
+    /// The next response, whatever its id: `(id, result or error)`. Events
+    /// received meanwhile are kept for `event`.
+    pub fn response(&mut self) -> (u64, Result<Value, Value>) {
+        loop {
+            let v = self.line();
+            match v["id"].as_u64() {
+                Some(id) => {
+                    return (id, match v.get("error") {
+                        Some(e) => Err(e.clone()),
+                        None => Ok(v["result"].clone()),
+                    });
+                }
+                None => self.pending.push_back(v),
+            }
+        }
+    }
+
     /// Forgets the events received so far, so that `event` waits for one
     /// caused by what the test does next.
     pub fn clear_events(&mut self) {

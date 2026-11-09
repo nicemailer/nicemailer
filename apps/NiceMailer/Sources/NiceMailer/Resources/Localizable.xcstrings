@@ -1279,6 +1279,16 @@
         }
       }
     },
+    "Nothing written: no draft kept": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rien d'écrit : aucun brouillon gardé"
+          }
+        }
+      }
+    },
     "Older versions of NiceMailer will no longer open it: copy the folder first to keep them able to.": {
       "localizations": {
         "fr": {

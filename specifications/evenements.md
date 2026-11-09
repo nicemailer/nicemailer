@@ -74,6 +74,8 @@ Chaque client abonné a une file d'événements bornée (`events.client_queue`, 
 
 L'abonnement précède les requêtes : un événement émis pendant une requête est ainsi reçu, et `as_of` dit s'il faut l'appliquer.
 
+Rythme des rechargements (ajouté en novembre 2026) : un client ne recharge pas à chaque événement. L'app regroupe les invalidations : le premier événement rend un rechargement dû, les suivants s'y ajoutent ; il part 40 ms après, au plus tôt 500 ms après le début du précédent, et jamais pendant qu'un autre tourne. Pendant l'import d'un compte, les événements arrivent sans pause : un regroupement qui repartait de zéro à chaque événement ne rechargeait jamais, ou empilait des rechargements devant les requêtes que l'utilisateur attendait.
+
 ## 8. Catalogue des événements
 
 Les événements **séquencés** passent par le tampon et sont rejoués. Les événements **transitoires** sont envoyés aux clients connectés et jamais rejoués : leur perte est sans conséquence.

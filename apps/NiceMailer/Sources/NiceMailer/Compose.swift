@@ -45,7 +45,11 @@ struct DraftView: Decodable, Equatable {
     let sendAt: Int?
 }
 
+/// The result of `prepare_draft` (what `r`, `R`, `f`, `c` open, written
+/// nowhere yet) and of `create_draft` (the draft written).
 struct CreateDraftResult: Decodable {
+    /// From `prepare_draft`, a draft with `id` 0 unless `reused`: proposed,
+    /// no row holds it yet (`Composer.isWritten`).
     let draft: DraftView
     let reused: Bool
     /// A forward whose files could not all be taken: which.
@@ -58,6 +62,16 @@ enum DraftKind: String {
     case replySender = "reply_sender"
     case forward
     case new
+
+    /// The kind of a draft the core shows (`reply`, `forward`, `new`): a
+    /// reply already written is given back whatever its recipients.
+    init(view kind: String) {
+        switch kind {
+        case "forward": self = .forward
+        case "new": self = .new
+        default: self = .replyAll
+        }
+    }
 }
 
 struct UpdateDraftResult: Decodable {
@@ -160,8 +174,23 @@ struct ComposeHeaders: Equatable {
 
 /// The reply being written: the draft as the core last saw it, and what
 /// the user typed since.
+///
+/// The draft starts proposed (`prepare_draft`, `reponse.md`, section 5):
+/// the core computed it without writing it, so that the screen opens at
+/// once even while an import keeps the database busy writing. It is
+/// written (`create_draft`, with the text typed) only when there is
+/// something to keep: the first pause of typing, a file attached, the
+/// sending (`AppModel.ensureWritten`). Closed before, it leaves nothing.
 struct Composer: Equatable {
     var draft: DraftView
+    /// Which opening of the reply screen this is: the answers of the core
+    /// that arrive late are dropped when the user has left it, or opened
+    /// another. Not the draft's id, which a proposal does not have yet.
+    let opened = UUID()
+    /// What the draft was opened as, and the line introducing the
+    /// quotation: what `create_draft` needs to write a proposed draft.
+    var kind: DraftKind
+    var quoteHeader: String
     var buffer: TextBuffer
     /// The revision of the draft the text was last saved at: `update_draft`
     /// sends it, and gets the next one back.
@@ -189,8 +218,10 @@ struct Composer: Equatable {
     var suggestions: [AddressView] = []
     var suggestionIndex: Int?
 
-    init(draft: DraftView) {
+    init(draft: DraftView, kind: DraftKind? = nil, quoteHeader: String = "") {
         self.draft = draft
+        self.kind = kind ?? DraftKind(view: draft.kind)
+        self.quoteHeader = quoteHeader
         // The cursor at the start: the reply is written above the
         // quotation (`reponse.md`, section 4).
         buffer = TextBuffer(draft.body, cursor: 0)
@@ -214,6 +245,27 @@ struct Composer: Equatable {
     }
 
     var isDirty: Bool { buffer.text != saved || headers != savedHeaders }
+
+    /// The draft is a row of the core: a proposal has id 0 (SQLite ids
+    /// start at 1). Until then, no call that takes an id can be made.
+    var isWritten: Bool { draft.id > 0 }
+
+    /// The draft as `create_draft` wrote it: its id, its revision, what it
+    /// holds now (what was typed, or another client's text if it wrote the
+    /// same reply first). The text and the headers typed stay; what
+    /// differs from the row is saved next (`isDirty`).
+    ///
+    /// The files are the core's: a proposal holds only those of a forward
+    /// (negative ids), since attaching one writes the draft first; written,
+    /// they have their real ids.
+    mutating func written(_ d: DraftView) {
+        draft = d
+        revision = d.revision
+        saved = d.body
+        savedHeaders = ComposeHeaders(d)
+        attachments = d.attachments
+        attachmentIndex = min(attachmentIndex, max(0, attachments.count - 1))
+    }
 
     /// The fields Tab goes through, in order: Bcc only when shown, the
     /// line of files only when there are some.
@@ -313,9 +365,24 @@ enum Compose {
         a.name.map { "\($0) <\(a.addr)>" } ?? a.addr
     }
 
+    /// The parameters of `create_draft` that write a proposed draft: what
+    /// it was opened as, and the text typed, which replaces the quotation
+    /// the core would write. The recipients, the subject and the sender
+    /// edited meanwhile follow with `update_draft` (`saveParams`).
+    static func createParams(_ c: Composer) -> [String: Any] {
+        var p: [String: Any] = ["kind": c.kind.rawValue, "quote_header": c.quoteHeader, "body": c.buffer.text]
+        switch c.kind {
+        case .new: p["account"] = c.draft.accountId
+        case .forward: if let m = c.draft.forwardOf { p["reply_to"] = m }
+        case .replyAll, .replySender: if let m = c.draft.replyTo { p["reply_to"] = m }
+        }
+        return p
+    }
+
     /// The parameters of `update_draft` for what changed since the last
     /// save: the body, and the recipients or the subject only when edited.
     static func saveParams(_ c: Composer) -> [String: Any] {
+        // Only for a draft written (`AppModel.ensureWritten` first).
         var p: [String: Any] = ["id": c.draft.id, "revision": c.revision]
         if c.buffer.text != c.saved { p["body"] = c.buffer.text }
         let h = c.headers, s = c.savedHeaders
@@ -404,6 +471,12 @@ enum Compose {
     /// What the status bar says when a draft is left with Escape.
     static func keptFlash(_ c: Composer) -> String {
         if c.isBlank { return L("Empty mail dropped") }
+        // Proposed and left as it was: nothing was ever written. An
+        // address still typed in a line is something: it is made a
+        // recipient and saved on the way out.
+        if !c.isWritten, !c.isDirty, c.line.text.trimmingCharacters(in: .whitespaces).isEmpty {
+            return L("Nothing written: no draft kept")
+        }
         switch c.draft.kind {
         case "forward": return L("Forward kept in Drafts · f to resume")
         case "new": return L("Mail kept in Drafts")

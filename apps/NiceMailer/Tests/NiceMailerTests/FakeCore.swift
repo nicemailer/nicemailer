@@ -142,12 +142,26 @@ enum Fixture {
         ["account_id": 2, "account": "work", "addr": "sales@work.example", "name": NSNull()],
     ]
 
+    /// A draft as `prepare_draft` gives it (`method` "prepare_draft"):
+    /// proposed, id 0 and revision 0, no row yet; as is for `create_draft`.
+    static func opened(_ method: String, _ d: [String: Any]) -> [String: Any] {
+        guard method == "prepare_draft" else { return d }
+        var p = d
+        p["id"] = 0
+        p["revision"] = 0
+        // The files of a forward proposed: listed, negative ids.
+        if let files = d["attachments"] as? [[String: Any]] {
+            p["attachments"] = files.enumerated().map { i, f in f.merging(["id": -(i + 1)]) { $1 } }
+        }
+        return p
+    }
+
     /// The default answers of the fake core.
     static func answer(_ method: String, _ params: [String: Any]) -> Any {
         switch method {
-        case "create_draft":
+        case "create_draft", "prepare_draft":
             let replyTo = params["reply_to"] as? Int ?? 10
-            return ["draft": draft(replyTo: replyTo, body: params["body"] as? String), "reused": false]
+            return ["draft": opened(method, draft(replyTo: replyTo, body: params["body"] as? String)), "reused": false]
         case "update_draft":
             return ["revision": (params["revision"] as? Int ?? 1) + 1]
         case "add_draft_attachment":

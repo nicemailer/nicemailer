@@ -20,7 +20,7 @@ pub struct CoreHost(pub Arc<Core>);
 
 impl SyncHost for CoreHost {
     fn write(&self, f: &mut dyn FnMut(&mut Store) -> Result<ChangeSet, StoreError>) -> Result<(), StoreError> {
-        let mut store = self.0.store.lock().unwrap();
+        let mut store = self.0.lock_store("sync");
         let changes = f(&mut store)?;
         // Emitted with the store's lock held, like the commands' events:
         // their order is the order of the writes.
@@ -29,7 +29,8 @@ impl SyncHost for CoreHost {
     }
 
     fn read(&self, f: &mut dyn FnMut(&Store) -> Result<(), StoreError>) -> Result<(), StoreError> {
-        self.0.readers.read(|s| f(s))
+        // The workers' own pool (`Core::sync_readers`).
+        self.0.sync_readers.read(|s| f(s))
     }
 
     fn event(&self, event: Event) {

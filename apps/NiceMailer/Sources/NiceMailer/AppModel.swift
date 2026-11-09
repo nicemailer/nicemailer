@@ -50,7 +50,15 @@ final class AppModel {
     @ObservationIgnored var openFile: (URL) -> Void = { NSWorkspace.shared.open($0) }
     /// Short message shown in the geek status bar (result of an action,
     /// "not available yet"…); cleared by the next key.
-    var flash: String?
+    var flash: String? {
+        // Swift note: `didSet` runs after each assignment, here to count
+        // them; `@Observable` keeps tracking the property as before.
+        didSet { flashCount &+= 1 }
+    }
+    /// How many messages the status bar was given: a message computed
+    /// after a wait (the reply screen opening) is shown only if nothing
+    /// newer was said meanwhile (`AppModel.sayOpening`).
+    @ObservationIgnored private(set) var flashCount = 0
     /// The conversation whose remote images the user asked to load although
     /// its sender's mail is not authenticated (`RemoteImages.automatic`):
     /// while it stays open, until another display is chosen. Forgotten when
@@ -121,6 +129,9 @@ final class AppModel {
     @ObservationIgnored var composeSaveTask: Task<Void, Never>?
     /// The save in progress, which the next one waits for.
     @ObservationIgnored var composeSaving: Task<Void, Never>?
+    /// The writing of a proposed draft in progress (`ensureWritten`): a
+    /// second caller waits for it rather than write the draft twice.
+    @ObservationIgnored var composeWriting: Task<Bool, Never>?
     /// Mails waiting for their undo delay or for the server, by draft id:
     /// the subject, for the status bar when they leave.
     @ObservationIgnored var sending: [Int: String] = [:]
@@ -440,8 +451,19 @@ final class AppModel {
     /// Position of the last event received, to detect missed events.
     private var lastEvent: Position?
     private var loadingMore = false
-    /// Pending debounced tasks, cancelled when a newer one replaces them.
+    /// The reload due or running (`scheduleRefresh`): the next one waits
+    /// for it, so that two reloads never run at once.
     private var refreshTask: Task<Void, Never>?
+    /// A reload is due and has not started: the events received meanwhile
+    /// only add to what it reloads.
+    private var refreshDue = false
+    /// The reload due must reload everything shown (a gap in the events).
+    private var refreshFull = false
+    /// When the last reload started, for `refreshDelay`.
+    private var lastRefreshStart: ContinuousClock.Instant?
+    /// How many reloads started: for the tests of the pacing.
+    @ObservationIgnored private(set) var refreshCount = 0
+    /// The pending debounced search, cancelled when a newer one replaces it.
     private var searchTask: Task<Void, Never>?
     /// Folders and threads invalidated by events since the last refresh.
     private var dirtyFolders = Set<Int>()
@@ -672,7 +694,7 @@ final class AppModel {
     /// Records what an event invalidates and schedules a refresh. If an
     /// event is missing (seq not consecutive, or another epoch), the model
     /// can no longer know what changed, so it reloads everything it shows.
-    private func handle(_ e: CoreClient.Event) {
+    func handle(_ e: CoreClient.Event) {
         let order = AppModel.order(of: e, after: lastEvent)
         switch order {
         case .transient:
@@ -742,20 +764,53 @@ final class AppModel {
         return .gap(p)
     }
 
-    /// Groups invalidations received in a burst into a single reload: a move
-    /// produces several events within a few milliseconds, and reloading
-    /// after each one would be wasteful. Each new event cancels the pending
-    /// task and restarts the 40 ms delay ("debounce").
+    /// The shortest time between the starts of two reloads.
+    nonisolated static let refreshInterval: Duration = .milliseconds(500)
+    /// The wait that groups the events of a burst (a move sends several
+    /// within a few milliseconds) into one reload.
+    nonisolated static let refreshBurst: Duration = .milliseconds(40)
+
+    /// How long a reload waits once due: the burst, but never less than
+    /// what is left of `refreshInterval` since the previous one started. A
+    /// pure function, tested alone.
+    nonisolated static func refreshDelay(sinceLastStart: Duration?) -> Duration {
+        guard let since = sinceLastStart else { return refreshBurst }
+        return max(refreshBurst, refreshInterval - since)
+    }
+
+    /// Groups the invalidations of the events into reloads, at most one
+    /// every `refreshInterval`, never two at once.
+    ///
+    /// Why not a debounce (each event restarting the delay), as before:
+    /// during the import of an account the core sends events all the time.
+    /// Events less than 40 ms apart never let the reload come (the lists
+    /// stayed stale); further apart, a reload started at each pause, while
+    /// the previous one was still running (cancelling a task does not
+    /// cancel the calls it already made), and the reloads piled up in the
+    /// core in front of what the user was waiting for. Now the first event
+    /// makes a reload due; the next ones only add to what it reloads; it
+    /// starts after the burst, at least `refreshInterval` after the last
+    /// one started, and once the last one ended. A user's move, in a quiet
+    /// mailbox, is still shown 40 ms after its events.
     private func scheduleRefresh(full: Bool) {
-        if full { dirtyFolders.formUnion(listedFolderIds) }
-        refreshTask?.cancel()
+        if full {
+            dirtyFolders.formUnion(listedFolderIds)
+            refreshFull = true
+        }
+        guard !refreshDue else { return }
+        refreshDue = true
+        let previous = refreshTask
+        let wait = AppModel.refreshDelay(sinceLastStart: lastRefreshStart.map { ContinuousClock.now - $0 })
         refreshTask = Task {
-            // `try?` ignores the error thrown when the sleep is cancelled; the
-            // cancellation is then detected just below.
-            try? await Task.sleep(for: .milliseconds(40))
-            guard !Task.isCancelled else { return }
-            let folders = dirtyFolders, threads = dirtyThreads
-            dirtyFolders = []; dirtyThreads = []
+            try? await Task.sleep(for: wait)
+            await previous?.value
+            // From here, events make the next reload due: this one has
+            // taken what they invalidated so far.
+            refreshDue = false
+            lastRefreshStart = ContinuousClock.now
+            refreshCount += 1
+            let folders = dirtyFolders, threads = dirtyThreads, full = refreshFull
+            dirtyFolders = []; dirtyThreads = []; refreshFull = false
             // Counters are cheap to reload: always refresh the sidebar.
             await reloadFolders()
             // The open thread first: the list refresh reads its new state to
