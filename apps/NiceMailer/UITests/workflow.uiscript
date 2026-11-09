@@ -23,11 +23,11 @@ expect undo_count = 1
 expect flash !~ next mails of
 key z
 expect flash ~ Undone: move to Archive
-# Quarantine: accepting a sender takes the decision inbox.
+# Quarantine: accepting a sender takes the decision inbox (`i`, without
+# `m`: quarantine.uiscript).
 key ;
 key q
 expect folder = Quarantine
-key m
 key i
 expect flash ~ moved to Inbox · next mails of
 # The fourth mail now is from a sender suspected of spoofing: the core asks
@@ -35,7 +35,6 @@ expect flash ~ moved to Inbox · next mails of
 key j
 key j
 key j
-key m
 key i
 expect suspect ~ @
 expect choice ~ Probable spoofing of
@@ -49,7 +48,6 @@ key esc
 expect suspect = 
 expect flash ~ Not moved
 # Asked again, then confirmed with y.
-key m
 key i
 expect suspect ~ @
 key y

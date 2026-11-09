@@ -1,0 +1,73 @@
+# Quarantine (`ui.md`, "Quarantine"): the move targets are single keys,
+# shown at the right end of the status bar in place of the `m` and `s`
+# blocks; the keys that would
+# change the mail otherwise are refused; viewing a mail never marks it read;
+# the flag stays.
+expect folder = Inbox
+expect status_targets = 
+key ;
+key q
+expect folder = Quarantine
+expect status_targets = inbox,newsletter,paperwork,junk,banned,deleted
+snap targets
+# Viewing never marks read: a mail chosen by hand, shown longer than the
+# one-second rule, keeps its unread dot.
+key j
+expect selected_unread > 0
+wait 1500
+expect selected_unread > 0
+# The same in one column, where Return opens the mail.
+key v
+key 1
+key ret
+expect reading = true
+wait 1500
+expect selected_unread > 0
+key esc
+key v
+key 2
+# The keys that would change the mail otherwise say why nothing happens.
+key u
+expect flash = In Quarantine, a mail can only be moved or flagged
+expect selected_unread > 0
+key U
+expect selected_unread > 0
+key t
+expect overlay = none
+key r
+expect composing = false
+# Nor is saving: its block left the status bar with the move one.
+key s
+expect overlay = none
+expect flash = In Quarantine, a mail can only be moved or flagged
+# m does not open a menu: the status bar already shows the targets.
+key m
+expect overlay = none
+expect flash ~ press the folder's key: i n p x b d
+# The flag stays.
+expect selected_flagged = false
+key *
+expect selected_flagged = true
+key *
+expect selected_flagged = false
+# A target's key moves at once, the next mail comes under the cursor.
+key x
+expect flash ~ moved to Junk
+# The message on the left of the targets, which stay at the right end.
+snap moved
+expect undo_count = 1
+key z
+expect flash ~ Undone: move to Junk
+# A click on a target of the status bar moves as its key.
+click status:target-deleted
+expect flash ~ moved to Deleted
+key z
+expect undo_count = 0
+# Elsewhere, the `m` block is back and d archives.
+key ;
+key i
+expect folder = Inbox
+expect status_targets = 
+key m
+expect overlay = menu(NiceMailer.GeekController.Prefix.move)
+key esc

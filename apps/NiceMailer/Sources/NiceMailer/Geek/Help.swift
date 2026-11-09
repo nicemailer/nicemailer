@@ -64,6 +64,8 @@ enum Help {
             HelpGroup(title: L("Act on mails"), entries: [
                 HelpEntry(key: "d", label: L("done (archive)")),
                 HelpEntry(key: "m…", label: L("move to a folder")),
+                // Quarantine drops the prefix (`GeekController.directTargets`).
+                HelpEntry(key: "i n p x b d", label: L("in Quarantine: move without m")),
                 HelpEntry(key: "del", label: L("delete")),
                 HelpEntry(key: "u", label: L("read / unread")),
                 HelpEntry(key: "U", label: L("mark as read")),

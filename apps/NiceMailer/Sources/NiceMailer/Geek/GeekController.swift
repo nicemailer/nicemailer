@@ -700,6 +700,9 @@ final class GeekController {
         default:
             break
         }
+        // In Quarantine, the folder letters move at once, and the keys that
+        // would change the mail otherwise are refused (`directTargets`).
+        if handleQuarantineKey(key) { return }
         switch key {
         case "j": moveCursor(1)
         case "k": moveCursor(-1)
@@ -736,6 +739,75 @@ final class GeekController {
         default:
             if !key.isEmpty { model.flash = L("No command %@", key) }
         }
+    }
+
+    // MARK: - Quarantine
+
+    /// The move targets offered as single keys, without the `m` prefix:
+    /// those of Quarantine (`ui.md`, "Quarantine"), empty elsewhere.
+    ///
+    /// In Quarantine the only decision to take on a mail is where it goes
+    /// (`dossiers.md`, "Cibles proposées": Inbox, Newsletter, Paperwork,
+    /// Junk, Banned, Deleted), so the status bar shows these targets at its
+    /// right end, in place of the `m` and `s` blocks and `i` does what `mi` does elsewhere: one key
+    /// less for the most repeated gesture of the folder. Their letters (`i n
+    /// p x b d`) are free in the normal mode, except `d`, which archives
+    /// elsewhere; Archive is not a target from Quarantine, so `d` takes the
+    /// meaning `md` has there (Deleted, which `z` undoes).
+    ///
+    /// Only while a Quarantine folder itself is listed (of an account, or of
+    /// "all"): not in "Everything" nor in a tag, group or contact list,
+    /// where the rows come from several folders and `d` must keep archiving.
+    /// The targets are the core's (`move_targets`) for the folder of the mail
+    /// under the cursor, as for the `m` menu: no list is written here twice.
+    var directTargets: [String] {
+        guard screen == .mail, model.listFilter == nil, model.currentRole == "quarantine" else { return [] }
+        let folderId = model.selectedThread?.folderId ?? model.selectedFolderId
+        return model.folders.first { $0.id == folderId }?.moveTargets ?? []
+    }
+
+    /// Keys refused in Quarantine: those that change the mail other than by
+    /// moving it or flagging it. Reading state (`u` `U`: viewing never marks
+    /// read there, so marking by hand would only blur which mails still wait
+    /// for a decision), tags and groups (the sender is not accepted yet),
+    /// and the reply (writing to the sender would accept it, `dossiers.md`,
+    /// "Écrire à quelqu'un vaut décision Inbox", outside the workflow of the
+    /// folder), and saving (`s`: its block leaves the status bar, the mail
+    /// is to be sorted, not kept). What stays: navigation, display, links,
+    /// `*`, `z`.
+    static let quarantineRefused: Set<String> = ["u", "U", "t", "g", "r", "s"]
+
+    /// A key pressed while Quarantine is listed: a target's letter moves the
+    /// marked mails (or the one under the cursor) there; `m` and the refused
+    /// keys say why nothing happens. Returns `true` when the key was used
+    /// here, `false` to let the normal mode handle it.
+    private func handleQuarantineKey(_ key: String) -> Bool {
+        guard model.listFilter == nil, model.currentRole == "quarantine" else { return false }
+        let targets = directTargets
+        if let role = targets.first(where: { Role.letter($0).lowercased() == key }) {
+            model.moveTargets(to: role)
+            return true
+        }
+        if key == "m" {
+            // The menu would only repeat what the status bar shows: say
+            // which keys to press instead.
+            let letters = targets.map { Role.letter($0).lowercased() }.joined(separator: " ")
+            model.flash = L("In Quarantine, press the folder's key: %@", letters)
+            return true
+        }
+        if Self.quarantineRefused.contains(key) {
+            model.flash = L("In Quarantine, a mail can only be moved or flagged")
+            return true
+        }
+        return false
+    }
+
+    /// A click on a target of the status bar in Quarantine: the same as its
+    /// key.
+    func moveFromStatusBar(_ role: String) {
+        model.flash = nil
+        overlay = .none
+        model.moveTargets(to: role)
     }
 
     /// Copies the link of the open mail (`DeepLink`): as a Markdown link

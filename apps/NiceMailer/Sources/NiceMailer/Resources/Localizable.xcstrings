@@ -739,6 +739,26 @@
         }
       }
     },
+    "In Quarantine, a mail can only be moved or flagged": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En Quarantine, un mail se déplace ou reçoit un drapeau, rien d'autre"
+          }
+        }
+      }
+    },
+    "In Quarantine, press the folder's key: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En Quarantine, tapez la touche du dossier : %@"
+          }
+        }
+      }
+    },
     "Keep the Current Mailbox": {
       "localizations": {
         "fr": {
@@ -2247,6 +2267,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "images"
+          }
+        }
+      }
+    },
+    "in Quarantine: move without m": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "en Quarantine : déplacer sans m"
           }
         }
       }

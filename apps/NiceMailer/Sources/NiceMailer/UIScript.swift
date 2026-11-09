@@ -479,6 +479,9 @@ private final class Runner {
             "help_columns": c.overlay == .help
                 ? UIScript.helpColumns.map { $0.joined(separator: ",") }.joined(separator: " | ") : "",
             "mode": c.modeLabel,
+            // Move targets shown in the status bar in Quarantine, in place
+            // of the `m` block: `inbox,newsletter,…`, empty elsewhere.
+            "status_targets": c.directTargets.joined(separator: ","),
             "mode_icon": "\(c.showsAppIcon && AppIcon.statusImage != nil)",
             "location": c.locationLabel,
             "flash": m.flash ?? "",

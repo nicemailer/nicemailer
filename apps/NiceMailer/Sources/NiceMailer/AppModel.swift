@@ -925,10 +925,27 @@ final class AppModel {
         return (out, selected)
     }
 
+    /// Whether the listed thread `id` sits in a Quarantine folder (of any
+    /// account: the unified view mixes them, and "Everything" lists them
+    /// too).
+    ///
+    /// Viewing a mail of Quarantine never marks it read (`ui.md`,
+    /// "Lecture"): the user is judging an unknown sender, not reading its
+    /// mail, and the unread dot keeps saying which mails still wait for that
+    /// judgement. Only the automatic marking is concerned (the one-second
+    /// rule, Return in one column, leaving the mail): the geek theme also
+    /// refuses `u` / `U` while Quarantine is listed (`GeekController`), but
+    /// the core itself accepts `set_thread_seen`, so a client that asks
+    /// explicitly (the CLI) still can.
+    func isInQuarantine(_ id: Int) -> Bool {
+        guard let folderId = threads.first(where: { $0.id == id })?.folderId else { return false }
+        return folders.first { $0.id == folderId }?.role == "quarantine"
+    }
+
     /// Marks a thread read (no change to the list here: the core's events
     /// refresh it).
     private func markSeen(_ id: Int) {
-        guard let client else { return }
+        guard let client, !isInQuarantine(id) else { return }
         Task {
             do {
                 let _: CommandResult = try await client.call("set_thread_seen", ["thread_id": id, "seen": true])
@@ -972,7 +989,7 @@ final class AppModel {
     /// when it ends: hidden in between (Escape back to the single-column
     /// list), the mail was not read.
     private func markSeenAfterDelay(_ id: Int) async {
-        guard let client, readerVisible, openThread?.id == id,
+        guard let client, readerVisible, openThread?.id == id, !isInQuarantine(id),
               openThread?.messages.contains(where: { !$0.isSeen }) == true
         else { return }
         do {

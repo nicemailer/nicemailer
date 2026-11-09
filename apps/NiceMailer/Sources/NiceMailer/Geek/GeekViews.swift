@@ -270,7 +270,11 @@ struct GeekStatusBar: View {
                 // down from the block. Three groups, set apart by a wide gap:
                 // what the list shows (@ ; F, above), the display preference
                 // (v), and actions on the current mail (m s).
-                ForEach([GeekController.Prefix.view, .move, .save], id: \.self) { p in
+                // In Quarantine, the `m` and `s` blocks go: a mail there can
+                // only be moved (or flagged), and its targets are shown at
+                // the right end of the bar instead (`quarantineTargets`).
+                let prefixes: [GeekController.Prefix] = controller.directTargets.isEmpty ? [.view, .move, .save] : [.view]
+                ForEach(prefixes, id: \.self) { p in
                     StatusBlock(icon: p.icon, text: "", key: p.rawValue)
                         .menuAnchor(p, controller)
                         .onTapGesture { controller.openMenuFromStatusBar(p) }
@@ -297,6 +301,7 @@ struct GeekStatusBar: View {
                 Text(L("%lld marked", model.marked.count)).foregroundStyle(Palette.markedBar)
             }
             if model.sort == "modified" { Text(L("by modification")).foregroundStyle(Palette.muted) }
+            quarantineTargets
             // The list of keys, last at the right end and on every screen:
             // a reminder that `?` exists, for whoever has not learned it
             // yet; a click opens it too.
@@ -311,6 +316,38 @@ struct GeekStatusBar: View {
         // Its empty parts move the window, as a title bar does: the title
         // bar is hidden by default (`WindowChrome`).
         .background(ZStack { Palette.statusBar; WindowDragArea() })
+    }
+}
+
+extension GeekStatusBar {
+    /// In Quarantine, the move targets with their key (`directTargets`),
+    /// aligned at the right end of the bar, just before `?`: the move
+    /// arrow once, then "Inbox i  Newsletter n …". On the right they stay
+    /// in the same place whatever the account, the folder name and the
+    /// chips on the left, so the eye finds them without searching. The
+    /// messages (result of a move) come before them, on their left.
+    /// Empty elsewhere.
+    @ViewBuilder
+    fileprivate var quarantineTargets: some View {
+        let targets = controller.directTargets
+        if !targets.isEmpty {
+            HStack(spacing: scaled(8)) {
+                Image(systemName: GeekController.Prefix.move.icon)
+                    .font(.system(size: scaled(10), weight: .semibold))
+                    .foregroundStyle(Palette.muted)
+                    .accessibilityLabel(L("Move"))
+                ForEach(targets, id: \.self) { role in
+                    StatusBlock(icon: nil, text: Role.name(role), key: Role.letter(role).lowercased())
+                        .onTapGesture { controller.moveFromStatusBar(role) }
+                        .uiTarget("status-target-\(role)")
+                }
+            }
+            // A wide gap on each side: the targets are a group of their
+            // own, apart from the messages and from `?`.
+            .padding(.horizontal, scaled(18))
+            // Never squeezed: a long message on their left is cut instead.
+            .fixedSize(horizontal: true, vertical: false)
+        }
     }
 }
 
@@ -329,15 +366,18 @@ extension View {
 }
 
 private struct StatusBlock: View {
-    let icon: String
+    /// `nil`: no icon (a move target of Quarantine, after the group's arrow).
+    let icon: String?
     let text: String
     let key: String
 
     var body: some View {
         HStack(spacing: scaled(4)) {
-            Image(systemName: icon)
-                .font(.system(size: scaled(10), weight: .semibold))
-                .foregroundStyle(Palette.muted)
+            if let icon {
+                Image(systemName: icon)
+                    .font(.system(size: scaled(10), weight: .semibold))
+                    .foregroundStyle(Palette.muted)
+            }
             if !text.isEmpty { Text(text).lineLimit(1) }
             Text(key)
                 .font(.geek(9))

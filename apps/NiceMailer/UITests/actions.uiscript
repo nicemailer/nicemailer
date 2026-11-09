@@ -61,7 +61,7 @@ expect flash ~ Not available yet: forward
 key ?
 expect overlay = help
 # Grouped keys, in three columns in a wide window.
-expect help_columns = Navigate,Read | Select,Act on mails | Write,Find and go,Window
+expect help_columns = Navigate,Read,Select | Act on mails,Write | Find and go,Window
 snap help
 key j
 expect overlay = none

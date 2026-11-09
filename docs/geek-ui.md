@@ -150,6 +150,7 @@ A one-click attempt the server refuses opens the page instead, and says why. The
 - A mail you select (`j` `k`, a click, the next mail after a move) is marked read once shown for one second. Browsing quickly with `j` / `k` marks nothing. With one column the list alone shows no content, so staying on a row marks nothing; opening the mail (Return, double-click) marks it read at once, and inside the open mail `j` / `k` follow the one-second rule.
 - The mail selected for you, the first one when a list opens or the one that replaces a mail that left the list, is not marked read by itself. It is marked read when you move from it to another mail of the list after at least one second. Moving it (`d`, `m`) or changing folder does not mark it.
 - In a filtered list (unread, flagged…), the selected mail that stops matching (read after one second, `u`, `U`, `*`) stays under the cursor, shown with its new state, until you leave it; it then leaves the list. As in Gmail's unread view: without this, a list of unread mails would empty itself, one mail per second.
+- A mail of **Quarantine** is never marked read by viewing it, by any of the rules above, wherever it is listed (Everything too): you are judging an unknown sender, not reading its mail, and the unread dot keeps saying which mails still wait for a decision. See "Quarantine" below.
 
 ## Keys
 
@@ -164,7 +165,7 @@ Actions apply to the **marked** mails if any (`J` / `K`), otherwise to the mail 
 | `@` | account picker: **all** (unified view) or one account, keeping the folder role (Archive to Archive), or its Inbox |
 | `l` | links of the mail, the senders' numbers and cards (Contacts), then its attached files; Return opens a link in the browser, or saves a file to Downloads; ⌘-Return saves the file and opens it |
 | `d` | done: move to Archive |
-| `m` + letter | move to a folder (`mt` Todo, `md` Deleted…); only allowed targets are offered |
+| `m` + letter | move to a folder (`mt` Todo, `md` Deleted…); only allowed targets are offered. In Quarantine, the letter alone (`i n p x b d`), see "Quarantine" |
 | Delete | move to Deleted |
 | `t` | tag picker: choose a tag, or type a new name; the same tag again removes it |
 | `g` | group picker: adds the sender to a group (new name: the group is created) |
@@ -240,6 +241,19 @@ Moving a mail to Newsletter, Paperwork or Banned, or out of Quarantine to the In
 When the sender's mail is suspected of spoofing, the core refuses the move and the app asks, in a small menu (mode `ASK`) with the mail under the cursor: `y` moves it anyway, `t` moves it and accepts this sender's mail without authentication from now on (a sender whose tool is badly configured), Escape leaves it where it is. Every other key waits for the answer. Moving such a mail to Banned concerns that mail only and asks nothing.
 
 The same small menu chooses a decision on the contacts screen (`m`, `M`); the current decision is marked "•". Keys, the arrows with Return, or a click choose.
+
+### Quarantine
+
+In Quarantine the only thing to do with a mail is to decide where it goes, so the move targets are single keys:
+
+- **The status bar shows the targets** at its right end, just before `?`, in place of the `m` and `s` blocks: the move arrow, then each target with its key, `Inbox i  Newsletter n  Paperwork p  Junk x  Banned b  Deleted d` (the core's `move_targets` for the folder of the mail under the cursor). On the right they stay in the same place whatever the account, the folder and the chips on the left; a message (the result of a move) comes before them and is cut first when the bar is short. A click on one moves as its key does.
+- **One key moves**: `i` does what `mi` does elsewhere, for the marked mails or the one under the cursor. The cursor goes to the next mail, as after any move, and `z` undoes. `d` moves to **Deleted** here (Archive is not a target from Quarantine), while it archives everywhere else.
+- **`m`** opens no menu: the status bar says which keys to press.
+- **Refused**: `u` `U` (read state), `t` (tag), `g` (group), `r` (reply: writing to the sender would accept it) and `s` (save: its block leaves the status bar; the mail is to be sorted, not kept). The status bar says "In Quarantine, a mail can only be moved or flagged".
+- **Still available**: `*` (flag), the navigation and marks, `v` (display), `l` (links), `z`, Delete, and the keys of every screen.
+- **Never read by viewing**: see "When a mail becomes read". The core itself does not refuse `set_thread_seen`: the CLI can still mark a mail of Quarantine read when asked to.
+
+This holds while a Quarantine folder is listed (of an account, or of "all"). In Everything, or a tag, group or contact list, the rows come from several folders: the `m` and `s` blocks and the usual keys stay (`GeekController.directTargets`).
 
 ## Not available yet
 

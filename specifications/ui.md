@@ -97,6 +97,19 @@ Limites assumées : l'adresse IP et l'heure de la première ouverture restent vi
 - Un mail choisi par l'utilisateur (`j` `k`, un clic, le mail suivant après un déplacement) est marqué lu après une seconde d'affichage. Parcourir vite la liste ne marque rien. En une colonne, la liste seule ne montre pas le contenu : rester sur une ligne ne marque rien. Ouvrir le mail (Entrée, double-clic) le marque lu aussitôt ; dans le mail ouvert, j / k suivent la règle de la seconde.
 - Un mail sélectionné par l'app (le premier à l'ouverture d'une liste, ou celui qui remplace un mail sorti de la liste) n'est pas marqué lu tout seul. Il l'est quand l'utilisateur le quitte pour un autre mail de la liste après au moins une seconde. Le déplacer ou changer de dossier ne le marque pas.
 - Dans une liste filtrée (non lus, avec drapeau…), le mail sélectionné qui ne correspond plus (lu après une seconde, `u`, `U`, `*`) reste sous le curseur, affiché avec son nouvel état, jusqu'à ce qu'on le quitte ; il sort alors de la liste. Sans cela, une liste de mails non lus se vidait toute seule, un mail par seconde.
+- Consulter un mail de Quarantine ne le marque **jamais** lu, quelle que soit la règle ci-dessus et où qu'il soit listé (Everything compris) : on juge un expéditeur inconnu, on ne lit pas son mail, et le point non lu continue de dire quels mails attendent une décision. Règle de l'app : le noyau accepte toujours `set_thread_seen`, le CLI peut donc marquer lu sur demande explicite.
+
+### Quarantine
+
+En Quarantine, la seule chose à faire d'un mail est de le déplacer vers une cible (`dossiers.md`, « Cibles proposées »). Les cibles deviennent donc des touches directes, sans le préfixe `m` : on économise une touche sur le geste le plus répété du dossier.
+
+- **Barre de statut** : les blocs `m` et `s` disparaissent ; à l'extrémité droite de la barre, juste avant `?`, la flèche de déplacement puis chaque cible suivie de sa touche : `Inbox i  Newsletter n  Paperwork p  Junk x  Banned b  Deleted d`. Alignées à droite, elles restent au même endroit quels que soient le compte, le dossier et les pastilles à gauche ; un message (résultat d'un déplacement) s'affiche avant elles et c'est lui qui est coupé si la place manque. Un clic sur une cible déplace comme sa touche.
+- **Une touche déplace** : `i` fait ce que fait `mi` ailleurs, pour les mails marqués ou le mail sous le curseur ; `z` annule. `d` déplace dans **Deleted** (Archive n'est pas une cible depuis la Quarantine), alors qu'il archive partout ailleurs. Choix assumé : la règle « la lettre de la cible » prime sur le sens habituel de `d` ; Deleted se rattrape par `z`.
+- **`m`** n'ouvre pas de menu : la barre de statut dit quelles touches taper.
+- **Refusées** : `u` `U` (lu / non lu), `t` (tag), `g` (groupe), `r` (répondre : écrire à l'expéditeur l'accepterait, « Écrire à quelqu'un vaut décision Inbox »), `s` (enregistrer : son bloc quitte la barre ; un mail en Quarantine est à trier, pas à conserver). La barre de statut dit qu'en Quarantine un mail se déplace ou reçoit un drapeau, rien d'autre.
+- **Restent** : `*` (drapeau), la navigation et les marques, `v`, `l`, `z`, Suppr.
+
+Cela vaut quand un dossier Quarantine est listé (d'un compte, ou de « all »). Dans Everything ou une liste de tag, groupe ou contact, les lignes viennent de plusieurs dossiers : les blocs `m` et `s` et les touches habituelles restent.
 
 ### Sélecteur d'attributs
 
@@ -172,7 +185,7 @@ r répondre à tous (`reponse.md`) : contexte édition, ⌘↩ envoie, échap ga
 R répondre à l'expéditeur seul (pas encore)
 f forwarder (pas encore)
 d mark done (archiver)
-m move (déplacer), puis choisir le dossier. mt déplacer dans le dossier Todo, md déplacer dans le dossier Deleted. Le menu ne propose que les cibles permises depuis le dossier du mail.
+m move (déplacer), puis choisir le dossier. mt déplacer dans le dossier Todo, md déplacer dans le dossier Deleted. Le menu ne propose que les cibles permises depuis le dossier du mail. En Quarantine, la lettre seule suffit (`i`, `n`, `p`, `x`, `b`, `d`) : voir « Quarantine ».
 del supprimer (déplacer dans Deleted)
 t tag (ajouter un tag ; si tous les mails visés l'ont déjà, le retirer)
 g group (ajoute l'expéditeur dans un groupe)
