@@ -247,6 +247,47 @@ pub struct Store {
     outgoing: Option<outgoing::OutgoingStore>,
 }
 
+/// Runs `analyze` (a `PRAGMA optimize`), then keeps only the averages of the
+/// statistics it computed.
+///
+/// `ANALYZE` writes two tables. `sqlite_stat1` holds averages: how many
+/// rows share a value of an index, on average. `sqlite_stat4` holds samples
+/// of actual values with their counts, so that the planner can tell a big
+/// account or folder from a small one. The core's SQLite is built with
+/// `SQLITE_ENABLE_STAT4` (rusqlite's bundled build), so both are written.
+///
+/// The samples are deleted, for a reason specific to a mail database: the
+/// values that matter (accounts, folders, threads) are created all the time,
+/// and a value created after the last analysis is absent from the samples,
+/// which SQLite reads as "almost no rows". A new account then looks empty
+/// while it fills: on a real database, the threading of an mbox import read
+/// every message of the account for each id cited (`insert.rs`,
+/// `THREADS_CITING`), and the lists of the new account chose other plans
+/// than those of the older ones. `PRAGMA optimize` does not analyze again
+/// until a table has grown about tenfold, so the samples stayed wrong for
+/// the whole import. The averages of `sqlite_stat1` are wrong by a little
+/// in such cases, never by orders of magnitude.
+///
+/// Measured on a copy of a real mailbox (160,000 messages, an archive
+/// account created after the last analysis): every list query of the plan
+/// tests, every filter, in its folder and its account, took 411 ms in total
+/// with the samples and 215 ms without; the slowest went from 31 ms to 7 ms.
+///
+/// `ANALYZE sqlite_schema` makes this connection load the statistics again:
+/// without it, it would keep the samples it read when it opened. The
+/// readers of the pool (`pool.rs`) are opened after the writing store, so
+/// they read the statistics without the samples.
+fn refresh_statistics(conn: &Connection, analyze: &str) -> Result<()> {
+    conn.execute_batch(analyze)?;
+    // The table exists only once something was analyzed.
+    let has_samples: bool =
+        conn.query_row("SELECT EXISTS (SELECT 1 FROM sqlite_schema WHERE name = 'sqlite_stat4')", [], |r| r.get(0))?;
+    if has_samples {
+        conn.execute_batch("DELETE FROM sqlite_stat4; ANALYZE sqlite_schema;")?;
+    }
+    Ok(())
+}
+
 impl Store {
     /// Opens (or creates) the database at `path` and applies migrations.
     ///
@@ -341,7 +382,7 @@ impl Store {
         // safety net. `0x10002` is the setting SQLite recommends when a
         // connection opens: it analyzes only the tables that need it, with a
         // bounded effort, so it stays quick on a large database.
-        conn.execute_batch("PRAGMA optimize = 0x10002;")?;
+        refresh_statistics(&conn, "PRAGMA optimize = 0x10002;")?;
         // The accounts whose changes go to the spool (`spool.rs`,
         // `set_server_accounts`): a table of this connection only, gone
         // when it closes, filled by the core from `accounts.toml`.
@@ -356,8 +397,7 @@ impl Store {
     /// tens of thousands of rows at once). Same as at opening: only the
     /// tables whose size changed much are analyzed.
     pub fn optimize(&self) -> Result<()> {
-        self.conn.execute_batch("PRAGMA optimize;")?;
-        Ok(())
+        refresh_statistics(&self.conn, "PRAGMA optimize;")
     }
 
     /// Direct access to the connection, for the CLI and tests.
