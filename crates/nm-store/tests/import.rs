@@ -78,6 +78,7 @@ impl Env {
             source: Source::Cli,
             // Small batches so that tests cross batch boundaries.
             batch_size: 2,
+            lock_budget: nm_store::import::LOCK_BUDGET,
         }
     }
 
@@ -164,6 +165,37 @@ fn creates_an_archive_account_with_every_workflow_folder() {
     // 4 messages, batches of 2: two batches, then the final step.
     assert_eq!(batches.len(), 3);
     assert_eq!(report.progress.bytes_read, report.progress.total_bytes);
+}
+
+/// A batch that writes slowly is cut at `lock_budget`, so that the store
+/// lock is released for the synchronization and the app (`import.rs`,
+/// `LOCK_BUDGET`). With a budget of zero, every message is its own batch,
+/// and the result is the same as in large batches: same order, same
+/// threads.
+#[test]
+fn a_slow_batch_is_cut_at_the_time_limit_and_the_rest_follows() {
+    let env = Env::new();
+    let path = env.write_mbox("a.mbox", &sample());
+    let opts = ImportOptions { batch_size: 500, lock_budget: std::time::Duration::ZERO, ..env.options(&path) };
+    let (report, batches) = env.import(&opts).unwrap();
+    assert_eq!(report.progress.imported, 4);
+    // One batch per message, at least one message each, then the final step.
+    assert_eq!(batches.len(), 5);
+    // Written in the order of the file.
+    let order: Vec<String> = {
+        let store = env.store.lock().unwrap();
+        let mut stmt = store.conn().prepare("SELECT message_id_hdr FROM message ORDER BY id").unwrap();
+        stmt.query_map([], |r| r.get(0)).unwrap().map(|r| r.unwrap()).collect()
+    };
+    assert_eq!(order, ["m2@hey.example", "m1@a.example", "n1@letter.example", "m3@hey.example"]);
+    assert_eq!(env.count("SELECT count(*) FROM thread"), 3);
+    assert_eq!(env.count("SELECT count(DISTINCT thread_id) FROM message WHERE message_id_hdr IN ('m1@a.example', 'm2@hey.example')"), 1);
+
+    // With the production limit, a small file is one batch.
+    let env = Env::new();
+    let path = env.write_mbox("a.mbox", &sample());
+    let opts = ImportOptions { batch_size: 500, ..env.options(&path) };
+    assert_eq!(env.import(&opts).unwrap().1.len(), 2);
 }
 
 #[test]

@@ -71,6 +71,7 @@ fn imported() -> (tempfile::TempDir, Store) {
         mark_correspondents: false,
         source: Source::Cli,
         batch_size: 10,
+        lock_budget: nm_store::import::LOCK_BUDGET,
     };
     import_mbox(&store, &raw, &opts, &mut |_, _, _| {}).unwrap();
     (dir, store.into_inner().unwrap())

@@ -62,6 +62,7 @@ fn imported() -> Store {
         mark_correspondents: false,
         source: Source::Cli,
         batch_size: 10,
+        lock_budget: nm_store::import::LOCK_BUDGET,
     };
     import_mbox(&store, &raw, &opts, &mut |_, _, _| {}).unwrap();
     store.into_inner().unwrap()

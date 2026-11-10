@@ -75,6 +75,7 @@ fn env_with(mbox: &str) -> Env {
         mark_correspondents: false,
         source: Source::Cli,
         batch_size: 10,
+        lock_budget: nm_store::import::LOCK_BUDGET,
     };
     import_mbox(&store, &raw, &opts, &mut |_, _, _| {}).unwrap();
     Env { _dir: dir, store, raw }
@@ -213,6 +214,7 @@ fn a_body_read_again_but_unchanged_is_not_rewritten() {
         mark_correspondents: false,
         source: Source::Cli,
         batch_size: 10,
+        lock_budget: nm_store::import::LOCK_BUDGET,
     };
     import_mbox(&store, &raw, &opts, &mut |_, _, _| {}).unwrap();
     store.lock().unwrap().conn().execute_batch("UPDATE message_body SET parser_version = 5; UPDATE message_fts SET body = 'marqueur';").unwrap();

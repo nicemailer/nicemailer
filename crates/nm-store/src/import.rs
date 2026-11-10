@@ -33,15 +33,24 @@
 //! Only the writer touches the database. It takes the store lock for one
 //! batch at a time, so the app and the CLI keep being served between batches,
 //! and each batch is one transaction: readers never see half a batch.
+//!
+//! A batch is bounded twice: at most [`BATCH_SIZE`] messages, and at most
+//! [`LOCK_BUDGET`] of writing. The count is what amortizes the commits when
+//! writing is fast; the time is what protects everyone else when it is not.
+//! The synchronization, the app's requests and the events all wait for the
+//! store lock, so a batch that takes 20 s stops the core for 20 s. It
+//! happened: with a query planned badly, 500 messages took 15 to 20 s, the
+//! synchronization waited up to 21 s for the lock, and its IMAP connections
+//! were cut meanwhile.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::fs::File;
 use std::io::BufReader;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, SyncSender, sync_channel};
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use nm_core::{FolderRole, Source};
 use rusqlite::{OptionalExtension, Transaction, TransactionBehavior, params};
@@ -56,6 +65,16 @@ use crate::{ChangeSet, Result, Store, StoreError};
 /// cost of a commit, small enough to release the store lock every few
 /// hundred milliseconds.
 pub const BATCH_SIZE: usize = 500;
+
+/// Longest time a batch writes while holding the store lock. Past it, the
+/// batch is committed with the messages written so far, and the rest go in
+/// the next one. The commit itself comes on top: the limit counts the
+/// writing of the messages. On a real mailbox (2,355 messages, 400 MB), a
+/// batch of 500 held the lock 145 ms at most, commit included, so the limit
+/// only cuts batches that are slow for a reason, and keeps the core
+/// answering its clients meanwhile. At least one message is written per
+/// batch, so the import always progresses.
+pub const LOCK_BUDGET: Duration = Duration::from_millis(200);
 
 /// Parameters of an import.
 #[derive(Debug, Clone)]
@@ -75,6 +94,9 @@ pub struct ImportOptions {
     /// Messages per transaction ([`BATCH_SIZE`] in production; tests use
     /// smaller batches to exercise batch boundaries).
     pub batch_size: usize,
+    /// Longest time a transaction may write ([`LOCK_BUDGET`] in production;
+    /// tests use zero to get one message per transaction).
+    pub lock_budget: Duration,
 }
 
 /// Progress, reported after each batch.
@@ -308,7 +330,8 @@ pub fn import_mbox(
         drop(prep_tx);
         drop(msg_rx);
 
-        let written = writer.run(store, raw, &prep_rx, opts.batch_size.max(1), bytes_read, on_batch);
+        let limits = Limits { messages: opts.batch_size.max(1), time: opts.lock_budget };
+        let written = writer.run(store, raw, &prep_rx, limits, bytes_read, on_batch);
         // If the writer failed, dropping the receiver makes the workers'
         // next `send` fail, so they stop, and then the reader stops too.
         drop(prep_rx);
@@ -375,6 +398,14 @@ fn io_error(path: &std::path::Path, e: std::io::Error) -> StoreError {
     StoreError::InvalidParams(format!("{} : {e}", path.display()))
 }
 
+/// How much one batch may hold: [`ImportOptions::batch_size`] and
+/// [`ImportOptions::lock_budget`].
+#[derive(Debug, Clone, Copy)]
+struct Limits {
+    messages: usize,
+    time: Duration,
+}
+
 /// State of the single writer thread.
 struct Writer {
     account: ArchiveAccount,
@@ -395,11 +426,14 @@ impl Writer {
         store: &Mutex<Store>,
         raw: &RawStore,
         rx: &Receiver<std::io::Result<Prepared>>,
-        batch_size: usize,
+        limits: Limits,
         bytes_read: &AtomicU64,
         on_batch: &mut dyn FnMut(&Store, &ChangeSet, &ImportProgress),
     ) -> Result<()> {
-        let mut batch: Vec<Prepared> = Vec::with_capacity(batch_size);
+        // A queue: a batch cut by the time limit leaves its last messages at
+        // the front, written first by the next batch, so the file order is
+        // kept.
+        let mut batch: VecDeque<Prepared> = VecDeque::with_capacity(limits.messages);
         // Messages that arrived ahead of their turn, by position. Its size
         // is bounded by the number of messages in flight in the channels.
         let mut ahead: BTreeMap<u64, Prepared> = BTreeMap::new();
@@ -411,23 +445,30 @@ impl Writer {
             // Move every message whose turn has come into the batch.
             while let Some(p) = ahead.remove(&next_seq) {
                 next_seq += 1;
-                batch.push(p);
-                if batch.len() >= batch_size {
-                    self.flush(store, raw, &mut batch, bytes_read, on_batch)?;
+                batch.push_back(p);
+                if batch.len() >= limits.messages {
+                    self.flush(store, raw, &mut batch, limits, bytes_read, on_batch)?;
                 }
             }
         }
         // Every worker is done, so nothing can be missing any more.
         debug_assert!(ahead.is_empty());
-        self.flush(store, raw, &mut batch, bytes_read, on_batch)
+        // The time limit may need several batches for what is left.
+        while !batch.is_empty() {
+            self.flush(store, raw, &mut batch, limits, bytes_read, on_batch)?;
+        }
+        Ok(())
     }
 
-    /// Writes one batch in one transaction, then reports it.
+    /// Writes one batch in one transaction, then reports it: the messages
+    /// of `batch` from the front, until there are none left or the writing
+    /// has taken `limits.time`. What is left stays in `batch`.
     fn flush(
         &mut self,
         store: &Mutex<Store>,
         raw: &RawStore,
-        batch: &mut Vec<Prepared>,
+        batch: &mut VecDeque<Prepared>,
+        limits: Limits,
         bytes_read: &AtomicU64,
         on_batch: &mut dyn FnMut(&Store, &ChangeSet, &ImportProgress),
     ) -> Result<()> {
@@ -436,22 +477,31 @@ impl Writer {
         }
         // The batch's raw files must be durable before the rows that
         // reference them are committed (`raw.rs`, "Durability on macOS").
-        // Done before taking the lock: the flush takes milliseconds.
+        // Done before taking the lock: the flush takes milliseconds. It also
+        // leaves the lock free for a moment between two batches, so that a
+        // thread waiting for it gets it.
         raw.barrier().map_err(|e| StoreError::Io(format!("stockage du brut : {e}")))?;
         let mut guard = store.lock().unwrap();
+        let started = Instant::now();
         let mut changes = ChangeSet::default();
         {
             let tx = guard.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-            // `drain(..)` moves the messages out of the batch, leaving it
-            // empty and ready to be refilled (its memory is reused). The
-            // pins live until the commit below.
+            // The pins live until the commit below. `pop_front` moves each
+            // message out of the queue; the queue keeps its memory, ready to
+            // be refilled.
             let mut pins = Vec::with_capacity(batch.len());
-            for mut p in batch.drain(..) {
+            // Rust note: `while let` loops as long as the pattern matches:
+            // here, as long as the queue gives a message. The time is checked
+            // after each message, so a batch has at least one.
+            while let Some(mut p) = batch.pop_front() {
                 pins.extend(p.pin.take());
                 if let Err(e) = self.insert(&tx, p, &mut changes) {
                     // The transaction is rolled back when `tx` is dropped.
                     self.inserter.abandon();
                     return Err(e);
+                }
+                if started.elapsed() >= limits.time {
+                    break;
                 }
             }
             changes.folders.insert(self.account.archive_folder);

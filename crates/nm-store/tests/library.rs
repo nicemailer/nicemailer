@@ -298,6 +298,7 @@ fn exports_a_message_as_eml_txt_and_md_without_overwriting() {
         mark_correspondents: false,
         source: Source::Cli,
         batch_size: 10,
+        lock_budget: nm_store::import::LOCK_BUDGET,
     };
     import_mbox(&store, &raw, &opts, &mut |_, _, _| {}).unwrap();
     let store = store.into_inner().unwrap();
@@ -478,6 +479,7 @@ fn a_tag_name_lists_the_tags_of_that_name_in_every_account() {
         mark_correspondents: false,
         source: Source::Cli,
         batch_size: 10,
+        lock_budget: nm_store::import::LOCK_BUDGET,
     };
     import_mbox(&store, &raw, &opts, &mut |_, _, _| {}).unwrap();
     let mut store = store.into_inner().unwrap();

@@ -124,6 +124,7 @@ fn imported() -> Fixture {
         mark_correspondents: false,
         source: Source::Cli,
         batch_size: 10,
+        lock_budget: nm_store::import::LOCK_BUDGET,
     };
     import_mbox(&store, &raw, &opts, &mut |_, _, _| {}).unwrap();
     Fixture { dir, raw, files, store: store.into_inner().unwrap() }

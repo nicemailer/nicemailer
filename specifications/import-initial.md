@@ -139,7 +139,7 @@ Chaque mail est conservé tel quel (`stockage-brut.md`), après retrait de l'éc
 
 - Un mail dont les octets bruts (même SHA-256) sont déjà dans le compte est ignoré. Relancer l'import du même fichier n'ajoute donc rien, et un import interrompu se reprend en le relançant.
 - Deux copies d'un même `Message-ID` qui diffèrent d'un octet sont deux mails : c'est la règle du stockage brut. Elles rejoignent la même conversation.
-- L'écriture se fait par lots de `import.mbox_batch_size` mails, chacun dans une transaction : une interruption perd au plus le lot en cours, sans état intermédiaire visible.
+- L'écriture se fait par lots de `import.mbox_batch_size` mails, chacun dans une transaction : une interruption perd au plus le lot en cours, sans état intermédiaire visible. Un lot écrit au plus 200 ms : au-delà, il est validé avec les mails déjà écrits et la suite passe au lot suivant, pour que la synchronisation et l'app ne restent jamais longtemps sans réponse.
 
 ### Adresses et correspondants
 

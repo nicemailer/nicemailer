@@ -69,7 +69,7 @@ use nm_api::{
 use nm_core::Source;
 use nm_engine::Engine;
 use nm_store::pool::ReadPool;
-use nm_store::import::{BATCH_SIZE, ImportOptions, ImportProgress, import_mbox};
+use nm_store::import::{BATCH_SIZE, ImportOptions, ImportProgress, LOCK_BUDGET, import_mbox};
 use nm_store::attachments::AttachmentFiles;
 use nm_store::raw::RawStore;
 use nm_store::screening::{MoveOptions, Outcome};
@@ -1463,6 +1463,7 @@ async fn start_import(core: &Arc<Core>, p: ImportMboxParams, source: Source) -> 
         mark_correspondents: p.mark_correspondents,
         source,
         batch_size: BATCH_SIZE,
+        lock_budget: LOCK_BUDGET,
     };
     let core = core.clone();
     std::thread::Builder::new()

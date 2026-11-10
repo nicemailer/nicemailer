@@ -69,7 +69,7 @@ How it is fast:
 
 - the file is read as a stream; memory use depends on the largest message, not on the file size;
 - hashing, compression and MIME parsing run on every core;
-- a single writer inserts messages in transactions of 500, so the app keeps being answered between batches;
+- a single writer inserts messages in transactions of at most 500 messages and at most 200 ms of writing (`BATCH_SIZE`, `LOCK_BUDGET` in `import.rs`), so the app and the synchronization keep being answered between batches. On a real mailbox (2,355 messages, 400 MB), a batch of 500 held the lock 145 ms at most, commit included: the time limit only cuts batches that are slow for a reason. A bad query plan once made 500 messages take 20 s, during which the core answered nobody and the synchronization lost its IMAP connections;
 - on macOS, raw files get a plain `fsync` each and one `F_FULLFSYNC` per batch (a full flush per file capped the import at 22 MB/s);
 - the search index row of each message is written once, by the code, instead of by triggers (twice as fast).
 
