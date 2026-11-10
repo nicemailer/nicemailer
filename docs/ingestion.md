@@ -45,6 +45,8 @@ Every link is between two messages present, whichever came first: the threads de
 
 Messages without any reference are not grouped by subject, which would merge unrelated mails such as monthly invoices.
 
+Finding the threads costs two index lookups per id a message cites, whatever the size of the account: an id is cited by a handful of messages (`idx_message_reference_ref`), each then read by its primary key. The query that follows citations is written with `CROSS JOIN`, which makes SQLite keep that order of the tables. With `JOIN`, the planner once chose the other order on a real database: its statistics dated from before an archive account existed, so they said reading all the messages of that account cost nothing. Each message of the mbox import then read every message imported before it, once per id it cites: 30 messages a second after 36,000, slower at every batch.
+
 ## Streaming writes
 
 A message received from an IMAP server comes in pieces of 1 MB above 4 MB (`nm-proto`, [imap.md](imap.md)), and may weigh 150 MB. `RawStore::writer` returns a `RawWriter`, which takes the pieces one by one:
@@ -85,6 +87,7 @@ A text body itself is not limited: a 150 MB `text/plain` mail would have 150 MB 
 
 | Test | What it checks |
 | --- | --- |
+| `crates/nm-store/src/insert.rs` (unit) | the threading queries keep their plan with statistics computed before the account existed |
 | `crates/nm-store/src/raw.rs` (unit) | pieces give the same file as one write; a size other than announced, a writer dropped unfinished, a full disk: nothing stored, nothing left in `.tmp/`; above 16 MB the plain copy is a mapped file |
 | `crates/nm-store/tests/insert.rs` | headers then body (list, counters, search before and after the body, `Already`, `Missing`); threads in each of 120 orders of arrival; two replies to an absent message; a merge; a batch rolled back leaves nothing and its addresses are forgotten; a full disk while the body arrives changes nothing |
 | `crates/nm-store/tests/big_message.rs` | 150 MB in pieces, bounded heap, stored byte for byte |

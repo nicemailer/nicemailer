@@ -55,6 +55,31 @@ use crate::ingest::{PARSER_VERSION, ParsedAddress, ParsedMessage};
 use crate::raw::Written;
 use crate::{ChangeSet, Result, refresh_folder_counts, refresh_thread};
 
+/// Threads of the messages of account `?1` whose `Message-ID` is `?2`.
+/// Both columns are in `idx_message_msgid`, so one index lookup finds them.
+const THREADS_BY_MESSAGE_ID: &str = "SELECT DISTINCT thread_id FROM message
+  WHERE account_id = ?1 AND message_id_hdr = ?2 AND thread_id IS NOT NULL";
+
+/// Threads of the messages of account `?2` that cite the `Message-ID` `?1`.
+///
+/// `CROSS JOIN` instead of `JOIN`: in SQLite it is the same join, but the
+/// planner must keep the order of the tables as written. The right order is
+/// always this one: an id is cited by a handful of messages
+/// (`idx_message_reference_ref`), each found by its primary key. The other
+/// order reads every message of the account and probes the references for
+/// each one.
+///
+/// The planner chose that order on a real database. Its statistics
+/// (`sqlite_stat4`) were computed before an archive account was created, so
+/// they said that account had no messages and that reading them all cost
+/// nothing. The account then received an mbox import, and each new message
+/// read all the messages imported before it, once per id it cites: 40 ms per
+/// lookup after 36,000 messages, an import slower at each batch, and the
+/// store lock held for 20 s per batch. Test:
+/// `tests::threading_ignores_statistics_older_than_the_account`.
+const THREADS_CITING: &str = "SELECT DISTINCT m.thread_id FROM message_reference r CROSS JOIN message m ON m.id = r.message_id
+  WHERE r.ref_msgid = ?1 AND m.account_id = ?2 AND m.thread_id IS NOT NULL";
+
 /// The IMAP flags a message arrives with. An mbox import marks everything
 /// as read.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -388,10 +413,7 @@ impl Inserter {
     fn thread_for(&mut self, tx: &Transaction, account_id: i64, m: &ParsedMessage, changes: &mut ChangeSet) -> Result<i64> {
         let mut found: BTreeSet<i64> = BTreeSet::new();
         {
-            let mut by_id = tx.prepare_cached(
-                "SELECT DISTINCT thread_id FROM message
-                  WHERE account_id = ?1 AND message_id_hdr = ?2 AND thread_id IS NOT NULL",
-            )?;
+            let mut by_id = tx.prepare_cached(THREADS_BY_MESSAGE_ID)?;
             for r in m.references.iter().chain(m.message_id.iter()) {
                 for t in by_id.query_map(params![account_id, r], |row| row.get::<_, i64>(0))? {
                     found.insert(t?);
@@ -401,10 +423,7 @@ impl Inserter {
         {
             // Messages that cite what this one cites, and messages that cite
             // this one.
-            let mut referencing = tx.prepare_cached(
-                "SELECT DISTINCT m.thread_id FROM message_reference r JOIN message m ON m.id = r.message_id
-                  WHERE r.ref_msgid = ?1 AND m.account_id = ?2 AND m.thread_id IS NOT NULL",
-            )?;
+            let mut referencing = tx.prepare_cached(THREADS_CITING)?;
             for r in m.references.iter().chain(m.message_id.iter()) {
                 for t in referencing.query_map(params![r, account_id], |row| row.get::<_, i64>(0))? {
                     found.insert(t?);
@@ -477,4 +496,85 @@ fn write_body(tx: &Transaction, message_id: i64, m: &ParsedMessage) -> Result<()
         .execute(params![message_id, u.url, u.mailto, u.one_click, u.source.as_str()])?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Store;
+
+    /// A new account with its Inbox: (account id, folder id).
+    fn account(store: &Store, name: &str) -> (i64, i64) {
+        let c = store.conn();
+        c.execute(
+            "INSERT INTO account (config_key, kind, created_by, modified_by) VALUES (?1, 'imap', 'core', 'core')",
+            [name],
+        )
+        .unwrap();
+        let account = c.last_insert_rowid();
+        c.execute(
+            "INSERT INTO folder (account_id, path, delimiter, role, created_by, modified_by)
+             VALUES (?1, 'INBOX', '/', 'inbox', 'core', 'core')",
+            [account],
+        )
+        .unwrap();
+        (account, c.last_insert_rowid())
+    }
+
+    /// `n` messages in `folder`, each citing the four before it, as a long
+    /// conversation does. Their ids are `<a{account}m{i}@x.example>`.
+    fn fill(store: &mut Store, account: i64, folder: i64, n: usize) {
+        let mut ins = Inserter::new(Source::Imap, None);
+        let mut changes = ChangeSet::default();
+        let tx = store.transaction().unwrap();
+        for i in 0..n {
+            let refs: String = (i.saturating_sub(4)..i).map(|j| format!("<a{account}m{j}@x.example> ")).collect();
+            let raw = format!(
+                "Message-ID: <a{account}m{i}@x.example>\r\nFrom: p{}@x.example\r\nSubject: s{i}\r\nReferences: {refs}\r\n\r\n",
+                i % 50
+            );
+            let h = crate::ingest::parse_headers(raw.as_bytes());
+            let m = NewMessage {
+                account_id: account,
+                folder_id: folder,
+                uid: Some(i as u32 + 1),
+                date_received: i as i64,
+                size: None,
+                modseq: None,
+                flags: Flags::default(),
+                auth: (nm_core::AuthResult::Unknown, None),
+                headers: &h,
+            };
+            ins.insert(&tx, &m, None, &mut changes).unwrap();
+        }
+        ins.commit(tx, &mut changes).unwrap();
+    }
+
+    /// The plan SQLite chooses for `sql` with these values bound. The values
+    /// matter: with `sqlite_stat4`, the planner looks at them.
+    fn plan(store: &Store, sql: &str, values: &[&dyn rusqlite::ToSql]) -> Vec<String> {
+        let mut stmt = store.conn().prepare(&format!("EXPLAIN QUERY PLAN {sql}")).unwrap();
+        stmt.query_map(values, |r| r.get(3)).unwrap().map(|r| r.unwrap()).collect()
+    }
+
+    #[test]
+    fn threading_ignores_statistics_older_than_the_account() {
+        let mut store = Store::open_in_memory().unwrap();
+        let (one, inbox_one) = account(&store, "one");
+        fill(&mut store, one, inbox_one, 1000);
+        // Statistics computed now know nothing of the account created next.
+        // `ANALYZE` itself, not `Store::optimize`: the statistics a database
+        // may already hold, whatever the store does with its own.
+        store.conn().execute_batch("ANALYZE").unwrap();
+        let (two, inbox_two) = account(&store, "two");
+        fill(&mut store, two, inbox_two, 1000);
+
+        let cited = format!("a{two}m10@x.example");
+        let steps = plan(&store, THREADS_CITING, &[&cited, &two]);
+        assert!(steps[0].starts_with("SEARCH r USING COVERING INDEX idx_message_reference_ref"), "{steps:?}");
+        assert!(steps[1].starts_with("SEARCH m USING INTEGER PRIMARY KEY"), "{steps:?}");
+
+        let steps = plan(&store, THREADS_BY_MESSAGE_ID, &[&two, &cited]);
+        assert!(steps[0].contains("idx_message_msgid (account_id=? AND message_id_hdr=?)"), "{steps:?}");
+    }
 }
