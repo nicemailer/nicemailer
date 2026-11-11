@@ -275,6 +275,8 @@ The requests of one connection no longer run one after the other (`serve`, `crat
 
 What is slow is written to `core.log`: a request over 500 ms (`slow request: create_draft took 8200 ms`), a wait for the write lock or a hold of it over 250 ms, with who held it (`store lock: sync held 900 ms`, `store lock: request waited 1400 ms`). These lines are the numbers to look at when the app feels slow during a synchronization. `NICEMAILER_TEST_WRITE_DELAY_MS`, read by the core's tests only, makes every write hold the lock that much longer. Reader connections are `query_only`: a query that writes by mistake fails in the tests instead of racing the writer.
 
+For a closer look, `NICEMAILER_SQL_LOG` in the core's environment logs every SQL statement of every connection (the writer and the read pools), with its parameters bound (`nm-store`, `sql_log.rs`): `1` (or `stderr`) writes to standard error, any other value is a file path, appended to. The log carries subjects, addresses and search words, and slows every query: a debugging tool, never on by default.
+
 ## Code
 
 | Where | What |

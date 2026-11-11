@@ -67,6 +67,7 @@ pub mod unsubscribe;
 pub mod seed;
 pub mod setup;
 pub mod spool;
+mod sql_log;
 pub mod sync;
 
 // `BTreeSet` is a sorted set without duplicates. It is used instead of
@@ -314,6 +315,7 @@ impl Store {
     /// instead of racing the writer.
     pub fn open_reader(path: &Path) -> Result<Store> {
         let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_WRITE)?;
+        sql_log::install(&conn);
         // Same settings as the writer (see `init`), with a smaller page
         // cache: there are several readers, and the operating system caches
         // the file for all of them anyway.
@@ -338,6 +340,7 @@ impl Store {
 
     /// Applies per-connection settings and creates or checks the schema.
     fn init(conn: Connection) -> Result<Store> {
+        sql_log::install(&conn);
         // These pragmas are not stored in the database file: they must be
         // set on every new connection (see the header of schema.sql).
         // - foreign_keys: SQLite ignores FOREIGN KEY constraints unless asked.
