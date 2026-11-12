@@ -230,3 +230,45 @@ fn in_everything_the_criteria_see_every_listed_folder() {
     assert_eq!(list(ThreadFilter { not_from: vec!["@acme.fr".into()], ..Default::default() }), vec!["Autre".to_string()]);
     assert_eq!(list(ThreadFilter { from: vec!["jean".into()], ..Default::default() }), vec![devis]);
 }
+
+/// A word with punctuation is looked for as written (`queries.rs`,
+/// `is_literal`): FTS5 alone read `paris.fr` as "paris" then a word starting
+/// with "fr", and found every postal address "75016 PARIS / France".
+#[test]
+fn a_word_with_punctuation_is_found_as_written() {
+    let mails: &[(&str, &str, &str, &str)] = &[
+        // 0: the case of a real mailbox: "PARIS", then "France".
+        ("Boutique <shop@b.example>", ME, "Votre commande", "11, square Jasmin\n75016 PARIS\nFrance\nTotal 8 €"),
+        // 1: the domain in the body.
+        ("Mairie <info@c.example>", ME, "Démarches", "Rendez-vous sur paris.fr pour la carte."),
+        // 2: the domain in the sender's address only.
+        ("Ville <contact@paris.fr>", ME, "Lettre d'information", "Les travaux de la semaine."),
+        // 3: "Paris" and "fr" side by side, not as written.
+        ("Agence <a@d.example>", ME, "Paris FR", "Bureau de Paris fr."),
+        // 4: a hyphenated word, kept as the index reads it.
+        ("Club <c@e.example>", ME, "Sortie", "Un rendez vous mardi."),
+    ];
+    let env = store_of(mails, &[]);
+    let found = |env: &(Store, Vec<i64>), filter: ThreadFilter| -> Vec<usize> {
+        let (items, _) = env.0.list_threads_in(&env.1, None, 100, ThreadSort::Received, &filter).unwrap();
+        let mut out: Vec<usize> = items.iter().map(|t| mails.iter().position(|m| m.2 == t.subject).unwrap()).collect();
+        out.sort();
+        out
+    };
+    // `/`: anywhere, addresses included.
+    assert_eq!(found(&env, ThreadFilter { contains: words("paris.fr"), ..Default::default() }), vec![1, 2]);
+    assert_eq!(found(&env, ThreadFilter { contains: words("PARIS.FR"), ..Default::default() }), vec![1, 2]);
+    // Text…: subject and body, never the addresses.
+    assert_eq!(found(&env, ThreadFilter { text: words("paris.fr"), ..Default::default() }), vec![1]);
+    // Excluded as written: only the mails holding it go.
+    assert_eq!(found(&env, ThreadFilter { contains: words("-paris.fr"), ..Default::default() }), vec![0, 3, 4]);
+    // With another word: both in the same mail.
+    assert_eq!(found(&env, ThreadFilter { contains: words("paris.fr carte"), ..Default::default() }), vec![1]);
+    // An address typed in full.
+    assert_eq!(found(&env, ThreadFilter { contains: words("contact@paris.fr"), ..Default::default() }), vec![2]);
+    // A hyphen is not punctuation here: "rendez-vous" finds "rendez vous".
+    assert_eq!(found(&env, ThreadFilter { text: words("rendez-vous"), ..Default::default() }), vec![1, 4]);
+    // The `search` method follows the same rule.
+    let hits = env.0.search("paris.fr", 10).unwrap();
+    assert_eq!(hits.len(), 2);
+}

@@ -863,22 +863,32 @@ impl Store {
         if fts_query.is_empty() {
             return Ok(vec![]);
         }
+        // Words with punctuation, confirmed as written (`is_literal`).
+        let mut values: Vec<Value> = vec![Value::Text(fts_query), Value::Integer(i64::from(limit))];
+        let mut literal = String::new();
+        for w in fts_words(query).0.iter().filter(|w| is_literal(w)) {
+            let mut bind = |v: Value| {
+                values.push(v);
+                format!("?{}", values.len())
+            };
+            literal.push_str(&format!(" AND {}", literal_condition(w, "", &mut bind)));
+        }
         // `snippet(...)` is an FTS5 function returning an excerpt around the
         // matches: column -1 means "best column", '[' and ']' wrap the
         // matched terms, '…' marks cut text, 12 is the excerpt length in
         // tokens. `rank` is FTS5's relevance score (BM25), lower is better.
-        let mut stmt = self.conn.prepare_cached(
+        let mut stmt = self.conn.prepare_cached(&format!(
             "SELECT m.id, m.thread_id, m.folder_id, f.role, m.subject, m.from_name, m.from_addr,
                     m.date_received, snippet(message_fts, -1, '[', ']', '…', 12)
                FROM message_fts
                JOIN message m ON m.id = message_fts.rowid
                JOIN folder f ON f.id = m.folder_id
-              WHERE message_fts MATCH ?1
+              WHERE message_fts MATCH ?1{literal}
               ORDER BY rank
-              LIMIT ?2",
-        )?;
+              LIMIT ?2"
+        ))?;
         let hits = stmt
-            .query_map(params![fts_query, limit], |r| {
+            .query_map(rusqlite::params_from_iter(values), |r| {
                 Ok(SearchHit {
                     message_id: r.get(0)?,
                     thread_id: r.get(1)?,
@@ -1032,6 +1042,42 @@ fn fts_words(query: &str) -> (Vec<String>, Vec<String>) {
     (wanted, excluded)
 }
 
+/// Whether a typed word must also be found as it is written: it holds a
+/// character the tokenizer splits on (`.` `@` `/` `:` `_`…). FTS5 reads
+/// `paris.fr` as the phrase "paris" then "fr", and as a prefix (`*`) "paris"
+/// then a word starting with "fr": "75016 PARIS / France" matched, 14,542
+/// mails of a real mailbox for a handful that contain "paris.fr". Such a
+/// word is still looked up in the index (it finds the candidates, with a
+/// word boundary before `paris`), then confirmed with `LIKE` on the text of
+/// those candidates (`literal_condition`). Hyphens and apostrophes do not
+/// count: they join the words of prose (`rendez-vous`, `l'eau`, often typed
+/// `l’eau` in a mail), where the index alone is the right answer.
+fn is_literal(word: &str) -> bool {
+    word.chars().any(|c| !c.is_alphanumeric() && !matches!(c, '-' | '\'' | '’'))
+}
+
+/// The columns of `message_fts` a column filter of `fts_phrase` covers
+/// (`""`: every column).
+fn literal_columns(columns: &str) -> &'static [&'static str] {
+    match columns {
+        "subject : " => &["subject"],
+        "{subject body} : " => &["subject", "body"],
+        _ => &["subject", "sender", "recipients", "body"],
+    }
+}
+
+/// `(subject LIKE ? OR body LIKE ? …)` on `message_fts` for a literal word:
+/// the word as written, anywhere in one of the columns. `LIKE` ignores ASCII
+/// case; `%` and `_` typed are escaped. Accents are not folded here, unlike
+/// in the index: `eleve.fr` does not find `élève.fr`.
+fn literal_condition(word: &str, columns: &str, bind: &mut dyn FnMut(Value) -> String) -> String {
+    let escaped = word.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
+    let p = bind(Value::Text(format!("%{escaped}%")));
+    let ors: Vec<String> =
+        literal_columns(columns).iter().map(|c| format!("message_fts.{c} LIKE {p} ESCAPE '\\'")).collect();
+    format!("({})", ors.join(" OR "))
+}
+
 /// One FTS5 phrase: the word quoted, as a prefix, behind a column filter
 /// (`{subject body} : ` restricts it to those columns; empty: every
 /// column).
@@ -1085,12 +1131,23 @@ fn text_clause(query: &str, columns: &str, thread: &str, bind: &mut dyn FnMut(Va
     };
     if !wanted.is_empty() {
         let q = wanted.iter().map(|w| fts_phrase(w, columns)).collect::<Vec<_>>().join(" ");
-        sql.push_str(&format!(" AND {thread} IN ({})", in_fts(bind(Value::Text(q)))));
+        let mut set = in_fts(bind(Value::Text(q)));
+        // Words with punctuation: in the same mail, as written.
+        for w in wanted.iter().filter(|w| is_literal(w)) {
+            set.push_str(&format!(" AND {}", literal_condition(w, columns, bind)));
+        }
+        sql.push_str(&format!(" AND {thread} IN ({set})"));
     }
-    if !excluded.is_empty() {
-        // Any excluded word leaves the thread out: the words are OR-ed.
-        let q = excluded.iter().map(|w| fts_phrase(w, columns)).collect::<Vec<_>>().join(" OR ");
+    // Any excluded word leaves the thread out. The plain words are OR-ed in
+    // one query; each literal one has its own, confirmed as written.
+    let (literal, plain): (Vec<&String>, Vec<&String>) = excluded.iter().partition(|w| is_literal(w));
+    if !plain.is_empty() {
+        let q = plain.iter().map(|w| fts_phrase(w, columns)).collect::<Vec<_>>().join(" OR ");
         sql.push_str(&format!(" AND {thread} NOT IN ({})", in_fts(bind(Value::Text(q)))));
+    }
+    for w in literal {
+        let set = format!("{} AND {}", in_fts(bind(Value::Text(fts_phrase(w, columns)))), literal_condition(w, columns, bind));
+        sql.push_str(&format!(" AND {thread} NOT IN ({set})"));
     }
     sql
 }
