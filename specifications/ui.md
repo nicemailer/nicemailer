@@ -155,9 +155,14 @@ Exemple, la gestion des registrars : trouver les mails qui parlent du domaine ac
 
 Les attributs avec « … » agrandissent aussitôt le panneau pour choisir la valeur. Choisir de nouveau un attribut actif le retire. Les attributs actifs s'affichent en pastilles dans la barre de statut ; un clic sur une pastille la retire, échap les retire toutes ; ils restent quand on change de dossier ou de compte.
 
-`/` est le raccourci de la recherche partout : il ouvre un panneau intitulé « Chercher partout » ; entrée va dans **Everything** de la vue (tous les dossiers, tous les comptes dans « all ») avec ces mots. Le résultat est la liste ordinaire, une ligne par conversation avec son dossier, la pastille et `F` pour affiner. Échap retire les attributs et revient au dossier d'où `/` a été tapé ; si l'on est allé ailleurs entre-temps (`;`, `@`, clic sur un dossier), échap retire seulement les attributs. Un second `/` remplace les mots et garde le dossier de retour. `/` reste le joker le plus large : ses mots sont cherchés partout, sujet, expéditeur, destinataires et texte (pastille « partout : … »), là où Texte… laisse les adresses de côté.
+`/` est le raccourci de la recherche partout : il ouvre un panneau intitulé « Chercher partout » ; entrée va dans **All Mail** de la vue (tous les dossiers sauf Deleted, Junk et Banned, tous les comptes dans « all ») avec ces mots ; tapé depuis Everything, il reste dans Everything. Le résultat est la liste ordinaire, une ligne par conversation avec son dossier, la pastille et `F` pour affiner. Échap retire les attributs et revient au dossier d'où `/` a été tapé ; si l'on est allé ailleurs entre-temps (`;`, `@`, clic sur un dossier), échap retire seulement les attributs. Un second `/` remplace les mots et garde le dossier de retour. `/` reste le joker le plus large : ses mots sont cherchés partout, sujet, expéditeur, destinataires et texte (pastille « partout : … »), là où Texte… laisse les adresses de côté.
 
-Au pied de la liste des dossiers, un dossier virtuel **Everything** (`;e`) réunit tous les dossiers de la vue (de tous les comptes dans « all ») pour chercher partout avec les attributs. Une conversation présente dans plusieurs dossiers (Inbox et Sent) n'y figure qu'une fois, dans le dossier de son dernier mail. Comme la liste mélange tous les dossiers, chaque ligne affiche son dossier (colonne discrète avant le nombre de messages), et le lecteur l'affiche à l'extrémité droite de la ligne du sujet. Dans « all », le compte suit le dossier (« Archive · perso ») : toujours dans le lecteur, et dans la liste seulement si le sujet garde au moins 30 caractères ; sinon le dossier seul.
+Au pied de la liste des dossiers, deux dossiers virtuels réunissent les dossiers de la vue (de tous les comptes dans « all ») pour chercher avec les attributs (ajouté en novembre 2026 pour All Mail) :
+
+- **All Mail** (`;E`) : tous les dossiers sauf Deleted, Junk et Banned, Quarantine comprise. C'est ce que veulent la plupart des recherches : ce qu'on a supprimé ou rejeté n'y encombre pas les résultats, et le mail d'un expéditeur pas encore accepté s'y trouve. Le nom est celui de Gmail, pour le même sens (tout sauf la corbeille et le spam). Une conversation dont le dernier mail a été supprimé y garde sa place et sa date, celles de son dernier mail resté dans All Mail ; ses critères (De…, À…, pièce jointe) ne regardent que les mails de ces dossiers.
+- **Everything** (`;e`) : vraiment tous les dossiers.
+
+Une conversation présente dans plusieurs dossiers (Inbox et Sent) n'y figure qu'une fois, dans le dossier de son dernier mail. Comme la liste mélange tous les dossiers, chaque ligne affiche son dossier (colonne discrète avant le nombre de messages), et le lecteur l'affiche à l'extrémité droite de la ligne du sujet. Dans « all », le compte suit le dossier (« Archive · perso ») : toujours dans le lecteur, et dans la liste seulement si le sujet garde au moins 30 caractères ; sinon le dossier seul.
 
 Il y a deux contextes totalement différents dans l'application : 
 - "navigation" : la gestion du stock de mail d'une part. lecture, recherche, screening, déplacement, etc
@@ -195,7 +200,7 @@ u lu / non lu
 U marque lu, quel que soit l'état actuel (un mail lu reste lu, contrairement à u)
 z annule le dernier déplacement ou la dernière décision (les mails reviennent, la décision précédente aussi, et le curseur revient sur la conversation rétablie) ; chaque z remonte d'une étape
 \* drapeau
-/ chercher partout : des mots n'importe où, adresses comprises, dans Everything (voir le sélecteur d'attributs) ; échap revient au dossier de départ
+/ chercher partout : des mots n'importe où, adresses comprises, dans All Mail (voir le sélecteur d'attributs) ; échap revient au dossier de départ
 ? liste des touches, regroupées par usage (naviguer, lire, sélectionner, agir sur les mails, écrire, chercher et aller, fenêtre), une touche par ligne, dans un panneau centré de trois colonnes au plus, équilibrées en hauteur ; moins de colonnes si la fenêtre est étroite. Les commandes pas encore disponibles sont grisées. N'importe quelle touche ou un clic à côté la ferme
 échap annule un préfixe, ferme un panneau, démarque, puis revient du tag, groupe ou contact listé au dossier
 ⌃⌘F met la fenêtre en plein écran et l'en sort, partout (liste, menu, réponse en cours d'écriture), que la barre de titre soit masquée ou non
@@ -220,6 +225,7 @@ d Deleted
 x Junk
 b Banned
 
+E All Mail
 e Everything
 
 c Contacts

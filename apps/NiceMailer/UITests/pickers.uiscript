@@ -115,9 +115,10 @@ expect overlay = menu(NiceMailer.GeekController.Prefix.goto)
 click menu:0
 expect account = fixture
 expect folder = Inbox
-# Search (/): words anywhere (addresses included), applied to "Everything" of the
-# view; the list is the ordinary one, with the chip and the folder column.
-# Escape comes back to the folder / was pressed from.
+# Search (/): words anywhere (addresses included), applied to "All Mail" of the
+# view (every folder but Deleted, Junk and Banned); the list is the ordinary
+# one, with the chip and the folder column. Escape comes back to the folder /
+# was pressed from.
 key /
 expect overlay = picker(NiceMailer.GeekController.PickerKind.search)
 type rapport
@@ -125,7 +126,7 @@ expect picker_count = 1
 snap search-panel
 key ret
 expect overlay = none
-expect folder = Everything
+expect folder = All Mail
 expect account = fixture
 expect filters ~ rapport
 expect search_origin ~ folder:
@@ -137,3 +138,21 @@ expect folder = Inbox
 expect account = fixture
 expect filters =
 expect search_origin =
+# The two virtual folders: `;E` All Mail, `;e` Everything; a search from
+# Everything stays in Everything.
+key ;
+key E
+expect folder = All Mail
+key ;
+key e
+expect folder = Everything
+key /
+type rapport
+key ret
+expect folder = Everything
+expect filters ~ rapport
+key esc
+expect folder = Everything
+key ;
+key i
+expect folder = Inbox

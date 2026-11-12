@@ -31,6 +31,7 @@ pub(crate) fn migrate(conn: &mut Connection, mut version: i64) -> Result<()> {
             4 => to_5(&tx)?,
             5 => to_6(&tx)?,
             6 => to_7(&tx)?,
+            7 => to_8(&tx)?,
             _ => unreachable!("aucune migration depuis la version {version}"),
         }
         version += 1;
@@ -163,6 +164,21 @@ fn to_6(conn: &Connection) -> Result<()> {
 /// instant. Existing drafts are sent by their own account: NULL.
 fn to_7(conn: &Connection) -> Result<()> {
     conn.execute_batch("ALTER TABLE draft ADD COLUMN send_account_id INTEGER REFERENCES account(id) ON DELETE SET NULL;")?;
+    Ok(())
+}
+
+/// Version 8: the virtual folder "All Mail" (`queries.rs`,
+/// `list_all_mail`) walks every folder's rows of `thread_folder` in date
+/// order at once, newest first, and stops after a page. Without these two
+/// indexes it read each folder on its own until a page was found in it: a
+/// search found in few folders read them all (160 ms a page instead of 20
+/// on 90,000 conversations). Built from `thread_folder`, a row per thread
+/// and folder: about a second on a large mailbox.
+fn to_8(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "CREATE INDEX idx_thread_folder_received ON thread_folder (date_last_received DESC, thread_id DESC);
+         CREATE INDEX idx_thread_folder_date_modified ON thread_folder (date_last_modified DESC, thread_id DESC);",
+    )?;
     Ok(())
 }
 

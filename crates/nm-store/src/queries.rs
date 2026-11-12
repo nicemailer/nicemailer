@@ -330,6 +330,70 @@ impl Store {
         Ok((items, next_cursor))
     }
 
+    /// The virtual folder "All Mail" (`ui.md`, "Sélecteur d'attributs"):
+    /// every folder of one account, or of every account, but Deleted, Junk
+    /// and Banned (`FolderRole::OUT_OF_ALL_MAIL`), Quarantine and folders
+    /// without a role included.
+    ///
+    /// Each thread is listed once, in the folder of its latest mail among
+    /// those of All Mail, and sorted by that mail: a thread whose latest
+    /// mail was just deleted keeps its place, it does not jump to the top
+    /// as it would if read from `thread` like Everything. The attributes
+    /// look at the mails of those folders only, as for any list of folders.
+    ///
+    /// One walk of `idx_thread_folder_received` (or `…_date_modified`),
+    /// every folder at once, newest first, stopping after a page: a search
+    /// costs what it costs in Everything. Reading each folder by its own
+    /// index and merging, as `list_threads_in` does, read every folder in
+    /// full when the words were found in few of them (160 ms a page, 8
+    /// times Everything, on a real mailbox).
+    pub fn list_all_mail(
+        &self,
+        account_id: Option<i64>,
+        cursor: Option<&str>,
+        limit: u32,
+        sort: ThreadSort,
+        filter: &ThreadFilter,
+    ) -> Result<(Vec<ThreadSummary>, Option<String>)> {
+        let out: Vec<&str> = FolderRole::OUT_OF_ALL_MAIL.iter().map(|r| r.as_str()).collect();
+        let folders: Vec<(i64, Option<String>)> = self
+            .conn
+            .prepare_cached(
+                "SELECT id, role FROM folder
+                  WHERE (?1 IS NULL OR account_id = ?1) AND coalesce(role, '') NOT IN (?2, ?3, ?4) ORDER BY id",
+            )?
+            .query_map(params![account_id, out[0], out[1], out[2]], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<std::result::Result<_, _>>()?;
+        if folders.is_empty() {
+            return Ok((vec![], None));
+        }
+        // The folders, as integers from the store written into the SQL
+        // text (no user input).
+        let set = folders.iter().map(|(f, _)| f.to_string()).collect::<Vec<_>>().join(",");
+        let tags = self.tag_ids(filter)?;
+        let after = cursor.map(parse_cursor).transpose()?;
+        let fetch = i64::from(limit) + 1;
+        let (sql, values) = all_mail_query(&set, after, fetch, sort, filter, &tags);
+        let map = |r: &Row| Ok((r.get(0)?, (r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?)));
+        let rows: Vec<(i64, ListRow)> =
+            self.conn.prepare_cached(&sql)?.query_map(rusqlite::params_from_iter(values), map)?.collect::<std::result::Result<_, _>>()?;
+        let has_more = rows.len() as i64 > i64::from(limit);
+        let mut items = Vec::with_capacity(rows.len().min(limit as usize));
+        for (folder_id, (thread_id, subject, received, modified, count, unread)) in rows.into_iter().take(limit as usize) {
+            let role = folders.iter().find(|(f, _)| *f == folder_id).and_then(|(_, r)| role_of(r.clone()));
+            items.push(self.thread_summary(thread_id, folder_id, role, subject, (received, modified), count, unread)?);
+        }
+        let next_cursor = if has_more {
+            items.last().map(|t| {
+                let d = if sort == ThreadSort::Modified { t.date_last_modified } else { t.date_last_received };
+                format!("{d}:{}", t.id)
+            })
+        } else {
+            None
+        };
+        Ok((items, next_cursor))
+    }
+
     /// Completes a list row with the details that `thread_folder` does not
     /// store: participants, snippet, attachments, flag and return mark.
     ///
@@ -656,6 +720,54 @@ fn folder_query(
     if !filter_values.is_empty() {
         values.resize(9, Value::Null);
         values.extend(filter_values.iter().cloned());
+    }
+    (sql, values)
+}
+
+/// The list query of `list_all_mail` and its parameters: the rows of
+/// `thread_folder` of the folders `set`, in date order, each thread once.
+fn all_mail_query(
+    set: &str,
+    after: Option<(i64, i64)>,
+    fetch: i64,
+    sort: ThreadSort,
+    filter: &ThreadFilter,
+    tags: &[i64],
+) -> (String, Vec<Value>) {
+    // Constants of ours, never client input (see `list_threads_in`).
+    let col = match sort {
+        ThreadSort::Received => "date_last_received",
+        ThreadSort::Modified => "date_last_modified",
+    };
+    let (filter_sql, filter_values) = filter_clause(filter, &Target::folders(set), tags);
+    // `+tf.folder_id`: the unary `+` keeps SQLite from reading the rows
+    // folder by folder through `idx_thread_folder_list` (then sorting them
+    // all); the date index is walked, and stops after a page.
+    //
+    // Each thread once: a row is skipped when the thread has a more recent
+    // row in another folder of the set (ties: the smallest folder id). That
+    // check reads the thread's few rows by the primary key.
+    let mut sql = format!(
+        "SELECT tf.folder_id, tf.thread_id, t.subject, tf.date_last_received, tf.date_last_modified,
+                tf.message_count, tf.unread_count
+           FROM thread_folder tf JOIN thread t ON t.id = tf.thread_id
+          WHERE +tf.folder_id IN ({set}){filter_sql}
+            AND NOT EXISTS (SELECT 1 FROM thread_folder tf2
+                             WHERE tf2.thread_id = tf.thread_id AND tf2.folder_id IN ({set})
+                               AND (tf2.{col} > tf.{col} OR (tf2.{col} = tf.{col} AND tf2.folder_id < tf.folder_id)))"
+    );
+    // Fixed parameters: ?2 limit, ?3 and ?4 cursor; the filter values
+    // start at ?10. SQLite counts parameters up to the highest number used,
+    // so unused numbers are bound to NULL.
+    let mut values = vec![Value::Null, Value::Integer(fetch)];
+    if let Some((d, id)) = after {
+        sql.push_str(&format!(" AND (tf.{col}, tf.thread_id) < (?3, ?4)"));
+        values.extend([Value::Integer(d), Value::Integer(id)]);
+    }
+    sql.push_str(&format!(" ORDER BY tf.{col} DESC, tf.thread_id DESC LIMIT ?2"));
+    if !filter_values.is_empty() {
+        values.resize(9, Value::Null);
+        values.extend(filter_values);
     }
     (sql, values)
 }
@@ -1103,7 +1215,9 @@ mod plan_tests {
     }
 
     /// The steps a list query may take. A full read (`SCAN`) is only
-    /// allowed on what is small or already narrowed: the list's own index,
+    /// allowed on what is small or already narrowed: the list's own index
+    /// (a thread index for Everything, the date index of `thread_folder`
+    /// for All Mail), walked newest first and stopped after a page,
     /// the address table (a LIKE needs to read it), the full-text index
     /// (it answers a MATCH itself) and the partial index of the messages
     /// with attachments. A correlated subquery (one run per row of the list)
@@ -1114,7 +1228,8 @@ mod plan_tests {
             assert!(!step.contains("CORRELATED"), "{what}: per-row subquery: {steps:?}");
             assert!(!step.contains("idx_message_list"), "{what}: reads a whole folder: {steps:?}");
             if step.starts_with("SCAN ") {
-                let allowed = ["SCAN t USING INDEX idx_thread_", "SCAN address", "SCAN message_fts VIRTUAL TABLE",
+                let allowed = ["SCAN t USING INDEX idx_thread_", "SCAN tf USING INDEX idx_thread_folder_received",
+                    "SCAN tf USING INDEX idx_thread_folder_date_modified", "SCAN address", "SCAN message_fts VIRTUAL TABLE",
                     "SCAN m USING COVERING INDEX idx_message_thread_attachments", "SCAN CONSTANT ROW"];
                 assert!(allowed.iter().any(|a| step.starts_with(a)), "{what}: full scan `{step}`: {steps:?}");
             }
@@ -1165,6 +1280,44 @@ mod plan_tests {
         assert_eq!(first(None, ThreadSort::Modified), ["SCAN t USING INDEX idx_thread_modified"]);
         assert_eq!(first(Some(1), ThreadSort::Received), ["SEARCH t USING INDEX idx_thread_account_received (account_id=?)"]);
         assert_eq!(first(Some(1), ThreadSort::Modified), ["SEARCH t USING INDEX idx_thread_account_modified (account_id=?)"]);
+    }
+
+    /// All Mail: one walk of the date index of `thread_folder` without
+    /// criterion; with one, the rows of its set by primary key. The only
+    /// subquery run per row is the check that the thread has no more recent
+    /// row in another folder: a few rows read by the primary key.
+    #[test]
+    fn all_mail_walks_the_date_index_with_every_filter() {
+        let store = Store::open_in_memory().unwrap();
+        let dedupe = "SEARCH tf2 USING PRIMARY KEY (thread_id=? AND folder_id=?)";
+        for (name, f) in filters() {
+            for sort in [ThreadSort::Received, ThreadSort::Modified] {
+                for after in [None, Some((1, 1))] {
+                    let (sql, values) = all_mail_query("1,2,3", after, 61, sort, &f, &[1, 2]);
+                    let steps = plan(&store, &sql, &values);
+                    let what = format!("all mail {name} {sort:?} cursor={}", after.is_some());
+                    assert!(steps.iter().any(|s| s == dedupe), "{what}: {steps:?}");
+                    // The dedupe step and its header are allowed; the rest
+                    // follows the rules of every list.
+                    let rest: Vec<String> =
+                        steps.iter().filter(|s| *s != dedupe && !s.starts_with("CORRELATED SCALAR SUBQUERY")).cloned().collect();
+                    check(&what, &rest);
+                    assert!(
+                        rest[0].contains("tf USING INDEX idx_thread_folder_received")
+                            || rest[0].contains("tf USING INDEX idx_thread_folder_date_modified")
+                            || rest[0] == "SEARCH t USING INTEGER PRIMARY KEY (rowid=?)"
+                            || rest[0].starts_with("SEARCH tf USING PRIMARY KEY (thread_id=?)"),
+                        "{what}: {steps:?}"
+                    );
+                }
+            }
+        }
+        let first = |sort| {
+            let (sql, values) = all_mail_query("1,2,3", None, 61, sort, &ThreadFilter::default(), &[]);
+            plan(&store, &sql, &values)
+        };
+        assert_eq!(first(ThreadSort::Received)[0], "SCAN tf USING INDEX idx_thread_folder_received");
+        assert_eq!(first(ThreadSort::Modified)[0], "SCAN tf USING INDEX idx_thread_folder_date_modified");
     }
 
     #[test]

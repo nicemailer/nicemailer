@@ -95,7 +95,7 @@ pub use rusqlite;
 /// 6: `draft.forward_of_message_id`, the mail a forward carries.
 /// 7: `draft.send_account_id`, the account that sends a draft when it is
 ///    not the draft's own.
-pub const SCHEMA_VERSION: i64 = 7;
+pub const SCHEMA_VERSION: i64 = 8;
 
 /// Full text of the schema, at the latest version. `include_str!` reads the
 /// file at compile time and embeds it in the binary as a `&'static str`; the

@@ -80,6 +80,23 @@ fn import_mbox_runs_in_the_background_and_reports_events() {
         assert_eq!(items[0]["folder_id"], sent["id"]);
         assert_eq!(items[0]["message_count"], 1);
     }
+    // All Mail (`all_mail`): the same here, nothing being in Deleted, Junk
+    // or Banned; once the archived mail is deleted, the conversation stays,
+    // by the reply in Sent, and Deleted is never where it is shown.
+    let sent = folders["items"].as_array().unwrap().iter().find(|f| f["role"] == "sent").unwrap()["id"].clone();
+    for scope in [json!({"all_mail": true}), json!({"account_id": account, "all_mail": true})] {
+        let page = c.call("list_threads", json!({"everything": scope})).unwrap();
+        assert_eq!(page["items"].as_array().unwrap().len(), 1, "{scope}");
+        assert_eq!(page["items"][0]["folder_id"], sent);
+    }
+    let thread = c.call("list_threads", json!({"folder_id": archive["id"]})).unwrap()["items"][0]["id"].clone();
+    c.call("move_thread", json!({"thread_id": thread, "target": "deleted", "from_folder_id": archive["id"]})).unwrap();
+    let page = c.call("list_threads", json!({"everything": {"all_mail": true}})).unwrap();
+    assert_eq!(page["items"].as_array().unwrap().len(), 1);
+    assert_eq!(page["items"][0]["folder_id"], sent);
+    // From Alice: her mail is in Deleted now, out of All Mail only.
+    let page = c.call("list_threads", json!({"everything": {"all_mail": true}, "filter": {"from": ["alice"]}})).unwrap();
+    assert!(page["items"].as_array().unwrap().is_empty(), "{page}");
     let page = c.call("list_threads", json!({"everything": {}, "filter": {"from": ["alice"]}})).unwrap();
     assert_eq!(page["items"].as_array().unwrap().len(), 1);
     // The threads of a contact are a criterion of the list (the former

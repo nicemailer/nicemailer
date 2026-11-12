@@ -175,6 +175,7 @@ final class GeekController {
         var folderId: Int?
         var unifiedRole: String?
         var everything: AppModel.Everything?
+        var allMail = false
     }
 
     /// Number of columns (`ui.md`, display menu): 1 = list only,
@@ -941,7 +942,7 @@ final class GeekController {
             var group: Int?
             for f in scopeFolders where !f.letter.isEmpty {
                 entries.append(Entry(
-                    key: f.letter.lowercased(), label: f.name,
+                    key: f.key, label: f.name,
                     gapBefore: group != nil && group != f.group, detail: f.unread > 0 ? "\(f.unread)" : nil
                 ) { [weak self] in self?.open(f) })
                 group = f.group
@@ -1005,18 +1006,23 @@ final class GeekController {
         let name: String
         let letter: String
         let unread: Int
-        /// The virtual folder "Everything".
+        /// The virtual folder "Everything", or "All Mail" with `allMail`.
         var everything = false
+        var allMail = false
         /// Block of the folder in the lists (`folderGroup`).
         var group: Int { everything ? GeekController.folderGroups.count + 1 : GeekController.folderGroup(role) }
-        var id: String { everything ? "everything" : folderId.map { "f\($0)" } ?? "r\(role ?? "")" }
+        var id: String { everything ? (allMail ? "all-mail" : "everything") : folderId.map { "f\($0)" } ?? "r\(role ?? "")" }
+        /// Its key in the menu `;`: the folder's letter in lower case;
+        /// All Mail keeps its capital `E` (`e` is Everything), as Tags its
+        /// `T` (`t` is Todo).
+        var key: String { allMail ? letter : letter.lowercased() }
     }
 
     /// Folders of the current view, in display order. In the unified view,
     /// one entry per role, with the unread counts of every account added up;
     /// folders without a role (user folders) stay per account and are not
     /// listed there.
-    var scopeFolders: [ScopeFolder] { Self.ordered(realScopeFolders) + [everythingFolder] }
+    var scopeFolders: [ScopeFolder] { Self.ordered(realScopeFolders) + [allMailFolder, everythingFolder] }
 
     /// Blocks of the folder lists (`ui.md`, "Thème geek"), in order: what
     /// is to deal with, what is filed, what was written, what was thrown
@@ -1053,6 +1059,12 @@ final class GeekController {
         }.map(\.element)
     }
 
+    /// "All Mail", at the foot of the list before Everything: every folder
+    /// of the view but Deleted, Junk and Banned, where `/` searches.
+    private var allMailFolder: ScopeFolder {
+        ScopeFolder(folderId: nil, role: nil, name: AppModel.allMailName, letter: "E", unread: 0, everything: true, allMail: true)
+    }
+
     /// "Everything", at the foot of the list: every folder of the view, to
     /// search everywhere with the attributes (`ui.md`).
     private var everythingFolder: ScopeFolder {
@@ -1081,7 +1093,7 @@ final class GeekController {
     /// Whether `f` is the folder shown.
     func isCurrent(_ f: ScopeFolder) -> Bool {
         guard model.listFilter == nil else { return false }
-        if f.everything { return model.everything != nil }
+        if f.everything { return model.everything != nil && model.allMail == f.allMail }
         if model.everything != nil { return false }
         if let id = f.folderId { return id == model.selectedFolderId }
         return f.role == model.unifiedRole
@@ -1092,7 +1104,7 @@ final class GeekController {
         if f.everything {
             screen = .mail
             searchOrigin = nil
-            model.selectEverything(model.scopeAccountId.map { .account($0) } ?? .all)
+            model.selectEverything(model.scopeAccountId.map { .account($0) } ?? .all, allMail: f.allMail)
         } else if let id = f.folderId {
             goToFolder(id)
         } else if let role = f.role {
@@ -1211,11 +1223,11 @@ final class GeekController {
     /// its Inbox, or its first folder.
     func goToAccount(_ accountId: Int?) {
         let role = model.currentRole
-        // From "Everything", stay in "Everything" of the chosen view.
+        // From "Everything" (or "All Mail"), stay there in the chosen view.
         if model.everything != nil {
             screen = .mail
             searchOrigin = nil
-            model.selectEverything(accountId.map { .account($0) } ?? .all)
+            model.selectEverything(accountId.map { .account($0) } ?? .all, allMail: model.allMail)
             return
         }
         guard let accountId else {
@@ -1974,17 +1986,21 @@ final class GeekController {
     // MARK: - Search
 
     /// `/` then Return: the words become the "anywhere" criterion of
-    /// "Everything" of the current view (every folder, every account in
-    /// "all"), shown like any filtered list (`ui.md`). The place `/` was
-    /// pressed from is kept for Escape; a second `/` keeps the first one.
+    /// "All Mail" of the current view (every folder but Deleted, Junk and
+    /// Banned, every account in "all"), shown like any filtered list
+    /// (`ui.md`): what a search mostly wants. Searched from Everything, it
+    /// stays in Everything. The place `/` was pressed from is kept for
+    /// Escape; a second `/` keeps the first one.
     func searchEverywhere(_ words: String) {
         if searchOrigin == nil {
             searchOrigin = SearchOrigin(
-                folderId: model.selectedFolderId, unifiedRole: model.unifiedRole, everything: model.everything)
+                folderId: model.selectedFolderId, unifiedRole: model.unifiedRole, everything: model.everything,
+                allMail: model.allMail)
         }
         screen = .mail
         model.attributes.contains = words
-        model.selectEverything(model.scopeAccountId.map { .account($0) } ?? .all)
+        let inEverything = model.everything != nil && !model.allMail
+        model.selectEverything(model.scopeAccountId.map { .account($0) } ?? .all, allMail: !inEverything)
     }
 
     /// Escape after a `/` search: back to the folder `/` was pressed from.
@@ -1996,7 +2012,7 @@ final class GeekController {
         } else if let role = origin.unifiedRole {
             model.selectUnified(role)
         } else if let e = origin.everything {
-            model.selectEverything(e)
+            model.selectEverything(e, allMail: origin.allMail)
         }
         searchOrigin = nil
     }

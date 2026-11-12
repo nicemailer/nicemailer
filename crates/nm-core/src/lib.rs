@@ -82,6 +82,12 @@ impl FolderRole {
         FolderRole::Banned,
     ];
 
+    /// Folders the virtual folder "All Mail" leaves out (`ui.md`, "Sélecteur
+    /// d'attributs"): what the user deleted or rejected. Searches mostly
+    /// want everything else, Quarantine included (the mail of a sender not
+    /// accepted yet is searched for too). "Everything" keeps them.
+    pub const OUT_OF_ALL_MAIL: [FolderRole; 3] = [FolderRole::Deleted, FolderRole::Junk, FolderRole::Banned];
+
     /// Folders whose messages follow a command applied to the conversation
     /// (`dossiers.md`, "Une conversation, pas un mail").
     ///

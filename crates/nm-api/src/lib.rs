@@ -474,12 +474,15 @@ pub struct ListThreadsParams {
 
 /// Scope of the virtual folder "Everything" in `list_threads`:
 /// `{"everything": {}}` for every account, `{"everything": {"account_id": 3}}`
-/// for one.
+/// for one. With `"all_mail": true`, the virtual folder "All Mail": the
+/// same without Deleted, Junk and Banned (`FolderRole::OUT_OF_ALL_MAIL`).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EverythingScope {
     #[serde(default)]
     pub account_id: Option<i64>,
+    #[serde(default)]
+    pub all_mail: bool,
 }
 
 /// Attributes that narrow a thread list, combined with AND. A thread

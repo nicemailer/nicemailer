@@ -267,12 +267,13 @@ struct GeekControllerTests {
 
     @Test func semicolonListsTheFoldersAndEverythingAndHIsFree() {
         let keys = controller.menuEntries(.goto).map(\.key)
-        // Four folders, then "Everything", then the screens.
-        #expect(keys == ["i", "t", "a", "d", "e", "c", "T", "g", "h"])
-        // A gap before each new block: Archive, Deleted, Everything,
-        // Contacts, History.
+        // Four folders, then "All Mail" (`E`) and "Everything" (`e`), then
+        // the screens.
+        #expect(keys == ["i", "t", "a", "d", "E", "e", "c", "T", "g", "h"])
+        // A gap before each new block: Archive, Deleted, the virtual
+        // folders, Contacts, History.
         let gaps = controller.menuEntries(.goto).filter(\.gapBefore).map(\.key)
-        #expect(gaps == ["a", "d", "e", "c", "h"])
+        #expect(gaps == ["a", "d", "E", "c", "h"])
         press("h")
         #expect(controller.overlay == .none && model.flash != nil)
     }
@@ -711,20 +712,45 @@ struct GeekControllerTests {
 
     // MARK: Search (/)
 
-    @Test func slashSearchesEverythingWithTheAnywhereCriterion() async {
+    @Test func slashSearchesAllMailWithTheAnywhereCriterion() async {
         press("/")
         #expect(controller.overlay == .picker(.search))
         type("devis")
         #expect(controller.pickerEntries(.search).map(\.label) == ["devis"])
         press("ret")
-        // Words anywhere, addresses included, over every folder of the account.
+        // Words anywhere, addresses included, over every folder of the
+        // account but Deleted, Junk and Banned.
         #expect(controller.overlay == .none)
-        #expect(model.attributes.contains == "devis" && model.everything == .account(1))
+        #expect(model.attributes.contains == "devis" && model.everything == .account(1) && model.allMail)
+        #expect(model.currentFolderName == "All Mail")
         #expect(await eventually {
             let call = core.calls("list_threads").last
-            return (call?["everything"] as? [String: Any])?["account_id"] as? Int == 1
+            let scope = call?["everything"] as? [String: Any]
+            return scope?["account_id"] as? Int == 1 && scope?["all_mail"] as? Bool == true
                 && (call?["filter"] as? [String: Any])?["contains"] as? String == "devis"
         })
+    }
+
+    /// `;E` opens All Mail, `;e` Everything; each is the current one in the
+    /// menu only when shown. A search from Everything stays in Everything.
+    @Test func allMailAndEverythingAreTwoVirtualFolders() async {
+        press(";"); press("E")
+        #expect(model.everything == .account(1) && model.allMail && model.currentFolderName == "All Mail")
+        // Deleted (folder 4) is not listened to: its events change nothing shown.
+        #expect(!model.listedFolderIds.contains(4) && model.listedFolderIds.contains(1))
+        let current = controller.scopeFolders.filter { controller.isCurrent($0) }.map(\.name)
+        #expect(current == ["All Mail"])
+        press(";"); press("e")
+        #expect(model.everything == .account(1) && !model.allMail && model.currentFolderName == "Everything")
+        #expect(model.listedFolderIds.contains(4))
+        #expect(await eventually { (core.calls("list_threads").last?["everything"] as? [String: Any])?["all_mail"] == nil })
+        press("/"); type("devis"); press("ret")
+        #expect(!model.allMail && model.everything == .account(1))
+        // A folder leaves both.
+        press("esc")
+        press(";"); press("E")
+        press(";"); press("a")
+        #expect(model.everything == nil && !model.allMail && model.selectedFolderId == 3)
     }
 
     @Test func escapeAfterASearchGoesBackToTheFolder() {

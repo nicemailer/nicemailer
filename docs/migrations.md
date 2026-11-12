@@ -26,6 +26,7 @@ Rule of thumb: a migration does what the code cannot work without (a new column,
 | 5 | `draft.after_send` accepts `stay`, the trial option "leave the conversation where it is" of the filing chosen at sending. SQLite cannot change a `CHECK` in place, so `draft` is made again (new table, rows copied, old one dropped, new one renamed); the rows of `draft_attachment`, which the drop would delete through `ON DELETE CASCADE`, are kept aside and put back. A few rows: instant. |
 | 6 | `draft.forward_of_message_id`, the mail a forward carries (`f`). A column added at the end of a small table: instant. |
 | 7 | `draft.send_account_id`, the account that sends a draft when it is not the draft's own: a reply to a mail of an account that cannot send, or a sender changed in the reply (`docs/sending.md`, "Choosing the sender"). A column added at the end of a small table: instant. |
+| 8 | `idx_thread_folder_received` and `idx_thread_folder_date_modified`: the rows of `thread_folder` of every folder in date order, for the virtual folder All Mail, which walks its folders at once and stops after a page (`queries.rs`, `list_all_mail`). Two indexes built from `thread_folder`: 0.15 s on 97,000 rows. |
 
 The reasons for the indexes of version 2, with measurements, are in `specifications/modele de donnees.md`, section 11.
 

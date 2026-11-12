@@ -185,3 +185,83 @@ fn the_lists_of_a_tag_a_group_and_a_contact_are_complete_and_ordered() {
     assert_eq!(tagged.len() as i64, expected);
     assert!(expected > 200);
 }
+
+// ---------------------------------------------------------------------------
+// All Mail (`ui.md`, "Sélecteur d'attributs"): every folder but Deleted,
+// Junk and Banned. Read in one walk of the date index of `thread_folder`;
+// it must list exactly what the folders of All Mail list together.
+// ---------------------------------------------------------------------------
+
+/// The folders of All Mail: all but Deleted, Junk and Banned.
+fn all_mail_folders(store: &Store) -> Vec<i64> {
+    store
+        .list_folders()
+        .unwrap()
+        .iter()
+        .filter(|f| !f.role.is_some_and(|r| nm_core::FolderRole::OUT_OF_ALL_MAIL.contains(&r)))
+        .map(|f| f.id)
+        .collect()
+}
+
+#[test]
+fn all_mail_lists_what_its_folders_list_page_after_page() {
+    let (store, _) = store();
+    let folders = all_mail_folders(&store);
+    let contact = busiest_address(&store);
+    let mut seen_rejected = false;
+    for filter in filters(contact) {
+        for sort in [ThreadSort::Received, ThreadSort::Modified] {
+            let merged = all_pages(|c| store.list_threads_in(&folders, c, 37, sort, &filter).unwrap());
+            let all_mail = all_pages(|c| store.list_all_mail(None, c, 37, sort, &filter).unwrap());
+            assert_eq!(rows(&all_mail), rows(&merged), "{filter:?} {sort:?}");
+            let account = store.list_folders().unwrap()[0].account_id;
+            let one = all_pages(|c| store.list_all_mail(Some(account), c, 37, sort, &filter).unwrap());
+            assert_eq!(rows(&one), rows(&merged), "account {filter:?} {sort:?}");
+            if filter == ThreadFilter::default() {
+                // Fewer threads than Everything: the seed fills Deleted,
+                // Junk and Banned too.
+                let everything = all_pages(|c| store.list_everything(None, c, 37, sort, &filter).unwrap());
+                seen_rejected |= everything.len() > all_mail.len();
+            }
+        }
+    }
+    assert!(seen_rejected, "the seed should have threads only in Deleted, Junk or Banned");
+    let (none, next) = store.list_all_mail(Some(9999), None, 50, ThreadSort::Received, &ThreadFilter::default()).unwrap();
+    assert!(none.is_empty() && next.is_none());
+}
+
+/// A thread whose latest mail was deleted keeps its place in All Mail:
+/// sorted and shown by its latest mail left, where Everything puts it at
+/// the date of the mail deleted.
+#[test]
+fn a_mail_deleted_does_not_move_its_thread_in_all_mail() {
+    let (store, _) = store();
+    let thread: i64 = store
+        .conn()
+        .query_row(
+            "SELECT tf.thread_id FROM thread_folder tf JOIN folder f ON f.id = tf.folder_id
+              WHERE f.role NOT IN ('deleted', 'junk', 'banned') ORDER BY tf.thread_id LIMIT 1",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    let deleted: i64 = store.conn().query_row("SELECT id FROM folder WHERE role = 'deleted'", [], |r| r.get(0)).unwrap();
+    // Its latest mail is now in Deleted, the most recent of the box (the
+    // aggregates set as `refresh_thread` would).
+    store
+        .conn()
+        .execute_batch(&format!(
+            "DELETE FROM thread_folder WHERE thread_id = {thread} AND folder_id = {deleted};
+             INSERT INTO thread_folder (thread_id, folder_id, date_last_received, date_last_modified, message_count, unread_count)
+                  VALUES ({thread}, {deleted}, 1900000000, 1900000000, 1, 0);
+             UPDATE thread SET date_last_received = 1900000000, date_last_modified = 1900000000 WHERE id = {thread};"
+        ))
+        .unwrap();
+    let everything = store.list_everything(None, None, 5, ThreadSort::Received, &ThreadFilter::default()).unwrap().0;
+    assert_eq!(everything[0].id, thread, "Everything puts it first");
+    let all_mail = all_pages(|c| store.list_all_mail(None, c, 50, ThreadSort::Received, &ThreadFilter::default()).unwrap());
+    let i = all_mail.iter().position(|t| t.id == thread).expect("still in All Mail");
+    assert!(all_mail[i].date_last_received < 1900000000);
+    assert_ne!(all_mail[i].folder_id, deleted);
+    assert!(i == 0 || all_mail[i - 1].date_last_received >= all_mail[i].date_last_received);
+}

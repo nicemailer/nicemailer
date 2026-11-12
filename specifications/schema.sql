@@ -33,7 +33,7 @@ PRAGMA temp_store = MEMORY;
 -- Une base existante est mise à jour par les migrations du noyau
 -- (crates/nm-store/src/migrations.rs) ; ce fichier crée directement la
 -- dernière version.
-PRAGMA user_version = 7;   -- migrations : comparer à la version attendue au démarrage
+PRAGMA user_version = 8;   -- migrations : comparer à la version attendue au démarrage
 
 -- ------------------------------------------------------------
 -- Comptes : état seulement. Les paramètres (adresse, serveurs, identifiants,
@@ -271,6 +271,14 @@ CREATE INDEX idx_thread_folder_list
 -- Même liste, triée par date de modification.
 CREATE INDEX idx_thread_folder_modified
     ON thread_folder (folder_id, date_last_modified DESC, thread_id DESC);
+
+-- Version 8. Tous les dossiers à la fois, par date : le dossier virtuel
+-- All Mail (ui.md, « Sélecteur d'attributs ») parcourt ses dossiers en une
+-- seule passe et s'arrête à la page, au lieu de lire chaque dossier.
+CREATE INDEX idx_thread_folder_received
+    ON thread_folder (date_last_received DESC, thread_id DESC);
+CREATE INDEX idx_thread_folder_date_modified
+    ON thread_folder (date_last_modified DESC, thread_id DESC);
 
 -- ------------------------------------------------------------
 -- Messages bruts (stockage-brut.md) : fichiers immuables adressés par leur
