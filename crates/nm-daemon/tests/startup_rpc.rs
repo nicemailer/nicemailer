@@ -49,3 +49,43 @@ fn a_database_of_a_newer_version_is_reported() {
     let r = report(dir.path());
     assert_eq!((r.kind.as_str(), r.found, r.expected), ("too_new", Some(99), Some(nm_store::SCHEMA_VERSION)));
 }
+
+/// A database of an earlier version that migrates slowly: the body file is
+/// locked by another connection, so the migration waits on it. Meanwhile
+/// `core-upgrading.json` says so (the app shows "upgrading" rather than
+/// "unreachable"), and a SIGTERM stops the core with code 0: launchd does
+/// not start it again, where a core killed in the middle of a migration was
+/// restarted and started the migration over (`docs/app-bundle.md`).
+#[test]
+fn an_upgrade_is_announced_and_a_stop_cancels_it_cleanly() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("nicemailer.db");
+    nm_store::rusqlite::Connection::open(&db)
+        .unwrap()
+        .execute_batch(include_str!("../../nm-store/tests/fixtures/schema_v1.sql"))
+        .unwrap();
+    // A write lock on the body file, held by this test.
+    let blocker = nm_store::rusqlite::Connection::open(nm_store::body_path(&db)).unwrap();
+    blocker.execute_batch("PRAGMA journal_mode = WAL; CREATE TABLE hold (x); BEGIN IMMEDIATE; INSERT INTO hold VALUES (1);").unwrap();
+    let mut core = start(dir.path());
+    let status_path = dir.path().join("core-upgrading.json");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while !status_path.exists() && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    let status: nm_api::UpgradeStatus = serde_json::from_str(&std::fs::read_to_string(&status_path).unwrap()).unwrap();
+    assert_eq!((status.from, status.to, status.pid), (1, nm_store::SCHEMA_VERSION, core.pid()));
+    assert!(status.started_at > 0);
+    // Stopped while it waits: code 0, the file gone, the database still at
+    // version 1 (the migration rolled back).
+    unsafe { libc::kill(core.pid() as i32, libc::SIGTERM) };
+    assert!(core.exit_status(20).success());
+    assert!(!status_path.exists());
+    drop(blocker);
+    let version: i64 = nm_store::rusqlite::Connection::open(&db).unwrap().query_row("PRAGMA user_version", [], |r| r.get(0)).unwrap();
+    assert_eq!(version, 1);
+    // Started again without the lock: it upgrades, opens, and the file goes.
+    let _core = start(dir.path());
+    Client::connect(dir.path());
+    assert!(!status_path.exists());
+}

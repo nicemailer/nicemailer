@@ -44,3 +44,14 @@ expect mailbox_upgrading =
 mailbox mailboxes/old
 expect mailbox_question =
 expect mailbox_switched = empty,old,old
+# The core upgrading the mailbox (`core-upgrading.json`, written by the core
+# before its migrations; here with the app's own pid): the app says so and
+# waits, instead of "unreachable" (`docs/app-bundle.md`).
+upgrade 9 10
+expect core_status ~ upgrading:
+expect core_status ~ data format 10
+expect core_status ~ 1 min
+snap upgrading
+# The file gone, the app goes on.
+upgrade off
+expect core_status = connected

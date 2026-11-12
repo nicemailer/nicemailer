@@ -1675,6 +1675,24 @@ pub struct UiConfig {
     pub title_bar: String,
 }
 
+/// The core is upgrading the database of its data directory (schema
+/// migrations, `docs/migrations.md`): written to `paths::UPGRADING` before
+/// the migrations start and removed when they end. The core answers no
+/// client meanwhile (its socket opens after the database), so the app reads
+/// this file to say "upgrading" rather than "unreachable", and waits
+/// (`docs/app-bundle.md`, "While the core upgrades the mailbox").
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UpgradeStatus {
+    /// Schema version of the database, and the version it is brought to.
+    pub from: i64,
+    pub to: i64,
+    /// The core's process: a file left by a core that was killed names a
+    /// process that no longer runs, and is ignored.
+    pub pid: u32,
+    /// When it started, in seconds since 1970.
+    pub started_at: u64,
+}
+
 /// Why the core could not run on a data directory: written by the core to
 /// `paths::STARTUP_ERROR` when it stops on an error, read by the app when
 /// no core answers (`docs/app-bundle.md`, "When the core cannot start").
@@ -1777,6 +1795,10 @@ pub mod paths {
     /// (`StartupError`, JSON), inside the data directory. Removed once a
     /// core runs there.
     pub const STARTUP_ERROR: &str = "core-error.json";
+    /// The database is being upgraded (`UpgradeStatus`, JSON), inside the
+    /// data directory: written by the core before migrating, removed once
+    /// the database is open (or the upgrade stopped).
+    pub const UPGRADING: &str = "core-upgrading.json";
 }
 
 // ---------------------------------------------------------------------------

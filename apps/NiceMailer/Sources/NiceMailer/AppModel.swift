@@ -22,6 +22,9 @@ final class AppModel {
     enum Status: Equatable {
         case connecting
         case connected(coreVersion: String)
+        /// The core is upgrading the mailbox (`UpgradeReport`): the message,
+        /// updated every second while the app waits.
+        case upgrading(String)
         case failed(String)
     }
 
@@ -524,12 +527,37 @@ final class AppModel {
             await reloadAll()
             openPendingDeepLink()
         } catch {
+            // A core upgrading the mailbox does not answer yet: say so and
+            // wait for it, then connect.
+            if await waitForUpgrade() {
+                await connect()
+                return
+            }
             // Inside `catch`, the error is implicitly named `error`. A core
             // that stopped on an error said why in its folder: that reason
             // is more useful than "unreachable".
             status = .failed(Self.noCoreMessage(error.localizedDescription,
                                                 report: StartupErrorReport.read(in: DataDirectory.current)))
         }
+    }
+
+    /// While the core of the current mailbox upgrades it (`UpgradeReport`),
+    /// shows `.upgrading` and waits, checking every second. Returns whether
+    /// it waited. A core killed meanwhile leaves the file behind but no
+    /// process: the wait ends, and the usual screen says what follows.
+    /// `dir` and `every` are parameters for the tests.
+    func waitForUpgrade(in dir: URL = DataDirectory.current, every: Duration = .seconds(1)) async -> Bool {
+        let before = status
+        var waited = false
+        while let report = UpgradeReport.read(in: dir), report.isRunning {
+            waited = true
+            status = .upgrading(report.message())
+            try? await Task.sleep(for: every)
+        }
+        // The UI scripts show this screen on a running core (`UIScript`,
+        // `upgrade`): back to it afterwards, without reconnecting.
+        if waited && UIScript.isActive { status = before }
+        return waited
     }
 
     /// What the screen without a core says: the reason the core left in its
@@ -559,6 +587,9 @@ final class AppModel {
             do {
                 return try CoreClient()
             } catch {
+                // Upgrading: no use waiting 8 s for a socket that opens
+                // after the upgrade (`connect` waits for it).
+                if UpgradeReport.read(in: DataDirectory.current)?.isRunning == true { throw error }
                 guard agentState == .enabled, Date() < deadline else {
                     CoreAgent.log.error("no core: \(error.localizedDescription, privacy: .public)")
                     throw error

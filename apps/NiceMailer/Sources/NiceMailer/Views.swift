@@ -29,6 +29,8 @@ struct ContentView: View {
             case .connecting:
                 ProgressView("Connexion au noyau…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+            case .upgrading(let message):
+                UpgradingView(message: message)
             case .failed(let message):
                 ConnectionErrorView(message: message)
             case .connected:
@@ -104,6 +106,25 @@ struct ContentView: View {
 }
 
 /// Shown when the core cannot be reached, with the command to start it.
+/// The core upgrades the mailbox (`AppModel.waitForUpgrade`): what is
+/// happening, the mailbox, and a spinner; the app goes on by itself.
+struct UpgradingView: View {
+    let message: String
+
+    var body: some View {
+        VStack(spacing: 12) {
+            ProgressView()
+            Text(message).multilineTextAlignment(.center).frame(maxWidth: 520)
+            Text(DataDirectory.current.path)
+                .font(.system(.body, design: .monospaced))
+                .textSelection(.enabled)
+                .foregroundStyle(.secondary)
+        }
+        .padding()
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
 struct ConnectionErrorView: View {
     @Environment(AppModel.self) private var model
     let message: String

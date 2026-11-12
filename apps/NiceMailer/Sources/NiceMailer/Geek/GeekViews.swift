@@ -70,7 +70,10 @@ private struct GeekWindow: View {
     }
 
     @ViewBuilder private var content: some View {
-        if case .failed(let message) = model.status, !UIScript.isActive {
+        if case .upgrading(let message) = model.status {
+            // The core upgrades the mailbox: say so, the app waits.
+            UpgradingView(message: message).font(.geek(12))
+        } else if case .failed(let message) = model.status, !UIScript.isActive {
             // No core: what to do, and the button that allows it.
             ConnectionErrorView(message: message).font(.geek(12))
         } else {
@@ -296,6 +299,8 @@ struct GeekStatusBar: View {
                 Text(flash).foregroundStyle(Palette.muted).lineLimit(1).truncationMode(.middle)
             } else if case .failed(let message) = model.status {
                 Text(message).foregroundStyle(Palette.error).lineLimit(1)
+            } else if case .upgrading = model.status {
+                Text(L("upgrading the mailbox…")).foregroundStyle(Palette.muted).lineLimit(1)
             }
             if !model.marked.isEmpty {
                 Text(L("%lld marked", model.marked.count)).foregroundStyle(Palette.markedBar)

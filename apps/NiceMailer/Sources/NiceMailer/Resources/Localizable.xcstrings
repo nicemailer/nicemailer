@@ -172,6 +172,17 @@
         }
       }
     },
+    "%lld min %lld s": {
+      "comment": "Minutes and seconds since the upgrade of the mailbox started.",
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld min %lld s"
+          }
+        }
+      }
+    },
     "%lld months": {
       "comment": "A typed duration, inserted in “newer than %@” / “older than %@”.",
       "localizations": {
@@ -189,6 +200,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "%lld autres mails rangés"
+          }
+        }
+      }
+    },
+    "%lld s": {
+      "comment": "Seconds since the upgrade of the mailbox started.",
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld s"
           }
         }
       }
@@ -1757,6 +1779,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Le noyau ne peut pas ouvrir cette base : elle a été écrite par une version plus récente de NiceMailer (format de données %1$lld ; celle-ci lit le %2$lld). Mettez NiceMailer à jour, ou choisissez une autre base."
+          }
+        }
+      }
+    },
+    "The core is upgrading this mailbox to the data format %lld (from %lld), for %@. It is done once, and can take a few minutes on a large mailbox: NiceMailer opens as soon as it ends. Do not stop the core meanwhile.": {
+      "comment": "Screen shown while the core migrates the database: target version, source version, elapsed time.",
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le noyau met à jour cette base au format de données %lld (depuis %lld), depuis %@. C'est fait une seule fois, et peut prendre quelques minutes sur une grosse base : NiceMailer s'ouvre dès que c'est fini. N'arrêtez pas le noyau pendant ce temps."
           }
         }
       }
@@ -3350,6 +3383,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "la mettre à jour et l’utiliser (les versions plus anciennes de NiceMailer ne l’ouvriront plus : copiez d’abord le dossier pour les garder capables de l’ouvrir)"
+          }
+        }
+      }
+    },
+    "upgrading the mailbox…": {
+      "comment": "Status bar while the core upgrades the mailbox.",
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "mise à jour de la base…"
           }
         }
       }

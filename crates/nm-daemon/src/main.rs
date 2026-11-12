@@ -230,7 +230,7 @@ async fn main() -> anyhow::Result<()> {
 async fn run(args: Args, data_dir: &Path) -> anyhow::Result<()> {
     let data_dir = data_dir.to_path_buf();
     let db_path = data_dir.join(nm_api::paths::DATABASE);
-    let mut store = Store::open(&db_path).with_context(|| format!("ouverture de {}", db_path.display()))?;
+    let mut store = open_store(&data_dir, &db_path).await?;
     // Opened after the writing store, which creates or migrates the
     // database. Six connections for the clients: since the requests of a
     // connection run in parallel (`serve`), the app may have a list, a
@@ -387,6 +387,78 @@ async fn run(args: Args, data_dir: &Path) -> anyhow::Result<()> {
     }
     cleanup(&socket_path);
     Ok(())
+}
+
+/// Opens the writing store, which migrates an older database first
+/// (`docs/migrations.md`). A migration can take minutes on a large mailbox
+/// (version 10 copies the bodies: 4 minutes for 400,000 mails), and the
+/// socket only opens after it, so:
+/// - `core-upgrading.json` says it is under way (`nm_api::UpgradeStatus`):
+///   the app shows "upgrading" and waits, instead of "unreachable";
+/// - the opening runs on a thread of its own while this task watches for
+///   SIGTERM and Ctrl-C. Before, a stop during a migration killed the core
+///   (its signal handler was not installed yet): launchd saw a failure,
+///   started it again (`KeepAlive`), and the migration started over each
+///   time. Now a stop cancels the migration and leaves with code 0, which
+///   launchd does not restart. The migration of a version is one
+///   transaction: cancelled, it is rolled back, and done again at the next
+///   start.
+async fn open_store(data_dir: &Path, db_path: &Path) -> anyhow::Result<Store> {
+    let upgrade = match nm_store::inspect::inspect(db_path) {
+        nm_store::inspect::DatabaseState::Upgradable { from, to } => Some((from, to)),
+        _ => None,
+    };
+    let status_path = data_dir.join(nm_api::paths::UPGRADING);
+    if let Some((from, to)) = upgrade {
+        eprintln!("mise à jour de la base : version {from} vers {to}, peut prendre plusieurs minutes");
+        let status = nm_api::UpgradeStatus {
+            from,
+            to,
+            pid: std::process::id(),
+            started_at: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0),
+        };
+        write_atomically(&status_path, &serde_json::to_string(&status).expect("plain struct"));
+    }
+    let path = db_path.to_path_buf();
+    // Rust note: `spawn_blocking` runs a synchronous function on a thread
+    // pool made for blocking work, and gives a future of its result; the
+    // `Store` it returns can cross threads (`Send`).
+    let opening = tokio::task::spawn_blocking(move || Store::open(&path));
+    let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
+    let started = std::time::Instant::now();
+    let result = tokio::select! {
+        r = opening => r.map_err(|e| anyhow::anyhow!("ouverture interrompue : {e}"))?,
+        _ = sigterm.recv() => stopped_while_opening(&status_path, upgrade.is_some()),
+        _ = tokio::signal::ctrl_c() => stopped_while_opening(&status_path, upgrade.is_some()),
+    };
+    let _ = fs::remove_file(&status_path);
+    if let Some((from, to)) = upgrade
+        && result.is_ok()
+    {
+        eprintln!("mise à jour de la base : version {from} vers {to} faite en {:.0} s", started.elapsed().as_secs_f64());
+    }
+    result.with_context(|| format!("ouverture de {}", db_path.display()))
+}
+
+/// A stop while the database opens: the opening thread is abandoned with
+/// the process, and SQLite rolls its transaction back at the next opening.
+/// Code 0, so that launchd does not start the core again at once.
+fn stopped_while_opening(status_path: &Path, upgrading: bool) -> ! {
+    let _ = fs::remove_file(status_path);
+    if upgrading {
+        eprintln!("arrêt demandé pendant la mise à jour de la base : annulée, elle reprendra au prochain démarrage");
+    }
+    std::process::exit(0)
+}
+
+/// Writes `text` to `path` through a temporary file and a rename, so that
+/// a reader never sees half a file.
+fn write_atomically(path: &Path, text: &str) {
+    let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let tmp = path.with_file_name(format!(".{name}.tmp"));
+    if let Err(e) = fs::write(&tmp, text).and_then(|()| fs::rename(&tmp, path)) {
+        eprintln!("{} : écriture impossible ({e})", path.display());
+    }
 }
 
 /// Writes why the core could not run to `core-error.json` of its data

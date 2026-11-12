@@ -94,6 +94,65 @@ struct MailboxDecisionTests {
     }
 }
 
+/// The core upgrading the mailbox (`core-upgrading.json`,
+/// `docs/app-bundle.md`): the app says so and waits, instead of
+/// "unreachable".
+@MainActor
+struct UpgradeWaitTests {
+    func folder() throws -> URL {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("nm-upgrade-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    func write(_ json: String, in dir: URL) throws {
+        try Data(json.utf8).write(to: dir.appendingPathComponent("core-upgrading.json"))
+    }
+
+    @Test func theReportIsReadAsTheCoreWritesIt() throws {
+        let dir = try folder()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        #expect(UpgradeReport.read(in: dir) == nil)
+        // As the core writes it (`nm_api::UpgradeStatus`).
+        try write(#"{"from":9,"to":10,"pid":\#(getpid()),"started_at":1000}"#, in: dir)
+        let r = try #require(UpgradeReport.read(in: dir))
+        #expect(r == UpgradeReport(from: 9, to: 10, pid: getpid(), startedAt: 1000))
+        #expect(r.isRunning)
+        // The time since it started, in minutes past a minute.
+        let text = r.message(now: Date(timeIntervalSince1970: 1075))
+        #expect(text.contains("10") && text.contains("9") && text.contains(L("%lld min %lld s", 1, 15)))
+        #expect(r.message(now: Date(timeIntervalSince1970: 1042)).contains(L("%lld s", 42)))
+        // A core killed during the upgrade leaves the file, with a pid that
+        // no longer runs: ignored.
+        let dead = Process()
+        dead.executableURL = URL(fileURLWithPath: "/usr/bin/true")
+        try dead.run()
+        dead.waitUntilExit()
+        #expect(!UpgradeReport(from: 9, to: 10, pid: dead.processIdentifier, startedAt: 0).isRunning)
+        try write("garbage", in: dir)
+        #expect(UpgradeReport.read(in: dir) == nil)
+    }
+
+    @Test func theAppWaitsWhileTheCoreUpgrades() async throws {
+        let dir = try folder()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let model = AppModel()
+        // Nothing to wait for: no file, or the file of a core that is gone.
+        #expect(await model.waitForUpgrade(in: dir, every: .milliseconds(10)) == false)
+        try write(#"{"from":9,"to":10,"pid":999999,"started_at":1}"#, in: dir)
+        #expect(await model.waitForUpgrade(in: dir, every: .milliseconds(10)) == false)
+        // A running core: the status says so until the file goes.
+        try write(#"{"from":9,"to":10,"pid":\#(getpid()),"started_at":1}"#, in: dir)
+        let wait = Task { await model.waitForUpgrade(in: dir, every: .milliseconds(10)) }
+        #expect(await eventually {
+            if case .upgrading(let message) = model.status { return message.contains("10") }
+            return false
+        })
+        try FileManager.default.removeItem(at: dir.appendingPathComponent("core-upgrading.json"))
+        #expect(await wait.value == true)
+    }
+}
+
 @MainActor
 struct MailboxChangeTests {
     let core = FakeCore(handler: Fixture.answer)

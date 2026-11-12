@@ -242,6 +242,25 @@ private final class Runner {
                 "denied": .denied, "unavailable": .unavailable, "authorized": .authorized, "undetermined": .notDetermined,
             ]
             if let book = model.addressBook as? FixtureAddressBook, let value = access[arg] { book.setAccess(value) }
+        case "upgrade":
+            // `upgrade 9 10`: the core of the scenario announced as upgrading
+            // the mailbox, as a real core does before its migrations
+            // (`core-upgrading.json`, with the app's own pid, which runs);
+            // the app shows its screen and waits. `upgrade off`: the file
+            // removed, the wait ends.
+            let file = DataDirectory.current.appendingPathComponent("core-upgrading.json")
+            if arg == "off" {
+                try? FileManager.default.removeItem(at: file)
+            } else {
+                let v = arg.split(separator: " ").compactMap { Int($0) }
+                let report = UpgradeReport(from: v.first ?? 0, to: v.last ?? 0, pid: getpid(),
+                                           startedAt: Int(Date().timeIntervalSince1970) - 75)
+                let encoder = JSONEncoder()
+                encoder.keyEncodingStrategy = .convertToSnakeCase
+                try? encoder.encode(report).write(to: file)
+                Task { _ = await model.waitForUpgrade() }
+                try? await Task.sleep(for: .milliseconds(100))
+            }
         case "mailbox":
             // "Change Mailbox…" with this folder, as the panel would give
             // it: a path relative to the scenario's data directory
@@ -589,6 +608,16 @@ private final class Runner {
             "mailbox_switched": UIScript.mailboxesSwitched.joined(separator: ","),
             "mailbox_question": m.pendingUpgrade.map { "\($0.url.lastPathComponent) \($0.from)->\($0.to)" } ?? "",
             "mailbox_upgrading": m.upgradingMailbox?.lastPathComponent ?? "",
+            // The connection: connecting, connected, upgrading: <message>,
+            // failed: <message>.
+            "core_status": {
+                switch m.status {
+                case .connecting: "connecting"
+                case .connected: "connected"
+                case .upgrading(let message): "upgrading: \(message)"
+                case .failed(let message): "failed: \(message)"
+                }
+            }(),
             "sticky": m.stickyThreadId.map(String.init) ?? "",
             "reader_folder": m.selectedThreadFolderLabel ?? "",
             "list_rows": "\(c.listVisibleRows)",

@@ -151,6 +151,37 @@ struct CLIMailboxTool: MailboxTool {
     }
 }
 
+/// The core is upgrading the database of a folder: `core-upgrading.json`,
+/// written by the core before its migrations and removed when they end
+/// (`nm_api::UpgradeStatus`, `docs/app-bundle.md`, "While the core upgrades
+/// the mailbox"). Its socket only opens afterwards: without this file the
+/// app could only say "unreachable", and a user who then stopped the core
+/// made the upgrade start over.
+struct UpgradeReport: Codable, Equatable {
+    let from: Int
+    let to: Int
+    let pid: Int32
+    let startedAt: Int
+
+    /// The file of `dir`, if any.
+    static func read(in dir: URL) -> UpgradeReport? {
+        guard let data = try? Data(contentsOf: dir.appendingPathComponent("core-upgrading.json")) else { return nil }
+        return try? CoreClient.decoder.decode(UpgradeReport.self, from: data)
+    }
+
+    /// Whether its core still runs: a core killed during the upgrade leaves
+    /// the file behind, naming a process that is gone. `kill` with signal 0
+    /// sends nothing, it only checks that the process exists.
+    var isRunning: Bool { pid > 0 && kill(pid, 0) == 0 }
+
+    /// What the screen says, with the time since the upgrade started.
+    func message(now: Date = Date()) -> String {
+        let elapsed = max(0, Int(now.timeIntervalSince1970) - startedAt)
+        let since = elapsed < 60 ? L("%lld s", elapsed) : L("%lld min %lld s", elapsed / 60, elapsed % 60)
+        return L("The core is upgrading this mailbox to the data format %lld (from %lld), for %@. It is done once, and can take a few minutes on a large mailbox: NiceMailer opens as soon as it ends. Do not stop the core meanwhile.", to, from, since)
+    }
+}
+
 /// Why the core could not run on a folder: `core-error.json`, written by
 /// the core (`nm_api::StartupError`), removed when one starts there.
 struct StartupErrorReport: Decodable, Equatable {
