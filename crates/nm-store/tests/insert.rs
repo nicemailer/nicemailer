@@ -133,7 +133,11 @@ fn headers_first_then_the_body() {
 
     let (done, changes) = env.body(&mut ins, id, ORIGINAL);
     assert_eq!(done, Completed::Done);
-    assert_eq!(changes.messages.len(), 1, "a client showing it wants its body");
+    // With its thread: the app reloads the reader from `MessageChanged`
+    // alone, no `ThreadChanged` comes with a body (`AppModel.handle`).
+    let thread = env.int("SELECT thread_id FROM message WHERE id = ?1", id);
+    assert!(thread.is_some());
+    assert_eq!(changes.messages.iter().collect::<Vec<_>>(), [&(id, thread)], "a client showing it wants its body");
     assert_eq!(env.int("SELECT body_state FROM message WHERE id = ?1", id), Some(1));
     assert_eq!(env.int("SELECT has_attachments FROM message WHERE id = ?1", id), Some(1));
     assert_eq!(env.count("SELECT count(*) FROM raw_blob"), 1);

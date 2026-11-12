@@ -822,12 +822,34 @@ final class AppModel {
                 flash = AppModel.revertedFlash(kind: kind, reason: reason)
             }
             return
+        case "MessageChanged":
+            // Not always followed by `ThreadChanged`: a body that has just
+            // been downloaded (`Inserter::complete`, `docs/ingestion.md`)
+            // changes only its message. A mail is listed and opened as soon
+            // as its headers are in, so without this the reader kept
+            // "(body not downloaded)" until the user left the mail and came
+            // back to it.
+            guard let t = e.params["thread_id"]?.int, let dirty = messageDirties(thread: t) else { return }
+            dirtyThreads.insert(t)
+            dirtyFolders.formUnion(dirty)
         default:
-            // MessageChanged is always followed by ThreadChanged, which is
-            // enough for what the app displays.
             return
         }
         scheduleRefresh(full: false)
+    }
+
+    /// What a `MessageChanged` of thread `t` invalidates on screen, or `nil`
+    /// when it shows nothing of it. The open thread is reloaded (the reader
+    /// shows the body); a listed thread reloads its list, whose row shows
+    /// the snippet that comes with the body. A thread neither open nor
+    /// listed reloads nothing: while the bodies of a whole account come
+    /// in (twenty per batch, one event each), only those of the mails on
+    /// screen cost a reload, and `scheduleRefresh` groups them.
+    private func messageDirties(thread t: Int) -> Set<Int>? {
+        let row = threads.first { $0.id == t }
+        guard row != nil || openThread?.id == t else { return nil }
+        // An empty set still reloads the open thread (`dirtyThreads`).
+        return row.map { [$0.folderId] } ?? []
     }
 
     /// Where an event stands in the stream (`evenements.md`): transient
