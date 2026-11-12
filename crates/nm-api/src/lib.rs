@@ -966,6 +966,12 @@ pub struct MessageView {
     /// `phones.rs` in nm-store). Only `http`, `https`, `mailto` and `tel`.
     #[serde(default)]
     pub links: Vec<LinkView>,
+    /// The verification code the message gives, when it is a code mail
+    /// ("Votre code de vérification : 610731"): 4 to 8 digits, or 6 to 8
+    /// capitals and digits (`codes.rs` in nm-store). Offered first by the
+    /// `l` panel, where Return copies it.
+    #[serde(default)]
+    pub verification_code: Option<String>,
 }
 
 /// A link of a message (`MessageView.links`).

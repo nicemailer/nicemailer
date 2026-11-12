@@ -56,6 +56,12 @@ for script in "${scripts[@]}"; do
     for _ in $(seq 50); do [ -S "$dir/core.sock" ] && break; sleep 0.1; done
     NICEMAILER_DATA_DIR="$dir" "$CLI" import-mbox "$APP/UITests/fixtures/sample.mbox" \
         --account fixture --address me@example.com >/dev/null 2>&1
+    # A scenario may add mail of its own (fixtures/<scenario>.mbox), so the
+    # mail the others count stays the same.
+    if [ -f "$APP/UITests/fixtures/$name.mbox" ]; then
+        NICEMAILER_DATA_DIR="$dir" "$CLI" import-mbox "$APP/UITests/fixtures/$name.mbox" \
+            --account fixture --address me@example.com >/dev/null 2>&1
+    fi
     mkdir -p "$dir/exports"
     # perl's alarm gives the app 120 s at most (macOS has no `timeout`).
     # `-AppleLanguages (en)`: English UI whatever the machine's language, so

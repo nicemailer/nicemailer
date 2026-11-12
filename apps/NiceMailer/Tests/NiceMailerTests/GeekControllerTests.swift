@@ -465,6 +465,51 @@ struct GeekControllerTests {
         #expect(controller.pickerEntries(.links).first?.label == L("Link to this mail"))
     }
 
+    // MARK: Verification codes
+
+    /// A code mail: its code is the first row of `l`, with a lock, and
+    /// Return (or ⌘-Return) copies it. In a thread, the latest code wins:
+    /// a site asked twice sends two codes, and only the last one works.
+    @Test func theCodeOfACodeMailIsTheFirstRowOfLAndReturnCopiesIt() async {
+        core.handler = { method, params in
+            guard method == "get_thread", params["thread_id"] as? Int == 2 else { return Fixture.answer(method, params) }
+            var thread = Fixture.threadView(2)
+            let m = (thread["messages"] as! [[String: Any]])[0]
+            var older = m, newer = m, after = m
+            older["id"] = 20; older["verification_code"] = "111111"
+            newer["id"] = 21; newer["verification_code"] = "482913"
+            // A later message without a code does not hide it.
+            after["id"] = 22; after["verification_code"] = NSNull()
+            thread["messages"] = [older, newer, after]
+            return thread
+        }
+        model.selectedThreadId = 2
+        _ = await eventually { model.openThread?.id == 2 }
+        press("l")
+        let rows = controller.pickerEntries(.links)
+        #expect(rows.first?.label == "482913")
+        #expect(rows.first?.detail == L("Verification code"))
+        #expect(rows.first?.icon == "lock.fill")
+        #expect(rows.first?.key == "1")
+        #expect(rows.dropFirst().first?.label == L("Link to this mail"))
+        press("ret")
+        #expect(controller.pasteboard.string(forType: .string) == "482913")
+        #expect(controller.overlay == .none)
+        #expect(model.flash == L("Code %@ copied", "482913"))
+        // ⌘-Return copies it too, and typing "code" finds the row.
+        controller.pasteboard.clearContents()
+        press("l"); type("code")
+        #expect(controller.pickerEntries(.links).first?.label == "482913")
+        press("cmd-ret")
+        #expect(controller.pasteboard.string(forType: .string) == "482913")
+    }
+
+    @Test func aMailWithoutACodeHasNoCodeRow() {
+        press("l")
+        #expect(controller.pickerEntries(.links).first?.label == L("Link to this mail"))
+        #expect(!controller.pickerEntries(.links).contains { $0.icon == "lock.fill" })
+    }
+
     @Test func aDeepLinkOpensTheMailInItsFolderAndClosesThePanels() async {
         core.handler = { method, params in
             guard method == "locate_message" else { return Fixture.answer(method, params) }

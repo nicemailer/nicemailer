@@ -641,6 +641,16 @@
         }
       }
     },
+    "Code %@ copied": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Code %@ copié"
+          }
+        }
+      }
+    },
     "Connection to the core lost": {
       "localizations": {
         "fr": {
@@ -2150,6 +2160,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Utiliser cette base"
+          }
+        }
+      }
+    },
+    "Verification code": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Code de vérification"
           }
         }
       }

@@ -1,0 +1,16 @@
+From x Tue Nov 10 09:00:00 2026
+From: Exemple Cloud <no-reply@cloud.example.com>
+To: me@example.com
+Subject: Votre code de vérification
+Message-ID: <code1@cloud.example.com>
+Content-Type: text/plain; charset=utf-8
+
+Bonjour,
+
+Saisissez le code ci-dessous pour vous connecter à votre compte :
+
+482913
+
+Ce code expire dans 10 minutes. Ne le communiquez à personne.
+
+https://cloud.example.com/aide

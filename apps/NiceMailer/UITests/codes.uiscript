@@ -1,0 +1,36 @@
+# Verification codes: the code of a code mail is the first row of l, with
+# a lock; Return copies it. The code mail comes from fixtures/codes.mbox,
+# imported for this scenario only.
+# The imported mail is in Archive, of the account "fixture".
+key ;
+key a
+expect folder = Archive
+key @
+type fixture
+key ret
+expect account = fixture
+expect folder = Archive
+expect selected_subject = Votre code de vérification
+key l
+expect picker_first = 482913
+expect picker_first_icon = lock.fill
+expect picker_first_detail = Verification code
+expect picker_rows ~ 482913 | Link to this mail | cloud.example.com
+snap codes-links
+key ret
+expect overlay = none
+expect pasteboard = 482913
+expect flash = Code 482913 copied
+# Typing finds it too; ⌘-Return copies it as well.
+key l
+type code
+expect picker_first = 482913
+key cmd-ret
+expect pasteboard = 482913
+# The next mail gives no code: the link to the mail comes first again.
+key j
+expect selected_subject = La lettre de novembre
+key l
+expect picker_first = Link to this mail
+expect picker_rows !~ 482913
+key esc

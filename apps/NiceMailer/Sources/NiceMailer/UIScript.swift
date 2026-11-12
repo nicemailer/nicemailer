@@ -568,6 +568,11 @@ private final class Runner {
                 if case .picker(let k) = c.overlay { return c.pickerEntries(k).first?.detail ?? "" }
                 return ""
             }(),
+            // Symbol of the first row ("lock.fill" for a verification code).
+            "picker_first_icon": {
+                if case .picker(let k) = c.overlay { return c.pickerEntries(k).first?.icon ?? "" }
+                return ""
+            }(),
             // The hint of the input line, shown while nothing is typed.
             "picker_hint": {
                 if case .picker(let k) = c.overlay, c.pickerQuery.isEmpty { return c.pickerHint(k) ?? "" }

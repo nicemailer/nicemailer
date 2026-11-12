@@ -79,6 +79,26 @@ The HTML is read because the text the core makes from an HTML part (an HTML-only
 
 `crates/nm-store/tests/links.rs` covers a botched text part replaced by its HTML, an HTML-only mail and a text mail with a phone number; `links.rs` itself the scanner (entities, tags inside a link, `>` inside an attribute, links left open, schemes, bounds, a number given by a `tel:` link and the text once, touching anchors joined or kept apart, one link behind several tracking addresses with its other texts, invisible texts, targets read or refused); `phones.rs` the formats, the numbers that are not phones, addresses, faxes and a huge line.
 
+## Verification codes
+
+`get_thread` gives with each message its `verification_code`: the one-time code it gives when it is a code mail ("Votre code de vérification : 610731"), or `null` (`crates/nm-store/src/codes.rs`). The app offers it first in the `l` panel, where Return copies it (`docs/geek-ui.md`).
+
+**What a code looks like.** A word of its own: 4 to 8 digits (`3280`, `610731`, `78355770`, not a year 1900–2099); 6 to 8 capitals and digits with at least one of each (`4T39TT`, `1RLUBS`, `VSM6WQZ7`), but not a word and a number of two or more digits (`BOOMER30`, `NEWS1120`, `BF2024`: promotion codes); 6 to 8 capitals without a vowel (`PGXFGG`: generators leave vowels out so that a code never spells a word); two groups of three with a dash or a space (`904-426`, `65A-TQC`, `831 884`), given without the separator, as the field that takes it expects. A masked number (`XXXX0405`), a word inside an address (`…/2fa?code=G49DTC&…`) and a number with dots, colons, slashes or another group of digits next to it (dates, times, IP addresses, `2641 801 9509`) are never codes.
+
+**Which mails.** Only a mail that speaks of a code to type: the word "code" with, within 40 characters, a word that says what for (verification, confirmation, security, authentication, login, connexion, validation, one-time use, temporary, OTP, 2FA, "à 6 chiffres", "digits", identity, access, recovery, reset, "expire", "minutes", "valable" before a duration), or "OTP", "passcode", "one-time password" alone. These words start a word ("digitale" is not "digits"). A "code" followed or preceded by what makes it another kind of code does not count: promo, postal, gift, coupon, cadeau, exclusif, offert, réservation, client, erreur, error, exit, status, the law ("code du travail", "code de la sécurité sociale"). A reply or a forward (`RE:`, `TR:`, `Fwd:`) is not a code mail: a conversation between people that speaks of codes holds references and numbers far more often than a code to type.
+
+**Where the code is**, in this order:
+
+1. the subject, when it gives it (`Votre code ChatGPT : 797899`, `[Gandi] 772432 - …`);
+2. a line of its own in the body (one word, or two groups of three), within 300 characters of a word that announces it ("code", "OTP", "passcode", "mot de passe"), counted once runs of spaces are collapsed (an HTML layout can put thousands between the sentence and the code). When the subject does not say the mail is a code mail, only the qualified words of the body announce: a newsletter that mentions a "code de sécurité" once does not lend its other "code" words to the numbers of its footer;
+3. the first number after an announcing word, on its line or the next (`enter this verification code: 651440`, `est le suivant :\n427242 Il est valable`), then the last one before it (`036764 is your OTP code`); nothing if that number is not a code. Only there may digits be glued to the text (`compte IKEA.677412Veiller`, a layout that lost its line breaks), 6 at least, and not after a letter (`ju0583116` is an order number).
+
+The text part is read first (20,000 characters at most, after collapsing whitespace); the HTML's text when the text part is empty, or when it gives no code (some stop short of it). In a thread, the app shows the code of the latest message that has one.
+
+**Measured** on a real mailbox of 400,000 messages: 615 codes found in 37 s (about 90 µs per message, HTML conversions included), all 26 sample code mails right; among those found, three known false ones (a promotion `25NANO`, a number in a conversation, a scam). The rules were tuned by reading, each time, the codes lost and gained over the whole mailbox: no rule names a sender. Not found: codes in no mail text (an image), a 4-digit code that reads as a year, a forward of a code mail, a permanent PIN announced with no qualifying word ("Votre code d'accès Flying Blue est : 0358").
+
+`codes.rs` covers each way of showing a code (from the real mails, with their codes and names changed), each kind of number that is not one, promotion codes, replies, the HTML fallback and a huge body.
+
 ## Locating a message
 
 `locate_message {message_id}` answers where a message is, `{message_id, thread_id, folder_id, account_id}` (`thread_id` null for a message not linked to a thread yet), or the error `1001` when it is not in the database. The app uses it to open a deep link `nicemailer://m/<id>` (`docs/deep-links.md`).

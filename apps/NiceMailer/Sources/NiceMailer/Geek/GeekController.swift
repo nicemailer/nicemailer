@@ -843,6 +843,14 @@ final class GeekController {
         model.flash = markdown ? L("Markdown link copied: %@", text) : L("Link copied: %@", text)
     }
 
+    /// Copies a verification code (the first row of `l`), to paste it in
+    /// the site or the app that asked for it.
+    func copyVerificationCode(_ code: String) {
+        pasteboard.clearContents()
+        pasteboard.setString(code, forType: .string)
+        model.flash = L("Code %@ copied", code)
+    }
+
     /// A deep link was opened (`AppModel.openDeepLink`): the mail is
     /// selected in its folder; the panels close and, in one column, the
     /// mail fills the window, as after Return.
@@ -1322,7 +1330,17 @@ final class GeekController {
             // whole address is a hidden keyword, so typing part of it finds
             // the row too.
             let links = model.links
-            // First, the link to this mail itself, for a note app
+            // First of all, the verification code of a code mail
+            // (`ui.md`, "Codes de vérification"): what the user opened the
+            // mail for. Return copies it, ⌘-Return too.
+            let codeRow = model.verificationCode.map { code in
+                Entry(key: "", label: code, detail: L("Verification code"), detailStyle: .info, icon: "lock.fill",
+                      commandAction: { [weak self] in self?.copyVerificationCode(code) },
+                      keywords: ["code", "otp", L("Verification code")]) { [weak self] in
+                    self?.copyVerificationCode(code)
+                }
+            }
+            // Then the link to this mail itself, for a note app
             // (`DeepLink`): Return copies it as a Markdown link, ⌘-Return as
             // a bare URL.
             let selfRow = model.deepLinkMessageId.map { id in
@@ -1361,7 +1379,7 @@ final class GeekController {
             // Which link rows are bare (no text, not a number); each group
             // keeps the order `merge` gave it.
             let bare = links.map { $0.text == nil && !$0.isPhone }
-            let ordered = Array([selfRow].compactMap { $0 }) + contactRows + zip(linkRows, bare).filter { !$0.1 }.map(\.0) + fileRows
+            let ordered = [codeRow, selfRow].compactMap { $0 } + contactRows + zip(linkRows, bare).filter { !$0.1 }.map(\.0) + fileRows
                 + zip(linkRows, bare).filter { $0.1 }.map(\.0)
             // Numbered once ordered: the number is the row's place.
             all = ordered.enumerated().map { i, e in

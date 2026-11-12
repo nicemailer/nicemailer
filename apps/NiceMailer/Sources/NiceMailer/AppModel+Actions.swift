@@ -500,6 +500,13 @@ extension AppModel {
         return Link.merge(thread.messages.map(\.links)).filter { !known.contains($0.key) }
     }
 
+    /// The verification code of the open thread for `l`: that of its
+    /// latest message giving one, since a newer code replaces the older
+    /// ones (a site asked twice sends two codes, and only the last works).
+    var verificationCode: String? {
+        openThread?.messages.last(where: { $0.verificationCode != nil })?.verificationCode
+    }
+
     /// The senders of the open thread, latest first, each once: the
     /// addresses of its received messages (not those in Sent or Drafts,
     /// which are the user's). People in copy are left out: in a

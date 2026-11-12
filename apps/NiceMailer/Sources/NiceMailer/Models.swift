@@ -160,6 +160,10 @@ struct MessageView: Decodable, Identifiable, Hashable {
     /// their text) and in the text part (`links.rs`): the text made from an
     /// HTML has no address left to look for.
     var links: [LinkView] = []
+    /// The verification code the message gives, when it is a code mail
+    /// (`codes.rs` in the core): offered first by `l`, where Return copies
+    /// it.
+    var verificationCode: String? = nil
 }
 
 /// Where a message is (`locate_message`), to open a deep link.

@@ -795,6 +795,7 @@ impl Store {
                     tracking_pixels: r.get(22)?,
                     // Filled below, from the bodies just read.
                     links: vec![],
+                    verification_code: None,
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -832,6 +833,9 @@ impl Store {
                 .into_iter()
                 .map(|l| nm_api::LinkView { url: l.url, text: l.text, target: l.target, other_texts: l.other_texts })
                 .collect();
+            // Its verification code, read the same way: from the subject
+            // and the bodies already in memory (`codes.rs`).
+            m.verification_code = crate::codes::find(&m.subject, m.body_text.as_deref(), m.body_html.as_deref());
         }
         // Embedded images get a source the reader can load (`nm-cid:`,
         // `attachments.rs`). Done here rather than stored: the attachment

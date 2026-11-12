@@ -53,6 +53,7 @@ pub mod ingest;
 pub mod library;
 pub mod links;
 pub mod phones;
+pub mod codes;
 pub mod mbox;
 pub mod outgoing;
 mod migrations;
