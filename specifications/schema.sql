@@ -33,7 +33,7 @@ PRAGMA temp_store = MEMORY;
 -- Une base existante est mise à jour par les migrations du noyau
 -- (crates/nm-store/src/migrations.rs) ; ce fichier crée directement la
 -- dernière version.
-PRAGMA user_version = 10;   -- migrations : comparer à la version attendue au démarrage
+PRAGMA user_version = 11;   -- migrations : comparer à la version attendue au démarrage
 
 -- ------------------------------------------------------------
 -- Comptes : état seulement. Les paramètres (adresse, serveurs, identifiants,
@@ -311,6 +311,19 @@ CREATE INDEX idx_thread_live_modified ON thread (date_last_modified, id)
     WHERE folder NOT IN ('d','x','b');
 CREATE INDEX idx_thread_live_account_modified ON thread (account_id, date_last_modified, id)
     WHERE folder NOT IN ('d','x','b');
+
+-- Version 11. Work (ui.md, « Dossiers virtuels ») : Inbox, Todo et Waiting
+-- ensemble. Même principe que All Mail : la requête reprend la condition
+-- telle quelle (queries.rs, WORK). Sans eux, folder IN ('i','t','w') lirait
+-- trois intervalles d'idx_thread_role_received, puis les trierait.
+CREATE INDEX idx_thread_work_received ON thread (date_last_received, id)
+    WHERE folder IN ('i','t','w');
+CREATE INDEX idx_thread_work_account_received ON thread (account_id, date_last_received, id)
+    WHERE folder IN ('i','t','w');
+CREATE INDEX idx_thread_work_modified ON thread (date_last_modified, id)
+    WHERE folder IN ('i','t','w');
+CREATE INDEX idx_thread_work_account_modified ON thread (account_id, date_last_modified, id)
+    WHERE folder IN ('i','t','w');
 
 -- Dossiers techniques : index partiels sur leur drapeau, qui ne contiennent
 -- que les conversations concernées.

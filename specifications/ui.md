@@ -159,9 +159,12 @@ Les attributs avec « … » agrandissent aussitôt le panneau pour choisir la v
 
 `/` est le raccourci de la recherche partout : il ouvre un panneau intitulé « Chercher partout » ; entrée va dans **All Mail** de la vue (tous les dossiers sauf Deleted, Junk et Banned, tous les comptes dans « all ») avec ces mots ; tapé depuis Everything, il reste dans Everything. Le résultat est la liste ordinaire, une ligne par conversation avec son dossier, la pastille et `F` pour affiner. Échap retire les attributs et revient au dossier d'où `/` a été tapé ; si l'on est allé ailleurs entre-temps (`;`, `@`, clic sur un dossier), échap retire seulement les attributs. Un second `/` remplace les mots et garde le dossier de retour. `/` reste le joker le plus large : ses mots sont cherchés partout, sujet, expéditeur, destinataires et texte (pastille « partout : … »), là où Texte… laisse les adresses de côté.
 
-Au pied de la liste des dossiers, deux dossiers virtuels réunissent les dossiers de la vue (de tous les comptes dans « all ») pour chercher avec les attributs (ajouté en novembre 2026 pour All Mail) :
+### Dossiers virtuels
 
-- **All Mail** (`;E`) : tous les dossiers sauf Deleted, Junk et Banned, Quarantine comprise. C'est ce que veulent la plupart des recherches : ce qu'on a supprimé ou rejeté n'y encombre pas les résultats, et le mail d'un expéditeur pas encore accepté s'y trouve. Le nom est celui de Gmail, pour le même sens (tout sauf la corbeille et le spam). Une conversation dont le dernier mail a été supprimé y garde sa place et sa date, celles de son dernier mail resté dans All Mail ; ses critères (De…, À…, pièce jointe, Date mail…) ne regardent que les mails de ces dossiers. Ce sont les conversations dont le dossier n'est ni Deleted, ni Junk, ni Banned (`dossiers.md`, « Dossier d'une conversation ») : une conversation rejetée n'y revient pas par la réponse de l'utilisateur restée dans Sent.
+Trois dossiers virtuels réunissent des dossiers de la vue (de tous les comptes dans « all »). Chacun termine le bloc de ce qu'il réunit dans le menu `;` et la colonne des dossiers, et s'y distingue des vrais dossiers : une icône de pile devant son nom, et la couleur d'accent (la police à chasse fixe du thème n'a pas d'italique). Réorganisé en novembre 2026 : Work ajouté, All Mail passé de `E` à `m`.
+
+- **Work** (`;o`) : Inbox, Todo et Waiting ensemble, ce qui reste à traiter. Chaque ligne affiche son dossier. Ses critères (De…, À…, pièce jointe, Date mail…) ne regardent que les mails de ces trois dossiers.
+- **All Mail** (`;m`) : tous les dossiers sauf Deleted, Junk et Banned, Quarantine comprise. C'est ce que veulent la plupart des recherches : ce qu'on a supprimé ou rejeté n'y encombre pas les résultats, et le mail d'un expéditeur pas encore accepté s'y trouve. Le nom est celui de Gmail, pour le même sens (tout sauf la corbeille et le spam). Une conversation dont le dernier mail a été supprimé y garde sa place et sa date, celles de son dernier mail resté dans All Mail ; ses critères (De…, À…, pièce jointe, Date mail…) ne regardent que les mails de ces dossiers. Ce sont les conversations dont le dossier n'est ni Deleted, ni Junk, ni Banned (`dossiers.md`, « Dossier d'une conversation ») : une conversation rejetée n'y revient pas par la réponse de l'utilisateur restée dans Sent.
 - **Everything** (`;e`) : vraiment tous les dossiers.
 
 Une conversation présente dans plusieurs dossiers (Inbox et Sent) n'y figure qu'une fois, dans son dossier (`dossiers.md`, « Dossier d'une conversation ») : l'Inbox, et non Sent, quand le dernier mail est la réponse de l'utilisateur. Comme la liste mélange tous les dossiers, chaque ligne affiche son dossier (colonne discrète avant le nombre de messages), et le lecteur l'affiche à l'extrémité droite de la ligne du sujet. Dans « all », le compte suit le dossier (« Archive · perso ») : toujours dans le lecteur, et dans la liste seulement si le sujet garde au moins 30 caractères ; sinon le dossier seul.
@@ -209,25 +212,25 @@ z annule le dernier déplacement ou la dernière décision (les mails reviennent
 en une colonne, sur la liste, espace ouvre le mail comme entrée ; mail affiché, espace et ctrl-f le font défiler d'une page vers le bas, maj-espace et ctrl-b vers le haut, en texte comme en HTML
 
 Le prefix ";" permet de changer d’écran
-; aller à un dossier. Le menu (et la colonne des dossiers) les range en blocs cohérents, séparés par une ligne vide : ce qui est à traiter, ce qui est classé, ce qui a été écrit, ce qui a été jeté ; puis Everything, les écrans Contacts, Tags, Groups, et History à part. Les dossiers propres à l'utilisateur forment un bloc après les dossiers classés. Le nombre de mails non lus de chaque dossier est aligné à l'extrémité droite de sa ligne.
+; aller à un dossier. Le menu (et la colonne des dossiers) les range en quatre blocs, séparés par une ligne vide, chacun terminé par son dossier virtuel (« Dossiers virtuels ») : ce qui est à traiter, puis Work ; ce qui est classé, Quarantine comprise (son mail attend une décision sur l'expéditeur, pas un travail) ; ce qui a été écrit, puis All Mail ; ce qui a été jeté, puis Everything. Viennent ensuite les écrans Contacts, Tags, Groups, et History à part. Les dossiers propres à l'utilisateur forment un bloc après les dossiers classés. Le nombre de mails non lus de chaque dossier est aligné à l'extrémité droite de sa ligne.
 
 i Inbox
 t Todo
 w Waiting
-q Quarantine
+o Work
 
 a Archive
 n Newsletter
 p Paperwork
+q Quarantine
 
 s Sent
 r Drafts
+m All Mail
 
 d Deleted
 x Junk
 b Banned
-
-E All Mail
 e Everything
 
 c Contacts

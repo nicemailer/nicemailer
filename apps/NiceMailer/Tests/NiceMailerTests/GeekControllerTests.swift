@@ -267,13 +267,17 @@ struct GeekControllerTests {
 
     @Test func semicolonListsTheFoldersAndEverythingAndHIsFree() {
         let keys = controller.menuEntries(.goto).map(\.key)
-        // Four folders, then "All Mail" (`E`) and "Everything" (`e`), then
-        // the screens.
-        #expect(keys == ["i", "t", "a", "d", "E", "e", "c", "T", "g", "h"])
-        // A gap before each new block: Archive, Deleted, the virtual
-        // folders, Contacts, History.
+        // Four blocks (`ui.md`, "Dossiers virtuels"), each virtual folder
+        // ending the block it gathers: Inbox, Todo, Work (`o`); Archive;
+        // All Mail (`m`), alone here with no Sent nor Drafts; Deleted,
+        // Everything (`e`); then the screens.
+        #expect(keys == ["i", "t", "o", "a", "m", "d", "e", "c", "T", "g", "h"])
+        // A gap before each new block.
         let gaps = controller.menuEntries(.goto).filter(\.gapBefore).map(\.key)
-        #expect(gaps == ["a", "d", "E", "c", "h"])
+        #expect(gaps == ["a", "m", "d", "c", "h"])
+        // The virtual folders are marked to be drawn apart, the others not.
+        let virtual = controller.menuEntries(.goto).filter(\.virtual).map(\.key)
+        #expect(virtual == ["o", "m", "e"])
         press("h")
         #expect(controller.overlay == .none && model.flash != nil)
     }
@@ -315,14 +319,23 @@ struct GeekControllerTests {
         }
         let sorted = GeekController.ordered(folders)
         #expect(sorted.map(\.name) == [
-            "inbox", "todo", "waiting", "quarantine",
-            "archive", "newsletter", "paperwork",
+            "inbox", "todo", "waiting",
+            "archive", "newsletter", "paperwork", "quarantine",
             "Projets",
             "sent", "drafts",
             "deleted", "junk", "banned",
         ])
         // Blocks: 0 to deal with, 2 filed, 3 the user's, 4 sent, 6 thrown away.
-        #expect(sorted.map(\.group) == [0, 0, 0, 0, 2, 2, 2, 3, 4, 4, 6, 6, 6])
+        #expect(sorted.map(\.group) == [0, 0, 0, 2, 2, 2, 2, 3, 4, 4, 6, 6, 6])
+        // With the virtual folders, each ends its block, whatever the order.
+        let all = GeekController.ordered(AppModel.Virtual.allCases.reversed().map(GeekController.virtualFolder) + folders)
+        #expect(all.map(\.name) == [
+            "inbox", "todo", "waiting", "Work",
+            "archive", "newsletter", "paperwork", "quarantine",
+            "Projets",
+            "sent", "drafts", "All Mail",
+            "deleted", "junk", "banned", "Everything",
+        ])
     }
 
     @Test func theMoveSaveAndDisplayBlocksOpenTheirMenus() {
@@ -341,7 +354,8 @@ struct GeekControllerTests {
     @Test func aClickOnAMenuRowActsLikeItsKey() {
         controller.openMenuFromStatusBar(.goto)
         #expect(controller.overlay == .menu(.goto))
-        controller.chooseMenuEntry(2)
+        // Inbox, Todo, Work, Archive: the fourth row.
+        controller.chooseMenuEntry(3)
         #expect(controller.overlay == .none && model.selectedFolderId == 3)
     }
 
@@ -731,10 +745,10 @@ struct GeekControllerTests {
         })
     }
 
-    /// `;E` opens All Mail, `;e` Everything; each is the current one in the
+    /// `;m` opens All Mail, `;e` Everything; each is the current one in the
     /// menu only when shown. A search from Everything stays in Everything.
     @Test func allMailAndEverythingAreTwoVirtualFolders() async {
-        press(";"); press("E")
+        press(";"); press("m")
         #expect(model.everything == .account(1) && model.allMail && model.currentFolderName == "All Mail")
         // Deleted (folder 4) is not listened to: its events change nothing shown.
         #expect(!model.listedFolderIds.contains(4) && model.listedFolderIds.contains(1))
@@ -748,9 +762,24 @@ struct GeekControllerTests {
         #expect(!model.allMail && model.everything == .account(1))
         // A folder leaves both.
         press("esc")
-        press(";"); press("E")
+        press(";"); press("m")
         press(";"); press("a")
         #expect(model.everything == nil && !model.allMail && model.selectedFolderId == 3)
+    }
+
+    /// `;o` opens Work: Inbox, Todo and Waiting together, asked of the
+    /// core with `work`, listening to those folders only.
+    @Test func workGathersInboxTodoAndWaiting() async {
+        press(";"); press("o")
+        #expect(model.everything == .account(1) && model.virtual == .work && model.currentFolderName == "Work")
+        #expect(model.listedFolderIds.sorted() == [1, 2])
+        #expect(controller.scopeFolders.filter { controller.isCurrent($0) }.map(\.name) == ["Work"])
+        #expect(await eventually { (core.calls("list_threads").last?["everything"] as? [String: Any])?["work"] as? Bool == true })
+        // `/` from Work searches All Mail, and Escape comes back to Work.
+        press("/"); type("devis"); press("ret")
+        #expect(model.virtual == .allMail)
+        press("esc")
+        #expect(model.virtual == .work && model.everything == .account(1))
     }
 
     @Test func escapeAfterASearchGoesBackToTheFolder() {

@@ -476,6 +476,9 @@ pub struct ListThreadsParams {
 /// `{"everything": {}}` for every account, `{"everything": {"account_id": 3}}`
 /// for one. With `"all_mail": true`, the virtual folder "All Mail": the
 /// same without Deleted, Junk and Banned (`FolderRole::OUT_OF_ALL_MAIL`).
+/// With `"work": true`, the virtual folder "Work": the conversations of
+/// Inbox, Todo and Waiting together (`FolderRole::WORK`). At most one of
+/// the two.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EverythingScope {
@@ -483,6 +486,8 @@ pub struct EverythingScope {
     pub account_id: Option<i64>,
     #[serde(default)]
     pub all_mail: bool,
+    #[serde(default)]
+    pub work: bool,
 }
 
 /// Attributes that narrow a thread list, combined with AND. A thread

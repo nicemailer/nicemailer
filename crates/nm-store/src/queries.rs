@@ -38,6 +38,12 @@ const THREAD_IS_FLAGGED: &str = "SELECT EXISTS (SELECT 1 FROM message WHERE thre
 /// expressions, not their meaning.
 const ALL_MAIL: &str = "t.folder NOT IN ('d','x','b')";
 
+/// The condition of Work (Inbox, Todo, Waiting together), written exactly
+/// as the `WHERE` of its partial indexes (`idx_thread_work_received`…),
+/// for the same reason as `ALL_MAIL`. With `folder IN (…)` alone, SQLite
+/// would read the three ranges of `idx_thread_role_received` and sort them.
+const WORK: &str = "t.folder IN ('i','t','w')";
+
 /// Parses a list cursor: `<date>:<thread_id>` of the last row of the
 /// previous page, the date being the sort key.
 ///
@@ -95,6 +101,8 @@ enum Scope {
     Flag(FolderRole),
     /// All Mail: every thread but those in Deleted, Junk and Banned.
     AllMail,
+    /// Work: the threads of Inbox, Todo and Waiting.
+    Work,
     /// Everything: every thread with a mail.
     Everything,
     /// A folder without a role: the threads with a mail in it. Such a
@@ -118,6 +126,7 @@ impl Scope {
             Scope::Role(r) => format!("t.folder = '{}'", r.code()),
             Scope::Flag(r) => format!("t.{} = 1", flag_column(r)),
             Scope::AllMail => ALL_MAIL.to_string(),
+            Scope::Work => WORK.to_string(),
             Scope::Everything => "t.message_count > 0".to_string(),
             Scope::Unmanaged(f) => {
                 format!("t.id IN (SELECT thread_id FROM message WHERE folder_id = {f} AND thread_id IS NOT NULL)")
@@ -522,6 +531,46 @@ impl Store {
             )?
             .query_map(params![account_id, out[0], out[1], out[2]], |r| r.get(0))?
             .collect::<std::result::Result<_, _>>()?;
+        self.list_virtual_of(Scope::AllMail, &folders, account_id, cursor, limit, sort, filter)
+    }
+
+    /// The virtual folder "Work" (`ui.md`, "Dossiers virtuels"): the
+    /// conversations of Inbox, Todo and Waiting together, of one account or
+    /// of every account, each in its folder. One walk of the partial index
+    /// `idx_thread_work_received` (or its variants). The attributes look at
+    /// the mails of those three folders.
+    pub fn list_work(
+        &self,
+        account_id: Option<i64>,
+        cursor: Option<&str>,
+        limit: u32,
+        sort: ThreadSort,
+        filter: &ThreadFilter,
+    ) -> Result<(Vec<ThreadSummary>, Option<String>)> {
+        let roles: Vec<&str> = FolderRole::WORK.iter().map(|r| r.as_str()).collect();
+        let folders: Vec<i64> = self
+            .conn
+            .prepare_cached(
+                "SELECT id FROM folder WHERE (?1 IS NULL OR account_id = ?1) AND role IN (?2, ?3, ?4) ORDER BY id",
+            )?
+            .query_map(params![account_id, roles[0], roles[1], roles[2]], |r| r.get(0))?
+            .collect::<std::result::Result<_, _>>()?;
+        self.list_virtual_of(Scope::Work, &folders, account_id, cursor, limit, sort, filter)
+    }
+
+    /// A page of a virtual folder whose criteria look at the mails of
+    /// `folders` (All Mail, Work).
+    #[allow(clippy::too_many_arguments)]
+    fn list_virtual_of(
+        &self,
+        scope: Scope,
+        folders: &[i64],
+        account_id: Option<i64>,
+        cursor: Option<&str>,
+        limit: u32,
+        sort: ThreadSort,
+        filter: &ThreadFilter,
+    ) -> Result<(Vec<ThreadSummary>, Option<String>)> {
         if folders.is_empty() {
             return Ok((vec![], None));
         }
@@ -530,7 +579,7 @@ impl Store {
         let set = folders.iter().map(i64::to_string).collect::<Vec<_>>().join(",");
         let tags = self.tag_ids(filter)?;
         let (filter_sql, filter_values) = filter_clause(filter, &Target::folders(&set), &tags);
-        self.list_virtual(Scope::AllMail, account_id, cursor, limit, sort, &filter_sql, &filter_values)
+        self.list_virtual(scope, account_id, cursor, limit, sort, &filter_sql, &filter_values)
     }
 
     /// A page of Everything or All Mail: one query, each row in its folder.
@@ -868,10 +917,21 @@ fn list_query(
         ThreadSort::Received => "t.date_last_received",
         ThreadSort::Modified => "t.date_last_modified",
     };
+    // Work: its partial index is named. Without statistics, SQLite prefers
+    // to read the three ranges of `idx_thread_role_received` and sort them
+    // (the plan tests caught it). Work holds what is still to deal with, a
+    // small set: walking its index is right even with a rare criterion.
+    let indexed = if scope == Scope::Work {
+        let account = if matches!(accounts, Accounts::One(_)) { "_account" } else { "" };
+        let sort_name = if sort == ThreadSort::Modified { "modified" } else { "received" };
+        format!(" INDEXED BY idx_thread_work{account}_{sort_name}")
+    } else {
+        String::new()
+    };
     let mut sql = format!(
         "SELECT t.id, t.subject, t.date_last_received, t.date_last_modified, t.message_count, t.unread_count,
                 t.folder, t.account_id
-           FROM thread t WHERE {}",
+           FROM thread t{indexed} WHERE {}",
         scope.condition()
     );
     // Fixed parameters: ?1 account, ?2 limit, ?3 and ?4 cursor; the filter
@@ -1359,6 +1419,7 @@ mod plan_tests {
             (Scope::Flag(Quarantine), ["idx_thread_quarantine_received", "idx_thread_quarantine_account_received", "idx_thread_quarantine_received"]),
             (Scope::Flag(Deleted), ["idx_thread_deleted_received", "idx_thread_deleted_account_received", "idx_thread_deleted_received"]),
             (Scope::AllMail, ["idx_thread_live_received", "idx_thread_live_account_received", "idx_thread_live_received"]),
+            (Scope::Work, ["idx_thread_work_received", "idx_thread_work_account_received", "idx_thread_work_received"]),
             (Scope::Everything, ["idx_thread_received", "idx_thread_account_received", "idx_thread_received"]),
         ]
     }

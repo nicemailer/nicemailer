@@ -1129,11 +1129,16 @@ async fn call(core: &Arc<Core>, source: Source, req: Request) -> Result<Value, R
                 Folders(Vec<i64>),
                 Everything(Option<i64>),
                 AllMail(Option<i64>),
+                Work(Option<i64>),
             }
             let scope = match (p.folder_id, p.folder_ids, p.everything) {
                 (Some(f), None, None) => Scope::Folders(vec![f]),
                 (None, Some(fs), None) if !fs.is_empty() => Scope::Folders(fs),
+                (None, None, Some(e)) if e.all_mail && e.work => {
+                    return Err(RpcError::new(error_code::INVALID_PARAMS, "all_mail ou work, pas les deux"));
+                }
                 (None, None, Some(e)) if e.all_mail => Scope::AllMail(e.account_id),
+                (None, None, Some(e)) if e.work => Scope::Work(e.account_id),
                 (None, None, Some(e)) => Scope::Everything(e.account_id),
                 _ => {
                     return Err(RpcError::new(
@@ -1152,6 +1157,7 @@ async fn call(core: &Arc<Core>, source: Source, req: Request) -> Result<Value, R
                 Scope::AllMail(account) => {
                     s.list_all_mail(account, p.cursor.as_deref(), limit(p.limit), p.sort, &p.filter)
                 }
+                Scope::Work(account) => s.list_work(account, p.cursor.as_deref(), limit(p.limit), p.sort, &p.filter),
             })
             .await?;
             to_value(Page { items, next_cursor, as_of })

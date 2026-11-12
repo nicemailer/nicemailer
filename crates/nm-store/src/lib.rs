@@ -101,7 +101,8 @@ pub use rusqlite;
 ///    `thread_folder` dropped, `idx_message_received` for Mail date….
 /// 10: the bodies and the search index in a second file,
 ///     `nicemailer_body.db` (`schema_body.sql`).
-pub const SCHEMA_VERSION: i64 = 10;
+/// 11: the partial indexes of the virtual folder Work.
+pub const SCHEMA_VERSION: i64 = 11;
 
 /// Full text of the schema, at the latest version. `include_str!` reads the
 /// file at compile time and embeds it in the binary as a `&'static str`; the

@@ -3064,12 +3064,12 @@
         }
       }
     },
-    "search everywhere, in Everything": {
+    "search everywhere, in All Mail": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "chercher partout, dans Everything"
+            "value": "chercher partout, dans All Mail"
           }
         }
       }

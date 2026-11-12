@@ -152,7 +152,7 @@ final class AppModel {
             if selectedFolderId != nil {
                 unifiedRole = nil
                 everything = nil
-                allMail = false
+                virtual = .everything
             }
             selectedThreadId = nil
             marked = []
@@ -176,27 +176,57 @@ final class AppModel {
         case account(Int)
     }
     private(set) var everything: Everything?
-    /// With `everything`, the virtual folder "All Mail" rather than
-    /// "Everything": the same without Deleted, Junk and Banned, what most
-    /// searches want (`ui.md`, "Sélecteur d'attributs"). The core leaves
-    /// them out (`list_threads`, `all_mail`). Everything else about the
-    /// two is the same: a list of every folder, each row with its folder.
-    private(set) var allMail = false
+
+    /// The virtual folders (`ui.md`, "Dossiers virtuels"): lists of several
+    /// folders together, each row with its folder. Shown with `everything`
+    /// set (its scope: every account, or one).
+    /// - `work`: Inbox, Todo and Waiting, what is still to deal with;
+    /// - `allMail`: every folder but Deleted, Junk and Banned, what most
+    ///   searches want (`/` lands there);
+    /// - `everything`: every folder.
+    /// The core reads each in one walk of an index (`list_threads`,
+    /// `everything` with `work` or `all_mail`).
+    enum Virtual: String, CaseIterable {
+        case work, allMail, everything
+
+        /// Its name (names, like the folder names, are not translated).
+        var name: String {
+            switch self {
+            case .work: AppModel.workName
+            case .allMail: AppModel.allMailName
+            case .everything: AppModel.everythingName
+            }
+        }
+
+        /// The roles whose folders it lists (`nil`: every folder).
+        var roles: Set<String>? {
+            switch self {
+            case .work: ["inbox", "todo", "waiting"]
+            case .allMail: nil
+            case .everything: nil
+            }
+        }
+    }
+    /// Which virtual folder `everything` shows.
+    private(set) var virtual: Virtual = .everything
+    /// Whether All Mail is shown (`virtual`, with `everything` set).
+    var allMail: Bool { everything != nil && virtual == .allMail }
 
     /// Names of the virtual folders (names, like the folder names, not
     /// translated).
     static let everythingName = "Everything"
     static let allMailName = "All Mail"
+    static let workName = "Work"
 
     /// The roles All Mail leaves out (`FolderRole::OUT_OF_ALL_MAIL`).
     static let outOfAllMail: Set<String> = ["deleted", "junk", "banned"]
 
     /// Shows "Everything", or "All Mail", of the unified view or of an
     /// account.
-    func selectEverything(_ e: Everything, allMail: Bool = false) {
-        let changed = everything != e || self.allMail != allMail || selectedFolderId != nil || unifiedRole != nil || listFilter != nil
+    func selectEverything(_ e: Everything, virtual: Virtual = .everything) {
+        let changed = everything != e || self.virtual != virtual || selectedFolderId != nil || unifiedRole != nil || listFilter != nil
         everything = e
-        self.allMail = allMail
+        self.virtual = virtual
         unifiedRole = nil
         guard changed else { return }
         if selectedFolderId != nil {
@@ -221,7 +251,7 @@ final class AppModel {
         let changed = unifiedRole != role || selectedFolderId != nil || listFilter != nil || everything != nil
         unifiedRole = role
         everything = nil
-        allMail = false
+        virtual = .everything
         guard changed else { return }
         if selectedFolderId != nil {
             // `didSet` clears the selection and reloads the list.
@@ -238,8 +268,14 @@ final class AppModel {
     /// folder of the unified role.
     var listedFolderIds: [Int] {
         // All Mail: an event about Deleted, Junk or Banned changes nothing
-        // it shows (the folder a thread left is told by its own event).
-        let inList = { (f: FolderView) in !self.allMail || !Self.outOfAllMail.contains(f.role ?? "") }
+        // it shows (the folder a thread left is told by its own event);
+        // Work: only its three folders.
+        let virtual = everything != nil ? self.virtual : .everything
+        let inList = { (f: FolderView) in
+            if virtual == .allMail { return !Self.outOfAllMail.contains(f.role ?? "") }
+            if let roles = virtual.roles { return roles.contains(f.role ?? "") }
+            return true
+        }
         switch everything {
         case .all: return folders.filter(inList).map(\.id)
         case .account(let a): return folders.filter { $0.accountId == a && inList($0) }.map(\.id)
@@ -256,9 +292,13 @@ final class AppModel {
     /// criterion (`listFilterParameters`).
     ///
     /// A pure function of its inputs, so it is tested without a core.
-    static func listScope(everything: Everything?, allMail: Bool = false, folderIds: [Int], listFilter: ListFilter? = nil) -> [String: Any] {
+    static func listScope(everything: Everything?, virtual: Virtual = .everything, folderIds: [Int], listFilter: ListFilter? = nil) -> [String: Any] {
         if listFilter != nil { return ["everything": [String: Any]()] }
-        var scope: [String: Any] = allMail ? ["all_mail": true] : [:]
+        var scope: [String: Any] = switch virtual {
+        case .allMail: ["all_mail": true]
+        case .work: ["work": true]
+        case .everything: [:]
+        }
         switch everything {
         case .all: return ["everything": scope]
         case .account(let a):
@@ -342,7 +382,7 @@ final class AppModel {
 
     /// Name of the folder shown.
     var currentFolderName: String {
-        if everything != nil { return allMail ? Self.allMailName : Self.everythingName }
+        if everything != nil { return virtual.name }
         return unifiedRole.map { Role.name($0) } ?? selectedFolder?.name ?? ""
     }
     /// Whether there are several accounts (the unified view is offered).
@@ -710,7 +750,7 @@ final class AppModel {
         openThread = nil
         unifiedRole = nil
         everything = nil
-        allMail = false
+        virtual = .everything
         selectedFolderId = nil
         lastEvent = nil
         if CoreAgent.register() == .enabled {
@@ -912,7 +952,7 @@ final class AppModel {
         let sort = self.sort
         let filter = attributes
         // Read once: every page of this reload lists the same thing.
-        let scope = Self.listScope(everything: everything, allMail: allMail, folderIds: folderIds, listFilter: listFilter)
+        let scope = Self.listScope(everything: everything, virtual: virtual, folderIds: folderIds, listFilter: listFilter)
         let filterParameters = Self.filterParameters(filter, listFilter: listFilter)
         let wanted = keepDepth ? max(threads.count, Self.pageSize) : Self.pageSize
         var items: [ThreadSummary] = []
@@ -1010,7 +1050,7 @@ final class AppModel {
         // `defer` runs when the function exits, whatever the path.
         defer { loadingMore = false }
         do {
-            var params = Self.listScope(everything: everything, allMail: allMail, folderIds: folderIds, listFilter: listFilter)
+            var params = Self.listScope(everything: everything, virtual: virtual, folderIds: folderIds, listFilter: listFilter)
             params["cursor"] = cursor
             params["limit"] = Self.pageSize
             params["sort"] = sort

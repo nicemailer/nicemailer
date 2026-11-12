@@ -115,10 +115,10 @@ struct AccountPickerTests {
         let labels = entries.map(\.label)
         // Inbox: 2 (perso) + 5 (archive); Archive: 2 + 2; Todo and Deleted
         // exist in one account only. The unread count is a separate detail,
-        // shown at the right end of the row; none for All Mail and
-        // Everything.
-        #expect(labels == ["Inbox", "Todo", "Archive", "Deleted", "All Mail", "Everything"])
-        #expect(entries.map(\.detail) == ["7", "2", "4", "2", nil, nil])
+        // shown at the right end of the row; none for the virtual
+        // folders, each at the end of its block.
+        #expect(labels == ["Inbox", "Todo", "Work", "Archive", "All Mail", "Deleted", "Everything"])
+        #expect(entries.map(\.detail) == ["7", "2", nil, "4", nil, "2", nil])
         #expect(!labels.contains { $0.contains("perso") || $0.contains("archive ·") })
     }
 
@@ -135,7 +135,7 @@ struct AccountPickerTests {
     @Test func everythingOfAllListsEveryFolderOfEveryAccount() async {
         controller.goToAccount(nil)
         let everything = try! #require(controller.scopeFolders.last)
-        #expect(everything.everything && everything.name == "Everything")
+        #expect(everything.virtual == .everything && everything.name == "Everything")
         controller.open(everything)
         #expect(model.everything == .all && model.currentFolderName == "Everything" && model.scopeName == "all")
         #expect(model.listedFolderIds.sorted() == [1, 2, 3, 4, 11, 13])
@@ -175,8 +175,10 @@ struct AccountPickerTests {
     @Test func theListScopeIsEverythingOrTheFolders() {
         #expect((AppModel.listScope(everything: .all, folderIds: [1, 2])["everything"] as? [String: Any])?.isEmpty == true)
         // All Mail: the same scope, with `all_mail`.
-        #expect((AppModel.listScope(everything: .all, allMail: true, folderIds: [1])["everything"] as? [String: Any])?["all_mail"] as? Bool == true)
-        let allMail = AppModel.listScope(everything: .account(3), allMail: true, folderIds: [7])["everything"] as? [String: Any]
+        #expect((AppModel.listScope(everything: .all, virtual: .allMail, folderIds: [1])["everything"] as? [String: Any])?["all_mail"] as? Bool == true)
+        // Work: with `work`.
+        #expect((AppModel.listScope(everything: .all, virtual: .work, folderIds: [1])["everything"] as? [String: Any])?["work"] as? Bool == true)
+        let allMail = AppModel.listScope(everything: .account(3), virtual: .allMail, folderIds: [7])["everything"] as? [String: Any]
         #expect(allMail?["account_id"] as? Int == 3 && allMail?["all_mail"] as? Bool == true)
         let account = AppModel.listScope(everything: .account(3), folderIds: [7])
         #expect((account["everything"] as? [String: Any])?["account_id"] as? Int == 3 && account["folder_ids"] == nil)

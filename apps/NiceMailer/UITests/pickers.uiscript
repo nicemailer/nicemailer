@@ -138,10 +138,36 @@ expect folder = Inbox
 expect account = fixture
 expect filters =
 expect search_origin =
-# The two virtual folders: `;E` All Mail, `;e` Everything; a search from
-# Everything stays in Everything.
+# The folder menu: four blocks, each ended by its virtual folder, drawn
+# apart (`ui.md`, "Dossiers virtuels").
 key ;
-key E
+expect menu_rows ~ i Inbox | t Todo | w Waiting | o Work* || a Archive
+expect menu_rows ~ q Quarantine || s Sent
+expect menu_rows ~ r Drafts | m All Mail* || d Deleted
+expect menu_rows ~ b Banned | e Everything* || c Contacts
+snap folder-menu
+key esc
+# The three virtual folders: `;o` Work (Inbox, Todo, Waiting), `;m` All
+# Mail, `;e` Everything; a search from Everything stays in Everything.
+# Work of this account (an mbox import: all filed) is empty; that of "all"
+# holds the Inbox, Todo and Waiting of the generated account.
+key ;
+key o
+expect folder = Work
+expect thread_count = 0
+key @
+type all
+key ret
+expect account = all
+expect folder = Work
+expect thread_count > 0
+snap work
+key @
+type fixture
+key ret
+expect folder = Work
+key ;
+key m
 expect folder = All Mail
 key ;
 key e

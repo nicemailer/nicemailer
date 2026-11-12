@@ -118,6 +118,9 @@ final class GeekController {
         /// Hidden words that also find the row when typed (`cc` for "To…"),
         /// never shown (`PickerMatch`).
         var keywords: [String] = []
+        /// A virtual folder in the menu `;`: drawn apart from the real
+        /// folders (`ui.md`, "Dossiers virtuels").
+        var virtual = false
         let action: @MainActor () -> Void
         var id: String { key + label }
     }
@@ -175,7 +178,7 @@ final class GeekController {
         var folderId: Int?
         var unifiedRole: String?
         var everything: AppModel.Everything?
-        var allMail = false
+        var virtual: AppModel.Virtual = .everything
     }
 
     /// Number of columns (`ui.md`, display menu): 1 = list only,
@@ -943,7 +946,8 @@ final class GeekController {
             for f in scopeFolders where !f.letter.isEmpty {
                 entries.append(Entry(
                     key: f.key, label: f.name,
-                    gapBefore: group != nil && group != f.group, detail: f.unread > 0 ? "\(f.unread)" : nil
+                    gapBefore: group != nil && group != f.group, detail: f.unread > 0 ? "\(f.unread)" : nil,
+                    virtual: f.virtual != nil
                 ) { [weak self] in self?.open(f) })
                 group = f.group
             }
@@ -1006,23 +1010,29 @@ final class GeekController {
         let name: String
         let letter: String
         let unread: Int
-        /// The virtual folder "Everything", or "All Mail" with `allMail`.
-        var everything = false
-        var allMail = false
-        /// Block of the folder in the lists (`folderGroup`).
-        var group: Int { everything ? GeekController.folderGroups.count + 1 : GeekController.folderGroup(role) }
-        var id: String { everything ? (allMail ? "all-mail" : "everything") : folderId.map { "f\($0)" } ?? "r\(role ?? "")" }
-        /// Its key in the menu `;`: the folder's letter in lower case;
-        /// All Mail keeps its capital `E` (`e` is Everything), as Tags its
-        /// `T` (`t` is Todo).
-        var key: String { allMail ? letter : letter.lowercased() }
+        /// A virtual folder (Work, All Mail, Everything), shown apart in
+        /// the lists (`ui.md`, "Dossiers virtuels").
+        var virtual: AppModel.Virtual? = nil
+        /// Block of the folder in the lists (`folderGroup`): a virtual
+        /// folder ends the block of what it gathers.
+        var group: Int {
+            switch virtual {
+            case .work: 0
+            case .allMail: 4
+            case .everything: 6
+            case nil: GeekController.folderGroup(role)
+            }
+        }
+        var id: String { virtual.map { $0.rawValue } ?? folderId.map { "f\($0)" } ?? "r\(role ?? "")" }
+        /// Its key in the menu `;`: the folder's letter in lower case.
+        var key: String { letter.lowercased() }
     }
 
     /// Folders of the current view, in display order. In the unified view,
     /// one entry per role, with the unread counts of every account added up;
     /// folders without a role (user folders) stay per account and are not
     /// listed there.
-    var scopeFolders: [ScopeFolder] { Self.ordered(realScopeFolders) + [allMailFolder, everythingFolder] }
+    var scopeFolders: [ScopeFolder] { Self.ordered(realScopeFolders + AppModel.Virtual.allCases.map(Self.virtualFolder)) }
 
     /// Blocks of the folder lists (`ui.md`, "Thème geek"), in order: what
     /// is to deal with, what is filed, what was written, what was thrown
@@ -1031,9 +1041,12 @@ final class GeekController {
     ///
     /// Swift note: `nonisolated` lets code outside the main actor (here the
     /// `group` property of `ScopeFolder`) use these constant rules.
+    /// Quarantine is with the filed folders: what it holds waits for a
+    /// decision on its sender, not for work. Each block ends with the
+    /// virtual folder that gathers it or more (`virtualFolder`).
     nonisolated static let folderGroups: [[String]] = [
-        ["inbox", "todo", "waiting", "quarantine"],
-        ["archive", "newsletter", "paperwork"],
+        ["inbox", "todo", "waiting"],
+        ["archive", "newsletter", "paperwork", "quarantine"],
         ["sent", "drafts"],
         ["deleted", "junk", "banned"],
     ]
@@ -1050,7 +1063,9 @@ final class GeekController {
     /// outside the blocks keep the core's order.
     static func ordered(_ folders: [ScopeFolder]) -> [ScopeFolder] {
         func rank(_ f: ScopeFolder) -> Int {
-            f.role.flatMap { r in folderGroups.lazy.compactMap { $0.firstIndex(of: r) }.first } ?? 0
+            // A virtual folder after the folders of its block.
+            if f.virtual != nil { return Int.max }
+            return f.role.flatMap { r in folderGroups.lazy.compactMap { $0.firstIndex(of: r) }.first } ?? 0
         }
         // Swift note: `enumerated()` pairs each element with its index; the
         // index breaks ties, which makes the sort stable.
@@ -1059,16 +1074,18 @@ final class GeekController {
         }.map(\.element)
     }
 
-    /// "All Mail", at the foot of the list before Everything: every folder
-    /// of the view but Deleted, Junk and Banned, where `/` searches.
-    private var allMailFolder: ScopeFolder {
-        ScopeFolder(folderId: nil, role: nil, name: AppModel.allMailName, letter: "E", unread: 0, everything: true, allMail: true)
-    }
-
-    /// "Everything", at the foot of the list: every folder of the view, to
-    /// search everywhere with the attributes (`ui.md`).
-    private var everythingFolder: ScopeFolder {
-        ScopeFolder(folderId: nil, role: nil, name: AppModel.everythingName, letter: "E", unread: 0, everything: true)
+    /// A virtual folder of the view (`ui.md`, "Dossiers virtuels"), at the
+    /// end of the block of what it gathers: Work (`o`, Inbox, Todo and
+    /// Waiting) after Waiting, All Mail (`m`, all but Deleted, Junk and
+    /// Banned, where `/` searches) after Drafts, Everything (`e`) after
+    /// Banned. Their letters are free in the menu `;`.
+    nonisolated static func virtualFolder(_ v: AppModel.Virtual) -> ScopeFolder {
+        let letter = switch v {
+        case .work: "o"
+        case .allMail: "m"
+        case .everything: "e"
+        }
+        return ScopeFolder(folderId: nil, role: nil, name: v.name, letter: letter, unread: 0, virtual: v)
     }
 
     private var realScopeFolders: [ScopeFolder] {
@@ -1093,7 +1110,7 @@ final class GeekController {
     /// Whether `f` is the folder shown.
     func isCurrent(_ f: ScopeFolder) -> Bool {
         guard model.listFilter == nil else { return false }
-        if f.everything { return model.everything != nil && model.allMail == f.allMail }
+        if let v = f.virtual { return model.everything != nil && model.virtual == v }
         if model.everything != nil { return false }
         if let id = f.folderId { return id == model.selectedFolderId }
         return f.role == model.unifiedRole
@@ -1101,10 +1118,10 @@ final class GeekController {
 
     /// Opens a folder of the current view.
     func open(_ f: ScopeFolder) {
-        if f.everything {
+        if let v = f.virtual {
             screen = .mail
             searchOrigin = nil
-            model.selectEverything(model.scopeAccountId.map { .account($0) } ?? .all, allMail: f.allMail)
+            model.selectEverything(model.scopeAccountId.map { .account($0) } ?? .all, virtual: v)
         } else if let id = f.folderId {
             goToFolder(id)
         } else if let role = f.role {
@@ -1227,7 +1244,7 @@ final class GeekController {
         if model.everything != nil {
             screen = .mail
             searchOrigin = nil
-            model.selectEverything(accountId.map { .account($0) } ?? .all, allMail: model.allMail)
+            model.selectEverything(accountId.map { .account($0) } ?? .all, virtual: model.virtual)
             return
         }
         guard let accountId else {
@@ -1995,12 +2012,12 @@ final class GeekController {
         if searchOrigin == nil {
             searchOrigin = SearchOrigin(
                 folderId: model.selectedFolderId, unifiedRole: model.unifiedRole, everything: model.everything,
-                allMail: model.allMail)
+                virtual: model.virtual)
         }
         screen = .mail
         model.attributes.contains = words
-        let inEverything = model.everything != nil && !model.allMail
-        model.selectEverything(model.scopeAccountId.map { .account($0) } ?? .all, allMail: !inEverything)
+        let inEverything = model.everything != nil && model.virtual == .everything
+        model.selectEverything(model.scopeAccountId.map { .account($0) } ?? .all, virtual: inEverything ? .everything : .allMail)
     }
 
     /// Escape after a `/` search: back to the folder `/` was pressed from.
@@ -2012,7 +2029,7 @@ final class GeekController {
         } else if let role = origin.unifiedRole {
             model.selectUnified(role)
         } else if let e = origin.everything {
-            model.selectEverything(e, allMail: origin.allMail)
+            model.selectEverything(e, virtual: origin.virtual)
         }
         searchOrigin = nil
     }

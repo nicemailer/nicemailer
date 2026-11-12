@@ -140,7 +140,7 @@ private struct GeekWindow: View {
             let menu = KeyMenu(title: menuTitle(prefix),
                                entries: controller.menuEntries(prefix).map {
                                    .init(key: $0.key, label: $0.label, muted: $0.disabled, gapBefore: $0.gapBefore, detail: $0.detail,
-                                         detailMuted: $0.detailStyle == .info)
+                                         detailMuted: $0.detailStyle == .info, virtual: $0.virtual)
                                },
                                highlighted: controller.menuIndex,
                                onSelect: { controller.chooseMenuEntry($0) })
@@ -464,7 +464,11 @@ private struct GeekFolderColumn: View {
                 ForEach(Array(folders.enumerated()), id: \.element.id) { i, f in
                     HStack(spacing: 6) {
                         Text(f.letter.lowercased()).foregroundStyle(Palette.muted)
-                        Text(f.name)
+                        if f.virtual != nil {
+                            VirtualFolderLabel(name: f.name)
+                        } else {
+                            Text(f.name)
+                        }
                         Spacer()
                         if f.unread > 0 { Text("\(f.unread)").foregroundStyle(Palette.unread) }
                     }
@@ -1463,6 +1467,24 @@ private struct HTMLReader: NSViewRepresentable {
 // MARK: - Menus and pickers
 
 /// Helix-style key menu, in the bottom-right corner: one line per key.
+/// The name of a virtual folder (Work, All Mail, Everything) in the menu
+/// `;` and the folder column (`ui.md`, "Dossiers virtuels"): a stack icon
+/// before it and the accent colour, so that it reads as a gathering of
+/// folders, not as one more folder. Neither an italic (the monospace font
+/// of the geek theme has none) nor a block of its own: each ends the block
+/// of the folders it gathers.
+struct VirtualFolderLabel: View {
+    let name: String
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "square.stack").imageScale(.small)
+            Text(name)
+        }
+        .foregroundStyle(Palette.accentText)
+    }
+}
+
 private struct KeyMenu: View {
     let title: String
     let entries: [Row]
@@ -1479,6 +1501,8 @@ private struct KeyMenu: View {
         var detail: String? = nil
         /// An information ("T: and open") rather than a count to notice.
         var detailMuted = false
+        /// A virtual folder of the menu `;` (`VirtualFolderMark`).
+        var virtual = false
     }
     /// Called with the row clicked; `nil` for a menu that only informs
     /// (the help).
@@ -1492,7 +1516,11 @@ private struct KeyMenu: View {
             ForEach(Array(entries.enumerated()), id: \.offset) { i, e in
                 HStack(spacing: 10) {
                     Text(e.key).foregroundStyle(Palette.accentText).frame(width: keyWidth, alignment: .leading)
-                    Text(e.label).foregroundStyle(e.muted ? Palette.muted : Palette.text)
+                    if e.virtual {
+                        VirtualFolderLabel(name: e.label)
+                    } else {
+                        Text(e.label).foregroundStyle(e.muted ? Palette.muted : Palette.text)
+                    }
                     // Pushes the detail to the right end; at least a gap
                     // of two characters after the longest label.
                     Spacer(minLength: scaled(16))

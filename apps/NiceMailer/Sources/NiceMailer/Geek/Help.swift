@@ -83,7 +83,7 @@ enum Help {
                 HelpEntry(key: "c", label: L("write a new mail")),
             ]),
             HelpGroup(title: L("Find and go"), entries: [
-                HelpEntry(key: "/", label: L("search everywhere, in Everything")),
+                HelpEntry(key: "/", label: L("search everywhere, in All Mail")),
                 HelpEntry(key: "F", label: L("filter by attributes")),
                 HelpEntry(key: "@", label: L("go to an account")),
                 HelpEntry(key: ";…", label: L("go to a folder or a screen")),

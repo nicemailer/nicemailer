@@ -633,6 +633,14 @@ private final class Runner {
             // Position of the first row of the open menu, in window
             // coordinates (origin bottom-left): where the menu is drawn.
             "menu_index": c.menuIndex.map(String.init) ?? "",
+            // The rows of the open menu, "key label", a virtual folder
+            // marked "*", blocks separated by " || ".
+            "menu_rows": {
+                guard case .menu(let p) = c.overlay else { return "" }
+                return c.menuEntries(p).map { e in
+                    (e.gapBefore ? "|| " : "") + "\(e.key) \(e.label)" + (e.virtual ? "*" : "")
+                }.joined(separator: " | ").replacingOccurrences(of: " | ||", with: " ||")
+            }(),
             "menu_x": "\(Int(UIScript.frames["menu-0"]?.minX ?? -1))",
             "menu_y": "\(Int(UIScript.frames["menu-0"]?.minY ?? -1))",
             // Height of the selected row, as laid out.

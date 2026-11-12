@@ -295,3 +295,33 @@ fn folder_counts_follow_the_folder_and_the_flags() {
     assert_eq!(count(FolderRole::Sent), 2);
     assert_eq!(count(FolderRole::Archive), 0);
 }
+
+/// Work (`ui.md`, "Dossiers virtuels"): the conversations of Inbox, Todo
+/// and Waiting together, newest first, each shown in its own folder; of
+/// every account or of one.
+#[test]
+fn work_lists_inbox_todo_and_waiting_together() {
+    let mut env = Env::new();
+    let mut expected = Vec::new();
+    for (i, role) in [FolderRole::Inbox, FolderRole::Archive, FolderRole::Todo, FolderRole::Sent, FolderRole::Waiting, FolderRole::Quarantine]
+        .into_iter()
+        .enumerate()
+    {
+        let t = env.thread(i % 2, "x");
+        env.mail(i % 2, t, Some(role), 100 + i as i64, false);
+        if FolderRole::WORK.contains(&role) {
+            expected.push((t, env.folder(i % 2, Some(role))));
+        }
+    }
+    expected.reverse();
+    let work = pages(|c| env.store.list_work(None, c, 2, ThreadSort::Received, &ThreadFilter::default()).unwrap());
+    assert_eq!(work.iter().map(|t| (t.id, t.folder_id)).collect::<Vec<_>>(), expected);
+    // One account: the even indices, its Inbox, Todo and Waiting; the other
+    // account's Work is empty but none of them.
+    let one = pages(|c| env.store.list_work(Some(env.accounts[0]), c, 2, ThreadSort::Modified, &ThreadFilter::default()).unwrap());
+    assert_eq!(one.len(), 3);
+    assert!(one.iter().all(|t| expected.iter().any(|(id, _)| *id == t.id)));
+    // Its criteria look at its folders: a word of none of its mails.
+    let none = ThreadFilter { mail_before: Some(50), ..Default::default() };
+    assert!(env.store.list_work(None, None, 10, ThreadSort::Received, &none).unwrap().0.is_empty());
+}

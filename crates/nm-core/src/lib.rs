@@ -88,6 +88,10 @@ impl FolderRole {
     /// accepted yet is searched for too). "Everything" keeps them.
     pub const OUT_OF_ALL_MAIL: [FolderRole; 3] = [FolderRole::Deleted, FolderRole::Junk, FolderRole::Banned];
 
+    /// The folders of the virtual folder "Work" (`ui.md`, "Dossiers
+    /// virtuels"): what is still to deal with.
+    pub const WORK: [FolderRole; 3] = [FolderRole::Inbox, FolderRole::Todo, FolderRole::Waiting];
+
     /// Folders whose messages follow a command applied to the conversation
     /// (`dossiers.md`, "Une conversation, pas un mail").
     ///

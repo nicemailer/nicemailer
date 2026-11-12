@@ -34,6 +34,7 @@ pub(crate) fn migrate(conn: &mut Connection, mut version: i64) -> Result<()> {
             7 => to_8(&tx)?,
             8 => to_9(&tx)?,
             9 => to_10(&tx)?,
+            10 => to_11(&tx)?,
             _ => unreachable!("aucune migration depuis la version {version}"),
         }
         version += 1;
@@ -284,6 +285,19 @@ fn to_10(conn: &Connection) -> Result<()> {
          DROP TRIGGER main.message_body_fts_au;
          DROP TABLE main.message_fts;
          DROP TABLE main.message_body;",
+    )?;
+    Ok(())
+}
+
+/// Version 11: the partial indexes of the virtual folder Work (Inbox, Todo
+/// and Waiting together, `ui.md`, "Dossiers virtuels"). They hold only the
+/// conversations to deal with: instant.
+fn to_11(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "CREATE INDEX idx_thread_work_received ON thread (date_last_received, id) WHERE folder IN ('i','t','w');
+         CREATE INDEX idx_thread_work_account_received ON thread (account_id, date_last_received, id) WHERE folder IN ('i','t','w');
+         CREATE INDEX idx_thread_work_modified ON thread (date_last_modified, id) WHERE folder IN ('i','t','w');
+         CREATE INDEX idx_thread_work_account_modified ON thread (account_id, date_last_modified, id) WHERE folder IN ('i','t','w');",
     )?;
     Ok(())
 }
