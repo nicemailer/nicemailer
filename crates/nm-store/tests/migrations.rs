@@ -173,6 +173,17 @@ fn a_migrated_database_lists_everything() {
         let (items, _) = store.list_threads(folder, None, 10, nm_api::ThreadSort::Received).unwrap();
         assert_eq!(items.iter().map(|t| (t.id, t.folder_id)).collect::<Vec<_>>(), [(1, folder)]);
     }
+    // Version 10: the search index was moved to the body file as it was
+    // (its shadow tables copied), and answers there.
+    assert!(nm_store::body_path(&path).exists());
+    assert_eq!(store.search("mainguet", 10).unwrap().len(), 1);
+    assert_eq!(store.search("beres", 10).unwrap().len(), 1);
+    store.conn().execute_batch("INSERT INTO message_fts (message_fts, rank) VALUES ('integrity-check', 1);").unwrap();
+    let main_tables: i64 = store
+        .conn()
+        .query_row("SELECT count(*) FROM main.sqlite_master WHERE name LIKE 'message_fts%' OR name = 'message_body'", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(main_tables, 0);
     // The From filter goes through the address, whose name was filled in.
     let from = nm_api::ThreadFilter { from: vec!["berès".into()], ..Default::default() };
     let (items, _) = store.list_everything(None, None, 10, nm_api::ThreadSort::Received, &from).unwrap();

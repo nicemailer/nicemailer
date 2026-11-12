@@ -99,12 +99,78 @@ pub use rusqlite;
 /// 8: date indexes of `thread_folder`, for All Mail.
 /// 9: the folder of a conversation in `thread` (`folder`, `has_sent`…),
 ///    `thread_folder` dropped, `idx_message_received` for Mail date….
-pub const SCHEMA_VERSION: i64 = 9;
+/// 10: the bodies and the search index in a second file,
+///     `nicemailer_body.db` (`schema_body.sql`).
+pub const SCHEMA_VERSION: i64 = 10;
 
 /// Full text of the schema, at the latest version. `include_str!` reads the
 /// file at compile time and embeds it in the binary as a `&'static str`; the
 /// path is relative to this source file.
 const SCHEMA: &str = include_str!("../../../specifications/schema.sql");
+
+/// Schema of the second file, `nicemailer_body.db`: the bodies and the
+/// full-text index (`specifications/schema_body.sql`, schema version 10).
+const BODY_SCHEMA: &str = include_str!("../../../specifications/schema_body.sql");
+
+/// The name under which the body file is attached to every connection
+/// (`ATTACH DATABASE … AS body`). Queries name `message_body` and
+/// `message_fts` without it: SQLite looks a table up in `main`, then in the
+/// attached files, and `main` has no such table since version 10.
+pub const BODY_ALIAS: &str = "body";
+
+/// The triggers that tie the two files together (`schema_body.sql`): a
+/// trigger stored in a file may only touch the tables of that file, so
+/// these are created `TEMP`, on each connection that writes, when it
+/// opens. A message's subject or sender changed: its row of the search
+/// index follows. A message deleted: its body and its row of the search
+/// index go (what `ON DELETE CASCADE` did within one file).
+const TEMP_TRIGGERS: &str = "
+    CREATE TEMP TRIGGER IF NOT EXISTS message_fts_au AFTER UPDATE OF subject, from_name, from_addr ON main.message BEGIN
+        UPDATE message_fts
+           SET subject = new.subject,
+               sender  = coalesce(new.from_name,'') || ' ' || coalesce(new.from_addr,'')
+         WHERE rowid = new.id;
+    END;
+    CREATE TEMP TRIGGER IF NOT EXISTS message_body_ad AFTER DELETE ON main.message BEGIN
+        DELETE FROM message_fts WHERE rowid = old.id;
+        DELETE FROM message_body WHERE message_id = old.id;
+    END;";
+
+/// The body file next to the database at `path`: `nicemailer.db` gives
+/// `nicemailer_body.db` (`<stem>_body.db` for any other name, as in tests).
+pub fn body_path(path: &Path) -> std::path::PathBuf {
+    let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "nicemailer".into());
+    path.with_file_name(format!("{stem}_body.db"))
+}
+
+/// Attaches the body file (`None`: an in-memory one, for tests) to `conn`.
+/// Rust note: `Option<&Path>` is a path that may be absent.
+fn attach_body(conn: &Connection, body: Option<&Path>) -> Result<()> {
+    let target = body.map(|p| p.to_string_lossy().into_owned()).unwrap_or_else(|| ":memory:".into());
+    conn.execute(&format!("ATTACH DATABASE ?1 AS {BODY_ALIAS}"), [target])?;
+    Ok(())
+}
+
+/// Creates the tables of the body file if it is new (its `user_version` is
+/// still 0), and sets it in WAL mode, like the main file.
+fn create_body_schema(conn: &Connection) -> Result<()> {
+    let version: i64 = conn.query_row(&format!("PRAGMA {BODY_ALIAS}.user_version"), [], |r| r.get(0))?;
+    if version == 0 {
+        // The statements of the file are written for a database of their
+        // own: run them with `body` as the schema of every name, by
+        // prefixing the `CREATE` statements. The pragmas are set apart.
+        conn.execute_batch(&format!("PRAGMA {BODY_ALIAS}.journal_mode = WAL;"))?;
+        let ddl = BODY_SCHEMA
+            .replace("PRAGMA journal_mode = WAL;", "")
+            .replace("PRAGMA user_version = 1;", "")
+            .replace("CREATE TABLE message_body", &format!("CREATE TABLE {BODY_ALIAS}.message_body"))
+            .replace("CREATE INDEX idx_message_body_parser", &format!("CREATE INDEX {BODY_ALIAS}.idx_message_body_parser"))
+            .replace("CREATE VIRTUAL TABLE message_fts", &format!("CREATE VIRTUAL TABLE {BODY_ALIAS}.message_fts"))
+            .replace("CREATE TRIGGER message_body_fts_au", &format!("CREATE TRIGGER {BODY_ALIAS}.message_body_fts_au"));
+        conn.execute_batch(&format!("BEGIN; {ddl} PRAGMA {BODY_ALIAS}.user_version = 1; COMMIT;"))?;
+    }
+    Ok(())
+}
 
 /// Errors returned by the store.
 ///
@@ -298,12 +364,16 @@ impl Store {
     ///
     /// Rust note: `&Path` is a borrowed path: the function reads it but does
     /// not take ownership, so the caller keeps its `PathBuf`.
+    /// The bodies and the search index live in a second file next to it,
+    /// `nicemailer_body.db` (`body_path`), created if missing: a mailbox
+    /// whose body file was deleted gets an empty one, and the
+    /// reinterpretation fills it again from the raw files (`reindex.rs`).
     pub fn open(path: &Path) -> Result<Store> {
         let conn = Connection::open_with_flags(
             path,
             OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE,
         )?;
-        Self::init(conn)
+        Self::init(conn, Some(&body_path(path)))
     }
 
     /// Opens a read-only connection to an existing database, for the read
@@ -334,16 +404,19 @@ impl Store {
         if version != SCHEMA_VERSION {
             return Err(StoreError::ReaderVersion { found: version, expected: SCHEMA_VERSION });
         }
+        // The body file, created by the writing store before the pool.
+        attach_body(&conn, Some(&body_path(path)))?;
         Ok(Store { conn, server_accounts: BTreeSet::new(), fake_sending: false, outgoing: None })
     }
 
     /// In-memory database, used by tests: fast and thrown away at the end.
+    /// Its body file is in memory too.
     pub fn open_in_memory() -> Result<Store> {
-        Self::init(Connection::open_in_memory()?)
+        Self::init(Connection::open_in_memory()?, None)
     }
 
     /// Applies per-connection settings and creates or checks the schema.
-    fn init(conn: Connection) -> Result<Store> {
+    fn init(conn: Connection, body: Option<&Path>) -> Result<Store> {
         sql_log::install(&conn);
         // These pragmas are not stored in the database file: they must be
         // set on every new connection (see the header of schema.sql).
@@ -364,13 +437,23 @@ impl Store {
         // `query_row` runs a query expected to return one row and passes it to
         // the closure `|r| r.get(0)`, which reads column 0.
         let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+        // The body file, attached before the migrations: version 10 moves
+        // the bodies into it. A new or deleted file gets its tables here.
+        attach_body(&conn, body)?;
+        create_body_schema(&conn)?;
         // Rust note: `mut` because migrating needs `&mut Connection` (a
         // transaction borrows the connection exclusively).
         let mut conn = conn;
         match version {
             // Fresh database: create everything. schema.sql ends by setting
             // `user_version` to the latest version.
-            0 => conn.execute_batch(SCHEMA)?,
+            // A body file already there belongs to a database that is gone
+            // (its main file deleted, `seed --reset`): the ids start again at
+            // 1, so its rows would answer for other mails. Emptied.
+            0 => {
+                conn.execute_batch(SCHEMA)?;
+                conn.execute_batch("DELETE FROM body.message_body; DELETE FROM body.message_fts;")?;
+            }
             // `v if ...` is a *match guard*: the arm matches only if the
             // condition holds.
             v if v > SCHEMA_VERSION => {
@@ -380,8 +463,19 @@ impl Store {
             v => {
                 check_schema(&conn, v)?;
                 migrations::migrate(&mut conn, v)?;
+                // The bodies just left the main file (version 10): give its
+                // pages back to the disk, once. `VACUUM` rewrites only the
+                // pages in use (about a tenth of the file on a real
+                // mailbox), outside any transaction.
+                if v < 10 {
+                    conn.execute_batch("VACUUM main;")?;
+                }
             }
         }
+        conn.execute_batch(TEMP_TRIGGERS)?;
+        // The two files are not committed together (`schema_body.sql`):
+        // make them agree after a crash, or after the body file was deleted.
+        reconcile_bodies(&conn)?;
         // Planner statistics (`sqlite_stat1`). Without them SQLite guesses how
         // selective each index is, and on a large mailbox it once preferred
         // an index that read a whole folder for every row of a list. The
@@ -433,6 +527,55 @@ impl Store {
     }
 }
 
+/// Makes the body file agree with the main one (`schema_body.sql`), after a
+/// crash between the commits of the two files, or a body file deleted to be
+/// rebuilt (`docs/backup.md`):
+/// - bodies and rows of the search index of messages that no longer exist
+///   are deleted;
+/// - a message without a row in the search index gets one, from what the
+///   main file knows (subject, sender, recipients) and its body if there
+///   is one; a missing body is the reinterpretation's to rebuild from the
+///   raw file (`reindex.rs`, `WITHOUT_BODY`), which then fills that row.
+///
+/// Only indexes and small tables are read, never the text: the ids of the
+/// bodies come from `idx_message_body_parser`, those of the search index
+/// from its table of sizes (`message_fts_docsize`, one short row per
+/// message), not from the 2 GB of its copy of the text. Returns the rows
+/// deleted and the rows added.
+fn reconcile_bodies(conn: &Connection) -> Result<(usize, usize)> {
+    let mut deleted = conn.execute(
+        "DELETE FROM message_body WHERE message_id IN (
+             SELECT message_id FROM message_body INDEXED BY idx_message_body_parser
+              WHERE parser_version > -1 AND message_id NOT IN (SELECT id FROM main.message))",
+        [],
+    )?;
+    let orphans: Vec<i64> = conn
+        .prepare("SELECT id FROM message_fts_docsize WHERE id NOT IN (SELECT id FROM main.message)")?
+        .query_map([], |r| r.get(0))?
+        .collect::<std::result::Result<_, _>>()?;
+    for id in &orphans {
+        conn.execute("DELETE FROM message_fts WHERE rowid = ?1", [id])?;
+    }
+    deleted += orphans.len();
+    // The recipients as the insertion writes them: "name address" for To,
+    // Cc and Bcc, in header order (`insert.rs`). The name is the
+    // contact's, the closest the main file keeps.
+    let added = conn.execute(
+        "INSERT INTO message_fts (rowid, subject, sender, recipients, body)
+         SELECT m.id, m.subject, trim(coalesce(m.from_name, '') || ' ' || coalesce(m.from_addr, '')),
+                coalesce((SELECT group_concat(coalesce(a.name, '') || ' ' || a.addr, ' ')
+                            FROM (SELECT ma.address_id FROM message_address ma
+                                   WHERE ma.message_id = m.id AND ma.role IN ('to', 'cc', 'bcc')
+                                   ORDER BY CASE ma.role WHEN 'to' THEN 0 WHEN 'cc' THEN 1 ELSE 2 END, ma.position) x
+                            JOIN address a ON a.id = x.address_id), ''),
+                coalesce((SELECT b.text_plain FROM message_body b WHERE b.message_id = m.id), '')
+           FROM main.message m
+          WHERE m.id NOT IN (SELECT id FROM message_fts_docsize)",
+        [],
+    )?;
+    Ok((deleted, added))
+}
+
 /// Checks that a database at `version` really has that version's schema.
 ///
 /// Version 1 was edited in place during development (it is not released),
@@ -461,7 +604,11 @@ fn check_schema(conn: &Connection, version: i64) -> Result<()> {
     }
     if version >= 3 {
         checks.push(("SELECT remote_images FROM address", "address.remote_images"));
-        checks.push(("SELECT tracking_pixels FROM message_body", "message_body.tracking_pixels"));
+        // From version 10 the bodies are in the second file, whose tables
+        // `create_body_schema` makes when missing: not a reason to refuse.
+        if version < 10 {
+            checks.push(("SELECT tracking_pixels FROM message_body", "message_body.tracking_pixels"));
+        }
     }
     if version >= 4 {
         checks.push(("SELECT disabled_at, position FROM account", "account.disabled_at, account.position"));

@@ -33,7 +33,7 @@ PRAGMA temp_store = MEMORY;
 -- Une base existante est mise à jour par les migrations du noyau
 -- (crates/nm-store/src/migrations.rs) ; ce fichier crée directement la
 -- dernière version.
-PRAGMA user_version = 9;   -- migrations : comparer à la version attendue au démarrage
+PRAGMA user_version = 10;   -- migrations : comparer à la version attendue au démarrage
 
 -- ------------------------------------------------------------
 -- Comptes : état seulement. Les paramètres (adresse, serveurs, identifiants,
@@ -345,7 +345,7 @@ CREATE TABLE raw_blob (
 
 -- ------------------------------------------------------------
 -- Messages : en-têtes seulement (table étroite = liste rapide).
--- Le corps vit dans message_body.
+-- Le corps vit dans message_body (nicemailer_body.db).
 -- ------------------------------------------------------------
 CREATE TABLE message (
     id               INTEGER PRIMARY KEY,
@@ -532,28 +532,10 @@ CREATE TABLE tag (
 ) STRICT;
 
 -- ------------------------------------------------------------
--- Corps : interprétation du message brut (seul le brut sur disque est immuable).
--- Écrit à la réception du message complet, puis réécrit par reindex quand
--- l'analyseur ou l'assainissement évoluent. Ce n'est pas un cache : il n'est
--- jamais évincé, seule la suppression du message l'efface (cascade).
+-- Corps et recherche plein texte : dans le second fichier,
+-- nicemailer_body.db (schema_body.sql, version 10). Voir modele de donnees.md,
+-- « Deux fichiers ».
 -- ------------------------------------------------------------
-CREATE TABLE message_body (
-    message_id      INTEGER PRIMARY KEY REFERENCES message(id) ON DELETE CASCADE,
-    text_plain      TEXT,
-    html_sanitized  TEXT,                 -- déjà passé par ammonia ; aucune source qu'une vue web
-                                          -- chargerait seule : images distantes en nm-remote:,
-                                          -- pixels de suivi sans source (remote_images.rs)
-    -- 1 : le HTML contient des images distantes chargeables à la demande
-    -- (hors pixels de suivi).
-    has_remote_content INTEGER NOT NULL DEFAULT 0 CHECK (has_remote_content IN (0,1)),
-    parser_version  INTEGER NOT NULL,     -- version de l'analyseur et de l'assainissement ;
-                                          -- reindex cible les lignes de version inférieure
-    date_fetched    INTEGER NOT NULL DEFAULT (unixepoch()),
-    -- Version 3. Pixels de suivi distants retirés du HTML.
-    tracking_pixels INTEGER NOT NULL DEFAULT 0
-) STRICT;
-
-CREATE INDEX idx_message_body_parser ON message_body (parser_version);
 
 -- ------------------------------------------------------------
 -- Pièces jointes (métadonnées ; les fichiers vivent sur disque)
@@ -660,44 +642,6 @@ CREATE INDEX idx_draft_attachment_draft ON draft_attachment (draft_id, position)
 CREATE INDEX idx_draft_attachment_hash  ON draft_attachment (hash);
 
 -- ------------------------------------------------------------
--- Recherche plein texte. rowid = message.id.
--- remove_diacritics 2 : "eleve" trouve "élève".
--- ------------------------------------------------------------
-CREATE VIRTUAL TABLE message_fts USING fts5 (
-    subject, sender, recipients, body,
-    tokenize = 'unicode61 remove_diacritics 2',
-    prefix   = '2 3'
-);
-
--- Insertion : pas de trigger. Le noyau insère la ligne de message_fts lui-même,
--- en une seule instruction par message, avec l'objet, l'expéditeur, les
--- destinataires et le corps s'il est déjà connu (sinon vide, complété à
--- l'arrivée du corps). Raison : dans une transaction, chaque instruction qui
--- déclenche un trigger sur une table FTS5 ouvre un point de sauvegarde, et
--- FTS5 vide alors son tampon et fusionne ses segments ; avec les triggers
--- d'insertion, l'import d'un mbox de 46 000 mails passait plus de la moitié
--- de son temps d'écriture dans ces fusions. Une insertion directe est deux
--- fois plus rapide (mesure du 3 novembre 2026).
-
-CREATE TRIGGER message_fts_au AFTER UPDATE OF subject, from_name, from_addr ON message BEGIN
-    UPDATE message_fts
-       SET subject = new.subject,
-           sender  = coalesce(new.from_name,'') || ' ' || coalesce(new.from_addr,'')
-     WHERE rowid = new.id;
-END;
-
-CREATE TRIGGER message_fts_ad AFTER DELETE ON message BEGIN
-    DELETE FROM message_fts WHERE rowid = old.id;
-END;
-
--- Quand le corps est réinterprété (reindex) : mettre l'index à jour.
--- reindex procède par UPDATE, jamais par INSERT OR REPLACE (qui supprimerait
--- puis réinsérerait la ligne sans passer par ce trigger).
-CREATE TRIGGER message_body_fts_au AFTER UPDATE OF text_plain ON message_body BEGIN
-    UPDATE message_fts SET body = coalesce(new.text_plain, '') WHERE rowid = new.message_id;
-END;
-
--- ------------------------------------------------------------
 -- Spool : file d'actions locales à rejouer vers le serveur (hors-ligne).
 -- L'action est déjà appliquée localement à l'insertion (affichage immédiat).
 -- Erreur temporaire : reste 'queued', date_run_after repoussé.
@@ -781,7 +725,7 @@ CREATE TABLE protected_setting (
 --    ORDER BY date_received DESC, id DESC
 --    LIMIT 50;
 --
--- Recherche plein texte, triée par pertinence :
+-- Recherche plein texte (message_fts, dans nicemailer_body.db), triée par pertinence :
 --   SELECT m.id, m.subject, snippet(message_fts, 3, '<b>', '</b>', '…', 12)
 --     FROM message_fts
 --     JOIN message m ON m.id = message_fts.rowid

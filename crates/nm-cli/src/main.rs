@@ -534,6 +534,15 @@ enum MailboxAction {
     Upgrade {
         dir: PathBuf,
     },
+    /// Copy the database of a mailbox folder to DEST, consistent even while
+    /// the core runs (`docs/backup.md`). Only nicemailer.db is copied: the
+    /// bodies and the search index (nicemailer_body.db) are rebuilt from
+    /// the raw files, which a file-level copy (rsync) of raw.noindex keeps.
+    Backup {
+        dir: PathBuf,
+        /// The file to write; must not exist.
+        dest: PathBuf,
+    },
 }
 
 /// `nicemailer config …`: works on the file directly, without the core.
@@ -1168,6 +1177,33 @@ fn run_mailbox(action: MailboxAction) -> anyhow::Result<()> {
             );
             Ok(())
         }
+        MailboxAction::Backup { dir, dest } => {
+            let db = dir.join(paths::DATABASE);
+            if !db.exists() {
+                bail!("{}: no database in this folder", dir.display());
+            }
+            if dest.exists() {
+                bail!("{}: already exists, give a new file", dest.display());
+            }
+            let start = Instant::now();
+            // `VACUUM INTO` writes a consistent copy from one read
+            // transaction: the core can go on writing meanwhile (WAL), and
+            // the copy is compact. Copying the file itself would miss the
+            // writes still in `nicemailer.db-wal`.
+            let conn = nm_store::rusqlite::Connection::open_with_flags(&db, nm_store::rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE)?;
+            conn.execute_batch("PRAGMA busy_timeout = 5000;")?;
+            conn.execute("VACUUM main INTO ?1", [dest.to_string_lossy().as_ref()])?;
+            let size = fs::metadata(&dest)?.len();
+            println!(
+                "{} -> {} ({:.1} MB) in {:.1} s. Also copy {} (rsync); nicemailer_body.db is rebuilt from it.",
+                db.display(),
+                dest.display(),
+                size as f64 / 1e6,
+                start.elapsed().as_secs_f64(),
+                dir.join("raw.noindex").display()
+            );
+            Ok(())
+        }
     }
 }
 
@@ -1187,10 +1223,14 @@ fn run_seed(data_dir: &Path, threads: usize, s: u64, reset: bool) -> anyhow::Res
         // In WAL mode SQLite uses two companion files next to the database:
         // `-wal` (pending writes) and `-shm` (shared index). All three must
         // go, or the new database could pick up stale pages.
-        for suffix in ["", "-wal", "-shm"] {
-            let p = PathBuf::from(format!("{}{suffix}", db.display()));
-            if p.exists() {
-                fs::remove_file(&p)?;
+        // The body file goes too (`nicemailer_body.db`): it holds the
+        // bodies of the mails of the old database.
+        for file in [db.clone(), nm_store::body_path(&db)] {
+            for suffix in ["", "-wal", "-shm"] {
+                let p = PathBuf::from(format!("{}{suffix}", file.display()));
+                if p.exists() {
+                    fs::remove_file(&p)?;
+                }
             }
         }
     }

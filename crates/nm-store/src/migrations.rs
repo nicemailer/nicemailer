@@ -33,6 +33,7 @@ pub(crate) fn migrate(conn: &mut Connection, mut version: i64) -> Result<()> {
             6 => to_7(&tx)?,
             7 => to_8(&tx)?,
             8 => to_9(&tx)?,
+            9 => to_10(&tx)?,
             _ => unreachable!("aucune migration depuis la version {version}"),
         }
         version += 1;
@@ -235,6 +236,54 @@ fn to_9(conn: &Connection) -> Result<()> {
          CREATE INDEX idx_thread_deleted_account_modified ON thread (account_id, date_last_modified, id) WHERE has_deleted = 1;
 
          CREATE INDEX idx_message_received ON message (date_received);",
+    )?;
+    Ok(())
+}
+
+/// Version 10: the bodies and the search index move to the second file,
+/// `nicemailer_body.db` (`schema_body.sql`; `modele de donnees.md`, "Deux
+/// fichiers"), attached as `body` and given its tables before the
+/// migrations run (`lib.rs`, `init`).
+///
+/// - The bodies: copied row by row (`INSERT … SELECT`), about 7 GB on a
+///   real mailbox, a matter of seconds since nothing is parsed.
+/// - The search index: its five shadow tables are copied as they are. An
+///   FTS5 table keeps all its state in them (`_data` the index, `_idx`
+///   its segments, `_content` the text, `_docsize` the sizes, `_config` its
+///   settings), and the new table was created with the same settings, so
+///   the copy is that index, without tokenizing 400,000 mails again.
+/// - The old tables and their triggers are dropped; the triggers that tie
+///   the two files are now TEMP (`lib.rs`, `TEMP_TRIGGERS`).
+///
+/// The rows of the new file are deleted first: if a previous attempt
+/// committed the body file but not the main one (two files commit
+/// separately), the migration runs again from the start without
+/// duplicates. The main file is vacuumed afterwards, outside the
+/// transaction (`lib.rs`).
+fn to_10(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "DELETE FROM body.message_body;
+         INSERT INTO body.message_body
+                (message_id, text_plain, html_sanitized, has_remote_content, parser_version, date_fetched, tracking_pixels)
+         SELECT message_id, text_plain, html_sanitized, has_remote_content, parser_version, date_fetched, tracking_pixels
+           FROM main.message_body;
+
+         DELETE FROM body.message_fts_data;
+         DELETE FROM body.message_fts_idx;
+         DELETE FROM body.message_fts_content;
+         DELETE FROM body.message_fts_docsize;
+         DELETE FROM body.message_fts_config;
+         INSERT INTO body.message_fts_data SELECT * FROM main.message_fts_data;
+         INSERT INTO body.message_fts_idx SELECT * FROM main.message_fts_idx;
+         INSERT INTO body.message_fts_content SELECT * FROM main.message_fts_content;
+         INSERT INTO body.message_fts_docsize SELECT * FROM main.message_fts_docsize;
+         INSERT INTO body.message_fts_config SELECT * FROM main.message_fts_config;
+
+         DROP TRIGGER main.message_fts_au;
+         DROP TRIGGER main.message_fts_ad;
+         DROP TRIGGER main.message_body_fts_au;
+         DROP TABLE main.message_fts;
+         DROP TABLE main.message_body;",
     )?;
     Ok(())
 }

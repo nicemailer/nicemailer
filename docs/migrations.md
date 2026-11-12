@@ -28,6 +28,7 @@ Rule of thumb: a migration does what the code cannot work without (a new column,
 | 7 | `draft.send_account_id`, the account that sends a draft when it is not the draft's own: a reply to a mail of an account that cannot send, or a sender changed in the reply (`docs/sending.md`, "Choosing the sender"). A column added at the end of a small table: instant. |
 | 8 | `idx_thread_folder_received` and `idx_thread_folder_date_modified`: the rows of `thread_folder` of every folder in date order, for the virtual folder All Mail, which walks its folders at once and stops after a page (`queries.rs`, `list_all_mail`). Two indexes built from `thread_folder`: 0.15 s on 97,000 rows. |
 | 9 | The folder of a conversation in `thread` (`dossiers.md`, "Dossier d'une conversation"): five columns added at the end of `thread` (`folder`, `has_sent`, `has_draft`, `has_quarantine`, `has_deleted`), computed for every thread in one set-based statement (`refresh_all_threads_sql`, the rule of `refresh_thread`, checked equal by a test); the counters become "live" (without Deleted, Junk and Banned). `thread_folder` and its indexes are dropped; the 24 list indexes of `thread` and `idx_message_received` (Mail date…) are created after the values are written. 15 s on a real mailbox of 400,000 mails (296,000 conversations), core start included; the file keeps its size until a `VACUUM`. |
+| 10 | The bodies and the search index move to a second file, `nicemailer_body.db` (`specifications/schema_body.sql`), attached as `body` to every connection ([backup.md](backup.md)). The bodies are copied row by row; the FTS5 index is copied as it is, its five shadow tables (`_data`, `_idx`, `_content`, `_docsize`, `_config`) into a table created with the same settings, without tokenizing the mail again (an `integrity-check` of the index passes after it, `tests/migrations.rs`). The old tables and their triggers are dropped, the triggers that tie the two files become TEMP (`lib.rs`, `TEMP_TRIGGERS`), and the main file is compacted (`VACUUM`). 230 s on a real mailbox of 400,000 mails, nearly all of it copying 11 GB: the main file goes from 12.3 GB to 516 MB. It needs as much free space as the bodies while it runs. Interrupted, it starts again from the beginning (the rows of the new file are deleted first). |
 
 The reasons for the indexes of version 2, with measurements, are in `specifications/modele de donnees.md`, section 11.
 
@@ -36,11 +37,13 @@ The reasons for the indexes of version 2, with measurements, are in `specificati
 `Store::open` (`lib.rs`, `init`) runs these steps, in this order, every time:
 
 1. **Connection settings.** `foreign_keys`, `synchronous = NORMAL`, `temp_store`, `busy_timeout`, `cache_size`: they are not stored in the file, so they are set on every connection.
-2. **Read `PRAGMA user_version`.**
+2. **Read `PRAGMA user_version`, then attach the body file** (`nicemailer_body.db`, [backup.md](backup.md)) as `body`, creating its tables when it is new or was deleted.
 3. **Decide:**
-   - `0`: an empty file. `schema.sql` is run as is, and the database is at the latest version.
+   - `0`: an empty file. `schema.sql` is run as is, and the database is at the latest version. A body file found next to it is emptied: it belonged to a database that is gone.
    - Greater than `SCHEMA_VERSION`: the database was written by a newer core. It is refused with `SchemaTooNew` ("version du schéma N plus récente que celle du code"), and nothing is touched: an older core does not know what the newer columns mean, and writing to them could corrupt the data.
    - Otherwise, an earlier version (or the current one): `check_schema` checks it is complete (below), then `migrations::migrate` upgrades it. At the current version there is nothing to migrate.
+   - After a migration from before version 10, `VACUUM main` gives back the pages the bodies left.
+3b. **The two files tied together.** The TEMP triggers that follow `message` into the body file are created, and `reconcile_bodies` makes the two files agree after a crash between their commits ([backup.md](backup.md)).
 4. **Planner statistics.** `PRAGMA optimize = 0x10002` analyzes the tables whose size changed much since the last analysis, with a bounded effort. The queries are written to be fast without statistics (the query plan tests check it); this is a safety net. Only the averages are kept (`sqlite_stat1`): the samples of values (`sqlite_stat4`) are deleted, here and after an import (`Store::optimize`). They describe the accounts and folders of the last analysis, and an account created since looks empty to the planner: on a real mailbox, the threading of an mbox import then read every message of the account for each id cited. Without the samples, the list queries of a real mailbox took 215 ms in total instead of 411 ms (`lib.rs`, `refresh_statistics`; test: `crates/nm-store/tests/statistics.rs`).
 
 `migrate` loops from the database's version to `SCHEMA_VERSION`. Each step:
@@ -171,6 +174,7 @@ D="$HOME/Library/Application Support/NiceMailer-archive"   # the data directory
 T=/tmp/nmtry; mkdir -p $T
 cp -c "$D/nicemailer.db" $T/
 [ -s "$D/nicemailer.db-wal" ] && cp -c "$D/nicemailer.db-wal" $T/
+[ -f "$D/nicemailer_body.db" ] && cp -c "$D"/nicemailer_body.db* $T/   # from version 10
 ln -s "$D/raw.noindex" $T/raw.noindex     # the raw files, read only
 target/release/nicemailer-core --data-dir $T
 ```
