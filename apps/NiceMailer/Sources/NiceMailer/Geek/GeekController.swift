@@ -719,7 +719,9 @@ final class GeekController {
         case "J": model.markAndMove(1)
         case "K": model.markAndMove(-1)
         case "@": openPicker(.accounts)
-        case "F": openPicker(.attributes)
+        // `f` the attribute selector, the search one uses most; `F` the
+        // forward (swapped in November 2026, `ui.md`).
+        case "f": openPicker(.attributes)
         case "l": openPicker(.links)
         case " ":
             // One column, on the list: Space opens the mail, as Return
@@ -739,12 +741,12 @@ final class GeekController {
         case "g": openPicker(.group)
         case "/": openPicker(.search)
         case "r":
-            // A reply to all (`reponse.md`); `R` to the sender alone; `f` a
+            // A reply to all (`reponse.md`); `R` to the sender alone; `F` a
             // forward; `c` a new mail.
             startReply()
         case "R":
             startReply(kind: .replySender)
-        case "f":
+        case "F":
             startReply(kind: .forward)
         case "c":
             Task {
@@ -789,11 +791,11 @@ final class GeekController {
     /// for a decision), tags and groups (the sender is not accepted yet),
     /// the replies (`r`, `R`: writing to the sender would accept it,
     /// `dossiers.md`, "Écrire à quelqu'un vaut décision Inbox", outside the
-    /// workflow of the folder), the forward (`f`: a mail not sorted yet is
+    /// workflow of the folder), the forward (`F`: a mail not sorted yet is
     /// not passed on; move it first), and saving (`s`: its block leaves the status bar, the mail
     /// is to be sorted, not kept). What stays: navigation, display, links,
     /// `*`, `z`.
-    static let quarantineRefused: Set<String> = ["u", "U", "t", "g", "r", "R", "f", "s"]
+    static let quarantineRefused: Set<String> = ["u", "U", "t", "g", "r", "R", "F", "s"]
 
     /// A key pressed while Quarantine is listed: a target's letter moves the
     /// marked mails (or the one under the cursor) there; `m` and the refused

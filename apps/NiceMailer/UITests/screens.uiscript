@@ -25,7 +25,7 @@ expect list_filter ~ contact
 expect thread_count > 0
 # The attributes narrow the mails of a contact too: the status bar keeps
 # "contact: …" and shows the magnifier and the chip.
-key F
+key f
 type Text
 key ret
 type zzzz

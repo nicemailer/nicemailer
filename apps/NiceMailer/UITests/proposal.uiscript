@@ -35,7 +35,7 @@ key ret
 key ;
 key a
 expect selected_subject = La lettre de novembre
-key f
+key F
 expect composing = true
 expect compose_written = false
 expect compose_attachments ~ devis.pdf

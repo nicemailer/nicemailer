@@ -503,20 +503,20 @@ struct GeekControllerTests {
         #expect(controller.pickerEntries(.accounts).filter { $0.detail != nil }.allSatisfy { $0.detailStyle == .count })
         press("esc")
         // How six digits were read is information.
-        press("F"); type(L("Conversation date…")); press("ret")
+        press("f"); type(L("Conversation date…")); press("ret")
         type("010120")
         #expect(controller.pickerEntries(.attributeValue(.date)).prefix(4).allSatisfy { $0.detailStyle == .info })
         press("esc")
         // An interval left empty is a warning: it stands out.
-        press("F"); type(L("Conversation date…")); press("ret")
+        press("f"); type(L("Conversation date…")); press("ret")
         type("2026-10-01"); press("ret")
-        press("F"); type(L("Conversation date…")); press("ret")
+        press("f"); type(L("Conversation date…")); press("ret")
         type("2026-09-01")
         let warning = controller.pickerEntries(.attributeValue(.date))[1]
         #expect(warning.detail == L("nothing in between") && warning.detailStyle == .count)
         press("esc")
         // "domain" on a From… value.
-        press("F"); type(L("From…")); press("ret")
+        press("f"); type(L("From…")); press("ret")
         type("@acme.fr")
         #expect(controller.pickerEntries(.attributeValue(.from)).first?.detailStyle == .info)
     }
@@ -627,7 +627,7 @@ struct GeekControllerTests {
     }
 
     @Test func theLeftArrowGoesBackToEditTheTypedText() {
-        press("F"); type(L("From…")); press("ret")
+        press("f"); type(L("From…")); press("ret")
         type("alce")
         press("left"); press("left")
         #expect(controller.pickerLine.cursor == 2)
@@ -665,7 +665,7 @@ struct GeekControllerTests {
     }
 
     @Test func editingKeysKeepThePickerOpenAndCtrlNPStillMove() {
-        press("F")
+        press("f")
         press("down")
         #expect(controller.pickerIndex == 1)
         press("left"); press("right")
@@ -677,7 +677,7 @@ struct GeekControllerTests {
 
     @Test func commandVPastesAtTheCursor() async {
         copy("  alice@acme.fr\n")
-        press("F"); type(L("From…")); press("ret")
+        press("f"); type(L("From…")); press("ret")
         press("cmd-v")
         #expect(controller.pickerQuery == "alice@acme.fr")
         // Pasted text is looked for like typed text.
@@ -704,7 +704,7 @@ struct GeekControllerTests {
 
     @Test func anEmptyPasteChangesNothing() {
         copy("\n ")
-        press("F"); type("un")
+        press("f"); type("un")
         press("cmd-v")
         #expect(controller.pickerQuery == "un")
     }
@@ -724,7 +724,7 @@ struct GeekControllerTests {
     }
 
     @Test func aClickOutsideClosesThePickerTheMenuAndTheHelp() {
-        press("F")
+        press("f")
         #expect(controller.closesOnClickOutside)
         controller.clickOutsideOverlay()
         #expect(controller.overlay == .none)
@@ -1314,7 +1314,7 @@ struct GeekControllerTests {
     // MARK: Attributes
 
     @Test func capitalFOpensTheAttributeSelectorAndAToggleNarrowsTheList() async {
-        press("F")
+        press("f")
         #expect(controller.overlay == .picker(.attributes))
         let labels = controller.pickerEntries(.attributes).map(\.label)
         // Compared with the translations: tests run in the machine's language.
@@ -1324,30 +1324,30 @@ struct GeekControllerTests {
         #expect(model.attributes.seen == false)
         #expect(await eventually { (core.calls("list_threads").last?["filter"] as? [String: Any])?["seen"] as? Bool == false })
         // Choosing it again removes it.
-        press("F"); type(L("unread")); press("ret")
+        press("f"); type(L("unread")); press("ret")
         #expect(model.attributes.isEmpty)
     }
 
     @Test func typingBringsTheBestMatchFirstInTheAttributeSelector() {
         // The opposite value contains the typed word ("unread" / "non lus")
         // and is listed first: ranking puts the exact one under Return.
-        press("F"); type(L("read"))
+        press("f"); type(L("read"))
         #expect(controller.pickerEntries(.attributes).first?.label == L("read"))
         press("ret")
         #expect(model.attributes.seen == true)
         // Initials reach a negative value.
         let initials = String(PickerMatch.words(PickerMatch.normalize(L("not flagged"))).compactMap(\.first))
-        press("F"); type(initials)
+        press("f"); type(initials)
         #expect(controller.pickerEntries(.attributes).first?.label == L("not flagged"))
         press("ret")
         #expect(model.attributes.flagged == false)
         // A hidden search word reaches To….
-        press("F"); type("cc")
+        press("f"); type("cc")
         #expect(controller.pickerEntries(.attributes).first?.label == L("To…"))
     }
 
     @Test func attributesWithAValueExpandThePanel() async {
-        press("F"); type(L("From…")); press("ret")
+        press("f"); type(L("From…")); press("ret")
         #expect(controller.overlay == .picker(.attributeValue(.from)))
         type("alice")
         #expect(controller.pickerEntries(.attributeValue(.from)).first?.label == "alice")
@@ -1361,7 +1361,7 @@ struct GeekControllerTests {
     }
 
     @Test func aValuePanelOffersTheValueThenItsExclusion() async {
-        press("F"); type(L("From…")); press("ret")
+        press("f"); type(L("From…")); press("ret")
         type("@acme.fr")
         var rows = controller.pickerEntries(.attributeValue(.from))
         #expect(rows.map(\.key).prefix(2) == ["+", "−"])
@@ -1374,7 +1374,7 @@ struct GeekControllerTests {
         })
         // A leading "-" leaves only the exclusion, and the contacts are
         // looked for without it.
-        press("F"); type(L("To…")); press("ret")
+        press("f"); type(L("To…")); press("ret")
         type("-alice")
         rows = controller.pickerEntries(.attributeValue(.to))
         #expect(rows.first?.key == "−" && rows.first?.label == L("not %@", "alice"))
@@ -1384,28 +1384,28 @@ struct GeekControllerTests {
     }
 
     @Test func textAndSubjectPanelsTakeWordsAndExclusions() {
-        press("F"); type(L("Text…")); press("ret")
+        press("f"); type(L("Text…")); press("ret")
         #expect(controller.overlay == .picker(.attributeValue(.text)))
         type("acme.fr"); press("ret")
         #expect(model.attributes.text == "acme.fr")
         // An exclusion decided after the fact: → leaves the current words,
         // selected, for the end of the line.
-        press("F"); type(L("Text…")); press("ret")
+        press("f"); type(L("Text…")); press("ret")
         press("right"); type(" -facture"); press("ret")
         #expect(model.attributes.text == "acme.fr -facture")
-        press("F"); type(L("Subject…")); press("ret")
+        press("f"); type(L("Subject…")); press("ret")
         type("-panne"); press("ret")
         #expect(model.attributes.subject == "-panne")
         #expect(model.attributes.contains == nil)
     }
 
     @Test func aSecondSubjectReplacesTheFirst() async {
-        press("F"); type(L("Subject…")); press("ret")
+        press("f"); type(L("Subject…")); press("ret")
         type("devis"); press("ret")
         #expect(model.attributes.subject == "devis")
         // The panel opens on the current subject, selected: typing
         // replaces it.
-        press("F"); type(L("Subject…")); press("ret")
+        press("f"); type(L("Subject…")); press("ret")
         #expect(controller.pickerQuery == "devis" && controller.pickerLine.selectedAll)
         type("facture")
         #expect(controller.pickerQuery == "facture" && !controller.pickerLine.selectedAll)
@@ -1415,18 +1415,18 @@ struct GeekControllerTests {
             (core.calls("list_threads").last?["filter"] as? [String: Any])?["subject"] as? String == "facture"
         })
         // Return without touching it keeps it as it is.
-        press("F"); type(L("Subject…")); press("ret"); press("ret")
+        press("f"); type(L("Subject…")); press("ret"); press("ret")
         #expect(model.attributes.subject == "facture")
         // A paste replaces it too.
         copy("rapport\n")
-        press("F"); type(L("Subject…")); press("ret"); press("cmd-v"); press("ret")
+        press("f"); type(L("Subject…")); press("ret"); press("cmd-v"); press("ret")
         #expect(model.attributes.subject == "rapport")
     }
 
     @Test func erasingTheWordsOfThePanelRemovesTheCriterion() {
-        press("F"); type(L("Subject…")); press("ret")
+        press("f"); type(L("Subject…")); press("ret")
         type("devis"); press("ret")
-        press("F"); type(L("Subject…")); press("ret")
+        press("f"); type(L("Subject…")); press("ret")
         // Delete clears the selected words; Return then removes the chip.
         press("del")
         #expect(controller.pickerQuery == "")
@@ -1435,12 +1435,12 @@ struct GeekControllerTests {
         press("ret")
         #expect(model.attributes.subject == nil && model.attributes.isEmpty)
         // With no criterion, an empty panel offers nothing.
-        press("F"); type(L("Subject…")); press("ret")
+        press("f"); type(L("Subject…")); press("ret")
         #expect(controller.pickerEntries(.attributeValue(.subject)).isEmpty && !controller.pickerLine.selectedAll)
     }
 
     @Test func valuePanelsSayWhatCanBeTyped() {
-        press("F"); type(L("Conversation date…")); press("ret")
+        press("f"); type(L("Conversation date…")); press("ret")
         // The Date… panel opens on its presets: the hint is on the input
         // line, not only in an empty panel.
         #expect(controller.pickerHint(.attributeValue(.date))?.contains("011026") == true)
@@ -1455,7 +1455,7 @@ struct GeekControllerTests {
     }
 
     @Test func theDatePanelOffersPresetsAndTypedDates() {
-        press("F"); type(L("Conversation date…")); press("ret")
+        press("f"); type(L("Conversation date…")); press("ret")
         #expect(controller.pickerEntries(.attributeValue(.date)).count == 5)
         type("2026-10-01")
         let labels = controller.pickerEntries(.attributeValue(.date)).map(\.label)
@@ -1465,21 +1465,21 @@ struct GeekControllerTests {
     }
 
     @Test func theDatePanelBuildsAnIntervalAndReadsDurations() {
-        press("F"); type(L("Conversation date…")); press("ret")
+        press("f"); type(L("Conversation date…")); press("ret")
         type("2026-10-01"); press("ret")
         // An upper bound kept with the lower one: two chips.
-        press("F"); type(L("Conversation date…")); press("ret")
+        press("f"); type(L("Conversation date…")); press("ret")
         type("2026-11-01"); press("down"); press("ret")
         #expect(model.attributes.chips.map(\.label) == [L("after %@", "2026-10-01"), L("before %@", "2026-11-01")])
         // An upper bound before the lower one: the row says so.
-        press("F"); type(L("Conversation date…")); press("ret")
+        press("f"); type(L("Conversation date…")); press("ret")
         type("2026-09-01")
         let rows = controller.pickerEntries(.attributeValue(.date))
         #expect(rows[1].label == L("before %@", "2026-09-01") && rows[1].detail == L("nothing in between"))
         #expect(rows[0].detail == nil)
         press("esc")
         // A duration: newer than, then older than, with the date it gives.
-        press("F"); type(L("Conversation date…")); press("ret")
+        press("f"); type(L("Conversation date…")); press("ret")
         type("3s")
         let d = controller.pickerEntries(.attributeValue(.date))
         #expect(d.prefix(2).map(\.label) == [L("newer than %@", L("%lld weeks", 3)), L("older than %@", L("%lld weeks", 3))])
@@ -1493,7 +1493,7 @@ struct GeekControllerTests {
     /// date… first (two letters reach it), Mail date… apart, each with its
     /// own bounds, chips and request parameters.
     @Test func mailDateIsACriterionOfItsOwn() async {
-        press("F")
+        press("f")
         let labels = controller.pickerEntries(.attributes).map(\.label)
         let conversation = labels.firstIndex(of: L("Conversation date…"))
         let mail = labels.firstIndex(of: L("Mail date…"))
@@ -1509,13 +1509,13 @@ struct GeekControllerTests {
             return f?["mail_before"] as? Int == model.attributes.mailBefore && f?["before"] == nil
         })
         // Its interval is its own: a conversation bound does not empty it.
-        press("F"); type(L("Conversation date…")); press("ret")
+        press("f"); type(L("Conversation date…")); press("ret")
         type("2021-01-01")
         #expect(controller.pickerEntries(.attributeValue(.date))[0].detail != L("nothing in between"))
         press("ret")
         #expect(model.attributes.after != nil && model.attributes.mailBefore != nil)
         // An empty interval of Mail date… is said in its own panel.
-        press("F"); type(L("Mail date…")); press("ret")
+        press("f"); type(L("Mail date…")); press("ret")
         type("2021-01-01")
         #expect(controller.pickerEntries(.attributeValue(.mailDate))[0].detail == L("nothing in between"))
         press("esc")

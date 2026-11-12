@@ -12,7 +12,7 @@ expect compose_focus = body
 key cmd-del
 expect composing = false
 # A forward.
-key f
+key F
 expect composing = true
 expect compose_focus = to
 expect compose_to = 

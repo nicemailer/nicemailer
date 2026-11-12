@@ -945,7 +945,7 @@ struct ComposeControllerTests {
             d["after_send_target"] = NSNull()
             return ["draft": Fixture.opened(method, d), "reused": false, "warning": NSNull()]
         }
-        press("f")
+        press("F")
         #expect(await eventually { model.composer != nil })
         let call = core.calls("prepare_draft").first
         #expect(call?["kind"] as? String == "forward")
@@ -1006,7 +1006,7 @@ struct ComposeControllerTests {
 
     /// Quarantine refuses `R` and `f` like `r`.
     @Test func quarantineRefusesTheRepliesAndTheForward() {
-        #expect(GeekController.quarantineRefused.isSuperset(of: ["r", "R", "f"]))
+        #expect(GeekController.quarantineRefused.isSuperset(of: ["r", "R", "F"]))
         #expect(!GeekController.quarantineRefused.contains("c"))
     }
 

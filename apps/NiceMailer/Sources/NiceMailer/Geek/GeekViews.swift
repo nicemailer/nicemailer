@@ -254,7 +254,7 @@ struct GeekStatusBar: View {
                 // contact list ("unread mails of the group"): the magnifier
                 // opens the selector (`F`); each active attribute is a chip,
                 // removed by a click.
-                StatusBlock(icon: "magnifyingglass", text: "", key: "F")
+                StatusBlock(icon: "magnifyingglass", text: "", key: "f")
                     .onTapGesture { controller.openPickerFromStatusBar(.attributes) }
                     .uiTarget("status-attributes")
                 ForEach(model.attributes.chips) { chip in

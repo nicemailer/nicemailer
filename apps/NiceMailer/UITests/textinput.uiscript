@@ -6,7 +6,7 @@
 # the mail under the click (here the reader) stays as it was.
 key j
 expect selected = 1
-key F
+key f
 expect overlay ~ picker
 snap picker-open
 # A click inside the panel (its input line) keeps it open.
@@ -62,7 +62,7 @@ key esc
 # ⌘V pastes an address copied in another app: line break and spaces
 # around it go; the From… panel looks for it like typed text.
 clipboard   me@example.com\n
-key F
+key f
 type From
 key ret
 expect overlay ~ attributeValue
@@ -95,7 +95,7 @@ key ret
 key ;
 key e
 expect thread_count = 4
-key F
+key f
 type Subject
 key ret
 type rapport
@@ -103,7 +103,7 @@ key ret
 expect filters = subject: rapport
 expect thread_count = 1
 # The panel opens on the current subject, selected.
-key F
+key f
 type Subject
 key ret
 expect picker_query = rapport
@@ -116,7 +116,7 @@ expect filters = subject: lettre
 expect thread_count = 1
 expect selected_subject ~ lettre
 # → keeps the words to edit them: an exclusion added after the fact.
-key F
+key f
 type Subject
 key ret
 key right
@@ -125,7 +125,7 @@ key ret
 expect filters = subject: lettre -novembre
 expect thread_count = 0
 # Erased, then Return: the criterion goes.
-key F
+key f
 type Subject
 key ret
 key del

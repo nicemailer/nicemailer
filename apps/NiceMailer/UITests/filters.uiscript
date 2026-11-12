@@ -1,7 +1,7 @@
 # Attribute selector (F, or a click on the magnifier in the status bar).
 expect filters =
 expect thread_count > 10
-key F
+key f
 expect overlay = picker(NiceMailer.GeekController.PickerKind.attributes)
 snap attribute-selector
 type unread
@@ -28,22 +28,22 @@ expect selected_unread > 0
 # Typing ranks the rows: the one starting with the typed text comes first,
 # so "read" chooses "read", not "unread" listed before it (it replaces
 # "unread"); initials reach a negative value; a hidden word finds To….
-key F
+key f
 type read
 expect picker_first = read
 key ret
 expect filters = read
-key F
+key f
 type nf
 expect picker_first = not flagged
 key ret
 expect filters = read, not flagged
-key F
+key f
 type cc
 expect picker_first = To…
 key esc
 # Back to unread only.
-key F
+key f
 type unread
 key ret
 click chip:flagged
@@ -63,7 +63,7 @@ expect thread_count = 0
 expect reader_subject =
 # Date: the input line says a date or a duration can be typed, six
 # digits included.
-key F
+key f
 type Date
 key ret
 expect picker_hint ~ 011026
@@ -77,7 +77,7 @@ expect picker_first_detail = dd mm yy
 snap date-six-digits
 key esc
 # Then a preset.
-key F
+key f
 type Date
 key ret
 type last 30
@@ -86,7 +86,7 @@ key ret
 expect filters ~ last 30 days
 # A duration: its rows say the date it gives; "older than" is the upper
 # bound, kept with the lower one (an interval, two chips).
-key F
+key f
 type Date
 key ret
 type 1w
@@ -97,7 +97,7 @@ key ret
 expect filters ~ last 30 days, older than 1 week
 # Mail date: a criterion of its own (any mail of the conversation), with
 # chips that say so; Conversation date's chips stay.
-key F
+key f
 type mail date
 key ret
 expect overlay = picker(NiceMailer.GeekController.PickerKind.attributeValue(NiceMailer.AttributeField.mailDate))
@@ -110,7 +110,7 @@ click chip:mail_after
 expect filters !~ mail:
 expect filters ~ last 30 days
 # Text: words of the subject and body.
-key F
+key f
 type Text
 key ret
 type facture
@@ -173,7 +173,7 @@ key esc
 expect folder = Everything
 expect filters =
 # Text… never looks at the addresses.
-key F
+key f
 type Text
 key ret
 type bob
@@ -183,7 +183,7 @@ expect thread_count = 0
 click chip:text
 # A value typed with "-" is excluded: a domain (with "@"), not only a
 # part of the address.
-key F
+key f
 type From
 key ret
 type -@example.org
@@ -194,7 +194,7 @@ expect filters = not from: @example.org
 expect thread_count = 1
 expect selected_subject ~ lettre
 # The exclusion is also the row under the value (one arrow down).
-key F
+key f
 type To
 key ret
 type @example.org
