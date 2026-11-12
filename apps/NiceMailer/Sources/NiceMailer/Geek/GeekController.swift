@@ -1250,7 +1250,7 @@ final class GeekController {
     /// pickers whose rows say it all.
     func pickerHint(_ kind: PickerKind) -> String? {
         switch kind {
-        case .attributeValue(.date): L("or type a date (2026-10-01, 1/10/2026, 011026, 261001) or a duration (10d, 3w, 6m, 1y)")
+        case .attributeValue(.date), .attributeValue(.mailDate): L("or type a date (2026-10-01, 1/10/2026, 011026, 261001) or a duration (10d, 3w, 6m, 1y)")
         case .attributeValue(.text): L("words of the subject or body; -word to exclude")
         case .attributeValue(.subject): L("words of the subject; -word to exclude")
         case .attributeValue: L("a name, an address or @domain; -value to exclude")
@@ -1434,7 +1434,7 @@ final class GeekController {
             guard !value.isEmpty else { return [] }
             // The words as typed: a "-word" among them stays an exclusion.
             return rows(value, value)
-        case .date:
+        case .date, .mailDate:
             // A typed date or duration first, then the presets (all of
             // them below a typed date, otherwise those whose label
             // matches).
@@ -1449,9 +1449,9 @@ final class GeekController {
             return presets.map { p in
                 // How the date was read is information; an empty interval
                 // is a warning, shown as such.
-                let empty = model.attributes.dateIsEmpty(with: p)
+                let empty = model.attributes.dateIsEmpty(with: p, on: field)
                 return Entry(key: " ", label: p.label, detail: empty ? L("nothing in between") : p.detail,
-                             detailStyle: empty ? .count : .info) { [model] in model.attributes.setDate(p) }
+                             detailStyle: empty ? .count : .info) { [model] in model.attributes.setDate(p, on: field) }
             }
         }
     }

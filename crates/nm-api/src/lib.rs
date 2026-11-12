@@ -547,12 +547,25 @@ pub struct ThreadFilter {
     /// Words of the subject only.
     #[serde(default)]
     pub subject: Option<String>,
-    /// Latest message received at or after this Unix time.
+    /// Conversation date (`ui.md`, "Deux critères de date"): the date of
+    /// the thread, that of its latest mail (outside Deleted, Junk and
+    /// Banned, as shown in the list), at or after this Unix time. Costs
+    /// nothing: the list is sorted on that date.
     #[serde(default)]
     pub after: Option<i64>,
-    /// Latest message received before this Unix time.
+    /// Conversation date: the latest mail before this Unix time.
     #[serde(default)]
     pub before: Option<i64>,
+    /// Mail date: a mail of the thread in the listed folders was received
+    /// at or after this Unix time. A thread from 2016 to 2026 matches
+    /// "before 2020" by its mails of 2016. Heavier than `after` (a set of
+    /// mails computed per request), hence a criterion of its own.
+    #[serde(default)]
+    pub mail_after: Option<i64>,
+    /// Mail date: a mail of the thread in the listed folders was received
+    /// before this Unix time.
+    #[serde(default)]
+    pub mail_before: Option<i64>,
     /// Tagged with this tag: a message of the thread carries it. A name,
     /// not an id: the tags of the same name in every account are one (each
     /// account has its own "Clients"), compared without case.
@@ -754,15 +767,19 @@ pub struct FolderList {
 pub struct ThreadSummary {
     pub id: i64,
     pub subject: String,
-    /// Names of the senders of the thread's messages in this folder, from
-    /// oldest to newest, without duplicates.
+    /// Names of the senders of the thread's messages, from oldest to
+    /// newest, without duplicates. Like the counters, without the mails of
+    /// Deleted, Junk and Banned unless the thread has only such mails.
     pub participants: Vec<String>,
     /// Beginning of the latest message's text.
     pub snippet: Option<String>,
-    /// Unix timestamp (seconds) of the most recent message received in this
-    /// folder. The list is sorted on it, newest first.
+    /// Unix timestamp (seconds) of the thread's latest mail, sent or
+    /// received, outside Deleted, Junk and Banned (all its mails when it
+    /// has only such mails). The list is sorted on it, newest first.
     pub date_last_received: i64,
-    /// Counters restricted to the listed folder.
+    /// Counters of the whole thread, on the same mails as
+    /// `date_last_received` (`dossiers.md`, "Dossier d'une conversation"):
+    /// the same in every list the thread is in.
     pub message_count: i64,
     pub unread_count: i64,
     pub is_flagged: bool,
@@ -771,12 +788,13 @@ pub struct ThreadSummary {
     pub returned_from: Option<FolderRole>,
     /// Folder preselected if the user replies (see `FolderRole::reply_target`).
     pub reply_target: Option<FolderRole>,
-    /// Folder this row describes: the listed folder, or for a list across
-    /// folders (Everything) the folder of the latest message. Moves
-    /// pass it as `from_folder_id`.
+    /// Folder this row describes: the listed folder (of the thread's
+    /// account), or in Everything and All Mail the folder of the thread
+    /// (`dossiers.md`, "Dossier d'une conversation"). Moves pass it as
+    /// `from_folder_id`.
     pub folder_id: i64,
-    /// Unix timestamp of the latest change to a message of the thread in
-    /// this folder (sort `modified`).
+    /// Unix timestamp of the latest change to a message of the thread, in
+    /// any folder (sort `modified`).
     pub date_last_modified: i64,
     /// Names of the tags on the thread's messages, sorted.
     pub tags: Vec<String>,

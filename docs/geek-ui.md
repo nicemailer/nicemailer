@@ -44,7 +44,8 @@ The magnifier after the folder in the status bar (key **F**, or a click) opens t
 | To… — À… | same, on To and Cc | `to`, `cc` — `a`, `cc`, `dest` |
 | Text… — Texte… | words of the subject and body, never the addresses; each word a prefix, accents ignored; `-word` excludes | `te` — `te` |
 | Subject… — Sujet… | words of the subject only; `-word` excludes | `su`, `title` — `su`, `objet` |
-| Date… — Date… | today, last 7 days, last 30 days, this year, older than a year, or "after" / "before" a typed date, or newer / older than a typed duration (see "Typed dates" below); the two bounds add up to an interval | `da` — `da`, `quand` |
+| Conversation date… — Date conversation… | the date of the conversation, that of its latest mail (as shown in the list): today, last 7 days, last 30 days, this year, older than a year, or "after" / "before" a typed date, or newer / older than a typed duration (see "Typed dates" below); the two bounds add up to an interval. The frequent one: it costs nothing | `cd` — `da`, `dc`, `quand` |
+| Mail date… — Date mail… | the same choices, on each mail: a conversation from 2016 to 2026 is "before 2020" by its mails of 2016. Heavier for the core (it reads the mails of the interval), hence a criterion of its own; its chips say "mail: …". Both can be combined | `ma` — `dm`, `message` |
 
 Choosing an active value again removes it; choosing the opposite value replaces it. An attribute with "…" expands the panel at once to choose its value. Active attributes are chips in the status bar: a click on a chip removes it; Escape clears them all (after the marks); they stay when changing folder or account.
 
@@ -57,7 +58,7 @@ The selector opens on its first row and Return chooses the highlighted row, so w
 3. the typed letters are the initials of the label's words (one word of two letters or more): `nf` → "not flagged", `sd` → "sans drapeau", `spj` → "sans pièce jointe", `sm` → "sans ma réponse";
 4. each typed word appears anywhere in the label (the former filter, so nothing it found is lost): `lagg` → "flagged".
 
-Case and accents are ignored (`a` finds "À…"). Attributes with a value also have hidden search words, localized (`AttributeField.keywords`): `cc` or `destinataire` finds To… / À…, `expéditeur` or `sender` finds From… / De…. The French labels were chosen so that two letters always reach a row: "De…", "Date…" and "drapeau" differ at the second letter, and "À…" replaces "Destinataire…", which started like "De…" (and matches the "à :" chip and the "À :" header of a mail).
+Case and accents are ignored (`a` finds "À…"). Attributes with a value also have hidden search words, localized (`AttributeField.keywords`): `cc` or `destinataire` finds To… / À…, `expéditeur` or `sender` finds From… / De…. The French labels were chosen so that two letters always reach a row: "De…", "Date conversation…" and "drapeau" differ at the second letter (`da` reaches Date conversation…, listed before Date mail…, which `dm` reaches), and "À…" replaces "Destinataire…", which started like "De…" (and matches the "à :" chip and the "À :" header of a mail).
 
 ### Typed dates
 

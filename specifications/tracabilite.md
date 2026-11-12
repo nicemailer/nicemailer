@@ -38,7 +38,7 @@ Trois mécanismes y répondent :
 | `pending_action` | `date_created`, `date_modified` (changement d'état), `created_by` (client qui a donné l'ordre) | Journal technique du spool ; la modification vient toujours du noyau |
 | `audit_log` | `date_created`, `created_by` | Lignes jamais modifiées |
 | `message_reference`, `message_address`, `message_keyword` | Aucune | Lignes de liaison créées avec le message ; ajouter un tag modifie le **message** |
-| `thread`, `thread_folder` | Aucune | Agrégats recalculés en permanence |
+| `thread` | Aucune | Agrégats recalculés en permanence |
 | `message_body` | `date_fetched` seulement | Un `reindex` réécrit le corps sans que rien ne change pour l'utilisateur |
 | `message_fts` | Aucune | Table virtuelle FTS5 |
 

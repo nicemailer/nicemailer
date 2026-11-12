@@ -10,7 +10,7 @@ Work identified but left for later, one section per ticket. A ticket says what i
 - a conversation spread over several work or filing folders (Inbox, Todo, Waiting, Archive, Newsletter, Paperwork) without a new mail explaining it (`dossiers.md`, "Une conversation, pas un mail");
 - a mail back in Quarantine after it left it (an earlier `move` line in `audit_log` from Quarantine);
 - a `$NmWasTodo` / `$NmWasWaiting` keyword on a mail outside the Inbox;
-- denormalized counters (`folder.total_count`, `unread_count`, `thread`, `thread_folder`) different from what `message` gives.
+- denormalized counters (`folder.total_count`, `unread_count`, `thread`) different from what `message` gives.
 
 **Why.** Many code paths move mail (moves, filings, undo, and later the IMAP sync, returns from Todo/Waiting, replies). A bug in one of them leaves the mailbox inconsistent without any error. `specifications/analyse-critique.md` asks for the same command, run by the tests after each scenario.
 

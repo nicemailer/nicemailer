@@ -32,6 +32,7 @@ pub(crate) fn migrate(conn: &mut Connection, mut version: i64) -> Result<()> {
             5 => to_6(&tx)?,
             6 => to_7(&tx)?,
             7 => to_8(&tx)?,
+            8 => to_9(&tx)?,
             _ => unreachable!("aucune migration depuis la version {version}"),
         }
         version += 1;
@@ -178,6 +179,62 @@ fn to_8(conn: &Connection) -> Result<()> {
     conn.execute_batch(
         "CREATE INDEX idx_thread_folder_received ON thread_folder (date_last_received DESC, thread_id DESC);
          CREATE INDEX idx_thread_folder_date_modified ON thread_folder (date_last_modified DESC, thread_id DESC);",
+    )?;
+    Ok(())
+}
+
+/// Version 9: the folder of a conversation is a column of `thread`, and the
+/// materialized view `thread_folder` goes (`modele de donnees.md`,
+/// "`thread`"; `dossiers.md`, "Dossier d'une conversation").
+///
+/// 1. Five columns added at the end of `thread`: instant, no rewrite.
+/// 2. The folder, flags and live counters of every thread, in one
+///    set-based statement (`refresh_all_threads_sql`, the rule of
+///    `refresh_thread`): a few seconds on 400,000 mails, where thread by
+///    thread would take minutes.
+/// 3. `thread_folder` dropped, with its indexes.
+/// 4. The indexes of the lists created after the values are written: SQLite
+///    builds an index faster in one sort than row by row.
+fn to_9(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "ALTER TABLE thread ADD COLUMN folder TEXT CHECK (folder IN ('i','t','w','a','n','p','x','b','s','r','q','d'));
+         ALTER TABLE thread ADD COLUMN has_sent INTEGER NOT NULL DEFAULT 0 CHECK (has_sent IN (0,1));
+         ALTER TABLE thread ADD COLUMN has_draft INTEGER NOT NULL DEFAULT 0 CHECK (has_draft IN (0,1));
+         ALTER TABLE thread ADD COLUMN has_quarantine INTEGER NOT NULL DEFAULT 0 CHECK (has_quarantine IN (0,1));
+         ALTER TABLE thread ADD COLUMN has_deleted INTEGER NOT NULL DEFAULT 0 CHECK (has_deleted IN (0,1));",
+    )?;
+    conn.execute_batch(&crate::refresh_all_threads_sql())?;
+    conn.execute_batch(
+        "DROP TABLE thread_folder;
+
+         CREATE INDEX idx_thread_role_received ON thread (folder, date_last_received, id);
+         CREATE INDEX idx_thread_role_account_received ON thread (folder, account_id, date_last_received, id);
+         CREATE INDEX idx_thread_role_modified ON thread (folder, date_last_modified, id);
+         CREATE INDEX idx_thread_role_account_modified ON thread (folder, account_id, date_last_modified, id);
+
+         CREATE INDEX idx_thread_live_received ON thread (date_last_received, id) WHERE folder NOT IN ('d','x','b');
+         CREATE INDEX idx_thread_live_account_received ON thread (account_id, date_last_received, id) WHERE folder NOT IN ('d','x','b');
+         CREATE INDEX idx_thread_live_modified ON thread (date_last_modified, id) WHERE folder NOT IN ('d','x','b');
+         CREATE INDEX idx_thread_live_account_modified ON thread (account_id, date_last_modified, id) WHERE folder NOT IN ('d','x','b');
+
+         CREATE INDEX idx_thread_sent_received ON thread (date_last_received, id) WHERE has_sent = 1;
+         CREATE INDEX idx_thread_sent_account_received ON thread (account_id, date_last_received, id) WHERE has_sent = 1;
+         CREATE INDEX idx_thread_sent_modified ON thread (date_last_modified, id) WHERE has_sent = 1;
+         CREATE INDEX idx_thread_sent_account_modified ON thread (account_id, date_last_modified, id) WHERE has_sent = 1;
+         CREATE INDEX idx_thread_draft_received ON thread (date_last_received, id) WHERE has_draft = 1;
+         CREATE INDEX idx_thread_draft_account_received ON thread (account_id, date_last_received, id) WHERE has_draft = 1;
+         CREATE INDEX idx_thread_draft_modified ON thread (date_last_modified, id) WHERE has_draft = 1;
+         CREATE INDEX idx_thread_draft_account_modified ON thread (account_id, date_last_modified, id) WHERE has_draft = 1;
+         CREATE INDEX idx_thread_quarantine_received ON thread (date_last_received, id) WHERE has_quarantine = 1;
+         CREATE INDEX idx_thread_quarantine_account_received ON thread (account_id, date_last_received, id) WHERE has_quarantine = 1;
+         CREATE INDEX idx_thread_quarantine_modified ON thread (date_last_modified, id) WHERE has_quarantine = 1;
+         CREATE INDEX idx_thread_quarantine_account_modified ON thread (account_id, date_last_modified, id) WHERE has_quarantine = 1;
+         CREATE INDEX idx_thread_deleted_received ON thread (date_last_received, id) WHERE has_deleted = 1;
+         CREATE INDEX idx_thread_deleted_account_received ON thread (account_id, date_last_received, id) WHERE has_deleted = 1;
+         CREATE INDEX idx_thread_deleted_modified ON thread (date_last_modified, id) WHERE has_deleted = 1;
+         CREATE INDEX idx_thread_deleted_account_modified ON thread (account_id, date_last_modified, id) WHERE has_deleted = 1;
+
+         CREATE INDEX idx_message_received ON message (date_received);",
     )?;
     Ok(())
 }

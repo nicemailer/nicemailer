@@ -438,9 +438,10 @@ impl Inserter {
             return Ok(tx.last_insert_rowid());
         };
         for other in found {
-            // Folders of the absorbed thread must be refreshed too.
+            // Folders of the absorbed thread must be refreshed too: those
+            // of its mails (`idx_message_thread` covers the query).
             {
-                let mut stmt = tx.prepare_cached("SELECT folder_id FROM thread_folder WHERE thread_id = ?1")?;
+                let mut stmt = tx.prepare_cached("SELECT DISTINCT folder_id FROM message WHERE thread_id = ?1")?;
                 for f in stmt.query_map([other], |r| r.get::<_, i64>(0))? {
                     changes.folders.insert(f?);
                 }
@@ -453,7 +454,6 @@ impl Inserter {
                 changes.messages.insert((id, Some(keep)));
             }
             tx.prepare_cached("UPDATE message SET thread_id = ?1 WHERE thread_id = ?2")?.execute(params![keep, other])?;
-            // `thread_folder` rows go with the thread (ON DELETE CASCADE).
             tx.prepare_cached("DELETE FROM thread WHERE id = ?1")?.execute([other])?;
             self.threads.remove(&other);
         }

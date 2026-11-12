@@ -649,6 +649,17 @@
         }
       }
     },
+    "Conversation date…": {
+      "comment": "Attribute of the F selector: the date of the conversation, that of its latest mail.",
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Date conversation…"
+          }
+        }
+      }
+    },
     "Copied: %@": {
       "localizations": {
         "fr": {
@@ -665,16 +676,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Date : %@"
-          }
-        }
-      }
-    },
-    "Date…": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Date…"
           }
         }
       }
@@ -965,6 +966,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Liens"
+          }
+        }
+      }
+    },
+    "Mail date…": {
+      "comment": "Attribute of the F selector: the date of any mail of the conversation.",
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Date mail…"
           }
         }
       }
@@ -2601,6 +2613,17 @@
         }
       }
     },
+    "mail: %@": {
+      "comment": "Chip of the Mail date… criterion, e.g. mail: last 7 days.",
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "mail : %@"
+          }
+        }
+      }
+    },
     "mark and move (multiple selection)": {
       "localizations": {
         "fr": {
@@ -2627,6 +2650,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "marquer tous les mails de la liste"
+          }
+        }
+      }
+    },
+    "message": {
+      "comment": "Hidden search words of the Mail date… attribute in the F selector, separated by spaces.",
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "message"
           }
         }
       }
@@ -3321,7 +3355,7 @@
       }
     },
     "when day period": {
-      "comment": "Hidden search words of the Date… attribute in the F selector, separated by spaces.",
+      "comment": "Hidden search words of the Conversation date… attribute in the F selector, separated by spaces.",
       "localizations": {
         "fr": {
           "stringUnit": {

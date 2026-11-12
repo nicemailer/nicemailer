@@ -2,6 +2,17 @@
 
 How moving a conversation records a decision on its sender, files the sender's other mails, and how it is all undone. The rules are those of `specifications/dossiers.md` ("Déplacer un mail", "Décision sur un expéditeur") and `specifications/authentification-expediteur.md` (sections 4 and 5). They live in the core (`nm-core` for the pure rules, `crates/nm-store/src/screening.rs` and `commands.rs` for the database), so the app, the CLI and future clients behave the same.
 
+## The folder of a conversation
+
+A conversation is in **one** folder, the one that says what it is (`specifications/dossiers.md`, "Dossier d'une conversation"), stored in `thread.folder`. The first case that applies:
+
+1. the folder of its latest mail in Inbox, Todo, Waiting, Archive, Newsletter or Paperwork;
+2. else that of its latest mail in Junk or Banned (a command never touches those mails, so a rejected mail left in a live conversation does not take it away);
+3. else Sent, Drafts, Quarantine, Deleted, the first that holds one of its mails;
+4. else none: its mails are all in folders without a role, and it only shows in Everything.
+
+Sent, Drafts, Quarantine and Deleted are technical: a conversation has a flag for each (`has_sent`…), and their lists read the flag. A conversation of the Inbox the user answered is listed in the Inbox and in Sent; one that got a mail from an unknown sender is listed in its folder and in Quarantine. A new mail in an archived conversation brings the whole conversation back to the Inbox list at once; its old mails stay in Archive on the server until the next command files them all. A list row shows the whole conversation: its number of mails and the date of its latest one, without those of Deleted, Junk and Banned. The rule is a pure function, `nm_core::thread_folder`; the store applies it in `refresh_thread`, on every write, and to every conversation of a folder whose role changes.
+
 ## A move can decide on the sender
 
 | Move | Effect |

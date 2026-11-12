@@ -71,7 +71,7 @@ Un mail sorti de Quarantine ne peut pas y retourner.
 
 ### Une conversation, pas un mail
 
-Les commandes s'appliquent à la **conversation** : tous ses mails sont traités de la même façon. Une conversation n'occupe donc normalement qu'un seul dossier de travail ou de rangement, en plus de Sent.
+Les commandes s'appliquent à la **conversation** : tous ses mails sont traités de la même façon. Une conversation n'occupe donc qu'un seul vrai dossier, en plus des dossiers techniques (« Dossier d'une conversation »).
 
 Une commande sur une conversation (déplacer, supprimer, marquer comme spam) s'applique à ses mails rangés dans Inbox, Todo, Waiting, Archive, Newsletter et Paperwork. Elle ne touche jamais :
 
@@ -83,10 +83,27 @@ Autres règles :
 
 - **Lu, non lu** : s'applique à tous les mails de la conversation. **Drapeau** : posé sur le dernier mail reçu ; la conversation est marquée si l'un de ses mails l'est.
 - **Décision sur l'expéditeur** (déplacement vers Newsletter, Paperwork ou Banned, ou vers Inbox depuis Quarantine ou Banned) : la décision porte sur l'auteur du dernier mail reçu de la conversation, hors ceux de l'utilisateur (Sent, Drafts, ou envoyés depuis l'adresse du compte). Les autres expéditeurs de la conversation gardent leur décision. Une conversation qui ne contient que des mails de l'utilisateur ne crée aucune décision. Choix assumé : demander quels expéditeurs sont concernés a été écarté pour garder une commande d'une touche ; le risque est de bannir un collègue en copie s'il est l'auteur du dernier mail, et l'annulation (« Annulation ») le rattrape.
-- **Nouveau mail dans une conversation déjà rangée** : il arrive là où le screening le place, en général l'Inbox. La conversation apparaît alors dans l'Inbox ; la commande suivante regroupe tous ses mails. Exception : une conversation en Todo ou en Waiting qui reçoit un mail revient entièrement dans l'Inbox (« Nouveau mail dans une conversation en Todo ou en Waiting »).
+- **Nouveau mail dans une conversation déjà rangée** : il arrive là où le screening le place, en général l'Inbox. Toute la conversation revient alors dans l'Inbox (son dossier est celui de son dernier mail, « Dossier d'une conversation ») et quitte la liste de son ancien dossier ; ses anciens mails restent dans leur dossier sur le serveur, où le téléphone les voit, jusqu'à la commande suivante, qui regroupe tous ses mails. Exception : une conversation en Todo ou en Waiting qui reçoit un mail revient entièrement dans l'Inbox, sur le serveur aussi (« Nouveau mail dans une conversation en Todo ou en Waiting »).
 - **Mail isolé** : dans la vue de lecture, un mail seul d'une conversation peut être supprimé. C'est la seule commande au niveau du mail.
 
 Les commandes du contrat prennent donc un identifiant de conversation (`thread_id`) ; seule la suppression accepte aussi un identifiant de message.
+
+### Dossier d'une conversation
+
+Une conversation n'est pas éparpillée entre plusieurs vrais dossiers : elle est dans **un** dossier, celui qui dit ce qu'elle est (à traiter, classée, rejetée). Les dossiers techniques ne contiennent que certains de ses mails, pour des raisons techniques : le mail envoyé dans Sent, le brouillon dans Drafts, le mail d'un expéditeur inconnu dans Quarantine, le mail supprimé seul dans Deleted. Ajouté en novembre 2026, avec la version 9 du schéma (`modele de donnees.md`, « `thread` »).
+
+Le dossier d'une conversation est, du premier cas qui s'applique au dernier :
+
+1. le dossier de son dernier mail rangé dans Inbox, Todo, Waiting, Archive, Newsletter ou Paperwork ;
+2. sinon, celui de son dernier mail rangé dans Junk ou Banned ;
+3. sinon, dans cet ordre fixe, Sent, Drafts, Quarantine ou Deleted, le premier qui contient un de ses mails ;
+4. sinon aucun : ses mails sont tous dans des dossiers sans rôle (un dossier qui a perdu le sien). Elle n'apparaît que dans Everything.
+
+- **Pourquoi Junk et Banned après les autres vrais dossiers.** Une commande sur la conversation ne touche jamais ses mails de Junk et de Banned (« Une conversation, pas un mail ») : un mail rejeté qui y reste ne dit plus ce qu'est la conversation. Sans cette règle, le mail d'un expéditeur banni dans une conversation de l'Inbox ferait passer toute la conversation dans Banned, et elle disparaîtrait de l'Inbox.
+- **Pourquoi Quarantine avant Deleted.** Deleted est le seul repli qui veut dire « plus vivant » : une conversation en Quarantine dont un mail a été supprimé reste dans All Mail, où son mail attend une décision.
+- **Dossiers techniques : des drapeaux.** Une conversation a un drapeau par dossier technique (`has_sent`, `has_draft`, `has_quarantine`, `has_deleted`) : elle a au moins un mail dans ce dossier. Les listes de Sent, Drafts, Quarantine et Deleted lisent ces drapeaux. Une conversation de l'Inbox à laquelle l'utilisateur a répondu est donc listée dans l'Inbox et dans Sent ; une conversation de l'Inbox qui reçoit un mail d'un inconnu (resté en Quarantine) est listée dans l'Inbox et dans Quarantine.
+- **Ce qu'affiche une ligne de liste.** Partout, le nombre de mails de toute la conversation et la date de son dernier mail, envoyé ou reçu, sans compter ceux de Deleted, Junk et Banned ; une conversation qui n'a que de tels mails les compte tous. Les compteurs propres à un dossier ont été abandonnés : la liste Sent est triée par le dernier mail de la conversation, pas par le dernier envoi (choix assumé, novembre 2026).
+- **Une conversation par compte.** Le même mail reçu sur deux comptes (deux adresses de l'utilisateur, un renvoi d'un compte vers un autre) fait deux conversations, une dans chaque compte : chaque compte a ses dossiers sur son serveur, et une commande ne touche que les mails de son compte.
 
 ### Catégories de dossiers
 

@@ -40,6 +40,29 @@ struct AttributesTests {
         #expect(p["seen"] == nil && p["before"] == nil)
     }
 
+    @Test func mailDateHasItsOwnBoundsChipsAndParameters() {
+        var f = ThreadFilter()
+        let after = DateChoice.Preset(label: "last 7 days", after: 10, before: nil)
+        let before = DateChoice.Preset(label: "before 2020-01-01", after: nil, before: 20)
+        f.setDate(after, on: .mailDate)
+        f.setDate(before, on: .mailDate)
+        #expect(f.mailAfter == 10 && f.mailBefore == 20 && f.after == nil && f.before == nil)
+        #expect(f.isActive(.mailDate) && !f.isActive(.date))
+        #expect(f.parameters["mail_after"] as? Int == 10 && f.parameters["mail_before"] as? Int == 20)
+        #expect(f.parameters["after"] == nil)
+        #expect(f.chips.map(\.id) == ["mail_after", "mail_before"])
+        #expect(f.chips[0].label == L("mail: %@", "last 7 days"))
+        // Each criterion checks its own interval.
+        f.setDate(DateChoice.Preset(label: "x", after: 5, before: nil))
+        #expect(f.dateIsEmpty(with: DateChoice.Preset(label: "y", after: nil, before: 4), on: .mailDate))
+        #expect(f.dateIsEmpty(with: DateChoice.Preset(label: "y", after: 30, before: nil), on: .mailDate))
+        #expect(!f.dateIsEmpty(with: DateChoice.Preset(label: "y", after: 30, before: nil), on: .date))
+        f.remove("mail_after")
+        #expect(f.mailAfter == nil && f.mailAfterLabel == nil && f.mailBefore == 20)
+        f.remove("mail_before"); f.remove("after")
+        #expect(f.isEmpty)
+    }
+
     @Test func chipsListEveryCriterionAndRemoveIt() {
         var f = ThreadFilter()
         f.toggle(.seen, false)

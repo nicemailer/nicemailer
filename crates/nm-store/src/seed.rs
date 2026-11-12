@@ -565,16 +565,11 @@ pub fn seed(store: &mut Store, opts: &SeedOptions) -> Result<SeedReport> {
                 coalesce(b.text_plain, '')
            FROM message m LEFT JOIN message_body b ON b.message_id = m.id;",
     )?;
+    // The folder, flags and counters of every thread, by the same rule as
+    // `refresh_thread`, in one statement (`refresh_all_threads_sql`).
+    tx.execute_batch(&crate::refresh_all_threads_sql())?;
     tx.execute_batch(
-        "INSERT INTO thread_folder (thread_id, folder_id, date_last_received, date_last_modified, message_count, unread_count)
-         SELECT thread_id, folder_id, max(date_received), max(date_modified), count(*), sum(is_seen = 0)
-           FROM message WHERE thread_id IS NOT NULL GROUP BY thread_id, folder_id;
-         UPDATE thread SET
-            date_last_received = (SELECT max(date_received) FROM message m WHERE m.thread_id = thread.id),
-            message_count      = (SELECT count(*) FROM message m WHERE m.thread_id = thread.id),
-            unread_count       = (SELECT count(*) FROM message m WHERE m.thread_id = thread.id AND m.is_seen = 0),
-            date_last_modified = (SELECT max(date_modified) FROM message m WHERE m.thread_id = thread.id);
-         UPDATE folder SET
+        "UPDATE folder SET
             total_count  = (SELECT count(*) FROM message m WHERE m.folder_id = folder.id),
             unread_count = (SELECT count(*) FROM message m WHERE m.folder_id = folder.id AND m.is_seen = 0),
             uidnext      = coalesce((SELECT max(uid) + 1 FROM message m WHERE m.folder_id = folder.id), 1),

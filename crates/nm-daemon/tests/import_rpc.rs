@@ -68,26 +68,27 @@ fn import_mbox_runs_in_the_background_and_reports_events() {
     assert_eq!(archive["account_kind"], "archive");
     assert_eq!(archive["total_count"], 1);
 
-    // The virtual folder Everything: the conversation once, shown in the
-    // folder of its latest mail (the reply, in Sent), for every account or
-    // for this one.
+    // The virtual folder Everything: the conversation once, shown in its
+    // folder (Archive, not Sent where its latest mail, the reply, is) with
+    // the counters of the whole thread, for every account or for this one
+    // (`dossiers.md`, "Dossier d'une conversation").
     let account = archive["account_id"].clone();
     for scope in [json!({}), json!({"account_id": account})] {
         let page = c.call("list_threads", json!({"everything": scope, "limit": 10})).unwrap();
         let items = page["items"].as_array().unwrap();
         assert_eq!(items.len(), 1, "{scope}");
-        let sent = folders["items"].as_array().unwrap().iter().find(|f| f["role"] == "sent").unwrap();
-        assert_eq!(items[0]["folder_id"], sent["id"]);
-        assert_eq!(items[0]["message_count"], 1);
+        assert_eq!(items[0]["folder_id"], archive["id"]);
+        assert_eq!(items[0]["message_count"], 2);
     }
     // All Mail (`all_mail`): the same here, nothing being in Deleted, Junk
     // or Banned; once the archived mail is deleted, the conversation stays,
-    // by the reply in Sent, and Deleted is never where it is shown.
+    // by the reply in Sent (its fallback folder), and Deleted is never
+    // where it is shown.
     let sent = folders["items"].as_array().unwrap().iter().find(|f| f["role"] == "sent").unwrap()["id"].clone();
     for scope in [json!({"all_mail": true}), json!({"account_id": account, "all_mail": true})] {
         let page = c.call("list_threads", json!({"everything": scope})).unwrap();
         assert_eq!(page["items"].as_array().unwrap().len(), 1, "{scope}");
-        assert_eq!(page["items"][0]["folder_id"], sent);
+        assert_eq!(page["items"][0]["folder_id"], archive["id"]);
     }
     let thread = c.call("list_threads", json!({"folder_id": archive["id"]})).unwrap()["items"][0]["id"].clone();
     c.call("move_thread", json!({"thread_id": thread, "target": "deleted", "from_folder_id": archive["id"]})).unwrap();

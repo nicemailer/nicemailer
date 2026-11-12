@@ -28,14 +28,22 @@ struct ThreadFilter: Equatable {
     var text: String?
     /// Words of the subject only (Subject…).
     var subject: String?
-    /// The two bounds of the date criterion, independent of each other so
-    /// that they make an interval (`ui.md`, "Sélecteur d'attributs"): "after" is
-    /// the lower bound (included), "before" the upper one (excluded).
+    /// The two bounds of Conversation date…, the date of the thread's
+    /// latest mail, independent of each other so that they make an
+    /// interval (`ui.md`, "Deux critères de date"): "after" is the lower
+    /// bound (included), "before" the upper one (excluded).
     var after: Int?
     var before: Int?
     /// How each bound is shown ("last 7 days", "after 2026-10-01").
     var afterLabel: String?
     var beforeLabel: String?
+    /// The two bounds of Mail date…: a mail of the thread received in the
+    /// interval (a thread from 2016 to 2026 is "before 2020"). Heavier for
+    /// the core, hence a criterion of its own.
+    var mailAfter: Int?
+    var mailBefore: Int?
+    var mailAfterLabel: String?
+    var mailBeforeLabel: String?
 
     var isEmpty: Bool { self == ThreadFilter() }
 
@@ -100,6 +108,8 @@ struct ThreadFilter: Equatable {
         if let subject, !subject.isEmpty { p["subject"] = subject }
         if let after { p["after"] = after }
         if let before { p["before"] = before }
+        if let mailAfter { p["mail_after"] = mailAfter }
+        if let mailBefore { p["mail_before"] = mailBefore }
         return p
     }
 
@@ -125,6 +135,9 @@ struct ThreadFilter: Equatable {
         // One chip per bound, so that either can be removed alone.
         if after != nil { out.append(Chip(id: "after", label: afterLabel ?? L("date"))) }
         if before != nil { out.append(Chip(id: "before", label: beforeLabel ?? L("date"))) }
+        // Mail date…'s chips say so: "mail: last 7 days".
+        if mailAfter != nil { out.append(Chip(id: "mail_after", label: L("mail: %@", mailAfterLabel ?? L("date")))) }
+        if mailBefore != nil { out.append(Chip(id: "mail_before", label: L("mail: %@", mailBeforeLabel ?? L("date")))) }
         return out
     }
 
@@ -145,6 +158,8 @@ struct ThreadFilter: Equatable {
         case "subject": subject = nil
         case "after": after = nil; afterLabel = nil
         case "before": before = nil; beforeLabel = nil
+        case "mail_after": mailAfter = nil; mailAfterLabel = nil
+        case "mail_before": mailBefore = nil; mailBeforeLabel = nil
         default: break
         }
     }
@@ -194,23 +209,30 @@ struct ThreadFilter: Equatable {
         case .to: if out { put(v, into: &notTo, &to) } else { put(v, into: &to, &notTo) }
         case .text: text = words()
         case .subject: subject = words()
-        case .date: break
+        case .date, .mailDate: break
         }
     }
 
-    /// Applies a choice of the Date… panel: it sets the bound it has and
-    /// keeps the other one, so "after 1 January" then "before 1 July" is
-    /// the first half of the year. Choosing a bound again replaces it.
-    mutating func setDate(_ p: DateChoice.Preset) {
-        if let a = p.after { after = a; afterLabel = p.label }
-        if let b = p.before { before = b; beforeLabel = p.label }
+    /// Applies a choice of a date panel (`field`: Conversation date… or
+    /// Mail date…): it sets the bound it has and keeps the other one, so
+    /// "after 1 January" then "before 1 July" is the first half of the
+    /// year. Choosing a bound again replaces it.
+    mutating func setDate(_ p: DateChoice.Preset, on field: AttributeField = .date) {
+        if field == .mailDate {
+            if let a = p.after { mailAfter = a; mailAfterLabel = p.label }
+            if let b = p.before { mailBefore = b; mailBeforeLabel = p.label }
+        } else {
+            if let a = p.after { after = a; afterLabel = p.label }
+            if let b = p.before { before = b; beforeLabel = p.label }
+        }
     }
 
-    /// Whether `p` would leave no day between the two bounds: its lower
-    /// bound at or past the current upper one, or the reverse. The panel
-    /// says so on the row rather than refusing it.
-    func dateIsEmpty(with p: DateChoice.Preset) -> Bool {
-        guard let lo = p.after ?? after, let hi = p.before ?? before else { return false }
+    /// Whether `p` would leave no day between the two bounds of `field`:
+    /// its lower bound at or past the current upper one, or the reverse.
+    /// The panel says so on the row rather than refusing it.
+    func dateIsEmpty(with p: DateChoice.Preset, on field: AttributeField = .date) -> Bool {
+        let (lo0, hi0) = field == .mailDate ? (mailAfter, mailBefore) : (after, before)
+        guard let lo = p.after ?? lo0, let hi = p.before ?? hi0 else { return false }
         return lo >= hi
     }
 
@@ -220,7 +242,7 @@ struct ThreadFilter: Equatable {
         switch field {
         case .text: text
         case .subject: subject
-        case .from, .to, .date: nil
+        case .from, .to, .date, .mailDate: nil
         }
     }
 
@@ -229,7 +251,7 @@ struct ThreadFilter: Equatable {
         switch field {
         case .text: text = nil
         case .subject: subject = nil
-        case .from, .to, .date: break
+        case .from, .to, .date, .mailDate: break
         }
     }
 
@@ -241,13 +263,17 @@ struct ThreadFilter: Equatable {
         case .text: text != nil
         case .subject: subject != nil
         case .date: after != nil || before != nil
+        case .mailDate: mailAfter != nil || mailBefore != nil
         }
     }
 }
 
 /// The attributes whose value is chosen in the expanded panel ("…").
+/// `date` is Conversation date…, the frequent one, listed first so that
+/// `da` reaches it; `mailDate` is Mail date… (`ui.md`, "Deux critères de
+/// date").
 enum AttributeField: String, CaseIterable {
-    case from, to, text, subject, date
+    case from, to, text, subject, date, mailDate
 
     /// Name in the selector, with "…" since a value follows.
     var title: String {
@@ -256,7 +282,8 @@ enum AttributeField: String, CaseIterable {
         case .to: L("To…")
         case .text: L("Text…")
         case .subject: L("Subject…")
-        case .date: L("Date…")
+        case .date: L("Conversation date…")
+        case .mailDate: L("Mail date…")
         }
     }
 
@@ -272,12 +299,13 @@ enum AttributeField: String, CaseIterable {
         case .text: L("text words body")
         case .subject: L("title")
         case .date: L("when day period")
+        case .mailDate: L("message")
         }
         return words.split(separator: " ").map(String.init)
     }
 }
 
-/// Dates of the "Date…" panel.
+/// Dates of the panels of Conversation date… and Mail date….
 enum DateChoice {
     /// A choice: label, and the bound it sets (one of the two).
     struct Preset: Equatable {

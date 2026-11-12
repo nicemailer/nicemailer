@@ -52,12 +52,13 @@ for i in {1..3000}; do [[ -S $DIR/core.sock ]] && break; sleep 0.2; done
 call() { "$CLI" --data-dir "$DIR" call "$@"; }
 
 # The biggest folder, the archives of every account, and the first account.
-read -r BIG ARCHIVES ACCOUNT <<< "$(call list_folders '{}' | python3 -I -c '
+read -r BIG ARCHIVES SENT ACCOUNT <<< "$(call list_folders '{}' | python3 -I -c '
 import json, sys
 f = json.load(sys.stdin)["items"]
 big = max(f, key=lambda x: x["thread_count"])["id"]
 arch = ",".join(str(x["id"]) for x in f if x["role"] == "archive")
-print(big, arch, f[0]["account_id"])')"
+sent = ",".join(str(x["id"]) for x in f if x["role"] == "sent")
+print(big, arch, sent, f[0]["account_id"])')"
 
 # A sender of the generated mailbox (or the first contact of a real one).
 CONTACT=$(call list_contacts '{"query":"energie-plus","limit":1}' | python3 -I -c '
@@ -90,6 +91,10 @@ P=(
   "20 biggest folder, flagged" "{\"folder_id\":$BIG,\"limit\":60,\"sort\":\"received\",\"filter\":{\"flagged\":true}}"
   "21 mails of a contact"      "{$E,\"filter\":{\"address_id\":$CONTACT}}"
   "22 a tag (none here)"       "{$E,\"filter\":{\"tag\":\"Clients\"}}"
+  "23 all mail"                "{\"everything\":{\"all_mail\":true},\"limit\":60,\"sort\":\"received\"}"
+  "24 sent of all accounts"    "{\"folder_ids\":[$SENT],\"limit\":60,\"sort\":\"received\"}"
+  "25 mail date, a month long ago" "{$E,\"filter\":{\"mail_after\":1230768000,\"mail_before\":1233446400}}"
+  "26 mail date, before a year" "{$E,\"filter\":{\"mail_before\":1577836800}}"
 )
 
 OUT=$(mktemp /tmp/nmbench-out.XXXXXX)

@@ -95,6 +95,20 @@ snap date-duration
 key down
 key ret
 expect filters ~ last 30 days, older than 1 week
+# Mail date: a criterion of its own (any mail of the conversation), with
+# chips that say so; Conversation date's chips stay.
+key F
+type mail date
+key ret
+expect overlay = picker(NiceMailer.GeekController.PickerKind.attributeValue(NiceMailer.AttributeField.mailDate))
+expect picker_hint ~ 011026
+type last 7
+key ret
+expect filters ~ last 30 days, older than 1 week, mail: last 7 days
+snap mail-date
+click chip:mail_after
+expect filters !~ mail:
+expect filters ~ last 30 days
 # Text: words of the subject and body.
 key F
 type Text

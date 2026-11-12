@@ -137,6 +137,46 @@ impl FolderRole {
         FolderRole::ALL.into_iter().find(|r| r.as_str() == s)
     }
 
+    /// One-letter code of the role in `thread.folder` (`schema.sql`, version
+    /// 9): the lower-case letter of [`FolderRole::letter`]. A single letter
+    /// rather than the name keeps the column and its indexes small; it is the
+    /// same letter as the move shortcut, so it reads easily in SQL.
+    pub fn code(self) -> &'static str {
+        match self {
+            FolderRole::Inbox => "i",
+            FolderRole::Todo => "t",
+            FolderRole::Waiting => "w",
+            FolderRole::Archive => "a",
+            FolderRole::Sent => "s",
+            FolderRole::Drafts => "r",
+            FolderRole::Newsletter => "n",
+            FolderRole::Paperwork => "p",
+            FolderRole::Quarantine => "q",
+            FolderRole::Deleted => "d",
+            FolderRole::Junk => "x",
+            FolderRole::Banned => "b",
+        }
+    }
+
+    /// Inverse of [`FolderRole::code`].
+    pub fn from_code(s: &str) -> Option<FolderRole> {
+        FolderRole::ALL.into_iter().find(|r| r.code() == s)
+    }
+
+    /// Technical folders (`dossiers.md`, "Dossier d'une conversation"):
+    /// they hold some mails of a conversation for technical reasons (the
+    /// mail sent, a draft, the mail of an unknown sender, a mail deleted
+    /// alone), never what the conversation is. A conversation has a flag
+    /// for each (`thread.has_sent`…), in this order, which is also the
+    /// fixed order of the fallback of [`thread_folder`].
+    pub const TECHNICAL: [FolderRole; 4] =
+        [FolderRole::Sent, FolderRole::Drafts, FolderRole::Quarantine, FolderRole::Deleted];
+
+    /// Whether this is one of [`FolderRole::TECHNICAL`].
+    pub fn is_technical(self) -> bool {
+        FolderRole::TECHNICAL.contains(&self)
+    }
+
     /// Default display name. The user will later be able to rename folders,
     /// which is why the role and the name are kept separate.
     pub fn display_name(self) -> &'static str {
@@ -523,6 +563,47 @@ impl Source {
 pub const KW_WAS_TODO: &str = "$NmWasTodo";
 pub const KW_WAS_WAITING: &str = "$NmWasWaiting";
 
+/// The folder of a conversation (`dossiers.md`, "Dossier d'une
+/// conversation"), from the roles of the folders of its mails, **latest mail
+/// first**; `None` for a mail in a folder without a role. The first case
+/// that applies:
+/// 1. the folder of the latest mail in Inbox, Todo, Waiting, Archive,
+///    Newsletter or Paperwork;
+/// 2. else that of the latest mail in Junk or Banned: a command on the
+///    conversation never touches those mails, so a rejected mail left there
+///    does not say what the conversation is;
+/// 3. else Sent, Drafts, Quarantine, Deleted, the first that holds a mail
+///    (fixed order: Deleted, the only "not alive" one, comes last);
+/// 4. else `None`: only folders without a role.
+///
+/// A pure function so that the rule is tested on its own; the store feeds
+/// it the mails of the thread (`refresh_thread`), and the migration to
+/// schema version 9 writes the same rule in SQL (`migrations.rs`, tested
+/// against this function).
+///
+/// Rust note: `impl IntoIterator<Item = ...>` accepts any sequence (a
+/// `Vec`, an array, an iterator), read once; `Clone` lets it be walked
+/// again for each case.
+pub fn thread_folder<I>(roles_latest_first: I) -> Option<FolderRole>
+where
+    I: IntoIterator<Item = Option<FolderRole>>,
+    I::IntoIter: Clone,
+{
+    let roles = roles_latest_first.into_iter();
+    use FolderRole::*;
+    let live = |r: &FolderRole| matches!(r, Inbox | Todo | Waiting | Archive | Newsletter | Paperwork);
+    let rejected = |r: &FolderRole| matches!(r, Junk | Banned);
+    // `flatten` skips the `None` (no role); `find` stops at the first,
+    // that is the latest, mail of the case.
+    if let Some(r) = roles.clone().flatten().find(live) {
+        return Some(r);
+    }
+    if let Some(r) = roles.clone().flatten().find(rejected) {
+        return Some(r);
+    }
+    FolderRole::TECHNICAL.into_iter().find(|t| roles.clone().flatten().any(|r| r == *t))
+}
+
 // Rust note: `#[cfg(test)]` means this module is only compiled when running
 // `cargo test`. Each function marked `#[test]` is a test case; it fails if
 // it panics, which is what `assert!` and `assert_eq!` do on failure.
@@ -540,6 +621,41 @@ mod tests {
         letters.sort();
         letters.dedup();
         assert_eq!(letters.len(), FolderRole::ALL.len());
+    }
+
+    #[test]
+    fn codes_are_unique_and_parse_back() {
+        for r in FolderRole::ALL {
+            assert_eq!(FolderRole::from_code(r.code()), Some(r));
+            assert_eq!(r.code(), r.letter().to_ascii_lowercase().to_string());
+        }
+        assert_eq!(FolderRole::from_code("z"), None);
+    }
+
+    #[test]
+    fn the_folder_of_a_thread_follows_the_spec() {
+        use FolderRole::*;
+        let f = |roles: &[Option<FolderRole>]| thread_folder(roles.iter().copied());
+        // 1. The latest mail in a real folder, technical ones skipped.
+        assert_eq!(f(&[Some(Sent), Some(Inbox), Some(Archive)]), Some(Inbox));
+        assert_eq!(f(&[Some(Archive), Some(Inbox)]), Some(Archive));
+        // A new mail brings the whole conversation back to the Inbox.
+        assert_eq!(f(&[Some(Inbox), Some(Archive), Some(Archive)]), Some(Inbox));
+        // 2. A rejected mail does not take a live conversation away.
+        assert_eq!(f(&[Some(Banned), Some(Inbox)]), Some(Inbox));
+        assert_eq!(f(&[Some(Junk), Some(Sent)]), Some(Junk));
+        assert_eq!(f(&[Some(Banned), Some(Junk)]), Some(Banned));
+        // 3. Only technical folders: fixed order, whatever the dates.
+        assert_eq!(f(&[Some(Deleted), Some(Sent)]), Some(Sent));
+        assert_eq!(f(&[Some(Quarantine), Some(Drafts)]), Some(Drafts));
+        assert_eq!(f(&[Some(Deleted), Some(Quarantine)]), Some(Quarantine));
+        assert_eq!(f(&[Some(Deleted)]), Some(Deleted));
+        // Quarantine is technical: an archived conversation stays archived.
+        assert_eq!(f(&[Some(Quarantine), Some(Archive)]), Some(Archive));
+        // 4. Folders without a role only, or no mail.
+        assert_eq!(f(&[None, None]), None);
+        assert_eq!(f(&[]), None);
+        assert_eq!(f(&[None, Some(Sent)]), Some(Sent));
     }
 
     #[test]

@@ -234,10 +234,14 @@ fn threads_a_reply_imported_before_its_parent() {
         env.text("SELECT t.subject FROM thread t JOIN message m ON m.thread_id = t.id WHERE m.message_id_hdr = 'm2@hey.example'"),
         Some("Devis".into())
     );
-    // The conversation appears in Archive and in Sent, with the right counts.
+    // The conversation is in Archive, flagged as having a mail in Sent.
     assert_eq!(
-        env.count("SELECT count(*) FROM thread_folder tf JOIN message m ON m.thread_id = tf.thread_id WHERE m.message_id_hdr = 'm1@a.example'"),
-        2
+        env.text("SELECT t.folder FROM thread t JOIN message m ON m.thread_id = t.id WHERE m.message_id_hdr = 'm1@a.example'"),
+        Some("a".into())
+    );
+    assert_eq!(
+        env.count("SELECT t.has_sent FROM thread t JOIN message m ON m.thread_id = t.id WHERE m.message_id_hdr = 'm1@a.example'"),
+        1
     );
     // The received message answered by the user is marked as answered.
     assert_eq!(env.count("SELECT is_answered FROM message WHERE message_id_hdr = 'm1@a.example'"), 1);
@@ -256,7 +260,7 @@ fn merges_two_threads_linked_by_a_later_message() {
     env.import(&env.options(&path)).unwrap();
     assert_eq!(env.count("SELECT count(*) FROM thread"), 1);
     assert_eq!(env.count("SELECT message_count FROM thread"), 3);
-    assert_eq!(env.count("SELECT count(*) FROM thread_folder"), 1);
+    assert_eq!(env.text("SELECT folder FROM thread"), Some("a".into()));
 }
 
 #[test]
@@ -497,10 +501,10 @@ fn a_from_line_written_at_export_time_falls_back_to_the_date_header() {
     env.import(&env.options(&path)).unwrap();
     assert_eq!(date_received(&env, "old@a.example"), 1_445_935_765);
     assert_eq!(date_received(&env, "future@b.example"), 0);
-    // The thread's date in its folder follows the message date.
+    // The thread's date follows the message date.
     assert_eq!(
         env.count(
-            "SELECT tf.date_last_received FROM thread_folder tf JOIN message m ON m.thread_id = tf.thread_id
+            "SELECT t.date_last_received FROM thread t JOIN message m ON m.thread_id = t.id
               WHERE m.message_id_hdr = 'old@a.example'"
         ),
         1_445_935_765

@@ -464,14 +464,14 @@ struct GeekControllerTests {
         #expect(controller.pickerEntries(.accounts).filter { $0.detail != nil }.allSatisfy { $0.detailStyle == .count })
         press("esc")
         // How six digits were read is information.
-        press("F"); type(L("Date…")); press("ret")
+        press("F"); type(L("Conversation date…")); press("ret")
         type("010120")
         #expect(controller.pickerEntries(.attributeValue(.date)).prefix(4).allSatisfy { $0.detailStyle == .info })
         press("esc")
         // An interval left empty is a warning: it stands out.
-        press("F"); type(L("Date…")); press("ret")
+        press("F"); type(L("Conversation date…")); press("ret")
         type("2026-10-01"); press("ret")
-        press("F"); type(L("Date…")); press("ret")
+        press("F"); type(L("Conversation date…")); press("ret")
         type("2026-09-01")
         let warning = controller.pickerEntries(.attributeValue(.date))[1]
         #expect(warning.detail == L("nothing in between") && warning.detailStyle == .count)
@@ -1265,7 +1265,7 @@ struct GeekControllerTests {
         let labels = controller.pickerEntries(.attributes).map(\.label)
         // Compared with the translations: tests run in the machine's language.
         #expect(Array(labels.prefix(2)) == [L("unread"), L("read")])
-        #expect(labels.contains(L("From…")) && labels.contains(L("Date…")))
+        #expect(labels.contains(L("From…")) && labels.contains(L("Conversation date…")))
         type(L("unread")); press("ret")
         #expect(model.attributes.seen == false)
         #expect(await eventually { (core.calls("list_threads").last?["filter"] as? [String: Any])?["seen"] as? Bool == false })
@@ -1386,7 +1386,7 @@ struct GeekControllerTests {
     }
 
     @Test func valuePanelsSayWhatCanBeTyped() {
-        press("F"); type(L("Date…")); press("ret")
+        press("F"); type(L("Conversation date…")); press("ret")
         // The Date… panel opens on its presets: the hint is on the input
         // line, not only in an empty panel.
         #expect(controller.pickerHint(.attributeValue(.date))?.contains("011026") == true)
@@ -1401,7 +1401,7 @@ struct GeekControllerTests {
     }
 
     @Test func theDatePanelOffersPresetsAndTypedDates() {
-        press("F"); type(L("Date…")); press("ret")
+        press("F"); type(L("Conversation date…")); press("ret")
         #expect(controller.pickerEntries(.attributeValue(.date)).count == 5)
         type("2026-10-01")
         let labels = controller.pickerEntries(.attributeValue(.date)).map(\.label)
@@ -1411,21 +1411,21 @@ struct GeekControllerTests {
     }
 
     @Test func theDatePanelBuildsAnIntervalAndReadsDurations() {
-        press("F"); type(L("Date…")); press("ret")
+        press("F"); type(L("Conversation date…")); press("ret")
         type("2026-10-01"); press("ret")
         // An upper bound kept with the lower one: two chips.
-        press("F"); type(L("Date…")); press("ret")
+        press("F"); type(L("Conversation date…")); press("ret")
         type("2026-11-01"); press("down"); press("ret")
         #expect(model.attributes.chips.map(\.label) == [L("after %@", "2026-10-01"), L("before %@", "2026-11-01")])
         // An upper bound before the lower one: the row says so.
-        press("F"); type(L("Date…")); press("ret")
+        press("F"); type(L("Conversation date…")); press("ret")
         type("2026-09-01")
         let rows = controller.pickerEntries(.attributeValue(.date))
         #expect(rows[1].label == L("before %@", "2026-09-01") && rows[1].detail == L("nothing in between"))
         #expect(rows[0].detail == nil)
         press("esc")
         // A duration: newer than, then older than, with the date it gives.
-        press("F"); type(L("Date…")); press("ret")
+        press("F"); type(L("Conversation date…")); press("ret")
         type("3s")
         let d = controller.pickerEntries(.attributeValue(.date))
         #expect(d.prefix(2).map(\.label) == [L("newer than %@", L("%lld weeks", 3)), L("older than %@", L("%lld weeks", 3))])
@@ -1433,6 +1433,38 @@ struct GeekControllerTests {
         press("ret")
         #expect(model.attributes.afterLabel == L("newer than %@", L("%lld weeks", 3)))
         #expect(model.attributes.beforeLabel == L("before %@", "2026-11-01"))
+    }
+
+    /// Two date criteria (`ui.md`, "Deux critères de date"): Conversation
+    /// date… first (two letters reach it), Mail date… apart, each with its
+    /// own bounds, chips and request parameters.
+    @Test func mailDateIsACriterionOfItsOwn() async {
+        press("F")
+        let labels = controller.pickerEntries(.attributes).map(\.label)
+        let conversation = labels.firstIndex(of: L("Conversation date…"))
+        let mail = labels.firstIndex(of: L("Mail date…"))
+        #expect(conversation != nil && mail != nil && conversation! < mail!)
+        type(L("Mail date…")); press("ret")
+        #expect(controller.overlay == .picker(.attributeValue(.mailDate)))
+        #expect(controller.pickerHint(.attributeValue(.mailDate))?.contains("011026") == true)
+        type("2020-01-01"); press("down"); press("ret")
+        #expect(model.attributes.mailBefore != nil && model.attributes.before == nil)
+        #expect(model.attributes.chips.map(\.label) == [L("mail: %@", L("before %@", "2020-01-01"))])
+        #expect(await eventually {
+            let f = core.calls("list_threads").last?["filter"] as? [String: Any]
+            return f?["mail_before"] as? Int == model.attributes.mailBefore && f?["before"] == nil
+        })
+        // Its interval is its own: a conversation bound does not empty it.
+        press("F"); type(L("Conversation date…")); press("ret")
+        type("2021-01-01")
+        #expect(controller.pickerEntries(.attributeValue(.date))[0].detail != L("nothing in between"))
+        press("ret")
+        #expect(model.attributes.after != nil && model.attributes.mailBefore != nil)
+        // An empty interval of Mail date… is said in its own panel.
+        press("F"); type(L("Mail date…")); press("ret")
+        type("2021-01-01")
+        #expect(controller.pickerEntries(.attributeValue(.mailDate))[0].detail == L("nothing in between"))
+        press("esc")
     }
 
     @Test func escapeClearsTheAttributesLast() {

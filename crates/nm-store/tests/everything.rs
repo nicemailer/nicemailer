@@ -1,6 +1,6 @@
-//! Integration tests of the virtual folder "Everything" (`ui.md`):
-//! `list_everything` reads whole threads from `thread` instead of merging
-//! every folder (`list_threads_in`), and must list the same threads, in the
+//! Integration tests of the virtual folders "Everything" and "All Mail"
+//! (`ui.md`): one walk of an index of `thread`, which must list the same
+//! threads as every folder listed together (`list_threads_in`), in the
 //! same order, shown in the same folder with the same counters, page after
 //! page.
 //!
@@ -111,33 +111,24 @@ fn everything_lists_what_every_folder_lists_page_after_page() {
 fn unread_in_everything_looks_at_the_whole_thread() {
     // A thread with an unread mail in one folder, but whose latest mail is
     // read and in another folder (the Inbox mail, then the user's reply in
-    // Sent, say). Listed folder by folder, the thread was shown in the
-    // folder of its latest mail, where nothing is unread, and its unread
-    // row was skipped as not the latest: it vanished from "unread".
+    // Sent, say). When lists were read folder by folder, the thread was
+    // shown in the folder of its latest mail, where nothing is unread, and
+    // it vanished from "unread". The counters are now those of the thread.
     let (mut store, _) = store();
-    // A thread of the seed in two folders or more, made read everywhere,
-    // then one mail of an older folder made unread again (the counters are
-    // updated as `refresh_thread` would).
     let (thread, older): (i64, i64) = store
         .conn()
         .query_row(
-            "SELECT tf.thread_id, tf.folder_id FROM thread_folder tf
-              WHERE EXISTS (SELECT 1 FROM thread_folder o WHERE o.thread_id = tf.thread_id
-                             AND o.date_last_received > tf.date_last_received)
-              LIMIT 1",
+            "SELECT m.thread_id, m.id FROM message m
+              WHERE EXISTS (SELECT 1 FROM message o WHERE o.thread_id = m.thread_id
+                             AND o.folder_id <> m.folder_id AND o.date_received > m.date_received)
+              ORDER BY m.id LIMIT 1",
             [],
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
         .expect("the seed has threads in several folders");
     store.set_thread_seen(thread, true, nm_core::Source::Cli).unwrap();
-    store
-        .conn()
-        .execute_batch(&format!(
-            "UPDATE message SET is_seen = 0 WHERE id = (SELECT id FROM message WHERE thread_id = {thread} AND folder_id = {older} LIMIT 1);
-             UPDATE thread_folder SET unread_count = 1 WHERE thread_id = {thread} AND folder_id = {older};
-             UPDATE thread SET unread_count = 1 WHERE id = {thread};"
-        ))
-        .unwrap();
+    store.conn().execute("UPDATE message SET is_seen = 0 WHERE id = ?1", [older]).unwrap();
+    store.refresh_thread_aggregates(thread).unwrap();
     let unread = ThreadFilter { seen: Some(false), ..Default::default() };
     let everything = all_pages(|c| store.list_everything(None, c, 100, ThreadSort::Received, &unread).unwrap());
     assert!(everything.iter().any(|t| t.id == thread));
@@ -187,9 +178,9 @@ fn the_lists_of_a_tag_a_group_and_a_contact_are_complete_and_ordered() {
 }
 
 // ---------------------------------------------------------------------------
-// All Mail (`ui.md`, "Sélecteur d'attributs"): every folder but Deleted,
-// Junk and Banned. Read in one walk of the date index of `thread_folder`;
-// it must list exactly what the folders of All Mail list together.
+// All Mail (`ui.md`, "Sélecteur d'attributs"): every conversation but
+// those in Deleted, Junk and Banned. One walk of its partial index; it must
+// list exactly what the folders of All Mail list together.
 // ---------------------------------------------------------------------------
 
 /// The folders of All Mail: all but Deleted, Junk and Banned.
@@ -231,37 +222,43 @@ fn all_mail_lists_what_its_folders_list_page_after_page() {
 }
 
 /// A thread whose latest mail was deleted keeps its place in All Mail:
-/// sorted and shown by its latest mail left, where Everything puts it at
-/// the date of the mail deleted.
+/// sorted and shown by its latest mail left, in its own folder. Everything
+/// shows the same row: its counters and date never count a deleted mail.
 #[test]
 fn a_mail_deleted_does_not_move_its_thread_in_all_mail() {
-    let (store, _) = store();
-    let thread: i64 = store
+    let (mut store, _) = store();
+    // A thread of Archive with two mails or more.
+    let (thread, account): (i64, i64) = store
         .conn()
         .query_row(
-            "SELECT tf.thread_id FROM thread_folder tf JOIN folder f ON f.id = tf.folder_id
-              WHERE f.role NOT IN ('deleted', 'junk', 'banned') ORDER BY tf.thread_id LIMIT 1",
+            "SELECT id, account_id FROM thread WHERE folder = 'a' AND message_count > 1 ORDER BY id LIMIT 1",
             [],
-            |r| r.get(0),
+            |r| Ok((r.get(0)?, r.get(1)?)),
         )
         .unwrap();
-    let deleted: i64 = store.conn().query_row("SELECT id FROM folder WHERE role = 'deleted'", [], |r| r.get(0)).unwrap();
-    // Its latest mail is now in Deleted, the most recent of the box (the
-    // aggregates set as `refresh_thread` would).
+    let deleted: i64 =
+        store.conn().query_row("SELECT id FROM folder WHERE role = 'deleted' AND account_id = ?1", [account], |r| r.get(0)).unwrap();
+    let before = all_pages(|c| store.list_all_mail(None, c, 50, ThreadSort::Received, &ThreadFilter::default()).unwrap());
+    let row = before.iter().find(|t| t.id == thread).unwrap().clone();
+    // A new mail of the thread, the most recent of the box, put in Deleted.
     store
         .conn()
-        .execute_batch(&format!(
-            "DELETE FROM thread_folder WHERE thread_id = {thread} AND folder_id = {deleted};
-             INSERT INTO thread_folder (thread_id, folder_id, date_last_received, date_last_modified, message_count, unread_count)
-                  VALUES ({thread}, {deleted}, 1900000000, 1900000000, 1, 0);
-             UPDATE thread SET date_last_received = 1900000000, date_last_modified = 1900000000 WHERE id = {thread};"
-        ))
+        .execute(
+            "INSERT INTO message (account_id, folder_id, thread_id, subject, date_received, is_seen, created_by, modified_by)
+             VALUES (?1, ?2, ?3, 'x', 1900000000, 0, 'cli', 'cli')",
+            [account, deleted, thread],
+        )
         .unwrap();
-    let everything = store.list_everything(None, None, 5, ThreadSort::Received, &ThreadFilter::default()).unwrap().0;
-    assert_eq!(everything[0].id, thread, "Everything puts it first");
+    store.refresh_thread_aggregates(thread).unwrap();
     let all_mail = all_pages(|c| store.list_all_mail(None, c, 50, ThreadSort::Received, &ThreadFilter::default()).unwrap());
     let i = all_mail.iter().position(|t| t.id == thread).expect("still in All Mail");
-    assert!(all_mail[i].date_last_received < 1900000000);
-    assert_ne!(all_mail[i].folder_id, deleted);
-    assert!(i == 0 || all_mail[i - 1].date_last_received >= all_mail[i].date_last_received);
+    // Same date, count and folder as before: the deleted mail is not counted.
+    assert_eq!(
+        (all_mail[i].date_last_received, all_mail[i].message_count, all_mail[i].unread_count, all_mail[i].folder_id),
+        (row.date_last_received, row.message_count, row.unread_count, row.folder_id)
+    );
+    assert_eq!(all_mail.iter().position(|t| t.id == thread), before.iter().position(|t| t.id == thread));
+    // It is listed in Deleted too (its flag), and still in Archive.
+    let in_deleted = all_pages(|c| store.list_threads_in(&[deleted], c, 50, ThreadSort::Received, &ThreadFilter::default()).unwrap());
+    assert!(in_deleted.iter().any(|t| t.id == thread && t.folder_id == deleted));
 }

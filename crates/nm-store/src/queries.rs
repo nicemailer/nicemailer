@@ -2,33 +2,44 @@
 //!
 //! These methods take `&self` (shared access): they never modify the
 //! database.
+//!
+//! Every thread list reads the table `thread` alone (`schema.sql`, version
+//! 9): its folder, flags and counters are columns, and each kind of list
+//! walks one of its indexes, newest first, and stops after a page.
+
+use std::collections::{BTreeMap, HashMap};
 
 use nm_api::{AddressView, FolderView, MessageView, SearchHit, SegmentView, ThreadFilter, ThreadSort, ThreadSummary};
-use rusqlite::types::Value;
-
-/// A row of `thread_folder` joined with its thread: (thread id, subject,
-/// last received, last modified, message count, unread count).
-type ListRow = (i64, String, i64, i64, i64, i64);
 use nm_core::{FolderRole, KW_WAS_TODO, KW_WAS_WAITING};
+use rusqlite::types::Value;
 use rusqlite::{OptionalExtension, Row, params};
 
 use crate::{Result, Store, StoreError};
 
-/// The messages of a thread in one folder, oldest first: the details of a
-/// list row (`thread_summary`). It must use `idx_message_thread (thread_id,
-/// folder_id, …)`; through `idx_message_list (folder_id, …)`, which gives
-/// the order for free, SQLite read the whole folder for every row of the
-/// list (1.5 s for a page of a folder of 75 000 threads).
-const THREAD_MESSAGES_IN_FOLDER: &str = "SELECT from_name, from_addr, snippet, has_attachments
-       FROM message WHERE thread_id = ?1 AND folder_id = ?2
-      ORDER BY date_received, id";
+/// A row of a list query: (thread id, subject, last received, last
+/// modified, message count, unread count, folder code, account).
+type ListRow = (i64, String, i64, i64, i64, i64, Option<String>, i64);
+
+/// The mails of a thread, oldest first, with the role of their folder: the
+/// details of a list row (`thread_summary`). Found through
+/// `idx_message_thread (thread_id, …)`; the sort is of a handful of rows.
+const THREAD_MESSAGES: &str = "SELECT m.from_name, m.from_addr, m.snippet, m.has_attachments, f.role
+       FROM message m JOIN folder f ON f.id = m.folder_id
+      WHERE m.thread_id = ?1
+      ORDER BY m.date_received, m.id";
 
 /// Whether a thread has a flagged message, in any folder (read from the
 /// partial index `idx_message_thread_flagged`).
 const THREAD_IS_FLAGGED: &str = "SELECT EXISTS (SELECT 1 FROM message WHERE thread_id = ?1 AND is_flagged = 1)";
 
-/// Parses a list cursor: `<date_last_received>:<thread_id>` of the last row
-/// of the previous page.
+/// The condition of All Mail, written exactly as the `WHERE` of its partial
+/// indexes (`idx_thread_live_received`…, `schema.sql`): SQLite uses a
+/// partial index only when the query holds its condition, and compares the
+/// expressions, not their meaning.
+const ALL_MAIL: &str = "t.folder NOT IN ('d','x','b')";
+
+/// Parses a list cursor: `<date>:<thread_id>` of the last row of the
+/// previous page, the date being the sort key.
 ///
 /// Why a cursor rather than `OFFSET`: with `OFFSET 500`, SQLite still reads
 /// and skips 500 rows, and if a thread arrives meanwhile, every row shifts
@@ -56,6 +67,78 @@ fn role_of(s: Option<String>) -> Option<FolderRole> {
     s.as_deref().and_then(FolderRole::parse)
 }
 
+/// A folder in `thread_counts`: (account, role, 0), or (account, `None`,
+/// folder id) for a folder without a role.
+type FolderKey = (i64, Option<FolderRole>, i64);
+
+/// The column of `thread` flagging a technical folder (`schema.sql`).
+fn flag_column(role: FolderRole) -> &'static str {
+    match role {
+        FolderRole::Sent => "has_sent",
+        FolderRole::Drafts => "has_draft",
+        FolderRole::Quarantine => "has_quarantine",
+        // Only the four technical roles reach here (`Scope::of`).
+        _ => "has_deleted",
+    }
+}
+
+/// Which threads a list reads from `thread`.
+///
+/// Rust note: `#[derive(Clone, Copy)]` lets a small value be copied freely
+/// instead of moved; `PartialEq, Eq, PartialOrd, Ord` let it be a key of a
+/// `BTreeMap` (the groups of `list_threads_in`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum Scope {
+    /// A real folder (Inbox… Banned): `folder = '<code>'`.
+    Role(FolderRole),
+    /// A technical folder (Sent, Drafts, Quarantine, Deleted): its flag.
+    Flag(FolderRole),
+    /// All Mail: every thread but those in Deleted, Junk and Banned.
+    AllMail,
+    /// Everything: every thread with a mail.
+    Everything,
+    /// A folder without a role: the threads with a mail in it. Such a
+    /// folder is not synchronized (`dossiers.md`), so it only holds mail
+    /// left there when it lost its role; the list reads its mails, a small
+    /// set, and walks the Everything index.
+    Unmanaged(i64),
+}
+
+impl Scope {
+    /// The scope of a folder of this role.
+    fn of(role: FolderRole) -> Scope {
+        if role.is_technical() { Scope::Flag(role) } else { Scope::Role(role) }
+    }
+
+    /// The SQL condition. The codes and column names are constants of
+    /// ours, and the folder id an integer from the store: no client input
+    /// is written into the SQL text.
+    fn condition(self) -> String {
+        match self {
+            Scope::Role(r) => format!("t.folder = '{}'", r.code()),
+            Scope::Flag(r) => format!("t.{} = 1", flag_column(r)),
+            Scope::AllMail => ALL_MAIL.to_string(),
+            Scope::Everything => "t.message_count > 0".to_string(),
+            Scope::Unmanaged(f) => {
+                format!("t.id IN (SELECT thread_id FROM message WHERE folder_id = {f} AND thread_id IS NOT NULL)")
+            }
+        }
+    }
+}
+
+/// The accounts a list covers.
+#[derive(Debug, Clone, PartialEq)]
+enum Accounts {
+    /// Every account: no condition, the "all accounts" index.
+    All,
+    /// One account: the "one account" index (`account_id = ?1`).
+    One(i64),
+    /// Several accounts, not all of them (the unified view without a
+    /// disabled account): the "all accounts" index walked, the others
+    /// skipped (comma-separated ids).
+    Some(String),
+}
+
 impl Store {
     /// Every folder shown in the sidebar, with its counters and the move
     /// targets it offers.
@@ -64,15 +147,17 @@ impl Store {
         // (`synchronisation-configuration.md`); it is technical and hidden.
         let mut stmt = self.conn.prepare_cached(
             "SELECT f.id, f.role, f.path, f.total_count, f.unread_count,
-                    (SELECT count(*) FROM thread_folder tf WHERE tf.folder_id = f.id),
                     a.id, a.config_key, a.kind, a.position
                FROM folder f JOIN account a ON a.id = f.account_id
               WHERE f.subscribed = 1 AND (f.role IS NULL OR f.role <> 'config')",
         )?;
         // Each folder with the position of its account, for the sort below.
+        // The number of conversations of each folder, counted once for all
+        // of them (`thread_counts`).
+        let counts = self.thread_counts()?;
         let mut items = stmt
             .query_map([], |r| {
-                let position: i64 = r.get(9)?;
+                let position: i64 = r.get(8)?;
                 let role = role_of(r.get(1)?);
                 let path: String = r.get(2)?;
                 Ok((position, FolderView {
@@ -85,12 +170,12 @@ impl Store {
                     category: role.map(|r| r.category()),
                     total_count: r.get(3)?,
                     unread_count: r.get(4)?,
-                    thread_count: r.get(5)?,
+                    thread_count: 0,
                     // `unwrap_or_default` gives an empty `Vec` when there is no role.
                     move_targets: role.map(|r| r.move_targets()).unwrap_or_default(),
-                    account_id: r.get(6)?,
-                    account_name: r.get(7)?,
-                    account_kind: r.get(8)?,
+                    account_id: r.get(5)?,
+                    account_name: r.get(6)?,
+                    account_kind: r.get(7)?,
                 }))
             })?
             .collect::<std::result::Result<Vec<(i64, FolderView)>, _>>()?;
@@ -111,8 +196,80 @@ impl Store {
                 f.name.clone(),
             )
         });
-        let items: Vec<FolderView> = items.into_iter().map(|(_, f)| f).collect();
+        let items: Vec<FolderView> = items
+            .into_iter()
+            .map(|(_, mut f)| {
+                let key = match f.role {
+                    Some(r) => (f.account_id, Some(r), 0),
+                    None => (f.account_id, None, f.id),
+                };
+                f.thread_count = counts.get(&key).copied().unwrap_or(0);
+                f
+            })
+            .collect();
         Ok(items)
+    }
+
+    /// The number of conversations of each folder, keyed by (account, role,
+    /// 0), or (account, `None`, folder id) for a folder without a role: the
+    /// threads whose `folder` is the role, or whose flag is set for a
+    /// technical folder (`dossiers.md`, "Dossier d'une conversation").
+    ///
+    /// One pass over each index rather than a count per folder: a
+    /// `GROUP BY` on the covering index of the real folders, and one on the
+    /// small partial index of each flag.
+    fn thread_counts(&self) -> Result<HashMap<FolderKey, i64>> {
+        let mut out = HashMap::new();
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT account_id, folder, count(*) FROM thread WHERE folder IS NOT NULL GROUP BY folder, account_id",
+        )?;
+        let rows = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?)))?;
+        for row in rows {
+            let (account, code, n) = row?;
+            // A technical code is the fallback folder of a thread; its list
+            // is that of the flag, counted below.
+            if let Some(role) = FolderRole::from_code(&code).filter(|r| !r.is_technical()) {
+                out.insert((account, Some(role), 0), n);
+            }
+        }
+        for role in FolderRole::TECHNICAL {
+            let sql = format!(
+                "SELECT account_id, count(*) FROM thread WHERE {} = 1 GROUP BY account_id",
+                flag_column(role)
+            );
+            let mut stmt = self.conn.prepare_cached(&sql)?;
+            let rows = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)))?;
+            for row in rows {
+                let (account, n) = row?;
+                out.insert((account, Some(role), 0), n);
+            }
+        }
+        // Folders without a role: normally empty (they are not synchronized).
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT f.account_id, f.id, (SELECT count(DISTINCT m.thread_id) FROM message m WHERE m.folder_id = f.id)
+               FROM folder f WHERE f.role IS NULL",
+        )?;
+        let rows = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?, r.get::<_, i64>(2)?)))?;
+        for row in rows {
+            let (account, folder, n) = row?;
+            out.insert((account, None, folder), n);
+        }
+        Ok(out)
+    }
+
+    /// Every folder with a role, by (account, role): the folder a thread
+    /// of Everything or All Mail is shown in, from its `folder` code.
+    fn role_folders(&self) -> Result<HashMap<(i64, FolderRole), i64>> {
+        let mut stmt = self.conn.prepare_cached("SELECT account_id, role, id FROM folder WHERE role IS NOT NULL")?;
+        let rows = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?)))?;
+        let mut out = HashMap::new();
+        for row in rows {
+            let (account, role, id) = row?;
+            if let Some(role) = FolderRole::parse(&role) {
+                out.insert((account, role), id);
+            }
+        }
+        Ok(out)
     }
 
     /// Ids of the active tags named like the `tag` criterion of `filter`,
@@ -165,14 +322,17 @@ impl Store {
 
     /// One page of the threads of several folders together, newest first:
     /// the unified view ("all") lists the folders of the same role in every
-    /// account. (The virtual folder "Everything" has its own query,
-    /// `list_everything`.) A thread in several of the folders is listed once
-    /// (see `once` below).
+    /// account. (The virtual folders have their own methods,
+    /// `list_everything` and `list_all_mail`.)
     ///
-    /// Each folder is read with its own index, `limit + 1` rows at most,
-    /// then the pages are merged: the cost depends on the page size, not on
-    /// the size of the folders (sorting the union of two folders of 40 000
-    /// threads on every page would not).
+    /// The folders are grouped by role. A role common to the folders of
+    /// every account is **one** query: one walk of the index of the role
+    /// (`idx_thread_role_received`, or the partial index of a technical
+    /// flag), whatever the number of accounts, which stops after a page.
+    /// Only folders of different roles together (Inbox and Sent, which the
+    /// CLI may ask for) are several queries, one per role, whose pages are
+    /// merged on the sort key, each thread once: every query reads `thread`,
+    /// so the key of a thread is the same in all of them.
     pub fn list_threads_in(
         &self,
         folder_ids: &[i64],
@@ -184,77 +344,107 @@ impl Store {
         if folder_ids.is_empty() {
             return Ok((vec![], None));
         }
-        let mut roles = Vec::with_capacity(folder_ids.len());
-        let mut accounts = Vec::with_capacity(folder_ids.len());
-        for f in folder_ids {
-            let (role, account) = self.folder_role_and_account(*f)?;
-            roles.push((*f, role));
-            accounts.push(account);
+        // The listed folders, grouped by scope: for each, the folder of
+        // each account, which a row of that account is shown in.
+        let mut groups: BTreeMap<Scope, BTreeMap<i64, i64>> = BTreeMap::new();
+        for &f in folder_ids {
+            let (role, account) = self.folder_role_and_account(f)?;
+            let scope = match role {
+                Some(r) => Scope::of(r),
+                None => Scope::Unmanaged(f),
+            };
+            groups.entry(scope).or_default().insert(account, f);
         }
-        // Fetch one extra row: if it exists, there is a next page. This
-        // avoids a separate `count(*)` query.
-        let fetch = i64::from(limit) + 1;
-        // The sort column. Both have their own index
-        // (idx_thread_folder_list, idx_thread_folder_modified). It is
-        // inserted into the SQL text, never taken from the client: only
-        // these two constants are possible, so there is no injection risk.
-        let key = match sort {
-            ThreadSort::Received => "tf.date_last_received",
-            ThreadSort::Modified => "tf.date_last_modified",
-        };
         let after = cursor.map(parse_cursor).transpose()?;
-        let mut rows: Vec<(i64, ListRow)> = Vec::new();
-        // Closure that converts a row into a tuple, shared by both queries.
-        let map = |r: &Row| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?));
-        // The listed folders, as integers from the store written into the
-        // SQL text (no user input).
+        let fetch = i64::from(limit) + 1;
+        // Attribute filters: their criteria look at the mails of every
+        // listed folder (`ui.md`, "Négation"). The ids are integers from
+        // the store written into the SQL text (no user input).
         let set = folder_ids.iter().map(|f| f.to_string()).collect::<Vec<_>>().join(",");
-        // Attribute filters: extra conditions, with their values bound after
-        // the fixed parameters (`?1`… are folder, cursor and limit).
         let tags = self.tag_ids(filter)?;
         let (filter_sql, filter_values) = filter_clause(filter, &Target::folders(&set), &tags);
-        // A thread belongs to one account, so it can only be in two listed
-        // folders if two of them belong to the same account (never in the
-        // unified view, which lists one folder per account). Then it is
-        // listed once, in the folder of its latest message among them (ties:
-        // the smallest folder id). Its rows in the other folders are
-        // skipped, on every page, so pagination stays consistent.
-        let shared_account = (1..accounts.len()).any(|i| accounts[..i].contains(&accounts[i]));
-        let once = if shared_account {
-            let col = key.trim_start_matches("tf.");
-            format!(
-                " AND NOT EXISTS (SELECT 1 FROM thread_folder tf2
-                                   WHERE tf2.thread_id = tf.thread_id AND tf2.folder_id IN ({set})
-                                     AND (tf2.{col} > tf.{col} OR (tf2.{col} = tf.{col} AND tf2.folder_id < tf.folder_id)))"
-            )
-        } else {
-            String::new()
-        };
-        for &folder_id in folder_ids {
-            let (sql, values) = folder_query(key, &once, &filter_sql, &filter_values, folder_id, fetch, after);
-            let mut stmt = self.conn.prepare_cached(&sql)?;
-            let page: Vec<ListRow> =
-                stmt.query_map(rusqlite::params_from_iter(values), map)?.collect::<std::result::Result<_, _>>()?;
-            rows.extend(page.into_iter().map(|r| (folder_id, r)));
-        }
-        // Merge: newest first on the sort key, then the thread id, like the
-        // index order. A single folder is already in that order.
-        if folder_ids.len() > 1 {
-            let sort_key = |r: &(i64, ListRow)| {
-                let (_, (id, _, received, modified, _, _)) = r;
-                (if sort == ThreadSort::Modified { *modified } else { *received }, *id)
-            };
-            rows.sort_by_key(|r| std::cmp::Reverse(sort_key(r)));
-        }
 
+        let mut rows: Vec<(Scope, ListRow)> = Vec::new();
+        for (scope, folders) in &groups {
+            let accounts = match scope {
+                Scope::Role(r) | Scope::Flag(r) => self.accounts_of(*r, folders)?,
+                _ => Accounts::All,
+            };
+            let (sql, values) = list_query(*scope, &accounts, after, fetch, sort, &filter_sql, &filter_values);
+            rows.extend(self.list_rows(&sql, values)?.into_iter().map(|r| (*scope, r)));
+        }
+        // Several groups: merge on the sort key then the id, like the index
+        // order, and keep each thread once (a thread of the Inbox the user
+        // answered is in the Inbox and in Sent).
+        if groups.len() > 1 {
+            let key = |r: &ListRow| (if sort == ThreadSort::Modified { r.3 } else { r.2 }, r.0);
+            rows.sort_by_key(|(_, r)| std::cmp::Reverse(key(r)));
+            let mut seen = std::collections::HashSet::new();
+            rows.retain(|(_, r)| seen.insert(r.0));
+        }
+        self.page(rows, limit, sort, |scope, row| {
+            let account = row.7;
+            Ok(match scope {
+                // The listed folder of the row's account, with its role: a
+                // row of Sent is moved from Sent (it has no targets).
+                Scope::Role(r) | Scope::Flag(r) => groups[&scope].get(&account).map(|f| (*f, Some(r))),
+                Scope::Unmanaged(f) => Some((f, None)),
+                _ => None,
+            })
+        })
+    }
+
+    /// The accounts of a list of the folders `folders` (account → folder)
+    /// of role `role`: every account when the folders of that role of all
+    /// accounts are listed (the unified view), else one, else several.
+    fn accounts_of(&self, role: FolderRole, folders: &BTreeMap<i64, i64>) -> Result<Accounts> {
+        if folders.len() == 1 {
+            return Ok(Accounts::One(*folders.keys().next().unwrap_or(&0)));
+        }
+        let all: Vec<i64> = self
+            .conn
+            .prepare_cached("SELECT account_id FROM folder WHERE role = ?1")?
+            .query_map([role.as_str()], |r| r.get(0))?
+            .collect::<std::result::Result<_, _>>()?;
+        if all.iter().all(|a| folders.contains_key(a)) {
+            Ok(Accounts::All)
+        } else {
+            Ok(Accounts::Some(folders.keys().map(i64::to_string).collect::<Vec<_>>().join(",")))
+        }
+    }
+
+    /// Runs a list query and reads its rows.
+    fn list_rows(&self, sql: &str, values: Vec<Value>) -> Result<Vec<ListRow>> {
+        let map = |r: &Row| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?, r.get(7)?));
+        Ok(self.conn.prepare_cached(sql)?.query_map(rusqlite::params_from_iter(values), map)?.collect::<std::result::Result<_, _>>()?)
+    }
+
+    /// Turns the rows of a list (one more than `limit` when there is a next
+    /// page) into a page of summaries and the cursor of the next page.
+    /// `shown_in` gives the folder a row is shown in and its role, or
+    /// `None` to take the thread's own folder (Everything, All Mail).
+    ///
+    /// Rust note: `impl Fn(...)` takes any closure with that signature; the
+    /// caller's closure borrows its local maps.
+    fn page(
+        &self,
+        rows: Vec<(Scope, ListRow)>,
+        limit: u32,
+        sort: ThreadSort,
+        shown_in: impl Fn(Scope, &ListRow) -> Result<Option<(i64, Option<FolderRole>)>>,
+    ) -> Result<(Vec<ThreadSummary>, Option<String>)> {
         // `as i64` is an explicit numeric conversion; Rust never converts
         // between integer types implicitly.
         let has_more = rows.len() as i64 > i64::from(limit);
+        let role_folders = self.role_folders()?;
         let mut items = Vec::with_capacity(rows.len().min(limit as usize));
-        // `into_iter` consumes `rows`; `take(limit)` drops the extra rows.
-        // The tuple is destructured directly in the `for` pattern.
-        for (folder_id, (thread_id, subject, received, modified, count, unread)) in rows.into_iter().take(limit as usize) {
-            let role = roles.iter().find(|(f, _)| *f == folder_id).and_then(|(_, r)| *r);
+        // `into_iter` consumes `rows`; `take(limit)` drops the extra row.
+        for (scope, row) in rows.into_iter().take(limit as usize) {
+            let (folder_id, role) = match shown_in(scope, &row)? {
+                Some(x) => x,
+                None => self.own_folder(&row, &role_folders)?,
+            };
+            let (thread_id, subject, received, modified, count, unread, _, _) = row;
             items.push(self.thread_summary(thread_id, folder_id, role, subject, (received, modified), count, unread)?);
         }
         let next_cursor = if has_more {
@@ -268,21 +458,31 @@ impl Store {
         Ok((items, next_cursor))
     }
 
-    /// One page of the virtual folder "Everything" (`ui.md`): every folder,
-    /// of one account or of all of them, newest first.
-    ///
-    /// Every folder means whole threads, so the list is read from `thread`
-    /// itself, whose aggregates (`date_last_received`,
-    /// `date_last_modified`, counters) span all folders: one walk of
-    /// `idx_thread_received` (or its per-account and "modified" variants),
-    /// whatever the number of accounts and folders. Listing it folder by
-    /// folder, as `list_threads_in` does, ran one query per folder (156 for
-    /// thirteen accounts) and had to check, for every row, that the thread
-    /// was not also in a more recent folder.
-    ///
-    /// Each thread is shown in the folder of its latest message (on the
-    /// sort key; ties: the smallest folder id), with that folder's counters,
-    /// exactly as when Everything was listed folder by folder.
+    /// The folder a thread is in (`dossiers.md`, "Dossier d'une
+    /// conversation"): that of its role in its account. A thread without a
+    /// role (its mails all in folders without one) is shown in the folder
+    /// of its latest mail.
+    fn own_folder(&self, row: &ListRow, role_folders: &HashMap<(i64, FolderRole), i64>) -> Result<(i64, Option<FolderRole>)> {
+        let role = row.6.as_deref().and_then(FolderRole::from_code);
+        if let Some(r) = role
+            && let Some(f) = role_folders.get(&(row.7, r))
+        {
+            return Ok((*f, Some(r)));
+        }
+        let folder: i64 = self
+            .conn
+            .prepare_cached("SELECT folder_id FROM message WHERE thread_id = ?1 ORDER BY date_received DESC, id DESC LIMIT 1")?
+            .query_row([row.0], |r| r.get(0))
+            .optional()?
+            .unwrap_or(0);
+        Ok((folder, None))
+    }
+
+    /// One page of the virtual folder "Everything" (`ui.md`): every
+    /// conversation, of one account or of all of them, newest first, each
+    /// in its folder. One walk of `idx_thread_received` (or its per-account
+    /// and "modified" variants), whatever the number of accounts and
+    /// folders. Its criteria look at every mail of the thread.
     pub fn list_everything(
         &self,
         account_id: Option<i64>,
@@ -291,62 +491,20 @@ impl Store {
         sort: ThreadSort,
         filter: &ThreadFilter,
     ) -> Result<(Vec<ThreadSummary>, Option<String>)> {
-        let fetch = i64::from(limit) + 1;
-        let after = cursor.map(parse_cursor).transpose()?;
         let tags = self.tag_ids(filter)?;
-        let (sql, values) = everything_query(account_id, after, fetch, sort, filter, &tags);
-        // Constant of ours, never client input (see `list_threads_in`).
-        let tf_key = match sort {
-            ThreadSort::Received => "tf.date_last_received",
-            ThreadSort::Modified => "tf.date_last_modified",
-        };
-        let rows: Vec<(i64, String, i64)> = self
-            .conn
-            .prepare_cached(&sql)?
-            .query_map(rusqlite::params_from_iter(values), |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
-            .collect::<std::result::Result<_, _>>()?;
-
-        let has_more = rows.len() as i64 > i64::from(limit);
-        // The folder each thread is shown in (`shown_in_sql`).
-        let mut shown_in = self.conn.prepare_cached(&shown_in_sql(tf_key))?;
-        let mut items = Vec::with_capacity(rows.len().min(limit as usize));
-        let mut last_key = None;
-        for (thread_id, subject, sort_value) in rows.into_iter().take(limit as usize) {
-            last_key = Some((sort_value, thread_id));
-            let row = shown_in
-                .query_row([thread_id], |r| {
-                    Ok((r.get::<_, i64>(0)?, role_of(r.get(1)?), r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?))
-                })
-                .optional()?;
-            // A thread with messages always has a folder row; skip rather
-            // than fail if an inconsistency ever slips in.
-            let Some((folder_id, role, received, modified, count, unread)) = row else { continue };
-            items.push(self.thread_summary(thread_id, folder_id, role, subject, (received, modified), count, unread)?);
-        }
-        // The cursor is the sort key of the thread itself (equal to that of
-        // the folder it is shown in), so the next page continues the walk of
-        // the index where this one stopped.
-        let next_cursor = if has_more { last_key.map(|(d, id)| format!("{d}:{id}")) } else { None };
-        Ok((items, next_cursor))
+        let (filter_sql, filter_values) = filter_clause(filter, &Target::everything(), &tags);
+        self.list_virtual(Scope::Everything, account_id, cursor, limit, sort, &filter_sql, &filter_values)
     }
 
     /// The virtual folder "All Mail" (`ui.md`, "Sélecteur d'attributs"):
-    /// every folder of one account, or of every account, but Deleted, Junk
-    /// and Banned (`FolderRole::OUT_OF_ALL_MAIL`), Quarantine and folders
-    /// without a role included.
+    /// every conversation of one account, or of every account, but those
+    /// in Deleted, Junk and Banned (`FolderRole::OUT_OF_ALL_MAIL`). A
+    /// thread whose latest mail was deleted keeps its place: its date is
+    /// that of its latest mail left (the "live" date of `thread`). The
+    /// attributes look at the mails of the folders of All Mail only.
     ///
-    /// Each thread is listed once, in the folder of its latest mail among
-    /// those of All Mail, and sorted by that mail: a thread whose latest
-    /// mail was just deleted keeps its place, it does not jump to the top
-    /// as it would if read from `thread` like Everything. The attributes
-    /// look at the mails of those folders only, as for any list of folders.
-    ///
-    /// One walk of `idx_thread_folder_received` (or `…_date_modified`),
-    /// every folder at once, newest first, stopping after a page: a search
-    /// costs what it costs in Everything. Reading each folder by its own
-    /// index and merging, as `list_threads_in` does, read every folder in
-    /// full when the words were found in few of them (160 ms a page, 8
-    /// times Everything, on a real mailbox).
+    /// One walk of the partial index `idx_thread_live_received` (or its
+    /// variants), stopping after a page.
     pub fn list_all_mail(
         &self,
         account_id: Option<i64>,
@@ -356,46 +514,50 @@ impl Store {
         filter: &ThreadFilter,
     ) -> Result<(Vec<ThreadSummary>, Option<String>)> {
         let out: Vec<&str> = FolderRole::OUT_OF_ALL_MAIL.iter().map(|r| r.as_str()).collect();
-        let folders: Vec<(i64, Option<String>)> = self
+        let folders: Vec<i64> = self
             .conn
             .prepare_cached(
-                "SELECT id, role FROM folder
+                "SELECT id FROM folder
                   WHERE (?1 IS NULL OR account_id = ?1) AND coalesce(role, '') NOT IN (?2, ?3, ?4) ORDER BY id",
             )?
-            .query_map(params![account_id, out[0], out[1], out[2]], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .query_map(params![account_id, out[0], out[1], out[2]], |r| r.get(0))?
             .collect::<std::result::Result<_, _>>()?;
         if folders.is_empty() {
             return Ok((vec![], None));
         }
         // The folders, as integers from the store written into the SQL
         // text (no user input).
-        let set = folders.iter().map(|(f, _)| f.to_string()).collect::<Vec<_>>().join(",");
+        let set = folders.iter().map(i64::to_string).collect::<Vec<_>>().join(",");
         let tags = self.tag_ids(filter)?;
-        let after = cursor.map(parse_cursor).transpose()?;
-        let fetch = i64::from(limit) + 1;
-        let (sql, values) = all_mail_query(&set, after, fetch, sort, filter, &tags);
-        let map = |r: &Row| Ok((r.get(0)?, (r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?)));
-        let rows: Vec<(i64, ListRow)> =
-            self.conn.prepare_cached(&sql)?.query_map(rusqlite::params_from_iter(values), map)?.collect::<std::result::Result<_, _>>()?;
-        let has_more = rows.len() as i64 > i64::from(limit);
-        let mut items = Vec::with_capacity(rows.len().min(limit as usize));
-        for (folder_id, (thread_id, subject, received, modified, count, unread)) in rows.into_iter().take(limit as usize) {
-            let role = folders.iter().find(|(f, _)| *f == folder_id).and_then(|(_, r)| role_of(r.clone()));
-            items.push(self.thread_summary(thread_id, folder_id, role, subject, (received, modified), count, unread)?);
-        }
-        let next_cursor = if has_more {
-            items.last().map(|t| {
-                let d = if sort == ThreadSort::Modified { t.date_last_modified } else { t.date_last_received };
-                format!("{d}:{}", t.id)
-            })
-        } else {
-            None
-        };
-        Ok((items, next_cursor))
+        let (filter_sql, filter_values) = filter_clause(filter, &Target::folders(&set), &tags);
+        self.list_virtual(Scope::AllMail, account_id, cursor, limit, sort, &filter_sql, &filter_values)
     }
 
-    /// Completes a list row with the details that `thread_folder` does not
-    /// store: participants, snippet, attachments, flag and return mark.
+    /// A page of Everything or All Mail: one query, each row in its folder.
+    #[allow(clippy::too_many_arguments)]
+    fn list_virtual(
+        &self,
+        scope: Scope,
+        account_id: Option<i64>,
+        cursor: Option<&str>,
+        limit: u32,
+        sort: ThreadSort,
+        filter_sql: &str,
+        filter_values: &[Value],
+    ) -> Result<(Vec<ThreadSummary>, Option<String>)> {
+        let after = cursor.map(parse_cursor).transpose()?;
+        let accounts = account_id.map(Accounts::One).unwrap_or(Accounts::All);
+        let (sql, values) = list_query(scope, &accounts, after, i64::from(limit) + 1, sort, filter_sql, filter_values);
+        let rows = self.list_rows(&sql, values)?.into_iter().map(|r| (scope, r)).collect();
+        self.page(rows, limit, sort, |_, _| Ok(None))
+    }
+
+    /// Completes a list row with the details that `thread` does not store:
+    /// participants, snippet, attachments, flag and return mark.
+    ///
+    /// They are read from the mails counted by the row: those outside
+    /// Deleted, Junk and Banned, or all of them when none is (the rule of
+    /// the counters, `schema.sql`).
     ///
     /// This runs a few small queries per thread (an "N+1" pattern). With a
     /// page of 50 threads and indexed lookups, it costs a few milliseconds;
@@ -404,7 +566,7 @@ impl Store {
     /// `#[allow(...)]` silences the clippy lint about functions with more
     /// than 7 parameters.
     ///
-    /// `dates` is (last received, last modified) in the folder.
+    /// `dates` is (last received, last modified) of the thread.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn thread_summary(
         &self,
@@ -416,17 +578,22 @@ impl Store {
         message_count: i64,
         unread_count: i64,
     ) -> Result<ThreadSummary> {
-        // The thread's messages in this folder, oldest first.
-        let mut stmt = self.conn.prepare_cached(THREAD_MESSAGES_IN_FOLDER)?;
+        // The thread's messages, oldest first, with their folder's role.
+        type Mail = (Option<String>, Option<String>, Option<String>, bool, Option<FolderRole>);
+        let mails: Vec<Mail> = self
+            .conn
+            .prepare_cached(THREAD_MESSAGES)?
+            .query_map([thread_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, role_of(r.get(4)?))))?
+            .collect::<std::result::Result<_, _>>()?;
+        let rejected = |r: &Option<FolderRole>| r.is_some_and(|r| FolderRole::OUT_OF_ALL_MAIL.contains(&r));
+        let any_live = mails.iter().any(|m| !rejected(&m.4));
         let mut participants: Vec<String> = Vec::new();
         let mut snippet = None;
         let mut has_attachments = false;
-        // `query` gives a cursor over rows; `while let` loops as long as
-        // `rows.next()?` returns `Some(row)`.
-        let mut rows = stmt.query(params![thread_id, folder_id])?;
-        while let Some(r) = rows.next()? {
-            let name: Option<String> = r.get(0)?;
-            let addr: Option<String> = r.get(1)?;
+        for (name, addr, text, attachments, folder_role) in mails {
+            if any_live && rejected(&folder_role) {
+                continue;
+            }
             // `or` keeps the name if present, otherwise the address.
             if let Some(p) = name.or(addr) {
                 // Remove a previous occurrence then append: each participant
@@ -435,12 +602,12 @@ impl Store {
                 participants.push(p);
             }
             // Keep the snippet of the latest message that has one.
-            snippet = r.get::<_, Option<String>>(2)?.or(snippet);
-            has_attachments |= r.get::<_, bool>(3)?;
+            snippet = text.or(snippet);
+            has_attachments |= attachments;
         }
 
-        // The flag is looked up across the whole thread, not only this
-        // folder: a flagged message in Sent still flags the conversation.
+        // The flag is looked up across the whole thread: a flagged message
+        // in Sent still flags the conversation.
         let is_flagged: bool = self.conn.prepare_cached(THREAD_IS_FLAGGED)?
         .query_row([thread_id], |r| r.get(0))?;
 
@@ -450,11 +617,11 @@ impl Store {
             let mut stmt = self.conn.prepare_cached(
                 "SELECT DISTINCT mk.keyword FROM message m
                    JOIN message_keyword mk ON mk.message_id = m.id
-                  WHERE m.thread_id = ?1 AND m.folder_id = ?2
-                    AND mk.keyword COLLATE NOCASE IN (?3, ?4)",
+                  WHERE m.thread_id = ?1
+                    AND mk.keyword COLLATE NOCASE IN (?2, ?3)",
             )?;
             let kws: Vec<String> = stmt
-                .query_map(params![thread_id, folder_id, KW_WAS_TODO, KW_WAS_WAITING], |r| r.get(0))?
+                .query_map(params![thread_id, KW_WAS_TODO, KW_WAS_WAITING], |r| r.get(0))?
                 .collect::<std::result::Result<_, _>>()?;
             // Both marks present: `todo` wins, since there is still something
             // to do.
@@ -680,124 +847,54 @@ impl Store {
     }
 }
 
-/// The list query of one folder of `list_threads_in` and its parameters:
-/// `once` and `filter_sql` are the extra conditions, `filter_values` the
-/// values of the filters.
-fn folder_query(
-    key: &str,
-    once: &str,
+/// The list query of a scope and its parameters: the threads of `scope`
+/// and `accounts`, newest first on the sort key, after the cursor, `fetch`
+/// rows at most, with the attribute conditions `filter_sql`.
+///
+/// One statement whatever the scope: the table `thread` alone, walked on
+/// one of its indexes (`schema.sql`, version 9). The plan tests below check
+/// which one for every scope, filter, sort and cursor.
+fn list_query(
+    scope: Scope,
+    accounts: &Accounts,
+    after: Option<(i64, i64)>,
+    fetch: i64,
+    sort: ThreadSort,
     filter_sql: &str,
     filter_values: &[Value],
-    folder_id: i64,
-    fetch: i64,
-    after: Option<(i64, i64)>,
 ) -> (String, Vec<Value>) {
-    let select = format!(
-        "SELECT tf.thread_id, t.subject, tf.date_last_received, tf.date_last_modified,
-                tf.message_count, tf.unread_count
-           FROM thread_folder tf JOIN thread t ON t.id = tf.thread_id
-          WHERE tf.folder_id = ?1{once}{filter_sql}"
-    );
-    // Two separate queries rather than one with `?2 IS NULL OR ...`: such a
-    // condition would prevent SQLite from using the index for the row-value
-    // comparison, and every page would scan the folder. Fixed parameters
-    // first, then the filter values (numbered from `?10`, see
-    // `filter_clause`).
-    let (sql, mut values): (String, Vec<Value>) = match after {
-        None => (
-            format!("{select} ORDER BY {key} DESC, tf.thread_id DESC LIMIT ?2"),
-            vec![Value::Integer(folder_id), Value::Integer(fetch)],
-        ),
-        // `(a, b) < (x, y)` is a row-value comparison: true when a < x, or
-        // a = x and b < y. It matches the sort order.
-        Some((d, id)) => (
-            format!("{select} AND ({key}, tf.thread_id) < (?3, ?4) ORDER BY {key} DESC, tf.thread_id DESC LIMIT ?2"),
-            vec![Value::Integer(folder_id), Value::Integer(fetch), Value::Integer(d), Value::Integer(id)],
-        ),
-    };
-    // SQLite counts parameters up to the highest number used: pad the
-    // unused numbers (up to `?9`) only when filters follow.
-    if !filter_values.is_empty() {
-        values.resize(9, Value::Null);
-        values.extend(filter_values.iter().cloned());
-    }
-    (sql, values)
-}
-
-/// The list query of `list_all_mail` and its parameters: the rows of
-/// `thread_folder` of the folders `set`, in date order, each thread once.
-fn all_mail_query(
-    set: &str,
-    after: Option<(i64, i64)>,
-    fetch: i64,
-    sort: ThreadSort,
-    filter: &ThreadFilter,
-    tags: &[i64],
-) -> (String, Vec<Value>) {
-    // Constants of ours, never client input (see `list_threads_in`).
-    let col = match sort {
-        ThreadSort::Received => "date_last_received",
-        ThreadSort::Modified => "date_last_modified",
-    };
-    let (filter_sql, filter_values) = filter_clause(filter, &Target::folders(set), tags);
-    // `+tf.folder_id`: the unary `+` keeps SQLite from reading the rows
-    // folder by folder through `idx_thread_folder_list` (then sorting them
-    // all); the date index is walked, and stops after a page.
-    //
-    // Each thread once: a row is skipped when the thread has a more recent
-    // row in another folder of the set (ties: the smallest folder id). That
-    // check reads the thread's few rows by the primary key.
-    let mut sql = format!(
-        "SELECT tf.folder_id, tf.thread_id, t.subject, tf.date_last_received, tf.date_last_modified,
-                tf.message_count, tf.unread_count
-           FROM thread_folder tf JOIN thread t ON t.id = tf.thread_id
-          WHERE +tf.folder_id IN ({set}){filter_sql}
-            AND NOT EXISTS (SELECT 1 FROM thread_folder tf2
-                             WHERE tf2.thread_id = tf.thread_id AND tf2.folder_id IN ({set})
-                               AND (tf2.{col} > tf.{col} OR (tf2.{col} = tf.{col} AND tf2.folder_id < tf.folder_id)))"
-    );
-    // Fixed parameters: ?2 limit, ?3 and ?4 cursor; the filter values
-    // start at ?10. SQLite counts parameters up to the highest number used,
-    // so unused numbers are bound to NULL.
-    let mut values = vec![Value::Null, Value::Integer(fetch)];
-    if let Some((d, id)) = after {
-        sql.push_str(&format!(" AND (tf.{col}, tf.thread_id) < (?3, ?4)"));
-        values.extend([Value::Integer(d), Value::Integer(id)]);
-    }
-    sql.push_str(&format!(" ORDER BY tf.{col} DESC, tf.thread_id DESC LIMIT ?2"));
-    if !filter_values.is_empty() {
-        values.resize(9, Value::Null);
-        values.extend(filter_values);
-    }
-    (sql, values)
-}
-
-/// The list query of `list_everything` and its parameters.
-fn everything_query(
-    account_id: Option<i64>,
-    after: Option<(i64, i64)>,
-    fetch: i64,
-    sort: ThreadSort,
-    filter: &ThreadFilter,
-    tags: &[i64],
-) -> (String, Vec<Value>) {
-    // Constants of ours, never client input (see `list_threads_in`).
+    // The sort column: a constant of ours, never client input.
     let key = match sort {
         ThreadSort::Received => "t.date_last_received",
         ThreadSort::Modified => "t.date_last_modified",
     };
-    let (filter_sql, filter_values) = filter_clause(filter, &Target::everything(), tags);
-    // `message_count > 0`: a thread whose messages were all deleted keeps
-    // its row until it is cleaned up, and has nothing to show.
-    let mut sql = format!("SELECT t.id, t.subject, {key} FROM thread t WHERE t.message_count > 0{filter_sql}");
+    let mut sql = format!(
+        "SELECT t.id, t.subject, t.date_last_received, t.date_last_modified, t.message_count, t.unread_count,
+                t.folder, t.account_id
+           FROM thread t WHERE {}",
+        scope.condition()
+    );
     // Fixed parameters: ?1 account, ?2 limit, ?3 and ?4 cursor; the filter
     // values start at ?10. SQLite counts parameters up to the highest number
     // used, so unused numbers are bound to NULL.
     let mut values = vec![Value::Null, Value::Integer(fetch)];
-    if let Some(a) = account_id {
-        sql.push_str(" AND t.account_id = ?1");
-        values[0] = Value::Integer(a);
+    match accounts {
+        Accounts::All => {}
+        Accounts::One(a) => {
+            sql.push_str(" AND t.account_id = ?1");
+            values[0] = Value::Integer(*a);
+        }
+        // The unary `+` keeps SQLite from reading the rows account by
+        // account (several ranges, then a sort of all of them): the index
+        // of all accounts is walked, the rows of the others skipped.
+        Accounts::Some(ids) => sql.push_str(&format!(" AND +t.account_id IN ({ids})")),
     }
+    sql.push_str(filter_sql);
+    // Two shapes rather than one with `?3 IS NULL OR ...`: such a condition
+    // would prevent SQLite from using the index for the row-value
+    // comparison, and every page would scan from the top. `(a, b) < (x, y)`
+    // is a row-value comparison: true when a < x, or a = x and b < y. It
+    // matches the sort order.
     if let Some((d, id)) = after {
         sql.push_str(&format!(" AND ({key}, t.id) < (?3, ?4)"));
         values.extend([Value::Integer(d), Value::Integer(id)]);
@@ -805,22 +902,9 @@ fn everything_query(
     sql.push_str(&format!(" ORDER BY {key} DESC, t.id DESC LIMIT ?2"));
     if !filter_values.is_empty() {
         values.resize(9, Value::Null);
-        values.extend(filter_values);
+        values.extend(filter_values.iter().cloned());
     }
     (sql, values)
-}
-
-/// The folder a thread of Everything is shown in, with its counters there:
-/// the row of `thread_folder` with the latest date on the sort key `tf_key`
-/// (ties: the smallest folder id), read through its primary key (a thread
-/// is in a handful of folders).
-fn shown_in_sql(tf_key: &str) -> String {
-    format!(
-        "SELECT tf.folder_id, f.role, tf.date_last_received, tf.date_last_modified, tf.message_count, tf.unread_count
-           FROM thread_folder tf JOIN folder f ON f.id = tf.folder_id
-          WHERE tf.thread_id = ?1
-          ORDER BY {tf_key} DESC, tf.folder_id LIMIT 1"
-    )
 }
 
 /// Simplified presentation of a thread, computed by the core so every
@@ -895,33 +979,25 @@ fn fts_phrase(word: &str, columns: &str) -> String {
     format!("{columns}\"{word}\"*")
 }
 
-/// What the attribute filters apply to: the columns of the list query, and
-/// the folders whose messages count.
+/// What the attribute filters apply to: the folders whose messages count.
 ///
-/// A folder list (`list_threads_in`) reads `thread_folder tf JOIN thread t`;
-/// Everything (`list_everything`) reads `thread t` alone. The column names
-/// are constants of ours written into the SQL text, never client input.
+/// Every list reads `thread t`; the column names are constants of ours
+/// written into the SQL text, never client input.
 struct Target<'a> {
-    /// The thread id of the row.
-    thread: &'static str,
-    /// Unread messages of the row (in the folder, or in the whole thread).
-    unread: &'static str,
-    /// Date of the latest message of the row.
-    received: &'static str,
     /// The listed folders (comma-separated ids), for the criteria that only
     /// look at the messages of those folders (`ui.md`, "Négation": From,
-    /// To and attachments). `None` in Everything: every folder is listed,
-    /// so the whole thread counts.
+    /// To, attachments and Mail date). `None` in Everything: every folder
+    /// is listed, so the whole thread counts.
     folders: Option<&'a str>,
 }
 
 impl<'a> Target<'a> {
     fn folders(set: &'a str) -> Target<'a> {
-        Target { thread: "tf.thread_id", unread: "tf.unread_count", received: "tf.date_last_received", folders: Some(set) }
+        Target { folders: Some(set) }
     }
 
     fn everything() -> Target<'static> {
-        Target { thread: "t.id", unread: "t.unread_count", received: "t.date_last_received", folders: None }
+        Target { folders: None }
     }
 
     /// " AND m.folder_id IN (…)" on the messages of a criterion, or nothing
@@ -1004,12 +1080,11 @@ fn address_condition(value: &str, bind: &mut dyn FnMut(Value) -> String) -> Stri
 fn filter_clause(f: &ThreadFilter, target: &Target, tags: &[i64]) -> (String, Vec<Value>) {
     let mut sql = String::new();
     let mut values: Vec<Value> = Vec::new();
-    let thread = target.thread;
+    let thread = "t.id";
     // " AND <thread> IN (<set>)", or NOT IN for `false` / an exclusion.
     let member = |yes: bool, set: &str| format!(" AND {thread} {}IN ({set})", if yes { "" } else { "NOT " });
     if let Some(seen) = f.seen {
-        let unread = target.unread;
-        sql.push_str(&if seen { format!(" AND {unread} = 0") } else { format!(" AND {unread} > 0") });
+        sql.push_str(if seen { " AND t.unread_count = 0" } else { " AND t.unread_count > 0" });
     }
     // Flag and "answered" look at the whole thread, attachments at the
     // listed folders. Each set is read from a partial index that holds only
@@ -1115,14 +1190,37 @@ fn filter_clause(f: &ThreadFilter, target: &Target, tags: &[i64]) -> (String, Ve
             sql.push_str(&text_clause(q, columns, thread, &mut bind));
         }
     }
-    let received = target.received;
+    // Conversation date…: the date of the thread, the one the list is
+    // sorted on (`ui.md`, "Deux critères de date"). Nothing to compute: a
+    // bound of the walk of the index.
     if let Some(after) = f.after {
         let p = bind(Value::Integer(after));
-        sql.push_str(&format!(" AND {received} >= {p}"));
+        sql.push_str(&format!(" AND t.date_last_received >= {p}"));
     }
     if let Some(before) = f.before {
         let p = bind(Value::Integer(before));
-        sql.push_str(&format!(" AND {received} < {p}"));
+        sql.push_str(&format!(" AND t.date_last_received < {p}"));
+    }
+    // Mail date…: a mail of the thread in the listed folders was received
+    // in the interval. A set computed once, through
+    // `idx_message_received (date_received)` in Everything, or
+    // `idx_message_list (folder_id, date_received)` in a list of folders:
+    // its cost follows the number of mails in the interval, which is why
+    // it is a criterion of its own.
+    if f.mail_after.is_some() || f.mail_before.is_some() {
+        let mut range = Vec::new();
+        if let Some(after) = f.mail_after {
+            range.push(format!("m.date_received >= {}", bind(Value::Integer(after))));
+        }
+        if let Some(before) = f.mail_before {
+            range.push(format!("m.date_received < {}", bind(Value::Integer(before))));
+        }
+        let set = format!(
+            "SELECT m.thread_id FROM message m WHERE {} AND m.thread_id IS NOT NULL{}",
+            range.join(" AND "),
+            target.in_folders("m")
+        );
+        sql.push_str(&member(true, &set));
     }
     (sql, values)
 }
@@ -1191,6 +1289,8 @@ mod plan_tests {
             subject: Some("facture".into()),
             after: Some(1),
             before: Some(2),
+            mail_after: Some(1),
+            mail_before: Some(2),
             tag: Some("Clients".into()),
             group_id: Some(1),
             address_id: Some(2),
@@ -1206,6 +1306,7 @@ mod plan_tests {
         out.push(("to", ThreadFilter { to: v("bob"), ..Default::default() }));
         out.push(("contains", ThreadFilter { contains: Some("devis".into()), ..Default::default() }));
         out.push(("dates", ThreadFilter { after: Some(1), before: Some(2), ..Default::default() }));
+        out.push(("mail dates", ThreadFilter { mail_after: Some(1), mail_before: Some(2), ..Default::default() }));
         out.push(("tag", ThreadFilter { tag: Some("Clients".into()), ..Default::default() }));
         out.push(("group", ThreadFilter { group_id: Some(1), ..Default::default() }));
         out.push(("contact", ThreadFilter { address_id: Some(2), ..Default::default() }));
@@ -1216,20 +1317,21 @@ mod plan_tests {
 
     /// The steps a list query may take. A full read (`SCAN`) is only
     /// allowed on what is small or already narrowed: the list's own index
-    /// (a thread index for Everything, the date index of `thread_folder`
-    /// for All Mail), walked newest first and stopped after a page,
-    /// the address table (a LIKE needs to read it), the full-text index
-    /// (it answers a MATCH itself) and the partial index of the messages
-    /// with attachments. A correlated subquery (one run per row of the list)
-    /// is never allowed, nor reading a whole folder through
-    /// `idx_message_list`.
+    /// of `thread`, walked newest first and stopped after a page, the
+    /// address table (a LIKE needs to read it), the full-text index (it
+    /// answers a MATCH itself) and the partial index of the messages with
+    /// attachments. A correlated subquery (one run per row of the list) is
+    /// never allowed, nor reading a whole folder through `idx_message_list`
+    /// (a range of dates in it, for Mail date…, is fine).
     fn check(what: &str, steps: &[String]) {
         for step in steps {
             assert!(!step.contains("CORRELATED"), "{what}: per-row subquery: {steps:?}");
-            assert!(!step.contains("idx_message_list"), "{what}: reads a whole folder: {steps:?}");
+            assert!(
+                !step.contains("idx_message_list") || step.contains("date_received>") || step.contains("date_received<"),
+                "{what}: reads a whole folder: {steps:?}"
+            );
             if step.starts_with("SCAN ") {
-                let allowed = ["SCAN t USING INDEX idx_thread_", "SCAN tf USING INDEX idx_thread_folder_received",
-                    "SCAN tf USING INDEX idx_thread_folder_date_modified", "SCAN address", "SCAN message_fts VIRTUAL TABLE",
+                let allowed = ["SCAN t USING INDEX idx_thread_", "SCAN address", "SCAN message_fts VIRTUAL TABLE",
                     "SCAN m USING COVERING INDEX idx_message_thread_attachments", "SCAN CONSTANT ROW"];
                 assert!(allowed.iter().any(|a| step.starts_with(a)), "{what}: full scan `{step}`: {steps:?}");
             }
@@ -1237,103 +1339,94 @@ mod plan_tests {
     }
 
     #[test]
-    fn row_details_use_the_thread_and_folder_index() {
+    fn row_details_use_the_thread_index() {
         let store = Store::open_in_memory().unwrap();
-        let steps = plan(&store, THREAD_MESSAGES_IN_FOLDER, &[Value::Integer(1), Value::Integer(1)]);
-        assert_eq!(steps, ["SEARCH message USING INDEX idx_message_thread (thread_id=? AND folder_id=?)"]);
+        let steps = plan(&store, THREAD_MESSAGES, &[Value::Integer(1)]);
+        assert_eq!(steps[0], "SEARCH m USING INDEX idx_message_thread (thread_id=?)", "{steps:?}");
         let steps = plan(&store, THREAD_IS_FLAGGED, &[Value::Integer(1)]);
         assert!(steps.iter().any(|s| s.contains("idx_message_thread_flagged (thread_id=?)")), "{steps:?}");
-        for key in ["tf.date_last_received", "tf.date_last_modified"] {
-            let steps = plan(&store, &shown_in_sql(key), &[Value::Integer(1)]);
-            assert_eq!(steps[0], "SEARCH tf USING PRIMARY KEY (thread_id=?)");
-            check("shown_in", &steps);
-        }
     }
 
+    /// Every scope of a list, with the index it must walk without
+    /// criterion, for all accounts, one account and some accounts.
+    fn scopes() -> Vec<(Scope, [&'static str; 3])> {
+        use FolderRole::*;
+        vec![
+            (Scope::Role(Inbox), ["idx_thread_role_received", "idx_thread_role_account_received", "idx_thread_role_received"]),
+            (Scope::Role(Junk), ["idx_thread_role_received", "idx_thread_role_account_received", "idx_thread_role_received"]),
+            (Scope::Flag(Sent), ["idx_thread_sent_received", "idx_thread_sent_account_received", "idx_thread_sent_received"]),
+            (Scope::Flag(Drafts), ["idx_thread_draft_received", "idx_thread_draft_account_received", "idx_thread_draft_received"]),
+            (Scope::Flag(Quarantine), ["idx_thread_quarantine_received", "idx_thread_quarantine_account_received", "idx_thread_quarantine_received"]),
+            (Scope::Flag(Deleted), ["idx_thread_deleted_received", "idx_thread_deleted_account_received", "idx_thread_deleted_received"]),
+            (Scope::AllMail, ["idx_thread_live_received", "idx_thread_live_account_received", "idx_thread_live_received"]),
+            (Scope::Everything, ["idx_thread_received", "idx_thread_account_received", "idx_thread_received"]),
+        ]
+    }
+
+    /// Every list, every filter, sort, account scope and cursor: the steps
+    /// follow the rules of `check`, and the list itself is a walk of an
+    /// index of `thread` (or the threads of a criterion's set, by primary
+    /// key).
     #[test]
-    fn everything_walks_a_thread_index_with_every_filter() {
+    fn every_list_walks_an_index_of_thread_with_every_filter() {
         let store = Store::open_in_memory().unwrap();
-        for (name, f) in filters() {
-            for account in [None, Some(1)] {
-                for sort in [ThreadSort::Received, ThreadSort::Modified] {
-                    for after in [None, Some((1, 1))] {
-                        let (sql, values) = everything_query(account, after, 61, sort, &f, &[1, 2]);
-                        let steps = plan(&store, &sql, &values);
-                        let what = format!("everything {name} account={account:?} {sort:?} cursor={}", after.is_some());
-                        check(&what, &steps);
-                        // The list itself: a thread index, or the threads
-                        // of a criterion's set, by primary key.
-                        assert!(
-                            steps[0].contains("USING INDEX idx_thread_") || steps[0] == "SEARCH t USING INTEGER PRIMARY KEY (rowid=?)",
-                            "{what}: {steps:?}"
-                        );
+        let accounts = [Accounts::All, Accounts::One(1), Accounts::Some("1,2".into())];
+        for (scope, _) in scopes() {
+            for target in [Target::folders("1,2,3"), Target::everything()] {
+                for (name, f) in filters() {
+                    let (filter_sql, filter_values) = filter_clause(&f, &target, &[1, 2]);
+                    for a in &accounts {
+                        for sort in [ThreadSort::Received, ThreadSort::Modified] {
+                            for after in [None, Some((1, 1))] {
+                                let (sql, values) = list_query(scope, a, after, 61, sort, &filter_sql, &filter_values);
+                                let steps = plan(&store, &sql, &values);
+                                let what = format!("{scope:?} {name} {a:?} {sort:?} cursor={}", after.is_some());
+                                check(&what, &steps);
+                                assert!(
+                                    steps[0].contains("t USING INDEX idx_thread_")
+                                        || steps[0].contains("t USING COVERING INDEX idx_thread_")
+                                        || steps[0] == "SEARCH t USING INTEGER PRIMARY KEY (rowid=?)",
+                                    "{what}: {steps:?}"
+                                );
+                            }
+                        }
                     }
                 }
             }
         }
-        // Without filter, the index of the sort and the scope, nothing else.
-        let first = |account, sort| {
-            let (sql, values) = everything_query(account, None, 61, sort, &ThreadFilter::default(), &[]);
-            plan(&store, &sql, &values)
-        };
-        assert_eq!(first(None, ThreadSort::Received), ["SCAN t USING INDEX idx_thread_received"]);
-        assert_eq!(first(None, ThreadSort::Modified), ["SCAN t USING INDEX idx_thread_modified"]);
-        assert_eq!(first(Some(1), ThreadSort::Received), ["SEARCH t USING INDEX idx_thread_account_received (account_id=?)"]);
-        assert_eq!(first(Some(1), ThreadSort::Modified), ["SEARCH t USING INDEX idx_thread_account_modified (account_id=?)"]);
     }
 
-    /// All Mail: one walk of the date index of `thread_folder` without
-    /// criterion; with one, the rows of its set by primary key. The only
-    /// subquery run per row is the check that the thread has no more recent
-    /// row in another folder: a few rows read by the primary key.
+    /// Without criterion, each list is one walk of its own index, in the
+    /// order of the sort: no other step, no sort of the rows.
     #[test]
-    fn all_mail_walks_the_date_index_with_every_filter() {
+    fn each_list_walks_its_own_index() {
         let store = Store::open_in_memory().unwrap();
-        let dedupe = "SEARCH tf2 USING PRIMARY KEY (thread_id=? AND folder_id=?)";
-        for (name, f) in filters() {
-            for sort in [ThreadSort::Received, ThreadSort::Modified] {
-                for after in [None, Some((1, 1))] {
-                    let (sql, values) = all_mail_query("1,2,3", after, 61, sort, &f, &[1, 2]);
+        let accounts = [Accounts::All, Accounts::One(1), Accounts::Some("1,2".into())];
+        for (scope, indexes) in scopes() {
+            for (a, index) in accounts.iter().zip(indexes) {
+                for sort in [ThreadSort::Received, ThreadSort::Modified] {
+                    let index = if sort == ThreadSort::Modified { index.replace("_received", "_modified") } else { index.to_string() };
+                    let (sql, values) = list_query(scope, a, None, 61, sort, "", &[]);
                     let steps = plan(&store, &sql, &values);
-                    let what = format!("all mail {name} {sort:?} cursor={}", after.is_some());
-                    assert!(steps.iter().any(|s| s == dedupe), "{what}: {steps:?}");
-                    // The dedupe step and its header are allowed; the rest
-                    // follows the rules of every list.
-                    let rest: Vec<String> =
-                        steps.iter().filter(|s| *s != dedupe && !s.starts_with("CORRELATED SCALAR SUBQUERY")).cloned().collect();
-                    check(&what, &rest);
-                    assert!(
-                        rest[0].contains("tf USING INDEX idx_thread_folder_received")
-                            || rest[0].contains("tf USING INDEX idx_thread_folder_date_modified")
-                            || rest[0] == "SEARCH t USING INTEGER PRIMARY KEY (rowid=?)"
-                            || rest[0].starts_with("SEARCH tf USING PRIMARY KEY (thread_id=?)"),
-                        "{what}: {steps:?}"
-                    );
+                    assert_eq!(steps.len(), 1, "{scope:?} {a:?} {sort:?}: {steps:?}");
+                    assert!(steps[0].contains(&format!("USING INDEX {index}")), "{scope:?} {a:?} {sort:?}: {steps:?}");
                 }
             }
         }
-        let first = |sort| {
-            let (sql, values) = all_mail_query("1,2,3", None, 61, sort, &ThreadFilter::default(), &[]);
-            plan(&store, &sql, &values)
-        };
-        assert_eq!(first(ThreadSort::Received)[0], "SCAN tf USING INDEX idx_thread_folder_received");
-        assert_eq!(first(ThreadSort::Modified)[0], "SCAN tf USING INDEX idx_thread_folder_date_modified");
     }
 
+    /// Mail date… reads the mails of its interval through a date index,
+    /// never a whole folder.
     #[test]
-    fn a_folder_list_walks_its_index_with_every_filter() {
+    fn mail_date_reads_a_range_of_dates() {
         let store = Store::open_in_memory().unwrap();
-        for (name, f) in filters() {
-            for key in ["tf.date_last_received", "tf.date_last_modified"] {
-                for after in [None, Some((1, 1))] {
-                    let (filter_sql, filter_values) = filter_clause(&f, &Target::folders("1,2"), &[1, 2]);
-                    let (sql, values) = folder_query(key, "", &filter_sql, &filter_values, 1, 61, after);
-                    let steps = plan(&store, &sql, &values);
-                    let what = format!("folder {name} {key} cursor={}", after.is_some());
-                    check(&what, &steps);
-                    assert!(steps[0].starts_with("SEARCH tf USING INDEX idx_thread_folder_"), "{what}: {steps:?}");
-                }
-            }
+        let f = ThreadFilter { mail_after: Some(1), mail_before: Some(2), ..Default::default() };
+        for target in [Target::folders("1"), Target::everything()] {
+            let (filter_sql, filter_values) = filter_clause(&f, &target, &[]);
+            let (sql, values) = list_query(Scope::Everything, &Accounts::All, None, 61, ThreadSort::Received, &filter_sql, &filter_values);
+            let steps = plan(&store, &sql, &values);
+            check("mail date", &steps);
+            assert!(steps.iter().any(|s| s.contains("date_received>?")), "{steps:?}");
         }
     }
 }

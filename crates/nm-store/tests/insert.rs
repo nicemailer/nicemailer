@@ -229,11 +229,13 @@ fn a_merge_keeps_the_oldest_thread_and_refreshes_every_folder() {
     }
     assert_eq!(env.count("SELECT count(*) FROM thread"), 1);
     assert!(changes.folders.contains(&env.inbox) && changes.folders.contains(&env.archive));
-    // Subject of the first message received, counters per folder.
+    // Subject of the first message received; the counters of the whole
+    // thread, and its folder, that of its latest mail (the Inbox).
     let subject: String = env.store.conn().query_row("SELECT subject FROM thread", [], |r| r.get(0)).unwrap();
     assert_eq!(subject, "Re: Devis toiture");
-    assert_eq!(env.count("SELECT sum(message_count) FROM thread_folder"), 3);
-    assert_eq!(env.count("SELECT message_count FROM thread_folder WHERE folder_id = (SELECT id FROM folder WHERE role = 'inbox')"), 2);
+    assert_eq!(env.count("SELECT message_count FROM thread"), 3);
+    let folder: String = env.store.conn().query_row("SELECT folder FROM thread", [], |r| r.get(0)).unwrap();
+    assert_eq!(folder, "i");
 }
 
 #[test]

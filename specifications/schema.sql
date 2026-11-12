@@ -33,7 +33,7 @@ PRAGMA temp_store = MEMORY;
 -- Une base existante est mise à jour par les migrations du noyau
 -- (crates/nm-store/src/migrations.rs) ; ce fichier crée directement la
 -- dernière version.
-PRAGMA user_version = 8;   -- migrations : comparer à la version attendue au démarrage
+PRAGMA user_version = 9;   -- migrations : comparer à la version attendue au démarrage
 
 -- ------------------------------------------------------------
 -- Comptes : état seulement. Les paramètres (adresse, serveurs, identifiants,
@@ -229,7 +229,40 @@ CREATE INDEX idx_contact_group_member_address
     ON contact_group_member (address_id, group_id) WHERE date_removed IS NULL;
 
 -- ------------------------------------------------------------
--- Conversations (JWZ). Une conversation peut couvrir plusieurs dossiers.
+-- Conversations (JWZ), une par compte : le même mail reçu sur deux comptes
+-- fait deux conversations (modele de donnees.md, « thread »).
+--
+-- Version 9 : le dossier de la conversation est une colonne de thread, et
+-- la vue matérialisée thread_folder (une ligne par conversation et par
+-- dossier) disparaît. Une conversation n'occupe qu'un vrai dossier
+-- (dossiers.md, « Dossier d'une conversation ») ; Sent, Drafts, Quarantine
+-- et Deleted ne sont que des drapeaux techniques sur certains de ses mails.
+-- Les listes lisent toutes cette seule table, par ses index.
+--
+-- folder : code d'une lettre du rôle (FolderRole::code) :
+--   i Inbox, t Todo, w Waiting, a Archive, n Newsletter, p Paperwork,
+--   x Junk, b Banned (vrais dossiers), s Sent, r Drafts, q Quarantine,
+--   d Deleted (repli, quand aucun mail n'est dans un vrai dossier).
+--   Règle de calcul, du premier cas qui s'applique au dernier :
+--   1. le dossier du dernier mail rangé dans Inbox, Todo, Waiting, Archive,
+--      Newsletter ou Paperwork ;
+--   2. sinon celui du dernier mail rangé dans Junk ou Banned ;
+--   3. sinon, s'il y a un mail dans l'un d'eux, Sent, puis Drafts, puis
+--      Quarantine, puis Deleted (ordre fixe) ;
+--   4. sinon NULL : la conversation n'a de mails que dans des dossiers sans
+--      rôle (un dossier qui a perdu son rôle). Elle n'apparaît que dans
+--      Everything.
+-- has_sent, has_draft, has_quarantine, has_deleted : la conversation a au
+--   moins un mail dans ce dossier technique. Les listes de ces dossiers
+--   lisent le drapeau, pas folder : une conversation de l'Inbox à laquelle
+--   l'utilisateur a répondu est aussi dans la liste Sent.
+-- Agrégats « vivants » : date_last_received, message_count et unread_count
+--   ne comptent pas les mails de Deleted, Junk et Banned ; une conversation
+--   qui n'a que de tels mails les compte tous (sinon elle n'aurait ni date
+--   ni nombre à afficher dans ces dossiers). date_last_modified compte tous
+--   les mails : supprimer ou rejeter un mail est une modification.
+-- Tous sont recalculés par le noyau (refresh_thread) dans la transaction
+-- qui change les mails, et quand un dossier change de rôle.
 -- ------------------------------------------------------------
 CREATE TABLE thread (
     id             INTEGER PRIMARY KEY,
@@ -239,46 +272,64 @@ CREATE TABLE thread (
     message_count  INTEGER NOT NULL DEFAULT 0,
     unread_count   INTEGER NOT NULL DEFAULT 0,
     -- Plus récente modification des mails de la conversation, tous dossiers
-    -- confondus : tri par modification d'Everything (version 2).
-    date_last_modified INTEGER NOT NULL DEFAULT 0
+    -- confondus : tri par modification (version 2).
+    date_last_modified INTEGER NOT NULL DEFAULT 0,
+    -- Version 9, en fin de table (ALTER TABLE ADD COLUMN, sans réécriture).
+    folder         TEXT CHECK (folder IN ('i','t','w','a','n','p','x','b','s','r','q','d')),
+    has_sent       INTEGER NOT NULL DEFAULT 0 CHECK (has_sent IN (0,1)),
+    has_draft      INTEGER NOT NULL DEFAULT 0 CHECK (has_draft IN (0,1)),
+    has_quarantine INTEGER NOT NULL DEFAULT 0 CHECK (has_quarantine IN (0,1)),
+    has_deleted    INTEGER NOT NULL DEFAULT 0 CHECK (has_deleted IN (0,1))
 ) STRICT;
 
--- Everything (ui.md) : tous les dossiers, donc la conversation entière. La
--- liste est un parcours de ces index, de tous les comptes ou d'un seul, sans
--- fusionner dossier par dossier (version 2).
+-- Chaque liste est un parcours d'index, du plus récent au plus ancien, qui
+-- s'arrête à la page : une requête, quel que soit le nombre de comptes ou
+-- de dossiers. Pour chaque portée, une variante « tous les comptes » et une
+-- variante « un compte », chacune triée par réception et par modification.
+-- Les index sont croissants et parcourus à l'envers (voir idx_message_list).
+
+-- Everything (ui.md) : toutes les conversations (version 2).
 CREATE INDEX idx_thread_received ON thread (date_last_received, id);
 CREATE INDEX idx_thread_account_received ON thread (account_id, date_last_received, id);
 CREATE INDEX idx_thread_modified ON thread (date_last_modified, id);
 CREATE INDEX idx_thread_account_modified ON thread (account_id, date_last_modified, id);
 
--- Vue matérialisée "conversations par dossier" : rend la liste de threads
--- d'un dossier en simple parcours d'index, sans agrégation à chaque scroll.
-CREATE TABLE thread_folder (
-    thread_id      INTEGER NOT NULL REFERENCES thread(id)  ON DELETE CASCADE,
-    folder_id     INTEGER NOT NULL REFERENCES folder(id) ON DELETE CASCADE,
-    date_last_received INTEGER NOT NULL,
-    -- Plus récente modification (message.date_modified) des mails de la
-    -- conversation dans ce dossier : tri « ce que j'ai traité récemment » (ui.md).
-    date_last_modified INTEGER NOT NULL DEFAULT 0,
-    message_count  INTEGER NOT NULL,
-    unread_count   INTEGER NOT NULL,
-    PRIMARY KEY (thread_id, folder_id)
-) STRICT, WITHOUT ROWID;
+-- Un vrai dossier, de tous les comptes (vue « all ») ou d'un seul.
+CREATE INDEX idx_thread_role_received ON thread (folder, date_last_received, id);
+CREATE INDEX idx_thread_role_account_received ON thread (folder, account_id, date_last_received, id);
+CREATE INDEX idx_thread_role_modified ON thread (folder, date_last_modified, id);
+CREATE INDEX idx_thread_role_account_modified ON thread (folder, account_id, date_last_modified, id);
 
-CREATE INDEX idx_thread_folder_list
-    ON thread_folder (folder_id, date_last_received DESC, thread_id DESC);
+-- All Mail : tout sauf les conversations rangées dans Deleted, Junk ou
+-- Banned. Index partiels : la requête doit reprendre la condition telle
+-- quelle (queries.rs, ALL_MAIL), sinon SQLite ne s'en sert pas.
+CREATE INDEX idx_thread_live_received ON thread (date_last_received, id)
+    WHERE folder NOT IN ('d','x','b');
+CREATE INDEX idx_thread_live_account_received ON thread (account_id, date_last_received, id)
+    WHERE folder NOT IN ('d','x','b');
+CREATE INDEX idx_thread_live_modified ON thread (date_last_modified, id)
+    WHERE folder NOT IN ('d','x','b');
+CREATE INDEX idx_thread_live_account_modified ON thread (account_id, date_last_modified, id)
+    WHERE folder NOT IN ('d','x','b');
 
--- Même liste, triée par date de modification.
-CREATE INDEX idx_thread_folder_modified
-    ON thread_folder (folder_id, date_last_modified DESC, thread_id DESC);
-
--- Version 8. Tous les dossiers à la fois, par date : le dossier virtuel
--- All Mail (ui.md, « Sélecteur d'attributs ») parcourt ses dossiers en une
--- seule passe et s'arrête à la page, au lieu de lire chaque dossier.
-CREATE INDEX idx_thread_folder_received
-    ON thread_folder (date_last_received DESC, thread_id DESC);
-CREATE INDEX idx_thread_folder_date_modified
-    ON thread_folder (date_last_modified DESC, thread_id DESC);
+-- Dossiers techniques : index partiels sur leur drapeau, qui ne contiennent
+-- que les conversations concernées.
+CREATE INDEX idx_thread_sent_received ON thread (date_last_received, id) WHERE has_sent = 1;
+CREATE INDEX idx_thread_sent_account_received ON thread (account_id, date_last_received, id) WHERE has_sent = 1;
+CREATE INDEX idx_thread_sent_modified ON thread (date_last_modified, id) WHERE has_sent = 1;
+CREATE INDEX idx_thread_sent_account_modified ON thread (account_id, date_last_modified, id) WHERE has_sent = 1;
+CREATE INDEX idx_thread_draft_received ON thread (date_last_received, id) WHERE has_draft = 1;
+CREATE INDEX idx_thread_draft_account_received ON thread (account_id, date_last_received, id) WHERE has_draft = 1;
+CREATE INDEX idx_thread_draft_modified ON thread (date_last_modified, id) WHERE has_draft = 1;
+CREATE INDEX idx_thread_draft_account_modified ON thread (account_id, date_last_modified, id) WHERE has_draft = 1;
+CREATE INDEX idx_thread_quarantine_received ON thread (date_last_received, id) WHERE has_quarantine = 1;
+CREATE INDEX idx_thread_quarantine_account_received ON thread (account_id, date_last_received, id) WHERE has_quarantine = 1;
+CREATE INDEX idx_thread_quarantine_modified ON thread (date_last_modified, id) WHERE has_quarantine = 1;
+CREATE INDEX idx_thread_quarantine_account_modified ON thread (account_id, date_last_modified, id) WHERE has_quarantine = 1;
+CREATE INDEX idx_thread_deleted_received ON thread (date_last_received, id) WHERE has_deleted = 1;
+CREATE INDEX idx_thread_deleted_account_received ON thread (account_id, date_last_received, id) WHERE has_deleted = 1;
+CREATE INDEX idx_thread_deleted_modified ON thread (date_last_modified, id) WHERE has_deleted = 1;
+CREATE INDEX idx_thread_deleted_account_modified ON thread (account_id, date_last_modified, id) WHERE has_deleted = 1;
 
 -- ------------------------------------------------------------
 -- Messages bruts (stockage-brut.md) : fichiers immuables adressés par leur
@@ -375,6 +426,11 @@ CREATE INDEX idx_message_flagged
 -- Vues "derniers mails traités" et "derniers mails consultés", tous dossiers
 -- confondus (voir tracabilite.md).
 CREATE INDEX idx_message_modified ON message (date_modified);
+-- Version 9. Critère « Date mail… » de toutes les conversations
+-- (Everything) : les conversations qui ont un mail reçu dans l'intervalle.
+-- Dans une liste de dossiers, idx_message_list (folder_id, date_received)
+-- sert le même critère.
+CREATE INDEX idx_message_received ON message (date_received);
 CREATE INDEX idx_message_viewed
     ON message (date_last_viewed) WHERE date_last_viewed IS NOT NULL;
 
@@ -733,11 +789,10 @@ CREATE TABLE protected_setting (
 --    ORDER BY rank
 --    LIMIT 50;
 --
--- Liste de conversations d'un dossier :
---   SELECT t.id, t.subject, tm.date_last_received, tm.message_count, tm.unread_count
---     FROM thread_folder tm
---     JOIN thread t ON t.id = tm.thread_id
---    WHERE tm.folder_id = :mb
---      AND (tm.date_last_received, tm.thread_id) < (:cursor_date, :cursor_id)
---    ORDER BY tm.date_last_received DESC, tm.thread_id DESC
+-- Liste de conversations d'un vrai dossier, tous comptes confondus :
+--   SELECT t.id, t.subject, t.date_last_received, t.message_count, t.unread_count
+--     FROM thread t
+--    WHERE t.folder = 'i'
+--      AND (t.date_last_received, t.id) < (:cursor_date, :cursor_id)
+--    ORDER BY t.date_last_received DESC, t.id DESC
 --    LIMIT 50;

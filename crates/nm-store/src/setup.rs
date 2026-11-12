@@ -310,11 +310,24 @@ impl Store {
     }
 }
 
+/// Gives a folder its role (or none) and records it. The folder of a
+/// conversation follows from the roles of its mails' folders (`dossiers.md`,
+/// "Dossier d'une conversation"): every thread with a mail in this folder is
+/// recomputed in the same transaction. At the creation of an account the
+/// folders are still empty; a role changed later, by the synchronized
+/// configuration, may recompute a whole folder, once.
 fn set_role(tx: &rusqlite::Transaction, folder: i64, role: Option<&str>, before: Option<&str>, source: Source) -> Result<()> {
     tx.execute(
         "UPDATE folder SET role = ?2, date_role_modified = unixepoch(), date_modified = unixepoch(), modified_by = ?3 WHERE id = ?1",
         params![folder, role, source.as_str()],
     )?;
+    let threads: Vec<i64> = tx
+        .prepare("SELECT DISTINCT thread_id FROM message WHERE folder_id = ?1 AND thread_id IS NOT NULL")?
+        .query_map([folder], |r| r.get(0))?
+        .collect::<std::result::Result<_, _>>()?;
+    for t in threads {
+        crate::refresh_thread(tx, t)?;
+    }
     tx.execute(
         "INSERT INTO audit_log (created_by, entity, entity_id, action, detail)
          VALUES (?1, 'folder', ?2, 'role', json_object('before', ?3, 'after', ?4))",

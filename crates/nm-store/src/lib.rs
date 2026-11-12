@@ -76,7 +76,8 @@ pub mod sync;
 use std::collections::BTreeSet;
 use std::path::Path;
 
-use rusqlite::{Connection, OpenFlags};
+use nm_core::FolderRole;
+use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
 
 // Re-export rusqlite so that crates depending on nm-store use exactly the
 // same version without declaring it themselves.
@@ -95,7 +96,10 @@ pub use rusqlite;
 /// 6: `draft.forward_of_message_id`, the mail a forward carries.
 /// 7: `draft.send_account_id`, the account that sends a draft when it is
 ///    not the draft's own.
-pub const SCHEMA_VERSION: i64 = 8;
+/// 8: date indexes of `thread_folder`, for All Mail.
+/// 9: the folder of a conversation in `thread` (`folder`, `has_sent`…),
+///    `thread_folder` dropped, `idx_message_received` for Mail date….
+pub const SCHEMA_VERSION: i64 = 9;
 
 /// Full text of the schema, at the latest version. `include_str!` reads the
 /// file at compile time and embeds it in the binary as a `&'static str`; the
@@ -403,6 +407,16 @@ impl Store {
         refresh_statistics(&self.conn, "PRAGMA optimize;")
     }
 
+    /// Recomputes the aggregates of a thread (`refresh_thread`), in its
+    /// own transaction: for tests that change `message` directly, and for
+    /// a repair of a thread whose aggregates drifted.
+    pub fn refresh_thread_aggregates(&mut self, thread_id: i64) -> Result<()> {
+        let tx = self.transaction()?;
+        refresh_thread(&tx, thread_id)?;
+        tx.commit()?;
+        Ok(())
+    }
+
     /// Direct access to the connection, for the CLI and tests.
     pub fn conn(&self) -> &Connection {
         &self.conn
@@ -432,13 +446,18 @@ fn check_schema(conn: &Connection, version: i64) -> Result<()> {
         ("SELECT raw_hash FROM message", "message.raw_hash"),
         ("SELECT hash FROM raw_blob", "raw_blob"),
         ("SELECT sync_key FROM contact_group", "contact_group"),
-        ("SELECT date_last_modified FROM thread_folder", "thread_folder.date_last_modified"),
         ("SELECT body_format FROM address", "address.body_format"),
         ("SELECT unsubscribed_at FROM address", "address.unsubscribed_at"),
         ("SELECT one_click FROM message_unsubscribe", "message_unsubscribe"),
     ];
     if version >= 2 {
         checks.push(("SELECT date_last_modified FROM thread", "thread.date_last_modified"));
+    }
+    // `thread_folder` existed from the first build to version 8.
+    if version < 9 {
+        checks.push(("SELECT date_last_modified FROM thread_folder", "thread_folder.date_last_modified"));
+    } else {
+        checks.push(("SELECT folder, has_quarantine FROM thread", "thread.folder"));
     }
     if version >= 3 {
         checks.push(("SELECT remote_images FROM address", "address.remote_images"));
@@ -471,66 +490,260 @@ fn check_schema(conn: &Connection, version: i64) -> Result<()> {
     Ok(())
 }
 
-/// Recomputes the denormalized aggregates of a thread (tables `thread` and
-/// `thread_folder`) and returns the folders where it appears, before or
-/// after the change.
+/// The aggregates of a thread, as stored in `thread` (`schema.sql`,
+/// version 9): its folder, its technical flags and its counters.
+#[derive(Debug, Clone, PartialEq, Default)]
+struct ThreadAggregates {
+    /// Code of the role (`FolderRole::code`), `None` without one.
+    folder: Option<&'static str>,
+    has_sent: bool,
+    has_draft: bool,
+    has_quarantine: bool,
+    has_deleted: bool,
+    date_last_received: i64,
+    message_count: i64,
+    unread_count: i64,
+    date_last_modified: i64,
+}
+
+/// One mail of a thread, as `refresh_thread` reads it.
+struct ThreadMail {
+    date_received: i64,
+    date_modified: i64,
+    seen: bool,
+    role: Option<FolderRole>,
+}
+
+impl ThreadAggregates {
+    /// The aggregates of the mails of a thread, **latest first** (`dossiers.md`,
+    /// "Dossier d'une conversation"):
+    /// - the folder by the rule of `nm_core::thread_folder`;
+    /// - a flag per technical folder holding a mail;
+    /// - the "live" counters, without the mails of Deleted, Junk and Banned,
+    ///   or of every mail when none is live (a thread wholly in Junk still
+    ///   shows its date and its count in Junk);
+    /// - the latest change of any mail: deleting one is a change.
+    fn of(mails: &[ThreadMail]) -> ThreadAggregates {
+        let out_of_all_mail = |r: Option<FolderRole>| r.is_some_and(|r| FolderRole::OUT_OF_ALL_MAIL.contains(&r));
+        let any_live = mails.iter().any(|m| !out_of_all_mail(m.role));
+        // Rust note: a closure can capture `any_live`; `filter` then keeps
+        // the live mails, or all of them when there is none.
+        let counted = || mails.iter().filter(move |m| !any_live || !out_of_all_mail(m.role));
+        let has = |r: FolderRole| mails.iter().any(|m| m.role == Some(r));
+        ThreadAggregates {
+            folder: nm_core::thread_folder(mails.iter().map(|m| m.role)).map(FolderRole::code),
+            has_sent: has(FolderRole::Sent),
+            has_draft: has(FolderRole::Drafts),
+            has_quarantine: has(FolderRole::Quarantine),
+            has_deleted: has(FolderRole::Deleted),
+            date_last_received: counted().map(|m| m.date_received).max().unwrap_or(0),
+            message_count: counted().count() as i64,
+            unread_count: counted().filter(|m| !m.seen).count() as i64,
+            date_last_modified: mails.iter().map(|m| m.date_modified).max().unwrap_or(0),
+        }
+    }
+}
+
+/// Recomputes the denormalized aggregates of a thread (`thread.folder`, its
+/// flags and counters) and returns the folders where it appears, before or
+/// after the change, for the events (`ThreadChanged`).
 ///
 /// Why denormalize: listing a folder must be fast even with 100 000 mails.
-/// Instead of grouping messages on every read, `thread_folder` stores one
-/// row per (thread, folder) with its date and counters, and an index on it
-/// makes the list query cheap. The price is that every write must keep those
-/// rows in sync, which is what this function does. It runs inside the same
-/// transaction as the write, so readers never see inconsistent counters.
+/// Instead of grouping messages on every read, `thread` stores the folder,
+/// date and counters of each conversation, and its indexes make every list
+/// a walk that stops after a page (`schema.sql`, version 9). The price is
+/// that every write must keep them in sync, which is what this function
+/// does. It runs inside the same transaction as the write, so readers never
+/// see inconsistent counters.
 ///
-/// The simplest correct approach is used: delete the thread's rows and
-/// recompute them from `message`. A thread has few messages, so it is cheap.
+/// The mails of the thread are read again (a thread has few), the
+/// aggregates computed in Rust, and only the columns that changed are
+/// written: SQLite rewrites an index only when one of its columns is in
+/// the `SET`, and `thread` has 28 of them. Marking a mail read changes
+/// `unread_count` alone, which no index holds.
+///
+/// "Before": the folders of the account with the roles the thread had
+/// (its folder and flags), since the mails have already moved when this
+/// runs. "After": the folders of its mails.
 ///
 /// Rust note: `pub(crate)` makes the function visible inside this crate
-/// only (to `commands.rs`), not to other crates.
+/// only (to `commands.rs`…), not to other crates.
 pub(crate) fn refresh_thread(conn: &Connection, thread_id: i64) -> Result<Vec<i64>> {
+    // The stored row, `None` if the thread is gone (merged into another).
+    let old: Option<(i64, ThreadAggregates)> = conn
+        .prepare_cached(
+            "SELECT account_id, folder, has_sent, has_draft, has_quarantine, has_deleted,
+                    date_last_received, message_count, unread_count, date_last_modified
+               FROM thread WHERE id = ?1",
+        )?
+        .query_row([thread_id], |r| {
+            let code: Option<String> = r.get(1)?;
+            Ok((
+                r.get(0)?,
+                ThreadAggregates {
+                    folder: code.as_deref().and_then(FolderRole::from_code).map(FolderRole::code),
+                    has_sent: r.get(2)?,
+                    has_draft: r.get(3)?,
+                    has_quarantine: r.get(4)?,
+                    has_deleted: r.get(5)?,
+                    date_last_received: r.get(6)?,
+                    message_count: r.get(7)?,
+                    unread_count: r.get(8)?,
+                    date_last_modified: r.get(9)?,
+                },
+            ))
+        })
+        .optional()?;
+    let Some((account_id, old)) = old else { return Ok(vec![]) };
+
+    // The mails, latest first: the order the folder rule reads them in.
+    // `idx_message_thread (thread_id, …)` finds them; the sort is of a few rows.
     let mut folders: BTreeSet<i64> = BTreeSet::new();
-    // Folders before the change. The extra `{ }` block limits the lifetime of
-    // `stmt`: a prepared statement borrows the connection, and the borrow
-    // must end before we run other statements below.
+    let mails: Vec<ThreadMail> = {
+        let mut stmt = conn.prepare_cached(
+            "SELECT m.date_received, m.date_modified, m.is_seen, f.role, m.folder_id
+               FROM message m JOIN folder f ON f.id = m.folder_id
+              WHERE m.thread_id = ?1
+              ORDER BY m.date_received DESC, m.id DESC",
+        )?;
+        let rows = stmt.query_map([thread_id], |r| {
+            let role: Option<String> = r.get(3)?;
+            Ok((
+                ThreadMail {
+                    date_received: r.get(0)?,
+                    date_modified: r.get(1)?,
+                    seen: r.get(2)?,
+                    role: role.as_deref().and_then(FolderRole::parse),
+                },
+                r.get::<_, i64>(4)?,
+            ))
+        })?;
+        let mut mails = Vec::new();
+        for row in rows {
+            let (mail, folder) = row?;
+            folders.insert(folder);
+            mails.push(mail);
+        }
+        mails
+    };
+    let new = ThreadAggregates::of(&mails);
+
+    // Folders before the change: those of the roles the thread had.
+    let mut old_roles: Vec<&str> = Vec::new();
+    if let Some(code) = old.folder.and_then(FolderRole::from_code) {
+        old_roles.push(code.as_str());
+    }
+    for (flag, role) in [(old.has_sent, FolderRole::Sent), (old.has_draft, FolderRole::Drafts),
+        (old.has_quarantine, FolderRole::Quarantine), (old.has_deleted, FolderRole::Deleted)]
     {
-        // `prepare_cached` keeps the compiled statement for reuse, which saves
-        // parsing the SQL on every call.
-        let mut stmt = conn.prepare_cached("SELECT folder_id FROM thread_folder WHERE thread_id = ?1")?;
-        // `query_map` returns an iterator over rows; each item is itself a
-        // `Result` because reading a row can fail, hence `f?`.
-        // `r.get::<_, i64>(0)` reads column 0 as an `i64`; `_` lets the
-        // compiler infer the index type.
-        for f in stmt.query_map([thread_id], |r| r.get::<_, i64>(0))? {
-            folders.insert(f?);
+        if flag {
+            old_roles.push(role.as_str());
         }
     }
-    conn.execute("DELETE FROM thread_folder WHERE thread_id = ?1", [thread_id])?;
-    // `sum(is_seen = 0)` counts unread messages: in SQLite a comparison
-    // yields 1 or 0.
-    conn.execute(
-        "INSERT INTO thread_folder (thread_id, folder_id, date_last_received, date_last_modified, message_count, unread_count)
-         SELECT thread_id, folder_id, max(date_received), max(date_modified), count(*), sum(is_seen = 0)
-           FROM message WHERE thread_id = ?1 GROUP BY folder_id",
-        [thread_id],
-    )?;
-    conn.execute(
-        "UPDATE thread SET
-            date_last_received = coalesce((SELECT max(date_received) FROM message WHERE thread_id = ?1), 0),
-            message_count      = (SELECT count(*) FROM message WHERE thread_id = ?1),
-            unread_count       = (SELECT count(*) FROM message WHERE thread_id = ?1 AND is_seen = 0),
-            date_last_modified = coalesce((SELECT max(date_modified) FROM message WHERE thread_id = ?1), 0)
-          WHERE id = ?1",
-        [thread_id],
-    )?;
-    // Folders after the change.
-    {
-        let mut stmt = conn.prepare_cached("SELECT folder_id FROM thread_folder WHERE thread_id = ?1")?;
-        for f in stmt.query_map([thread_id], |r| r.get::<_, i64>(0))? {
-            folders.insert(f?);
+    if old != new {
+        let mut stmt = conn.prepare_cached("SELECT id FROM folder WHERE account_id = ?1 AND role = ?2")?;
+        for role in old_roles {
+            if let Some(id) = stmt.query_row(params![account_id, role], |r| r.get::<_, i64>(0)).optional()? {
+                folders.insert(id);
+            }
         }
+        write_changed(conn, thread_id, &old, &new)?;
     }
-    // Convert the set into a `Vec` (already sorted, without duplicates).
     Ok(folders.into_iter().collect())
+}
+
+/// Writes the columns of `new` that differ from `old` (see
+/// `refresh_thread`). The statement depends on which columns changed;
+/// there are few combinations, each prepared once (`prepare_cached`).
+fn write_changed(conn: &Connection, thread_id: i64, old: &ThreadAggregates, new: &ThreadAggregates) -> Result<()> {
+    use rusqlite::types::Value;
+    let mut sets: Vec<&str> = Vec::new();
+    let mut values: Vec<Value> = vec![Value::Integer(thread_id)];
+    // Rust note: a macro_rules! macro avoids repeating the same three lines
+    // for each column: `$col` is a field name, `$sql` its SQL assignment.
+    macro_rules! column {
+        ($col:ident, $sql:literal, $value:expr) => {
+            if old.$col != new.$col {
+                sets.push($sql);
+                values.push($value);
+            }
+        };
+    }
+    column!(folder, "folder = ?", new.folder.map(|c| Value::Text(c.to_string())).unwrap_or(Value::Null));
+    column!(has_sent, "has_sent = ?", Value::Integer(new.has_sent.into()));
+    column!(has_draft, "has_draft = ?", Value::Integer(new.has_draft.into()));
+    column!(has_quarantine, "has_quarantine = ?", Value::Integer(new.has_quarantine.into()));
+    column!(has_deleted, "has_deleted = ?", Value::Integer(new.has_deleted.into()));
+    column!(date_last_received, "date_last_received = ?", Value::Integer(new.date_last_received));
+    column!(message_count, "message_count = ?", Value::Integer(new.message_count));
+    column!(unread_count, "unread_count = ?", Value::Integer(new.unread_count));
+    column!(date_last_modified, "date_last_modified = ?", Value::Integer(new.date_last_modified));
+    // Numbered parameters: ?1 is the id, then one per column, in order.
+    let sets: Vec<String> = sets.iter().enumerate().map(|(i, s)| s.replace('?', &format!("?{}", i + 2))).collect();
+    let sql = format!("UPDATE thread SET {} WHERE id = ?1", sets.join(", "));
+    conn.prepare_cached(&sql)?.execute(rusqlite::params_from_iter(values))?;
+    Ok(())
+}
+
+/// The aggregates of **every** thread in one set-based statement, the same
+/// rule as `refresh_thread` written in SQL: for the migration to version 9
+/// (`migrations.rs`) and the fake mailbox (`seed.rs`), where computing
+/// thread by thread would take minutes. The test
+/// `refresh_all_threads_matches_refresh_thread` (`tests/insert.rs`) checks
+/// that both give the same rows.
+///
+/// - The latest mail of a class: `max(date_received * 1e9 + id)` with the
+///   role as a "bare column", which SQLite takes from the row holding the
+///   maximum (documented behaviour of `min()` and `max()` in an aggregate).
+///   Message ids stay far below 10⁹, and dates below 2³¹: no overflow.
+/// - The codes come from `FolderRole::code` (a `CASE` built from the enum),
+///   so the SQL and the Rust rule cannot disagree on a letter.
+/// - A thread without mail is left as it is (it is about to be deleted).
+pub(crate) fn refresh_all_threads_sql() -> String {
+    let code = FolderRole::ALL
+        .iter()
+        .map(|r| format!("WHEN '{}' THEN '{}'", r.as_str(), r.code()))
+        .collect::<Vec<_>>()
+        .join(" ");
+    format!(
+        "WITH m AS (
+             SELECT m.thread_id AS t, m.date_received * 1000000000 + m.id AS k, m.date_received AS dr,
+                    m.date_modified AS dm, m.is_seen AS seen, f.role AS role,
+                    coalesce(f.role NOT IN ('deleted', 'junk', 'banned'), 1) AS live
+               FROM message m JOIN folder f ON f.id = m.folder_id
+              WHERE m.thread_id IS NOT NULL
+         ),
+         live_folder AS (
+             SELECT t, role, max(k) FROM m
+              WHERE role IN ('inbox', 'todo', 'waiting', 'archive', 'newsletter', 'paperwork') GROUP BY t
+         ),
+         rejected_folder AS (
+             SELECT t, role, max(k) FROM m WHERE role IN ('junk', 'banned') GROUP BY t
+         ),
+         agg AS (
+             SELECT t, max(live) AS any_live, max(dm) AS dm,
+                    max(role IS 'sent') AS hs, max(role IS 'drafts') AS hr,
+                    max(role IS 'quarantine') AS hq, max(role IS 'deleted') AS hd,
+                    max(CASE WHEN live THEN dr END) AS dr_live, max(dr) AS dr_all,
+                    sum(live) AS n_live, count(*) AS n_all,
+                    sum(live AND seen = 0) AS u_live, sum(seen = 0) AS u_all
+               FROM m GROUP BY t
+         )
+         UPDATE thread SET
+             folder = (CASE coalesce(lf.role, rf.role,
+                                     CASE WHEN a.hs THEN 'sent' WHEN a.hr THEN 'drafts'
+                                          WHEN a.hq THEN 'quarantine' WHEN a.hd THEN 'deleted' END)
+                       {code} END),
+             has_sent = a.hs, has_draft = a.hr, has_quarantine = a.hq, has_deleted = a.hd,
+             date_last_received = CASE WHEN a.any_live THEN a.dr_live ELSE a.dr_all END,
+             message_count = CASE WHEN a.any_live THEN a.n_live ELSE a.n_all END,
+             unread_count = CASE WHEN a.any_live THEN a.u_live ELSE a.u_all END,
+             date_last_modified = a.dm
+           FROM agg a
+           LEFT JOIN live_folder lf ON lf.t = a.t
+           LEFT JOIN rejected_folder rf ON rf.t = a.t
+          WHERE thread.id = a.t"
+    )
 }
 
 /// Recomputes the message counters of a folder (`folder.total_count` and
@@ -545,4 +758,70 @@ pub(crate) fn refresh_folder_counts(conn: &Connection, folder_id: i64) -> Result
     )?;
     // `()` is the "unit" type: the function succeeds without returning data.
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every column `refresh_thread` maintains, for every thread.
+    /// (id, folder, four flags, received, count, unread, modified).
+    type Row = (i64, Option<String>, i64, i64, i64, i64, i64, i64, i64, i64);
+
+    fn aggregates(store: &Store) -> Vec<Row> {
+        store
+            .conn()
+            .prepare(
+                "SELECT id, folder, has_sent, has_draft, has_quarantine, has_deleted,
+                        date_last_received, message_count, unread_count, date_last_modified
+                   FROM thread ORDER BY id",
+            )
+            .unwrap()
+            .query_map([], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?, r.get(7)?, r.get(8)?, r.get(9)?))
+            })
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect()
+    }
+
+    /// The set-based SQL of the migration and the seed gives exactly what
+    /// `refresh_thread` gives, thread by thread, on a seeded mailbox made
+    /// to hold every case of the rule: mails of every folder, a rejected
+    /// mail in a live thread, technical folders only, a folder without a
+    /// role, ties of dates.
+    #[test]
+    fn refresh_all_threads_matches_refresh_thread() {
+        let mut store = Store::open_in_memory().unwrap();
+        crate::seed::seed(&mut store, &crate::seed::SeedOptions { threads: 600, seed: 3, now: 1_750_000_000 }).unwrap();
+        // Shuffle mails between folders, deterministically: every mail whose
+        // id is a multiple of 3, 5, 7 or 11 goes to another folder (a folder
+        // without a role among them), some with the same date as another.
+        store
+            .conn()
+            .execute_batch(
+                "INSERT INTO folder (account_id, path, created_by, modified_by)
+                     SELECT id, 'Old', 'cli', 'cli' FROM account LIMIT 1;
+                 UPDATE message SET uid = NULL;
+                 UPDATE message SET folder_id = (SELECT id FROM folder WHERE role = 'junk') WHERE id % 3 = 0;
+                 UPDATE message SET folder_id = (SELECT id FROM folder WHERE role = 'quarantine') WHERE id % 5 = 0;
+                 UPDATE message SET folder_id = (SELECT id FROM folder WHERE role = 'deleted') WHERE id % 7 = 0;
+                 UPDATE message SET folder_id = (SELECT id FROM folder WHERE path = 'Old') WHERE id % 11 = 0;
+                 UPDATE message SET date_received = 1700000000 WHERE id % 13 = 0;",
+            )
+            .unwrap();
+        store.conn().execute_batch(&refresh_all_threads_sql()).unwrap();
+        let by_sql = aggregates(&store);
+        let threads: Vec<i64> = by_sql.iter().map(|t| t.0).collect();
+        for t in threads {
+            store.refresh_thread_aggregates(t).unwrap();
+        }
+        let by_rust = aggregates(&store);
+        assert_eq!(by_sql, by_rust);
+        // Every case is there.
+        let has = |code: Option<&str>| by_rust.iter().any(|t| t.1.as_deref() == code);
+        for code in [Some("a"), Some("i"), Some("x"), Some("s"), Some("q"), Some("d")] {
+            assert!(has(code), "no thread in {code:?}");
+        }
+    }
 }

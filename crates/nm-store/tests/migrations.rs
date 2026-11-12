@@ -157,9 +157,22 @@ fn a_migrated_database_lists_everything() {
         .list_everything(None, None, 10, nm_api::ThreadSort::Modified, &nm_api::ThreadFilter::default())
         .unwrap();
     assert_eq!(items.len(), 1);
-    // Shown in the folder of its latest mail (Sent), with that folder's
-    // counters.
-    assert_eq!((items[0].folder_id, items[0].subject.as_str(), items[0].unread_count), (2, "2ème rappel", 0));
+    // Version 9: shown in its folder, the Inbox, not Sent where its latest
+    // mail (the user's reply) is; with the counters of the whole thread.
+    assert_eq!(
+        (items[0].folder_id, items[0].subject.as_str(), items[0].message_count, items[0].unread_count),
+        (1, "2ème rappel", 2, 1)
+    );
+    let row: (String, i64, i64) = store
+        .conn()
+        .query_row("SELECT folder, has_sent, has_deleted FROM thread WHERE id = 1", [], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+        .unwrap();
+    assert_eq!(row, ("i".to_string(), 1, 0));
+    // Listed in the Inbox and in Sent.
+    for folder in [1, 2] {
+        let (items, _) = store.list_threads(folder, None, 10, nm_api::ThreadSort::Received).unwrap();
+        assert_eq!(items.iter().map(|t| (t.id, t.folder_id)).collect::<Vec<_>>(), [(1, folder)]);
+    }
     // The From filter goes through the address, whose name was filled in.
     let from = nm_api::ThreadFilter { from: vec!["berès".into()], ..Default::default() };
     let (items, _) = store.list_everything(None, None, 10, nm_api::ThreadSort::Received, &from).unwrap();
