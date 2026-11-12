@@ -332,11 +332,39 @@ impl Store {
             return Err(StoreError::InvalidParams("nom de tag vide ou trop long (64 caractères au plus)".into()));
         }
         let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let changes = tag_one(&tx, thread_id, name, remove, source)?;
+        tx.commit()?;
+        Ok(changes)
+    }
+
+    /// `tag_thread` for several threads, in one transaction: `t` on 50
+    /// marked threads is one request and one batch of events (`ui.md`,
+    /// "Actions groupées"). Threads gone meanwhile are skipped; a thread
+    /// of a read-only account refuses the whole command.
+    pub fn tag_threads(&mut self, thread_ids: &[i64], name: &str, remove: bool, source: Source) -> Result<ChangeSet> {
+        let name = name.trim();
+        if name.is_empty() || name.chars().count() > 64 {
+            return Err(StoreError::InvalidParams("nom de tag vide ou trop long (64 caractères au plus)".into()));
+        }
+        let ids = self.existing_threads(thread_ids)?;
+        let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let mut all = ChangeSet::default();
+        for id in ids {
+            all.merge(tag_one(&tx, id, name, remove, source)?);
+        }
+        tx.commit()?;
+        Ok(all)
+    }
+}
+
+/// The body of `tag_thread`, in the caller's transaction.
+fn tag_one(tx: &rusqlite::Transaction, thread_id: i64, name: &str, remove: bool, source: Source) -> Result<ChangeSet> {
+    {
         let account_id: i64 = tx
             .query_row("SELECT account_id FROM thread WHERE id = ?1", [thread_id], |r| r.get(0))
             .optional()?
             .ok_or_else(|| StoreError::NotFound(format!("conversation {thread_id}")))?;
-        crate::spool::refuse_read_only(&tx, thread_id)?;
+        crate::spool::refuse_read_only(tx, thread_id)?;
         // Names are compared without case in Rust: SQLite's NOCASE only folds
         // ASCII, so "Équipe" and "équipe" would be two tags. An account has
         // few tags, reading them all is cheap.
@@ -359,18 +387,18 @@ impl Store {
                     "UPDATE tag SET date_deleted = NULL, date_modified = unixepoch(), modified_by = ?2 WHERE id = ?1",
                     params![id, source.as_str()],
                 )?;
-                audit(&tx, source, "tag", id, "create", serde_json::json!({"after": {"name": name}}))?;
+                audit(tx, source, "tag", id, "create", serde_json::json!({"after": {"name": name}}))?;
                 kw
             }
             None if remove => return Ok(ChangeSet::default()),
             None => {
-                let kw = unique_keyword(&tx, account_id, &tag_keyword(name))?;
+                let kw = unique_keyword(tx, account_id, &tag_keyword(name))?;
                 tx.execute(
                     "INSERT INTO tag (account_id, name, keyword, created_by, modified_by) VALUES (?1, ?2, ?3, ?4, ?4)",
                     params![account_id, name, kw, source.as_str()],
                 )?;
                 let id = tx.last_insert_rowid();
-                audit(&tx, source, "tag", id, "create", serde_json::json!({"after": {"name": name, "keyword": kw}}))?;
+                audit(tx, source, "tag", id, "create", serde_json::json!({"after": {"name": name, "keyword": kw}}))?;
                 kw
             }
         };
@@ -401,20 +429,21 @@ impl Store {
                 params![message_id, source.as_str()],
             )?;
             let op = if remove { "remove" } else { "add" };
-            audit(&tx, source, "message", message_id, "set_tags", serde_json::json!({op: name, "tag": name}))?;
+            audit(tx, source, "message", message_id, "set_tags", serde_json::json!({op: name, "tag": name}))?;
             // A tag is an IMAP keyword: the server gets it through the spool.
-            crate::spool::enqueue_flag(&tx, message_id, &keyword, !remove, source.as_str(), &mut changes)?;
+            crate::spool::enqueue_flag(tx, message_id, &keyword, !remove, source.as_str(), &mut changes)?;
             changes.messages.insert((message_id, Some(thread_id)));
             changes.folders.insert(folder_id);
         }
         if !changes.messages.is_empty() {
-            let folders = refresh_thread(&tx, thread_id)?;
+            let folders = refresh_thread(tx, thread_id)?;
             changes.threads.push((thread_id, folders));
         }
-        tx.commit()?;
         Ok(changes)
     }
+}
 
+impl Store {
     // ----------------------------------------------------------------
     // Contact groups (groupes.md)
     // ----------------------------------------------------------------

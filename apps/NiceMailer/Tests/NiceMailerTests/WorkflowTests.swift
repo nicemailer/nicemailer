@@ -25,6 +25,14 @@ struct WorkflowTests {
             case "move_thread" where params["thread_id"] as? Int == 2 && params["confirm_suspect"] == nil:
                 return CoreClient.RPCError(code: CoreClient.RPCError.confirmationRequired, message: "confirmation requise",
                                            data: ["addr": "support@banque.fr", "verdict": "fail"])
+            case "move_threads" where (params["threads"] as? [[String: Any]])?.contains { $0["thread_id"] as? Int == 2 } == true
+                && params["confirm_suspect"] == nil:
+                // Thread 2's sender is suspected of spoofing: left, and
+                // reported; the others move.
+                let ids = (params["threads"] as? [[String: Any]] ?? []).compactMap { $0["thread_id"] as? Int }.filter { $0 != 2 }
+                return ["changed": ids.count, "moved": ids.count, "filed": 0, "decisions": [[String: Any]](),
+                        "undo": ids.isEmpty ? NSNull() : "1:1", "moved_threads": ids, "refused": [Int](),
+                        "suspects": [["thread_id": 2, "addr": "support@banque.fr", "verdict": "fail"]]]
             default:
                 return Fixture.answer(method, params)
             }
@@ -112,16 +120,20 @@ struct WorkflowTests {
         #expect(model.flash == flash)
     }
 
-    @Test func zUndoesTheThreadsOfOneCommandTogetherLastFirst() async {
+    /// The threads of one command are one request (`move_threads`), so one
+    /// undo token, undone by one `z` in one request (`ui.md`, "Actions
+    /// groupées"); it used to be one token and one `undo` per thread.
+    @Test func zUndoesTheThreadsOfOneCommandTogether() async {
         // Threads 3 to 5 (thread 2 waits for a confirmation in this core).
         press("j"); press("j")
         press("J"); press("J")
         press("d")
-        #expect(await eventually { model.undoStack.first?.tokens.count == 3 })
+        #expect(await eventually { model.undoStack.first?.tokens.count == 1 })
         #expect(model.undoStack.count == 1)
+        #expect(Set(model.undoStack.first?.threads ?? []) == [3, 4, 5])
         press("z")
-        #expect(await eventually { core.calls("undo").count == 3 })
-        #expect(core.calls("undo").map { $0["token"] as? String } == ["5:5", "4:4", "3:3"])
+        #expect(await eventually { core.calls("undo").count == 1 })
+        #expect(core.calls("undo").map { $0["token"] as? String } == ["3:5"])
     }
 
     /// `z` puts the cursor back on the thread it brings back: the move had
@@ -172,12 +184,13 @@ struct WorkflowTests {
         #expect(await eventually { model.threads.contains { $0.id == 2 } && model.selectedThreadId == 2 })
         // Any other key is ignored while the question waits.
         press("d")
-        #expect(model.suspectMove != nil && core.calls("move_thread").count == 1)
+        #expect(model.suspectMove != nil && core.calls("move_threads").count == 1 && core.calls("move_thread").isEmpty)
 
         press("t")
         #expect(model.suspectMove == nil && controller.activeChoice == nil)
-        #expect(await eventually { core.calls("move_thread").count == 2 })
-        let confirmed = core.calls("move_thread")[1]
+        // The confirmation moves that thread alone.
+        #expect(await eventually { core.calls("move_thread").count == 1 })
+        let confirmed = core.calls("move_thread")[0]
         #expect(confirmed["confirm_suspect"] as? Bool == true)
         #expect(confirmed["auth_policy"] as? String == "not_required")
         #expect(await eventually { model.undoStack.count == 1 })
@@ -186,8 +199,8 @@ struct WorkflowTests {
     @Test func aSuspectMoveConfirmedWithYKeepsThePolicy() async {
         await moveSuspect()
         press("y")
-        #expect(await eventually { core.calls("move_thread").count == 2 })
-        #expect(core.calls("move_thread")[1]["auth_policy"] == nil)
+        #expect(await eventually { core.calls("move_thread").count == 1 })
+        #expect(core.calls("move_thread")[0]["auth_policy"] == nil)
     }
 
     @Test func escapeLeavesTheSuspectMailWhereItIs() async {
@@ -196,7 +209,7 @@ struct WorkflowTests {
         #expect(model.suspectMove == nil)
         #expect(model.flash?.contains("Subject 2") == true)
         try? await Task.sleep(for: .milliseconds(50))
-        #expect(core.calls("move_thread").count == 1)
+        #expect(core.calls("move_thread").isEmpty)
         #expect(model.undoStack.isEmpty)
     }
 

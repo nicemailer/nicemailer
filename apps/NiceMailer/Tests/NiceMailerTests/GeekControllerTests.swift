@@ -165,8 +165,8 @@ struct GeekControllerTests {
         #expect(controller.overlay == .menu(.move))
         press("t")
         #expect(controller.overlay == .none)
-        #expect(await eventually { core.calls("move_thread").count == 1 })
-        let call = core.calls("move_thread")[0]
+        #expect(await eventually { core.moveCalls().count == 1 })
+        let call = core.moveCalls()[0]
         #expect(call["target"] as? String == "todo")
         #expect(call["from_folder_id"] as? Int == 1)
         #expect(call["thread_id"] as? Int == 1)
@@ -177,8 +177,10 @@ struct GeekControllerTests {
     @Test func dArchivesEveryMarkedThread() async {
         press("J"); press("J")
         press("d")
-        #expect(await eventually { core.calls("move_thread").count == 3 })
-        #expect(core.calls("move_thread").allSatisfy { $0["target"] as? String == "archive" })
+        #expect(await eventually { core.moveCalls().count == 3 })
+        // One request for the three (`ui.md`, "Actions groupées").
+        #expect(core.calls("move_threads").count == 1)
+        #expect(core.moveCalls().allSatisfy { $0["target"] as? String == "archive" })
         #expect(model.marked.isEmpty)
     }
 
@@ -191,21 +193,44 @@ struct GeekControllerTests {
 
     @Test func deleteMovesToDeleted() async {
         press("del")
-        #expect(await eventually { core.calls("move_thread").first?["target"] as? String == "deleted" })
+        #expect(await eventually { core.moveCalls().first?["target"] as? String == "deleted" })
     }
 
     @Test func escapeCancelsAPrefixAndUnknownKeysAreReported() {
         press("m"); press("esc")
-        #expect(controller.overlay == .none && core.calls("move_thread").isEmpty)
+        #expect(controller.overlay == .none && core.moveCalls().isEmpty)
         press("y")
         #expect(model.flash != nil)
         press("m"); press("z")
-        #expect(model.flash != nil && core.calls("move_thread").isEmpty)
+        #expect(model.flash != nil && core.moveCalls().isEmpty)
+    }
+
+    /// `U`, `*` and `t` on marked threads (`ui.md`, "Actions groupées"):
+    /// one request with every thread, and the rows change at once, all
+    /// together, before the core answers.
+    @Test func groupedActionsAreOneRequestShownAtOnce() async {
+        // The cursor's thread and the next two, marked.
+        press("J"); press("J")
+        let ids = Set(model.marked)
+        #expect(ids.count == 3)
+        press("U")
+        // At once: no row of the three is unread any more.
+        let read = model.threads.filter { ids.contains($0.id) }.allSatisfy { $0.unreadCount == 0 }
+        #expect(read)
+        #expect(await eventually { core.calls("set_thread_seen").count == 1 })
+        #expect(Set(core.calls("set_thread_seen")[0]["thread_ids"] as? [Int] ?? []).isSubset(of: ids))
+        press("*")
+        let flagged = model.threads.filter { ids.contains($0.id) }.allSatisfy { $0.isFlagged }
+        #expect(flagged)
+        #expect(await eventually { core.calls("set_thread_flagged").count == 1 })
+        #expect(Set(core.calls("set_thread_flagged")[0]["thread_ids"] as? [Int] ?? []) == ids)
     }
 
     @Test func readAndFlagToggles() async {
         press("*")
         #expect(await eventually { core.calls("set_thread_flagged").first?["flagged"] as? Bool == true })
+        // Shown at once, before the core answers.
+        #expect(model.selectedThread?.isFlagged == true)
         press("u")
         #expect(await eventually { !core.calls("set_thread_seen").isEmpty })
     }

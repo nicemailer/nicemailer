@@ -536,6 +536,10 @@ private final class Runner {
             "selected_tags": sel?.tags.joined(separator: ",") ?? "",
             "marked": markedIdx.map(String.init).joined(separator: ","),
             "marked_count": "\(m.marked.count)",
+            // Marked rows still unread, and flagged: grouped actions
+            // (`ui.md`, "Actions groupées") change them all at once.
+            "marked_unread": "\(m.threads.filter { m.marked.contains($0.id) && $0.unreadCount > 0 }.count)",
+            "marked_flagged": "\(m.threads.filter { m.marked.contains($0.id) && $0.isFlagged }.count)",
             "folder": m.currentFolderName,
             "account": m.scopeName,
             "search_origin": c.searchOrigin.map { o in

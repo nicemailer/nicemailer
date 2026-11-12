@@ -79,6 +79,94 @@ impl Store {
         opts: MoveOptions,
         source: Source,
     ) -> Result<Outcome> {
+        // The checks first, before any write: a refusal changes nothing.
+        let prepared = self.prepare_move(thread_id, target, from_folder_id, opts)?;
+        // From here on every statement goes through `tx`. If the function
+        // returns early with an error (`?`), `tx` is dropped without commit
+        // and SQLite rolls everything back automatically.
+        let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let mark = audit_mark(&tx)?;
+        let mut out = Outcome::default();
+        let mut threads = BTreeSet::new();
+        let (decision, filed) = apply_move(&tx, &prepared, opts, source, &mut out, &mut threads)?;
+        out.decision = decision;
+        out.filed = filed;
+        // Recompute aggregates only if something actually changed.
+        refresh_all(&tx, &threads, &mut out.changes)?;
+        out.undo = undo_token(&tx, mark)?;
+        tx.commit()?;
+        Ok(out)
+    }
+
+    /// Moves several threads to the folder with role `target`, each from
+    /// the folder it is shown in, in **one** transaction (`ui.md`, "Actions
+    /// groupées"): one request, one commit, one batch of events and one
+    /// undo token for all, where one request per thread made the list
+    /// change row by row and `z` undo them one at a time.
+    ///
+    /// Each thread follows the rules of `move_thread`. What would refuse
+    /// the whole batch in a loop of single moves is reported instead:
+    /// - a thread gone meanwhile is skipped;
+    /// - a target not allowed from a thread's folder: the thread is left,
+    ///   and listed in `refused`;
+    /// - a sender suspected of spoofing that would get a favorable decision
+    ///   without `opts.confirm_suspect`: the thread is left, and listed in
+    ///   `suspects` for the client to ask about.
+    pub fn move_threads(
+        &mut self,
+        threads: &[(i64, Option<i64>)],
+        target: FolderRole,
+        opts: MoveOptions,
+        source: Source,
+    ) -> Result<MoveBatch> {
+        let mut batch = MoveBatch::default();
+        let mut prepared = Vec::with_capacity(threads.len());
+        for &(thread_id, from_folder_id) in threads {
+            if prepared.iter().any(|p: &PreparedMove| p.thread_id == thread_id) {
+                continue;
+            }
+            match self.prepare_move(thread_id, target, from_folder_id, opts) {
+                Ok(p) => prepared.push(p),
+                Err(StoreError::NotFound(_)) => {}
+                Err(StoreError::InvalidMove(_)) => batch.refused.push(thread_id),
+                Err(StoreError::ConfirmationRequired { addr, verdict }) => {
+                    batch.suspects.push(SuspectThread { thread_id, addr, verdict })
+                }
+                Err(e) => return Err(e),
+            }
+        }
+        if prepared.is_empty() {
+            return Ok(batch);
+        }
+        let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let mark = audit_mark(&tx)?;
+        let mut touched = BTreeSet::new();
+        for p in &prepared {
+            let (decision, filed) = apply_move(&tx, p, opts, source, &mut batch.outcome, &mut touched)?;
+            batch.outcome.filed += filed;
+            if let Some(d) = decision {
+                batch.decisions.push(d);
+            }
+        }
+        batch.outcome.decision = batch.decisions.last().cloned();
+        refresh_all(&tx, &touched, &mut batch.outcome.changes)?;
+        batch.outcome.undo = undo_token(&tx, mark)?;
+        tx.commit()?;
+        batch.moved_threads = prepared.iter().map(|p| p.thread_id).collect();
+        Ok(batch)
+    }
+
+    /// The checks of a move, before any write: the thread exists and can be
+    /// written, the target is allowed from the folder it is shown in, and
+    /// the decision the move implies (`dossiers.md`, "Déplacement et
+    /// décision sur l'expéditeur") is allowed for its sender.
+    fn prepare_move(
+        &self,
+        thread_id: i64,
+        target: FolderRole,
+        from_folder_id: Option<i64>,
+        opts: MoveOptions,
+    ) -> Result<PreparedMove> {
         let account_id = self.thread_account(thread_id)?;
 
         // Role of the folder where the command is given, if any.
@@ -112,8 +200,11 @@ impl Store {
             )));
         }
 
-        // The decision, checked before any write so that a refusal changes
-        // nothing.
+        // The decision. A sender whose mail is suspected of spoofing:
+        // - is not banned: Banned then concerns this mail only, so a forger
+        //   cannot get the real address banned;
+        // - gets a favorable decision only with `opts.confirm_suspect`, else
+        //   `ConfirmationRequired`.
         let decision = match ScreeningTarget::for_move(from_role, target) {
             Some(d) => match thread_sender(&self.conn, thread_id)? {
                 Some((_, _, _, true)) if d == ScreeningTarget::Banned => None,
@@ -126,113 +217,224 @@ impl Store {
             },
             None => None,
         };
+        Ok(PreparedMove { thread_id, account_id, target, from_folder_id, from_role, decision })
+    }
+}
 
-        // From here on every statement goes through `tx`. If the function
-        // returns early with an error (`?`), `tx` is dropped without commit
-        // and SQLite rolls everything back automatically.
-        let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let mark = audit_mark(&tx)?;
-        let target_id: i64 = tx
-            .query_row(
-                "SELECT id FROM folder WHERE account_id = ?1 AND role = ?2",
-                params![account_id, target.as_str()],
-                |r| r.get(0),
-            )
-            .optional()?
-            .ok_or_else(|| StoreError::NotFound(format!("dossier {}", target.as_str())))?;
+/// A move checked by `prepare_move`, to apply in a transaction.
+struct PreparedMove {
+    thread_id: i64,
+    account_id: i64,
+    target: FolderRole,
+    from_folder_id: Option<i64>,
+    from_role: Option<FolderRole>,
+    /// The decision on the sender: (target, address id, address, the mail
+    /// that triggers it).
+    decision: Option<(ScreeningTarget, i64, String, i64)>,
+}
 
-        // Messages to move, with their current folder (needed for the audit
-        // log and to refresh the old folder's counters). The six roles of the
-        // scope are passed as separate parameters (?3 to ?8); `-1` stands
-        // for "no from_folder" since no folder has that id.
-        let scope: Vec<&str> = FolderRole::CONVERSATION_SCOPE.iter().map(|r| r.as_str()).collect();
-        // From Drafts, the folder of the command only (see above): ?10 off.
-        let whole_conversation = from_role != Some(FolderRole::Drafts);
-        let moved: Vec<(i64, i64)> = {
-            let mut stmt = tx.prepare(
-                "SELECT m.id, m.folder_id FROM message m JOIN folder f ON f.id = m.folder_id
-                  WHERE m.thread_id = ?1 AND m.folder_id <> ?2
-                    AND ((?10 AND f.role IN (?3, ?4, ?5, ?6, ?7, ?8)) OR m.folder_id = ?9)",
-            )?;
-            stmt.query_map(
-                params![
-                    thread_id, target_id, scope[0], scope[1], scope[2], scope[3], scope[4], scope[5],
-                    from_folder_id.unwrap_or(-1), whole_conversation
-                ],
-                |r| Ok((r.get(0)?, r.get(1)?)),
-            )?
-            // Each row is a `Result`; collecting into `Result<Vec<_>, _>`
-            // stops at the first error, which the final `?` propagates.
-            .collect::<std::result::Result<_, _>>()?
-        };
+/// What `move_threads` did.
+#[derive(Debug, Default)]
+pub struct MoveBatch {
+    /// Changes, mails moved and filed, the undo token of the whole batch,
+    /// and the last decision taken (`decisions` lists them all).
+    pub outcome: Outcome,
+    pub decisions: Vec<DecisionChange>,
+    /// The threads moved.
+    pub moved_threads: Vec<i64>,
+    /// Threads left where they are: the target is not allowed from their
+    /// folder.
+    pub refused: Vec<i64>,
+    /// Threads left where they are: their sender is suspected of spoofing
+    /// and the move would accept it; the client asks, then moves them with
+    /// `confirm_suspect`.
+    pub suspects: Vec<SuspectThread>,
+}
 
-        if !whole_conversation {
-            for (message_id, _) in &moved {
-                crate::draft_copies::release_for_deletion(&tx, *message_id)?;
-            }
+impl MoveBatch {
+    /// The contract's view of the batch (`move_threads`).
+    pub fn view(self) -> nm_api::MoveThreadsResult {
+        let one = self.outcome.view();
+        nm_api::MoveThreadsResult {
+            changed: one.changed,
+            moved: one.moved,
+            filed: one.filed,
+            decisions: self.decisions.iter().map(DecisionChange::view).collect(),
+            undo: one.undo,
+            moved_threads: self.moved_threads,
+            refused: self.refused,
+            suspects: self
+                .suspects
+                .into_iter()
+                .map(|s| nm_api::SuspectView { thread_id: s.thread_id, addr: s.addr, verdict: s.verdict })
+                .collect(),
         }
+    }
+}
 
-        let mut out = Outcome { moved: moved.len(), ..Outcome::default() };
-        out.changes.folders.insert(target_id);
-        let mut threads = BTreeSet::new();
-        let none = serde_json::json!({});
-        // `&moved` iterates by reference, so `message_id` and `old_folder` are
-        // `&i64`; `*old_folder` reads the value behind the reference.
-        for (message_id, old_folder) in &moved {
-            move_message(&tx, *message_id, Some(thread_id), *old_folder, target_id, source, &none, &mut out.changes, &mut threads)?;
+/// A thread a batch move left for a confirmation (`MoveBatch::suspects`).
+#[derive(Debug, Clone)]
+pub struct SuspectThread {
+    pub thread_id: i64,
+    pub addr: String,
+    pub verdict: String,
+}
+
+/// The writes of a move checked by `prepare_move` (`dossiers.md`,
+/// "Déplacer un mail"), in the caller's transaction. Adds to `out` its
+/// changes and the mails moved, and to `threads` the threads to refresh;
+/// returns the decision taken and the number of other mails filed.
+///
+/// Only the thread's messages filed in Inbox, Todo, Waiting, Archive,
+/// Newsletter and Paperwork follow (`CONVERSATION_SCOPE`), plus those in
+/// the folder where the command is given (`from_folder_id`). So the
+/// copies in Sent never move, and a message the user deleted stays in
+/// Deleted unless the user is restoring it from there.
+///
+/// From Drafts (only to Deleted), only the drafts move: deleting an old
+/// draft must not put the conversation it answers in the bin. A draft
+/// of NiceMailer loses its row of `draft` on the way
+/// (`draft_copies::release_for_deletion`): its row of Drafts, in
+/// Deleted, keeps its text.
+fn apply_move(
+    tx: &rusqlite::Transaction,
+    p: &PreparedMove,
+    opts: MoveOptions,
+    source: Source,
+    out: &mut Outcome,
+    threads: &mut BTreeSet<i64>,
+) -> Result<(Option<DecisionChange>, usize)> {
+    let thread_id = p.thread_id;
+    let target_id: i64 = tx
+        .query_row(
+            "SELECT id FROM folder WHERE account_id = ?1 AND role = ?2",
+            params![p.account_id, p.target.as_str()],
+            |r| r.get(0),
+        )
+        .optional()?
+        .ok_or_else(|| StoreError::NotFound(format!("dossier {}", p.target.as_str())))?;
+
+    // Messages to move, with their current folder (needed for the audit
+    // log and to refresh the old folder's counters). The six roles of the
+    // scope are passed as separate parameters (?3 to ?8); `-1` stands
+    // for "no from_folder" since no folder has that id.
+    let scope: Vec<&str> = FolderRole::CONVERSATION_SCOPE.iter().map(|r| r.as_str()).collect();
+    // From Drafts, the folder of the command only (see above): ?10 off.
+    let whole_conversation = p.from_role != Some(FolderRole::Drafts);
+    let moved: Vec<(i64, i64)> = {
+        let mut stmt = tx.prepare_cached(
+            "SELECT m.id, m.folder_id FROM message m JOIN folder f ON f.id = m.folder_id
+              WHERE m.thread_id = ?1 AND m.folder_id <> ?2
+                AND ((?10 AND f.role IN (?3, ?4, ?5, ?6, ?7, ?8)) OR m.folder_id = ?9)",
+        )?;
+        stmt.query_map(
+            params![
+                thread_id, target_id, scope[0], scope[1], scope[2], scope[3], scope[4], scope[5],
+                p.from_folder_id.unwrap_or(-1), whole_conversation
+            ],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )?
+        // Each row is a `Result`; collecting into `Result<Vec<_>, _>`
+        // stops at the first error, which the final `?` propagates.
+        .collect::<std::result::Result<_, _>>()?
+    };
+
+    if !whole_conversation {
+        for (message_id, _) in &moved {
+            crate::draft_copies::release_for_deletion(tx, *message_id)?;
         }
-
-        // Any command clears the "came back from Todo/Waiting" mark, even when
-        // nothing moved: by acting on the thread, the user has dealt with it.
-        // `COLLATE NOCASE` because IMAP keywords are case-insensitive.
-        // The marks are IMAP keywords: removed on the server too (spool).
-        let ids: Vec<i64> = tx
-            .prepare("SELECT id FROM message WHERE thread_id = ?1")?
-            .query_map([thread_id], |r| r.get(0))?
-            .collect::<std::result::Result<_, _>>()?;
-        let unmarked = crate::reception::clear_return_marks(&tx, &ids, source, &mut out.changes)?;
-        if unmarked > 0 {
-            threads.insert(thread_id);
-        }
-
-        if let Some((d, address_id, addr, trigger)) = decision {
-            if d.is_favorable()
-                && let Some(p) = opts.auth_policy
-            {
-                record_auth_policy(&tx, address_id, p, None, source)?;
-            }
-            let before = record_decision(&tx, RuleKind::Address, address_id, Some(d), Some(trigger), None, source)?;
-            let mut folders = HashMap::new();
-            out.filed = file_address(&tx, address_id, d, false, source, &mut folders, &mut out.changes, &mut threads)?;
-            out.decision = Some(DecisionChange { kind: RuleKind::Address, name: addr, before, after: Some(d) });
-        }
-
-        // Recompute aggregates only if something actually changed.
-        refresh_all(&tx, &threads, &mut out.changes)?;
-        out.undo = undo_token(&tx, mark)?;
-        tx.commit()?;
-        Ok(out)
     }
 
+    out.moved += moved.len();
+    out.changes.folders.insert(target_id);
+    let none = serde_json::json!({});
+    // `&moved` iterates by reference, so `message_id` and `old_folder` are
+    // `&i64`; `*old_folder` reads the value behind the reference.
+    for (message_id, old_folder) in &moved {
+        move_message(tx, *message_id, Some(thread_id), *old_folder, target_id, source, &none, &mut out.changes, threads)?;
+    }
+
+    // Any command clears the "came back from Todo/Waiting" mark, even when
+    // nothing moved: by acting on the thread, the user has dealt with it.
+    // The marks are IMAP keywords: removed on the server too (spool).
+    let ids: Vec<i64> = tx
+        .prepare_cached("SELECT id FROM message WHERE thread_id = ?1")?
+        .query_map([thread_id], |r| r.get(0))?
+        .collect::<std::result::Result<_, _>>()?;
+    let unmarked = crate::reception::clear_return_marks(tx, &ids, source, &mut out.changes)?;
+    if unmarked > 0 {
+        threads.insert(thread_id);
+    }
+
+    let mut decision = None;
+    let mut filed = 0;
+    if let Some((d, address_id, addr, trigger)) = &p.decision {
+        if d.is_favorable()
+            && let Some(policy) = opts.auth_policy
+        {
+            record_auth_policy(tx, *address_id, policy, None, source)?;
+        }
+        let before = record_decision(tx, RuleKind::Address, *address_id, Some(*d), Some(*trigger), None, source)?;
+        let mut folders = HashMap::new();
+        filed = file_address(tx, *address_id, *d, false, source, &mut folders, &mut out.changes, threads)?;
+        decision = Some(DecisionChange { kind: RuleKind::Address, name: addr.clone(), before, after: Some(*d) });
+    }
+    Ok((decision, filed))
+}
+
+impl Store {
     /// Marks every message of the thread as read or unread.
     pub fn set_thread_seen(&mut self, thread_id: i64, seen: bool, source: Source) -> Result<ChangeSet> {
         self.thread_account(thread_id)?;
+        self.set_threads_seen(&[thread_id], seen, source)
+    }
+
+    /// Marks every message of the threads read or unread, in **one**
+    /// transaction: `u` and `U` on 50 marked threads are one request, one
+    /// commit and one batch of events, where 50 requests made the list
+    /// change row by row (`ui.md`, "Actions groupées"). A thread gone
+    /// meanwhile (merged, deleted by the synchronization) is skipped; a
+    /// thread of a read-only account refuses the whole command, before any
+    /// write.
+    pub fn set_threads_seen(&mut self, thread_ids: &[i64], seen: bool, source: Source) -> Result<ChangeSet> {
+        let ids = self.existing_threads(thread_ids)?;
         let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        // `RETURNING` (SQLite 3.35+) gives back the rows actually updated, so
-        // a single statement both modifies and tells us what changed. The
-        // `is_seen <> ?2` condition skips messages already in the wanted state.
-        let changed: Vec<(i64, i64)> = {
-            let mut stmt = tx.prepare(
-                "UPDATE message SET is_seen = ?2, date_modified = unixepoch(), modified_by = ?3
-                  WHERE thread_id = ?1 AND is_seen <> ?2
-                  RETURNING id, folder_id",
-            )?;
-            stmt.query_map(params![thread_id, seen, source.as_str()], |r| Ok((r.get(0)?, r.get(1)?)))?
-                .collect::<std::result::Result<_, _>>()?
-        };
-        let changes = finish_flag_change(&tx, thread_id, &changed, source, "set_flags", "is_seen", seen)?;
+        let mut all = ChangeSet::default();
+        for thread_id in ids {
+            // `RETURNING` (SQLite 3.35+) gives back the rows actually
+            // updated, so a single statement both modifies and tells us what
+            // changed. The `is_seen <> ?2` condition skips messages already
+            // in the wanted state.
+            let changed: Vec<(i64, i64)> = {
+                let mut stmt = tx.prepare_cached(
+                    "UPDATE message SET is_seen = ?2, date_modified = unixepoch(), modified_by = ?3
+                      WHERE thread_id = ?1 AND is_seen <> ?2
+                      RETURNING id, folder_id",
+                )?;
+                stmt.query_map(params![thread_id, seen, source.as_str()], |r| Ok((r.get(0)?, r.get(1)?)))?
+                    .collect::<std::result::Result<_, _>>()?
+            };
+            all.merge(finish_flag_change(&tx, thread_id, &changed, source, "set_flags", "is_seen", seen)?);
+        }
         tx.commit()?;
-        Ok(changes)
+        Ok(all)
+    }
+
+    /// The threads of `ids` that still exist, in their order and each once;
+    /// `ReadOnly` if one belongs to a read-only account (nothing written).
+    pub(crate) fn existing_threads(&self, ids: &[i64]) -> Result<Vec<i64>> {
+        let mut out = Vec::with_capacity(ids.len());
+        for &id in ids {
+            if out.contains(&id) {
+                continue;
+            }
+            match self.thread_account(id) {
+                Ok(_) => out.push(id),
+                Err(StoreError::NotFound(_)) => {}
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(out)
     }
 
     /// Flags the last message received in the thread, or unflags all of
@@ -243,44 +445,53 @@ impl Store {
     /// messages is.
     pub fn set_thread_flagged(&mut self, thread_id: i64, flagged: bool, source: Source) -> Result<ChangeSet> {
         self.thread_account(thread_id)?;
+        self.set_threads_flagged(&[thread_id], flagged, source)
+    }
+
+    /// `set_thread_flagged` for several threads, in one transaction (see
+    /// `set_threads_seen`).
+    pub fn set_threads_flagged(&mut self, thread_ids: &[i64], flagged: bool, source: Source) -> Result<ChangeSet> {
+        let ids = self.existing_threads(thread_ids)?;
         let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        // In Rust `if` is an expression: both branches produce the `Vec`.
-        let changed: Vec<(i64, i64)> = if flagged {
-            // Last received message, excluding Sent and Drafts; if the thread
-            // only has those, the most recent message overall. The first
-            // ORDER BY term is 0 for received mail and 1 for Sent/Drafts, so
-            // received mail sorts first.
-            let target: Option<i64> = tx
-                .query_row(
-                    "SELECT m.id FROM message m JOIN folder f ON f.id = m.folder_id
-                      WHERE m.thread_id = ?1
-                      ORDER BY (coalesce(f.role, '') IN ('sent', 'drafts')), m.date_received DESC, m.id DESC
-                      LIMIT 1",
-                    [thread_id],
-                    |r| r.get(0),
-                )
-                .optional()?;
-            let mut stmt = tx.prepare(
-                "UPDATE message SET is_flagged = 1, date_modified = unixepoch(), modified_by = ?2
-                  WHERE id = ?1 AND is_flagged = 0 RETURNING id, folder_id",
-            )?;
-            match target {
-                Some(id) => stmt
-                    .query_map(params![id, source.as_str()], |r| Ok((r.get(0)?, r.get(1)?)))?
-                    .collect::<std::result::Result<_, _>>()?,
-                None => vec![],
-            }
-        } else {
-            let mut stmt = tx.prepare(
-                "UPDATE message SET is_flagged = 0, date_modified = unixepoch(), modified_by = ?2
-                  WHERE thread_id = ?1 AND is_flagged = 1 RETURNING id, folder_id",
-            )?;
-            stmt.query_map(params![thread_id, source.as_str()], |r| Ok((r.get(0)?, r.get(1)?)))?
-                .collect::<std::result::Result<_, _>>()?
-        };
-        let changes = finish_flag_change(&tx, thread_id, &changed, source, "set_flags", "is_flagged", flagged)?;
+        let mut all = ChangeSet::default();
+        for thread_id in ids {
+            // In Rust `if` is an expression: both branches produce the `Vec`.
+            let changed: Vec<(i64, i64)> = if flagged {
+                // Last received message, excluding Sent and Drafts; if the
+                // thread only has those, the most recent message overall.
+                // The first ORDER BY term is 0 for received mail and 1 for
+                // Sent/Drafts, so received mail sorts first.
+                let target: Option<i64> = tx
+                    .prepare_cached(
+                        "SELECT m.id FROM message m JOIN folder f ON f.id = m.folder_id
+                          WHERE m.thread_id = ?1
+                          ORDER BY (coalesce(f.role, '') IN ('sent', 'drafts')), m.date_received DESC, m.id DESC
+                          LIMIT 1",
+                    )?
+                    .query_row([thread_id], |r| r.get(0))
+                    .optional()?;
+                let mut stmt = tx.prepare_cached(
+                    "UPDATE message SET is_flagged = 1, date_modified = unixepoch(), modified_by = ?2
+                      WHERE id = ?1 AND is_flagged = 0 RETURNING id, folder_id",
+                )?;
+                match target {
+                    Some(id) => stmt
+                        .query_map(params![id, source.as_str()], |r| Ok((r.get(0)?, r.get(1)?)))?
+                        .collect::<std::result::Result<_, _>>()?,
+                    None => vec![],
+                }
+            } else {
+                let mut stmt = tx.prepare_cached(
+                    "UPDATE message SET is_flagged = 0, date_modified = unixepoch(), modified_by = ?2
+                      WHERE thread_id = ?1 AND is_flagged = 1 RETURNING id, folder_id",
+                )?;
+                stmt.query_map(params![thread_id, source.as_str()], |r| Ok((r.get(0)?, r.get(1)?)))?
+                    .collect::<std::result::Result<_, _>>()?
+            };
+            all.merge(finish_flag_change(&tx, thread_id, &changed, source, "set_flags", "is_flagged", flagged)?);
+        }
         tx.commit()?;
-        Ok(changes)
+        Ok(all)
     }
 }
 

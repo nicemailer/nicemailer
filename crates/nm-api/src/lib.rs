@@ -46,6 +46,8 @@ pub mod method {
     pub const GET_THREAD: &str = "get_thread";
     pub const SEARCH: &str = "search";
     pub const MOVE_THREAD: &str = "move_thread";
+    /// Several threads moved in one request (`MoveThreadsParams`).
+    pub const MOVE_THREADS: &str = "move_threads";
     pub const SET_THREAD_SEEN: &str = "set_thread_seen";
     pub const SET_THREAD_FLAGGED: &str = "set_thread_flagged";
     /// Starts the import of an mbox file into an archive account; the work
@@ -662,6 +664,61 @@ pub struct MoveThreadParams {
     pub auth_policy: Option<AuthPolicy>,
 }
 
+/// Params of `move_threads`: several threads moved to `target` in one
+/// request, one transaction, one undo token (`ui.md`, "Actions groupées").
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MoveThreadsParams {
+    /// Each thread with the folder it is shown in (`from_folder_id` of
+    /// `move_thread`).
+    pub threads: Vec<ThreadInFolder>,
+    pub target: FolderRole,
+    /// As in `move_thread`: the user confirmed the suspected senders.
+    #[serde(default)]
+    pub confirm_suspect: bool,
+    #[serde(default)]
+    pub auth_policy: Option<AuthPolicy>,
+}
+
+/// A thread and the folder it is shown in.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ThreadInFolder {
+    pub thread_id: i64,
+    #[serde(default)]
+    pub from_folder_id: Option<i64>,
+}
+
+/// Result of `move_threads`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MoveThreadsResult {
+    /// Messages modified, filed mails included.
+    pub changed: usize,
+    /// Mails of the threads moved.
+    pub moved: usize,
+    /// Other mails filed by the decisions.
+    pub filed: usize,
+    /// The decisions taken, one per sender decided on.
+    pub decisions: Vec<DecisionView>,
+    /// Pass it to `undo` to cancel the whole batch; absent when nothing
+    /// changed.
+    pub undo: Option<String>,
+    /// The threads moved.
+    pub moved_threads: Vec<i64>,
+    /// Threads left: the target is not allowed from their folder.
+    pub refused: Vec<i64>,
+    /// Threads left: their sender is suspected of spoofing and the move
+    /// would accept it. Ask the user, then move them again with
+    /// `confirm_suspect`.
+    pub suspects: Vec<SuspectView>,
+}
+
+/// A thread `move_threads` left for a confirmation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SuspectView {
+    pub thread_id: i64,
+    pub addr: String,
+    pub verdict: String,
+}
+
 /// A screening decision taken, changed or removed by a command.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DecisionView {
@@ -716,14 +773,35 @@ pub struct UndoParams {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SetThreadSeenParams {
-    pub thread_id: i64,
+    /// One thread…
+    #[serde(default)]
+    pub thread_id: Option<i64>,
+    /// …or several, in one transaction and one batch of events (the marked
+    /// threads of the app, `ui.md`, "Actions groupées"). Exactly one of the
+    /// two. Threads gone meanwhile are skipped.
+    #[serde(default)]
+    pub thread_ids: Option<Vec<i64>>,
     pub seen: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SetThreadFlaggedParams {
-    pub thread_id: i64,
+    /// One thread, or several (`thread_ids`), as for `set_thread_seen`.
+    #[serde(default)]
+    pub thread_id: Option<i64>,
+    #[serde(default)]
+    pub thread_ids: Option<Vec<i64>>,
     pub flagged: bool,
+}
+
+/// The threads of a command: `thread_id` or `thread_ids`, exactly one.
+/// `None` when both or neither are given.
+pub fn thread_list(one: Option<i64>, several: Option<Vec<i64>>) -> Option<Vec<i64>> {
+    match (one, several) {
+        (Some(id), None) => Some(vec![id]),
+        (None, Some(ids)) if !ids.is_empty() => Some(ids),
+        _ => None,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1444,7 +1522,11 @@ pub struct TagView {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TagThreadParams {
-    pub thread_id: i64,
+    /// One thread, or several (`thread_ids`), as for `set_thread_seen`.
+    #[serde(default)]
+    pub thread_id: Option<i64>,
+    #[serde(default)]
+    pub thread_ids: Option<Vec<i64>>,
     /// Tag name; the tag is created in the thread's account if needed.
     pub name: String,
     /// Remove the tag instead of adding it.

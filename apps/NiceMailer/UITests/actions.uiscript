@@ -43,6 +43,20 @@ key cmd-a
 expect marked_count > 2
 expect flash = 
 snap all-marked
+# Grouped actions (`ui.md`, "Actions groupées"): one request for every
+# marked mail, all the rows changed at once. U makes them all read; then
+# u all unread (none is), U all read again; * all flagged, then not.
+key U
+expect marked_unread = 0
+key u
+expect marked_unread > 2
+key U
+expect marked_unread = 0
+key *
+expect marked_flagged > 2
+snap all-flagged
+key *
+expect marked_flagged = 0
 key esc
 expect marked_count = 0
 # Unknown keys and commands are reported, not executed.

@@ -60,33 +60,30 @@ extension AppModel {
         // which one left. The core's answer may complete the message with
         // the decision on the sender (`Workflow.moveFlash`).
         flash = Workflow.moveFlash(subjects: allowed.map(\.subject), folder: Role.name(role), decision: nil, filed: 0)
+        // One request for every thread (`ui.md`, "Actions groupées"): one
+        // transaction, one batch of events, one undo token. A thread whose
+        // sender is suspected of spoofing is left by the core and asked
+        // about; it comes back to the list.
         Task {
-            var tokens: [String] = []
-            var decision: DecisionView?
-            var filed = 0
-            var refused = false
-            for t in allowed {
-                do {
-                    let r: WorkflowResult = try await client.call(
-                        "move_thread", ["thread_id": t.id, "target": role, "from_folder_id": t.folderId])
-                    if let u = r.undo { tokens.append(u) }
-                    decision = decision ?? r.decision
-                    filed += r.filed
-                } catch let e as CoreClient.RPCError where e.code == CoreClient.RPCError.confirmationRequired {
-                    // The thread comes back to the list, and the user is
-                    // asked; the other threads go on.
-                    refused = true
-                    if suspectMove == nil {
-                        suspectMove = SuspectMove(threadId: t.id, folderId: t.folderId, target: role, subject: t.subject,
-                                                  addr: e.data["addr"] ?? "", verdict: e.data["verdict"] ?? "")
-                    }
-                } catch {
-                    report(error)
-                }
+            let items: [[String: Any]] = allowed.map { ["thread_id": $0.id, "from_folder_id": $0.folderId] }
+            let r: MoveThreadsResult
+            do {
+                r = try await client.call("move_threads", ["threads": items, "target": role])
+            } catch {
+                report(error)
+                await reloadThreads(keepDepth: true)
+                return
             }
-            let moved = allowed.filter { t in suspectMove?.threadId != t.id }
-            if !tokens.isEmpty {
-                pushUndo(UndoStep(tokens: tokens, label: L("move to %@", Role.name(role)), threads: moved.map(\.id)))
+            if let s = r.suspects.first, let t = allowed.first(where: { $0.id == s.threadId }), suspectMove == nil {
+                suspectMove = SuspectMove(threadId: t.id, folderId: t.folderId, target: role, subject: t.subject,
+                                          addr: s.addr, verdict: s.verdict)
+            }
+            let refused = !r.suspects.isEmpty || !r.refused.isEmpty
+            let moved = allowed.filter { r.movedThreads.contains($0.id) }
+            let decision = r.decisions.last
+            let filed = r.filed
+            if let u = r.undo {
+                pushUndo(UndoStep(tokens: [u], label: L("move to %@", Role.name(role)), threads: moved.map(\.id)))
             }
             if let s = suspectMove {
                 flash = L("Probable spoofing of %@: confirm or cancel", s.addr)
@@ -114,30 +111,42 @@ extension AppModel {
         setSeen(true, of: targetThreads.filter { $0.unreadCount > 0 })
     }
 
-    /// Sends `set_thread_seen` for each thread. Not optimistic, as for the
-    /// flag: the list updates when the core's event arrives.
+    /// Read or unread for the target threads: shown at once on every row
+    /// (optimistic), then **one** request for all of them (`thread_ids`,
+    /// `ui.md`, "Actions groupées"). One request per thread made the rows
+    /// change one after the other, as each answer and event came back. On
+    /// an error the list is read again, which puts back the core's state.
     private func setSeen(_ seen: Bool, of targets: [ThreadSummary]) {
         guard let client = core, !targets.isEmpty else { return }
+        let ids = Set(targets.map(\.id))
+        // Unread: every mail of the thread, as the core does.
+        threads = threads.map { ids.contains($0.id) ? $0.with(unreadCount: seen ? 0 : $0.messageCount, isFlagged: $0.isFlagged) : $0 }
         Task {
-            for t in targets {
-                do {
-                    let _: CommandResult = try await client.call("set_thread_seen", ["thread_id": t.id, "seen": seen])
-                } catch { report(error) }
+            do {
+                let _: CommandResult = try await client.call("set_thread_seen", ["thread_ids": targets.map(\.id), "seen": seen])
+            } catch {
+                report(error)
+                await reloadThreads(keepDepth: true)
             }
         }
     }
 
-    /// Flag for the target threads, by the same rule.
+    /// Flag for the target threads, by the same rule as `u` (all flagged
+    /// if one is not), shown at once and sent in one request.
     func toggleFlagTargets() {
         guard let client = core else { return }
         let targets = targetThreads
+        guard !targets.isEmpty else { return }
         let flagged = targets.contains { !$0.isFlagged }
+        let ids = Set(targets.map(\.id))
+        threads = threads.map { ids.contains($0.id) ? $0.with(unreadCount: $0.unreadCount, isFlagged: flagged) : $0 }
         Task {
-            for t in targets {
-                do {
-                    let _: CommandResult = try await client.call(
-                        "set_thread_flagged", ["thread_id": t.id, "flagged": flagged])
-                } catch { report(error) }
+            do {
+                let _: CommandResult = try await client.call(
+                    "set_thread_flagged", ["thread_ids": targets.map(\.id), "flagged": flagged])
+            } catch {
+                report(error)
+                await reloadThreads(keepDepth: true)
             }
         }
     }
@@ -151,12 +160,10 @@ extension AppModel {
         let remove = targets.allSatisfy { $0.tags.contains(name) }
         flash = remove ? L("Tag removed: %@", name) : L("Tagged: %@", name)
         Task {
-            for t in targets {
-                do {
-                    let _: CommandResult = try await client.call(
-                        "tag_thread", ["thread_id": t.id, "name": name, "remove": remove])
-                } catch { report(error) }
-            }
+            do {
+                let _: CommandResult = try await client.call(
+                    "tag_thread", ["thread_ids": targets.map(\.id), "name": name, "remove": remove])
+            } catch { report(error) }
         }
     }
 

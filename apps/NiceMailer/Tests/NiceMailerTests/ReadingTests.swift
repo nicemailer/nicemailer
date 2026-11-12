@@ -61,8 +61,11 @@ struct ReadingTests {
                 view["messages"] = messages
                 return view
             case "set_thread_seen":
-                box.setSeen(params["thread_id"] as! Int, params["seen"] as! Bool)
-                return ["changed": 1]
+                // One thread (`thread_id`, the reader) or several
+                // (`thread_ids`, a grouped `u` / `U`).
+                let ids = (params["thread_ids"] as? [Int]) ?? [params["thread_id"] as! Int]
+                for id in ids { box.setSeen(id, params["seen"] as! Bool) }
+                return ["changed": ids.count]
             default:
                 return Fixture.answer(method, params)
             }
@@ -90,7 +93,9 @@ struct ReadingTests {
     /// Waits longer than `seenDelay`, for the negative checks.
     func pause() async { try? await Task.sleep(for: .milliseconds(250)) }
 
-    var seenCalls: [Int] { core.calls("set_thread_seen").compactMap { $0["thread_id"] as? Int } }
+    /// The threads of every `set_thread_seen` sent, in order, whether by
+    /// `thread_id` or in a batch (`thread_ids`).
+    var seenCalls: [Int] { core.calls("set_thread_seen").flatMap { ($0["thread_ids"] as? [Int]) ?? [$0["thread_id"] as? Int].compactMap { $0 } } }
 
     /// Shows the unread mails only (attribute selector).
     func filterUnread() async {
@@ -302,8 +307,9 @@ struct ReadingTests {
 
     /// `(thread_id, seen)` of every `set_thread_seen` sent so far.
     var seenRequests: [(Int, Bool)] {
-        core.calls("set_thread_seen").compactMap { c in
-            (c["thread_id"] as? Int).flatMap { id in (c["seen"] as? Bool).map { (id, $0) } }
+        core.calls("set_thread_seen").flatMap { c -> [(Int, Bool)] in
+            let ids = (c["thread_ids"] as? [Int]) ?? [c["thread_id"] as? Int].compactMap { $0 }
+            return ids.map { ($0, c["seen"] as? Bool ?? false) }
         }
     }
 

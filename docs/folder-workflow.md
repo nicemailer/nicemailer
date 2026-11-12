@@ -67,11 +67,14 @@ The token is the range of the command's lines in the history (`audit_log`): a co
 | Method | Parameters | Result |
 | --- | --- | --- |
 | `move_thread` | `thread_id`, `target`, `from_folder_id?`, `confirm_suspect?`, `auth_policy?` | `WorkflowResult` |
+| `move_threads` | `threads` (`[{thread_id, from_folder_id?}]`), `target`, `confirm_suspect?`, `auth_policy?` | `MoveThreadsResult` |
 | `set_address_screening` | `addr`, `target?` (absent: remove) | `WorkflowResult` |
 | `set_domain_screening` | `domain`, `target?` | `WorkflowResult` |
 | `undo` | `token` | `WorkflowResult` |
 
 `WorkflowResult`: `changed` (messages modified), `moved` (mails of the conversation, or put back by `undo`), `filed` (other mails of the sender), `decision` (`{kind: address|domain, name, before, after}`, absent when nothing was decided) and `undo` (absent when nothing changed). A decision received from another Mac (`config_sync`) files nothing: that Mac did. `list_contacts` gives each address its own decision, its domain's (`domain_target`) and its `auth_policy`.
+
+`move_threads` moves several conversations in one transaction, with one batch of events and **one** undo token for all (`specifications/ui.md`, "Actions groupées"): the app sends the marked conversations this way. `MoveThreadsResult`: `changed`, `moved`, `filed` (all conversations), `decisions` (one per sender decided on), `undo`, `moved_threads`, and the conversations left where they are: `refused` (the target is not allowed from their folder) and `suspects` (`[{thread_id, addr, verdict}]`: a favorable decision on a sender suspected of spoofing; the app asks, then moves each with `move_thread` and `confirm_suspect`). A conversation gone meanwhile is skipped. The store splits a move into its checks (`prepare_move`, before any write) and its writes (`apply_move`, in the caller's transaction), shared by `move_thread` and `move_threads`.
 
 ## CLI
 

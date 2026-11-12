@@ -41,6 +41,18 @@ final class FakeCore: CoreCalling, @unchecked Sendable {
     func calls(_ method: String) -> [[String: Any]] {
         calls.filter { $0.method == method }.map(\.params)
     }
+
+    /// Every thread moved, in order, as the parameters of a single move
+    /// (`thread_id`, `from_folder_id`, `target`): the threads of each
+    /// `move_threads`, and each `move_thread`.
+    func moveCalls() -> [[String: Any]] {
+        calls.filter { $0.method == "move_threads" || $0.method == "move_thread" }.flatMap { c -> [[String: Any]] in
+            guard c.method == "move_threads" else { return [c.params] }
+            return (c.params["threads"] as? [[String: Any]] ?? []).map { t in
+                t.merging(["target": c.params["target"] ?? ""]) { mine, _ in mine }
+            }
+        }
+    }
 }
 
 /// A small mailbox: one account, Inbox / Archive / Todo / Deleted, eight
@@ -224,6 +236,18 @@ enum Fixture {
                 : NSNull()
             let filed = params["target"] as? String == "newsletter" ? 2 : 0
             return ["changed": 1 + filed, "moved": 1, "filed": filed, "decision": decision, "undo": "\(thread):\(thread)"]
+        case "move_threads":
+            // Every thread moved, by the rule of `move_thread` above; one
+            // undo token for all.
+            let ids = (params["threads"] as? [[String: Any]] ?? []).compactMap { $0["thread_id"] as? Int }
+            let newsletter = params["target"] as? String == "newsletter"
+            let decisions: [[String: Any]] = newsletter
+                ? ids.map { ["kind": "address", "name": "sender\($0)@example.org", "before": NSNull(), "after": "newsletter"] }
+                : []
+            let filed = newsletter ? 2 * ids.count : 0
+            return ["changed": ids.count + filed, "moved": ids.count, "filed": filed, "decisions": decisions,
+                    "undo": "\(ids.first ?? 0):\(ids.last ?? 0)", "moved_threads": ids, "refused": [Int](),
+                    "suspects": [[String: Any]]()]
         case "undo":
             return ["changed": 1, "moved": 1, "filed": 0, "decision": NSNull(), "undo": "u"]
         case "set_address_screening", "set_domain_screening":

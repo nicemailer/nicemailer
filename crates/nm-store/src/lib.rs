@@ -300,6 +300,35 @@ impl ChangeSet {
     pub fn changed_messages(&self) -> usize {
         self.messages.len()
     }
+
+    /// Adds the changes of `other`: a command on several threads, run in
+    /// one transaction, reports them in one `ChangeSet` (one batch of
+    /// events). A thread already listed keeps its first entry, with the
+    /// folders of both.
+    pub fn merge(&mut self, other: ChangeSet) {
+        self.messages.extend(other.messages);
+        for (thread, folders) in other.threads {
+            match self.threads.iter_mut().find(|(t, _)| *t == thread) {
+                Some((_, mine)) => {
+                    for f in folders {
+                        if !mine.contains(&f) {
+                            mine.push(f);
+                        }
+                    }
+                }
+                None => self.threads.push((thread, folders)),
+            }
+        }
+        self.folders.extend(other.folders);
+        self.accounts.extend(other.accounts);
+        self.arrived.extend(other.arrived);
+        self.spooled.extend(other.spooled);
+        self.reverted.extend(other.reverted);
+        self.sending.extend(other.sending);
+        self.sent.extend(other.sent);
+        self.send_failed.extend(other.send_failed);
+        self.send_partial.extend(other.send_partial);
+    }
 }
 
 /// Handle on the database. There is a single writing `Store` in the core,

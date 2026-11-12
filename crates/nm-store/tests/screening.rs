@@ -409,3 +409,96 @@ fn a_domain_decision_files_the_addresses_without_their_own() {
     assert!(b.store.set_domain_screening("a@b.fr", None, Source::Cli).is_err());
     assert!(b.store.set_domain_screening("localhost", None, Source::Cli).is_err());
 }
+
+// ---------------------------------------------------------------------------
+// Grouped commands (`ui.md`, "Actions groupées"): several threads in one
+// transaction, one batch of events, one undo token.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn several_threads_are_moved_in_one_transaction_and_undone_at_once() {
+    let mut b = mailbox();
+    let inbox = b.folder(b.account, FolderRole::Inbox);
+    let quarantine = b.folder(b.account, FolderRole::Quarantine);
+    let (m1, t1) = b.mail(FolderRole::Inbox, "a@one.fr", OK);
+    let (m2, t2) = b.mail(FolderRole::Inbox, "b@two.fr", OK);
+    let (m3, t3) = b.mail(FolderRole::Inbox, "news@shop.fr", OK);
+    // A forged sender in Quarantine, and a sent mail (no target from Sent).
+    let forged = M { verdict: "fail", suspect: true, flagged: false };
+    let (m4, t4) = b.mail(FolderRole::Quarantine, "support@banque.fr", forged);
+    let (_, t5) = b.mail(FolderRole::Sent, ME, OK);
+    let sent = b.folder(b.account, FolderRole::Sent);
+    let audit_before: i64 = b.store.conn().query_row("SELECT count(*) FROM audit_log", [], |r| r.get(0)).unwrap();
+
+    // To Newsletter: every thread decides on its sender.
+    let batch = b
+        .store
+        .move_threads(
+            &[(t1, Some(inbox)), (t2, Some(inbox)), (t3, Some(inbox)), (t4, Some(quarantine)), (t5, Some(sent)), (999_999, None)],
+            FolderRole::Newsletter,
+            MoveOptions::default(),
+            Source::App,
+        )
+        .unwrap();
+    // Moved together; the forged sender left for a confirmation, the sent
+    // mail refused, the unknown thread skipped.
+    assert_eq!(batch.moved_threads, vec![t1, t2, t3]);
+    assert_eq!(batch.refused, vec![t5]);
+    assert_eq!(batch.suspects.iter().map(|s| (s.thread_id, s.addr.as_str())).collect::<Vec<_>>(), [(t4, "support@banque.fr")]);
+    assert_eq!(batch.decisions.len(), 3);
+    for m in [m1, m2, m3] {
+        assert_eq!(b.role_of(m), FolderRole::Newsletter);
+    }
+    assert_eq!(b.role_of(m4), FolderRole::Quarantine);
+    // One batch of changes, naming the three threads.
+    let threads: Vec<i64> = batch.outcome.changes.threads.iter().map(|(t, _)| *t).collect();
+    assert!([t1, t2, t3].iter().all(|t| threads.contains(t)));
+    assert!(audit_before < b.store.conn().query_row::<i64, _, _>("SELECT count(*) FROM audit_log", [], |r| r.get(0)).unwrap());
+
+    // One token undoes the whole batch, decisions included.
+    b.store.undo(&batch.outcome.undo.unwrap(), Source::App).unwrap();
+    for m in [m1, m2, m3] {
+        assert_eq!(b.role_of(m), FolderRole::Inbox);
+    }
+    for addr in ["a@one.fr", "b@two.fr", "news@shop.fr"] {
+        assert_eq!(b.decision(addr), None, "{addr}");
+    }
+
+    // The suspect thread, confirmed, moves alone.
+    let confirmed = MoveOptions { confirm_suspect: true, ..MoveOptions::default() };
+    let again = b.store.move_threads(&[(t4, Some(quarantine))], FolderRole::Inbox, confirmed, Source::App).unwrap();
+    assert_eq!(again.moved_threads, vec![t4]);
+    assert_eq!(b.role_of(m4), FolderRole::Inbox);
+}
+
+#[test]
+fn several_threads_are_marked_read_flagged_and_tagged_in_one_transaction() {
+    let mut b = mailbox();
+    let threads: Vec<i64> = (0..5).map(|i| b.mail(FolderRole::Inbox, &format!("p{i}@x.fr"), OK).1).collect();
+    for t in &threads {
+        b.store.refresh_thread_aggregates(*t).unwrap();
+    }
+    let mut ids = threads.clone();
+    ids.push(999_999); // gone meanwhile: skipped
+
+    let changes = b.store.set_threads_seen(&ids, true, Source::App).unwrap();
+    assert_eq!(changes.changed_messages(), 5);
+    assert_eq!(changes.threads.len(), 5);
+    let unread: i64 = b.store.conn().query_row("SELECT sum(unread_count) FROM thread", [], |r| r.get(0)).unwrap();
+    assert_eq!(unread, 0);
+    // Again: nothing to change, nothing reported.
+    assert_eq!(b.store.set_threads_seen(&ids, true, Source::App).unwrap().changed_messages(), 0);
+
+    let changes = b.store.set_threads_flagged(&ids, true, Source::App).unwrap();
+    assert_eq!(changes.changed_messages(), 5);
+    let flagged: i64 = b.store.conn().query_row("SELECT count(*) FROM message WHERE is_flagged = 1", [], |r| r.get(0)).unwrap();
+    assert_eq!(flagged, 5);
+
+    let changes = b.store.tag_threads(&ids, "Clients", false, Source::App).unwrap();
+    assert_eq!(changes.changed_messages(), 5);
+    let tagged: i64 = b.store.conn().query_row("SELECT count(*) FROM message_keyword", [], |r| r.get(0)).unwrap();
+    assert_eq!(tagged, 5);
+    // One tag created for all of them.
+    let tags: i64 = b.store.conn().query_row("SELECT count(*) FROM tag WHERE name = 'Clients'", [], |r| r.get(0)).unwrap();
+    assert_eq!(tags, 1);
+}

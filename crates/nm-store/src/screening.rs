@@ -65,6 +65,13 @@ pub struct Outcome {
     pub undo: Option<String>,
 }
 
+impl DecisionChange {
+    /// The contract's view of the decision.
+    pub fn view(&self) -> nm_api::DecisionView {
+        nm_api::DecisionView { kind: self.kind.table().into(), name: self.name.clone(), before: self.before, after: self.after }
+    }
+}
+
 impl Outcome {
     /// The contract's view of the outcome.
     pub fn view(&self) -> nm_api::WorkflowResult {
@@ -72,12 +79,7 @@ impl Outcome {
             changed: self.changes.changed_messages(),
             moved: self.moved,
             filed: self.filed,
-            decision: self.decision.as_ref().map(|d| nm_api::DecisionView {
-                kind: d.kind.table().into(),
-                name: d.name.clone(),
-                before: d.before,
-                after: d.after,
-            }),
+            decision: self.decision.as_ref().map(DecisionChange::view),
             undo: self.undo.clone(),
         }
     }

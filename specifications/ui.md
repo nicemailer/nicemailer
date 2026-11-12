@@ -43,6 +43,10 @@ Lors de l'ouverture d'une fenêtre, le premier mail est systématiquement sélec
 - Le drapeau est une icône orange en fin de ligne, couleur propre, distincte du point jaune des non lus.
 - ⌘A marque tous les mails de la liste telle qu'affichée (les lignes chargées jusqu'ici), pour une action groupée ; la barre de statut dit combien ; Échap les démarque. Seulement sur l'écran des mails, sans panneau ouvert.
 
+#### Actions groupées
+
+Une action sur plusieurs mails (les mails marqués) part en **une seule** demande au noyau, quelle que soit leur nombre : lu et non lu (`u`, `U`), drapeau (`*`), tag (`t`), déplacement (`d`, `m`, Suppr, les cibles directes de Quarantine). Le noyau les traite dans une seule transaction et n'émet qu'un lot d'événements. La liste change d'un coup : lu, non lu et drapeau s'affichent tout de suite sur toutes les lignes, avant la réponse du noyau, et les mails déplacés quittent la liste ensemble ; en cas d'erreur, la liste est relue et montre l'état du noyau. Avant (novembre 2026), l'app envoyait une demande par mail, et les lignes changeaient l'une après l'autre. Un déplacement groupé s'annule d'un seul `z`, en une demande. Un mail dont l'expéditeur est suspect d'usurpation n'est pas déplacé avec les autres : il revient dans la liste et l'app pose la question pour lui seul ; un mail pour lequel la cible n'est pas permise reste aussi où il est.
+
 ### Affichage d'une conversation
 
 L'affichage est simplifié au maximum : chaque message montre ce qu'il apporte. Le noyau découpe chaque message et l'app n'affiche que le résultat (détail : `docs/thread-display.md`).

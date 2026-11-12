@@ -85,3 +85,45 @@ fn workflow_commands_report_decisions_filing_and_undo() {
     assert_eq!(c.call("undo", json!({"token": "x"})).unwrap_err()["code"], -32602);
     assert_eq!(c.call("set_address_screening", json!({"addr": "a@b.fr", "target": "todo"})).unwrap_err()["code"], -32602);
 }
+
+/// Grouped commands through the socket (`ui.md`, "Actions groupées"): one
+/// request for every marked thread.
+#[test]
+fn grouped_commands_take_every_thread_in_one_request() {
+    let dir = tempfile::tempdir().unwrap();
+    let (quarantine, [first, forged, news]) = prepare(dir.path());
+    let _core = start(dir.path());
+    let mut c = Client::connect(dir.path());
+
+    // Read, flagged, tagged: `thread_ids`.
+    let r = c.call("set_thread_seen", json!({"thread_ids": [first, forged, news], "seen": true})).unwrap();
+    assert_eq!(r["changed"], 3);
+    let r = c.call("set_thread_flagged", json!({"thread_ids": [first, news], "flagged": true})).unwrap();
+    assert_eq!(r["changed"], 2);
+    let r = c.call("tag_thread", json!({"thread_ids": [first, news], "name": "Clients"})).unwrap();
+    assert_eq!(r["changed"], 2);
+    // One of `thread_id` and `thread_ids`, not both, not neither.
+    for bad in [json!({"thread_id": first, "thread_ids": [news], "seen": true}), json!({"seen": true})] {
+        assert_eq!(c.call("set_thread_seen", bad).unwrap_err()["code"], -32602);
+    }
+
+    // Moved together: the genuine mail and the newsletter; the forged
+    // sender left for a confirmation, with what to show.
+    let r = c
+        .call(
+            "move_threads",
+            json!({"threads": [
+                {"thread_id": first, "from_folder_id": quarantine},
+                {"thread_id": forged, "from_folder_id": quarantine},
+                {"thread_id": news, "from_folder_id": quarantine}],
+                "target": "inbox"}),
+        )
+        .unwrap();
+    assert_eq!(r["moved_threads"], json!([first, news]));
+    assert_eq!(r["suspects"], json!([{"thread_id": forged, "addr": "jean@pme.fr", "verdict": "fail"}]));
+    assert_eq!(r["decisions"].as_array().unwrap().len(), 2);
+    // One token undoes both.
+    let token = r["undo"].as_str().unwrap().to_string();
+    let undone = c.call("undo", json!({"token": token})).unwrap();
+    assert_eq!(undone["moved"], 2);
+}

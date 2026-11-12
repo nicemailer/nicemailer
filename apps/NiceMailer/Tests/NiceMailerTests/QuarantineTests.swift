@@ -80,7 +80,7 @@ struct QuarantineTests {
     func pause() async { try? await Task.sleep(for: .milliseconds(250)) }
 
     func moves() -> [(thread: Int, target: String)] {
-        core.calls("move_thread").map { ($0["thread_id"] as? Int ?? 0, $0["target"] as? String ?? "") }
+        core.moveCalls().map { ($0["thread_id"] as? Int ?? 0, $0["target"] as? String ?? "") }
     }
 
     // MARK: Targets in the status bar
@@ -174,7 +174,7 @@ struct QuarantineTests {
         await goToQuarantine()
         press("*")
         _ = await eventually { !core.calls("set_thread_flagged").isEmpty }
-        #expect(core.calls("set_thread_flagged").first?["thread_id"] as? Int == 51)
+        #expect(core.calls("set_thread_flagged").first?["thread_ids"] as? [Int] == [51])
         press("j")
         #expect(model.selectedThreadId == 52)
         press("v")

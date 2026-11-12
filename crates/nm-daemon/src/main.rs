@@ -1038,6 +1038,13 @@ async fn workflow(
     to_value(result)
 }
 
+/// The threads of `thread_id` / `thread_ids` (`nm_api::thread_list`), or
+/// `INVALID_PARAMS` when both or neither are given.
+fn threads_param(one: Option<i64>, several: Option<Vec<i64>>) -> Result<Vec<i64>, RpcError> {
+    nm_api::thread_list(one, several)
+        .ok_or_else(|| RpcError::new(error_code::INVALID_PARAMS, "un seul de thread_id, thread_ids attendu"))
+}
+
 /// Page size requested by the client, or the default, clamped to the
 /// allowed range.
 fn limit(l: Option<u32>) -> u32 {
@@ -1182,6 +1189,25 @@ async fn call(core: &Arc<Core>, source: Source, req: Request) -> Result<Value, R
             let items = with_reader(core, move |s| s.search(&p.query, limit(p.limit))).await?;
             to_value(SearchResult { items, as_of })
         }
+        method::MOVE_THREADS => {
+            let p: nm_api::MoveThreadsParams = params(req.params)?;
+            if p.threads.is_empty() {
+                return Err(RpcError::new(error_code::INVALID_PARAMS, "threads vide"));
+            }
+            let opts = MoveOptions { confirm_suspect: p.confirm_suspect, auth_policy: p.auth_policy };
+            let threads: Vec<(i64, Option<i64>)> = p.threads.iter().map(|t| (t.thread_id, t.from_folder_id)).collect();
+            let core2 = core.clone();
+            let result = with_store(core, move |store| {
+                let batch = store.move_threads(&threads, p.target, opts, source)?;
+                // One batch of events for the whole move, emitted under the
+                // store lock like any command (`command`).
+                core2.events.lock().unwrap().emit(&batch.outcome.changes);
+                sync::wake(&core2, &batch.outcome.changes);
+                Ok(batch.view())
+            })
+            .await?;
+            to_value(result)
+        }
         method::MOVE_THREAD => {
             let p: MoveThreadParams = params(req.params)?;
             let opts = MoveOptions { confirm_suspect: p.confirm_suspect, auth_policy: p.auth_policy };
@@ -1201,11 +1227,24 @@ async fn call(core: &Arc<Core>, source: Source, req: Request) -> Result<Value, R
         }
         method::SET_THREAD_SEEN => {
             let p: SetThreadSeenParams = params(req.params)?;
-            command(core, move |s| s.set_thread_seen(p.thread_id, p.seen, source)).await
+            match (p.thread_id, p.thread_ids) {
+                // One thread: an unknown one is an error, as it always was.
+                (Some(id), None) => command(core, move |s| s.set_thread_seen(id, p.seen, source)).await,
+                (one, several) => {
+                    let ids = threads_param(one, several)?;
+                    command(core, move |s| s.set_threads_seen(&ids, p.seen, source)).await
+                }
+            }
         }
         method::SET_THREAD_FLAGGED => {
             let p: SetThreadFlaggedParams = params(req.params)?;
-            command(core, move |s| s.set_thread_flagged(p.thread_id, p.flagged, source)).await
+            match (p.thread_id, p.thread_ids) {
+                (Some(id), None) => command(core, move |s| s.set_thread_flagged(id, p.flagged, source)).await,
+                (one, several) => {
+                    let ids = threads_param(one, several)?;
+                    command(core, move |s| s.set_threads_flagged(&ids, p.flagged, source)).await
+                }
+            }
         }
         method::IMPORT_MBOX => {
             let p: ImportMboxParams = params(req.params)?;
@@ -1303,7 +1342,13 @@ async fn call(core: &Arc<Core>, source: Source, req: Request) -> Result<Value, R
         }
         method::TAG_THREAD => {
             let p: TagThreadParams = params(req.params)?;
-            command(core, move |s| s.tag_thread(p.thread_id, &p.name, p.remove, source)).await
+            match (p.thread_id, p.thread_ids) {
+                (Some(id), None) => command(core, move |s| s.tag_thread(id, &p.name, p.remove, source)).await,
+                (one, several) => {
+                    let ids = threads_param(one, several)?;
+                    command(core, move |s| s.tag_threads(&ids, &p.name, p.remove, source)).await
+                }
+            }
         }
         method::LIST_GROUPS => {
             let as_of = as_of();

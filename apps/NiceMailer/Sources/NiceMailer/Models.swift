@@ -262,6 +262,27 @@ struct WorkflowResult: Decodable {
     let undo: String?
 }
 
+/// What `move_threads` did (`ui.md`, "Actions groupées"): one request for
+/// every thread moved, one undo token for all; the threads left (target
+/// not allowed, sender suspected of spoofing) are listed.
+struct MoveThreadsResult: Decodable {
+    let changed: Int
+    let moved: Int
+    let filed: Int
+    let decisions: [DecisionView]
+    let undo: String?
+    let movedThreads: [Int]
+    let refused: [Int]
+    let suspects: [SuspectView]
+}
+
+/// A thread `move_threads` left for a confirmation.
+struct SuspectView: Decodable {
+    let threadId: Int
+    let addr: String
+    let verdict: String
+}
+
 /// A plain list (`list_tags`, `list_groups`).
 struct Items<T: Decodable>: Decodable {
     let items: [T]
