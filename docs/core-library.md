@@ -40,6 +40,15 @@ The pixels are found by a pass of html5ever's tokenizer over the original HTML b
 
 The file goes to `dir` (absolute), by default `~/Downloads`, named `<date> <subject>.<ext>`. An existing file is never overwritten: ` (2)`, ` (3)`… is added.
 
+`message_text {message_id}` returns, as `text`, what the app puts on the clipboard (`sc`): the headers of the `txt` export, an empty line, then the text body with its paragraphs made whole again (`nm-store/src/paragraphs.rs`), and no line break at the end. The stored body keeps the line breaks of the sender's app; `paragraphs::unwrap` removes the ones a tool put there:
+
+- a format=flowed soft break: a line of at least 40 characters ending with a space is joined to the next;
+- hard wrapping: per quote depth, the width is the widest line of at most 80 characters; the text counts as wrapped when that width is at least 60, at least two lines end within 12 characters of it, and lines longer than 80 are fewer than those. A line of at least half the width is then joined to the next when the next line's first word would not have fit after it, in characters or in bytes (some tools count bytes). A depth with too few lines to tell (two quoted lines) uses the width of the whole text, prefix included. A line longer than the width made of a single word (a URL) is joined too;
+- never joined: different quote depths, the signature after `-- `, list items (`-`, `*`, `•`, `1.`, `2)`…), lines indented by a tab or two spaces, lines with a tab, and blocks of two lines or more that all end a sentence (`.`, `!`, `?`, `:`, `;`, `…`);
+- CRLF becomes LF, trailing spaces go, runs of empty lines (whitespace, no-break spaces and invisible characters only) become one, none at either end. Between a quote and the reply, the shallower empty line stays.
+
+The pass is linear in the size of the text. Its unit tests are in `paragraphs.rs`; `crates/nm-store/tests/library.rs` checks a format=flowed mail through import.
+
 ## Attachments
 
 `get_thread` lists the attachments of each message in `attachments`: `id`, `filename` (as given by the sender, possibly null), `mime_type`, `size` in bytes, in MIME order. An image the HTML body shows (`cid:`) belongs to the body and is not listed; an image marked inline but shown by no HTML (Apple Mail puts photos in a plain text mail this way) is listed, otherwise nobody would see it. The list comes from the database, filled when the message arrives: opening a thread never reads the raw message.

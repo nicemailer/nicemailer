@@ -606,8 +606,11 @@ private final class Runner {
             // Where the fonts and translations were found (`AppResources`):
             // `Contents/Resources` of NiceMailer.app, or the build folder.
             "resources_bundle": AppResources.bundle.bundlePath,
-            // What the private pasteboard holds (a link copied with `l`).
+            // What the private pasteboard holds (a link copied with `l`, a
+            // mail copied with `sc`), and its number of lines (`sc` keeps
+            // one line per paragraph).
             "pasteboard": controller.pasteboard.string(forType: .string) ?? "",
+            "pasteboard_lines": "\((controller.pasteboard.string(forType: .string) ?? "").split(separator: "\n", omittingEmptySubsequences: false).count)",
             "reader_subject": m.openThread?.subject ?? "",
             "unsubscribe": m.unsubscribeOffer.map {
                 $0.senderUnsubscribedAt != nil ? "done" : "\($0.source):\($0.method)"

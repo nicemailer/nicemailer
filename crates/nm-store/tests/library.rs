@@ -322,6 +322,48 @@ fn exports_a_message_as_eml_txt_and_md_without_overwriting() {
 }
 
 #[test]
+fn the_clipboard_text_has_one_line_per_paragraph() {
+    // A format=flowed mail (Apple Mail, Thunderbird) with CRLF line ends,
+    // a copy and a quote: as stored, its paragraphs are cut every 72
+    // characters; the clipboard text joins them back.
+    let dir = tempfile::tempdir().unwrap();
+    let raw = RawStore::open(dir.path()).unwrap();
+    let store = Mutex::new(Store::open_in_memory().unwrap());
+    let mbox = dir.path().join("a.mbox");
+    let mail = "Subject: Réunion\r\nFrom: Alice <alice@a.example>\r\nTo: me@x.example\r\nCc: Bob <bob@b.example>\r\n\
+        Message-ID: <2@a>\r\nContent-Type: text/plain; charset=utf-8; format=flowed\r\n\r\n\
+        Bonjour,\r\n\r\n\r\nVoici le compte rendu de la réunion de ce matin, avec les \r\n\
+        décisions prises et les points restant à trancher.\r\n\r\n\
+        > Pouvez-vous m'envoyer le compte rendu dès qu'il sera prêt, avec la \r\n\
+        > liste des participants ?\r\n\r\nAlice\r\n";
+    std::fs::write(&mbox, format!("From a Tue Jun 23 19:20:56 2020\n{mail}")).unwrap();
+    let opts = ImportOptions {
+        path: mbox,
+        account: "arch".into(),
+        address: "me@x.example".into(),
+        mark_correspondents: false,
+        source: Source::Cli,
+        batch_size: 10,
+        lock_budget: nm_store::import::LOCK_BUDGET,
+    };
+    import_mbox(&store, &raw, &opts, &mut |_, _, _| {}).unwrap();
+    let store = store.into_inner().unwrap();
+    let id: i64 = store.conn().query_row("SELECT id FROM message", [], |r| r.get(0)).unwrap();
+
+    assert_eq!(
+        store.message_text(id).unwrap(),
+        "From: Alice <alice@a.example>\nTo: me@x.example\nCc: Bob <bob@b.example>\nDate: 2020-06-23 19:20 UTC\n\
+         Subject: Réunion\n\n\
+         Bonjour,\n\n\
+         Voici le compte rendu de la réunion de ce matin, avec les décisions prises et les points restant à \
+         trancher.\n\n\
+         > Pouvez-vous m'envoyer le compte rendu dès qu'il sera prêt, avec la liste des participants ?\n\n\
+         Alice"
+    );
+    assert!(matches!(store.message_text(999), Err(StoreError::NotFound(_))));
+}
+
+#[test]
 fn several_folders_are_listed_together_newest_first_without_duplicates() {
     let store = seeded();
     let inbox = folder_id(&store, FolderRole::Inbox);

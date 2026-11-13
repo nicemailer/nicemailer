@@ -260,6 +260,10 @@ enum Fixture {
             return ["group_id": 1, "addr": "sender1@example.org", "changed": true]
         case "export_message":
             return ["path": "/tmp/x.eml"]
+        case "message_text":
+            // Message ids are thread ids × 10 in the fixture.
+            let id = params["message_id"] as? Int ?? 0
+            return ["text": "From: sender\(id / 10)@example.org\nSubject: Subject \(id / 10)\n\nParagraph of \(id)."]
         case "unsubscribe":
             // Message ids are thread ids × 10 in the fixture.
             let thread = (params["message_id"] as? Int ?? 0) / 10

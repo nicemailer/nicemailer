@@ -186,6 +186,18 @@ expect html_offset = 0
 key v
 key h
 expect body_format = text
+# sc, the first row of the menu s: the mail (its headers, then its text)
+# on the pasteboard, nothing saved. Its 300 lines are 300 sentences, one
+# per line: they stay apart. 4 header lines, an empty line, the 300
+# lines, an empty line, the unsubscribe line: 307.
+key s
+key c
+expect pasteboard ~ Subject: Un long mail
+expect pasteboard ~ Ligne 300 du long mail
+expect pasteboard ~ Se désabonner
+expect pasteboard_lines = 307
+expect flash ~ copied to the clipboard
+expect export_files = 4
 # ctrl-d moves the list, not the mail.
 key ctrl-d
 expect reader_offset = 0
@@ -212,8 +224,10 @@ key s
 key M
 expect export_files = 9
 expect opened_file ~ .md
-# ⌘-Return on a highlighted row (the second, "as text file"): the same.
+# ⌘-Return on a highlighted row (the third, "as text file", after "to
+# clipboard" and "as .eml file"): the same.
 key s
+key down
 key down
 key down
 key cmd-ret

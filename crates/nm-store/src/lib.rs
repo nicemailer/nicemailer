@@ -56,6 +56,7 @@ pub mod phones;
 pub mod codes;
 pub mod mbox;
 pub mod outgoing;
+pub mod paragraphs;
 mod migrations;
 pub mod pool;
 mod queries;

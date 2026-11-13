@@ -351,6 +351,47 @@ extension AppModel {
     /// Files `export(_:open:)` opens at most: beyond, they are only saved.
     static let maxOpened = 5
 
+    /// `sc` (`ui.md`, menu `s`): puts the text of the latest mail of every
+    /// target thread (the marked ones, or the one under the cursor) on
+    /// `pasteboard`, in the order of the list. The core gives each text
+    /// with its paragraphs joined back, one line each (`message_text`):
+    /// pasted into a document, a paragraph stays a paragraph, without the
+    /// line breaks the sender's mail app put every 72 characters. The
+    /// pasteboard is the controller's: the general one, a private one in
+    /// tests and UI scripts.
+    func copyText(to pasteboard: NSPasteboard) {
+        guard let client = core, !targetThreads.isEmpty else { return }
+        Task {
+            var texts: [String] = []
+            var subjects: [String] = []
+            var firstError: Error?
+            for thread in await targetThreadViews(client: client) {
+                guard let m = thread.messages.last else { continue }
+                do {
+                    let r: MessageTextResult = try await client.call("message_text", ["message_id": m.id])
+                    texts.append(r.text)
+                    subjects.append(thread.subject)
+                } catch { firstError = firstError ?? error }
+            }
+            guard !texts.isEmpty else {
+                if let firstError { report(firstError) }
+                return
+            }
+            pasteboard.clearContents()
+            pasteboard.setString(Self.clipboardText(texts), forType: .string)
+            flash = texts.count == 1
+                ? L("“%@” copied to the clipboard", Format.flashSubject(subjects[0]))
+                : L("%lld mails copied to the clipboard", texts.count)
+        }
+    }
+
+    /// The texts of several mails as one: an empty line between two mails,
+    /// as between two paragraphs; each starts with its `From:` line, which
+    /// tells where the next one begins. A pure function, tested alone.
+    nonisolated static func clipboardText(_ texts: [String]) -> String {
+        texts.joined(separator: "\n\n")
+    }
+
     /// Attachments of the open thread, message by message (`l`, tiles).
     var attachments: [AttachmentView] { openThread?.messages.flatMap(\.attachments) ?? [] }
 

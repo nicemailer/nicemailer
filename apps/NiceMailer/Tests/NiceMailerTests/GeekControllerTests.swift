@@ -1320,6 +1320,51 @@ struct GeekControllerTests {
         #expect(opened.isEmpty)
     }
 
+    // MARK: Copying to the clipboard (sc)
+
+    @Test func scCopiesTheTextOfTheMailUnderTheCursor() async {
+        let rows = controller.menuEntries(.save)
+        #expect(rows.first?.key == "c" && rows.first?.label == L("to clipboard"))
+        press("s"); press("c")
+        #expect(await eventually { controller.pasteboard.string(forType: .string) != nil })
+        #expect(core.calls("message_text").map { $0["message_id"] as? Int } == [10])
+        #expect(controller.pasteboard.string(forType: .string) == "From: sender1@example.org\nSubject: Subject 1\n\nParagraph of 10.")
+        #expect(model.flash == L("“%@” copied to the clipboard", "Subject 1"))
+        #expect(controller.overlay == .none)
+        // Nothing saved to a file.
+        #expect(core.calls("export_message").isEmpty)
+    }
+
+    @Test func scCopiesEveryMarkedMailInTheOrderOfTheList() async {
+        press("J"); press("J")
+        #expect(model.marked == [1, 2, 3])
+        press("s"); press("c")
+        #expect(await eventually { core.calls("message_text").count == 3 })
+        #expect(await eventually { model.flash == L("%lld mails copied to the clipboard", 3) })
+        let text = controller.pasteboard.string(forType: .string) ?? ""
+        #expect(text.components(separatedBy: "\n\nFrom: ").count == 3)
+        #expect(text.hasPrefix("From: sender1@") && text.hasSuffix("Paragraph of 30."))
+    }
+
+    @Test func scWithAFailingCoreLeavesThePasteboardAndSaysWhy() async {
+        controller.pasteboard.clearContents()
+        controller.pasteboard.setString("before", forType: .string)
+        core.handler = { method, params in
+            guard method == "message_text" else { return Fixture.answer(method, params) }
+            return CoreClient.RPCError(code: CoreClient.RPCError.notFound, message: "message not found")
+        }
+        press("s"); press("c")
+        #expect(await eventually { model.lastError != nil })
+        #expect(controller.pasteboard.string(forType: .string) == "before")
+        #expect(model.flash == nil)
+    }
+
+    @Test func clipboardTextPutsAnEmptyLineBetweenTwoMails() {
+        #expect(AppModel.clipboardText(["A\n\nb"]) == "A\n\nb")
+        #expect(AppModel.clipboardText(["A", "B"]) == "A\n\nB")
+        #expect(AppModel.clipboardText([]) == "")
+    }
+
     @Test func theSaveMenuShowsTheSecondKeyAndCommandReturnRunsIt() async {
         let rows = controller.menuEntries(.save)
         let text = rows.first { $0.key == "t" }

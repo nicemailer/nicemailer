@@ -27,6 +27,33 @@ pub struct UnsubscribeTarget {
 }
 use crate::{ChangeSet, Result, Store, StoreError, refresh_thread};
 
+/// A message as the exports show it (`Store::message_parts`).
+struct MessageParts {
+    subject: String,
+    /// `Name <addr>`, or the bare address.
+    from: String,
+    /// Recipients, `Name <addr>` joined by ", "; empty when none.
+    to: String,
+    cc: String,
+    /// `YYYY-MM-DD HH:MM`, local time (`format_datetime`).
+    when: String,
+    /// The stored text body, as is.
+    body: String,
+    /// Hash of the raw message, for `.eml`.
+    hash: Option<Vec<u8>>,
+}
+
+/// The header lines of the text export and of the clipboard text, each
+/// ended by a line break; `Cc` only when there is one.
+fn text_headers(from: &str, to: &str, cc: &str, when: &str, subject: &str) -> String {
+    let mut s = format!("From: {from}\nTo: {to}\n");
+    if !cc.is_empty() {
+        s.push_str(&format!("Cc: {cc}\n"));
+    }
+    s.push_str(&format!("Date: {when}\nSubject: {subject}\n"));
+    s
+}
+
 /// Splits a `<number>:<number>` cursor (date and id of the last row).
 fn parse_pair(cursor: &str) -> Result<(i64, i64)> {
     let bad = || StoreError::InvalidParams(format!("curseur invalide : {cursor}"));
@@ -80,6 +107,54 @@ impl Store {
     /// The file is named `<date> <subject>.<ext>`; an existing file is never
     /// overwritten, " (2)", " (3)"… is added instead.
     pub fn export_message(&self, raw: &RawStore, message_id: i64, format: ExportFormat, dir: &Path) -> Result<PathBuf> {
+        let MessageParts { subject, from, to, cc, when, body, hash } = self.message_parts(message_id)?;
+        let (bytes, ext): (Vec<u8>, &str) = match format {
+            ExportFormat::Eml => {
+                let hash = hash.ok_or_else(|| StoreError::NotFound(format!("brut du message {message_id}")))?;
+                let hash: crate::raw::Hash =
+                    hash.try_into().map_err(|_| StoreError::Io("hash de brut invalide".into()))?;
+                (raw.read(&hash).map_err(|e| crate::raw_error(&hash, e))?, "eml")
+            }
+            ExportFormat::Txt => {
+                let mut s = text_headers(&from, &to, &cc, &when, &subject);
+                s.push_str(&format!("\n{body}\n"));
+                (s.into_bytes(), "txt")
+            }
+            ExportFormat::Md => {
+                let mut s = format!("# {}\n\n- **From:** {from}\n- **To:** {}\n", md_inline(&subject), to);
+                if !cc.is_empty() {
+                    s.push_str(&format!("- **Cc:** {cc}\n"));
+                }
+                s.push_str(&format!("- **Date:** {when}\n\n{body}\n"));
+                (s.into_bytes(), "md")
+            }
+        };
+        let base = format!("{} {}", &when[..10], file_safe(&subject));
+        write_new_file(dir, &base, ext, &bytes)
+    }
+
+    /// The text of one message for the clipboard (`ui.md`, menu `s`, "c
+    /// to clipboard"): the headers of the text file, then the text body
+    /// with each paragraph on one line (`paragraphs::unwrap`), so that it
+    /// pastes into a document without the line breaks of the sender's
+    /// mail app. No line break at the end.
+    pub fn message_text(&self, message_id: i64) -> Result<String> {
+        let MessageParts { subject, from, to, cc, when, body, .. } = self.message_parts(message_id)?;
+        let mut s = text_headers(&from, &to, &cc, &when, &subject);
+        let body = crate::paragraphs::unwrap(&body);
+        if body.is_empty() {
+            // No body: the headers alone, without the empty line after them.
+            s.pop();
+        } else {
+            s.push('\n');
+            s.push_str(&body);
+        }
+        Ok(s)
+    }
+
+    /// What the exports of a message are made of, read in one query plus
+    /// one per recipient role.
+    fn message_parts(&self, message_id: i64) -> Result<MessageParts> {
         type Row = (String, Option<String>, Option<String>, i64, Option<Vec<u8>>, Option<String>);
         let (subject, from_name, from_addr, date, hash, text): Row = self
             .conn
@@ -112,37 +187,15 @@ impl Store {
             (None, Some(a)) => a.clone(),
             _ => String::new(),
         };
-        let when = format_datetime(date);
-        let body = text.unwrap_or_default();
-
-        let (bytes, ext): (Vec<u8>, &str) = match format {
-            ExportFormat::Eml => {
-                let hash = hash.ok_or_else(|| StoreError::NotFound(format!("brut du message {message_id}")))?;
-                let hash: crate::raw::Hash =
-                    hash.try_into().map_err(|_| StoreError::Io("hash de brut invalide".into()))?;
-                (raw.read(&hash).map_err(|e| crate::raw_error(&hash, e))?, "eml")
-            }
-            ExportFormat::Txt => {
-                let mut s = format!("From: {from}\nTo: {}\n", recipients("to")?);
-                let cc = recipients("cc")?;
-                if !cc.is_empty() {
-                    s.push_str(&format!("Cc: {cc}\n"));
-                }
-                s.push_str(&format!("Date: {when}\nSubject: {subject}\n\n{body}\n"));
-                (s.into_bytes(), "txt")
-            }
-            ExportFormat::Md => {
-                let mut s = format!("# {}\n\n- **From:** {from}\n- **To:** {}\n", md_inline(&subject), recipients("to")?);
-                let cc = recipients("cc")?;
-                if !cc.is_empty() {
-                    s.push_str(&format!("- **Cc:** {cc}\n"));
-                }
-                s.push_str(&format!("- **Date:** {when}\n\n{body}\n"));
-                (s.into_bytes(), "md")
-            }
-        };
-        let base = format!("{} {}", &when[..10], file_safe(&subject));
-        write_new_file(dir, &base, ext, &bytes)
+        Ok(MessageParts {
+            subject,
+            from,
+            to: recipients("to")?,
+            cc: recipients("cc")?,
+            when: format_datetime(date),
+            body: text.unwrap_or_default(),
+            hash,
+        })
     }
 
     // ----------------------------------------------------------------

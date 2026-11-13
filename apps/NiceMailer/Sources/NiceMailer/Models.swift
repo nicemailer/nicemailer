@@ -340,6 +340,12 @@ struct ExportResult: Decodable {
     let path: String
 }
 
+/// Result of `message_text`: the text of a mail for the clipboard, each
+/// paragraph on one line (`nm-store`, `paragraphs.rs`).
+struct MessageTextResult: Decodable {
+    let text: String
+}
+
 /// How to unsubscribe from a mailing list, as found by the core at
 /// reception.
 struct UnsubscribeView: Decodable, Hashable {

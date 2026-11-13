@@ -57,7 +57,7 @@ use std::sync::{Arc, Mutex};
 use anyhow::Context;
 use clap::Parser;
 use nm_api::{
-    AttachmentFileView, CommandResult, DEFAULT_LIMIT, Event, ExportMessageParams, ExportResult, FolderList,
+    AttachmentFileView, CommandResult, DEFAULT_LIMIT, Event, ExportMessageParams, ExportResult, FolderList, MessageTextParams, MessageTextResult,
     GetAttachmentParams, GetThreadParams, LocateMessageParams, UnsubscribeParams, UnsubscribeResult,
     GroupMemberResult, HelloParams, HelloResult, ImportMboxParams, ImportStatus, Items, ListContactsParams,
     ListHistoryParams, ListTagsParams, ListThreadsParams, MAX_LIMIT, MoveThreadParams,
@@ -1268,6 +1268,12 @@ async fn call(core: &Arc<Core>, source: Source, req: Request) -> Result<Value, R
             let raw = core.raw.clone();
             let path = sync::repaired(core, with_reader(core, move |s| s.export_message(&raw, p.message_id, p.format, &dir)).await).await?;
             to_value(ExportResult { path: path.display().to_string() })
+        }
+        method::MESSAGE_TEXT => {
+            // `ui.md`, menu `s`: the client puts the text on the clipboard.
+            let p: MessageTextParams = params(req.params)?;
+            let text = with_reader(core, move |s| s.message_text(p.message_id)).await?;
+            to_value(MessageTextResult { text })
         }
         method::UNSUBSCRIBE => {
             // `ui.md`, "Désabonnement". With one click (RFC 8058), the core

@@ -112,6 +112,16 @@
         }
       }
     },
+    "%lld mails copied to the clipboard": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld mails copiés dans le presse-papiers"
+          }
+        }
+      }
+    },
     "%lld mails filed": {
       "localizations": {
         "fr": {
@@ -3297,6 +3307,16 @@
         }
       }
     },
+    "to clipboard": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "dans le presse-papiers"
+          }
+        }
+      }
+    },
     "to: %@": {
       "localizations": {
         "fr": {
@@ -3556,6 +3576,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "··· signature"
+          }
+        }
+      }
+    },
+    "“%@” copied to the clipboard": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "« %@ » copié dans le presse-papiers"
           }
         }
       }

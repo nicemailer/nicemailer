@@ -970,6 +970,12 @@ final class GeekController {
             return entries
         case .save:
             return [
+                // First: the most frequent use, the mail pasted elsewhere
+                // (a note, a document, a ticket), its paragraphs whole.
+                Entry(key: "c", label: L("to clipboard")) { [weak self] in
+                    guard let self else { return }
+                    model.copyText(to: pasteboard)
+                },
                 Entry(key: "e", label: L("as .eml file")) { [model] in model.export("eml") },
                 // The capital saves, then opens the file in front, in the
                 // app macOS gives it (TextEdit, Obsidian…): `T`, `M`, or

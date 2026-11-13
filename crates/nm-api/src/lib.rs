@@ -60,6 +60,9 @@ pub mod method {
     pub const SET_BODY_FORMAT: &str = "set_body_format";
     /// Writes one message to a file (.eml, .txt, .md).
     pub const EXPORT_MESSAGE: &str = "export_message";
+    /// The text of one message, each paragraph on one line, for the
+    /// clipboard.
+    pub const MESSAGE_TEXT: &str = "message_text";
     pub const GET_ATTACHMENT: &str = "get_attachment";
     pub const UNSUBSCRIBE: &str = "unsubscribe";
     /// Audit log, newest first (`tracabilite.md`).
@@ -1434,6 +1437,22 @@ pub struct ExportMessageParams {
     /// Absolute directory to write into; default `~/Downloads`.
     #[serde(default)]
     pub dir: Option<String>,
+}
+
+/// Parameters of `message_text`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MessageTextParams {
+    pub message_id: i64,
+}
+
+/// Result of `message_text`: the headers of the text export (From, To, Cc,
+/// Date, Subject), an empty line, then the text body with each paragraph
+/// on one line and one empty line between paragraphs, the line breaks of
+/// the sender's mail app removed (format=flowed, hard wrapping). Made to
+/// be pasted into a document; no line break at the end.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MessageTextResult {
+    pub text: String,
 }
 
 /// Parameters of `unsubscribe`.
