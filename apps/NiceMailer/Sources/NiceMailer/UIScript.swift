@@ -531,6 +531,9 @@ private final class Runner {
             "thread_count": "\(m.threads.count)",
             "selected": index.map(String.init) ?? "-1",
             "selected_subject": sel?.subject ?? "",
+            // The sender column of the selected row, as drawn: "→ Alice"
+            // when the user wrote the latest mail (`ui.md`, "Liste").
+            "selected_sender": sel.map(GeekSender.plain) ?? "",
             "selected_unread": "\(sel?.unreadCount ?? 0)",
             "selected_flagged": "\(sel?.isFlagged ?? false)",
             "selected_tags": sel?.tags.joined(separator: ",") ?? "",

@@ -75,7 +75,7 @@ fn store_of(mails: &[(&str, &str, &str, &str)], replies: &[(usize, usize)]) -> (
 /// The indexes in `MAILS` of the threads matching `filter`, sorted.
 fn found(env: &(Store, Vec<i64>), filter: ThreadFilter) -> Vec<usize> {
     let (store, folders) = env;
-    let (items, next) = store.list_threads_in(folders, None, 100, ThreadSort::Received, &filter).unwrap();
+    let (items, next) = store.list_threads_in(folders, None, 100, ThreadSort::Received, &filter, &[]).unwrap();
     assert!(next.is_none());
     let index = |items: &[nm_api::ThreadSummary]| {
         let mut out: Vec<usize> =
@@ -85,7 +85,7 @@ fn found(env: &(Store, Vec<i64>), filter: ThreadFilter) -> Vec<usize> {
     };
     // Every folder is what the virtual folder Everything lists, with its
     // own query: both must find the same threads.
-    let (everything, next) = store.list_everything(None, None, 100, ThreadSort::Received, &filter).unwrap();
+    let (everything, next) = store.list_everything(None, None, 100, ThreadSort::Received, &filter, &[]).unwrap();
     assert!(next.is_none());
     assert_eq!(index(&everything), index(&items), "Everything and every folder differ for {filter:?}");
     index(&items)
@@ -221,7 +221,7 @@ fn in_everything_the_criteria_see_every_listed_folder() {
     ];
     let (store, folders) = store_of(mails, &[(0, 1)]);
     let list = |filter: ThreadFilter| -> Vec<String> {
-        let (items, _) = store.list_threads_in(&folders, None, 100, ThreadSort::Received, &filter).unwrap();
+        let (items, _) = store.list_threads_in(&folders, None, 100, ThreadSort::Received, &filter, &[]).unwrap();
         items.into_iter().map(|t| t.subject).collect()
     };
     let all = list(ThreadFilter::default());
@@ -250,7 +250,7 @@ fn a_word_with_punctuation_is_found_as_written() {
     ];
     let env = store_of(mails, &[]);
     let found = |env: &(Store, Vec<i64>), filter: ThreadFilter| -> Vec<usize> {
-        let (items, _) = env.0.list_threads_in(&env.1, None, 100, ThreadSort::Received, &filter).unwrap();
+        let (items, _) = env.0.list_threads_in(&env.1, None, 100, ThreadSort::Received, &filter, &[]).unwrap();
         let mut out: Vec<usize> = items.iter().map(|t| mails.iter().position(|m| m.2 == t.subject).unwrap()).collect();
         out.sort();
         out

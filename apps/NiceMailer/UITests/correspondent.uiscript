@@ -1,0 +1,33 @@
+# The sender column names the person a conversation is with (`ui.md`,
+# "Liste"), not the user who answered last; "→" marks the conversations
+# whose latest mail is the user's. `me@example.com` is the address of the
+# archive account "fixture". The mail "Invitation" comes from
+# fixtures/correspondent.mbox, imported for this scenario only.
+key ;
+key a
+key @
+type fixture
+key ret
+expect account = fixture
+expect folder = Archive
+# A newsletter: its author, unmarked.
+expect selected_subject = La lettre de novembre
+expect selected_sender = Lettre
+# Alice asked, the user answered last: Alice, marked. (Before: the
+# user's own address.)
+key j
+expect selected_subject = Rapport mensuel
+expect selected_sender = → Alice
+snap list
+# Bob wrote the latest mail of "Chantier": his name alone.
+key j
+key j
+expect selected_subject = Chantier
+expect selected_sender = Bob
+# A mail the user wrote alone, in Sent: its first recipient, by name.
+key ;
+key s
+expect folder = Sent
+expect selected_subject = Invitation
+expect selected_sender = → Carol
+snap sent

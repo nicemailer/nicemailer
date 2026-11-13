@@ -154,7 +154,7 @@ fn a_migrated_database_lists_everything() {
     version_1(&path);
     let store = Store::open(&path).unwrap();
     let (items, _) = store
-        .list_everything(None, None, 10, nm_api::ThreadSort::Modified, &nm_api::ThreadFilter::default())
+        .list_everything(None, None, 10, nm_api::ThreadSort::Modified, &nm_api::ThreadFilter::default(), &[])
         .unwrap();
     assert_eq!(items.len(), 1);
     // Version 9: shown in its folder, the Inbox, not Sent where its latest
@@ -186,7 +186,7 @@ fn a_migrated_database_lists_everything() {
     assert_eq!(main_tables, 0);
     // The From filter goes through the address, whose name was filled in.
     let from = nm_api::ThreadFilter { from: vec!["berès".into()], ..Default::default() };
-    let (items, _) = store.list_everything(None, None, 10, nm_api::ThreadSort::Received, &from).unwrap();
+    let (items, _) = store.list_everything(None, None, 10, nm_api::ThreadSort::Received, &from, &[]).unwrap();
     assert_eq!(items.len(), 1);
 }
 

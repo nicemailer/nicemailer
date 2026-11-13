@@ -606,6 +606,37 @@ struct RowLayout: Equatable {
     }
 }
 
+/// The sender column of a list row (`ui.md`, "Liste").
+enum GeekSender {
+    /// The arrow shown before the correspondent when the user wrote the
+    /// latest mail. A symbol, the same in every language.
+    static let mark = "→"
+
+    /// What the column says: "Alice", or "→ Alice" when the user spoke
+    /// last.
+    static func plain(_ thread: ThreadSummary) -> String {
+        thread.lastIsMine ? "\(mark) \(thread.correspondentName)" : thread.correspondentName
+    }
+
+    /// The same, the arrow muted: it marks the row, the name is what one
+    /// reads.
+    ///
+    /// Swift note: an `AttributedString` carries styles on ranges of its
+    /// text; a `Text` built from it draws each range in its own style.
+    static func text(_ thread: ThreadSummary) -> AttributedString {
+        let name = AttributedString(thread.correspondentName)
+        guard thread.lastIsMine else { return name }
+        var arrow = AttributedString("\(mark) ")
+        arrow.foregroundColor = Palette.muted
+        return arrow + name
+    }
+
+    /// What VoiceOver reads: the name, then that the user wrote last.
+    static func spoken(_ thread: ThreadSummary) -> String {
+        thread.lastIsMine ? L("%@, you wrote last", thread.correspondentName) : thread.correspondentName
+    }
+}
+
 /// One list row: mark bar, unread dot, date, sender, paperclip, subject and
 /// tags, (in "Everything") folder, count, flag. Every column but the
 /// subject has a fixed width.
@@ -627,9 +658,14 @@ private struct GeekThreadRow: View {
             Text(thread.unreadCount > 0 ? "●" : " ").foregroundStyle(Palette.unread).frame(width: layout.char)
             Text(Format.geekListDate(thread.dateLastReceived)).foregroundStyle(Palette.muted)
                 .frame(width: layout.date, alignment: .leading)
-            Text(thread.participants.last ?? "")
+            // The person the conversation is with, not the user who
+            // answered last; "→" says the user spoke last and the
+            // conversation waits on them (`ui.md`, "Liste"). One `Text`,
+            // so a long name is cut after the arrow, never the arrow.
+            Text(GeekSender.text(thread))
                 .fontWeight(thread.unreadCount > 0 ? .bold : .regular)
                 .frame(width: layout.sender, alignment: .leading)
+                .accessibilityLabel(GeekSender.spoken(thread))
             Group {
                 if thread.hasAttachments {
                     Image(systemName: "paperclip")

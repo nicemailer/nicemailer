@@ -39,6 +39,7 @@ Lors de l'ouverture d'une fenêtre, le premier mail est systématiquement sélec
 ### Liste
 
 - Chaque ligne : le point des non lus, la date, l'expéditeur, un trombone s'il y a des pièces jointes, le sujet et ses tags, (dans Everything) le dossier, le nombre de messages de la conversation, le drapeau.
+- La colonne de l'expéditeur nomme **la personne avec qui l'on correspond**, pas l'auteur du dernier mail (novembre 2026) : dès qu'on avait répondu, l'auteur du dernier mail était soi-même, ce qui ne disait rien. Elle montre le dernier auteur qui n'est pas soi ; pour un mail qu'on a écrit seul, son premier destinataire (To avant Cc). Une flèche grisée **→** devant le nom dit qu'on a écrit le dernier mail, et que la conversation attend l'autre : « → Alice ». Un brouillon non envoyé ne compte pas : une réponse en cours d'écriture laisse la ligne comme elle était. Un mail est le nôtre selon la règle des en-têtes allégés de la lecture : son expéditeur est une des adresses de la boîte, ou il est dans Sent ou Drafts. C'est le noyau qui le décide, et l'app qui l'affiche.
 - Le trombone est seul, sans chiffre, et placé avant le sujet : à côté du nombre de messages en fin de ligne, « 📎 3 » se lirait comme trois pièces jointes.
 - Le drapeau est une icône orange en fin de ligne, couleur propre, distincte du point jaune des non lus.
 - ⌘A marque tous les mails de la liste telle qu'affichée (les lignes chargées jusqu'ici), pour une action groupée ; la barre de statut dit combien ; Échap les démarque. Seulement sur l'écran des mails, sans panneau ouvert.

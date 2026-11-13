@@ -27,7 +27,7 @@ fn everything(store: &Store, filter: &ThreadFilter) -> Vec<ThreadSummary> {
     let mut out = Vec::new();
     let mut cursor: Option<String> = None;
     loop {
-        let (items, next) = store.list_everything(None, cursor.as_deref(), 40, ThreadSort::Received, filter).unwrap();
+        let (items, next) = store.list_everything(None, cursor.as_deref(), 40, ThreadSort::Received, filter, &[]).unwrap();
         out.extend(items);
         match next {
             Some(c) => cursor = Some(c),
@@ -374,7 +374,7 @@ fn several_folders_are_listed_together_newest_first_without_duplicates() {
     let mut all = vec![];
     let mut cursor: Option<String> = None;
     loop {
-        let (items, next) = store.list_threads_in(&[inbox, archive], cursor.as_deref(), 7, ThreadSort::Received, &Default::default()).unwrap();
+        let (items, next) = store.list_threads_in(&[inbox, archive], cursor.as_deref(), 7, ThreadSort::Received, &Default::default(), &[]).unwrap();
         all.extend(items);
         match next {
             Some(c) => cursor = Some(c),
@@ -387,7 +387,7 @@ fn several_folders_are_listed_together_newest_first_without_duplicates() {
     assert!(all.windows(2).all(|w| (w[0].date_last_received, w[0].id) > (w[1].date_last_received, w[1].id)));
     // Each row keeps its own folder, for moves.
     assert!(all.iter().all(|t| t.folder_id == inbox || t.folder_id == archive));
-    assert!(store.list_threads_in(&[], None, 10, ThreadSort::Received, &Default::default()).unwrap().0.is_empty());
+    assert!(store.list_threads_in(&[], None, 10, ThreadSort::Received, &Default::default(), &[]).unwrap().0.is_empty());
 }
 
 /// Threads of the Inbox narrowed by `filter`, all pages.
@@ -396,7 +396,7 @@ fn filtered(store: &Store, filter: &nm_api::ThreadFilter) -> Vec<nm_api::ThreadS
     let mut all = vec![];
     let mut cursor: Option<String> = None;
     loop {
-        let (items, next) = store.list_threads_in(&[inbox], cursor.as_deref(), 9, ThreadSort::Received, filter).unwrap();
+        let (items, next) = store.list_threads_in(&[inbox], cursor.as_deref(), 9, ThreadSort::Received, filter, &[]).unwrap();
         all.extend(items);
         match next {
             Some(c) => cursor = Some(c),
@@ -479,7 +479,7 @@ fn a_thread_in_several_listed_folders_is_listed_once() {
     let mut cursor: Option<String> = None;
     loop {
         let (items, next) =
-            store.list_threads_in(&all, cursor.as_deref(), 11, ThreadSort::Received, &Default::default()).unwrap();
+            store.list_threads_in(&all, cursor.as_deref(), 11, ThreadSort::Received, &Default::default(), &[]).unwrap();
         rows.extend(items);
         match next {
             Some(c) => cursor = Some(c),

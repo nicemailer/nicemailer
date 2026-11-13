@@ -565,7 +565,7 @@ fn an_address_without_a_name_gets_the_first_one_a_mail_gives() {
     // The From filter finds Dave by the name of his address.
     let filter = nm_api::ThreadFilter { from: vec!["durand".into()], ..Default::default() };
     let store = env.store.lock().unwrap();
-    let (items, _) = store.list_everything(None, None, 10, nm_api::ThreadSort::Received, &filter).unwrap();
+    let (items, _) = store.list_everything(None, None, 10, nm_api::ThreadSort::Received, &filter, &[]).unwrap();
     assert_eq!(items.len(), 3);
 }
 

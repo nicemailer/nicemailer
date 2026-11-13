@@ -890,6 +890,19 @@ pub struct ThreadSummary {
     /// newest, without duplicates. Like the counters, without the mails of
     /// Deleted, Junk and Banned unless the thread has only such mails.
     pub participants: Vec<String>,
+    /// The person the conversation is with, for the sender column of a
+    /// list (`ui.md`, "Liste"): the author of its latest mail that the
+    /// user did not write; when the user wrote every mail, the first
+    /// recipient of the latest one. A name if the header gives one, else
+    /// the address. `None` when the mails name nobody (no `From`, no
+    /// recipient). Counted on the same mails as `participants`; drafts
+    /// only count in a conversation of drafts alone.
+    #[serde(default)]
+    pub correspondent: Option<String>,
+    /// The user wrote the latest mail: the conversation waits on the
+    /// correspondent. The list marks it before the name ("→ Alice").
+    #[serde(default)]
+    pub last_is_mine: bool,
     /// Beginning of the latest message's text.
     pub snippet: Option<String>,
     /// Unix timestamp (seconds) of the thread's latest mail, sent or

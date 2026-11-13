@@ -114,7 +114,7 @@ impl Env {
 
     /// Subjects of the threads of `folder` under `filter`.
     fn subjects(&self, folder: i64, filter: &ThreadFilter) -> Vec<String> {
-        let (rows, _) = self.store.list_threads_in(&[folder], None, 50, ThreadSort::default(), filter).unwrap();
+        let (rows, _) = self.store.list_threads_in(&[folder], None, 50, ThreadSort::default(), filter, &[]).unwrap();
         let mut s: Vec<String> = rows.into_iter().map(|t| t.subject).collect();
         s.sort();
         s

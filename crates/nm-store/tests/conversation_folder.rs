@@ -81,7 +81,7 @@ impl Env {
 
     /// Every page of the folders `folders` listed together.
     fn list(&self, folders: &[i64], filter: &ThreadFilter) -> Vec<ThreadSummary> {
-        pages(|c| self.store.list_threads_in(folders, c, 2, ThreadSort::Received, filter).unwrap())
+        pages(|c| self.store.list_threads_in(folders, c, 2, ThreadSort::Received, filter, &[]).unwrap())
     }
 
     /// The ids listed in the folder of `role`, of both accounts.
@@ -130,7 +130,7 @@ fn a_reply_lists_the_conversation_in_its_folder_and_in_sent() {
     assert_eq!(inbox.folder_id, env.folder(0, Some(FolderRole::Inbox)));
     assert_eq!(sent.folder_id, env.folder(0, Some(FolderRole::Sent)));
     // Everything and All Mail show it once, in its folder.
-    let everything = pages(|c| env.store.list_everything(None, c, 10, ThreadSort::Received, &ThreadFilter::default()).unwrap());
+    let everything = pages(|c| env.store.list_everything(None, c, 10, ThreadSort::Received, &ThreadFilter::default(), &[]).unwrap());
     assert_eq!(everything.iter().map(|t| (t.id, t.folder_id)).collect::<Vec<_>>(), [(t, env.folder(0, Some(FolderRole::Inbox)))]);
     assert_eq!(everything[0].reply_target, Some(FolderRole::Archive));
     // Listed together (as the CLI may ask), Inbox and Sent show it once.
@@ -177,12 +177,12 @@ fn technical_and_rejected_mails_do_not_take_a_conversation_away() {
     env.mail(0, fallback, Some(FolderRole::Quarantine), 500, false);
     env.mail(0, fallback, Some(FolderRole::Deleted), 600, true);
     assert_eq!(env.code(fallback).as_deref(), Some("q"));
-    let all_mail = pages(|c| env.store.list_all_mail(None, c, 10, ThreadSort::Received, &ThreadFilter::default()).unwrap());
+    let all_mail = pages(|c| env.store.list_all_mail(None, c, 10, ThreadSort::Received, &ThreadFilter::default(), &[]).unwrap());
     assert!(all_mail.iter().any(|t| t.id == fallback), "its quarantined mail keeps it in All Mail");
     // Wholly deleted: out of All Mail, its counters those of every mail.
     let gone = env.thread(0, "g");
     env.mail(0, gone, Some(FolderRole::Deleted), 700, false);
-    let all_mail = pages(|c| env.store.list_all_mail(None, c, 10, ThreadSort::Received, &ThreadFilter::default()).unwrap());
+    let all_mail = pages(|c| env.store.list_all_mail(None, c, 10, ThreadSort::Received, &ThreadFilter::default(), &[]).unwrap());
     assert!(!all_mail.iter().any(|t| t.id == gone));
     let deleted = env.list(&[env.folder(0, Some(FolderRole::Deleted))], &ThreadFilter::default());
     let row = deleted.iter().find(|t| t.id == gone).unwrap();
@@ -191,7 +191,7 @@ fn technical_and_rejected_mails_do_not_take_a_conversation_away() {
     let old = env.thread(0, "o");
     env.mail(0, old, None, 800, true);
     assert_eq!(env.code(old), None);
-    let everything = pages(|c| env.store.list_everything(None, c, 10, ThreadSort::Received, &ThreadFilter::default()).unwrap());
+    let everything = pages(|c| env.store.list_everything(None, c, 10, ThreadSort::Received, &ThreadFilter::default(), &[]).unwrap());
     assert_eq!(everything.iter().find(|t| t.id == old).map(|t| t.folder_id), Some(env.folder(0, None)));
     assert_eq!(env.list(&[env.folder(0, None)], &ThreadFilter::default()).iter().map(|t| t.id).collect::<Vec<_>>(), [old]);
 }
@@ -276,7 +276,7 @@ fn conversation_date_and_mail_date_are_two_criteria() {
     env.store.refresh_thread_aggregates(long).unwrap();
     assert_eq!(ids(&env, ThreadFilter { mail_before: Some(y2020), ..Default::default() }), [short]);
     let f = ThreadFilter { mail_before: Some(y2020), ..Default::default() };
-    let everything = pages(|c| env.store.list_everything(None, c, 10, ThreadSort::Received, &f).unwrap());
+    let everything = pages(|c| env.store.list_everything(None, c, 10, ThreadSort::Received, &f, &[]).unwrap());
     assert_eq!(everything.iter().map(|t| t.id).collect::<Vec<_>>(), [long, short]);
 }
 
@@ -314,14 +314,14 @@ fn work_lists_inbox_todo_and_waiting_together() {
         }
     }
     expected.reverse();
-    let work = pages(|c| env.store.list_work(None, c, 2, ThreadSort::Received, &ThreadFilter::default()).unwrap());
+    let work = pages(|c| env.store.list_work(None, c, 2, ThreadSort::Received, &ThreadFilter::default(), &[]).unwrap());
     assert_eq!(work.iter().map(|t| (t.id, t.folder_id)).collect::<Vec<_>>(), expected);
     // One account: the even indices, its Inbox, Todo and Waiting; the other
     // account's Work is empty but none of them.
-    let one = pages(|c| env.store.list_work(Some(env.accounts[0]), c, 2, ThreadSort::Modified, &ThreadFilter::default()).unwrap());
+    let one = pages(|c| env.store.list_work(Some(env.accounts[0]), c, 2, ThreadSort::Modified, &ThreadFilter::default(), &[]).unwrap());
     assert_eq!(one.len(), 3);
     assert!(one.iter().all(|t| expected.iter().any(|(id, _)| *id == t.id)));
     // Its criteria look at its folders: a word of none of its mails.
     let none = ThreadFilter { mail_before: Some(50), ..Default::default() };
-    assert!(env.store.list_work(None, None, 10, ThreadSort::Received, &none).unwrap().0.is_empty());
+    assert!(env.store.list_work(None, None, 10, ThreadSort::Received, &none, &[]).unwrap().0.is_empty());
 }

@@ -58,6 +58,13 @@ struct ThreadSummary: Decodable, Identifiable, Hashable {
     let id: Int
     let subject: String
     let participants: [String]
+    /// The person the conversation is with, as the core finds it: the
+    /// latest author who is not the user, or the recipient of a mail the
+    /// user wrote alone (`ThreadSummary::correspondent` in nm-api).
+    let correspondent: String?
+    /// The user wrote the latest mail: the conversation waits on the
+    /// correspondent.
+    let lastIsMine: Bool
     let snippet: String?
     /// Unix timestamp in seconds.
     let dateLastReceived: Int
@@ -79,6 +86,14 @@ struct ThreadSummary: Decodable, Identifiable, Hashable {
 }
 
 extension ThreadSummary {
+    /// The name of the sender column (`ui.md`, "Liste"): the
+    /// correspondent, else the latest participant (a conversation whose
+    /// mails name nobody else).
+    ///
+    /// Swift note: `??` gives the value on its right when the optional on
+    /// its left is `nil`; chained, it takes the first that is not.
+    var correspondentName: String { correspondent ?? participants.last ?? "" }
+
     /// A copy with another unread count and flag (a row kept in a filtered
     /// list after its state changed, `AppModel.keepingSelected`).
     ///
@@ -86,7 +101,8 @@ extension ThreadSummary {
     /// stored property in order; it is used here to copy the row.
     func with(unreadCount: Int, isFlagged: Bool) -> ThreadSummary {
         ThreadSummary(
-            id: id, subject: subject, participants: participants, snippet: snippet,
+            id: id, subject: subject, participants: participants, correspondent: correspondent,
+            lastIsMine: lastIsMine, snippet: snippet,
             dateLastReceived: dateLastReceived, messageCount: messageCount, unreadCount: unreadCount,
             isFlagged: isFlagged, hasAttachments: hasAttachments, returnedFrom: returnedFrom,
             replyTarget: replyTarget, folderId: folderId, dateLastModified: dateLastModified, tags: tags)

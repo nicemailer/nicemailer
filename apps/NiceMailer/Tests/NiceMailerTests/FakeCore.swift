@@ -80,9 +80,13 @@ enum Fixture {
         folder(4, "deleted", "Deleted", "D", targets: ["inbox", "archive"]),
     ]
 
+    /// A row of the list. Thread 3 is one the user answered: its latest
+    /// mail is theirs, and the row names the person answered.
     static func thread(_ id: Int, folder: Int = 1, tags: [String] = []) -> [String: Any] {
         [
-            "id": id, "subject": "Subject \(id)", "participants": ["Sender \(id)"], "snippet": "…",
+            "id": id, "subject": "Subject \(id)",
+            "participants": id == 3 ? ["Sender 3", "Me"] : ["Sender \(id)"],
+            "correspondent": "Sender \(id)", "last_is_mine": id == 3, "snippet": "…",
             "date_last_received": 1_790_000_000 - id * 60, "message_count": 1, "unread_count": id % 2,
             "is_flagged": false, "has_attachments": false, "returned_from": NSNull(), "reply_target": NSNull(),
             "folder_id": folder, "date_last_modified": 1_790_000_000, "tags": tags,

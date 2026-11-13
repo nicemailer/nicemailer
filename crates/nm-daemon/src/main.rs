@@ -1221,17 +1221,23 @@ async fn call(core: &Arc<Core>, source: Source, req: Request) -> Result<Value, R
                     ));
                 }
             };
+            // The addresses of the mailbox, as for `get_thread`: a row names
+            // the person a conversation is with, not the user who answered
+            // last (`ThreadSummary::correspondent`).
+            let own = drafts::declared_addresses(core);
             let (items, next_cursor) = with_reader(core, move |s| match scope {
                 Scope::Folders(folders) => {
-                    s.list_threads_in(&folders, p.cursor.as_deref(), limit(p.limit), p.sort, &p.filter)
+                    s.list_threads_in(&folders, p.cursor.as_deref(), limit(p.limit), p.sort, &p.filter, &own)
                 }
                 Scope::Everything(account) => {
-                    s.list_everything(account, p.cursor.as_deref(), limit(p.limit), p.sort, &p.filter)
+                    s.list_everything(account, p.cursor.as_deref(), limit(p.limit), p.sort, &p.filter, &own)
                 }
                 Scope::AllMail(account) => {
-                    s.list_all_mail(account, p.cursor.as_deref(), limit(p.limit), p.sort, &p.filter)
+                    s.list_all_mail(account, p.cursor.as_deref(), limit(p.limit), p.sort, &p.filter, &own)
                 }
-                Scope::Work(account) => s.list_work(account, p.cursor.as_deref(), limit(p.limit), p.sort, &p.filter),
+                Scope::Work(account) => {
+                    s.list_work(account, p.cursor.as_deref(), limit(p.limit), p.sort, &p.filter, &own)
+                }
             })
             .await?;
             to_value(Page { items, next_cursor, as_of })

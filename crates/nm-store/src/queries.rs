@@ -23,10 +23,20 @@ type ListRow = (i64, String, i64, i64, i64, i64, Option<String>, i64);
 /// The mails of a thread, oldest first, with the role of their folder: the
 /// details of a list row (`thread_summary`). Found through
 /// `idx_message_thread (thread_id, …)`; the sort is of a handful of rows.
-const THREAD_MESSAGES: &str = "SELECT m.from_name, m.from_addr, m.snippet, m.has_attachments, f.role
+const THREAD_MESSAGES: &str = "SELECT m.from_name, m.from_addr, m.snippet, m.has_attachments, f.role, m.id
        FROM message m JOIN folder f ON f.id = m.folder_id
       WHERE m.thread_id = ?1
       ORDER BY m.date_received, m.id";
+
+/// The first recipient of a mail: To before Cc before Bcc, in header
+/// order (the correspondent of a conversation the user wrote alone,
+/// `thread_summary`). Found through the primary key of `message_address`
+/// `(message_id, …)`; the sort is of a handful of rows.
+const FIRST_RECIPIENT: &str = "SELECT a.name, a.addr FROM message_address ma
+       JOIN address a ON a.id = ma.address_id
+      WHERE ma.message_id = ?1 AND ma.role IN ('to', 'cc', 'bcc')
+      ORDER BY ma.role = 'to' DESC, ma.role = 'cc' DESC, ma.position
+      LIMIT 1";
 
 /// Whether a thread has a flagged message, in any folder (read from the
 /// partial index `idx_message_thread_flagged`).
@@ -318,7 +328,9 @@ impl Store {
     /// modification date (`sort`).
     ///
     /// Returns the threads and the cursor of the next page (`None` when this
-    /// is the last page).
+    /// is the last page). Given no address of the mailbox, it tells the
+    /// user's mails by their folder alone (Sent, Drafts): for the CLI and
+    /// tests, where that is enough.
     pub fn list_threads(
         &self,
         folder_id: i64,
@@ -326,7 +338,7 @@ impl Store {
         limit: u32,
         sort: ThreadSort,
     ) -> Result<(Vec<ThreadSummary>, Option<String>)> {
-        self.list_threads_in(&[folder_id], cursor, limit, sort, &ThreadFilter::default())
+        self.list_threads_in(&[folder_id], cursor, limit, sort, &ThreadFilter::default(), &[])
     }
 
     /// One page of the threads of several folders together, newest first:
@@ -342,6 +354,12 @@ impl Store {
     /// CLI may ask for) are several queries, one per role, whose pages are
     /// merged on the sort key, each thread once: every query reads `thread`,
     /// so the key of a thread is the same in all of them.
+    ///
+    /// `own`: the addresses of the mailbox, which `accounts.toml` holds and
+    /// only the caller knows, as for `get_thread`. They tell the user's
+    /// mails, so a row names the person the conversation is with rather
+    /// than the user (`ThreadSummary::correspondent`). The other lists
+    /// take them for the same reason.
     pub fn list_threads_in(
         &self,
         folder_ids: &[i64],
@@ -349,6 +367,7 @@ impl Store {
         limit: u32,
         sort: ThreadSort,
         filter: &ThreadFilter,
+        own: &[String],
     ) -> Result<(Vec<ThreadSummary>, Option<String>)> {
         if folder_ids.is_empty() {
             return Ok((vec![], None));
@@ -392,7 +411,7 @@ impl Store {
             let mut seen = std::collections::HashSet::new();
             rows.retain(|(_, r)| seen.insert(r.0));
         }
-        self.page(rows, limit, sort, |scope, row| {
+        self.page(rows, limit, sort, own, |scope, row| {
             let account = row.7;
             Ok(match scope {
                 // The listed folder of the row's account, with its role: a
@@ -469,12 +488,15 @@ impl Store {
         rows: Vec<(Scope, ListRow)>,
         limit: u32,
         sort: ThreadSort,
+        own: &[String],
         shown_in: impl Fn(Scope, &ListRow) -> Result<Option<(i64, Option<FolderRole>)>>,
     ) -> Result<(Vec<ThreadSummary>, Option<String>)> {
         // `as i64` is an explicit numeric conversion; Rust never converts
         // between integer types implicitly.
         let has_more = rows.len() as i64 > i64::from(limit);
         let role_folders = self.role_folders()?;
+        // Read once per page: a handful of rows (`own_addresses`).
+        let own = self.own_addresses(own)?;
         let mut items = Vec::with_capacity(rows.len().min(limit as usize));
         // `into_iter` consumes `rows`; `take(limit)` drops the extra row.
         for (scope, row) in rows.into_iter().take(limit as usize) {
@@ -483,7 +505,7 @@ impl Store {
                 None => self.own_folder(&row, &role_folders)?,
             };
             let (thread_id, subject, received, modified, count, unread, _, _) = row;
-            items.push(self.thread_summary(thread_id, folder_id, role, subject, (received, modified), count, unread)?);
+            items.push(self.thread_summary(thread_id, folder_id, role, subject, (received, modified), count, unread, &own)?);
         }
         let next_cursor = if has_more {
             items.last().map(|t| {
@@ -528,11 +550,12 @@ impl Store {
         limit: u32,
         sort: ThreadSort,
         filter: &ThreadFilter,
+        own: &[String],
     ) -> Result<(Vec<ThreadSummary>, Option<String>)> {
         let tags = self.tag_ids(filter)?;
         let unread = self.unread_plan(filter, None, account_id)?;
         let filter = filter_clause(filter, &Target::everything(), &tags, unread);
-        self.list_virtual(Scope::Everything, account_id, cursor, limit, sort, &filter)
+        self.list_virtual(Scope::Everything, account_id, cursor, limit, sort, &filter, own)
     }
 
     /// The virtual folder "All Mail" (`ui.md`, "Sélecteur d'attributs"):
@@ -551,6 +574,7 @@ impl Store {
         limit: u32,
         sort: ThreadSort,
         filter: &ThreadFilter,
+        own: &[String],
     ) -> Result<(Vec<ThreadSummary>, Option<String>)> {
         let out: Vec<&str> = FolderRole::OUT_OF_ALL_MAIL.iter().map(|r| r.as_str()).collect();
         let folders: Vec<i64> = self
@@ -561,7 +585,7 @@ impl Store {
             )?
             .query_map(params![account_id, out[0], out[1], out[2]], |r| r.get(0))?
             .collect::<std::result::Result<_, _>>()?;
-        self.list_virtual_of(Scope::AllMail, &folders, account_id, cursor, limit, sort, filter)
+        self.list_virtual_of(Scope::AllMail, &folders, account_id, cursor, limit, sort, filter, own)
     }
 
     /// The virtual folder "Work" (`ui.md`, "Dossiers virtuels"): the
@@ -576,6 +600,7 @@ impl Store {
         limit: u32,
         sort: ThreadSort,
         filter: &ThreadFilter,
+        own: &[String],
     ) -> Result<(Vec<ThreadSummary>, Option<String>)> {
         let roles: Vec<&str> = FolderRole::WORK.iter().map(|r| r.as_str()).collect();
         let folders: Vec<i64> = self
@@ -585,7 +610,7 @@ impl Store {
             )?
             .query_map(params![account_id, roles[0], roles[1], roles[2]], |r| r.get(0))?
             .collect::<std::result::Result<_, _>>()?;
-        self.list_virtual_of(Scope::Work, &folders, account_id, cursor, limit, sort, filter)
+        self.list_virtual_of(Scope::Work, &folders, account_id, cursor, limit, sort, filter, own)
     }
 
     /// A page of a virtual folder whose criteria look at the mails of
@@ -600,6 +625,7 @@ impl Store {
         limit: u32,
         sort: ThreadSort,
         filter: &ThreadFilter,
+        own: &[String],
     ) -> Result<(Vec<ThreadSummary>, Option<String>)> {
         if folders.is_empty() {
             return Ok((vec![], None));
@@ -610,10 +636,11 @@ impl Store {
         let tags = self.tag_ids(filter)?;
         let unread = self.unread_plan(filter, Some(folders), None)?;
         let filter = filter_clause(filter, &Target::folders(&set), &tags, unread);
-        self.list_virtual(scope, account_id, cursor, limit, sort, &filter)
+        self.list_virtual(scope, account_id, cursor, limit, sort, &filter, own)
     }
 
     /// A page of Everything or All Mail: one query, each row in its folder.
+    #[allow(clippy::too_many_arguments)]
     fn list_virtual(
         &self,
         scope: Scope,
@@ -622,12 +649,13 @@ impl Store {
         limit: u32,
         sort: ThreadSort,
         filter: &FilterSql,
+        own: &[String],
     ) -> Result<(Vec<ThreadSummary>, Option<String>)> {
         let after = cursor.map(parse_cursor).transpose()?;
         let accounts = account_id.map(Accounts::One).unwrap_or(Accounts::All);
         let (sql, values) = list_query(scope, &accounts, after, i64::from(limit) + 1, sort, filter);
         let rows = self.list_rows(&sql, values)?.into_iter().map(|r| (scope, r)).collect();
-        self.page(rows, limit, sort, |_, _| Ok(None))
+        self.page(rows, limit, sort, own, |_, _| Ok(None))
     }
 
     /// Completes a list row with the details that `thread` does not store:
@@ -655,34 +683,59 @@ impl Store {
         dates: (i64, i64),
         message_count: i64,
         unread_count: i64,
+        own: &BTreeSet<String>,
     ) -> Result<ThreadSummary> {
         // The thread's messages, oldest first, with their folder's role.
-        type Mail = (Option<String>, Option<String>, Option<String>, bool, Option<FolderRole>);
-        let mails: Vec<Mail> = self
+        let mails: Vec<ListMail> = self
             .conn
             .prepare_cached(THREAD_MESSAGES)?
-            .query_map([thread_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, role_of(r.get(4)?))))?
+            .query_map([thread_id], |r| {
+                Ok(ListMail {
+                    name: r.get(0)?,
+                    addr: r.get(1)?,
+                    snippet: r.get(2)?,
+                    has_attachments: r.get(3)?,
+                    role: role_of(r.get(4)?),
+                    id: r.get(5)?,
+                })
+            })?
             .collect::<std::result::Result<_, _>>()?;
-        let rejected = |r: &Option<FolderRole>| r.is_some_and(|r| FolderRole::OUT_OF_ALL_MAIL.contains(&r));
-        let any_live = mails.iter().any(|m| !rejected(&m.4));
+        let rejected = |r: Option<FolderRole>| r.is_some_and(|r| FolderRole::OUT_OF_ALL_MAIL.contains(&r));
+        let any_live = mails.iter().any(|m| !rejected(m.role));
+        // The mails the row counts, as the counters do.
+        let counted: Vec<&ListMail> = mails.iter().filter(|m| !(any_live && rejected(m.role))).collect();
         let mut participants: Vec<String> = Vec::new();
         let mut snippet = None;
         let mut has_attachments = false;
-        for (name, addr, text, attachments, folder_role) in mails {
-            if any_live && rejected(&folder_role) {
-                continue;
-            }
-            // `or` keeps the name if present, otherwise the address.
-            if let Some(p) = name.or(addr) {
+        for m in &counted {
+            if let Some(p) = label(&m.name, &m.addr) {
                 // Remove a previous occurrence then append: each participant
                 // appears once, at the position of their latest message.
                 participants.retain(|x| x != &p);
                 participants.push(p);
             }
             // Keep the snippet of the latest message that has one.
-            snippet = text.or(snippet);
-            has_attachments |= attachments;
+            // Rust note: `m.snippet` sits behind a shared reference (`&`),
+            // so it is cloned rather than moved out.
+            snippet = m.snippet.clone().or(snippet);
+            has_attachments |= m.has_attachments;
         }
+
+        // Who the conversation is with, and whether the user spoke last
+        // (`ui.md`, "Liste"). Pure, so tested on its own (`correspondent`).
+        let (correspondent, last_is_mine) = match correspondent(&counted, own) {
+            Correspondent::Author(name, mine) => (name, mine),
+            // Every mail is the user's: the person they wrote to, read
+            // only for such threads (one indexed lookup).
+            Correspondent::RecipientOf(id) => (
+                self.conn
+                    .prepare_cached(FIRST_RECIPIENT)?
+                    .query_row([id], |r| Ok(label(&r.get(0)?, &r.get(1)?)))
+                    .optional()?
+                    .flatten(),
+                true,
+            ),
+        };
 
         // The flag is looked up across the whole thread: a flagged message
         // in Sent still flags the conversation.
@@ -733,6 +786,8 @@ impl Store {
             id: thread_id,
             subject,
             participants,
+            correspondent,
+            last_is_mine,
             snippet,
             date_last_received: dates.0,
             date_last_modified: dates.1,
@@ -1036,6 +1091,77 @@ fn list_query(
     (sql, values)
 }
 
+/// Whether the user wrote a mail: its sender is one of the addresses of
+/// the mailbox (`own`, lowercase), or it sits in Sent or Drafts (an
+/// account whose address `accounts.toml` no longer declares). It stays
+/// theirs once filed in Waiting or Todo (`reponse.md`, section 8). The one
+/// rule of the reader (`present_thread`) and of the list
+/// (`correspondent`).
+fn is_mine(from_addr: Option<&str>, role: Option<FolderRole>, own: &BTreeSet<String>) -> bool {
+    from_addr.is_some_and(|a| own.contains(&a.trim().to_lowercase()))
+        || matches!(role, Some(FolderRole::Sent) | Some(FolderRole::Drafts))
+}
+
+/// A mail of a thread, as a list row reads it (`THREAD_MESSAGES`).
+struct ListMail {
+    id: i64,
+    name: Option<String>,
+    addr: Option<String>,
+    snippet: Option<String>,
+    has_attachments: bool,
+    role: Option<FolderRole>,
+}
+
+/// What a list shows of a person: their name, else their address; a
+/// blank name counts as none.
+///
+/// Rust note: `&Option<String>` borrows the option without taking it;
+/// `as_deref` turns it into an `Option<&str>` to look at, and `to_string`
+/// makes the owned copy returned.
+fn label(name: &Option<String>, addr: &Option<String>) -> Option<String> {
+    let name = name.as_deref().map(str::trim).filter(|n| !n.is_empty());
+    let addr = addr.as_deref().map(str::trim).filter(|a| !a.is_empty());
+    name.or(addr).map(str::to_string)
+}
+
+/// Who a conversation is with, as `correspondent` finds it.
+#[derive(Debug, PartialEq)]
+enum Correspondent {
+    /// The latest author who is not the user (or `None`: no mail names
+    /// one), and whether the user wrote the latest mail.
+    Author(Option<String>, bool),
+    /// The user wrote every mail: the correspondent is the first recipient
+    /// of this one, the latest, which the caller reads from the database.
+    RecipientOf(i64),
+}
+
+/// Who the conversation of `mails` (oldest first, those its row counts) is
+/// with, for the sender column of the list (`ui.md`, "Liste").
+///
+/// The author of the latest mail alone told nothing when the user had
+/// answered: the row showed their own name. The latest author who is not
+/// the user is the person the conversation waits on, or who waits on the
+/// user; the second value says which ("→ Alice": the user spoke last).
+///
+/// Drafts are left out unless the thread has nothing else: a reply being
+/// written has not been sent, and the conversation still waits on the
+/// user.
+fn correspondent(mails: &[&ListMail], own: &BTreeSet<String>) -> Correspondent {
+    let draft = |m: &ListMail| m.role == Some(FolderRole::Drafts);
+    let only_drafts = mails.iter().all(|m| draft(m));
+    // Rust note: `copied` turns the iterator's `&&ListMail` into the
+    // `&ListMail` the slice holds; no mail is copied, only references.
+    let sent: Vec<&ListMail> = mails.iter().copied().filter(|m| only_drafts || !draft(m)).collect();
+    let mine = |m: &ListMail| is_mine(m.addr.as_deref(), m.role, own);
+    let Some(last) = sent.last() else { return Correspondent::Author(None, false) };
+    if sent.iter().all(|m| mine(m)) {
+        return Correspondent::RecipientOf(last.id);
+    }
+    // The latest mail of someone else that names its author.
+    let author = sent.iter().rev().filter(|m| !mine(m)).find_map(|m| label(&m.name, &m.addr));
+    Correspondent::Author(author, mine(last))
+}
+
 /// Simplified presentation of a thread, computed by the core so every
 /// client shows the same thing (`clean.rs`, `docs/thread-display.md`):
 /// segments of each message, messages folded by default, recipients only
@@ -1072,8 +1198,7 @@ fn present_thread(messages: &mut [MessageView], own: &BTreeSet<String>) {
         // longer declares). Showing "from me" tells nothing; who it went
         // to is the information, and a mail sent to one person would
         // otherwise show nobody (`docs/thread-display.md`).
-        let mine = m.from_addr.as_deref().is_some_and(|a| own.contains(&a.trim().to_lowercase()))
-            || matches!(m.folder_role, Some(FolderRole::Sent) | Some(FolderRole::Drafts));
+        let mine = is_mine(m.from_addr.as_deref(), m.folder_role, own);
         m.show_recipients = !recipients.is_empty()
             && (mine
                 || match &previous {
@@ -1517,6 +1642,87 @@ fn unsubscribe_view(
 /// query in a test would be slow and flaky; its plan is deterministic and
 /// says whether the cost grows with the page or with the mailbox.
 #[cfg(test)]
+mod correspondent_tests {
+    use super::*;
+
+    /// A mail from `addr` (named `name`) in a folder of `role`.
+    fn mail(id: i64, name: Option<&str>, addr: Option<&str>, role: Option<FolderRole>) -> ListMail {
+        ListMail {
+            id,
+            name: name.map(str::to_string),
+            addr: addr.map(str::to_string),
+            snippet: None,
+            has_attachments: false,
+            role,
+        }
+    }
+
+    fn own() -> BTreeSet<String> {
+        BTreeSet::from(["me@x.org".to_string()])
+    }
+
+    fn of(mails: &[ListMail]) -> Correspondent {
+        correspondent(&mails.iter().collect::<Vec<_>>(), &own())
+    }
+
+    fn author(name: &str, mine: bool) -> Correspondent {
+        Correspondent::Author(Some(name.to_string()), mine)
+    }
+
+    const INBOX: Option<FolderRole> = Some(FolderRole::Inbox);
+
+    #[test]
+    fn the_latest_other_author_and_who_spoke_last() {
+        let alice = mail(1, Some("Alice"), Some("alice@x.org"), INBOX);
+        let me = mail(2, None, Some("ME@x.org "), INBOX);
+        let bob = mail(3, Some("Bob"), Some("bob@x.org"), INBOX);
+        assert_eq!(of(&[mail(1, Some("Alice"), Some("alice@x.org"), INBOX)]), author("Alice", false));
+        assert_eq!(of(&[alice, me]), author("Alice", true));
+        let alice = mail(1, Some("Alice"), Some("alice@x.org"), INBOX);
+        let me = mail(2, None, Some("me@x.org"), INBOX);
+        assert_eq!(of(&[alice, bob, me]), author("Bob", true));
+    }
+
+    #[test]
+    fn sent_mail_is_the_users_whatever_its_address() {
+        // An account `accounts.toml` no longer declares: its Sent says so.
+        let alice = mail(1, Some("Alice"), Some("alice@x.org"), INBOX);
+        let sent = mail(2, None, Some("old@x.org"), Some(FolderRole::Sent));
+        assert_eq!(of(&[alice, sent]), author("Alice", true));
+    }
+
+    #[test]
+    fn the_users_mails_alone_ask_for_the_latest_ones_recipient() {
+        let first = mail(1, None, Some("me@x.org"), Some(FolderRole::Sent));
+        let second = mail(2, None, Some("me@x.org"), Some(FolderRole::Waiting));
+        assert_eq!(of(&[first, second]), Correspondent::RecipientOf(2));
+    }
+
+    #[test]
+    fn a_draft_reply_does_not_count_until_sent() {
+        // Alice asked and the user is writing: the conversation still
+        // waits on them.
+        let alice = mail(1, Some("Alice"), Some("alice@x.org"), INBOX);
+        let draft = mail(2, None, Some("me@x.org"), Some(FolderRole::Drafts));
+        assert_eq!(of(&[alice, draft]), author("Alice", false));
+        // A new mail being written: its recipient, like a sent one.
+        let draft = mail(3, None, Some("me@x.org"), Some(FolderRole::Drafts));
+        assert_eq!(of(&[draft]), Correspondent::RecipientOf(3));
+    }
+
+    #[test]
+    fn a_mail_without_sender_names_nobody_but_still_counts() {
+        // No `From`: not the user's, but nothing to name; an earlier
+        // author is named instead.
+        let alice = mail(1, Some(" "), Some("alice@x.org"), INBOX);
+        let anonymous = mail(2, None, None, INBOX);
+        assert_eq!(of(&[alice, anonymous]), author("alice@x.org", false));
+        assert_eq!(of(&[mail(1, None, None, INBOX)]), Correspondent::Author(None, false));
+        assert_eq!(of(&[]), Correspondent::Author(None, false));
+    }
+}
+
+#[cfg(test)]
 mod plan_tests {
     use super::*;
     use crate::Store;
@@ -1609,6 +1815,8 @@ mod plan_tests {
         let store = Store::open_in_memory().unwrap();
         let steps = plan(&store, THREAD_MESSAGES, &[Value::Integer(1)]);
         assert_eq!(steps[0], "SEARCH m USING INDEX idx_message_thread (thread_id=?)", "{steps:?}");
+        let steps = plan(&store, FIRST_RECIPIENT, &[Value::Integer(1)]);
+        assert!(steps[0].contains("ma USING PRIMARY KEY (message_id=?"), "{steps:?}");
         let steps = plan(&store, THREAD_IS_FLAGGED, &[Value::Integer(1)]);
         assert!(steps.iter().any(|s| s.contains("idx_message_thread_flagged (thread_id=?)")), "{steps:?}");
     }

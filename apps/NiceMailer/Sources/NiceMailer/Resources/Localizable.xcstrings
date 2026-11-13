@@ -2646,6 +2646,16 @@
         }
       }
     },
+    "%@, you wrote last": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@, vous avez écrit en dernier"
+          }
+        }
+      }
+    },
     "flagged": {
       "localizations": {
         "fr": {

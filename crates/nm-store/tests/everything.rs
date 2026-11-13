@@ -93,17 +93,17 @@ fn everything_lists_what_every_folder_lists_page_after_page() {
     let contact = busiest_address(&store);
     for filter in filters(contact) {
         for sort in [ThreadSort::Received, ThreadSort::Modified] {
-            let merged = all_pages(|c| store.list_threads_in(&folders, c, 37, sort, &filter).unwrap());
-            let everything = all_pages(|c| store.list_everything(None, c, 37, sort, &filter).unwrap());
+            let merged = all_pages(|c| store.list_threads_in(&folders, c, 37, sort, &filter, &[]).unwrap());
+            let everything = all_pages(|c| store.list_everything(None, c, 37, sort, &filter, &[]).unwrap());
             assert!(!merged.is_empty() || filter != ThreadFilter::default());
             assert_eq!(rows(&everything), rows(&merged), "{filter:?} {sort:?}");
             // The scope of one account gives the same, the seed having one.
-            let one = all_pages(|c| store.list_everything(Some(accounts[0]), c, 37, sort, &filter).unwrap());
+            let one = all_pages(|c| store.list_everything(Some(accounts[0]), c, 37, sort, &filter, &[]).unwrap());
             assert_eq!(rows(&one), rows(&merged), "account {filter:?} {sort:?}");
         }
     }
     // Another account sees nothing of this one.
-    let (none, next) = store.list_everything(Some(9999), None, 50, ThreadSort::Received, &ThreadFilter::default()).unwrap();
+    let (none, next) = store.list_everything(Some(9999), None, 50, ThreadSort::Received, &ThreadFilter::default(), &[]).unwrap();
     assert!(none.is_empty() && next.is_none());
 }
 
@@ -130,11 +130,11 @@ fn unread_in_everything_looks_at_the_whole_thread() {
     store.conn().execute("UPDATE message SET is_seen = 0 WHERE id = ?1", [older]).unwrap();
     store.refresh_thread_aggregates(thread).unwrap();
     let unread = ThreadFilter { seen: Some(false), ..Default::default() };
-    let everything = all_pages(|c| store.list_everything(None, c, 100, ThreadSort::Received, &unread).unwrap());
+    let everything = all_pages(|c| store.list_everything(None, c, 100, ThreadSort::Received, &unread, &[]).unwrap());
     assert!(everything.iter().any(|t| t.id == thread));
     // And "read" leaves it out: it has an unread mail.
     let read = ThreadFilter { seen: Some(true), ..Default::default() };
-    let everything = all_pages(|c| store.list_everything(None, c, 100, ThreadSort::Received, &read).unwrap());
+    let everything = all_pages(|c| store.list_everything(None, c, 100, ThreadSort::Received, &read, &[]).unwrap());
     assert!(!everything.iter().any(|t| t.id == thread));
 }
 
@@ -142,12 +142,12 @@ fn unread_in_everything_looks_at_the_whole_thread() {
 fn a_cursor_of_everything_continues_where_the_page_stopped() {
     let (store, _) = store();
     let filter = ThreadFilter::default();
-    let (first, cursor) = store.list_everything(None, None, 10, ThreadSort::Received, &filter).unwrap();
-    let (second, _) = store.list_everything(None, cursor.as_deref(), 10, ThreadSort::Received, &filter).unwrap();
-    let (both, _) = store.list_everything(None, None, 20, ThreadSort::Received, &filter).unwrap();
+    let (first, cursor) = store.list_everything(None, None, 10, ThreadSort::Received, &filter, &[]).unwrap();
+    let (second, _) = store.list_everything(None, cursor.as_deref(), 10, ThreadSort::Received, &filter, &[]).unwrap();
+    let (both, _) = store.list_everything(None, None, 20, ThreadSort::Received, &filter, &[]).unwrap();
     assert_eq!(rows(&[first, second].concat()), rows(&both));
     // A malformed cursor is refused.
-    assert!(store.list_everything(None, Some("x"), 10, ThreadSort::Received, &filter).is_err());
+    assert!(store.list_everything(None, Some("x"), 10, ThreadSort::Received, &filter, &[]).is_err());
 }
 
 #[test]
@@ -159,7 +159,7 @@ fn the_lists_of_a_tag_a_group_and_a_contact_are_complete_and_ordered() {
         ThreadFilter { group_id: Some(1), ..Default::default() },
         ThreadFilter { address_id: Some(contact), ..Default::default() },
     ] {
-        let list = all_pages(|c| store.list_everything(None, c, 25, ThreadSort::Received, &filter).unwrap());
+        let list = all_pages(|c| store.list_everything(None, c, 25, ThreadSort::Received, &filter, &[]).unwrap());
         // Newest first on the date shown, every page (no cap at 200).
         assert!(list.windows(2).all(|w| (w[0].date_last_received, w[0].id) >= (w[1].date_last_received, w[1].id)), "{filter:?}");
         let ids: std::collections::BTreeSet<i64> = list.iter().map(|t| t.id).collect();
@@ -168,7 +168,7 @@ fn the_lists_of_a_tag_a_group_and_a_contact_are_complete_and_ordered() {
     }
     // The tag: exactly the tagged threads (every seventh), more than a page.
     let tagged = all_pages(|c| {
-        store.list_everything(None, c, 25, ThreadSort::Received, &ThreadFilter { tag: Some("CLIENTS".into()), ..Default::default() }).unwrap()
+        store.list_everything(None, c, 25, ThreadSort::Received, &ThreadFilter { tag: Some("CLIENTS".into()), ..Default::default() }, &[]).unwrap()
     });
     let expected: i64 = store.conn().query_row(
         "SELECT count(DISTINCT m.thread_id) FROM message_keyword mk JOIN message m ON m.id = mk.message_id WHERE mk.keyword = 'Clients'",
@@ -202,22 +202,22 @@ fn all_mail_lists_what_its_folders_list_page_after_page() {
     let mut seen_rejected = false;
     for filter in filters(contact) {
         for sort in [ThreadSort::Received, ThreadSort::Modified] {
-            let merged = all_pages(|c| store.list_threads_in(&folders, c, 37, sort, &filter).unwrap());
-            let all_mail = all_pages(|c| store.list_all_mail(None, c, 37, sort, &filter).unwrap());
+            let merged = all_pages(|c| store.list_threads_in(&folders, c, 37, sort, &filter, &[]).unwrap());
+            let all_mail = all_pages(|c| store.list_all_mail(None, c, 37, sort, &filter, &[]).unwrap());
             assert_eq!(rows(&all_mail), rows(&merged), "{filter:?} {sort:?}");
             let account = store.list_folders().unwrap()[0].account_id;
-            let one = all_pages(|c| store.list_all_mail(Some(account), c, 37, sort, &filter).unwrap());
+            let one = all_pages(|c| store.list_all_mail(Some(account), c, 37, sort, &filter, &[]).unwrap());
             assert_eq!(rows(&one), rows(&merged), "account {filter:?} {sort:?}");
             if filter == ThreadFilter::default() {
                 // Fewer threads than Everything: the seed fills Deleted,
                 // Junk and Banned too.
-                let everything = all_pages(|c| store.list_everything(None, c, 37, sort, &filter).unwrap());
+                let everything = all_pages(|c| store.list_everything(None, c, 37, sort, &filter, &[]).unwrap());
                 seen_rejected |= everything.len() > all_mail.len();
             }
         }
     }
     assert!(seen_rejected, "the seed should have threads only in Deleted, Junk or Banned");
-    let (none, next) = store.list_all_mail(Some(9999), None, 50, ThreadSort::Received, &ThreadFilter::default()).unwrap();
+    let (none, next) = store.list_all_mail(Some(9999), None, 50, ThreadSort::Received, &ThreadFilter::default(), &[]).unwrap();
     assert!(none.is_empty() && next.is_none());
 }
 
@@ -238,7 +238,7 @@ fn a_mail_deleted_does_not_move_its_thread_in_all_mail() {
         .unwrap();
     let deleted: i64 =
         store.conn().query_row("SELECT id FROM folder WHERE role = 'deleted' AND account_id = ?1", [account], |r| r.get(0)).unwrap();
-    let before = all_pages(|c| store.list_all_mail(None, c, 50, ThreadSort::Received, &ThreadFilter::default()).unwrap());
+    let before = all_pages(|c| store.list_all_mail(None, c, 50, ThreadSort::Received, &ThreadFilter::default(), &[]).unwrap());
     let row = before.iter().find(|t| t.id == thread).unwrap().clone();
     // A new mail of the thread, the most recent of the box, put in Deleted.
     store
@@ -250,7 +250,7 @@ fn a_mail_deleted_does_not_move_its_thread_in_all_mail() {
         )
         .unwrap();
     store.refresh_thread_aggregates(thread).unwrap();
-    let all_mail = all_pages(|c| store.list_all_mail(None, c, 50, ThreadSort::Received, &ThreadFilter::default()).unwrap());
+    let all_mail = all_pages(|c| store.list_all_mail(None, c, 50, ThreadSort::Received, &ThreadFilter::default(), &[]).unwrap());
     let i = all_mail.iter().position(|t| t.id == thread).expect("still in All Mail");
     // Same date, count and folder as before: the deleted mail is not counted.
     assert_eq!(
@@ -259,6 +259,6 @@ fn a_mail_deleted_does_not_move_its_thread_in_all_mail() {
     );
     assert_eq!(all_mail.iter().position(|t| t.id == thread), before.iter().position(|t| t.id == thread));
     // It is listed in Deleted too (its flag), and still in Archive.
-    let in_deleted = all_pages(|c| store.list_threads_in(&[deleted], c, 50, ThreadSort::Received, &ThreadFilter::default()).unwrap());
+    let in_deleted = all_pages(|c| store.list_threads_in(&[deleted], c, 50, ThreadSort::Received, &ThreadFilter::default(), &[]).unwrap());
     assert!(in_deleted.iter().any(|t| t.id == thread && t.folder_id == deleted));
 }
