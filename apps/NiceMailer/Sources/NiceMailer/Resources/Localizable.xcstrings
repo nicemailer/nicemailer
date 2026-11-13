@@ -3759,6 +3759,36 @@
           }
         }
       }
+    },
+    "Calling…": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Appel en cours…"
+          }
+        }
+      }
+    },
+    "To confirm calls, allow NiceMailer in System Settings › Privacy & Security › Accessibility": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pour confirmer les appels, autorisez NiceMailer dans Réglages Système › Confidentialité et sécurité › Accessibilité"
+          }
+        }
+      }
+    },
+    "Call not confirmed: click the green button": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Appel non confirmé : cliquez sur le bouton vert"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

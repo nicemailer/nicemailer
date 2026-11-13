@@ -488,3 +488,13 @@ fn the_title_bar_is_hidden_unless_asked() {
     let p = refused("[ui]\ntitle_bar = \"maybe\"\n");
     assert_eq!(p.key.as_deref(), Some("ui.title_bar"));
 }
+
+/// The app confirms its calls only when asked: the setting needs the
+/// Accessibility permission (`docs/geek-ui.md`, "Calling a number").
+#[test]
+fn calls_are_confirmed_by_the_app_only_when_asked() {
+    assert!(!settings("").unwrap().config.ui.auto_confirm_calls);
+    assert!(settings("[ui]\nauto_confirm_calls = true\n").unwrap().config.ui.auto_confirm_calls);
+    let p = refused("[ui]\nauto_confirm_calls = \"yes\"\n");
+    assert_eq!(p.key.as_deref(), Some("ui.auto_confirm_calls"));
+}

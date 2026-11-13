@@ -203,11 +203,16 @@ pub struct UiSettings {
     /// The title bar of the window (its title and the red, orange and
     /// green buttons): hidden by default, the content up to the top edge.
     pub title_bar: TitleBar,
+    /// The app presses the green button of the confirmation macOS shows
+    /// before it calls a number (`docs/geek-ui.md`, "Calling a number").
+    /// Off by default: it needs the Accessibility permission, which lets
+    /// the app drive the interface of other apps.
+    pub auto_confirm_calls: bool,
 }
 
 impl Default for UiSettings {
     fn default() -> Self {
-        UiSettings { view_threshold_ms: 2_000, title_bar: TitleBar::Hidden }
+        UiSettings { view_threshold_ms: 2_000, title_bar: TitleBar::Hidden, auto_confirm_calls: false }
     }
 }
 
@@ -762,6 +767,7 @@ impl<'t> Reader<'t> {
                         Some("shown") => TitleBar::Shown,
                         _ => TitleBar::Hidden,
                     },
+                    auto_confirm_calls: self.bool(&mut t, "auto_confirm_calls", d.ui.auto_confirm_calls)?,
                 };
                 self.finish(t);
                 u
@@ -1252,6 +1258,11 @@ view_threshold_ms = {view_threshold_ms}
 # "hidden", the content up to the top edge (move the window by the status
 # bar, quit with Cmd-Q), or "shown". Applied at once.
 title_bar = "{title_bar}"
+# Confirm the calls of the app for you: when it calls a number (Return on a
+# number of the links, a tel: link), the app presses the green button of
+# the notification macOS shows first. Needs the Accessibility permission
+# (System Settings, Privacy & Security). Applied at once.
+auto_confirm_calls = {auto_confirm_calls}
 
 [audit]
 # Days the history of changes is kept.
@@ -1281,6 +1292,7 @@ undo_send_seconds = {undo_send_seconds}
         verify_on_read = d.raw.verify_on_read,
         view_threshold_ms = d.ui.view_threshold_ms,
         title_bar = d.ui.title_bar.as_str(),
+        auto_confirm_calls = d.ui.auto_confirm_calls,
         retention_days = d.audit.retention_days,
         undo_send_seconds = d.compose.undo_send_seconds,
     )

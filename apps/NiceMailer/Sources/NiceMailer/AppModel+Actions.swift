@@ -429,6 +429,34 @@ extension AppModel {
         }
     }
 
+    /// Opens a link of a mail with the system: a web page in the browser,
+    /// a `mailto:` in the mail app, a `tel:` number with the phone (FaceTime
+    /// through the iPhone). With `ui.auto_confirm_calls`, the confirmation
+    /// macOS shows before calling is pressed by the app (`CallConfirmation`;
+    /// `docs/geek-ui.md`, "Calling a number"), and the status bar says how
+    /// it went.
+    func openLink(_ url: URL) {
+        guard url.scheme?.lowercased() == "tel", autoConfirmCalls else {
+            openFile(url)
+            return
+        }
+        Task {
+            // Swift note: `[weak self]` is not needed here: the model lives
+            // as long as the app, and the task ends within seconds.
+            let outcome = await confirmCall(url) { openFile(url) }
+            flash = Self.callMessage(outcome)
+        }
+    }
+
+    /// What the status bar says once a call was confirmed, or could not be.
+    nonisolated static func callMessage(_ outcome: CallConfirmation.Outcome) -> String {
+        switch outcome {
+        case .confirmed: L("Calling…")
+        case .notTrusted: L("To confirm calls, allow NiceMailer in System Settings › Privacy & Security › Accessibility")
+        case .notFound: L("Call not confirmed: click the green button")
+        }
+    }
+
     /// What to do with an attachment.
     enum AttachmentAction {
         /// Copy it to Downloads (a click on a tile, Return in `l`).

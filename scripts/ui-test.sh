@@ -43,6 +43,11 @@ for script in "${scripts[@]}"; do
     # Short path: the core's socket path must stay under 104 characters.
     dir=$(mktemp -d /tmp/nmuit.XXXXXX)
     NICEMAILER_DATA_DIR="$dir" "$CLI" seed --threads 300 --seed 1 >/dev/null
+    # A scenario may have settings of its own (fixtures/<scenario>.config.toml),
+    # read by the core when it starts.
+    if [ -f "$APP/UITests/fixtures/$name.config.toml" ]; then
+        cp "$APP/UITests/fixtures/$name.config.toml" "$dir/config.toml"
+    fi
     # No request leaves the machine (one-click unsubscribe).
     NICEMAILER_DATA_DIR="$dir" NICEMAILER_CONFIG="$dir/config.toml" NICEMAILER_FAKE_NETWORK=1 "$CORE" 2>"$dir/core.log" &
     # Mailboxes for "Change Mailbox…" (mailbox.uiscript): one of an earlier

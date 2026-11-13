@@ -1,0 +1,3 @@
+# Settings of calls.uiscript: the app confirms its calls itself.
+[ui]
+auto_confirm_calls = true

@@ -1,0 +1,28 @@
+# Calling a number with ui.auto_confirm_calls = true (fixtures/calls.config.toml):
+# the app opens the tel: URL and confirms the call itself. In UI script mode
+# both are only recorded: no notification is touched, no call is placed.
+expect auto_confirm_calls = true
+key ;
+key a
+expect folder = Archive
+key @
+type fixture
+key ret
+expect account = fixture
+expect selected_subject = La lettre de novembre
+# Return on the number of the newsletter: opened, then confirmed.
+key l
+type 01 23
+expect picker_first = 01 23 45 67 89
+key ret
+expect overlay = none
+expect opened_file = tel:0123456789
+expect confirmed_calls = tel:0123456789
+# The status bar says the call goes on.
+expect flash = Calling…
+# A web link is opened, never "confirmed".
+key l
+type Lire en ligne
+key ret
+expect opened_file ~ http
+expect confirmed_calls = tel:0123456789

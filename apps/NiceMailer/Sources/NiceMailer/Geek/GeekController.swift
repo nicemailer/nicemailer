@@ -1334,8 +1334,9 @@ final class GeekController {
             // the attached files, then the links without a text (mostly an
             // image leading to a social network: the least wanted, after
             // the files). Return opens a link in the browser, calls a
-            // number with the phone app (macOS opens `tel:` URLs with it),
-            // or saves a file; ⌘-Return saves the file and opens it at once.
+            // number with the phone app (macOS opens `tel:` URLs with it;
+            // `AppModel.openLink` may also press the confirmation macOS
+            // shows first), or saves a file; ⌘-Return saves the file and opens it at once.
             // A link shows its text and, on the right, where it goes; its
             // whole address is a hidden keyword, so typing part of it finds
             // the row too.
@@ -1366,7 +1367,7 @@ final class GeekController {
             let contactRows = model.contactLinks.map { link in
                 Entry(key: "", label: link.title, detail: link.destination, detailStyle: .info, icon: link.icon,
                       keywords: [link.url.absoluteString, link.shownNumber ?? "", "contacts"]) { [model] in
-                    model.openFile(link.url)
+                    model.openLink(link.url)
                 }
             }
             let linkRows = links.map { link in
@@ -1374,7 +1375,7 @@ final class GeekController {
                 // finds the row.
                 Entry(key: "", label: link.title, detail: link.destination, detailStyle: .info, icon: link.icon,
                       keywords: [link.url.absoluteString] + [link.target].compactMap { $0 } + link.otherTexts) { [model] in
-                    model.openFile(link.url)
+                    model.openLink(link.url)
                 }
             }
             let fileRows = model.attachments.map { a in

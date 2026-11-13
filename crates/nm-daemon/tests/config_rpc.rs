@@ -44,6 +44,8 @@ fn missing_files_are_created_at_start_and_change_nothing() {
     // Every setting listed, commented out: the defaults apply. The
     // window's title bar: hidden by default.
     assert_eq!(status["ui"]["title_bar"], "hidden");
+    // The app does not confirm calls for the user unless asked.
+    assert_eq!(status["ui"]["auto_confirm_calls"], false);
     let config = std::fs::read_to_string(dir.path().join("config.toml")).unwrap();
     assert_eq!(config, nm_engine::config::config_template());
     assert!(config.contains("# poll_interval_secs = 300"), "{config}");
@@ -77,6 +79,21 @@ fn the_title_bar_setting_reaches_the_app_and_follows_the_file() {
     let e = c.event("ConfigChanged", 15);
     assert!(e["keys"].as_array().unwrap().contains(&json!("ui.title_bar")), "{e}");
     assert_eq!(c.call("config_status", json!({})).unwrap()["ui"]["title_bar"], "hidden");
+}
+
+#[test]
+fn the_call_confirmation_setting_reaches_the_app_and_follows_the_file() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("config.toml"), "[ui]\nauto_confirm_calls = true\n").unwrap();
+    let _core = start(dir.path());
+    let mut c = Client::connect(dir.path());
+    assert_eq!(c.call("config_status", json!({})).unwrap()["ui"]["auto_confirm_calls"], true);
+    c.call("subscribe", json!({})).unwrap();
+    std::thread::sleep(Duration::from_millis(500));
+    save(&mut c, dir.path(), "config.toml", "[ui]\nauto_confirm_calls = false\n");
+    let e = c.event("ConfigChanged", 15);
+    assert!(e["keys"].as_array().unwrap().contains(&json!("ui.auto_confirm_calls")), "{e}");
+    assert_eq!(c.call("config_status", json!({})).unwrap()["ui"]["auto_confirm_calls"], false);
 }
 
 #[test]

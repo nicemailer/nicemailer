@@ -80,6 +80,9 @@ type 01 23
 expect picker_first = 01 23 45 67 89
 key ret
 expect opened_file = tel:0123456789
+# ui.auto_confirm_calls is off by default: the call is not confirmed by
+# the app (calls.uiscript).
+expect confirmed_calls =
 expect overlay = none
 key j
 expect selected_subject = Rapport mensuel

@@ -51,6 +51,13 @@ final class AppModel {
     /// in UI script mode and in unit tests, which must never launch Preview
     /// or Word on the user's screen.
     @ObservationIgnored var openFile: (URL) -> Void = { NSWorkspace.shared.open($0) }
+    /// Opens a `tel:` URL with the closure it is given and presses the
+    /// confirmation macOS shows before calling (`CallConfirmation`).
+    /// Replaced in UI script mode and in unit tests, which must never drive
+    /// the user's notifications nor place a call.
+    @ObservationIgnored var confirmCall: @MainActor (URL, () -> Void) async -> CallConfirmation.Outcome = { url, open in
+        await CallConfirmation.confirm(url, open: open)
+    }
     /// Short message shown in the geek status bar (result of an action,
     /// "not available yet"…); cleared by the next key.
     var flash: String? {
@@ -103,6 +110,10 @@ final class AppModel {
     /// `ui.title_bar` of `config.toml`: the title bar of the window is
     /// hidden (the default), or shown (`WindowChrome`).
     var titleBarHidden = true
+    /// `ui.auto_confirm_calls` of `config.toml`: a number called from the
+    /// app is confirmed by the app itself (`CallConfirmation`). Off by
+    /// default: it needs the Accessibility permission.
+    var autoConfirmCalls = false
 
     /// The agent of the core, when the app carries it (`CoreAgent`).
     var agentState: CoreAgent.State = .notBundled
@@ -616,6 +627,7 @@ final class AppModel {
         guard let client else { return }
         if let status: ConfigStatusView = try? await client.call("config_status", [:]), let ui = status.ui {
             titleBarHidden = ui.titleBar != "shown"
+            autoConfirmCalls = ui.autoConfirmCalls ?? false
         }
     }
 

@@ -260,6 +260,8 @@ struct ConfigStatusView: Decodable {
 struct UIConfig: Decodable {
     /// `hidden` or `shown`.
     let titleBar: String
+    /// `ui.auto_confirm_calls`; absent from an older core (nil: off).
+    let autoConfirmCalls: Bool?
 }
 
 /// A screening decision taken, changed or removed by a command: on an

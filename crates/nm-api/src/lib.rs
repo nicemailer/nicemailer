@@ -1838,6 +1838,11 @@ pub struct ConfigStatus {
 pub struct UiConfig {
     /// `hidden` (the default) or `shown`.
     pub title_bar: String,
+    /// `ui.auto_confirm_calls`: the app confirms its calls itself
+    /// (`docs/geek-ui.md`, "Calling a number"). `false` when absent, for a
+    /// client reading an older core.
+    #[serde(default)]
+    pub auto_confirm_calls: bool,
 }
 
 /// The core is upgrading the database of its data directory (schema

@@ -1496,9 +1496,12 @@ private struct HTMLReader: NSViewRepresentable {
                 return
             }
             // Only the document itself loads here; a clicked link opens in
-            // the default browser.
+            // the default browser, a `tel:` link calls (`AppModel.openLink`,
+            // which may confirm the call too).
             if action.navigationType == .linkActivated, let url = action.request.url {
-                NSWorkspace.shared.open(url)
+                MainActor.assumeIsolated {
+                    if let model = controller?.model { model.openLink(url) } else { NSWorkspace.shared.open(url) }
+                }
                 decisionHandler(.cancel)
             } else {
                 decisionHandler(.allow)

@@ -58,6 +58,10 @@ enum UIScript {
     /// mode nothing is opened, so as not to launch Preview or Word on the
     /// user's screen.
     static var openedFile = ""
+    /// The `tel:` URLs whose call the app would have confirmed
+    /// (`CallConfirmation`): in UI script mode no notification is touched
+    /// and no call is placed.
+    static var confirmedCalls: [String] = []
     /// What the open panel of ⇧⌘A answers (`files`).
     static var chosenFiles: [URL] = []
     /// Lines of the reader's title line, 1 or 2 (`ReaderTitleBar`).
@@ -112,6 +116,14 @@ enum UIScript {
         // Opening a file would launch an app on the user's screen: only
         // record its name.
         model.openFile = { openedFile = $0.isFileURL ? $0.lastPathComponent : $0.absoluteString }
+        // Confirming a call would drive the user's notifications and call
+        // through their iPhone: the URL is opened (recorded, above) and the
+        // confirmation only recorded.
+        model.confirmCall = { url, open in
+            open()
+            confirmedCalls.append(url.absoluteString)
+            return .confirmed
+        }
         // ⇧⌘A would show the open panel: the scenario names the files
         // (`files`), taken from `UITests/fixtures/files`.
         model.chooseFiles = { UIScript.chosenFiles }
@@ -626,6 +638,8 @@ private final class Runner {
             } ?? "",
             "reader_attachments": "\(UIScript.readerAttachments)",
             "opened_file": UIScript.openedFile,
+            "confirmed_calls": UIScript.confirmedCalls.joined(separator: ","),
+            "auto_confirm_calls": "\(m.autoConfirmCalls)",
             "mailbox_switched": UIScript.mailboxesSwitched.joined(separator: ","),
             "mailbox_question": m.pendingUpgrade.map { "\($0.url.lastPathComponent) \($0.from)->\($0.to)" } ?? "",
             "mailbox_upgrading": m.upgradingMailbox?.lastPathComponent ?? "",

@@ -1559,7 +1559,10 @@ async fn call(core: &Arc<Core>, source: Source, req: Request) -> Result<Value, R
                 accounts_exists: engine.accounts_path().exists(),
                 error: engine.error().map(nm_engine::problem_view),
                 warnings: engine.warnings().iter().map(nm_engine::problem_view).collect(),
-                ui: nm_api::UiConfig { title_bar: engine.config().ui.title_bar.as_str().into() },
+                ui: nm_api::UiConfig {
+                    title_bar: engine.config().ui.title_bar.as_str().into(),
+                    auto_confirm_calls: engine.config().ui.auto_confirm_calls,
+                },
                 as_of,
             })
         }
