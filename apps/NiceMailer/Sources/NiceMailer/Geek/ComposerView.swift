@@ -24,12 +24,22 @@ struct ComposerView: View {
                 VStack(alignment: .leading, spacing: scaled(2)) {
                     // Who sends, and from which account; a click (or ⌥⌘F)
                     // chooses another address of an account that can send.
-                    headerLine(L("From"), focused: false) {
-                        Text(Compose.fromLine(c.headers, senders: model.senders)).lineLimit(1)
+                    //
+                    // While "Send from" is open it takes this line's
+                    // place: the answer is read where the address it
+                    // changes is, in the headers, not in a corner of the
+                    // window (`reponse.md`, section 4 ter).
+                    if controller.activeChoice == .sendFrom {
+                        ChoicePanel(controller: controller, choice: .sendFrom)
+                            .padding(.vertical, scaled(2))
+                    } else {
+                        headerLine(L("From"), focused: false) {
+                            Text(Compose.fromLine(c.headers, senders: model.senders)).lineLimit(1)
+                        }
+                        .contentShape(Rectangle())
+                        .onTapGesture { controller.chooseSender() }
+                        .uiTarget("compose-from")
                     }
-                    .contentShape(Rectangle())
-                    .onTapGesture { controller.chooseSender() }
-                    .uiTarget("compose-from")
                     recipientLine(.to, L("To"), c)
                     recipientLine(.cc, L("Cc"), c)
                     if c.showsBcc {
@@ -61,7 +71,14 @@ struct ComposerView: View {
                             }
                         }
                     }
-                    if let after = Compose.afterSendLine(c.draft) {
+                    // ⇧⌘↩, like ⌥⌘F, is answered in the headers and not
+                    // in a corner of the window: its panel takes the place
+                    // of the line "After sending: …", which is what it
+                    // changes (`reponse.md`, section 8).
+                    if controller.activeChoice == .sendThen {
+                        ChoicePanel(controller: controller, choice: .sendThen)
+                            .padding(.top, scaled(2))
+                    } else if let after = Compose.afterSendLine(c.draft) {
                         Text(after).foregroundStyle(Palette.accentText).lineLimit(1)
                     }
                 }

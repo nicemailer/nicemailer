@@ -121,17 +121,24 @@ private struct GeekWindow: View {
 
     @ViewBuilder private var overlay: some View {
         // A question (a suspect move to confirm, a decision to choose)
-        // comes before any other panel, in the bottom-right corner.
-        if let choice = controller.activeChoice {
-            KeyMenu(title: controller.choiceTitle(choice),
-                    entries: controller.choiceEntries(choice).map { .init(key: $0.key, label: $0.label, gapBefore: $0.gapBefore, detail: $0.detail) },
-                    highlighted: controller.choiceIndex,
-                    onSelect: { controller.chooseChoiceEntry($0) })
+        // comes before any other panel, in the bottom-right corner —
+        // except the one the screen draws where its answer belongs
+        // ("Send from", in place of the line "From" of the reply).
+        if let choice = controller.activeChoice, !drawnInPlace(choice) {
+            ChoicePanel(controller: controller, choice: choice)
                 .padding(12)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
         } else {
             menusAndPickers
         }
+    }
+
+    /// Choices a screen draws itself, at the place they are about: in the
+    /// headers of the reply being written, ⌥⌘F replaces the line "From"
+    /// and ⇧⌘↩ the line "After sending: …" (`reponse.md`, sections 4 ter
+    /// and 8), so the corner leaves them alone.
+    private func drawnInPlace(_ choice: GeekController.Choice) -> Bool {
+        (choice == .sendFrom || choice == .sendThen) && model.composer != nil
     }
 
     @ViewBuilder private var menusAndPickers: some View {
@@ -1485,7 +1492,22 @@ struct VirtualFolderLabel: View {
     }
 }
 
-private struct KeyMenu: View {
+/// The panel of a choice (`GeekController.activeChoice`): its title and
+/// one row per answer, each with its key. Drawn in the bottom-right
+/// corner, or by the screen itself where the choice belongs.
+struct ChoicePanel: View {
+    let controller: GeekController
+    let choice: GeekController.Choice
+
+    var body: some View {
+        KeyMenu(title: controller.choiceTitle(choice),
+                entries: controller.choiceEntries(choice).map { .init(key: $0.key, label: $0.label, gapBefore: $0.gapBefore, detail: $0.detail) },
+                highlighted: controller.choiceIndex,
+                onSelect: { controller.chooseChoiceEntry($0) })
+    }
+}
+
+struct KeyMenu: View {
     let title: String
     let entries: [Row]
     /// Row highlighted with the arrows, if any.

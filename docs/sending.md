@@ -58,7 +58,7 @@ Then the status bar says what happened: "Sent · filed in Archive · z: undo the
 
 ## Choosing the filing
 
-`⌘↩` files the conversation as the line "After sending: …" says: the core's preselection (`dossiers.md`, "Répondre à une conversation"). `⇧⌘↩` asks first, in a small menu with the preselection marked:
+`⌘↩` files the conversation as the line "After sending: …" says: the core's preselection (`dossiers.md`, "Répondre à une conversation"). `⇧⌘↩` asks first, in a small menu shown **in the headers of the mail**, in place of that very line (as "Send from" takes the place of the line "From"), with the preselection marked:
 
 - `a` Archive, `w` Waiting, `t` Todo;
 - `s` leave it where it is, a **trial** option shown only in this menu: the mail is sent and its recipients get their decision, but the conversation is not touched at all: nothing moves, and its return mark ("↩ Todo") stays.
@@ -75,7 +75,7 @@ What moves is **the mail written**: its copy leaves Sent for the folder chosen, 
 
 ## Choosing the sender
 
-Any mail can be sent from any account that can send: an account of `accounts.toml` with `[smtp]`, not read-only (with `NICEMAILER_FAKE_NETWORK`, the accounts the file does not declare too). `⌥⌘F`, or a click on the line "From", opens "Send from": every address of those accounts, each account's main address then its identities, in the order of the accounts, keyed `1` to `9` then by letter, the current one marked. A key (or a click) chooses; Escape goes back to the text. The status bar says "Sending from Sales <sales@work.fr> · work". With a single address there is nothing to choose, and the status bar says which it is.
+Any mail can be sent from any account that can send: an account of `accounts.toml` with `[smtp]`, not read-only (with `NICEMAILER_FAKE_NETWORK`, the accounts the file does not declare too). `⌥⌘F`, or a click on the line "From", opens "Send from": every address of those accounts, each account's main address then its identities, in the order of the accounts, keyed `1` to `9` then by letter, the current one marked. A key (or a click) chooses; Escape goes back to the text. The panel takes **the place of the line "From"**, at the top of the mail, rather than the bottom-right corner the other questions use: as for "Send, then file…", the answer is read where the line it changes is. The status bar says "Sending from Sales <sales@work.fr> · work". With a single address there is nothing to choose, and the status bar says which it is.
 
 The choice is saved with the draft at the next pause, like the other headers (`update_draft` with `from: {account_id, addr}`): the core checks that the account can send and that the address is one of its own, and takes the name `accounts.toml` gives it. Escape then `r` gives the reply back from the address chosen.
 
