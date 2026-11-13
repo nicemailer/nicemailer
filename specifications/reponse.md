@@ -221,10 +221,21 @@ La règle est celle de `dossiers.md`, « Répondre à une conversation ». Le ch
 ### Choix manuel (`⇧⌘↩`)
 
 - `⌘↩` envoie avec le rangement affiché. `⇧⌘↩` ouvre un petit menu « Envoyer, puis ranger la conversation dans » : `a` Archive, `w` Waiting, `t` Todo, puis, séparée, `s` « la laisser en place (essai) ». La présélection y est marquée. La touche choisie envoie aussitôt ; un clic sur une ligne aussi. Échap revient au texte sans rien envoyer.
-- Le menu n'est proposé que si le noyau propose un rangement (`after_send_target` présent : conversation dans Inbox, Todo ou Waiting). Ailleurs, `⇧⌘↩` le dit dans la barre d'état et n'envoie rien.
+- Le menu est proposé quand le noyau propose un rangement (`after_send_target` présent : conversation dans Inbox, Todo ou Waiting) et pour un **nouveau mail** (ci-dessous). Ailleurs — un transfert, une réponse à une conversation rangée ailleurs — `⇧⌘↩` le dit dans la barre d'état et n'envoie rien.
 - **Le choix explicite l'emporte** sur la présélection recalculée à l'envoi. Il ne déplace pourtant jamais une conversation sortie entre-temps d'Inbox, Todo et Waiting (archivée ailleurs, par exemple) : rien n'est rangé, comme pour la présélection.
 - Le choix est **enregistré dans le brouillon** (`draft.after_send`) : un envoi annulé par `z` rouvre la réponse avec lui (« Après l'envoi : Waiting »), et `⌘↩` l'applique. Un nouveau `⇧⌘↩` le remplace.
 - **Option d'essai « laisser en place »** (`stay`), visible seulement dans ce menu : la réponse part, les destinataires reçoivent leur décision (section 10), mais la conversation n'est pas touchée : aucun déplacement, et les marques `$NmWasTodo` / `$NmWasWaiting` restent (ce n'est pas une commande sur la conversation). Elle sert la réponse qui laisse la conversation à traiter dans l'Inbox. À évaluer à l'usage : à garder, à retirer, ou à intégrer à `dossiers.md`.
+
+### Nouveau mail (ajouté en novembre 2026)
+
+Un nouveau mail ne répond à aucune conversation : il n'y a rien à ranger au moment de l'envoi, mais le mail écrit forme lui-même une conversation, et l'utilisateur veut souvent le suivre (une demande dont il attend la réponse va dans Waiting, un mail à reprendre dans Todo).
+
+- `⇧⌘↩` propose donc le même menu, titré « Envoyer, puis ranger ce mail dans » : `a` Archive, `w` Waiting, `t` Todo, puis, séparée, `s` « le laisser dans Sent ». La présélection est `s` : sans choix, `⌘↩` laisse le mail dans Sent, comme avant.
+- Le rangement choisi s'applique **au mail envoyé lui-même** : sa copie quitte Sent pour le dossier choisi, ici et sur le serveur, exactement comme un déplacement donné depuis Sent sur une conversation qui n'a rien d'autre (`dossiers.md`, « Cibles proposées »). Le choix est enregistré dans le brouillon (`draft.after_send`) comme pour une réponse.
+- Il est fait **après la copie dans Sent** (fin de la phase `append`, même transaction que l'UID de la copie) : avant, la copie n'existe pas encore sur le serveur et son UID est inconnu, donc le serveur ne pourrait pas suivre le déplacement. L'événement `DraftSent` annonce le rangement à venir dans `filing` (et non dans `moved_to`, qui ne décrit que ce qui est déjà rangé) : la barre d'état peut dire « Envoyé · rangé dans Waiting » tout de suite.
+- `z` après l'envoi annule les décisions prises sur les destinataires (section 10), **pas** ce rangement : il a lieu après le jeton d'annulation de `DraftSent`. La barre d'état ne propose donc pas d'annuler le rangement, et le mail est déplacé comme n'importe quel autre depuis sa liste.
+- Un envoi dont la copie dans Sent n'aboutit jamais (serveur injoignable jusqu'à la dernière tentative, compte sans dossier Sent) ne range rien : le rangement fait partie de la copie.
+- Un **transfert** ne range rien, comme en v1 : la conversation transférée reste en place, et `⇧⌘↩` le dit.
 
 ## 9. Copie dans Sent
 
@@ -270,7 +281,7 @@ Ces décisions font partie de la même commande que le rangement : `z` après l'
 
 `quote_header` est mis en forme par le client parce que la langue et le format de date sont ceux de l'app ; le noyau ne la modifie pas. Les clients sans langue (CLI) passent une ligne anglaise.
 
-Événements : `DraftSent {draft_id, message_id, thread_id, moved_to?, undo?}`, `SendFailed {draft_id, reply_to, reason}`, `SendPartial {draft_id, refused}`.
+Événements : `DraftSent {draft_id, message_id, thread_id, moved_to?, filing?, undo?}` (`filing` : le rangement d'un nouveau mail, fait après la copie dans Sent, section 8), `SendFailed {draft_id, reply_to, reason}`, `SendPartial {draft_id, refused}`.
 
 Ces commandes sont réservées à l'app, à la TUI et au CLI : un agent (MCP) ou le serveur web reçoit `FORBIDDEN`, en attendant la confirmation des envois d'agents dans l'app (`architecture.md`, section 9).
 

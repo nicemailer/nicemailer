@@ -1033,14 +1033,19 @@ fn a_forward_carries_the_mail_and_its_files() {
     assert!(reused && again.id == d.id);
     use nm_store::drafts::DraftEdit;
     let rev = e.s.edit_draft(d.id, d.revision, &DraftEdit { to: Some(vec![mb("dan@d.example", None)]), ..Default::default() }, Source::App).unwrap();
-    e.s.send_draft(d.id, rev, &d.body, None, 0, "t", Source::App).unwrap();
+    // A filing asked for anyway (another client): a forward files
+    // nothing, neither the conversation forwarded nor its own copy.
+    e.s.send_draft(d.id, rev, &d.body, Some(AfterSend::Waiting), 0, "t", Source::App).unwrap();
     let jobs = e.s.send_claim(e.acc).unwrap();
     let parsed = parse(&jobs[0].mime);
     assert!(parsed.in_reply_to.is_none());
     assert_eq!(parsed.attachments[0].filename.as_deref(), Some("devis.pdf"));
     let written = e.raw.write(&jobs[0].copy).unwrap();
     let c = e.s.send_accepted(jobs[0].action_id, &written, &[], &e.ids.own()).unwrap();
-    assert_eq!(c.sent[0].moved_to, None);
+    assert_eq!((c.sent[0].moved_to, c.sent[0].filing), (None, None));
+    let sent = c.sent[0].message_id;
+    e.s.send_copied(jobs[0].action_id, Some(915)).unwrap();
+    assert_eq!(e.role_of(sent), "sent");
     assert_eq!(e.role_of(m), "inbox");
 }
 
@@ -1079,6 +1084,81 @@ fn a_new_mail_starts_empty_and_is_dropped_when_left_empty() {
     let r = e.reply(m);
     e.s.update_draft(r.id, r.revision, "", Source::App).unwrap();
     assert!(!e.s.drop_if_blank(r.id).unwrap());
+}
+
+/// A new mail filed with ⇧⌘↩ (`reponse.md`, section 8, "Nouveau mail"):
+/// it answers nothing, so the mail written is what is filed. The move
+/// waits for the copy in Sent, whose UID the server must know to follow
+/// it: `send_accepted` only announces it (`filing`), `send_copied` does
+/// it, and the spool carries the move with the UID of the copy.
+#[test]
+fn a_new_mail_is_filed_once_its_copy_in_sent_is_made() {
+    let mut e = env();
+    let d = e.s.create_new_draft(e.acc, &e.ids, None, Source::App).unwrap();
+    use nm_store::drafts::DraftEdit;
+    let rev = e.s.edit_draft(d.id, d.revision, &DraftEdit { to: Some(vec![mb("dan@d.example", None)]), ..Default::default() }, Source::App).unwrap();
+    // Nothing to preselect: the conversation does not exist yet.
+    assert_eq!(e.s.get_draft(d.id).unwrap().after_send_target, None);
+    e.s.send_draft(d.id, rev, "Bonjour Dan.", Some(AfterSend::Waiting), 0, "NiceMailer/test", Source::App).unwrap();
+    // The choice is kept in the draft, like a reply's.
+    assert_eq!(e.s.get_draft(d.id).unwrap().after_send, Some(AfterSend::Waiting));
+    let jobs = e.s.send_claim(e.acc).unwrap();
+    let written = e.raw.write(&jobs[0].copy).unwrap();
+    let c = e.s.send_accepted(jobs[0].action_id, &written, &[], &e.ids.own()).unwrap();
+    let sent = c.sent[0].message_id;
+    // Announced, not done: the copy in Sent does not exist on the server
+    // yet. `moved_to`, which `undo` covers, stays empty.
+    assert_eq!((c.sent[0].moved_to, c.sent[0].filing), (None, Some(FolderRole::Waiting)));
+    assert_eq!(e.role_of(sent), "sent");
+    // The copy made, with its UID: the mail leaves Sent for Waiting, and
+    // the server is told, from the UID the copy had.
+    let c = e.s.send_copied(jobs[0].action_id, Some(910)).unwrap();
+    assert_eq!(e.role_of(sent), "waiting");
+    assert!(c.messages.iter().any(|(id, _)| *id == sent));
+    let (kind, payload): (String, String) = e
+        .s
+        .conn()
+        .query_row("SELECT kind, payload FROM pending_action WHERE message_id = ?1 AND kind = 'move'", [sent], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })
+        .unwrap();
+    assert_eq!(kind, "move");
+    let moved: serde_json::Value = serde_json::from_str(&payload).unwrap();
+    assert_eq!(moved["from_uid"], 910);
+    assert_eq!(moved["to_folder_id"], folder(&e.s, "waiting"));
+    // The conversation of the mail written is in Waiting, and nothing is
+    // left in Sent.
+    assert_eq!(e.int("SELECT count(*) FROM message m JOIN folder f ON f.id = m.folder_id WHERE f.role = 'sent'"), 0);
+}
+
+/// ⌘↩ without a choice on a new mail, and a forward: nothing is filed
+/// (`reponse.md`, section 8). The mail stays in Sent.
+#[test]
+fn a_new_mail_without_a_choice_stays_in_sent() {
+    let mut e = env();
+    let d = e.s.create_new_draft(e.acc, &e.ids, None, Source::App).unwrap();
+    use nm_store::drafts::DraftEdit;
+    let rev = e.s.edit_draft(d.id, d.revision, &DraftEdit { to: Some(vec![mb("dan@d.example", None)]), ..Default::default() }, Source::App).unwrap();
+    e.s.send_draft(d.id, rev, "Bonjour.", None, 0, "NiceMailer/test", Source::App).unwrap();
+    let jobs = e.s.send_claim(e.acc).unwrap();
+    let written = e.raw.write(&jobs[0].copy).unwrap();
+    let c = e.s.send_accepted(jobs[0].action_id, &written, &[], &e.ids.own()).unwrap();
+    assert_eq!((c.sent[0].moved_to, c.sent[0].filing), (None, None));
+    let sent = c.sent[0].message_id;
+    e.s.send_copied(jobs[0].action_id, Some(911)).unwrap();
+    assert_eq!(e.role_of(sent), "sent");
+    assert_eq!(e.int(&format!("SELECT count(*) FROM pending_action WHERE message_id = {sent} AND kind = 'move'")), 0);
+    // The trial option `stay` on a new mail: the same, nothing moves.
+    let d = e.s.create_new_draft(e.acc, &e.ids, None, Source::App).unwrap();
+    let rev = e.s.edit_draft(d.id, d.revision, &DraftEdit { to: Some(vec![mb("eve@e.example", None)]), ..Default::default() }, Source::App).unwrap();
+    e.s.send_draft(d.id, rev, "Bonjour.", Some(AfterSend::Stay), 0, "NiceMailer/test", Source::App).unwrap();
+    let jobs = e.s.send_claim(e.acc).unwrap();
+    let written = e.raw.write(&jobs[0].copy).unwrap();
+    let c = e.s.send_accepted(jobs[0].action_id, &written, &[], &e.ids.own()).unwrap();
+    assert_eq!((c.sent[0].moved_to, c.sent[0].filing), (None, None));
+    let second = c.sent[0].message_id;
+    e.s.send_copied(jobs[0].action_id, Some(912)).unwrap();
+    assert_eq!(e.role_of(second), "sent");
 }
 
 /// A second account, `key`, with the folders of the workflow, synchronized

@@ -401,6 +401,16 @@
         }
       }
     },
+    "A forward files nothing: ⌘↩ to send": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un transfert ne range rien : ⌘↩ pour envoyer"
+          }
+        }
+      }
+    },
     "A single mail: no other message": {
       "localizations": {
         "fr": {
@@ -1583,6 +1593,16 @@
         }
       }
     },
+    "Send, then file this mail in": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Envoyer, puis ranger ce mail dans"
+          }
+        }
+      }
+    },
     "Sending cancelled: the reply is open again": {
       "localizations": {
         "fr": {
@@ -2435,6 +2455,16 @@
         }
       }
     },
+    "decisions of the sending": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "décisions de l'envoi"
+          }
+        }
+      }
+    },
     "delete": {
       "localizations": {
         "fr": {
@@ -2642,6 +2672,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "7 derniers jours"
+          }
+        }
+      }
+    },
+    "leave it in Sent": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "le laisser dans Sent"
           }
         }
       }

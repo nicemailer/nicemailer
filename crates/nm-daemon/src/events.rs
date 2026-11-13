@@ -146,6 +146,7 @@ impl EventLog {
                 message_id: s.message_id,
                 thread_id: s.thread_id,
                 moved_to: s.moved_to,
+                filing: s.filing,
                 undo: s.undo.clone(),
             });
         }

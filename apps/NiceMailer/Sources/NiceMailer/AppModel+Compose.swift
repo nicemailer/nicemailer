@@ -528,8 +528,17 @@ extension AppModel {
             // Its sending can no longer be cancelled; its filing can be.
             undoStack.removeAll { $0.cancelSend == id }
             let undo = params["undo"]?.string
-            if let undo { pushUndo(UndoStep(tokens: [undo], label: L("filing of the reply"), threads: params["thread_id"]?.int.map { [$0] } ?? [])) }
-            flash = Compose.sentFlash(movedTo: params["moved_to"]?.string, undo: undo != nil)
+            // `filing`: a new mail's own, which the core applies once the
+            // copy in Sent is made (`reponse.md`, section 8, "Nouveau
+            // mail"). It comes after this token, so `z` then undoes the
+            // decisions taken on the recipients alone, and says so.
+            let filing = params["filing"]?.string
+            if let undo {
+                pushUndo(UndoStep(tokens: [undo],
+                                  label: filing == nil ? L("filing of the reply") : L("decisions of the sending"),
+                                  threads: params["thread_id"]?.int.map { [$0] } ?? []))
+            }
+            flash = Compose.sentFlash(movedTo: params["moved_to"]?.string, filing: filing, undo: undo != nil)
         case "SendFailed":
             sending[id] = nil
             undoStack.removeAll { $0.cancelSend == id }

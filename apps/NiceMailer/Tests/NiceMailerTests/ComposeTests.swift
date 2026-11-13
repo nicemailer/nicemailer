@@ -91,6 +91,45 @@ struct ComposeRulesTests {
         #expect(chosen.filter(\.current).map(\.key) == ["s"])
     }
 
+    /// A draft of `kind`, with no conversation to file: a new mail, a
+    /// forward.
+    func ownDraft(kind: String, chosen: String?) throws -> DraftView {
+        var json = Fixture.draft(replyTo: 10)
+        json["kind"] = kind
+        json["reply_to"] = NSNull()
+        json["forward_of"] = kind == "forward" ? 10 : NSNull()
+        json["thread_id"] = NSNull()
+        json["after_send_target"] = NSNull()
+        json["after_send"] = chosen ?? NSNull()
+        return try CoreClient.decoder.decode(DraftView.self, from: JSONSerialization.data(withJSONObject: json))
+    }
+
+    /// A new mail files itself (`reponse.md`, section 8, "Nouveau mail"):
+    /// ⇧⌘↩ offers the three folders, Sent being where it stays; a forward
+    /// files nothing at all.
+    @Test func aNewMailFilesTheMailWritten() throws {
+        let fresh = try ownDraft(kind: "new", chosen: nil)
+        #expect(Compose.offersFiling(fresh) && Compose.filesItself(fresh))
+        // Nothing chosen: it stays in Sent, and the headers say nothing.
+        #expect(Compose.afterSend(fresh) == nil)
+        #expect(Compose.afterSendLine(fresh) == nil)
+        let choices = Compose.sendChoices(fresh)
+        #expect(choices.map(\.afterSend) == ["archive", "waiting", "todo", "stay"])
+        #expect(choices.filter(\.current).map(\.key) == ["s"])
+        #expect(choices.last?.label == L("leave it in Sent"))
+        // Chosen: it applies, and the headers show it.
+        let waiting = try ownDraft(kind: "new", chosen: "waiting")
+        #expect(Compose.afterSend(waiting) == "waiting")
+        #expect(Compose.afterSendLine(waiting) == L("After sending: %@", Role.name("waiting")))
+        #expect(Compose.sendChoices(waiting).filter(\.current).map(\.key) == ["w"])
+        // `stay` chosen on a new mail: nothing to say, it is the default.
+        #expect(Compose.afterSendLine(try ownDraft(kind: "new", chosen: "stay")) == nil)
+        // A forward: nothing is offered, whatever a client stored.
+        let forward = try ownDraft(kind: "forward", chosen: nil)
+        #expect(!Compose.offersFiling(forward) && !Compose.filesItself(forward))
+        #expect(Compose.afterSend(try ownDraft(kind: "forward", chosen: "todo")) == nil)
+    }
+
     /// Tab goes through To, Cc, (Bcc when shown), Subject and the text,
     /// turning around; ⇧Tab the other way.
     @Test func tabGoesFromFieldToField() throws {
@@ -251,6 +290,10 @@ struct ComposeRulesTests {
         #expect(Compose.sentFlash(movedTo: "archive", undo: true) == L("Sent") + " · " + L("filed in %@", Role.name("archive")) + " · " + L("z: undo the filing"))
         #expect(Compose.sentFlash(movedTo: nil, undo: false) == L("Sent"))
         #expect(Compose.sentFlash(movedTo: nil, undo: true) == L("Sent") + " · " + L("z: undo"))
+        // A new mail's own filing: said the same way, but `z` only offers
+        // the decisions back (section 8, "Nouveau mail").
+        #expect(Compose.sentFlash(movedTo: nil, filing: "waiting", undo: true)
+            == L("Sent") + " · " + L("filed in %@", Role.name("waiting")) + " · " + L("z: undo"))
     }
 
     @Test func theComposerStartsAboveTheQuotation() throws {
@@ -558,6 +601,58 @@ struct ComposeControllerTests {
         #expect(core.calls("send_draft").first?["after_send"] == nil)
     }
 
+    /// A new mail files itself (`reponse.md`, section 8, "Nouveau mail"):
+    /// ⇧⌘↩ asks where the mail written goes, Sent being the preselection,
+    /// and the choice is sent with it.
+    @Test func shiftCommandReturnFilesANewMail() async {
+        core.handler = { method, params in
+            guard method == "create_draft" || method == "prepare_draft" else { return Fixture.answer(method, params) }
+            var d = Fixture.draft(replyTo: 10)
+            d["kind"] = "new"
+            d["reply_to"] = NSNull()
+            d["thread_id"] = NSNull()
+            d["after_send_target"] = NSNull()
+            return ["draft": Fixture.opened(method, d), "reused": false]
+        }
+        press("c")
+        #expect(await eventually { model.composer != nil })
+        type("Bonjour")
+        press("shift-cmd-ret")
+        #expect(controller.activeChoice == .sendThen)
+        // The mail, not a conversation; Sent is where it stays by default.
+        #expect(controller.choiceTitle(.sendThen) == L("Send, then file this mail in"))
+        let entries = controller.choiceEntries(.sendThen)
+        #expect(entries.map(\.key) == ["a", "w", "t", "s", "esc"])
+        #expect(entries[3].label == L("leave it in Sent"))
+        #expect(entries[3].detail == "•")
+        #expect(entries.first?.detail == nil)
+        // `w`: sent, the mail to go to Waiting.
+        press("w")
+        #expect(await eventually { core.calls("send_draft").count == 1 })
+        #expect(core.calls("send_draft").first?["after_send"] as? String == "waiting")
+    }
+
+    /// A forward files nothing (`reponse.md`, section 8): ⇧⌘↩ says so and
+    /// sends nothing.
+    @Test func aForwardHasNothingToFile() async {
+        core.handler = { method, params in
+            guard method == "create_draft" || method == "prepare_draft" else { return Fixture.answer(method, params) }
+            var d = Fixture.draft(replyTo: 10)
+            d["kind"] = "forward"
+            d["reply_to"] = NSNull()
+            d["forward_of"] = 10
+            d["thread_id"] = NSNull()
+            d["after_send_target"] = NSNull()
+            return ["draft": Fixture.opened(method, d), "reused": false]
+        }
+        press("F")
+        #expect(await eventually { model.composer != nil })
+        press("shift-cmd-ret")
+        #expect(controller.activeChoice == nil)
+        #expect(model.flash == L("A forward files nothing: ⌘↩ to send"))
+        #expect(core.calls("send_draft").isEmpty)
+    }
+
     /// No filing offered (a conversation in Archive, Newsletter…): ⇧⌘↩
     /// says so and sends nothing.
     @Test func nothingToChooseOutsideTheWorkFolders() async {
@@ -856,6 +951,11 @@ struct ComposeControllerTests {
         #expect(model.flash == L("Not sent: %@ · r on the mail to reopen the reply", "550 no such user"))
         model.draftEvent("SendPartial", ["draft_id": .int(903), "refused": .strings(["bad@x.fr (550 unknown)"])])
         #expect(model.flash == L("Sent, but the server refused: %@", "bad@x.fr (550 unknown)"))
+        // A new mail filed with ⇧⌘↩: the core applies it once the copy in
+        // Sent is made (`filing`), so `z` only offers the decisions back.
+        model.draftEvent("DraftSent", ["draft_id": .int(904), "filing": .string("waiting"), "undo": .string("11:12")])
+        #expect(model.flash == L("Sent") + " · " + L("filed in %@", Role.name("waiting")) + " · " + L("z: undo"))
+        #expect(model.undoStack.last?.label == L("decisions of the sending"))
     }
 
     /// ⌥⌘F: "Send from", the addresses of every account that can send;

@@ -11,7 +11,7 @@ How a reply is written in the app and sent by the core. The rules are those of `
 | `F` | a mail | forward it with its files: no recipient (the keys go to To), `Fwd:`, the block "---------- Forwarded message ---------" in the app's language, then the mail's text as it is; nothing is filed |
 | `c` | anywhere in the list | a new mail from the account of the view; left empty, Escape drops it |
 | ⌘↩ | the reply | send, after the undo delay (5 s); the status bar says "Sending in 5 s · z to cancel" |
-| ⇧⌘↩ | the reply | "Send, then file the conversation in": `a` Archive, `w` Waiting, `t` Todo, `s` leave it where it is (trial); the key (or a click) sends, Escape goes back to the text |
+| ⇧⌘↩ | the reply | "Send, then file the conversation in": `a` Archive, `w` Waiting, `t` Todo, `s` leave it where it is (trial); the key (or a click) sends, Escape goes back to the text. On a new mail, "Send, then file this mail in": the mail written is what is filed, and `s` leaves it in Sent |
 | Escape | the reply | back to the mail; the reply goes to Drafts (here and on the server), and `r` on the mail, or `r` / Return on the draft in Drafts, reopens it |
 | ⌘⌫ | the reply | abandon the reply; `z` gives it back with its text |
 | ⇥ ⇧⇥ | the reply | next / previous field: To, Cc, Bcc (when shown), Subject, the text; in the text ⇥ is typed, ⇧⇥ goes up to the subject |
@@ -63,7 +63,15 @@ Then the status bar says what happened: "Sent · filed in Archive · z: undo the
 - `a` Archive, `w` Waiting, `t` Todo;
 - `s` leave it where it is, a **trial** option shown only in this menu: the mail is sent and its recipients get their decision, but the conversation is not touched at all: nothing moves, and its return mark ("↩ Todo") stays.
 
-The choice is sent as `after_send` and saved in the draft (`draft.after_send`): `z` during the undo delay gives the reply back with it ("After sending: Waiting", or "stays where it is"), and the next `⌘↩` applies it. It wins over the preselection, which is worked out again when the server accepts the mail; but nothing moves a conversation that is no longer in the Inbox, Todo or Waiting by then. Where the core offers no filing (a conversation in Archive, Newsletter…), `⇧⌘↩` says so and sends nothing.
+The choice is sent as `after_send` and saved in the draft (`draft.after_send`): `z` during the undo delay gives the reply back with it ("After sending: Waiting", or "stays where it is"), and the next `⌘↩` applies it. It wins over the preselection, which is worked out again when the server accepts the mail; but nothing moves a conversation that is no longer in the Inbox, Todo or Waiting by then. Where the core offers no filing (a conversation in Archive, Newsletter…, or a forward, which files nothing), `⇧⌘↩` says so and sends nothing.
+
+### A new mail files itself
+
+A new mail (`c`) answers no conversation, so there is nothing to file at the moment it is sent — but the mail written is often one to follow: a request whose answer is awaited belongs in Waiting, one to come back to in Todo. So `⇧⌘↩` offers the same menu, titled "Send, then file this mail in", with `s` "leave it in Sent" as the preselection: `⌘↩` alone leaves the mail in Sent, as before.
+
+What moves is **the mail written**: its copy leaves Sent for the folder chosen, here and on the server, exactly as a move given from Sent on a conversation with nothing else does (`folder-workflow.md`). It happens **once the copy in Sent is made** (the end of the `append` phase, in the same transaction as the copy's UID): before that the copy does not exist on the server and its UID is unknown, so the server could not follow the move. The status bar says "Sent · filed in Waiting" as soon as the mail is accepted — the event `DraftSent` carries the folder in `filing` — and the list shows the move a moment later.
+
+`z` after sending undoes the decisions taken on the recipients, **not** that filing: it happens after the undo token of the sending. The status bar does not offer it, and the mail is moved from its list like any other. A send whose copy in Sent never succeeds (a server unreachable to the last attempt, an account without a Sent folder) files nothing.
 
 ## Choosing the sender
 
@@ -122,8 +130,8 @@ send_draft ─▶ action `send` (phase smtp), due after the undo delay ─▶ SM
 Each account with `[smtp]` has a **sender**, a thread of its worker with its own connections (`nm-engine`, `sync/send.rs`). It sleeps until the next mail is due, or until a mail is queued or cancelled, then:
 
 1. connects to the SMTP server (TLS or STARTTLS, certificates checked by macOS, `ca_file` honoured), logs in (`AUTH PLAIN`, else `LOGIN`, only over TLS), `MAIL FROM`, `RCPT TO` for every recipient, `DATA`;
-2. once accepted, in one transaction (`Store::send_accepted`): the mail becomes a row of Sent (its raw file is what was sent), its conversation is filed as preselected, its recipients without decision get `inbox` (and their mails leave Quarantine), the draft is deleted, a `send` line goes to the history, and `DraftSent` carries the undo token of the filing;
-3. copies the mail to the Sent folder of the server (`APPEND`, `\Seen`) and records its UID (`APPENDUID`). Gmail (capability `X-GM-EXT-1` or `smtp.gmail.com`) and Fastmail copy sent mail themselves: there the sender only looks for the copy's UID. `save_sent = "always" | "never"` overrides the detection. Without a UID the next pass of Sent attaches the row by its `Message-ID` (a row NiceMailer sent less than an hour ago is never taken for an orphan).
+2. once accepted, in one transaction (`Store::send_accepted`): the mail becomes a row of Sent (its raw file is what was sent), its conversation is filed as preselected, its recipients without decision get `inbox` (and their mails leave Quarantine), the draft is deleted, a `send` line goes to the history, and `DraftSent` carries the undo token of the filing (a new mail's own filing is only announced here, in `filing`, and carried by the action as `file_after_copy`);
+3. copies the mail to the Sent folder of the server (`APPEND`, `\Seen`) and records its UID (`APPENDUID`), then applies a new mail's filing (`Store::send_copied`): the copy, now on the server with its UID, moves to the folder chosen and the spool tells the server. Gmail (capability `X-GM-EXT-1` or `smtp.gmail.com`) and Fastmail copy sent mail themselves: there the sender only looks for the copy's UID. `save_sent = "always" | "never"` overrides the detection. Without a UID the next pass of Sent attaches the row by its `Message-ID` (a row NiceMailer sent less than an hour ago is never taken for an orphan).
 
 | What happened | What follows |
 | --- | --- |
@@ -161,7 +169,7 @@ The app, the TUI and the CLI. An agent (MCP) or the web server get `FORBIDDEN`: 
 | `send_draft` | `id`, `revision`, `body`, `after_send?` (`archive`, `waiting`, `todo`, `stay`; saved in the draft; absent: the one saved, else the preselection) | `{send_at}`; `CANNOT_SEND` (1015), also when the account that sends no longer can (`accounts.toml` changed) |
 | `cancel_send` | `id` | `DraftView`, editable; `SEND_ALREADY_STARTED` (1014) |
 
-`prepare_draft` and `create_draft` return `BODY_PENDING` (1016) when the mail's body is not downloaded yet; the core asks for it first. Events: `DraftSent {draft_id, message_id, thread_id, moved_to, undo}`, `SendFailed {draft_id, reply_to, reason}`, `SendPartial {draft_id, refused}`.
+`prepare_draft` and `create_draft` return `BODY_PENDING` (1016) when the mail's body is not downloaded yet; the core asks for it first. Events: `DraftSent {draft_id, message_id, thread_id, moved_to, filing, undo}` (`filing`: a new mail's own filing, applied once the copy in Sent is made, and not covered by `undo`), `SendFailed {draft_id, reply_to, reason}`, `SendPartial {draft_id, refused}`.
 
 ## Settings
 

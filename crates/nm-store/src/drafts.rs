@@ -70,7 +70,13 @@ pub struct SentDraft {
     pub draft_id: i64,
     pub message_id: i64,
     pub thread_id: Option<i64>,
+    /// Where the conversation of the mail answered was filed, already
+    /// done and undone by `undo`; `None` when it stayed.
     pub moved_to: Option<FolderRole>,
+    /// Where a new mail will be filed once its copy in Sent is made
+    /// (`reponse.md`, section 8, "Nouveau mail"): decided, not done yet,
+    /// and **not** covered by `undo`.
+    pub filing: Option<FolderRole>,
     pub undo: Option<String>,
 }
 
@@ -1005,8 +1011,16 @@ impl Store {
         }
         let source = Source::parse(&created_by).unwrap_or(Source::Core);
         let draft_id = p["draft_id"].as_i64().unwrap_or(0);
-        let reply_to: Option<i64> =
-            tx.query_row("SELECT reply_to_message_id FROM draft WHERE id = ?1", [draft_id], |r| r.get(0)).optional()?.flatten();
+        // What the draft was written from: the mail answered (its
+        // conversation is the one filed), the mail forwarded (nothing is
+        // filed), or neither — a new mail, which files itself (section 8,
+        // "Nouveau mail").
+        let (reply_to, forward_of): (Option<i64>, Option<i64>) = tx
+            .query_row("SELECT reply_to_message_id, forward_of_message_id FROM draft WHERE id = ?1", [draft_id], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
+            .optional()?
+            .unwrap_or((None, None));
         // The copy kept, with its `Bcc`: the row of Sent lists the hidden
         // recipients, and they get their decision like the others.
         let mime = message_bytes(&p, self.outgoing.as_ref()).map(|(_, copy)| copy).unwrap_or_default();
@@ -1018,6 +1032,9 @@ impl Store {
         let mut threads = BTreeSet::new();
         let mut sent_id = None;
         let mut moved_to = None;
+        // A new mail's own filing, waiting for its copy in Sent
+        // ([`Store::send_copied`]).
+        let mut filing = None;
         let mark: i64;
         if let Some(folder) = sent_folder {
             let m = NewMessage {
@@ -1061,6 +1078,19 @@ impl Store {
             {
                 let target = after.and_then(AfterSend::folder);
                 moved_to = crate::reception::file_reply_thread(&tx, thread_account, t, id, target, source, "reply", &mut changes, &mut threads)?;
+            } else if reply_to.is_none()
+                && forward_of.is_none()
+                && parsed.in_reply_to.is_none()
+                && let Some(target) = after.and_then(AfterSend::folder)
+            {
+                // A new mail has no conversation to file: what the user
+                // filed is the mail they wrote, so its copy in Sent moves
+                // (`reponse.md`, section 8, "Nouveau mail"). Not now: that
+                // copy does not exist on the server yet, and its UID is
+                // unknown, so the server could not follow the move. The
+                // action carries the target into its `append` phase, which
+                // [`Store::send_copied`] ends.
+                filing = Some(target);
             }
             crate::reception::accept_recipients(&tx, own, id, source, &mut changes, &mut threads)?;
             tx.execute(
@@ -1069,6 +1099,12 @@ impl Store {
                   WHERE id = ?1",
                 params![action_id, id],
             )?;
+            if let Some(target) = filing {
+                tx.execute(
+                    "UPDATE pending_action SET payload = json_set(payload, '$.file_after_copy', ?2) WHERE id = ?1",
+                    params![action_id, target.as_str()],
+                )?;
+            }
         } else {
             // No Sent folder known: the mail left, nothing to copy.
             send_audit(&tx, source, reply_to.unwrap_or(0), &p, refused)?;
@@ -1089,7 +1125,7 @@ impl Store {
             None => None,
         };
         if let Some(message_id) = sent_id {
-            changes.sent.push(SentDraft { draft_id, message_id, thread_id, moved_to, undo });
+            changes.sent.push(SentDraft { draft_id, message_id, thread_id, moved_to, filing, undo });
         }
         if !refused.is_empty() {
             changes.send_partial.push((draft_id, refused.to_vec()));
@@ -1156,14 +1192,28 @@ impl Store {
     }
 
     /// The copy in Sent is made (or found): the row of the mail gets its
-    /// UID when known, and the action ends. Without a UID (a server without
-    /// UIDPLUS, a provider that copies itself), the synchronization of Sent
-    /// attaches the row by its `Message-ID`.
+    /// UID when known, the filing a new mail chose is applied, and the
+    /// action ends. Without a UID (a server without UIDPLUS, a provider
+    /// that copies itself), the synchronization of Sent attaches the row
+    /// by its `Message-ID`.
+    ///
+    /// The filing waits for this moment: the mail is in Sent on the
+    /// server from now on, so the move the user chose can be told to it
+    /// (`reponse.md`, section 8, "Nouveau mail"). Replayed after a crash,
+    /// the call finds the mail already out of Sent and files nothing.
     pub fn send_copied(&mut self, action_id: i64, uid: Option<u32>) -> Result<ChangeSet> {
         let tx = self.transaction()?;
         let mut changes = ChangeSet::default();
-        let message: Option<i64> =
-            tx.query_row("SELECT message_id FROM pending_action WHERE id = ?1", [action_id], |r| r.get(0)).optional()?.flatten();
+        let row: Option<(Option<i64>, i64, String, String)> = tx
+            .query_row("SELECT message_id, account_id, payload, created_by FROM pending_action WHERE id = ?1", [action_id], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+            })
+            .optional()?;
+        let (message, account_id, payload, created_by) = match row {
+            Some(r) => r,
+            // The action is gone (an old database cleaned): nothing to end.
+            None => return Ok(changes),
+        };
         if let (Some(id), Some(uid)) = (message, uid) {
             // A pass may have attached it meanwhile: never two rows on one UID.
             let n = tx.execute(
@@ -1175,6 +1225,17 @@ impl Store {
                 let thread: Option<i64> = tx.query_row("SELECT thread_id FROM message WHERE id = ?1", [id], |r| r.get(0))?;
                 changes.messages.insert((id, thread));
             }
+        }
+        // The filing of a new mail, chosen with ⇧⌘↩ and carried by the
+        // action since the server accepted the mail.
+        let p: Value = serde_json::from_str(&payload).unwrap_or(Value::Null);
+        if let Some(id) = message
+            && let Some(target) = p["file_after_copy"].as_str().and_then(FolderRole::parse)
+        {
+            let source = Source::parse(&created_by).unwrap_or(Source::Core);
+            let mut threads = BTreeSet::new();
+            crate::reception::file_sent_mail(&tx, account_id, id, target, source, &mut changes, &mut threads)?;
+            crate::screening::refresh_all(&tx, &threads, &mut changes)?;
         }
         tx.execute("UPDATE pending_action SET state = 'done', last_error = NULL, date_modified = unixepoch() WHERE id = ?1", [action_id])?;
         tx.commit()?;

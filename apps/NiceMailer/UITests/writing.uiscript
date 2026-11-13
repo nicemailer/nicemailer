@@ -74,3 +74,32 @@ expect folder = Sent
 expect selected_subject !~ Un nouveau sujet
 key z
 expect selected_subject ~ Un nouveau sujet
+# A new mail filed with ⇧⌘↩ (`reponse.md`, section 8, "Nouveau mail"): it
+# answers nothing, so what is filed is the mail written. Sent is where it
+# stays by default; `w` sends it and its copy leaves Sent for Waiting once
+# the copy is made.
+key c
+expect composing = true
+type frank@exemple.fr
+key tab
+key tab
+expect compose_focus = subject
+type Une question
+key ret
+type Peux-tu répondre ?
+key shift-cmd-ret
+expect overlay ~ choice
+expect choice ~ Send, then file this mail in
+snap new-mail-filing
+key w
+expect composing = false
+wait 4500
+expect flash ~ Sent · filed in Waiting
+key ;
+key w
+expect folder = Waiting
+expect selected_subject ~ Une question
+key ;
+key s
+expect folder = Sent
+expect selected_subject !~ Une question

@@ -396,7 +396,20 @@ pub enum Event {
     /// `message_id` is the mail in Sent; `moved_to` the folder its
     /// conversation was filed in (absent: it stayed); `undo` cancels that
     /// filing and the decisions taken on the recipients, not the sending.
-    DraftSent { draft_id: i64, message_id: i64, thread_id: Option<i64>, moved_to: Option<FolderRole>, undo: Option<String> },
+    ///
+    /// `filing` is the folder a **new mail** goes to, chosen with ⇧⌘↩
+    /// (section 8, "Nouveau mail"): decided, but applied once the copy in
+    /// Sent is made, and not covered by `undo`. A client may say so at
+    /// once ("Sent · filed in Waiting"); the move itself arrives as the
+    /// usual `MessagesChanged` and `FolderChanged`.
+    DraftSent {
+        draft_id: i64,
+        message_id: i64,
+        thread_id: Option<i64>,
+        moved_to: Option<FolderRole>,
+        filing: Option<FolderRole>,
+        undo: Option<String>,
+    },
     /// A draft could not be sent, for good: it is editable again, and
     /// `reply_to` is the mail it answers (the next `r` on it reopens it).
     SendFailed { draft_id: i64, reply_to: Option<i64>, reason: String },

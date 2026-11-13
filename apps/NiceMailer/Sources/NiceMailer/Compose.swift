@@ -500,21 +500,41 @@ enum Compose {
         return shown.joined(separator: ", ")
     }
 
+    /// Whether ⇧⌘↩ has something to ask (`reponse.md`, section 8):
+    ///
+    /// - a reply whose conversation the core offers to file
+    ///   (`afterSendTarget`: it is in the Inbox, Todo or Waiting);
+    /// - a **new mail**, which answers nothing and so files itself: the
+    ///   copy kept in Sent goes to the folder chosen ("Nouveau mail").
+    ///
+    /// A forward files nothing, and neither does a reply to a
+    /// conversation already in Archive, Newsletter…: ⇧⌘↩ says so.
+    static func offersFiling(_ d: DraftView) -> Bool {
+        d.afterSendTarget != nil || filesItself(d)
+    }
+
+    /// A draft whose own mail is filed, not a conversation: a new mail
+    /// (`kind` `new`). The wording and the preselection differ.
+    static func filesItself(_ d: DraftView) -> Bool {
+        d.kind == "new"
+    }
+
     /// The filing that will apply: the one chosen, else the preselection.
-    /// Nil when the conversation stays where it is, because the core offers
-    /// no filing for it (it is not in the Inbox, Todo or Waiting) or because
-    /// the user chose `stay`.
+    /// Nil when nothing moves: no filing is offered, the user chose
+    /// `stay`, or a new mail was left to Sent (its preselection).
     static func afterSend(_ d: DraftView) -> String? {
-        guard d.afterSendTarget != nil else { return nil }
-        let chosen = d.afterSend ?? d.afterSendTarget
+        guard offersFiling(d) else { return nil }
+        let chosen = d.afterSend ?? (filesItself(d) ? "stay" : d.afterSendTarget)
         return chosen == "stay" ? nil : chosen
     }
 
     /// The line "After sending: Archive", "After sending: stays where it
-    /// is" when the user chose to leave it, or nil when no filing applies.
+    /// is" when the user chose to leave a conversation where it is, or nil
+    /// when nothing moves (a new mail left to Sent says nothing: that is
+    /// what happens anyway).
     static func afterSendLine(_ d: DraftView) -> String? {
-        guard d.afterSendTarget != nil else { return nil }
-        if d.afterSend == "stay" { return L("After sending: stays where it is") }
+        guard offersFiling(d) else { return nil }
+        if d.afterSend == "stay" { return filesItself(d) ? nil : L("After sending: stays where it is") }
         return afterSend(d).map { L("After sending: %@", Role.name($0)) }
     }
 
@@ -530,9 +550,14 @@ enum Compose {
     }
 
     static func sendChoices(_ d: DraftView) -> [SendChoice] {
-        let current = d.afterSend ?? d.afterSendTarget
+        // A new mail is in Sent and stays there unless the user says
+        // otherwise: `stay` is its preselection.
+        let own = filesItself(d)
+        let current = d.afterSend ?? (own ? "stay" : d.afterSendTarget)
         return [("a", "archive"), ("w", "waiting"), ("t", "todo"), ("s", "stay")].map { key, value in
-            let label = value == "stay" ? L("leave it where it is (trial)") : Role.name(value)
+            let label = value == "stay"
+                ? (own ? L("leave it in Sent") : L("leave it where it is (trial)"))
+                : Role.name(value)
             return SendChoice(key: key, afterSend: value, label: label, current: value == current)
         }
     }
@@ -544,9 +569,15 @@ enum Compose {
 
     /// The status bar once the mail is sent: where the conversation went,
     /// and that `z` puts it back (the mail itself has left).
-    static func sentFlash(movedTo: String?, undo: Bool) -> String {
+    ///
+    /// `filing` is a new mail's own filing, which the core applies once
+    /// the copy in Sent is made (`reponse.md`, section 8, "Nouveau
+    /// mail"): said in the same words, but `z` does not undo it (it is
+    /// outside the undo token of the sending), so only the decisions are
+    /// offered back.
+    static func sentFlash(movedTo: String?, filing: String? = nil, undo: Bool) -> String {
         var text = L("Sent")
-        if let movedTo { text += " · " + L("filed in %@", Role.name(movedTo)) }
+        if let target = movedTo ?? filing { text += " · " + L("filed in %@", Role.name(target)) }
         if undo { text += " · " + (movedTo != nil ? L("z: undo the filing") : L("z: undo")) }
         return text
     }

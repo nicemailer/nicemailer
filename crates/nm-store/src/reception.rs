@@ -464,3 +464,39 @@ pub(crate) fn file_reply_thread(
     }
     Ok(moved.then_some(target))
 }
+
+/// Files a mail the user wrote, once its copy in Sent is made
+/// (`reponse.md`, section 8, "Nouveau mail"): the copy leaves Sent for
+/// `target`, here and on the server. A new mail answers nothing, so its
+/// conversation is made of that copy alone; moving it is what a move
+/// given from Sent does for such a conversation (`commands::apply_move`,
+/// `dossiers.md`, "Cibles proposées").
+///
+/// Only the mail sent moves, never another copy its conversation may
+/// hold: the user filed *this* mail. Returns the folder it went to;
+/// `None` when the account has no such folder, or the mail already left
+/// Sent (moved by hand meanwhile, or this call replayed after a crash).
+pub(crate) fn file_sent_mail(
+    tx: &Transaction,
+    account_id: i64,
+    sent: i64,
+    target: FolderRole,
+    source: Source,
+    changes: &mut ChangeSet,
+    threads: &mut BTreeSet<i64>,
+) -> Result<Option<FolderRole>> {
+    let Some(to) = folder_of_role(tx, account_id, target)? else { return Ok(None) };
+    // Where the mail is now, and whether that folder is still Sent.
+    let row: Option<(i64, Option<i64>, Option<String>)> = tx
+        .prepare_cached(
+            "SELECT m.folder_id, m.thread_id, f.role FROM message m JOIN folder f ON f.id = m.folder_id WHERE m.id = ?1",
+        )?
+        .query_row([sent], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+        .optional()?;
+    let Some((from, thread, role)) = row else { return Ok(None) };
+    if role.as_deref() != Some(FolderRole::Sent.as_str()) || from == to {
+        return Ok(None);
+    }
+    move_message(tx, sent, thread, from, to, source, &json!({"reason": "sent_new"}), changes, threads)?;
+    Ok(Some(target))
+}

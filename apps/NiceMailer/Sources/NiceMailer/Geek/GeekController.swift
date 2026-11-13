@@ -1581,11 +1581,16 @@ final class GeekController {
         model.flash = nil
         model.lastError = nil
         // ⇧⌘↩: choose where the conversation goes, then send. Only when
-        // the core offers a filing: a conversation outside the Inbox, Todo
-        // and Waiting stays where it is whatever the choice.
+        // there is something to file: a conversation outside the Inbox,
+        // Todo and Waiting stays where it is whatever the choice, and a
+        // forward files nothing. A new mail files itself (`Compose
+        // .offersFiling`, `reponse.md`, section 8).
         if code == KeyCode.returnKey, command, mods.contains(.shift) {
-            if model.composer?.draft.afterSendTarget == nil {
-                model.flash = L("This conversation stays where it is: nothing to choose · ⌘↩ to send")
+            guard let d = model.composer?.draft else { return true }
+            if !Compose.offersFiling(d) {
+                model.flash = d.kind == "forward"
+                    ? L("A forward files nothing: ⌘↩ to send")
+                    : L("This conversation stays where it is: nothing to choose · ⌘↩ to send")
             } else {
                 choiceIndex = nil
                 overlay = .choice(.sendThen)
@@ -2137,7 +2142,12 @@ final class GeekController {
         case .decision(let name, let domain, _): domain ? L("Decision on the domain %@", name) : L("Decision on %@", name)
         case .mailboxUpgrade(let u):
             L("The mailbox %@ uses an older data format (%lld; this NiceMailer uses %lld)", DataDirectory.displayName(u.url), u.from, u.to)
-        case .sendThen: L("Send, then file the conversation in")
+        case .sendThen:
+            // A new mail has no conversation yet: what is filed is the
+            // mail written (`reponse.md`, section 8, "Nouveau mail").
+            model.composer.map { Compose.filesItself($0.draft) } == true
+                ? L("Send, then file this mail in")
+                : L("Send, then file the conversation in")
         case .sendFrom: L("Send from")
         }
     }
