@@ -87,18 +87,18 @@ fn modified_sort_paginates_every_thread_once() {
 fn body_format_is_remembered_per_sender() {
     let mut store = seeded();
     let (thread, _) = inbox_thread(&store);
-    let (_, messages) = store.get_thread(thread).unwrap();
+    let (_, messages) = store.get_thread(thread, &[]).unwrap();
     let sender = messages.iter().find_map(|m| m.from_addr.clone()).unwrap();
     assert!(messages.iter().all(|m| m.from_body_format.is_none()));
     store.set_body_format(&sender, Some("html")).unwrap();
-    let (_, messages) = store.get_thread(thread).unwrap();
+    let (_, messages) = store.get_thread(thread, &[]).unwrap();
     let m = messages.iter().find(|m| m.from_addr.as_deref() == Some(sender.as_str())).unwrap();
     assert_eq!(m.from_body_format.as_deref(), Some("html"));
     // Images: HTML with remote images, read back as "images"; html again
     // forgets the images.
     store.set_body_format(&sender, Some("images")).unwrap();
     let format = |store: &Store| {
-        let (_, messages) = store.get_thread(thread).unwrap();
+        let (_, messages) = store.get_thread(thread, &[]).unwrap();
         messages.into_iter().find(|m| m.from_addr.as_deref() == Some(sender.as_str())).unwrap().from_body_format
     };
     assert_eq!(format(&store).as_deref(), Some("images"));
@@ -120,7 +120,7 @@ fn body_format_is_remembered_per_sender() {
 fn history_lists_actions_newest_first_with_a_summary() {
     let mut store = seeded();
     let (thread, inbox) = inbox_thread(&store);
-    let subject = store.get_thread(thread).unwrap().0;
+    let subject = store.get_thread(thread, &[]).unwrap().0;
     store.move_thread(thread, FolderRole::Todo, Some(inbox), MoveOptions::default(), Source::App).unwrap();
     let (items, _) = store.list_history(None, 10).unwrap();
     let first = &items[0];
@@ -188,7 +188,7 @@ fn group_membership_follows_the_rules_of_groupes_md() {
     // The sender of the thread (not the user, whose mails are in Sent).
     let (gid, addr, changed) = store.set_group_member("VIP", None, Some(thread), false, Source::App).unwrap();
     assert!(changed && addr.contains('@'));
-    let (_, msgs) = store.get_thread(thread).unwrap();
+    let (_, msgs) = store.get_thread(thread, &[]).unwrap();
     assert!(msgs.iter().any(|m| m.from_addr.as_deref() == Some(addr.as_str()) && m.folder_role != Some(FolderRole::Sent)));
     // Adding twice changes nothing; "vip" is the same group.
     assert!(!store.set_group_member("vip", Some(&addr), None, false, Source::App).unwrap().2);
@@ -258,7 +258,7 @@ fn contacts_are_filtered_and_paginated() {
 fn threads_by_contact_include_mail_to_and_from_the_address() {
     let store = seeded();
     let (thread, _) = inbox_thread(&store);
-    let (_, msgs) = store.get_thread(thread).unwrap();
+    let (_, msgs) = store.get_thread(thread, &[]).unwrap();
     let addr = msgs.iter().find_map(|m| m.from_addr.clone()).unwrap();
     let id: i64 = store.conn().query_row("SELECT id FROM address WHERE addr = ?1", [&addr], |r| r.get(0)).unwrap();
     let list = everything(&store, &ThreadFilter { address_id: Some(id), ..Default::default() });

@@ -72,7 +72,7 @@ fn the_bodies_live_in_their_own_file() {
     // Queries name the tables without the file: search and bodies work.
     assert_eq!(hits(&store, "charpente"), 1);
     let thread: i64 = count(&store, "SELECT thread_id FROM message WHERE message_id_hdr = 'm1@a.example'");
-    let (_, messages) = store.get_thread(thread).unwrap();
+    let (_, messages) = store.get_thread(thread, &[]).unwrap();
     assert!(messages[0].body_text.as_deref().unwrap_or("").contains("charpente"));
     // A reader of the pool sees them too.
     let reader = Store::open_reader(&db).unwrap();

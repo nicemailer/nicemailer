@@ -67,7 +67,7 @@ fn thread() -> Vec<nm_api::MessageView> {
     import_mbox(&store, &raw, &opts, &mut |_, _, _| {}).unwrap();
     let store = store.into_inner().unwrap();
     let id: i64 = store.conn().query_row("SELECT thread_id FROM message LIMIT 1", [], |r| r.get(0)).unwrap();
-    store.get_thread(id).unwrap().1
+    store.get_thread(id, &[]).unwrap().1
 }
 
 fn kinds(m: &nm_api::MessageView) -> Vec<(&str, bool)> {

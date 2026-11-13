@@ -72,7 +72,7 @@ fn imported() -> Store {
 fn shown(store: &Store, subject: &str) -> (i64, Option<nm_api::UnsubscribeView>) {
     let thread: i64 =
         store.conn().query_row("SELECT thread_id FROM message WHERE subject = ?1", [subject], |r| r.get(0)).unwrap();
-    let m = store.get_thread(thread).unwrap().1.remove(0);
+    let m = store.get_thread(thread, &[]).unwrap().1.remove(0);
     (m.id, m.unsubscribe)
 }
 

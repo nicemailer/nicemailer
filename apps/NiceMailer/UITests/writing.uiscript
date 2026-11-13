@@ -56,6 +56,9 @@ key ;
 key s
 expect folder = Sent
 expect selected_subject ~ Un nouveau sujet
+# A mail I wrote shows who it went to (`docs/thread-display.md`): its
+# sender is me, so the recipient is the information, even alone.
+expect reader_text ~ To: eve@exemple.fr
 # A new mail, no answer yet, is put in Waiting from Sent (`dossiers.md`,
 # "Cibles proposées"): with nothing else in its conversation, the sent
 # mail itself goes to Waiting and leaves Sent. `z` brings it back.
@@ -99,6 +102,9 @@ key ;
 key w
 expect folder = Waiting
 expect selected_subject ~ Une question
+# Out of Sent, it still shows its recipient: it is recognised by its
+# sender, one of the mailbox's own addresses.
+expect reader_text ~ To: frank@exemple.fr
 key ;
 key s
 expect folder = Sent

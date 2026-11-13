@@ -83,7 +83,7 @@ fn links(store: &Store, subject: &str) -> (Vec<LinkView>, String) {
         .conn()
         .query_row("SELECT thread_id FROM message WHERE subject = ?1", [subject], |r| r.get(0))
         .unwrap();
-    let m = store.get_thread(thread).unwrap().1.remove(0);
+    let m = store.get_thread(thread, &[]).unwrap().1.remove(0);
     (m.links, m.body_text.unwrap_or_default())
 }
 

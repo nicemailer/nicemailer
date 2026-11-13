@@ -1239,8 +1239,12 @@ async fn call(core: &Arc<Core>, source: Source, req: Request) -> Result<Value, R
             let p: GetThreadParams = params(req.params)?;
             let as_of = as_of();
             let thread_id = p.thread_id;
+            // The addresses of the mailbox, which only `accounts.toml`
+            // holds: the store shows the recipients of the mails they
+            // sent (`present_thread`, `docs/thread-display.md`).
+            let own = drafts::declared_addresses(core);
             let ((subject, messages), missing) =
-                with_reader(core, move |s| Ok((s.get_thread(thread_id)?, s.thread_bodies_missing(thread_id)?))).await?;
+                with_reader(core, move |s| Ok((s.get_thread(thread_id, &own)?, s.thread_bodies_missing(thread_id)?))).await?;
             // Bodies not downloaded yet: the user is waiting for them.
             sync::prioritize(core, missing);
             to_value(ThreadView { id: p.thread_id, subject, messages, as_of })

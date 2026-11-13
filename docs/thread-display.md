@@ -33,7 +33,7 @@ A message whose visible content is empty is flagged `only_quotes`: folded, it sh
 
 As in Gmail, the latest message and the unread ones are open (`expanded`); the others are one line: sender, date, beginning of what they bring. A message that only quotes stays folded unless it is the latest.
 
-Headers are light: sender and date ("14:05", "yesterday 14:05", "3 Nov 14:05", "3 Nov 2021"). Recipients are shown only when they differ from the previous message's (`show_recipients`; for the first message, when there are several).
+Headers are light: sender and date ("14:05", "yesterday 14:05", "3 Nov 14:05", "3 Nov 2021"). Recipients are shown only when they differ from the previous message's (`show_recipients`; for the first message, when there are several) — **always for a mail the user wrote**, whose sender says nothing and whose recipients are the whole point (added in November 2026). A mail is the user's own when its sender is one of the mailbox's addresses, or when it sits in Sent or Drafts. The addresses come from `accounts.toml`, which the database does not hold: the daemon passes them to `get_thread`, which adds the archive accounts' own (`account.address`). So a mail sent and then filed in Waiting or Todo (`sending.md`) still shows who it went to.
 
 ## In the app (geek theme)
 

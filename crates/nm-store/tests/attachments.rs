@@ -136,7 +136,7 @@ fn listed(store: &Store, subject: &str) -> Vec<nm_api::AttachmentView> {
         .conn()
         .query_row("SELECT thread_id FROM message WHERE subject = ?1", [subject], |r| r.get(0))
         .unwrap();
-    store.get_thread(thread).unwrap().1.remove(0).attachments
+    store.get_thread(thread, &[]).unwrap().1.remove(0).attachments
 }
 
 #[test]
@@ -157,7 +157,7 @@ fn each_message_lists_its_files_but_not_the_images_of_its_html() {
 fn the_images_of_the_html_get_a_source_the_reader_can_load() {
     let f = imported();
     let thread: i64 = f.store.conn().query_row("SELECT thread_id FROM message WHERE subject = 'Lettre'", [], |r| r.get(0)).unwrap();
-    let m = f.store.get_thread(thread).unwrap().1.remove(0);
+    let m = f.store.get_thread(thread, &[]).unwrap().1.remove(0);
     let logo: i64 = f.store.conn().query_row("SELECT id FROM attachment WHERE content_id = 'logo@x'", [], |r| r.get(0)).unwrap();
     let html = m.body_html.unwrap();
     // `cid:` is replaced by the app's scheme, with the attachment's id,

@@ -124,6 +124,20 @@ async fn senders(core: &Arc<Core>) -> Result<Vec<Candidate>, RpcError> {
     Ok(out)
 }
 
+/// Every address `accounts.toml` declares, lowercase: each account's own
+/// and its identities. What the database cannot know, and what tells the
+/// user's own mails from the rest (`get_thread`, which adds the archive
+/// accounts' addresses it holds itself).
+pub(crate) fn declared_addresses(core: &Arc<Core>) -> Vec<String> {
+    let engine = core.engine.lock().unwrap();
+    engine
+        .config()
+        .accounts
+        .values()
+        .flat_map(|a| std::iter::once(a.email.to_lowercase()).chain(a.identities.iter().map(|i| i.email.to_lowercase())))
+        .collect()
+}
+
 /// The addresses of an account, lowercase: its address and identities in
 /// `accounts.toml`, else its address in the database (an archive account).
 /// Never recipients of a reply to one of its mails.

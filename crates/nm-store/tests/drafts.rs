@@ -1131,6 +1131,35 @@ fn a_new_mail_is_filed_once_its_copy_in_sent_is_made() {
     assert_eq!(e.int("SELECT count(*) FROM message m JOIN folder f ON f.id = m.folder_id WHERE f.role = 'sent'"), 0);
 }
 
+/// A mail the user wrote always shows who it went to
+/// (`docs/thread-display.md`): its sender is the user, so the recipients
+/// are the information, and a mail sent to one person would otherwise
+/// show nobody. In Sent its folder says it is the user's; moved to
+/// Waiting by ⇧⌘↩, its sender does — one of the addresses the daemon
+/// gives to `get_thread`, which the database does not hold for an IMAP
+/// account.
+#[test]
+fn a_mail_i_sent_shows_who_it_went_to() {
+    let mut e = env();
+    let d = e.s.create_new_draft(e.acc, &e.ids, None, Source::App).unwrap();
+    use nm_store::drafts::DraftEdit;
+    let rev = e.s.edit_draft(d.id, d.revision, &DraftEdit { to: Some(vec![mb("dan@d.example", None)]), ..Default::default() }, Source::App).unwrap();
+    e.s.send_draft(d.id, rev, "Bonjour Dan.", Some(AfterSend::Waiting), 0, "NiceMailer/test", Source::App).unwrap();
+    let jobs = e.s.send_claim(e.acc).unwrap();
+    let written = e.raw.write(&jobs[0].copy).unwrap();
+    let c = e.s.send_accepted(jobs[0].action_id, &written, &[], &e.ids.own()).unwrap();
+    let thread = c.sent[0].thread_id.unwrap();
+    // In Sent, with a single recipient: shown all the same.
+    let (_, shown) = e.s.get_thread(thread, &[]).unwrap();
+    assert_eq!(shown.len(), 1);
+    assert_eq!(shown[0].to.iter().map(|a| a.addr.as_str()).collect::<Vec<_>>(), ["dan@d.example"]);
+    assert!(shown[0].show_recipients);
+    // Filed in Waiting: no longer in Sent, recognised by its sender.
+    e.s.send_copied(jobs[0].action_id, Some(920)).unwrap();
+    let (_, filed) = e.s.get_thread(thread, &[ME.to_string()]).unwrap();
+    assert!(filed[0].show_recipients);
+}
+
 /// ⌘↩ without a choice on a new mail, and a forward: nothing is filed
 /// (`reponse.md`, section 8). The mail stays in Sent.
 #[test]

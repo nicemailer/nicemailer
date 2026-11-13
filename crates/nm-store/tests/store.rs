@@ -84,7 +84,7 @@ fn move_thread_updates_lists_and_counters() {
 
     // Sent never follows the thread: every message is now either in Todo
     // or still in Sent.
-    let (_, messages) = store.get_thread(thread.id).unwrap();
+    let (_, messages) = store.get_thread(thread.id, &[]).unwrap();
     assert!(messages.iter().all(|m| matches!(m.folder_role, Some(FolderRole::Todo | FolderRole::Sent))));
 }
 
@@ -107,7 +107,7 @@ fn restore_from_deleted_uses_command_folder() {
     let deleted = folder_id(&store, FolderRole::Deleted);
     let (items, _) = store.list_threads(deleted, None, 1, ThreadSort::Received).unwrap();
     store.move_thread(items[0].id, FolderRole::Inbox, Some(deleted), MoveOptions::default(), Source::App).unwrap();
-    let (_, messages) = store.get_thread(items[0].id).unwrap();
+    let (_, messages) = store.get_thread(items[0].id, &[]).unwrap();
     assert!(!messages.iter().any(|m| m.folder_role == Some(FolderRole::Deleted)));
 }
 
@@ -171,18 +171,18 @@ fn move_from_sent_files_the_conversation_and_keeps_the_sent_copies() {
     let thread = items
         .iter()
         .find(|t| {
-            let (_, m) = store.get_thread(t.id).unwrap();
+            let (_, m) = store.get_thread(t.id, &[]).unwrap();
             m.iter().any(|m| m.folder_role == Some(FolderRole::Inbox))
         })
         .expect("an answered conversation of the Inbox");
-    let (_, before) = store.get_thread(thread.id).unwrap();
+    let (_, before) = store.get_thread(thread.id, &[]).unwrap();
     let in_sent = before.iter().filter(|m| m.folder_role == Some(FolderRole::Sent)).count();
     assert!(in_sent > 0);
 
     let out = store.move_thread(thread.id, FolderRole::Todo, Some(sent), MoveOptions::default(), Source::App).unwrap();
     assert!(out.moved > 0);
 
-    let (_, after) = store.get_thread(thread.id).unwrap();
+    let (_, after) = store.get_thread(thread.id, &[]).unwrap();
     assert_eq!(after.iter().filter(|m| m.folder_role == Some(FolderRole::Sent)).count(), in_sent);
     assert!(!after.iter().any(|m| m.folder_role == Some(FolderRole::Inbox)));
     let (todo_items, _) = store.list_threads(todo, None, 500, ThreadSort::Received).unwrap();
@@ -203,16 +203,16 @@ fn move_from_sent_takes_a_lone_sent_mail_along() {
     let thread = items
         .iter()
         .find(|t| {
-            let (_, m) = store.get_thread(t.id).unwrap();
+            let (_, m) = store.get_thread(t.id, &[]).unwrap();
             m.iter().all(|m| m.folder_role == Some(FolderRole::Sent))
         })
         .expect("a conversation only in Sent");
-    let (_, before) = store.get_thread(thread.id).unwrap();
+    let (_, before) = store.get_thread(thread.id, &[]).unwrap();
 
     let out = store.move_thread(thread.id, FolderRole::Waiting, Some(sent), MoveOptions::default(), Source::App).unwrap();
     assert_eq!(out.moved, before.len());
 
-    let (_, after) = store.get_thread(thread.id).unwrap();
+    let (_, after) = store.get_thread(thread.id, &[]).unwrap();
     assert!(after.iter().all(|m| m.folder_role == Some(FolderRole::Waiting)));
     let (waiting_items, _) = store.list_threads(waiting, None, 500, ThreadSort::Received).unwrap();
     assert!(waiting_items.iter().any(|t| t.id == thread.id));
@@ -220,7 +220,7 @@ fn move_from_sent_takes_a_lone_sent_mail_along() {
     assert!(!sent_items.iter().any(|t| t.id == thread.id));
 
     store.undo(out.undo.as_deref().expect("an undo token"), Source::App).unwrap();
-    let (_, undone) = store.get_thread(thread.id).unwrap();
+    let (_, undone) = store.get_thread(thread.id, &[]).unwrap();
     assert!(undone.iter().all(|m| m.folder_role == Some(FolderRole::Sent)));
 }
 

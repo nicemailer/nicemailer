@@ -7,7 +7,7 @@
 //! 9): its folder, flags and counters are columns, and each kind of list
 //! walks one of its indexes, newest first, and stops after a page.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use nm_api::{AddressView, FolderView, MessageView, SearchHit, SegmentView, ThreadFilter, ThreadSort, ThreadSummary};
 use nm_core::{FolderRole, KW_WAS_TODO, KW_WAS_WAITING};
@@ -762,9 +762,28 @@ impl Store {
             .ok_or_else(|| StoreError::NotFound(format!("message {message_id}")))
     }
 
+    /// The addresses of the mailbox, lowercase: those the caller gives
+    /// (`accounts.toml`, which the database does not hold) and those of
+    /// the archive accounts, which it does (`account.address`). A handful
+    /// of rows, read once per thread opened.
+    fn own_addresses(&self, given: &[String]) -> Result<BTreeSet<String>> {
+        let mut out: BTreeSet<String> = given.iter().map(|a| a.trim().to_lowercase()).filter(|a| !a.is_empty()).collect();
+        let mut stmt = self.conn.prepare_cached("SELECT address FROM account WHERE address IS NOT NULL")?;
+        for a in stmt.query_map([], |r| r.get::<_, String>(0))? {
+            out.insert(a?.trim().to_lowercase());
+        }
+        Ok(out)
+    }
+
     /// Every message of a thread, across all folders, oldest first.
     /// Returns the thread's subject and its messages.
-    pub fn get_thread(&self, thread_id: i64) -> Result<(String, Vec<MessageView>)> {
+    ///
+    /// `own`: the addresses of the mailbox, which `accounts.toml` holds
+    /// and only the caller knows (the daemon). They decide which messages
+    /// are the user's own, and so always show their recipients
+    /// (`present_thread`); the addresses of the archive accounts, which
+    /// the database holds, are added here.
+    pub fn get_thread(&self, thread_id: i64, own: &[String]) -> Result<(String, Vec<MessageView>)> {
         let subject: String = self
             .conn
             .query_row("SELECT subject FROM thread WHERE id = ?1", [thread_id], |r| r.get(0))
@@ -878,7 +897,7 @@ impl Store {
                 m.body_html = Some(crate::attachments::resolve_inline_images(html, images));
             }
         }
-        present_thread(&mut messages);
+        present_thread(&mut messages, &self.own_addresses(own)?);
         Ok((subject, messages))
     }
 
@@ -1020,8 +1039,9 @@ fn list_query(
 /// Simplified presentation of a thread, computed by the core so every
 /// client shows the same thing (`clean.rs`, `docs/thread-display.md`):
 /// segments of each message, messages folded by default, recipients only
-/// when they change.
-fn present_thread(messages: &mut [MessageView]) {
+/// when they change — always for the user's own mails, whose recipients
+/// are the whole point (`own`, the addresses of the mailbox).
+fn present_thread(messages: &mut [MessageView], own: &BTreeSet<String>) {
     let inputs: Vec<(Option<&str>, &str)> =
         messages.iter().map(|m| (m.from_addr.as_deref(), m.body_text.as_deref().unwrap_or(""))).collect();
     let cleaned = crate::clean::clean_thread(&inputs);
@@ -1047,10 +1067,19 @@ fn present_thread(messages: &mut [MessageView]) {
         m.expanded = i == last || (!m.is_seen && !m.only_quotes);
         let mut recipients: Vec<String> = m.to.iter().chain(m.cc.iter()).map(|a| a.addr.to_lowercase()).collect();
         recipients.sort();
-        m.show_recipients = match &previous {
-            None => recipients.len() > 1,
-            Some(p) => *p != recipients,
-        };
+        // A mail the user wrote: its sender is one of their addresses, or
+        // it sits in Sent or Drafts (an account whose address the file no
+        // longer declares). Showing "from me" tells nothing; who it went
+        // to is the information, and a mail sent to one person would
+        // otherwise show nobody (`docs/thread-display.md`).
+        let mine = m.from_addr.as_deref().is_some_and(|a| own.contains(&a.trim().to_lowercase()))
+            || matches!(m.folder_role, Some(FolderRole::Sent) | Some(FolderRole::Drafts));
+        m.show_recipients = !recipients.is_empty()
+            && (mine
+                || match &previous {
+                    None => recipients.len() > 1,
+                    Some(p) => *p != recipients,
+                });
         previous = Some(recipients);
     }
 }
