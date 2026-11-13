@@ -1355,6 +1355,13 @@ fn filter_clause(f: &ThreadFilter, target: &Target, tags: &[i64], unread: Unread
         );
         sql.push_str(&member(yes, &set));
     }
+    // Human / robot (`expediteurs.md`, section 8): a column of the thread
+    // (`thread.has_person`), tested during the walk like the conversation
+    // criterion. A set of threads built at each request cost 50 ms a page
+    // on 400,000 mails; the column costs nothing.
+    if let Some(yes) = f.human {
+        sql.push_str(if yes { " AND t.has_person = 1" } else { " AND t.has_person = 0" });
+    }
     if let Some(yes) = f.conversation {
         sql.push_str(if yes { " AND t.message_count > 1" } else { " AND t.message_count = 1" });
     }
@@ -1547,6 +1554,7 @@ mod plan_tests {
             tag: Some("Clients".into()),
             group_id: Some(1),
             address_id: Some(2),
+            human: Some(true),
         };
         let mut out = vec![("none", ThreadFilter::default())];
         out.push(("seen", ThreadFilter { seen: Some(false), ..Default::default() }));
@@ -1554,6 +1562,8 @@ mod plan_tests {
         out.push(("not flagged", ThreadFilter { flagged: Some(false), ..Default::default() }));
         out.push(("answered", ThreadFilter { answered: Some(true), ..Default::default() }));
         out.push(("attachments", ThreadFilter { attachments: Some(true), ..Default::default() }));
+        out.push(("human", ThreadFilter { human: Some(true), ..Default::default() }));
+        out.push(("robot", ThreadFilter { human: Some(false), ..Default::default() }));
         out.push(("from", ThreadFilter { from: v("alice"), ..Default::default() }));
         out.push(("not from", ThreadFilter { not_from: v("@acme.fr"), ..Default::default() }));
         out.push(("to", ThreadFilter { to: v("bob"), ..Default::default() }));

@@ -33,7 +33,7 @@ PRAGMA temp_store = MEMORY;
 -- Une base existante est mise à jour par les migrations du noyau
 -- (crates/nm-store/src/migrations.rs) ; ce fichier crée directement la
 -- dernière version.
-PRAGMA user_version = 11;   -- migrations : comparer à la version attendue au démarrage
+PRAGMA user_version = 12;   -- migrations : comparer à la version attendue au démarrage
 
 -- ------------------------------------------------------------
 -- Comptes : état seulement. Les paramètres (adresse, serveurs, identifiants,
@@ -161,6 +161,20 @@ CREATE TABLE address (
     -- chargées (mode « images », ui.md, « Images distantes ») ; seulement avec
     -- body_format = 'html'. Même statut que body_format : local, non journalisé.
     remote_images INTEGER NOT NULL DEFAULT 0 CHECK (remote_images IN (0,1)),
+    -- Version 12. Personnes et robots (expediteurs.md) : verdict calculé
+    -- (NULL tant qu'aucun mail n'est compté), verdict forcé par l'utilisateur
+    -- (prime sur le calcul), « l'utilisateur lui a écrit » (destinataire d'un
+    -- mail de Sent), et les mails reçus comptés par nature (section 5), mis à
+    -- jour à chaque mail : recalculer le verdict ne relit jamais les mails.
+    sender_kind      TEXT CHECK (sender_kind IN ('person','robot')),
+    sender_kind_user TEXT CHECK (sender_kind_user IN ('person','robot')),
+    date_sender_kind_modified INTEGER,  -- dernier choix de l'utilisateur
+    written_to    INTEGER NOT NULL DEFAULT 0 CHECK (written_to IN (0,1)),
+    sender_count  INTEGER NOT NULL DEFAULT 0,  -- hors réponses automatiques
+    sender_bulk   INTEGER NOT NULL DEFAULT 0,
+    sender_list   INTEGER NOT NULL DEFAULT 0,
+    sender_human  INTEGER NOT NULL DEFAULT 0,
+    sender_client INTEGER NOT NULL DEFAULT 0,
     UNIQUE (addr)
 ) STRICT;
 
@@ -279,7 +293,12 @@ CREATE TABLE thread (
     has_sent       INTEGER NOT NULL DEFAULT 0 CHECK (has_sent IN (0,1)),
     has_draft      INTEGER NOT NULL DEFAULT 0 CHECK (has_draft IN (0,1)),
     has_quarantine INTEGER NOT NULL DEFAULT 0 CHECK (has_quarantine IN (0,1)),
-    has_deleted    INTEGER NOT NULL DEFAULT 0 CHECK (has_deleted IN (0,1))
+    has_deleted    INTEGER NOT NULL DEFAULT 0 CHECK (has_deleted IN (0,1)),
+    -- Version 12 : un mail de la conversation, dans n'importe quel dossier,
+    -- est d'une personne (message.sender_kind, expediteurs.md, section 8).
+    -- Le filtre humain / robot teste cette colonne pendant le parcours de la
+    -- liste, sans calculer d'ensemble.
+    has_person     INTEGER NOT NULL DEFAULT 0 CHECK (has_person IN (0,1))
 ) STRICT;
 
 -- Chaque liste est un parcours d'index, du plus récent au plus ancien, qui
@@ -418,6 +437,15 @@ CREATE TABLE message (
     modified_by      TEXT NOT NULL CHECK (modified_by IN ('core','app','cli','tui','web','mcp','config_sync','imap')),
     date_last_viewed INTEGER,
 
+    -- Version 12. Personnes et robots (expediteurs.md) : les indices des
+    -- en-têtes et la nature du mail (bits, sender_kind.rs) ; NULL tant que le
+    -- rattrapage des mails antérieurs ne les a pas lus. sender_kind : 'person'
+    -- pour un mail de l'utilisateur (Sent, Drafts), 'robot' pour un mail
+    -- automatique, sinon le verdict de l'adresse ; NULL sans expéditeur ou pas
+    -- encore lu. Résumé par conversation dans thread.has_person.
+    sender_signals   INTEGER,
+    sender_kind      TEXT CHECK (sender_kind IN ('person','robot')),
+
     UNIQUE (folder_id, uid)               -- synchro ; plusieurs NULL autorisés
 ) STRICT;
 
@@ -465,6 +493,10 @@ CREATE INDEX idx_message_thread_answered
     ON message (thread_id) WHERE is_answered = 1;
 CREATE INDEX idx_message_thread_attachments
     ON message (folder_id, thread_id) WHERE has_attachments = 1;
+-- Mails dont le rattrapage n'a pas encore lu les indices (version 12) :
+-- l'index se vide à mesure, et ne coûte plus rien ensuite.
+CREATE INDEX idx_message_sender_pending
+    ON message (id) WHERE sender_signals IS NULL;
 
 -- Mails d'un expéditeur, par dossier : rangement après une décision d'adresse
 -- ou de domaine, « adresse vue dans cette boîte » (synchronisation-configuration.md).

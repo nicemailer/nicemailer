@@ -82,6 +82,10 @@ final class GeekController {
         /// `m` / `M` on the contacts screen: the decision on the address,
         /// or on its domain.
         case decision(name: String, domain: Bool, current: String?)
+        /// `o` on the contacts screen: whether the address is a person or a
+        /// robot (`expediteurs.md`, section 9). `current`: the shown verdict,
+        /// `forced` when the user chose it.
+        case senderKind(addressId: Int, addr: String, current: String?, forced: Bool)
         /// "Change Mailbox…" chose a mailbox of an earlier data format:
         /// upgrade it, or keep the current one (`AppModel.pendingUpgrade`).
         case mailboxUpgrade(PendingUpgrade)
@@ -1415,7 +1419,8 @@ final class GeekController {
         for flag in ThreadFilter.Flag.allCases {
             // Unread before read, then "with" before "without".
             for value in flag == .seen ? [false, true] : [true, false] {
-                entries.append(Entry(key: a.value(flag) == value ? "•" : " ", label: ThreadFilter.label(flag, value)) {
+                entries.append(Entry(key: a.value(flag) == value ? "•" : " ", label: ThreadFilter.label(flag, value),
+                                     keywords: ThreadFilter.keywords(flag, value)) {
                     [model] in model.attributes.toggle(flag, value)
                 })
             }
@@ -2139,6 +2144,12 @@ final class GeekController {
             choiceIndex = nil
             overlay = .choice(.decision(name: name, domain: domain, current: domain ? c.domainTarget : c.screeningTarget))
         }
+        // `o` (origin): a person or a robot.
+        if key == "o", screen == .contacts, contacts.indices.contains(screenIndex) {
+            let c = contacts[screenIndex]
+            choiceIndex = nil
+            overlay = .choice(.senderKind(addressId: c.id, addr: c.addr, current: c.senderKind, forced: c.forced))
+        }
     }
 
     /// Domain part of an address (`news.shop.fr` for `a@news.shop.fr`).
@@ -2165,6 +2176,7 @@ final class GeekController {
         switch c {
         case .suspect(let s): L("Probable spoofing of %@ (verdict %@)", s.addr, s.verdict)
         case .decision(let name, let domain, _): domain ? L("Decision on the domain %@", name) : L("Decision on %@", name)
+        case .senderKind(_, let addr, _, _): L("Who writes from %@", addr)
         case .mailboxUpgrade(let u):
             L("The mailbox %@ uses an older data format (%lld; this NiceMailer uses %lld)", DataDirectory.displayName(u.url), u.from, u.to)
         case .sendThen:
@@ -2200,6 +2212,14 @@ final class GeekController {
                 self?.decide(name, domain: domain, target: nil)
             })
             return entries
+        case .senderKind(let id, _, let current, let forced):
+            // The forced value is marked; "automatic" when the core decides.
+            return Self.senderKindChoices.map { choice in
+                let marked = choice.kind == nil ? !forced : forced && current == choice.kind
+                return Entry(key: choice.key, label: choice.label, detail: marked ? "•" : nil) { [weak self] in
+                    self?.setSenderKind(id, choice.kind)
+                }
+            }
         case .mailboxUpgrade:
             return [
                 Entry(key: "y", label: L("upgrade it and use it (older versions of NiceMailer will no longer open it: copy the folder first to keep them able to)")) {
@@ -2244,6 +2264,19 @@ final class GeekController {
         }
         choiceIndex = nil
         overlay = .choice(.sendFrom)
+    }
+
+    /// The answers of `o` on the contacts screen: `h` human, `r` robot,
+    /// `-` automatic (the core's verdict takes over again).
+    static var senderKindChoices: [(key: String, label: String, kind: String?)] {
+        [("h", L("human"), "person"), ("r", L("robot"), "robot"), ("-", L("automatic (computed from the mails)"), nil)]
+    }
+
+    private func setSenderKind(_ addressId: Int, _ kind: String?) {
+        Task {
+            await model.setSenderKind(addressId, kind: kind)
+            await loadContacts(reset: false, keep: true)
+        }
     }
 
     private func decide(_ name: String, domain: Bool, target: String?) {

@@ -34,6 +34,7 @@ Le produit s'adresse à des individus et à de petites structures. La synchronis
 | Décision de screening d'une adresse | adresse | Soumis au filtre de confidentialité |
 | Décision de screening d'un domaine | domaine | Soumis au filtre de confidentialité |
 | `auth_policy` d'une adresse | adresse | Choix de l'utilisateur, comme le screening ; même filtre |
+| Provenance forcée d'une adresse (`sender_kind_user`, `expediteurs.md`) | adresse | Choix de l'utilisateur ; même filtre. Le verdict calculé ne l'est pas : il se recalcule à partir des messages |
 | Rôle des dossiers (Archive → « Archives », Junk → « Spam »…), dont les dossiers du workflow créés par NiceMailer | rôle | Propre à la boîte |
 | Tags : nom et couleur associés à un mot-clé IMAP | mot-clé | Propre à la boîte (`tag.account_id`) |
 | Groupes de contacts : nom, couleur, position | `sync_key` du groupe | Commun à tous les comptes ; écrit seulement s'il a une appartenance écrite (section 6, `groupes.md`) |

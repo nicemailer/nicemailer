@@ -15,6 +15,34 @@ struct AttributesTests {
         #expect(f.seen == nil && f.isEmpty)
     }
 
+    /// Human / robot (`expediteurs.md`, section 8): one yes / no attribute,
+    /// sent to the core as `human`, the opposite replacing the other.
+    @Test func humanAndRobotAreOneAttribute() {
+        var f = ThreadFilter()
+        f.toggle(.human, true)
+        #expect(f.parameters["human"] as? Bool == true)
+        #expect(f.chips.map(\.label) == [L("human")])
+        f.toggle(.human, false)
+        #expect(f.parameters["human"] as? Bool == false)
+        #expect(f.chips.map(\.label) == [L("robot")])
+        f.remove("human")
+        #expect(f.isEmpty)
+        // Listed last, so that the letters reaching the others stay.
+        #expect(ThreadFilter.Flag.allCases.last == .human)
+        #expect(ThreadFilter.keywords(.human, true) == L("person people").split(separator: " ").map(String.init))
+        #expect(ThreadFilter.keywords(.seen, true).isEmpty)
+    }
+
+    @Test func theOriginOfAContactSaysWhenTheUserChoseIt() {
+        let c = { (kind: String?, forced: Bool?) in
+            ContactView(id: 1, addr: "a@b.fr", name: nil, screeningTarget: nil, groups: [], messageCount: 1,
+                        senderKind: kind, senderKindForced: forced)
+        }
+        #expect(c("person", false).originLabel == L("human"))
+        #expect(c("robot", true).originLabel == L("robot") + " *")
+        #expect(c(nil, nil).originLabel == "")
+    }
+
     @Test func parametersFollowTheCoreNames() {
         var f = ThreadFilter()
         f.toggle(.attachments, true)

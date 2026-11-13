@@ -668,21 +668,27 @@ impl Store {
             .filter(|q| !q.is_empty())
             .map(|q| format!("%{}%", q.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")));
         let fetch = i64::from(limit) + 1;
-        // id, addr, name, screening_target, auth_policy.
-        type Row = (i64, String, Option<String>, Option<String>, String);
+        // id, addr, name, screening_target, auth_policy, sender kind
+        // (computed, forced).
+        type Row = (i64, String, Option<String>, Option<String>, String, Option<String>, Option<String>);
         let rows: Vec<Row> = self
             .conn
             .prepare_cached(
-                "SELECT id, addr, name, screening_target, auth_policy FROM address
+                "SELECT id, addr, name, screening_target, auth_policy, sender_kind, sender_kind_user FROM address
                   WHERE (?1 IS NULL OR addr > ?1)
                     AND (?2 IS NULL OR addr LIKE ?2 ESCAPE '\\' OR name LIKE ?2 ESCAPE '\\')
                   ORDER BY addr LIMIT ?3",
             )?
-            .query_map(params![cursor, pattern, fetch], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)))?
+            .query_map(params![cursor, pattern, fetch], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?))
+            })?
             .collect::<std::result::Result<_, _>>()?;
         let has_more = rows.len() as i64 > i64::from(limit);
         let mut items = Vec::new();
-        for (id, addr, name, screening_target, auth_policy) in rows.into_iter().take(limit as usize) {
+        for (id, addr, name, screening_target, auth_policy, computed, forced) in rows.into_iter().take(limit as usize) {
+            // The user's choice wins over the computation (`expediteurs.md`).
+            let sender_kind_forced = forced.is_some();
+            let sender_kind = forced.or(computed).as_deref().and_then(nm_core::SenderKind::parse);
             let groups: Vec<String> = self
                 .conn
                 .prepare_cached(
@@ -698,7 +704,18 @@ impl Store {
                 .prepare_cached("SELECT count(*) FROM message WHERE from_address_id = ?1")?
                 .query_row([id], |r| r.get(0))?;
             let domain_target = crate::screening::domain_target(&self.conn, &addr)?.map(|t| t.as_str().to_string());
-            items.push(ContactView { id, addr, name, screening_target, domain_target, auth_policy, groups, message_count });
+            items.push(ContactView {
+                id,
+                addr,
+                name,
+                screening_target,
+                domain_target,
+                auth_policy,
+                groups,
+                message_count,
+                sender_kind,
+                sender_kind_forced,
+            });
         }
         let next = if has_more { items.last().map(|c| c.addr.clone()) } else { None };
         Ok((items, next))

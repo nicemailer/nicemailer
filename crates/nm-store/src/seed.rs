@@ -565,9 +565,28 @@ pub fn seed(store: &mut Store, opts: &SeedOptions) -> Result<SeedReport> {
                 coalesce(b.text_plain, '')
            FROM message m LEFT JOIN message_body b ON b.message_id = m.id;",
     )?;
+    // People and robots (`expediteurs.md`): the fake mails have no headers
+    // to read, so each gets the clues its kind of sender would give. The
+    // contacts write with a mail client; newsletters, invoices and banned
+    // senders send in bulk; the unknown senders of Quarantine and Junk give
+    // no clue (rule 10 makes them robots, unless on a public domain). Then
+    // the counts, verdicts and kinds, as the insertion would compute them.
+    {
+        use crate::sender_kind::{LIST_UNSUBSCRIBE, MAIL_CLIENT, NATURE_BULK, NATURE_HUMAN, NATURE_NONE};
+        tx.execute_batch(&format!(
+            "UPDATE message SET sender_signals = CASE
+                 (SELECT a.screening_target FROM address a WHERE a.id = message.from_address_id)
+                 WHEN 'inbox' THEN {human}
+                 WHEN 'newsletter' THEN {bulk} WHEN 'paperwork' THEN {bulk} WHEN 'banned' THEN {bulk}
+                 ELSE {NATURE_NONE} END;",
+            human = MAIL_CLIENT | NATURE_HUMAN,
+            bulk = LIST_UNSUBSCRIBE | NATURE_BULK,
+        ))?;
+        crate::senders::classify_all(&tx)?;
+    }
     // The folder, flags and counters of every thread, by the same rule as
     // `refresh_thread`, in one statement (`refresh_all_threads_sql`).
-    tx.execute_batch(&crate::refresh_all_threads_sql())?;
+    tx.execute_batch(&crate::refresh_all_threads_sql(true))?;
     tx.execute_batch(
         "UPDATE folder SET
             total_count  = (SELECT count(*) FROM message m WHERE m.folder_id = folder.id),
@@ -830,5 +849,45 @@ mod tests {
             .unwrap();
         assert_eq!(total, sum);
         assert!(seed(&mut store, &SeedOptions { threads: 1, seed: 1, now: 0 }).is_err());
+    }
+
+    /// The fake mailbox has people and robots (`expediteurs.md`), with
+    /// nothing left for the catch-up, and kinds that agree with the counts:
+    /// what the insertion would give.
+    #[test]
+    fn seed_classifies_people_and_robots() {
+        let mut store = Store::open_in_memory().unwrap();
+        seed(&mut store, &SeedOptions { threads: 300, seed: 2, now: 1_790_000_000 }).unwrap();
+        assert_eq!(crate::senders::pending(&store).unwrap(), 0);
+        let kind = |target: &str| -> Vec<String> {
+            store
+                .conn
+                .prepare("SELECT DISTINCT sender_kind FROM address WHERE screening_target = ?1 AND sender_count > 0")
+                .unwrap()
+                .query_map([target], |r| r.get(0))
+                .unwrap()
+                .map(|r| r.unwrap())
+                .collect()
+        };
+        assert_eq!(kind("inbox"), ["person"]);
+        assert_eq!(kind("newsletter"), ["robot"]);
+        // Every mail of a robot sender is a robot, every thread with a mail
+        // of a person says so.
+        let wrong: i64 = store
+            .conn
+            .query_row(
+                "SELECT (SELECT count(*) FROM message m JOIN address a ON a.id = m.from_address_id
+                          JOIN folder f ON f.id = m.folder_id
+                         WHERE f.role NOT IN ('sent', 'drafts') AND m.sender_kind IS NOT a.sender_kind)
+                      + (SELECT count(*) FROM thread t WHERE t.has_person <>
+                          EXISTS (SELECT 1 FROM message m WHERE m.thread_id = t.id AND m.sender_kind = 'person'))",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(wrong, 0);
+        let people: i64 = store.conn.query_row("SELECT count(*) FROM thread WHERE has_person = 1", [], |r| r.get(0)).unwrap();
+        let robots: i64 = store.conn.query_row("SELECT count(*) FROM thread WHERE has_person = 0", [], |r| r.get(0)).unwrap();
+        assert!(people > 50 && robots > 50, "{people} / {robots}");
     }
 }

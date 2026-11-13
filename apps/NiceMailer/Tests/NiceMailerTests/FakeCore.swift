@@ -223,9 +223,12 @@ enum Fixture {
         case "search":
             return ["items": [], "as_of": position]
         case "list_contacts":
+            // c1 a person, c2 a robot forced by the user, c3 not counted
+            // yet (`expediteurs.md`).
+            let kinds: [Any] = ["person", "robot", NSNull()]
             let items: [[String: Any]] = (1...3).map {
                 ["id": $0, "addr": "c\($0)@example.org", "name": NSNull(), "screening_target": NSNull(),
-                 "groups": [], "message_count": $0]
+                 "groups": [], "message_count": $0, "sender_kind": kinds[$0 - 1], "sender_kind_forced": $0 == 2]
             }
             return ["items": items, "next_cursor": NSNull(), "as_of": position]
         case "list_history":
@@ -261,6 +264,8 @@ enum Fixture {
                     "decision": ["kind": params["addr"] != nil ? "address" : "domain", "name": name,
                                  "before": NSNull(), "after": params["target"] ?? NSNull()],
                     "undo": "7:9"]
+        case "set_sender_kind":
+            return ["changed": 0, "moved": 0, "filed": 0, "decision": NSNull(), "undo": "11:11"]
         case "set_group_member":
             return ["group_id": 1, "addr": "sender1@example.org", "changed": true]
         case "export_message":

@@ -334,6 +334,29 @@ struct ContactView: Decodable, Identifiable, Hashable {
     var authPolicy: String? = nil
     let groups: [String]
     let messageCount: Int
+    /// Who writes the address's mails (`expediteurs.md`): `person`,
+    /// `robot`, or `nil` before any mail was counted. The user's choice
+    /// when `forced`, else the core's verdict.
+    var senderKind: String? = nil
+    /// Swift note: an optional, so that the synthesized decoder accepts a
+    /// core that does not send the key (a non-optional `Bool` with a
+    /// default value is still required in the JSON).
+    var senderKindForced: Bool? = nil
+    var forced: Bool { senderKindForced == true }
+}
+
+extension ContactView {
+    /// The origin column of the contacts screen: "human" or "robot",
+    /// followed by "*" when the user chose it; empty before the core counted
+    /// any mail.
+    var originLabel: String {
+        let word: String = switch senderKind {
+        case "person": L("human")
+        case "robot": L("robot")
+        default: ""
+        }
+        return word.isEmpty || !forced ? word : word + " *"
+    }
 }
 
 struct ExportResult: Decodable {

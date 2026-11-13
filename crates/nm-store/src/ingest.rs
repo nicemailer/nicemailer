@@ -114,6 +114,10 @@ pub struct ParsedMessage {
     /// How many mailboxes `From` holds: a mail with several has no sender
     /// a rule can apply to (`authentification-expediteur.md`, section 4).
     pub from_count: usize,
+    /// The clues of who wrote the message, and its nature
+    /// (`sender_kind::signals`, `expediteurs.md`, section 4). Read from the
+    /// headers, so known before the body is downloaded.
+    pub sender_signals: i64,
     /// `false` when `mail-parser` could not make sense of the bytes at all.
     /// The raw file is kept anyway, and `reindex` can retry later
     /// (`stockage-brut.md`, section 5, "Échec de l'analyse MIME").
@@ -241,17 +245,30 @@ pub fn parse(raw: &[u8]) -> ParsedMessage {
         .map(|h| String::from_utf8_lossy(h.raw_value()).trim().to_string())
         .collect();
     let from_count = m.from().map(|l| l.mailboxes().count()).unwrap_or(0);
+    let from = m.from().and_then(|l| l.first()).and_then(|mb| address(mb.address(), mb.name()));
+    let message_id = message_id.filter(|s| !s.is_empty());
+    // Rust note: `h.name()` returns a temporary value, so the name is copied
+    // (`to_string`) to outlive it; the values borrow the raw bytes.
+    let header_fields: Vec<(String, Cow<str>)> =
+        m.headers().iter().map(|h| (h.name().as_str().to_string(), String::from_utf8_lossy(h.raw_value()))).collect();
+    let sender_signals = crate::sender_kind::signals(
+        header_fields.iter().map(|(n, v)| (n.as_str(), v.as_ref())),
+        from.as_ref().map(|f| f.addr.as_str()),
+        message_id.as_deref(),
+        !references.is_empty(),
+    );
 
     ParsedMessage {
         auth_results,
         from_count,
-        message_id: message_id.filter(|s| !s.is_empty()),
+        sender_signals,
+        message_id,
         in_reply_to: in_reply_to.filter(|s| !s.is_empty()),
         references,
         // `decode_leftovers`: encoded words `mail-parser` did not decode
         // because they are glued inside a word (`encoded_words.rs`).
         subject: m.subject().map(|s| crate::encoded_words::decode_leftovers(s.trim()).into_owned()).unwrap_or_default(),
-        from: m.from().and_then(|l| l.first()).and_then(|mb| address(mb.address(), mb.name())),
+        from,
         to: addresses(m.to()),
         cc: addresses(m.cc()),
         bcc: addresses(m.bcc()),

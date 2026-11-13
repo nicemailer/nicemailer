@@ -495,7 +495,7 @@ impl Store {
         let rows: Vec<(i64, String, i64, String, String)> = tx
             .prepare(
                 "SELECT id, entity, entity_id, action, detail FROM audit_log
-                  WHERE id BETWEEN ?1 AND ?2 AND action IN ('move', 'screening', 'auth_policy')
+                  WHERE id BETWEEN ?1 AND ?2 AND action IN ('move', 'screening', 'auth_policy', 'sender_kind')
                   ORDER BY id DESC",
             )?
             .query_map(params![first, last], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)))?
@@ -544,6 +544,17 @@ impl Store {
                         && let Some(p) = detail["before"].as_str().and_then(AuthPolicy::parse)
                     {
                         record_auth_policy(&tx, id, p, Some(row), source)?;
+                    }
+                }
+                // The verdict forced on an address (`expediteurs.md`,
+                // section 9): back to the previous choice, or to the
+                // computation, if nobody changed it since.
+                ("address", "sender_kind") => {
+                    let current: Option<String> =
+                        tx.query_row("SELECT sender_kind_user FROM address WHERE id = ?1", [id], |r| r.get(0))?;
+                    if current.as_deref() == detail["after"].as_str() {
+                        let before = detail["before"].as_str().and_then(nm_core::SenderKind::parse);
+                        crate::senders::force_sender_kind(&tx, id, before, Some(row), source)?;
                     }
                 }
                 _ => {}

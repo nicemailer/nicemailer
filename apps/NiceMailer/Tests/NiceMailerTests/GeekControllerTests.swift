@@ -1494,6 +1494,23 @@ struct GeekControllerTests {
         #expect(controller.pickerEntries(.attributes).first?.label == L("To…"))
     }
 
+    @Test func humanAndRobotAreReachedInTheSelectorAndSentToTheCore() async {
+        press("f")
+        let labels = controller.pickerEntries(.attributes).map(\.label)
+        #expect(labels.contains(L("human")) && labels.contains(L("robot")))
+        type(L("human")); press("ret")
+        #expect(model.attributes.human == true)
+        #expect(await eventually { (core.calls("list_threads").last?["filter"] as? [String: Any])?["human"] as? Bool == true })
+        // A hidden word reaches it too: "person" (French "personne").
+        press("f"); type(L("person people").split(separator: " ").first.map(String.init) ?? "")
+        #expect(controller.pickerEntries(.attributes).first?.label == L("human"))
+        press("esc")
+        // The opposite replaces it.
+        press("f"); type(L("robot")); press("ret")
+        #expect(model.attributes.human == false)
+        #expect(await eventually { (core.calls("list_threads").last?["filter"] as? [String: Any])?["human"] as? Bool == false })
+    }
+
     @Test func attributesWithAValueExpandThePanel() async {
         press("f"); type(L("From…")); press("ret")
         #expect(controller.overlay == .picker(.attributeValue(.from)))

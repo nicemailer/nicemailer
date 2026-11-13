@@ -580,6 +580,9 @@ private final class Runner {
             }(),
             "screen_index": "\(c.screenIndex)",
             "contacts_count": "\(c.contacts.count)",
+            // The origin column of the contact under the cursor ("human",
+            // "robot *" when forced; `expediteurs.md`, section 9).
+            "contact_origin": c.contacts.indices.contains(c.screenIndex) ? c.contacts[c.screenIndex].originLabel : "",
             "history_count": "\(c.history.count)",
             "tags_count": "\(c.tags.count)",
             "groups_count": "\(c.groups.count)",

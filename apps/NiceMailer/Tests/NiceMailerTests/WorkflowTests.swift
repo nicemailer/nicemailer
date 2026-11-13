@@ -246,6 +246,34 @@ struct WorkflowTests {
         #expect(call["domain"] as? String == "example.org" && call["target"] == nil)
     }
 
+    /// `o` on a contact (`expediteurs.md`, section 9): human, robot, or
+    /// back to the core's verdict, undoable; the contacts are loaded again.
+    @Test func oOnAContactForcesWhetherItIsAPersonOrARobot() async {
+        await openContacts()
+        #expect(controller.contacts.map(\.originLabel) == [L("human"), L("robot") + " *", ""])
+        press("o")
+        #expect(controller.overlay == .choice(.senderKind(addressId: 1, addr: "c1@example.org", current: "person", forced: false)))
+        let entries = controller.choiceEntries(controller.activeChoice!)
+        #expect(entries.map(\.key) == ["h", "r", "-"])
+        // Not forced: "automatic" is the one marked.
+        #expect(entries.map(\.detail) == [nil, nil, "•"])
+        let loads = core.calls("list_contacts").count
+        press("r")
+        #expect(await eventually { core.calls("set_sender_kind").count == 1 })
+        let call = core.calls("set_sender_kind")[0]
+        #expect(call["address_id"] as? Int == 1 && call["kind"] as? String == "robot")
+        #expect(await eventually { model.undoStack.count == 1 && model.flash == L("Marked as written by a robot") })
+        #expect(await eventually { core.calls("list_contacts").count > loads })
+
+        // The forced contact: its value is marked, and `-` gives it back.
+        press("down"); press("o")
+        #expect(controller.choiceEntries(controller.activeChoice!).map(\.detail) == [nil, "•", nil])
+        press("-")
+        #expect(await eventually { core.calls("set_sender_kind").count == 2 })
+        #expect(core.calls("set_sender_kind")[1]["kind"] == nil)
+        #expect(await eventually { model.flash == L("Origin computed from the mails again") })
+    }
+
     @Test func aChoiceCanBeMadeWithTheArrowsOrCancelled() async {
         await openContacts()
         press("m"); press("esc")

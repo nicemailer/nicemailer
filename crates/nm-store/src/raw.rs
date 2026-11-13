@@ -312,6 +312,54 @@ impl RawStore {
         }
         Ok(bytes)
     }
+
+    /// The header block of the message `hash`, up to and including the
+    /// empty line that ends it (at most [`HEADER_LIMIT`] bytes): only the
+    /// start of the file is decompressed. Reading the headers of 400,000
+    /// mails this way takes seconds where `read` would decompress tens of
+    /// gigabytes.
+    ///
+    /// The content is not checked against the hash (that needs the whole
+    /// file): this is for clues that a corrupt file can only make wrong,
+    /// never for what the user reads (`senders.rs`).
+    pub fn read_header(&self, hash: &Hash) -> io::Result<Vec<u8>> {
+        let mut decoder = zstd::stream::read::Decoder::new(File::open(self.path(hash))?)?;
+        let mut out: Vec<u8> = Vec::with_capacity(8192);
+        let mut chunk = [0u8; 8192];
+        loop {
+            let n = decoder.read(&mut chunk)?;
+            if n == 0 {
+                return Ok(out);
+            }
+            // Look for the end in the new bytes, plus the three before them
+            // (the empty line may straddle two chunks).
+            let from = out.len().saturating_sub(3);
+            out.extend_from_slice(&chunk[..n]);
+            if let Some(end) = header_end(&out[from..]) {
+                out.truncate(from + end);
+                return Ok(out);
+            }
+            if out.len() >= HEADER_LIMIT {
+                out.truncate(HEADER_LIMIT);
+                return Ok(out);
+            }
+        }
+    }
+}
+
+/// The most [`RawStore::read_header`] reads: a header block is a few
+/// kilobytes; one without an end (a broken message) stops here.
+pub const HEADER_LIMIT: usize = 512 * 1024;
+
+/// The length of the header block in `bytes`, its empty line included
+/// (`\r\n\r\n` or `\n\n`), if it ends there.
+fn header_end(bytes: &[u8]) -> Option<usize> {
+    let crlf = bytes.windows(4).position(|w| w == b"\r\n\r\n").map(|i| i + 4);
+    let lf = bytes.windows(2).position(|w| w == b"\n\n").map(|i| i + 2);
+    match (crlf, lf) {
+        (Some(a), Some(b)) => Some(a.min(b)),
+        (a, b) => a.or(b),
+    }
 }
 
 /// A message being written in pieces ([`RawStore::writer`]): hashed and
@@ -621,6 +669,24 @@ mod tests {
         assert_eq!(fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o400);
         // Nothing is left in .tmp.
         assert_eq!(fs::read_dir(dir.path().join(RAW_DIR).join(".tmp")).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn read_header_stops_at_the_empty_line() {
+        let dir = tempfile::tempdir().unwrap();
+        let raw = RawStore::open(dir.path()).unwrap();
+        let w = raw.write(b"Subject: hi\r\nX-Mailer: Mutt\r\n\r\nbody\r\n\r\nmore\r\n").unwrap();
+        assert_eq!(raw.read_header(&w.hash).unwrap(), b"Subject: hi\r\nX-Mailer: Mutt\r\n\r\n");
+        // Bare LF, and the end straddling two chunks of the decoder.
+        let mut long = "X-Long: ".to_string() + &"a".repeat(8190) + "\n\nbody";
+        let w = raw.write(long.as_bytes()).unwrap();
+        assert_eq!(raw.read_header(&w.hash).unwrap(), &long.as_bytes()[..long.len() - 4]);
+        // No end: everything, up to the limit.
+        long = "X-Huge: ".to_string() + &"b".repeat(HEADER_LIMIT * 2);
+        let w = raw.write(long.as_bytes()).unwrap();
+        assert_eq!(raw.read_header(&w.hash).unwrap().len(), HEADER_LIMIT);
+        let w = raw.write(b"Subject: no end").unwrap();
+        assert_eq!(raw.read_header(&w.hash).unwrap(), b"Subject: no end");
     }
 
     #[test]

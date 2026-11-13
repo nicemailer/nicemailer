@@ -342,6 +342,31 @@ impl AfterSend {
     }
 }
 
+/// Who writes the mails of an address (`expediteurs.md`): a person or a
+/// machine. Stored in `address.sender_kind` (computed),
+/// `address.sender_kind_user` (forced by the user) and `message.sender_kind`
+/// (what the list filter reads).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SenderKind {
+    Person,
+    Robot,
+}
+
+impl SenderKind {
+    /// Identifier stored in the database and sent to the clients.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            SenderKind::Person => "person",
+            SenderKind::Robot => "robot",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<SenderKind> {
+        [SenderKind::Person, SenderKind::Robot].into_iter().find(|k| k.as_str() == s)
+    }
+}
+
 /// Screening decision on an address or a domain (`address.screening_target`,
 /// `domain.screening_target`): where the next mails of that sender go.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

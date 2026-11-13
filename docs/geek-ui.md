@@ -40,6 +40,7 @@ The magnifier after the folder in the status bar (key **F**, or a click) opens t
 | attachments | with attachments / without attachments — pièce jointe / sans pièce jointe | `wi` `witho` — `pj` (or `pi`) `spj` |
 | answered (you replied) | answered / not answered — répondus / sans ma réponse | `an` `na` — `r` `sm` |
 | conversation | conversation (several mails) / single mail — conversations / mails seuls | `co` `si` — `co` `m` |
+| origin ([senders.md](senders.md)) | human / robot — humain / robot: a mail of the conversation, in any folder, was written by a person, or none was. Listed last so the letters above stay | `h` `ro`, hidden words `person`, `machine` — `h` `ro`, `personne`, `automate` |
 | From… — De… | part of a name or address, or a domain written `@acme.fr`; contacts suggested as you type; several values OR-ed; `-value` excludes. The name is the contact's, not the display name of each mail | `fr`, `sender` — `de`, `exp` |
 | To… — À… | same, on To and Cc | `to`, `cc` — `a`, `cc`, `dest` |
 | Text… — Texte… | words of the subject and body, never the addresses; each word a prefix, accents ignored; `-word` excludes | `te` — `te` |
@@ -224,7 +225,7 @@ The menu lists the folders in blocks separated by a blank line, the folder colum
 | `;o` | Work: Inbox, Todo and Waiting of the view together |
 | `;m` | All Mail: every folder of the view but Deleted, Junk and Banned |
 | `;e` | Everything: every folder of the view |
-| `;c` | Contacts: every known address, with its decision (or its domain's, after "@"), groups and number of mails; `/` filters; `m` chooses the decision on the address, `M` on its domain (`i` Inbox, `n` Newsletter, `p` Paperwork, `b` Banned, `-` none); Return lists the contact's mails |
+| `;c` | Contacts: every known address, with its decision (or its domain's, after "@"), its origin ("human" or "robot", "*" when chosen by the user), groups and number of mails; `/` filters; `m` chooses the decision on the address, `M` on its domain (`i` Inbox, `n` Newsletter, `p` Paperwork, `b` Banned, `-` none); `o` chooses its origin (`h` human, `r` robot, `-` automatic, [senders.md](senders.md)); Return lists the contact's mails |
 | `;T` | Tags; Return lists the mails of the tag, in every account (uppercase: `;t` is Todo) |
 | `;g` | Groups; Return lists the mails of the group's members |
 | `;h` | History: the audit log, newest first |

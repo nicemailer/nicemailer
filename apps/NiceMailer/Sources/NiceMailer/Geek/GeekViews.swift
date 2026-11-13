@@ -1833,7 +1833,7 @@ private struct ContactsScreen: View {
 
     var body: some View {
         ScreenList(
-            title: L("Contacts"), hint: L("/ filter · m: decision · M: domain decision · return: their mails · esc: back"),
+            title: L("Contacts"), hint: L("/ filter · m: decision · M: domain decision · o: human or robot · return: their mails · esc: back"),
             count: controller.contacts.count, index: controller.screenIndex,
             onClick: { controller.clickScreenRow($0) }
         ) { i in
@@ -1849,6 +1849,9 @@ private struct ContactsScreen: View {
                     Text(c.domainTarget.map { "@" + Role.name($0) } ?? "").foregroundStyle(Palette.muted)
                         .frame(width: scaled(110), alignment: .leading)
                 }
+                // Human or robot; a choice of the user is marked "*".
+                Text(c.originLabel).foregroundStyle(c.forced ? Palette.text : Palette.muted)
+                    .frame(width: scaled(80), alignment: .leading)
                 Text("\(c.messageCount)").foregroundStyle(Palette.muted).frame(width: scaled(60), alignment: .trailing)
                 Text(c.groups.map { "@" + $0 }.joined(separator: " ")).foregroundStyle(Palette.accentText)
             }

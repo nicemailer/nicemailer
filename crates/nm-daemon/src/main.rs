@@ -63,7 +63,7 @@ use nm_api::{
     ListHistoryParams, ListTagsParams, ListThreadsParams, MAX_LIMIT, MoveThreadParams,
     PROTOCOL_VERSION, Page, ProbeAccountParams, ProbeReport, Request, Response, RpcError, SearchParams, SearchResult, SetBodyFormatParams,
     SetGroupMemberParams, SetThreadFlaggedParams, SetThreadSeenParams, SubscribeParams, SubscribeResult,
-    SetAddressScreeningParams, SetDomainScreeningParams, TagThreadParams, ThreadView, UndoParams, error_code,
+    SetAddressScreeningParams, SetDomainScreeningParams, SetSenderKindParams, TagThreadParams, ThreadView, UndoParams, error_code,
     method, ConfigStatus, SetAccountOrderParams, SetPasswordParams,
 };
 use nm_core::Source;
@@ -357,6 +357,7 @@ async fn run(args: Args, data_dir: &Path) -> anyhow::Result<()> {
     fs::set_permissions(&socket_path, fs::Permissions::from_mode(0o600))?;
     eprintln!("nicemailer-core : base {}, socket {}", db_path.display(), socket_path.display());
     start_reindex(&core)?;
+    start_sender_backfill(&core)?;
     sync::start_gc(&core);
 
     // Accept connections until Ctrl-C (SIGINT) or SIGTERM (sent by `kill`
@@ -1291,6 +1292,10 @@ async fn call(core: &Arc<Core>, source: Source, req: Request) -> Result<Value, R
             let p: SetDomainScreeningParams = params(req.params)?;
             workflow(core, move |s| s.set_domain_screening(&p.domain, p.target, source)).await
         }
+        method::SET_SENDER_KIND => {
+            let p: SetSenderKindParams = params(req.params)?;
+            workflow(core, move |s| s.set_sender_kind(p.address_id, p.kind, source)).await
+        }
         method::UNDO => {
             let p: UndoParams = params(req.params)?;
             workflow(core, move |s| s.undo(&p.token, source)).await
@@ -1712,6 +1717,41 @@ fn start_reindex(core: &Arc<Core>) -> anyhow::Result<()> {
                 r.reparsed, r.repaired, r.unchanged, r.missing_raw, r.parse_errors, r.names_filled, r.seconds
             ),
             Err(e) => eprintln!("reindex échoué : {e}"),
+        }
+    })?;
+    Ok(())
+}
+
+/// Starts the catch-up of people and robots, if mails stored before
+/// version 12 have not had their clues read (`expediteurs.md`, section 10):
+/// a plain thread, like the reindex, that takes the store lock one batch at
+/// a time. Until it is done, those mails have no verdict, and the filter
+/// "human" leaves them out.
+///
+/// No event: a list filtered on human / robot is the only one that changes,
+/// and the app reloads it when it is filtered again.
+fn start_sender_backfill(core: &Arc<Core>) -> anyhow::Result<()> {
+    let core = core.clone();
+    std::thread::Builder::new().name("nicemailer-senders".into()).spawn(move || {
+        let pending = match nm_store::senders::pending(&core.lock_store("senders")) {
+            Ok(0) => return,
+            Ok(n) => n,
+            Err(e) => return eprintln!("personnes et robots : {e}"),
+        };
+        eprintln!("personnes et robots : {pending} mails à classer, en tâche de fond");
+        let mut last_logged = std::time::Instant::now();
+        let mut progress = |done: u64, total: u64| {
+            if last_logged.elapsed().as_secs() >= 10 {
+                eprintln!("personnes et robots : {done} / {total}");
+                last_logged = std::time::Instant::now();
+            }
+        };
+        match nm_store::senders::backfill(&core.store, &core.raw, nm_store::senders::BATCH_SIZE, &mut progress) {
+            Ok(r) => eprintln!(
+                "personnes et robots : {} mails classés, {} sans brut lisible, en {:.1} s",
+                r.read, r.missing_raw, r.seconds
+            ),
+            Err(e) => eprintln!("personnes et robots : échec : {e}"),
         }
     })?;
     Ok(())

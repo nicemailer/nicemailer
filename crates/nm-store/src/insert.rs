@@ -235,9 +235,13 @@ impl Inserter {
                 .execute(params![message_id, pos as i64, r])?;
         }
         let mut recipients = String::new();
+        let mut addressed: Vec<i64> = Vec::new();
         for (role, list) in [("to", &h.to), ("cc", &h.cc), ("bcc", &h.bcc), ("reply_to", &h.reply_to)] {
             for (pos, a) in list.iter().enumerate() {
                 let aid = self.address_id(tx, a)?;
+                if role != "reply_to" {
+                    addressed.push(aid);
+                }
                 tx.prepare_cached(
                     "INSERT OR IGNORE INTO message_address (message_id, role, position, address_id) VALUES (?1, ?2, ?3, ?4)",
                 )?
@@ -261,6 +265,16 @@ impl Inserter {
         if let Some(b) = body {
             write_body(tx, message_id, b.parsed)?;
         }
+        // People and robots (`expediteurs.md`): a mail of Sent or Drafts is
+        // the user's, and its recipients are people the user wrote to; any
+        // other mail is counted on its sender (`senders.rs`).
+        let folder_role: Option<String> =
+            tx.prepare_cached("SELECT role FROM folder WHERE id = ?1")?.query_row([m.folder_id], |r| r.get(0))?;
+        let own_mail = matches!(folder_role.as_deref(), Some("sent" | "drafts"));
+        if folder_role.as_deref() == Some("sent") {
+            crate::senders::mark_written_to(tx, &addressed)?;
+        }
+        crate::senders::record(tx, message_id, from_id, h.sender_signals, own_mail)?;
         // No `changes.messages` entry: a new message is not a change of a
         // message a client shows. The folder counters say it is there
         // (`changes.folders`), and the synchronization announces it with

@@ -35,6 +35,7 @@ pub(crate) fn migrate(conn: &mut Connection, mut version: i64) -> Result<()> {
             8 => to_9(&tx)?,
             9 => to_10(&tx)?,
             10 => to_11(&tx)?,
+            11 => to_12(&tx)?,
             _ => unreachable!("aucune migration depuis la version {version}"),
         }
         version += 1;
@@ -205,7 +206,7 @@ fn to_9(conn: &Connection) -> Result<()> {
          ALTER TABLE thread ADD COLUMN has_quarantine INTEGER NOT NULL DEFAULT 0 CHECK (has_quarantine IN (0,1));
          ALTER TABLE thread ADD COLUMN has_deleted INTEGER NOT NULL DEFAULT 0 CHECK (has_deleted IN (0,1));",
     )?;
-    conn.execute_batch(&crate::refresh_all_threads_sql())?;
+    conn.execute_batch(&crate::refresh_all_threads_sql(false))?;
     conn.execute_batch(
         "DROP TABLE thread_folder;
 
@@ -298,6 +299,40 @@ fn to_11(conn: &Connection) -> Result<()> {
          CREATE INDEX idx_thread_work_account_received ON thread (account_id, date_last_received, id) WHERE folder IN ('i','t','w');
          CREATE INDEX idx_thread_work_modified ON thread (date_last_modified, id) WHERE folder IN ('i','t','w');
          CREATE INDEX idx_thread_work_account_modified ON thread (account_id, date_last_modified, id) WHERE folder IN ('i','t','w');",
+    )?;
+    Ok(())
+}
+
+/// Version 12: people and robots (`expediteurs.md`). Columns added at the
+/// end of `address`, `message` and `thread`, which SQLite does without
+/// rewriting the tables, and the partial index of the mails whose clues are
+/// still to read (all of them at first).
+///
+/// `address.written_to` is filled here, in one statement over the mails of
+/// Sent (a few thousand rows of `message_address`). The rest needs the
+/// headers of every stored mail, read from the raw files: that is the
+/// catch-up done in the background (`senders.rs`), so the app opens
+/// at once.
+fn to_12(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "ALTER TABLE address ADD COLUMN sender_kind TEXT CHECK (sender_kind IN ('person','robot'));
+         ALTER TABLE address ADD COLUMN sender_kind_user TEXT CHECK (sender_kind_user IN ('person','robot'));
+         ALTER TABLE address ADD COLUMN date_sender_kind_modified INTEGER;
+         ALTER TABLE address ADD COLUMN written_to INTEGER NOT NULL DEFAULT 0 CHECK (written_to IN (0,1));
+         ALTER TABLE address ADD COLUMN sender_count INTEGER NOT NULL DEFAULT 0;
+         ALTER TABLE address ADD COLUMN sender_bulk INTEGER NOT NULL DEFAULT 0;
+         ALTER TABLE address ADD COLUMN sender_list INTEGER NOT NULL DEFAULT 0;
+         ALTER TABLE address ADD COLUMN sender_human INTEGER NOT NULL DEFAULT 0;
+         ALTER TABLE address ADD COLUMN sender_client INTEGER NOT NULL DEFAULT 0;
+         ALTER TABLE message ADD COLUMN sender_signals INTEGER;
+         ALTER TABLE message ADD COLUMN sender_kind TEXT CHECK (sender_kind IN ('person','robot'));
+         ALTER TABLE thread ADD COLUMN has_person INTEGER NOT NULL DEFAULT 0 CHECK (has_person IN (0,1));
+         CREATE INDEX idx_message_sender_pending ON message (id) WHERE sender_signals IS NULL;
+         UPDATE address SET written_to = 1 WHERE id IN (
+             SELECT ma.address_id FROM message_address ma
+               JOIN message m ON m.id = ma.message_id
+               JOIN folder f ON f.id = m.folder_id
+              WHERE f.role = 'sent' AND ma.role IN ('to', 'cc', 'bcc'));",
     )?;
     Ok(())
 }

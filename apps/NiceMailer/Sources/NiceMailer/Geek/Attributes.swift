@@ -13,6 +13,9 @@ struct ThreadFilter: Equatable {
     var attachments: Bool?
     var answered: Bool?
     var conversation: Bool?
+    /// Written by a person (true) or by a machine (false): a mail of the
+    /// conversation is a person's, or none is (`expediteurs.md`, section 8).
+    var human: Bool?
     /// From one of these (OR-ed); a value starting with `@` is a domain
     /// (the core matches it with its subdomains).
     var from: [String] = []
@@ -47,9 +50,10 @@ struct ThreadFilter: Equatable {
 
     var isEmpty: Bool { self == ThreadFilter() }
 
-    /// The yes / no attributes.
+    /// The yes / no attributes. `human` comes last so that the letters
+    /// reaching the others do not change (`r` stays "répondus" in French).
     enum Flag: String, CaseIterable {
-        case seen, flagged, attachments, answered, conversation
+        case seen, flagged, attachments, answered, conversation, human
     }
 
     func value(_ flag: Flag) -> Bool? {
@@ -59,6 +63,7 @@ struct ThreadFilter: Equatable {
         case .attachments: attachments
         case .answered: answered
         case .conversation: conversation
+        case .human: human
         }
     }
 
@@ -73,6 +78,7 @@ struct ThreadFilter: Equatable {
         case .attachments: attachments = new
         case .answered: answered = new
         case .conversation: conversation = new
+        case .human: human = new
         }
     }
 
@@ -90,7 +96,21 @@ struct ThreadFilter: Equatable {
         case (.answered, false): L("not answered")
         case (.conversation, true): L("conversation")
         case (.conversation, false): L("single mail")
+        case (.human, true): L("human")
+        case (.human, false): L("robot")
         }
+    }
+
+    /// Hidden words that also find a yes / no value in the selector, like
+    /// `AttributeField.keywords`: "person" reaches "human". Localized, one
+    /// string of words separated by spaces.
+    static func keywords(_ flag: Flag, _ value: Bool) -> [String] {
+        let words: String = switch (flag, value) {
+        case (.human, true): L("person people")
+        case (.human, false): L("machine automatic bulk")
+        default: ""
+        }
+        return words.split(separator: " ").map(String.init)
     }
 
     /// Request parameters (`ThreadFilter` of the core, snake_case keys).

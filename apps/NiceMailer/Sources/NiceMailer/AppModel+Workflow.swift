@@ -170,6 +170,27 @@ extension AppModel {
     /// Takes, changes or removes (`target == nil`) the decision on an
     /// address, or on a domain, from the contacts screen. The core files the
     /// mails already received; `z` undoes it.
+    /// Forces an address to be a person or a robot, or gives it back to the
+    /// core's verdict (`kind` nil), from the contacts screen
+    /// (`expediteurs.md`, section 9). Undoable like a decision. The list is
+    /// loaded again when filtered on human / robot: its content changed.
+    func setSenderKind(_ addressId: Int, kind: String?) async {
+        guard let client = core else { return }
+        var params: [String: Any] = ["address_id": addressId]
+        if let kind { params["kind"] = kind }
+        do {
+            let r: WorkflowResult = try await client.call("set_sender_kind", params)
+            if let u = r.undo { pushUndo(UndoStep(tokens: [u], label: L("origin of the address"))) }
+            flash = switch kind {
+            case "person": L("Marked as written by a person")
+            case "robot": L("Marked as written by a robot")
+            default: L("Origin computed from the mails again")
+            }
+        } catch {
+            report(error)
+        }
+    }
+
     func setScreening(_ name: String, domain: Bool, target: String?) async {
         guard let client = core else { return }
         let method = domain ? "set_domain_screening" : "set_address_screening"

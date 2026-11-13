@@ -1,6 +1,106 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "human": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "humain"
+          }
+        }
+      }
+    },
+    "person people": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "personne personnes gens"
+          }
+        }
+      }
+    },
+    "machine automatic bulk": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "automate machine automatique masse"
+          }
+        }
+      }
+    },
+    "Who writes from %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Qui écrit depuis %@"
+          }
+        }
+      }
+    },
+    "automatic (computed from the mails)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "automatique (d'après ses mails)"
+          }
+        }
+      }
+    },
+    "origin of the address": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "provenance de l'adresse"
+          }
+        }
+      }
+    },
+    "Marked as written by a person": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Adresse marquée : écrite par une personne"
+          }
+        }
+      }
+    },
+    "Marked as written by a robot": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Adresse marquée : envoyée par un robot"
+          }
+        }
+      }
+    },
+    "Origin computed from the mails again": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Provenance de nouveau calculée d'après les mails"
+          }
+        }
+      }
+    },
+    "robot": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "robot"
+          }
+        }
+      }
+    },
     "%@ not upgraded: the current mailbox is kept": {
       "localizations": {
         "fr": {
@@ -317,12 +417,12 @@
         }
       }
     },
-    "/ filter · m: decision · M: domain decision · return: their mails · esc: back": {
+    "/ filter · m: decision · M: domain decision · o: human or robot · return: their mails · esc: back": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "/ filtrer · m : décision · M : décision sur le domaine · entrée : ses mails · échap : retour"
+            "value": "/ filtrer · m : décision · M : décision sur le domaine · o : humain ou robot · entrée : ses mails · échap : retour"
           }
         }
       }

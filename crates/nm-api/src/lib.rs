@@ -17,7 +17,7 @@
 
 use std::collections::BTreeMap;
 
-use nm_core::{AfterSend, AuthPolicy, FolderCategory, FolderRole, ScreeningTarget};
+use nm_core::{AfterSend, AuthPolicy, FolderCategory, FolderRole, ScreeningTarget, SenderKind};
 use serde::{Deserialize, Serialize};
 // `Value` is serde_json's type for "any JSON value" (object, array, string...).
 // It is used where the shape is not known in advance, e.g. request params
@@ -82,6 +82,9 @@ pub mod method {
     pub const SET_ADDRESS_SCREENING: &str = "set_address_screening";
     /// The same for a domain.
     pub const SET_DOMAIN_SCREENING: &str = "set_domain_screening";
+    /// Forces an address to be a person or a robot, or gives it back to the
+    /// computation (`expediteurs.md`, section 9).
+    pub const SET_SENDER_KIND: &str = "set_sender_kind";
     /// Undoes a move or a decision from the token it returned.
     pub const UNDO: &str = "undo";
     /// Every account, IMAP and archive, with its state (`AccountView`).
@@ -602,6 +605,12 @@ pub struct ThreadFilter {
     /// listed folders is from it or to it (To, Cc).
     #[serde(default)]
     pub address_id: Option<i64>,
+    /// Human (true: a mail of the thread, in any folder, was written by a
+    /// person, the user's own replies included) or robot (false: none
+    /// was), `expediteurs.md`, section 8. The two values split the list,
+    /// with no overlap and no gap.
+    #[serde(default)]
+    pub human: Option<bool>,
 }
 
 impl ThreadFilter {
@@ -770,6 +779,17 @@ pub struct SetAddressScreeningParams {
     /// `None` removes the decision.
     #[serde(default)]
     pub target: Option<ScreeningTarget>,
+}
+
+/// Parameters of `set_sender_kind`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SetSenderKindParams {
+    /// The `address` id (`ContactView.id`).
+    pub address_id: i64,
+    /// `None` gives the address back to the computation.
+    #[serde(default)]
+    pub kind: Option<SenderKind>,
 }
 
 /// Parameters of `set_domain_screening`.
@@ -1634,6 +1654,13 @@ pub struct ContactView {
     pub groups: Vec<String>,
     /// Number of messages received from the address.
     pub message_count: i64,
+    /// Who writes its mails (`expediteurs.md`): the user's choice, else the
+    /// computed verdict; `None` before any mail was counted.
+    #[serde(default)]
+    pub sender_kind: Option<SenderKind>,
+    /// `sender_kind` was forced by the user.
+    #[serde(default)]
+    pub sender_kind_forced: bool,
 }
 
 /// An account, in `list_accounts`.

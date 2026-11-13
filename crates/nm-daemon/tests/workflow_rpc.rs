@@ -127,3 +127,34 @@ fn grouped_commands_take_every_thread_in_one_request() {
     let undone = c.call("undo", json!({"token": token})).unwrap();
     assert_eq!(undone["moved"], 2);
 }
+
+/// `set_sender_kind` (`expediteurs.md`, section 9): the verdict forced on an
+/// address shows in `list_contacts`, `undo` gives it back to the
+/// computation, and the list filter `human` is accepted.
+#[test]
+fn set_sender_kind_forces_the_verdict_of_a_contact() {
+    let dir = tempfile::tempdir().unwrap();
+    let (quarantine, _) = prepare(dir.path());
+    let _core = start(dir.path());
+    let mut c = Client::connect(dir.path());
+    let contacts = c.call("list_contacts", json!({"query": "shop.fr"})).unwrap();
+    let id = contacts["items"][0]["id"].as_i64().unwrap();
+
+    let r = c.call("set_sender_kind", json!({"address_id": id, "kind": "person"})).unwrap();
+    let token = r["undo"].as_str().unwrap().to_string();
+    let contacts = c.call("list_contacts", json!({"query": "shop.fr"})).unwrap();
+    assert_eq!(contacts["items"][0]["sender_kind"], "person");
+    assert_eq!(contacts["items"][0]["sender_kind_forced"], true);
+
+    c.call("undo", json!({"token": token})).unwrap();
+    let contacts = c.call("list_contacts", json!({"query": "shop.fr"})).unwrap();
+    assert_eq!(contacts["items"][0]["sender_kind_forced"], false);
+
+    // A kind the core does not know, and an unknown address, are refused.
+    assert_eq!(c.call("set_sender_kind", json!({"address_id": id, "kind": "alien"})).unwrap_err()["code"], -32602);
+    assert!(c.call("set_sender_kind", json!({"address_id": 999_999, "kind": "robot"})).is_err());
+
+    // The filter of the list.
+    let page = c.call("list_threads", json!({"folder_id": quarantine, "filter": {"human": false}})).unwrap();
+    assert!(page["items"].is_array());
+}
