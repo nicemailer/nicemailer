@@ -36,12 +36,50 @@ key alt-del
 key alt-del
 key alt-del
 expect compose_line = |
-# ⌫ on the empty line: the last address comes back as text.
+# ⌫ on the empty line: the last address comes back, selected (`reponse.md`,
+# section 6, "Corriger"). A second ⌫ removes it whole, instead of leaving
+# its letters to delete one by one.
 key del
 expect compose_line = marc@exemple.fr|
+expect compose_line_selected = true
 expect compose_to !~ marc@exemple.fr
+snap recipients-taken-back
+key del
+expect compose_line = |
+expect compose_line_selected = false
+# Taken back again, typing replaces it in one go; an arrow would instead
+# put the cursor in it to correct it.
+type marc@exemple.fr
 key ret
 expect compose_to ~ marc@exemple.fr
+key del
+expect compose_line_selected = true
+key right
+expect compose_line_selected = false
+expect compose_line = marc@exemple.fr|
+key ret
+expect compose_to ~ marc@exemple.fr
+key del
+type luc@exemple.fr
+expect compose_line = luc@exemple.fr|
+key ret
+expect compose_to ~ luc@exemple.fr
+expect compose_to !~ marc@exemple.fr
+# A click on an address takes that one back, wherever it sits: here the
+# first of three (the one the reply was addressed to), which ⌫ removes.
+type dan@exemple.fr
+key ret
+expect compose_to = victor.fontaine@agence-hublot.fr,luc@exemple.fr,dan@exemple.fr
+click compose:to-0
+expect compose_focus = to
+expect compose_line = victor.fontaine@agence-hublot.fr|
+expect compose_line_selected = true
+expect compose_to = luc@exemple.fr,dan@exemple.fr
+key del
+expect compose_line = |
+type marc@exemple.fr
+key ret
+expect compose_to = luc@exemple.fr,dan@exemple.fr,marc@exemple.fr
 # A click on Cc, and a pasted list.
 click compose:cc
 expect compose_focus = cc

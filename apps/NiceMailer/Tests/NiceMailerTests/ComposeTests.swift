@@ -144,7 +144,7 @@ struct ComposeRulesTests {
     }
 
     /// An address is in one line only; ⌫ on an empty line takes the last
-    /// one back as text.
+    /// one back, selected.
     @Test func addressesAreAddedOnceAndTakenBack() throws {
         var c = Composer(draft: try draft(target: "archive", chosen: nil))
         let sender = c.headers.to[0]
@@ -157,6 +157,43 @@ struct ComposeRulesTests {
         #expect(c.line.text == "new@x.fr")
         #expect(c.headers.cc.isEmpty)
         let none = c.takeBackLast(of: .bcc)
+        #expect(!none)
+    }
+
+    /// The address taken back is selected (`reponse.md`, section 6,
+    /// "Corriger"): one ⌫ wipes it, typing replaces it, an arrow turns it
+    /// into an ordinary text to correct. Any address can be taken, not
+    /// only the last, which a click on it does.
+    @Test func theAddressTakenBackIsSelected() throws {
+        var c = Composer(draft: try draft(target: "archive", chosen: nil))
+        c.add([AddressView(addr: "a@x.fr", name: nil), AddressView(addr: "b@x.fr", name: "Bee")], to: .cc)
+        var took = c.takeBackLast(of: .cc)
+        #expect(took && c.line.selectedAll)
+        // One Delete, and nothing is left of it.
+        c.line.deleteBackward()
+        #expect(c.line.text.isEmpty)
+        // Typing replaces it whole.
+        took = c.takeBackLast(of: .cc)
+        #expect(took)
+        #expect((c.line.text, c.line.selectedAll) == ("a@x.fr", true))
+        c.line.insert("z@x.fr")
+        #expect(c.line.text == "z@x.fr")
+        // An arrow keeps it, to correct it letter by letter.
+        c.add([AddressView(addr: "c@x.fr", name: nil)], to: .cc)
+        took = c.takeBackLast(of: .cc)
+        #expect(took)
+        c.line.moveRight()
+        #expect((c.line.text, c.line.selectedAll, c.line.cursor) == ("c@x.fr", false, 6))
+        // By index: the first of the line, the others untouched; a name
+        // is left out, the address alone comes back.
+        c.line = LineEdit()
+        c.add([AddressView(addr: "d@x.fr", name: nil), AddressView(addr: "e@x.fr", name: "Eve")], to: .to)
+        let all = c.headers.to.map(\.addr)
+        took = c.takeBack(0, of: .to)
+        #expect(took)
+        #expect((c.line.text, c.line.selectedAll) == (all[0], true))
+        #expect(c.headers.to.map(\.addr) == Array(all.dropFirst()))
+        let none = c.takeBack(9, of: .to)
         #expect(!none)
     }
 
@@ -695,13 +732,43 @@ struct ComposeControllerTests {
         press("ret")
         #expect(await eventually { model.flash == L("Not an address: %@", "nope") })
         #expect(model.composer?.line.text == "nope")
-        // ⌫ until the line is empty, then once more: carl comes back.
+        // ⌫ until the line is empty, then once more: carl comes back,
+        // selected, and one more ⌫ removes it whole.
         for _ in 0..<5 { press("del") }
         #expect(model.composer?.line.text == "carl@example.org")
+        #expect(model.composer?.line.selectedAll == true)
         #expect(model.composer?.headers.to.last?.addr == "albert@example.org")
+        press("del")
+        #expect(model.composer?.line.text == "")
+        #expect(model.composer?.line.selectedAll == false)
         // Saved with the next pause: the whole To line.
         #expect(await eventually { core.calls("update_draft").contains { ($0["to"] as? [[String: Any]])?.count == 2 } })
         #expect(core.calls("update_draft").allSatisfy { $0["body"] == nil })
+    }
+
+    /// A click on an address takes that one back into its line, selected,
+    /// wherever it sits (`reponse.md`, section 6, "Corriger"): removing or
+    /// correcting an address no longer means taking back every one after
+    /// it. What was being typed becomes an address first, so nothing typed
+    /// is lost.
+    @Test func aClickOnAnAddressTakesItBack() async {
+        await reply()
+        controller.focusCompose(.to)
+        type("zoe@example.org,")
+        #expect(await eventually { model.composer?.headers.to.count == 2 })
+        let first = model.composer?.headers.to.first?.addr ?? ""
+        type("dan@example.org")
+        controller.clickRecipient(.to, 0)
+        #expect(await eventually { model.composer?.line.text == first })
+        #expect(model.composer?.line.selectedAll == true)
+        #expect(model.composer?.focus == .to)
+        let left = model.composer?.headers.to.map(\.addr) ?? []
+        #expect(!left.contains(first))
+        #expect(left == ["zoe@example.org", "dan@example.org"])
+        // Delete: the address is gone, and the line is free again.
+        press("del")
+        #expect(model.composer?.line.text == "")
+        #expect(model.composer?.headers.to.map(\.addr) == ["zoe@example.org", "dan@example.org"])
     }
 
     /// ⌥⌘B shows the Bcc line; an address typed and not ended is sent

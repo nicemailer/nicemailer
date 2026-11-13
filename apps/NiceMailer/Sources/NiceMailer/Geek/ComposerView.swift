@@ -124,16 +124,21 @@ struct ComposerView: View {
 
     /// To, Cc or Bcc: an address per tag, then, while the line has the
     /// keys, the text typed with its caret, and the suggestions under it.
-    /// A click gives the line the keys.
+    /// A click gives the line the keys; a click on an address takes that
+    /// one back into the line, selected, to remove or correct it
+    /// (`reponse.md`, section 6, "Corriger").
     @ViewBuilder private func recipientLine(_ field: ComposeField, _ label: String, _ c: Composer) -> some View {
         let focused = c.focus == field
         headerLine(label, focused: focused) {
             FlowLayout(spacing: scaled(4)) {
-                ForEach(Array(c.headers[field].enumerated()), id: \.offset) { _, a in
+                ForEach(Array(c.headers[field].enumerated()), id: \.offset) { i, a in
                     Text(Compose.label(a))
                         .lineLimit(1)
                         .padding(.horizontal, scaled(4))
                         .background(RoundedRectangle(cornerRadius: 3).fill(Palette.cursor))
+                        .contentShape(Rectangle())
+                        .onTapGesture { controller.clickRecipient(field, i) }
+                        .uiTarget("compose-\(field.rawValue)-\(i)")
                 }
                 if focused {
                     CaretText(line: c.line).lineLimit(1)

@@ -700,6 +700,9 @@ private final class Runner {
             "compose_subject": m.composer?.headers.subject ?? "",
             "compose_focus": m.composer?.focus.rawValue ?? "",
             "compose_line": m.composer.map { $0.line.beforeCursor + "|" + String($0.line.text.dropFirst($0.line.cursor)) } ?? "",
+            // The line is a whole-text selection (an address taken back
+            // with ⌫ or a click): typing or ⌫ replaces all of it.
+            "compose_line_selected": "\(m.composer?.line.selectedAll ?? false)",
             "compose_suggestions": m.composer.map { $0.suggestions.map(\.addr).joined(separator: ",") } ?? "",
             "compose_attachments": m.composer.map { $0.attachments.map(\.filename).joined(separator: ",") } ?? "",
             "compose_attachment_index": m.composer.map { String($0.attachmentIndex) } ?? "",

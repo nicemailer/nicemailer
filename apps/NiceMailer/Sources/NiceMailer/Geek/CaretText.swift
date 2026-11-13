@@ -20,6 +20,17 @@ struct CaretText: View {
     let line: LineEdit
 
     var body: some View {
+        if line.selectedAll {
+            // A whole-text selection (a recipient taken back with ⌫, the
+            // current words of Subject…): highlighted, with no caret,
+            // since typing or ⌫ replaces all of it at once.
+            Text(line.text).background(Palette.cursor)
+        } else {
+            caret
+        }
+    }
+
+    private var caret: some View {
         // A zero-width space (U+200B) has no width but the height of a
         // line of the current font: an empty line keeps its height, and the
         // caret is as tall as the letters around it, whatever the text size.

@@ -1778,7 +1778,8 @@ final class GeekController {
     /// A key in a recipient line (`reponse.md`, section 6): the text typed
     /// with the editing keys of a text field; Return, `,` or `;` make it an
     /// address; ↑ ↓ choose among the suggestions, Return or Tab takes one;
-    /// ⌫ on an empty line takes the last address back to be corrected.
+    /// ⌫ on an empty line takes the last address back, selected: a
+    /// second ⌫ removes it, typing replaces it, an arrow corrects it.
     private func handleRecipientKey(_ event: NSEvent, mods: NSEvent.ModifierFlags) {
         guard var c = model.composer else { return }
         let key = event.charactersIgnoringModifiers ?? ""
@@ -1856,6 +1857,30 @@ final class GeekController {
             return
         }
         model.composer = c
+    }
+
+    /// A click on an address of a recipient line (`reponse.md`, section 6,
+    /// "Corriger"): the line takes the keys and that address comes back
+    /// into it, selected, exactly as ⌫ brings back the last one. ⌫ then
+    /// removes it, typing replaces it, ← or → corrects it letter by
+    /// letter. Any of the three lines' addresses can be reached this way,
+    /// not only the last.
+    ///
+    /// What was being typed becomes an address first, as a click
+    /// elsewhere does, so nothing typed is lost; it is added at the end
+    /// of its line, which leaves `index` pointing at the same address.
+    func clickRecipient(_ field: ComposeField, _ index: Int) {
+        guard model.composer != nil else { return }
+        let pending = model.takePendingLine()
+        Task {
+            if let pending { await model.commitRecipients(pending.text, to: pending.field) }
+            guard var c = model.composer, c.takeBack(index, of: field) else { return }
+            c.focus = field
+            c.suggestions = []
+            c.suggestionIndex = nil
+            model.composer = c
+            model.composerChanged()
+        }
     }
 
     /// A click on a file of the reply: the line of files takes the keys,

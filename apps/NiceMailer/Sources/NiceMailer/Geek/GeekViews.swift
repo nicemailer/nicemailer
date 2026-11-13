@@ -1674,14 +1674,10 @@ struct PickerPopup: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 6) {
                 Text(title).foregroundStyle(Palette.accentText)
-                // The caret is drawn where the cursor is (`LineEdit`); a
-                // selected text (the current words of Subject…, Text…) is
-                // highlighted, since typing will replace it.
-                if controller.pickerLine.selectedAll {
-                    Text(controller.pickerLine.text).background(Palette.cursor)
-                } else {
-                    CaretText(line: controller.pickerLine)
-                }
+                // The caret is drawn where the cursor is, and a selected
+                // text (the current words of Subject…, Text…) is
+                // highlighted instead: `CaretText` does both.
+                CaretText(line: controller.pickerLine)
                 // What can be typed, until something is (`pickerHint`).
                 if controller.pickerQuery.isEmpty, let hint = controller.pickerHint(kind) {
                     Text(hint).foregroundStyle(Palette.muted).lineLimit(1).truncationMode(.tail)

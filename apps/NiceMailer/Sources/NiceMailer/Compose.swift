@@ -298,10 +298,30 @@ struct Composer: Equatable {
     }
 
     /// ⌫ on an empty recipient line: its last address goes back to the
-    /// line as text, to be corrected or deleted.
+    /// line, **selected** (`reponse.md`, section 6, "Corriger").
+    ///
+    /// Selected, as a macOS field reached with Tab, it is one keystroke
+    /// away from either wish: a second ⌫ wipes it, typing replaces it,
+    /// and ← or → turns it into an ordinary text to correct letter by
+    /// letter. It used to come back with the caret at its end, so
+    /// removing the address meant deleting every one of its characters.
     mutating func takeBackLast(of field: ComposeField) -> Bool {
-        guard let last = headers[field].popLast() else { return false }
-        line = LineEdit(last.addr)
+        guard !headers[field].isEmpty else { return false }
+        return takeBack(headers[field].count - 1, of: field)
+    }
+
+    /// A click on an address: that one goes back to its line, selected,
+    /// as ⌫ brings back the last (`takeBackLast`). Any address of the
+    /// three lines can so be removed or corrected, not only the last one.
+    /// What was being typed in the line is committed first by the caller
+    /// (`GeekController.clickRecipient`), so nothing typed is lost.
+    @discardableResult
+    mutating func takeBack(_ index: Int, of field: ComposeField) -> Bool {
+        guard headers[field].indices.contains(index) else { return false }
+        let taken = headers[field].remove(at: index)
+        // The address alone, as before: a name is for reading, and
+        // what is typed back is read by `parse_addresses` anyway.
+        line = LineEdit(taken.addr, selected: true)
         return true
     }
 }
