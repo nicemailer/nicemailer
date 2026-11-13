@@ -861,6 +861,62 @@ fn recipients_are_suggested_by_use() {
 }
 
 
+/// Suggestions are ranked by use and **above all by how recent it is**
+/// (`reponse.md`, section 6, "Suggestions"): the address written to this
+/// week comes before the one written to twenty times two years ago, and
+/// inside a bucket the one written to most often wins. An address never
+/// written to comes after every one that was, the most heard from
+/// first.
+#[test]
+fn recipients_are_suggested_by_recent_use() {
+    let mut e = env();
+    // Written to: Anna twenty times, two years ago; Arthur once
+    // yesterday; Amélie three times this week.
+    for i in 0..20 {
+        e.deliver("sent", &format!("Message-ID: <anna{i}@hey.example>\r\nFrom: {ME}\r\nTo: Anna <anna@x.example>\r\nSubject: x\r\n\r\nx\r\n"));
+    }
+    e.deliver("sent", &format!("Message-ID: <arthur0@hey.example>\r\nFrom: {ME}\r\nTo: Arthur <arthur@x.example>\r\nSubject: x\r\n\r\nx\r\n"));
+    for i in 0..3 {
+        e.deliver("sent", &format!("Message-ID: <amelie{i}@hey.example>\r\nFrom: {ME}\r\nTo: Amélie <amelie@x.example>\r\nSubject: x\r\n\r\nx\r\n"));
+    }
+    // Never written to: Aline writes ten times, Albert twice. Those are
+    // ranked on how much they write, not on when (dating every received
+    // mail would double the time of a suggestion, `suggest_recipients`).
+    for i in 0..10 {
+        e.deliver("inbox", &format!("Message-ID: <aline{i}@x.example>\r\nFrom: Aline <aline@x.example>\r\nTo: {ME}\r\nSubject: x\r\n\r\nx\r\n"));
+    }
+    for i in 0..2 {
+        e.deliver("inbox", &format!("Message-ID: <albert{i}@x.example>\r\nFrom: Albert <albert@x.example>\r\nTo: {ME}\r\nSubject: x\r\n\r\nx\r\n"));
+    }
+    // Dated from now, so that the buckets are those of the day the test
+    // runs (`deliver` dates its mails in 2023).
+    let dated = |e: &Env, who: &str, days: i64| {
+        e.s.conn()
+            .execute(&format!("UPDATE message SET date_sent = unixepoch() - {days} * 86400 WHERE message_id_hdr LIKE '{who}%'"), [])
+            .unwrap();
+    };
+    dated(&e, "anna", 730);
+    dated(&e, "arthur", 1);
+    dated(&e, "amelie", 3);
+    dated(&e, "aline", 1000);
+    dated(&e, "albert", 0);
+    // Rust note: a plain function rather than a closure capturing `e`,
+    // so that `e` can still be used mutably between two calls.
+    fn names(e: &Env, q: &str) -> Vec<String> {
+        e.s.suggest_recipients(q, 8, &[ME.to_string()]).unwrap().into_iter().map(|a| a.addr).collect()
+    }
+    assert_eq!(
+        names(&e, "a"),
+        ["amelie@x.example", "arthur@x.example", "anna@x.example", "aline@x.example", "albert@x.example"]
+    );
+    // Writing to Anna again today puts her first: she is the one written
+    // to most, and now the most recently too.
+    e.deliver("sent", &format!("Message-ID: <anna-new@hey.example>\r\nFrom: {ME}\r\nTo: Anna <anna@x.example>\r\nSubject: x\r\n\r\nx\r\n"));
+    dated(&e, "anna-new", 0);
+    assert_eq!(names(&e, "a")[0], "anna@x.example");
+}
+
+
 impl Env {
     /// A file put in `incoming.noindex` by "the app": its staged name.
     fn stage(&self, name: &str, bytes: &[u8]) -> String {

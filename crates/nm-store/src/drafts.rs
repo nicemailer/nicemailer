@@ -724,47 +724,88 @@ impl Store {
         Ok(if n > 0 { rev + 1 } else { rev })
     }
 
-    /// The addresses to suggest for `query` in a recipient line, those the
-    /// user wrote to most first, then those they receive most from
-    /// (`reponse.md`, section 6). An address matches when it starts with
-    /// the text, or its domain does, or its name, or a word of its name.
-    /// Banned senders, the addresses of `own` and those of the accounts
-    /// (an archive account's too) are never suggested.
+    /// The addresses to suggest for `query` in a recipient line
+    /// (`reponse.md`, section 6, "Suggestions"). An address matches when
+    /// it starts with the text, or its domain does, or its name, or a
+    /// word of its name. Banned senders, the addresses of `own` and
+    /// those of the accounts (an archive account's too) are never
+    /// suggested.
+    ///
+    /// Ranked by use, **the most recent first**: the addresses written to
+    /// this week come before those of this month, then this quarter, this
+    /// year, longer ago, and last those never written to; inside each of
+    /// those, the one written to most often, then the one most heard
+    /// from. Whom one writes to changes over the years, and the address
+    /// of this morning's correspondent is wanted before that of a heavy
+    /// exchange long over; buckets rather than a decaying score keep the
+    /// order easy to predict, which a list answered with ↓ and Return
+    /// must be, and hold until a mail crosses a bucket's edge.
     ///
     /// The candidates are found by a scan of `address`, at most
-    /// `CANDIDATES`; each is then counted through the indexes
-    /// `idx_message_address_address` and `idx_message_from`. Measured on a
-    /// mailbox of 275,000 mails and 49,000 addresses: under 0.1 s for one
-    /// letter, much less for more. With one letter, a frequent
-    /// correspondent beyond the first 2,000 matches can be missed; a second
-    /// letter finds them.
+    /// `CANDIDATES`; their mails are then counted and dated through the
+    /// indexes `idx_message_address_address` and `idx_message_from`.
+    /// Measured on a generated mailbox of 285,000 mails: 61 ms for one
+    /// letter (55 ms before the dates were read), much less for more.
+    /// With one letter, a frequent correspondent beyond the first 2,000
+    /// matches can be missed; a second letter finds them.
     pub fn suggest_recipients(&self, query: &str, limit: u32, own: &[String]) -> Result<Vec<AddressView>> {
         const CANDIDATES: i64 = 2000;
         let q = query.trim().replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
         if q.is_empty() {
             return Ok(Vec::new());
         }
+        // The date of a mail is the one it carries, else when it arrived.
+        let date = "max(coalesce(m.date_sent, m.date_received))";
+        let sql = format!(
+            "WITH cand AS (
+                 SELECT id, addr, name FROM address
+                  WHERE (addr LIKE ?1 ESCAPE '\\' OR addr LIKE ?2 ESCAPE '\\'
+                         OR name LIKE ?1 ESCAPE '\\' OR name LIKE ?3 ESCAPE '\\')
+                    AND (screening_target IS NULL OR screening_target <> 'banned')
+                    AND addr NOT IN (SELECT address FROM account WHERE address IS NOT NULL)
+                  LIMIT ?4),
+             -- Mails written to each candidate: how many, and how old the
+             -- latest is. Grouped once over the index rather than counted
+             -- candidate by candidate.
+             written AS (
+                 SELECT ma.address_id AS id, count(*) AS n, {age} AS age
+                   FROM message_address ma
+                   JOIN message m ON m.id = ma.message_id
+                   JOIN folder f ON f.id = m.folder_id
+                  WHERE ma.address_id IN (SELECT id FROM cand)
+                    AND ma.role IN ('to', 'cc', 'bcc') AND f.role = 'sent'
+                  GROUP BY ma.address_id),
+             -- Mails received from each candidate: how many. No date
+             -- here, on purpose: counting reads the index alone
+             -- (`idx_message_from`), while dating would read every one of
+             -- those mails, and received mails are most of a mailbox (it
+             -- doubled the time of a suggestion on 285,000 mails).
+             got AS (
+                 SELECT m.from_address_id AS id, count(*) AS n
+                   FROM message m
+                  WHERE m.from_address_id IN (SELECT id FROM cand)
+                  GROUP BY m.from_address_id)
+             SELECT c.addr, c.name FROM cand c
+               LEFT JOIN written w ON w.id = c.id
+               LEFT JOIN got g ON g.id = c.id
+              ORDER BY coalesce(w.age, {never}), coalesce(w.n, 0) DESC,
+                       coalesce(g.n, 0) DESC, c.addr
+              LIMIT ?5",
+            age = Self::AGE_BUCKET.replace("{date}", date),
+            never = Self::NEVER,
+        );
         let rows: Vec<(String, Option<String>)> = self
             .conn
-            .prepare_cached(
-                "WITH cand AS (
-                     SELECT id, addr, name FROM address
-                      WHERE (addr LIKE ?1 ESCAPE '\\' OR addr LIKE ?2 ESCAPE '\\'
-                             OR name LIKE ?1 ESCAPE '\\' OR name LIKE ?3 ESCAPE '\\')
-                        AND (screening_target IS NULL OR screening_target <> 'banned')
-                        AND addr NOT IN (SELECT address FROM account WHERE address IS NOT NULL)
-                      LIMIT ?4)
-                 SELECT c.addr, c.name FROM cand c
-                  ORDER BY (SELECT count(*) FROM message_address ma
-                              JOIN message m ON m.id = ma.message_id
-                              JOIN folder f ON f.id = m.folder_id
-                             WHERE ma.address_id = c.id AND ma.role IN ('to', 'cc', 'bcc') AND f.role = 'sent') DESC,
-                           (SELECT count(*) FROM message m WHERE m.from_address_id = c.id) DESC,
-                           c.addr
-                  LIMIT ?5",
-            )?
+            .prepare_cached(&sql)?
             .query_map(
-                params![format!("{q}%"), format!("%@{q}%"), format!("% {q}%"), CANDIDATES, i64::from(limit) + own.len() as i64],
+                params![
+                    format!("{q}%"),
+                    format!("%@{q}%"),
+                    format!("% {q}%"),
+                    CANDIDATES,
+                    i64::from(limit) + own.len() as i64,
+                    now()
+                ],
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )?
             .collect::<std::result::Result<_, _>>()?;
@@ -775,6 +816,18 @@ impl Store {
             .map(|(addr, name)| AddressView { addr: addr.to_lowercase(), name: name.filter(|n| !n.trim().is_empty()) })
             .collect())
     }
+
+    /// How old the latest mail of a group is, in buckets rather than in
+    /// seconds, so that the order of the suggestions holds for a while and
+    /// a mail one day older does not change it (`suggest_recipients`).
+    /// `{date}` is the expression giving that date, `?6` is now.
+    const AGE_BUCKET: &'static str = "CASE WHEN {date} >= ?6 - 604800 THEN 0
+                                           WHEN {date} >= ?6 - 2592000 THEN 1
+                                           WHEN {date} >= ?6 - 7776000 THEN 2
+                                           WHEN {date} >= ?6 - 31536000 THEN 3
+                                           ELSE 4 END";
+    /// The bucket of an address never written to (or never heard from).
+    const NEVER: i64 = 5;
 
     /// Abandons a draft, and returns it as it was: the client keeps it to
     /// restore it (`z`, through `create_reply_draft` with its body). A
