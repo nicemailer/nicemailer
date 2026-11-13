@@ -116,3 +116,33 @@ fn a_reader_refuses_a_database_at_another_version() {
     nm_store::rusqlite::Connection::open(&path).unwrap().execute_batch("PRAGMA user_version = 1;").unwrap();
     assert!(matches!(ReadPool::open(&path, 1), Err(nm_store::StoreError::ReaderVersion { found: 1, .. })));
 }
+
+/// `read_timed` says how long a read waited for a free connection: none
+/// when one is idle, the time the others kept it when all are lent.
+#[test]
+fn a_read_says_how_long_it_waited_for_a_connection() {
+    let (_dir, path, _store) = seeded();
+    let pool = Arc::new(ReadPool::open(&path, 1).unwrap());
+    let (r, waited) = pool.read_timed(|s| s.list_folders());
+    assert!(r.is_ok());
+    assert!(waited < Duration::from_millis(50), "{waited:?}");
+
+    // The only connection, kept 300 ms by another read.
+    let started = Arc::new(Barrier::new(2));
+    let holder = {
+        let (pool, started) = (pool.clone(), started.clone());
+        std::thread::spawn(move || {
+            pool.read(|_| {
+                started.wait();
+                std::thread::sleep(Duration::from_millis(300));
+                Ok(())
+            })
+            .unwrap()
+        })
+    };
+    started.wait();
+    let (r, waited) = pool.read_timed(|s| s.list_folders());
+    assert!(r.is_ok());
+    assert!(waited >= Duration::from_millis(200), "{waited:?}");
+    holder.join().unwrap();
+}

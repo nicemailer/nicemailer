@@ -119,6 +119,12 @@ pub fn start(dir: &Path) -> Core {
 /// The same, with these environment variables given to the core
 /// (`NICEMAILER_FAKE_NETWORK`…).
 pub fn start_with(dir: &Path, env: &[(&str, &str)]) -> Core {
+    start_logged(dir, env, None)
+}
+
+/// The same, with the core's log (its standard error, `core.log` in the
+/// app) written to `log`, for a test that reads what the core said.
+pub fn start_logged(dir: &Path, env: &[(&str, &str)], log: Option<&Path>) -> Core {
     let keychain = dir.join("test.keychain-db");
     if !keychain.exists() {
         for args in [["create-keychain", "-p", "test"], ["unlock-keychain", "-p", "test"]] {
@@ -139,6 +145,10 @@ pub fn start_with(dir: &Path, env: &[(&str, &str)]) -> Core {
             .arg("--keychain")
             .arg(&keychain)
             .envs(env.iter().copied())
+            .stderr(match log {
+                Some(path) => std::process::Stdio::from(std::fs::File::create(path).unwrap()),
+                None => std::process::Stdio::inherit(),
+            })
             .spawn()
             .unwrap(),
     )

@@ -15,6 +15,9 @@ final class FakeCore: CoreCalling, @unchecked Sendable {
     private let lock = NSLock()
     private var recorded: [(method: String, params: [String: Any])] = []
     var handler: (String, [String: Any]) -> Any
+    /// How long the core takes to answer a method, for a test of requests
+    /// that overlap (none by default: it answers at once).
+    var delays: [String: Duration] = [:]
 
     var calls: [(method: String, params: [String: Any])] {
         lock.lock()
@@ -29,7 +32,9 @@ final class FakeCore: CoreCalling, @unchecked Sendable {
     func call<R: Decodable>(_ method: String, _ params: [String: Any]) async throws -> R {
         lock.lock()
         recorded.append((method, params))
+        let delay = delays[method]
         lock.unlock()
+        if let delay { try await Task.sleep(for: delay) }
         let result = handler(method, params)
         // A handler answers an error by returning it.
         if let error = result as? CoreClient.RPCError { throw error }

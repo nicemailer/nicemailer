@@ -30,6 +30,7 @@
 
 use std::path::Path;
 use std::sync::{Condvar, Mutex};
+use std::time::{Duration, Instant};
 
 use crate::{Result, Store};
 
@@ -55,6 +56,15 @@ impl ReadPool {
     /// Runs `f` on one of the stores, inside a read transaction, and gives
     /// the store back. Blocks while every store is lent.
     pub fn read<T>(&self, f: impl FnOnce(&Store) -> Result<T>) -> Result<T> {
+        self.read_timed(f).0
+    }
+
+    /// [`ReadPool::read`], and how long it waited for a free store. A
+    /// request that is slow because every connection was lent (the app
+    /// sent many at once) is told apart in `core.log` from one whose query
+    /// is slow: the cures differ.
+    pub fn read_timed<T>(&self, f: impl FnOnce(&Store) -> Result<T>) -> (Result<T>, Duration) {
+        let asked = Instant::now();
         let store = {
             let mut idle = self.idle.lock().unwrap();
             // Rust note: `wait` releases the lock while sleeping and takes it
@@ -66,9 +76,12 @@ impl ReadPool {
                 idle = self.returned.wait(idle).unwrap();
             }
         };
-        // The store goes back to the pool when `lent` is dropped, also when
-        // `f` panics: otherwise a bug in one query would shrink the pool for
-        // good, and after a few of them every reader would wait forever.
+        let waited = asked.elapsed();
+        (self.run(store, f), waited)
+    }
+
+    /// Runs `f` on `store` in a read transaction, then gives it back.
+    fn run<T>(&self, store: Store, f: impl FnOnce(&Store) -> Result<T>) -> Result<T> {
         let lent = Lent { pool: self, store: Some(store) };
         let conn = lent.store().conn();
         conn.execute_batch("BEGIN")?;

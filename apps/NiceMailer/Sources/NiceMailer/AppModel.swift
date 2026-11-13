@@ -476,6 +476,10 @@ final class AppModel {
     /// content arrived late, after the reader came back, both used to wait
     /// their delay, then both marked it.
     @ObservationIgnored private var seenTask: Task<Void, Never>?
+    /// The load of the open thread running (`loadOpenThread`), and the one
+    /// wanted next.
+    @ObservationIgnored private var threadLoader: Task<Void, Never>?
+    @ObservationIgnored private var threadWanted: ThreadLoad?
 
     /// Starts the delay of `id`, replacing the one in progress. Swift note:
     /// cancelling a task makes its `Task.sleep` throw `CancellationError`,
@@ -1154,8 +1158,44 @@ final class AppModel {
         markSeen(id)
     }
 
-    /// Loads the selected thread into the reading pane.
+    /// Loads the selected thread into the reading pane, with **at most one
+    /// `get_thread` in flight**. Each cursor move asks for the mail under
+    /// the cursor; holding `j` asked for every mail passed over, and the
+    /// requests queued behind the core's few reader connections: the mail
+    /// finally under the cursor came seconds later, and the lists behind
+    /// it too (`core.log`, "slow request: get_thread took 9630 ms"). Now a
+    /// call made while one is loading only records what it wants, and the
+    /// running loop loads the selection of the moment once it is done: the
+    /// mails passed over in between are never asked for.
+    ///
+    /// A caller that awaits (the refresh, which reads the open thread
+    /// before the list) returns once that loop has finished, so its own
+    /// request has been served.
     private func loadOpenThread(markSeen: Bool) async {
+        threadWanted = ThreadLoad.merge(threadWanted, ThreadLoad(id: selectedThreadId, markSeen: markSeen))
+        if let running = threadLoader {
+            await running.value
+            return
+        }
+        let loader = Task { await runThreadLoads() }
+        threadLoader = loader
+        await loader.value
+    }
+
+    /// The loop of `loadOpenThread`: loads what is wanted until nothing is.
+    /// On the main actor, nothing runs between the last check and the end
+    /// of the loop: a request comes either before (served) or after (a new
+    /// loop).
+    private func runThreadLoads() async {
+        while let wanted = threadWanted {
+            threadWanted = nil
+            await fetchOpenThread(markSeen: wanted.markSeen)
+        }
+        threadLoader = nil
+    }
+
+    /// One `get_thread` of the selected thread.
+    private func fetchOpenThread(markSeen: Bool) async {
         guard let client, let id = selectedThreadId else { openThread = nil; return }
         do {
             let view: ThreadView = try await client.call("get_thread", ["thread_id": id])
@@ -1349,4 +1389,22 @@ final class AppModel {
 
     /// Reloads the open thread (after a change of display preference).
     func reloadOpenThread() async { await loadOpenThread(markSeen: false) }
+}
+
+/// A load of the open thread asked for (`AppModel.loadOpenThread`): the
+/// selection when it was asked, and whether the mail is then to be marked
+/// read after the delay (a mail the user chose, not one the app selected).
+struct ThreadLoad: Equatable {
+    let id: Int?
+    let markSeen: Bool
+
+    /// What to load next when `new` is asked while `pending` waits: always
+    /// the latest selection. For the same mail, it is marked read if either
+    /// asked for it: a refresh (`markSeen: false`) arriving after the user
+    /// chose the mail must not cancel its marking. For another mail, only
+    /// the new request counts. A pure function, tested alone.
+    static func merge(_ pending: ThreadLoad?, _ new: ThreadLoad) -> ThreadLoad {
+        guard let pending, pending.id == new.id else { return new }
+        return ThreadLoad(id: new.id, markSeen: pending.markSeen || new.markSeen)
+    }
 }

@@ -612,6 +612,9 @@ private final class Runner {
             "pasteboard": controller.pasteboard.string(forType: .string) ?? "",
             "pasteboard_lines": "\((controller.pasteboard.string(forType: .string) ?? "").split(separator: "\n", omittingEmptySubsequences: false).count)",
             "reader_subject": m.openThread?.subject ?? "",
+            // The reader shows the mail under the cursor (not one passed
+            // over while moving fast, `AppModel.loadOpenThread`).
+            "reader_is_selected": "\(m.openThread != nil && m.openThread?.id == m.selectedThreadId)",
             "unsubscribe": m.unsubscribeOffer.map {
                 $0.senderUnsubscribedAt != nil ? "done" : "\($0.source):\($0.method)"
             } ?? "",

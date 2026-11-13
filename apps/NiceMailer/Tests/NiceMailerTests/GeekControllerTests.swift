@@ -201,6 +201,37 @@ struct GeekControllerTests {
         #expect(AppModel.moveMayKeepRow(from: "sent") && !AppModel.moveMayKeepRow(from: "inbox"))
     }
 
+    /// Holding `j` over the list asks the core for the mail finally under
+    /// the cursor, not for every mail passed over: one `get_thread` at a
+    /// time, then the selection of the moment (`AppModel.loadOpenThread`).
+    @Test func movingFastLoadsOnlyTheMailFinallyUnderTheCursor() async {
+        core.delays["get_thread"] = .milliseconds(300)
+        let before = core.calls("get_thread").count
+        let asked = { core.calls("get_thread").dropFirst(before).map { $0["thread_id"] as? Int } }
+        // The first move: its load is in flight (the core takes 300 ms).
+        press("j")
+        #expect(await eventually { asked() == [2] })
+        // Four more moves while it loads, as a held key repeats.
+        for _ in 0..<4 { press("j") }
+        #expect(model.selectedThreadId == 6)
+        #expect(await eventually { model.openThread?.id == 6 })
+        // Then only the mail finally under the cursor: the three passed
+        // over are never asked for.
+        if asked() != [2, 6] { Issue.record("asked: \(asked())") }
+    }
+
+    /// The merge of two loads asked for: the latest selection, marked read
+    /// if either asked for it on the same mail.
+    @Test func aLoadAskedMeanwhileReplacesTheOneWaiting() {
+        let chosen = ThreadLoad(id: 3, markSeen: true)
+        let refresh = ThreadLoad(id: 3, markSeen: false)
+        #expect(ThreadLoad.merge(nil, refresh) == refresh)
+        #expect(ThreadLoad.merge(chosen, refresh) == chosen)
+        #expect(ThreadLoad.merge(refresh, chosen) == chosen)
+        #expect(ThreadLoad.merge(chosen, ThreadLoad(id: 4, markSeen: false)) == ThreadLoad(id: 4, markSeen: false))
+        #expect(ThreadLoad.merge(chosen, ThreadLoad(id: nil, markSeen: false)) == ThreadLoad(id: nil, markSeen: false))
+    }
+
     @Test func dArchivesEveryMarkedThread() async {
         press("J"); press("J")
         press("d")

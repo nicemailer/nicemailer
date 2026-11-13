@@ -11,7 +11,7 @@ mod common;
 
 use std::time::{Duration, Instant};
 
-use common::{Client, start_with};
+use common::{Client, start_logged, start_with};
 use serde_json::json;
 
 const DELAY_MS: u64 = 1500;
@@ -97,4 +97,42 @@ fn the_session_requests_stay_in_order() {
     let r = next();
     assert_eq!(r["id"], 3, "the notification is not answered: {r}");
     assert!(r["result"]["items"].is_array(), "{r}");
+}
+
+/// A slow request says in `core.log` when it ran and how its time splits:
+/// the second of two writes waits for the first (the lock is held
+/// `DELAY_MS`), so most of its time is waiting for the database, not its
+/// own work.
+#[test]
+fn a_slow_request_says_how_long_it_waited_for_the_database() {
+    let dir = tempfile::tempdir().unwrap();
+    let log = dir.path().join("core.log");
+    let delay = DELAY_MS.to_string();
+    let core = start_logged(dir.path(), &[("NICEMAILER_TEST_WRITE_DELAY_MS", delay.as_str())], Some(&log));
+    // Two connections: the writes of one connection run one after the
+    // other before reaching the lock; of two, they meet at the lock.
+    let mut a = Client::connect_as(dir.path(), "app");
+    let mut b = Client::connect_as(dir.path(), "app");
+    a.send("set_address_screening", json!({"addr": "a@x.example", "target": "inbox"}));
+    std::thread::sleep(Duration::from_millis(100));
+    b.send("set_address_screening", json!({"addr": "b@x.example", "target": "inbox"}));
+    assert!(a.response().1.is_ok());
+    assert!(b.response().1.is_ok());
+    drop(core);
+    let text = std::fs::read_to_string(&log).unwrap();
+    // "12:03:41 slow request: set_address_screening took 2955 ms (2953 ms
+    // waiting for the database, 1 ms running)": the second one waited for
+    // the first. (The test delay is spent inside `lock_store`, so it counts
+    // as waiting too.)
+    let waited: Vec<u128> = text
+        .lines()
+        .filter(|l| l.contains("slow request: set_address_screening"))
+        .map(|l| {
+            assert!(l.as_bytes()[2] == b':' && l.as_bytes()[5] == b':', "dated: {l}");
+            let n = l.split(" ms waiting").next().unwrap().rsplit('(').next().unwrap();
+            n.parse().unwrap()
+        })
+        .collect();
+    assert_eq!(waited.len(), 2, "{text}");
+    assert!(waited.iter().any(|w| *w >= u128::from(DELAY_MS) - 300), "{text}");
 }

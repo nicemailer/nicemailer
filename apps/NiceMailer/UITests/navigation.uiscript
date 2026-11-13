@@ -53,3 +53,20 @@ key ctrl-u
 expect selected = 0
 key ctrl-u
 expect selected = 0
+# Many moves in a row, as a held key: the reader ends on the mail under
+# the cursor (one load at a time, then the last selection).
+key j
+key j
+key j
+key j
+key j
+key j
+key j
+key j
+expect selected = 8
+expect reader_is_selected = true
+key k
+key k
+key k
+expect selected = 5
+expect reader_is_selected = true

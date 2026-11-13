@@ -536,7 +536,7 @@ impl Core {
         let guard = self.store.lock().unwrap();
         let waited = asked.elapsed();
         if waited >= SLOW_LOCK {
-            eprintln!("store lock: {who} waited {} ms", waited.as_millis());
+            eprintln!("{} store lock: {who} waited {} ms", local_time(), waited.as_millis());
         }
         if let Some(d) = self.test_write_delay {
             std::thread::sleep(d);
@@ -575,7 +575,7 @@ impl Drop for StoreLock<'_> {
     fn drop(&mut self) {
         let held = self.since.elapsed();
         if held >= SLOW_LOCK {
-            eprintln!("store lock: {} held {} ms", self.who, held.as_millis());
+            eprintln!("{} store lock: {} held {} ms", local_time(), self.who, held.as_millis());
         }
     }
 }
@@ -704,7 +704,7 @@ async fn serve(core: Arc<Core>, stream: UnixStream) -> anyhow::Result<()> {
         // pending: worth knowing when a response is late.
         let waited = timer.elapsed();
         if waited >= SLOW_WAIT {
-            eprintln!("connection: {} ms before a request could start ({IN_FLIGHT} in flight)", waited.as_millis());
+            eprintln!("{} connection: {} ms before a request could start ({IN_FLIGHT} in flight)", local_time(), waited.as_millis());
         }
         let source = session.source;
         if runs_in_parallel(&req.method) {
@@ -752,18 +752,73 @@ const SLOW_REQUEST: Duration = Duration::from_millis(500);
 /// The same for a wait (a permit, the store's lock).
 const SLOW_WAIT: Duration = Duration::from_millis(100);
 
+tokio::task_local! {
+    /// What the request running in this task waited for the database: a
+    /// connection of the read pool, the store's write lock, and a thread of
+    /// the blocking pool to run on. `with_reader` and `with_store` add to it.
+    ///
+    /// Rust note: a `task_local!` is a variable of the current tokio task,
+    /// as a thread-local is of a thread; `scope` gives it a value for the
+    /// duration of a future. A `Cell` lets that value change through a
+    /// shared reference (`get`, `set`), for a type that is `Copy`.
+    static DB_WAIT: std::cell::Cell<Duration>;
+}
+
+/// Adds `d` to the database wait of the current request, if any (a call
+/// outside `answer`, at startup, has none).
+fn add_db_wait(d: Duration) {
+    let _ = DB_WAIT.try_with(|w| w.set(w.get() + d));
+}
+
 /// Runs a request that is not one of the session's, and builds its
 /// response (`None` for a notification, which has no `id`).
 async fn answer(core: &Arc<Core>, source: Source, req: Request) -> Option<Response> {
     let id = req.id.clone();
     let method = req.method.clone();
     let timer = Instant::now();
-    let result = call(core, source, req).await;
+    let (result, waited) = DB_WAIT
+        .scope(std::cell::Cell::new(Duration::ZERO), async {
+            let result = call(core, source, req).await;
+            (result, DB_WAIT.with(|w| w.get()))
+        })
+        .await;
     let took = timer.elapsed();
     if took >= SLOW_REQUEST {
-        eprintln!("slow request: {method} took {} ms", took.as_millis());
+        eprintln!("{}", slow_request_line(&local_time(), &method, took, waited));
     }
     id.map(|id| reply(id, result))
+}
+
+/// The line of a slow request in `core.log`: when, what, and how its time
+/// splits between waiting for the database and running. A request that
+/// mostly waited was stuck behind others (every connection of the read
+/// pool lent, the write lock held): its own query is not the one to
+/// speed up. A pure function, tested alone.
+fn slow_request_line(at: &str, method: &str, took: Duration, waited: Duration) -> String {
+    let waited = waited.min(took);
+    format!(
+        "{at} slow request: {method} took {} ms ({} ms waiting for the database, {} ms running)",
+        took.as_millis(),
+        waited.as_millis(),
+        (took - waited).as_millis()
+    )
+}
+
+/// The local time of the Mac, `HH:MM:SS`, to date a line of `core.log`.
+///
+/// Rust note: `unsafe` because `localtime_r` is a C function the compiler
+/// cannot check; `localtime_r`, unlike `localtime`, is safe to call from
+/// several threads.
+fn local_time() -> String {
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    let time = now as libc::time_t;
+    // SAFETY: `tm` is a plain C struct, valid when zeroed; `localtime_r`
+    // only reads `time` and writes `tm`.
+    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+    if unsafe { libc::localtime_r(&time, &mut tm).is_null() } {
+        return "--:--:--".into();
+    }
+    format!("{:02}:{:02}:{:02}", tm.tm_hour, tm.tm_min, tm.tm_sec)
 }
 
 /// Deserializes the params of a request into the expected type `T`.
@@ -828,15 +883,19 @@ async fn with_store<T: Send + 'static>(
     f: impl FnOnce(&mut Store) -> Result<T, StoreError> + Send + 'static,
 ) -> Result<T, RpcError> {
     let core = core.clone();
-    tokio::task::spawn_blocking(move || {
+    let asked = Instant::now();
+    let (result, waited) = tokio::task::spawn_blocking(move || {
         let mut store = core.lock_store("request");
-        f(&mut store)
+        // From the call to the lock: a blocking thread, then the lock.
+        let waited = asked.elapsed();
+        (f(&mut store), waited)
     })
     .await
     // Two layers of errors: the first `map_err` handles a failure of the
     // blocking task itself (a panic), the second converts a store error.
-    .map_err(|e| RpcError::new(error_code::INTERNAL_ERROR, e.to_string()))?
-    .map_err(store_error)
+    .map_err(|e| RpcError::new(error_code::INTERNAL_ERROR, e.to_string()))?;
+    add_db_wait(waited);
+    result.map_err(store_error)
 }
 
 /// Runs the query `f` on a connection of the read pool, on a blocking
@@ -846,10 +905,17 @@ pub(crate) async fn with_reader<T: Send + 'static>(
     f: impl FnOnce(&Store) -> Result<T, StoreError> + Send + 'static,
 ) -> Result<T, RpcError> {
     let core = core.clone();
-    tokio::task::spawn_blocking(move || core.readers.read(f))
-        .await
-        .map_err(|e| RpcError::new(error_code::INTERNAL_ERROR, e.to_string()))?
-        .map_err(store_error)
+    let asked = Instant::now();
+    let (result, waited) = tokio::task::spawn_blocking(move || {
+        // A blocking thread, then a free connection of the pool.
+        let queued = asked.elapsed();
+        let (result, waited) = core.readers.read_timed(f);
+        (result, queued + waited)
+    })
+    .await
+    .map_err(|e| RpcError::new(error_code::INTERNAL_ERROR, e.to_string()))?;
+    add_db_wait(waited);
+    result.map_err(store_error)
 }
 
 /// `set_password`: saves the IMAP password of an account in the Keychain,
@@ -1695,4 +1761,32 @@ fn run_import(core: Arc<Core>, job_id: u64, opts: ImportOptions) {
         Err(e) => eprintln!("import {job_id} échoué : {e}"),
     }
     core.events.lock().unwrap().push(Event::ImportFinished(status));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The line of a slow request: dated, its total, its wait for the
+    /// database and the rest; a wait measured longer than the total (clocks
+    /// read at different points) is capped.
+    #[test]
+    fn a_slow_request_line_splits_waiting_and_running() {
+        let ms = Duration::from_millis;
+        assert_eq!(
+            slow_request_line("09:12:03", "get_thread", ms(9630), ms(9500)),
+            "09:12:03 slow request: get_thread took 9630 ms (9500 ms waiting for the database, 130 ms running)"
+        );
+        assert_eq!(
+            slow_request_line("09:12:03", "list_threads", ms(600), ms(700)),
+            "09:12:03 slow request: list_threads took 600 ms (600 ms waiting for the database, 0 ms running)"
+        );
+    }
+
+    #[test]
+    fn the_local_time_is_hours_minutes_seconds() {
+        let t = local_time();
+        assert_eq!(t.len(), 8, "{t}");
+        assert_eq!((&t[2..3], &t[5..6]), (":", ":"), "{t}");
+    }
 }
