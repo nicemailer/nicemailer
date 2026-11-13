@@ -91,13 +91,7 @@ enum ThreadDisplay {
                                    files: m.attachments.count))
                 continue
             }
-            var recipients: String?
-            if state.showAll || m.showRecipients {
-                var parts: [String] = []
-                if !m.to.isEmpty { parts.append(L("To: %@", m.to.map(\.display).joined(separator: ", "))) }
-                if !m.cc.isEmpty { parts.append(L("Cc: %@", m.cc.map(\.display).joined(separator: ", "))) }
-                recipients = parts.isEmpty ? nil : parts.joined(separator: "   ")
-            }
+            let recipients = Self.recipients(m, state)
             // The address after the date, unless it is the name already.
             let address = m.fromName != nil ? m.fromAddr.flatMap { $0.isEmpty ? nil : $0 } : nil
             out.append(.header(messageId: m.id, folded: false, title: "\(conversation ? "▾ " : "")\(who) · \(date)",
@@ -122,6 +116,20 @@ enum ThreadDisplay {
             }
         }
         return out
+    }
+
+    /// The recipients line of an unfolded message ("To: Alice, Bob   Cc:
+    /// Carol"), or nil when not worth showing: the core decides
+    /// (`show_recipients`: they changed since the previous message, or the
+    /// user wrote the mail), `T` shows them always. Shared by the text and
+    /// the HTML readers, so both show the same header (`ui.md`,
+    /// "Expéditeur": "En texte comme en HTML").
+    static func recipients(_ m: MessageView, _ state: State) -> String? {
+        guard state.showAll || m.showRecipients else { return nil }
+        var parts: [String] = []
+        if !m.to.isEmpty { parts.append(L("To: %@", m.to.map(\.display).joined(separator: ", "))) }
+        if !m.cc.isEmpty { parts.append(L("Cc: %@", m.cc.map(\.display).joined(separator: ", "))) }
+        return parts.isEmpty ? nil : parts.joined(separator: "   ")
     }
 
     /// One line describing a hidden segment.

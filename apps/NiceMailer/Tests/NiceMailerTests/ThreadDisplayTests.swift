@@ -135,6 +135,31 @@ struct ThreadDisplayTests {
         #expect(!ThreadDisplay.senderAlert(sender("Alice Martin", "alice@atelier.fr", auth: "none")))
     }
 
+    /// The recipients line, shared by the text and HTML readers so both
+    /// show the same header: when the core says they are worth it, or
+    /// always under `T`; To and Cc, by name.
+    @Test func theRecipientsLineFollowsTheCoreOrT() {
+        var m = message(1, from: "Alice", segments: [], expanded: true, recipients: true)
+        #expect(ThreadDisplay.recipients(m, .init()) == L("To: %@", "me@x.org"))
+        m = MessageView(
+            id: 1, folderId: 1, folderRole: "archive", subject: "S", fromName: "Alice", fromAddr: "alice@x.org",
+            to: [AddressView(addr: "h@x.org", name: "Hélène"), AddressView(addr: "e@x.org", name: "Elsa")],
+            cc: [AddressView(addr: "c@x.org", name: nil)], dateSent: nil, dateReceived: 1_700_000_000,
+            bodyText: "", isSeen: true, isFlagged: false, isAnswered: false, hasAttachments: false,
+            authResult: "unknown", bodyHtml: "<p>x</p>", hasRemoteContent: false, fromBodyFormat: nil,
+            segments: [], onlyQuotes: false, expanded: true, showRecipients: true, attachments: [])
+        #expect(ThreadDisplay.recipients(m, .init())
+                == L("To: %@", "Hélène, Elsa") + "   " + L("Cc: %@", "c@x.org"))
+        // Not worth showing: nothing, unless `T` shows everything.
+        let quiet = message(2, from: "Bob", segments: [], expanded: true, recipients: false)
+        #expect(ThreadDisplay.recipients(quiet, .init()) == nil)
+        #expect(ThreadDisplay.recipients(quiet, .init(showAll: true)) == L("To: %@", "me@x.org"))
+        // The text reader's header carries the same line.
+        let blocks = ThreadDisplay.blocks(ThreadView(id: 1, subject: "S", messages: [m], asOf: Position(epoch: "e", seq: 0)), .init())
+        guard case .header(1, false, _, let detail, _, _, _, _) = blocks.first else { Issue.record("\(blocks)"); return }
+        #expect(detail == ThreadDisplay.recipients(m, .init()))
+    }
+
     @Test func showAllUnfoldsAndRevealsEverything() {
         let blocks = ThreadDisplay.blocks(thread, .init(showAll: true))
         #expect(ThreadDisplay.foldedCount(blocks) == 0)

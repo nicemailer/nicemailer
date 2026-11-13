@@ -932,6 +932,8 @@ private struct GeekReaderColumn: View {
         summary::-webkit-details-marker { display: none; }
         details[open] summary { margin-bottom: 12px; }
         summary a.addr { text-decoration: none; color: inherit; }
+        /* The recipients, under the sender's line, as in the text reader. */
+        summary .rcpt { display: block; margin-top: 2px; }
         summary a.alert { color: #E06C75; }
         @media (prefers-color-scheme: light) { summary a.alert { color: #C0392B; } }
         /* A single mail: a click on its line does nothing, except on the
@@ -980,6 +982,11 @@ private struct GeekReaderColumn: View {
             }
             var summary = unfolded ? "\(arrow)\(who) · \(date)\(address)"
                 : "\(arrow)\(who) · \(date)\(domain) — \(esc(ThreadDisplay.snippet(m)))"
+            // Unfolded, the recipients on a second line when worth showing,
+            // the same rule as the text reader (`ThreadDisplay.recipients`).
+            if unfolded, let recipients = ThreadDisplay.recipients(m, state) {
+                summary += "<span class=\"rcpt\">\(esc(recipients))</span>"
+            }
             if !unfolded && !m.attachments.isEmpty {
                 summary += " &nbsp;<img src=\"\(Self.symbolDataURI("paperclip"))\">\(m.attachments.count)"
             }

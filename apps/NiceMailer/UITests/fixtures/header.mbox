@@ -1,0 +1,95 @@
+From x Fri Nov 13 12:00:00 2026
+From: Hugo Marchal <hugo@etude-marchal.example>
+To: =?utf-8?q?H=C3=A9l=C3=A8ne?= Petit <helene@example.org>, Elsa Roux <elsa@example.org>, me@example.com
+Subject: Constat du 7 novembre
+Message-ID: <header-constat@etude-marchal.example>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="m1"
+
+--m1
+Content-Type: multipart/alternative; boundary="b1"
+
+--b1
+Content-Type: text/plain; charset=utf-8
+
+Cher Maître,
+
+Paragraphe 0 du constat, avec assez de texte pour remplir une ligne entière du lecteur.
+
+Paragraphe 1 du constat, avec assez de texte pour remplir une ligne entière du lecteur.
+
+Paragraphe 2 du constat, avec assez de texte pour remplir une ligne entière du lecteur.
+
+Paragraphe 3 du constat, avec assez de texte pour remplir une ligne entière du lecteur.
+
+Paragraphe 4 du constat, avec assez de texte pour remplir une ligne entière du lecteur.
+
+Paragraphe 5 du constat, avec assez de texte pour remplir une ligne entière du lecteur.
+
+Paragraphe 6 du constat, avec assez de texte pour remplir une ligne entière du lecteur.
+
+Paragraphe 7 du constat, avec assez de texte pour remplir une ligne entière du lecteur.
+
+Paragraphe 8 du constat, avec assez de texte pour remplir une ligne entière du lecteur.
+
+Paragraphe 9 du constat, avec assez de texte pour remplir une ligne entière du lecteur.
+
+Paragraphe 10 du constat, avec assez de texte pour remplir une ligne entière du lecteur.
+
+Paragraphe 11 du constat, avec assez de texte pour remplir une ligne entière du lecteur.
+
+Paragraphe 12 du constat, avec assez de texte pour remplir une ligne entière du lecteur.
+
+Paragraphe 13 du constat, avec assez de texte pour remplir une ligne entière du lecteur.
+
+Paragraphe 14 du constat, avec assez de texte pour remplir une ligne entière du lecteur.
+
+Paragraphe 15 du constat, avec assez de texte pour remplir une ligne entière du lecteur.
+
+Paragraphe 16 du constat, avec assez de texte pour remplir une ligne entière du lecteur.
+
+Paragraphe 17 du constat, avec assez de texte pour remplir une ligne entière du lecteur.
+
+Paragraphe 18 du constat, avec assez de texte pour remplir une ligne entière du lecteur.
+
+Paragraphe 19 du constat, avec assez de texte pour remplir une ligne entière du lecteur.
+
+Paragraphe 20 du constat, avec assez de texte pour remplir une ligne entière du lecteur.
+
+Paragraphe 21 du constat, avec assez de texte pour remplir une ligne entière du lecteur.
+
+Paragraphe 22 du constat, avec assez de texte pour remplir une ligne entière du lecteur.
+
+Paragraphe 23 du constat, avec assez de texte pour remplir une ligne entière du lecteur.
+
+Paragraphe 24 du constat, avec assez de texte pour remplir une ligne entière du lecteur.
+
+Bien à vous,
+
+--b1
+Content-Type: text/html; charset=utf-8
+
+<html><body><p>Cher Maître,</p><p>Paragraphe 0 du constat, avec assez de texte pour remplir une ligne entière du lecteur.</p><p>Paragraphe 1 du constat, avec assez de texte pour remplir une ligne entière du lecteur.</p><p>Paragraphe 2 du constat, avec assez de texte pour remplir une ligne entière du lecteur.</p><p>Paragraphe 3 du constat, avec assez de texte pour remplir une ligne entière du lecteur.</p><p>Paragraphe 4 du constat, avec assez de texte pour remplir une ligne entière du lecteur.</p><p>Paragraphe 5 du constat, avec assez de texte pour remplir une ligne entière du lecteur.</p><p>Paragraphe 6 du constat, avec assez de texte pour remplir une ligne entière du lecteur.</p><p>Paragraphe 7 du constat, avec assez de texte pour remplir une ligne entière du lecteur.</p><p>Paragraphe 8 du constat, avec assez de texte pour remplir une ligne entière du lecteur.</p><p>Paragraphe 9 du constat, avec assez de texte pour remplir une ligne entière du lecteur.</p><p>Paragraphe 10 du constat, avec assez de texte pour remplir une ligne entière du lecteur.</p><p>Paragraphe 11 du constat, avec assez de texte pour remplir une ligne entière du lecteur.</p><p>Paragraphe 12 du constat, avec assez de texte pour remplir une ligne entière du lecteur.</p><p>Paragraphe 13 du constat, avec assez de texte pour remplir une ligne entière du lecteur.</p><p>Paragraphe 14 du constat, avec assez de texte pour remplir une ligne entière du lecteur.</p><p>Paragraphe 15 du constat, avec assez de texte pour remplir une ligne entière du lecteur.</p><p>Paragraphe 16 du constat, avec assez de texte pour remplir une ligne entière du lecteur.</p><p>Paragraphe 17 du constat, avec assez de texte pour remplir une ligne entière du lecteur.</p><p>Paragraphe 18 du constat, avec assez de texte pour remplir une ligne entière du lecteur.</p><p>Paragraphe 19 du constat, avec assez de texte pour remplir une ligne entière du lecteur.</p><p>Paragraphe 20 du constat, avec assez de texte pour remplir une ligne entière du lecteur.</p><p>Paragraphe 21 du constat, avec assez de texte pour remplir une ligne entière du lecteur.</p><p>Paragraphe 22 du constat, avec assez de texte pour remplir une ligne entière du lecteur.</p><p>Paragraphe 23 du constat, avec assez de texte pour remplir une ligne entière du lecteur.</p><p>Paragraphe 24 du constat, avec assez de texte pour remplir une ligne entière du lecteur.</p><p>Bien à vous,
+</p></body></html>
+--b1--
+
+--m1
+Content-Type: application/vnd.openxmlformats-officedocument.wordprocessingml.document; name="PV AG.docx"
+Content-Disposition: attachment; filename="PV AG.docx"
+Content-Transfer-Encoding: base64
+
+UEsgZmFrZSBkb2N4IFBLIGZha2UgZG9jeCBQSyBmYWtlIGRvY3ggUEsgZmFrZSBkb2N4IFBLIGZh
+a2UgZG9jeCBQSyBmYWtlIGRvY3ggUEsgZmFrZSBkb2N4IFBLIGZha2UgZG9jeCBQSyBmYWtlIGRv
+Y3ggUEsgZmFrZSBkb2N4IFBLIGZha2UgZG9jeCBQSyBmYWtlIGRvY3ggUEsgZmFrZSBkb2N4IFBL
+IGZha2UgZG9jeCBQSyBmYWtlIGRvY3ggUEsgZmFrZSBkb2N4IFBLIGZha2UgZG9jeCBQSyBmYWtl
+IGRvY3ggUEsgZmFrZSBkb2N4IFBLIGZha2UgZG9jeCBQSyBmYWtlIGRvY3ggUEsgZmFrZSBkb2N4
+IFBLIGZha2UgZG9jeCBQSyBmYWtlIGRvY3ggUEsgZmFrZSBkb2N4IFBLIGZha2UgZG9jeCBQSyBm
+YWtlIGRvY3ggUEsgZmFrZSBkb2N4IFBLIGZha2UgZG9jeCBQSyBmYWtlIGRvY3ggUEsgZmFrZSBk
+b2N4IFBLIGZha2UgZG9jeCBQSyBmYWtlIGRvY3ggUEsgZmFrZSBkb2N4IFBLIGZha2UgZG9jeCBQ
+SyBmYWtlIGRvY3ggUEsgZmFrZSBkb2N4IFBLIGZha2UgZG9jeCBQSyBmYWtlIGRvY3ggUEsgZmFr
+ZSBkb2N4IFBLIGZha2UgZG9jeCBQSyBmYWtlIGRvY3ggUEsgZmFrZSBkb2N4IFBLIGZha2UgZG9j
+eCBQSyBmYWtlIGRvY3ggUEsgZmFrZSBkb2N4IFBLIGZha2UgZG9jeCBQSyBmYWtlIGRvY3ggUEsg
+ZmFrZSBkb2N4IFBLIGZha2UgZG9jeCA=
+
+--m1--
+

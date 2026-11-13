@@ -1,0 +1,49 @@
+# The header of a mail (`ui.md`, "Expéditeur"): the same in text and in
+# HTML, "name · date · address" and the recipients on the next line, when
+# worth showing (here a first mail to three people). The mail, text and
+# HTML with a file, comes from fixtures/header.mbox. Checked when opened
+# in either format, after going back and forth, and through a deep link.
+key @
+type fixture
+key ret
+key ;
+key m
+expect selected_subject = Constat du 7 novembre
+expect body_format = text
+expect reader_text ~ Hugo Marchal
+expect reader_text ~ hugo@etude-marchal.example
+expect reader_text ~ To: Hélène Petit, Elsa Roux, me@example.com
+expect reader_offset = 0
+snap header-text
+click format:html
+expect body_format = html
+expect html_text ~ Hugo Marchal
+expect html_text ~ hugo@etude-marchal.example
+expect html_text ~ To: Hélène Petit, Elsa Roux, me@example.com
+snap header-html
+click format:text
+expect body_format = text
+expect reader_text ~ To: Hélène Petit, Elsa Roux, me@example.com
+expect reader_offset = 0
+# The format is remembered for the sender: another mail and back opens it
+# in HTML, with the whole header.
+click format:html
+key j
+key k
+expect selected_subject = Constat du 7 novembre
+expect body_format = html
+expect html_text ~ To: Hélène Petit, Elsa Roux, me@example.com
+click format:text
+expect reader_text ~ To: Hélène Petit, Elsa Roux, me@example.com
+# Through its deep link, from another folder.
+key l
+key cmd-ret
+expect pasteboard ~ nicemailer://m/
+key ;
+key i
+expect selected_subject != Constat du 7 novembre
+openurl clipboard
+expect selected_subject = Constat du 7 novembre
+expect reader_text ~ Hugo Marchal
+expect reader_text ~ To: Hélène Petit, Elsa Roux, me@example.com
+expect reader_offset = 0
