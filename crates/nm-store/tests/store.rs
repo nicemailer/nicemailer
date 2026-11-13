@@ -157,3 +157,78 @@ fn search_ignores_accents_and_matches_prefixes() {
     assert!(store.search("\"", 10).unwrap().is_empty());
     assert!(!store.search("l'organisation", 10).unwrap().is_empty());
 }
+
+/// From Sent, a conversation is filed like anywhere else, but its copies
+/// in Sent stay there (`dossiers.md`, "Cibles proposées"): it leaves the
+/// Inbox for Todo and is still listed in Sent.
+#[test]
+fn move_from_sent_files_the_conversation_and_keeps_the_sent_copies() {
+    let mut store = seeded();
+    let sent = folder_id(&store, FolderRole::Sent);
+    let todo = folder_id(&store, FolderRole::Todo);
+    let (items, _) = store.list_threads(sent, None, 500, ThreadSort::Received).unwrap();
+    // A conversation with mails in Sent and in the Inbox: an answered mail.
+    let thread = items
+        .iter()
+        .find(|t| {
+            let (_, m) = store.get_thread(t.id).unwrap();
+            m.iter().any(|m| m.folder_role == Some(FolderRole::Inbox))
+        })
+        .expect("an answered conversation of the Inbox");
+    let (_, before) = store.get_thread(thread.id).unwrap();
+    let in_sent = before.iter().filter(|m| m.folder_role == Some(FolderRole::Sent)).count();
+    assert!(in_sent > 0);
+
+    let out = store.move_thread(thread.id, FolderRole::Todo, Some(sent), MoveOptions::default(), Source::App).unwrap();
+    assert!(out.moved > 0);
+
+    let (_, after) = store.get_thread(thread.id).unwrap();
+    assert_eq!(after.iter().filter(|m| m.folder_role == Some(FolderRole::Sent)).count(), in_sent);
+    assert!(!after.iter().any(|m| m.folder_role == Some(FolderRole::Inbox)));
+    let (todo_items, _) = store.list_threads(todo, None, 500, ThreadSort::Received).unwrap();
+    assert!(todo_items.iter().any(|t| t.id == thread.id));
+    let (sent_items, _) = store.list_threads(sent, None, 500, ThreadSort::Received).unwrap();
+    assert!(sent_items.iter().any(|t| t.id == thread.id));
+}
+
+/// A conversation with nothing but mails in Sent (a new mail, no answer
+/// yet) would not move at all: its sent mails go to the target instead,
+/// and it leaves the list of Sent. Undo brings them back to Sent.
+#[test]
+fn move_from_sent_takes_a_lone_sent_mail_along() {
+    let mut store = seeded();
+    let sent = folder_id(&store, FolderRole::Sent);
+    let waiting = folder_id(&store, FolderRole::Waiting);
+    let (items, _) = store.list_threads(sent, None, 500, ThreadSort::Received).unwrap();
+    let thread = items
+        .iter()
+        .find(|t| {
+            let (_, m) = store.get_thread(t.id).unwrap();
+            m.iter().all(|m| m.folder_role == Some(FolderRole::Sent))
+        })
+        .expect("a conversation only in Sent");
+    let (_, before) = store.get_thread(thread.id).unwrap();
+
+    let out = store.move_thread(thread.id, FolderRole::Waiting, Some(sent), MoveOptions::default(), Source::App).unwrap();
+    assert_eq!(out.moved, before.len());
+
+    let (_, after) = store.get_thread(thread.id).unwrap();
+    assert!(after.iter().all(|m| m.folder_role == Some(FolderRole::Waiting)));
+    let (waiting_items, _) = store.list_threads(waiting, None, 500, ThreadSort::Received).unwrap();
+    assert!(waiting_items.iter().any(|t| t.id == thread.id));
+    let (sent_items, _) = store.list_threads(sent, None, 500, ThreadSort::Received).unwrap();
+    assert!(!sent_items.iter().any(|t| t.id == thread.id));
+
+    store.undo(out.undo.as_deref().expect("an undo token"), Source::App).unwrap();
+    let (_, undone) = store.get_thread(thread.id).unwrap();
+    assert!(undone.iter().all(|m| m.folder_role == Some(FolderRole::Sent)));
+}
+
+/// Sent is still never a target: only sending fills it.
+#[test]
+fn sent_is_never_a_target_from_sent_either() {
+    let mut store = seeded();
+    let sent = folder_id(&store, FolderRole::Sent);
+    let (items, _) = store.list_threads(sent, None, 1, ThreadSort::Received).unwrap();
+    assert!(store.move_thread(items[0].id, FolderRole::Sent, Some(sent), MoveOptions::default(), Source::App).is_err());
+}

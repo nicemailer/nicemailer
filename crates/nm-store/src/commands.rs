@@ -287,9 +287,13 @@ pub struct SuspectThread {
 ///
 /// Only the thread's messages filed in Inbox, Todo, Waiting, Archive,
 /// Newsletter and Paperwork follow (`CONVERSATION_SCOPE`), plus those in
-/// the folder where the command is given (`from_folder_id`). So the
-/// copies in Sent never move, and a message the user deleted stays in
-/// Deleted unless the user is restoring it from there.
+/// the folder where the command is given (`from_folder_id`). So a
+/// message the user deleted stays in Deleted unless the user is
+/// restoring it from there.
+///
+/// From Sent, the copies in Sent move only when the conversation has no
+/// other mail to move (a new mail with no answer yet): otherwise they
+/// stay in Sent, where the phone finds them.
 ///
 /// From Drafts (only to Deleted), only the drafts move: deleting an old
 /// draft must not put the conversation it answers in the bin. A draft
@@ -321,22 +325,38 @@ fn apply_move(
     let scope: Vec<&str> = FolderRole::CONVERSATION_SCOPE.iter().map(|r| r.as_str()).collect();
     // From Drafts, the folder of the command only (see above): ?10 off.
     let whole_conversation = p.from_role != Some(FolderRole::Drafts);
-    let moved: Vec<(i64, i64)> = {
+    // Rust note: a closure (`|from| ...`) is an anonymous function that
+    // can read the variables around it (`tx`, `scope`...). It is called
+    // twice below, with a different folder of the command.
+    let select = |from_folder: i64| -> Result<Vec<(i64, i64)>> {
         let mut stmt = tx.prepare_cached(
             "SELECT m.id, m.folder_id FROM message m JOIN folder f ON f.id = m.folder_id
               WHERE m.thread_id = ?1 AND m.folder_id <> ?2
                 AND ((?10 AND f.role IN (?3, ?4, ?5, ?6, ?7, ?8)) OR m.folder_id = ?9)",
         )?;
-        stmt.query_map(
-            params![
-                thread_id, target_id, scope[0], scope[1], scope[2], scope[3], scope[4], scope[5],
-                p.from_folder_id.unwrap_or(-1), whole_conversation
-            ],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        )?
-        // Each row is a `Result`; collecting into `Result<Vec<_>, _>`
-        // stops at the first error, which the final `?` propagates.
-        .collect::<std::result::Result<_, _>>()?
+        let rows = stmt
+            .query_map(
+                params![
+                    thread_id, target_id, scope[0], scope[1], scope[2], scope[3], scope[4], scope[5], from_folder,
+                    whole_conversation
+                ],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )?
+            // Each row is a `Result`; collecting into `Result<Vec<_>, _>`
+            // stops at the first error, which the final `?` propagates.
+            .collect::<std::result::Result<_, _>>()?;
+        Ok(rows)
+    };
+    // From Sent, the copies in Sent stay where the phone finds them: only
+    // the rest of the conversation moves. A conversation with nothing
+    // else (a new mail, no answer yet) would not move at all, so its mails
+    // in Sent leave instead, here and on the server: the user put a mail
+    // they wrote in Waiting or Todo (`dossiers.md`, "Cibles proposées").
+    let moved: Vec<(i64, i64)> = if p.from_role == Some(FolderRole::Sent) {
+        let rest = select(-1)?;
+        if rest.is_empty() { select(p.from_folder_id.unwrap_or(-1))? } else { rest }
+    } else {
+        select(p.from_folder_id.unwrap_or(-1))?
     };
 
     if !whole_conversation {

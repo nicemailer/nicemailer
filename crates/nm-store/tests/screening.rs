@@ -423,25 +423,26 @@ fn several_threads_are_moved_in_one_transaction_and_undone_at_once() {
     let (m1, t1) = b.mail(FolderRole::Inbox, "a@one.fr", OK);
     let (m2, t2) = b.mail(FolderRole::Inbox, "b@two.fr", OK);
     let (m3, t3) = b.mail(FolderRole::Inbox, "news@shop.fr", OK);
-    // A forged sender in Quarantine, and a sent mail (no target from Sent).
+    // A forged sender in Quarantine, and a draft (Deleted is its only
+    // target, `dossiers.md`, "Cibles proposées").
     let forged = M { verdict: "fail", suspect: true, flagged: false };
     let (m4, t4) = b.mail(FolderRole::Quarantine, "support@banque.fr", forged);
-    let (_, t5) = b.mail(FolderRole::Sent, ME, OK);
-    let sent = b.folder(b.account, FolderRole::Sent);
+    let (_, t5) = b.mail(FolderRole::Drafts, ME, OK);
+    let drafts = b.folder(b.account, FolderRole::Drafts);
     let audit_before: i64 = b.store.conn().query_row("SELECT count(*) FROM audit_log", [], |r| r.get(0)).unwrap();
 
     // To Newsletter: every thread decides on its sender.
     let batch = b
         .store
         .move_threads(
-            &[(t1, Some(inbox)), (t2, Some(inbox)), (t3, Some(inbox)), (t4, Some(quarantine)), (t5, Some(sent)), (999_999, None)],
+            &[(t1, Some(inbox)), (t2, Some(inbox)), (t3, Some(inbox)), (t4, Some(quarantine)), (t5, Some(drafts)), (999_999, None)],
             FolderRole::Newsletter,
             MoveOptions::default(),
             Source::App,
         )
         .unwrap();
-    // Moved together; the forged sender left for a confirmation, the sent
-    // mail refused, the unknown thread skipped.
+    // Moved together; the forged sender left for a confirmation, the
+    // draft refused, the unknown thread skipped.
     assert_eq!(batch.moved_threads, vec![t1, t2, t3]);
     assert_eq!(batch.refused, vec![t5]);
     assert_eq!(batch.suspects.iter().map(|s| (s.thread_id, s.addr.as_str())).collect::<Vec<_>>(), [(t4, "support@banque.fr")]);

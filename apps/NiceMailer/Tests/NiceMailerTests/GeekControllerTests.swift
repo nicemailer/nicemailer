@@ -174,6 +174,33 @@ struct GeekControllerTests {
         #expect(model.threads.count == 7 && selectedIndex == 0)
     }
 
+    /// From Sent, `m` + a letter files the conversation (`dossiers.md`,
+    /// "Cibles proposées"). Its row is not removed at once: the copies in
+    /// Sent keep the conversation in that list unless it has nothing else,
+    /// so the list is read again from the core.
+    @Test func aMoveFromSentKeepsTheRowUntilTheCoreAnswers() async {
+        core.handler = { method, params in
+            if method == "list_folders" {
+                let sent = Fixture.folder(5, "sent", "Sent", "S", targets: ["todo", "waiting", "inbox", "archive", "deleted"])
+                return ["items": Fixture.folders + [sent], "as_of": Fixture.position]
+            }
+            return Fixture.answer(method, params)
+        }
+        await model.reloadFolders()
+        model.selectedFolderId = 5
+        #expect(await eventually { model.threads.first?.id == 105 })
+        let listed = core.calls("list_threads").count
+        press("m"); press("w")
+        #expect(await eventually { core.moveCalls().count == 1 })
+        let call = core.moveCalls()[0]
+        #expect(call["target"] as? String == "waiting")
+        #expect(call["from_folder_id"] as? Int == 5)
+        // The row stayed, and the list was read again after the answer.
+        #expect(model.threads.contains { $0.id == 105 })
+        #expect(await eventually { core.calls("list_threads").count > listed })
+        #expect(AppModel.moveMayKeepRow(from: "sent") && !AppModel.moveMayKeepRow(from: "inbox"))
+    }
+
     @Test func dArchivesEveryMarkedThread() async {
         press("J"); press("J")
         press("d")

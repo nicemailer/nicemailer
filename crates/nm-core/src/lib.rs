@@ -237,8 +237,11 @@ impl FolderRole {
     /// Targets offered by the move command when the user is in this folder
     /// (`dossiers.md`, "Cibles proposées").
     ///
-    /// - Sent and Drafts offer nothing: a sent message stays in Sent, and a
-    ///   draft is either sent or deleted.
+    /// - Sent offers the same targets as the work and filing folders: a
+    ///   conversation listed in Sent can be filed from there, and a new mail
+    ///   with no answer yet can go to Waiting or Todo (added in November
+    ///   2026). The store decides which mails follow (`apply_move`).
+    /// - Drafts offers Deleted only: a draft is either sent or deleted.
     /// - Quarantine is a screening step: from there the user can accept the
     ///   sender (Inbox, Newsletter, Paperwork) or reject them. Todo and
     ///   Waiting are not offered, because the sender must be accepted first.
@@ -252,8 +255,6 @@ impl FolderRole {
     pub fn move_targets(self) -> Vec<FolderRole> {
         use FolderRole::*;
         match self {
-            // Sent mails stay where the phone finds them.
-            Sent => vec![],
             // A draft only goes to Deleted (`del`): a draft of another
             // client (Spark, the phone), which NiceMailer cannot open, could
             // not be removed otherwise (`dossiers.md`, "Sent et Drafts").
@@ -664,7 +665,16 @@ mod tests {
 
     #[test]
     fn move_targets_follow_spec() {
-        assert!(FolderRole::Sent.move_targets().is_empty());
+        // Sent: every command target, never Sent itself (`dossiers.md`,
+        // "Cibles proposées").
+        assert_eq!(
+            FolderRole::Sent.move_targets(),
+            [
+                FolderRole::Todo, FolderRole::Waiting, FolderRole::Inbox, FolderRole::Archive,
+                FolderRole::Newsletter, FolderRole::Paperwork, FolderRole::Junk, FolderRole::Banned,
+                FolderRole::Deleted,
+            ]
+        );
         assert_eq!(FolderRole::Drafts.move_targets(), [FolderRole::Deleted]);
         assert!(!FolderRole::Inbox.move_targets().contains(&FolderRole::Inbox));
         assert!(!FolderRole::Quarantine.move_targets().contains(&FolderRole::Todo));

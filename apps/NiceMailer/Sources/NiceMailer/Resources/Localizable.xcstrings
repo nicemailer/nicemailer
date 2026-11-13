@@ -391,16 +391,6 @@
         }
       }
     },
-    "A sent mail stays in Sent": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Un mail envoyé reste dans Sent"
-          }
-        }
-      }
-    },
     "A single mail: no other message": {
       "localizations": {
         "fr": {

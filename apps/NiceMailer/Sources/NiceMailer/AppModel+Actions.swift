@@ -16,14 +16,23 @@ extension AppModel {
     }
 
     /// Why a move is refused, and what to do instead (`dossiers.md`,
-    /// "Sent et Drafts"): a draft only goes to Deleted (Delete), a sent
-    /// mail stays in Sent. A pure function, tested alone.
+    /// "Sent et Drafts"): a draft only goes to Deleted (Delete). A pure
+    /// function, tested alone.
     nonisolated static func refusedMoveFlash(from: String?, to role: String) -> String {
         switch from {
         case "drafts": return L("A draft is not moved: Delete puts it in %@", Role.name("deleted"))
-        case "sent": return L("A sent mail stays in Sent")
         default: return L("Not a target from this folder: %@", Role.name(role))
         }
+    }
+
+    /// Whether a thread moved out of the folder `role` may still belong to
+    /// its list afterwards, so that its row must not be removed before the
+    /// core answers. Only Sent: its copies in Sent stay when the rest of
+    /// the conversation is filed, and only a conversation with nothing but
+    /// sent mails leaves (`dossiers.md`, "Cibles proposées"). The app
+    /// cannot tell the two apart from a row, so it reads the list again.
+    nonisolated static func moveMayKeepRow(from role: String?) -> Bool {
+        role == "sent"
     }
 
     /// Moves the target threads to the folder with `role` (`d` = archive,
@@ -47,7 +56,10 @@ extension AppModel {
         // the cursor goes to the next remaining thread (Helix and Vim keep
         // the cursor's position rather than jumping to the top).
         let ids = Set(allowed.map(\.id))
-        if listFilter == nil {
+        let mayStay = allowed.contains { t in
+            AppModel.moveMayKeepRow(from: folders.first { $0.id == t.folderId }?.role)
+        }
+        if listFilter == nil && !mayStay {
             let index = threads.firstIndex { $0.id == selectedThreadId } ?? 0
             threads.removeAll { ids.contains($0.id) }
             marked.subtract(ids)
@@ -90,7 +102,7 @@ extension AppModel {
             } else if decision != nil || filed > 0 {
                 flash = Workflow.moveFlash(subjects: moved.map(\.subject), folder: Role.name(role), decision: decision, filed: filed)
             }
-            if listFilter != nil || refused { await reloadThreads(keepDepth: true) }
+            if listFilter != nil || refused || mayStay { await reloadThreads(keepDepth: true) }
             // The question is about that mail: the cursor goes back to it.
             if let s = suspectMove, threads.contains(where: { $0.id == s.threadId }) { selectedThreadId = s.threadId }
         }

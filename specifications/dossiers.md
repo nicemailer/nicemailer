@@ -75,7 +75,7 @@ Les commandes s'appliquent à la **conversation** : tous ses mails sont traités
 
 Une commande sur une conversation (déplacer, supprimer, marquer comme spam) s'applique à ses mails rangés dans Inbox, Todo, Waiting, Archive, Newsletter et Paperwork. Elle ne touche jamais :
 
-- **Sent et Drafts** : les mails envoyés restent dans Sent, où le téléphone les retrouve ; un brouillon en cours n'est pas déplacé. Inversement, supprimer un brouillon depuis Drafts (voir « Cibles proposées ») ne touche que les brouillons, pas la conversation à laquelle ils répondent ;
+- **Sent et Drafts** : les mails envoyés restent dans Sent, où le téléphone les retrouve, sauf ceux d'une conversation qui n'a rien d'autre à déplacer (voir « Cibles proposées ») ; un brouillon en cours n'est pas déplacé. Inversement, supprimer un brouillon depuis Drafts (voir « Cibles proposées ») ne touche que les brouillons, pas la conversation à laquelle ils répondent ;
 - **Deleted, Junk et Banned** : un mail que l'utilisateur a supprimé ou rejeté n'est pas ressuscité par une action sur le reste de la conversation ;
 - **Quarantine** : un mail en Quarantine attend une décision sur son expéditeur, que la commande ne prend pas à sa place.
 
@@ -124,7 +124,7 @@ La commande de déplacement propose, selon le dossier courant :
 | Travail et rangement | Todo, Waiting, Inbox, Archive, Newsletter, Paperwork, Junk, Banned, Deleted, sauf le dossier courant |
 | Junk, Banned | Mêmes cibles que les dossiers de travail et de rangement, pour rattraper une erreur |
 | Deleted | Mêmes cibles, pour restaurer un mail supprimé |
-| Sent | Aucune : Sent est alimenté par l'envoi |
+| Sent | Mêmes cibles que les dossiers de travail et de rangement (ajouté en novembre 2026) : une conversation listée dans Sent se range depuis Sent comme depuis son dossier. Ses mails de Sent y restent, seul le reste de la conversation est déplacé ; elle reste donc listée dans Sent. Une conversation qui n'a que des mails dans Sent (un nouveau mail, encore sans réponse) n'aurait rien à déplacer : ses mails de Sent partent alors dans la cible, ici et sur le serveur, et elle quitte Sent. Choix assumé : le téléphone ne voit plus ce mail dans Sent, et s'il est en Waiting, la réponse le ramène avec la conversation dans l'Inbox (« Nouveau mail dans une conversation en Todo ou en Waiting »), pas dans Sent. Une copie (le mail dans Sent et dans la cible) a été écartée : deux mails de même `Message-ID` dans la conversation, à dédoublonner partout |
 | Drafts | Deleted seulement (ajouté en novembre 2026) : Drafts est alimenté par la rédaction, mais un brouillon doit pouvoir être supprimé, y compris celui d'un autre logiciel (Spark, le téléphone) que NiceMailer n'ouvre pas encore. Seuls les mails de Drafts de la conversation partent dans Deleted, ici et sur le serveur. Un brouillon NiceMailer y perd sa ligne `draft` (son texte reste dans le mail de Deleted) ; c'est refusé tant qu'il est en cours d'envoi ou que sa copie vers le serveur n'est pas faite. Toute autre cible est refusée avec un message qui dit d'utiliser Suppr |
 
 **Deleted** est un dossier technique, mais il est proposé comme cible pour fluidifier la commande : déplacer un mail dans Deleted et le supprimer (touche Suppr) sont la même action.

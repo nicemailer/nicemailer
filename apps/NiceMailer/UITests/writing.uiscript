@@ -56,3 +56,21 @@ key ;
 key s
 expect folder = Sent
 expect selected_subject ~ Un nouveau sujet
+# A new mail, no answer yet, is put in Waiting from Sent (`dossiers.md`,
+# "Cibles proposées"): with nothing else in its conversation, the sent
+# mail itself goes to Waiting and leaves Sent. `z` brings it back.
+key m
+expect overlay ~ move
+key w
+expect flash ~ Waiting
+expect selected_subject !~ Un nouveau sujet
+key ;
+key w
+expect folder = Waiting
+expect selected_subject ~ Un nouveau sujet
+key ;
+key s
+expect folder = Sent
+expect selected_subject !~ Un nouveau sujet
+key z
+expect selected_subject ~ Un nouveau sujet
