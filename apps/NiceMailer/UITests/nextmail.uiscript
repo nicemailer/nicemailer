@@ -1,0 +1,25 @@
+# Where the cursor goes when a move takes the next mail too (`ui.md`;
+# `AppModel.successor`). Moving a mail to Banned files the other mails of
+# its sender (`dossiers.md`), here the one just below it. The cursor must
+# skip it and land on the mail after both, not go back to the top of the
+# list. The four mails come from fixtures/nextmail.mbox, imported for
+# this scenario only, newer than every other mail of the account.
+key @
+type fixture
+key ret
+key ;
+key m
+expect folder = All Mail
+expect selected_subject = Avant
+key j
+expect selected_subject = Promo une
+key m
+key b
+expect flash ~ next mails of promo@spam.example
+# "Promo deux" left with it: the cursor is on the mail after both.
+expect selected_subject = Après
+expect reader_subject = Après
+snap after-ban
+# Back to the previous mail with k: "Avant", the two promos are gone.
+key k
+expect selected_subject = Avant

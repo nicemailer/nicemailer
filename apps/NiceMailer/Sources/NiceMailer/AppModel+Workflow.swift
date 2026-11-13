@@ -142,8 +142,12 @@ extension AppModel {
     func confirmSuspect(trustTool: Bool) {
         guard let client = core, let s = suspectMove else { return }
         suspectMove = nil
+        let before = threads.map(\.id)
         threads.removeAll { $0.id == s.threadId }
-        if selectedThreadId == s.threadId { selectedThreadId = threads.first?.id }
+        // The next mail, as after any move (`AppModel.successor`).
+        if selectedThreadId == s.threadId {
+            selectedThreadId = AppModel.successor(of: s.threadId, previous: before, listed: threads.map(\.id))
+        }
         var params: [String: Any] = [
             "thread_id": s.threadId, "target": s.target, "from_folder_id": s.folderId, "confirm_suspect": true,
         ]

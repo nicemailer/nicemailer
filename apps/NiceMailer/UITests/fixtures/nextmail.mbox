@@ -1,0 +1,36 @@
+From x Fri Nov 13 12:00:00 2026
+From: Carol <carol@example.org>
+To: me@example.com
+Subject: Avant
+Message-ID: <nextmail-avant@example.org>
+Content-Type: text/plain; charset=utf-8
+
+Le mail au-dessus.
+
+From x Fri Nov 13 11:00:00 2026
+From: Promo <promo@spam.example>
+To: me@example.com
+Subject: Promo une
+Message-ID: <nextmail-promo1@spam.example>
+Content-Type: text/plain; charset=utf-8
+
+Premier mail du même expéditeur.
+
+From x Fri Nov 13 10:00:00 2026
+From: Promo <promo@spam.example>
+To: me@example.com
+Subject: Promo deux
+Message-ID: <nextmail-promo2@spam.example>
+Content-Type: text/plain; charset=utf-8
+
+Second mail du même expéditeur, juste en dessous.
+
+From x Fri Nov 13 09:00:00 2026
+From: Dan <dan@example.org>
+To: me@example.com
+Subject: Après
+Message-ID: <nextmail-apres@example.org>
+Content-Type: text/plain; charset=utf-8
+
+Le mail qui suit les deux promos.
+

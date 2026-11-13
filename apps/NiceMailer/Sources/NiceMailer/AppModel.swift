@@ -1006,20 +1006,25 @@ final class AppModel {
                                        open: openThread,
                                        listed: listFilter == nil ? Set(folderIds) : Set(folders.map(\.id)))
                 : (threads: items, sticky: nil)
+            // The list as the user last saw it: where a selection that left
+            // it goes depends on what followed it there.
+            let before = threads
             threads = kept.threads
             stickyThreadId = kept.sticky
             nextCursor = cursor
-            selectFirstIfNeeded()
+            selectFirstIfNeeded(previous: keepDepth ? before : [])
         } catch { report(error) }
     }
 
     /// `ui.md`: a list always has a selected mail, so the reading pane
     /// shows something. A selection no longer in the list (moved, or left
-    /// out by the attributes) goes to the first mail, or to nothing when the
-    /// list is empty, so the reading pane never shows a mail the list does
-    /// not. The one exception is a search result opened in an old part of
-    /// a folder, not in the pages loaded yet (`keepSelection`).
-    private func selectFirstIfNeeded() {
+    /// out by the attributes) goes to the mail that followed it in
+    /// `previous`, the list before the reload, and is still listed
+    /// (`successor`); with no such mail, to the first one, or to nothing
+    /// when the list is empty, so the reading pane never shows a mail the
+    /// list does not. The one exception is a search result opened in an old
+    /// part of a folder, not in the pages loaded yet (`keepSelection`).
+    private func selectFirstIfNeeded(previous: [ThreadSummary] = []) {
         marked = marked.filter { id in threads.contains { $0.id == id } }
         if let keep = keepSelection {
             keepSelection = nil
@@ -1031,8 +1036,31 @@ final class AppModel {
             // `selectedThreadId`).
             selectingAutomatically = true
             defer { selectingAutomatically = false }
-            selectedThreadId = threads.first?.id
+            selectedThreadId = Self.successor(of: selectedThreadId, previous: previous.map(\.id),
+                                              listed: threads.map(\.id))
         }
+    }
+
+    /// Where the cursor goes when the mail `selected` is no longer among
+    /// `listed`: the first mail after it in `previous` that is still listed,
+    /// else the nearest one before it, else the first mail of `listed` (nil
+    /// when it is empty). A pure function, tested alone.
+    ///
+    /// Why not simply "the row now at the same index": the mail the cursor
+    /// went to may leave the list in the same reload. Moving a mail to
+    /// Banned (or Newsletter, Paperwork) files every mail of its sender
+    /// (`dossiers.md`, "Cibles proposées"): the optimistic update put the
+    /// cursor on the next row, and when that row is from the same sender,
+    /// the core's reload removes it too. The cursor then fell back to the
+    /// top of the list; it now skips the mails gone with it, wherever the
+    /// loaded rows shifted to.
+    nonisolated static func successor(of selected: Int?, previous: [Int], listed: [Int]) -> Int? {
+        let ids = Set(listed)
+        if let selected, let index = previous.firstIndex(of: selected) {
+            if let after = previous[(index + 1)...].first(where: { ids.contains($0) }) { return after }
+            if let before = previous[..<index].last(where: { ids.contains($0) }) { return before }
+        }
+        return listed.first
     }
 
     /// Thread to keep selected after the next reload, even if it is not in
