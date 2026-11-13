@@ -64,7 +64,7 @@ pub struct GcReport {
 /// old.
 const TMP_GRACE: Duration = Duration::from_secs(24 * 3600);
 
-/// Rows checked per query during the sweep.
+/// Files checked per query during the sweep (one range of `raw_blob`).
 const SWEEP_CHUNK: usize = 500;
 
 /// Collects the raw files nothing references, then sweeps the orphans.
@@ -121,6 +121,10 @@ pub fn collect_garbage(store: &Mutex<Store>, raw: &RawStore, attachments: Option
             }
         }
     }
+    // Every final file, by name only: no `stat` of the 400,000 files of a
+    // large mailbox, most of which have their row. Sorted by hash, the
+    // order of the primary key of `raw_blob`, so that each chunk is one
+    // range of it.
     let mut files: Vec<(Hash, std::path::PathBuf)> = Vec::new();
     for dir in std::fs::read_dir(raw.root()).into_iter().flatten().flatten() {
         let name = dir.file_name();
@@ -131,23 +135,29 @@ pub fn collect_garbage(store: &Mutex<Store>, raw: &RawStore, attachments: Option
         for f in std::fs::read_dir(dir.path()).into_iter().flatten().flatten() {
             let fname = f.file_name();
             let Some(h) = fname.to_string_lossy().strip_suffix(".eml.zst").and_then(parse_hex) else { continue };
-            if old(&f.path(), grace) {
-                files.push((h, f.path()));
-            }
+            files.push((h, f.path()));
         }
     }
+    files.sort_unstable_by_key(|f| f.0);
     for chunk in files.chunks(SWEEP_CHUNK) {
+        let (Some(first), Some(last)) = (chunk.first(), chunk.last()) else { continue };
         let st = store.lock().unwrap();
         raw.with_pins_locked(|pinned| -> Result<()> {
+            // One query per chunk: the rows of its range of hashes, read in
+            // the order of the primary key. One `EXISTS` per file made
+            // 400,000 queries an hour on the store's lock.
+            let known: std::collections::HashSet<Vec<u8>> = st
+                .conn()
+                .prepare_cached("SELECT hash FROM raw_blob WHERE hash >= ?1 AND hash <= ?2")?
+                .query_map(params![&first.0[..], &last.0[..]], |r| r.get(0))?
+                .collect::<std::result::Result<_, _>>()?;
             for (hash, path) in chunk {
-                if pinned(hash) {
+                // Only the files without a row are looked at, and their age
+                // read: a crash leaves few of them.
+                if known.contains(&hash[..]) || pinned(hash) || !old(path, grace) {
                     continue;
                 }
-                let known: bool = st
-                    .conn()
-                    .prepare_cached("SELECT EXISTS (SELECT 1 FROM raw_blob WHERE hash = ?1)")?
-                    .query_row([&hash[..]], |r| r.get(0))?;
-                if !known && std::fs::remove_file(path).is_ok() {
+                if std::fs::remove_file(path).is_ok() {
                     report.orphans += 1;
                 }
             }

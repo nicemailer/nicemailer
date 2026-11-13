@@ -111,7 +111,7 @@ The race of the specification: an ingestion finds a file "already there" (the sa
 
 ### Sweep of orphans
 
-What a crash may leave: files of `.tmp/` older than a day, and final files without `raw_blob` row older than `raw.gc_grace_secs` (a day) and not pinned. The directories are listed without any lock; each candidate is checked under the locks.
+What a crash may leave: files of `.tmp/` older than a day, and final files without `raw_blob` row older than `raw.gc_grace_secs` (a day) and not pinned. The directories are listed without any lock, by file name only (no `stat`), and the files sorted by hash. They are then checked 500 at a time under the locks: one query reads the rows of `raw_blob` in the range of hashes of the 500 (its primary key is in that order), and only the files without a row have their age read and may be removed. On a mailbox of 400,000 raw files this is 800 queries an hour instead of one per file (400,000), and a `stat` of the few orphans instead of every file.
 
 ### A raw file corrupt or missing
 

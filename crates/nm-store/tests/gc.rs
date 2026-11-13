@@ -188,3 +188,26 @@ fn a_damaged_mail_without_server_cannot_be_fetched_again() {
     assert_eq!((r.refetch, r.lost, r.set_aside), (0, 1, false));
     assert_eq!(e.count("SELECT body_state FROM message"), 1, "kept as it was, with its error");
 }
+
+/// The sweep reads `raw_blob` one range of hashes at a time (`SWEEP_CHUNK`
+/// files): over several chunks, with orphans spread among files that have
+/// their row, only the old orphans go.
+#[test]
+fn the_sweep_finds_the_orphans_among_many_files() {
+    let e = env();
+    let kept: Vec<_> = (0..1200).map(|i| e.add(&format!("m{i}"), Some(i + 1)).1).collect();
+    // Orphans: their hashes fall anywhere among the others'.
+    let orphans: Vec<_> = (0..30).map(|i| e.raw.write(format!("Subject: orphan {i}\r\n\r\nx\r\n").as_bytes()).unwrap().hash).collect();
+    let old = std::time::SystemTime::now() - Duration::from_secs(2 * 86_400);
+    for h in &orphans[..20] {
+        let p = e.raw.path(h);
+        let f = std::fs::File::options().write(true).open(&p).or_else(|_| std::fs::File::open(&p)).unwrap();
+        f.set_modified(old).unwrap();
+    }
+    let r = collect_garbage(&e.store, &e.raw, None, Duration::from_secs(3600)).unwrap();
+    assert_eq!((r.blobs, r.orphans), (0, 20));
+    assert!(orphans[..20].iter().all(|h| !e.raw.path(h).exists()));
+    // Young: a write may be in progress.
+    assert!(orphans[20..].iter().all(|h| e.raw.path(h).exists()));
+    assert!(kept.iter().all(|h| e.raw.path(h).exists()));
+}
