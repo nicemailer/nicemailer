@@ -371,7 +371,8 @@ impl Store {
         // the store written into the SQL text (no user input).
         let set = folder_ids.iter().map(|f| f.to_string()).collect::<Vec<_>>().join(",");
         let tags = self.tag_ids(filter)?;
-        let (filter_sql, filter_values) = filter_clause(filter, &Target::folders(&set), &tags);
+        let unread = self.unread_plan(filter, Some(folder_ids), None)?;
+        let filter = filter_clause(filter, &Target::folders(&set), &tags, unread);
 
         let mut rows: Vec<(Scope, ListRow)> = Vec::new();
         for (scope, folders) in &groups {
@@ -379,7 +380,7 @@ impl Store {
                 Scope::Role(r) | Scope::Flag(r) => self.accounts_of(*r, folders)?,
                 _ => Accounts::All,
             };
-            let (sql, values) = list_query(*scope, &accounts, after, fetch, sort, &filter_sql, &filter_values);
+            let (sql, values) = list_query(*scope, &accounts, after, fetch, sort, &filter);
             rows.extend(self.list_rows(&sql, values)?.into_iter().map(|r| (*scope, r)));
         }
         // Several groups: merge on the sort key then the id, like the index
@@ -420,6 +421,34 @@ impl Store {
         } else {
             Ok(Accounts::Some(folders.keys().map(i64::to_string).collect::<Vec<_>>().join(",")))
         }
+    }
+
+    /// How the list finds its unread conversations (`UnreadPlan`), from
+    /// the unread mails of the listed folders (`folders`), or of every
+    /// folder of `account_id` (of every account when `None`) in Everything.
+    /// `folder.unread_count` is the sidebar's counter, kept up to date by
+    /// every change: one indexed read of a few hundred rows, and never
+    /// stale. Without the unread criterion, nothing is read.
+    ///
+    /// The counter includes the mails of Deleted, Junk and Banned, which
+    /// `thread.unread_count` leaves out: it only chooses the method, both
+    /// give the same rows.
+    fn unread_plan(&self, filter: &ThreadFilter, folders: Option<&[i64]>, account_id: Option<i64>) -> Result<UnreadPlan> {
+        if filter.seen != Some(false) {
+            return Ok(UnreadPlan::Walk);
+        }
+        let unread: i64 = match folders {
+            // Integers from the store written into the SQL text.
+            Some(ids) => {
+                let set = ids.iter().map(i64::to_string).collect::<Vec<_>>().join(",");
+                self.conn.query_row(&format!("SELECT coalesce(sum(unread_count), 0) FROM folder WHERE id IN ({set})"), [], |r| r.get(0))?
+            }
+            None => self.conn.prepare_cached(
+                "SELECT coalesce(sum(unread_count), 0) FROM folder WHERE ?1 IS NULL OR account_id = ?1",
+            )?
+            .query_row([account_id], |r| r.get(0))?,
+        };
+        Ok(UnreadPlan::for_count(unread))
     }
 
     /// Runs a list query and reads its rows.
@@ -501,8 +530,9 @@ impl Store {
         filter: &ThreadFilter,
     ) -> Result<(Vec<ThreadSummary>, Option<String>)> {
         let tags = self.tag_ids(filter)?;
-        let (filter_sql, filter_values) = filter_clause(filter, &Target::everything(), &tags);
-        self.list_virtual(Scope::Everything, account_id, cursor, limit, sort, &filter_sql, &filter_values)
+        let unread = self.unread_plan(filter, None, account_id)?;
+        let filter = filter_clause(filter, &Target::everything(), &tags, unread);
+        self.list_virtual(Scope::Everything, account_id, cursor, limit, sort, &filter)
     }
 
     /// The virtual folder "All Mail" (`ui.md`, "Sélecteur d'attributs"):
@@ -578,12 +608,12 @@ impl Store {
         // text (no user input).
         let set = folders.iter().map(i64::to_string).collect::<Vec<_>>().join(",");
         let tags = self.tag_ids(filter)?;
-        let (filter_sql, filter_values) = filter_clause(filter, &Target::folders(&set), &tags);
-        self.list_virtual(scope, account_id, cursor, limit, sort, &filter_sql, &filter_values)
+        let unread = self.unread_plan(filter, Some(folders), None)?;
+        let filter = filter_clause(filter, &Target::folders(&set), &tags, unread);
+        self.list_virtual(scope, account_id, cursor, limit, sort, &filter)
     }
 
     /// A page of Everything or All Mail: one query, each row in its folder.
-    #[allow(clippy::too_many_arguments)]
     fn list_virtual(
         &self,
         scope: Scope,
@@ -591,12 +621,11 @@ impl Store {
         cursor: Option<&str>,
         limit: u32,
         sort: ThreadSort,
-        filter_sql: &str,
-        filter_values: &[Value],
+        filter: &FilterSql,
     ) -> Result<(Vec<ThreadSummary>, Option<String>)> {
         let after = cursor.map(parse_cursor).transpose()?;
         let accounts = account_id.map(Accounts::One).unwrap_or(Accounts::All);
-        let (sql, values) = list_query(scope, &accounts, after, i64::from(limit) + 1, sort, filter_sql, filter_values);
+        let (sql, values) = list_query(scope, &accounts, after, i64::from(limit) + 1, sort, filter);
         let rows = self.list_rows(&sql, values)?.into_iter().map(|r| (scope, r)).collect();
         self.page(rows, limit, sort, |_, _| Ok(None))
     }
@@ -912,7 +941,7 @@ impl Store {
 
 /// The list query of a scope and its parameters: the threads of `scope`
 /// and `accounts`, newest first on the sort key, after the cursor, `fetch`
-/// rows at most, with the attribute conditions `filter_sql`.
+/// rows at most, with the attribute conditions `filter`.
 ///
 /// One statement whatever the scope: the table `thread` alone, walked on
 /// one of its indexes (`schema.sql`, version 9). The plan tests below check
@@ -923,8 +952,7 @@ fn list_query(
     after: Option<(i64, i64)>,
     fetch: i64,
     sort: ThreadSort,
-    filter_sql: &str,
-    filter_values: &[Value],
+    filter: &FilterSql,
 ) -> (String, Vec<Value>) {
     // The sort column: a constant of ours, never client input.
     let key = match sort {
@@ -935,7 +963,15 @@ fn list_query(
     // to read the three ranges of `idx_thread_role_received` and sort them
     // (the plan tests caught it). Work holds what is still to deal with, a
     // small set: walking its index is right even with a rare criterion.
-    let indexed = if scope == Scope::Work {
+    //
+    // The set of the unread threads (`UnreadPlan::Set`): no index of
+    // `thread` at all (`NOT INDEXED`), only its primary key, so the threads
+    // of the set are read one by one then sorted. Without statistics (a new
+    // database, before `ANALYZE`) SQLite walks the date index instead and
+    // only tests each row against the set: the whole mailbox again.
+    let indexed = if filter.by_set {
+        " NOT INDEXED".to_string()
+    } else if scope == Scope::Work {
         let account = if matches!(accounts, Accounts::One(_)) { "_account" } else { "" };
         let sort_name = if sort == ThreadSort::Modified { "modified" } else { "received" };
         format!(" INDEXED BY idx_thread_work{account}_{sort_name}")
@@ -963,7 +999,7 @@ fn list_query(
         // of all accounts is walked, the rows of the others skipped.
         Accounts::Some(ids) => sql.push_str(&format!(" AND +t.account_id IN ({ids})")),
     }
-    sql.push_str(filter_sql);
+    sql.push_str(&filter.sql);
     // Two shapes rather than one with `?3 IS NULL OR ...`: such a condition
     // would prevent SQLite from using the index for the row-value
     // comparison, and every page would scan from the top. `(a, b) < (x, y)`
@@ -974,9 +1010,9 @@ fn list_query(
         values.extend([Value::Integer(d), Value::Integer(id)]);
     }
     sql.push_str(&format!(" ORDER BY {key} DESC, t.id DESC LIMIT ?2"));
-    if !filter_values.is_empty() {
+    if !filter.values.is_empty() {
         values.resize(9, Value::Null);
-        values.extend(filter_values.iter().cloned());
+        values.extend(filter.values.iter().cloned());
     }
     (sql, values)
 }
@@ -1089,6 +1125,53 @@ fn fts_phrase(word: &str, columns: &str) -> String {
     format!("{columns}\"{word}\"*")
 }
 
+/// How the criterion "unread" finds its conversations.
+///
+/// A list walks its date index and stops after a page. A test on
+/// `thread.unread_count` during that walk costs the rows walked before a
+/// page is found: nothing when unread mail is common, the whole mailbox
+/// when it is rare, and the most when there is none at all (the walk goes
+/// to the end). The set of the unread conversations, read from the partial
+/// index `idx_message_unread` (only the unread mails), costs the opposite:
+/// nothing when it is small, a sort of every unread conversation when it
+/// is large.
+///
+/// Measured on a real mailbox of 400,000 mails and 296,000 conversations
+/// (one page of 50, Everything and the archives alike):
+///
+/// | unread mails | walk     | set     |
+/// | ------------ | -------- | ------- |
+/// | 0            | 64 ms    | 0.0 ms  |
+/// | 100          | 32 ms    | 0.1 ms  |
+/// | 1,000        | 4 ms     | 0.7 ms  |
+/// | 5,000        | 0.8 ms   | 7–13 ms |
+/// | 50,000       | 0.1 ms   | 74 ms   |
+/// | 150,000      | 0.0 ms   | 145 ms  |
+///
+/// Hence the switch at [`UNREAD_SET_MAX`], decided for each query on the
+/// unread mails of the listed folders, not of the mailbox: 100 unread mails
+/// all in the Inbox leave none in the archives, whose walk would go to the
+/// end. Both plans give the same rows: the set only narrows the threads,
+/// and `t.unread_count > 0` still decides.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum UnreadPlan {
+    /// Test `t.unread_count` during the walk of the list's index.
+    Walk,
+    /// Read the set of the unread conversations first.
+    Set,
+}
+
+/// The most unread mails in the listed folders for which the list reads
+/// the set of their conversations (`UnreadPlan`). Both plans cost a few
+/// milliseconds there.
+const UNREAD_SET_MAX: i64 = 2_000;
+
+impl UnreadPlan {
+    fn for_count(unread_mails: i64) -> UnreadPlan {
+        if unread_mails <= UNREAD_SET_MAX { UnreadPlan::Set } else { UnreadPlan::Walk }
+    }
+}
+
 /// What the attribute filters apply to: the folders whose messages count.
 ///
 /// Every list reads `thread t`; the column names are constants of ours
@@ -1188,6 +1271,18 @@ fn address_condition(value: &str, bind: &mut dyn FnMut(Value) -> String) -> Stri
     }
 }
 
+/// The attribute conditions of a list (`filter_clause`).
+#[derive(Debug, Default)]
+struct FilterSql {
+    /// Conditions, each starting with " AND ".
+    sql: String,
+    /// Their values, numbered from `?10`.
+    values: Vec<Value>,
+    /// The unread criterion reads the set of the unread threads first
+    /// (`UnreadPlan::Set`): `list_query` then reads `thread` by primary key.
+    by_set: bool,
+}
+
 /// SQL conditions (each starting with " AND ") for the attribute filters,
 /// and their values, numbered from `?10` (the first nine numbers are kept
 /// for the fixed parameters of the list query).
@@ -1198,13 +1293,21 @@ fn address_condition(value: &str, bind: &mut dyn FnMut(Value) -> String) -> Stri
 /// has a page of matching rows: with a rare criterion (a sender seen in 2009
 /// only, no flagged mail at all), a per-row subquery ran for every thread of
 /// the mailbox, several seconds on 200 000 threads.
-fn filter_clause(f: &ThreadFilter, target: &Target, tags: &[i64]) -> (String, Vec<Value>) {
+fn filter_clause(f: &ThreadFilter, target: &Target, tags: &[i64], unread: UnreadPlan) -> FilterSql {
+    let by_set = f.seen == Some(false) && unread == UnreadPlan::Set;
     let mut sql = String::new();
     let mut values: Vec<Value> = Vec::new();
     let thread = "t.id";
     // " AND <thread> IN (<set>)", or NOT IN for `false` / an exclusion.
     let member = |yes: bool, set: &str| format!(" AND {thread} {}IN ({set})", if yes { "" } else { "NOT " });
+    // Unread: `thread.unread_count` decides (it leaves out the mails of
+    // Deleted, Junk and Banned), narrowed first by the set of the threads
+    // with an unread mail when they are few (`UnreadPlan`). Read: the common
+    // case, a test during the walk stops early.
     if let Some(seen) = f.seen {
+        if by_set {
+            sql.push_str(&member(true, "SELECT thread_id FROM message WHERE is_seen = 0 AND thread_id IS NOT NULL"));
+        }
         sql.push_str(if seen { " AND t.unread_count = 0" } else { " AND t.unread_count > 0" });
     }
     // Flag and "answered" look at the whole thread, attachments at the
@@ -1343,7 +1446,7 @@ fn filter_clause(f: &ThreadFilter, target: &Target, tags: &[i64]) -> (String, Ve
         );
         sql.push_str(&member(true, &set));
     }
-    (sql, values)
+    FilterSql { sql, values, by_set }
 }
 
 /// The view of a `message_unsubscribe` row (all `None` when the message has
@@ -1441,7 +1544,7 @@ mod plan_tests {
     /// of `thread`, walked newest first and stopped after a page, the
     /// address table (a LIKE needs to read it), the full-text index (it
     /// answers a MATCH itself) and the partial index of the messages with
-    /// attachments. A correlated subquery (one run per row of the list) is
+    /// attachments, and that of the unread mails. A correlated subquery (one run per row of the list) is
     /// never allowed, nor reading a whole folder through `idx_message_list`
     /// (a range of dates in it, for Mail date…, is fine).
     fn check(what: &str, steps: &[String]) {
@@ -1453,7 +1556,10 @@ mod plan_tests {
             );
             if step.starts_with("SCAN ") {
                 let allowed = ["SCAN t USING INDEX idx_thread_", "SCAN address", "SCAN message_fts VIRTUAL TABLE",
-                    "SCAN m USING COVERING INDEX idx_message_thread_attachments", "SCAN CONSTANT ROW"];
+                    "SCAN m USING COVERING INDEX idx_message_thread_attachments", "SCAN CONSTANT ROW",
+                    // The unread mails only, read when they are few
+                    // (`UnreadPlan::Set`).
+                    "SCAN message USING INDEX idx_message_unread"];
                 assert!(allowed.iter().any(|a| step.starts_with(a)), "{what}: full scan `{step}`: {steps:?}");
             }
         }
@@ -1495,14 +1601,14 @@ mod plan_tests {
         let accounts = [Accounts::All, Accounts::One(1), Accounts::Some("1,2".into())];
         for (scope, _) in scopes() {
             for target in [Target::folders("1,2,3"), Target::everything()] {
-                for (name, f) in filters() {
-                    let (filter_sql, filter_values) = filter_clause(&f, &target, &[1, 2]);
+                for ((name, f), unread) in filters().into_iter().flat_map(|x| [(x.clone(), UnreadPlan::Walk), (x, UnreadPlan::Set)]) {
+                    let filter = filter_clause(&f, &target, &[1, 2], unread);
                     for a in &accounts {
                         for sort in [ThreadSort::Received, ThreadSort::Modified] {
                             for after in [None, Some((1, 1))] {
-                                let (sql, values) = list_query(scope, a, after, 61, sort, &filter_sql, &filter_values);
+                                let (sql, values) = list_query(scope, a, after, 61, sort, &filter);
                                 let steps = plan(&store, &sql, &values);
-                                let what = format!("{scope:?} {name} {a:?} {sort:?} cursor={}", after.is_some());
+                                let what = format!("{scope:?} {name} {unread:?} {a:?} {sort:?} cursor={}", after.is_some());
                                 check(&what, &steps);
                                 assert!(
                                     steps[0].contains("t USING INDEX idx_thread_")
@@ -1528,13 +1634,109 @@ mod plan_tests {
             for (a, index) in accounts.iter().zip(indexes) {
                 for sort in [ThreadSort::Received, ThreadSort::Modified] {
                     let index = if sort == ThreadSort::Modified { index.replace("_received", "_modified") } else { index.to_string() };
-                    let (sql, values) = list_query(scope, a, None, 61, sort, "", &[]);
+                    let (sql, values) = list_query(scope, a, None, 61, sort, &FilterSql::default());
                     let steps = plan(&store, &sql, &values);
                     assert_eq!(steps.len(), 1, "{scope:?} {a:?} {sort:?}: {steps:?}");
                     assert!(steps[0].contains(&format!("USING INDEX {index}")), "{scope:?} {a:?} {sort:?}: {steps:?}");
                 }
             }
         }
+    }
+
+    /// With few unread mails (`UnreadPlan::Set`), every list reads the set
+    /// of the unread threads first, then those threads by primary key,
+    /// whatever the scope, sort or cursor: never a walk of a date index,
+    /// which would go to the end of the mailbox when nothing is unread.
+    #[test]
+    fn few_unread_mails_are_read_from_their_set() {
+        let store = Store::open_in_memory().unwrap();
+        let f = ThreadFilter { seen: Some(false), ..Default::default() };
+        for (scope, _) in scopes() {
+            for a in [Accounts::All, Accounts::One(1), Accounts::Some("1,2".into())] {
+                for sort in [ThreadSort::Received, ThreadSort::Modified] {
+                    for after in [None, Some((1, 1))] {
+                        let filter = filter_clause(&f, &Target::everything(), &[], UnreadPlan::Set);
+                        assert!(filter.by_set);
+                        let (sql, values) = list_query(scope, &a, after, 61, sort, &filter);
+                        let steps = plan(&store, &sql, &values);
+                        let what = format!("{scope:?} {a:?} {sort:?} cursor={}", after.is_some());
+                        assert_eq!(steps[0], "SEARCH t USING INTEGER PRIMARY KEY (rowid=?)", "{what}: {steps:?}");
+                        assert!(steps.iter().any(|s| s.contains("idx_message_unread")), "{what}: {steps:?}");
+                    }
+                }
+            }
+        }
+        // Another criterion than unread keeps the walk: the set is only for
+        // "unread".
+        let read = ThreadFilter { seen: Some(true), ..Default::default() };
+        assert!(!filter_clause(&read, &Target::everything(), &[], UnreadPlan::Set).by_set);
+        assert!(!filter_clause(&ThreadFilter::default(), &Target::everything(), &[], UnreadPlan::Set).by_set);
+    }
+
+    /// The switch follows the unread mails of the listed folders.
+    #[test]
+    fn the_plan_switches_at_the_threshold() {
+        assert_eq!(UnreadPlan::for_count(0), UnreadPlan::Set);
+        assert_eq!(UnreadPlan::for_count(UNREAD_SET_MAX), UnreadPlan::Set);
+        assert_eq!(UnreadPlan::for_count(UNREAD_SET_MAX + 1), UnreadPlan::Walk);
+    }
+
+    /// The decision reads the unread counters of the listed folders only,
+    /// or of the folders of the account in Everything; without the unread
+    /// criterion it is always the walk.
+    #[test]
+    fn the_plan_reads_the_counters_of_the_listed_folders() {
+        let mut store = Store::open_in_memory().unwrap();
+        crate::seed::seed(&mut store, &crate::seed::SeedOptions { threads: 50, seed: 3, now: 1_790_000_000 }).unwrap();
+        let id = |role: &str| -> i64 {
+            store.conn().query_row("SELECT id FROM folder WHERE role = ?1", [role], |r| r.get(0)).unwrap()
+        };
+        let (inbox, archive) = (id("inbox"), id("archive"));
+        let unread = ThreadFilter { seen: Some(false), ..Default::default() };
+        // Many unread mails in the Inbox, none in the archives.
+        store.conn().execute("UPDATE folder SET unread_count = 0", []).unwrap();
+        store.conn().execute("UPDATE folder SET unread_count = 5000 WHERE id = ?1", [inbox]).unwrap();
+        assert_eq!(store.unread_plan(&unread, Some(&[inbox]), None).unwrap(), UnreadPlan::Walk);
+        assert_eq!(store.unread_plan(&unread, Some(&[archive]), None).unwrap(), UnreadPlan::Set);
+        assert_eq!(store.unread_plan(&unread, None, None).unwrap(), UnreadPlan::Walk);
+        assert_eq!(store.unread_plan(&unread, None, Some(999)).unwrap(), UnreadPlan::Set);
+        // Another criterion: nothing to choose.
+        assert_eq!(store.unread_plan(&ThreadFilter::default(), Some(&[archive]), None).unwrap(), UnreadPlan::Walk);
+    }
+
+    /// Both plans give the same rows, page after page, in every scope: the
+    /// set only narrows the threads, `t.unread_count` still decides (an
+    /// unread mail in Deleted does not make a live thread unread).
+    #[test]
+    fn both_plans_give_the_same_pages() {
+        let mut store = Store::open_in_memory().unwrap();
+        crate::seed::seed(&mut store, &crate::seed::SeedOptions { threads: 400, seed: 7, now: 1_790_000_000 }).unwrap();
+        // An unread mail in Deleted, in a thread whose other mails are read.
+        store.conn().execute_batch(
+            "UPDATE message SET is_seen = 0
+              WHERE id = (SELECT m.id FROM message m JOIN folder f ON f.id = m.folder_id
+                           WHERE f.role = 'deleted' ORDER BY m.id LIMIT 1)",
+        ).unwrap();
+        let f = ThreadFilter { seen: Some(false), ..Default::default() };
+        let pages = |scope: Scope, unread: UnreadPlan| -> Vec<i64> {
+            let filter = filter_clause(&f, &Target::everything(), &[], unread);
+            let mut out = Vec::new();
+            let mut after = None;
+            loop {
+                let (sql, values) = list_query(scope, &Accounts::All, after, 8, ThreadSort::Received, &filter);
+                let rows = store.list_rows(&sql, values).unwrap();
+                out.extend(rows.iter().map(|r| r.0));
+                match rows.last() {
+                    Some(r) if rows.len() == 8 => after = Some((r.2, r.0)),
+                    _ => return out,
+                }
+            }
+        };
+        for (scope, _) in scopes() {
+            let walk = pages(scope, UnreadPlan::Walk);
+            assert_eq!(walk, pages(scope, UnreadPlan::Set), "{scope:?}");
+        }
+        assert!(!pages(Scope::Everything, UnreadPlan::Walk).is_empty());
     }
 
     /// Mail date… reads the mails of its interval through a date index,
@@ -1544,8 +1746,8 @@ mod plan_tests {
         let store = Store::open_in_memory().unwrap();
         let f = ThreadFilter { mail_after: Some(1), mail_before: Some(2), ..Default::default() };
         for target in [Target::folders("1"), Target::everything()] {
-            let (filter_sql, filter_values) = filter_clause(&f, &target, &[]);
-            let (sql, values) = list_query(Scope::Everything, &Accounts::All, None, 61, ThreadSort::Received, &filter_sql, &filter_values);
+            let filter = filter_clause(&f, &target, &[], UnreadPlan::Walk);
+            let (sql, values) = list_query(Scope::Everything, &Accounts::All, None, 61, ThreadSort::Received, &filter);
             let steps = plan(&store, &sql, &values);
             check("mail date", &steps);
             assert!(steps.iter().any(|s| s.contains("date_received>?")), "{steps:?}");
