@@ -48,12 +48,18 @@ Le 2 nov. 2026 a 11:00, me@x.org a ecrit :
 ";
 
 fn thread() -> Vec<nm_api::MessageView> {
+    thread_of(MBOX)
+}
+
+/// The messages of the conversation imported from `mbox`, as `get_thread`
+/// returns them, for the user `me@x.org`.
+fn thread_of(mbox: &str) -> Vec<nm_api::MessageView> {
     let dir = tempfile::tempdir().unwrap();
     let raw = RawStore::open(dir.path()).unwrap();
     let path = dir.path().join("t.mbox");
     // The attribution lines use "a ecrit" without accent in the fixture, so
     // add the accented form expected by the rules.
-    std::fs::write(&path, MBOX.replace("a ecrit :", "a écrit :")).unwrap();
+    std::fs::write(&path, mbox.replace("a ecrit :", "a écrit :")).unwrap();
     let store = Mutex::new(Store::open_in_memory().unwrap());
     let opts = ImportOptions {
         path,
@@ -103,4 +109,33 @@ fn recipients_are_shown_only_when_they_change() {
     assert!(!t[0].show_recipients);
     assert!(t[1].show_recipients);
     assert!(t[2].show_recipients);
+}
+
+#[test]
+fn a_mail_alone_always_shows_its_recipients() {
+    // A single mail to the user alone: nothing to compare with, the
+    // recipients are shown all the same (`ui.md`, "En-têtes allégés").
+    let t = thread_of(
+        "From a Mon Nov  2 10:00:00 2026
+From: Alice <alice@x.org>
+To: me@x.org
+Subject: Seul
+Message-ID: <solo@x>
+
+Un mail seul.
+",
+    );
+    assert_eq!(t.len(), 1);
+    assert!(t[0].show_recipients);
+    // Without any recipient (a Bcc only), there is nothing to show.
+    let t = thread_of(
+        "From a Mon Nov  2 10:00:00 2026
+From: Alice <alice@x.org>
+Subject: Sans destinataire
+Message-ID: <none@x>
+
+Personne en To ni en Cc.
+",
+    );
+    assert!(!t[0].show_recipients);
 }

@@ -1172,6 +1172,9 @@ fn present_thread(messages: &mut [MessageView], own: &BTreeSet<String>) {
         messages.iter().map(|m| (m.from_addr.as_deref(), m.body_text.as_deref().unwrap_or(""))).collect();
     let cleaned = crate::clean::clean_thread(&inputs);
     let last = messages.len().saturating_sub(1);
+    // A mail alone in its conversation has no previous message to compare
+    // with: its recipients are always shown (`ui.md`, "En-têtes allégés").
+    let single = messages.len() == 1;
     let mut previous: Option<Vec<String>> = None;
     for (i, (m, c)) in messages.iter_mut().zip(cleaned).enumerate() {
         if m.body_text.is_some() {
@@ -1202,7 +1205,9 @@ fn present_thread(messages: &mut [MessageView], own: &BTreeSet<String>) {
         m.show_recipients = !recipients.is_empty()
             && (mine
                 || match &previous {
-                    None => recipients.len() > 1,
+                    // The first message of a conversation: shown when it
+                    // went to several people, or when it is the only one.
+                    None => single || recipients.len() > 1,
                     Some(p) => *p != recipients,
                 });
         previous = Some(recipients);

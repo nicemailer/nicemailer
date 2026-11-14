@@ -1,7 +1,8 @@
 # The header of a mail (`ui.md`, "Expéditeur"): the same in text and in
 # HTML, "name · date · address" and the recipients on the next line, when
-# worth showing (here a first mail to three people). The mail, text and
-# HTML with a file, comes from fixtures/header.mbox. Checked when opened
+# worth showing (here a first mail to three people, and a mail alone to
+# me only). The mails, one text and HTML with a file, come from
+# fixtures/header.mbox. Checked when opened
 # in either format, after going back and forth, and through a deep link.
 key @
 type fixture
@@ -28,7 +29,14 @@ expect reader_offset = 0
 # The format is remembered for the sender: another mail and back opens it
 # in HTML, with the whole header.
 click format:html
+# A mail alone in its conversation, to me only: its recipient is shown
+# all the same, there being no previous mail to compare with.
 key j
+expect selected_subject = Rendez-vous de lundi
+expect body_format = text
+expect reader_text ~ Jeanne Blanc
+expect reader_text ~ To: me@example.com
+snap header-single
 key k
 expect selected_subject = Constat du 7 novembre
 expect body_format = html

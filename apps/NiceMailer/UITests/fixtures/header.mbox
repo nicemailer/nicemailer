@@ -93,3 +93,13 @@ ZmFrZSBkb2N4IFBLIGZha2UgZG9jeCA=
 
 --m1--
 
+From x Fri Nov 13 11:00:00 2026
+From: Jeanne Blanc <jeanne@cabinet-blanc.example>
+To: me@example.com
+Subject: Rendez-vous de lundi
+Message-ID: <header-seul@cabinet-blanc.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+Bonjour, je confirme le rendez-vous de lundi à 9 h.
+
