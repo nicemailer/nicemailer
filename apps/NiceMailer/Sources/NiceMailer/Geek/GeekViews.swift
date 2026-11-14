@@ -621,6 +621,12 @@ struct RowLayout: Equatable {
     /// more, and the reader shows the account anyway.
     var showsAccount: Bool { subjectWidth(folderWidth: folder(withAccount: true)) >= 30 * char }
 
+    /// The AI's suggested target is cut short ("→ Newsl…") when the subject
+    /// would keep fewer than 40 characters beside its full name: in two
+    /// columns, the subject says more than the target, which the status
+    /// bar names in full.
+    var narrowSuggestion: Bool { subjectWidth(folderWidth: 12 * char) < 40 * char }
+
     /// `scale`: the text size factor (`TextSize.scale`).
     init(width: CGFloat, scale: CGFloat? = nil) {
         self.width = width
@@ -776,7 +782,8 @@ private struct GeekThreadRow: View {
             // The AI's suggestion, before the count: the target's name in
             // the accent colour, after an arrow, as the move it proposes.
             if let s = suggestion {
-                Text("→ " + Role.name(s.target)).foregroundStyle(Palette.accentText)
+                Text(AI.suggestionTag(Role.name(s.target), narrow: layout.narrowSuggestion))
+                    .foregroundStyle(Palette.accentText)
                     .fixedSize()
                     .accessibilityLabel(L("AI suggests %@", Role.name(s.target)))
             }

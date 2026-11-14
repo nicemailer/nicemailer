@@ -307,6 +307,16 @@ enum AI {
         s.total > 0 ? L("%@: %lld of %lld sorted · esc stop", s.title, s.done, s.total) : L("%@: sorting… · esc stop", s.title)
     }
 
+    /// The target the AI suggests, on its row: "→ Newsletter", cut to its
+    /// first letters in a narrow list ("→ Newsl…"), where the full name
+    /// took the room of the subject. A name of `short` letters or fewer
+    /// stays whole ("Inbox", "Junk", "Banned"); the status bar gives the
+    /// full name with the reason.
+    static func suggestionTag(_ name: String, narrow: Bool, short: Int = 6) -> String {
+        guard narrow, name.count > short else { return "→ " + name }
+        return "→ " + name.prefix(short - 1) + "…"
+    }
+
     /// The status bar for the conversation under the cursor, when the AI
     /// suggested a target for it: the target, then why.
     static func suggestionLine(_ s: AISuggestion) -> String {

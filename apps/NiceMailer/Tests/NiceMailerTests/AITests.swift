@@ -91,6 +91,17 @@ struct AIRulesTests {
         #expect(thread([], nil, nil) == nil)
     }
 
+    @Test @MainActor func theSuggestedTargetIsCutShortInANarrowList() {
+        #expect(AI.suggestionTag("Newsletter", narrow: false) == "→ Newsletter")
+        #expect(AI.suggestionTag("Newsletter", narrow: true) == "→ Newsl…")
+        #expect(AI.suggestionTag("Paperwork", narrow: true) == "→ Paper…")
+        #expect(AI.suggestionTag("Banned", narrow: true) == "→ Banned", "six letters stay whole")
+        #expect(AI.suggestionTag("Inbox", narrow: true) == "→ Inbox")
+        // Two columns are narrow, a wide list alone is not.
+        #expect(RowLayout(width: 640, scale: 1).narrowSuggestion)
+        #expect(!RowLayout(width: 1800, scale: 1).narrowSuggestion)
+    }
+
     @Test func theStatusBarSaysTheSortAndTheSuggestion() {
         #expect(AI.sortLine(AISort(runId: 1, title: "Sort", done: 20, total: 47)) == L("%@: %lld of %lld sorted · esc stop", "Sort", 20, 47))
         #expect(AI.sortLine(AISort(runId: 0, title: "Sort")) == L("%@: sorting… · esc stop", "Sort"))
