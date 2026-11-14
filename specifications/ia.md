@@ -1,6 +1,6 @@
 # NiceMailer : assistance par IA
 
-Statut : proposé (novembre 2026), à valider. Rien n'est réalisé. Complète `architecture.md` (sections 2 et 9), `configuration.md`, `schema.sql`, `tracabilite.md`, `reponse.md` (« Corps et citation ») et `dossiers.md` (« Cibles proposées »).
+Statut : proposé (novembre 2026), à valider. Phase 0 faite (section 3) ; rien d'autre n'est réalisé. Complète `architecture.md` (sections 2 et 9), `configuration.md`, `schema.sql`, `tracabilite.md`, `reponse.md` (« Corps et citation ») et `dossiers.md` (« Cibles proposées »).
 
 ## 1. Objet
 
@@ -24,17 +24,62 @@ Le noyau définit un trait `AiProvider` (nouvelle crate `nm-ai`) : il reçoit un
 
 Le noyau lance le binaire `claude` (Claude Code) installé et connecté par l'utilisateur, en mode non interactif (`claude -p`). C'est la **seule voie qui utilise un abonnement Pro ou Max** : Anthropic n'autorise pas une application tierce à proposer la connexion Claude.ai, ni à stocker ou relayer les identifiants d'un abonnement ; un utilisateur peut en revanche lancer le binaire `claude` non modifié avec son propre abonnement (`code.claude.com/docs/en/legal-and-compliance`).
 
-- **NiceMailer ne stocke aucune connexion.** Claude Code garde ses identifiants dans son propre trousseau. `config.toml` ne contient que le chemin du binaire (`ai.claude_path`, vide : cherché dans le `PATH` de l'utilisateur, puis `~/.claude/local/claude`, `/opt/homebrew/bin/claude`, `/usr/local/bin/claude`). Le noyau, lancé par launchd, n'a pas le `PATH` du shell : la recherche est faite explicitement.
+- **NiceMailer ne stocke aucune connexion.** Claude Code garde ses identifiants dans son propre trousseau. `config.toml` ne contient que le chemin du binaire (`ai.claude_path`, vide : cherché dans `~/.local/bin/claude` (installation par défaut, un lien vers `~/.local/share/claude/versions/<version>`), `~/.claude/local/claude`, `/opt/homebrew/bin/claude`, `/usr/local/bin/claude`). Le noyau, lancé par launchd, n'a pas le `PATH` du shell : la recherche est faite explicitement. Vérifié en phase 0 : avec l'environnement minimal d'un LaunchAgent (`HOME`, `USER`, `PATH=/usr/bin:/bin:/usr/sbin:/sbin`), le binaire trouve la connexion de l'abonnement.
 - **Statut assumé : usage personnel.** Ce mode sert l'utilisateur qui a déjà Claude Code ; l'app le présente comme tel. Une distribution grand public ne doit pas en faire le mode principal : si Anthropic restreint cet usage ou si Claude Code change de comportement (le mode `--bare`, qui ne lit pas l'abonnement, est annoncé comme futur défaut de `-p`), le mode `anthropic-api` reste.
-- **Exigences de l'appel**, à valider en phase 0 (section 14) avant toute autre implémentation :
-  - **aucun outil** : ni Bash, ni lecture ou écriture de fichiers, ni web, ni serveur MCP. Un mail de Quarantine lu par un agent qui peut lancer des commandes serait une faille. **Sécurité maximale : si les outils ne peuvent pas être coupés de façon vérifiable, le fournisseur `claude-code` est bloqué**, pour tous les prompts, et seul `anthropic-api` reste ;
-  - **vérifié à chaque appel, pas seulement en phase 0** : une mise à jour de Claude Code peut changer ses options. Avant d'envoyer le moindre contenu, le noyau lit ce que le processus annonce de lui-même au démarrage (en `stream-json`, l'événement d'initialisation liste les outils et les serveurs MCP chargés ; mécanisme à confirmer en phase 0). Si la liste n'est pas vide, ou si l'annonce manque ou est illisible, le processus est tué sans avoir reçu le mail, l'exécution échoue avec `ai_provider_unsafe`, et `ai_status` signale le fournisseur comme bloqué. Le contenu n'est donc envoyé qu'à un processus qui a prouvé n'avoir aucun outil ;
-  - aucune configuration de projet : dossier de travail vide et temporaire, pas de `CLAUDE.md` ni de réglages lus, pas de session conservée ;
-  - le prompt système de NiceMailer remplace celui de Claude Code ;
-  - sortie en flux (`--output-format stream-json`) ; sortie structurée par `--json-schema` pour les sorties à schéma ;
-  - délai maximal (`ai.timeout_secs`) ; à l'annulation ou au délai, le processus et ses enfants sont tués.
-- **Coût.** Le `total_cost_usd` que renvoie Claude Code est un équivalent au tarif de l'API : il n'est pas facturé sous abonnement. Il est enregistré avec `billed = 0` (section 9).
-- **Erreurs reconnues** : binaire introuvable, non connecté, limite d'usage de l'abonnement atteinte, délai dépassé, sortie illisible. Chacune a son code d'erreur typé et un message qui dit quoi faire (« Lancez `claude` dans un terminal pour vous connecter »).
+
+#### L'appel
+
+Une exécution est un processus `claude`, lancé dans son propre groupe de processus, dans un dossier de travail vide propre au noyau (`<data_dir>/ai.noindex/work`, toujours le même : Claude Code range ses données par dossier de travail, un dossier fixe n'en crée qu'un), avec ces options :
+
+| Option | Raison |
+| --- | --- |
+| `-p --input-format stream-json --output-format stream-json --verbose` | Dialogue par lignes JSON dans les deux sens : la vérification ci-dessous en a besoin |
+| `--include-partial-messages` | Fragments de texte au fil de l'eau (`AiDelta`) ; sorties texte seulement |
+| `--tools ""` | Aucun outil intégré (Bash, fichiers, web, agents) |
+| `--strict-mcp-config --mcp-config '{"mcpServers":{}}'` | Aucun serveur MCP, ni ceux de l'utilisateur ni ceux de Claude Code |
+| `--setting-sources ""` | Aucun réglage utilisateur, projet ou local : ni hooks, ni permissions, ni `CLAUDE.md` |
+| `--disable-slash-commands` | Ni commandes ni skills |
+| `--no-session-persistence`, `--settings '{"autoMemoryEnabled": false}'` | Rien n'est gardé : ni transcription, ni mémoire |
+| `--system-prompt <prompt>` | Le prompt de NiceMailer remplace celui de Claude Code |
+| `--model <modèle>` | `ai.model` ou celui du prompt |
+| `--json-schema <schéma>` | Sorties JSON seulement (section 6) |
+
+#### Vérification à chaque appel
+
+Une mise à jour de Claude Code peut changer ses options ou leur sens : la vérification est refaite à chaque exécution, pas une fois pour toutes. **Le contenu n'est envoyé qu'à un processus qui a prouvé n'avoir aucun outil.**
+
+Le processus n'annonce sa configuration (l'événement `system/init`, qui liste `tools` et `mcp_servers`) qu'après avoir reçu un premier message. La séquence est donc :
+
+1. Le noyau envoie un **message sonde**, sans aucun contenu de l'utilisateur : « The content to process follows in the next message. »
+2. Il lit les lignes jusqu'à `system/init`, et vérifie : `tools` est exactement vide, ou exactement `["StructuredOutput"]` quand `--json-schema` est passé (c'est l'outil interne par lequel Claude Code rend la sortie structurée ; il n'agit sur rien) ; `mcp_servers` est vide.
+3. **Échec** (un outil de plus, un serveur MCP, une annonce absente, illisible, ou qui n'arrive pas dans le délai) : le groupe de processus est tué, l'exécution échoue avec `ai_provider_unsafe` (qui nomme les outils annoncés), et `ai_status` signale le fournisseur comme bloqué jusqu'à la prochaine exécution réussie. Le mail n'a jamais été écrit dans le processus.
+4. **Succès** : le noyau interrompt le tour de la sonde (requête de contrôle `interrupt`) avant tout appel au modèle, attend sa fin (`result`, `error_during_execution`, coût nul), puis envoie le vrai message et ferme l'entrée.
+
+Mesuré en phase 0 (Claude Code 2.1.325) : l'annonce arrive 0,3 à 0,6 s après le lancement, et la sonde ne coûte rien. Le témoin, lancé sans les options ci-dessus, annonce 38 outils et 11 serveurs MCP et est refusé. Avec les options, un mail piégé qui demande d'exécuter des commandes, d'écrire des fichiers, de lancer un agent, d'ouvrir une URL et de lire `~/.ssh/id_rsa` ne produit aucun appel d'outil ni aucun fichier, même quand le prompt système invite à utiliser « tout outil disponible ».
+
+La sonde reste dans la conversation du processus, qui ne sert qu'à une exécution : son texte est choisi pour ne rien changer à la réponse (un premier essai, « Reply with OK. », faisait finir la réponse par « OK »).
+
+#### État du fournisseur
+
+`ai_status` lance `claude` avec la seule requête de contrôle `initialize` (sans message, donc sans appel au modèle), qui répond en 0,3 s avec la version de Claude Code et le compte (`subscriptionType`, par exemple « Claude Pro »), puis le tue. Elle ne donne pas la liste des outils, d'où la vérification à chaque appel.
+
+#### Résultat, coût et erreurs
+
+- Le texte final est dans l'événement `result` (`result`), la sortie structurée dans `structured_output` ; les fragments dans les `stream_event` de type `content_block_delta`. Mesuré : premier fragment vers 1 s, réponse complète en 2 à 4 s pour un mail.
+- **Coût.** Le `total_cost_usd` de `result` est un équivalent au tarif de l'API : il n'est pas facturé sous abonnement. Il est enregistré avec `billed = 0` (section 9), avec l'usage en tokens.
+- L'événement `rate_limit_event` donne l'état des limites de l'abonnement (fenêtres de 5 heures et de 7 jours, utilisation, heure de reprise) : `ai_status` le garde pour l'afficher, et une limite atteinte devient l'erreur `ai_rate_limited` avec l'heure de reprise.
+- **Erreurs reconnues**, chacune avec son code typé et un message qui dit quoi faire :
+
+| Erreur | Signe | Code |
+| --- | --- | --- |
+| Binaire introuvable | Aucun chemin ne mène à un exécutable | `ai_provider_missing` |
+| Non connecté | `error: "authentication_failed"` sur le message, `result.is_error`, sortie 1 (« Not logged in · Please run /login ») | `ai_not_logged_in` : « Lancez `claude` dans un terminal pour vous connecter » |
+| Outils annoncés | Vérification ci-dessus | `ai_provider_unsafe` |
+| Limite d'usage atteinte | `rate_limit_event` à un autre état que `allowed`, ou erreur de limite dans `result` (à observer : non provoquée en phase 0) | `ai_rate_limited` |
+| Délai dépassé | `ai.timeout_secs` | `ai_timeout` |
+| Sortie illisible | Ligne non JSON, `result` absent, `structured_output` absent avec un schéma | `ai_invalid_output` |
+
+- **Annulation et délai** : le groupe de processus reçoit `SIGTERM` (puis `SIGKILL` s'il n'est pas fini une seconde plus tard). Vérifié : tué en plein flux, aucun processus ne reste.
 
 ### `anthropic-api` : une clé API
 
@@ -349,7 +394,7 @@ L'interrupteur est global : un compte ne peut pas être exclu en v1. Le format l
 
 ## 14. Feuille de route
 
-0. **Vérifier le CLI `claude`** (avant tout le reste) : couper les outils de façon vérifiable, et trouver comment le vérifier à chaque appel (section 3) ; sinon `claude-code` est bloqué (un mail piégé qui demande une commande ne doit rien exécuter), flux `stream-json`, `--json-schema`, connexion par l'abonnement sans `--bare`, latence de démarrage, comportement à la limite d'usage. Même vérification minimale pour l'API. Le résultat décide des exigences de la section 3.
+0. **Vérifier le CLI `claude`** : fait le 14 novembre 2026 avec Claude Code 2.1.325 (section 3, « L'appel » et « Vérification à chaque appel »). Restent à observer : la limite d'usage atteinte, et le fournisseur `anthropic-api`, faute de clé API pendant l'essai.
 1. **Crate `nm-ai`** : trait `AiProvider`, `ClaudeCodeProvider`, `AnthropicApiProvider`, `FakeProvider` ; chargement, validation et rechargement des prompts ; construction du message ; validation des sorties. Testée sans réseau.
 2. **Entrées dans le noyau** : découpage en segments de `draft.own_text` et reconstruction, puis les autres entrées.
 3. **Contrat et historique** : commandes, événements, tables `ai_run` et `ai_suggestion`, purge.
@@ -369,7 +414,7 @@ Chaque étape livre sa documentation dans `docs/` (`docs/ai.md`).
 - **Validation des sorties** : chaque sortie JSON, valide et invalide ; cible hors liste, conversation non envoyée, segments en nombre différent refusés avec `ai_invalid_output` et réponse brute gardée ; clôture de code retirée.
 - **Plancher** : chaque signe fort relève `low` à `medium`.
 - **Garde-fou** : présent dans tout prompt, intégré ou non.
-- **Fournisseurs**, avec `FakeProvider` et un faux binaire `claude` : un faux binaire qui annonce un outil, ou rien, est tué avant d'avoir reçu le contenu (le faux binaire enregistre ce qu'il lit : rien) et l'exécution échoue avec `ai_provider_unsafe` ; flux, fin avec usage et coût, chaque erreur reconnue, délai dépassé, annulation (processus tué, aucun processus restant), sortie illisible.
+- **Fournisseurs**, avec `FakeProvider` et un faux binaire `claude` qui rejoue des lignes enregistrées en phase 0 : un faux binaire qui annonce un outil, un serveur MCP, `StructuredOutput` sans schéma, ou aucune annonce, est tué sans avoir reçu le contenu (il enregistre ce qu'il lit : la sonde seule) et l'exécution échoue avec `ai_provider_unsafe` ; `StructuredOutput` seul avec un schéma est accepté ; la sonde est interrompue avant le vrai message ; flux, fin avec usage et coût, chaque erreur reconnue, délai dépassé, annulation (processus tué, aucun processus restant), sortie illisible.
 - **Contrat** : `ai_run` répond avant la fin ; `ai.max_parallel` respecté ; `ai_apply` refusé sur une révision périmée ; IA désactivée : tout refusé ; exécution `running` au démarrage passée à `failed`.
 - **Historique** : purge du contenu après le délai, métadonnées gardées ; `billed` selon le fournisseur ; décisions `accepted`, `rejected`, `partial`.
 - **Portée `selection`** : sans marque, la conversation sous le curseur hors Quarantine, tout le dossier en Quarantine, au-delà des lignes chargées ; `ai.max_folder_items` respecté.
