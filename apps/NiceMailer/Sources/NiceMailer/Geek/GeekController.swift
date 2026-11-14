@@ -57,6 +57,9 @@ final class GeekController {
         case tag
         /// `g`: add the senders to a group (existing, or new).
         case group
+        /// `a`, or ⌘I in a reply: the AI prompts of the screen, as a
+        /// command palette (`ia.md`, section 11).
+        case ai
     }
 
     /// What currently receives the keys, besides the normal mode.
@@ -95,16 +98,6 @@ final class GeekController {
         /// ⌥⌘F in the reply, or a click on "From": the address, and so the
         /// account, it is sent from (`reponse.md`, section 4 ter).
         case sendFrom
-        /// `a`, or ⌘I in the reply: the AI menu of the screen, or the
-        /// variants of one of its prompts (`ia.md`, section 11).
-        case ai(AIMenu)
-    }
-
-    /// The AI menu open: the prompts of the screen, and the prompt whose
-    /// variants are shown, if one is.
-    struct AIMenu: Equatable {
-        let prompts: [AIPromptView]
-        var parent: AIPromptView? = nil
     }
 
     /// One row of a menu or a picker.
@@ -1202,7 +1195,7 @@ final class GeekController {
             // asks whether the app may read Contacts. The rows appear
             // when the cards are read (the panel follows the model).
             Task { await model.loadSenderCards(asking: true) }
-        case .accounts, .attributes:
+        case .accounts, .attributes, .ai:
             break
         case .attributeValue, .search:
             valueSuggestions = []
@@ -1318,6 +1311,7 @@ final class GeekController {
         case .attributeValue(.subject): L("words of the subject; -word to exclude")
         case .attributeValue: L("a name, an address or @domain; -value to exclude")
         case .search: L("words: subject, sender, recipients or body")
+        case .ai: L("type to filter, or a prompt's letters · ↩ runs the first row")
         default: nil
         }
     }
@@ -1430,6 +1424,8 @@ final class GeekController {
             all = withNew(names) { [model] name in model.tagTargets(name) }
         case .group:
             all = withNew(groups.map(\.name)) { [model] name in model.addSendersToGroup(name) }
+        case .ai:
+            all = aiEntries()
         }
         // Best matches first, so that Return takes the row the user meant
         // (`PickerMatch`); the "+ typed text" row always stays.
@@ -2229,7 +2225,6 @@ final class GeekController {
                 ? L("Send, then file this mail in")
                 : L("Send, then file the conversation in")
         case .sendFrom: L("Send from")
-        case .ai(let m): m.parent?.label ?? L("AI")
         }
     }
 
@@ -2292,41 +2287,40 @@ final class GeekController {
             }
             entries.append(Entry(key: "esc", label: L("cancel: back to the reply")) {})
             return entries
-        case .ai(let m):
-            return aiEntries(m)
         }
     }
 
-    /// The rows of the AI menu: a prompt per key, `…` after one that opens
-    /// its variants; one this version cannot run yet says so on the right.
-    /// The rows of a prompt's variants start it.
-    func aiEntries(_ m: AIMenu) -> [Entry] {
-        var entries: [Entry]
-        if let parent = m.parent {
-            entries = parent.variants.map { v in
-                Entry(key: v.key, label: v.label) { [weak self] in
-                    self?.runAI(parent, variant: v)
-                }
+    /// The rows of the AI palette: a prompt per row, and a row per variant
+    /// of a prompt that has some ("Rewrite · Shorter"), so that typing finds
+    /// any of them at once, as in the command palette of an editor. The
+    /// prompts' order is the core's, the most used first: the first row,
+    /// highlighted, is the one Return runs (⌘I then Return proofreads). The
+    /// letters of a prompt (`c`, `rc` for a variant) are its search words:
+    /// typed, they bring it first. A prompt this version cannot run yet
+    /// says so on the right.
+    func aiEntries() -> [Entry] {
+        aiPrompts.flatMap { p -> [Entry] in
+            let notYet = p.available ? nil : L("not yet")
+            guard !p.variants.isEmpty else {
+                return [Entry(key: p.key, label: p.label, disabled: !p.available, detail: notYet, detailStyle: .info,
+                              keywords: [p.key]) { [weak self] in self?.chooseAI(p, variant: nil) }]
             }
-        } else {
-            entries = m.prompts.map { p in
-                Entry(key: p.key, label: p.variants.isEmpty ? p.label : p.label + "…",
-                      detail: p.available ? nil : L("not yet"), detailStyle: .info) { [weak self] in
-                    guard let self else { return }
-                    if !p.available {
-                        model.flash = L("Not available yet: %@", p.label)
-                    } else if !p.variants.isEmpty {
-                        // The first variant highlighted, as the first prompt.
-                        choiceIndex = 0
-                        overlay = .choice(.ai(AIMenu(prompts: m.prompts, parent: p)))
-                    } else {
-                        runAI(p, variant: nil)
-                    }
-                }
+            return p.variants.map { v in
+                Entry(key: p.key + v.key, label: AI.title(p, variant: v), disabled: !p.available, detail: notYet,
+                      detailStyle: .info, keywords: [p.key + v.key]) { [weak self] in self?.chooseAI(p, variant: v) }
             }
         }
-        entries.append(Entry(key: "esc", label: L("cancel")) {})
-        return entries
+    }
+
+    /// The prompts of the AI palette open (`openAI`).
+    var aiPrompts: [AIPromptView] = []
+
+    private func chooseAI(_ p: AIPromptView, variant: AIVariantView?) {
+        guard p.available else {
+            model.flash = L("Not available yet: %@", p.label)
+            return
+        }
+        runAI(p, variant: variant)
     }
 
     /// Starts a prompt chosen in the AI menu: on the reply being written,
@@ -2375,18 +2369,18 @@ final class GeekController {
             // The first row highlighted: the most used prompt comes first
             // (`Catalog::menu`), so ⌘I then Return proofreads a reply, `a`
             // then Return summarizes a mail or sorts the Quarantine.
-            choiceIndex = 0
-            overlay = .choice(.ai(AIMenu(prompts: prompts)))
+            aiPrompts = prompts
+            openPicker(.ai)
         }
     }
 
-    /// Where the AI shows: `center` for what `a` opened (its menu, then the
-    /// panel of a mail), the main place of focus while it is open; `headers`
-    /// for ⌘I in a reply, just above the text it works on; `none` when
-    /// nothing of the AI is open.
+    /// Where the AI shows: `palette` for its menu (`a` or ⌘I), a picker at
+    /// the top, over the rest; `center` for the panel of a mail's result,
+    /// the main place of focus while it is open; `headers` for the panel
+    /// of a reply, just above the text it works on; `none` when nothing of
+    /// the AI is open.
     var aiPlacement: String {
-        let composing = model.composer != nil && screen == .mail
-        if case .ai? = activeChoice { return composing ? "headers" : "center" }
+        if overlay == .picker(.ai) { return "palette" }
         if let run = model.aiRun { return run.composer == nil ? "center" : "headers" }
         return "none"
     }

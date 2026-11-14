@@ -81,12 +81,6 @@ struct ComposerView: View {
                     } else if let after = Compose.afterSendLine(c.draft) {
                         Text(after).foregroundStyle(Palette.accentText).lineLimit(1)
                     }
-                    // ⌘I: the AI menu, at the foot of the headers, just
-                    // above the text it works on.
-                    if case .ai? = controller.activeChoice, let choice = controller.activeChoice {
-                        ChoicePanel(controller: controller, choice: choice)
-                            .padding(.top, scaled(2))
-                    }
                 }
                 .font(.geek(12))
                 .padding(.horizontal, 12)

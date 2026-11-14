@@ -297,10 +297,16 @@ final class AIControllerTests {
         type(text)
     }
 
-    /// The AI menu open.
-    var aiMenu: GeekController.AIMenu? {
-        if case .choice(.ai(let m)) = controller.overlay { return m }
-        return nil
+    /// The AI palette open (`a`, ⌘I).
+    var paletteOpen: Bool { controller.overlay == .picker(.ai) }
+
+    /// The rows of the AI palette, "key label".
+    var paletteRows: [String] { controller.pickerEntries(.ai).map { "\($0.key) \($0.label)" } }
+
+    /// Types `letters` in the open palette, then Return: the first row left.
+    func choose(_ letters: String) {
+        type(letters)
+        press("ret")
     }
 
     var seq = 0
@@ -310,57 +316,54 @@ final class AIControllerTests {
         model.handle(CoreClient.Event(method: method, epoch: "e_test", seq: transient ? nil : seq, params: params))
     }
 
-    @Test func cmdIOpensTheMenuOfTheReplyAndItsVariants() async throws {
+    @Test func cmdIOpensThePaletteOfTheReplyWithItsVariantsAsRows() async throws {
         await reply()
         press("cmd-i")
-        _ = await eventually { self.aiMenu != nil }
-        // In a reply, above the text it works on, not in the middle.
-        #expect(controller.aiPlacement == "headers")
-        let rows = controller.choiceEntries(.ai(try #require(aiMenu))).map { "\($0.key) \($0.label)" }
-        #expect(rows == ["c Proofread", "r Rewrite…", "o Suggest subjects", "w Write from my notes", "esc " + L("cancel")])
+        _ = await eventually { self.paletteOpen }
+        #expect(controller.aiPlacement == "palette")
+        // The most used first; a variant is a row of its own.
+        #expect(paletteRows == ["c Proofread", "rc Rewrite · Shorter", "rf Rewrite · More formal", "o Suggest subjects",
+                                "w Write from my notes"])
         #expect(core.calls("ai_list_prompts").last?["screen"] as? String == "compose")
-        // ⌘I was not typed.
+        // ⌘I was not typed; a letter typed filters, it is not the text's.
         #expect(model.composer?.buffer.text.hasPrefix("merci\n") == true)
-        // A prompt not available yet says so, and starts nothing.
-        press("w")
-        #expect(model.flash == L("Not available yet: %@", "Write from my notes"))
-        #expect(core.calls("ai_run").isEmpty)
-        // Variants: a second menu.
-        press("cmd-i")
-        _ = await eventually { self.aiMenu != nil }
-        press("r")
-        #expect(aiMenu?.parent?.id == "rewrite")
-        #expect(controller.choiceTitle(.ai(try #require(aiMenu))) == "Rewrite")
+        type("formal")
+        #expect(paletteRows.first == "rf Rewrite · More formal")
+        #expect(model.composer?.buffer.text.hasPrefix("merci\n") == true)
         press("esc")
-        #expect(aiMenu == nil)
+        #expect(!paletteOpen)
+        // A prompt not available yet says so, and starts nothing.
+        press("cmd-i")
+        _ = await eventually { self.paletteOpen }
+        choose("w")
+        #expect(model.flash == L("Not available yet: %@", "Write from my notes"))
         #expect(core.calls("ai_run").isEmpty)
     }
 
-    @Test func theFirstPromptIsHighlightedSoReturnRunsIt() async throws {
+    @Test func theFirstRowIsHighlightedSoReturnRunsIt() async throws {
         // ⌘I then Return: the first prompt of the reply, proofreading.
         await reply()
         press("cmd-i")
-        _ = await eventually { self.aiMenu != nil }
-        #expect(controller.choiceIndex == 0)
+        _ = await eventually { self.paletteOpen }
+        #expect(controller.pickerIndex == 0)
         press("ret")
         _ = await eventually { self.model.aiRun?.runId == 7 }
         #expect(core.calls("ai_run").last?["prompt"] as? String == "proofread")
         press("esc")
         _ = await eventually { self.model.aiRun == nil }
-        // A submenu too: its first variant.
+        // A prompt's letters bring it first: `rc`, rewrite shorter.
         press("cmd-i")
-        _ = await eventually { self.aiMenu != nil }
-        press("r")
-        #expect(aiMenu?.parent?.id == "rewrite")
-        #expect(controller.choiceIndex == 0)
-        press("ret")
+        _ = await eventually { self.paletteOpen }
+        choose("rc")
         _ = await eventually { self.model.aiRun?.runId == 7 }
-        #expect(core.calls("ai_run").last?["variant"] as? String == "c")
+        let run = try #require(core.calls("ai_run").last)
+        #expect(run["prompt"] as? String == "rewrite")
+        #expect(run["variant"] as? String == "c")
     }
 
     @Test func aThenReturnRunsTheFirstPromptOfTheMailAndOfTheList() async throws {
         press("a")
-        _ = await eventually { self.aiMenu != nil }
+        _ = await eventually { self.paletteOpen }
         press("ret")
         _ = await eventually { self.model.aiRun?.runId == 7 }
         #expect(core.calls("ai_run").last?["prompt"] as? String == "summarize-thread")
@@ -368,7 +371,7 @@ final class AIControllerTests {
         _ = await eventually { self.model.aiRun == nil }
         controller.columns = 1
         press("a")
-        _ = await eventually { self.aiMenu != nil }
+        _ = await eventually { self.paletteOpen }
         press("ret")
         _ = await eventually { self.model.aiSort?.runId == 7 }
         #expect(core.calls("ai_run").last?["prompt"] as? String == "suggest-folder")
@@ -377,8 +380,8 @@ final class AIControllerTests {
     @Test func aProofreadingRunsIsShownAndAccepted() async throws {
         await reply()
         press("cmd-i")
-        _ = await eventually { self.aiMenu != nil }
-        press("c")
+        _ = await eventually { self.paletteOpen }
+        choose("c")
         _ = await eventually { self.model.aiRun?.runId == 7 }
         // The text was saved first, and the run asked on that revision.
         let saved = try #require(core.calls("create_draft").last ?? core.calls("update_draft").last)
@@ -422,8 +425,8 @@ final class AIControllerTests {
     @Test func escapeRefusesAProposalAndStopsARun() async throws {
         await reply()
         press("cmd-i")
-        _ = await eventually { self.aiMenu != nil }
-        press("c")
+        _ = await eventually { self.paletteOpen }
+        choose("c")
         _ = await eventually { self.model.aiRun?.runId == 7 }
         // Running: Escape cancels.
         press("esc")
@@ -436,8 +439,8 @@ final class AIControllerTests {
 
         // Again, up to the proposal, then refused.
         press("cmd-i")
-        _ = await eventually { self.aiMenu != nil }
-        press("c")
+        _ = await eventually { self.paletteOpen }
+        choose("c")
         _ = await eventually { self.model.aiRun?.runId == 7 }
         event("AiDone", ["run_id": .int(7)])
         _ = await eventually { if case .proposal? = self.model.aiRun?.phase { true } else { false } }
@@ -451,8 +454,8 @@ final class AIControllerTests {
     @Test func aFailureIsShownThenClosed() async {
         await reply()
         press("cmd-i")
-        _ = await eventually { self.aiMenu != nil }
-        press("c")
+        _ = await eventually { self.paletteOpen }
+        choose("c")
         _ = await eventually { self.model.aiRun?.runId == 7 }
         event("AiFailed", ["run_id": .int(7), "code": .string("ai_not_logged_in"), "message": .string("run claude to sign in")])
         #expect(model.aiRun?.phase == .failed("run claude to sign in"))
@@ -467,8 +470,8 @@ final class AIControllerTests {
         ai.appliedSubject = "Confirmation pour jeudi"
         await reply()
         press("cmd-i")
-        _ = await eventually { self.aiMenu != nil }
-        press("o")
+        _ = await eventually { self.paletteOpen }
+        choose("o")
         _ = await eventually { self.model.aiRun?.runId == 7 }
         event("AiDone", ["run_id": .int(7)])
         _ = await eventually { if case .proposal? = self.model.aiRun?.phase { true } else { false } }
@@ -486,8 +489,8 @@ final class AIControllerTests {
         core.delays["ai_run"] = .milliseconds(200)
         await reply()
         press("cmd-i")
-        _ = await eventually { self.aiMenu != nil }
-        press("c")
+        _ = await eventually { self.paletteOpen }
+        choose("c")
         _ = await eventually { self.model.aiRun != nil }
         #expect(model.aiRun?.runId == 0, "the panel is open, the id not known yet")
         event("AiDone", ["run_id": .int(7)])
@@ -498,8 +501,8 @@ final class AIControllerTests {
     @Test func anEndAfterAGapIsNotLost() async {
         await reply()
         press("cmd-i")
-        _ = await eventually { self.aiMenu != nil }
-        press("c")
+        _ = await eventually { self.paletteOpen }
+        choose("c")
         _ = await eventually { self.model.aiRun?.runId == 7 }
         // A numbered event out of order: a gap, which reloads everything.
         model.handle(CoreClient.Event(method: "AiDone", epoch: "e_test", seq: 99, params: ["run_id": .int(7)]))
@@ -511,19 +514,19 @@ final class AIControllerTests {
         await reply()
         press("cmd-i")
         _ = await eventually { self.model.flash == L("The AI is off: set ai.enabled = true in config.toml") }
-        #expect(aiMenu == nil)
+        #expect(!paletteOpen)
         #expect(core.calls("ai_list_prompts").isEmpty)
     }
 
     @Test func aSummaryOfTheMailReadIsShownThenClosed() async throws {
         #expect(controller.aiPlacement == "none")
-        // Two columns: the mail is shown, `a` opens the reading menu, in
-        // the middle of the window.
+        // Two columns: the mail is shown, `a` opens the reading menu, a
+        // palette at the top; its result in the middle of the window.
         press("a")
-        _ = await eventually { self.aiMenu != nil }
-        #expect(controller.aiPlacement == "center")
+        _ = await eventually { self.paletteOpen }
+        #expect(controller.aiPlacement == "palette")
         #expect(core.calls("ai_list_prompts").last?["screen"] as? String == "reading")
-        press("r")
+        choose("r")
         _ = await eventually { self.model.aiRun?.runId == 7 }
         let run = try #require(core.calls("ai_run").last)
         #expect(run["thread_id"] as? Int == model.openThread?.id)
@@ -551,10 +554,8 @@ final class AIControllerTests {
 
     @Test func aMessagePromptNamesTheMailUnderTheCursor() async throws {
         press("a")
-        _ = await eventually { self.aiMenu != nil }
-        press("t")
-        #expect(aiMenu?.parent?.id == "translate-message")
-        press("e")
+        _ = await eventually { self.paletteOpen }
+        choose("te")
         _ = await eventually { self.model.aiRun?.runId == 7 }
         let run = try #require(core.calls("ai_run").last)
         #expect(run["variant"] as? String == "e")
@@ -563,8 +564,8 @@ final class AIControllerTests {
 
     @Test func aQuickReplyStartsTheReplyWithIt() async {
         press("a")
-        _ = await eventually { self.aiMenu != nil }
-        press("p")
+        _ = await eventually { self.paletteOpen }
+        choose("p")
         _ = await eventually { self.model.aiRun?.runId == 7 }
         event("AiDone", ["run_id": .int(7)])
         _ = await eventually { if case .proposal? = self.model.aiRun?.phase { true } else { false } }
@@ -601,8 +602,8 @@ final class AIControllerTests {
     @Test func aSortRunsInTheBackgroundWithTheKeysFree() async throws {
         controller.columns = 1
         press("a")
-        _ = await eventually { self.aiMenu != nil }
-        press("s")
+        _ = await eventually { self.paletteOpen }
+        choose("s")
         _ = await eventually { self.model.aiSort?.runId == 7 }
         let run = try #require(core.calls("ai_run").last)
         #expect(run["prompt"] as? String == "suggest-folder")
@@ -628,8 +629,8 @@ final class AIControllerTests {
     @Test func escapeStopsASort() async {
         controller.columns = 1
         press("a")
-        _ = await eventually { self.aiMenu != nil }
-        press("s")
+        _ = await eventually { self.paletteOpen }
+        choose("s")
         _ = await eventually { self.model.aiSort?.runId == 7 }
         press("esc")
         _ = await eventually { self.core.calls("ai_cancel").count == 1 }
@@ -641,10 +642,10 @@ final class AIControllerTests {
         // One column, on the list: the list's menu.
         controller.columns = 1
         press("a")
-        _ = await eventually { self.aiMenu != nil }
+        _ = await eventually { self.paletteOpen }
         #expect(core.calls("ai_list_prompts").last?["screen"] as? String == "list")
         #expect(core.calls("ai_list_prompts").last?["folder"] as? String == "inbox")
-        press("w")
+        choose("w")
         #expect(model.flash == L("Not available yet: %@", "Write from my notes"))
     }
 }

@@ -3980,16 +3980,6 @@
         }
       }
     },
-    "cancel": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "annuler"
-          }
-        }
-      }
-    },
     "No AI prompt here": {
       "localizations": {
         "fr": {
@@ -4166,6 +4156,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "L'IA suggère %@"
+          }
+        }
+      }
+    },
+    "type to filter, or a prompt's letters · ↩ runs the first row": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "tapez pour filtrer, ou les lettres d'un prompt · ↩ lance la première ligne"
+          }
+        }
+      }
+    },
+    "No AI prompt matches": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucun prompt IA ne correspond"
           }
         }
       }

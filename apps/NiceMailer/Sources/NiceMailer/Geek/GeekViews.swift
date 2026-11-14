@@ -124,11 +124,7 @@ private struct GeekWindow: View {
         // comes before any other panel, in the bottom-right corner —
         // except the one the screen draws where its answer belongs
         // ("Send from", in place of the line "From" of the reply).
-        if controller.aiPlacement == "center", let choice = controller.activeChoice {
-            // What `a` opened is the main place of focus while it is open:
-            // in the middle of the window, the rest dimmed behind it.
-            AIFocus { ChoicePanel(controller: controller, choice: choice) }
-        } else if let choice = controller.activeChoice, !drawnInPlace(choice) {
+        if let choice = controller.activeChoice, !drawnInPlace(choice) {
             ChoicePanel(controller: controller, choice: choice)
                 .padding(12)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
@@ -151,9 +147,7 @@ private struct GeekWindow: View {
     /// and ⇧⌘↩ the line "After sending: …" (`reponse.md`, sections 4 ter
     /// and 8), so the corner leaves them alone.
     private func drawnInPlace(_ choice: GeekController.Choice) -> Bool {
-        guard model.composer != nil else { return false }
-        if case .ai = choice { return controller.screen == .mail }
-        return choice == .sendFrom || choice == .sendThen
+        (choice == .sendFrom || choice == .sendThen) && model.composer != nil
     }
 
     @ViewBuilder private var menusAndPickers: some View {
@@ -1896,6 +1890,7 @@ struct PickerPopup: View {
         case .links: L("Links")
         case .tag: L("Tag")
         case .group: L("Group")
+        case .ai: L("AI")
         }
     }
 
@@ -1905,6 +1900,7 @@ struct PickerPopup: View {
         case .tag, .group: L("Type a name")
         case .accounts: L("No account")
         case .attributes: L("No attribute")
+        case .ai: L("No AI prompt matches")
         // The value panels: the input line shows the hint while nothing is
         // typed; text that gives no row (a date that is none) shows it
         // here instead.

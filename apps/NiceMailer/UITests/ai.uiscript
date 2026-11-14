@@ -1,6 +1,7 @@
 # The AI assistance in a reply (`ia.md`, section 11; docs/ai.md), its
 # prompts answered by the core from fixtures/ai.ai.json (NICEMAILER_FAKE_AI):
-# ⌘I opens the menu of the reply (not typed), a prompt not available yet
+# ⌘I opens the AI palette at the top (not typed): typing filters, the
+# first row, highlighted, runs with Return; a prompt not available yet
 # says so, proofreading shows its differences, the keys do not reach the
 # text meanwhile, Return applies them (quotation untouched) and ⌘Z undoes
 # them; a variant from the submenu, refused with Escape; a subject chosen
@@ -14,21 +15,22 @@ key r
 expect composing = true
 type merci je vien jeudi
 key cmd-i
-expect choice = AI
-expect ai_placement = headers
-expect choice_rows ~ c Proofread
-expect choice_rows ~ r Rewrite…
-expect choice_rows ~ o Suggest subjects
-expect choice_rows ~ w Write from my notes
+expect ai_placement = palette
+expect picker_first = Proofread
+expect picker_rows ~ Proofread | Rewrite · More formal
+expect picker_rows ~ Translate · Into English
+expect picker_rows ~ Suggest subjects
+expect picker_rows ~ Write from my notes
 expect compose_text ~ merci je vien jeudi|
 snap ai-menu
-key w
+type w
+key ret
 expect flash ~ Not available yet
 expect ai_state = none
-# Proofreading, the first prompt, highlighted: ⌘I then Return. The text is
+# Proofreading, the first row, highlighted: ⌘I then Return. The text is
 # saved, then proposed as differences.
 key cmd-i
-expect choice_index = 0
+expect picker_index = 0
 key ret
 expect ai_state = proposal
 expect ai_title = Proofread
@@ -51,20 +53,21 @@ key cmd-z
 expect compose_text ~ merci je vien jeudi
 expect flash ~ undone
 expect compose_saved = true
-# A variant from the submenu, refused: the text stays.
+# A variant, a row of the palette found by its letters (`rc`), refused:
+# the text stays.
 key cmd-i
-key r
-expect choice = Rewrite
-expect choice_rows ~ c Shorter
-key c
+type rc
+expect picker_first = Rewrite · Shorter
+key ret
 expect ai_state = proposal
 expect ai_title = Rewrite · Shorter
 key esc
 expect ai_state = none
 expect compose_text ~ merci je vien jeudi
-# Subjects: one chosen by its number.
+# Subjects (`o`): one chosen by its number.
 key cmd-i
-key o
+type o
+key ret
 expect ai_state = proposal
 expect ai_subjects = Jeudi 14h | Confirmation pour jeudi
 snap ai-subjects
@@ -75,14 +78,13 @@ expect compose_subject = Confirmation pour jeudi
 key esc
 expect composing = false
 key a
-expect choice = AI
-expect ai_placement = center
-expect choice_rows ~ r Summarize
-expect choice_rows ~ p Quick replies
-expect choice_rows ~ s Security check
-expect choice_rows ~ t Translate…
+expect ai_placement = palette
+expect picker_first = Summarize
+expect picker_rows ~ Summarize | Quick replies
+expect picker_rows ~ Security check
+expect picker_rows ~ Translate · Into English
 snap ai-mail-menu
-key r
+key ret
 expect ai_state = proposal
 expect ai_placement = center
 expect ai_title = Summarize
@@ -99,7 +101,8 @@ expect selected = 1
 key k
 # A quick reply starts the reply with it, above the quotation.
 key a
-key p
+type p
+key ret
 expect ai_state = proposal
 expect ai_result ~ 2. I will send it tomorrow.
 key 2
@@ -113,8 +116,8 @@ key esc
 key v
 key 1
 key a
-expect choice_rows ~ Suggest a folder
-key s
+expect picker_first = Suggest a folder
+key ret
 expect ai_suggestions = 1
 expect selected_suggestion ~ archive: Fake reason
 # The Quarantine, in two columns: `a` opens the menu of the list (sorting
@@ -127,8 +130,8 @@ key ;
 key q
 expect folder = Quarantine
 key a
-expect choice_rows ~ s Sort the Quarantine
-key s
+expect picker_first = Sort the Quarantine
+key ret
 expect ai_suggestions > 0
 expect ai_sort = 
 expect selected_suggestion ~ newsletter: Fake reason
