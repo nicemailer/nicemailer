@@ -128,6 +128,14 @@ private struct GeekWindow: View {
             ChoicePanel(controller: controller, choice: choice)
                 .padding(12)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+        } else if let run = model.aiRun, run.composer == nil {
+            // The AI panel of a mail (`a`): in the corner, as the choices,
+            // so it shows the same in every layout, the list alone included.
+            AIPanel(run: run)
+                .frame(maxWidth: 640)
+                .overlay(Rectangle().stroke(Palette.separator, lineWidth: 1))
+                .padding(12)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
         } else {
             menusAndPickers
         }

@@ -65,9 +65,17 @@ struct AISegmentChange: Decodable, Equatable {
 enum AIProposal: Decodable, Equatable {
     case replace(segments: [AISegmentChange], unchanged: Bool)
     case subjects([String])
+    /// A text to read: a translation, the dates of a mail.
+    case text(String)
+    case summary(String, actions: [AIAction])
+    /// The phishing risk (`low`, `medium`, `high`) and its reasons;
+    /// `raised` when the core raised the model's verdict.
+    case verdict(risk: String, reasons: [String], raised: Bool)
+    /// Texts to choose from; `then` is `reply` (start a reply with it).
+    case choices([String], then: String)
 
     private enum Keys: String, CodingKey {
-        case kind, segments, unchanged, items
+        case kind, segments, unchanged, items, text, summary, actions, risk, reasons, raised, then
     }
 
     init(from decoder: Decoder) throws {
@@ -78,10 +86,26 @@ enum AIProposal: Decodable, Equatable {
                             unchanged: try c.decode(Bool.self, forKey: .unchanged))
         case "subjects":
             self = .subjects(try c.decode([String].self, forKey: .items))
+        case "text":
+            self = .text(try c.decode(String.self, forKey: .text))
+        case "summary":
+            self = .summary(try c.decode(String.self, forKey: .summary), actions: try c.decode([AIAction].self, forKey: .actions))
+        case "verdict":
+            self = .verdict(risk: try c.decode(String.self, forKey: .risk), reasons: try c.decode([String].self, forKey: .reasons),
+                            raised: try c.decode(Bool.self, forKey: .raised))
+        case "choices":
+            self = .choices(try c.decode([String].self, forKey: .items), then: try c.decode(String.self, forKey: .then))
         case let other:
             throw DecodingError.dataCorruptedError(forKey: .kind, in: c, debugDescription: "unknown proposal \(other)")
         }
     }
+}
+
+/// An action item of a summary; `owner` and `due` may be empty.
+struct AIAction: Decodable, Equatable {
+    let task: String
+    let owner: String
+    let due: String
 }
 
 /// `ai_get_run` (only what the app uses).
@@ -114,12 +138,25 @@ struct AIRun: Equatable {
     let runId: Int
     /// The prompt's label (and its variant's), the title of the panel.
     let title: String
-    /// The opening of the reply it was started from (`Composer.opened`):
-    /// what comes for another reply is dropped.
-    let composer: UUID
+    /// What it works on.
+    let target: Target
     /// The text received so far.
     var text = ""
     var phase: Phase = .running
+
+    enum Target: Equatable {
+        /// The reply being written, by its opening (`Composer.opened`):
+        /// what comes for another reply is dropped.
+        case reply(UUID)
+        /// A conversation, and the mail of it under the reader's cursor.
+        case mail(thread: Int, message: Int?)
+    }
+
+    /// The opening of the reply it works on, if it works on one.
+    var composer: UUID? {
+        if case .reply(let id) = target { return id }
+        return nil
+    }
 
     enum Phase: Equatable {
         case running
@@ -158,10 +195,13 @@ enum AI {
             if isReturn || key == "y" { return .accept }
             if isEscape || key == "n" { return .refuse }
             return .hint
-        case .proposal(.subjects(let items)):
+        case .proposal(.subjects(let items)), .proposal(.choices(let items, _)):
             if isEscape || key == "n" { return .refuse }
-            if let d = Int(key), (1...items.count).contains(d) { return .choose(d - 1) }
+            if let d = Int(key), d >= 1, d <= items.count { return .choose(d - 1) }
             return .hint
+        case .proposal(.text), .proposal(.summary), .proposal(.verdict):
+            // Only read: nothing to accept.
+            return isEscape || isReturn ? .close : .hint
         }
     }
 
@@ -173,6 +213,8 @@ enum AI {
         case .proposal(.replace(_, true)): L("No change to make · esc close")
         case .proposal(.replace): L("↩ or y accept · esc or n refuse · ⌘Z after accepting undoes")
         case .proposal(.subjects(let items)): L("1–%lld choose · esc or n refuse", items.count)
+        case .proposal(.choices(let items, _)): L("1–%lld reply with it · esc or n refuse", items.count)
+        case .proposal(.text), .proposal(.summary), .proposal(.verdict): L("esc close")
         }
     }
 
@@ -209,6 +251,52 @@ enum AI {
         if c >= a.count - suffix { return b.count - (a.count - c) }
         if c <= prefix { return c }
         return b.count - suffix
+    }
+
+    /// A proposal that is only read, as text: for the UI scripts, and for
+    /// copying. A summary lists its action items under it; a verdict gives
+    /// its risk, then its reasons.
+    static func resultText(_ p: AIProposal) -> String {
+        switch p {
+        case .text(let t): return t
+        case .summary(let s, let actions):
+            return ([s] + actions.map { a in
+                var line = "- " + a.task
+                if !a.owner.isEmpty { line += " (\(a.owner))" }
+                if !a.due.isEmpty { line += " · " + a.due }
+                return line
+            }).joined(separator: "\n")
+        case .verdict(let risk, let reasons, _):
+            return ([riskLabel(risk)] + reasons.map { "- " + $0 }).joined(separator: "\n")
+        case .choices(let items, _), .subjects(let items):
+            return items.enumerated().map { "\($0.offset + 1). \($0.element)" }.joined(separator: "\n")
+        case .replace(let segments, _):
+            return diffText(segments)
+        }
+    }
+
+    /// The risk of a verdict, in the app's language.
+    static func riskLabel(_ risk: String) -> String {
+        switch risk {
+        case "high": L("Risk: high")
+        case "medium": L("Risk: medium")
+        default: L("Risk: low")
+        }
+    }
+
+    /// A quick reply put at the start of a reply: alone above the
+    /// quotation of a new reply; an empty line apart from the words of a
+    /// reply already started. The cursor right after it.
+    static func insertReply(_ text: String, into buffer: TextBuffer) -> TextBuffer {
+        var b = buffer
+        b.moveToStart()
+        b.insert(text)
+        if !b.text.dropFirst(text.count).hasPrefix("\n") {
+            b.insert("\n\n")
+            b.moveLeft()
+            b.moveLeft()
+        }
+        return b
     }
 
     /// The title of the panel: the prompt, and its variant.

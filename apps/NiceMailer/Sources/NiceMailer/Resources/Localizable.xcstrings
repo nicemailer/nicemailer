@@ -4030,12 +4030,82 @@
         }
       }
     },
-    "AI menu of the mails": {
+    "1–%lld reply with it · esc or n refuse": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "menu IA des mails"
+            "value": "1–%lld y répondre · esc ou n refuser"
+          }
+        }
+      }
+    },
+    "Risk: high": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Risque : élevé"
+          }
+        }
+      }
+    },
+    "Risk: medium": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Risque : moyen"
+          }
+        }
+      }
+    },
+    "Risk: low": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Risque : faible"
+          }
+        }
+      }
+    },
+    "No mail to work on": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucun mail à traiter"
+          }
+        }
+      }
+    },
+    "To do": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "À faire"
+          }
+        }
+      }
+    },
+    "Raised by NiceMailer: what it found itself in the mail": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Relevé par NiceMailer : ce qu'il a trouvé lui-même dans le mail"
+          }
+        }
+      }
+    },
+    "AI menu of the mail: summary, translation, quick replies, security": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "menu IA du mail : résumé, traduction, réponses rapides, sécurité"
           }
         }
       }

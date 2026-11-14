@@ -39,7 +39,7 @@ extension AppModel {
         // What was kept of earlier runs (the end of one cancelled, a run of
         // the CLI) is not this run's: only what comes from now on may be.
         aiEarly = [:]
-        aiRun = AIRun(runId: 0, title: AI.title(prompt, variant: variant), composer: opened)
+        aiRun = AIRun(runId: 0, title: AI.title(prompt, variant: variant), target: .reply(opened))
         // The pending save now, rather than after its pause.
         composeSaveTask?.cancel()
         await saveComposer()
@@ -61,18 +61,46 @@ extension AppModel {
             let r: AIRunResult = try await client.call("ai_run", params)
             // Escape was pressed while waiting, or the reply left: the run
             // is not wanted.
-            guard var run = aiRun, run.runId == 0, run.composer == opened, composer?.opened == opened else {
+            guard let run = aiRun, run.runId == 0, run.composer == opened, composer?.opened == opened else {
                 let _: CommandResult? = try? await client.call("ai_cancel", ["run_id": r.runId])
                 return
             }
-            run = AIRun(runId: r.runId, title: run.title, composer: opened)
-            aiRun = run
-            // What came before this answer (a quick provider ends first).
-            for e in aiEarly.removeValue(forKey: r.runId) ?? [] { aiEvent(e) }
+            started(r.runId, run)
         } catch {
             if aiRun?.runId == 0 { aiRun = nil }
             flash = AI.errorFlash(error)
         }
+    }
+
+    /// Runs a prompt on a conversation (`a` in the list or the reader):
+    /// on the mail under the reader's cursor for a prompt of one mail, the
+    /// core choosing the latest received when there is none.
+    func startMailAI(_ prompt: AIPromptView, variant: AIVariantView?, thread: Int, message: Int?) async {
+        guard aiRun == nil, let client = core else { return }
+        aiEarly = [:]
+        let target = AIRun.Target.mail(thread: thread, message: message)
+        aiRun = AIRun(runId: 0, title: AI.title(prompt, variant: variant), target: target)
+        var params: [String: Any] = ["prompt": prompt.id, "thread_id": thread, "lang": AI.language]
+        if let message, prompt.scope == "message" { params["message_id"] = message }
+        if let v = variant { params["variant"] = v.key }
+        do {
+            let r: AIRunResult = try await client.call("ai_run", params)
+            guard let run = aiRun, run.runId == 0, run.target == target else {
+                let _: CommandResult? = try? await client.call("ai_cancel", ["run_id": r.runId])
+                return
+            }
+            started(r.runId, run)
+        } catch {
+            if aiRun?.runId == 0 { aiRun = nil }
+            flash = AI.errorFlash(error)
+        }
+    }
+
+    /// The run's id is known: the panel follows it, and what came for it
+    /// before this answer is played (a quick provider ends first).
+    private func started(_ runId: Int, _ run: AIRun) {
+        aiRun = AIRun(runId: runId, title: run.title, target: run.target)
+        for e in aiEarly.removeValue(forKey: runId) ?? [] { aiEvent(e) }
     }
 
     /// `AiDelta`, `AiDone`, `AiFailed`.
@@ -152,17 +180,34 @@ extension AppModel {
                 let _: CommandResult? = try? await client.call("ai_dismiss", ["run_id": run.runId])
             }
         case .accept, .choose:
-            guard let c = composer, c.opened == run.composer else { return }
-            var params: [String: Any] = ["run_id": run.runId, "revision": c.revision]
+            var params: [String: Any] = ["run_id": run.runId]
             if case .choose(let i) = action { params["choice"] = i }
+            switch run.target {
+            case .reply(let opened):
+                guard let c = composer, c.opened == opened else { return }
+                params["revision"] = c.revision
+            case .mail:
+                break
+            }
             do {
                 let r: AIApplyResult = try await client.call("ai_apply", params)
                 aiRun = nil
-                if let d = r.draft { applied(d, opened: run.composer) }
+                if let d = r.draft, let opened = run.composer { applied(d, opened: opened) }
+                if let text = r.text, case .mail(_, let message) = run.target { await replyWith(text, current: message) }
             } catch {
                 flash = AI.errorFlash(error)
             }
         }
+    }
+
+    /// A quick reply chosen: the reply to the mail (`r`), the text above the
+    /// quotation, the cursor after it, saved at the next pause as if typed.
+    private func replyWith(_ text: String, current: Int?) async {
+        await startReply(current: current)
+        guard var c = composer else { return }
+        c.buffer = AI.insertReply(text, into: c.buffer)
+        composer = c
+        composerChanged()
     }
 
     /// The draft as `ai_apply` saved it: the text (kept for ⌘Z) or the

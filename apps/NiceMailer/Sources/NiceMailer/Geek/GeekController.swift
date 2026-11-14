@@ -578,6 +578,12 @@ final class GeekController {
             handleChoiceKey(choice, key: key, code: code)
             return true
         }
+        // The AI panel of a mail takes every key while it is open, as the
+        // one of a reply does (`AI.action`).
+        if let run = model.aiRun, run.composer == nil, overlay == .none {
+            handleAIKey(event, run: run)
+            return true
+        }
 
         switch overlay {
         case .menu(let prefix):
@@ -2292,8 +2298,8 @@ final class GeekController {
         var entries: [Entry]
         if let parent = m.parent {
             entries = parent.variants.map { v in
-                Entry(key: v.key, label: v.label) { [model] in
-                    Task { await model.startAI(parent, variant: v) }
+                Entry(key: v.key, label: v.label) { [weak self] in
+                    self?.runAI(parent, variant: v)
                 }
             }
         } else {
@@ -2307,13 +2313,29 @@ final class GeekController {
                         choiceIndex = nil
                         overlay = .choice(.ai(AIMenu(prompts: m.prompts, parent: p)))
                     } else {
-                        Task { await self.model.startAI(p, variant: nil) }
+                        runAI(p, variant: nil)
                     }
                 }
             }
         }
         entries.append(Entry(key: "esc", label: L("cancel")) {})
         return entries
+    }
+
+    /// Starts a prompt chosen in the AI menu: on the reply being written,
+    /// or on the conversation open, the mail under the reader's cursor for
+    /// a prompt of one mail.
+    private func runAI(_ p: AIPromptView, variant: AIVariantView?) {
+        if model.composer != nil {
+            Task { await model.startAI(p, variant: variant) }
+            return
+        }
+        guard let thread = model.openThread?.id else {
+            model.flash = L("No mail to work on")
+            return
+        }
+        let current = readerState.current
+        Task { await model.startMailAI(p, variant: variant, thread: thread, message: current) }
     }
 
     /// `a` outside the text, ⌘I in the reply: the AI menu of the screen,
@@ -2323,7 +2345,11 @@ final class GeekController {
     func openAI() {
         let compose = model.composer != nil && screen == .mail
         guard compose || screen == .mail else { return }
-        let name = compose ? "compose" : reading ? "reading" : "list"
+        // The mail shown (two or three columns, or read in the whole
+        // window): the menu of the reading screen, translation and security
+        // check included. The list alone (one column): the list's. The two
+        // cannot be one menu: their prompts share letters (`s`).
+        let name = compose ? "compose" : (columns == 1 && !reading) ? "list" : "reading"
         let folder = compose ? nil : model.currentRole
         Task {
             guard let prompts = await model.aiPrompts(screen: name, folder: folder) else { return }

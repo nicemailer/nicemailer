@@ -418,6 +418,7 @@ Le jalon 1 est dans l'app (`docs/ai.md`, « In the app ») : ⌘I et son menu da
 - **Le curseur, après une proposition acceptée**, reste avant ce qui a changé, garde sa distance à la fin s'il était après, et va à la fin des mots réécrits s'il était dedans ou à leur frontière (on vient de taper « merci », l'IA ajoute un point : le curseur va après le point).
 - **⌘Z** rend le texte d'avant une seule fois, et seulement tant que le texte est celui que l'IA a donné ; un objet choisi ne se défait pas par ⌘Z dans le texte.
 - **Le menu de la réponse** s'affiche au pied des en-têtes, juste au-dessus du texte qu'il traite, comme ⇧⌘↩ ; celui des mails dans le coin, comme les autres choix.
+- **Le jalon 2 dans l'app** (novembre 2026) : `a` ouvre le menu de lecture dès que le mail est affiché (deux ou trois colonnes, ou un mail lu en pleine fenêtre), le menu de la liste en une colonne sur la liste seule. Les deux menus ne peuvent pas n'en faire qu'un : leurs prompts partagent des lettres (`s`, analyse de sécurité et rangement). Le tri de la Quarantine (jalon 3), qui passe par le menu de la liste, devra revenir sur ce choix. Le panneau d'un mail est dans le coin de la fenêtre et prend lui aussi toutes les touches. Une réponse rapide choisie ouvre la réponse au mail, le texte au-dessus de la citation, séparé par une ligne vide du texte d'une réponse déjà commencée.
 
 ### Quarantine
 
@@ -463,7 +464,7 @@ L'interrupteur est global : un compte ne peut pas être exclu en v1. Le format l
 3. **Contrat et historique** : fait pour les prompts du brouillon (section 10, « Réalisé ») ; les autres portées viendront avec leurs entrées.
 4. **CLI** (section 12) : fait, sauf `ai key set` et `ai history`.
 5. **Jalon 1, la correction dans l'app** : fait (section 11, « Réalisé »), avec reformuler, traduire et les objets.
-6. **Jalon 2, la lecture** : `a`, résumé, traduction, réponses rapides, analyse de sécurité, dates.
+6. **Jalon 2, la lecture** : fait (section 11, « Réalisé »).
 7. **Jalon 3, la Quarantine** : suggestions par lots, affichage sur les lignes, `↩`.
 8. **Jalon 4, le reste** : reformuler, traduire le brouillon, rédiger à partir de notes, objets, résumé de pièce jointe (extraction du texte des PDF et DOCX), documentation des prompts de l'utilisateur.
 9. **Plus tard** : affichage du coût, exclusion par compte, prompts exposés au client MCP, autres fournisseurs.

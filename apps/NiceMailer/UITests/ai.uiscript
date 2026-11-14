@@ -4,7 +4,8 @@
 # says so, proofreading shows its differences, the keys do not reach the
 # text meanwhile, Return applies them (quotation untouched) and ⌘Z undoes
 # them; a variant from the submenu, refused with Escape; a subject chosen
-# by its number; `a` in the list opens the menu of the mails.
+# by its number; `a` with a mail shown: a summary, then a quick reply that
+# starts the reply; `a` on the list alone opens the menu of the list.
 expect folder = Inbox
 key r
 expect composing = true
@@ -64,11 +65,45 @@ snap ai-subjects
 key 2
 expect ai_state = none
 expect compose_subject = Confirmation pour jeudi
-# Out of the reply, `a` opens the AI menu of the mails, not available yet.
+# Out of the reply, with the mail shown, `a` opens the AI menu of the mail.
 key esc
 expect composing = false
 key a
 expect choice = AI
+expect choice_rows ~ r Summarize
+expect choice_rows ~ p Quick replies
+expect choice_rows ~ s Security check
+expect choice_rows ~ t Translate…
+snap ai-mail-menu
+key r
+expect ai_state = proposal
+expect ai_title = Summarize
+expect ai_result ~ Victor asks whether the March invoice is ready.
+expect ai_result ~ - Send the March invoice (you)
+snap ai-summary
+# The panel takes the keys: `j` does not move the list.
+key j
+expect selected = 0
+key esc
+expect ai_state = none
+key j
+expect selected = 1
+key k
+# A quick reply starts the reply with it, above the quotation.
+key a
+key p
+expect ai_state = proposal
+expect ai_result ~ 2. I will send it tomorrow.
+key 2
+expect composing = true
+expect ai_state = none
+expect compose_text ~ I will send it tomorrow.|\n\n
+expect compose_text ~ wrote:
+key esc
+# One column, on the list alone: the menu of the list, not available yet.
+key v
+key 1
+key a
 expect choice_rows ~ Suggest a folder
 key s
 expect flash ~ Not available yet

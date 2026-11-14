@@ -39,6 +39,42 @@ struct AIRulesTests {
         #expect(act(.failed("x"), "n") == .hint)
     }
 
+    @Test func theProposalsOfAMailAreReadOrChosen() {
+        func act(_ p: AIProposal, _ key: String = "", ret: Bool = false, esc: Bool = false) -> AIKeyAction {
+            AI.action(.proposal(p), key: key, isReturn: ret, isEscape: esc)
+        }
+        for p in [AIProposal.text("x"), .summary("s", actions: []), .verdict(risk: "low", reasons: ["r"], raised: false)] {
+            #expect(act(p, ret: true) == .close)
+            #expect(act(p, esc: true) == .close)
+            #expect(act(p, "y") == .hint, "nothing to accept in \(p)")
+            #expect(AI.hint(.proposal(p)) == L("esc close"))
+        }
+        let replies = AIProposal.choices(["Oui", "Non"], then: "reply")
+        #expect(act(replies, "1") == .choose(0))
+        #expect(act(replies, "3") == .hint)
+        #expect(act(replies, esc: true) == .refuse)
+        #expect(AI.hint(.proposal(replies)) == L("1–%lld reply with it · esc or n refuse", 2))
+    }
+
+    @Test func aResultReadsAsText() {
+        let summary = AIProposal.summary("Alice attend jeudi.", actions: [
+            AIAction(task: "Apporter les clés", owner: "you", due: "jeudi"), AIAction(task: "Réserver", owner: "", due: ""),
+        ])
+        #expect(AI.resultText(summary) == "Alice attend jeudi.\n- Apporter les clés (you) · jeudi\n- Réserver")
+        #expect(AI.resultText(.verdict(risk: "medium", reasons: ["a link lies"], raised: true)) == L("Risk: medium") + "\n- a link lies")
+        #expect(AI.resultText(.choices(["Oui", "Non"], then: "reply")) == "1. Oui\n2. Non")
+        #expect(AI.riskLabel("anything") == L("Risk: low"))
+    }
+
+    @Test func aQuickReplyGoesAboveTheQuotationApartFromWordsAlreadyTyped() {
+        let fresh = AI.insertReply("Oui.", into: TextBuffer("\n\nOn Nov 7, A wrote:\n> Hi"))
+        #expect(fresh.text == "Oui.\n\nOn Nov 7, A wrote:\n> Hi")
+        #expect(fresh.cursor == 4)
+        let started = AI.insertReply("Oui.", into: TextBuffer("merci\n\nOn Nov 7, A wrote:\n> Hi", cursor: 3))
+        #expect(started.text == "Oui.\n\nmerci\n\nOn Nov 7, A wrote:\n> Hi")
+        #expect(started.cursor == 4)
+    }
+
     @Test func theHintSaysTheKeys() {
         #expect(AI.hint(.running) == L("esc stop"))
         #expect(AI.hint(.proposal(.subjects(["A", "B"]))) == L("1–%lld choose · esc or n refuse", 2))
@@ -61,7 +97,14 @@ struct AIRulesTests {
         ]])
         #expect(r == .replace(segments: [AISegmentChange(old: "teh", new: "the", diff: [AIDiffPiece(kind: "added", text: "the")])], unchanged: false))
         #expect(try decode(["kind": "subjects", "items": ["A", "B"]]) == .subjects(["A", "B"]))
+        #expect(try decode(["kind": "text", "text": "Hi"]) == .text("Hi"))
+        #expect(try decode(["kind": "summary", "summary": "S", "actions": [["task": "T", "owner": "", "due": ""]]])
+            == .summary("S", actions: [AIAction(task: "T", owner: "", due: "")]))
+        #expect(try decode(["kind": "verdict", "risk": "high", "reasons": ["x"], "raised": false])
+            == .verdict(risk: "high", reasons: ["x"], raised: false))
+        #expect(try decode(["kind": "choices", "items": ["A"], "then": "reply"]) == .choices(["A"], then: "reply"))
         #expect(throws: (any Error).self) { try decode(["kind": "verdict"]) }
+        #expect(throws: (any Error).self) { try decode(["kind": "targets", "items": []]) }
     }
 
     @Test func theCursorFollowsTheText() {
@@ -107,8 +150,9 @@ final class AIFakeState: @unchecked Sendable {
     ]
     private var _appliedBody = "Merci.\n\nOn Nov 7, Sender 1 wrote:\n> Hello"
     private var _appliedSubject = "Re: Subject 1"
+    private var _lastPrompt = ""
 
-    private func locked<T>(_ f: () -> T) -> T {
+    func locked<T>(_ f: () -> T) -> T {
         lock.lock()
         defer { lock.unlock() }
         return f()
@@ -118,6 +162,15 @@ final class AIFakeState: @unchecked Sendable {
     var proposal: [String: Any] { get { locked { _proposal } } set { locked { _proposal = newValue } } }
     var appliedBody: String { get { locked { _appliedBody } } set { locked { _appliedBody = newValue } } }
     var appliedSubject: String { get { locked { _appliedSubject } } set { locked { _appliedSubject = newValue } } }
+
+    static let mailPrompts: [[String: Any]] = [
+        ["id": "summarize-thread", "key": "r", "label": "Summarize", "scope": "thread", "output": "summary", "variants": [],
+         "source": "builtin", "available": true],
+        ["id": "quick-replies", "key": "p", "label": "Quick replies", "scope": "thread", "output": "choices", "variants": [],
+         "source": "builtin", "available": true],
+        ["id": "translate-message", "key": "t", "label": "Translate", "scope": "message", "output": "panel",
+         "variants": [["key": "e", "label": "Into English"]], "source": "builtin", "available": true],
+    ]
 
     static let prompts: [[String: Any]] = [
         ["id": "proofread", "key": "c", "label": "Proofread", "scope": "draft", "output": "replace", "variants": [],
@@ -134,9 +187,25 @@ final class AIFakeState: @unchecked Sendable {
         switch method {
         case "ai_status": return ["enabled": enabled, "ready": enabled, "reason": NSNull()] as [String: Any]
         case "ai_list_prompts":
-            return (params["screen"] as? String) == "compose" ? Self.prompts : [Self.prompts[3]]
-        case "ai_run": return ["run_id": 7, "streamed": true] as [String: Any]
-        case "ai_get_run": return ["state": "done", "proposal": proposal, "error": NSNull()] as [String: Any]
+            switch params["screen"] as? String {
+            case "compose": return Self.prompts
+            case "reading": return Self.mailPrompts
+            default: return [Self.prompts[3]]
+            }
+        case "ai_run":
+            locked { _lastPrompt = params["prompt"] as? String ?? "" }
+            return ["run_id": 7, "streamed": true] as [String: Any]
+        case "ai_get_run":
+            let p: [String: Any] = switch locked({ _lastPrompt }) {
+            case "summarize-thread": ["kind": "summary", "summary": "Alice attend jeudi.",
+                                      "actions": [["task": "Apporter les clés", "owner": "you", "due": "jeudi"]]]
+            case "quick-replies": ["kind": "choices", "items": ["C'est noté !", "On peut décaler ?"], "then": "reply"]
+            default: proposal
+            }
+            return ["state": "done", "proposal": p, "error": NSNull()] as [String: Any]
+        case "ai_apply" where locked({ _lastPrompt }) == "quick-replies":
+            let items = ["C'est noté !", "On peut décaler ?"]
+            return ["draft": NSNull(), "text": items[params["choice"] as? Int ?? 0]] as [String: Any]
         case "ai_apply":
             var d = Fixture.draft(replyTo: 10, body: appliedBody, revision: (params["revision"] as? Int ?? 1) + 1)
             d["subject"] = appliedSubject
@@ -373,7 +442,69 @@ final class AIControllerTests {
         #expect(core.calls("ai_list_prompts").isEmpty)
     }
 
+    @Test func aSummaryOfTheMailReadIsShownThenClosed() async throws {
+        // Two columns: the mail is shown, `a` opens the reading menu.
+        press("a")
+        _ = await eventually { self.aiMenu != nil }
+        #expect(core.calls("ai_list_prompts").last?["screen"] as? String == "reading")
+        press("r")
+        _ = await eventually { self.model.aiRun?.runId == 7 }
+        let run = try #require(core.calls("ai_run").last)
+        #expect(run["thread_id"] as? Int == model.openThread?.id)
+        #expect(run["message_id"] == nil, "a thread prompt names no mail")
+        #expect(run["draft_id"] == nil)
+        event("AiDone", ["run_id": .int(7)])
+        _ = await eventually { if case .proposal? = self.model.aiRun?.phase { true } else { false } }
+        #expect(AI.resultText(try #require({ if case .proposal(let p)? = model.aiRun?.phase { p } else { nil } }()))
+            == "Alice attend jeudi.\n- Apporter les clés (you) · jeudi")
+        // The panel takes the keys: `j` does not move the list.
+        let selected = model.selectedThreadId
+        press("j")
+        #expect(model.selectedThreadId == selected)
+        #expect(await eventually { self.model.flash == L("esc close") })
+        press("esc")
+        _ = await eventually { self.model.aiRun == nil }
+        #expect(core.calls("ai_dismiss").count == 1)
+        // The keys are the list's again.
+        press("j")
+        #expect(model.selectedThreadId != selected)
+    }
+
+    @Test func aMessagePromptNamesTheMailUnderTheCursor() async throws {
+        press("a")
+        _ = await eventually { self.aiMenu != nil }
+        press("t")
+        #expect(aiMenu?.parent?.id == "translate-message")
+        press("e")
+        _ = await eventually { self.model.aiRun?.runId == 7 }
+        let run = try #require(core.calls("ai_run").last)
+        #expect(run["variant"] as? String == "e")
+        #expect(run["thread_id"] as? Int == model.openThread?.id)
+    }
+
+    @Test func aQuickReplyStartsTheReplyWithIt() async {
+        press("a")
+        _ = await eventually { self.aiMenu != nil }
+        press("p")
+        _ = await eventually { self.model.aiRun?.runId == 7 }
+        event("AiDone", ["run_id": .int(7)])
+        _ = await eventually { if case .proposal? = self.model.aiRun?.phase { true } else { false } }
+        press("2")
+        _ = await eventually { self.model.composer != nil }
+        #expect(core.calls("ai_apply").last?["choice"] as? Int == 1)
+        #expect(core.calls("ai_apply").last?["revision"] == nil, "no draft yet")
+        #expect(model.aiRun == nil)
+        // The reply to the mail, the text above the quotation, the cursor
+        // after it, to be saved as if typed.
+        #expect(core.calls("prepare_draft").count == 1)
+        #expect(model.composer?.buffer.text.hasPrefix("On peut décaler ?\n\nOn Nov 7") == true, "\(model.composer?.buffer.text ?? "")")
+        #expect(model.composer?.buffer.cursor == "On peut décaler ?".count)
+        #expect(model.composer?.isDirty == true)
+    }
+
     @Test func aInTheListOpensTheMenuOfTheMails() async {
+        // One column, on the list: the list's menu.
+        controller.columns = 1
         press("a")
         _ = await eventually { self.aiMenu != nil }
         #expect(core.calls("ai_list_prompts").last?["screen"] as? String == "list")

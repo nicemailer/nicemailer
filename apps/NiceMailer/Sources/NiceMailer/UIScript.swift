@@ -725,6 +725,15 @@ private final class Runner {
                 guard case .proposal(.replace(let segments, _))? = m.aiRun?.phase else { return "" }
                 return AI.diffText(segments).replacingOccurrences(of: "\n", with: "\\n")
             }(),
+            // A proposal only read, or a list of choices, as text
+            // (`AI.resultText`, line breaks as `\n`).
+            "ai_result": {
+                guard case .proposal(let p)? = m.aiRun?.phase else { return "" }
+                switch p {
+                case .text, .summary, .verdict, .choices: return AI.resultText(p).replacingOccurrences(of: "\n", with: "\\n")
+                default: return ""
+                }
+            }(),
             "ai_subjects": {
                 guard case .proposal(.subjects(let items))? = m.aiRun?.phase else { return "" }
                 return items.joined(separator: " | ")

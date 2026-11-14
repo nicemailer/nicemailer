@@ -524,12 +524,45 @@ struct AIPanel: View {
                     }
                 }
             }
-        case .proposal(.subjects(let items)):
+        case .proposal(.subjects(let items)), .proposal(.choices(let items, _)):
             VStack(alignment: .leading, spacing: scaled(2)) {
                 ForEach(Array(items.enumerated()), id: \.offset) { i, subject in
-                    HStack(spacing: scaled(10)) {
+                    HStack(alignment: .firstTextBaseline, spacing: scaled(10)) {
                         Text("\(i + 1)").foregroundStyle(Palette.accentText)
                         Text(subject).foregroundStyle(Palette.text)
+                    }
+                }
+            }
+        case .proposal(.text(let text)):
+            Text(text).foregroundStyle(Palette.text)
+        case .proposal(.summary(let summary, let actions)):
+            VStack(alignment: .leading, spacing: scaled(4)) {
+                Text(summary).foregroundStyle(Palette.text)
+                if !actions.isEmpty {
+                    Text(L("To do")).foregroundStyle(Palette.accentText).padding(.top, scaled(4))
+                    ForEach(Array(actions.enumerated()), id: \.offset) { _, a in
+                        HStack(alignment: .firstTextBaseline, spacing: scaled(6)) {
+                            Text("–").foregroundStyle(Palette.muted)
+                            Text(a.task).foregroundStyle(Palette.text)
+                            if !a.owner.isEmpty { Text(a.owner).foregroundStyle(Palette.muted) }
+                            if !a.due.isEmpty { Text(a.due).foregroundStyle(Palette.unread) }
+                        }
+                    }
+                }
+            }
+        case .proposal(.verdict(let risk, let reasons, let raised)):
+            VStack(alignment: .leading, spacing: scaled(2)) {
+                // The colour says the risk at a glance: high in the error
+                // colour, medium in the unread one, low in the accent one.
+                Text(AI.riskLabel(risk))
+                    .foregroundStyle(risk == "high" ? Palette.error : risk == "medium" ? Palette.unread : Palette.accentText)
+                if raised {
+                    Text(L("Raised by NiceMailer: what it found itself in the mail")).foregroundStyle(Palette.muted)
+                }
+                ForEach(Array(reasons.enumerated()), id: \.offset) { _, r in
+                    HStack(alignment: .firstTextBaseline, spacing: scaled(6)) {
+                        Text("–").foregroundStyle(Palette.muted)
+                        Text(r).foregroundStyle(Palette.text)
                     }
                 }
             }
