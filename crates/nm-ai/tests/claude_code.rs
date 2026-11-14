@@ -271,15 +271,15 @@ async fn a_timeout_kills_the_process_group() {
     let tail = r#"sleep 60 & echo $! > "$D/grandchild"; wait"#;
     let fake = FakeClaude::new(&[String::new()], tail);
     let mut p = fake.provider();
-    p.timeout = Duration::from_millis(500);
+    // Long enough for the fake to start its grandchild even on a loaded
+    // machine (500 ms was not, once): the grandchild must exist when the
+    // timeout kills the group, or the test would prove nothing.
+    p.timeout = Duration::from_secs(3);
     // The first chunk is empty, so the fake writes nothing after the probe.
     let err = p.run(&request(None), |_| {}).await.unwrap_err();
     assert_eq!(err, AiError::Timeout);
-    let pid: i32 = std::fs::read_to_string(fake.path().join("grandchild"))
-        .unwrap()
-        .trim()
-        .parse()
-        .unwrap();
+    let pid = read_pid(&fake.path().join("grandchild"))
+        .expect("the grandchild started before the timeout");
     assert!(
         gone_within(pid, Duration::from_secs(3)),
         "grandchild {pid} still running"
@@ -292,16 +292,22 @@ async fn a_cancelled_call_kills_the_process_group() {
     let fake = FakeClaude::new(&[String::new()], tail);
     let p = fake.provider();
     let req = request(None);
+    let pid_file = fake.path().join("grandchild");
     // Dropping the future is how a caller cancels (`ia.md`, `ai_cancel`):
-    // here, `select!` drops the call when the sleep wins.
-    tokio::select! {
+    // here, `select!` drops the call as soon as the other branch ends, which
+    // is when the grandchild is running. A fixed delay instead made the test
+    // fail on a loaded machine, where the fake had not started it yet.
+    let pid = tokio::select! {
         _ = p.run(&req, |_| {}) => panic!("the call cannot finish"),
-        _ = tokio::time::sleep(Duration::from_millis(300)) => {}
-    }
-    // The fake writes the grandchild's pid as soon as it reads the probe,
-    // well within the 300 ms the call ran.
-    let pid = wait_for_file(&fake.path().join("grandchild"), Duration::from_secs(2))
-        .expect("the fake started its grandchild before the cancel");
+        pid = async {
+            loop {
+                if let Some(pid) = read_pid(&pid_file) {
+                    break pid;
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        } => pid,
+    };
     assert!(
         gone_within(pid, Duration::from_secs(3)),
         "grandchild {pid} still running"
@@ -404,16 +410,9 @@ fn gone_within(pid: i32, limit: Duration) -> bool {
     false
 }
 
-fn wait_for_file(path: &Path, limit: Duration) -> Option<i32> {
-    let start = std::time::Instant::now();
-    while start.elapsed() < limit {
-        if let Some(pid) = std::fs::read_to_string(path)
-            .ok()
-            .and_then(|s| s.trim().parse().ok())
-        {
-            return Some(pid);
-        }
-        std::thread::sleep(Duration::from_millis(50));
-    }
-    None
+/// The pid a fake wrote to a file, once it is there and complete.
+fn read_pid(path: &Path) -> Option<i32> {
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|s| s.trim().parse().ok())
 }
