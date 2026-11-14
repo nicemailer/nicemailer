@@ -38,7 +38,10 @@ pub struct Mailbox {
 
 impl Mailbox {
     pub fn new(addr: &str, name: Option<&str>) -> Mailbox {
-        Mailbox { addr: addr.to_string(), name: name.map(str::to_string) }
+        Mailbox {
+            addr: addr.to_string(),
+            name: name.map(str::to_string),
+        }
     }
 }
 
@@ -60,12 +63,16 @@ pub const REFERENCES_MAX: usize = 20;
 /// is also what keeps a hostile header from injecting a command into the
 /// SMTP conversation (`RCPT TO:<…>` cannot be closed early).
 pub fn valid_addr(addr: &str) -> bool {
-    let Some((local, domain)) = addr.rsplit_once('@') else { return false };
+    let Some((local, domain)) = addr.rsplit_once('@') else {
+        return false;
+    };
     !local.is_empty()
         && !domain.is_empty()
         && addr.len() <= 254
         && (domain.contains('.') || domain.eq_ignore_ascii_case("localhost"))
-        && !addr.chars().any(|c| c.is_whitespace() || c.is_control() || "<>()[],;:\\\"".contains(c))
+        && !addr
+            .chars()
+            .any(|c| c.is_whitespace() || c.is_control() || "<>()[],;:\\\"".contains(c))
         && !domain.contains('@')
 }
 
@@ -136,7 +143,10 @@ fn split_addresses(text: &str) -> Vec<&str> {
 fn parse_mailbox(piece: &str) -> Option<Mailbox> {
     let bare = |s: &str| -> Option<String> {
         let s = s.trim();
-        let s = s.strip_prefix("mailto:").or_else(|| s.strip_prefix("MAILTO:")).unwrap_or(s);
+        let s = s
+            .strip_prefix("mailto:")
+            .or_else(|| s.strip_prefix("MAILTO:"))
+            .unwrap_or(s);
         valid_addr(s).then(|| s.to_lowercase())
     };
     let unquote = |name: &str| -> Option<String> {
@@ -150,7 +160,10 @@ fn parse_mailbox(piece: &str) -> Option<Mailbox> {
     };
     if let (Some(open), true) = (piece.rfind('<'), piece.ends_with('>')) {
         let addr = bare(&piece[open + 1..piece.len() - 1])?;
-        return Some(Mailbox { addr, name: unquote(&piece[..open]) });
+        return Some(Mailbox {
+            addr,
+            name: unquote(&piece[..open]),
+        });
     }
     if let Some(addr) = bare(piece) {
         return Some(Mailbox { addr, name: None });
@@ -158,7 +171,10 @@ fn parse_mailbox(piece: &str) -> Option<Mailbox> {
     // "Alice Martin alice@x.fr": a name, then the address.
     let (name, last) = piece.rsplit_once(char::is_whitespace)?;
     let addr = bare(last)?;
-    Some(Mailbox { addr, name: unquote(name) })
+    Some(Mailbox {
+        addr,
+        name: unquote(name),
+    })
 }
 
 /// The recipients of a draft as the user edited them: each address once
@@ -179,7 +195,12 @@ pub fn clean_recipients(lists: [&[Mailbox]; 3]) -> Result<[Vec<Mailbox>; 3], Str
                 continue;
             }
             seen.push(addr.clone());
-            let name = m.name.as_deref().map(str::trim).filter(|n| !n.is_empty()).map(clean);
+            let name = m
+                .name
+                .as_deref()
+                .map(str::trim)
+                .filter(|n| !n.is_empty())
+                .map(clean);
             out[i].push(Mailbox { addr, name });
         }
     }
@@ -192,7 +213,13 @@ pub fn clean_recipients(lists: [&[Mailbox]; 3]) -> Result<[Vec<Mailbox>; 3], Str
 /// A subject as typed: one line, without control characters, at most
 /// 998 characters (the longest line of a mail).
 pub fn clean_subject(subject: &str) -> String {
-    clean(subject).chars().filter(|c| !c.is_control()).take(998).collect::<String>().trim().to_string()
+    clean(subject)
+        .chars()
+        .filter(|c| !c.is_control())
+        .take(998)
+        .collect::<String>()
+        .trim()
+        .to_string()
 }
 
 /// What the reply rules read of the mail answered.
@@ -226,7 +253,11 @@ pub fn reply_all(original: &Original, own: &[String]) -> (Vec<Mailbox>, Vec<Mail
     let (to, cc): (Vec<&Mailbox>, Vec<&Mailbox>) = if from_own {
         (original.to.iter().collect(), original.cc.iter().collect())
     } else {
-        let to = if original.reply_to.is_empty() { original.from.into_iter().collect() } else { original.reply_to.iter().collect() };
+        let to = if original.reply_to.is_empty() {
+            original.from.into_iter().collect()
+        } else {
+            original.reply_to.iter().collect()
+        };
         (to, original.to.iter().chain(original.cc).collect())
     };
     let mut seen: Vec<String> = Vec::new();
@@ -240,7 +271,10 @@ pub fn reply_all(original: &Original, own: &[String]) -> (Vec<Mailbox>, Vec<Mail
                 continue;
             }
             seen.push(addr.clone());
-            out.push(Mailbox { addr, name: m.name.clone().filter(|n| !n.trim().is_empty()) });
+            out.push(Mailbox {
+                addr,
+                name: m.name.clone().filter(|n| !n.trim().is_empty()),
+            });
         }
         out
     };
@@ -252,7 +286,10 @@ pub fn reply_all(original: &Original, own: &[String]) -> (Vec<Mailbox>, Vec<Mail
     if to.is_empty()
         && let Some(f) = original.from.filter(|f| valid_addr(f.addr.trim()))
     {
-        to.push(Mailbox { addr: f.addr.trim().to_lowercase(), name: f.name.clone() });
+        to.push(Mailbox {
+            addr: f.addr.trim().to_lowercase(),
+            name: f.name.clone(),
+        });
     }
     (to, cc)
 }
@@ -263,7 +300,18 @@ pub fn reply_all(original: &Original, own: &[String]) -> (Vec<Mailbox>, Vec<Mail
 /// invalid addresses are removed; nobody left: the sender, even if it is
 /// an address of the account. Never a Cc.
 pub fn reply_sender(original: &Original, own: &[String]) -> Vec<Mailbox> {
-    let only_to = Original { cc: &[], to: if original.from.is_some_and(|f| own.iter().any(|o| o.eq_ignore_ascii_case(&f.addr))) { original.to } else { &[] }, ..*original };
+    let only_to = Original {
+        cc: &[],
+        to: if original
+            .from
+            .is_some_and(|f| own.iter().any(|o| o.eq_ignore_ascii_case(&f.addr)))
+        {
+            original.to
+        } else {
+            &[]
+        },
+        ..*original
+    };
     reply_all(&only_to, own).0
 }
 
@@ -273,8 +321,13 @@ pub fn forward_subject(subject: &str) -> String {
     let s = subject.trim();
     const WORDS: &[&str] = &["fwd", "fw", "tr", "wg", "rv", "enc", "doorst", "vs", "vb"];
     let word: String = s.chars().take_while(|c| c.is_alphabetic()).collect();
-    let prefixed = WORDS.contains(&word.to_lowercase().as_str()) && s[word.len()..].trim_start().starts_with(':');
-    if prefixed { s.to_string() } else { format!("Fwd: {s}") }
+    let prefixed = WORDS.contains(&word.to_lowercase().as_str())
+        && s[word.len()..].trim_start().starts_with(':');
+    if prefixed {
+        s.to_string()
+    } else {
+        format!("Fwd: {s}")
+    }
 }
 
 /// The body of a forward (`reponse.md`, section 4): two empty lines for
@@ -291,8 +344,19 @@ pub fn forward_body(header: &str, text: &str) -> String {
 /// among the recipients of the mail answered, else the main address.
 /// `identities` is never empty: it starts with the account's address.
 pub fn sender_identity(identities: &[Mailbox], original: &Original) -> Mailbox {
-    let addressed = |i: &&Mailbox| original.to.iter().chain(original.cc).any(|r| r.addr.trim().eq_ignore_ascii_case(&i.addr));
-    identities.iter().find(addressed).or(identities.first()).cloned().unwrap_or_default()
+    let addressed = |i: &&Mailbox| {
+        original
+            .to
+            .iter()
+            .chain(original.cc)
+            .any(|r| r.addr.trim().eq_ignore_ascii_case(&i.addr))
+    };
+    identities
+        .iter()
+        .find(addressed)
+        .or(identities.first())
+        .cloned()
+        .unwrap_or_default()
 }
 
 /// The account that sends a reply or a forward of a mail whose own account
@@ -302,12 +366,23 @@ pub fn sender_identity(identities: &[Mailbox], original: &Original) -> Mailbox {
 /// with that identity; else the first account, from its main address.
 /// Returns its index in `accounts`; `None` when no account has an address.
 pub fn choose_sender(accounts: &[&[Mailbox]], original: &Original) -> Option<(usize, Mailbox)> {
-    let addressed = |i: &Mailbox| original.to.iter().chain(original.cc).any(|r| r.addr.trim().eq_ignore_ascii_case(&i.addr));
+    let addressed = |i: &Mailbox| {
+        original
+            .to
+            .iter()
+            .chain(original.cc)
+            .any(|r| r.addr.trim().eq_ignore_ascii_case(&i.addr))
+    };
     accounts
         .iter()
         .enumerate()
         .find_map(|(n, ids)| ids.iter().find(|i| addressed(i)).map(|m| (n, m.clone())))
-        .or_else(|| accounts.first().and_then(|ids| ids.first()).map(|m| (0, m.clone())))
+        .or_else(|| {
+            accounts
+                .first()
+                .and_then(|ids| ids.first())
+                .map(|m| (0, m.clone()))
+        })
         .filter(|(_, m)| !m.addr.is_empty())
 }
 
@@ -315,7 +390,11 @@ pub fn choose_sender(accounts: &[&[Mailbox]], original: &Original) -> Option<(us
 /// starts with a reply prefix (`reponse.md`, section 4, "Objet").
 pub fn reply_subject(subject: &str) -> String {
     let s = subject.trim();
-    if has_reply_prefix(s) { s.to_string() } else { format!("Re: {s}") }
+    if has_reply_prefix(s) {
+        s.to_string()
+    } else {
+        format!("Re: {s}")
+    }
 }
 
 /// Whether `s` starts with a reply prefix in one of the usual languages:
@@ -348,7 +427,11 @@ fn has_reply_prefix(s: &str) -> bool {
 /// mail answered, or its `In-Reply-To` when it has none, then its own
 /// `Message-ID`. Without duplicates, and at most [`REFERENCES_MAX`]: the
 /// first (the root of the conversation) and the latest ones.
-pub fn references(parent_refs: &[String], parent_in_reply_to: Option<&str>, parent_id: Option<&str>) -> Vec<String> {
+pub fn references(
+    parent_refs: &[String],
+    parent_in_reply_to: Option<&str>,
+    parent_id: Option<&str>,
+) -> Vec<String> {
     let base: Vec<&str> = if parent_refs.is_empty() {
         parent_in_reply_to.into_iter().collect()
     } else {
@@ -372,7 +455,11 @@ pub fn references(parent_refs: &[String], parent_in_reply_to: Option<&str>, pare
 /// A `Message-ID` that can be written between `<` and `>` as is: no space,
 /// no control character, no angle bracket.
 pub fn valid_msgid(id: &str) -> bool {
-    !id.is_empty() && id.len() <= 250 && !id.chars().any(|c| c.is_whitespace() || c.is_control() || c == '<' || c == '>' || !c.is_ascii())
+    !id.is_empty()
+        && id.len() <= 250
+        && !id
+            .chars()
+            .any(|c| c.is_whitespace() || c.is_control() || c == '<' || c == '>' || !c.is_ascii())
 }
 
 /// The text of the mail answered, quoted (`reponse.md`, section 4):
@@ -451,7 +538,14 @@ pub fn flowed(text: &str) -> String {
             let content = rest.strip_prefix(' ').unwrap_or(rest);
             // One space after the marks: it is "stuffing", removed by the
             // reader, and makes the quotation readable everywhere.
-            (format!("{}{}", ">".repeat(depth), if content.is_empty() { "" } else { " " }), content)
+            (
+                format!(
+                    "{}{}",
+                    ">".repeat(depth),
+                    if content.is_empty() { "" } else { " " }
+                ),
+                content,
+            )
         } else {
             (String::new(), rest)
         };
@@ -459,7 +553,9 @@ pub fn flowed(text: &str) -> String {
         for piece in cut(content, room) {
             out.push_str(&prefix);
             // A piece starting with `>` would read as a quotation.
-            if depth == 0 && (piece.starts_with(' ') || piece.starts_with("From ") || piece.starts_with('>')) {
+            if depth == 0
+                && (piece.starts_with(' ') || piece.starts_with("From ") || piece.starts_with('>'))
+            {
                 out.push(' ');
             }
             out.push_str(piece);
@@ -504,7 +600,9 @@ fn cut(s: &str, room: usize) -> Vec<&str> {
                 }
             }
         }
-        let Some(end) = best.or(first_after) else { break };
+        let Some(end) = best.or(first_after) else {
+            break;
+        };
         pieces.push(&rest[..end]);
         rest = &rest[end..];
     }
@@ -576,13 +674,21 @@ pub fn clean_filename(name: &str) -> String {
     let base = name.rsplit(['/', '\\']).next().unwrap_or("");
     let cleaned: String = base.chars().filter(|c| !c.is_control()).take(255).collect();
     let cleaned = cleaned.trim().trim_start_matches('.').trim();
-    if cleaned.is_empty() { "attachment".to_string() } else { cleaned.to_string() }
+    if cleaned.is_empty() {
+        "attachment".to_string()
+    } else {
+        cleaned.to_string()
+    }
 }
 
 /// A MIME type as `type/subtype` of token characters (RFC 2045), in
 /// lowercase; `application/octet-stream` for anything else.
 pub fn clean_mime_type(t: &str) -> String {
-    let token = |s: &str| !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || "!#$&^_.+-".contains(c));
+    let token = |s: &str| {
+        !s.is_empty()
+            && s.chars()
+                .all(|c| c.is_ascii_alphanumeric() || "!#$&^_.+-".contains(c))
+    };
     match t.trim().split_once('/') {
         Some((a, b)) if token(a) && token(b) && t.len() <= 127 => t.trim().to_ascii_lowercase(),
         _ => "application/octet-stream".to_string(),
@@ -597,7 +703,10 @@ pub fn clean_mime_type(t: &str) -> String {
 /// Lines end with CRLF. `Bcc` is written when `h.bcc` is not empty: the
 /// caller gives an empty list for the mail sent.
 pub fn build_message(h: &Outgoing, body: &str, attachments: &[Attachment]) -> Vec<u8> {
-    let files: usize = attachments.iter().map(|a| encoded_size(a.data.len() as u64) as usize + 512).sum();
+    let files: usize = attachments
+        .iter()
+        .map(|a| encoded_size(a.data.len() as u64) as usize + 512)
+        .sum();
     let mut out = String::with_capacity(body.len() + 1024 + files);
     header(&mut out, "From", &mailbox(h.from));
     if !h.to.is_empty() {
@@ -615,7 +724,12 @@ pub fn build_message(h: &Outgoing, body: &str, attachments: &[Attachment]) -> Ve
     if let Some(parent) = h.in_reply_to.filter(|p| valid_msgid(p)) {
         header(&mut out, "In-Reply-To", &format!("<{parent}>"));
     }
-    let refs: Vec<String> = h.references.iter().filter(|r| valid_msgid(r)).map(|r| format!("<{r}>")).collect();
+    let refs: Vec<String> = h
+        .references
+        .iter()
+        .filter(|r| valid_msgid(r))
+        .map(|r| format!("<{r}>"))
+        .collect();
     if !refs.is_empty() {
         // One identifier per line: they are long, and a folded header
         // keeps every line short.
@@ -631,12 +745,18 @@ pub fn build_message(h: &Outgoing, body: &str, attachments: &[Attachment]) -> Ve
     // same draft gives the same bytes. Base64 and quoted-printable never
     // hold `=_`; a text sent as is that holds it goes in quoted-printable.
     let boundary = format!("=_nm_{}", &hex_digest(h.message_id)[..24]);
-    let plain = text.is_ascii() && text.split("\r\n").all(|l| l.len() <= 998) && !(!attachments.is_empty() && text.contains(&boundary));
+    let plain = text.is_ascii()
+        && text.split("\r\n").all(|l| l.len() <= 998)
+        && !(!attachments.is_empty() && text.contains(&boundary));
     if attachments.is_empty() {
         text_part(&mut out, &text, plain);
         return out.into_bytes();
     }
-    header(&mut out, "Content-Type", &format!("multipart/mixed; boundary=\"{boundary}\""));
+    header(
+        &mut out,
+        "Content-Type",
+        &format!("multipart/mixed; boundary=\"{boundary}\""),
+    );
     out.push_str("\r\n");
     let _ = write!(out, "--{boundary}\r\n");
     text_part(&mut out, &text, plain);
@@ -645,9 +765,21 @@ pub fn build_message(h: &Outgoing, body: &str, attachments: &[Attachment]) -> Ve
         let name = clean_filename(a.filename);
         let (param, display) = filename_params(&name);
         // `name` on a line of its own when it is encoded: lines stay short.
-        let sep = if display.starts_with("\"=?") { ";\r\n " } else { "; " };
-        header(&mut out, "Content-Type", &format!("{}{sep}name={display}", clean_mime_type(a.mime_type)));
-        header(&mut out, "Content-Disposition", &format!("attachment;{param}"));
+        let sep = if display.starts_with("\"=?") {
+            ";\r\n "
+        } else {
+            "; "
+        };
+        header(
+            &mut out,
+            "Content-Type",
+            &format!("{}{sep}name={display}", clean_mime_type(a.mime_type)),
+        );
+        header(
+            &mut out,
+            "Content-Disposition",
+            &format!("attachment;{param}"),
+        );
         header(&mut out, "Content-Transfer-Encoding", "base64");
         out.push_str("\r\n");
         let encoded = base64(a.data);
@@ -664,8 +796,16 @@ pub fn build_message(h: &Outgoing, body: &str, attachments: &[Attachment]) -> Ve
 
 /// The headers and the text of the body part.
 fn text_part(out: &mut String, text: &str, plain: bool) {
-    header(out, "Content-Type", "text/plain; charset=utf-8; format=flowed");
-    header(out, "Content-Transfer-Encoding", if plain { "7bit" } else { "quoted-printable" });
+    header(
+        out,
+        "Content-Type",
+        "text/plain; charset=utf-8; format=flowed",
+    );
+    header(
+        out,
+        "Content-Transfer-Encoding",
+        if plain { "7bit" } else { "quoted-printable" },
+    );
     out.push_str("\r\n");
     if plain {
         out.push_str(text);
@@ -686,7 +826,11 @@ fn text_part(out: &mut String, text: &str, plain: bool) {
 /// (`filename*0*=…; filename*1*=…`) so that no line grows long, and as an
 /// RFC 2047 encoded word in `name`, which older readers understand.
 fn filename_params(name: &str) -> (String, String) {
-    let simple = name.is_ascii() && !name.chars().any(|c| c.is_control() || c == '"' || c == '\\') && name.len() <= 60;
+    let simple = name.is_ascii()
+        && !name
+            .chars()
+            .any(|c| c.is_control() || c == '"' || c == '\\')
+        && name.len() <= 60;
     if simple {
         return (format!(" filename=\"{name}\""), format!("\"{name}\""));
     }
@@ -703,7 +847,10 @@ fn filename_params(name: &str) -> (String, String) {
     let mut rest = encoded.as_str();
     while !rest.is_empty() {
         let mut end = rest.len().min(50);
-        while end < rest.len() && end > 0 && (rest.as_bytes()[end - 1] == b'%' || (end >= 2 && rest.as_bytes()[end - 2] == b'%')) {
+        while end < rest.len()
+            && end > 0
+            && (rest.as_bytes()[end - 1] == b'%' || (end >= 2 && rest.as_bytes()[end - 2] == b'%'))
+        {
             end -= 1;
         }
         pieces.push(&rest[..end]);
@@ -712,7 +859,13 @@ fn filename_params(name: &str) -> (String, String) {
     let param = pieces
         .iter()
         .enumerate()
-        .map(|(i, p)| if i == 0 { format!("\r\n filename*0*=utf-8''{p}") } else { format!("\r\n filename*{i}*={p}") })
+        .map(|(i, p)| {
+            if i == 0 {
+                format!("\r\n filename*0*=utf-8''{p}")
+            } else {
+                format!("\r\n filename*{i}*={p}")
+            }
+        })
         .collect::<Vec<_>>()
         .join(";");
     (param, format!("\"{}\"", encoded_words(name)))
@@ -721,10 +874,12 @@ fn filename_params(name: &str) -> (String, String) {
 /// SHA-256 of a text, in hexadecimal.
 fn hex_digest(s: &str) -> String {
     use sha2::{Digest, Sha256};
-    Sha256::digest(s.as_bytes()).iter().fold(String::with_capacity(64), |mut out, b| {
-        let _ = write!(out, "{b:02x}");
-        out
-    })
+    Sha256::digest(s.as_bytes())
+        .iter()
+        .fold(String::with_capacity(64), |mut out, b| {
+            let _ = write!(out, "{b:02x}");
+            out
+        })
 }
 
 /// A header line. The value is already encoded and folded.
@@ -738,7 +893,15 @@ fn header(out: &mut String, name: &str, value: &str) {
 /// A value from outside without line breaks: a CR or LF in a subject or a
 /// name would end the header and start another (header injection).
 fn clean(s: &str) -> String {
-    s.chars().map(|c| if c == '\r' || c == '\n' || c == '\t' { ' ' } else { c }).collect()
+    s.chars()
+        .map(|c| {
+            if c == '\r' || c == '\n' || c == '\t' {
+                ' '
+            } else {
+                c
+            }
+        })
+        .collect()
 }
 
 /// An unstructured value (the subject): as is when it is ASCII, else in
@@ -798,11 +961,25 @@ fn encoded_words(s: &str) -> String {
 /// has special characters, encoded when it is not ASCII.
 fn mailbox(m: &Mailbox) -> String {
     let addr = clean(&m.addr);
-    match m.name.as_deref().map(clean).map(|n| n.trim().to_string()).filter(|n| !n.is_empty()) {
+    match m
+        .name
+        .as_deref()
+        .map(clean)
+        .map(|n| n.trim().to_string())
+        .filter(|n| !n.is_empty())
+    {
         None => addr,
         Some(n) if !n.is_ascii() => format!("{} <{addr}>", encoded_words(&n)),
-        Some(n) if n.chars().all(|c| c.is_ascii_alphanumeric() || " !#$%&'*+-/=?^_`{|}~".contains(c)) => format!("{n} <{addr}>"),
-        Some(n) => format!("\"{}\" <{addr}>", n.replace('\\', "\\\\").replace('"', "\\\"")),
+        Some(n)
+            if n.chars()
+                .all(|c| c.is_ascii_alphanumeric() || " !#$%&'*+-/=?^_`{|}~".contains(c)) =>
+        {
+            format!("{n} <{addr}>")
+        }
+        Some(n) => format!(
+            "\"{}\" <{addr}>",
+            n.replace('\\', "\\\\").replace('"', "\\\"")
+        ),
     }
 }
 
@@ -849,7 +1026,8 @@ fn quoted_printable(out: &mut String, text: &str) {
         let mut len = 0;
         for (i, &b) in bytes.iter().enumerate() {
             let at_end = i + 1 == bytes.len();
-            let literal = (b == b' ' || b == b'\t') && !at_end || (33..=126).contains(&b) && b != b'=';
+            let literal =
+                (b == b' ' || b == b'\t') && !at_end || (33..=126).contains(&b) && b != b'=';
             let piece_len = if literal { 1 } else { 3 };
             // A soft break keeps the line at 76 characters, `=` included.
             if len + piece_len > 75 {
@@ -872,7 +1050,11 @@ pub fn base64(bytes: &[u8]) -> String {
     const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
     for chunk in bytes.chunks(3) {
-        let b = [chunk[0], *chunk.get(1).unwrap_or(&0), *chunk.get(2).unwrap_or(&0)];
+        let b = [
+            chunk[0],
+            *chunk.get(1).unwrap_or(&0),
+            *chunk.get(2).unwrap_or(&0),
+        ];
         let n = (u32::from(b[0]) << 16) | (u32::from(b[1]) << 8) | u32::from(b[2]);
         for i in 0..4 {
             if i <= chunk.len() {
@@ -894,7 +1076,9 @@ pub fn rfc5322_date(unix: i64, tz_offset_secs: i32) -> String {
     let (y, m, d) = civil_from_days(days);
     // 1970-01-01 was a Thursday.
     const WEEKDAYS: [&str; 7] = ["Thu", "Fri", "Sat", "Sun", "Mon", "Tue", "Wed"];
-    const MONTHS: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const MONTHS: [&str; 12] = [
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ];
     let sign = if tz_offset_secs < 0 { '-' } else { '+' };
     let off = tz_offset_secs.unsigned_abs() / 60;
     format!(
@@ -932,7 +1116,11 @@ fn civil_from_days(z: i64) -> (i64, i64, i64) {
 /// domain of the address it is sent from, so that it is unique and says
 /// nothing of the Mac.
 pub fn new_message_id(random: u128, from_addr: &str) -> String {
-    let domain = from_addr.rsplit_once('@').map(|(_, d)| d.to_lowercase()).filter(|d| valid_msgid(d)).unwrap_or_else(|| "nicemailer.invalid".into());
+    let domain = from_addr
+        .rsplit_once('@')
+        .map(|(_, d)| d.to_lowercase())
+        .filter(|d| valid_msgid(d))
+        .unwrap_or_else(|| "nicemailer.invalid".into());
     format!("{random:032x}@{domain}")
 }
 
@@ -963,7 +1151,11 @@ pub fn must_copy_to_sent(save: SaveSent, smtp_host: &str, gmail_capability: bool
 pub fn provider_copies_sent(smtp_host: &str, gmail_capability: bool) -> bool {
     let h = smtp_host.trim_end_matches('.').to_lowercase();
     let under = |d: &str| h == d || h.ends_with(&format!(".{d}"));
-    gmail_capability || h == "smtp.gmail.com" || h == "smtp.googlemail.com" || under("fastmail.com") || under("messagingengine.com")
+    gmail_capability
+        || h == "smtp.gmail.com"
+        || h == "smtp.googlemail.com"
+        || under("fastmail.com")
+        || under("messagingengine.com")
 }
 
 #[cfg(test)]
@@ -1007,7 +1199,12 @@ mod tests {
         let from = Mailbox::new("alice@a.fr", Some("Alice"));
         let to = [mb("me@x.fr"), mb("bob@b.fr")];
         let cc = [mb("carol@c.fr")];
-        let o = Original { from: Some(&from), reply_to: &[], to: &to, cc: &cc };
+        let o = Original {
+            from: Some(&from),
+            reply_to: &[],
+            to: &to,
+            cc: &cc,
+        };
         let (t, c) = reply_all(&o, &["me@x.fr".into()]);
         assert_eq!(addrs(&t), ["alice@a.fr"]);
         assert_eq!(t[0].name.as_deref(), Some("Alice"));
@@ -1019,7 +1216,12 @@ mod tests {
         let from = mb("noreply@a.fr");
         let rt = [mb("list@a.fr")];
         let to = [mb("me@x.fr")];
-        let o = Original { from: Some(&from), reply_to: &rt, to: &to, cc: &[] };
+        let o = Original {
+            from: Some(&from),
+            reply_to: &rt,
+            to: &to,
+            cc: &[],
+        };
         let (t, c) = reply_all(&o, &["me@x.fr".into()]);
         assert_eq!(addrs(&t), ["list@a.fr"]);
         assert!(c.is_empty());
@@ -1028,9 +1230,19 @@ mod tests {
     #[test]
     fn own_addresses_duplicates_and_case_are_removed() {
         let from = mb("Alice@A.fr");
-        let to = [mb("ME@x.fr"), mb("alice@a.fr"), mb("other@me.fr"), mb("bob@b.fr")];
+        let to = [
+            mb("ME@x.fr"),
+            mb("alice@a.fr"),
+            mb("other@me.fr"),
+            mb("bob@b.fr"),
+        ];
         let cc = [mb("BOB@b.fr"), mb("not an address"), mb("x@")];
-        let o = Original { from: Some(&from), reply_to: &[], to: &to, cc: &cc };
+        let o = Original {
+            from: Some(&from),
+            reply_to: &[],
+            to: &to,
+            cc: &cc,
+        };
         let (t, c) = reply_all(&o, &["me@x.fr".into(), "other@me.fr".into()]);
         assert_eq!(addrs(&t), ["alice@a.fr"]);
         assert_eq!(addrs(&c), ["bob@b.fr"]);
@@ -1041,7 +1253,12 @@ mod tests {
         let from = mb("me@x.fr");
         let to = [mb("bob@b.fr")];
         let cc = [mb("carol@c.fr"), mb("me@x.fr")];
-        let o = Original { from: Some(&from), reply_to: &[], to: &to, cc: &cc };
+        let o = Original {
+            from: Some(&from),
+            reply_to: &[],
+            to: &to,
+            cc: &cc,
+        };
         let (t, c) = reply_all(&o, &["me@x.fr".into()]);
         assert_eq!(addrs(&t), ["bob@b.fr"]);
         assert_eq!(addrs(&c), ["carol@c.fr"]);
@@ -1053,29 +1270,57 @@ mod tests {
         let from = mb("me@x.fr");
         let to = [mb("me@x.fr")];
         let cc = [mb("carol@c.fr"), mb("dan@d.fr")];
-        let o = Original { from: Some(&from), reply_to: &[], to: &to, cc: &cc };
+        let o = Original {
+            from: Some(&from),
+            reply_to: &[],
+            to: &to,
+            cc: &cc,
+        };
         let (t, c) = reply_all(&o, &["me@x.fr".into()]);
         assert_eq!(addrs(&t), ["carol@c.fr"]);
         assert_eq!(addrs(&c), ["dan@d.fr"]);
         // Sent to oneself only: the reply goes to oneself.
-        let o = Original { from: Some(&from), reply_to: &[], to: &to, cc: &[] };
+        let o = Original {
+            from: Some(&from),
+            reply_to: &[],
+            to: &to,
+            cc: &[],
+        };
         let (t, c) = reply_all(&o, &["me@x.fr".into()]);
         assert_eq!(addrs(&t), ["me@x.fr"]);
         assert!(c.is_empty());
         // No sender at all, nobody: an empty reply, refused at sending.
-        let o = Original { from: None, reply_to: &[], to: &[], cc: &[] };
+        let o = Original {
+            from: None,
+            reply_to: &[],
+            to: &[],
+            cc: &[],
+        };
         assert_eq!(reply_all(&o, &[]), (vec![], vec![]));
     }
 
     #[test]
     fn the_identity_is_the_one_the_mail_was_sent_to() {
-        let ids = [Mailbox::new("me@x.fr", Some("Me")), Mailbox::new("contact@x.fr", Some("Contact"))];
+        let ids = [
+            Mailbox::new("me@x.fr", Some("Me")),
+            Mailbox::new("contact@x.fr", Some("Contact")),
+        ];
         let from = mb("a@a.fr");
         let to = [mb("Contact@X.fr")];
-        let o = Original { from: Some(&from), reply_to: &[], to: &to, cc: &[] };
+        let o = Original {
+            from: Some(&from),
+            reply_to: &[],
+            to: &to,
+            cc: &[],
+        };
         assert_eq!(sender_identity(&ids, &o).addr, "contact@x.fr");
         let to = [mb("list@l.fr")];
-        let o = Original { from: Some(&from), reply_to: &[], to: &to, cc: &[] };
+        let o = Original {
+            from: Some(&from),
+            reply_to: &[],
+            to: &to,
+            cc: &[],
+        };
         assert_eq!(sender_identity(&ids, &o).addr, "me@x.fr");
         assert_eq!(sender_identity(&[], &o), Mailbox::default());
     }
@@ -1083,17 +1328,36 @@ mod tests {
     #[test]
     fn the_account_the_mail_was_sent_to_sends_for_an_account_that_cannot() {
         let perso = [Mailbox::new("me@perso.fr", None)];
-        let work = [Mailbox::new("me@work.fr", Some("Me")), Mailbox::new("sales@work.fr", Some("Sales"))];
+        let work = [
+            Mailbox::new("me@work.fr", Some("Me")),
+            Mailbox::new("sales@work.fr", Some("Sales")),
+        ];
         let from = mb("a@a.fr");
         // Sent to an identity of the second account: that account, that identity.
         let to = [mb("old@hey.fr")];
         let cc = [mb("Sales@Work.fr")];
-        let o = Original { from: Some(&from), reply_to: &[], to: &to, cc: &cc };
+        let o = Original {
+            from: Some(&from),
+            reply_to: &[],
+            to: &to,
+            cc: &cc,
+        };
         let (i, m) = choose_sender(&[&perso, &work], &o).unwrap();
-        assert_eq!((i, m.addr.as_str(), m.name.as_deref()), (1, "sales@work.fr", Some("Sales")));
+        assert_eq!(
+            (i, m.addr.as_str(), m.name.as_deref()),
+            (1, "sales@work.fr", Some("Sales"))
+        );
         // Sent to none of them: the first account, its main address.
-        let o = Original { from: Some(&from), reply_to: &[], to: &to, cc: &[] };
-        assert_eq!(choose_sender(&[&perso, &work], &o).map(|(i, m)| (i, m.addr)), Some((0, "me@perso.fr".to_string())));
+        let o = Original {
+            from: Some(&from),
+            reply_to: &[],
+            to: &to,
+            cc: &[],
+        };
+        assert_eq!(
+            choose_sender(&[&perso, &work], &o).map(|(i, m)| (i, m.addr)),
+            Some((0, "me@perso.fr".to_string()))
+        );
         // No account, or one without address: nobody.
         assert_eq!(choose_sender(&[], &o), None);
         assert_eq!(choose_sender(&[&[]], &o), None);
@@ -1104,7 +1368,18 @@ mod tests {
         assert_eq!(reply_subject("Devis"), "Re: Devis");
         assert_eq!(reply_subject("  Devis  "), "Re: Devis");
         assert_eq!(reply_subject(""), "Re: ");
-        for s in ["Re: Devis", "RE: Devis", "re:Devis", "Re[2]: Devis", "Re(3): Devis", "AW: Angebot", "Sv: Hej", "Réf. : Dossier", "Antw: x", "Re : Devis"] {
+        for s in [
+            "Re: Devis",
+            "RE: Devis",
+            "re:Devis",
+            "Re[2]: Devis",
+            "Re(3): Devis",
+            "AW: Angebot",
+            "Sv: Hej",
+            "Réf. : Dossier",
+            "Antw: x",
+            "Re : Devis",
+        ] {
             assert_eq!(reply_subject(s), s, "{s}");
         }
         // A word that only starts like a prefix is not one.
@@ -1118,7 +1393,10 @@ mod tests {
     #[test]
     fn references_follow_the_parent_and_stay_bounded() {
         let refs: Vec<String> = vec!["a@x".into(), "b@x".into()];
-        assert_eq!(references(&refs, Some("b@x"), Some("c@x")), ["a@x", "b@x", "c@x"]);
+        assert_eq!(
+            references(&refs, Some("b@x"), Some("c@x")),
+            ["a@x", "b@x", "c@x"]
+        );
         assert_eq!(references(&[], Some("<b@x>"), Some("c@x")), ["b@x", "c@x"]);
         assert_eq!(references(&[], None, Some("c@x")), ["c@x"]);
         assert!(references(&[], None, None).is_empty());
@@ -1146,7 +1424,10 @@ mod tests {
 
     #[test]
     fn the_initial_body_leaves_room_above_the_quotation() {
-        assert_eq!(initial_body("On Nov 7, Alice wrote:", "> Hi\n"), "\n\nOn Nov 7, Alice wrote:\n> Hi\n");
+        assert_eq!(
+            initial_body("On Nov 7, Alice wrote:", "> Hi\n"),
+            "\n\nOn Nov 7, Alice wrote:\n> Hi\n"
+        );
         // A header from the client cannot add lines.
         assert_eq!(initial_body("a\nb", ""), "\n\na b\n");
     }
@@ -1159,7 +1440,10 @@ mod tests {
             assert!(line.chars().count() <= 78, "{line:?}");
         }
         // Every piece of the quotation keeps its mark.
-        assert!(f.lines().filter(|l| l.starts_with("> ")).count() >= 2, "{f}");
+        assert!(
+            f.lines().filter(|l| l.starts_with("> ")).count() >= 2,
+            "{f}"
+        );
         assert!(f.ends_with("\r\n") && !f.ends_with("\r\n\r\n"));
         assert_eq!(unflow(&f), text.trim_end());
     }
@@ -1177,7 +1461,10 @@ mod tests {
         // A word longer than the line is not cut.
         let url = format!("see https://example.com/{}", "a".repeat(100));
         let f = flowed(&url);
-        assert_eq!(f, format!("see \r\nhttps://example.com/{}\r\n", "a".repeat(100)));
+        assert_eq!(
+            f,
+            format!("see \r\nhttps://example.com/{}\r\n", "a".repeat(100))
+        );
         assert_eq!(unflow(&f), url);
         // Several spaces between words stay with the piece before the cut.
         let spaced = format!("{} {}   {}", "x".repeat(40), "y".repeat(28), "z".repeat(30));
@@ -1188,7 +1475,10 @@ mod tests {
     fn the_message_has_the_headers_of_a_reply() {
         let from = Mailbox::new("me@x.fr", Some("Achille Moi"));
         let to = [Mailbox::new("alice@a.fr", Some("Alice Martin"))];
-        let cc = [Mailbox::new("bob@b.fr", Some("Dupont, Bob")), mb("carol@c.fr")];
+        let cc = [
+            Mailbox::new("bob@b.fr", Some("Dupont, Bob")),
+            mb("carol@c.fr"),
+        ];
         let refs = vec!["root@a".to_string(), "p@a".to_string()];
         let h = Outgoing {
             from: &from,
@@ -1216,8 +1506,19 @@ mod tests {
         assert!(m.contains("Content-Transfer-Encoding: 7bit\r\n\r\nMerci !\r\n\r\n> Hi\r\n"));
         assert!(!m.to_lowercase().contains("bcc"));
         assert!(!m.contains("X-NiceMailer-Draft-Revision"));
-        let draft = String::from_utf8(build_message(&Outgoing { draft_revision: Some(7), ..h.clone() }, "x", &[])).unwrap();
-        assert!(draft.contains("X-NiceMailer-Draft-Revision: 7\r\n"), "{draft}");
+        let draft = String::from_utf8(build_message(
+            &Outgoing {
+                draft_revision: Some(7),
+                ..h.clone()
+            },
+            "x",
+            &[],
+        ))
+        .unwrap();
+        assert!(
+            draft.contains("X-NiceMailer-Draft-Revision: 7\r\n"),
+            "{draft}"
+        );
         assert!(m.split("\r\n").all(|l| l.len() <= 998));
         assert!(!m.replace("\r\n", "").contains('\n'), "bare LF");
     }
@@ -1242,7 +1543,10 @@ mod tests {
         };
         let m = String::from_utf8(build_message(&h, "Très bien, à lundi.", &[])).unwrap();
         assert!(m.is_ascii());
-        assert!(m.contains("From: =?UTF-8?B?SMOpbMOobmU=?= <me@x.fr>\r\n"), "{m}");
+        assert!(
+            m.contains("From: =?UTF-8?B?SMOpbMOobmU=?= <me@x.fr>\r\n"),
+            "{m}"
+        );
         assert!(m.contains("Subject: =?UTF-8?B?"));
         assert!(m.split("\r\n").all(|l| l.len() <= 78), "{m}");
         assert!(m.contains("Content-Transfer-Encoding: quoted-printable\r\n\r\nTr=C3=A8s bien, =C3=A0 lundi.\r\n"), "{m}");
@@ -1288,7 +1592,14 @@ mod tests {
 
     #[test]
     fn base64_matches_the_rfc() {
-        for (i, o) in [("", ""), ("f", "Zg=="), ("fo", "Zm8="), ("foo", "Zm9v"), ("foob", "Zm9vYg=="), ("foobar", "Zm9vYmFy")] {
+        for (i, o) in [
+            ("", ""),
+            ("f", "Zg=="),
+            ("fo", "Zm8="),
+            ("foo", "Zm9v"),
+            ("foob", "Zm9vYg=="),
+            ("foobar", "Zm9vYmFy"),
+        ] {
             assert_eq!(base64(i.as_bytes()), o);
         }
     }
@@ -1297,15 +1608,30 @@ mod tests {
     fn dates_are_in_local_time() {
         assert_eq!(rfc5322_date(0, 0), "Thu, 01 Jan 1970 00:00:00 +0000");
         // 2026-11-07 10:12:00 in Paris (UTC+1).
-        assert_eq!(rfc5322_date(1_794_042_720, 3600), "Sat, 07 Nov 2026 10:12:00 +0100");
-        assert_eq!(rfc5322_date(1_794_042_720, -5 * 3600 - 1800), "Sat, 07 Nov 2026 03:42:00 -0530");
-        assert_eq!(rfc5322_date(951_782_400, 0), "Tue, 29 Feb 2000 00:00:00 +0000");
+        assert_eq!(
+            rfc5322_date(1_794_042_720, 3600),
+            "Sat, 07 Nov 2026 10:12:00 +0100"
+        );
+        assert_eq!(
+            rfc5322_date(1_794_042_720, -5 * 3600 - 1800),
+            "Sat, 07 Nov 2026 03:42:00 -0530"
+        );
+        assert_eq!(
+            rfc5322_date(951_782_400, 0),
+            "Tue, 29 Feb 2000 00:00:00 +0000"
+        );
     }
 
     #[test]
     fn message_ids_use_the_senders_domain() {
-        assert_eq!(new_message_id(255, "Me@Example.FR"), "000000000000000000000000000000ff@example.fr");
-        assert_eq!(new_message_id(1, "broken"), "00000000000000000000000000000001@nicemailer.invalid");
+        assert_eq!(
+            new_message_id(255, "Me@Example.FR"),
+            "000000000000000000000000000000ff@example.fr"
+        );
+        assert_eq!(
+            new_message_id(1, "broken"),
+            "00000000000000000000000000000001@nicemailer.invalid"
+        );
     }
 
     #[test]
@@ -1317,10 +1643,18 @@ mod tests {
         assert!(provider_copies_sent("smtp.example.com", true));
         assert!(!provider_copies_sent("mail.infomaniak.com", false));
         assert!(!provider_copies_sent("notfastmail.com", false));
-        assert!(must_copy_to_sent(SaveSent::Auto, "mail.infomaniak.com", false));
+        assert!(must_copy_to_sent(
+            SaveSent::Auto,
+            "mail.infomaniak.com",
+            false
+        ));
         assert!(!must_copy_to_sent(SaveSent::Auto, "smtp.gmail.com", false));
         assert!(must_copy_to_sent(SaveSent::Always, "smtp.gmail.com", true));
-        assert!(!must_copy_to_sent(SaveSent::Never, "mail.infomaniak.com", false));
+        assert!(!must_copy_to_sent(
+            SaveSent::Never,
+            "mail.infomaniak.com",
+            false
+        ));
     }
 
     #[test]
@@ -1328,7 +1662,17 @@ mod tests {
         assert!(valid_addr("a@b.fr"));
         assert!(valid_addr("a.b+c@sub.b.fr"));
         assert!(valid_addr("me@localhost"));
-        for bad in ["", "a", "a@", "@b.fr", "a b@c.fr", "a@b", "<a@b.fr>", "a@b.fr>\r\nRCPT TO:<x@y.fr", "a,b@c.fr"] {
+        for bad in [
+            "",
+            "a",
+            "a@",
+            "@b.fr",
+            "a b@c.fr",
+            "a@b",
+            "<a@b.fr>",
+            "a@b.fr>\r\nRCPT TO:<x@y.fr",
+            "a,b@c.fr",
+        ] {
             assert!(!valid_addr(bad), "{bad:?}");
         }
     }
@@ -1338,7 +1682,10 @@ mod tests {
         let (ok, bad) = parse_address_list(
             "alice@x.fr, Bob <BOB@y.fr>; \"Dupont, J.\" <j@z.fr>\nCarol Martin carol@c.fr, <d@d.fr>, mailto:e@e.fr",
         );
-        let got: Vec<(&str, Option<&str>)> = ok.iter().map(|m| (m.addr.as_str(), m.name.as_deref())).collect();
+        let got: Vec<(&str, Option<&str>)> = ok
+            .iter()
+            .map(|m| (m.addr.as_str(), m.name.as_deref()))
+            .collect();
         assert_eq!(
             got,
             [
@@ -1355,11 +1702,16 @@ mod tests {
 
     #[test]
     fn what_is_not_an_address_is_given_back_as_typed() {
-        let (ok, bad) = parse_address_list("alice@x.fr, alice, bob@, ALICE@x.fr, , Evil <a@b.fr>\r\nBcc: c@d.fr");
+        let (ok, bad) = parse_address_list(
+            "alice@x.fr, alice, bob@, ALICE@x.fr, , Evil <a@b.fr>\r\nBcc: c@d.fr",
+        );
         // The line break separates: what would have been an injected header
         // is only one more recipient in the line, seen by the user, named
         // "Bcc:" by the rule "a name, then the address".
-        assert_eq!(ok.iter().map(|m| m.addr.as_str()).collect::<Vec<_>>(), ["alice@x.fr", "a@b.fr", "c@d.fr"]);
+        assert_eq!(
+            ok.iter().map(|m| m.addr.as_str()).collect::<Vec<_>>(),
+            ["alice@x.fr", "a@b.fr", "c@d.fr"]
+        );
         assert_eq!(ok[2].name.as_deref(), Some("Bcc:"));
         assert_eq!(bad, ["alice", "bob@"]);
         assert_eq!(parse_address_list("  ").0, []);
@@ -1370,21 +1722,41 @@ mod tests {
 
     #[test]
     fn recipients_are_cleaned_across_the_three_lists() {
-        let to = [Mailbox::new("A@x.fr", Some("  Alice ")), Mailbox::new("b@x.fr", Some(""))];
-        let cc = [Mailbox::new("a@x.fr", None), Mailbox::new("c@x.fr", Some("C\r\nBcc: z@z.fr"))];
+        let to = [
+            Mailbox::new("A@x.fr", Some("  Alice ")),
+            Mailbox::new("b@x.fr", Some("")),
+        ];
+        let cc = [
+            Mailbox::new("a@x.fr", None),
+            Mailbox::new("c@x.fr", Some("C\r\nBcc: z@z.fr")),
+        ];
         let bcc = [Mailbox::new("c@x.fr", None), Mailbox::new("d@x.fr", None)];
         let [to, cc, bcc] = clean_recipients([&to, &cc, &bcc]).unwrap();
-        assert_eq!(to, [Mailbox::new("a@x.fr", Some("Alice")), Mailbox::new("b@x.fr", None)]);
+        assert_eq!(
+            to,
+            [
+                Mailbox::new("a@x.fr", Some("Alice")),
+                Mailbox::new("b@x.fr", None)
+            ]
+        );
         assert_eq!(cc, [Mailbox::new("c@x.fr", Some("C  Bcc: z@z.fr"))]);
         assert_eq!(bcc, [Mailbox::new("d@x.fr", None)]);
-        assert_eq!(clean_recipients([&[Mailbox::new("nope", None)], &[], &[]]), Err("nope".to_string()));
-        let many: Vec<Mailbox> = (0..=RECIPIENTS_MAX).map(|i| Mailbox::new(&format!("p{i}@x.fr"), None)).collect();
+        assert_eq!(
+            clean_recipients([&[Mailbox::new("nope", None)], &[], &[]]),
+            Err("nope".to_string())
+        );
+        let many: Vec<Mailbox> = (0..=RECIPIENTS_MAX)
+            .map(|i| Mailbox::new(&format!("p{i}@x.fr"), None))
+            .collect();
         assert!(clean_recipients([&many, &[], &[]]).is_err());
     }
 
     #[test]
     fn a_subject_is_one_clean_line() {
-        assert_eq!(clean_subject("  Devis\r\nBcc: x@y.fr\u{7} "), "Devis  Bcc: x@y.fr");
+        assert_eq!(
+            clean_subject("  Devis\r\nBcc: x@y.fr\u{7} "),
+            "Devis  Bcc: x@y.fr"
+        );
         assert_eq!(clean_subject(&"é".repeat(2000)).chars().count(), 998);
     }
 
@@ -1437,12 +1809,26 @@ mod tests {
         let to = [Mailbox::new("a@x.fr", None)];
         let data: Vec<u8> = (0..=255u8).cycle().take(1000).collect();
         let files = [
-            Attachment { filename: "devis.pdf", mime_type: "application/pdf", data: &data },
-            Attachment { filename: "../../café ☕ très long nom de fichier pour voir la découpe en morceaux.txt", mime_type: "Text/Plain", data: b"hi" },
+            Attachment {
+                filename: "devis.pdf",
+                mime_type: "application/pdf",
+                data: &data,
+            },
+            Attachment {
+                filename: "../../café ☕ très long nom de fichier pour voir la découpe en morceaux.txt",
+                mime_type: "Text/Plain",
+                data: b"hi",
+            },
         ];
-        let mime = String::from_utf8(build_message(&headers(&from, &to), "Bonjour", &files)).unwrap();
+        let mime =
+            String::from_utf8(build_message(&headers(&from, &to), "Bonjour", &files)).unwrap();
         let boundary = format!("=_nm_{}", &hex_digest("id@x.fr")[..24]);
-        assert!(mime.contains(&format!("Content-Type: multipart/mixed; boundary=\"{boundary}\"\r\n")), "{mime}");
+        assert!(
+            mime.contains(&format!(
+                "Content-Type: multipart/mixed; boundary=\"{boundary}\"\r\n"
+            )),
+            "{mime}"
+        );
         assert_eq!(mime.matches(&format!("--{boundary}\r\n")).count(), 3);
         assert!(mime.ends_with(&format!("--{boundary}--\r\n")));
         assert!(mime.contains("Content-Type: application/pdf; name=\"devis.pdf\"\r\nContent-Disposition: attachment; filename=\"devis.pdf\"\r\n"));
@@ -1453,19 +1839,38 @@ mod tests {
         assert!(mime.contains("Content-Type: text/plain;\r\n name=\"=?UTF-8?B?"));
         assert!(mime.split("\r\n").all(|l| l.len() <= 78), "{mime}");
         // The base64 of the file, read back.
-        let start = mime.find("Content-Transfer-Encoding: base64\r\n\r\n").unwrap() + 37;
-        let b64: String = mime[start..].split("\r\n--").next().unwrap().replace("\r\n", "");
+        let start = mime
+            .find("Content-Transfer-Encoding: base64\r\n\r\n")
+            .unwrap()
+            + 37;
+        let b64: String = mime[start..]
+            .split("\r\n--")
+            .next()
+            .unwrap()
+            .replace("\r\n", "");
         assert_eq!(b64, base64(&data));
         // The same draft, the same bytes.
-        assert_eq!(build_message(&headers(&from, &to), "Bonjour", &files), build_message(&headers(&from, &to), "Bonjour", &files));
+        assert_eq!(
+            build_message(&headers(&from, &to), "Bonjour", &files),
+            build_message(&headers(&from, &to), "Bonjour", &files)
+        );
     }
 
     #[test]
     fn a_text_holding_the_boundary_goes_in_quoted_printable() {
         let from = Mailbox::new("me@x.fr", None);
         let boundary = format!("=_nm_{}", &hex_digest("id@x.fr")[..24]);
-        let file = [Attachment { filename: "a.txt", mime_type: "text/plain", data: b"x" }];
-        let mime = String::from_utf8(build_message(&headers(&from, &[]), &format!("--{boundary}"), &file)).unwrap();
+        let file = [Attachment {
+            filename: "a.txt",
+            mime_type: "text/plain",
+            data: b"x",
+        }];
+        let mime = String::from_utf8(build_message(
+            &headers(&from, &[]),
+            &format!("--{boundary}"),
+            &file,
+        ))
+        .unwrap();
         assert_eq!(mime.matches(&format!("--{boundary}")).count(), 3, "{mime}");
     }
 
@@ -1477,7 +1882,10 @@ mod tests {
         assert_eq!(clean_filename(""), "attachment");
         assert_eq!(clean_filename(&"é".repeat(300)).chars().count(), 255);
         assert_eq!(clean_mime_type("Image/PNG"), "image/png");
-        assert_eq!(clean_mime_type("text/plain; charset=x"), "application/octet-stream");
+        assert_eq!(
+            clean_mime_type("text/plain; charset=x"),
+            "application/octet-stream"
+        );
         assert_eq!(clean_mime_type("nonsense"), "application/octet-stream");
         assert_eq!(encoded_size(57), 78);
         assert_eq!(encoded_size(0), 0);
@@ -1489,17 +1897,47 @@ mod tests {
         let to = [mb("me@x.fr"), mb("bob@b.fr")];
         let cc = [mb("carol@c.fr")];
         let own = ["me@x.fr".to_string()];
-        let o = Original { from: Some(&from), reply_to: &[], to: &to, cc: &cc };
+        let o = Original {
+            from: Some(&from),
+            reply_to: &[],
+            to: &to,
+            cc: &cc,
+        };
         assert_eq!(addrs(&reply_sender(&o, &own)), ["alice@a.fr"]);
         // Reply-To wins.
         let rt = [mb("list@l.fr")];
-        assert_eq!(addrs(&reply_sender(&Original { reply_to: &rt, ..o }, &own)), ["list@l.fr"]);
+        assert_eq!(
+            addrs(&reply_sender(&Original { reply_to: &rt, ..o }, &own)),
+            ["list@l.fr"]
+        );
         // One's own mail: its To, never its Cc.
         let me = mb("me@x.fr");
         let to = [mb("bob@b.fr")];
-        assert_eq!(addrs(&reply_sender(&Original { from: Some(&me), reply_to: &[], to: &to, cc: &cc }, &own)), ["bob@b.fr"]);
+        assert_eq!(
+            addrs(&reply_sender(
+                &Original {
+                    from: Some(&me),
+                    reply_to: &[],
+                    to: &to,
+                    cc: &cc
+                },
+                &own
+            )),
+            ["bob@b.fr"]
+        );
         // Only to oneself: the sender.
-        assert_eq!(addrs(&reply_sender(&Original { from: Some(&me), reply_to: &[], to: &[], cc: &[] }, &own)), ["me@x.fr"]);
+        assert_eq!(
+            addrs(&reply_sender(
+                &Original {
+                    from: Some(&me),
+                    reply_to: &[],
+                    to: &[],
+                    cc: &[]
+                },
+                &own
+            )),
+            ["me@x.fr"]
+        );
     }
 
     #[test]
@@ -1510,6 +1948,9 @@ mod tests {
         assert_eq!(forward_subject("Re: Devis"), "Fwd: Re: Devis");
         assert_eq!(forward_subject("Trajet"), "Fwd: Trajet");
         assert_eq!(forward_subject(""), "Fwd: ");
-        assert_eq!(forward_body("--- Forwarded ---\nFrom: A\n", "Bonjour\n> cité\n\n"), "\n\n--- Forwarded ---\nFrom: A\n\nBonjour\n> cité");
+        assert_eq!(
+            forward_body("--- Forwarded ---\nFrom: A\n", "Bonjour\n> cité\n\n"),
+            "\n\n--- Forwarded ---\nFrom: A\n\nBonjour\n> cité"
+        );
     }
 }

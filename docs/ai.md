@@ -79,6 +79,18 @@ the conversation does not contain.
 - A file with a problem is refused alone, with its line; the other prompts stay. An unknown key is only a warning.
 - A key must be free in the menu where the prompt appears. The reading screen shows the `message` and `thread` prompts together, and the list shows `selection` and `thread`. A conflict with a built-in prompt is reported on your file.
 
+## The user's text in a draft
+
+Proofreading must touch the user's words only. `nm_core::segments::own_segments(body)` finds them in a draft's body, as byte ranges, and `segments::splice(body, ranges, new_texts)` puts the rewritten texts in their place, every other byte unchanged. What is not the user's text is recognised by its form, since the app writes the reply and forward headers in its own language and the core does not store them:
+
+- quoted lines (`>`), and the line just above a quotation that ends with `:` ("On Nov 7, 2026, at 10:12, Alice wrote:");
+- a forwarded mail: everything from a line of dashes around a text ("---------- Forwarded message ---------");
+- a signature: from `-- ` (or `--`) to the next quoted line or the end.
+
+The rest, cut where quoted lines interrupt it, makes the segments; a reply written between quoted lines has several. A segment has no blank line or whitespace around it, and `splice` keeps the whitespace that surrounded the original, so the model never decides the layout. In doubt, a line is left out: then it is only not proofread. With a selection, the selection alone is one segment.
+
+`nm_ai::message::segments(texts)` writes them for the model as `<segment n="1">…</segment>`, the form `answer::segments` reads back. A text that already contains a segment tag is not sent (`ai_bad_input`).
+
 ## Answers
 
 `nm_ai::answer::read(output, outcome, sent)` checks what the model answered against what was asked and sent, and gives a typed `Answer` or `ai_invalid_output` with the reason. It is strict: a key the schema does not have, a target that was not offered, a conversation that was not sent, segments in another number or order are all refused, rather than guessed at. A tolerant reading would hide the drift of a prompt, and the core applies these answers.
@@ -104,5 +116,6 @@ A whole answer in a code fence (```` ```json ````) is unfenced first. A structur
 | `tests/fixtures.rs` | The recordings of the real binary (`tests/fixtures/claude-code/`, described in their README) show what they claim, and name no user or machine |
 | `tests/claude_code.rs` | The provider against a fake `claude`, a shell script that replays the recordings turn by turn and keeps what it read: the order probe, interrupt, message; a process announcing tools gets the probe only; not signed in is found before the content is sent; the safety options are passed; a timeout and a cancel kill the process group, grandchildren included; a missing binary |
 | `tests/catalog.rs` | Every built-in prompt loads without problem or warning, has English and French labels, and builds a system prompt for each variant; the menus of the spec; replacing, adding and disabling; a file refused alone; each rule refused with its line; keys shared across a screen; the hash, unchanged by comments, labels and key order, changed by the text, inputs or model |
+| `nm-core` (unit, `segments.rs`) | Replies, answers between quoted lines, signatures, forwards in English and French, Windows line ends; unchanged segments give the body back byte for byte, also on 3,000 random bodies made of every kind of line, none of whose segments holds a quoted line, a signature or a forwarded mail |
 | `tests/answer.rs` | Each output, accepted and refused, case by case; the recorded answers of phase 0 read; the floor of the verdict |
 | `tests/real_claude.rs` | Ignored by default. The real binary, with the user's subscription: status, a prompt injection that must run nothing, a structured answer. Run it after an update of Claude Code: `cargo test -p nm-ai --test real_claude -- --ignored` |

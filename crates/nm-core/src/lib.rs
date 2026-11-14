@@ -10,6 +10,7 @@
 //! are rendered by `cargo doc`.
 
 pub mod compose;
+pub mod segments;
 
 use serde::{Deserialize, Serialize};
 
@@ -86,7 +87,8 @@ impl FolderRole {
     /// d'attributs"): what the user deleted or rejected. Searches mostly
     /// want everything else, Quarantine included (the mail of a sender not
     /// accepted yet is searched for too). "Everything" keeps them.
-    pub const OUT_OF_ALL_MAIL: [FolderRole; 3] = [FolderRole::Deleted, FolderRole::Junk, FolderRole::Banned];
+    pub const OUT_OF_ALL_MAIL: [FolderRole; 3] =
+        [FolderRole::Deleted, FolderRole::Junk, FolderRole::Banned];
 
     /// The folders of the virtual folder "Work" (`ui.md`, "Dossiers
     /// virtuels"): what is still to deal with.
@@ -173,8 +175,12 @@ impl FolderRole {
     /// alone), never what the conversation is. A conversation has a flag
     /// for each (`thread.has_sent`…), in this order, which is also the
     /// fixed order of the fallback of [`thread_folder`].
-    pub const TECHNICAL: [FolderRole; 4] =
-        [FolderRole::Sent, FolderRole::Drafts, FolderRole::Quarantine, FolderRole::Deleted];
+    pub const TECHNICAL: [FolderRole; 4] = [
+        FolderRole::Sent,
+        FolderRole::Drafts,
+        FolderRole::Quarantine,
+        FolderRole::Deleted,
+    ];
 
     /// Whether this is one of [`FolderRole::TECHNICAL`].
     pub fn is_technical(self) -> bool {
@@ -314,7 +320,12 @@ pub enum AfterSend {
 }
 
 impl AfterSend {
-    pub const ALL: [AfterSend; 4] = [AfterSend::Archive, AfterSend::Waiting, AfterSend::Todo, AfterSend::Stay];
+    pub const ALL: [AfterSend; 4] = [
+        AfterSend::Archive,
+        AfterSend::Waiting,
+        AfterSend::Todo,
+        AfterSend::Stay,
+    ];
 
     /// Identifier stored in the database (`draft.after_send`) and in the
     /// payload of a `send` action.
@@ -363,7 +374,9 @@ impl SenderKind {
     }
 
     pub fn parse(s: &str) -> Option<SenderKind> {
-        [SenderKind::Person, SenderKind::Robot].into_iter().find(|k| k.as_str() == s)
+        [SenderKind::Person, SenderKind::Robot]
+            .into_iter()
+            .find(|k| k.as_str() == s)
     }
 }
 
@@ -379,8 +392,12 @@ pub enum ScreeningTarget {
 }
 
 impl ScreeningTarget {
-    pub const ALL: [ScreeningTarget; 4] =
-        [ScreeningTarget::Inbox, ScreeningTarget::Newsletter, ScreeningTarget::Paperwork, ScreeningTarget::Banned];
+    pub const ALL: [ScreeningTarget; 4] = [
+        ScreeningTarget::Inbox,
+        ScreeningTarget::Newsletter,
+        ScreeningTarget::Paperwork,
+        ScreeningTarget::Banned,
+    ];
 
     /// Identifier stored in the database.
     pub fn as_str(self) -> &'static str {
@@ -448,7 +465,9 @@ impl ScreeningTarget {
             Newsletter => Some(ScreeningTarget::Newsletter),
             Paperwork => Some(ScreeningTarget::Paperwork),
             Banned => Some(ScreeningTarget::Banned),
-            Inbox if matches!(from, Some(Quarantine) | Some(Banned)) => Some(ScreeningTarget::Inbox),
+            Inbox if matches!(from, Some(Quarantine) | Some(Banned)) => {
+                Some(ScreeningTarget::Inbox)
+            }
             _ => None,
         }
     }
@@ -511,7 +530,13 @@ impl AuthPolicy {
     }
 
     pub fn parse(s: &str) -> Option<AuthPolicy> {
-        [AuthPolicy::Auto, AuthPolicy::Required, AuthPolicy::NotRequired].into_iter().find(|p| p.as_str() == s)
+        [
+            AuthPolicy::Auto,
+            AuthPolicy::Required,
+            AuthPolicy::NotRequired,
+        ]
+        .into_iter()
+        .find(|p| p.as_str() == s)
     }
 
     /// Whether a favorable address rule applies to a mail with `verdict`
@@ -621,7 +646,8 @@ where
 {
     let roles = roles_latest_first.into_iter();
     use FolderRole::*;
-    let live = |r: &FolderRole| matches!(r, Inbox | Todo | Waiting | Archive | Newsletter | Paperwork);
+    let live =
+        |r: &FolderRole| matches!(r, Inbox | Todo | Waiting | Archive | Newsletter | Paperwork);
     let rejected = |r: &FolderRole| matches!(r, Junk | Banned);
     // `flatten` skips the `None` (no role); `find` stops at the first,
     // that is the latest, mail of the case.
@@ -631,7 +657,9 @@ where
     if let Some(r) = roles.clone().flatten().find(rejected) {
         return Some(r);
     }
-    FolderRole::TECHNICAL.into_iter().find(|t| roles.clone().flatten().any(|r| r == *t))
+    FolderRole::TECHNICAL
+        .into_iter()
+        .find(|t| roles.clone().flatten().any(|r| r == *t))
 }
 
 // Rust note: `#[cfg(test)]` means this module is only compiled when running
@@ -695,15 +723,33 @@ mod tests {
         assert_eq!(
             FolderRole::Sent.move_targets(),
             [
-                FolderRole::Todo, FolderRole::Waiting, FolderRole::Inbox, FolderRole::Archive,
-                FolderRole::Newsletter, FolderRole::Paperwork, FolderRole::Junk, FolderRole::Banned,
+                FolderRole::Todo,
+                FolderRole::Waiting,
+                FolderRole::Inbox,
+                FolderRole::Archive,
+                FolderRole::Newsletter,
+                FolderRole::Paperwork,
+                FolderRole::Junk,
+                FolderRole::Banned,
                 FolderRole::Deleted,
             ]
         );
         assert_eq!(FolderRole::Drafts.move_targets(), [FolderRole::Deleted]);
-        assert!(!FolderRole::Inbox.move_targets().contains(&FolderRole::Inbox));
-        assert!(!FolderRole::Quarantine.move_targets().contains(&FolderRole::Todo));
-        assert!(FolderRole::Deleted.move_targets().contains(&FolderRole::Inbox));
+        assert!(
+            !FolderRole::Inbox
+                .move_targets()
+                .contains(&FolderRole::Inbox)
+        );
+        assert!(
+            !FolderRole::Quarantine
+                .move_targets()
+                .contains(&FolderRole::Todo)
+        );
+        assert!(
+            FolderRole::Deleted
+                .move_targets()
+                .contains(&FolderRole::Inbox)
+        );
     }
 
     #[test]
@@ -711,7 +757,13 @@ mod tests {
         use FolderRole::*;
         let d = ScreeningTarget::for_move;
         // Newsletter, Paperwork, Banned decide from anywhere.
-        for from in [Some(Inbox), Some(Quarantine), Some(Archive), Some(Todo), None] {
+        for from in [
+            Some(Inbox),
+            Some(Quarantine),
+            Some(Archive),
+            Some(Todo),
+            None,
+        ] {
             assert_eq!(d(from, Newsletter), Some(ScreeningTarget::Newsletter));
             assert_eq!(d(from, Paperwork), Some(ScreeningTarget::Paperwork));
             assert_eq!(d(from, Banned), Some(ScreeningTarget::Banned));

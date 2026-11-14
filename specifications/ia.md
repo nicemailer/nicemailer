@@ -202,14 +202,20 @@ Une entrée qui n'a pas de sens dans la portée du prompt est une erreur de char
 
 C'est le cas de la correction : on envoie le texte de l'utilisateur, pas la citation ni la signature, et la réponse remplace ce texte sans toucher au reste.
 
-Le noyau découpe le corps en **segments** : il connaît la ligne d'introduction qu'il a lui-même écrite (`reponse.md`, « Corps et citation »), et repère :
+Le noyau découpe le corps en **segments** (`crates/nm-core/src/segments.rs`). Les en-têtes de réponse et de transfert sont écrits par l'app dans sa langue et ne sont pas gardés en base : ils sont reconnus à leur forme, quelle que soit la langue. Ne sont pas le texte de l'utilisateur :
 
-- les lignes citées (`>` en début de ligne) et la ligne d'introduction qui précède le premier bloc cité ;
-- la signature : du séparateur `-- ` (tiret, tiret, espace, seul sur sa ligne) à la fin du texte ou au bloc cité suivant.
+- les lignes citées (`>` en début de ligne) ;
+- la ligne d'introduction d'une citation : une ligne qui se termine par `:` et que suit une ligne citée (« Le 7 nov. 2026 à 10:12, Alice a écrit : ») ;
+- un mail transféré : d'une ligne de tirets autour d'un texte (« ---------- Message transféré --------- », au moins cinq tirets de chaque côté) à la fin du corps ; des tirets seuls sont un trait de l'utilisateur ;
+- la signature : du séparateur `-- ` (ou `--`, qu'un éditeur peut avoir privé de son espace), seul sur sa ligne, à la ligne citée suivante ou à la fin du texte.
+
+Dans le doute, une ligne est exclue plutôt qu'incluse : exclue à tort, elle n'est pas corrigée ; incluse à tort, elle serait réécrite. Un segment ne contient ni ligne vide en tête ou en fin, ni espace autour : la mise en page qui l'entoure n'est jamais confiée au modèle.
 
 Les segments restants sont le texte de l'utilisateur. Une réponse écrite entre les lignes citées en a plusieurs. Ils sont envoyés numérotés (`<segment n="1">…</segment>`), et la réponse doit les rendre dans le même nombre et le même ordre ; sinon elle est refusée (section 6). À l'application, le noyau remet chaque segment à sa place : citation, introduction et signature ne sont jamais réécrites.
 
 Avec une sélection, seule la sélection est envoyée, en un segment, même si elle contient des lignes citées : l'utilisateur a choisi.
+
+Un texte qui contient déjà une balise `<segment` ou `</segment>` n'est pas envoyé (`ai_bad_input`) : la réponse ne pourrait plus être lue sans deviner à quel segment appartient quel texte. Rendre la réponse sans rien changer redonne le corps à l'octet près ; c'est vérifié sur des milliers de corps tirés au hasard.
 
 ## 6. Ce qu'un prompt reçoit
 
@@ -361,7 +367,7 @@ Le déplacement qui suit une suggestion est le `move_to_folder` habituel, avec `
 | `AiDelta {run_id, text}` | Un fragment de texte, pour l'affichage au fil de l'eau |
 | `AiProgress {run_id, done, total}` | Avancement d'un lot (`selection`) |
 | `AiDone {run_id}` | Fin ; le client lit le résultat validé par `ai_get_run` |
-| `AiFailed {run_id, code, message}` | Échec, avec un code d'erreur typé |
+| `AiFailed {run_id, code, message}` | Échec, avec un code d'erreur typé : ceux de la section 3, `ai_invalid_output` (section 6) et `ai_bad_input` (rien n'a été envoyé : entrée vide, ou qui ne peut être envoyée telle quelle) |
 | `AiSuggestionsChanged {folder}` | De nouvelles suggestions à afficher |
 
 Les sorties JSON ne sont pas affichées au fil de l'eau (un JSON partiel n'a pas de sens pour l'utilisateur) : le client montre l'attente, et pour un lot l'avancement. Les sorties texte le sont ; pour `replace`, le texte arrive dans le panneau, puis les différences s'affichent à la fin, une fois la réponse validée.
@@ -424,7 +430,7 @@ L'interrupteur est global : un compte ne peut pas être exclu en v1. Le format l
 
 0. **Vérifier le CLI `claude`** : fait le 14 novembre 2026 avec Claude Code 2.1.325 (section 3, « L'appel » et « Vérification à chaque appel »). Restent à observer : la limite d'usage atteinte, et le fournisseur `anthropic-api`, faute de clé API pendant l'essai. Après une mise à jour de Claude Code, `cargo test -p nm-ai --test real_claude -- --ignored` refait les essais essentiels avec le vrai binaire.
 1. **Crate `nm-ai`** : fait pour les fournisseurs `claude-code` et factice, le format, le chargement et la validation des prompts, les prompts intégrés et la lecture des réponses avec le plancher du verdict (`docs/ai.md`) ; restent `AnthropicApiProvider` et le rechargement des prompts (FSEvents, dans le noyau). La construction du message dépend des entrées : elle vient avec la phase 2. Testée sans réseau.
-2. **Entrées dans le noyau** : découpage en segments de `draft.own_text` et reconstruction, puis les autres entrées.
+2. **Entrées dans le noyau** : découpage en segments de `draft.own_text` et reconstruction (fait), puis les autres entrées.
 3. **Contrat et historique** : commandes, événements, tables `ai_run` et `ai_suggestion`, purge.
 4. **CLI** (section 12).
 5. **Jalon 1, la correction dans l'app** : ⌘I, menu, panneau au fil de l'eau, différences, Accepter et Refuser. Valide la chaîne entière sur le cas le plus simple.

@@ -10,15 +10,17 @@
 //! - [`prompt`]: what a prompt is, and the system prompt built from it;
 //! - [`catalog`]: the built-in prompts (`prompts/*.toml`) merged with the
 //!   user's files, checked;
-//! - [`answer`]: the strict checking of what the model answered.
+//! - [`answer`]: the strict checking of what the model answered;
+//! - [`message`]: the user message sent to the model (the segments of the
+//!   draft so far).
 //!
-//! The API-key provider and the building of the messages from a mail come
-//! next.
+//! The API-key provider and the other inputs of a mail come next.
 
 pub mod answer;
 pub mod catalog;
 pub mod claude_code;
 pub mod fake;
+pub mod message;
 pub mod prompt;
 pub mod provider;
 pub mod stream;

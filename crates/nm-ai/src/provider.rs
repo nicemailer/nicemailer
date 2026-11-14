@@ -93,6 +93,10 @@ pub enum AiError {
     /// The process could not be started or talked to.
     #[error("cannot run the claude binary: {0}")]
     Io(String),
+    /// Nothing was sent: the input is empty, or cannot be sent as it is.
+    /// The text says what to do.
+    #[error("{0}")]
+    BadInput(String),
 }
 
 impl AiError {
@@ -107,6 +111,7 @@ impl AiError {
             AiError::InvalidOutput(_) => "ai_invalid_output",
             AiError::Failed(_) => "ai_failed",
             AiError::Io(_) => "ai_io",
+            AiError::BadInput(_) => "ai_bad_input",
         }
     }
 }
