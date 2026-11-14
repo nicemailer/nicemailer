@@ -15,6 +15,7 @@ expect composing = true
 type merci je vien jeudi
 key cmd-i
 expect choice = AI
+expect ai_placement = headers
 expect choice_rows ~ c Proofread
 expect choice_rows ~ r Rewrite…
 expect choice_rows ~ o Suggest subjects
@@ -73,6 +74,7 @@ key esc
 expect composing = false
 key a
 expect choice = AI
+expect ai_placement = center
 expect choice_rows ~ r Summarize
 expect choice_rows ~ p Quick replies
 expect choice_rows ~ s Security check
@@ -80,6 +82,7 @@ expect choice_rows ~ t Translate…
 snap ai-mail-menu
 key r
 expect ai_state = proposal
+expect ai_placement = center
 expect ai_title = Summarize
 expect ai_result ~ Victor asks whether the March invoice is ready.
 expect ai_result ~ - Send the March invoice (you)

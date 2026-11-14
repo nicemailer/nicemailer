@@ -737,6 +737,9 @@ private final class Runner {
             // A sorting under way (`a` `s`): "done/total", empty otherwise;
             // the suggestions of the rows shown, and the one of the row
             // under the cursor ("target: reason").
+            // Where the AI shows (`GeekController.aiPlacement`): `center`,
+            // `headers`, `none`.
+            "ai_placement": c.aiPlacement,
             "ai_sort": m.aiSort.map { "\($0.done)/\($0.total)" } ?? "",
             "ai_suggestions": "\(m.aiSuggestions.count)",
             "selected_suggestion": m.selectedSuggestion.map { "\($0.target): \($0.reason)" } ?? "",

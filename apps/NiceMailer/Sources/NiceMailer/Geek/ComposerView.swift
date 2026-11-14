@@ -482,6 +482,9 @@ final class ComposerNSTextView: NSTextView {
 /// (`AI.action`); a click does nothing, as the keys say everything.
 struct AIPanel: View {
     let run: AIRun
+    /// How tall the text may grow before it scrolls: a third of a window
+    /// in the reply, more in the middle of the window (`AIFocus`).
+    var maxTextHeight: CGFloat = scaled(220)
 
     var body: some View {
         VStack(alignment: .leading, spacing: scaled(4)) {
@@ -498,7 +501,7 @@ struct AIPanel: View {
             }
             // At most about a third of a window: the text below stays in
             // sight, and a long answer scrolls.
-            .frame(maxHeight: scaled(220))
+            .frame(maxHeight: maxTextHeight)
             .fixedSize(horizontal: false, vertical: true)
         }
         .font(.geek(12))
@@ -591,5 +594,26 @@ struct AIPanel: View {
             out += a
         }
         return out
+    }
+}
+
+
+/// The AI in the middle of the window, the rest dimmed behind it: what `a`
+/// opened is where the eyes go, until it is answered or closed. The keys
+/// already go to it (`GeekController`); the dimmed rest takes no click.
+struct AIFocus<Content: View>: View {
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.25)
+                .contentShape(Rectangle())
+                .onTapGesture {}
+            content()
+                .overlay(Rectangle().stroke(Palette.separator, lineWidth: 1))
+                .shadow(color: .black.opacity(0.25), radius: 12, y: 4)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .uiTarget("ai-focus")
     }
 }

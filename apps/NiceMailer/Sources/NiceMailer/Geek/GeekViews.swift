@@ -124,18 +124,23 @@ private struct GeekWindow: View {
         // comes before any other panel, in the bottom-right corner —
         // except the one the screen draws where its answer belongs
         // ("Send from", in place of the line "From" of the reply).
-        if let choice = controller.activeChoice, !drawnInPlace(choice) {
+        if controller.aiPlacement == "center", let choice = controller.activeChoice {
+            // What `a` opened is the main place of focus while it is open:
+            // in the middle of the window, the rest dimmed behind it.
+            AIFocus { ChoicePanel(controller: controller, choice: choice) }
+        } else if let choice = controller.activeChoice, !drawnInPlace(choice) {
             ChoicePanel(controller: controller, choice: choice)
                 .padding(12)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-        } else if let run = model.aiRun, run.composer == nil {
-            // The AI panel of a mail (`a`): in the corner, as the choices,
-            // so it shows the same in every layout, the list alone included.
-            AIPanel(run: run)
-                .frame(maxWidth: 640)
-                .overlay(Rectangle().stroke(Palette.separator, lineWidth: 1))
-                .padding(12)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+        } else if controller.aiPlacement == "center", let run = model.aiRun {
+            // The AI panel of a mail (`a`), in the middle too, large enough
+            // to read a summary or a translation without scrolling.
+            GeometryReader { geo in
+                AIFocus {
+                    AIPanel(run: run, maxTextHeight: geo.size.height * 0.6)
+                        .frame(width: min(760, geo.size.width - 48))
+                }
+            }
         } else {
             menusAndPickers
         }

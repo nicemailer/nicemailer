@@ -2376,6 +2376,17 @@ final class GeekController {
         }
     }
 
+    /// Where the AI shows: `center` for what `a` opened (its menu, then the
+    /// panel of a mail), the main place of focus while it is open; `headers`
+    /// for ⌘I in a reply, just above the text it works on; `none` when
+    /// nothing of the AI is open.
+    var aiPlacement: String {
+        let composing = model.composer != nil && screen == .mail
+        if case .ai? = activeChoice { return composing ? "headers" : "center" }
+        if let run = model.aiRun { return run.composer == nil ? "center" : "headers" }
+        return "none"
+    }
+
     /// The screen whose AI menu `a` (or ⌘I) opens: the reply's while one is
     /// written; in Quarantine, the list's (sorting is what it is for);
     /// elsewhere the reading one while a mail is shown, the list's on the

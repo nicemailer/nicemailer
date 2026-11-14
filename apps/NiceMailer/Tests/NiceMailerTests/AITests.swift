@@ -314,6 +314,8 @@ final class AIControllerTests {
         await reply()
         press("cmd-i")
         _ = await eventually { self.aiMenu != nil }
+        // In a reply, above the text it works on, not in the middle.
+        #expect(controller.aiPlacement == "headers")
         let rows = controller.choiceEntries(.ai(try #require(aiMenu))).map { "\($0.key) \($0.label)" }
         #expect(rows == ["c Proofread", "r Rewrite…", "o Suggest subjects", "w Write from my notes", "esc " + L("cancel")])
         #expect(core.calls("ai_list_prompts").last?["screen"] as? String == "compose")
@@ -476,9 +478,12 @@ final class AIControllerTests {
     }
 
     @Test func aSummaryOfTheMailReadIsShownThenClosed() async throws {
-        // Two columns: the mail is shown, `a` opens the reading menu.
+        #expect(controller.aiPlacement == "none")
+        // Two columns: the mail is shown, `a` opens the reading menu, in
+        // the middle of the window.
         press("a")
         _ = await eventually { self.aiMenu != nil }
+        #expect(controller.aiPlacement == "center")
         #expect(core.calls("ai_list_prompts").last?["screen"] as? String == "reading")
         press("r")
         _ = await eventually { self.model.aiRun?.runId == 7 }
@@ -490,7 +495,9 @@ final class AIControllerTests {
         _ = await eventually { if case .proposal? = self.model.aiRun?.phase { true } else { false } }
         #expect(AI.resultText(try #require({ if case .proposal(let p)? = model.aiRun?.phase { p } else { nil } }()))
             == "Alice attend jeudi.\n- Apporter les clés (you) · jeudi")
-        // The panel takes the keys: `j` does not move the list.
+        // The result, in the middle too; it takes the keys: `j` does not
+        // move the list.
+        #expect(controller.aiPlacement == "center")
         let selected = model.selectedThreadId
         press("j")
         #expect(model.selectedThreadId == selected)
@@ -498,6 +505,7 @@ final class AIControllerTests {
         press("esc")
         _ = await eventually { self.model.aiRun == nil }
         #expect(core.calls("ai_dismiss").count == 1)
+        #expect(controller.aiPlacement == "none")
         // The keys are the list's again.
         press("j")
         #expect(model.selectedThreadId != selected)
