@@ -498,3 +498,52 @@ fn calls_are_confirmed_by_the_app_only_when_asked() {
     let p = refused("[ui]\nauto_confirm_calls = \"yes\"\n");
     assert_eq!(p.key.as_deref(), Some("ui.auto_confirm_calls"));
 }
+
+/// `[ai]` (`ia.md`, section 13): off by default, every value checked.
+#[test]
+fn the_ai_is_off_unless_asked_and_its_settings_are_checked() {
+    let d = settings("").unwrap().config.ai;
+    assert!(!d.enabled, "nothing goes to an AI provider unless the user says so");
+    assert_eq!(d.provider, config::AiProviderKind::ClaudeCode);
+    assert_eq!(d.model, "claude-sonnet-5-5");
+    assert_eq!(d.claude_path, None);
+    assert_eq!((d.timeout_secs, d.max_parallel, d.batch_size, d.max_folder_items, d.history_days), (120, 2, 20, 500, 30));
+
+    let a = settings(
+        "[ai]\nenabled = true\nprovider = \"anthropic-api\"\nmodel = \"claude-haiku-5-5\"\n\
+         claude_path = \"~/bin/claude\"\ntimeout_secs = 30\nmax_parallel = 1\nbatch_size = 5\n\
+         max_folder_items = 100\nhistory_days = 7\n",
+    )
+    .unwrap()
+    .config
+    .ai;
+    assert!(a.enabled);
+    assert_eq!(a.provider, config::AiProviderKind::AnthropicApi);
+    assert_eq!(a.model, "claude-haiku-5-5");
+    assert!(a.claude_path.as_ref().unwrap().is_absolute() && a.claude_path.unwrap().ends_with("bin/claude"));
+    assert_eq!((a.timeout_secs, a.max_parallel, a.batch_size, a.max_folder_items, a.history_days), (30, 1, 5, 100, 7));
+
+    for (text, key) in [
+        ("provider = \"openai\"", "ai.provider"),
+        ("model = \"claude sonnet\"", "ai.model"),
+        ("model = \"\"", "ai.model"),
+        ("claude_path = \"bin/claude\"", "ai.claude_path"),
+        ("timeout_secs = 4", "ai.timeout_secs"),
+        ("timeout_secs = 601", "ai.timeout_secs"),
+        ("max_parallel = 0", "ai.max_parallel"),
+        ("max_parallel = 9", "ai.max_parallel"),
+        ("batch_size = 101", "ai.batch_size"),
+        ("max_folder_items = 5001", "ai.max_folder_items"),
+        ("history_days = 0", "ai.history_days"),
+        ("enabled = \"yes\"", "ai.enabled"),
+    ] {
+        let p = refused(&format!("[ai]\n{text}\n"));
+        assert_eq!(p.key.as_deref(), Some(key), "{text}: {p:?}");
+        assert_eq!(p.line, Some(2), "{text}: {p:?}");
+    }
+    // An unknown key is a warning, as everywhere: ai.languages was planned,
+    // then dropped (`ia.md`, section 8).
+    let w = settings("[ai]\nlanguages = [\"en\"]\n").unwrap().warnings;
+    assert_eq!(w.len(), 1);
+    assert_eq!(w[0].key.as_deref(), Some("ai.languages"));
+}

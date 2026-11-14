@@ -265,6 +265,15 @@ They are all in `config.toml`; `nicemailer config defaults` prints them all. Ran
 | `ui.auto_confirm_calls` | false | | yes: the app applies it at once; it presses the confirmation macOS shows before a call (`geek-ui.md`, "Calling a number") |
 | `audit.retention_days` | 365 | 1 to 36500 | no |
 | `compose.undo_send_seconds` | 5 | 0 to 30 | yes: the delay before a mail leaves ([sending.md](sending.md)) |
+| `ai.enabled` | false | | not yet: allows mail to be sent to an AI provider, for every account ([ai.md](ai.md)) |
+| `ai.provider` | `claude-code` | `claude-code`, `anthropic-api` | not yet ([ai.md](ai.md), "Providers") |
+| `ai.model` | `claude-sonnet-5-5` | a model id, no space | not yet; a prompt may name its own |
+| `ai.claude_path` | searched | absolute or `~/` | not yet: the `claude` binary ([ai.md](ai.md), "The `claude` binary") |
+| `ai.timeout_secs` | 120 | 5 to 600 | not yet |
+| `ai.max_parallel` | 2 | 1 to 8 | not yet |
+| `ai.batch_size` | 20 | 1 to 100 | not yet: conversations per call when several are processed |
+| `ai.max_folder_items` | 500 | 1 to 5000 | not yet: most conversations sent when a prompt takes the whole folder |
+| `ai.history_days` | 30 | 1 to 3650 | not yet: days before the texts of the run history are purged |
 
 "At start": the value is read when the core starts; a change is accepted and announced, and applies at the next start. Every key is validated today, so a file valid now stays valid when the key starts being used.
 

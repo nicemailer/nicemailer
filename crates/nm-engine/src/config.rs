@@ -81,6 +81,7 @@ pub struct Config {
     pub ui: UiSettings,
     pub audit: AuditSettings,
     pub compose: ComposeSettings,
+    pub ai: AiSettings,
     /// IMAP accounts, by key (`[accounts.<key>]` of `accounts.toml`).
     ///
     /// Rust note: a `BTreeMap` is a map sorted by key, so accounts are
@@ -101,6 +102,7 @@ impl Default for Config {
             ui: UiSettings::default(),
             audit: AuditSettings::default(),
             compose: ComposeSettings::default(),
+            ai: AiSettings::default(),
             accounts: BTreeMap::new(),
         }
     }
@@ -256,6 +258,64 @@ pub struct ComposeSettings {
 impl Default for ComposeSettings {
     fn default() -> Self {
         ComposeSettings { undo_send_seconds: nm_core::compose::UNDO_SEND_DEFAULT_SECS }
+    }
+}
+
+/// `[ai]` (`ia.md`, section 13): the AI assistance, off by default.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct AiSettings {
+    /// Allow mail to be sent to the AI provider, for every account. Off,
+    /// the AI menu is not shown and the core refuses every run.
+    pub enabled: bool,
+    pub provider: AiProviderKind,
+    /// The default model; a prompt may name its own.
+    pub model: String,
+    /// The `claude` binary; `None`: searched (`ia.md`, section 3).
+    pub claude_path: Option<PathBuf>,
+    /// Longest duration of one run, in seconds.
+    pub timeout_secs: u64,
+    /// Runs at the same time.
+    pub max_parallel: u64,
+    /// Conversations per call of a batch (`selection` scope).
+    pub batch_size: u64,
+    /// Most conversations a prompt sends when it takes the whole folder.
+    pub max_folder_items: u64,
+    /// Days before the content of the run history is purged.
+    pub history_days: u64,
+}
+
+impl Default for AiSettings {
+    fn default() -> Self {
+        AiSettings {
+            enabled: false,
+            provider: AiProviderKind::ClaudeCode,
+            model: "claude-sonnet-5-5".into(),
+            claude_path: None,
+            timeout_secs: 120,
+            max_parallel: 2,
+            batch_size: 20,
+            max_folder_items: 500,
+            history_days: 30,
+        }
+    }
+}
+
+/// `ai.provider`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum AiProviderKind {
+    /// The user's `claude` binary, signed in with their subscription.
+    ClaudeCode,
+    /// An Anthropic API key, kept in the Keychain.
+    AnthropicApi,
+}
+
+impl AiProviderKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            AiProviderKind::ClaudeCode => "claude-code",
+            AiProviderKind::AnthropicApi => "anthropic-api",
+        }
     }
 }
 
@@ -800,6 +860,39 @@ impl<'t> Reader<'t> {
             }
         };
 
+        let ai = match self.table(&mut s, "ai")? {
+            None => d.ai,
+            Some(mut t) => {
+                let item = t.table.get("model");
+                let model = match self.string(&mut t, "model")? {
+                    None => d.ai.model.clone(),
+                    // A model id is one word (`claude-sonnet-5-5`): a space
+                    // is a typing mistake, better caught here than as a
+                    // refusal of the provider at the first run.
+                    Some(m) if m.contains(char::is_whitespace) => {
+                        return Err(self.problem(item, t.key("model"), "a model id has no space"));
+                    }
+                    Some(m) => m,
+                };
+                let a = AiSettings {
+                    enabled: self.bool(&mut t, "enabled", d.ai.enabled)?,
+                    provider: match self.choice(&mut t, "provider", &["claude-code", "anthropic-api"])? {
+                        Some("anthropic-api") => AiProviderKind::AnthropicApi,
+                        _ => AiProviderKind::ClaudeCode,
+                    },
+                    model,
+                    claude_path: self.path(&mut t, "claude_path")?,
+                    timeout_secs: self.int(&mut t, "timeout_secs", d.ai.timeout_secs, 5..=600)?,
+                    max_parallel: self.int(&mut t, "max_parallel", d.ai.max_parallel, 1..=8)?,
+                    batch_size: self.int(&mut t, "batch_size", d.ai.batch_size, 1..=100)?,
+                    max_folder_items: self.int(&mut t, "max_folder_items", d.ai.max_folder_items, 1..=5_000)?,
+                    history_days: self.int(&mut t, "history_days", d.ai.history_days, 1..=3_650)?,
+                };
+                self.finish(t);
+                a
+            }
+        };
+
         // The accounts are in `accounts.toml`. Found here, they are an error
         // rather than a warning: ignoring them would start the core without
         // the user's accounts, and silently.
@@ -813,7 +906,7 @@ impl<'t> Reader<'t> {
             });
         }
         self.finish(s);
-        Ok(Config { version, core, sync, config_sync, events, import, raw, ui, audit, compose, accounts: BTreeMap::new() })
+        Ok(Config { version, core, sync, config_sync, events, import, raw, ui, audit, compose, ai, accounts: BTreeMap::new() })
     }
 
     /// `accounts.toml`: its `version` and its `[accounts.<key>]` tables,
@@ -1272,6 +1365,33 @@ retention_days = {retention_days}
 # Seconds a mail waits after Cmd-Return before it leaves, during which
 # z cancels it. 0 to 30; 0 sends at once.
 undo_send_seconds = {undo_send_seconds}
+
+[ai]
+# Allow mail to be sent to an AI provider, to proofread a draft, summarize
+# a conversation or sort the Quarantine. Nothing is ever sent without a
+# key pressed. One switch for every account.
+enabled = {ai_enabled}
+# "claude-code": the claude binary of Claude Code, signed in with your
+# Claude subscription (NiceMailer keeps no credential). "anthropic-api":
+# an Anthropic API key, kept in the Keychain (not available yet).
+provider = "{ai_provider}"
+# The default model; a prompt may name its own.
+model = "{ai_model}"
+# claude_path: the claude binary, an absolute path or one starting with
+# ~/. Left out, it is searched in ~/.local/bin, ~/.claude/local,
+# /opt/homebrew/bin and /usr/local/bin, in that order.
+# Longest duration of one run, in seconds. 5 to 600.
+timeout_secs = {ai_timeout_secs}
+# Runs at the same time. 1 to 8.
+max_parallel = {ai_max_parallel}
+# Conversations sent per call when several are processed. 1 to 100.
+batch_size = {ai_batch_size}
+# Most conversations sent when a prompt takes the whole folder (sorting
+# the Quarantine): beyond, the most recent ones. 1 to 5000.
+max_folder_items = {ai_max_folder_items}
+# Days before the texts sent and received are purged from the history
+# of runs; the rest (prompt, date, cost) is kept. 1 to 3650.
+history_days = {ai_history_days}
 "#,
         version = d.version,
         background_sorting = d.core.background_sorting,
@@ -1295,5 +1415,13 @@ undo_send_seconds = {undo_send_seconds}
         auto_confirm_calls = d.ui.auto_confirm_calls,
         retention_days = d.audit.retention_days,
         undo_send_seconds = d.compose.undo_send_seconds,
+        ai_enabled = d.ai.enabled,
+        ai_provider = d.ai.provider.as_str(),
+        ai_model = d.ai.model,
+        ai_timeout_secs = d.ai.timeout_secs,
+        ai_max_parallel = d.ai.max_parallel,
+        ai_batch_size = d.ai.batch_size,
+        ai_max_folder_items = d.ai.max_folder_items,
+        ai_history_days = d.ai.history_days,
     )
 }
