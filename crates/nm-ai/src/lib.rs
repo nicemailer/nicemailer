@@ -9,11 +9,13 @@
 //! - [`Provider`]: the one the configuration chose;
 //! - [`prompt`]: what a prompt is, and the system prompt built from it;
 //! - [`catalog`]: the built-in prompts (`prompts/*.toml`) merged with the
-//!   user's files, checked.
+//!   user's files, checked;
+//! - [`answer`]: the strict checking of what the model answered.
 //!
 //! The API-key provider and the building of the messages from a mail come
 //! next.
 
+pub mod answer;
 pub mod catalog;
 pub mod claude_code;
 pub mod fake;

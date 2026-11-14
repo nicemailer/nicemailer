@@ -2,7 +2,7 @@
 
 NiceMailer can ask a language model to help with mail: proofread a draft, summarize a conversation, suggest where a mail of the Quarantine should go. The rules are in `specifications/ia.md` (in French). This page describes what is built so far and how it is tested.
 
-**Status (November 2026):** the core can call Claude through the user's own `claude` binary, and reads and checks the prompt files (crate `nm-ai`). Nothing in the app, the CLI or the contract uses them yet; the inputs taken from a mail, the checking of answers and the API-key provider come next.
+**Status (November 2026):** the core can call Claude through the user's own `claude` binary, and reads and checks the prompt files and the model's answers (crate `nm-ai`). Nothing in the app, the CLI or the contract uses them yet; the inputs taken from a mail and the API-key provider come next.
 
 ## Providers
 
@@ -79,6 +79,23 @@ the conversation does not contain.
 - A file with a problem is refused alone, with its line; the other prompts stay. An unknown key is only a warning.
 - A key must be free in the menu where the prompt appears. The reading screen shows the `message` and `thread` prompts together, and the list shows `selection` and `thread`. A conflict with a built-in prompt is reported on your file.
 
+## Answers
+
+`nm_ai::answer::read(output, outcome, sent)` checks what the model answered against what was asked and sent, and gives a typed `Answer` or `ai_invalid_output` with the reason. It is strict: a key the schema does not have, a target that was not offered, a conversation that was not sent, segments in another number or order are all refused, rather than guessed at. A tolerant reading would hide the drift of a prompt, and the core applies these answers.
+
+| Output | Accepted |
+| --- | --- |
+| `replace` | Exactly the segments sent, `<segment n="1">` to `n="N"` in order, only whitespace around; each one trimmed, the core restoring the original whitespace |
+| `insert`, `reply`, `panel` | A non-empty text |
+| `choices`, `subjects` | 1 to 5 distinct texts (case ignored), 2,000 characters at most |
+| `summary` | A summary and at most 8 action items, each with a task and possibly empty owner and due date |
+| `verdict` | `low`, `medium` or `high`, and 1 to 5 reasons of 300 characters at most |
+| `targets` | At most one suggestion per conversation sent, each to a target offered, with a reason. A conversation the model left out gets no suggestion; the rest of the batch stands |
+
+A whole answer in a code fence (```` ```json ````) is unfenced first. A structured answer given as text, by a provider without structured output, is read as JSON.
+
+`answer::apply_floor(verdict, findings)` raises a `low` security verdict to `medium` when the core found a strong sign in the mail itself (a failed authentication, a link that shows one site and opens another…), and puts that sign first among the reasons. The findings come from the core, with the inputs of the mail.
+
 ## Tests
 
 | Test | What it covers |
@@ -87,4 +104,5 @@ the conversation does not contain.
 | `tests/fixtures.rs` | The recordings of the real binary (`tests/fixtures/claude-code/`, described in their README) show what they claim, and name no user or machine |
 | `tests/claude_code.rs` | The provider against a fake `claude`, a shell script that replays the recordings turn by turn and keeps what it read: the order probe, interrupt, message; a process announcing tools gets the probe only; not signed in is found before the content is sent; the safety options are passed; a timeout and a cancel kill the process group, grandchildren included; a missing binary |
 | `tests/catalog.rs` | Every built-in prompt loads without problem or warning, has English and French labels, and builds a system prompt for each variant; the menus of the spec; replacing, adding and disabling; a file refused alone; each rule refused with its line; keys shared across a screen; the hash, unchanged by comments, labels and key order, changed by the text, inputs or model |
+| `tests/answer.rs` | Each output, accepted and refused, case by case; the recorded answers of phase 0 read; the floor of the verdict |
 | `tests/real_claude.rs` | Ignored by default. The real binary, with the user's subscription: status, a prompt injection that must run nothing, a structured answer. Run it after an update of Claude Code: `cargo test -p nm-ai --test real_claude -- --ignored` |

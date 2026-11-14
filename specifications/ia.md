@@ -231,6 +231,14 @@ Les sorties JSON ont un **schéma défini par le noyau**, transmis au fournisseu
 
 Les sorties texte sont nettoyées d'une éventuelle clôture de code (`` ``` ``) et des espaces autour.
 
+Précisions de la lecture (`crates/nm-ai/src/answer.rs`) :
+
+- **Segments** : exactement les segments envoyés, numérotés de 1 à N dans l'ordre, avec seulement des espaces autour ; un segment qui en contient un autre est refusé. Chaque segment rendu est débarrassé de ses espaces autour : le noyau remet ceux du segment d'origine, qu'il connaît, plutôt que de faire confiance au modèle pour la mise en page.
+- **Listes de textes** (`choices`, `subjects`) : 1 à 5 textes non vides, sans doublon (casse ignorée), de 2 000 caractères au plus.
+- **Raisons** (`verdict`, `targets`) : non vides, 300 caractères au plus.
+- **`targets`** : une conversation non envoyée, ou suggérée deux fois, fait échouer le lot. Une conversation **oubliée** par le modèle n'a simplement pas de suggestion : refuser un lot de vingt pour un trou coûterait plus qu'il ne protège.
+- **Une sortie à schéma donnée en texte** (fournisseur sans sortie structurée) est lue comme du JSON, après le retrait d'une éventuelle clôture de code.
+
 ### Plancher du verdict de sécurité
 
 Un verdict `low` est relevé à `medium` quand le noyau a trouvé lui-même un signe fort : verdict d'authentification en échec (`fail`), Reply-To d'un autre domaine enregistrable que l'expéditeur (`domaines-publics.md`), lien dont le texte affiché nomme un autre site que son adresse, lien vers une adresse IP. Le signe trouvé est ajouté en tête des raisons. Le modèle peut manquer une preuve ; l'utilisateur doit la voir.
@@ -415,7 +423,7 @@ L'interrupteur est global : un compte ne peut pas être exclu en v1. Le format l
 ## 14. Feuille de route
 
 0. **Vérifier le CLI `claude`** : fait le 14 novembre 2026 avec Claude Code 2.1.325 (section 3, « L'appel » et « Vérification à chaque appel »). Restent à observer : la limite d'usage atteinte, et le fournisseur `anthropic-api`, faute de clé API pendant l'essai. Après une mise à jour de Claude Code, `cargo test -p nm-ai --test real_claude -- --ignored` refait les essais essentiels avec le vrai binaire.
-1. **Crate `nm-ai`** : fait pour les fournisseurs `claude-code` et factice, le format, le chargement et la validation des prompts, et les prompts intégrés (`docs/ai.md`) ; restent `AnthropicApiProvider`, le rechargement des prompts (FSEvents, dans le noyau), la construction du message et la validation des sorties. Testée sans réseau.
+1. **Crate `nm-ai`** : fait pour les fournisseurs `claude-code` et factice, le format, le chargement et la validation des prompts, les prompts intégrés et la lecture des réponses avec le plancher du verdict (`docs/ai.md`) ; restent `AnthropicApiProvider` et le rechargement des prompts (FSEvents, dans le noyau). La construction du message dépend des entrées : elle vient avec la phase 2. Testée sans réseau.
 2. **Entrées dans le noyau** : découpage en segments de `draft.own_text` et reconstruction, puis les autres entrées.
 3. **Contrat et historique** : commandes, événements, tables `ai_run` et `ai_suggestion`, purge.
 4. **CLI** (section 12).
