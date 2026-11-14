@@ -16,6 +16,8 @@ use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
+mod ai;
+
 use anyhow::{Context, bail};
 use clap::{Parser, Subcommand};
 use nm_api::{PROTOCOL_VERSION, Response, paths};
@@ -134,6 +136,11 @@ enum Command {
     Raw {
         #[command(subcommand)]
         action: RawAction,
+    },
+    /// The AI assistance: its state, the prompts, running one on a draft.
+    Ai {
+        #[command(subcommand)]
+        action: ai::AiAction,
     },
 }
 
@@ -660,6 +667,7 @@ fn main() -> anyhow::Result<()> {
             Ok(())
         }
         Command::Config { action } => run_config(action),
+        Command::Ai { action } => ai::run(&data_dir, action),
         Command::Mailbox { action } => run_mailbox(action),
         Command::Account { action: AccountAction::Password { key, smtp } } => {
             // Connect first: no point asking for a password the core
@@ -1369,6 +1377,30 @@ impl Client {
             bail!("connection closed by the core");
         }
         Ok(line.trim_end().to_string())
+    }
+
+    /// Like [`Client::call`], but keeps the events received while waiting
+    /// for the response instead of dropping them: an event caused by the
+    /// request (the first fragment of an AI run) may come before it.
+    fn call_keeping_events(&mut self, method: &str, params: Value) -> anyhow::Result<(Value, Vec<Value>)> {
+        let id = self.next_id;
+        self.next_id += 1;
+        writeln!(self.stream, "{}", json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params}))?;
+        let mut events = Vec::new();
+        loop {
+            let v: Value = serde_json::from_str(&self.read_line()?)?;
+            match v.get("id").and_then(Value::as_u64) {
+                Some(i) if i == id => {
+                    let r: Response = serde_json::from_value(v)?;
+                    if let Some(e) = r.error {
+                        bail!("error {}: {}", e.code, e.message);
+                    }
+                    return Ok((r.result.unwrap_or(Value::Null), events));
+                }
+                Some(_) => {}
+                None => events.push(v),
+            }
+        }
     }
 
     /// Sends a request and waits for its response, returning its `result`

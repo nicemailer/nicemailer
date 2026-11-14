@@ -2,7 +2,7 @@
 
 NiceMailer can ask a language model to help with mail: proofread a draft, summarize a conversation, suggest where a mail of the Quarantine should go. The rules are in `specifications/ia.md` (in French). This page describes what is built so far and how it is tested.
 
-**Status (November 2026):** the core runs the prompts of the compose screen (proofread, rewrite, translate, subjects) through the contract, with the user's own `claude` binary; the app and the CLI do not call them yet. The prompts of the other screens, which need the inputs taken from a mail, and the API-key provider come next.
+**Status (November 2026):** the core runs the prompts of the compose screen (proofread, rewrite, translate, subjects) through the contract, with the user's own `claude` binary; the CLI runs them (`nicemailer ai`); the app does not call them yet. The prompts of the other screens, which need the inputs taken from a mail, and the API-key provider come next.
 
 ## Providers
 
@@ -144,6 +144,22 @@ The user's prompts folder is read again when its files change (name, size, date)
 
 For tests, `NICEMAILER_FAKE_AI=<file.json>` makes the core answer from a table `{"<task>": "<answer>"}` instead of calling a provider.
 
+## From the terminal
+
+```sh
+nicemailer ai status [--check]          # on or off, provider, model, ready; --check: claude's version and subscription
+nicemailer ai prompts list [--screen compose|reading|list|attachment] [--folder quarantine] [--lang fr]
+nicemailer ai prompts export [<id>…] [--dir …]   # copies of built-in prompts to start from; never overwrites
+nicemailer ai prompts check [<dir>]     # your prompt files checked without the core; status 1 if one is refused
+nicemailer ai run <prompt> --draft <id> [--variant k] [--lang fr] [--apply] [--choice N]
+```
+
+`ai run` opens the draft as the app does, starts the prompt, shows the text as it comes, then the proposal: a replacement as a word diff in the `wdiff` style, `[-removed-]{+added+}`, or the numbered subjects. Nothing changes without `--apply` (and `--choice N` for a subject); without it, the proposal is dismissed. Ctrl-C stops following, not the run.
+
+While a text answer comes, the tags of the segments are hidden (`nm_ai::message::SegmentFilter`, in the core, for every client): a tag may be cut between two fragments, so a `<` that may start one is held back until the next fragment tells, and the text outside the segments is not shown.
+
+Tried on 14 November 2026 with Claude Code 2.1.325, Claude Pro, `claude-haiku-5-5`: a reply proofread and applied in 1.75 s, the start of the process included; the signature and the quotation untouched, `14h` kept.
+
 ## Tests
 
 | Test | What it covers |
@@ -154,6 +170,8 @@ For tests, `NICEMAILER_FAKE_AI=<file.json>` makes the core answer from a table `
 | `tests/catalog.rs` | Every built-in prompt loads without problem or warning, has English and French labels, and builds a system prompt for each variant; the menus of the spec; replacing, adding and disabling; a file refused alone; each rule refused with its line; keys shared across a screen; the hash, unchanged by comments, labels and key order, changed by the text, inputs or model |
 | `nm-ai` (unit, `diff.rs`) | The word diff: order removed-then-added, both texts rebuilt, spacing alone not a change, no glued words, huge texts replaced whole |
 | `nm-core` (unit, `segments.rs`) | Replies, answers between quoted lines, signatures, forwards in English and French, Windows line ends; unchanged segments give the body back byte for byte, also on 3,000 random bodies made of every kind of line, none of whose segments holds a quoted line, a signature or a forwarded mail |
+| `nm-ai` (unit, `message.rs`) | The segments sent and read back; the tags hidden from the streamed text however the answer is cut, from 1 byte to whole; a `<` of the text kept; text outside the segments not shown |
+| `nm-cli` (unit, `ai.rs`) | The word diff as text, the export that keeps existing files and writes files that load as the built-in prompts, the status and the menu as text |
 | `tests/answer.rs` | Each output, accepted and refused, case by case; the recorded answers of phase 0 read; the floor of the verdict |
 | `nm-store`, `tests/ai_runs.rs` | A run from start to decision; ending and deciding once; failed and cancelled runs keep their raw answer; runs left running fail at start; the purge keeps everything but the texts and leaves running runs alone; suggestions follow their run and their conversation, and a batch is written whole or not at all |
 | `nm-daemon`, `tests/ai_rpc.rs` | The real core: a reply proofread from the menu to the saved draft, quotation untouched; nothing runs while the AI is off; what cannot work refused before any row is written; an answer with the wrong segments fails and is kept; a draft changed during the run is not overwritten; a subject chosen; a run cancelled and its `claude` process killed; a `claude` that announces tools never gets the mail |

@@ -426,6 +426,8 @@ Le résultat s'affiche dans un panneau sous l'en-tête du mail ou du brouillon :
 
 `ai run` sert aussi à mettre au point un prompt de l'utilisateur sans l'app.
 
+Réalisé (novembre 2026, `docs/ai.md`, « From the terminal ») : `ai status [--check]`, `ai prompts list | export | check` et `ai run <prompt> --draft <id>` ; le résultat d'`ai run` est un diff mot à mot au format de `wdiff` (`[-supprimé-]{+ajouté+}`), lisible sans couleurs. Restent `ai key set`, avec le fournisseur `anthropic-api`, et `ai history`, qui demande une requête de l'historique dans le contrat.
+
 ## 13. Configuration
 
 | Clé | Rôle | Valeur par défaut |
@@ -448,7 +450,7 @@ L'interrupteur est global : un compte ne peut pas être exclu en v1. Le format l
 1. **Crate `nm-ai`** : fait pour les fournisseurs `claude-code` et factice, le format, le chargement et la validation des prompts, les prompts intégrés et la lecture des réponses avec le plancher du verdict (`docs/ai.md`) ; restent `AnthropicApiProvider` et le rechargement des prompts (FSEvents, dans le noyau). La construction du message dépend des entrées : elle vient avec la phase 2. Testée sans réseau.
 2. **Entrées dans le noyau** : découpage en segments de `draft.own_text` et reconstruction (fait), puis les autres entrées.
 3. **Contrat et historique** : fait pour les prompts du brouillon (section 10, « Réalisé ») ; les autres portées viendront avec leurs entrées.
-4. **CLI** (section 12).
+4. **CLI** (section 12) : fait, sauf `ai key set` et `ai history`.
 5. **Jalon 1, la correction dans l'app** : ⌘I, menu, panneau au fil de l'eau, différences, Accepter et Refuser. Valide la chaîne entière sur le cas le plus simple.
 6. **Jalon 2, la lecture** : `a`, résumé, traduction, réponses rapides, analyse de sécurité, dates.
 7. **Jalon 3, la Quarantine** : suggestions par lots, affichage sur les lignes, `↩`.

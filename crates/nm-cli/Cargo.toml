@@ -14,7 +14,11 @@ nm-api.workspace = true
 nm-core.workspace = true
 nm-store.workspace = true
 nm-engine.workspace = true
+nm-ai = { path = "../nm-ai" }
 libc.workspace = true
 serde_json.workspace = true
 anyhow.workspace = true
 clap.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
