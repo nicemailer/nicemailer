@@ -23,7 +23,7 @@ struct AddressBookTests {
     init() async {
         model.openFile = { _ in }
         model.addressBook = book
-        let defaults = UserDefaults(suiteName: "NiceMailerTests-\(UUID().uuidString)")!
+        let defaults = TestDefaults.make()
         controller = GeekController(model: model, defaults: defaults, textSize: TextSize(defaults: defaults))
         controller.pasteboard = NSPasteboard(name: NSPasteboard.Name("NiceMailerTests-\(UUID().uuidString)"))
         await model.attach(core)

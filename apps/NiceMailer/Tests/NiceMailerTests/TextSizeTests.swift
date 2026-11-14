@@ -6,7 +6,7 @@ import Testing
 @MainActor
 struct TextSizeTests {
     func fresh() -> (TextSize, UserDefaults) {
-        let d = UserDefaults(suiteName: "NiceMailerTests-\(UUID().uuidString)")!
+        let d = TestDefaults.make()
         return (TextSize(defaults: d), d)
     }
 

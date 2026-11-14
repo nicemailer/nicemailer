@@ -48,7 +48,7 @@ struct QuarantineTests {
                 return Fixture.answer(method, params)
             }
         }
-        let defaults = UserDefaults(suiteName: "NiceMailerTests-\(UUID().uuidString)")!
+        let defaults = TestDefaults.make()
         controller = GeekController(model: model, defaults: defaults, textSize: TextSize(defaults: defaults))
         model.seenDelay = 0.05
         await model.attach(core)

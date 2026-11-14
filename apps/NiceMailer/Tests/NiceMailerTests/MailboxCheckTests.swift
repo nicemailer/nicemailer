@@ -171,7 +171,7 @@ struct MailboxChangeTests {
     let early = URL(fileURLWithPath: "/mailboxes/early")
 
     init() async throws {
-        let defaults = UserDefaults(suiteName: "NiceMailerTests-\(UUID().uuidString)")!
+        let defaults = TestDefaults.make()
         controller = GeekController(model: model, defaults: defaults, textSize: TextSize(defaults: defaults))
         model.openFile = { _ in }
         model.addressBook = FixtureAddressBook(cards: [:])

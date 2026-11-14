@@ -16,7 +16,7 @@ struct UnsubscribeTests {
     let opened = Opened()
 
     init() async {
-        let defaults = UserDefaults(suiteName: "NiceMailerTests-\(UUID().uuidString)")!
+        let defaults = TestDefaults.make()
         controller = GeekController(model: model, defaults: defaults, textSize: TextSize(defaults: defaults))
         let opened = opened
         model.openFile = { opened.urls.append($0) }

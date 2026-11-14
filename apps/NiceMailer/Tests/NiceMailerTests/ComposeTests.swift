@@ -359,7 +359,7 @@ struct ComposeControllerTests {
     let controller: GeekController
 
     init() async {
-        let defaults = UserDefaults(suiteName: "NiceMailerTests-\(UUID().uuidString)")!
+        let defaults = TestDefaults.make()
         controller = GeekController(model: model, defaults: defaults, textSize: TextSize(defaults: defaults))
         controller.pasteboard = NSPasteboard(name: NSPasteboard.Name("NiceMailerTests-\(UUID().uuidString)"))
         model.openFile = { _ in }

@@ -37,7 +37,7 @@ struct WorkflowTests {
                 return Fixture.answer(method, params)
             }
         }
-        let defaults = UserDefaults(suiteName: "NiceMailerTests-\(UUID().uuidString)")!
+        let defaults = TestDefaults.make()
         controller = GeekController(model: model, defaults: defaults, textSize: TextSize(defaults: defaults))
         model.openFile = { _ in }
         await model.attach(core)

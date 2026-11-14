@@ -15,7 +15,7 @@ struct GeekControllerTests {
     let controller: GeekController
 
     init() async {
-        defaults = UserDefaults(suiteName: "NiceMailerTests-\(UUID().uuidString)")!
+        defaults = TestDefaults.make()
         textSize = TextSize(defaults: defaults)
         controller = GeekController(model: model, defaults: defaults, textSize: textSize)
         // A pasteboard of its own: a test that copies (a link to a mail)

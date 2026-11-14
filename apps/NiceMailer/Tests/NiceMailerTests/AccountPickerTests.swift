@@ -28,7 +28,7 @@ struct AccountPickerTests {
         core = FakeCore { method, params in
             method == "list_folders" ? ["items": folders, "as_of": Fixture.position] : Fixture.answer(method, params)
         }
-        let defaults = UserDefaults(suiteName: "NiceMailerTests-\(UUID().uuidString)")!
+        let defaults = TestDefaults.make()
         controller = GeekController(model: model, defaults: defaults, textSize: TextSize(defaults: defaults))
         model.startUnified = unified
         await model.attach(core)

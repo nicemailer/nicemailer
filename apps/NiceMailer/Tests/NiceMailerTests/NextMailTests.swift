@@ -102,7 +102,7 @@ struct NextMailTests {
                 return Fixture.answer(method, params)
             }
         }
-        let defaults = UserDefaults(suiteName: "NiceMailerTests-\(UUID().uuidString)")!
+        let defaults = TestDefaults.make()
         controller = GeekController(model: model, defaults: defaults, textSize: TextSize(defaults: defaults))
         // Long enough that nothing is marked read behind the tests' back.
         model.seenDelay = 60
