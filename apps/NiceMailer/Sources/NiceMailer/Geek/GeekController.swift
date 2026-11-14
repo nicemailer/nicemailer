@@ -2374,14 +2374,13 @@ final class GeekController {
         }
     }
 
-    /// Where the AI shows: `palette` for its menu (`a` or ⌘I), a picker at
-    /// the top, over the rest; `center` for the panel of a mail's result,
-    /// the main place of focus while it is open; `headers` for the panel
-    /// of a reply, just above the text it works on; `none` when nothing of
-    /// the AI is open.
+    /// Where the AI shows: `palette` for its menu (`a` or ⌘I), a picker
+    /// over the rest of the window; `panel` for the result of a prompt, in
+    /// the palette's place, for a reply as for a mail; `none` when nothing
+    /// of the AI is open.
     var aiPlacement: String {
         if overlay == .picker(.ai) { return "palette" }
-        if let run = model.aiRun { return run.composer == nil ? "center" : "headers" }
+        if model.aiRun != nil { return "panel" }
         return "none"
     }
 

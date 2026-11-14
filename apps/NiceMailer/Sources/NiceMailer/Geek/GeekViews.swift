@@ -128,14 +128,23 @@ private struct GeekWindow: View {
             ChoicePanel(controller: controller, choice: choice)
                 .padding(12)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-        } else if controller.aiPlacement == "center", let run = model.aiRun {
-            // The AI panel of a mail (`a`), in the middle too, large enough
-            // to read a summary or a translation without scrolling.
+        } else if let run = model.aiRun {
+            // The result of a prompt takes the place of the palette it was
+            // chosen in, the same box at the same place, for a reply as for
+            // a mail: where the eyes already are (`ia.md`, section 11).
+            // Its top is the palette's top (the picker is centred in the
+            // window, at a fixed height), and it grows downward as the
+            // answer streams in, without moving what is already read.
             GeometryReader { geo in
-                AIFocus {
-                    AIPanel(run: run, maxTextHeight: geo.size.height * 0.6)
-                        .frame(width: min(760, geo.size.width - 48))
-                }
+                let scale = TextSize.shared.scale
+                let top = max(0, (geo.size.height - PickerPopup.height(.ai, scale: scale)) / 2)
+                AIPanel(run: run, maxTextHeight: geo.size.height - top - 120 * scale)
+                    .frame(width: PickerPopup.width(.ai, available: geo.size.width, scale: scale))
+                    .background(Palette.popup)
+                    .overlay(Rectangle().stroke(Palette.separator, lineWidth: 1))
+                    .uiTarget("ai-panel-box")
+                    .padding(.top, top)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
         } else {
             menusAndPickers
@@ -1786,10 +1795,22 @@ struct PickerPopup: View {
         let wanted: CGFloat
         switch kind {
         case .links: wanted = max(min(available - 2 * 40 * scale, 1100 * scale), 520 * scale)
-        case .attributeValue, .search: wanted = 680 * scale
+        // The AI palette as wide as the search: its result takes its place,
+        // and a text rewritten reads better on long lines.
+        case .attributeValue, .search, .ai: wanted = 680 * scale
         default: wanted = 520 * scale
         }
         return min(wanted, available)
+    }
+
+    /// The panel's height, fixed so that it does not jump while typing
+    /// filters the rows: taller for the panels that show details. Shared
+    /// with the AI result, which takes the palette's place.
+    static func height(_ kind: GeekController.PickerKind, scale: CGFloat) -> CGFloat {
+        switch kind {
+        case .attributeValue, .search, .links: 440 * scale
+        default: 320 * scale
+        }
     }
 
     var body: some View {
@@ -1863,7 +1884,7 @@ struct PickerPopup: View {
         }
         // An attribute with a value gets a bigger panel at once (`ui.md`),
         // and so do the links of a mail.
-        .frame(width: width, height: scaled(expanded ? 440 : 320))
+        .frame(width: width, height: Self.height(kind, scale: TextSize.shared.scale))
         .onAppear { if UIScript.isActive { UIScript.pickerWidth = width } }
         .onChange(of: width) { _, w in if UIScript.isActive { UIScript.pickerWidth = w } }
         .background(Palette.popup)
@@ -1872,13 +1893,6 @@ struct PickerPopup: View {
 
     /// Rows in two halves, text and address (the links of `l`).
     private var halves: Bool { kind == .links }
-
-    private var expanded: Bool {
-        switch kind {
-        case .attributeValue, .search, .links: return true
-        default: return false
-        }
-    }
 
     private var title: String {
         switch kind {

@@ -33,6 +33,7 @@ key cmd-i
 expect picker_index = 0
 key ret
 expect ai_state = proposal
+expect ai_placement = panel
 expect ai_title = Proofread
 expect ai_diff ~ [-merci -]{+Merci, +}
 expect ai_diff ~ [-vien jeudi-]{+viens jeudi.+}
@@ -86,7 +87,7 @@ expect picker_rows ~ Translate · Into English
 snap ai-mail-menu
 key ret
 expect ai_state = proposal
-expect ai_placement = center
+expect ai_placement = panel
 expect ai_title = Summarize
 expect ai_result ~ Victor asks whether the March invoice is ready.
 expect ai_result ~ - Send the March invoice (you)

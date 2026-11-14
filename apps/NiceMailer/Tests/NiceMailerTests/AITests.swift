@@ -392,6 +392,8 @@ final class AIControllerTests {
         #expect(run["revision"] as? Int == model.composer?.revision)
         #expect(run["lang"] as? String == AI.language)
         #expect(model.aiRun?.title == "Proofread")
+        // In the palette's place, not above the text of the reply.
+        #expect(controller.aiPlacement == "panel")
 
         // The text as it comes; the keys do not reach the text meanwhile.
         event("AiDelta", ["run_id": .int(7), "text": .string("Mer")], transient: true)
@@ -536,9 +538,9 @@ final class AIControllerTests {
         _ = await eventually { if case .proposal? = self.model.aiRun?.phase { true } else { false } }
         #expect(AI.resultText(try #require({ if case .proposal(let p)? = model.aiRun?.phase { p } else { nil } }()))
             == "Alice attend jeudi.\n- Apporter les clés (you) · jeudi")
-        // The result, in the middle too; it takes the keys: `j` does not
-        // move the list.
-        #expect(controller.aiPlacement == "center")
+        // The result, in the palette's place; it takes the keys: `j` does
+        // not move the list.
+        #expect(controller.aiPlacement == "panel")
         let selected = model.selectedThreadId
         press("j")
         #expect(model.selectedThreadId == selected)
