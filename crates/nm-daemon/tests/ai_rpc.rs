@@ -246,8 +246,8 @@ fn a_passage_selected_gets_other_wordings_and_the_one_chosen_replaces_it() {
     // needs the whole text.
     let menu = c.call("ai_list_prompts", json!({"screen": "compose-selection", "lang": "fr"})).unwrap();
     let ids: Vec<&str> = menu.as_array().unwrap().iter().map(|p| p["id"].as_str().unwrap()).collect();
-    assert_eq!(ids, ["alternatives", "proofread", "rewrite", "translate-draft"]);
-    assert!(menu.as_array().unwrap().iter().take(2).all(|p| p["available"] == true), "{menu}");
+    assert_eq!(ids, ["alternatives", "proofread", "improve", "rewrite", "translate-draft"]);
+    assert!(menu.as_array().unwrap().iter().take(3).all(|p| p["available"] == true), "{menu}");
     // "viens": ASCII before it, so UTF-16 units are bytes.
     let selection = json!({"start": 3, "end": 8});
     let run = |c: &mut Client, prompt: &str, sel: Option<&Value>| {

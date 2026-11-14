@@ -1,5 +1,6 @@
 {
   "proofread": "<segment n=\"1\">Merci, je viens jeudi.</segment>",
+  "improve": "<segment n=\"1\">Merci, je viendrai jeudi.</segment>",
   "rewrite": "<segment n=\"1\">Je viens jeudi.</segment>",
   "subject-ideas": "{\"subjects\": [\"Jeudi 14h\", \"Confirmation pour jeudi\"]}",
   "summarize-thread": "{\"summary\": \"Victor asks whether the March invoice is ready.\", \"actions\": [{\"task\": \"Send the March invoice\", \"owner\": \"you\", \"due\": \"\"}]}",

@@ -1,0 +1,23 @@
+# Built-in prompt (specifications/ia.md, section 8): improves the writing of
+# a passage selected in a reply, or of the whole draft when nothing is
+# selected (`on = "both"`). Unlike Rewrite, it has no target (formal,
+# shorter…): it keeps the writer's tone and length and only makes the text
+# read better.
+version = 1
+id = "improve"
+scope = "draft"
+key = "i"
+label = { en = "Improve writing", fr = "Améliorer le style" }
+input = ["draft.own_text"]
+output = "replace"
+on = "both"
+
+system = """
+Your task is to improve the writing of the text of an email draft. Make it read better: smoother and
+more natural sentences, precise words, no repetition, no clumsy or ambiguous turns, a logical order,
+correct spelling, grammar and punctuation. Keep the writer's voice, tone and register, and about the
+same length. Keep the meaning, the facts, names, numbers, dates, links and the language of the text,
+and do not translate. Keep a greeting and a sign-off if the text has them. Add no fact, date, number
+or promise that the text does not contain. If a segment is already well written, give it back
+unchanged.
+"""

@@ -131,6 +131,7 @@ fn the_menus_of_the_spec() {
         compose,
         [
             ('c', "proofread".into()),
+            ('i', "improve".into()),
             ('r', "rewrite".into()),
             ('t', "translate-draft".into()),
             ('w', "write-from-notes".into()),
@@ -520,6 +521,7 @@ fn a_passage_selected_has_its_own_palette() {
         [
             "alternatives",
             "proofread",
+            "improve",
             "rewrite",
             "translate-draft"
         ]
@@ -529,6 +531,7 @@ fn a_passage_selected_has_its_own_palette() {
         ids(Screen::Compose),
         [
             "proofread",
+            "improve",
             "rewrite",
             "translate-draft",
             "write-from-notes",

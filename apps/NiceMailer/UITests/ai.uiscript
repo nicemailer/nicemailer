@@ -6,7 +6,8 @@
 # first row, highlighted, runs with Return; a prompt not available yet
 # says so, proofreading shows its differences, the keys do not reach the
 # text meanwhile, Return applies them (quotation untouched) and ⌘Z undoes
-# them; a variant from the submenu, refused with Escape; a subject chosen
+# them; improving the writing, refused; a variant from the submenu,
+# refused with Escape; a subject chosen
 # by its number; `a` with a mail shown: a summary, then a quick reply that
 # starts the reply; `a` on the list alone offers the prompts of the row
 # under the cursor, and filing with several marked; in
@@ -21,7 +22,7 @@ type merci je vien jeudi
 key shift-alt-left
 key cmd-i
 expect picker_first = Other wordings
-expect picker_rows ~ Proofread
+expect picker_rows ~ Improve writing
 expect picker_rows !~ Suggest subjects
 snap ai-passage-menu
 key ret
@@ -37,7 +38,7 @@ expect compose_text ~ merci je vien jeudi|
 key cmd-i
 expect ai_placement = palette
 expect picker_first = Proofread
-expect picker_rows ~ Proofread | Rewrite · More formal
+expect picker_rows ~ Proofread | Improve writing | Rewrite · More formal
 expect picker_rows ~ Translate · Into English
 expect picker_rows ~ Suggest subjects
 expect picker_rows ~ Write from my notes
@@ -74,6 +75,17 @@ key cmd-z
 expect compose_text ~ merci je vien jeudi
 expect flash ~ undone
 expect compose_saved = true
+# Improving the writing of the whole text (`i`): its differences, refused.
+key cmd-i
+type i
+expect picker_first = Improve writing
+key ret
+expect ai_state = proposal
+expect ai_title = Improve writing
+expect ai_diff ~ viendrai
+key esc
+expect ai_state = none
+expect compose_text ~ merci je vien jeudi
 # A variant, a row of the palette found by its letters (`rc`), refused:
 # the text stays.
 key cmd-i

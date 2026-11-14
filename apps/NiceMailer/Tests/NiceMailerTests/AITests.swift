@@ -222,6 +222,8 @@ final class AIFakeState: @unchecked Sendable {
          "variants": [], "source": "builtin", "available": true],
         ["id": "proofread", "key": "c", "label": "Proofread", "scope": "draft", "output": "replace", "variants": [],
          "source": "builtin", "available": true],
+        ["id": "improve", "key": "i", "label": "Improve writing", "scope": "draft", "output": "replace", "variants": [],
+         "source": "builtin", "available": true],
     ]
 
     static let prompts: [[String: Any]] = [

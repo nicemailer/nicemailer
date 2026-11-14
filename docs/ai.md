@@ -42,6 +42,7 @@ A prompt is a TOML file. The built-in ones are in `crates/nm-ai/prompts/`, compi
 | --- | --- | --- |
 | `alternatives` | a passage selected, `a` | Other wordings of the passage, fitted to the draft around it: up to five synonyms for a word or a short expression, three wordings for a longer passage; the one chosen replaces it |
 | `proofread` | compose, `c` | Fixes spelling and grammar only, keeping the writer's typography (`14h` stays `14h`) |
+| `improve` | compose, `i` | Improves the writing of the passage selected, or of the whole text: smoother sentences, precise words, no repetition, same tone and about the same length |
 | `rewrite` | compose, `r` + `f` `a` `c` `l` `s` | More formal, friendlier, shorter, longer, clearer |
 | `translate-draft` | compose, `t` + `e` `f` `s` `d` `i` | Into English, French, Spanish, German, Italian |
 | `write-from-notes` | compose, `w` | Turns notes into a mail, with `[placeholders]` for what is unknown |
@@ -186,7 +187,7 @@ The palette offers the prompts of its **target**, not of the window's layout (`G
 | Target | Screen | Prompts |
 |---|---|---|
 | The reply written (⌘I), nothing selected | `compose` | proofread, rewrite, translate, subjects… |
-| A passage selected in the reply (⌘I) | `compose-selection` | other wordings, then proofread, rewrite, translate of the passage |
+| A passage selected in the reply (⌘I) | `compose-selection` | other wordings, then proofread, improve, rewrite, translate of the passage |
 | One mail: the one marked alone, else the one shown, else the row under the cursor | `mail` | summary, quick replies, translation, security check, dates |
 | Several mails marked | `selection` | filing them (Suggest a folder; Sort the Quarantine there) |
 
@@ -196,7 +197,7 @@ Out of a reply, **`a`** opens the palette of one mail: summary, quick replies, t
 
 ### A passage selected
 
-In a reply, **select a passage, then ⌘I**: the palette is the passage's. **Other wordings** comes first, so ⌘I ↩ asks for other wordings of it: up to five synonyms when the passage is a word or a few words you hesitate over, three wordings when it is longer (one prompt: you do not choose between "a word" and "a passage" before asking); proofread, rewrite and translate work on the passage alone. The core sends the passage, then the whole draft with the passage marked `<selected>…</selected>` (`draft.context`: your sentences around it and the mail replied to, quoted below; a long draft is cut around the passage). The panel lists the texts, numbered: **Return takes the first**, the best, a number another; the core puts it in place of the passage, once sure the draft is still the one it read, and the cursor goes after it. ⌘Z gives the passage back. The passage is the one selected when ⌘I was pressed (`AppModel.aiPassage`), sent in UTF-16 units of the body as `selection`.
+In a reply, **select a passage, then ⌘I**: the palette is the passage's. **Other wordings** comes first, so ⌘I ↩ asks for other wordings of it: up to five synonyms when the passage is a word or a few words you hesitate over, three wordings when it is longer (one prompt: you do not choose between "a word" and "a passage" before asking); proofread, improve, rewrite and translate work on the passage alone. The core sends the passage, then the whole draft with the passage marked `<selected>…</selected>` (`draft.context`: your sentences around it and the mail replied to, quoted below; a long draft is cut around the passage). The panel lists the texts, numbered: **Return takes the first**, the best, a number another; the core puts it in place of the passage, once sure the draft is still the one it read, and the cursor goes after it. ⌘Z gives the passage back. The passage is the one selected when ⌘I was pressed (`AppModel.aiPassage`), sent in UTF-16 units of the body as `selection`.
 
 In **Quarantine**, the palette starts with **Sort the Quarantine**, so `a` then Return sorts the whole folder (the prompt's `unmarked = "folder"`), or the conversations marked. Nothing takes the keys meanwhile: the status bar says "20 of 47 sorted", and Escape stops it (what is sorted stays). As each batch ends, its rows show their target after an arrow ("→ Newsletter", cut to "→ Newsl…" in a narrow list such as two columns, where the subject needs the room: `AI.suggestionTag`), and the status bar gives the reason of the one under the cursor. **Return** on a row with a suggestion moves it there, as the target's key would; any move decides the suggestion (`accepted` or `other`). Elsewhere, with several conversations marked, **Suggest a folder** files them (`unmarked = "cursor"`: it is offered only for a selection).
 

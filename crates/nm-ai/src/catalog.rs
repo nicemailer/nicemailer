@@ -50,6 +50,7 @@ pub const BUILTIN: &[(&str, &str)] = &[
         include_str!("../prompts/alternatives.toml"),
     ),
     ("proofread.toml", include_str!("../prompts/proofread.toml")),
+    ("improve.toml", include_str!("../prompts/improve.toml")),
     ("rewrite.toml", include_str!("../prompts/rewrite.toml")),
     (
         "translate-draft.toml",
