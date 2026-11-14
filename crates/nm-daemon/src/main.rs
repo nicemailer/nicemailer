@@ -39,6 +39,7 @@
 //! Funnelling responses and events through one channel guarantees that two
 //! lines are never interleaved on the socket.
 
+mod ai;
 mod drafts;
 mod events;
 mod setup;
@@ -171,6 +172,8 @@ struct Core {
     /// The synchronization of the IMAP accounts (`sync.rs`). Set once the
     /// core is shared, since the workers hold a pointer to it.
     syncer: std::sync::OnceLock<nm_engine::sync::Syncer>,
+    /// The AI assistance: prompts, runs, proposals (`ai.rs`).
+    ai: ai::AiState,
 }
 
 /// Imports run one at a time, on a dedicated thread (see `start_import`).
@@ -270,6 +273,7 @@ async fn run(args: Args, data_dir: &Path) -> anyhow::Result<()> {
     let startup_events = engine.reload(&mut store, true)?;
     log_config(&engine);
     let settings = engine.config().events.clone();
+    let ai_settings = engine.config().ai.clone();
 
     let raw = RawStore::open(&data_dir).with_context(|| format!("stockage brut dans {}", data_dir.display()))?;
     let attachments = AttachmentFiles::open(&data_dir)
@@ -299,6 +303,7 @@ async fn run(args: Args, data_dir: &Path) -> anyhow::Result<()> {
         outgoing,
         import: Mutex::new(ImportState::default()),
         syncer: std::sync::OnceLock::new(),
+        ai: ai::AiState::new(&config_path, &data_dir, &ai_settings),
     });
     // The workers of the IMAP accounts of the file (`plan-imap.md`,
     // phase 4). They only start working once the socket is up: their
@@ -359,6 +364,7 @@ async fn run(args: Args, data_dir: &Path) -> anyhow::Result<()> {
     start_reindex(&core)?;
     start_sender_backfill(&core)?;
     sync::start_gc(&core);
+    ai::start_upkeep(&core);
 
     // Accept connections until Ctrl-C (SIGINT) or SIGTERM (sent by `kill`
     // or by launchd).
@@ -1520,6 +1526,13 @@ async fn call(core: &Arc<Core>, source: Source, req: Request) -> Result<Value, R
         method::DISCARD_DRAFT => to_value(drafts::discard(core, params(req.params)?, source).await?),
         method::SEND_DRAFT => to_value(drafts::send(core, params(req.params)?, source).await?),
         method::CANCEL_SEND => to_value(drafts::cancel(core, params(req.params)?, source).await?),
+        method::AI_STATUS => to_value(ai::status(core, params(req.params)?).await?),
+        method::AI_LIST_PROMPTS => to_value(ai::list_prompts(core, params(req.params)?)?),
+        method::AI_RUN => to_value(ai::run(core, params(req.params)?, source).await?),
+        method::AI_CANCEL => to_value(ai::cancel(core, params(req.params)?).await?),
+        method::AI_GET_RUN => to_value(ai::get_run(core, params(req.params)?).await?),
+        method::AI_APPLY => to_value(ai::apply(core, params(req.params)?, source).await?),
+        method::AI_DISMISS => to_value(ai::dismiss(core, params(req.params)?).await?),
         method::RAW_GC => {
             let core2 = core.clone();
             let r = tokio::task::spawn_blocking(move || sync::run_gc(&core2))

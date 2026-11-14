@@ -11,6 +11,7 @@
 //! - [`catalog`]: the built-in prompts (`prompts/*.toml`) merged with the
 //!   user's files, checked;
 //! - [`answer`]: the strict checking of what the model answered;
+//! - [`diff`]: the word-level differences shown before a replacement;
 //! - [`message`]: the user message sent to the model (the segments of the
 //!   draft so far).
 //!
@@ -19,6 +20,7 @@
 pub mod answer;
 pub mod catalog;
 pub mod claude_code;
+pub mod diff;
 pub mod fake;
 pub mod message;
 pub mod prompt;

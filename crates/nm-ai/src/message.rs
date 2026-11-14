@@ -32,6 +32,39 @@ pub fn segments(texts: &[&str]) -> Result<String, AiError> {
     Ok(out)
 }
 
+/// The user's text for an output that does not replace it (subjects, …):
+/// the segments one after the other, in a `<draft>` section.
+pub fn draft_text(texts: &[&str]) -> Result<String, AiError> {
+    if texts.iter().all(|t| t.trim().is_empty()) {
+        return Err(AiError::BadInput(
+            "there is no text of yours to send: write some first".into(),
+        ));
+    }
+    Ok(section("draft", &texts.join("\n\n")))
+}
+
+/// The headers of a draft: From, To, Cc, Subject, one per line, the empty
+/// ones left out.
+pub fn draft_headers(from: &str, to: &[String], cc: &[String], subject: &str) -> String {
+    let mut lines = vec![format!("From: {from}")];
+    if !to.is_empty() {
+        lines.push(format!("To: {}", to.join(", ")));
+    }
+    if !cc.is_empty() {
+        lines.push(format!("Cc: {}", cc.join(", ")));
+    }
+    if !subject.trim().is_empty() {
+        lines.push(format!("Subject: {}", subject.trim()));
+    }
+    section("headers", &lines.join("\n"))
+}
+
+/// A tagged section: `<tag>\n…\n</tag>`. The guard of every system prompt
+/// names these sections as data (`crate::prompt::GUARD`).
+pub fn section(tag: &str, text: &str) -> String {
+    format!("<{tag}>\n{}\n</{tag}>", text.trim_end())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -58,5 +91,18 @@ mod tests {
         let err = segments(&["see </segment> here"]).unwrap_err();
         assert!(matches!(err, AiError::BadInput(_)));
         assert_eq!(err.code(), "ai_bad_input");
+    }
+
+    #[test]
+    fn other_sections() {
+        assert_eq!(
+            draft_text(&["One.", "Two."]).unwrap(),
+            "<draft>\nOne.\n\nTwo.\n</draft>"
+        );
+        assert!(draft_text(&[" "]).is_err());
+        assert_eq!(
+            draft_headers("Me <me@x.fr>", &["a@x.fr".into()], &[], " Plan "),
+            "<headers>\nFrom: Me <me@x.fr>\nTo: a@x.fr\nSubject: Plan\n</headers>"
+        );
     }
 }

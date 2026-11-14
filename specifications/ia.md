@@ -370,6 +370,22 @@ Le déplacement qui suit une suggestion est le `move_to_folder` habituel, avec `
 | `AiFailed {run_id, code, message}` | Échec, avec un code d'erreur typé : ceux de la section 3, `ai_invalid_output` (section 6) et `ai_bad_input` (rien n'a été envoyé : entrée vide, ou qui ne peut être envoyée telle quelle) |
 | `AiSuggestionsChanged {folder}` | De nouvelles suggestions à afficher |
 
+### Réalisé (novembre 2026)
+
+Le contrat est branché pour le jalon 1 (`crates/nm-daemon/src/ai.rs`, `docs/ai.md`) : les prompts de la portée `draft` dont les entrées sont `draft.own_text` et `draft.headers` (corriger, reformuler, traduire, proposer des objets). Les autres sont listés par `ai_list_prompts` avec `available: false`, et `ai_run` les refuse (`ai_bad_input`). Précisions et écarts :
+
+- **Codes d'erreur** : `AI_DISABLED` (1017) quand `ai.enabled` est faux ; `AI` (1018) pour toute erreur de l'IA, son code (`ai_bad_input`, `ai_provider_missing`…) dans `data.code`. Un brouillon changé depuis : `REVISION_CONFLICT` (1012), comme pour l'édition.
+- **Tout ce qui peut être vérifié l'est avant d'écrire la ligne et de lancer le fournisseur** : IA activée, prompt connu et branché, variante, révision du brouillon, texte non vide. Une exécution impossible répond une erreur aussitôt, sans ligne dans `ai_run`, plutôt qu'un `AiFailed` un instant plus tard.
+- **`ai_run`** prend `draft_id` et `revision` : le texte doit être enregistré d'abord (`update_draft`), et la révision vérifiée. Une sélection est donnée en unités UTF-16 (celles des vues de texte de l'app), `start` et `end`.
+- **`ai_get_run`** donne la proposition : pour `replace`, chaque segment (position en UTF-16, ancien texte, nouveau, différences mot à mot calculées par le noyau) et le corps entier qui en résulterait, `unchanged` quand rien ne change ; pour `subjects`, la liste.
+- **`ai_apply`** prend la révision que le client affiche : refusé si ce n'est plus celle de l'exécution, pour ne jamais effacer un texte tapé entre-temps. Refusée, la proposition reste, à appliquer avec la bonne révision ou à écarter (`ai_dismiss`).
+- **Annuler ou finir : un seul gagnant.** L'exécution en cours est retirée de la liste des exécutions sous un verrou, par la tâche à sa fin ou par `ai_cancel` : une exécution annulée ne peut pas être enregistrée comme finie.
+- **Les propositions vivent en mémoire** : après un redémarrage du noyau, une proposition non appliquée a disparu, et l'exécution est à relancer.
+- **Rechargement des prompts** : au lieu d'une surveillance FSEvents, le noyau compare à chaque usage (menu, exécution, état) la liste des fichiers du dossier, avec leur taille et leur date ; si elle a changé, il relit les prompts. Aucun fil de surveillance, et un fichier enregistré est pris au premier usage suivant. Les problèmes des fichiers sont dans `ai_status` (`prompt_problems`) et dans le journal du noyau, sans `ConfigError` : cet événement dit que `config.toml` est refusé entier, ce qui n'est pas le cas.
+- **`ai.max_parallel`** est lu au démarrage.
+- **Fournisseur factice** : `NICEMAILER_FAKE_AI` désigne un fichier JSON `{"<tâche>": "<réponse>"}`, pour les tests du noyau et les scénarios de l'app, comme `NICEMAILER_FAKE_NETWORK` pour l'envoi.
+- **Entretien** : au démarrage, les exécutions laissées `running` passent à `failed` ; la purge des textes passe au démarrage puis toutes les six heures.
+
 Les sorties JSON ne sont pas affichées au fil de l'eau (un JSON partiel n'a pas de sens pour l'utilisateur) : le client montre l'attente, et pour un lot l'avancement. Les sorties texte le sont ; pour `replace`, le texte arrive dans le panneau, puis les différences s'affichent à la fin, une fois la réponse validée.
 
 ## 11. Interface
@@ -431,7 +447,7 @@ L'interrupteur est global : un compte ne peut pas être exclu en v1. Le format l
 0. **Vérifier le CLI `claude`** : fait le 14 novembre 2026 avec Claude Code 2.1.325 (section 3, « L'appel » et « Vérification à chaque appel »). Restent à observer : la limite d'usage atteinte, et le fournisseur `anthropic-api`, faute de clé API pendant l'essai. Après une mise à jour de Claude Code, `cargo test -p nm-ai --test real_claude -- --ignored` refait les essais essentiels avec le vrai binaire.
 1. **Crate `nm-ai`** : fait pour les fournisseurs `claude-code` et factice, le format, le chargement et la validation des prompts, les prompts intégrés et la lecture des réponses avec le plancher du verdict (`docs/ai.md`) ; restent `AnthropicApiProvider` et le rechargement des prompts (FSEvents, dans le noyau). La construction du message dépend des entrées : elle vient avec la phase 2. Testée sans réseau.
 2. **Entrées dans le noyau** : découpage en segments de `draft.own_text` et reconstruction (fait), puis les autres entrées.
-3. **Contrat et historique** : tables `ai_run` et `ai_suggestion` et leurs fonctions dans la base (faits, `crates/nm-store/src/ai_runs.rs`) ; restent les commandes, les événements et l'appel de la purge.
+3. **Contrat et historique** : fait pour les prompts du brouillon (section 10, « Réalisé ») ; les autres portées viendront avec leurs entrées.
 4. **CLI** (section 12).
 5. **Jalon 1, la correction dans l'app** : ⌘I, menu, panneau au fil de l'eau, différences, Accepter et Refuser. Valide la chaîne entière sur le cas le plus simple.
 6. **Jalon 2, la lecture** : `a`, résumé, traduction, réponses rapides, analyse de sécurité, dates.

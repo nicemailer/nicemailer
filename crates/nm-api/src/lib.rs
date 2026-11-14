@@ -173,6 +173,22 @@ pub mod method {
     pub const SEND_DRAFT: &str = "send_draft";
     /// Cancels a send during the undo delay: the draft is editable again.
     pub const CANCEL_SEND: &str = "cancel_send";
+    /// The AI assistance (`ia.md`, section 10): on or off, the provider and
+    /// whether it is ready, the problems of the prompt files.
+    pub const AI_STATUS: &str = "ai_status";
+    /// The prompts of one screen's AI menu, in a folder.
+    pub const AI_LIST_PROMPTS: &str = "ai_list_prompts";
+    /// Starts a run; answers at once with its id, the rest comes by events
+    /// (`AiDelta`, `AiDone`, `AiFailed`).
+    pub const AI_RUN: &str = "ai_run";
+    /// Stops a run.
+    pub const AI_CANCEL: &str = "ai_cancel";
+    /// The state and the proposal of a run.
+    pub const AI_GET_RUN: &str = "ai_get_run";
+    /// Applies the proposal of a finished run.
+    pub const AI_APPLY: &str = "ai_apply";
+    /// Turns down the proposal of a run, or stops it if it still runs.
+    pub const AI_DISMISS: &str = "ai_dismiss";
 }
 
 /// Stable error codes. Negative codes are the ones defined by the JSON-RPC
@@ -233,6 +249,12 @@ pub mod error_code {
     /// The body of the mail answered is not downloaded yet: it is asked
     /// for first, try again in a moment.
     pub const BODY_PENDING: i64 = 1016;
+    /// The AI assistance is off (`ai.enabled`): nothing was sent.
+    pub const AI_DISABLED: i64 = 1017;
+    /// A run could not start or failed; `data.code` is the AI error code
+    /// (`ai_not_logged_in`, `ai_bad_input`, `ai_provider_unsafe`…,
+    /// `ia.md`, sections 3 and 10).
+    pub const AI: i64 = 1018;
 }
 
 // ---------------------------------------------------------------------------
@@ -419,6 +441,15 @@ pub enum Event {
     /// A draft was sent, but the server refused some recipients (each with
     /// its answer); the others received it.
     SendPartial { draft_id: i64, refused: Vec<String> },
+    /// A fragment of the text of a run, to show as it comes. Transient:
+    /// without sequence number, never replayed; `ai_get_run` gives the
+    /// whole answer once it is done.
+    AiDelta { run_id: i64, text: String },
+    /// A run ended with an answer, checked: `ai_get_run` gives its proposal.
+    AiDone { run_id: i64 },
+    /// A run failed or was cancelled (`code` `ai_cancelled`); nothing to
+    /// apply. `code` is the AI error code, `message` says what to do.
+    AiFailed { run_id: i64, code: String, message: String },
 }
 
 // ---------------------------------------------------------------------------
@@ -2404,4 +2435,187 @@ pub struct RawGcResult {
     /// referred to, deleted.
     #[serde(default)]
     pub outgoing: u64,
+}
+
+// ---------------------------------------------------------------------------
+// AI assistance (`specifications/ia.md`, section 10)
+// ---------------------------------------------------------------------------
+
+/// Params of `ai_status`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct AiStatusParams {
+    /// Asks the provider itself (about 0.3 s for the `claude` binary, no
+    /// call to the model): its version and the subscription.
+    #[serde(default)]
+    pub check: bool,
+}
+
+/// Result of `ai_status`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct AiStatusResult {
+    /// `ai.enabled`.
+    pub enabled: bool,
+    /// `claude-code` or `anthropic-api`.
+    pub provider: String,
+    pub model: String,
+    /// Whether a run can start now; `reason` says why not.
+    pub ready: bool,
+    pub reason: Option<String>,
+    /// With `check`: the provider's version and the account's subscription
+    /// ("Claude Pro").
+    pub version: Option<String>,
+    pub subscription: Option<String>,
+    /// The prompt files refused, and their warnings, as "file, line N,
+    /// key: message".
+    pub prompt_problems: Vec<String>,
+    pub prompt_warnings: Vec<String>,
+}
+
+/// Params of `ai_list_prompts`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AiListPromptsParams {
+    /// `compose`, `reading`, `list` or `attachment`.
+    pub screen: String,
+    /// The role of the folder shown; absent for the compose screen.
+    #[serde(default)]
+    pub folder: Option<FolderRole>,
+    /// The app's language, for the labels (`en`, `fr`).
+    #[serde(default)]
+    pub lang: Option<String>,
+}
+
+/// A prompt of an AI menu.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AiPromptView {
+    pub id: String,
+    /// Its letter in the menu.
+    pub key: String,
+    pub label: String,
+    pub scope: String,
+    pub output: String,
+    /// A submenu; empty when the prompt has none.
+    pub variants: Vec<AiVariantView>,
+    /// `builtin` or `user`.
+    pub source: String,
+    /// Whether this version of the core can run it from this screen yet.
+    pub available: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AiVariantView {
+    pub key: String,
+    pub label: String,
+}
+
+/// A part of a draft's body chosen by the user, in UTF-16 code units (the
+/// unit of the text views of the app), end excluded.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AiSelection {
+    pub start: u32,
+    pub end: u32,
+}
+
+/// Params of `ai_run`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AiRunParams {
+    pub prompt: String,
+    /// The key of a variant, for a prompt that has some.
+    #[serde(default)]
+    pub variant: Option<String>,
+    /// The draft, for the prompts of the compose screen, at this revision:
+    /// the text must be saved first, and the run is refused if it changed.
+    #[serde(default)]
+    pub draft_id: Option<i64>,
+    #[serde(default)]
+    pub revision: Option<i64>,
+    /// Only this part of the draft's body.
+    #[serde(default)]
+    pub selection: Option<AiSelection>,
+    /// The app's language (`fr`), for the answers that follow it.
+    pub lang: String,
+}
+
+/// Result of `ai_run`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AiRunResult {
+    pub run_id: i64,
+    /// Whether `AiDelta` events will come (text answers); a JSON answer
+    /// only comes whole.
+    pub streamed: bool,
+}
+
+/// Params of `ai_cancel`, `ai_get_run` and `ai_dismiss`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AiRunIdParams {
+    pub run_id: i64,
+}
+
+/// A piece of a word diff.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AiDiffPiece {
+    /// `same`, `removed` or `added`.
+    pub kind: String,
+    pub text: String,
+}
+
+/// One segment of a draft rewritten.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AiSegmentChange {
+    /// Where the segment was in the body, in UTF-16 code units.
+    pub start: u32,
+    pub end: u32,
+    pub old: String,
+    pub new: String,
+    pub diff: Vec<AiDiffPiece>,
+}
+
+/// What a finished run proposes.
+///
+/// Rust note: `#[serde(tag = "kind")]` writes the variant's name in a
+/// `kind` field next to its own fields: `{"kind": "replace", "segments":
+/// […], "body": "…"}`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum AiProposal {
+    /// The draft's segments rewritten; `body` is the whole body as it would
+    /// be, `unchanged` when the AI changed nothing.
+    Replace { segments: Vec<AiSegmentChange>, body: String, unchanged: bool },
+    /// Subject lines to choose from.
+    Subjects { items: Vec<String> },
+}
+
+/// Result of `ai_get_run`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AiRunView {
+    pub run_id: i64,
+    pub prompt: String,
+    pub variant: Option<String>,
+    /// `running`, `done`, `failed` or `cancelled`.
+    pub state: String,
+    /// `accepted`, `rejected`, `partial`, or absent.
+    pub decision: Option<String>,
+    /// Present while the proposal can be applied.
+    pub proposal: Option<AiProposal>,
+    /// The error of a failed run: AI code and message.
+    pub error_code: Option<String>,
+    pub error: Option<String>,
+}
+
+/// Params of `ai_apply`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AiApplyParams {
+    pub run_id: i64,
+    /// The draft's revision the client shows: refused if it moved since the
+    /// run started, so that a text typed meanwhile is never overwritten.
+    pub revision: i64,
+    /// For a list (`subjects`): the index of the one chosen.
+    #[serde(default)]
+    pub choice: Option<usize>,
+}
+
+/// Result of `ai_apply`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AiApplyResult {
+    /// The draft as saved.
+    pub draft: DraftView,
 }

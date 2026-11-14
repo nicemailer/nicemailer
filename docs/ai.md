@@ -2,7 +2,7 @@
 
 NiceMailer can ask a language model to help with mail: proofread a draft, summarize a conversation, suggest where a mail of the Quarantine should go. The rules are in `specifications/ia.md` (in French). This page describes what is built so far and how it is tested.
 
-**Status (November 2026):** the core can call Claude through the user's own `claude` binary, and reads and checks the prompt files and the model's answers (crate `nm-ai`). Nothing in the app, the CLI or the contract uses them yet; the inputs taken from a mail and the API-key provider come next.
+**Status (November 2026):** the core runs the prompts of the compose screen (proofread, rewrite, translate, subjects) through the contract, with the user's own `claude` binary; the app and the CLI do not call them yet. The prompts of the other screens, which need the inputs taken from a mail, and the API-key provider come next.
 
 ## Providers
 
@@ -124,6 +124,26 @@ Every run is a row of `ai_run` (`crates/nm-store/src/ai_runs.rs`; schema version
 
 Each change checks the state it starts from: a run ends once and is decided once, so a second answer for the same run is refused instead of written over the first. Nothing calls these yet; the core will, with the contract.
 
+## The contract
+
+| Method | Does |
+| --- | --- |
+| `ai_status {check?}` | On or off, the provider and model, whether a run can start (`ready`, else `reason`), the problems of the prompt files. With `check`, asks the `claude` binary its version and the subscription (0.3 s, no call to the model) |
+| `ai_list_prompts {screen, folder?, lang?}` | The prompts of a menu (`compose`, `reading`, `list`, `attachment`), labels in `lang`, with `available`: whether this version can run them yet |
+| `ai_run {prompt, variant?, draft_id, revision, selection?, lang}` | Starts a run and answers `{run_id, streamed}` at once |
+| `ai_get_run {run_id}` | State, decision, error, and the proposal while it can be applied |
+| `ai_apply {run_id, revision, choice?}` | Applies the proposal to the draft, if the draft is still at the revision the run read; answers the draft saved |
+| `ai_dismiss {run_id}` | Turns the proposal down, or cancels a run still going |
+| `ai_cancel {run_id}` | Stops a run; its process group is killed |
+
+Events: `AiDelta {run_id, text}`, transient, the fragments of a text answer; `AiDone {run_id}`; `AiFailed {run_id, code, message}`, `code` `ai_cancelled` for a cancel. Errors: `AI_DISABLED` (1017) when `ai.enabled` is off, `AI` (1018) with the AI error code in `data.code`, `REVISION_CONFLICT` (1012) when the draft changed.
+
+A run is checked before anything is written or sent: the AI on, the prompt known and wired, its variant, the draft's revision, some text of the user's. Then its row is written (`running`), the run waits for one of the `ai.max_parallel` places, the text comes as `AiDelta`, the answer is checked (`answer::read`) and kept as a proposal, in memory, for `ai_apply`. `ai_cancel` and the end of a run take it out of the running ones under one lock, so only one of them decides how it ended.
+
+The user's prompts folder is read again when its files change (name, size, date), at the next use: no watch thread.
+
+For tests, `NICEMAILER_FAKE_AI=<file.json>` makes the core answer from a table `{"<task>": "<answer>"}` instead of calling a provider.
+
 ## Tests
 
 | Test | What it covers |
@@ -132,7 +152,9 @@ Each change checks the state it starts from: a run ends once and is decided once
 | `tests/fixtures.rs` | The recordings of the real binary (`tests/fixtures/claude-code/`, described in their README) show what they claim, and name no user or machine |
 | `tests/claude_code.rs` | The provider against a fake `claude`, a shell script that replays the recordings turn by turn and keeps what it read: the order probe, interrupt, message; a process announcing tools gets the probe only; not signed in is found before the content is sent; the safety options are passed; a timeout and a cancel kill the process group, grandchildren included; a missing binary |
 | `tests/catalog.rs` | Every built-in prompt loads without problem or warning, has English and French labels, and builds a system prompt for each variant; the menus of the spec; replacing, adding and disabling; a file refused alone; each rule refused with its line; keys shared across a screen; the hash, unchanged by comments, labels and key order, changed by the text, inputs or model |
+| `nm-ai` (unit, `diff.rs`) | The word diff: order removed-then-added, both texts rebuilt, spacing alone not a change, no glued words, huge texts replaced whole |
 | `nm-core` (unit, `segments.rs`) | Replies, answers between quoted lines, signatures, forwards in English and French, Windows line ends; unchanged segments give the body back byte for byte, also on 3,000 random bodies made of every kind of line, none of whose segments holds a quoted line, a signature or a forwarded mail |
 | `tests/answer.rs` | Each output, accepted and refused, case by case; the recorded answers of phase 0 read; the floor of the verdict |
 | `nm-store`, `tests/ai_runs.rs` | A run from start to decision; ending and deciding once; failed and cancelled runs keep their raw answer; runs left running fail at start; the purge keeps everything but the texts and leaves running runs alone; suggestions follow their run and their conversation, and a batch is written whole or not at all |
+| `nm-daemon`, `tests/ai_rpc.rs` | The real core: a reply proofread from the menu to the saved draft, quotation untouched; nothing runs while the AI is off; what cannot work refused before any row is written; an answer with the wrong segments fails and is kept; a draft changed during the run is not overwritten; a subject chosen; a run cancelled and its `claude` process killed; a `claude` that announces tools never gets the mail |
 | `tests/real_claude.rs` | Ignored by default. The real binary, with the user's subscription: status, a prompt injection that must run nothing, a structured answer. Run it after an update of Claude Code: `cargo test -p nm-ai --test real_claude -- --ignored` |

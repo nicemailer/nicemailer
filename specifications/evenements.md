@@ -95,6 +95,9 @@ Les événements **séquencés** passent par le tampon et sont rejoués. Les év
 | `ConfigError` | `file`, `line`, `key`, `message` | séquencé | `config.toml` ou `accounts.toml` invalide (`file` dit lequel) : les deux sont refusés, la configuration précédente reste appliquée. `line` (à partir de 1, dans ce fichier) et `key` (clé pointée) valent `null` quand ils ne s'appliquent pas (fichier illisible) ; l'état reste disponible par `config_status` |
 | `ResyncRequired` | `epoch`, `seq` | séquencé | Le client doit recharger toutes ses vues |
 | `SyncProgress` | `account_id`, `folder_id` (`null` pour les corps), `stage` (`headers` ou `bodies`), `done`, `total` | transitoire | Avancement d'une synchronisation, quatre par seconde au plus. Sans `seq` : il ne prend aucune place dans la séquence, et un client ne doit pas y voir un trou |
+| `AiDelta` | `run_id`, `text` | transitoire | Un fragment du texte d'une exécution IA, à afficher au fil de l'eau (`ia.md`, section 10). Un client qui en manque un ne perd rien : `ai_get_run` donne la réponse entière une fois finie |
+| `AiDone` | `run_id` | séquencé | Une exécution IA a fini avec une réponse vérifiée : `ai_get_run` donne sa proposition |
+| `AiFailed` | `run_id`, `code`, `message` | séquencé | Une exécution IA a échoué, ou a été annulée (`code` `ai_cancelled`) ; rien à appliquer |
 | `ImportProgress` | `job_id`, `path`, `account_id`, `running`, `bytes_read`, `total_bytes`, `imported`, `skipped`, `parse_errors` | séquencé | Avancement d'un import mbox, un par lot de mails écrits (`import-initial.md`, section 9) |
 | `ImportFinished` | mêmes paramètres, plus `sent`, `archived`, `correspondents`, `seconds`, et `error` en cas d'échec | séquencé | Fin d'un import mbox, réussi ou non ; l'état reste disponible par `import_status` |
 
