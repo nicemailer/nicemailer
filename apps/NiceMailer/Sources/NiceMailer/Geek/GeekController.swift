@@ -2354,7 +2354,7 @@ final class GeekController {
         let compose = model.composer != nil && screen == .mail
         guard compose || screen == .mail else { return }
         // In the reply, the text selected decides: its prompts (other
-        // wordings, synonyms…) work on it alone; none, the whole text. The
+        // wordings…) work on it alone; none, the whole text. The
         // passage is kept as it was when ⌘I was pressed.
         let passage = compose ? model.composer?.buffer.utf16Selection : nil
         let name = passage != nil ? "compose-selection" : Self.aiScreen(compose: compose, marked: model.marked.count)

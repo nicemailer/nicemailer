@@ -346,7 +346,7 @@ extension AppModel {
         guard var c = composer, c.opened == opened else { return }
         let before = c.buffer.text
         if d.body != before {
-            // A passage selected (other wordings, synonyms…): from its end,
+            // A passage selected (other wordings…): from its end,
             // so the cursor lands after the new words, where writing goes
             // on, whichever way the selection was made.
             let from = c.buffer.selection?.upperBound ?? c.buffer.cursor

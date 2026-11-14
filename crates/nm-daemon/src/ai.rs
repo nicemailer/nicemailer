@@ -191,7 +191,7 @@ fn available(p: &Prompt) -> bool {
             p.inputs.iter().all(|i| matches!(i, Input::DraftOwnText | Input::DraftContext | Input::DraftHeaders))
                 && match p.output {
                     Output::Replace | Output::Subjects => true,
-                    // Other wordings, synonyms: the one chosen replaces the
+                    // Other wordings: the one chosen replaces the
                     // passage selected.
                     Output::Choices => p.then == Some(nm_ai::prompt::Then::Replace),
                     _ => false,
@@ -1201,8 +1201,8 @@ pub(crate) async fn apply(core: &Arc<Core>, p: AiApplyParams, source: Source) ->
     let run_id = p.run_id;
     // A choice the client applies itself (a quick reply starts a reply):
     // the core records it and gives the text back.
-    // A choice that replaces the passage selected (other wordings,
-    // synonyms) is not one: the core puts it in the draft below, as a
+    // A choice that replaces the passage selected (other wordings) is not
+    // one: the core puts it in the draft below, as a
     // proofreading, once sure the draft is still the text the AI read.
     let replaces = finished.context.prompt.then == Some(nm_ai::prompt::Then::Replace);
     if let (Answer::Choices(items), false) = (&finished.answer, replaces) {

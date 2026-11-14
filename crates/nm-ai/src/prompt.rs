@@ -66,7 +66,7 @@ pub enum Screen {
     /// The reply or new-mail screen (⌘I), nothing selected: the whole text.
     Compose,
     /// The same with text selected (⌘I): the prompts of a passage, its
-    /// other wordings, its synonyms, and those that work on either.
+    /// other wordings, and those that work on either.
     ComposeSelection,
     /// One mail (`a`): the one shown, the one marked alone, or the row under
     /// the cursor when nothing is marked. A summary or a quick reply means
@@ -111,7 +111,7 @@ impl Screen {
     ///
     /// In a reply, the text selected or not decides (`on`): a prompt of the
     /// whole text (subjects) is not offered on a passage, a prompt of a
-    /// passage (synonyms) not without one.
+    /// passage (other wordings) not without one.
     pub fn offers(self, p: &Prompt) -> bool {
         self.scopes().contains(&p.scope)
             && match self {
@@ -378,7 +378,7 @@ pub enum Then {
     Insert,
     Reply,
     /// The text chosen replaces the passage selected in the draft (other
-    /// wordings, synonyms).
+    /// wordings).
     Replace,
 }
 
@@ -387,7 +387,7 @@ pub enum Then {
 pub enum On {
     /// The whole text the user wrote (subjects, writing from notes).
     Text,
-    /// Only a passage selected (other wordings, synonyms): offered when
+    /// Only a passage selected (other wordings): offered when
     /// text is selected, and only then.
     Selection,
     /// Either: the passage selected, else the whole text (proofreading).

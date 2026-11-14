@@ -220,8 +220,6 @@ final class AIFakeState: @unchecked Sendable {
     static let passagePrompts: [[String: Any]] = [
         ["id": "alternatives", "key": "a", "label": "Other wordings", "scope": "draft", "output": "choices",
          "variants": [], "source": "builtin", "available": true],
-        ["id": "synonyms", "key": "s", "label": "Synonyms", "scope": "draft", "output": "choices",
-         "variants": [], "source": "builtin", "available": true],
         ["id": "proofread", "key": "c", "label": "Proofread", "scope": "draft", "output": "replace", "variants": [],
          "source": "builtin", "available": true],
     ]

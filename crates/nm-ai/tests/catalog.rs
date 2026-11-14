@@ -513,13 +513,12 @@ fn a_passage_selected_has_its_own_palette() {
             .map(|p| p.id.clone())
             .collect()
     };
-    // Text selected: its other wordings first (⌘I then Return), synonyms,
-    // then what works on either; nothing that needs the whole text.
+    // Text selected: its other wordings first (⌘I then Return), then what
+    // works on either; nothing that needs the whole text.
     assert_eq!(
         ids(Screen::ComposeSelection),
         [
             "alternatives",
-            "synonyms",
             "proofread",
             "rewrite",
             "translate-draft"

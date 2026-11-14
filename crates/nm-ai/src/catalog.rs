@@ -42,13 +42,13 @@ use crate::prompt::{
 /// text as a `&'static str`; a missing file is a compile error, not a
 /// runtime one.
 pub const BUILTIN: &[(&str, &str)] = &[
-    // A passage selected in a reply: its other wordings first, ⌘I then
-    // Return; they are not offered without a selection (`on`).
+    // A passage selected in a reply: its other wordings (synonyms for a
+    // word) first, ⌘I then Return; they are not offered without a
+    // selection (`on`).
     (
         "alternatives.toml",
         include_str!("../prompts/alternatives.toml"),
     ),
-    ("synonyms.toml", include_str!("../prompts/synonyms.toml")),
     ("proofread.toml", include_str!("../prompts/proofread.toml")),
     ("rewrite.toml", include_str!("../prompts/rewrite.toml")),
     (

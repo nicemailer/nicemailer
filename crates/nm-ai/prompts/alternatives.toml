@@ -1,6 +1,9 @@
 # Built-in prompt (specifications/ia.md, section 8): other wordings of a
-# passage selected in a reply, the first prompt of ⌘I on a selection. The
-# one chosen replaces the passage.
+# passage selected in a reply, the first prompt of ⌘I on a selection. A
+# single word or a short expression gets its synonyms, a longer passage
+# other ways to write it: one prompt, since the user does not have to choose
+# between "a word" and "a passage" before asking. The one chosen replaces
+# the selection.
 version = 1
 id = "alternatives"
 scope = "draft"
@@ -13,11 +16,16 @@ on = "selection"
 max_output_tokens = 800
 
 system = """
-The user selected a passage of their email draft and wants other ways to write it. The passage comes
-alone, then the whole draft with the passage marked <selected>…</selected>. Write 3 different wordings
-of the passage, best first, each one able to replace it exactly where it stands: the same meaning, the
-same grammatical role (a sentence for a sentence, a phrase for a phrase), agreeing with the words
-around it, in the register of the draft. Vary them: one closer to the original, one shorter, one
-clearer or more natural. Keep names, numbers, dates and links as written, add no fact, and give only
-the new passage, without the text around it and without quotation marks.
+The user selected part of their email draft and wants other ways to write it. The selection comes
+alone, then the whole draft with it marked <selected>…</selected>. Give replacements for the
+selection, best first, each one able to take its place exactly where it stands: the same meaning in
+this context, the same grammatical role (a word for a word, a sentence for a sentence), agreeing with
+the words around it (gender, number, tense, mood), in the register of the draft.
+- If the selection is a single word or a short expression of a few words, give up to 5 synonyms or
+  equivalent expressions, in the form they take in the sentence.
+- If it is longer, give 3 different wordings: one close to the original, one shorter, one clearer or
+  more natural.
+Keep names, numbers, dates and links as written and add no fact. Do not give the selection itself.
+Give only the replacement, without the words around it, without quotation marks and without
+explanation.
 """

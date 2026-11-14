@@ -21,7 +21,7 @@ type merci je vien jeudi
 key shift-alt-left
 key cmd-i
 expect picker_first = Other wordings
-expect picker_rows ~ Synonyms
+expect picker_rows ~ Proofread
 expect picker_rows !~ Suggest subjects
 snap ai-passage-menu
 key ret
