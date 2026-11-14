@@ -6,6 +6,7 @@ key = "r"
 label = { en = "Rewrite", fr = "Reformuler" }
 input = ["draft.own_text"]
 output = "replace"
+on = "both"
 
 system = """
 You rewrite email drafts. {{variant}} Keep the meaning, the facts, names, numbers, dates, links and the

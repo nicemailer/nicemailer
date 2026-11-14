@@ -58,10 +58,12 @@ pub enum AiAction {
 pub enum PromptsAction {
     /// The prompts of a screen's AI menu.
     List {
-        /// compose, reading, list or attachment.
+        /// compose (the whole text of a reply), compose-selection (a passage
+        /// selected), mail (one mail), selection (several marked) or
+        /// attachment.
         #[arg(long, default_value = "compose")]
         screen: String,
-        /// The folder's role, for the list and reading screens (quarantine…).
+        /// The folder's role, for the mail and selection screens (quarantine…).
         #[arg(long)]
         folder: Option<String>,
         /// The language of the labels (en, fr).

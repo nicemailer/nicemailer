@@ -4179,6 +4179,16 @@
           }
         }
       }
+    },
+    "↩ or 1–%lld replace the selection · esc or n refuse · ⌘Z after choosing undoes": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "↩ ou 1–%lld remplace la sélection · esc ou n refuse · ⌘Z après le choix annule"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

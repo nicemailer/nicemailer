@@ -8,6 +8,7 @@ key = "c"
 label = { en = "Proofread", fr = "Corriger" }
 input = ["draft.own_text"]
 output = "replace"
+on = "both"
 
 system = """
 You are a careful proofreader for email drafts. Fix spelling, grammar, punctuation and obvious typos

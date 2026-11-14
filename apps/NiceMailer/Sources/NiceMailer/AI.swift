@@ -74,7 +74,8 @@ enum AIProposal: Decodable, Equatable {
     /// The phishing risk (`low`, `medium`, `high`) and its reasons;
     /// `raised` when the core raised the model's verdict.
     case verdict(risk: String, reasons: [String], raised: Bool)
-    /// Texts to choose from; `then` is `reply` (start a reply with it).
+    /// Texts to choose from; `then` is `reply` (start a reply with it) or
+    /// `replace` (the passage selected in the reply).
     case choices([String], then: String)
     /// A target per conversation sorted; the batches that gave none.
     case targets([AISuggestion], failedBatches: Int)
@@ -220,6 +221,13 @@ enum AI {
             if isReturn || key == "y" { return .accept }
             if isEscape || key == "n" { return .refuse }
             return .hint
+        case .proposal(.choices(let items, "replace")):
+            // Other wordings, synonyms: the best comes first, so Return
+            // takes it, as in the palette (⌘I ↩ ↩).
+            if isEscape || key == "n" { return .refuse }
+            if isReturn { return .choose(0) }
+            if let d = Int(key), d >= 1, d <= items.count { return .choose(d - 1) }
+            return .hint
         case .proposal(.subjects(let items)), .proposal(.choices(let items, _)):
             if isEscape || key == "n" { return .refuse }
             if let d = Int(key), d >= 1, d <= items.count { return .choose(d - 1) }
@@ -238,6 +246,8 @@ enum AI {
         case .proposal(.replace(_, true)): L("No change to make · esc close")
         case .proposal(.replace): L("↩ or y accept · esc or n refuse · ⌘Z after accepting undoes")
         case .proposal(.subjects(let items)): L("1–%lld choose · esc or n refuse", items.count)
+        case .proposal(.choices(let items, "replace")):
+            L("↩ or 1–%lld replace the selection · esc or n refuse · ⌘Z after choosing undoes", items.count)
         case .proposal(.choices(let items, _)): L("1–%lld reply with it · esc or n refuse", items.count)
         case .proposal(.text), .proposal(.summary), .proposal(.verdict), .proposal(.targets): L("esc close")
         }

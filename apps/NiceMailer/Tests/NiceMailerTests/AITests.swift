@@ -216,6 +216,16 @@ final class AIFakeState: @unchecked Sendable {
          "variants": [["key": "e", "label": "Into English"]], "source": "builtin", "available": true],
     ]
 
+    /// The palette of a passage selected in the reply.
+    static let passagePrompts: [[String: Any]] = [
+        ["id": "alternatives", "key": "a", "label": "Other wordings", "scope": "draft", "output": "choices",
+         "variants": [], "source": "builtin", "available": true],
+        ["id": "synonyms", "key": "s", "label": "Synonyms", "scope": "draft", "output": "choices",
+         "variants": [], "source": "builtin", "available": true],
+        ["id": "proofread", "key": "c", "label": "Proofread", "scope": "draft", "output": "replace", "variants": [],
+         "source": "builtin", "available": true],
+    ]
+
     static let prompts: [[String: Any]] = [
         ["id": "proofread", "key": "c", "label": "Proofread", "scope": "draft", "output": "replace", "variants": [],
          "source": "builtin", "available": true],
@@ -233,6 +243,7 @@ final class AIFakeState: @unchecked Sendable {
         case "ai_list_prompts":
             switch params["screen"] as? String {
             case "compose": return Self.prompts
+            case "compose-selection": return Self.passagePrompts
             case "mail": return Self.mailPrompts
             default: return [Self.sortPrompt, Self.prompts[3]]
             }
@@ -249,6 +260,7 @@ final class AIFakeState: @unchecked Sendable {
             case "summarize-thread": ["kind": "summary", "summary": "Alice attend jeudi.",
                                       "actions": [["task": "Apporter les clés", "owner": "you", "due": "jeudi"]]]
             case "quick-replies": ["kind": "choices", "items": ["C'est noté !", "On peut décaler ?"], "then": "reply"]
+            case "alternatives": ["kind": "choices", "items": ["viens", "passe"], "then": "replace"]
             default: proposal
             }
             return ["state": "done", "proposal": p, "error": NSNull()] as [String: Any]
@@ -454,6 +466,52 @@ final class AIControllerTests {
         #expect(model.flash == L("AI change undone"))
         // Once: a second ⌘Z is not the AI's.
         #expect(model.undoAI() == false)
+    }
+
+    @Test func aPassageSelectedGetsItsOwnPaletteAndItsChoiceReplacesIt() async throws {
+        await reply("merci je vien jeudi")
+        // Nothing selected: the palette of the whole text.
+        press("cmd-i")
+        _ = await eventually { self.paletteOpen }
+        #expect(core.calls("ai_list_prompts").last?["screen"] as? String == "compose")
+        press("esc")
+        // "jeudi" selected: the palette of a passage, other wordings first.
+        model.composer?.buffer.extend { $0.moveWordLeft() }
+        #expect(model.composer?.buffer.selectedText == "jeudi")
+        press("cmd-i")
+        _ = await eventually { self.paletteOpen }
+        #expect(core.calls("ai_list_prompts").last?["screen"] as? String == "compose-selection")
+        #expect(paletteRows.first == "a Other wordings")
+        // ⌘I ↩: the passage is sent, in UTF-16 units of the body.
+        press("ret")
+        _ = await eventually { self.model.aiRun?.runId == 7 }
+        let run = try #require(core.calls("ai_run").last)
+        #expect(run["prompt"] as? String == "alternatives")
+        let selection = try #require(run["selection"] as? [String: Any])
+        #expect(selection["start"] as? Int == 14 && selection["end"] as? Int == 19)
+        event("AiDone", ["run_id": .int(7)])
+        _ = await eventually { if case .proposal? = self.model.aiRun?.phase { true } else { false } }
+        #expect(AI.hint(try #require(model.aiRun?.phase)) == L("↩ or 1–%lld replace the selection · esc or n refuse · ⌘Z after choosing undoes", 2))
+        // ↩ again takes the first, the best: the core puts it in the draft.
+        let before = try #require(model.composer?.buffer.text)
+        ai.appliedBody = before.replacingOccurrences(of: "jeudi", with: "viens")
+        press("ret")
+        _ = await eventually { self.model.aiRun == nil }
+        let apply = try #require(core.calls("ai_apply").last)
+        #expect(apply["choice"] as? Int == 0)
+        #expect(apply["revision"] != nil)
+        #expect(model.composer?.buffer.text == ai.appliedBody)
+        // The cursor after the new word, though the selection was made
+        // leftwards (the cursor at its start).
+        #expect(model.composer?.buffer.cursor == "merci je vien viens".count)
+        #expect(model.flash == L("Applied · ⌘Z undoes it"))
+        // Nothing selected again: the next ⌘I works on the whole text.
+        press("cmd-i")
+        _ = await eventually { self.paletteOpen }
+        #expect(core.calls("ai_list_prompts").last?["screen"] as? String == "compose")
+        press("ret")
+        _ = await eventually { self.core.calls("ai_run").count == 2 }
+        #expect(core.calls("ai_run").last?["selection"] == nil)
     }
 
     @Test func escapeRefusesAProposalAndStopsARun() async throws {

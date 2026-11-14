@@ -1,0 +1,23 @@
+# Built-in prompt (specifications/ia.md, section 8): other wordings of a
+# passage selected in a reply, the first prompt of ⌘I on a selection. The
+# one chosen replaces the passage.
+version = 1
+id = "alternatives"
+scope = "draft"
+key = "a"
+label = { en = "Other wordings", fr = "Autres formulations" }
+input = ["draft.own_text", "draft.context"]
+output = "choices"
+then = "replace"
+on = "selection"
+max_output_tokens = 800
+
+system = """
+The user selected a passage of their email draft and wants other ways to write it. The passage comes
+alone, then the whole draft with the passage marked <selected>…</selected>. Write 3 different wordings
+of the passage, best first, each one able to replace it exactly where it stands: the same meaning, the
+same grammatical role (a sentence for a sentence, a phrase for a phrase), agreeing with the words
+around it, in the register of the draft. Vary them: one closer to the original, one shorter, one
+clearer or more natural. Keep names, numbers, dates and links as written, add no fact, and give only
+the new passage, without the text around it and without quotation marks.
+"""

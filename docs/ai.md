@@ -40,6 +40,8 @@ A prompt is a TOML file. The built-in ones are in `crates/nm-ai/prompts/`, compi
 
 | Built-in prompt | Screen, key | Does |
 | --- | --- | --- |
+| `alternatives` | a passage selected, `a` | Three other wordings of the passage, fitted to the draft around it; the one chosen replaces it |
+| `synonyms` | a passage selected, `s` | Up to five words that could take the place of the one selected, in its context |
 | `proofread` | compose, `c` | Fixes spelling and grammar only, keeping the writer's typography (`14h` stays `14h`) |
 | `rewrite` | compose, `r` + `f` `a` `c` `l` `s` | More formal, friendlier, shorter, longer, clearer |
 | `translate-draft` | compose, `t` + `e` `f` `s` `d` `i` | Into English, French, Spanish, German, Italian |
@@ -52,7 +54,9 @@ A prompt is a TOML file. The built-in ones are in `crates/nm-ai/prompts/`, compi
 | `dates` | one mail, `d` | Dates and appointments the mail mentions |
 | `summarize-attachment` | attachment, `r` | What the file is and what matters in it |
 | `triage-quarantine` | list in Quarantine, `s` | A target per conversation; with nothing marked, the whole folder |
-| `suggest-folder` | list elsewhere, `s` | A target per marked conversation, or the one under the cursor |
+| `suggest-folder` | several marked elsewhere, `s` | A target per marked conversation |
+
+Proofread, rewrite and translate work on the passage selected when there is one, else on the whole text (`on = "both"`); subjects and writing from notes on the whole text only.
 
 ### Writing your own
 
@@ -77,6 +81,7 @@ the conversation does not contain.
 - `system` describes the task only. NiceMailer builds the system prompt around it: a `TASK=<id>` line, your text, the format the answer must follow (taken from `output`), the language rule (`lang`) and a guard against instructions hidden in mail.
 - The full list of keys, scopes, inputs and outputs, and the rules checked, are in `specifications/ia.md`, sections 4 to 6.
 - A file with a problem is refused alone, with its line; the other prompts stay. An unknown key is only a warning.
+- In a draft, `on` says what text the prompt works on: `text` (the default, the whole text), `selection` (a passage selected, and only then: its input `draft.context` gives the draft around it, and `then = "replace"` puts the text chosen in its place) or `both`.
 - A key must be free in the menu where the prompt appears. The mail screen shows the `thread` and `message` prompts together, and a `selection` prompt whose `unmarked` is `folder` with them (`Screen::offers`). A conflict with a built-in prompt is reported on your file.
 
 ## The user's text in a draft
@@ -156,7 +161,7 @@ Each change checks the state it starts from: a run ends once and is decided once
 | Method | Does |
 | --- | --- |
 | `ai_status {check?}` | On or off, the provider and model, whether a run can start (`ready`, else `reason`), the problems of the prompt files. With `check`, asks the `claude` binary its version and the subscription (0.3 s, no call to the model) |
-| `ai_list_prompts {screen, folder?, lang?}` | The prompts of a palette (`compose`, `mail`, `selection`, `attachment`: see "What the palette works on"), labels in `lang`, with `available`: whether this version can run them yet |
+| `ai_list_prompts {screen, folder?, lang?}` | The prompts of a palette (`compose`, `compose-selection`, `mail`, `selection`, `attachment`: see "What the palette works on"), labels in `lang`, with `available`: whether this version can run them yet |
 | `ai_run {prompt, variant?, draft_id, revision, selection?, lang}` | Starts a run and answers `{run_id, streamed}` at once |
 | `ai_get_run {run_id}` | State, decision, error, and the proposal while it can be applied |
 | `ai_apply {run_id, revision, choice?}` | Applies the proposal to the draft, if the draft is still at the revision the run read; answers the draft saved |
@@ -173,7 +178,7 @@ For tests, `NICEMAILER_FAKE_AI=<file.json>` makes the core answer from a table `
 
 ## In the app
 
-In a reply, **⌘I**, and elsewhere **`a`**, open the **AI palette**: a picker like the one of `f`, over the rest of the window, as the command palette of an editor. Its rows are the prompts of the screen, a row per variant of a prompt that has some ("Rewrite · Shorter", "Translate · Into English"), so that typing finds any of them at once; "not yet" marks a prompt this version cannot run. Typing filters and ranks the rows as in every picker (start of the label, words, initials), and a prompt's letters are its search words: `c` brings Proofread first, `rc` Rewrite · Shorter. The **first row is highlighted** and Return runs it: ⌘I then Return proofreads a reply, `a` then Return summarizes the mail read, or sorts the Quarantine. So the palette lists the most used prompts first (`Catalog::menu`): by the screen's scopes (the list sorts before it summarizes; reading summarizes the conversation before working on one mail), then in the order of the built-in prompts (`BUILTIN`, from the most useful), the user's after them. If the AI is off, the status bar says how to turn it on (`ai.enabled`).
+In a reply, **⌘I**, and elsewhere **`a`**, open the **AI palette**: a picker like the one of `f`, over the rest of the window, as the command palette of an editor. Its rows are the prompts of the screen, a row per variant of a prompt that has some ("Rewrite · Shorter", "Translate · Into English"), so that typing finds any of them at once; "not yet" marks a prompt this version cannot run. Typing filters and ranks the rows as in every picker (start of the label, words, initials), and a prompt's letters are its search words: `c` brings Proofread first, `rc` Rewrite · Shorter. The **first row is highlighted** and Return runs it: ⌘I then Return proofreads a reply, `a` then Return summarizes the mail, or sorts the Quarantine, ⌘I then Return on a passage selected gives its other wordings. So the palette lists the most used prompts first (`Catalog::menu`): by the screen's scopes (the sorting of the whole folder before the mail; the conversation before one of its mails), then in the order of the built-in prompts (`BUILTIN`, from the most useful), the user's after them. If the AI is off, the status bar says how to turn it on (`ai.enabled`).
 
 ### What the palette works on
 
@@ -181,13 +186,18 @@ The palette offers the prompts of its **target**, not of the window's layout (`G
 
 | Target | Screen | Prompts |
 |---|---|---|
-| The reply written (⌘I) | `compose` | proofread, rewrite, translate, subjects… |
+| The reply written (⌘I), nothing selected | `compose` | proofread, rewrite, translate, subjects… |
+| A passage selected in the reply (⌘I) | `compose-selection` | other wordings, synonyms, then proofread, rewrite, translate of the passage |
 | One mail: the one marked alone, else the one shown, else the row under the cursor | `mail` | summary, quick replies, translation, security check, dates |
 | Several mails marked | `selection` | filing them (Suggest a folder; Sort the Quarantine there) |
 
 A summary or a quick reply means nothing for several mails, and filing one mail alone is what the folder keys are for. One exception, from the prompt rather than the folder: a prompt of a set that takes the whole folder when nothing is marked (`unmarked = "folder"`, the sorting of the Quarantine) is offered on one mail too, first, since it still has its folder to work on. So in Quarantine the palette sorts first, and the security check of the mail shown is right there. A prompt over several mails other than filing (summarizing a few newsletters) would only need a `selection` prompt: the screens are ready for it.
 
-Out of a reply, **`a`** opens the palette of the mail shown (two or three columns, or a mail read in the whole window): summary, quick replies, translation into each language, security check, dates. A prompt of one mail works on the mail under the reader's cursor (`ctrl-j`, `ctrl-k`), a prompt of the conversation on all of it. On the list alone (one column), `a` opens the menu of the list, whose prompts (sorting the Quarantine) are not available yet. The two menus cannot be one: their prompts share letters (`s`).
+Out of a reply, **`a`** opens the palette of one mail: summary, quick replies, translation into each language, security check, dates. A prompt of one mail works on the mail under the reader's cursor (`ctrl-j`, `ctrl-k`) when its conversation is shown, else on its latest mail received; a prompt of the conversation on all of it.
+
+### A passage selected
+
+In a reply, **select a passage, then ⌘I**: the palette is the passage's. **Other wordings** comes first, so ⌘I ↩ asks for three wordings of it; **Synonyms** gives up to five words for a word you hesitate over; proofread, rewrite and translate work on the passage alone. The core sends the passage, then the whole draft with the passage marked `<selected>…</selected>` (`draft.context`: your sentences around it and the mail replied to, quoted below; a long draft is cut around the passage). The panel lists the texts, numbered: **Return takes the first**, the best, a number another; the core puts it in place of the passage, once sure the draft is still the one it read, and the cursor goes after it. ⌘Z gives the passage back. The passage is the one selected when ⌘I was pressed (`AppModel.aiPassage`), sent in UTF-16 units of the body as `selection`.
 
 In **Quarantine**, the palette starts with **Sort the Quarantine**, so `a` then Return sorts the whole folder (the prompt's `unmarked = "folder"`), or the conversations marked. Nothing takes the keys meanwhile: the status bar says "20 of 47 sorted", and Escape stops it (what is sorted stays). As each batch ends, its rows show their target after an arrow ("→ Newsletter", cut to "→ Newsl…" in a narrow list such as two columns, where the subject needs the room: `AI.suggestionTag`), and the status bar gives the reason of the one under the cursor. **Return** on a row with a suggestion moves it there, as the target's key would; any move decides the suggestion (`accepted` or `other`). Elsewhere, with several conversations marked, **Suggest a folder** files them (`unmarked = "cursor"`: it is offered only for a selection).
 
@@ -212,7 +222,7 @@ The rules are pure functions (`AI.swift`: the key answers, the hint, the cursor,
 
 ```sh
 nicemailer ai status [--check]          # on or off, provider, model, ready; --check: claude's version and subscription
-nicemailer ai prompts list [--screen compose|mail|selection|attachment] [--folder quarantine] [--lang fr]
+nicemailer ai prompts list [--screen compose|compose-selection|mail|selection|attachment] [--folder quarantine] [--lang fr]
 nicemailer ai prompts export [<id>…] [--dir …]   # copies of built-in prompts to start from; never overwrites
 nicemailer ai prompts check [<dir>]     # your prompt files checked without the core; status 1 if one is refused
 nicemailer ai run <prompt> --draft <id> [--variant k] [--lang fr] [--apply] [--choice N]

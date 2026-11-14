@@ -42,7 +42,7 @@ use std::time::{Duration, SystemTime};
 use nm_ai::answer::{self, Answer, Finding, Sent};
 use nm_ai::message::Mail;
 use nm_ai::catalog::{self, Loaded};
-use nm_ai::prompt::{Input, Output, Prompt, Scope, Screen, Source as PromptSource};
+use nm_ai::prompt::{Input, On, Output, Prompt, Scope, Screen, Source as PromptSource};
 use nm_ai::{AiError, AiRequest, Provider};
 use nm_api::{
     AiActionView, AiApplyParams, AiApplyResult, AiDiffPiece, AiDismissSuggestionParams, AiSuggestionView, AiSuggestionsParams, AiListPromptsParams, AiPromptView, AiProposal, AiRunIdParams, AiRunParams,
@@ -188,8 +188,14 @@ fn settings(core: &Core) -> AiSettings {
 fn available(p: &Prompt) -> bool {
     match p.scope {
         Scope::Draft => {
-            p.inputs.iter().all(|i| matches!(i, Input::DraftOwnText | Input::DraftHeaders))
-                && matches!(p.output, Output::Replace | Output::Subjects)
+            p.inputs.iter().all(|i| matches!(i, Input::DraftOwnText | Input::DraftContext | Input::DraftHeaders))
+                && match p.output {
+                    Output::Replace | Output::Subjects => true,
+                    // Other wordings, synonyms: the one chosen replaces the
+                    // passage selected.
+                    Output::Choices => p.then == Some(nm_ai::prompt::Then::Replace),
+                    _ => false,
+                }
         }
         Scope::Message | Scope::Thread => {
             p.inputs.iter().all(|i| {
@@ -430,6 +436,18 @@ async fn draft_inputs(
         err.data = Some(serde_json::json!({ "revision": draft.revision }));
         return Err(err);
     }
+    // A prompt of a passage needs one, a prompt of the whole text takes
+    // none (`on`, `ia.md`, section 4): the palette offers each only when
+    // it fits, so another client is told what is wrong.
+    match (prompt.on, p.selection.is_some()) {
+        (On::Selection, false) => {
+            return Err(ai_error(AiError::BadInput("select the text to work on first".into())));
+        }
+        (On::Text, true) => {
+            return Err(ai_error(AiError::BadInput("this prompt works on the whole text: send no selection".into())));
+        }
+        _ => {}
+    }
     // The segments sent: the selection, or the user's own text.
     let body = draft.body.clone();
     let ranges: Vec<Range<usize>> = match p.selection {
@@ -450,7 +468,13 @@ async fn draft_inputs(
     for input in &prompt.inputs {
         sections.push(match input {
             Input::DraftOwnText if prompt.output == Output::Replace => nm_ai::message::segments(&texts).map_err(ai_error)?,
+            // The passage alone, then the draft around it (`DraftContext`).
+            Input::DraftOwnText if prompt.on == On::Selection => {
+                nm_ai::message::passage(texts.first().copied().unwrap_or("")).map_err(ai_error)?
+            }
             Input::DraftOwnText => nm_ai::message::draft_text(&texts).map_err(ai_error)?,
+            // `on = "selection"` (the catalog checks it): one range.
+            Input::DraftContext => nm_ai::message::draft_context(&body, ranges[0].clone()),
             Input::DraftHeaders => draft_headers(&draft),
             _ => unreachable!("`available` lets only these inputs through"),
         });
@@ -1120,6 +1144,7 @@ fn proposal(run_id: i64, f: &Finished) -> Option<AiProposal> {
             items: items.clone(),
             then: match f.context.prompt.then {
                 Some(nm_ai::prompt::Then::Insert) => "insert".into(),
+                Some(nm_ai::prompt::Then::Replace) => "replace".into(),
                 _ => "reply".into(),
             },
         }),
@@ -1176,7 +1201,11 @@ pub(crate) async fn apply(core: &Arc<Core>, p: AiApplyParams, source: Source) ->
     let run_id = p.run_id;
     // A choice the client applies itself (a quick reply starts a reply):
     // the core records it and gives the text back.
-    if let Answer::Choices(items) = &finished.answer {
+    // A choice that replaces the passage selected (other wordings,
+    // synonyms) is not one: the core puts it in the draft below, as a
+    // proofreading, once sure the draft is still the text the AI read.
+    let replaces = finished.context.prompt.then == Some(nm_ai::prompt::Then::Replace);
+    if let (Answer::Choices(items), false) = (&finished.answer, replaces) {
         let Some(text) = p.choice.and_then(|i| items.get(i)).cloned() else {
             return put_back(finished, RpcError::new(error_code::INVALID_PARAMS, "choose one of the texts (choice)"));
         };
@@ -1199,6 +1228,13 @@ pub(crate) async fn apply(core: &Arc<Core>, p: AiApplyParams, source: Source) ->
         Answer::Segments(new) => match nm_core::segments::splice(&body, &ranges, new) {
             Ok(body) => DraftEdit { body: Some(body), ..Default::default() },
             Err(m) => return put_back(finished, RpcError::new(error_code::INTERNAL_ERROR, m)),
+        },
+        Answer::Choices(items) => match p.choice.and_then(|i| items.get(i)) {
+            Some(text) => match nm_core::segments::splice(&body, &ranges, std::slice::from_ref(text)) {
+                Ok(body) => DraftEdit { body: Some(body), ..Default::default() },
+                Err(m) => return put_back(finished, RpcError::new(error_code::INTERNAL_ERROR, m)),
+            },
+            None => return put_back(finished, RpcError::new(error_code::INVALID_PARAMS, "choose one of the texts (choice)")),
         },
         Answer::Subjects(items) => match p.choice.and_then(|i| items.get(i)) {
             Some(subject) => DraftEdit { subject: Some(subject.clone()), ..Default::default() },

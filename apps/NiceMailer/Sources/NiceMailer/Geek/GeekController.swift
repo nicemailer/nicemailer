@@ -2333,7 +2333,7 @@ final class GeekController {
             return
         }
         if model.composer != nil {
-            Task { await model.startAI(p, variant: variant) }
+            Task { await model.startAI(p, variant: variant, passage: model.aiPassage) }
             return
         }
         guard let thread = Self.aiThread(marked: model.marked, open: model.openThread?.id, cursor: model.selectedThreadId) else {
@@ -2353,7 +2353,12 @@ final class GeekController {
     func openAI() {
         let compose = model.composer != nil && screen == .mail
         guard compose || screen == .mail else { return }
-        let name = Self.aiScreen(compose: compose, marked: model.marked.count)
+        // In the reply, the text selected decides: its prompts (other
+        // wordings, synonyms…) work on it alone; none, the whole text. The
+        // passage is kept as it was when ⌘I was pressed.
+        let passage = compose ? model.composer?.buffer.utf16Selection : nil
+        let name = passage != nil ? "compose-selection" : Self.aiScreen(compose: compose, marked: model.marked.count)
+        model.aiPassage = passage
         let folder = compose ? nil : model.currentRole
         Task {
             guard let prompts = await model.aiPrompts(screen: name, folder: folder) else { return }

@@ -34,7 +34,10 @@ extension AppModel {
     /// keys from then on: the text cannot change under the run. Its run id
     /// is not known yet (`0`); Escape meanwhile closes it, and the run is
     /// cancelled as soon as its id comes.
-    func startAI(_ prompt: AIPromptView, variant: AIVariantView?) async {
+    /// `passage`: the text selected when ⌘I was pressed, in UTF-16 units
+    /// of the body (the units of the core's `selection`); the prompt then
+    /// works on it alone (`ia.md`, section 4, `on`).
+    func startAI(_ prompt: AIPromptView, variant: AIVariantView?, passage: NSRange? = nil) async {
         guard let opened = composer?.opened, aiRun == nil else { return }
         // What was kept of earlier runs (the end of one cancelled, a run of
         // the CLI) is not this run's: only what comes from now on may be.
@@ -57,6 +60,11 @@ extension AppModel {
             "prompt": prompt.id, "draft_id": c.draft.id, "revision": c.revision, "lang": AI.language,
         ]
         if let v = variant { params["variant"] = v.key }
+        // The text saved above is the text the passage was selected in
+        // (`isDirty` is false): its units point at the same characters.
+        if let passage {
+            params["selection"] = ["start": passage.location, "end": passage.location + passage.length]
+        }
         do {
             let r: AIRunResult = try await client.call("ai_run", params)
             // Escape was pressed while waiting, or the reply left: the run
@@ -338,7 +346,11 @@ extension AppModel {
         guard var c = composer, c.opened == opened else { return }
         let before = c.buffer.text
         if d.body != before {
-            c.buffer = TextBuffer(d.body, cursor: AI.cursorAfter(old: before, new: d.body, cursor: c.buffer.cursor))
+            // A passage selected (other wordings, synonyms…): from its end,
+            // so the cursor lands after the new words, where writing goes
+            // on, whichever way the selection was made.
+            let from = c.buffer.selection?.upperBound ?? c.buffer.cursor
+            c.buffer = TextBuffer(d.body, cursor: AI.cursorAfter(old: before, new: d.body, cursor: from))
             c.aiUndo = AIUndo(before: before, after: c.buffer.text)
             flash = L("Applied · ⌘Z undoes it")
         }

@@ -31,7 +31,7 @@ use sha2::{Digest, Sha256};
 use toml_edit::{Item, TableLike};
 
 use crate::prompt::{
-    Input, Labels, Lang, Output, Prompt, Scope, Screen, Source, Then, Unmarked, Variant,
+    Input, Labels, Lang, On, Output, Prompt, Scope, Screen, Source, Then, Unmarked, Variant,
 };
 
 /// The built-in prompts: file name and text, compiled into the binary. Their
@@ -42,6 +42,13 @@ use crate::prompt::{
 /// text as a `&'static str`; a missing file is a compile error, not a
 /// runtime one.
 pub const BUILTIN: &[(&str, &str)] = &[
+    // A passage selected in a reply: its other wordings first, ⌘I then
+    // Return; they are not offered without a selection (`on`).
+    (
+        "alternatives.toml",
+        include_str!("../prompts/alternatives.toml"),
+    ),
+    ("synonyms.toml", include_str!("../prompts/synonyms.toml")),
     ("proofread.toml", include_str!("../prompts/proofread.toml")),
     ("rewrite.toml", include_str!("../prompts/rewrite.toml")),
     (
@@ -639,7 +646,7 @@ fn parse(file: &str, text: &str, source: Source, warnings: &mut Vec<Problem>) ->
             return Err(r.problem(
                 Some(output_item),
                 "then",
-                "choices needs then = \"insert\" or \"reply\"",
+                "choices needs then = \"insert\", \"reply\" or \"replace\"",
             ));
         }
         None => None,
@@ -653,12 +660,13 @@ fn parse(file: &str, text: &str, source: Source, warnings: &mut Vec<Problem>) ->
                 |s| match s {
                     "insert" => Some(Then::Insert),
                     "reply" => Some(Then::Reply),
+                    "replace" => Some(Then::Replace),
                     _ => None,
                 },
-                "insert or reply",
+                "insert, reply or replace",
             )?;
             let fits = match t {
-                Then::Insert => scope == Scope::Draft,
+                Then::Insert | Then::Replace => scope == Scope::Draft,
                 Then::Reply => scope != Scope::Draft,
             };
             if !fits {
@@ -819,6 +827,44 @@ fn parse(file: &str, text: &str, source: Source, warnings: &mut Vec<Problem>) ->
         }
     };
 
+    // What text of a draft the prompt works on: the whole text by default.
+    let on = match r.get(root, "on") {
+        None => On::Text,
+        Some(item) => {
+            if scope != Scope::Draft {
+                return Err(r.problem(Some(item), "on", "on is only for scope = \"draft\""));
+            }
+            r.choice(
+                item,
+                "on",
+                |s| match s {
+                    "text" => Some(On::Text),
+                    "selection" => Some(On::Selection),
+                    "both" => Some(On::Both),
+                    _ => None,
+                },
+                "text, selection or both",
+            )?
+        }
+    };
+    // A passage's context and a choice that replaces it need a passage:
+    // a prompt offered only when text is selected (`Screen::offers`).
+    if inputs.contains(&Input::DraftContext) && on != On::Selection {
+        return Err(r.problem(
+            Some(input_item),
+            "input",
+            "draft.context marks the passage selected: it needs on = \"selection\"",
+        ));
+    }
+    if then == Some(Then::Replace) && on != On::Selection {
+        let item = r.get(root, "then");
+        return Err(r.problem(
+            item,
+            "then",
+            "then = \"replace\" replaces the passage selected: it needs on = \"selection\"",
+        ));
+    }
+
     // Unknown keys: warnings, so that a file written for a newer NiceMailer
     // stays usable.
     for (k, item) in root.iter() {
@@ -850,6 +896,7 @@ fn parse(file: &str, text: &str, source: Source, warnings: &mut Vec<Problem>) ->
         variants,
         folders,
         unmarked,
+        on,
         text,
         source,
         hash: [0; 32],
@@ -969,6 +1016,7 @@ fn hash(p: &Prompt) -> [u8; 32] {
         &format!("{:?}{:?}", p.folders.is_some(), folders),
     );
     field("unmarked", &format!("{:?}", p.unmarked));
+    field("on", &format!("{:?}", p.on));
     for v in &p.variants {
         field("variant", &format!("{}={}", v.key, v.instruction));
     }

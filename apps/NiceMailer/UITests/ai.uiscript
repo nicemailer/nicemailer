@@ -1,6 +1,8 @@
 # The AI assistance in a reply (`ia.md`, section 11; docs/ai.md), its
 # prompts answered by the core from fixtures/ai.ai.json (NICEMAILER_FAKE_AI):
-# ⌘I opens the AI palette at the top (not typed): typing filters, the
+# ⌘I on a word selected offers its other wordings, the first put in its
+# place by Return; without a selection, ⌘I opens the palette of the whole
+# text (not typed): typing filters, the
 # first row, highlighted, runs with Return; a prompt not available yet
 # says so, proofreading shows its differences, the keys do not reach the
 # text meanwhile, Return applies them (quotation untouched) and ⌘Z undoes
@@ -14,6 +16,24 @@ expect folder = Inbox
 key r
 expect composing = true
 type merci je vien jeudi
+# A word selected: the palette of a passage, its other wordings first;
+# ⌘I ↩ ↩ puts the first one in its place, ⌘Z gives the word back.
+key shift-alt-left
+key cmd-i
+expect picker_first = Other wordings
+expect picker_rows ~ Synonyms
+expect picker_rows !~ Suggest subjects
+snap ai-passage-menu
+key ret
+expect ai_state = proposal
+expect ai_result ~ 1. vendredi
+snap ai-passage
+key ret
+expect ai_state = none
+expect compose_text ~ merci je vien vendredi|
+key cmd-z
+expect compose_text ~ merci je vien jeudi|
+# Nothing selected: the palette of the whole text.
 key cmd-i
 expect ai_placement = palette
 expect picker_first = Proofread

@@ -5,7 +5,7 @@
 use std::path::PathBuf;
 
 use nm_ai::catalog::{self, BUILTIN, Loaded, Problem, UserFile};
-use nm_ai::prompt::{Input, Lang, Output, Scope, Screen, Source, Unmarked};
+use nm_ai::prompt::{Input, Lang, On, Output, Scope, Screen, Source, Then, Unmarked};
 use nm_core::FolderRole;
 
 /// A minimal valid user prompt, with extra lines appended.
@@ -20,6 +20,23 @@ input = ["message.text"]
 output = "panel"
 system = "Do the task."
 {extra}"#
+    )
+}
+
+/// A prompt of a passage selected in a draft, `on` and `then` given.
+fn passage_prompt(on: &str, then: &str) -> String {
+    format!(
+        r#"version = 1
+id = "mine"
+scope = "draft"
+key = "x"
+label = "Test"
+input = ["draft.own_text", "draft.context"]
+output = "choices"
+{then}
+on = "{on}"
+system = "Do the task."
+"#
     )
 }
 
@@ -449,6 +466,32 @@ fn each_rule_is_an_error_with_its_line() {
             Some(3),
             "",
         ),
+        (
+            minimal("mine", "x", "on = \"both\""),
+            "on",
+            Some(9),
+            "only for scope = \"draft\"",
+        ),
+        (
+            passage_prompt("both", "then = \"replace\""),
+            "input",
+            Some(6),
+            "draft.context marks the passage",
+        ),
+        (
+            passage_prompt("selection", "then = \"replace\"")
+                .replace(", \"draft.context\"", "")
+                .replace("on = \"selection\"", "on = \"text\""),
+            "then",
+            Some(8),
+            "needs on = \"selection\"",
+        ),
+        (
+            passage_prompt("everywhere", "then = \"replace\""),
+            "on",
+            Some(9),
+            "text, selection or both",
+        ),
     ];
     for (text, key, line, message) in cases {
         let p = problem_of(&text);
@@ -458,6 +501,62 @@ fn each_rule_is_an_error_with_its_line() {
         assert_eq!(p.line, line, "{text}\n→ {p}");
         assert!(p.message.contains(message), "{text}\n→ {p}");
     }
+}
+
+#[test]
+fn a_passage_selected_has_its_own_palette() {
+    let l = user(&[]);
+    let ids = |screen| -> Vec<String> {
+        l.catalog
+            .menu(screen, None)
+            .iter()
+            .map(|p| p.id.clone())
+            .collect()
+    };
+    // Text selected: its other wordings first (⌘I then Return), synonyms,
+    // then what works on either; nothing that needs the whole text.
+    assert_eq!(
+        ids(Screen::ComposeSelection),
+        [
+            "alternatives",
+            "synonyms",
+            "proofread",
+            "rewrite",
+            "translate-draft"
+        ]
+    );
+    // Nothing selected: no prompt of a passage.
+    assert_eq!(
+        ids(Screen::Compose),
+        [
+            "proofread",
+            "rewrite",
+            "translate-draft",
+            "write-from-notes",
+            "subject-ideas"
+        ]
+    );
+    let alt = l.catalog.get("alternatives").unwrap();
+    assert_eq!((alt.on, alt.then), (On::Selection, Some(Then::Replace)));
+    // A user's prompt of a passage loads.
+    let mine = user(&[(
+        "mine.toml",
+        &passage_prompt("selection", "then = \"replace\""),
+    )]);
+    assert_eq!(mine.problems, vec![]);
+    assert!(
+        mine.catalog
+            .menu(Screen::ComposeSelection, None)
+            .iter()
+            .any(|p| p.id == "mine")
+    );
+    assert!(
+        !mine
+            .catalog
+            .menu(Screen::Compose, None)
+            .iter()
+            .any(|p| p.id == "mine")
+    );
 }
 
 #[test]

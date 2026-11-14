@@ -147,6 +147,9 @@ final class AppModel {
     /// The AI run shown in the panel of the reply (`AppModel+AI.swift`);
     /// nil when the panel is closed.
     var aiRun: AIRun?
+    /// The passage selected in the reply when the AI palette opened (⌘I),
+    /// in UTF-16 units; `nil` for the whole text.
+    var aiPassage: NSRange?
     /// AI events that came before the answer of `ai_run` told which run is
     /// ours (a fake or quick provider ends before): kept by run id, replayed
     /// once it is known.

@@ -43,6 +43,50 @@ pub fn draft_text(texts: &[&str]) -> Result<String, AiError> {
     Ok(section("draft", &texts.join("\n\n")))
 }
 
+/// `draft.own_text` of a prompt of a passage (`on = "selection"`): the
+/// passage the user selected, alone, in a `<passage>` section.
+pub fn passage(text: &str) -> Result<String, AiError> {
+    if text.trim().is_empty() {
+        return Err(AiError::BadInput("the selection is empty".into()));
+    }
+    Ok(section("passage", text))
+}
+
+/// Most characters of `draft.context`, the passage included.
+pub const MAX_CONTEXT_CHARS: usize = 12_000;
+
+/// `draft.context`: the draft's whole body, the passage selected marked
+/// `<selected>…</selected>` where it stands, so that the model fits its
+/// answer to what comes before and after: the user's sentences, and the
+/// mail replied to, quoted below. A long draft keeps the passage whole and
+/// as much text on each side as the limit allows, each cut said by `[…]`.
+///
+/// `selection` is a byte range of `body` on character boundaries (the
+/// core checked it).
+pub fn draft_context(body: &str, selection: std::ops::Range<usize>) -> String {
+    let before = &body[..selection.start];
+    let chosen = &body[selection.clone()];
+    let after = &body[selection.end..];
+    let room = MAX_CONTEXT_CHARS.saturating_sub(chosen.chars().count()) / 2;
+    // Rust note: `chars().rev().take(n)` walks back from the end by
+    // characters, never cutting one of several bytes in two.
+    let before_kept: usize = before.chars().rev().take(room).map(char::len_utf8).sum();
+    let after_kept: usize = after.chars().take(room).map(char::len_utf8).sum();
+    let mut text = String::new();
+    if before_kept < before.len() {
+        text.push_str("[…]");
+    }
+    text.push_str(&before[before.len() - before_kept..]);
+    text.push_str("<selected>");
+    text.push_str(chosen);
+    text.push_str("</selected>");
+    text.push_str(&after[..after_kept]);
+    if after_kept < after.len() {
+        text.push_str("[…]");
+    }
+    section("draft", &text)
+}
+
 /// The headers of a draft: From, To, Cc, Subject, one per line, the empty
 /// ones left out.
 pub fn draft_headers(from: &str, to: &[String], cc: &[String], subject: &str) -> String {
@@ -69,6 +113,33 @@ pub fn section(tag: &str, text: &str) -> String {
 mod tests {
     use super::*;
     use crate::answer;
+
+    #[test]
+    fn a_passage_comes_with_its_draft_marked() {
+        let body = "Bonjour Paul,\n\nJe viens jeudi.\n\nÀ bientôt";
+        let start = body.find("viens").unwrap();
+        let ctx = draft_context(body, start..start + "viens".len());
+        assert_eq!(
+            ctx,
+            "<draft>\nBonjour Paul,\n\nJe <selected>viens</selected> jeudi.\n\nÀ bientôt\n</draft>"
+        );
+        assert_eq!(passage("viens").unwrap(), "<passage>\nviens\n</passage>");
+        assert!(passage("  ").is_err());
+    }
+
+    #[test]
+    fn a_long_draft_keeps_the_passage_and_text_on_each_side() {
+        // Accented letters on both sides: the cuts fall between characters.
+        let side = "é".repeat(MAX_CONTEXT_CHARS);
+        let body = format!("{side}MOT{side}");
+        let start = side.len();
+        let ctx = draft_context(&body, start..start + 3);
+        assert!(ctx.contains("<selected>MOT</selected>"));
+        assert!(ctx.starts_with("<draft>\n[…]é") && ctx.ends_with("é[…]\n</draft>"));
+        let chars = ctx.chars().count();
+        assert!(chars <= MAX_CONTEXT_CHARS + 60, "{chars}");
+        assert!(chars >= MAX_CONTEXT_CHARS, "{chars}");
+    }
 
     #[test]
     fn segments_are_numbered_and_read_back() {

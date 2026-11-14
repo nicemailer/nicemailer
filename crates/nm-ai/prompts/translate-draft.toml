@@ -7,6 +7,7 @@ key = "t"
 label = { en = "Translate", fr = "Traduire" }
 input = ["draft.own_text"]
 output = "replace"
+on = "both"
 lang = "variant"
 
 system = """

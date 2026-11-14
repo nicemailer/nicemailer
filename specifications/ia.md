@@ -141,6 +141,7 @@ typos only. Do not change the wording, tone, meaning, names, numbers or line bre
 | `system` | La tâche, et elle seule : le noyau construit le prompt système autour (ci-dessous) |
 | `folders` | Facultatif : les rôles de dossiers où le prompt est proposé (`["quarantine"]`) ; absent : partout où sa portée a un sens |
 | `unmarked` | Portée `selection` : ce que traite le prompt quand aucun mail n'est marqué. `cursor` (par défaut) : la conversation sous le curseur, comme toute action groupée (`ui.md`, « Actions groupées ») ; `folder` : tout le dossier. `folder` n'est accepté qu'avec `folders`, pour qu'un prompt ne puisse pas envoyer toute l'Archive par mégarde |
+| `on` | Portée `draft` : le texte traité. `text` (par défaut) : tout le texte de l'utilisateur ; `selection` : un passage sélectionné, et seulement quand il y en a un (autres formulations, synonymes) ; `both` : le passage sélectionné, sinon tout le texte (corriger, reformuler, traduire). La palette de ⌘I dépend de la présence d'une sélection (section 11) |
 | `enabled` | Faux : le prompt n'est pas proposé |
 
 Le message envoyé au modèle n'est pas écrit dans le prompt : le noyau le construit à partir de `input` (section 5), toujours de la même façon. Un prompt de l'utilisateur ne peut donc pas demander une donnée que la liste ne prévoit pas.
@@ -157,7 +158,7 @@ Le noyau construit le prompt système envoyé au modèle, dans cet ordre (`crate
 
 ### Règles vérifiées au chargement
 
-Chacune est une erreur, avec le fichier et la ligne, qui refuse le fichier : une valeur hors des listes ; une entrée sans objet dans la portée ; une sortie qui ne s'applique pas dans la portée (`replace`, `insert` et `subjects` : `draft` ; `reply` : `message`, `thread` ; `verdict` : `message` ; `summary` : `message`, `thread` ; `targets` : `selection`) ; `replace` sans l'entrée `draft.own_text`, qu'il remplace ; `targets` sans `selection.items` et `targets` ; `choices` sans `then`, ou `then` sans `choices` ; `then = "insert"` hors `draft`, `then = "reply"` dans `draft` ; `{{variant}}` sans variante, ou des variantes sans `{{variant}}` ; deux variantes sur la même touche ; `lang = "variant"` sans variante ; `unmarked` hors `selection`, ou `unmarked = "folder"` sans `folders` ; une entrée donnée deux fois ; une liste vide.
+Chacune est une erreur, avec le fichier et la ligne, qui refuse le fichier : une valeur hors des listes ; une entrée sans objet dans la portée ; une sortie qui ne s'applique pas dans la portée (`replace`, `insert` et `subjects` : `draft` ; `reply` : `message`, `thread` ; `verdict` : `message` ; `summary` : `message`, `thread` ; `targets` : `selection`) ; `replace` sans l'entrée `draft.own_text`, qu'il remplace ; `targets` sans `selection.items` et `targets` ; `choices` sans `then`, ou `then` sans `choices` ; `then = "insert"` ou `"replace"` hors `draft`, `then = "reply"` dans `draft` ; `then = "replace"` ou l'entrée `draft.context` sans `on = "selection"` ; `on` hors `draft` ; `{{variant}}` sans variante, ou des variantes sans `{{variant}}` ; deux variantes sur la même touche ; `lang = "variant"` sans variante ; `unmarked` hors `selection`, ou `unmarked = "folder"` sans `folders` ; une entrée donnée deux fois ; une liste vide.
 
 ### Hash
 
@@ -181,6 +182,7 @@ La liste est fermée : chaque entrée est calculée par le noyau, a une limite d
 
 | Entrée | Portées | Contenu | Limite |
 | --- | --- | --- | --- |
+| `draft.context` | `draft` (`on = "selection"`) | Tout le corps du brouillon, le passage sélectionné balisé `<selected>…</selected>` à sa place : les phrases autour et le mail auquel on répond, cité dessous. Un long brouillon garde le passage entier et autant de texte de chaque côté que la limite le permet, chaque coupure marquée `[…]` | 12 000 caractères |
 | `draft.own_text` | `draft` | Le texte écrit par l'utilisateur, sans la ligne d'introduction, sans les lignes citées, sans la signature (ci-dessous) ; la sélection seule si l'utilisateur a sélectionné du texte | 12 000 caractères |
 | `draft.full` | `draft` | Le corps entier, citation comprise | 24 000 |
 | `draft.headers` | `draft` | De, À, Cc, Objet | — |
@@ -227,7 +229,7 @@ Un texte qui contient déjà une balise `<segment` ou `</segment>` n'est pas env
 | `insert` | Texte | Inséré au curseur du brouillon |
 | `reply` | Texte | Ouvre une réponse au mail (`prepare_draft`) avec le texte au-dessus de la citation ; rien n'est envoyé |
 | `panel` | Texte | Affiché dans le panneau IA ; copiable |
-| `choices` | JSON : `{"choices": ["…"]}`, 1 à 5 | Liste dans le panneau ; le choix est appliqué comme `then` le dit (`insert` ou `reply`) |
+| `choices` | JSON : `{"choices": ["…"]}`, 1 à 5 | Liste dans le panneau ; le choix est appliqué comme `then` le dit (`insert`, `reply`, ou `replace` : il remplace le passage sélectionné, par le noyau, à la révision lue) |
 | `subjects` | JSON : `{"subjects": ["…"]}`, 1 à 5 | Liste dans le panneau ; le choix remplace l'objet du brouillon |
 | `summary` | JSON : `{"summary": "…", "actions": [{"task", "owner", "due"}]}` | Panneau : résumé, puis actions à faire |
 | `verdict` | JSON : `{"risk": "low" \| "medium" \| "high", "reasons": ["…"]}` | Panneau. Plancher : voir ci-dessous |
@@ -269,6 +271,8 @@ Le noyau ajoute la consigne au prompt système (« Answer in French. ») ; pour 
 
 | Portée | Touche | Prompt | Entrées | Sortie |
 | --- | --- | --- | --- | --- |
+| `draft` | `a` | Autres formulations : trois, du passage sélectionné (`on = "selection"`) | `draft.own_text`, `draft.context` | `choices`, `then = "replace"` |
+| `draft` | `s` | Synonymes : jusqu'à cinq, du mot sélectionné (`on = "selection"`) | `draft.own_text`, `draft.context` | `choices`, `then = "replace"` |
 | `draft` | `c` | Corriger | `draft.own_text` | `replace` |
 | `draft` | `r` | Reformuler : `f` formel, `a` amical, `c` plus court, `l` plus long, `s` plus clair | `draft.own_text` | `replace` |
 | `draft` | `t` | Traduire : `e` anglais, `f` français, `s` espagnol, `d` allemand, `i` italien | `draft.own_text` | `replace` |
@@ -277,7 +281,7 @@ Le noyau ajoute la consigne au prompt système (« Answer in French. ») ; pour 
 | `thread` | `r` | Résumer, avec les actions à faire | `thread.text`, `user.identity` | `summary` |
 | `message` | `t` | Traduire : mêmes langues | `message.text` | `panel` |
 | `thread` | `p` | Réponses rapides | `thread.text`, `user.identity` | `choices`, `then = "reply"` |
-| `message` | `s` | Analyse de sécurité | `message.headers`, `message.auth`, `message.text`, `sender.history` | `verdict` |
+| `message` | `c` | Analyse de sécurité | `message.headers`, `message.auth`, `message.text`, `sender.history` | `verdict` |
 | `message` | `d` | Dates et rendez-vous | `message.text`, `message.headers` | `panel` |
 | `attachment` | `r` | Résumer la pièce jointe | `attachment.text` | `panel` |
 | `selection` | `s` | Trier la Quarantine (`folders = ["quarantine"]`, `unmarked = "folder"`) | `selection.items`, `targets` | `targets` |
@@ -396,6 +400,7 @@ Les sorties JSON ne sont pas affichées au fil de l'eau (un JSON partiel n'a pas
 ### Raccourcis
 
 - **`a`**, hors saisie de texte (liste, lecture) : ouvre le menu IA.
+- **Une sélection dans la rédaction** (novembre 2026) : ⌘I sur un passage sélectionné ouvre la palette du passage : autres formulations en tête (⌘I ↩), synonymes, puis corriger, reformuler et traduire le passage seul ; objets et rédaction à partir des notes, qui portent sur tout le texte, n'y sont pas. Sans sélection, la palette de tout le texte. Le panneau numérote les propositions : ↩ prend la première, un chiffre une autre ; elle remplace le passage, le curseur après elle, ⌘Z rend le passage.
 - **Contexte** (novembre 2026) : la palette dépend de sa **cible**, et non de la disposition de la fenêtre. En rédaction, le texte (⌘I). Sinon, **un mail** — celui marqué seul, à défaut celui affiché, à défaut la ligne sous le curseur — offre résumé, réponses rapides, traduction, analyse de sécurité, dates. **Plusieurs mails marqués** offrent leur rangement. Résumer ou répondre n'a pas de sens pour plusieurs mails, et ranger un seul mail est le rôle des touches de dossier. Exception portée par le prompt et non par le dossier : un prompt de sélection qui prend tout le dossier quand rien n'est marqué (`unmarked = "folder"`, le tri de la Quarantine) est aussi offert sur un mail, en tête. En Quarantine, `a` ↩ trie donc toujours, et l'analyse de sécurité du mail affiché est dans la même palette ; sa lettre devient `c` (`s` est celle du tri). Un futur prompt sur plusieurs mails (résumer un ensemble de newsletters) n'aura qu'à être un prompt `selection`.
 - **⌘I**, en saisie de texte (écran de réponse) : ouvre le menu IA. Dans un champ de texte, une lettre seule s'écrit, et `ctrl-a` est déjà « début de ligne » (macOS et `LineEdit.swift`) ; ⌘I n'est pris ni par l'app ni par l'éditeur, qui n'a pas de mise en forme. ⌘I est une commande de la barre de menus (menu « IA »), il marche donc aussi hors saisie.
 - **Le menu est une palette de commandes** (novembre 2026), le sélecteur de `f` : au-dessus du reste de la fenêtre, un champ où taper filtre et classe les lignes comme dans tout sélecteur, une ligne par prompt et une par variante (« Reformuler · Plus court »), la lettre d'un prompt (`c`, `rc` pour une variante) comme mot de recherche qui l'amène en tête. Une lettre filtre donc au lieu de lancer : ⌘I `c` demande ↩ ensuite.

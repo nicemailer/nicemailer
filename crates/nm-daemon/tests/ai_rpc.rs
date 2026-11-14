@@ -235,6 +235,53 @@ fn a_subject_is_chosen_among_the_suggestions() {
     assert_eq!(a["draft"]["body"], d["body"], "the body is untouched");
 }
 
+#[test]
+fn a_passage_selected_gets_other_wordings_and_the_one_chosen_replaces_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let answers = json!({"alternatives": "{\"choices\": [\"passe\", \"arrive\", \"serai là\"]}"});
+    let _core = core(dir.path(), Some(answers), "");
+    let mut c = Client::connect_as(dir.path(), "app");
+    let d = reply(dir.path(), &mut c, "Je viens jeudi à 14h.\n");
+    // The palette of a passage: its other wordings first, nothing that
+    // needs the whole text.
+    let menu = c.call("ai_list_prompts", json!({"screen": "compose-selection", "lang": "fr"})).unwrap();
+    let ids: Vec<&str> = menu.as_array().unwrap().iter().map(|p| p["id"].as_str().unwrap()).collect();
+    assert_eq!(ids, ["alternatives", "synonyms", "proofread", "rewrite", "translate-draft"]);
+    assert!(menu.as_array().unwrap().iter().take(2).all(|p| p["available"] == true), "{menu}");
+    // "viens": ASCII before it, so UTF-16 units are bytes.
+    let selection = json!({"start": 3, "end": 8});
+    let run = |c: &mut Client, prompt: &str, sel: Option<&Value>| {
+        let mut p = json!({"prompt": prompt, "draft_id": d["id"], "revision": d["revision"], "lang": "fr"});
+        if let Some(s) = sel {
+            p["selection"] = s.clone();
+        }
+        c.call("ai_run", p)
+    };
+    // A prompt of a passage needs one; a prompt of the whole text takes none.
+    let e = run(&mut c, "alternatives", None).unwrap_err();
+    assert_eq!(e["data"]["code"], "ai_bad_input", "{e}");
+    let e = run(&mut c, "subject-ideas", Some(&selection)).unwrap_err();
+    assert_eq!(e["data"]["code"], "ai_bad_input", "{e}");
+    c.clear_events();
+    let id = run(&mut c, "alternatives", Some(&selection)).unwrap()["run_id"].as_i64().unwrap();
+    c.event("AiDone", 10);
+    // Sent: the passage alone, then the draft with it marked, the mail
+    // replied to (quoted) included for its context.
+    let input = sent(dir.path(), id);
+    assert!(input.contains("<passage>\nviens\n</passage>"), "{input}");
+    assert!(input.contains("<draft>\nJe <selected>viens</selected> jeudi à 14h."), "{input}");
+    assert!(input.contains("> "), "the quotation is context: {input}");
+    let v = c.call("ai_get_run", json!({"run_id": id})).unwrap();
+    assert_eq!(v["proposal"], json!({"kind": "choices", "items": ["passe", "arrive", "serai là"], "then": "replace"}));
+    // No choice, refused, the proposal kept; the second chosen replaces
+    // the passage only.
+    assert_eq!(c.call("ai_apply", json!({"run_id": id, "revision": d["revision"]})).unwrap_err()["code"], -32602);
+    let a = c.call("ai_apply", json!({"run_id": id, "revision": d["revision"], "choice": 1})).unwrap();
+    let expected = d["body"].as_str().unwrap().replacen("viens", "arrive", 1);
+    assert_eq!(a["draft"]["body"], json!(expected));
+    assert_eq!(row(dir.path(), id).1.as_deref(), Some("accepted"));
+}
+
 /// A fake `claude` that announces `tools` and, when safe, hangs after the
 /// probe: long enough to be cancelled.
 fn fake_claude(dir: &Path, tools: &str) -> String {
