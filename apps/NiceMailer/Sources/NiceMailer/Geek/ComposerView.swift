@@ -520,7 +520,11 @@ struct AIPanel: View {
                     HStack(alignment: .firstTextBaseline, spacing: scaled(10)) {
                         Text("\(i + 1)").foregroundStyle(Palette.accentText)
                         Text(subject).foregroundStyle(Palette.text)
+                        Spacer(minLength: 0)
                     }
+                    // The text Return takes, highlighted as the row of a
+                    // picker (`AIRun.choice`): the first until ↑ ↓ move it.
+                    .background(i == run.choice ? Palette.cursor : Color.clear)
                 }
             }
         case .proposal(.text(let text)):

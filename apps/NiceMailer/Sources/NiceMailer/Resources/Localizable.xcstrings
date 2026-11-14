@@ -3850,12 +3850,12 @@
         }
       }
     },
-    "1–%lld choose · esc or n refuse": {
+    "↩ or 1–%lld choose · ↑↓ move · esc or n refuse": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "1–%lld choisir · esc ou n refuser"
+            "value": "↩ ou 1–%lld choisir · ↑↓ déplacer · esc ou n refuser"
           }
         }
       }
@@ -4020,12 +4020,12 @@
         }
       }
     },
-    "1–%lld reply with it · esc or n refuse": {
+    "↩ or 1–%lld reply with it · ↑↓ move · esc or n refuse": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "1–%lld y répondre · esc ou n refuser"
+            "value": "↩ ou 1–%lld y répondre · ↑↓ déplacer · esc ou n refuser"
           }
         }
       }
@@ -4180,12 +4180,12 @@
         }
       }
     },
-    "↩ or 1–%lld replace the selection · esc or n refuse · ⌘Z after choosing undoes": {
+    "↩ or 1–%lld replace the selection · ↑↓ move · esc or n refuse · ⌘Z after choosing undoes": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "↩ ou 1–%lld remplace la sélection · esc ou n refuse · ⌘Z après le choix annule"
+            "value": "↩ ou 1–%lld remplace la sélection · ↑↓ déplace · esc ou n refuse · ⌘Z après le choix annule"
           }
         }
       }

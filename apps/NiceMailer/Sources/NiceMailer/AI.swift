@@ -169,6 +169,11 @@ struct AIRun: Equatable {
     /// The text received so far.
     var text = ""
     var phase: Phase = .running
+    /// The text of a list proposal (other wordings, subjects, quick
+    /// replies) that Return takes, highlighted in the panel. The first by
+    /// default: the prompts give the best first, so ⌘I ↩ ↩ takes it, and
+    /// ↑ ↓ move to another (`AI.action`, `.move`).
+    var choice = 0
 
     enum Target: Equatable {
         /// The reply being written, by its opening (`Composer.opened`):
@@ -195,8 +200,11 @@ struct AIRun: Equatable {
 /// (the text cannot change under a proposal): the answer, or nothing.
 enum AIKeyAction: Equatable {
     case accept
-    /// A subject of the list, from 0.
+    /// A text of the list (a subject, a wording, a reply), from 0.
     case choose(Int)
+    /// Highlight another text of the list: the index it moves to, kept
+    /// within the list.
+    case move(Int)
     case refuse
     /// Stop the run still going.
     case cancel
@@ -208,9 +216,11 @@ enum AIKeyAction: Equatable {
 
 enum AI {
     /// The answer a key gives in the panel (`ia.md`, section 11, "Panneau
-    /// IA"): ↩ or `y` accepts, Escape or `n` refuses, a digit chooses a
-    /// subject, Escape stops a run still going.
-    static func action(_ phase: AIRun.Phase, key: String, isReturn: Bool, isEscape: Bool) -> AIKeyAction {
+    /// IA"): ↩ or `y` accepts, Escape or `n` refuses, Escape stops a run
+    /// still going. In a list, `choice` is the text highlighted: ↩ takes
+    /// it, ↑ ↓ (`arrow` -1, +1) move it, a digit takes a text directly.
+    static func action(_ phase: AIRun.Phase, key: String, isReturn: Bool, isEscape: Bool,
+                       arrow: Int = 0, choice: Int = 0) -> AIKeyAction {
         switch phase {
         case .running:
             return isEscape ? .cancel : .hint
@@ -221,15 +231,15 @@ enum AI {
             if isReturn || key == "y" { return .accept }
             if isEscape || key == "n" { return .refuse }
             return .hint
-        case .proposal(.choices(let items, "replace")):
-            // Other wordings, synonyms: the best comes first, so Return
-            // takes it, as in the palette (⌘I ↩ ↩).
-            if isEscape || key == "n" { return .refuse }
-            if isReturn { return .choose(0) }
             if let d = Int(key), d >= 1, d <= items.count { return .choose(d - 1) }
             return .hint
         case .proposal(.subjects(let items)), .proposal(.choices(let items, _)):
+            // Every list works the same way, as a picker does: the text
+            // highlighted (the first, the best, until ↑ ↓ move it) is the
+            // one Return takes (⌘I ↩ ↩ on a passage).
             if isEscape || key == "n" { return .refuse }
+            if isReturn { return .choose(min(max(0, choice), items.count - 1)) }
+            if arrow != 0 { return .move(min(max(0, choice + arrow), items.count - 1)) }
             if let d = Int(key), d >= 1, d <= items.count { return .choose(d - 1) }
             return .hint
         case .proposal(.text), .proposal(.summary), .proposal(.verdict), .proposal(.targets):
@@ -245,10 +255,10 @@ enum AI {
         case .failed: L("esc close")
         case .proposal(.replace(_, true)): L("No change to make · esc close")
         case .proposal(.replace): L("↩ or y accept · esc or n refuse · ⌘Z after accepting undoes")
-        case .proposal(.subjects(let items)): L("1–%lld choose · esc or n refuse", items.count)
+        case .proposal(.subjects(let items)): L("↩ or 1–%lld choose · ↑↓ move · esc or n refuse", items.count)
         case .proposal(.choices(let items, "replace")):
-            L("↩ or 1–%lld replace the selection · esc or n refuse · ⌘Z after choosing undoes", items.count)
-        case .proposal(.choices(let items, _)): L("1–%lld reply with it · esc or n refuse", items.count)
+            L("↩ or 1–%lld replace the selection · ↑↓ move · esc or n refuse · ⌘Z after choosing undoes", items.count)
+        case .proposal(.choices(let items, _)): L("↩ or 1–%lld reply with it · ↑↓ move · esc or n refuse", items.count)
         case .proposal(.text), .proposal(.summary), .proposal(.verdict), .proposal(.targets): L("esc close")
         }
     }

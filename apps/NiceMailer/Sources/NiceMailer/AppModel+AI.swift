@@ -297,6 +297,9 @@ extension AppModel {
         switch action {
         case .hint:
             flash = AI.hint(run.phase)
+        case .move(let i):
+            // `GeekController.handleAIKey` applies it itself, at once.
+            aiRun?.choice = i
         case .cancel:
             aiRun = nil
             flash = L("AI stopped")

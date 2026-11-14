@@ -8,7 +8,7 @@
 # text meanwhile, Return applies them (quotation untouched) and ⌘Z undoes
 # them; improving the writing, refused; a variant from the submenu,
 # refused with Escape; a subject chosen
-# by its number; `a` with a mail shown: a summary, then a quick reply that
+# with ↓ ↩; `a` with a mail shown: a summary, then a quick reply that
 # starts the reply; `a` on the list alone offers the prompts of the row
 # under the cursor, and filing with several marked; in
 # Quarantine, `a` `s` sorts the folder, the rows show their target, Return
@@ -28,6 +28,7 @@ snap ai-passage-menu
 key ret
 expect ai_state = proposal
 expect ai_result ~ 1. vendredi
+expect ai_choice = 1
 snap ai-passage
 key ret
 expect ai_state = none
@@ -97,14 +98,17 @@ expect ai_title = Rewrite · Shorter
 key esc
 expect ai_state = none
 expect compose_text ~ merci je vien jeudi
-# Subjects (`o`): one chosen by its number.
+# Subjects (`o`): the first highlighted, ↓ moves to the second, Return takes it.
 key cmd-i
 type o
 key ret
 expect ai_state = proposal
 expect ai_subjects = Jeudi 14h | Confirmation pour jeudi
+expect ai_choice = 1
+key down
+expect ai_choice = 2
 snap ai-subjects
-key 2
+key ret
 expect ai_state = none
 expect compose_subject = Confirmation pour jeudi
 # Out of the reply, with the mail shown, `a` opens the AI menu of the mail.

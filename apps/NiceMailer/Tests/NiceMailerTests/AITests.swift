@@ -32,11 +32,32 @@ struct AIRulesTests {
         #expect(act(.proposal(subjects), "2") == .choose(1))
         #expect(act(.proposal(subjects), "4") == .hint)
         #expect(act(.proposal(subjects), "0") == .hint)
-        #expect(act(.proposal(subjects), ret: true) == .hint)
         #expect(act(.proposal(subjects), esc: true) == .refuse)
+        // Return takes the one highlighted: the first by default.
+        #expect(act(.proposal(subjects), ret: true) == .choose(0))
+        #expect(AI.action(.proposal(subjects), key: "", isReturn: true, isEscape: false, choice: 2) == .choose(2))
+        #expect(AI.hint(.proposal(subjects)) == L("↩ or 1–%lld choose · ↑↓ move · esc or n refuse", 3))
         // A failure: Escape or Return close it.
         #expect(act(.failed("x"), esc: true) == .close)
         #expect(act(.failed("x"), "n") == .hint)
+    }
+
+    @Test func theArrowsMoveTheTextReturnTakesWithinTheList() {
+        func act(_ p: AIProposal, arrow: Int, choice: Int) -> AIKeyAction {
+            AI.action(.proposal(p), key: "", isReturn: false, isEscape: false, arrow: arrow, choice: choice)
+        }
+        // Every list: other wordings, subjects, quick replies.
+        for p in [AIProposal.choices(["a", "b", "c"], then: "replace"), .subjects(["a", "b", "c"]),
+                  .choices(["a", "b", "c"], then: "reply")] {
+            #expect(act(p, arrow: 1, choice: 0) == .move(1))
+            #expect(act(p, arrow: -1, choice: 2) == .move(1))
+            // Kept within the list: no wrap, no index out of it.
+            #expect(act(p, arrow: -1, choice: 0) == .move(0))
+            #expect(act(p, arrow: 1, choice: 2) == .move(2))
+        }
+        // No list: the arrows mean nothing.
+        #expect(act(.text("x"), arrow: 1, choice: 0) == .hint)
+        #expect(AI.action(.proposal(replace), key: "", isReturn: false, isEscape: false, arrow: 1) == .hint)
     }
 
     @Test func theProposalsOfAMailAreReadOrChosen() {
@@ -52,8 +73,9 @@ struct AIRulesTests {
         let replies = AIProposal.choices(["Oui", "Non"], then: "reply")
         #expect(act(replies, "1") == .choose(0))
         #expect(act(replies, "3") == .hint)
+        #expect(act(replies, ret: true) == .choose(0), "the first, highlighted")
         #expect(act(replies, esc: true) == .refuse)
-        #expect(AI.hint(.proposal(replies)) == L("1–%lld reply with it · esc or n refuse", 2))
+        #expect(AI.hint(.proposal(replies)) == L("↩ or 1–%lld reply with it · ↑↓ move · esc or n refuse", 2))
     }
 
     @Test func aResultReadsAsText() {
@@ -113,7 +135,7 @@ struct AIRulesTests {
 
     @Test func theHintSaysTheKeys() {
         #expect(AI.hint(.running) == L("esc stop"))
-        #expect(AI.hint(.proposal(.subjects(["A", "B"]))) == L("1–%lld choose · esc or n refuse", 2))
+        #expect(AI.hint(.proposal(.subjects(["A", "B"]))) == L("↩ or 1–%lld choose · ↑↓ move · esc or n refuse", 2))
         #expect(AI.hint(.proposal(.replace(segments: [], unchanged: true))) == L("No change to make · esc close"))
     }
 
@@ -305,6 +327,8 @@ final class AIControllerTests {
         switch name {
         case "esc": chars = "\u{1b}"; code = KeyCode.escape
         case "ret": chars = "\r"; code = KeyCode.returnKey
+        case "up": chars = "\u{F700}"; code = KeyCode.up; mods = .function
+        case "down": chars = "\u{F701}"; code = KeyCode.down; mods = .function
         default:
             if name.hasPrefix("cmd-") { mods = .command; chars = String(name.dropFirst(4)) }
         }
@@ -491,7 +515,7 @@ final class AIControllerTests {
         #expect(selection["start"] as? Int == 14 && selection["end"] as? Int == 19)
         event("AiDone", ["run_id": .int(7)])
         _ = await eventually { if case .proposal? = self.model.aiRun?.phase { true } else { false } }
-        #expect(AI.hint(try #require(model.aiRun?.phase)) == L("↩ or 1–%lld replace the selection · esc or n refuse · ⌘Z after choosing undoes", 2))
+        #expect(AI.hint(try #require(model.aiRun?.phase)) == L("↩ or 1–%lld replace the selection · ↑↓ move · esc or n refuse · ⌘Z after choosing undoes", 2))
         // ↩ again takes the first, the best: the core puts it in the draft.
         let before = try #require(model.composer?.buffer.text)
         ai.appliedBody = before.replacingOccurrences(of: "jeudi", with: "viens")
@@ -574,6 +598,31 @@ final class AIControllerTests {
         #expect(model.composer?.subjectLine.text == "Confirmation pour jeudi")
         #expect(model.composer?.isDirty == false)
         #expect(model.composer?.aiUndo == nil, "a subject is not undone by ⌘Z in the text")
+    }
+
+    @Test func aSubjectIsChosenWithTheArrowsAndReturn() async throws {
+        ai.proposal = ["kind": "subjects", "items": ["Jeudi 14h", "Confirmation pour jeudi", "Jeudi"]]
+        ai.appliedBody = "merci\n\nOn Nov 7, Sender 1 wrote:\n> Hello"
+        ai.appliedSubject = "Confirmation pour jeudi"
+        await reply()
+        press("cmd-i")
+        _ = await eventually { self.paletteOpen }
+        choose("o")
+        _ = await eventually { self.model.aiRun?.runId == 7 }
+        event("AiDone", ["run_id": .int(7)])
+        _ = await eventually { if case .proposal? = self.model.aiRun?.phase { true } else { false } }
+        // The first highlighted; ↓ ↓ ↑ ends on the second, and the arrows
+        // do not reach the text.
+        #expect(model.aiRun?.choice == 0)
+        press("down")
+        press("down")
+        press("up")
+        #expect(model.aiRun?.choice == 1)
+        #expect(model.composer?.buffer.text.hasPrefix("merci") == true)
+        press("ret")
+        _ = await eventually { self.model.aiRun == nil }
+        #expect(core.calls("ai_apply").last?["choice"] as? Int == 1)
+        #expect(model.composer?.headers.subject == "Confirmation pour jeudi")
     }
 
     @Test func anEndThatComesBeforeTheRunIdIsNotLost() async {

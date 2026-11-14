@@ -746,6 +746,14 @@ private final class Runner {
             "ai_sort": m.aiSort.map { "\($0.done)/\($0.total)" } ?? "",
             "ai_suggestions": "\(m.aiSuggestions.count)",
             "selected_suggestion": m.selectedSuggestion.map { "\($0.target): \($0.reason)" } ?? "",
+            // The text of a list proposal Return takes, from 1 as the
+            // panel numbers them; empty without a list.
+            "ai_choice": {
+                switch m.aiRun?.phase {
+                case .proposal(.subjects)?, .proposal(.choices)?: "\((m.aiRun?.choice ?? 0) + 1)"
+                default: ""
+                }
+            }(),
             "ai_subjects": {
                 guard case .proposal(.subjects(let items))? = m.aiRun?.phase else { return "" }
                 return items.joined(separator: " | ")

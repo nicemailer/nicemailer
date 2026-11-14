@@ -2407,8 +2407,17 @@ final class GeekController {
     /// A key while the AI panel of the reply is open: the answer it gives
     /// (`AI.action`), and nothing reaches the text.
     private func handleAIKey(_ event: NSEvent, run: AIRun) {
+        let arrow = event.keyCode == KeyCode.up ? -1 : event.keyCode == KeyCode.down ? 1 : 0
         let action = AI.action(run.phase, key: event.charactersIgnoringModifiers ?? "",
-                               isReturn: event.keyCode == KeyCode.returnKey, isEscape: event.keyCode == KeyCode.escape)
+                               isReturn: event.keyCode == KeyCode.returnKey, isEscape: event.keyCode == KeyCode.escape,
+                               arrow: arrow, choice: run.choice)
+        // A move is applied at once, not in a `Task`: the next arrow
+        // (a key held down repeats it) must read the choice it left, or
+        // two quick ↓ would move by one.
+        if case .move(let i) = action {
+            model.aiRun?.choice = i
+            return
+        }
         Task { await model.answerAI(action) }
     }
 
