@@ -120,7 +120,7 @@ As each batch ends, its suggestions are kept (`ai_suggestion`) and announced (`A
 
 ## Answers
 
-`nm_ai::answer::read(output, outcome, sent)` checks what the model answered against what was asked and sent, and gives a typed `Answer` or `ai_invalid_output` with the reason. It is strict: a key the schema does not have, a target that was not offered, a conversation that was not sent, segments in another number or order are all refused, rather than guessed at. A tolerant reading would hide the drift of a prompt, and the core applies these answers.
+`nm_ai::answer::read(output, outcome, sent)` checks what the model answered against what was asked and sent, and gives a typed `Answer` or `ai_invalid_output` with the reason. It is strict: a key the schema does not have, a target that was not offered, a conversation that was not sent, segments in another number or order are all refused, rather than guessed at. One exception for the segments: a model that corrects itself (it gives every segment, writes "Wait — I must correct that…", then gives them all again) is read, and its last complete set is the answer; text before the first set or after the last is still refused. A tolerant reading would hide the drift of a prompt, and the core applies these answers.
 
 | Output | Accepted |
 | --- | --- |

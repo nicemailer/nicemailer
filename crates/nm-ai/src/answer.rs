@@ -155,13 +155,45 @@ pub fn unfence(s: &str) -> String {
     t.to_string()
 }
 
-/// The `<segment n="1">…</segment>` elements of a `replace` answer: exactly
-/// `expected` of them, numbered 1 to `expected` in order, and nothing but
-/// whitespace around them.
+/// The `<segment n="1">…</segment>` elements of a `replace` answer:
+/// exactly `expected` of them, numbered 1 to `expected` in order, and
+/// nothing but whitespace around them.
+///
+/// One exception, the model correcting itself: it gives every segment, then
+/// writes "Wait — I must correct that…" and gives them all again (seen with
+/// a proofreading that first changed the writer's words). The answer may
+/// then hold several complete sets of segments, with text between them;
+/// the last set is the model's final word and is the one read, the text
+/// between the sets is dropped. Everything else stays refused: text before
+/// the first set or after the last, a set incomplete or out of order. The
+/// result is a proposal shown as differences anyway (`ia.md`, section 6).
 pub fn segments(text: &str, expected: usize) -> Result<Vec<String>, AiError> {
-    let mut out = Vec::new();
     let mut rest = text;
     loop {
+        let (set, after) = segment_set(rest, expected)?;
+        let tail = after.trim_start();
+        if tail.is_empty() {
+            return Ok(set);
+        }
+        // Text after a complete set: only a comment before another set.
+        match tail.find("<segment") {
+            Some(at) if tail[at..].starts_with("<segment n=\"1\">") => rest = &tail[at..],
+            _ => {
+                return Err(invalid(format!(
+                    "text outside the segments near {:?}",
+                    clip(tail, 40)
+                )));
+            }
+        }
+    }
+}
+
+/// One complete set of segments at the start of `text` (leading whitespace
+/// aside), and the text after it.
+fn segment_set(text: &str, expected: usize) -> Result<(Vec<String>, &str), AiError> {
+    let mut out = Vec::new();
+    let mut rest = text;
+    while out.len() < expected {
         let before = rest.trim_start();
         if before.is_empty() {
             break;
@@ -194,7 +226,16 @@ pub fn segments(text: &str, expected: usize) -> Result<Vec<String>, AiError> {
             out.len()
         )));
     }
-    Ok(out)
+    // One segment too many, right after the set, is a count error, not a
+    // second set: a second set starts again at 1.
+    let tail = rest.trim_start();
+    if tail.starts_with("<segment") && !tail.starts_with("<segment n=\"1\">") {
+        let total = expected + tail.matches("<segment n=").count();
+        return Err(invalid(format!(
+            "{total} segments in the answer, {expected} sent"
+        )));
+    }
+    Ok((out, rest))
 }
 
 /// Fails on any key of `obj` outside `allowed`: the schemas forbid them

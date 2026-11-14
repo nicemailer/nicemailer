@@ -125,11 +125,62 @@ fn bad_segments_are_refused() {
         ),
         ("Bonjour Paul", one, "text outside"),
         ("", one, "0 segments"),
+        // A self-correction is read only between complete sets.
+        (
+            "<segment n=\"1\">a</segment>\nWait.\n<segment n=\"1\">b</segment> Done!",
+            one,
+            "text outside",
+        ),
+        (
+            "<segment n=\"1\">a</segment><segment n=\"2\">b</segment>\nWait.\n<segment n=\"1\">c</segment>",
+            two,
+            "1 segments in the answer, 2 sent",
+        ),
+        (
+            "<segment n=\"1\">a</segment>\nWait.\n<segment n=\"2\">b</segment>",
+            one,
+            "text outside",
+        ),
     ];
     for (answer, sent, why) in cases {
         let m = refused(read(Output::Replace, &text(answer), &sent));
         assert!(m.contains(why), "{answer:?}: {m}");
     }
+}
+
+#[test]
+fn a_model_correcting_itself_gives_its_last_set_of_segments() {
+    // A real answer (proofreading, November 2026): every segment, a comment,
+    // then every segment again, as the model meant them.
+    let sent = Sent {
+        segments: 2,
+        ..NONE
+    };
+    let answer = "<segment n=\"1\">Je suis en body.</segment>\n<segment n=\"2\">Les sauts devant-derrière.</segment>\n\n\
+                  Wait — I must correct that: I changed \"babygros\", which alters the writer's wording. \
+                  Here is the proper version:\n\n\
+                  <segment n=\"1\">Je suis en babygros.</segment>\n<segment n=\"2\">Les sauts devant derrière.</segment>";
+    assert_eq!(
+        read(Output::Replace, &text(answer), &sent).unwrap(),
+        Answer::Segments(vec![
+            "Je suis en babygros.".into(),
+            "Les sauts devant derrière.".into()
+        ])
+    );
+    // Two sets with nothing between them: the last one too.
+    let sent = Sent {
+        segments: 1,
+        ..NONE
+    };
+    assert_eq!(
+        read(
+            Output::Replace,
+            &text("<segment n=\"1\">a</segment><segment n=\"1\">b</segment>"),
+            &sent
+        )
+        .unwrap(),
+        Answer::Segments(vec!["b".into()])
+    );
 }
 
 #[test]

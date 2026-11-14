@@ -239,7 +239,7 @@ Les sorties texte sont nettoyées d'une éventuelle clôture de code (`` ``` ``)
 
 Précisions de la lecture (`crates/nm-ai/src/answer.rs`) :
 
-- **Segments** : exactement les segments envoyés, numérotés de 1 à N dans l'ordre, avec seulement des espaces autour ; un segment qui en contient un autre est refusé. Chaque segment rendu est débarrassé de ses espaces autour : le noyau remet ceux du segment d'origine, qu'il connaît, plutôt que de faire confiance au modèle pour la mise en page.
+- **Segments** : exactement les segments envoyés, numérotés de 1 à N dans l'ordre, avec seulement des espaces autour ; un segment qui en contient un autre est refusé. Seule exception, le modèle qui se reprend (vu en novembre 2026 : une correction rend tous les segments, écrit « Wait — I must correct that… », puis les rend tous à nouveau) : la réponse peut contenir plusieurs **jeux complets** de segments séparés par du texte, et seul le dernier est lu. Du texte avant le premier jeu ou après le dernier, ou un jeu incomplet, reste refusé. Chaque segment rendu est débarrassé de ses espaces autour : le noyau remet ceux du segment d'origine, qu'il connaît, plutôt que de faire confiance au modèle pour la mise en page.
 - **Listes de textes** (`choices`, `subjects`) : 1 à 5 textes non vides, sans doublon (casse ignorée), de 2 000 caractères au plus.
 - **Raisons** (`verdict`, `targets`) : non vides, 300 caractères au plus.
 - **`targets`** : une conversation non envoyée, ou suggérée deux fois, fait échouer le lot. Une conversation **oubliée** par le modèle n'a simplement pas de suggestion : refuser un lot de vingt pour un trou coûterait plus qu'il ne protège.
