@@ -10,11 +10,15 @@ import Testing
 ///
 /// The fake core adds a Quarantine folder (id 5) to the fixture, with the
 /// targets the real core gives it (`dossiers.md`, "Cibles proposées") and
-/// four unread threads (51 to 54). The Inbox (id 1) keeps the fixture's
-/// eight threads.
+/// four unread threads (51 to 54): 51 from a person, 52 and 54 from
+/// robots, 53 without verdict. The Inbox (id 1) keeps the fixture's eight
+/// threads.
 @MainActor
 struct QuarantineTests {
     static let targets = ["inbox", "newsletter", "paperwork", "junk", "banned", "deleted"]
+    /// Who wrote each Quarantine thread, as the core says it
+    /// (`correspondent_kind`); 53 has no verdict.
+    static let kinds: [Int: String] = [51: "person", 52: "robot", 54: "robot"]
 
     let core: FakeCore
     let model = AppModel()
@@ -33,6 +37,7 @@ struct QuarantineTests {
                 let items = (51...54).map { id -> [String: Any] in
                     var t = Fixture.thread(id, folder: 5)
                     t["unread_count"] = 1
+                    t["correspondent_kind"] = QuarantineTests.kinds[id] ?? NSNull()
                     return t
                 }
                 return ["items": items, "next_cursor": NSNull(), "as_of": Fixture.position]
@@ -96,6 +101,30 @@ struct QuarantineTests {
         // Another screen has no mail to move.
         controller.open(.contacts)
         #expect(controller.directTargets.isEmpty)
+    }
+
+    // MARK: Person or robot before the name
+
+    @Test func theSenderColumnTellsPeopleFromRobotsInQuarantineOnly() async {
+        // The Inbox draws no icon: its rows carry no kind (the fixture's),
+        // and the list would not show one anyway.
+        #expect(!model.listShowsSenderKind)
+        await goToQuarantine()
+        #expect(model.listShowsSenderKind)
+        let kinds = model.threads.map(\.correspondentKind)
+        #expect(kinds == ["person", "robot", nil, "robot"])
+        #expect(model.threads.map(GeekSender.kindSymbol) == ["person.fill", "gearshape.fill", nil, "gearshape.fill"])
+        // The name itself is unchanged: the icon is drawn beside it.
+        #expect(GeekSender.plain(model.threads[0]) == "Sender 51")
+        // VoiceOver hears it with the name; without verdict, the name alone.
+        #expect(GeekSender.spoken(model.threads[0], showsKind: true) == L("%@, written by a person", "Sender 51"))
+        #expect(GeekSender.spoken(model.threads[1], showsKind: true) == L("%@, written by a robot", "Sender 52"))
+        #expect(GeekSender.spoken(model.threads[2], showsKind: true) == "Sender 53")
+        // Back to the Inbox: no icon.
+        press(";")
+        press("i")
+        _ = await eventually { model.threads.first?.id == 1 }
+        #expect(!model.listShowsSenderKind)
     }
 
     @Test func aTargetsKeyMovesAtOnce() async {

@@ -258,12 +258,17 @@ struct WorkflowTests {
         // Not forced: "automatic" is the one marked.
         #expect(entries.map(\.detail) == [nil, nil, "•"])
         let loads = core.calls("list_contacts").count
+        let listLoads = core.calls("list_threads").count
         press("r")
         #expect(await eventually { core.calls("set_sender_kind").count == 1 })
         let call = core.calls("set_sender_kind")[0]
         #expect(call["address_id"] as? Int == 1 && call["kind"] as? String == "robot")
         #expect(await eventually { model.undoStack.count == 1 && model.flash == L("Marked as written by a robot") })
         #expect(await eventually { core.calls("list_contacts").count > loads })
+        // And the mail list: the core sends no event for the mails it
+        // rewrote, and their rows (filter human / robot, icon of
+        // Quarantine) depend on the kind.
+        #expect(await eventually { core.calls("list_threads").count > listLoads })
 
         // The forced contact: its value is marked, and `-` gives it back.
         press("down"); press("o")

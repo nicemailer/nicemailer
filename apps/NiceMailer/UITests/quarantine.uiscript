@@ -68,6 +68,47 @@ key ;
 key i
 expect folder = Inbox
 expect status_targets = 
+expect selected_sender_kind = 
 key m
 expect overlay = menu(NiceMailer.GeekController.Prefix.move)
 key esc
+# Before each sender's name, an icon tells a person from a robot. The
+# seed's first mail comes from a stranger never written to: a robot.
+key ;
+key q
+expect folder = Quarantine
+expect selected = 0
+expect selected_sender = Louis Durand
+expect selected_sender_kind = robot
+snap sender-kind
+# Forced to "human" on the contacts screen, the row shows a person: the
+# icon follows the core's verdict, recomputed for every mail of the address.
+key ;
+key c
+key /
+type louis@conseil-digital360.fr
+expect contacts_count = 1
+key ret
+key o
+key h
+expect contact_origin = human *
+key esc
+key ;
+key q
+expect folder = Quarantine
+expect selected_sender = Louis Durand
+expect selected_sender_kind = person
+snap sender-person
+# Given back to the computation, a robot again. The contacts screen kept
+# its filter: the address is still the one under the cursor.
+key ;
+key c
+expect contacts_count = 1
+expect contact_addr = louis@conseil-digital360.fr
+key o
+key -
+expect contact_origin = robot
+key esc
+key ;
+key q
+expect selected_sender_kind = robot

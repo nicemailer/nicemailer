@@ -10,7 +10,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use nm_api::{AddressView, FolderView, MessageView, SearchHit, SegmentView, ThreadFilter, ThreadSort, ThreadSummary};
-use nm_core::{FolderRole, KW_WAS_TODO, KW_WAS_WAITING};
+use nm_core::{FolderRole, KW_WAS_TODO, KW_WAS_WAITING, SenderKind};
 use rusqlite::types::Value;
 use rusqlite::{OptionalExtension, Row, params};
 
@@ -23,7 +23,7 @@ type ListRow = (i64, String, i64, i64, i64, i64, Option<String>, i64);
 /// The mails of a thread, oldest first, with the role of their folder: the
 /// details of a list row (`thread_summary`). Found through
 /// `idx_message_thread (thread_id, …)`; the sort is of a handful of rows.
-const THREAD_MESSAGES: &str = "SELECT m.from_name, m.from_addr, m.snippet, m.has_attachments, f.role, m.id
+const THREAD_MESSAGES: &str = "SELECT m.from_name, m.from_addr, m.snippet, m.has_attachments, f.role, m.id, m.sender_kind
        FROM message m JOIN folder f ON f.id = m.folder_id
       WHERE m.thread_id = ?1
       ORDER BY m.date_received, m.id";
@@ -697,6 +697,9 @@ impl Store {
                     has_attachments: r.get(3)?,
                     role: role_of(r.get(4)?),
                     id: r.get(5)?,
+                    // A value the schema does not know (it has a CHECK)
+                    // reads as no verdict rather than failing the list.
+                    kind: r.get::<_, Option<String>>(6)?.as_deref().and_then(SenderKind::parse),
                 })
             })?
             .collect::<std::result::Result<_, _>>()?;
@@ -723,8 +726,14 @@ impl Store {
 
         // Who the conversation is with, and whether the user spoke last
         // (`ui.md`, "Liste"). Pure, so tested on its own (`correspondent`).
-        let (correspondent, last_is_mine) = match correspondent(&counted, own) {
-            Correspondent::Author(name, mine) => (name, mine),
+        let (correspondent, correspondent_kind, last_is_mine) = match correspondent(&counted, own) {
+            Correspondent::Author(author, mine) => {
+                // Rust note: `unzip` splits an `Option<(A, B)>` into an
+                // `(Option<A>, Option<B>)`; `flatten` then turns the kind's
+                // `Option<Option<SenderKind>>` into one level.
+                let (name, kind) = author.unzip();
+                (name, kind.flatten(), mine)
+            }
             // Every mail is the user's: the person they wrote to, read
             // only for such threads (one indexed lookup).
             Correspondent::RecipientOf(id) => (
@@ -733,6 +742,10 @@ impl Store {
                     .query_row([id], |r| Ok(label(&r.get(0)?, &r.get(1)?)))
                     .optional()?
                     .flatten(),
+                // The user wrote every mail: no received mail carries a
+                // verdict, and none is shown (`expediteurs.md` judges
+                // senders, not recipients).
+                None,
                 true,
             ),
         };
@@ -787,6 +800,7 @@ impl Store {
             subject,
             participants,
             correspondent,
+            correspondent_kind,
             last_is_mine,
             snippet,
             date_last_received: dates.0,
@@ -1110,6 +1124,10 @@ struct ListMail {
     snippet: Option<String>,
     has_attachments: bool,
     role: Option<FolderRole>,
+    /// `message.sender_kind`: a person or a robot wrote this mail
+    /// (`expediteurs.md`, section 6); `None` without a readable sender or
+    /// before the catch-up has read the mail.
+    kind: Option<SenderKind>,
 }
 
 /// What a list shows of a person: their name, else their address; a
@@ -1127,9 +1145,10 @@ fn label(name: &Option<String>, addr: &Option<String>) -> Option<String> {
 /// Who a conversation is with, as `correspondent` finds it.
 #[derive(Debug, PartialEq)]
 enum Correspondent {
-    /// The latest author who is not the user (or `None`: no mail names
-    /// one), and whether the user wrote the latest mail.
-    Author(Option<String>, bool),
+    /// The latest author who is not the user, with the verdict of the mail
+    /// that names them (or `None`: no mail names one), and whether the
+    /// user wrote the latest mail.
+    Author(Option<(String, Option<SenderKind>)>, bool),
     /// The user wrote every mail: the correspondent is the first recipient
     /// of this one, the latest, which the caller reads from the database.
     RecipientOf(i64),
@@ -1157,8 +1176,11 @@ fn correspondent(mails: &[&ListMail], own: &BTreeSet<String>) -> Correspondent {
     if sent.iter().all(|m| mine(m)) {
         return Correspondent::RecipientOf(last.id);
     }
-    // The latest mail of someone else that names its author.
-    let author = sent.iter().rev().filter(|m| !mine(m)).find_map(|m| label(&m.name, &m.addr));
+    // The latest mail of someone else that names its author, and the
+    // verdict of that very mail: the icon of Quarantine must describe the
+    // name shown beside it, not another mail of the conversation.
+    let author =
+        sent.iter().rev().filter(|m| !mine(m)).find_map(|m| label(&m.name, &m.addr).map(|name| (name, m.kind)));
     Correspondent::Author(author, mine(last))
 }
 
@@ -1659,6 +1681,7 @@ mod correspondent_tests {
             snippet: None,
             has_attachments: false,
             role,
+            kind: None,
         }
     }
 
@@ -1671,7 +1694,7 @@ mod correspondent_tests {
     }
 
     fn author(name: &str, mine: bool) -> Correspondent {
-        Correspondent::Author(Some(name.to_string()), mine)
+        Correspondent::Author(Some((name.to_string(), None)), mine)
     }
 
     const INBOX: Option<FolderRole> = Some(FolderRole::Inbox);
@@ -1724,6 +1747,34 @@ mod correspondent_tests {
         assert_eq!(of(&[alice, anonymous]), author("alice@x.org", false));
         assert_eq!(of(&[mail(1, None, None, INBOX)]), Correspondent::Author(None, false));
         assert_eq!(of(&[]), Correspondent::Author(None, false));
+    }
+
+    #[test]
+    fn the_kind_is_that_of_the_mail_naming_the_correspondent() {
+        // Bob, a robot, wrote last; Alice before him. The row names Bob,
+        // so its kind is his mail's, not Alice's.
+        let robot = |mut m: ListMail| {
+            m.kind = Some(SenderKind::Robot);
+            m
+        };
+        let person = |mut m: ListMail| {
+            m.kind = Some(SenderKind::Person);
+            m
+        };
+        let alice = person(mail(1, Some("Alice"), Some("alice@x.org"), INBOX));
+        let bob = robot(mail(2, Some("Bob"), Some("bob@x.org"), INBOX));
+        assert_eq!(of(&[alice, bob]), Correspondent::Author(Some(("Bob".into(), Some(SenderKind::Robot))), false));
+        // A mail without sender is skipped: the kind follows the name.
+        let alice = person(mail(1, Some("Alice"), Some("alice@x.org"), INBOX));
+        let anonymous = robot(mail(2, None, None, INBOX));
+        assert_eq!(
+            of(&[alice, anonymous]),
+            Correspondent::Author(Some(("Alice".into(), Some(SenderKind::Person))), false)
+        );
+        // The user's own reply carries no kind of the correspondent.
+        let alice = person(mail(1, Some("Alice"), Some("alice@x.org"), INBOX));
+        let me = person(mail(2, None, Some("me@x.org"), Some(FolderRole::Sent)));
+        assert_eq!(of(&[alice, me]), Correspondent::Author(Some(("Alice".into(), Some(SenderKind::Person))), true));
     }
 }
 

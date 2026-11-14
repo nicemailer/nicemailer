@@ -62,6 +62,15 @@ struct ThreadSummary: Decodable, Identifiable, Hashable {
     /// latest author who is not the user, or the recipient of a mail the
     /// user wrote alone (`ThreadSummary::correspondent` in nm-api).
     let correspondent: String?
+    /// Who wrote the mail that names the correspondent: `person`, `robot`,
+    /// or `nil` when the core has no verdict for it
+    /// (`ThreadSummary::correspondent_kind`, `expediteurs.md`). Shown as an
+    /// icon before the name while Quarantine is listed.
+    ///
+    /// Swift note: the synthesized decoder reads an optional with
+    /// `decodeIfPresent`, so a core that does not send the key still
+    /// decodes, with `nil`.
+    let correspondentKind: String?
     /// The user wrote the latest mail: the conversation waits on the
     /// correspondent.
     let lastIsMine: Bool
@@ -102,7 +111,7 @@ extension ThreadSummary {
     func with(unreadCount: Int, isFlagged: Bool) -> ThreadSummary {
         ThreadSummary(
             id: id, subject: subject, participants: participants, correspondent: correspondent,
-            lastIsMine: lastIsMine, snippet: snippet,
+            correspondentKind: correspondentKind, lastIsMine: lastIsMine, snippet: snippet,
             dateLastReceived: dateLastReceived, messageCount: messageCount, unreadCount: unreadCount,
             isFlagged: isFlagged, hasAttachments: hasAttachments, returnedFrom: returnedFrom,
             replyTarget: replyTarget, folderId: folderId, dateLastModified: dateLastModified, tags: tags)

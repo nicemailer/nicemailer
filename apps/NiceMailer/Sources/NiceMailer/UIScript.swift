@@ -546,6 +546,10 @@ private final class Runner {
             // The sender column of the selected row, as drawn: "→ Alice"
             // when the user wrote the latest mail (`ui.md`, "Liste").
             "selected_sender": sel.map(GeekSender.plain) ?? "",
+            // The icon before that name, Quarantine only (`ui.md`,
+            // "Quarantine"): `person`, `robot`, `none` (no verdict, a blank
+            // place), or empty when the list draws no icon.
+            "selected_sender_kind": m.listShowsSenderKind ? sel.map { $0.correspondentKind ?? "none" } ?? "" : "",
             "selected_unread": "\(sel?.unreadCount ?? 0)",
             "selected_flagged": "\(sel?.isFlagged ?? false)",
             "selected_tags": sel?.tags.joined(separator: ",") ?? "",

@@ -8,7 +8,7 @@
 use std::sync::Mutex;
 
 use nm_api::{ThreadFilter, ThreadSort, ThreadSummary};
-use nm_core::Source;
+use nm_core::{SenderKind, Source};
 use nm_store::Store;
 use nm_store::import::{ImportOptions, import_mbox};
 use nm_store::raw::RawStore;
@@ -118,6 +118,16 @@ Message-ID: <f2@x>
 In-Reply-To: <f1@x>
 
 Answer.
+
+From n Mon Nov  2 10:00:00 2026
+From: Shop <news@shop.example>
+To: me@x.org
+Subject: Weekly offers
+Message-ID: <g1@shop.example>
+List-Unsubscribe: <https://shop.example/unsubscribe>
+Precedence: bulk
+
+Offers.
 ";
 
 /// The store, with the mbox imported into the archive account `me@x.org`.
@@ -212,4 +222,21 @@ fn every_list_names_the_correspondent() {
     s.conn().execute("UPDATE message SET folder_id = ?1 WHERE thread_id = ?2", [inbox, answered_id]).unwrap();
     s.conn().execute("UPDATE thread SET folder = 'i' WHERE id = ?1", [answered_id]).unwrap();
     assert_eq!(answered(s.list_work(None, None, 50, ThreadSort::Modified, &f, &own).unwrap().0), expected);
+}
+
+#[test]
+fn the_row_says_whether_a_person_or_a_robot_wrote_to_the_user() {
+    // The icon of the sender column in Quarantine (`ui.md`, "Quarantine"):
+    // the verdict of the mail that names the correspondent
+    // (`message.sender_kind`, `expediteurs.md`, section 6).
+    let s = store();
+    // Alice, to whom the user wrote: a person, even when the user's answer
+    // is the latest mail (the user's own verdict is never the one shown).
+    assert_eq!(row(&s, "Answered", &[]).correspondent_kind, Some(SenderKind::Person));
+    // A bulk mail with a list header: a robot.
+    let news = row(&s, "Weekly offers", &[]);
+    assert_eq!(news.correspondent.as_deref(), Some("Shop"));
+    assert_eq!(news.correspondent_kind, Some(SenderKind::Robot));
+    // The user wrote every mail: the recipient named is not judged.
+    assert_eq!(row(&s, "Mine alone", &[]).correspondent_kind, None);
 }

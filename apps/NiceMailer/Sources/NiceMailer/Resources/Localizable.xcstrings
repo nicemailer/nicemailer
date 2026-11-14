@@ -2646,6 +2646,26 @@
         }
       }
     },
+    "%@, written by a person": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@, écrit par une personne"
+          }
+        }
+      }
+    },
+    "%@, written by a robot": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@, écrit par un robot"
+          }
+        }
+      }
+    },
     "%@, you wrote last": {
       "localizations": {
         "fr": {

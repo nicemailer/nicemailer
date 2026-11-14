@@ -1155,6 +1155,16 @@ final class AppModel {
         return (out, selected)
     }
 
+    /// Whether the list shows, before each sender's name, an icon telling a
+    /// person from a robot (`ui.md`, "Quarantine"): while a Quarantine
+    /// folder itself is listed (of an account, or of "all"), as for its
+    /// direct targets (`GeekController.directTargets`). There the user
+    /// judges unknown senders, and a person among the robots is the mail
+    /// most likely to deserve the Inbox. Elsewhere the attribute selector's
+    /// human / robot filter does that job, and the column keeps its room
+    /// for the name.
+    var listShowsSenderKind: Bool { listFilter == nil && currentRole == "quarantine" }
+
     /// Whether the listed thread `id` sits in a Quarantine folder (of any
     /// account: the unified view mixes them, and "Everything" lists them
     /// too).

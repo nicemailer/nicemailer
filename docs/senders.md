@@ -56,6 +56,10 @@ When the verdict of an address changes (its first mails, a mail written to it, t
 
 The attribute selector (`f`) has **human** / **robot**, a yes / no attribute sent to the core as `ThreadFilter.human`. `human` keeps the conversations with a mail of a person, `robot` the others: the two split the list. The criterion is a test of `thread.has_person` while the list walks its index: on 400,000 mails, three pages of Archive take 2 ms, as without filter. (A set of threads built at each request, as for attachments, took 30 to 160 ms; hence the column.)
 
+## Icon in Quarantine
+
+Each list row carries `correspondent_kind` (nm-api `ThreadSummary`): the `message.sender_kind` of the mail that names the correspondent, read in the same query as the name (`THREAD_MESSAGES`, no extra cost). `None` when no mail names one, when the user wrote every mail, or without verdict. The app draws it as an icon before the name while Quarantine is listed (`geek-ui.md`, "Quarantine").
+
 ## Contacts
 
 The Contacts screen shows the origin of each address, "human" or "robot", followed by "*" when the user chose it. `o` asks: `h` human, `r` robot, `-` automatic (the computation takes over again). The core method is `set_sender_kind` (`address_id`, `kind`: `person`, `robot` or absent); the choice is journaled (`audit_log`, action `sender_kind`) and undone by `undo` like a screening decision. It is not yet synchronized between Macs.
@@ -89,4 +93,5 @@ The fake mailbox (`nicemailer seed`) has no headers to read: its mails get the c
 - `crates/nm-store/src/sender_kind.rs` (unit): every clue and trap, the ten rules in order.
 - `crates/nm-store/tests/senders.rs`: verdicts at insertion, a mail written to an address, a mixed address, a discussion list, automatic replies, the filter (and the user's reply in Sent), forcing and undo, contacts, and the catch-up, which must give exactly what the insertion gives.
 - `crates/nm-store/src/raw.rs`: `read_header`. `crates/nm-store/src/seed.rs`: the fake mailbox is classified. `crates/nm-daemon/tests/workflow_rpc.rs`: `set_sender_kind` through the socket.
-- App: `AttributesTests`, `GeekControllerTests` (the selector), `WorkflowTests` (`o` on Contacts), and the scenario `UITests/senders.uiscript`.
+- `crates/nm-store/tests/correspondent.rs` and the unit tests of `queries.rs`: `correspondent_kind` of a list row, the kind of the mail that names the correspondent.
+- App: `AttributesTests`, `GeekControllerTests` (the selector), `WorkflowTests` (`o` on Contacts, which reloads the list), `QuarantineTests` and `SenderColumnTests` (the icon of Quarantine), and the scenarios `UITests/senders.uiscript` and `UITests/quarantine.uiscript`.

@@ -127,6 +127,10 @@ N'importe quel dossier, et pas seulement les dossiers listés : une notification
 
 Le critère est la colonne `thread.has_person`, testée pendant le parcours de l'index de la liste. Mesuré sur 400 000 mails : 2 ms pour trois pages d'Archive, comme sans filtre. Un ensemble de conversations calculé à chaque requête, comme pour les pièces jointes, coûtait 30 à 160 ms.
 
+## 8 bis. Icône en Quarantine
+
+Quand la Quarantine est listée, le nom de l'expéditeur de chaque ligne est précédé d'une icône personne ou robot : le `sender_kind` du mail qui nomme le correspondant (`ui.md`, « Quarantine »). Un mail sans verdict n'a pas d'icône : le filtre le range avec les robots, mais une icône affirmerait un verdict que personne n'a calculé.
+
 ## 9. Écran Contacts
 
 Chaque adresse affiche son verdict (« humain » ou « robot »), marqué quand il est forcé. La touche `o` (*origine*) ouvre le choix : `h` humain, `r` robot, `-` automatique (le calcul reprend la main). Le choix est journalisé (`audit_log`, action `sender_kind`) et annulable.

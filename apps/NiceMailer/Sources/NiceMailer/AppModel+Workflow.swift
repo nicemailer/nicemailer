@@ -176,8 +176,15 @@ extension AppModel {
     /// mails already received; `z` undoes it.
     /// Forces an address to be a person or a robot, or gives it back to the
     /// core's verdict (`kind` nil), from the contacts screen
-    /// (`expediteurs.md`, section 9). Undoable like a decision. The list is
-    /// loaded again when filtered on human / robot: its content changed.
+    /// (`expediteurs.md`, section 9). Undoable like a decision.
+    ///
+    /// The list is loaded again afterwards: the core rewrites the kind of
+    /// every mail of the address but sends no event for them (an address
+    /// of 5,000 mails would make every client reload every folder,
+    /// `Store::set_sender_kind`), so the client that asked reloads. A list
+    /// filtered on human / robot changes content, and Quarantine's rows
+    /// show the new icon (`ThreadSummary.correspondentKind`). Before, the
+    /// comment promised this reload but nothing did it.
     func setSenderKind(_ addressId: Int, kind: String?) async {
         guard let client = core else { return }
         var params: [String: Any] = ["address_id": addressId]
@@ -190,6 +197,7 @@ extension AppModel {
             case "robot": L("Marked as written by a robot")
             default: L("Origin computed from the mails again")
             }
+            await reloadThreads(keepDepth: true)
         } catch {
             report(error)
         }

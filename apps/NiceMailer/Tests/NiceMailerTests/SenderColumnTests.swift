@@ -49,6 +49,24 @@ struct SenderColumnTests {
         #expect(GeekSender.plain(empty) == "")
     }
 
+    @Test func theKindOfTheCorrespondentIsDecodedAndOptional() throws {
+        // As the core sends it (`ThreadSummary::correspondent_kind`).
+        let person = try row(["correspondent_kind": "person"])
+        #expect(person.correspondentKind == "person")
+        #expect(GeekSender.kindSymbol(person) == "person.fill")
+        let robot = try row(["correspondent_kind": "robot"])
+        #expect(GeekSender.kindSymbol(robot) == "gearshape.fill")
+        // No verdict, or an older core that does not send the key: no
+        // icon, and the row still decodes.
+        let unknown = try row(["correspondent_kind": NSNull()])
+        #expect(unknown.correspondentKind == nil && GeekSender.kindSymbol(unknown) == nil)
+        #expect(try row([:]).correspondentKind == nil)
+        // The kind survives the copy of a row kept in a filtered list.
+        #expect(person.with(unreadCount: 0, isFlagged: true).correspondentKind == "person")
+        // Outside Quarantine VoiceOver reads the name alone.
+        #expect(GeekSender.spoken(person) == "Sender 1")
+    }
+
     @Test func theListMarksTheAnsweredThread() async {
         // Through the model, as the list draws it: thread 3 of the fixture
         // is the one the user answered.

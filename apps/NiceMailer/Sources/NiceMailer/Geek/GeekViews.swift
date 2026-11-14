@@ -514,6 +514,8 @@ private struct GeekThreadRows: View {
         let marked = model.marked
         // In "Everything", the folder of each row (nil elsewhere).
         let folderLabels = model.everythingFolderLabels
+        // Read once per redraw, like the labels, not row by row.
+        let showsKind = model.listShowsSenderKind
         // The column widths depend on the list width only, never on a row's
         // content: every row gets the same layout and the columns line up.
         GeometryReader { geo in
@@ -524,7 +526,8 @@ private struct GeekThreadRows: View {
                         ForEach(model.threads) { t in
                             GeekThreadRow(
                                 thread: t, cursor: t.id == cursor, marked: marked.contains(t.id), layout: layout,
-                                folder: folderLabels.map { $0[t.folderId] ?? .init(folder: "", account: nil) })
+                                folder: folderLabels.map { $0[t.folderId] ?? .init(folder: "", account: nil) },
+                                showsKind: showsKind)
                                 .contentShape(Rectangle())
                                 // Click, ⌘-click, ⇧-click (`clickThread`).
                                 .onClick { controller.clickThread(t.id, $0) }
@@ -631,9 +634,31 @@ enum GeekSender {
         return arrow + name
     }
 
-    /// What VoiceOver reads: the name, then that the user wrote last.
-    static func spoken(_ thread: ThreadSummary) -> String {
-        thread.lastIsMine ? L("%@, you wrote last", thread.correspondentName) : thread.correspondentName
+    /// What VoiceOver reads: the name, then that the user wrote last, then
+    /// (`showsKind`, in Quarantine) whether a person or a robot wrote.
+    static func spoken(_ thread: ThreadSummary, showsKind: Bool = false) -> String {
+        let name = thread.lastIsMine ? L("%@, you wrote last", thread.correspondentName) : thread.correspondentName
+        guard showsKind else { return name }
+        return switch thread.correspondentKind {
+        case "person": L("%@, written by a person", name)
+        case "robot": L("%@, written by a robot", name)
+        default: name
+        }
+    }
+
+    /// The SF Symbol drawn before the name in Quarantine (`ui.md`,
+    /// "Quarantine"): a silhouette for a person, a gear for a robot.
+    /// `nil` without a verdict (no readable sender, or the catch-up has not
+    /// read the mail yet): the core's filter ranks such mails with the
+    /// robots, but a gear would claim something nobody computed, so the
+    /// place stays blank. Symbols, not words: the same in every language
+    /// and one character and a half wide (SF Symbols has no robot).
+    static func kindSymbol(_ thread: ThreadSummary) -> String? {
+        switch thread.correspondentKind {
+        case "person": "person.fill"
+        case "robot": "gearshape.fill"
+        default: nil
+        }
     }
 }
 
@@ -651,6 +676,9 @@ private struct GeekThreadRow: View {
     let layout: RowLayout
     /// Folder of the row, shown in "Everything" only (`nil` elsewhere).
     var folder: AppModel.FolderLabel? = nil
+    /// The icon person / robot before the name (Quarantine only,
+    /// `AppModel.listShowsSenderKind`).
+    var showsKind = false
 
     var body: some View {
         HStack(spacing: layout.char) {
@@ -662,10 +690,37 @@ private struct GeekThreadRow: View {
             // answered last; "→" says the user spoke last and the
             // conversation waits on them (`ui.md`, "Liste"). One `Text`,
             // so a long name is cut after the arrow, never the arrow.
-            Text(GeekSender.text(thread))
-                .fontWeight(thread.unreadCount > 0 ? .bold : .regular)
-                .frame(width: layout.sender, alignment: .leading)
-                .accessibilityLabel(GeekSender.spoken(thread))
+            //
+            // In Quarantine an icon comes first, inside the column: the
+            // columns after it stay where they are, and the name gives up
+            // the room. A row without verdict keeps the blank place, so
+            // every name starts at the same x.
+            HStack(spacing: layout.char / 2) {
+                if showsKind {
+                    Group {
+                        if let symbol = GeekSender.kindSymbol(thread) {
+                            Image(systemName: symbol)
+                                .font(.system(size: scaled(10), weight: .medium))
+                                // The person in the accent colour: among
+                                // the robots of Quarantine, the mail that
+                                // most likely deserves the Inbox stands out.
+                                .foregroundStyle(thread.correspondentKind == "person" ? Palette.accentText : Palette.muted)
+                        } else {
+                            Color.clear
+                        }
+                    }
+                    .frame(width: layout.icon)
+                    // Read once, with the name (`spoken`), not as an image.
+                    .accessibilityHidden(true)
+                }
+                Text(GeekSender.text(thread))
+                    .fontWeight(thread.unreadCount > 0 ? .bold : .regular)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .frame(width: layout.sender, alignment: .leading)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(GeekSender.spoken(thread, showsKind: showsKind))
             Group {
                 if thread.hasAttachments {
                     Image(systemName: "paperclip")

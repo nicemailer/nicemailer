@@ -899,6 +899,14 @@ pub struct ThreadSummary {
     /// only count in a conversation of drafts alone.
     #[serde(default)]
     pub correspondent: Option<String>,
+    /// Who wrote the mail that names the correspondent: a person or a
+    /// robot (`message.sender_kind`, `expediteurs.md`, section 6). `None`
+    /// when no mail names one, when the user wrote every mail, or when the
+    /// mail has no verdict yet (catch-up not done). The app shows it as an
+    /// icon before the name in Quarantine, where telling a person from a
+    /// machine helps the decision (`ui.md`, "Quarantine").
+    #[serde(default)]
+    pub correspondent_kind: Option<SenderKind>,
     /// The user wrote the latest mail: the conversation waits on the
     /// correspondent. The list marks it before the name ("→ Alice").
     #[serde(default)]
