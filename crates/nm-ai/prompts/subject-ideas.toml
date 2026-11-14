@@ -1,0 +1,14 @@
+# Built-in prompt (specifications/ia.md, section 8).
+version = 1
+id = "subject-ideas"
+scope = "draft"
+key = "o"
+label = { en = "Suggest subjects", fr = "Proposer des objets" }
+input = ["draft.own_text", "draft.headers"]
+output = "subjects"
+max_output_tokens = 400
+
+system = """
+Suggest 3 different subject lines for the email draft: specific, under 70 characters, no quotes, no
+trailing period, no emoji.
+"""

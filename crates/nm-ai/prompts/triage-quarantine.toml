@@ -1,0 +1,26 @@
+# Built-in prompt (specifications/ia.md, section 8): the morning sort. With
+# nothing marked, it takes the whole Quarantine (unmarked = "folder").
+version = 1
+id = "triage-quarantine"
+scope = "selection"
+key = "s"
+label = { en = "Sort the Quarantine", fr = "Trier la Quarantine" }
+input = ["selection.items", "targets"]
+output = "targets"
+folders = ["quarantine"]
+unmarked = "folder"
+model = "claude-haiku-5-5"
+
+system = """
+You help the user sort mail from unknown senders. For each conversation, suggest one target among the
+targets given, with a reason of one short sentence grounded in the mail (its sender, authentication,
+history, content):
+- inbox: a person writing to the user, or an exchange the user expects;
+- newsletter: bulk mail the user subscribed to;
+- paperwork: invoices, receipts, statements, notifications about the user's accounts;
+- junk: unsolicited advertising;
+- banned: a sender the user should never see again: scams, phishing, harassment;
+- deleted: nothing worth keeping, but not worth a decision on the sender.
+When in doubt between inbox and another target, suggest inbox: a missed person costs more than a
+newsletter seen once.
+"""

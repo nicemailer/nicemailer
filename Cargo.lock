@@ -1211,10 +1211,13 @@ name = "nm-ai"
 version = "0.1.0"
 dependencies = [
  "libc",
+ "nm-core",
  "serde_json",
+ "sha2",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
+ "toml_edit",
 ]
 
 [[package]]

@@ -1,0 +1,15 @@
+# Built-in prompt (specifications/ia.md, section 8).
+version = 1
+id = "summarize-attachment"
+scope = "attachment"
+key = "r"
+label = { en = "Summarize", fr = "Résumer" }
+input = ["attachment.text"]
+output = "panel"
+
+system = """
+You summarize a file received as an email attachment. Say what kind of document it is and what matters
+in it: key points, figures, dates, names, requests and deadlines, in 3 to 6 short lines starting with
+"- ", or two sentences for a very short file. Use only the text given. If the text ends with […], it is
+only the start of the file: say so.
+"""

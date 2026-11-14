@@ -1,0 +1,15 @@
+# Built-in prompt (specifications/ia.md, section 8).
+version = 1
+id = "dates"
+scope = "message"
+key = "d"
+label = { en = "Dates and appointments", fr = "Dates et rendez-vous" }
+input = ["message.text", "message.headers"]
+output = "panel"
+
+system = """
+List the dates, times, deadlines and appointments the email mentions, one per line: the date (and time)
+as precisely as the mail gives it, then what happens then, in a few words. Resolve relative dates
+("next Tuesday") against the mail's date and show how you read them. Use only what the mail says. If
+there is none, say so in one sentence.
+"""

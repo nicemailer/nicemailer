@@ -6,13 +6,18 @@
 //! - [`claude_code`]: the user's local `claude` binary, with the safety
 //!   check of every call, and [`stream`], the reading of its output;
 //! - [`fake`]: canned answers, for the tests of the layers above;
-//! - [`Provider`]: the one the configuration chose.
+//! - [`Provider`]: the one the configuration chose;
+//! - [`prompt`]: what a prompt is, and the system prompt built from it;
+//! - [`catalog`]: the built-in prompts (`prompts/*.toml`) merged with the
+//!   user's files, checked.
 //!
-//! The API-key provider, the prompt files and the building of the messages
-//! come next.
+//! The API-key provider and the building of the messages from a mail come
+//! next.
 
+pub mod catalog;
 pub mod claude_code;
 pub mod fake;
+pub mod prompt;
 pub mod provider;
 pub mod stream;
 

@@ -1,0 +1,39 @@
+# Built-in prompt (specifications/ia.md, section 8).
+version = 1
+id = "rewrite"
+scope = "draft"
+key = "r"
+label = { en = "Rewrite", fr = "Reformuler" }
+input = ["draft.own_text"]
+output = "replace"
+
+system = """
+You rewrite email drafts. {{variant}} Keep the meaning, the facts, names, numbers, dates, links and the
+language of the draft. Keep a greeting and a sign-off if the draft has them. Add no fact, date,
+number or promise that the draft does not contain.
+"""
+
+[[variants]]
+key = "f"
+label = { en = "More formal", fr = "Plus formel" }
+instruction = "Make it formal and professional: polite, precise wording, no slang."
+
+[[variants]]
+key = "a"
+label = { en = "Friendlier", fr = "Plus amical" }
+instruction = "Make it warm, friendly and conversational while staying polite."
+
+[[variants]]
+key = "c"
+label = { en = "Shorter", fr = "Plus court" }
+instruction = "Make it noticeably shorter: keep every important point, drop filler and repetition."
+
+[[variants]]
+key = "l"
+label = { en = "Longer", fr = "Plus long" }
+instruction = "Make it longer and more complete with courtesy and connecting sentences, without new facts."
+
+[[variants]]
+key = "s"
+label = { en = "Clearer", fr = "Plus clair" }
+instruction = "Make it clearer and easier to follow: simpler sentences, better order, same content."

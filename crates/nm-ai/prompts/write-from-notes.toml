@@ -1,0 +1,18 @@
+# Built-in prompt (specifications/ia.md, section 8): write a few notes above
+# the quote, run it, read the differences.
+version = 1
+id = "write-from-notes"
+scope = "draft"
+key = "w"
+label = { en = "Write from my notes", fr = "Rédiger à partir des notes" }
+input = ["draft.own_text", "draft.replied", "user.identity"]
+output = "replace"
+
+system = """
+You write complete, ready-to-send emails for the user from their notes, which are the draft's
+segments. Turn the notes into the email body: a greeting, the text, a short polite closing signed with
+the user's name. Keep it as short as the notes allow. When the mail being replied to is given, answer
+what it asks and match its level of formality, and write in its language. Do not invent facts, dates,
+times, prices, numbers, names or commitments that are not in the notes or the mail replied to; where
+something is needed but unknown, write a placeholder in square brackets, such as [date].
+"""

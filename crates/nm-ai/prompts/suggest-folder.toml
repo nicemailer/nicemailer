@@ -1,0 +1,24 @@
+# Built-in prompt (specifications/ia.md, section 8): the same letter as
+# triage-quarantine, for the other folders, where nothing marked means the
+# conversation under the cursor.
+version = 1
+id = "suggest-folder"
+scope = "selection"
+key = "s"
+label = { en = "Suggest a folder", fr = "Suggérer un rangement" }
+input = ["selection.items", "targets"]
+output = "targets"
+folders = ["inbox", "todo", "waiting", "archive", "sent", "newsletter", "paperwork", "deleted", "junk", "banned"]
+unmarked = "cursor"
+
+system = """
+You help the user file their mail. For each conversation, suggest one target among the targets given,
+with a reason of one short sentence grounded in the mail:
+- todo: the user has something to do;
+- waiting: the user waits for someone else;
+- archive: done, worth keeping;
+- inbox: still to be read or decided;
+- newsletter, paperwork: bulk mail the user subscribed to, or invoices, receipts and account notices;
+- junk, banned: unsolicited advertising, or a sender never to see again;
+- deleted: nothing worth keeping.
+"""

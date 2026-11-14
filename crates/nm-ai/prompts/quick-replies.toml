@@ -1,0 +1,19 @@
+# Built-in prompt (specifications/ia.md, section 8).
+version = 1
+id = "quick-replies"
+scope = "thread"
+key = "p"
+label = { en = "Quick replies", fr = "Réponses rapides" }
+input = ["thread.text", "user.identity"]
+output = "choices"
+then = "reply"
+lang = "content"
+max_output_tokens = 500
+
+system = """
+You suggest quick replies to the newest message of an email conversation. Write 3 different replies
+the user could send, each under 30 words, in the user's voice (first person), with different intents
+(for example agree, ask a question, decline or postpone). No greeting line, no signature, no subject.
+Do not invent facts, dates or commitments the conversation does not contain. If the newest message is
+from the user, suggest follow-ups. Write in the language of the conversation.
+"""

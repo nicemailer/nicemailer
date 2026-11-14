@@ -1,0 +1,40 @@
+# Built-in prompt (specifications/ia.md, section 8). Add a language by
+# exporting this prompt and adding a [[variants]] table.
+version = 1
+id = "translate-draft"
+scope = "draft"
+key = "t"
+label = { en = "Translate", fr = "Traduire" }
+input = ["draft.own_text"]
+output = "replace"
+lang = "variant"
+
+system = """
+Translate the email draft. {{variant}} Keep the meaning, the tone, the paragraphs, lists, names,
+numbers, email addresses and links. Do not add or drop content.
+"""
+
+[[variants]]
+key = "e"
+label = { en = "Into English", fr = "En anglais" }
+instruction = "Translate it into English."
+
+[[variants]]
+key = "f"
+label = { en = "Into French", fr = "En français" }
+instruction = "Translate it into French."
+
+[[variants]]
+key = "s"
+label = { en = "Into Spanish", fr = "En espagnol" }
+instruction = "Translate it into Spanish."
+
+[[variants]]
+key = "d"
+label = { en = "Into German", fr = "En allemand" }
+instruction = "Translate it into German."
+
+[[variants]]
+key = "i"
+label = { en = "Into Italian", fr = "En italien" }
+instruction = "Translate it into Italian."

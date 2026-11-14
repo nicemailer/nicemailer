@@ -98,7 +98,7 @@ Le noyau appelle l'API Messages d'Anthropic directement (HTTPS, flux SSE), avec 
 ### Deux sources
 
 - **Prompts intégrés** : des fichiers TOML du dépôt (`crates/nm-ai/prompts/*.toml`), compilés dans le binaire. Toujours présents, testés, versionnés avec le code. Rédigés en anglais, langue où les modèles suivent le plus fidèlement les consignes.
-- **Prompts de l'utilisateur** : `prompts/*.toml` à côté de `config.toml` (`~/.config/nicemailer/prompts/`). Ils se versionnent et se partagent comme la configuration, dans la langue que l'utilisateur veut. Un fichier dont l'`id` est celui d'un prompt intégré le **remplace** ; un autre `id` **ajoute** un prompt. `enabled = false` dans un fichier masque un prompt intégré.
+- **Prompts de l'utilisateur** : `prompts/*.toml` à côté de `config.toml` (`~/.config/nicemailer/prompts/`). Ils se versionnent et se partagent comme la configuration, dans la langue que l'utilisateur veut. Un fichier dont l'`id` est celui d'un prompt intégré le **remplace** ; un autre `id` **ajoute** un prompt. `enabled = false` dans un fichier masque le prompt de cet `id`, intégré ou non ; le reste d'un tel fichier n'est pas vérifié, pour qu'on puisse mettre de côté un prompt en cours d'écriture. Deux fichiers de même `id` : le second, par ordre de nom, est refusé.
 
 Le dossier n'est pas créé au démarrage : `nicemailer ai prompts export [<id>…]` y écrit une copie des prompts intégrés, comme point de départ.
 
@@ -116,12 +116,11 @@ key = "c"
 label = { en = "Proofread", fr = "Corriger" }
 input = ["draft.own_text"]
 output = "replace"
-lang = "content"             # content | app
+lang = "content"             # content | app | variant
 model = ""                   # vide : ai.model
 max_output_tokens = 4000
 
 system = """
-TASK=proofread
 You are a careful proofreader for email drafts. Fix spelling, grammar, punctuation and obvious
 typos only. Do not change the wording, tone, meaning, names, numbers or line breaks. …
 """
@@ -130,21 +129,39 @@ typos only. Do not change the wording, tone, meaning, names, numbers or line bre
 | Clé | Rôle |
 | --- | --- |
 | `version` | Version du format (1) |
-| `id` | Identifiant stable, `[a-z0-9-]+` |
+| `id` | Identifiant stable : 1 à 40 caractères parmi `a-z`, `0-9` et `-`, commençant par une lettre. Celui d'un prompt intégré est le nom de son fichier |
 | `scope` | Où le prompt est proposé (section 5) : `draft`, `message`, `thread`, `selection`, `attachment` |
-| `key` | Lettre du prompt dans le menu IA (section 11) ; unique par portée, vérifiée au chargement |
-| `label` | Libellé du menu, par langue ; une seule langue suffit pour un prompt de l'utilisateur, l'anglais sert de repli |
+| `key` | Lettre (ou chiffre) du prompt dans le menu IA (section 11). Unique **par écran**, pas seulement par portée : la lecture montre ensemble les prompts `message` et `thread`, la liste les prompts `selection` et `thread`. Deux prompts d'un même écran ne partagent une lettre que si leurs `folders` ne se chevauchent pas. En cas de conflit, un prompt de l'utilisateur cède à un prompt intégré : l'erreur est toujours signalée sur le fichier de l'utilisateur, qu'il peut changer |
+| `label` | Libellé du menu : un texte (pris pour l'anglais) ou une table par code de langue (`{ en = "…", fr = "…" }`). Repli : l'anglais, puis la première langue donnée. Les prompts intégrés ont l'anglais et le français |
 | `input` | Entrées envoyées, dans l'ordre (section 5) |
 | `output` | Sortie attendue et son application (section 6) |
-| `lang` | Langue de la réponse : `content` (celle du texte traité), `app` (celle de l'app) ; section 7 |
-| `model`, `max_output_tokens` | Surcharges facultatives |
+| `lang` | Langue de la réponse (section 7) : `content` (celle du texte traité), `app` (celle de l'app), `variant` (la variante choisie la dit, pour les traductions). Par défaut : `content` pour la portée `draft`, `app` ailleurs |
+| `model`, `max_output_tokens` | Surcharges facultatives ; `max_output_tokens` entre 1 et 64 000 |
 | `variants` | Facultatif : un sous-menu, une table par variante (`key`, `label`, `instruction`), par exemple les styles de reformulation ou les langues de traduction. L'instruction de la variante choisie remplace `{{variant}}` dans `system` |
-| `system` | Le prompt système. Commence par `TASK=<id>` (le fournisseur factice des tests s'y reconnaît) |
+| `system` | La tâche, et elle seule : le noyau construit le prompt système autour (ci-dessous) |
 | `folders` | Facultatif : les rôles de dossiers où le prompt est proposé (`["quarantine"]`) ; absent : partout où sa portée a un sens |
 | `unmarked` | Portée `selection` : ce que traite le prompt quand aucun mail n'est marqué. `cursor` (par défaut) : la conversation sous le curseur, comme toute action groupée (`ui.md`, « Actions groupées ») ; `folder` : tout le dossier. `folder` n'est accepté qu'avec `folders`, pour qu'un prompt ne puisse pas envoyer toute l'Archive par mégarde |
 | `enabled` | Faux : le prompt n'est pas proposé |
 
 Le message envoyé au modèle n'est pas écrit dans le prompt : le noyau le construit à partir de `input` (section 5), toujours de la même façon. Un prompt de l'utilisateur ne peut donc pas demander une donnée que la liste ne prévoit pas.
+
+### Prompt système
+
+Le noyau construit le prompt système envoyé au modèle, dans cet ordre (`crates/nm-ai/src/prompt.rs`, `Prompt::system`) :
+
+1. `TASK=<id>`, suivi de ` variant=<touche>` pour une variante. C'est à cette ligne que le fournisseur factice des tests reconnaît la tâche ; le noyau l'écrit lui-même, un fichier ne peut donc ni l'oublier ni la fausser.
+2. Le texte de `system`, `{{variant}}` remplacé par l'instruction de la variante choisie.
+3. La consigne de format de la sortie, propre à `output` (segments numérotés pour `replace`, JSON conforme au schéma pour les sorties à schéma, texte brut sans titres pour `panel`…). Un fichier ne décrit que la tâche, et ne peut pas se tromper de format.
+4. La consigne de langue (section 7).
+5. Le garde-fou (section 6).
+
+### Règles vérifiées au chargement
+
+Chacune est une erreur, avec le fichier et la ligne, qui refuse le fichier : une valeur hors des listes ; une entrée sans objet dans la portée ; une sortie qui ne s'applique pas dans la portée (`replace`, `insert` et `subjects` : `draft` ; `reply` : `message`, `thread` ; `verdict` : `message` ; `summary` : `message`, `thread` ; `targets` : `selection`) ; `replace` sans l'entrée `draft.own_text`, qu'il remplace ; `targets` sans `selection.items` et `targets` ; `choices` sans `then`, ou `then` sans `choices` ; `then = "insert"` hors `draft`, `then = "reply"` dans `draft` ; `{{variant}}` sans variante, ou des variantes sans `{{variant}}` ; deux variantes sur la même touche ; `lang = "variant"` sans variante ; `unmarked` hors `selection`, ou `unmarked = "folder"` sans `folders` ; une entrée donnée deux fois ; une liste vide.
+
+### Hash
+
+Le hash est un SHA-256 de ce qui change le comportement du prompt, sous une forme fixe : un commentaire, l'ordre des clés ou un libellé traduit ne le changent pas ; un mot du texte, une entrée, le modèle ou une variante le changent.
 
 ## 5. Ce qu'un prompt envoie
 
@@ -240,17 +257,19 @@ Le noyau ajoute la consigne au prompt système (« Answer in French. ») ; pour 
 | --- | --- | --- | --- | --- |
 | `draft` | `c` | Corriger | `draft.own_text` | `replace` |
 | `draft` | `r` | Reformuler : `f` formel, `a` amical, `c` plus court, `l` plus long, `s` plus clair | `draft.own_text` | `replace` |
-| `draft` | `t` | Traduire : une variante par langue de `ai.languages` | `draft.own_text` | `replace` |
+| `draft` | `t` | Traduire : `e` anglais, `f` français, `s` espagnol, `d` allemand, `i` italien | `draft.own_text` | `replace` |
 | `draft` | `w` | Rédiger à partir des notes | `draft.own_text`, `draft.replied`, `user.identity` | `replace` |
 | `draft` | `o` | Proposer des objets | `draft.own_text`, `draft.headers` | `subjects` |
 | `thread` | `r` | Résumer, avec les actions à faire | `thread.text`, `user.identity` | `summary` |
-| `message` | `t` | Traduire | `message.text` | `panel` |
+| `message` | `t` | Traduire : mêmes langues | `message.text` | `panel` |
 | `thread` | `p` | Réponses rapides | `thread.text`, `user.identity` | `choices`, `then = "reply"` |
 | `message` | `s` | Analyse de sécurité | `message.headers`, `message.auth`, `message.text`, `sender.history` | `verdict` |
 | `message` | `d` | Dates et rendez-vous | `message.text`, `message.headers` | `panel` |
 | `attachment` | `r` | Résumer la pièce jointe | `attachment.text` | `panel` |
 | `selection` | `s` | Trier la Quarantine (`folders = ["quarantine"]`, `unmarked = "folder"`) | `selection.items`, `targets` | `targets` |
 | `selection` | `s` | Suggérer un rangement (hors Quarantine, `unmarked = "cursor"`) | `selection.items`, `targets` | `targets` |
+
+Les langues de traduction sont des variantes du prompt, pas un réglage : pour en ajouter une, on exporte le prompt et on lui ajoute une table `[[variants]]`. Un réglage `ai.languages` avait été prévu ; il aurait demandé de fabriquer des variantes hors des fichiers, alors que le fichier dit déjà tout.
 
 « Rédiger à partir des notes » remplace les notes par le mail rédigé : on écrit trois puces au-dessus de la citation, on lance le prompt, on relit les différences. Les faits absents des notes et de la conversation ne sont pas inventés : le prompt demande un `[à compléter]` à leur place.
 
@@ -345,7 +364,7 @@ Les sorties JSON ne sont pas affichées au fil de l'eau (un JSON partiel n'a pas
 
 - **`a`**, hors saisie de texte (liste, lecture) : ouvre le menu IA.
 - **⌘I**, en saisie de texte (écran de réponse) : ouvre le menu IA. Dans un champ de texte, une lettre seule s'écrit, et `ctrl-a` est déjà « début de ligne » (macOS et `LineEdit.swift`) ; ⌘I n'est pris ni par l'app ni par l'éditeur, qui n'a pas de mise en forme. ⌘I est une commande de la barre de menus (menu « IA »), il marche donc aussi hors saisie.
-- Dans le menu, **la lettre du prompt** le lance (`a` `r` résume la conversation, ⌘I `c` corrige le brouillon) ; un prompt à variantes ouvre un second menu (⌘I `r` `c` : reformuler plus court). Échap ferme. Le menu ne montre que les prompts de la portée courante ; un seul prompt de chaque portée par lettre, vérifié au chargement.
+- Dans le menu, **la lettre du prompt** le lance (`a` `r` résume la conversation, ⌘I `c` corrige le brouillon) ; un prompt à variantes ouvre un second menu (⌘I `r` `c` : reformuler plus court). Échap ferme. Le menu montre les prompts des portées de l'écran (section 4, `key`) ; une lettre n'y désigne qu'un prompt, ce que le chargement vérifie.
 - Le menu s'affiche comme `⇧⌘↩` (`reponse.md`, section 8) : une liste avec la lettre de chaque ligne, cliquable.
 - IA désactivée : `a` et ⌘I affichent dans la barre de statut que l'IA est désactivée, et comment l'activer.
 
@@ -390,14 +409,13 @@ Le résultat s'affiche dans un panneau sous l'en-tête du mail ou du brouillon :
 | `ai.batch_size` | Conversations par appel pour `selection` | 20 |
 | `ai.max_folder_items` | Conversations au plus pour un prompt `unmarked = "folder"` ; au-delà, les plus récentes, et la barre de statut le dit | 500 |
 | `ai.history_days` | Durée avant la purge du contenu de l'historique | 30 |
-| `ai.languages` | Langues proposées par « Traduire » | `["en", "fr"]` |
 
 L'interrupteur est global : un compte ne peut pas être exclu en v1. Le format le permettra (`[accounts.<clé>.ai] enabled = false`) sans migration.
 
 ## 14. Feuille de route
 
 0. **Vérifier le CLI `claude`** : fait le 14 novembre 2026 avec Claude Code 2.1.325 (section 3, « L'appel » et « Vérification à chaque appel »). Restent à observer : la limite d'usage atteinte, et le fournisseur `anthropic-api`, faute de clé API pendant l'essai. Après une mise à jour de Claude Code, `cargo test -p nm-ai --test real_claude -- --ignored` refait les essais essentiels avec le vrai binaire.
-1. **Crate `nm-ai`** : fait pour les fournisseurs `claude-code` et factice (`docs/ai.md`) ; restent `AnthropicApiProvider`, chargement, validation et rechargement des prompts ; construction du message ; validation des sorties. Testée sans réseau.
+1. **Crate `nm-ai`** : fait pour les fournisseurs `claude-code` et factice, le format, le chargement et la validation des prompts, et les prompts intégrés (`docs/ai.md`) ; restent `AnthropicApiProvider`, le rechargement des prompts (FSEvents, dans le noyau), la construction du message et la validation des sorties. Testée sans réseau.
 2. **Entrées dans le noyau** : découpage en segments de `draft.own_text` et reconstruction, puis les autres entrées.
 3. **Contrat et historique** : commandes, événements, tables `ai_run` et `ai_suggestion`, purge.
 4. **CLI** (section 12).

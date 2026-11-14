@@ -230,7 +230,6 @@ Les paramètres sont définis dans les spécifications qui les utilisent. Ce tab
 | `ai.batch_size` | Conversations par appel pour un lot | 20 | `ia.md` |
 | `ai.max_folder_items` | Conversations au plus quand un prompt traite tout le dossier | 500 | `ia.md` |
 | `ai.history_days` | Durée avant la purge du contenu de l'historique | 30 | `ia.md` |
-| `ai.languages` | Langues proposées par « Traduire » | `["en", "fr"]` | `ia.md` |
 
 Un nouveau paramètre est ajouté à la fois dans la spécification qui l'utilise et dans ce tableau.
 
