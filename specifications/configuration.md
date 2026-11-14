@@ -171,6 +171,8 @@ Limite assumée, comme pour la confirmation des envois : un programme qui a les 
 | Tags, rôles de dossiers | Base (`tag`, `folder`) | Synchronisés entre Mac par `nicemailer-sync`, avec horodatage et pierres tombales |
 | Valeurs détectées (`authserv_id`) | Base (`account`) | État, pas intention |
 | Réglages protégés | Base (`protected_setting`) | Section 7 |
+| Clé API du fournisseur d'IA | Keychain (`ai:anthropic`) | Secret (`ia.md`, section 3) |
+| Prompts | `prompts/*.toml` à côté de `config.toml` | Fichiers à part, un par prompt (`ia.md`, section 4) |
 
 **Les réglages des fichiers ne sont pas synchronisés par `nicemailer-sync`.** Le noyau ne modifie jamais un fichier existant de lui-même, et un fichier suivi par Git ne doit pas changer sans que son propriétaire l'ait voulu. L'utilisateur qui veut les mêmes réglages sur plusieurs Mac versionne son `config.toml`. Sur une boîte partagée, chaque personne garde ses propres réglages, comme elle garde déjà sa signature.
 
@@ -219,6 +221,16 @@ Les paramètres sont définis dans les spécifications qui les utilisent. Ce tab
 | `raw.verify_on_read` | Vérifier le hash à la lecture | vrai | `stockage-brut.md` |
 | `ui.view_threshold_ms` | Durée d'affichage avant `mark_viewed` | 2 000 | `tracabilite.md` |
 | `audit.retention_days` | Durée de conservation du journal | 365 | `tracabilite.md` |
+| `ai.enabled` | Autoriser l'envoi de mails au fournisseur d'IA, pour tous les comptes | faux | `ia.md` |
+| `ai.provider` | Fournisseur : `claude-code` (abonnement, binaire local) ou `anthropic-api` (clé dans le Keychain) | `claude-code` | `ia.md` |
+| `ai.model` | Modèle par défaut, qu'un prompt peut remplacer | `claude-sonnet-5-5` | `ia.md` |
+| `ai.claude_path` | Chemin du binaire `claude` ; vide : recherché | vide | `ia.md` |
+| `ai.timeout_secs` | Délai maximal d'une exécution | 120 | `ia.md` |
+| `ai.max_parallel` | Exécutions simultanées | 2 | `ia.md` |
+| `ai.batch_size` | Conversations par appel pour un lot | 20 | `ia.md` |
+| `ai.max_folder_items` | Conversations au plus quand un prompt traite tout le dossier | 500 | `ia.md` |
+| `ai.history_days` | Durée avant la purge du contenu de l'historique | 30 | `ia.md` |
+| `ai.languages` | Langues proposées par « Traduire » | `["en", "fr"]` | `ia.md` |
 
 Un nouveau paramètre est ajouté à la fois dans la spécification qui l'utilise et dans ce tableau.
 
