@@ -4,6 +4,7 @@
   "rewrite": "<segment n=\"1\">Je viens jeudi.</segment>",
   "subject-ideas": "{\"subjects\": [\"Jeudi 14h\", \"Confirmation pour jeudi\"]}",
   "summarize-thread": "{\"summary\": \"Victor asks whether the March invoice is ready.\", \"actions\": [{\"task\": \"Send the March invoice\", \"owner\": \"you\", \"due\": \"\"}]}",
+  "dates": "{\"events\": [{\"title\": \"Point sur la facture de mars\", \"start\": \"2026-11-19T10:00\", \"end\": \"2026-11-19T10:30\", \"location\": \"Visio\", \"details\": \"Jeudi : le lendemain du mail.\"}, {\"title\": \"Envoi de la facture\", \"start\": \"2026-11-21\", \"end\": \"\", \"location\": \"\", \"details\": \"\"}]}",
   "quick-replies": "{\"choices\": [\"Yes, it is ready.\", \"I will send it tomorrow.\", \"Not yet, sorry.\"]}",
   "triage-quarantine": "@each-thread newsletter",
   "suggest-folder": "@each-thread archive",

@@ -2628,6 +2628,36 @@ pub enum AiProposal {
     /// A target suggested for each conversation sorted; the batches whose
     /// answer could not be read gave none.
     Targets { items: Vec<AiSuggestionView>, failed_batches: u64 },
+    /// The appointments of a mail (`dates`); `ai_apply {choice}` gives the
+    /// calendar file of one, and the proposal stays, to save another.
+    Events { items: Vec<AiEventView> },
+}
+
+/// An appointment of a mail (`ia.md`, section 8, "Dates et rendez-vous").
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AiEventView {
+    pub title: String,
+    /// `YYYY-MM-DD` (a whole day) or `YYYY-MM-DDTHH:MM` (floating: the time
+    /// as the mail gives it, read in the user's time zone).
+    pub start: String,
+    /// Of the form of `start`; empty when the mail gives no end. A whole
+    /// day's end is the last day included.
+    pub end: String,
+    /// Empty when the mail gives none.
+    pub location: String,
+    /// How the date was read, what to bring; may be empty.
+    pub details: String,
+}
+
+/// A calendar file to save (`ai_apply` on an appointment): the client
+/// writes it where the user's files go (the core has no access to
+/// Downloads), under `filename` or a free variant of it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AiCalendarFile {
+    /// `2026-11-20 Visite de l'appartement.ics`.
+    pub filename: String,
+    /// The iCalendar text (RFC 5545), CRLF line ends.
+    pub content: String,
 }
 
 /// A suggested target for a conversation (`ia.md`, section 11).
@@ -2686,7 +2716,8 @@ pub struct AiApplyParams {
     /// Absent for a proposal that is not applied to a draft.
     #[serde(default)]
     pub revision: Option<i64>,
-    /// For a list (`subjects`): the index of the one chosen.
+    /// For a list (`subjects`, `choices`, `events`): the index of the one
+    /// chosen, from 0.
     #[serde(default)]
     pub choice: Option<usize>,
 }
@@ -2699,4 +2730,7 @@ pub struct AiApplyResult {
     /// The text chosen, for a choice the client applies itself (a quick
     /// reply: the client starts the reply and puts the text in it).
     pub text: Option<String>,
+    /// The calendar file of the appointment chosen, for the client to save.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub calendar: Option<AiCalendarFile>,
 }

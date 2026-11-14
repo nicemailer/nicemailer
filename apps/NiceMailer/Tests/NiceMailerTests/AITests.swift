@@ -42,6 +42,54 @@ struct AIRulesTests {
         #expect(act(.failed("x"), "n") == .hint)
     }
 
+    @Test func anAppointmentIsSavedWithReturnAndClosedWithEscape() {
+        func act(_ p: AIProposal, _ key: String = "", ret: Bool = false, esc: Bool = false, arrow: Int = 0, choice: Int = 0) -> AIKeyAction {
+            AI.action(.proposal(p), key: key, isReturn: ret, isEscape: esc, arrow: arrow, choice: choice)
+        }
+        let e = AIEvent(title: "Visite", start: "2020-06-25T14:00", end: "", location: "", details: "")
+        let two = AIProposal.events([e, e])
+        #expect(act(two, ret: true) == .choose(0), "the first, highlighted")
+        #expect(act(two, ret: true, choice: 1) == .choose(1))
+        #expect(AI.action(.proposal(two), key: "", isReturn: true, isEscape: false, choice: 1, isCommand: true) == .open(1))
+        // ⌘↩ elsewhere is Return as before.
+        let subjects = AIProposal.subjects(["A"])
+        #expect(AI.action(.proposal(subjects), key: "", isReturn: true, isEscape: false, isCommand: true) == .choose(0))
+        #expect(act(two, arrow: 1) == .move(1))
+        #expect(act(two, arrow: 1, choice: 1) == .move(1))
+        #expect(act(two, "2") == .choose(1))
+        #expect(act(two, "3") == .hint)
+        #expect(act(two, esc: true) == .refuse)
+        #expect(act(two, "n") == .hint, "nothing to turn down: Escape closes")
+        #expect(AI.hint(.proposal(two)) == L("↩ or 1–%lld save (.ics) · ⌘↩ add to the calendar · ↑↓ move · esc close", 2))
+        // A mail without a date: only read.
+        #expect(act(.events([]), ret: true) == .close)
+        #expect(act(.events([]), esc: true) == .close)
+        #expect(act(.events([]), arrow: 1) == .hint)
+        #expect(AI.hint(.proposal(.events([]))) == L("esc close"))
+        #expect(AI.resultText(.events([])) == L("No date or appointment in this mail."))
+    }
+
+    @Test func anAppointmentSaysWhenInTheUsersLanguage() {
+        let fr = Locale(identifier: "fr_FR")
+        func when(_ start: String, _ end: String = "", in locale: Locale) -> String {
+            AI.eventWhen(AIEvent(title: "t", start: start, end: end, location: "", details: ""), locale: locale)
+        }
+        #expect(when("2020-06-25T14:00", in: fr) == "jeudi 25 juin 2020 · 14:00")
+        #expect(when("2020-06-25T14:00", "2020-06-25T15:30", in: fr) == "jeudi 25 juin 2020 · 14:00–15:30")
+        #expect(when("2020-06-25T22:00", "2020-06-26T02:00", in: fr) == "jeudi 25 juin 2020 · 22:00 – vendredi 26 juin 2020 · 02:00")
+        #expect(when("2020-06-30", in: fr) == "mardi 30 juin 2020")
+        #expect(when("2026-11-28", "2026-11-30", in: fr) == "samedi 28 novembre 2026 – lundi 30 novembre 2026")
+        // The day of a summer date stays the day the core gave, whatever
+        // the zone of the Mac (floating dates, read in UTC).
+        #expect(when("2026-03-29T02:30", in: fr) == "dimanche 29 mars 2026 · 02:30")
+        let en = when("2020-06-25T14:00", in: Locale(identifier: "en_US"))
+        #expect(en.contains("Thursday") && en.contains("June 25") && en.contains("2:00"), "\(en)")
+        // A date the app cannot read is shown as given.
+        #expect(when("jeudi", in: fr) == "jeudi")
+        let e = AIEvent(title: "Visite", start: "2020-06-25T14:00", end: "", location: "12 rue de la Paix", details: "Le 25.")
+        #expect(AI.resultText(.events([e])) == "1. " + AI.eventWhen(e) + " · Visite · 12 rue de la Paix · Le 25.")
+    }
+
     @Test func theArrowsMoveTheTextReturnTakesWithinTheList() {
         func act(_ p: AIProposal, arrow: Int, choice: Int) -> AIKeyAction {
             AI.action(.proposal(p), key: "", isReturn: false, isEscape: false, arrow: arrow, choice: choice)
@@ -236,6 +284,15 @@ final class AIFakeState: @unchecked Sendable {
          "source": "builtin", "available": true],
         ["id": "translate-message", "key": "t", "label": "Translate", "scope": "message", "output": "panel",
          "variants": [["key": "e", "label": "Into English"]], "source": "builtin", "available": true],
+        ["id": "dates", "key": "d", "label": "Dates and appointments", "scope": "message", "output": "events", "variants": [],
+         "source": "builtin", "available": true],
+    ]
+
+    /// The appointments of `dates`.
+    static let events: [[String: Any]] = [
+        ["title": "Visite de l'appartement", "start": "2020-06-25T14:00", "end": "", "location": "12 rue de la Paix",
+         "details": "Jeudi : le 25."],
+        ["title": "Remise des clés", "start": "2020-06-30", "end": "", "location": "", "details": ""],
     ]
 
     /// The palette of a passage selected in the reply.
@@ -283,9 +340,15 @@ final class AIFakeState: @unchecked Sendable {
                                       "actions": [["task": "Apporter les clés", "owner": "you", "due": "jeudi"]]]
             case "quick-replies": ["kind": "choices", "items": ["C'est noté !", "On peut décaler ?"], "then": "reply"]
             case "alternatives": ["kind": "choices", "items": ["viens", "passe"], "then": "replace"]
+            case "dates": ["kind": "events", "items": Self.events]
             default: proposal
             }
             return ["state": "done", "proposal": p, "error": NSNull()] as [String: Any]
+        case "ai_apply" where locked({ _lastPrompt }) == "dates":
+            let e = Self.events[params["choice"] as? Int ?? 0]
+            let name = (e["start"] as! String).prefix(10) + " " + (e["title"] as! String) + ".ics"
+            return ["draft": NSNull(), "text": NSNull(),
+                    "calendar": ["filename": name, "content": "BEGIN:VCALENDAR\r\nSUMMARY:\(e["title"]!)\r\nEND:VCALENDAR\r\n"]] as [String: Any]
         case "ai_apply" where locked({ _lastPrompt }) == "quick-replies":
             let items = ["C'est noté !", "On peut décaler ?"]
             return ["draft": NSNull(), "text": items[params["choice"] as? Int ?? 0]] as [String: Any]
@@ -327,6 +390,7 @@ final class AIControllerTests {
         switch name {
         case "esc": chars = "\u{1b}"; code = KeyCode.escape
         case "ret": chars = "\r"; code = KeyCode.returnKey
+        case "cmd-ret": chars = "\r"; code = KeyCode.returnKey; mods = .command
         case "up": chars = "\u{F700}"; code = KeyCode.up; mods = .function
         case "down": chars = "\u{F701}"; code = KeyCode.down; mods = .function
         default:
@@ -701,6 +765,49 @@ final class AIControllerTests {
         let run = try #require(core.calls("ai_run").last)
         #expect(run["variant"] as? String == "e")
         #expect(run["thread_id"] as? Int == model.openThread?.id)
+    }
+
+    @Test func theAppointmentsOfAMailAreSavedOneByOneAsCalendarFiles() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("NiceMailerTests-ics-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        model.exportDirectory = dir.path
+        press("a")
+        _ = await eventually { self.paletteOpen }
+        choose("d")
+        _ = await eventually { self.model.aiRun?.runId == 7 }
+        event("AiDone", ["run_id": .int(7)])
+        _ = await eventually { if case .proposal? = self.model.aiRun?.phase { true } else { false } }
+        // The first highlighted; ↓ the second, saved with Return.
+        #expect(model.aiRun?.choice == 0)
+        press("down")
+        press("ret")
+        _ = await eventually { self.core.calls("ai_apply").count == 1 && self.model.flash != nil }
+        #expect(core.calls("ai_apply").last?["choice"] as? Int == 1)
+        let second = dir.appendingPathComponent("2020-06-30 Remise des clés.ics")
+        #expect(try String(contentsOf: second, encoding: .utf8).contains("SUMMARY:Remise des clés"))
+        #expect(model.flash == L("%@ saved to %@", second.lastPathComponent, FileManager.default.displayName(atPath: dir.path)))
+        // The panel stays, to save another; the same again does not
+        // overwrite the first file.
+        #expect(model.aiRun != nil)
+        press("ret")
+        _ = await eventually { self.core.calls("ai_apply").count == 2 }
+        _ = await eventually { FileManager.default.fileExists(atPath: dir.appendingPathComponent("2020-06-30 Remise des clés (2).ics").path) }
+        #expect(FileManager.default.fileExists(atPath: dir.appendingPathComponent("2020-06-30 Remise des clés (2).ics").path))
+        // ⌘↩ on the first: saved, then opened (here recorded, not opened).
+        var opened: [URL] = []
+        model.openFile = { opened.append($0) }
+        press("up")
+        press("cmd-ret")
+        _ = await eventually { !opened.isEmpty }
+        #expect(core.calls("ai_apply").last?["choice"] as? Int == 0)
+        #expect(opened.map(\.lastPathComponent) == ["2020-06-25 Visite de l'appartement.ics"])
+        #expect(FileManager.default.fileExists(atPath: opened[0].path))
+        #expect(model.flash == L("%@ saved to %@ and opened", opened[0].lastPathComponent, FileManager.default.displayName(atPath: dir.path)))
+        #expect(model.aiRun != nil, "still open, for another")
+        press("esc")
+        _ = await eventually { self.model.aiRun == nil }
+        #expect(core.calls("ai_dismiss").count == 1)
+        try? FileManager.default.removeItem(at: dir)
     }
 
     @Test func aQuickReplyStartsTheReplyWithIt() async {

@@ -3830,6 +3830,26 @@
         }
       }
     },
+    "No date or appointment in this mail.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucune date ni rendez-vous dans ce mail."
+          }
+        }
+      }
+    },
+    "↩ or 1–%lld save (.ics) · ⌘↩ add to the calendar · ↑↓ move · esc close": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "↩ ou 1–%lld enregistrer (.ics) · ⌘↩ ajouter à l'agenda · ↑↓ déplacer · esc fermer"
+          }
+        }
+      }
+    },
     "No change to make · esc close": {
       "localizations": {
         "fr": {

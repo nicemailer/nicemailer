@@ -312,9 +312,10 @@ extension AppModel {
             if case .proposal = run.phase {
                 let _: CommandResult? = try? await client.call("ai_dismiss", ["run_id": run.runId])
             }
-        case .accept, .choose:
+        case .accept, .choose, .open:
             var params: [String: Any] = ["run_id": run.runId]
             if case .choose(let i) = action { params["choice"] = i }
+            if case .open(let i) = action { params["choice"] = i }
             switch run.target {
             case .reply(let opened):
                 guard let c = composer, c.opened == opened else { return }
@@ -324,6 +325,22 @@ extension AppModel {
             }
             do {
                 let r: AIApplyResult = try await client.call("ai_apply", params)
+                // An appointment: its file saved, the panel stays open, to
+                // save another date of the mail (the core keeps the
+                // proposal).
+                if let file = r.calendar {
+                    let dest = try await saveCalendarFile(file)
+                    let place = FileManager.default.displayName(atPath: saveDirectory.path)
+                    if case .open = action {
+                        // Opened with its default app, Calendar, which asks
+                        // which calendar to add it to.
+                        openFile(dest)
+                        flash = L("%@ saved to %@ and opened", dest.lastPathComponent, place)
+                    } else {
+                        flash = L("%@ saved to %@", dest.lastPathComponent, place)
+                    }
+                    return
+                }
                 aiRun = nil
                 if let d = r.draft, let opened = run.composer { applied(d, opened: opened) }
                 if let text = r.text, case .mail(_, let message) = run.target { await replyWith(text, current: message) }
@@ -383,5 +400,22 @@ extension AppModel {
         flash = L("AI change undone")
         composerChanged()
         return true
+    }
+
+    /// Writes the calendar file of an appointment to `saveDirectory`
+    /// (~/Downloads by default), under its name or a free variant of it
+    /// ("… (2).ics"), never overwriting a file; returns where. Opening it
+    /// adds the event to Calendar; the app does not, the user decides.
+    func saveCalendarFile(_ file: AICalendarFile) async throws -> URL {
+        let dir = saveDirectory
+        // Written off the main thread, like the copies of attachments.
+        return try await Task.detached {
+            let fm = FileManager.default
+            let dest = AttachmentDisplay.freeURL(in: dir, name: file.filename) { fm.fileExists(atPath: $0.path) }
+            // `withoutOverwriting`: a file created between the check and the
+            // write is not replaced, the write fails instead.
+            try Data(file.content.utf8).write(to: dest, options: .withoutOverwriting)
+            return dest
+        }.value
     }
 }

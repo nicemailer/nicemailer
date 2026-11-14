@@ -544,6 +544,15 @@ final class GeekController {
             markAll()
             return true
         }
+        // ⌘↩ in the AI panel of a mail: an appointment saved, then opened
+        // (`AI.action`). Here, before the other ⌘ shortcuts, which leave
+        // ⌘ keys to the menus.
+        if mods.contains(.command), event.keyCode == KeyCode.returnKey,
+           let run = model.aiRun, run.composer == nil, overlay == .none {
+            model.flash = nil
+            handleAIKey(event, run: run)
+            return true
+        }
         if mods.contains(.command) {
             // Text size (`TextSize`): handled here so that ⌘= works too (on
             // AZERTY, `+` needs Shift) and in every keyboard layout. The
@@ -2410,7 +2419,8 @@ final class GeekController {
         let arrow = event.keyCode == KeyCode.up ? -1 : event.keyCode == KeyCode.down ? 1 : 0
         let action = AI.action(run.phase, key: event.charactersIgnoringModifiers ?? "",
                                isReturn: event.keyCode == KeyCode.returnKey, isEscape: event.keyCode == KeyCode.escape,
-                               arrow: arrow, choice: run.choice)
+                               arrow: arrow, choice: run.choice,
+                               isCommand: event.modifierFlags.contains(.command))
         // A move is applied at once, not in a `Task`: the next arrow
         // (a key held down repeats it) must read the choice it left, or
         // two quick ↓ would move by one.

@@ -8,7 +8,8 @@
 # text meanwhile, Return applies them (quotation untouched) and ⌘Z undoes
 # them; improving the writing, refused; a variant from the submenu,
 # refused with Escape; a subject chosen
-# with ↓ ↩; `a` with a mail shown: a summary, then a quick reply that
+# with ↓ ↩; `a` with a mail shown: a summary, its dates (one saved as a
+# calendar file, one opened with ⌘↩), then a quick reply that
 # starts the reply; `a` on the list alone offers the prompts of the row
 # under the cursor, and filing with several marked; in
 # Quarantine, `a` `s` sorts the folder, the rows show their target, Return
@@ -136,6 +137,35 @@ expect ai_state = none
 key j
 expect selected = 1
 key k
+# Dates: one block per appointment, the first highlighted; ↓ then Return
+# saves the second as a calendar file (exports go to the scenario's
+# folder), the panel staying for another; Escape closes it.
+key a
+type d
+expect picker_first = Dates and appointments
+key ret
+expect ai_state = proposal
+expect ai_title = Dates and appointments
+expect ai_choice = 1
+expect ai_result ~ Point sur la facture de mars · Visio
+expect ai_result ~ 2. 
+snap ai-dates
+key down
+expect ai_choice = 2
+key ret
+expect flash ~ 2026-11-21 Envoi de la facture.ics
+expect export_files = 1
+expect ai_state = proposal
+# ⌘↩ on the first: saved too, then opened, which imports it into the
+# calendar (UI script mode only records it).
+key up
+key cmd-ret
+expect opened_file ~ 2026-11-19 Point sur la facture de mars.ics
+expect flash ~ and opened
+expect export_files = 2
+expect ai_state = proposal
+key esc
+expect ai_state = none
 # A quick reply starts the reply with it, above the quotation.
 key a
 type p

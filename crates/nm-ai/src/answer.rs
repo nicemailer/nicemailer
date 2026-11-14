@@ -15,6 +15,7 @@
 use nm_core::FolderRole;
 use serde_json::{Map, Value};
 
+use crate::ics::{Event, When};
 use crate::prompt::Output;
 use crate::provider::{AiError, AiOutcome};
 
@@ -46,6 +47,9 @@ pub enum Answer {
     Verdict(Verdict),
     /// `targets`: at most one suggestion per conversation sent.
     Targets(Vec<Suggestion>),
+    /// `events`: the appointments of a mail, in the order of the answer;
+    /// none when the mail names no date.
+    Events(Vec<Event>),
 }
 
 /// One action item of a summary. `owner` and `due` may be empty.
@@ -119,6 +123,7 @@ pub fn read(output: Output, outcome: &AiOutcome, sent: &Sent) -> Result<Answer, 
             Output::Summary => summary(obj),
             Output::Verdict => verdict(obj),
             Output::Targets => targets(obj, sent),
+            Output::Events => events(obj),
             _ => unreachable!("is_structured covers exactly these outputs"),
         };
     }
@@ -413,6 +418,58 @@ fn targets(obj: &Map<String, Value>, sent: &Sent) -> Result<Answer, AiError> {
     // A conversation the model left out simply gets no suggestion: refusing
     // a whole batch of twenty for one gap would cost more than it protects.
     Ok(Answer::Targets(out))
+}
+
+/// `{"events": [{"title", "start", "end", "location", "details"}]}`: at
+/// most 10 appointments, each with a title and a start that is a real day
+/// (`ics::When::parse`); an end, when given, of the kind of its start and
+/// not before it. A date the model wrote another way ("jeudi 14h", "18/11")
+/// is refused rather than guessed: the file would land on the wrong day.
+fn events(obj: &Map<String, Value>) -> Result<Answer, AiError> {
+    only_keys(obj, &["events"], "the answer")?;
+    let list = obj
+        .get("events")
+        .and_then(Value::as_array)
+        .ok_or_else(|| invalid("events is missing or not a list"))?;
+    if list.len() > 10 {
+        return Err(invalid(format!("{} events, at most 10 expected", list.len())));
+    }
+    let mut out = Vec::new();
+    for e in list {
+        let e = e.as_object().ok_or_else(|| invalid("an event is not an object"))?;
+        only_keys(e, &["title", "start", "end", "location", "details"], "an event")?;
+        let title = string(e, "title", 200, true)?;
+        let when = |key: &str| -> Result<Option<When>, AiError> {
+            let s = string(e, key, 40, key == "start")?;
+            if s.is_empty() {
+                return Ok(None);
+            }
+            When::parse(&s)
+                .map(Some)
+                .ok_or_else(|| invalid(format!("{key} {s:?} of {title:?} is not YYYY-MM-DD or YYYY-MM-DDTHH:MM")))
+        };
+        let start = when("start")?.expect("start is required, so not empty");
+        let end = when("end")?;
+        if let Some(end) = end {
+            match end.is_after(start) {
+                None => return Err(invalid(format!("the end of {title:?} is not of the form of its start"))),
+                // A whole day may end the day it starts (written twice);
+                // a time must end after it starts.
+                Some(false) if end != start || matches!(start, When::At(..)) => {
+                    return Err(invalid(format!("{title:?} ends before it starts")));
+                }
+                _ => {}
+            }
+        }
+        out.push(Event {
+            title,
+            start,
+            end,
+            location: string(e, "location", 300, false)?,
+            details: string(e, "details", 1_000, false)?,
+        });
+    }
+    Ok(Answer::Events(out))
 }
 
 /// One fact the core found by itself in a mail, for the floor of the

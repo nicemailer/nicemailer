@@ -51,7 +51,7 @@ A prompt is a TOML file. The built-in ones are in `crates/nm-ai/prompts/`, compi
 | `quick-replies` | one mail, `p` | Three short replies, one of which starts a reply |
 | `translate-message` | one mail, `t` + language | The mail translated, in the panel |
 | `security-check` | one mail, `c` | Phishing risk and reasons |
-| `dates` | one mail, `d` | Dates and appointments the mail mentions |
+| `dates` | one mail, `d` | The dates and appointments of the mail, each saved as a calendar file (`.ics`) with Return, opened in Calendar with ⌘Return |
 | `summarize-attachment` | attachment, `r` | What the file is and what matters in it |
 | `triage-quarantine` | list in Quarantine, `s` | A target per conversation; with nothing marked, the whole folder |
 | `suggest-folder` | several marked elsewhere, `s` | A target per marked conversation |
@@ -111,7 +111,13 @@ The prompts of one mail take `thread_id` (and `message_id` for a mail of it; abs
 
 What the core found raises a `low` security verdict to `medium` (`answer::apply_floor`), its first strong finding first among the reasons. The Reply-To of the specification is not read yet: the reader does not give it.
 
-Their proposals: `text` (a translation, the dates), `summary` (with its action items), `verdict` (`risk`, `reasons`, `raised`), `choices` (`then: reply`). A text, a summary or a verdict is only read: `ai_dismiss` closes it without a decision, and `ai_apply` has nothing to do with it. A quick reply is applied by the client: `ai_apply {run_id, choice}` records it and gives its text back, and the client starts the reply with it.
+Their proposals: `text` (a translation), `summary` (with its action items), `verdict` (`risk`, `reasons`, `raised`), `choices` (`then: reply`), `events` (the dates). A text, a summary or a verdict is only read: `ai_dismiss` closes it without a decision, and `ai_apply` has nothing to do with it. A quick reply is applied by the client: `ai_apply {run_id, choice}` records it and gives its text back, and the client starts the reply with it.
+
+### Dates and appointments
+
+`dates` answers `events`: `{"events": [{"title", "start", "end", "location", "details"}]}`, at most 10, none for a mail without a date. `start` and `end` are `YYYY-MM-DD` (a whole day; its end is the last day included) or `YYYY-MM-DDTHH:MM`, floating: the time as the mail gives it, read in the user's time zone (RFC 5545 "floating time"). `answer::read` refuses a day that does not exist, a time with seconds or a zone, an end of another form than its start or not after it: a date written another way ("jeudi 14h") is not guessed, since the file would land on the wrong day.
+
+`ai_apply {run_id, choice}` gives `calendar: {filename, content}`: the iCalendar text of that appointment (`nm_ai::ics::calendar`), one `VEVENT`, lines ended by CRLF and folded at 75 bytes; an hour long when the mail gives a time without an end; `UID` `nicemailer-ai-<run>-<n>@nicemailer`, so that saving it twice updates the event; `URL` and the last line of `DESCRIPTION` the link of the mail read, `nicemailer://m/<id>` (`docs/deep-links.md`). The client writes the file (`AppModel.saveCalendarFile`): the core runs without access to Downloads. The proposal stays, to save another date of the mail; the first file accepts the run, and `ai_dismiss` afterwards records no refusal.
 
 ## Sorting several conversations
 
@@ -211,6 +217,7 @@ A prompt chosen, the text is saved first (the core reads the draft as saved, at 
 | a replacement is proposed | the differences, removed words struck out in the error colour, added ones underlined in the accent colour | Return or `y` accepts, Escape or `n` refuses |
 | subjects are proposed | the numbered list, the first highlighted | Return takes the one highlighted, ↑ ↓ move it, a number chooses directly; Escape or `n` refuses |
 | a mail's text, summary or verdict is shown | it | Escape or Return closes it |
+| a mail's dates are proposed | one block per appointment, spaced out, the first highlighted: when (in words, in the app's language), what, where, how the date was read | Return saves the calendar file of the one highlighted, ⌘Return saves it and opens it (Calendar imports it), ↑ ↓ move, a number chooses directly; the panel stays open for another; Escape closes it |
 | quick replies are proposed | the numbered list, the first highlighted | Return (the one highlighted, ↑ ↓ move it) or a number starts the reply with it; Escape or `n` refuses |
 | it failed | why, in the error colour | Escape or Return closes it |
 

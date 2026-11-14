@@ -45,7 +45,7 @@ use nm_ai::catalog::{self, Loaded};
 use nm_ai::prompt::{Input, On, Output, Prompt, Scope, Screen, Source as PromptSource};
 use nm_ai::{AiError, AiRequest, Provider};
 use nm_api::{
-    AiActionView, AiApplyParams, AiApplyResult, AiDiffPiece, AiDismissSuggestionParams, AiSuggestionView, AiSuggestionsParams, AiListPromptsParams, AiPromptView, AiProposal, AiRunIdParams, AiRunParams,
+    AiActionView, AiApplyParams, AiApplyResult, AiCalendarFile, AiEventView, AiDiffPiece, AiDismissSuggestionParams, AiSuggestionView, AiSuggestionsParams, AiListPromptsParams, AiPromptView, AiProposal, AiRunIdParams, AiRunParams,
     AiRunResult, AiRunView, AiSegmentChange, AiStatusParams, AiStatusResult, AiVariantView, CommandResult, DraftView,
     Event, MessageView, RpcError, error_code,
 };
@@ -91,8 +91,9 @@ enum Target {
     /// A draft, at a revision; its body then, and the byte ranges of the
     /// segments sent.
     Draft { draft_id: i64, revision: i64, body: String, ranges: Vec<Range<usize>> },
-    /// A mail and its conversation.
-    Mail,
+    /// A mail and its conversation; `message` is the mail read, which a
+    /// calendar file links back to (`nicemailer://m/<id>`).
+    Mail { message: i64 },
     /// Several conversations, sorted in batches.
     Selection,
 }
@@ -101,7 +102,7 @@ impl Target {
     fn segments(&self) -> usize {
         match self {
             Target::Draft { ranges, .. } => ranges.len(),
-            Target::Mail | Target::Selection => 0,
+            Target::Mail { .. } | Target::Selection => 0,
         }
     }
 }
@@ -116,6 +117,9 @@ struct Finished {
     answer: Answer,
     /// For a run in batches: those whose answer could not be read.
     failed_batches: u64,
+    /// For appointments: a calendar file was given, which accepted the run
+    /// (`apply`); closing the panel then is no refusal.
+    saved: bool,
 }
 
 /// The `.toml` files of the prompts folder: name, size, modification time.
@@ -209,7 +213,7 @@ fn available(p: &Prompt) -> bool {
                         | Input::UserIdentity
                 )
             }) && match p.output {
-                Output::Panel | Output::Summary | Output::Verdict => true,
+                Output::Panel | Output::Summary | Output::Verdict | Output::Events => true,
                 Output::Choices => p.then == Some(nm_ai::prompt::Then::Reply),
                 _ => false,
             }
@@ -542,7 +546,7 @@ async fn mail_inputs(
         });
     }
     let target_json = serde_json::json!({ "thread": thread_id, "message": message.id }).to_string();
-    Ok((sections.join("\n\n"), Target::Mail, target_json, findings))
+    Ok((sections.join("\n\n"), Target::Mail { message: message.id }, target_json, findings))
 }
 
 /// The user's addresses: those of `accounts.toml`, and those of the
@@ -811,7 +815,7 @@ async fn execute_selection(core: Arc<Core>, run_id: i64, b: Batch, provider: Pro
     if let Err(e) = stored {
         eprintln!("ai : exécution {run_id} non enregistrée : {}", e.message);
     }
-    core.ai.finished.lock().unwrap().insert(run_id, Finished { context: running.context, answer: Answer::Targets(found), failed_batches: failed });
+    core.ai.finished.lock().unwrap().insert(run_id, Finished { context: running.context, answer: Answer::Targets(found), failed_batches: failed, saved: false });
     core.events.lock().unwrap().push(Event::AiDone { run_id });
 }
 
@@ -1056,7 +1060,7 @@ async fn execute(core: Arc<Core>, run_id: i64, request: AiRequest, provider: Pro
             if let Err(e) = stored {
                 eprintln!("ai : exécution {run_id} non enregistrée : {}", e.message);
             }
-            core.ai.finished.lock().unwrap().insert(run_id, Finished { context, answer, failed_batches: 0 });
+            core.ai.finished.lock().unwrap().insert(run_id, Finished { context, answer, failed_batches: 0, saved: false });
             core.events.lock().unwrap().push(Event::AiDone { run_id });
         }
     }
@@ -1090,6 +1094,15 @@ pub(crate) async fn cancel(core: &Arc<Core>, p: AiRunIdParams) -> Result<Command
         message: "cancelled".into(),
     });
     Ok(CommandResult { changed: 0 })
+}
+
+/// The deep link of the mail a run read (`docs/deep-links.md`), put in its
+/// calendar files: from the calendar, one click goes back to the mail.
+fn mail_link(t: &Target) -> Option<String> {
+    match t {
+        Target::Mail { message } => Some(format!("nicemailer://m/{message}")),
+        _ => None,
+    }
 }
 
 /// The proposal of a finished run, as the client shows it.
@@ -1140,6 +1153,18 @@ fn proposal(run_id: i64, f: &Finished) -> Option<AiProposal> {
                 .collect(),
             failed_batches: f.failed_batches,
         }),
+        (Answer::Events(list), _) => Some(AiProposal::Events {
+            items: list
+                .iter()
+                .map(|e| AiEventView {
+                    title: e.title.clone(),
+                    start: e.start.iso(),
+                    end: e.end.map(|w| w.iso()).unwrap_or_default(),
+                    location: e.location.clone(),
+                    details: e.details.clone(),
+                })
+                .collect(),
+        }),
         (Answer::Choices(items), _) => Some(AiProposal::Choices {
             items: items.clone(),
             then: match f.context.prompt.then {
@@ -1156,7 +1181,9 @@ fn proposal(run_id: i64, f: &Finished) -> Option<AiProposal> {
 /// nothing to apply, and closing it is no decision on it.
 fn read_only(a: &Answer) -> bool {
     // Targets are decided one by one, by the moves that follow.
+    // A mail without a date: nothing to save.
     matches!(a, Answer::Text(_) | Answer::Summary { .. } | Answer::Verdict(_) | Answer::Targets(_))
+        || matches!(a, Answer::Events(list) if list.is_empty())
 }
 
 /// `ai_get_run`.
@@ -1204,6 +1231,34 @@ pub(crate) async fn apply(core: &Arc<Core>, p: AiApplyParams, source: Source) ->
     // A choice that replaces the passage selected (other wordings) is not
     // one: the core puts it in the draft below, as a
     // proofreading, once sure the draft is still the text the AI read.
+    // An appointment: its calendar file, for the client to save. The
+    // proposal stays: a mail with three dates may go into the calendar
+    // three times. The first file saved accepts the run; closing the
+    // panel afterwards (`ai_dismiss`) does not turn it down.
+    if let Answer::Events(list) = &finished.answer {
+        let Some((n, event)) = p.choice.and_then(|i| list.get(i).map(|e| (i, e))) else {
+            return put_back(finished, RpcError::new(error_code::INVALID_PARAMS, "choose one of the appointments (choice)"));
+        };
+        let stamp = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64);
+        let calendar = AiCalendarFile {
+            filename: nm_ai::ics::file_name(event),
+            // The same run and appointment give the same uid: saved twice,
+            // the calendar updates the event instead of adding it again.
+            content: nm_ai::ics::calendar(
+                event,
+                &format!("nicemailer-ai-{run_id}-{}@nicemailer", n + 1),
+                stamp,
+                mail_link(&finished.context.target).as_deref(),
+            ),
+        };
+        if !finished.saved {
+            if let Err(e) = with_store(core, move |st| st.ai_run_decide(run_id, Decision::Accepted)).await {
+                return put_back(finished, e);
+            }
+        }
+        core.ai.finished.lock().unwrap().insert(run_id, Finished { saved: true, ..finished });
+        return Ok(AiApplyResult { draft: None, text: None, calendar: Some(calendar) });
+    }
     let replaces = finished.context.prompt.then == Some(nm_ai::prompt::Then::Replace);
     if let (Answer::Choices(items), false) = (&finished.answer, replaces) {
         let Some(text) = p.choice.and_then(|i| items.get(i)).cloned() else {
@@ -1212,7 +1267,7 @@ pub(crate) async fn apply(core: &Arc<Core>, p: AiApplyParams, source: Source) ->
         if let Err(e) = with_store(core, move |st| st.ai_run_decide(run_id, Decision::Accepted)).await {
             return put_back(finished, e);
         }
-        return Ok(AiApplyResult { draft: None, text: Some(text) });
+        return Ok(AiApplyResult { draft: None, text: Some(text), calendar: None });
     }
     let Target::Draft { draft_id, revision, body, ranges } = finished.context.target.clone() else {
         return put_back(finished, RpcError::new(error_code::INVALID_PARAMS, "nothing to apply: close it with ai_dismiss"));
@@ -1249,7 +1304,7 @@ pub(crate) async fn apply(core: &Arc<Core>, p: AiApplyParams, source: Source) ->
     })
     .await;
     match saved {
-        Ok(draft) => Ok(AiApplyResult { draft: Some(draft), text: None }),
+        Ok(draft) => Ok(AiApplyResult { draft: Some(draft), text: None, calendar: None }),
         Err(e) => put_back(finished, e),
     }
 }
@@ -1263,7 +1318,7 @@ pub(crate) async fn dismiss(core: &Arc<Core>, p: AiRunIdParams) -> Result<Comman
     let Some(finished) = core.ai.finished.lock().unwrap().remove(&p.run_id) else {
         return Err(RpcError::new(error_code::NOT_FOUND, format!("AI run {} has no proposal", p.run_id)));
     };
-    if !read_only(&finished.answer) {
+    if !read_only(&finished.answer) && !finished.saved {
         let id = p.run_id;
         with_store(core, move |st| st.ai_run_decide(id, Decision::Rejected)).await?;
     }

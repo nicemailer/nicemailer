@@ -244,10 +244,13 @@ pub enum Output {
     Verdict,
     /// A suggested target per conversation.
     Targets,
+    /// The appointments a mail mentions, each one a calendar file to save
+    /// (`nm_ai::ics`).
+    Events,
 }
 
 impl Output {
-    pub const ALL: [Output; 9] = [
+    pub const ALL: [Output; 10] = [
         Output::Replace,
         Output::Insert,
         Output::Reply,
@@ -257,6 +260,7 @@ impl Output {
         Output::Summary,
         Output::Verdict,
         Output::Targets,
+        Output::Events,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -270,6 +274,7 @@ impl Output {
             Output::Summary => "summary",
             Output::Verdict => "verdict",
             Output::Targets => "targets",
+            Output::Events => "events",
         }
     }
 
@@ -288,6 +293,7 @@ impl Output {
             Output::Summary => &[Message, Thread],
             Output::Verdict => &[Message],
             Output::Targets => &[Selection],
+            Output::Events => &[Message, Thread],
         }
     }
 
@@ -301,6 +307,7 @@ impl Output {
                 | Output::Summary
                 | Output::Verdict
                 | Output::Targets
+                | Output::Events
         )
     }
 
@@ -345,6 +352,20 @@ impl Output {
                                        "reason": {"type": "string"}}}}}
                 })
             }
+            // Every field required, the empty string for "none": strict
+            // structured outputs want every property listed as required.
+            Output::Events => json!({
+                "type": "object", "additionalProperties": false, "required": ["events"],
+                "properties": {"events": {"type": "array", "maxItems": 10, "items": {
+                    "type": "object", "additionalProperties": false,
+                    "required": ["title", "start", "end", "location", "details"],
+                    "properties": {
+                        "title": {"type": "string"},
+                        "start": {"type": "string", "description": "YYYY-MM-DD, or YYYY-MM-DDTHH:MM with a time"},
+                        "end": {"type": "string", "description": "same form as start, or empty"},
+                        "location": {"type": "string"},
+                        "details": {"type": "string"}}}}}
+            }),
             Output::Replace | Output::Insert | Output::Reply | Output::Panel => return None,
         })
     }
@@ -368,6 +389,11 @@ impl Output {
             | Output::Summary
             | Output::Verdict
             | Output::Targets => "Answer with JSON matching the given schema.",
+            Output::Events => {
+                "Answer with JSON matching the given schema. Write start and end as YYYY-MM-DD for a whole day, \
+                 or YYYY-MM-DDTHH:MM (24-hour clock, the time as the mail gives it, no time zone) for a time; \
+                 end is empty when the mail gives none, and of the same form as start otherwise."
+            }
         }
     }
 }

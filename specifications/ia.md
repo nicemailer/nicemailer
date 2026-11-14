@@ -234,6 +234,7 @@ Un texte qui contient déjà une balise `<segment` ou `</segment>` n'est pas env
 | `summary` | JSON : `{"summary": "…", "actions": [{"task", "owner", "due"}]}` | Panneau : résumé, puis actions à faire |
 | `verdict` | JSON : `{"risk": "low" \| "medium" \| "high", "reasons": ["…"]}` | Panneau. Plancher : voir ci-dessous |
 | `targets` | JSON : `{"items": [{"thread": id, "target": "…", "reason": "…"}]}` | Une suggestion par conversation, affichée sur sa ligne (section 11) |
+| `events` | JSON : `{"events": [{"title", "start", "end", "location", "details"}]}`, 0 à 10 | Un bloc par rendez-vous ; celui choisi devient un fichier de calendrier (`.ics`), enregistré par le client (section 8) |
 
 Les sorties JSON ont un **schéma défini par le noyau**, transmis au fournisseur comme sortie structurée. La réponse est validée strictement : JSON invalide, champ inconnu, valeur hors liste (une cible absente de `targets`, un identifiant de conversation non envoyé), segments en nombre différent : l'exécution échoue avec l'erreur `ai_invalid_output`, et la réponse brute est gardée dans l'historique pour comprendre. Pas d'interprétation tolérante : elle masquerait les dérives d'un prompt.
 
@@ -282,12 +283,14 @@ Le noyau ajoute la consigne au prompt système (« Answer in French. ») ; pour 
 | `message` | `t` | Traduire : mêmes langues | `message.text` | `panel` |
 | `thread` | `p` | Réponses rapides | `thread.text`, `user.identity` | `choices`, `then = "reply"` |
 | `message` | `c` | Analyse de sécurité | `message.headers`, `message.auth`, `message.text`, `sender.history` | `verdict` |
-| `message` | `d` | Dates et rendez-vous | `message.text`, `message.headers` | `panel` |
+| `message` | `d` | Dates et rendez-vous | `message.text`, `message.headers` | `events` |
 | `attachment` | `r` | Résumer la pièce jointe | `attachment.text` | `panel` |
 | `selection` | `s` | Trier la Quarantine (`folders = ["quarantine"]`, `unmarked = "folder"`) | `selection.items`, `targets` | `targets` |
 | `selection` | `s` | Suggérer un rangement (hors Quarantine, `unmarked = "cursor"`) | `selection.items`, `targets` | `targets` |
 
 Les langues de traduction sont des variantes du prompt, pas un réglage : pour en ajouter une, on exporte le prompt et on lui ajoute une table `[[variants]]`. Un réglage `ai.languages` avait été prévu ; il aurait demandé de fabriquer des variantes hors des fichiers, alors que le fichier dit déjà tout.
+
+« Dates et rendez-vous » (novembre 2026) donne chaque date du mail comme un événement de calendrier : un titre, un début et une fin éventuelle, un lieu, et comment la date a été lue (« jeudi : le 20, lendemain du mail »). Les dates sont écrites `AAAA-MM-JJ` (journée entière) ou `AAAA-MM-JJTHH:MM`, **sans fuseau** : l'heure telle que le mail la donne, lue dans le fuseau de l'utilisateur (heure « flottante », RFC 5545) ; un mail qui fixe une réunion dans un autre fuseau est l'exception, et le détail dit comment l'heure a été lue. Le noyau vérifie chaque date (un jour qui existe, une fin de la forme du début et après lui) : une date écrite autrement (« jeudi 14h ») fait échouer l'exécution plutôt que d'être devinée, car le fichier tomberait un autre jour. Choisir un rendez-vous (`ai_apply`, `choice`) donne son fichier `.ics` (`nm_ai::ics`) : nom `AAAA-MM-JJ titre.ics`, une heure de durée sans fin donnée, un `UID` stable par exécution et rendez-vous (l'enregistrer deux fois met l'événement à jour au lieu de le doubler), et le **lien du mail** (`nicemailer://m/<id>`, `docs/deep-links.md`) en `URL` et en dernière ligne de la description, pour revenir au mail depuis le calendrier. Le client écrit le fichier (le noyau n'a pas accès aux Téléchargements) et la proposition reste ouverte, pour enregistrer une autre date du même mail. Le premier fichier accepte l'exécution ; fermer ensuite n'est pas un refus.
 
 « Rédiger à partir des notes » remplace les notes par le mail rédigé : on écrit trois puces au-dessus de la citation, on lance le prompt, on relit les différences. Les faits absents des notes et de la conversation ne sont pas inventés : le prompt demande un `[à compléter]` à leur place.
 
@@ -416,6 +419,7 @@ Le résultat s'affiche dans un panneau sous l'en-tête du mail ou du brouillon :
 - `replace` : les différences mot à mot (supprimé barré, ajouté souligné, dans les couleurs du thème). ↩ ou `y` accepte, Échap ou `n` refuse. Accepter remplace le texte ; ⌘Z dans l'éditeur annule le remplacement, comme une frappe.
 - `choices`, `subjects` : une liste numérotée, **la première proposition sélectionnée par défaut** (novembre 2026) : les prompts donnent la meilleure en tête, ↩ la prend donc. ↑ ↓ déplacent la sélection, sans boucler ; ↩ prend la proposition sélectionnée, un chiffre en prend une directement. Toutes les listes se choisissent de la même façon, comme dans un sélecteur.
 - `panel`, `summary`, `verdict` : du texte, copiable (`c`) ; Échap ferme.
+- `events` (novembre 2026) : un bloc par rendez-vous, aéré, et non une ligne de menu : la date en toutes lettres dans la langue de l'app, le titre, puis le lieu et la lecture de la date, chacun sur sa ligne. Le premier est sélectionné ; ↑ ↓ déplacent la sélection, ↩ enregistre le fichier `.ics` du rendez-vous sélectionné dans les Téléchargements (sans écraser : « (2) »), **⌘↩ l'enregistre puis l'ouvre**, ce qui l'importe dans Calendrier. Le panneau reste ouvert pour un autre ; Échap ferme. Sans date, une phrase le dit.
 - Pendant l'attente, Échap annule l'exécution.
 - En échec : le message de l'erreur, et pour une sortie invalide, « Réessayer » (`r`).
 

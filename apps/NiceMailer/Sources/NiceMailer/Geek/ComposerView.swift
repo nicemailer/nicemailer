@@ -468,6 +468,34 @@ final class ComposerNSTextView: NSTextView {
 /// the error colour, added underlined in the accent colour), the subjects
 /// to choose from, or why it failed. Its keys are read by the controller
 /// (`AI.action`); a click does nothing, as the keys say everything.
+/// An appointment in the AI panel (`dates`): its number, when, what, then
+/// where and how the date was read, each on its own line.
+struct AIEventCard: View {
+    let index: Int
+    let event: AIEvent
+    let selected: Bool
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: scaled(10)) {
+            Text("\(index + 1)").foregroundStyle(Palette.accentText)
+            VStack(alignment: .leading, spacing: scaled(3)) {
+                Text(AI.eventWhen(event)).foregroundStyle(Palette.accentText)
+                Text(event.title).foregroundStyle(Palette.text)
+                if !event.location.isEmpty {
+                    Text(event.location).foregroundStyle(Palette.muted)
+                }
+                if !event.details.isEmpty {
+                    Text(event.details).foregroundStyle(Palette.muted)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, scaled(6))
+        .padding(.horizontal, scaled(8))
+        .background(RoundedRectangle(cornerRadius: 4).fill(selected ? Palette.cursor : Color.clear))
+    }
+}
+
 struct AIPanel: View {
     let run: AIRun
     /// How tall the text may grow before it scrolls.
@@ -525,6 +553,18 @@ struct AIPanel: View {
                     // The text Return takes, highlighted as the row of a
                     // picker (`AIRun.choice`): the first until ↑ ↓ move it.
                     .background(i == run.choice ? Palette.cursor : Color.clear)
+                }
+            }
+        case .proposal(.events(let items)) where items.isEmpty:
+            Text(L("No date or appointment in this mail.")).foregroundStyle(Palette.muted)
+        case .proposal(.events(let items)):
+            // One block per appointment, with room between them: each is
+            // read as an entry of a calendar (when, what, where, how the
+            // date was read), not picked as a line of a menu. The one Return
+            // saves is highlighted as a whole.
+            VStack(alignment: .leading, spacing: scaled(8)) {
+                ForEach(Array(items.enumerated()), id: \.offset) { i, e in
+                    AIEventCard(index: i, event: e, selected: i == run.choice)
                 }
             }
         case .proposal(.text(let text)):

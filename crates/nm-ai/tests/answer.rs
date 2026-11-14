@@ -476,3 +476,53 @@ fn a_structured_answer_given_as_text_is_parsed() {
     let a = read(Output::Choices, &text("{\"choices\": [\"OK\"]}"), &NONE).unwrap();
     assert_eq!(a, Answer::Choices(vec!["OK".into()]));
 }
+
+/// One event of an `events` answer, every field given.
+fn ev(title: &str, start: &str, end: &str) -> Value {
+    json!({"title": title, "start": start, "end": end, "location": "", "details": ""})
+}
+
+#[test]
+fn appointments_are_read_with_real_dates() {
+    use nm_ai::ics::When;
+    let o = structured(json!({"events": [
+        {"title": "Visite de l'appartement", "start": "2026-11-20T14:00", "end": "2026-11-20T15:00",
+         "location": "12 rue de la Paix", "details": "Jeudi : le 20, lendemain du mail."},
+        ev("Salon", "2026-11-28", "2026-11-30"),
+        ev("Rendu du devis", "2026-12-01", ""),
+        ev("Une journée écrite deux fois", "2026-12-02", "2026-12-02"),
+    ]}));
+    let Answer::Events(list) = read(Output::Events, &o, &NONE).unwrap() else { panic!() };
+    assert_eq!(list.len(), 4);
+    assert_eq!(list[0].start, When::parse("2026-11-20T14:00").unwrap());
+    assert_eq!(list[0].end, When::parse("2026-11-20T15:00"));
+    assert_eq!(list[0].location, "12 rue de la Paix");
+    assert_eq!(list[2].end, None, "an empty end is none");
+    // A mail without a date: no event, not an error.
+    assert_eq!(read(Output::Events, &structured(json!({"events": []})), &NONE).unwrap(), Answer::Events(vec![]));
+    // Given as text by a provider without structured output, fenced.
+    let fenced = text("```json\n{\"events\": [{\"title\": \"A\", \"start\": \"2026-11-20\", \"end\": \"\", \"location\": \"\", \"details\": \"\"}]}\n```");
+    assert!(matches!(read(Output::Events, &fenced, &NONE).unwrap(), Answer::Events(l) if l.len() == 1));
+}
+
+#[test]
+fn appointments_with_dates_written_otherwise_are_refused() {
+    let one = |e: Value| refused(read(Output::Events, &structured(json!({"events": [e]})), &NONE));
+    assert!(one(ev("A", "jeudi 14h", "")).contains("start \"jeudi 14h\" of \"A\" is not YYYY-MM-DD"));
+    assert!(one(ev("A", "2026-02-30", "")).contains("is not YYYY-MM-DD"), "a day that does not exist");
+    assert!(one(ev("A", "2026-11-20T14:00+01:00", "")).contains("not YYYY-MM-DD"), "no zone");
+    assert!(one(ev("A", "", "")).contains("start is empty"));
+    assert!(one(ev("", "2026-11-20", "")).contains("title is empty"));
+    assert!(one(ev("A", "2026-11-20T14:00", "2026-11-20")).contains("not of the form of its start"));
+    assert!(one(ev("A", "2026-11-20T14:00", "2026-11-20T13:00")).contains("ends before it starts"));
+    assert!(one(ev("A", "2026-11-20T14:00", "2026-11-20T14:00")).contains("ends before it starts"), "no zero length");
+    assert!(one(ev("A", "2026-11-20", "2026-11-19")).contains("ends before it starts"));
+    let mut extra = ev("A", "2026-11-20", "");
+    extra["all_day"] = json!(true);
+    assert!(one(extra).contains("unexpected key \"all_day\" in an event"));
+    let mut missing = ev("A", "2026-11-20", "");
+    missing.as_object_mut().unwrap().remove("location");
+    assert!(one(missing).contains("location is missing"));
+    let eleven: Vec<Value> = (0..11).map(|i| ev(&format!("E{i}"), "2026-11-20", "")).collect();
+    assert!(refused(read(Output::Events, &structured(json!({"events": eleven})), &NONE)).contains("11 events, at most 10"));
+}

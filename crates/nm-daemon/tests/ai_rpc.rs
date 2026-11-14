@@ -71,6 +71,13 @@ fn row(dir: &Path, run_id: i64) -> (String, Option<String>, Option<String>, Opti
     .unwrap()
 }
 
+/// The mail a run of one mail read, from its recorded target.
+fn row_target(dir: &Path, run_id: i64) -> i64 {
+    let db = nm_store::rusqlite::Connection::open_with_flags(dir.join("nicemailer.db"), nm_store::rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+    let target: String = db.query_row("SELECT target FROM ai_run WHERE id = ?1", [run_id], |r| r.get(0)).unwrap();
+    serde_json::from_str::<Value>(&target).unwrap()["message"].as_i64().unwrap()
+}
+
 fn runs(dir: &Path) -> i64 {
     let db = nm_store::rusqlite::Connection::open_with_flags(dir.join("nicemailer.db"), nm_store::rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
     db.query_row("SELECT count(*) FROM ai_run", [], |r| r.get(0)).unwrap()
@@ -506,6 +513,61 @@ fn a_quick_reply_is_chosen_and_given_back() {
     let a = c.call("ai_apply", json!({"run_id": id, "choice": 2})).unwrap();
     assert_eq!((a["text"].clone(), a["draft"].clone()), (json!("On peut décaler ?"), Value::Null));
     assert_eq!(row(dir.path(), id).1.as_deref(), Some("accepted"));
+}
+
+#[test]
+fn the_appointments_of_a_mail_are_saved_one_by_one_as_calendar_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let answers = json!({"dates": "{\"events\": [\
+        {\"title\": \"Visite de l'appartement\", \"start\": \"2020-06-25T14:00\", \"end\": \"\", \"location\": \"12 rue de la Paix, Paris\", \"details\": \"Jeudi : le 25.\"},\
+        {\"title\": \"Remise des clés\", \"start\": \"2020-06-30\", \"end\": \"\", \"location\": \"\", \"details\": \"\"}]}"});
+    let (_core, mut c, visit, _) = mail_core(dir.path(), answers);
+    let (id, p) = run_mail(&mut c, "dates", visit, None);
+    assert_eq!(p, json!({"kind": "events", "items": [
+        {"title": "Visite de l'appartement", "start": "2020-06-25T14:00", "end": "", "location": "12 rue de la Paix, Paris", "details": "Jeudi : le 25."},
+        {"title": "Remise des clés", "start": "2020-06-30", "end": "", "location": "", "details": ""}]}));
+    assert_eq!(c.call("ai_apply", json!({"run_id": id})).unwrap_err()["code"], -32602, "an appointment is needed");
+    assert_eq!(c.call("ai_apply", json!({"run_id": id, "choice": 2})).unwrap_err()["code"], -32602);
+    // The second: a whole day, its file named by its date and title.
+    let a = c.call("ai_apply", json!({"run_id": id, "choice": 1})).unwrap();
+    assert_eq!(a["calendar"]["filename"], "2020-06-30 Remise des clés.ics");
+    let ics = a["calendar"]["content"].as_str().unwrap();
+    assert!(ics.contains("DTSTART;VALUE=DATE:20200630\r\nDTEND;VALUE=DATE:20200701\r\n"), "{ics}");
+    assert!(ics.contains(&format!("UID:nicemailer-ai-{id}-2@nicemailer")), "{ics}");
+    // A link back to the mail read: the latest received of the conversation.
+    let mail = row_target(dir.path(), id);
+    assert!(ics.contains(&format!("\r\nURL:nicemailer://m/{mail}\r\n")), "{ics}");
+    assert!(ics.contains(&format!("DESCRIPTION:nicemailer://m/{mail}\r\n")), "{ics}");
+    assert_eq!(row(dir.path(), id).1.as_deref(), Some("accepted"));
+    // The proposal stays: the first saved as well, floating, an hour long.
+    let a = c.call("ai_apply", json!({"run_id": id, "choice": 0})).unwrap();
+    let ics = a["calendar"]["content"].as_str().unwrap();
+    assert!(ics.contains("DTSTART:20200625T140000\r\nDTEND:20200625T150000\r\n"), "{ics}");
+    assert!(ics.contains("LOCATION:12 rue de la Paix\\, Paris"), "{ics}");
+    assert_eq!(a["draft"], Value::Null);
+    // Closing it afterwards turns nothing down.
+    c.call("ai_dismiss", json!({"run_id": id})).unwrap();
+    assert_eq!(row(dir.path(), id).1.as_deref(), Some("accepted"));
+}
+
+#[test]
+fn appointments_closed_without_a_file_are_turned_down_and_bad_dates_fail() {
+    let dir = tempfile::tempdir().unwrap();
+    let answers = json!({"dates": "{\"events\": [{\"title\": \"Visite\", \"start\": \"2020-06-25\", \"end\": \"\", \"location\": \"\", \"details\": \"\"}]}"});
+    let (_core, mut c, visit, _) = mail_core(dir.path(), answers);
+    let (id, _) = run_mail(&mut c, "dates", visit, None);
+    c.call("ai_dismiss", json!({"run_id": id})).unwrap();
+    assert_eq!(row(dir.path(), id).1.as_deref(), Some("rejected"));
+    // A date the model wrote its own way: the run fails, nothing to save.
+    let dir = tempfile::tempdir().unwrap();
+    let answers = json!({"dates": "{\"events\": [{\"title\": \"Visite\", \"start\": \"jeudi 14h\", \"end\": \"\", \"location\": \"\", \"details\": \"\"}]}"});
+    let (_core, mut c, visit, _) = mail_core(dir.path(), answers);
+    c.clear_events();
+    let id = c.call("ai_run", json!({"prompt": "dates", "thread_id": visit, "lang": "fr"})).unwrap()["run_id"].as_i64().unwrap();
+    c.event("AiFailed", 10);
+    let v = c.call("ai_get_run", json!({"run_id": id})).unwrap();
+    assert_eq!(v["error_code"], "ai_invalid_output", "{v}");
+    assert!(v["error"].as_str().unwrap().contains("jeudi 14h"), "{v}");
 }
 
 #[test]

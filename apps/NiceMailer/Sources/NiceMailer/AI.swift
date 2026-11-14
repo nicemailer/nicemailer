@@ -79,6 +79,9 @@ enum AIProposal: Decodable, Equatable {
     case choices([String], then: String)
     /// A target per conversation sorted; the batches that gave none.
     case targets([AISuggestion], failedBatches: Int)
+    /// The appointments of a mail (`dates`): Return saves the one
+    /// highlighted as a calendar file; none when the mail names no date.
+    case events([AIEvent])
 
     private enum Keys: String, CodingKey {
         case kind, segments, unchanged, items, text, summary, actions, risk, reasons, raised, then, failedBatches
@@ -101,12 +104,34 @@ enum AIProposal: Decodable, Equatable {
                             raised: try c.decode(Bool.self, forKey: .raised))
         case "choices":
             self = .choices(try c.decode([String].self, forKey: .items), then: try c.decode(String.self, forKey: .then))
+        case "events":
+            self = .events(try c.decode([AIEvent].self, forKey: .items))
         case "targets":
             self = .targets(try c.decode([AISuggestion].self, forKey: .items), failedBatches: try c.decode(Int.self, forKey: .failedBatches))
         case let other:
             throw DecodingError.dataCorruptedError(forKey: .kind, in: c, debugDescription: "unknown proposal \(other)")
         }
     }
+}
+
+/// An appointment of a mail (`ia.md`, section 8, "Dates et rendez-vous"),
+/// its dates as the core checked them: `YYYY-MM-DD` for a whole day,
+/// `YYYY-MM-DDTHH:MM` for a time, floating (read in the user's zone).
+struct AIEvent: Decodable, Equatable {
+    let title: String
+    let start: String
+    /// Of the form of `start`; empty when the mail gives no end.
+    let end: String
+    let location: String
+    /// How the date was read, what to bring; may be empty.
+    let details: String
+}
+
+/// The calendar file of an appointment (`ai_apply`), for the app to save:
+/// the core has no access to Downloads.
+struct AICalendarFile: Decodable, Equatable {
+    let filename: String
+    let content: String
 }
 
 /// An action item of a summary; `owner` and `due` may be empty.
@@ -146,6 +171,8 @@ struct AIRunView: Decodable {
 struct AIApplyResult: Decodable {
     let draft: DraftView?
     let text: String?
+    /// An appointment chosen: its calendar file.
+    var calendar: AICalendarFile? = nil
 }
 
 /// The error codes of the AI (`nm-api`, `error_code`).
@@ -205,6 +232,9 @@ enum AIKeyAction: Equatable {
     /// Highlight another text of the list: the index it moves to, kept
     /// within the list.
     case move(Int)
+    /// An appointment saved as a calendar file, then opened (⌘↩): the
+    /// file's app, Calendar, imports it.
+    case open(Int)
     case refuse
     /// Stop the run still going.
     case cancel
@@ -220,7 +250,7 @@ enum AI {
     /// still going. In a list, `choice` is the text highlighted: ↩ takes
     /// it, ↑ ↓ (`arrow` -1, +1) move it, a digit takes a text directly.
     static func action(_ phase: AIRun.Phase, key: String, isReturn: Bool, isEscape: Bool,
-                       arrow: Int = 0, choice: Int = 0) -> AIKeyAction {
+                       arrow: Int = 0, choice: Int = 0, isCommand: Bool = false) -> AIKeyAction {
         switch phase {
         case .running:
             return isEscape ? .cancel : .hint
@@ -231,6 +261,17 @@ enum AI {
             if isReturn || key == "y" { return .accept }
             if isEscape || key == "n" { return .refuse }
             return .hint
+        case .proposal(.events(let items)) where items.isEmpty:
+            // No date in the mail: only read.
+            return isEscape || isReturn ? .close : .hint
+        case .proposal(.events(let items)):
+            // Escape closes rather than refuses (`ai_dismiss` records no
+            // refusal once a file was saved); the rest as every list.
+            if isEscape { return .refuse }
+            // ⌘↩ as on an attachment: saved, then opened.
+            if isReturn && isCommand { return .open(min(max(0, choice), items.count - 1)) }
+            if isReturn { return .choose(min(max(0, choice), items.count - 1)) }
+            if arrow != 0 { return .move(min(max(0, choice + arrow), items.count - 1)) }
             if let d = Int(key), d >= 1, d <= items.count { return .choose(d - 1) }
             return .hint
         case .proposal(.subjects(let items)), .proposal(.choices(let items, _)):
@@ -259,6 +300,8 @@ enum AI {
         case .proposal(.choices(let items, "replace")):
             L("↩ or 1–%lld replace the selection · ↑↓ move · esc or n refuse · ⌘Z after choosing undoes", items.count)
         case .proposal(.choices(let items, _)): L("↩ or 1–%lld reply with it · ↑↓ move · esc or n refuse", items.count)
+        case .proposal(.events(let items)) where items.isEmpty: L("esc close")
+        case .proposal(.events(let items)): L("↩ or 1–%lld save (.ics) · ⌘↩ add to the calendar · ↑↓ move · esc close", items.count)
         case .proposal(.text), .proposal(.summary), .proposal(.verdict), .proposal(.targets): L("esc close")
         }
     }
@@ -319,7 +362,57 @@ enum AI {
             return diffText(segments)
         case .targets(let items, _):
             return items.map { "\($0.threadId) → \($0.target)" }.joined(separator: "\n")
+        case .events(let items):
+            if items.isEmpty { return L("No date or appointment in this mail.") }
+            return items.enumerated().map { i, e in
+                ["\(i + 1). \(eventWhen(e))", e.title, e.location, e.details].filter { !$0.isEmpty }.joined(separator: " · ")
+            }.joined(separator: "\n")
         }
+    }
+
+    /// When an appointment is, in the user's language: "Thursday 25 June
+    /// 2020 · 14:00–15:00", "Saturday 28 November 2026 – Monday 30
+    /// November 2026". The dates are floating (`AIEvent`): read and written
+    /// in one fixed zone (UTC), so that no zone shift, nor a change to
+    /// summer time, moves them. A date the app cannot read is shown as the
+    /// core gave it.
+    static func eventWhen(_ e: AIEvent, locale: Locale = .current) -> String {
+        var calendar = Calendar(identifier: .gregorian)
+        let utc = TimeZone(identifier: "UTC")!
+        calendar.timeZone = utc
+        func parse(_ s: String) -> (date: Date, timed: Bool)? {
+            let f = DateFormatter()
+            f.calendar = calendar
+            f.timeZone = utc
+            f.locale = Locale(identifier: "en_US_POSIX")
+            f.dateFormat = s.contains("T") ? "yyyy-MM-dd'T'HH:mm" : "yyyy-MM-dd"
+            return f.date(from: s).map { ($0, s.contains("T")) }
+        }
+        func formatter(_ template: String) -> DateFormatter {
+            let f = DateFormatter()
+            f.calendar = calendar
+            f.timeZone = utc
+            f.locale = locale
+            f.setLocalizedDateFormatFromTemplate(template)
+            return f
+        }
+        guard let start = parse(e.start) else { return e.start }
+        let day = formatter("EEEEdMMMMy"), time = formatter("jjmm")
+        let end = parse(e.end)
+        if start.timed {
+            var s = day.string(from: start.date) + " · " + time.string(from: start.date)
+            if let end, end.timed {
+                // Another day (a night shift, a trip): its day too.
+                s += calendar.isDate(end.date, inSameDayAs: start.date)
+                    ? "–" + time.string(from: end.date)
+                    : " – " + day.string(from: end.date) + " · " + time.string(from: end.date)
+            }
+            return s
+        }
+        if let end, !end.timed, end.date > start.date {
+            return day.string(from: start.date) + " – " + day.string(from: end.date)
+        }
+        return day.string(from: start.date)
     }
 
     /// The status bar while a sorting goes on.

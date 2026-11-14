@@ -1,15 +1,26 @@
-# Built-in prompt (specifications/ia.md, section 8).
+# Built-in prompt (specifications/ia.md, section 8): the dates and
+# appointments a mail mentions, each one shown in the panel and saved as a
+# calendar file (.ics) with Return (`nm_ai::ics`). The core checks every
+# date (`answer::read`): one written another way is refused, not guessed.
 version = 1
 id = "dates"
 scope = "message"
 key = "d"
 label = { en = "Dates and appointments", fr = "Dates et rendez-vous" }
 input = ["message.text", "message.headers"]
-output = "panel"
+output = "events"
 
 system = """
-List the dates, times, deadlines and appointments the email mentions, one per line: the date (and time)
-as precisely as the mail gives it, then what happens then, in a few words. Resolve relative dates
-("next Tuesday") against the mail's date and show how you read them. Use only what the mail says. If
-there is none, say so in one sentence.
+List the dates, times, deadlines and appointments the email mentions, in the order they happen, each
+as an event to put in a calendar:
+- title: what happens, in a few words, as a calendar entry would name it ("Visit of the flat with
+  Alice", "Quote due");
+- start: the day, and the time when the mail gives one; end: when the mail gives an end or a duration
+  ("from 2 to 4pm", "for an hour", "until Friday"), otherwise empty;
+- location: the place or the link of the meeting when the mail gives one, otherwise empty;
+- details: how you read the date when the mail does not write it in full ("Thursday: the 20th, the
+  day after the mail"), and what to bring or prepare if the mail says so; otherwise empty.
+Resolve relative dates ("next Tuesday", "tomorrow") against the mail's date. Use only what the mail
+says: no event the mail does not mention, no time it does not give, the dates of the quoted history
+left out. Give no event if the mail names no date.
 """

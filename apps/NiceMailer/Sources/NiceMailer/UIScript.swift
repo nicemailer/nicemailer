@@ -733,7 +733,7 @@ private final class Runner {
             "ai_result": {
                 guard case .proposal(let p)? = m.aiRun?.phase else { return "" }
                 switch p {
-                case .text, .summary, .verdict, .choices: return AI.resultText(p).replacingOccurrences(of: "\n", with: "\\n")
+                case .text, .summary, .verdict, .choices, .events: return AI.resultText(p).replacingOccurrences(of: "\n", with: "\\n")
                 default: return ""
                 }
             }(),
@@ -750,7 +750,7 @@ private final class Runner {
             // panel numbers them; empty without a list.
             "ai_choice": {
                 switch m.aiRun?.phase {
-                case .proposal(.subjects)?, .proposal(.choices)?: "\((m.aiRun?.choice ?? 0) + 1)"
+                case .proposal(.subjects)?, .proposal(.choices)?, .proposal(.events)?: "\((m.aiRun?.choice ?? 0) + 1)"
                 default: ""
                 }
             }(),
