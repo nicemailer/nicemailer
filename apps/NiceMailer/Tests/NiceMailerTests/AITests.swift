@@ -336,6 +336,44 @@ final class AIControllerTests {
         #expect(core.calls("ai_run").isEmpty)
     }
 
+    @Test func theFirstPromptIsHighlightedSoReturnRunsIt() async throws {
+        // ⌘I then Return: the first prompt of the reply, proofreading.
+        await reply()
+        press("cmd-i")
+        _ = await eventually { self.aiMenu != nil }
+        #expect(controller.choiceIndex == 0)
+        press("ret")
+        _ = await eventually { self.model.aiRun?.runId == 7 }
+        #expect(core.calls("ai_run").last?["prompt"] as? String == "proofread")
+        press("esc")
+        _ = await eventually { self.model.aiRun == nil }
+        // A submenu too: its first variant.
+        press("cmd-i")
+        _ = await eventually { self.aiMenu != nil }
+        press("r")
+        #expect(aiMenu?.parent?.id == "rewrite")
+        #expect(controller.choiceIndex == 0)
+        press("ret")
+        _ = await eventually { self.model.aiRun?.runId == 7 }
+        #expect(core.calls("ai_run").last?["variant"] as? String == "c")
+    }
+
+    @Test func aThenReturnRunsTheFirstPromptOfTheMailAndOfTheList() async throws {
+        press("a")
+        _ = await eventually { self.aiMenu != nil }
+        press("ret")
+        _ = await eventually { self.model.aiRun?.runId == 7 }
+        #expect(core.calls("ai_run").last?["prompt"] as? String == "summarize-thread")
+        press("esc")
+        _ = await eventually { self.model.aiRun == nil }
+        controller.columns = 1
+        press("a")
+        _ = await eventually { self.aiMenu != nil }
+        press("ret")
+        _ = await eventually { self.model.aiSort?.runId == 7 }
+        #expect(core.calls("ai_run").last?["prompt"] as? String == "suggest-folder")
+    }
+
     @Test func aProofreadingRunsIsShownAndAccepted() async throws {
         await reply()
         press("cmd-i")

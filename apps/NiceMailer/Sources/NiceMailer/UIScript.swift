@@ -706,6 +706,9 @@ private final class Runner {
             "suspect": m.suspectMove?.addr ?? "",
             "choice": c.activeChoice.map { c.choiceTitle($0) } ?? "",
             // The rows of the choice shown, "key label | key label".
+            // The row of the open choice highlighted with the arrows (or
+            // first when it opens, for the AI menu), empty if none.
+            "choice_index": c.choiceIndex.map(String.init) ?? "",
             "choice_rows": c.activeChoice.map { ch in c.choiceEntries(ch).map { "\($0.key) \($0.label)" }.joined(separator: " | ") } ?? "",
             // The AI panel of the reply (`AIPanel`): `none`, `running`,
             // `proposal`, `failed`; its title, the text received, the

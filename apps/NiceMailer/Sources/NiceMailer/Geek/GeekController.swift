@@ -2316,7 +2316,8 @@ final class GeekController {
                     if !p.available {
                         model.flash = L("Not available yet: %@", p.label)
                     } else if !p.variants.isEmpty {
-                        choiceIndex = nil
+                        // The first variant highlighted, as the first prompt.
+                        choiceIndex = 0
                         overlay = .choice(.ai(AIMenu(prompts: m.prompts, parent: p)))
                     } else {
                         runAI(p, variant: nil)
@@ -2371,7 +2372,10 @@ final class GeekController {
                 model.flash = L("No AI prompt here")
                 return
             }
-            choiceIndex = nil
+            // The first row highlighted: the most used prompt comes first
+            // (`Catalog::menu`), so ⌘I then Return proofreads a reply, `a`
+            // then Return summarizes a mail or sorts the Quarantine.
+            choiceIndex = 0
             overlay = .choice(.ai(AIMenu(prompts: prompts)))
         }
     }

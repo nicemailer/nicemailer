@@ -106,22 +106,42 @@ fn the_menus_of_the_spec() {
             .map(|p| (p.key, p.id.clone()))
             .collect()
     };
+    // The most used first (the first row is the one Return chooses):
+    // proofreading in a reply, the summary of a mail read, sorting in the
+    // Quarantine.
     let compose = keys(Screen::Compose, None);
     assert_eq!(
         compose,
         [
             ('c', "proofread".into()),
-            ('o', "subject-ideas".into()),
             ('r', "rewrite".into()),
             ('t', "translate-draft".into()),
-            ('w', "write-from-notes".into())
+            ('w', "write-from-notes".into()),
+            ('o', "subject-ideas".into()),
         ]
     );
-    let reading: Vec<char> = keys(Screen::Reading, Some(FolderRole::Inbox))
-        .iter()
-        .map(|k| k.0)
+    let reading: Vec<String> = keys(Screen::Reading, Some(FolderRole::Inbox))
+        .into_iter()
+        .map(|k| k.1)
         .collect();
-    assert_eq!(reading, ['d', 'p', 'r', 's', 't']);
+    assert_eq!(
+        reading,
+        [
+            "summarize-thread",
+            "quick-replies",
+            "translate-message",
+            "security-check",
+            "dates"
+        ]
+    );
+    assert_eq!(
+        keys(Screen::List, Some(FolderRole::Quarantine))[0].1,
+        "triage-quarantine"
+    );
+    assert_eq!(
+        keys(Screen::List, Some(FolderRole::Archive))[0].1,
+        "suggest-folder"
+    );
     // `a` `s` sorts the Quarantine there, suggests a folder elsewhere.
     let q = l.catalog.menu(Screen::List, Some(FolderRole::Quarantine));
     let s = q.iter().find(|p| p.key == 's').unwrap();

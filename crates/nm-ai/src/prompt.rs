@@ -83,7 +83,9 @@ impl Screen {
     pub fn scopes(self) -> &'static [Scope] {
         match self {
             Screen::Compose => &[Scope::Draft],
-            Screen::Reading => &[Scope::Message, Scope::Thread],
+            // The conversation first: its summary is what a mail read most
+            // often needs; the prompts of one mail follow.
+            Screen::Reading => &[Scope::Thread, Scope::Message],
             Screen::List => &[Scope::Selection, Scope::Thread],
             Screen::Attachment => &[Scope::Attachment],
         }

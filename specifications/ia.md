@@ -397,6 +397,7 @@ Les sorties JSON ne sont pas affichées au fil de l'eau (un JSON partiel n'a pas
 
 - **`a`**, hors saisie de texte (liste, lecture) : ouvre le menu IA.
 - **⌘I**, en saisie de texte (écran de réponse) : ouvre le menu IA. Dans un champ de texte, une lettre seule s'écrit, et `ctrl-a` est déjà « début de ligne » (macOS et `LineEdit.swift`) ; ⌘I n'est pris ni par l'app ni par l'éditeur, qui n'a pas de mise en forme. ⌘I est une commande de la barre de menus (menu « IA »), il marche donc aussi hors saisie.
+- **La première ligne du menu est présélectionnée** à son ouverture, et ↩ la lance : ⌘I ↩ corrige la réponse, `a` ↩ résume le mail lu ou trie la Quarantine. Le menu liste donc les prompts du plus utilisé au moins utilisé, et non par lettre : selon les portées de l'écran (la liste trie avant de résumer ; la lecture résume la conversation avant de traiter un mail), puis dans l'ordre des prompts intégrés, ceux de l'utilisateur après. Un sous-menu de variantes s'ouvre aussi sur sa première.
 - Dans le menu, **la lettre du prompt** le lance (`a` `r` résume la conversation, ⌘I `c` corrige le brouillon) ; un prompt à variantes ouvre un second menu (⌘I `r` `c` : reformuler plus court). Échap ferme. Le menu montre les prompts des portées de l'écran (section 4, `key`) ; une lettre n'y désigne qu'un prompt, ce que le chargement vérifie.
 - Le menu s'affiche comme `⇧⌘↩` (`reponse.md`, section 8) : une liste avec la lettre de chaque ligne, cliquable.
 - IA désactivée : `a` et ⌘I affichent dans la barre de statut que l'IA est désactivée, et comment l'activer.

@@ -34,7 +34,9 @@ use crate::prompt::{
     Input, Labels, Lang, Output, Prompt, Scope, Screen, Source, Then, Unmarked, Variant,
 };
 
-/// The built-in prompts: file name and text, compiled into the binary.
+/// The built-in prompts: file name and text, compiled into the binary. Their
+/// order is the order of the menus within a scope (`Catalog::menu`): the
+/// most used first, since the first row is the one Return chooses.
 ///
 /// Rust note: `include_str!` reads the file at compile time and embeds its
 /// text as a `&'static str`; a missing file is a compile error, not a
@@ -145,15 +147,23 @@ impl Catalog {
     }
 
     /// The prompts of a screen's AI menu, in a folder of this role (`None`
-    /// for the compose screen), sorted by key.
+    /// for the compose screen), the most used first: the first row is
+    /// highlighted when the menu opens, so that ⌘I then Return proofreads
+    /// a reply. By the screen's order of scopes (`Screen::scopes`: the list
+    /// sorts before it summarizes), then in the catalog's order: the
+    /// built-in prompts as `BUILTIN` ranks them, from the most useful, then
+    /// the user's.
     pub fn menu(&self, screen: Screen, folder: Option<FolderRole>) -> Vec<&Prompt> {
-        let mut v: Vec<&Prompt> = self
+        let scopes = screen.scopes();
+        let mut v: Vec<(usize, usize, &Prompt)> = self
             .prompts
             .iter()
-            .filter(|p| screen.scopes().contains(&p.scope) && p.offered_in(folder))
+            .enumerate()
+            .filter(|(_, p)| p.offered_in(folder))
+            .filter_map(|(i, p)| Some((scopes.iter().position(|s| *s == p.scope)?, i, p)))
             .collect();
-        v.sort_by_key(|p| p.key);
-        v
+        v.sort_by_key(|(scope, i, _)| (*scope, *i));
+        v.into_iter().map(|(_, _, p)| p).collect()
     }
 }
 
