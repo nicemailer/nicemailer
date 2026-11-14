@@ -486,7 +486,158 @@ fn a_mail_prompt_needs_its_conversation() {
     assert_eq!(e["code"], -32602);
     let e = c.call("ai_run", json!({"prompt": "dates", "thread_id": visit, "message_id": 999999, "lang": "fr"})).unwrap_err();
     assert_eq!(e["code"], 1001);
-    // Quarantine sorting is not wired yet.
+    // A prompt of several conversations needs the folders shown.
     let e = c.call("ai_run", json!({"prompt": "triage-quarantine", "thread_id": visit, "lang": "fr"})).unwrap_err();
-    assert_eq!(e["data"]["code"], "ai_bad_input");
+    assert_eq!(e["code"], -32602, "{e}");
+}
+
+// ---------------------------------------------------------------------------
+// Sorting several conversations (the Quarantine)
+// ---------------------------------------------------------------------------
+
+/// A mailbox made by the generator of the UI tests (`nicemailer seed`),
+/// with conversations in Quarantine; the Quarantine's folder id and its
+/// conversations, newest first, as the core lists them.
+fn seeded(dir: &Path) -> (i64, Vec<i64>) {
+    let mut st = nm_store::Store::open(&dir.join("nicemailer.db")).unwrap();
+    nm_store::seed::seed(&mut st, &nm_store::seed::SeedOptions { threads: 80, seed: 1, now: 1_790_000_000 }).unwrap();
+    let folder: i64 = st.conn().query_row("SELECT id FROM folder WHERE role = 'quarantine'", [], |r| r.get(0)).unwrap();
+    let mut q = st
+        .conn()
+        .prepare("SELECT id FROM thread WHERE has_quarantine = 1 ORDER BY date_last_received DESC")
+        .unwrap();
+    let threads: Vec<i64> = q.query_map([], |r| r.get(0)).unwrap().map(Result::unwrap).collect();
+    assert!(threads.len() >= 3, "the generator puts mail in Quarantine: {}", threads.len());
+    (folder, threads)
+}
+
+/// The fake answer suggesting `target` for each of `threads`.
+fn suggest(threads: &[i64], target: &str) -> String {
+    let items: Vec<Value> = threads.iter().map(|t| json!({"thread": t, "target": target, "reason": format!("reason {t}")})).collect();
+    json!({ "items": items }).to_string()
+}
+
+/// Runs the triage of the Quarantine (nothing marked: the whole folder)
+/// and waits for its end; the run's id, its proposal, the events seen.
+fn triage(c: &mut Client, folder: i64) -> (i64, Value, Vec<Value>) {
+    c.clear_events();
+    let r = c.call("ai_run", json!({"prompt": "triage-quarantine", "folder_ids": [folder], "lang": "fr"})).unwrap();
+    assert_eq!(r["streamed"], false);
+    let id = r["run_id"].as_i64().unwrap();
+    let mut seen = Vec::new();
+    loop {
+        let e = c.next_event();
+        if e["params"]["run_id"].as_i64() != Some(id) {
+            continue;
+        }
+        seen.push(e.clone());
+        match e["method"].as_str() {
+            Some("AiDone") | Some("AiFailed") => break,
+            _ => {}
+        }
+    }
+    let v = c.call("ai_get_run", json!({"run_id": id})).unwrap();
+    (id, v, seen)
+}
+
+#[test]
+fn the_whole_quarantine_is_sorted_and_the_moves_decide() {
+    let dir = tempfile::tempdir().unwrap();
+    let (folder, threads) = seeded(dir.path());
+    let answers = json!({"triage-quarantine": suggest(&threads, "newsletter")});
+    let _core = core(dir.path(), Some(answers), "batch_size = 100\n");
+    let mut c = Client::connect_as(dir.path(), "app");
+    c.call("subscribe", json!({})).unwrap();
+
+    let (id, v, seen) = triage(&mut c, folder);
+    assert_eq!(v["state"], "done", "{v}");
+    let p = &v["proposal"];
+    assert_eq!((p["kind"].clone(), p["failed_batches"].clone()), (json!("targets"), json!(0)));
+    assert_eq!(p["items"].as_array().unwrap().len(), threads.len());
+    // The suggestions of the batch, then the progress, then the end.
+    let methods: Vec<&str> = seen.iter().map(|e| e["method"].as_str().unwrap()).collect();
+    assert_eq!(methods, ["AiSuggestions", "AiProgress", "AiDone"], "{seen:?}");
+    assert_eq!(seen[1]["params"]["done"], json!(threads.len()));
+    assert!(seen[1]["params"].get("seq").is_none(), "progress is transient");
+    // What the model was sent: each conversation by its id, the targets
+    // of Quarantine (the run's input names them; the batches say the rest).
+    let input = sent(dir.path(), id);
+    assert!(input.contains(&format!("{}", threads[0])), "{input}");
+
+    // The suggestions, by conversation shown.
+    let s = c.call("ai_suggestions", json!({"thread_ids": [threads[0], threads[1], 999_999]})).unwrap();
+    assert_eq!(s.as_array().unwrap().len(), 2);
+    assert_eq!((s[0]["target"].clone(), s[0]["reason"].clone()), (json!("newsletter"), json!(format!("reason {}", threads[0]))));
+
+    // A move to the target suggested accepts it; one elsewhere does not.
+    let mv = |c: &mut Client, t: i64, target: &str| {
+        c.call("move_threads", json!({"threads": [{"thread_id": t, "from_folder_id": folder}], "target": target, "confirm_suspect": true})).unwrap()
+    };
+    mv(&mut c, threads[0], "newsletter");
+    mv(&mut c, threads[1], "junk");
+    let db = nm_store::rusqlite::Connection::open_with_flags(dir.path().join("nicemailer.db"), nm_store::rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+    let decision = |t: i64| -> Option<String> {
+        db.query_row("SELECT decision FROM ai_suggestion WHERE thread_id = ?1", [t], |r| r.get(0)).unwrap()
+    };
+    assert_eq!(decision(threads[0]).as_deref(), Some("accepted"));
+    assert_eq!(decision(threads[1]).as_deref(), Some("other"));
+    assert_eq!(c.call("ai_suggestions", json!({"thread_ids": [threads[0], threads[1]]})).unwrap(), json!([]));
+    // One set aside.
+    c.call("ai_dismiss_suggestion", json!({"run_id": id, "thread_id": threads[2]})).unwrap();
+    assert_eq!(decision(threads[2]).as_deref(), Some("dismissed"));
+}
+
+#[test]
+fn batches_go_one_after_the_other_and_a_bad_one_does_not_sink_the_rest() {
+    let dir = tempfile::tempdir().unwrap();
+    let (folder, threads) = seeded(dir.path());
+    // Batches of 2; the fake gives the same answer to each, which names the
+    // first batch's conversations only: the others answer about
+    // conversations they were not sent, and are refused.
+    let answers = json!({"triage-quarantine": suggest(&threads[..2], "junk")});
+    let _core = core(dir.path(), Some(answers), "batch_size = 2\n");
+    let mut c = Client::connect_as(dir.path(), "app");
+    c.call("subscribe", json!({})).unwrap();
+    let (_, v, seen) = triage(&mut c, folder);
+    let batches = threads.len().div_ceil(2) as u64;
+    assert_eq!(v["state"], "done", "{v}");
+    assert_eq!(v["proposal"]["items"].as_array().unwrap().len(), 2);
+    assert_eq!(v["proposal"]["failed_batches"], json!(batches - 1));
+    let progress: Vec<u64> = seen.iter().filter(|e| e["method"] == "AiProgress").map(|e| e["params"]["done"].as_u64().unwrap()).collect();
+    assert_eq!(progress.len() as u64, batches);
+    assert_eq!(*progress.last().unwrap(), threads.len() as u64);
+}
+
+#[test]
+fn a_run_whose_every_batch_fails_fails() {
+    let dir = tempfile::tempdir().unwrap();
+    let (folder, _) = seeded(dir.path());
+    let _core = core(dir.path(), Some(json!({"triage-quarantine": suggest(&[999_999], "junk")})), "");
+    let mut c = Client::connect_as(dir.path(), "app");
+    c.call("subscribe", json!({})).unwrap();
+    let (id, v, _) = triage(&mut c, folder);
+    assert_eq!((v["state"].clone(), v["error_code"].clone()), (json!("failed"), json!("ai_invalid_output")), "{v}");
+    assert!(row(dir.path(), id).3.unwrap().contains("999999"), "the raw answers are kept");
+}
+
+#[test]
+fn sorting_needs_its_folder_and_what_to_sort() {
+    let dir = tempfile::tempdir().unwrap();
+    let (quarantine, threads) = seeded(dir.path());
+    let _core = core(dir.path(), Some(json!({})), "");
+    let mut c = Client::connect_as(dir.path(), "app");
+    let db = nm_store::rusqlite::Connection::open_with_flags(dir.path().join("nicemailer.db"), nm_store::rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+    let inbox: i64 = db.query_row("SELECT id FROM folder WHERE role = 'inbox'", [], |r| r.get(0)).unwrap();
+    // No folder.
+    assert_eq!(c.call("ai_run", json!({"prompt": "triage-quarantine", "lang": "fr"})).unwrap_err()["code"], -32602);
+    // The Quarantine's prompt in the Inbox.
+    let e = c.call("ai_run", json!({"prompt": "triage-quarantine", "folder_ids": [inbox], "lang": "fr"})).unwrap_err();
+    assert_eq!(e["data"]["code"], "ai_bad_input", "{e}");
+    // Elsewhere, nothing marked: the client gives the cursor's; none, refused.
+    let e = c.call("ai_run", json!({"prompt": "suggest-folder", "folder_ids": [inbox], "lang": "fr"})).unwrap_err();
+    assert!(e["message"].as_str().unwrap().contains("mark the conversations"), "{e}");
+    let menu = c.call("ai_list_prompts", json!({"screen": "list", "folder": "quarantine"})).unwrap();
+    let triage = menu.as_array().unwrap().iter().find(|p| p["id"] == "triage-quarantine").unwrap().clone();
+    assert_eq!((triage["available"].clone(), triage["unmarked"].clone()), (json!(true), json!("folder")));
+    let _ = (quarantine, threads);
 }

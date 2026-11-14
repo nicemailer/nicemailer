@@ -189,6 +189,10 @@ pub mod method {
     pub const AI_APPLY: &str = "ai_apply";
     /// Turns down the proposal of a run, or stops it if it still runs.
     pub const AI_DISMISS: &str = "ai_dismiss";
+    /// The suggested targets waiting for the user, for conversations shown.
+    pub const AI_SUGGESTIONS: &str = "ai_suggestions";
+    /// Sets one suggested target aside.
+    pub const AI_DISMISS_SUGGESTION: &str = "ai_dismiss_suggestion";
 }
 
 /// Stable error codes. Negative codes are the ones defined by the JSON-RPC
@@ -450,6 +454,12 @@ pub enum Event {
     /// A run failed or was cancelled (`code` `ai_cancelled`); nothing to
     /// apply. `code` is the AI error code, `message` says what to do.
     AiFailed { run_id: i64, code: String, message: String },
+    /// A run on several conversations went through `done` of `total`.
+    /// Transient: `ai_get_run` says where a finished one ended.
+    AiProgress { run_id: i64, done: u64, total: u64 },
+    /// A batch of a run gave targets for these conversations: reload their
+    /// suggestions (`ai_suggestions`).
+    AiSuggestions { run_id: i64, thread_ids: Vec<i64> },
 }
 
 // ---------------------------------------------------------------------------
@@ -2499,6 +2509,10 @@ pub struct AiPromptView {
     pub source: String,
     /// Whether this version of the core can run it from this screen yet.
     pub available: bool,
+    /// For a prompt of several conversations, what it takes when none is
+    /// marked: `cursor` (the client sends the one under its cursor) or
+    /// `folder` (the core takes the whole folder).
+    pub unmarked: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2538,6 +2552,15 @@ pub struct AiRunParams {
     pub thread_id: Option<i64>,
     #[serde(default)]
     pub message_id: Option<i64>,
+    /// For the prompts of several conversations: the folders shown (one
+    /// per account in the view of all accounts), whose role gives the
+    /// targets, and the conversations marked. None marked: what the
+    /// prompt's `unmarked` says, the conversation under the cursor (given
+    /// here by the client) or the whole folder.
+    #[serde(default)]
+    pub folder_ids: Option<Vec<i64>>,
+    #[serde(default)]
+    pub thread_ids: Option<Vec<i64>>,
     /// The app's language (`fr`), for the answers that follow it.
     pub lang: String,
 }
@@ -2600,6 +2623,31 @@ pub enum AiProposal {
     /// Texts to choose from; `then` says what the one chosen does
     /// (`reply`: starts a reply with it, `insert`: goes into the draft).
     Choices { items: Vec<String>, then: String },
+    /// A target suggested for each conversation sorted; the batches whose
+    /// answer could not be read gave none.
+    Targets { items: Vec<AiSuggestionView>, failed_batches: u64 },
+}
+
+/// A suggested target for a conversation (`ia.md`, section 11).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AiSuggestionView {
+    pub run_id: i64,
+    pub thread_id: i64,
+    pub target: FolderRole,
+    pub reason: String,
+}
+
+/// Params of `ai_suggestions`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AiSuggestionsParams {
+    pub thread_ids: Vec<i64>,
+}
+
+/// Params of `ai_dismiss_suggestion`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AiDismissSuggestionParams {
+    pub run_id: i64,
+    pub thread_id: i64,
 }
 
 /// An action item of a summary; `owner` and `due` may be empty.

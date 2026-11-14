@@ -45,13 +45,13 @@ use nm_ai::catalog::{self, Loaded};
 use nm_ai::prompt::{Input, Output, Prompt, Scope, Screen, Source as PromptSource};
 use nm_ai::{AiError, AiRequest, Provider};
 use nm_api::{
-    AiActionView, AiApplyParams, AiApplyResult, AiDiffPiece, AiListPromptsParams, AiPromptView, AiProposal, AiRunIdParams, AiRunParams,
+    AiActionView, AiApplyParams, AiApplyResult, AiDiffPiece, AiDismissSuggestionParams, AiSuggestionView, AiSuggestionsParams, AiListPromptsParams, AiPromptView, AiProposal, AiRunIdParams, AiRunParams,
     AiRunResult, AiRunView, AiSegmentChange, AiStatusParams, AiStatusResult, AiVariantView, CommandResult, DraftView,
     Event, MessageView, RpcError, error_code,
 };
-use nm_core::Source;
+use nm_core::{FolderRole, Source};
 use nm_engine::config::{AiProviderKind, AiSettings};
-use nm_store::ai_runs::{Decision, NewRun, RunDone, RunEnd};
+use nm_store::ai_runs::{Decision, NewRun, NewSuggestion, RunDone, RunEnd};
 use nm_store::drafts::DraftEdit;
 use tokio::sync::Semaphore;
 
@@ -93,13 +93,15 @@ enum Target {
     Draft { draft_id: i64, revision: i64, body: String, ranges: Vec<Range<usize>> },
     /// A mail and its conversation.
     Mail,
+    /// Several conversations, sorted in batches.
+    Selection,
 }
 
 impl Target {
     fn segments(&self) -> usize {
         match self {
             Target::Draft { ranges, .. } => ranges.len(),
-            Target::Mail => 0,
+            Target::Mail | Target::Selection => 0,
         }
     }
 }
@@ -112,6 +114,8 @@ struct Running {
 struct Finished {
     context: Context,
     answer: Answer,
+    /// For a run in batches: those whose answer could not be read.
+    failed_batches: u64,
 }
 
 /// The `.toml` files of the prompts folder: name, size, modification time.
@@ -204,7 +208,10 @@ fn available(p: &Prompt) -> bool {
                 _ => false,
             }
         }
-        Scope::Selection | Scope::Attachment => false,
+        Scope::Selection => {
+            p.output == Output::Targets && p.inputs.iter().all(|i| matches!(i, Input::SelectionItems | Input::Targets))
+        }
+        Scope::Attachment => false,
     }
 }
 
@@ -294,6 +301,10 @@ pub(crate) fn list_prompts(core: &Arc<Core>, p: AiListPromptsParams) -> Result<V
                 PromptSource::User(_) => "user".into(),
             },
             available: available(q),
+            unmarked: match q.unmarked {
+                nm_ai::prompt::Unmarked::Cursor => "cursor".into(),
+                nm_ai::prompt::Unmarked::Folder => "folder".into(),
+            },
         })
         .collect())
 }
@@ -348,6 +359,9 @@ pub(crate) async fn run(core: &Arc<Core>, p: AiRunParams, source: Source) -> Res
     // The parameters first (a variant missing, unknown), before reading
     // anything: building the system prompt checks the variant.
     let system = prompt.system(variant, &p.lang).map_err(|m| RpcError::new(error_code::INVALID_PARAMS, m))?;
+    if prompt.scope == Scope::Selection {
+        return run_selection(core, &s, prompt, variant, system, &p, source).await;
+    }
     let (message, target, target_json, findings) = match prompt.scope {
         Scope::Draft => draft_inputs(core, &prompt, &p).await?,
         _ => mail_inputs(core, &prompt, &p).await?,
@@ -466,15 +480,7 @@ async fn mail_inputs(
     let declared = crate::drafts::declared_addresses(core);
     let (messages, own) = with_reader(core, move |st| {
         let (_, messages) = st.get_thread(thread_id, &declared)?;
-        let mut own = declared;
-        let mut q = st.conn().prepare("SELECT lower(address) FROM account WHERE address IS NOT NULL")?;
-        for a in q.query_map([], |r| r.get::<_, String>(0))? {
-            let a = a?;
-            if !own.contains(&a) {
-                own.push(a);
-            }
-        }
-        Ok((messages, own))
+        Ok((messages, own_addresses(st, declared)?))
     })
     .await?;
     let is_mine = |m: &MessageView| m.from_addr.as_deref().is_some_and(|a| own.contains(&a.to_lowercase()));
@@ -517,6 +523,293 @@ async fn mail_inputs(
     }
     let target_json = serde_json::json!({ "thread": thread_id, "message": message.id }).to_string();
     Ok((sections.join("\n\n"), Target::Mail, target_json, findings))
+}
+
+/// The user's addresses: those of `accounts.toml`, and those of the
+/// accounts in the database (an archive account imported from an mbox is
+/// in the database only).
+fn own_addresses(st: &nm_store::Store, declared: Vec<String>) -> Result<Vec<String>, nm_store::StoreError> {
+    let mut own = declared;
+    let mut q = st.conn().prepare("SELECT lower(address) FROM account WHERE address IS NOT NULL")?;
+    for a in q.query_map([], |r| r.get::<_, String>(0))? {
+        let a = a?;
+        if !own.contains(&a) {
+            own.push(a);
+        }
+    }
+    Ok(own)
+}
+
+/// A prompt of several conversations (`ia.md`, section 11, "Quarantine"):
+/// the conversations and the targets are found now, the batches built and
+/// sent in the background, one after the other, their suggestions kept as
+/// each ends (`AiSuggestions`), the progress announced (`AiProgress`).
+async fn run_selection(
+    core: &Arc<Core>,
+    s: &AiSettings,
+    prompt: Prompt,
+    variant: Option<char>,
+    system: String,
+    p: &AiRunParams,
+    source: Source,
+) -> Result<AiRunResult, RpcError> {
+    let folders = p.folder_ids.clone().unwrap_or_default();
+    if folders.is_empty() {
+        return Err(RpcError::new(error_code::INVALID_PARAMS, "this prompt needs folder_ids, the folders shown"));
+    }
+    let marked = p.thread_ids.clone().unwrap_or_default();
+    let whole_folder = marked.is_empty() && prompt.unmarked == nm_ai::prompt::Unmarked::Folder;
+    let max = s.max_folder_items as usize;
+    let (role, threads) = with_reader(core, move |st| {
+        let mut role: Option<FolderRole> = None;
+        let mut threads: Vec<(i64, i64)> = Vec::new();
+        for f in &folders {
+            let (r, account): (Option<String>, i64) =
+                st.conn().query_row("SELECT role, account_id FROM folder WHERE id = ?1", [f], |r| Ok((r.get(0)?, r.get(1)?)))?;
+            let r = r.as_deref().and_then(FolderRole::parse);
+            if role.is_some() && r != role {
+                return Err(nm_store::StoreError::InvalidParams("the folders shown have different roles".into()));
+            }
+            role = r;
+            let Some(r) = r else { continue };
+            if whole_folder {
+                // The newest first, as the list shows them; a conversation
+                // in Quarantine is any with a mail there (`has_quarantine`).
+                let sql = if r == FolderRole::Quarantine {
+                    "SELECT id, date_last_received FROM thread WHERE account_id = ?1 AND has_quarantine = 1
+                      ORDER BY date_last_received DESC LIMIT ?3"
+                } else {
+                    "SELECT id, date_last_received FROM thread WHERE account_id = ?1 AND folder = ?2
+                      ORDER BY date_last_received DESC LIMIT ?3"
+                };
+                let mut q = st.conn().prepare(sql)?;
+                let rows = q.query_map(nm_store::rusqlite::params![account, r.code(), max as i64], |row| Ok((row.get(0)?, row.get(1)?)))?;
+                for row in rows {
+                    threads.push(row?);
+                }
+            }
+        }
+        threads.sort_by_key(|t| std::cmp::Reverse(t.1));
+        threads.truncate(max);
+        Ok((role, threads.into_iter().map(|t| t.0).collect::<Vec<i64>>()))
+    })
+    .await?;
+    let Some(role) = role else {
+        return Err(ai_error(AiError::BadInput("this folder has no role: nothing to sort it into".into())));
+    };
+    if !prompt.offered_in(Some(role)) {
+        return Err(ai_error(AiError::BadInput(format!("the prompt {} is not offered in this folder", prompt.id))));
+    }
+    let threads = if whole_folder { threads } else { marked };
+    if threads.is_empty() {
+        return Err(ai_error(AiError::BadInput(if whole_folder {
+            "this folder is empty: nothing to sort".into()
+        } else {
+            "mark the conversations to sort, or put the cursor on one".into()
+        })));
+    }
+    let targets = role.move_targets();
+    let provider = provider(core, s).map_err(ai_error)?;
+    let model = prompt.model.clone().unwrap_or_else(|| s.model.clone());
+    let ids = threads.iter().map(|t| t.to_string()).collect::<Vec<_>>().join(", ");
+    let input = format!("{system}\n\n[conversations, sent in batches of {}: {ids}]", s.batch_size);
+    let target_json = serde_json::json!({ "threads": threads, "folder": role.as_str() }).to_string();
+    let row = (
+        prompt.id.clone(),
+        variant.map(|c| c.to_string()),
+        if matches!(prompt.source, PromptSource::Builtin) { "builtin" } else { "user" },
+        prompt.hash,
+        provider.name(),
+        model.clone(),
+        p.lang.clone(),
+    );
+    let run_id = with_store(core, move |st| {
+        st.ai_run_start(&NewRun {
+            created_by: source,
+            prompt_id: &row.0,
+            variant: row.1.as_deref(),
+            prompt_source: row.2,
+            prompt_hash: &row.3,
+            provider: row.4,
+            model: &row.5,
+            scope: "selection",
+            target: &target_json,
+            lang: &row.6,
+            input: &input,
+        })
+    })
+    .await?;
+    let max_output_tokens = prompt.max_output_tokens;
+    let context = Context { prompt, target: Target::Selection, findings: Vec::new() };
+    core.ai.running.lock().unwrap().insert(run_id, Running { abort: None, context });
+    let batch = Batch { system, model, max_output_tokens, threads, targets, size: s.batch_size as usize };
+    let task = tokio::spawn(execute_selection(core.clone(), run_id, batch, provider));
+    if let Some(r) = core.ai.running.lock().unwrap().get_mut(&run_id) {
+        r.abort = Some(task.abort_handle());
+    }
+    Ok(AiRunResult { run_id, streamed: false })
+}
+
+/// What the batches of a run on several conversations are made of.
+struct Batch {
+    system: String,
+    model: String,
+    max_output_tokens: Option<u32>,
+    threads: Vec<i64>,
+    targets: Vec<FolderRole>,
+    size: usize,
+}
+
+/// The conversations of a batch as the model sees them: the latest mail
+/// received of each (the latest of all when every one is the user's),
+/// its authentication and findings, its sender. A conversation gone, or
+/// whose mail is not downloaded yet, is left out of the batch.
+async fn items(core: &Arc<Core>, threads: Vec<i64>) -> Result<Vec<nm_ai::message::Item>, RpcError> {
+    let declared = crate::drafts::declared_addresses(core);
+    with_reader(core, move |st| {
+        let own = own_addresses(st, declared.clone())?;
+        let mut out = Vec::new();
+        for t in threads {
+            let Ok((_, messages)) = st.get_thread(t, &declared) else { continue };
+            let is_mine = |m: &MessageView| m.from_addr.as_deref().is_some_and(|a| own.contains(&a.to_lowercase()));
+            let Some(m) = messages.iter().rev().find(|m| !is_mine(m)).or(messages.last()) else { continue };
+            if m.body_text.is_none() {
+                continue;
+            }
+            let addr = m.from_addr.clone().unwrap_or_default().to_lowercase();
+            out.push(nm_ai::message::Item {
+                thread_id: t,
+                mail: mail_of(m, is_mine(m)),
+                auth: m.auth_result.clone(),
+                findings: findings(m),
+                sender: sender_history(st, &addr)?.into_iter().skip(1).collect(),
+            });
+        }
+        Ok(out)
+    })
+    .await
+}
+
+/// The task of a run on several conversations (`run_selection`).
+async fn execute_selection(core: Arc<Core>, run_id: i64, b: Batch, provider: Provider) {
+    let Ok(_slot) = core.ai.slots.clone().acquire_owned().await else { return };
+    let total = b.threads.len() as u64;
+    let roles: Vec<&str> = b.targets.iter().map(|t| t.as_str()).collect();
+    let (mut done, mut failed) = (0u64, 0u64);
+    let mut outputs: Vec<String> = Vec::new();
+    let mut found: Vec<nm_ai::answer::Suggestion> = Vec::new();
+    let (mut input_tokens, mut output_tokens, mut cost, mut billed, mut duration) = (0u64, 0u64, None::<f64>, false, 0u64);
+    for chunk in b.threads.chunks(b.size.max(1)) {
+        let items = match items(&core, chunk.to_vec()).await {
+            Ok(i) => i,
+            Err(e) => {
+                if core.ai.running.lock().unwrap().remove(&run_id).is_some() {
+                    fail(&core, run_id, AiError::Failed(e.message), None).await;
+                }
+                return;
+            }
+        };
+        if !items.is_empty() {
+            let ids: Vec<i64> = items.iter().map(|i| i.thread_id).collect();
+            let request = AiRequest {
+                system: b.system.clone(),
+                message: format!("{}\n\n{}", nm_ai::message::selection_items(&items), nm_ai::message::targets(&roles)),
+                model: b.model.clone(),
+                schema: Output::Targets.schema(&b.targets),
+                max_output_tokens: b.max_output_tokens,
+            };
+            match provider.run(&request, |_| {}).await {
+                // The provider itself failed (not signed in, the usage
+                // limit, a timeout): the next batches would fail the same.
+                Err(e) => {
+                    if core.ai.running.lock().unwrap().remove(&run_id).is_some() {
+                        fail(&core, run_id, e, Some(outputs.join("\n"))).await;
+                    }
+                    return;
+                }
+                Ok(o) => {
+                    input_tokens += o.usage.input_tokens;
+                    output_tokens += o.usage.output_tokens;
+                    cost = Some(cost.unwrap_or(0.0) + o.cost_usd.unwrap_or(0.0));
+                    billed |= o.billed;
+                    duration += o.duration_ms.unwrap_or(0);
+                    outputs.push(o.text.clone());
+                    let sent = Sent { segments: 0, threads: &ids, targets: &b.targets };
+                    match answer::read(Output::Targets, &o, &sent) {
+                        Ok(Answer::Targets(list)) => {
+                            let rows: Vec<(i64, String, String)> =
+                                list.iter().map(|s| (s.thread, s.target.as_str().to_string(), s.reason.clone())).collect();
+                            let stored = with_store(&core, move |st| {
+                                let new: Vec<NewSuggestion> = rows
+                                    .iter()
+                                    .map(|(t, target, reason)| NewSuggestion { thread_id: *t, target, reason })
+                                    .collect();
+                                st.ai_suggestions_add(run_id, &new)
+                            })
+                            .await;
+                            match stored {
+                                Ok(()) => {
+                                    let thread_ids = list.iter().map(|s| s.thread).collect();
+                                    core.events.lock().unwrap().push(Event::AiSuggestions { run_id, thread_ids });
+                                    found.extend(list);
+                                }
+                                Err(e) => {
+                                    eprintln!("ai : suggestions de l'exécution {run_id} non enregistrées : {}", e.message);
+                                    failed += 1;
+                                }
+                            }
+                        }
+                        // One batch answered badly: the others may not.
+                        _ => failed += 1,
+                    }
+                }
+            }
+        }
+        done += chunk.len() as u64;
+        core.events.lock().unwrap().push_transient(Event::AiProgress { run_id, done, total });
+    }
+    let Some(running) = core.ai.running.lock().unwrap().remove(&run_id) else { return };
+    if found.is_empty() && failed > 0 {
+        let e = AiError::InvalidOutput("no batch gave targets that could be read".into());
+        return fail(&core, run_id, e, Some(outputs.join("\n"))).await;
+    }
+    let output = outputs.join("\n");
+    let stored = with_store(&core, move |st| {
+        st.ai_run_done(
+            run_id,
+            &RunDone {
+                output: &output,
+                input_tokens: Some(input_tokens),
+                output_tokens: Some(output_tokens),
+                cost_usd: cost,
+                billed,
+                duration_ms: Some(duration),
+            },
+        )
+    })
+    .await;
+    if let Err(e) = stored {
+        eprintln!("ai : exécution {run_id} non enregistrée : {}", e.message);
+    }
+    core.ai.finished.lock().unwrap().insert(run_id, Finished { context: running.context, answer: Answer::Targets(found), failed_batches: failed });
+    core.events.lock().unwrap().push(Event::AiDone { run_id });
+}
+
+/// `ai_suggestions`.
+pub(crate) async fn suggestions(core: &Arc<Core>, p: AiSuggestionsParams) -> Result<Vec<AiSuggestionView>, RpcError> {
+    let rows = with_reader(core, move |st| st.ai_suggestions_for(&p.thread_ids)).await?;
+    Ok(rows
+        .into_iter()
+        .filter_map(|r| {
+            Some(AiSuggestionView { run_id: r.run_id, thread_id: r.thread_id, target: FolderRole::parse(&r.target)?, reason: r.reason })
+        })
+        .collect())
+}
+
+/// `ai_dismiss_suggestion`.
+pub(crate) async fn dismiss_suggestion(core: &Arc<Core>, p: AiDismissSuggestionParams) -> Result<CommandResult, RpcError> {
+    with_store(core, move |st| st.ai_suggestion_dismiss(p.run_id, p.thread_id)).await?;
+    Ok(CommandResult { changed: 0 })
 }
 
 /// "Name <address>", or what there is of it.
@@ -743,7 +1036,7 @@ async fn execute(core: Arc<Core>, run_id: i64, request: AiRequest, provider: Pro
             if let Err(e) = stored {
                 eprintln!("ai : exécution {run_id} non enregistrée : {}", e.message);
             }
-            core.ai.finished.lock().unwrap().insert(run_id, Finished { context, answer });
+            core.ai.finished.lock().unwrap().insert(run_id, Finished { context, answer, failed_batches: 0 });
             core.events.lock().unwrap().push(Event::AiDone { run_id });
         }
     }
@@ -780,7 +1073,7 @@ pub(crate) async fn cancel(core: &Arc<Core>, p: AiRunIdParams) -> Result<Command
 }
 
 /// The proposal of a finished run, as the client shows it.
-fn proposal(f: &Finished) -> Option<AiProposal> {
+fn proposal(run_id: i64, f: &Finished) -> Option<AiProposal> {
     match (&f.answer, &f.context.target) {
         (Answer::Segments(new), Target::Draft { body: old_body, ranges, .. }) => {
             let body = nm_core::segments::splice(old_body, ranges, new).ok()?;
@@ -820,6 +1113,13 @@ fn proposal(f: &Finished) -> Option<AiProposal> {
         (Answer::Verdict(v), _) => {
             Some(AiProposal::Verdict { risk: v.risk.as_str().into(), reasons: v.reasons.clone(), raised: v.raised })
         }
+        (Answer::Targets(list), _) => Some(AiProposal::Targets {
+            items: list
+                .iter()
+                .map(|s| AiSuggestionView { run_id, thread_id: s.thread, target: s.target, reason: s.reason.clone() })
+                .collect(),
+            failed_batches: f.failed_batches,
+        }),
         (Answer::Choices(items), _) => Some(AiProposal::Choices {
             items: items.clone(),
             then: match f.context.prompt.then {
@@ -834,7 +1134,8 @@ fn proposal(f: &Finished) -> Option<AiProposal> {
 /// Whether a proposal is only read (a translation, a summary, a verdict):
 /// nothing to apply, and closing it is no decision on it.
 fn read_only(a: &Answer) -> bool {
-    matches!(a, Answer::Text(_) | Answer::Summary { .. } | Answer::Verdict(_))
+    // Targets are decided one by one, by the moves that follow.
+    matches!(a, Answer::Text(_) | Answer::Summary { .. } | Answer::Verdict(_) | Answer::Targets(_))
 }
 
 /// `ai_get_run`.
@@ -843,7 +1144,7 @@ pub(crate) async fn get_run(core: &Arc<Core>, p: AiRunIdParams) -> Result<AiRunV
     let row = with_reader(core, move |st| st.ai_run(id))
         .await?
         .ok_or_else(|| RpcError::new(error_code::NOT_FOUND, format!("no AI run {id}")))?;
-    let proposal = core.ai.finished.lock().unwrap().get(&id).and_then(proposal);
+    let proposal = core.ai.finished.lock().unwrap().get(&id).and_then(|f| proposal(id, f));
     let (error_code, error) = match row.error.as_deref().and_then(|e| e.split_once(": ")) {
         Some((code, message)) => (Some(code.to_string()), Some(message.to_string())),
         None => (None, row.error.clone()),

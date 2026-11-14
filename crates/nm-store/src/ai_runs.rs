@@ -111,6 +111,15 @@ pub struct NewSuggestion<'a> {
     pub reason: &'a str,
 }
 
+/// A suggestion waiting for the user.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Suggestion {
+    pub run_id: i64,
+    pub thread_id: i64,
+    pub target: String,
+    pub reason: String,
+}
+
 /// The text of a run left `running` by a stop of the core.
 pub const ABANDONED: &str = "ai_failed: the core stopped during the run";
 
@@ -262,6 +271,52 @@ impl Store {
         }
         tx.commit()?;
         Ok(())
+    }
+
+    /// The suggestions still waiting for the user, for these conversations:
+    /// the latest one of each (a conversation sorted twice keeps the newer
+    /// suggestion), by thread id.
+    pub fn ai_suggestions_for(&self, threads: &[i64]) -> Result<Vec<Suggestion>> {
+        let mut out = Vec::new();
+        // One statement per thread on the primary key's index: the screen
+        // asks for its visible rows, a few dozen.
+        let mut q = self.conn.prepare_cached(
+            "SELECT run_id, thread_id, target, reason FROM ai_suggestion
+              WHERE thread_id = ?1 AND decision IS NULL ORDER BY run_id DESC LIMIT 1",
+        )?;
+        for t in threads {
+            if let Some(s) = q
+                .query_row([t], |r| Ok(Suggestion { run_id: r.get(0)?, thread_id: r.get(1)?, target: r.get(2)?, reason: r.get(3)? }))
+                .optional()?
+            {
+                out.push(s);
+            }
+        }
+        Ok(out)
+    }
+
+    /// Conversations moved to `target`: their suggestions still waiting
+    /// become `accepted` (the suggested target) or `other` (`ia.md`,
+    /// section 9). Returns how many.
+    pub fn ai_suggestions_resolve(&mut self, threads: &[i64], target: &str) -> Result<usize> {
+        let mut n = 0;
+        let mut q = self.conn.prepare_cached(
+            "UPDATE ai_suggestion SET decision = CASE WHEN target = ?2 THEN 'accepted' ELSE 'other' END
+              WHERE thread_id = ?1 AND decision IS NULL",
+        )?;
+        for t in threads {
+            n += q.execute(params![t, target])?;
+        }
+        Ok(n)
+    }
+
+    /// The user set a suggestion aside.
+    pub fn ai_suggestion_dismiss(&mut self, run_id: i64, thread_id: i64) -> Result<()> {
+        let n = self.conn.execute(
+            "UPDATE ai_suggestion SET decision = 'dismissed' WHERE run_id = ?1 AND thread_id = ?2 AND decision IS NULL",
+            params![run_id, thread_id],
+        )?;
+        if n == 1 { Ok(()) } else { Err(StoreError::NotFound(format!("AI suggestion {run_id}/{thread_id}"))) }
     }
 
     /// Exactly one row was changed, or the run was not in the state needed.

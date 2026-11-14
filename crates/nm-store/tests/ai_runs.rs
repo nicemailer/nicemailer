@@ -167,3 +167,40 @@ fn suggestions_follow_their_run_and_their_conversation() {
     assert!(s.ai_suggestions_add(run2, &dup).is_err());
     assert_eq!(count(&s), 1);
 }
+
+#[test]
+fn suggestions_wait_until_the_conversation_moves() {
+    let mut s = Store::open_in_memory().unwrap();
+    s.conn().execute("INSERT INTO account (config_key, kind, created_by, modified_by) VALUES ('a', 'imap', 'core', 'core')", []).unwrap();
+    for id in [1, 2, 3] {
+        s.conn().execute("INSERT INTO thread (id, account_id) VALUES (?1, 1)", [id]).unwrap();
+    }
+    let hash = [0u8; 32];
+    let first = s.ai_run_start(&new_run(&hash)).unwrap();
+    s.ai_suggestions_add(first, &[
+        NewSuggestion { thread_id: 1, target: "newsletter", reason: "old" },
+        NewSuggestion { thread_id: 2, target: "junk", reason: "ads" },
+    ]).unwrap();
+    let second = s.ai_run_start(&new_run(&hash)).unwrap();
+    s.ai_suggestions_add(second, &[
+        NewSuggestion { thread_id: 1, target: "inbox", reason: "new" },
+        NewSuggestion { thread_id: 3, target: "paperwork", reason: "invoice" },
+    ]).unwrap();
+    // The latest of each conversation, only for those asked.
+    let got = s.ai_suggestions_for(&[1, 2, 99]).unwrap();
+    assert_eq!(got.iter().map(|g| (g.thread_id, g.target.as_str(), g.run_id)).collect::<Vec<_>>(),
+               [(1, "inbox", second), (2, "junk", first)]);
+    // Moved: to the suggested target, elsewhere.
+    assert_eq!(s.ai_suggestions_resolve(&[2], "junk").unwrap(), 1);
+    assert_eq!(s.ai_suggestions_resolve(&[3], "inbox").unwrap(), 1);
+    let decision = |s: &Store, run: i64, t: i64| -> Option<String> {
+        s.conn().query_row("SELECT decision FROM ai_suggestion WHERE run_id = ?1 AND thread_id = ?2", [run, t], |r| r.get(0)).unwrap()
+    };
+    assert_eq!(decision(&s, first, 2).as_deref(), Some("accepted"));
+    assert_eq!(decision(&s, second, 3).as_deref(), Some("other"));
+    // Both suggestions of conversation 1 wait; one set aside, the older shows.
+    s.ai_suggestion_dismiss(second, 1).unwrap();
+    assert_eq!(s.ai_suggestions_for(&[1]).unwrap()[0].reason, "old");
+    assert!(s.ai_suggestion_dismiss(second, 1).is_err(), "once");
+    assert_eq!(s.ai_suggestions_for(&[2, 3]).unwrap(), []);
+}

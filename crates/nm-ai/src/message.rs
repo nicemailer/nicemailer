@@ -245,6 +245,60 @@ pub fn identity(addresses: &[String]) -> String {
     )
 }
 
+/// One conversation of a batch (`selection.items`): its id, which the
+/// answer names, and what the model needs to sort it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Item {
+    pub thread_id: i64,
+    /// Its latest mail received.
+    pub mail: Mail,
+    /// The authentication verdict of that mail, and what the core found.
+    pub auth: String,
+    pub findings: Vec<crate::answer::Finding>,
+    /// What the mailbox knows of its sender.
+    pub sender: Vec<String>,
+}
+
+/// Start of the text of each conversation of a batch, in characters.
+pub const ITEM_TEXT_CHARS: usize = 1_500;
+
+/// `selection.items`: the conversations of a batch, each with its id.
+pub fn selection_items(items: &[Item]) -> String {
+    let blocks: Vec<String> = items
+        .iter()
+        .map(|i| {
+            let mut lines = vec![
+                format!("thread: {}", i.thread_id),
+                format!("From: {}", i.mail.from),
+                format!("Subject: {}", i.mail.subject),
+                format!("Date: {}", i.mail.date),
+                format!("Authentication: {}", i.auth),
+            ];
+            lines.extend(
+                i.findings
+                    .iter()
+                    .map(|f| format!("Found by the app: {}", f.text)),
+            );
+            lines.extend(i.sender.iter().map(|l| format!("Sender: {l}")));
+            if !i.mail.attachments.is_empty() {
+                lines.push(format!("Attachments: {}", i.mail.attachments.join(", ")));
+            }
+            lines.push(format!("Text:\n{}", clip(&i.mail.text, ITEM_TEXT_CHARS)));
+            format!("<item>\n{}\n</item>", lines.join("\n"))
+        })
+        .collect();
+    section("conversations", &blocks.join("\n"))
+}
+
+/// `targets`: the folders a conversation may go to from the folder shown,
+/// by the name the answer must use.
+pub fn targets(roles: &[&str]) -> String {
+    section(
+        "targets",
+        &format!("Answer with one of: {}", roles.join(", ")),
+    )
+}
+
 /// The text of a streamed `replace` answer as the user should see it while
 /// it comes: without the `<segment n="…">` tags, two segments apart by an
 /// empty line (`specifications/ia.md`, section 11, "Panneau IA").
@@ -410,6 +464,40 @@ mod mail_tests {
         // One mail longer than everything is still given, cut.
         let one = thread_text(&[mail("A", &"y".repeat(50_000))]);
         assert!(one.contains("[…]") && !one.contains("left out"));
+    }
+
+    #[test]
+    fn a_batch_names_each_conversation() {
+        let mut m = mail("Shop <news@shop.example>", &"x".repeat(2_000));
+        m.attachments = vec!["promo.pdf".into()];
+        let item = Item {
+            thread_id: 42,
+            mail: m,
+            auth: "pass".into(),
+            findings: vec![crate::answer::Finding {
+                text: "a link lies".into(),
+                strong: true,
+            }],
+            sender: vec!["Mails received from it: 3".into()],
+        };
+        let s = selection_items(&[
+            item.clone(),
+            Item {
+                thread_id: 43,
+                ..item
+            },
+        ]);
+        assert!(
+            s.starts_with("<conversations>\n<item>\nthread: 42\nFrom: Shop <news@shop.example>"),
+            "{s}"
+        );
+        assert!(s.contains("Found by the app: a link lies\nSender: Mails received from it: 3\nAttachments: promo.pdf\nText:\n"));
+        assert!(s.contains("thread: 43"));
+        assert_eq!(s.matches("[…]").count(), 2, "each text cut at its limit");
+        assert_eq!(
+            targets(&["inbox", "junk"]),
+            "<targets>\nAnswer with one of: inbox, junk\n</targets>"
+        );
     }
 
     #[test]

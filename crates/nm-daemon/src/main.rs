@@ -1282,6 +1282,18 @@ async fn call(core: &Arc<Core>, source: Source, req: Request) -> Result<Value, R
             let core2 = core.clone();
             let result = with_store(core, move |store| {
                 let batch = store.move_threads(&threads, p.target, opts, source)?;
+                // The AI's suggestions for the conversations moved are
+                // decided by the move (`ia.md`, section 9): accepted when
+                // it went to the target suggested, other otherwise.
+                let moved: Vec<i64> = batch
+                    .outcome
+                    .changes
+                    .threads
+                    .iter()
+                    .map(|t| t.0)
+                    .filter(|t| threads.iter().any(|r| r.0 == *t))
+                    .collect();
+                store.ai_suggestions_resolve(&moved, p.target.as_str())?;
                 // One batch of events for the whole move, emitted under the
                 // store lock like any command (`command`).
                 core2.events.lock().unwrap().emit(&batch.outcome.changes);
@@ -1294,7 +1306,14 @@ async fn call(core: &Arc<Core>, source: Source, req: Request) -> Result<Value, R
         method::MOVE_THREAD => {
             let p: MoveThreadParams = params(req.params)?;
             let opts = MoveOptions { confirm_suspect: p.confirm_suspect, auth_policy: p.auth_policy };
-            workflow(core, move |s| s.move_thread(p.thread_id, p.target, p.from_folder_id, opts, source)).await
+            workflow(core, move |s| {
+                let out = s.move_thread(p.thread_id, p.target, p.from_folder_id, opts, source)?;
+                if out.moved > 0 {
+                    s.ai_suggestions_resolve(&[p.thread_id], p.target.as_str())?;
+                }
+                Ok(out)
+            })
+            .await
         }
         method::SET_ADDRESS_SCREENING => {
             let p: SetAddressScreeningParams = params(req.params)?;
@@ -1533,6 +1552,8 @@ async fn call(core: &Arc<Core>, source: Source, req: Request) -> Result<Value, R
         method::AI_GET_RUN => to_value(ai::get_run(core, params(req.params)?).await?),
         method::AI_APPLY => to_value(ai::apply(core, params(req.params)?, source).await?),
         method::AI_DISMISS => to_value(ai::dismiss(core, params(req.params)?).await?),
+        method::AI_SUGGESTIONS => to_value(ai::suggestions(core, params(req.params)?).await?),
+        method::AI_DISMISS_SUGGESTION => to_value(ai::dismiss_suggestion(core, params(req.params)?).await?),
         method::RAW_GC => {
             let core2 = core.clone();
             let r = tokio::task::spawn_blocking(move || sync::run_gc(&core2))
