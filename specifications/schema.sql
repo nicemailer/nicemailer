@@ -33,7 +33,7 @@ PRAGMA temp_store = MEMORY;
 -- Une base existante est mise à jour par les migrations du noyau
 -- (crates/nm-store/src/migrations.rs) ; ce fichier crée directement la
 -- dernière version.
-PRAGMA user_version = 12;   -- migrations : comparer à la version attendue au démarrage
+PRAGMA user_version = 13;   -- migrations : comparer à la version attendue au démarrage
 
 -- ------------------------------------------------------------
 -- Comptes : état seulement. Les paramètres (adresse, serveurs, identifiants,
@@ -745,6 +745,64 @@ CREATE TABLE audit_log (
 
 CREATE INDEX idx_audit_log_entity ON audit_log (entity, entity_id, date_created);
 CREATE INDEX idx_audit_log_date   ON audit_log (date_created);
+
+-- ------------------------------------------------------------
+-- Assistance par IA (ia.md, section 9 ; version 13). Une ligne par exécution
+-- d'un prompt, créée au lancement (running) et complétée à la fin. Pas
+-- d'inscription dans audit_log : cette table est le journal des exécutions ;
+-- ce qu'une proposition acceptée fait y est inscrit comme toute action.
+-- prompt_hash : SHA-256 du prompt normalisé (nm-ai, catalog.rs) ; target :
+-- JSON {draft} | {message} | {thread} | {threads: […]} | {attachment} ;
+-- input, output : message envoyé et réponse brute, NULL après la purge
+-- (ai.history_days, date_purged) ; cost_usd : tel que le fournisseur le
+-- donne ; billed = 0 : équivalent au tarif de l'API sous abonnement.
+-- ------------------------------------------------------------
+CREATE TABLE ai_run (
+    id             INTEGER PRIMARY KEY,
+    date_created   INTEGER NOT NULL DEFAULT (unixepoch()),
+    created_by     TEXT NOT NULL CHECK (created_by IN ('core','app','cli','tui','web','mcp','config_sync','imap')),
+    prompt_id      TEXT NOT NULL,
+    variant        TEXT,
+    prompt_source  TEXT NOT NULL CHECK (prompt_source IN ('builtin','user')),
+    prompt_hash    BLOB NOT NULL,          -- SHA-256, 32 octets
+    provider       TEXT NOT NULL,
+    model          TEXT NOT NULL,
+    scope          TEXT NOT NULL CHECK (scope IN ('draft','message','thread','selection','attachment')),
+    target         TEXT NOT NULL,
+    lang           TEXT NOT NULL,
+    input          TEXT,
+    output         TEXT,
+    state          TEXT NOT NULL CHECK (state IN ('running','done','failed','cancelled')),
+    error          TEXT,
+    decision       TEXT CHECK (decision IN ('accepted','rejected','partial')),
+    date_decided   INTEGER,
+    input_tokens   INTEGER,
+    output_tokens  INTEGER,
+    cost_usd       REAL,
+    billed         INTEGER NOT NULL CHECK (billed IN (0,1)),
+    duration_ms    INTEGER,
+    date_purged    INTEGER
+) STRICT;
+
+CREATE INDEX idx_ai_run_date ON ai_run (date_created);
+CREATE INDEX idx_ai_run_prompt ON ai_run (prompt_id, prompt_hash);
+CREATE INDEX idx_ai_run_unpurged ON ai_run (date_created) WHERE date_purged IS NULL;
+-- Les exécutions laissées à running par un arrêt du noyau, passées à failed
+-- au démarrage suivant.
+CREATE INDEX idx_ai_run_running ON ai_run (id) WHERE state = 'running';
+
+-- Suggestions de rangement d'un lot (sortie targets) : affichées sur les
+-- lignes de la liste tant que la conversation reste dans son dossier.
+CREATE TABLE ai_suggestion (
+    run_id         INTEGER NOT NULL REFERENCES ai_run(id) ON DELETE CASCADE,
+    thread_id      INTEGER NOT NULL REFERENCES thread(id) ON DELETE CASCADE,
+    target         TEXT NOT NULL,
+    reason         TEXT NOT NULL,
+    decision       TEXT CHECK (decision IN ('accepted','other','dismissed')),
+    PRIMARY KEY (run_id, thread_id)
+) STRICT;
+
+CREATE INDEX idx_ai_suggestion_thread ON ai_suggestion (thread_id);
 
 -- ------------------------------------------------------------
 -- Réglages protégés : hors de config.toml et d'accounts.toml, modifiables seulement par l'app

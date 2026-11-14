@@ -108,6 +108,22 @@ A whole answer in a code fence (```` ```json ````) is unfenced first. A structur
 
 `answer::apply_floor(verdict, findings)` raises a `low` security verdict to `medium` when the core found a strong sign in the mail itself (a failed authentication, a link that shows one site and opens another…), and puts that sign first among the reasons. The findings come from the core, with the inputs of the mail.
 
+## History of runs
+
+Every run is a row of `ai_run` (`crates/nm-store/src/ai_runs.rs`; schema version 13, [migrations.md](migrations.md)): the prompt, its source and hash, the provider and model, the scope and target, the language, the texts sent and received, the state, the error, the user's decision, the tokens, the cost and whether it is billed, the duration.
+
+| Call | Does |
+| --- | --- |
+| `ai_run_start` | A new row, `running` |
+| `ai_run_done` | `running` to `done`, with the answer, tokens, cost and duration |
+| `ai_run_end` | `running` to `failed` or `cancelled`, with the error and the raw answer when there was one (an answer refused as invalid is kept, to understand why) |
+| `ai_run_decide` | `accepted`, `rejected` or `partial`, once, on a `done` run |
+| `ai_runs_abandoned` | At start: the runs a stop of the core left `running` become `failed` |
+| `ai_runs_purge(before)` | The texts of the runs created before that date are forgotten (`ai.history_days`); the rest of the row stays |
+| `ai_suggestions_add` | The suggestions of a batch, in one transaction; a suggestion goes with its conversation |
+
+Each change checks the state it starts from: a run ends once and is decided once, so a second answer for the same run is refused instead of written over the first. Nothing calls these yet; the core will, with the contract.
+
 ## Tests
 
 | Test | What it covers |
@@ -118,4 +134,5 @@ A whole answer in a code fence (```` ```json ````) is unfenced first. A structur
 | `tests/catalog.rs` | Every built-in prompt loads without problem or warning, has English and French labels, and builds a system prompt for each variant; the menus of the spec; replacing, adding and disabling; a file refused alone; each rule refused with its line; keys shared across a screen; the hash, unchanged by comments, labels and key order, changed by the text, inputs or model |
 | `nm-core` (unit, `segments.rs`) | Replies, answers between quoted lines, signatures, forwards in English and French, Windows line ends; unchanged segments give the body back byte for byte, also on 3,000 random bodies made of every kind of line, none of whose segments holds a quoted line, a signature or a forwarded mail |
 | `tests/answer.rs` | Each output, accepted and refused, case by case; the recorded answers of phase 0 read; the floor of the verdict |
+| `nm-store`, `tests/ai_runs.rs` | A run from start to decision; ending and deciding once; failed and cancelled runs keep their raw answer; runs left running fail at start; the purge keeps everything but the texts and leaves running runs alone; suggestions follow their run and their conversation, and a batch is written whole or not at all |
 | `tests/real_claude.rs` | Ignored by default. The real binary, with the user's subscription: status, a prompt injection that must run nothing, a structured answer. Run it after an update of Claude Code: `cargo test -p nm-ai --test real_claude -- --ignored` |

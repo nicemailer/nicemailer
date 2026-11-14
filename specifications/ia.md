@@ -293,7 +293,7 @@ Les langues de traduction sont des variantes du prompt, pas un réglage : pour e
 
 ### Tables
 
-Elles entreront dans `schema.sql` à la phase 3, avec leur migration (`docs/migrations.md`) : `schema.sql` est le schéma que le noyau crée pour une base neuve, et une table ajoutée sans migration donnerait aux bases existantes un autre schéma.
+Elles sont dans `schema.sql` depuis la version 13 du schéma, avec leur migration (`docs/migrations.md`), et quatre index : par date, par prompt et version (pour comparer les versions d'un prompt), les exécutions non purgées (pour la purge) et celles en cours (pour le démarrage).
 
 ```sql
 CREATE TABLE ai_run (
@@ -431,7 +431,7 @@ L'interrupteur est global : un compte ne peut pas être exclu en v1. Le format l
 0. **Vérifier le CLI `claude`** : fait le 14 novembre 2026 avec Claude Code 2.1.325 (section 3, « L'appel » et « Vérification à chaque appel »). Restent à observer : la limite d'usage atteinte, et le fournisseur `anthropic-api`, faute de clé API pendant l'essai. Après une mise à jour de Claude Code, `cargo test -p nm-ai --test real_claude -- --ignored` refait les essais essentiels avec le vrai binaire.
 1. **Crate `nm-ai`** : fait pour les fournisseurs `claude-code` et factice, le format, le chargement et la validation des prompts, les prompts intégrés et la lecture des réponses avec le plancher du verdict (`docs/ai.md`) ; restent `AnthropicApiProvider` et le rechargement des prompts (FSEvents, dans le noyau). La construction du message dépend des entrées : elle vient avec la phase 2. Testée sans réseau.
 2. **Entrées dans le noyau** : découpage en segments de `draft.own_text` et reconstruction (fait), puis les autres entrées.
-3. **Contrat et historique** : commandes, événements, tables `ai_run` et `ai_suggestion`, purge.
+3. **Contrat et historique** : tables `ai_run` et `ai_suggestion` et leurs fonctions dans la base (faits, `crates/nm-store/src/ai_runs.rs`) ; restent les commandes, les événements et l'appel de la purge.
 4. **CLI** (section 12).
 5. **Jalon 1, la correction dans l'app** : ⌘I, menu, panneau au fil de l'eau, différences, Accepter et Refuser. Valide la chaîne entière sur le cas le plus simple.
 6. **Jalon 2, la lecture** : `a`, résumé, traduction, réponses rapides, analyse de sécurité, dates.

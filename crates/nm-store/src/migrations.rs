@@ -36,6 +36,7 @@ pub(crate) fn migrate(conn: &mut Connection, mut version: i64) -> Result<()> {
             9 => to_10(&tx)?,
             10 => to_11(&tx)?,
             11 => to_12(&tx)?,
+            12 => to_13(&tx)?,
             _ => unreachable!("aucune migration depuis la version {version}"),
         }
         version += 1;
@@ -333,6 +334,57 @@ fn to_12(conn: &Connection) -> Result<()> {
                JOIN message m ON m.id = ma.message_id
                JOIN folder f ON f.id = m.folder_id
               WHERE f.role = 'sent' AND ma.role IN ('to', 'cc', 'bcc'));",
+    )?;
+    Ok(())
+}
+
+/// Version 13: the AI assistance (`ia.md`, section 9). Two new tables and
+/// their indexes, empty: instant. Nothing to fill, since no run happened
+/// before.
+fn to_13(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "CREATE TABLE ai_run (
+             id             INTEGER PRIMARY KEY,
+             date_created   INTEGER NOT NULL DEFAULT (unixepoch()),
+             created_by     TEXT NOT NULL CHECK (created_by IN ('core','app','cli','tui','web','mcp','config_sync','imap')),
+             prompt_id      TEXT NOT NULL,
+             variant        TEXT,
+             prompt_source  TEXT NOT NULL CHECK (prompt_source IN ('builtin','user')),
+             prompt_hash    BLOB NOT NULL,
+             provider       TEXT NOT NULL,
+             model          TEXT NOT NULL,
+             scope          TEXT NOT NULL CHECK (scope IN ('draft','message','thread','selection','attachment')),
+             target         TEXT NOT NULL,
+             lang           TEXT NOT NULL,
+             input          TEXT,
+             output         TEXT,
+             state          TEXT NOT NULL CHECK (state IN ('running','done','failed','cancelled')),
+             error          TEXT,
+             decision       TEXT CHECK (decision IN ('accepted','rejected','partial')),
+             date_decided   INTEGER,
+             input_tokens   INTEGER,
+             output_tokens  INTEGER,
+             cost_usd       REAL,
+             billed         INTEGER NOT NULL CHECK (billed IN (0,1)),
+             duration_ms    INTEGER,
+             date_purged    INTEGER
+         ) STRICT;
+         
+         CREATE INDEX idx_ai_run_date ON ai_run (date_created);
+         CREATE INDEX idx_ai_run_prompt ON ai_run (prompt_id, prompt_hash);
+         CREATE INDEX idx_ai_run_unpurged ON ai_run (date_created) WHERE date_purged IS NULL;
+         CREATE INDEX idx_ai_run_running ON ai_run (id) WHERE state = 'running';
+         
+         CREATE TABLE ai_suggestion (
+             run_id         INTEGER NOT NULL REFERENCES ai_run(id) ON DELETE CASCADE,
+             thread_id      INTEGER NOT NULL REFERENCES thread(id) ON DELETE CASCADE,
+             target         TEXT NOT NULL,
+             reason         TEXT NOT NULL,
+             decision       TEXT CHECK (decision IN ('accepted','other','dismissed')),
+             PRIMARY KEY (run_id, thread_id)
+         ) STRICT;
+         
+         CREATE INDEX idx_ai_suggestion_thread ON ai_suggestion (thread_id);",
     )?;
     Ok(())
 }

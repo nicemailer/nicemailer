@@ -38,6 +38,7 @@
 //! `impl Store` blocks still add public methods to `Store`.
 
 pub mod accounts;
+pub mod ai_runs;
 pub mod auth;
 pub mod attachments;
 mod commands;
@@ -110,7 +111,9 @@ pub use rusqlite;
 /// 11: the partial indexes of the virtual folder Work.
 /// 12: people and robots (`expediteurs.md`): the clues and the verdict of
 ///     each message, the verdict and the counts of each address.
-pub const SCHEMA_VERSION: i64 = 12;
+/// 13: the AI assistance (`ia.md`, section 9): `ai_run`, the history of
+///     the runs of prompts, and `ai_suggestion`, the targets suggested.
+pub const SCHEMA_VERSION: i64 = 13;
 
 /// Full text of the schema, at the latest version. `include_str!` reads the
 /// file at compile time and embeds it in the binary as a `&'static str`; the
@@ -656,6 +659,10 @@ fn check_schema(conn: &Connection, version: i64) -> Result<()> {
     }
     if version >= 7 {
         checks.push(("SELECT send_account_id FROM draft", "draft.send_account_id"));
+    }
+    if version >= 13 {
+        checks.push(("SELECT prompt_hash, billed FROM ai_run", "ai_run"));
+        checks.push(("SELECT run_id, thread_id FROM ai_suggestion", "ai_suggestion"));
     }
     for (sql, what) in checks {
         if conn.prepare(sql).is_err() {
