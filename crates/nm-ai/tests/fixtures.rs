@@ -16,9 +16,13 @@ use std::path::PathBuf;
 /// at compile time, so the test finds its files whatever the current
 /// directory is when `cargo test` runs.
 fn lines(name: &str) -> Vec<Value> {
-    let path: PathBuf = [env!("CARGO_MANIFEST_DIR"), "tests/fixtures/claude-code", name]
-        .iter()
-        .collect();
+    let path: PathBuf = [
+        env!("CARGO_MANIFEST_DIR"),
+        "tests/fixtures/claude-code",
+        name,
+    ]
+    .iter()
+    .collect();
     let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
     text.lines()
         .enumerate()
@@ -69,13 +73,24 @@ fn assert_safe_run(name: &str, allowed: &[&str]) -> Vec<Value> {
     assert_eq!(i.len(), 2, "{name}: one init per turn");
     for init in &i {
         assert_eq!(tools(init), allowed, "{name}: announced tools");
-        assert_eq!(init["mcp_servers"].as_array().unwrap().len(), 0, "{name}: MCP servers");
+        assert_eq!(
+            init["mcp_servers"].as_array().unwrap().len(),
+            0,
+            "{name}: MCP servers"
+        );
     }
     let r = results(&v);
     assert_eq!(r.len(), 2, "{name}: two turns");
     // The interrupted probe costs nothing and has no answer.
-    assert_eq!(r[0]["subtype"], "error_during_execution", "{name}: probe interrupted");
-    assert_eq!(r[0]["total_cost_usd"].as_f64(), Some(0.0), "{name}: probe is free");
+    assert_eq!(
+        r[0]["subtype"], "error_during_execution",
+        "{name}: probe interrupted"
+    );
+    assert_eq!(
+        r[0]["total_cost_usd"].as_f64(),
+        Some(0.0),
+        "{name}: probe is free"
+    );
     assert_eq!(r[1]["subtype"], "success", "{name}: real turn");
     assert_eq!(r[1]["is_error"], false, "{name}: real turn");
     v
@@ -105,13 +120,21 @@ fn streamed_text_comes_in_deltas() {
         .filter(|d| d["type"] == "stream_event" && d["event"]["type"] == "content_block_delta")
         .count();
     assert!(deltas > 1, "several deltas, got {deltas}");
-    assert!(results(&v)[1]["result"].as_str().unwrap().contains("notaire"));
+    assert!(
+        results(&v)[1]["result"]
+            .as_str()
+            .unwrap()
+            .contains("notaire")
+    );
 }
 
 #[test]
 fn not_logged_in_is_recognizable() {
     let v = lines("not-logged-in.jsonl");
-    let assistant = v.iter().find(|d| d["type"] == "assistant").expect("an assistant line");
+    let assistant = v
+        .iter()
+        .find(|d| d["type"] == "assistant")
+        .expect("an assistant line");
     assert_eq!(assistant["error"], "authentication_failed");
     let r = results(&v);
     assert_eq!(r.len(), 1);
@@ -126,7 +149,10 @@ fn default_options_announce_tools() {
     assert_eq!(v.len(), 1);
     let init = inits(&v)[0];
     let t = tools(init);
-    assert!(t.contains(&"Bash") && t.contains(&"Write"), "dangerous tools announced");
+    assert!(
+        t.contains(&"Bash") && t.contains(&"Write"),
+        "dangerous tools announced"
+    );
     assert!(!init["mcp_servers"].as_array().unwrap().is_empty());
 }
 
@@ -140,9 +166,13 @@ fn recordings_name_no_user_or_machine() {
         "not-logged-in.jsonl",
         "unsafe-default-tools.jsonl",
     ] {
-        let path: PathBuf = [env!("CARGO_MANIFEST_DIR"), "tests/fixtures/claude-code", name]
-            .iter()
-            .collect();
+        let path: PathBuf = [
+            env!("CARGO_MANIFEST_DIR"),
+            "tests/fixtures/claude-code",
+            name,
+        ]
+        .iter()
+        .collect();
         let text = std::fs::read_to_string(path).unwrap();
         for needle in ["/Users/", "/private/tmp/"] {
             assert!(!text.contains(needle), "{name} contains {needle:?}");

@@ -6,6 +6,12 @@ edition.workspace = true
 publish.workspace = true
 
 [dependencies]
+serde_json.workspace = true
+thiserror.workspace = true
+libc.workspace = true
+# "process" on top of the workspace's features: the claude-code provider
+# runs the `claude` binary as a child process.
+tokio = { workspace = true, features = ["process"] }
 
 [dev-dependencies]
-serde_json.workspace = true
+tempfile.workspace = true

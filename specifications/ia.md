@@ -18,7 +18,7 @@ Ce document spécifie comment NiceMailer fait appel à un modèle de langage (Cl
 
 ## 3. Fournisseurs et connexion
 
-Le noyau définit un trait `AiProvider` (nouvelle crate `nm-ai`) : il reçoit une requête (système, message, modèle, schéma de sortie éventuel, limite de tokens) et renvoie un flux d'événements (fragment de texte, fin avec usage et coût, erreur). Il accepte l'annulation. Deux implémentations en v1.
+Le noyau définit un type `Provider` (crate `nm-ai`), une énumération avec une variante par fournisseur plutôt qu'un trait : la liste des fournisseurs est fermée et connue du noyau. Un fournisseur reçoit une requête (système, message, modèle, schéma de sortie éventuel, limite de tokens), passe les fragments de texte au fil de l'eau, puis rend la réponse avec son usage et son coût, ou une erreur typée. L'annulation consiste à abandonner l'appel en cours. Deux fournisseurs réels en v1, plus un fournisseur factice pour les tests.
 
 ### `claude-code` : l'abonnement Claude de l'utilisateur
 
@@ -79,7 +79,7 @@ La sonde reste dans la conversation du processus, qui ne sert qu'à une exécuti
 | Délai dépassé | `ai.timeout_secs` | `ai_timeout` |
 | Sortie illisible | Ligne non JSON, `result` absent, `structured_output` absent avec un schéma | `ai_invalid_output` |
 
-- **Annulation et délai** : le groupe de processus reçoit `SIGTERM` (puis `SIGKILL` s'il n'est pas fini une seconde plus tard). Vérifié : tué en plein flux, aucun processus ne reste.
+- **Annulation, délai et fin** : le groupe de processus reçoit `SIGKILL`, puis le processus est récupéré (`wait`). Pas de `SIGTERM` d'abord : la réponse est lue ou abandonnée, et le processus ne garde rien qui vaille d'être sauvé (aucune session n'est conservée). Le groupe est tué **avant** que le processus soit récupéré : son identifiant est celui du processus, réservé tant qu'il n'est pas récupéré ; après, il pourrait désigner un autre processus. Vérifié : tué en plein flux ou au délai, aucun processus ne reste, petits-enfants compris (`crates/nm-ai/tests/claude_code.rs`).
 
 ### `anthropic-api` : une clé API
 
@@ -260,6 +260,8 @@ Le noyau ajoute la consigne au prompt système (« Answer in French. ») ; pour 
 
 ### Tables
 
+Elles entreront dans `schema.sql` à la phase 3, avec leur migration (`docs/migrations.md`) : `schema.sql` est le schéma que le noyau crée pour une base neuve, et une table ajoutée sans migration donnerait aux bases existantes un autre schéma.
+
 ```sql
 CREATE TABLE ai_run (
     id             INTEGER PRIMARY KEY,
@@ -394,8 +396,8 @@ L'interrupteur est global : un compte ne peut pas être exclu en v1. Le format l
 
 ## 14. Feuille de route
 
-0. **Vérifier le CLI `claude`** : fait le 14 novembre 2026 avec Claude Code 2.1.325 (section 3, « L'appel » et « Vérification à chaque appel »). Restent à observer : la limite d'usage atteinte, et le fournisseur `anthropic-api`, faute de clé API pendant l'essai.
-1. **Crate `nm-ai`** : trait `AiProvider`, `ClaudeCodeProvider`, `AnthropicApiProvider`, `FakeProvider` ; chargement, validation et rechargement des prompts ; construction du message ; validation des sorties. Testée sans réseau.
+0. **Vérifier le CLI `claude`** : fait le 14 novembre 2026 avec Claude Code 2.1.325 (section 3, « L'appel » et « Vérification à chaque appel »). Restent à observer : la limite d'usage atteinte, et le fournisseur `anthropic-api`, faute de clé API pendant l'essai. Après une mise à jour de Claude Code, `cargo test -p nm-ai --test real_claude -- --ignored` refait les essais essentiels avec le vrai binaire.
+1. **Crate `nm-ai`** : fait pour les fournisseurs `claude-code` et factice (`docs/ai.md`) ; restent `AnthropicApiProvider`, chargement, validation et rechargement des prompts ; construction du message ; validation des sorties. Testée sans réseau.
 2. **Entrées dans le noyau** : découpage en segments de `draft.own_text` et reconstruction, puis les autres entrées.
 3. **Contrat et historique** : commandes, événements, tables `ai_run` et `ai_suggestion`, purge.
 4. **CLI** (section 12).

@@ -23,5 +23,6 @@ User and developer documentation, in English. It is written together with the co
 | [app-bundle.md](app-bundle.md) | `NiceMailer.app` in `/Applications`: its core run by a launch agent, stopping it, choosing the mailbox (⌥ at launch, Change Mailbox…), `make bundle` |
 | [sending.md](sending.md) | Replying to a mail: the reply screen, what the core prepares, sending through SMTP with an undo delay, the copy in Sent, the filing, failures, the SMTP password |
 | [core-library.md](core-library.md) | Core methods behind the screens: sort by modification, text/HTML per sender, export, history, tags, groups, contacts |
+| [ai.md](ai.md) | AI assistance: the providers (the user's `claude` binary, a fake for tests), the safety check that proves at every call that the binary has no tool, how a call ends, the tests |
 
 Features of the first working version that predate this folder (fake-mail seed, folders and moves, search, events) are described in the main `README.md` and still need their own pages.
