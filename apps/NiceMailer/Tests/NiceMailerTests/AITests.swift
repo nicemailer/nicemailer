@@ -75,15 +75,20 @@ struct AIRulesTests {
         #expect(started.cursor == 4)
     }
 
-    @Test func theScreenOfTheMenuFollowsTheFolderAndTheLayout() {
+    @Test func theScreenOfThePaletteFollowsItsTarget() {
         let screen = GeekController.aiScreen
-        #expect(screen(true, "quarantine", 2, false) == "compose")
-        #expect(screen(false, "quarantine", 2, false) == "list", "Quarantine: sorting, whatever the layout")
-        #expect(screen(false, "quarantine", 1, true) == "list")
-        #expect(screen(false, "inbox", 2, false) == "reading")
-        #expect(screen(false, "inbox", 1, true) == "reading")
-        #expect(screen(false, "inbox", 1, false) == "list")
-        #expect(screen(false, nil, 3, false) == "reading")
+        #expect(screen(true, 0) == "compose")
+        #expect(screen(true, 5) == "compose", "the reply written, whatever is marked")
+        #expect(screen(false, 0) == "mail", "the mail shown or under the cursor")
+        #expect(screen(false, 1) == "mail", "one mail marked is one mail")
+        #expect(screen(false, 2) == "selection")
+        // The conversation of a prompt of one mail.
+        let thread = GeekController.aiThread
+        #expect(thread([7], 3, 4) == 7, "the one marked alone first")
+        #expect(thread([], 3, 4) == 3, "then the one shown")
+        #expect(thread([], nil, 4) == 4, "then the row under the cursor")
+        #expect(thread([7, 8], 3, 4) == 3)
+        #expect(thread([], nil, nil) == nil)
     }
 
     @Test func theStatusBarSaysTheSortAndTheSuggestion() {
@@ -217,7 +222,7 @@ final class AIFakeState: @unchecked Sendable {
         case "ai_list_prompts":
             switch params["screen"] as? String {
             case "compose": return Self.prompts
-            case "reading": return Self.mailPrompts
+            case "mail": return Self.mailPrompts
             default: return [Self.sortPrompt, Self.prompts[3]]
             }
         case "ai_suggestions":
@@ -369,9 +374,25 @@ final class AIControllerTests {
         #expect(core.calls("ai_run").last?["prompt"] as? String == "summarize-thread")
         press("esc")
         _ = await eventually { self.model.aiRun == nil }
+        // The list alone, nothing marked: the row under the cursor is the
+        // mail, summarized without being opened.
         controller.columns = 1
+        press("j")
         press("a")
         _ = await eventually { self.paletteOpen }
+        press("ret")
+        _ = await eventually { self.model.aiRun?.runId == 7 }
+        let run = try #require(core.calls("ai_run").last)
+        #expect(run["prompt"] as? String == "summarize-thread")
+        #expect(run["thread_id"] as? Int == model.selectedThreadId)
+        #expect(run["message_id"] == nil)
+        press("esc")
+        _ = await eventually { self.model.aiRun == nil }
+        // Several marked: filing them.
+        model.marked = Set(model.threads.prefix(2).map(\.id))
+        press("a")
+        _ = await eventually { self.paletteOpen }
+        #expect(core.calls("ai_list_prompts").last?["screen"] as? String == "selection")
         press("ret")
         _ = await eventually { self.model.aiSort?.runId == 7 }
         #expect(core.calls("ai_run").last?["prompt"] as? String == "suggest-folder")
@@ -527,7 +548,7 @@ final class AIControllerTests {
         press("a")
         _ = await eventually { self.paletteOpen }
         #expect(controller.aiPlacement == "palette")
-        #expect(core.calls("ai_list_prompts").last?["screen"] as? String == "reading")
+        #expect(core.calls("ai_list_prompts").last?["screen"] as? String == "mail")
         choose("r")
         _ = await eventually { self.model.aiRun?.runId == 7 }
         let run = try #require(core.calls("ai_run").last)
@@ -602,7 +623,8 @@ final class AIControllerTests {
     }
 
     @Test func aSortRunsInTheBackgroundWithTheKeysFree() async throws {
-        controller.columns = 1
+        let two = Set(model.threads.prefix(2).map(\.id))
+        model.marked = two
         press("a")
         _ = await eventually { self.paletteOpen }
         choose("s")
@@ -610,8 +632,8 @@ final class AIControllerTests {
         let run = try #require(core.calls("ai_run").last)
         #expect(run["prompt"] as? String == "suggest-folder")
         #expect(run["folder_ids"] as? [Int] == model.listedFolderIds)
-        // Nothing marked, `unmarked` cursor: the conversation under it.
-        #expect(run["thread_ids"] as? [Int] == [model.selectedThreadId!])
+        // The conversations marked.
+        #expect(Set(run["thread_ids"] as? [Int] ?? []) == two)
         // The progress in the status bar; the keys are the list's.
         event("AiProgress", ["run_id": .int(7), "done": .int(20), "total": .int(47)], transient: true)
         #expect(model.aiSort?.done == 20 && model.aiSort?.total == 47)
@@ -629,7 +651,7 @@ final class AIControllerTests {
     }
 
     @Test func escapeStopsASort() async {
-        controller.columns = 1
+        model.marked = Set(model.threads.prefix(2).map(\.id))
         press("a")
         _ = await eventually { self.paletteOpen }
         choose("s")
@@ -640,12 +662,11 @@ final class AIControllerTests {
         #expect(model.flash == L("AI stopped"))
     }
 
-    @Test func aInTheListOpensTheMenuOfTheMails() async {
-        // One column, on the list: the list's menu.
-        controller.columns = 1
+    @Test func aWithSeveralMarkedOpensThePaletteOfTheSelection() async {
+        model.marked = Set(model.threads.prefix(2).map(\.id))
         press("a")
         _ = await eventually { self.paletteOpen }
-        #expect(core.calls("ai_list_prompts").last?["screen"] as? String == "list")
+        #expect(core.calls("ai_list_prompts").last?["screen"] as? String == "selection")
         #expect(core.calls("ai_list_prompts").last?["folder"] as? String == "inbox")
         choose("w")
         #expect(model.flash == L("Not available yet: %@", "Write from my notes"))

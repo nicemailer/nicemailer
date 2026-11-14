@@ -149,8 +149,8 @@ impl Catalog {
     /// The prompts of a screen's AI menu, in a folder of this role (`None`
     /// for the compose screen), the most used first: the first row is
     /// highlighted when the menu opens, so that ⌘I then Return proofreads
-    /// a reply. By the screen's order of scopes (`Screen::scopes`: the list
-    /// sorts before it summarizes), then in the catalog's order: the
+    /// a reply. By the screen's order of scopes (`Screen::scopes`: the
+    /// Quarantine sorts before it summarizes), then in the catalog's order: the
     /// built-in prompts as `BUILTIN` ranks them, from the most useful, then
     /// the user's.
     pub fn menu(&self, screen: Screen, folder: Option<FolderRole>) -> Vec<&Prompt> {
@@ -159,7 +159,7 @@ impl Catalog {
             .prompts
             .iter()
             .enumerate()
-            .filter(|(_, p)| p.offered_in(folder))
+            .filter(|(_, p)| p.offered_in(folder) && screen.offers(p))
             .filter_map(|(i, p)| Some((scopes.iter().position(|s| *s == p.scope)?, i, p)))
             .collect();
         v.sort_by_key(|(scope, i, _)| (*scope, *i));
@@ -346,9 +346,7 @@ pub fn load(user: &[UserFile]) -> Loaded {
 
 /// Whether two prompts would share a letter in one menu.
 fn clash(a: &Prompt, b: &Prompt) -> bool {
-    let same_screen = Screen::ALL
-        .iter()
-        .any(|s| s.scopes().contains(&a.scope) && s.scopes().contains(&b.scope));
+    let same_screen = Screen::ALL.iter().any(|s| s.offers(a) && s.offers(b));
     let overlap = match (&a.folders, &b.folders) {
         (Some(x), Some(y)) => x.iter().any(|f| y.contains(f)),
         // No `folders`: offered everywhere, so it meets any other.

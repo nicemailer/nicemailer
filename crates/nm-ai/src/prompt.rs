@@ -56,18 +56,21 @@ impl Scope {
     }
 }
 
-/// A screen of the app and the scopes whose prompts its menu shows
-/// together. The key of a prompt must be unique within a screen, not only
-/// within its scope: the reading screen lists the `message` and `thread`
-/// prompts in one menu.
+/// What the AI palette works on, and so the scopes whose prompts it shows
+/// together (`ia.md`, section 11, "Contexte"). It is not the layout of the
+/// window but the target: the reply written, one mail, or several. The key
+/// of a prompt must be unique within a screen, not only within its scope:
+/// the mail screen lists the `thread` and `message` prompts in one menu.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Screen {
     /// The reply or new-mail screen (⌘I).
     Compose,
-    /// A mail open in the reader (`a`).
-    Reading,
-    /// The list of conversations (`a`).
-    List,
+    /// One mail (`a`): the one shown, the one marked alone, or the row under
+    /// the cursor when nothing is marked. A summary or a quick reply means
+    /// nothing for several mails.
+    Mail,
+    /// Several mails marked (`a`): what works on a set, filing them today.
+    Selection,
     /// An attachment chosen in the reader.
     Attachment,
 }
@@ -75,18 +78,46 @@ pub enum Screen {
 impl Screen {
     pub const ALL: [Screen; 4] = [
         Screen::Compose,
-        Screen::Reading,
-        Screen::List,
+        Screen::Mail,
+        Screen::Selection,
         Screen::Attachment,
     ];
+
+    /// The screen's name in the contract (`ai_list_prompts`).
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Screen::Compose => "compose",
+            Screen::Mail => "mail",
+            Screen::Selection => "selection",
+            Screen::Attachment => "attachment",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Screen> {
+        Screen::ALL.into_iter().find(|x| x.as_str() == s)
+    }
+
+    /// Whether the screen's palette shows this prompt, its folders aside.
+    /// On one mail, a prompt of a set is offered only if it takes the whole
+    /// folder when nothing is marked (`unmarked = "folder"`, the sorting of
+    /// the Quarantine): with one mail shown or under the cursor, it still
+    /// has its folder to work on. Filing one mail alone is not offered
+    /// there: the mail's own prompts are what one mail needs.
+    pub fn offers(self, p: &Prompt) -> bool {
+        self.scopes().contains(&p.scope)
+            && !(self == Screen::Mail
+                && p.scope == Scope::Selection
+                && p.unmarked != Unmarked::Folder)
+    }
 
     pub fn scopes(self) -> &'static [Scope] {
         match self {
             Screen::Compose => &[Scope::Draft],
-            // The conversation first: its summary is what a mail read most
-            // often needs; the prompts of one mail follow.
-            Screen::Reading => &[Scope::Thread, Scope::Message],
-            Screen::List => &[Scope::Selection, Scope::Thread],
+            // A prompt of the whole folder first (sorting the Quarantine,
+            // what the folder is for: `offers`), then the conversation, its
+            // summary being what a mail most often needs, then its mail.
+            Screen::Mail => &[Scope::Selection, Scope::Thread, Scope::Message],
+            Screen::Selection => &[Scope::Selection],
             Screen::Attachment => &[Scope::Attachment],
         }
     }

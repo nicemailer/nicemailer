@@ -276,12 +276,8 @@ pub(crate) async fn status(core: &Arc<Core>, p: AiStatusParams) -> Result<AiStat
 
 /// `ai_list_prompts`.
 pub(crate) fn list_prompts(core: &Arc<Core>, p: AiListPromptsParams) -> Result<Vec<AiPromptView>, RpcError> {
-    let screen = match p.screen.as_str() {
-        "compose" => Screen::Compose,
-        "reading" => Screen::Reading,
-        "list" => Screen::List,
-        "attachment" => Screen::Attachment,
-        other => return Err(RpcError::new(error_code::INVALID_PARAMS, format!("unknown screen {other:?}"))),
+    let Some(screen) = Screen::parse(&p.screen) else {
+        return Err(RpcError::new(error_code::INVALID_PARAMS, format!("unknown screen {:?}", p.screen)));
     };
     let lang = p.lang.as_deref().unwrap_or("en");
     let loaded = core.ai.catalog();

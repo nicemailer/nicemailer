@@ -3,7 +3,7 @@
 version = 1
 id = "security-check"
 scope = "message"
-key = "s"
+key = "c"
 label = { en = "Security check", fr = "Analyse de sécurité" }
 input = ["message.headers", "message.auth", "message.text", "sender.history"]
 output = "verdict"

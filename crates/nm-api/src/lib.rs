@@ -2484,7 +2484,9 @@ pub struct AiStatusResult {
 /// Params of `ai_list_prompts`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AiListPromptsParams {
-    /// `compose`, `reading`, `list` or `attachment`.
+    /// `compose` (the reply written), `mail` (one mail: shown, marked
+    /// alone, or under the cursor), `selection` (several mails marked) or
+    /// `attachment` (`ia.md`, section 11, "Contexte").
     pub screen: String,
     /// The role of the folder shown; absent for the compose screen.
     #[serde(default)]
@@ -2545,7 +2547,7 @@ pub struct AiRunParams {
     /// Only this part of the draft's body.
     #[serde(default)]
     pub selection: Option<AiSelection>,
-    /// The conversation, for the prompts of the reading and list screens;
+    /// The conversation, for the prompts of the mail and selection screens;
     /// with `message_id`, the mail of it a `message` prompt works on (its
     /// latest received when absent).
     #[serde(default)]

@@ -404,7 +404,7 @@ fn a_conversation_is_summarized_in_the_apps_language() {
     let dir = tempfile::tempdir().unwrap();
     let answers = json!({"summarize-thread": "{\"summary\": \"Alice attend jeudi 14h.\", \"actions\": [{\"task\": \"Apporter la pièce d'identité\", \"owner\": \"you\", \"due\": \"jeudi\"}]}"});
     let (_core, mut c, visit, _) = mail_core(dir.path(), answers);
-    let menu = c.call("ai_list_prompts", json!({"screen": "reading", "folder": "inbox", "lang": "fr"})).unwrap();
+    let menu = c.call("ai_list_prompts", json!({"screen": "mail", "folder": "inbox", "lang": "fr"})).unwrap();
     let available: Vec<&str> = menu.as_array().unwrap().iter().filter(|p| p["available"] == true).map(|p| p["id"].as_str().unwrap()).collect();
     for id in ["summarize-thread", "quick-replies", "translate-message", "security-check", "dates"] {
         assert!(available.contains(&id), "{id} in {available:?}");
@@ -636,7 +636,7 @@ fn sorting_needs_its_folder_and_what_to_sort() {
     // Elsewhere, nothing marked: the client gives the cursor's; none, refused.
     let e = c.call("ai_run", json!({"prompt": "suggest-folder", "folder_ids": [inbox], "lang": "fr"})).unwrap_err();
     assert!(e["message"].as_str().unwrap().contains("mark the conversations"), "{e}");
-    let menu = c.call("ai_list_prompts", json!({"screen": "list", "folder": "quarantine"})).unwrap();
+    let menu = c.call("ai_list_prompts", json!({"screen": "selection", "folder": "quarantine"})).unwrap();
     let triage = menu.as_array().unwrap().iter().find(|p| p["id"] == "triage-quarantine").unwrap().clone();
     assert_eq!((triage["available"].clone(), triage["unmarked"].clone()), (json!(true), json!("folder")));
     let _ = (quarantine, threads);

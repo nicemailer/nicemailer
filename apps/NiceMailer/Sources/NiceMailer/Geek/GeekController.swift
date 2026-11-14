@@ -2336,11 +2336,13 @@ final class GeekController {
             Task { await model.startAI(p, variant: variant) }
             return
         }
-        guard let thread = model.openThread?.id else {
+        guard let thread = Self.aiThread(marked: model.marked, open: model.openThread?.id, cursor: model.selectedThreadId) else {
             model.flash = L("No mail to work on")
             return
         }
-        let current = readerState.current
+        // The mail under the reader's cursor, if the conversation is the
+        // one shown; else the core takes its latest mail received.
+        let current = thread == model.openThread?.id ? readerState.current : nil
         Task { await model.startMailAI(p, variant: variant, thread: thread, message: current) }
     }
 
@@ -2351,14 +2353,7 @@ final class GeekController {
     func openAI() {
         let compose = model.composer != nil && screen == .mail
         guard compose || screen == .mail else { return }
-        // The mail shown (two or three columns, or read in the whole
-        // window): the menu of the reading screen, translation and security
-        // check included. The list alone (one column): the list's. The two
-        // cannot be one menu: their prompts share letters (`s`).
-        //
-        // In Quarantine, always the list's: sorting is what the folder is
-        // for (`a` `s` sorts it), whatever the layout.
-        let name = Self.aiScreen(compose: compose, role: model.currentRole, columns: columns, reading: reading)
+        let name = Self.aiScreen(compose: compose, marked: model.marked.count)
         let folder = compose ? nil : model.currentRole
         Task {
             guard let prompts = await model.aiPrompts(screen: name, folder: folder) else { return }
@@ -2384,14 +2379,24 @@ final class GeekController {
         return "none"
     }
 
-    /// The screen whose AI menu `a` (or ⌘I) opens: the reply's while one is
-    /// written; in Quarantine, the list's (sorting is what it is for);
-    /// elsewhere the reading one while a mail is shown, the list's on the
-    /// list alone. A pure function, tested alone.
-    nonisolated static func aiScreen(compose: Bool, role: String?, columns: Int, reading: Bool) -> String {
+    /// The screen whose AI palette `a` (or ⌘I) opens (`ia.md`, section 11,
+    /// "Contexte"): what it works on, not the layout of the window. The
+    /// reply while one is written; several mails when two or more are
+    /// marked (filing them); else one mail. The folder plays its part in
+    /// the core: in Quarantine, the sorting of the whole folder joins the
+    /// mail's prompts. A pure function, tested alone.
+    nonisolated static func aiScreen(compose: Bool, marked: Int) -> String {
         if compose { return "compose" }
-        if role == "quarantine" || (columns == 1 && !reading) { return "list" }
-        return "reading"
+        return marked >= 2 ? "selection" : "mail"
+    }
+
+    /// The conversation a prompt of one mail works on: the one marked
+    /// alone, else the one shown, else the row under the cursor (a summary
+    /// of a conversation not opened yet is a way to sort it). A pure
+    /// function, tested alone.
+    nonisolated static func aiThread(marked: Set<Int>, open: Int?, cursor: Int?) -> Int? {
+        if marked.count == 1 { return marked.first }
+        return open ?? cursor
     }
 
     /// A key while the AI panel of the reply is open: the answer it gives

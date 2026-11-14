@@ -120,12 +120,16 @@ fn the_menus_of_the_spec() {
             ('o', "subject-ideas".into()),
         ]
     );
-    let reading: Vec<String> = keys(Screen::Reading, Some(FolderRole::Inbox))
-        .into_iter()
-        .map(|k| k.1)
-        .collect();
+    let ids = |screen, folder| -> Vec<String> {
+        keys(screen, Some(folder))
+            .into_iter()
+            .map(|k| k.1)
+            .collect()
+    };
+    // One mail, in an ordinary folder: its prompts only, the conversation's
+    // first; filing it alone is not offered.
     assert_eq!(
-        reading,
+        ids(Screen::Mail, FolderRole::Inbox),
         [
             "summarize-thread",
             "quick-replies",
@@ -134,27 +138,52 @@ fn the_menus_of_the_spec() {
             "dates"
         ]
     );
+    // One mail in Quarantine: the sorting of the whole folder first, as it
+    // takes the folder when nothing is marked, then the mail's prompts,
+    // the security check included.
     assert_eq!(
-        keys(Screen::List, Some(FolderRole::Quarantine))[0].1,
-        "triage-quarantine"
+        ids(Screen::Mail, FolderRole::Quarantine),
+        [
+            "triage-quarantine",
+            "summarize-thread",
+            "quick-replies",
+            "translate-message",
+            "security-check",
+            "dates"
+        ]
+    );
+    // Several mails marked: filing them, nothing that needs one mail.
+    assert_eq!(
+        ids(Screen::Selection, FolderRole::Quarantine),
+        ["triage-quarantine"]
     );
     assert_eq!(
-        keys(Screen::List, Some(FolderRole::Archive))[0].1,
-        "suggest-folder"
+        ids(Screen::Selection, FolderRole::Archive),
+        ["suggest-folder"]
     );
-    // `a` `s` sorts the Quarantine there, suggests a folder elsewhere.
-    let q = l.catalog.menu(Screen::List, Some(FolderRole::Quarantine));
-    let s = q.iter().find(|p| p.key == 's').unwrap();
+    // The letters of one palette are distinct: `s` sorts, `c` checks.
+    let k: Vec<char> = keys(Screen::Mail, Some(FolderRole::Quarantine))
+        .into_iter()
+        .map(|k| k.0)
+        .collect();
+    assert_eq!(k, ['s', 'r', 'p', 't', 'c', 'd']);
+    let q = l
+        .catalog
+        .menu(Screen::Selection, Some(FolderRole::Quarantine));
     assert_eq!(
-        (s.id.as_str(), s.unmarked),
+        (q[0].id.as_str(), q[0].unmarked),
         ("triage-quarantine", Unmarked::Folder)
     );
-    let a = l.catalog.menu(Screen::List, Some(FolderRole::Archive));
-    let s = a.iter().find(|p| p.key == 's').unwrap();
+    let a = l.catalog.menu(Screen::Selection, Some(FolderRole::Archive));
     assert_eq!(
-        (s.id.as_str(), s.unmarked),
+        (a[0].id.as_str(), a[0].unmarked),
         ("suggest-folder", Unmarked::Cursor)
     );
+    // The screens' names in the contract.
+    for screen in Screen::ALL {
+        assert_eq!(Screen::parse(screen.as_str()), Some(screen));
+    }
+    assert_eq!(Screen::parse("reading"), None);
 }
 
 #[test]
@@ -581,7 +610,7 @@ fn the_example_of_the_docs_loads() {
     let p = l.catalog.get("polite-no").unwrap();
     assert!(
         l.catalog
-            .menu(Screen::Reading, Some(FolderRole::Inbox))
+            .menu(Screen::Mail, Some(FolderRole::Inbox))
             .iter()
             .any(|q| q.id == p.id)
     );

@@ -6,8 +6,8 @@
 # text meanwhile, Return applies them (quotation untouched) and ⌘Z undoes
 # them; a variant from the submenu, refused with Escape; a subject chosen
 # by its number; `a` with a mail shown: a summary, then a quick reply that
-# starts the reply; `a` on the list alone suggests a folder for the mail
-# under the cursor; in
+# starts the reply; `a` on the list alone offers the prompts of the row
+# under the cursor, and filing with several marked; in
 # Quarantine, `a` `s` sorts the folder, the rows show their target, Return
 # moves one there.
 expect folder = Inbox
@@ -112,17 +112,27 @@ expect ai_state = none
 expect compose_text ~ I will send it tomorrow.|\n\n
 expect compose_text ~ wrote:
 key esc
-# One column, on the list alone: the menu of the list. Nothing marked, a
-# folder is suggested for the conversation under the cursor only.
+# One column, on the list alone, nothing marked: the row under the cursor
+# is the mail, its prompts are offered, not filing it.
 key v
 key 1
 key a
+expect ai_placement = palette
+expect picker_first = Summarize
+key esc
+# Several marked: filing them, the mail's prompts gone.
+key J
+key J
+expect marked_count = 3
+key a
 expect picker_first = Suggest a folder
+expect picker_rows !~ Summarize
 key ret
-expect ai_suggestions = 1
+expect ai_suggestions = 3
 expect selected_suggestion ~ archive: Fake reason
-# The Quarantine, in two columns: `a` opens the menu of the list (sorting
-# is what the folder is for), `s` sorts the whole folder in the background,
+# The Quarantine, in two columns: `a` opens the palette of the mail shown,
+# the sorting of the whole folder first (what the folder is for), the
+# security check among the mail's prompts; Return sorts in the background,
 # each row shows the target suggested and the status bar why; Return moves
 # the conversation there.
 key v
@@ -132,6 +142,7 @@ key q
 expect folder = Quarantine
 key a
 expect picker_first = Sort the Quarantine
+expect picker_rows ~ Security check
 key ret
 expect ai_suggestions > 0
 expect ai_sort = 
