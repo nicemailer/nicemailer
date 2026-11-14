@@ -3809,6 +3809,236 @@
           }
         }
       }
+    },
+    "esc stop": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "esc arrêter"
+          }
+        }
+      }
+    },
+    "esc close": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "esc fermer"
+          }
+        }
+      }
+    },
+    "No change to make · esc close": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rien à changer · esc fermer"
+          }
+        }
+      }
+    },
+    "↩ or y accept · esc or n refuse · ⌘Z after accepting undoes": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "↩ ou y accepter · esc ou n refuser · ⌘Z après avoir accepté annule"
+          }
+        }
+      }
+    },
+    "1–%lld choose · esc or n refuse": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1–%lld choisir · esc ou n refuser"
+          }
+        }
+      }
+    },
+    "The AI is off: set ai.enabled = true in config.toml": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L'IA est désactivée : mettez ai.enabled = true dans config.toml"
+          }
+        }
+      }
+    },
+    "The reply changed since the AI read it: run it again": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La réponse a changé depuis que l'IA l'a lue : relancez-la"
+          }
+        }
+      }
+    },
+    "AI: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "IA : %@"
+          }
+        }
+      }
+    },
+    "The reply could not be saved: try again": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La réponse n'a pas pu être enregistrée : réessayez"
+          }
+        }
+      }
+    },
+    "The AI failed": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L'IA a échoué"
+          }
+        }
+      }
+    },
+    "The AI gave nothing to apply": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L'IA n'a rien donné à appliquer"
+          }
+        }
+      }
+    },
+    "AI stopped": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "IA arrêtée"
+          }
+        }
+      }
+    },
+    "Applied · ⌘Z undoes it": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Appliqué · ⌘Z l'annule"
+          }
+        }
+      }
+    },
+    "The text changed since the AI's change: nothing undone": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le texte a changé depuis la modification de l'IA : rien n'est annulé"
+          }
+        }
+      }
+    },
+    "AI change undone": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Modification de l'IA annulée"
+          }
+        }
+      }
+    },
+    "AI": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "IA"
+          }
+        }
+      }
+    },
+    "not yet": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "pas encore"
+          }
+        }
+      }
+    },
+    "cancel": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "annuler"
+          }
+        }
+      }
+    },
+    "No AI prompt here": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucun prompt IA ici"
+          }
+        }
+      }
+    },
+    "The AI is reading…": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L'IA lit…"
+          }
+        }
+      }
+    },
+    "The AI changes nothing.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L'IA ne change rien."
+          }
+        }
+      }
+    },
+    "in a reply: AI menu (proofread, rewrite, translate, subjects)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "dans une réponse : menu IA (corriger, reformuler, traduire, objets)"
+          }
+        }
+      }
+    },
+    "AI menu of the mails": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "menu IA des mails"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

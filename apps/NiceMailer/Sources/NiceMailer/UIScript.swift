@@ -705,6 +705,34 @@ private final class Runner {
             "undo_count": "\(m.undoStack.count)",
             "suspect": m.suspectMove?.addr ?? "",
             "choice": c.activeChoice.map { c.choiceTitle($0) } ?? "",
+            // The rows of the choice shown, "key label | key label".
+            "choice_rows": c.activeChoice.map { ch in c.choiceEntries(ch).map { "\($0.key) \($0.label)" }.joined(separator: " | ") } ?? "",
+            // The AI panel of the reply (`AIPanel`): `none`, `running`,
+            // `proposal`, `failed`; its title, the text received, the
+            // proposal (a replacement as `[-removed-]{+added+}`, subjects
+            // joined by " | "), the failure.
+            "ai_state": {
+                switch m.aiRun?.phase {
+                case nil: "none"
+                case .running?: "running"
+                case .proposal?: "proposal"
+                case .failed?: "failed"
+                }
+            }(),
+            "ai_title": m.aiRun?.title ?? "",
+            "ai_text": (m.aiRun?.text ?? "").replacingOccurrences(of: "\n", with: "\\n"),
+            "ai_diff": {
+                guard case .proposal(.replace(let segments, _))? = m.aiRun?.phase else { return "" }
+                return AI.diffText(segments).replacingOccurrences(of: "\n", with: "\\n")
+            }(),
+            "ai_subjects": {
+                guard case .proposal(.subjects(let items))? = m.aiRun?.phase else { return "" }
+                return items.joined(separator: " | ")
+            }(),
+            "ai_error": {
+                guard case .failed(let message)? = m.aiRun?.phase else { return "" }
+                return message
+            }(),
             "contact_addr": c.contacts.indices.contains(c.screenIndex) ? c.contacts[c.screenIndex].addr : "",
             "contact_decision": c.contacts.indices.contains(c.screenIndex)
                 ? c.contacts[c.screenIndex].screeningTarget ?? c.contacts[c.screenIndex].domainTarget.map { "@" + $0 } ?? ""

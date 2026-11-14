@@ -48,6 +48,14 @@ for script in "${scripts[@]}"; do
     if [ -f "$APP/UITests/fixtures/$name.config.toml" ]; then
         cp "$APP/UITests/fixtures/$name.config.toml" "$dir/config.toml"
     fi
+    # A scenario may answer the AI prompts from a table
+    # (fixtures/<scenario>.ai.json, `NICEMAILER_FAKE_AI`, docs/ai.md): no
+    # AI provider is ever called by the UI tests.
+    if [ -f "$APP/UITests/fixtures/$name.ai.json" ]; then
+        export NICEMAILER_FAKE_AI="$APP/UITests/fixtures/$name.ai.json"
+    else
+        unset NICEMAILER_FAKE_AI
+    fi
     # No request leaves the machine (one-click unsubscribe).
     NICEMAILER_DATA_DIR="$dir" NICEMAILER_CONFIG="$dir/config.toml" NICEMAILER_FAKE_NETWORK=1 "$CORE" 2>"$dir/core.log" &
     # Mailboxes for "Change Mailbox…" (mailbox.uiscript): one of an earlier

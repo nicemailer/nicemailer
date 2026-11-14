@@ -2,7 +2,7 @@
 
 NiceMailer can ask a language model to help with mail: proofread a draft, summarize a conversation, suggest where a mail of the Quarantine should go. The rules are in `specifications/ia.md` (in French). This page describes what is built so far and how it is tested.
 
-**Status (November 2026):** the core runs the prompts of the compose screen (proofread, rewrite, translate, subjects) through the contract, with the user's own `claude` binary; the CLI runs them (`nicemailer ai`); the app does not call them yet. The prompts of the other screens, which need the inputs taken from a mail, and the API-key provider come next.
+**Status (November 2026):** the core runs the prompts of the compose screen (proofread, rewrite, translate, subjects) through the contract, with the user's own `claude` binary; the CLI (`nicemailer ai`) and the app (⌘I in a reply) run them. The prompts of the other screens, which need the inputs taken from a mail, and the API-key provider come next.
 
 ## Providers
 
@@ -144,6 +144,23 @@ The user's prompts folder is read again when its files change (name, size, date)
 
 For tests, `NICEMAILER_FAKE_AI=<file.json>` makes the core answer from a table `{"<task>": "<answer>"}` instead of calling a provider.
 
+## In the app
+
+In a reply, **⌘I** opens the AI menu at the foot of the headers, just above the text it works on: the prompts of the compose screen, each with its letter, `…` after one that opens its variants (⌘I `r` `c`: rewrite shorter), "not yet" after one this version cannot run. Out of a reply, **`a`** opens the AI menu of the mails, all "not yet" for now. If the AI is off, the status bar says how to turn it on (`ai.enabled`).
+
+A prompt chosen, the text is saved first (the core reads the draft as saved, at its revision), and the **AI panel** opens between the headers and the text:
+
+| While | Shows | Keys |
+| --- | --- | --- |
+| the run goes on | the text as it comes, without the segment tags | Escape stops it |
+| a replacement is proposed | the differences, removed words struck out in the error colour, added ones underlined in the accent colour | Return or `y` accepts, Escape or `n` refuses |
+| subjects are proposed | the numbered list | the number chooses one; Escape or `n` refuses |
+| it failed | why, in the error colour | Escape or Return closes it |
+
+The panel takes every key while it is open: the text cannot change under a proposal, and a letter pressed only says which keys answer. Accepted, the text becomes the core's (`ai_apply`), the cursor going to the end of the words rewritten if it was in them; **⌘Z** then gives the text back, once, and only while it is still the one the AI gave.
+
+The rules are pure functions (`AI.swift`: the key answers, the hint, the cursor, the diff as text); the model calls the core (`AppModel+AI.swift`); the panel is `AIPanel` (`ComposerView.swift`). An AI event that comes before the answer of `ai_run` is kept and replayed once the run's id is known; the end of a run is taken even after a gap of events, and after missed events the app asks the core for the state of the run it waits for.
+
 ## From the terminal
 
 ```sh
@@ -175,4 +192,6 @@ Tried on 14 November 2026 with Claude Code 2.1.325, Claude Pro, `claude-haiku-5-
 | `tests/answer.rs` | Each output, accepted and refused, case by case; the recorded answers of phase 0 read; the floor of the verdict |
 | `nm-store`, `tests/ai_runs.rs` | A run from start to decision; ending and deciding once; failed and cancelled runs keep their raw answer; runs left running fail at start; the purge keeps everything but the texts and leaves running runs alone; suggestions follow their run and their conversation, and a batch is written whole or not at all |
 | `nm-daemon`, `tests/ai_rpc.rs` | The real core: a reply proofread from the menu to the saved draft, quotation untouched; nothing runs while the AI is off; what cannot work refused before any row is written; an answer with the wrong segments fails and is kept; a draft changed during the run is not overwritten; a subject chosen; a run cancelled and its `claude` process killed; a `claude` that announces tools never gets the mail |
+| Swift, `AITests.swift` | The keys of the panel in each phase, the hint, the diff as text, the cursor after a replacement, the proposals decoded, the errors said; through the keys against `FakeCore`: ⌘I and the menu (a prompt not available yet, the variants), a proofreading saved, run, streamed, accepted and undone, Escape stopping a run and refusing a proposal, a failure, a subject chosen, an end that comes before the run's id or after a gap, the AI off, `a` in the list |
+| `UITests/ai.uiscript` | The app with a real core answering from `fixtures/ai.ai.json`: the menu (not typed), a prompt not available yet, the differences, a letter not typed, applied with the quotation untouched and the cursor after the words, ⌘Z, a variant refused, a subject chosen, `a` in the list |
 | `tests/real_claude.rs` | Ignored by default. The real binary, with the user's subscription: status, a prompt injection that must run nothing, a structured answer. Run it after an update of Claude Code: `cargo test -p nm-ai --test real_claude -- --ignored` |

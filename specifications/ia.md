@@ -408,6 +408,15 @@ Le résultat s'affiche dans un panneau sous l'en-tête du mail ou du brouillon :
 - Pendant l'attente, Échap annule l'exécution.
 - En échec : le message de l'erreur, et pour une sortie invalide, « Réessayer » (`r`).
 
+### Réalisé (novembre 2026)
+
+Le jalon 1 est dans l'app (`docs/ai.md`, « In the app ») : ⌘I et son menu dans la réponse, les variantes, le panneau au fil de l'eau, les différences, Accepter et Refuser, les objets, ⌘Z. `a` ouvre le menu des mails, dont aucun prompt n'est encore branché. Précisions :
+
+- **Le panneau prend toutes les touches** tant qu'il est ouvert : le texte ne peut pas changer sous une proposition, et une lettre tapée dit seulement quelles touches répondent. Ce n'est pas le cas de la spec d'origine, qui laissait ce point ouvert ; c'est plus simple et plus sûr que de vérifier la révision au moment d'accepter (le noyau la vérifie quand même).
+- **Le curseur, après une proposition acceptée**, reste avant ce qui a changé, garde sa distance à la fin s'il était après, et va à la fin des mots réécrits s'il était dedans ou à leur frontière (on vient de taper « merci », l'IA ajoute un point : le curseur va après le point).
+- **⌘Z** rend le texte d'avant une seule fois, et seulement tant que le texte est celui que l'IA a donné ; un objet choisi ne se défait pas par ⌘Z dans le texte.
+- **Le menu de la réponse** s'affiche au pied des en-têtes, juste au-dessus du texte qu'il traite, comme ⇧⌘↩ ; celui des mails dans le coin, comme les autres choix.
+
 ### Quarantine
 
 `a` `s` lance « Trier la Quarantine » sur les mails marqués, ou sur **tout le dossier** si rien n'est marqué (`unmarked = "folder"`) : c'est le tri du matin, et marquer d'abord chaque mail ôterait l'intérêt de la commande. Tout le dossier veut dire toutes ses conversations, demandées au noyau, et pas seulement les lignes déjà chargées par la liste. Elles partent par appels de `ai.batch_size` conversations, dans l'ordre de la liste, et les suggestions des premières s'affichent sans attendre les suivantes. Avant l'envoi, la barre de statut dit combien de conversations partent (« 47 conversations envoyées à l'IA ») ; `AiProgress` donne l'avancement, Échap arrête les appels restants. Chaque ligne reçoit alors, à droite, la cible suggérée dans la couleur de la cible, et la raison s'affiche dans la barre de statut quand la ligne est sous le curseur. La touche de la cible (`i`, `n`, `p`, `x`, `b`, `d` ; `ui.md`, « Quarantine ») déplace comme avant ; la suggestion ne fait que la montrer. `↩` sur une ligne suggérée accepte la suggestion, c'est-à-dire tape la touche de la cible suggérée. Une suggestion ne disparaît que quand la conversation quitte le dossier ou qu'on l'écarte.
@@ -451,7 +460,7 @@ L'interrupteur est global : un compte ne peut pas être exclu en v1. Le format l
 2. **Entrées dans le noyau** : découpage en segments de `draft.own_text` et reconstruction (fait), puis les autres entrées.
 3. **Contrat et historique** : fait pour les prompts du brouillon (section 10, « Réalisé ») ; les autres portées viendront avec leurs entrées.
 4. **CLI** (section 12) : fait, sauf `ai key set` et `ai history`.
-5. **Jalon 1, la correction dans l'app** : ⌘I, menu, panneau au fil de l'eau, différences, Accepter et Refuser. Valide la chaîne entière sur le cas le plus simple.
+5. **Jalon 1, la correction dans l'app** : fait (section 11, « Réalisé »), avec reformuler, traduire et les objets.
 6. **Jalon 2, la lecture** : `a`, résumé, traduction, réponses rapides, analyse de sécurité, dates.
 7. **Jalon 3, la Quarantine** : suggestions par lots, affichage sur les lignes, `↩`.
 8. **Jalon 4, le reste** : reformuler, traduire le brouillon, rédiger à partir de notes, objets, résumé de pièce jointe (extraction du texte des PDF et DOCX), documentation des prompts de l'utilisateur.

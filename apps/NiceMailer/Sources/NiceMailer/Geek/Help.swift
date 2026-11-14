@@ -81,6 +81,8 @@ enum Help {
                 HelpEntry(key: "R", label: L("reply to the sender only")),
                 HelpEntry(key: "F", label: L("forward")),
                 HelpEntry(key: "c", label: L("write a new mail")),
+                HelpEntry(key: "⌘I", label: L("in a reply: AI menu (proofread, rewrite, translate, subjects)")),
+                HelpEntry(key: "a", label: L("AI menu of the mails"), notYet: true),
             ]),
             HelpGroup(title: L("Find and go"), entries: [
                 HelpEntry(key: "/", label: L("search everywhere, in All Mail")),

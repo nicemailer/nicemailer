@@ -81,11 +81,23 @@ struct ComposerView: View {
                     } else if let after = Compose.afterSendLine(c.draft) {
                         Text(after).foregroundStyle(Palette.accentText).lineLimit(1)
                     }
+                    // ⌘I: the AI menu, at the foot of the headers, just
+                    // above the text it works on.
+                    if case .ai? = controller.activeChoice, let choice = controller.activeChoice {
+                        ChoicePanel(controller: controller, choice: choice)
+                            .padding(.top, scaled(2))
+                    }
                 }
                 .font(.geek(12))
                 .padding(.horizontal, 12)
                 .padding(.vertical, scaled(6))
                 Palette.separator.frame(height: 1)
+                // The AI panel, between the headers and the text: the text
+                // as it comes, then the proposal (`ia.md`, section 11).
+                if let run = model.aiRun, run.composer == c.opened {
+                    AIPanel(run: run)
+                    Palette.separator.frame(height: 1)
+                }
                 ComposerTextView(text: c.buffer.text, cursor: c.buffer.utf16Cursor, selection: c.buffer.utf16Selection,
                                  focused: c.focus == .body, controller: controller)
                     .uiTarget("compose-text")
@@ -460,4 +472,87 @@ final class ComposerNSTextView: NSTextView {
     }
 
     override func mouseUp(with event: NSEvent) {}
+}
+
+
+/// The AI panel of the reply: the prompt and the keys it answers to, then
+/// the text as it comes, the differences proposed (removed struck out in
+/// the error colour, added underlined in the accent colour), the subjects
+/// to choose from, or why it failed. Its keys are read by the controller
+/// (`AI.action`); a click does nothing, as the keys say everything.
+struct AIPanel: View {
+    let run: AIRun
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: scaled(4)) {
+            HStack(spacing: scaled(8)) {
+                Text(run.title).foregroundStyle(Palette.accentText)
+                if case .running = run.phase {
+                    ProgressView().controlSize(.small)
+                }
+                Text(AI.hint(run.phase)).foregroundStyle(Palette.muted).lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            ScrollView {
+                content.frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
+            }
+            // At most about a third of a window: the text below stays in
+            // sight, and a long answer scrolls.
+            .frame(maxHeight: scaled(220))
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        .font(.geek(12))
+        .padding(.horizontal, 12)
+        .padding(.vertical, scaled(6))
+        .background(Palette.popup)
+        .uiTarget("ai-panel")
+    }
+
+    @ViewBuilder private var content: some View {
+        switch run.phase {
+        case .running:
+            Text(run.text.isEmpty ? L("The AI is reading…") : run.text).foregroundStyle(Palette.muted)
+        case .failed(let message):
+            Text(message).foregroundStyle(Palette.error)
+        case .proposal(.replace(let segments, let unchanged)):
+            if unchanged {
+                Text(L("The AI changes nothing.")).foregroundStyle(Palette.muted)
+            } else {
+                VStack(alignment: .leading, spacing: scaled(6)) {
+                    ForEach(Array(segments.enumerated()), id: \.offset) { _, s in
+                        Text(Self.diff(s.diff))
+                    }
+                }
+            }
+        case .proposal(.subjects(let items)):
+            VStack(alignment: .leading, spacing: scaled(2)) {
+                ForEach(Array(items.enumerated()), id: \.offset) { i, subject in
+                    HStack(spacing: scaled(10)) {
+                        Text("\(i + 1)").foregroundStyle(Palette.accentText)
+                        Text(subject).foregroundStyle(Palette.text)
+                    }
+                }
+            }
+        }
+    }
+
+    /// The pieces of a diff as one text with its marks.
+    static func diff(_ pieces: [AIDiffPiece]) -> AttributedString {
+        var out = AttributedString()
+        for p in pieces {
+            var a = AttributedString(p.text)
+            switch p.kind {
+            case "removed":
+                a.foregroundColor = Palette.error
+                a.strikethroughStyle = .single
+            case "added":
+                a.foregroundColor = Palette.accentText
+                a.underlineStyle = .single
+            default:
+                a.foregroundColor = Palette.text
+            }
+            out += a
+        }
+        return out
+    }
 }

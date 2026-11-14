@@ -1,0 +1,74 @@
+# The AI assistance in a reply (`ia.md`, section 11; docs/ai.md), its
+# prompts answered by the core from fixtures/ai.ai.json (NICEMAILER_FAKE_AI):
+# ⌘I opens the menu of the reply (not typed), a prompt not available yet
+# says so, proofreading shows its differences, the keys do not reach the
+# text meanwhile, Return applies them (quotation untouched) and ⌘Z undoes
+# them; a variant from the submenu, refused with Escape; a subject chosen
+# by its number; `a` in the list opens the menu of the mails.
+expect folder = Inbox
+key r
+expect composing = true
+type merci je vien jeudi
+key cmd-i
+expect choice = AI
+expect choice_rows ~ c Proofread
+expect choice_rows ~ r Rewrite…
+expect choice_rows ~ o Suggest subjects
+expect choice_rows ~ w Write from my notes
+expect compose_text ~ merci je vien jeudi|
+snap ai-menu
+key w
+expect flash ~ Not available yet
+expect ai_state = none
+# Proofreading: the text is saved, then proposed as differences.
+key cmd-i
+key c
+expect ai_state = proposal
+expect ai_title = Proofread
+expect ai_diff ~ [-merci -]{+Merci, +}
+expect ai_diff ~ [-vien jeudi-]{+viens jeudi.+}
+snap ai-proposal
+# A letter is not typed while the panel is open.
+key x
+expect compose_text ~ merci je vien jeudi|
+expect ai_state = proposal
+key ret
+expect ai_state = none
+expect flash ~ Applied
+# The cursor at the end of the words the AI rewrote, as after typing them.
+expect compose_text ~ Merci, je viens jeudi.|
+expect compose_text ~ wrote:
+expect compose_text ~ \n> 
+snap ai-applied
+key cmd-z
+expect compose_text ~ merci je vien jeudi
+expect flash ~ undone
+expect compose_saved = true
+# A variant from the submenu, refused: the text stays.
+key cmd-i
+key r
+expect choice = Rewrite
+expect choice_rows ~ c Shorter
+key c
+expect ai_state = proposal
+expect ai_title = Rewrite · Shorter
+key esc
+expect ai_state = none
+expect compose_text ~ merci je vien jeudi
+# Subjects: one chosen by its number.
+key cmd-i
+key o
+expect ai_state = proposal
+expect ai_subjects = Jeudi 14h | Confirmation pour jeudi
+snap ai-subjects
+key 2
+expect ai_state = none
+expect compose_subject = Confirmation pour jeudi
+# Out of the reply, `a` opens the AI menu of the mails, not available yet.
+key esc
+expect composing = false
+key a
+expect choice = AI
+expect choice_rows ~ Suggest a folder
+key s
+expect flash ~ Not available yet

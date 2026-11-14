@@ -95,6 +95,16 @@ final class GeekController {
         /// ⌥⌘F in the reply, or a click on "From": the address, and so the
         /// account, it is sent from (`reponse.md`, section 4 ter).
         case sendFrom
+        /// `a`, or ⌘I in the reply: the AI menu of the screen, or the
+        /// variants of one of its prompts (`ia.md`, section 11).
+        case ai(AIMenu)
+    }
+
+    /// The AI menu open: the prompts of the screen, and the prompt whose
+    /// variants are shown, if one is.
+    struct AIMenu: Equatable {
+        let prompts: [AIPromptView]
+        var parent: AIPromptView? = nil
     }
 
     /// One row of a menu or a picker.
@@ -752,6 +762,10 @@ final class GeekController {
             startReply(kind: .replySender)
         case "F":
             startReply(kind: .forward)
+        case "a":
+            // The AI menu of the list, or of the mail read (`ia.md`,
+            // section 11); in the reply, ⌘I.
+            openAI()
         case "c":
             Task {
                 await model.startNewMail()
@@ -1586,6 +1600,22 @@ final class GeekController {
         let code = event.keyCode
         model.flash = nil
         model.lastError = nil
+        // The AI panel takes every key while it is open (`AI.action`).
+        if let run = model.aiRun {
+            handleAIKey(event, run: run)
+            return true
+        }
+        // ⌘I: the AI menu of the reply (`ia.md`, section 11): a letter
+        // alone would be typed, and ctrl-a is already "start of line".
+        if command, !option, !control, event.charactersIgnoringModifiers?.lowercased() == "i" {
+            openAI()
+            return true
+        }
+        // ⌘Z right after an AI proposal accepted gives the text back;
+        // otherwise it goes on to the menus, as before.
+        if command, !option, !control, event.charactersIgnoringModifiers?.lowercased() == "z", model.undoAI() {
+            return true
+        }
         // ⇧⌘↩: choose where the conversation goes, then send. Only when
         // there is something to file: a conversation outside the Inbox,
         // Todo and Waiting stays where it is whatever the choice, and a
@@ -2187,6 +2217,7 @@ final class GeekController {
                 ? L("Send, then file this mail in")
                 : L("Send, then file the conversation in")
         case .sendFrom: L("Send from")
+        case .ai(let m): m.parent?.label ?? L("AI")
         }
     }
 
@@ -2249,7 +2280,68 @@ final class GeekController {
             }
             entries.append(Entry(key: "esc", label: L("cancel: back to the reply")) {})
             return entries
+        case .ai(let m):
+            return aiEntries(m)
         }
+    }
+
+    /// The rows of the AI menu: a prompt per key, `…` after one that opens
+    /// its variants; one this version cannot run yet says so on the right.
+    /// The rows of a prompt's variants start it.
+    func aiEntries(_ m: AIMenu) -> [Entry] {
+        var entries: [Entry]
+        if let parent = m.parent {
+            entries = parent.variants.map { v in
+                Entry(key: v.key, label: v.label) { [model] in
+                    Task { await model.startAI(parent, variant: v) }
+                }
+            }
+        } else {
+            entries = m.prompts.map { p in
+                Entry(key: p.key, label: p.variants.isEmpty ? p.label : p.label + "…",
+                      detail: p.available ? nil : L("not yet"), detailStyle: .info) { [weak self] in
+                    guard let self else { return }
+                    if !p.available {
+                        model.flash = L("Not available yet: %@", p.label)
+                    } else if !p.variants.isEmpty {
+                        choiceIndex = nil
+                        overlay = .choice(.ai(AIMenu(prompts: m.prompts, parent: p)))
+                    } else {
+                        Task { await self.model.startAI(p, variant: nil) }
+                    }
+                }
+            }
+        }
+        entries.append(Entry(key: "esc", label: L("cancel")) {})
+        return entries
+    }
+
+    /// `a` outside the text, ⌘I in the reply: the AI menu of the screen,
+    /// once the core has said which prompts it offers there. In the reply,
+    /// the prompts work on the text; elsewhere, on the mails, for a later
+    /// version of the core (`available: false` for now).
+    func openAI() {
+        let compose = model.composer != nil && screen == .mail
+        guard compose || screen == .mail else { return }
+        let name = compose ? "compose" : reading ? "reading" : "list"
+        let folder = compose ? nil : model.currentRole
+        Task {
+            guard let prompts = await model.aiPrompts(screen: name, folder: folder) else { return }
+            guard !prompts.isEmpty else {
+                model.flash = L("No AI prompt here")
+                return
+            }
+            choiceIndex = nil
+            overlay = .choice(.ai(AIMenu(prompts: prompts)))
+        }
+    }
+
+    /// A key while the AI panel of the reply is open: the answer it gives
+    /// (`AI.action`), and nothing reaches the text.
+    private func handleAIKey(_ event: NSEvent, run: AIRun) {
+        let action = AI.action(run.phase, key: event.charactersIgnoringModifiers ?? "",
+                               isReturn: event.keyCode == KeyCode.returnKey, isEscape: event.keyCode == KeyCode.escape)
+        Task { await model.answerAI(action) }
     }
 
     /// ⌥⌘F or a click on "From": the choice of the address to send from,

@@ -139,6 +139,13 @@ final class AppModel {
     /// The reply being written (`AppModel+Compose.swift`); nil when the
     /// reader shows the mail.
     var composer: Composer?
+    /// The AI run shown in the panel of the reply (`AppModel+AI.swift`);
+    /// nil when the panel is closed.
+    var aiRun: AIRun?
+    /// AI events that came before the answer of `ai_run` told which run is
+    /// ours (a fake or quick provider ends before): kept by run id, replayed
+    /// once it is known.
+    @ObservationIgnored var aiEarly: [Int: [CoreClient.Event]] = [:]
     /// The pending save of the reply's text, restarted at each key.
     @ObservationIgnored var composeSaveTask: Task<Void, Never>?
     /// The save in progress, which the next one waits for.
@@ -806,14 +813,21 @@ final class AppModel {
         let order = AppModel.order(of: e, after: lastEvent)
         switch order {
         case .transient:
-            // Progress of a synchronization: nothing to reload, and the
-            // position stays that of the last numbered event.
+            // Progress of a synchronization, a fragment of an AI answer:
+            // nothing to reload, and the position stays that of the last
+            // numbered event.
+            if e.method == "AiDelta" { aiEvent(e) }
             return
         case .inOrder(let p), .gap(let p):
             lastEvent = p
         }
+        // The end of an AI run is taken whatever its order: dropped with
+        // the rest after a gap, it would leave the panel waiting for good.
+        if e.method == "AiDone" || e.method == "AiFailed" { aiEvent(e) }
         if e.method == "ResyncRequired" || order.isGap {
             scheduleRefresh(full: true)
+            // Events were missed: the end of the run among them, maybe.
+            Task { await aiResync() }
             return
         }
         switch e.method {
@@ -828,6 +842,8 @@ final class AppModel {
             return
         case "DraftSent", "SendFailed", "SendPartial":
             draftEvent(e.method, e.params)
+            return
+        case "AiDone", "AiFailed":
             return
         case "ActionReverted":
             // The server refused a change made here; the core has undone it

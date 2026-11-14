@@ -138,7 +138,9 @@ private struct GeekWindow: View {
     /// and ⇧⌘↩ the line "After sending: …" (`reponse.md`, sections 4 ter
     /// and 8), so the corner leaves them alone.
     private func drawnInPlace(_ choice: GeekController.Choice) -> Bool {
-        (choice == .sendFrom || choice == .sendThen) && model.composer != nil
+        guard model.composer != nil else { return false }
+        if case .ai = choice { return controller.screen == .mail }
+        return choice == .sendFrom || choice == .sendThen
     }
 
     @ViewBuilder private var menusAndPickers: some View {

@@ -181,6 +181,12 @@ struct ComposeHeaders: Equatable {
 /// written (`create_draft`, with the text typed) only when there is
 /// something to keep: the first pause of typing, a file attached, the
 /// sending (`AppModel.ensureWritten`). Closed before, it leaves nothing.
+/// The text of a reply before and after an AI proposal was accepted.
+struct AIUndo: Equatable {
+    let before: String
+    let after: String
+}
+
 struct Composer: Equatable {
     var draft: DraftView
     /// Which opening of the reply screen this is: the answers of the core
@@ -217,6 +223,10 @@ struct Composer: Equatable {
     /// the one ↑ ↓ highlighted.
     var suggestions: [AddressView] = []
     var suggestionIndex: Int?
+    /// The text before and after the last AI proposal accepted, for ⌘Z
+    /// (`AppModel.undoAI`): undone only while the text is still the one the
+    /// AI gave, so that ⌘Z never erases what was typed since.
+    var aiUndo: AIUndo?
 
     init(draft: DraftView, kind: DraftKind? = nil, quoteHeader: String = "") {
         self.draft = draft
