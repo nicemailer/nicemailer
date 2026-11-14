@@ -182,6 +182,21 @@ impl Client {
         }
     }
 
+    /// The next event: one kept while waiting for a response first, else
+    /// the next line that is an event. For a test that reads several kinds
+    /// of events in order (the fragments of an AI run, then its end).
+    pub fn next_event(&mut self) -> Value {
+        if let Some(v) = self.pending.pop_front() {
+            return v;
+        }
+        loop {
+            let v = self.line();
+            if v.get("id").is_none() {
+                return v;
+            }
+        }
+    }
+
     /// Forgets the events received so far, so that `event` waits for one
     /// caused by what the test does next.
     pub fn clear_events(&mut self) {

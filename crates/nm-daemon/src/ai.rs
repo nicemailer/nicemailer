@@ -414,9 +414,19 @@ async fn execute(core: Arc<Core>, run_id: i64, request: AiRequest, provider: Pro
     // frees it when dropped, at the end of this function, whatever happens.
     let Ok(_slot) = core.ai.slots.clone().acquire_owned().await else { return };
     let events = core.clone();
+    // The tags of the segments are hidden from the text shown as it comes
+    // (`nm_ai::message::SegmentFilter`); other outputs are shown as they are.
+    let replace = core.ai.running.lock().unwrap().get(&run_id).is_some_and(|r| r.context.prompt.output == Output::Replace);
+    let mut filter = replace.then(nm_ai::message::SegmentFilter::new);
     let result = provider
         .run(&request, |text| {
-            events.events.lock().unwrap().push_transient(Event::AiDelta { run_id, text: text.to_string() });
+            let shown = match filter.as_mut() {
+                Some(f) => f.push(text),
+                None => text.to_string(),
+            };
+            if !shown.is_empty() {
+                events.events.lock().unwrap().push_transient(Event::AiDelta { run_id, text: shown });
+            }
         })
         .await;
     // The winner of the end (module documentation): if `ai_cancel` already

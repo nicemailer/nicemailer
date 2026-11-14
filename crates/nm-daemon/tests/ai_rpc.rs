@@ -95,11 +95,24 @@ fn a_reply_is_proofread_and_only_the_users_words_change() {
     let r = run(&mut c, &d, "proofread").unwrap();
     assert_eq!(r["streamed"], true);
     let id = r["run_id"].as_i64().unwrap();
-    // The text comes in fragments, then the end.
-    let delta = c.event("AiDelta", 10);
-    assert_eq!(delta["run_id"], id);
-    assert!(delta.get("seq").is_none(), "fragments are transient");
-    assert_eq!(c.event("AiDone", 10)["run_id"], id);
+    // The text comes in fragments, without the segment tags (the fake cuts
+    // the answer word by word, tags included), then the end.
+    let mut shown = String::new();
+    let done = loop {
+        let v = c.next_event();
+        match v["method"].as_str() {
+            Some("AiDelta") => {
+                assert_eq!(v["params"]["run_id"], id);
+                assert!(v["params"].get("seq").is_none(), "fragments are transient");
+                shown.push_str(v["params"]["text"].as_str().unwrap());
+            }
+            Some("AiDone") => break v["params"].clone(),
+            Some("AiFailed") => panic!("{v}"),
+            _ => {}
+        }
+    };
+    assert_eq!(done["run_id"], id);
+    assert_eq!(shown, "Oui, je viens jeudi à 14h.");
 
     let v = c.call("ai_get_run", json!({"run_id": id})).unwrap();
     assert_eq!(v["state"], "done");
