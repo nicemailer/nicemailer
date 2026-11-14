@@ -35,7 +35,12 @@ final class AppModel {
     /// as the user scrolls).
     // Settable from `AppModel+Actions.swift` (optimistic updates); a
     // `private(set)` setter would only be reachable from this file.
-    var threads: [ThreadSummary] = []
+    var threads: [ThreadSummary] = [] {
+        didSet {
+            // The AI's suggestions follow the rows shown (`AppModel+AI`).
+            if threads.map(\.id) != oldValue.map(\.id) { scheduleSuggestions() }
+        }
+    }
     /// Cursor of the next page of `threads`; nil when everything is loaded.
     private(set) var nextCursor: String?
     /// Thread shown in the reading pane.
@@ -146,6 +151,15 @@ final class AppModel {
     /// ours (a fake or quick provider ends before): kept by run id, replayed
     /// once it is known.
     @ObservationIgnored var aiEarly: [Int: [CoreClient.Event]] = [:]
+    /// A sorting of several conversations under way (`a` `s`), for the
+    /// status bar.
+    var aiSort: AISort?
+    /// The target the AI suggests for the conversations shown, by thread.
+    var aiSuggestions: [Int: AISuggestion] = [:]
+    /// The AI is on (`ai_status`): only then are suggestions asked for.
+    @ObservationIgnored var aiEnabled = false
+    /// The pending load of the suggestions, restarted when the rows change.
+    @ObservationIgnored var aiSuggestionsTask: Task<Void, Never>?
     /// The pending save of the reply's text, restarted at each key.
     @ObservationIgnored var composeSaveTask: Task<Void, Never>?
     /// The save in progress, which the next one waits for.
@@ -636,6 +650,7 @@ final class AppModel {
             titleBarHidden = ui.titleBar != "shown"
             autoConfirmCalls = ui.autoConfirmCalls ?? false
         }
+        await refreshAIEnabled()
     }
 
     /// Opens the socket of the core. With the agent, a core that does not
@@ -816,14 +831,14 @@ final class AppModel {
             // Progress of a synchronization, a fragment of an AI answer:
             // nothing to reload, and the position stays that of the last
             // numbered event.
-            if e.method == "AiDelta" { aiEvent(e) }
+            if e.method == "AiDelta" || e.method == "AiProgress" { aiEvent(e) }
             return
         case .inOrder(let p), .gap(let p):
             lastEvent = p
         }
         // The end of an AI run is taken whatever its order: dropped with
         // the rest after a gap, it would leave the panel waiting for good.
-        if e.method == "AiDone" || e.method == "AiFailed" { aiEvent(e) }
+        if e.method == "AiDone" || e.method == "AiFailed" || e.method == "AiSuggestions" { aiEvent(e) }
         if e.method == "ResyncRequired" || order.isGap {
             scheduleRefresh(full: true)
             // Events were missed: the end of the run among them, maybe.
@@ -843,7 +858,7 @@ final class AppModel {
         case "DraftSent", "SendFailed", "SendPartial":
             draftEvent(e.method, e.params)
             return
-        case "AiDone", "AiFailed":
+        case "AiDone", "AiFailed", "AiSuggestions":
             return
         case "ActionReverted":
             // The server refused a change made here; the core has undone it
@@ -1449,6 +1464,7 @@ final class AppModel {
         connection = nil
         client = core
         status = .connected(coreVersion: "test")
+        await refreshAIEnabled()
         await reloadAll()
         openPendingDeepLink()
     }

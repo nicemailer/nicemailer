@@ -734,6 +734,12 @@ private final class Runner {
                 default: return ""
                 }
             }(),
+            // A sorting under way (`a` `s`): "done/total", empty otherwise;
+            // the suggestions of the rows shown, and the one of the row
+            // under the cursor ("target: reason").
+            "ai_sort": m.aiSort.map { "\($0.done)/\($0.total)" } ?? "",
+            "ai_suggestions": "\(m.aiSuggestions.count)",
+            "selected_suggestion": m.selectedSuggestion.map { "\($0.target): \($0.reason)" } ?? "",
             "ai_subjects": {
                 guard case .proposal(.subjects(let items))? = m.aiRun?.phase else { return "" }
                 return items.joined(separator: " | ")

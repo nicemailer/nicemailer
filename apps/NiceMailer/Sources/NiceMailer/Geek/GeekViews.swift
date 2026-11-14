@@ -318,6 +318,11 @@ struct GeekStatusBar: View {
                 Text(message).foregroundStyle(Palette.error).lineLimit(1)
             } else if case .upgrading = model.status {
                 Text(L("upgrading the mailbox…")).foregroundStyle(Palette.muted).lineLimit(1)
+            } else if let sort = model.aiSort {
+                Text(AI.sortLine(sort)).foregroundStyle(Palette.accentText).lineLimit(1)
+            } else if controller.screen == .mail, model.composer == nil, let s = model.selectedSuggestion {
+                // Why the AI suggests a target for the mail under the cursor.
+                Text(AI.suggestionLine(s)).foregroundStyle(Palette.accentText).lineLimit(1).truncationMode(.tail)
             }
             if !model.marked.isEmpty {
                 Text(L("%lld marked", model.marked.count)).foregroundStyle(Palette.markedBar)
@@ -537,7 +542,7 @@ private struct GeekThreadRows: View {
                             GeekThreadRow(
                                 thread: t, cursor: t.id == cursor, marked: marked.contains(t.id), layout: layout,
                                 folder: folderLabels.map { $0[t.folderId] ?? .init(folder: "", account: nil) },
-                                showsKind: showsKind)
+                                showsKind: showsKind, suggestion: model.aiSuggestions[t.id])
                                 .contentShape(Rectangle())
                                 // Click, ⌘-click, ⇧-click (`clickThread`).
                                 .onClick { controller.clickThread(t.id, $0) }
@@ -689,6 +694,8 @@ private struct GeekThreadRow: View {
     /// The icon person / robot before the name (Quarantine only,
     /// `AppModel.listShowsSenderKind`).
     var showsKind = false
+    /// The target the AI suggests for the conversation (`a` `s`).
+    var suggestion: AISuggestion? = nil
 
     var body: some View {
         HStack(spacing: layout.char) {
@@ -757,6 +764,13 @@ private struct GeekThreadRow: View {
                 let withAccount = folder.account != nil && layout.showsAccount
                 Text(withAccount ? folder.text : folder.folder).foregroundStyle(Palette.muted)
                     .frame(width: layout.folder(withAccount: withAccount), alignment: .leading)
+            }
+            // The AI's suggestion, before the count: the target's name in
+            // the accent colour, after an arrow, as the move it proposes.
+            if let s = suggestion {
+                Text("→ " + Role.name(s.target)).foregroundStyle(Palette.accentText)
+                    .fixedSize()
+                    .accessibilityLabel(L("AI suggests %@", Role.name(s.target)))
             }
             Text(thread.messageCount > 1 ? "\(thread.messageCount)" : "").foregroundStyle(Palette.muted)
                 .frame(width: layout.count, alignment: .trailing)

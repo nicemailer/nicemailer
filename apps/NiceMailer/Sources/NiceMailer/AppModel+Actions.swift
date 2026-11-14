@@ -38,9 +38,9 @@ extension AppModel {
     /// Moves the target threads to the folder with `role` (`d` = archive,
     /// `m` + letter, Delete). Threads for which the move is not allowed from
     /// their folder are skipped and reported.
-    func moveTargets(to role: String) {
+    func moveTargets(to role: String, only: [ThreadSummary]? = nil) {
         guard let client = core else { return }
-        let targets = targetThreads
+        let targets = only ?? targetThreads
         guard !targets.isEmpty else { return }
         var allowed: [ThreadSummary] = []
         for t in targets {

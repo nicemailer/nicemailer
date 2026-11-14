@@ -535,6 +535,10 @@ struct AIPanel: View {
             }
         case .proposal(.text(let text)):
             Text(text).foregroundStyle(Palette.text)
+        case .proposal(.targets(let items, _)):
+            // A sorting shows on the rows of the list, not in a panel;
+            // listed here only for completeness.
+            Text(L("AI: %lld suggestions · ↩ on a row moves it there", items.count)).foregroundStyle(Palette.muted)
         case .proposal(.summary(let summary, let actions)):
             VStack(alignment: .leading, spacing: scaled(4)) {
                 Text(summary).foregroundStyle(Palette.text)

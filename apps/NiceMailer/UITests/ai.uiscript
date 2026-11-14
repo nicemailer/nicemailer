@@ -5,7 +5,10 @@
 # text meanwhile, Return applies them (quotation untouched) and ⌘Z undoes
 # them; a variant from the submenu, refused with Escape; a subject chosen
 # by its number; `a` with a mail shown: a summary, then a quick reply that
-# starts the reply; `a` on the list alone opens the menu of the list.
+# starts the reply; `a` on the list alone suggests a folder for the mail
+# under the cursor; in
+# Quarantine, `a` `s` sorts the folder, the rows show their target, Return
+# moves one there.
 expect folder = Inbox
 key r
 expect composing = true
@@ -100,10 +103,33 @@ expect ai_state = none
 expect compose_text ~ I will send it tomorrow.|\n\n
 expect compose_text ~ wrote:
 key esc
-# One column, on the list alone: the menu of the list, not available yet.
+# One column, on the list alone: the menu of the list. Nothing marked, a
+# folder is suggested for the conversation under the cursor only.
 key v
 key 1
 key a
 expect choice_rows ~ Suggest a folder
 key s
-expect flash ~ Not available yet
+expect ai_suggestions = 1
+expect selected_suggestion ~ archive: Fake reason
+# The Quarantine, in two columns: `a` opens the menu of the list (sorting
+# is what the folder is for), `s` sorts the whole folder in the background,
+# each row shows the target suggested and the status bar why; Return moves
+# the conversation there.
+key v
+key 2
+key ;
+key q
+expect folder = Quarantine
+key a
+expect choice_rows ~ s Sort the Quarantine
+key s
+expect ai_suggestions > 0
+expect ai_sort = 
+expect selected_suggestion ~ newsletter: Fake reason
+expect flash ~ suggestions
+snap ai-quarantine
+expect thread_count > 2
+key ret
+expect flash ~ Newsletter
+expect selected_suggestion ~ newsletter: Fake reason

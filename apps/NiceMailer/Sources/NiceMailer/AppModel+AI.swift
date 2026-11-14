@@ -103,9 +103,24 @@ extension AppModel {
         for e in aiEarly.removeValue(forKey: runId) ?? [] { aiEvent(e) }
     }
 
-    /// `AiDelta`, `AiDone`, `AiFailed`.
+    /// `AiDelta`, `AiDone`, `AiFailed`, and those of a sorting.
     func aiEvent(_ e: CoreClient.Event) {
         guard let id = e.params["run_id"]?.int else { return }
+        // A sorting: its own state, not the panel's.
+        if e.method == "AiSuggestions" {
+            // Any client's sorting: the rows shown take its suggestions.
+            let ids = Set(e.params["thread_ids"]?.ints ?? [])
+            if !ids.isDisjoint(with: threads.map(\.id)) { scheduleSuggestions() }
+            return
+        }
+        if let sort = aiSort, sort.runId == id {
+            sortEvent(e, sort)
+            return
+        }
+        if aiSort?.runId == 0, e.method != "AiDelta" {
+            if aiEarly.count < 32 { aiEarly[id, default: []].append(e) }
+            return
+        }
         guard var run = aiRun, run.runId == id else {
             // Not (yet) ours: kept a while, in case `ai_run` has not
             // answered yet. A run of another client (the CLI) ends up here
@@ -130,6 +145,113 @@ extension AppModel {
         default:
             break
         }
+    }
+
+    private func sortEvent(_ e: CoreClient.Event, _ sort: AISort) {
+        switch e.method {
+        case "AiProgress":
+            var s = sort
+            s.done = e.params["done"]?.int ?? s.done
+            s.total = e.params["total"]?.int ?? s.total
+            aiSort = s
+        case "AiDone":
+            aiSort = nil
+            Task {
+                guard let client = core else { return }
+                let v: AIRunView? = try? await client.call("ai_get_run", ["run_id": sort.runId])
+                if case .targets(let items, let failed)? = v?.proposal {
+                    flash = AI.sortedFlash(found: items.count, failedBatches: failed)
+                }
+                scheduleSuggestions()
+            }
+        case "AiFailed":
+            aiSort = nil
+            if e.params["code"]?.string != "ai_cancelled" {
+                flash = L("AI: %@", e.params["message"]?.string ?? L("The AI failed"))
+            }
+        default:
+            break
+        }
+    }
+
+    /// Sorts conversations (`a` `s`): those marked, else what the prompt's
+    /// `unmarked` says, the conversation under the cursor or the whole
+    /// folder (the core takes it). Nothing takes the keys meanwhile: the
+    /// suggestions show on the rows as each batch ends.
+    func startSort(_ prompt: AIPromptView) async {
+        guard aiSort == nil, let client = core else { return }
+        var params: [String: Any] = ["prompt": prompt.id, "folder_ids": listedFolderIds, "lang": AI.language]
+        if !marked.isEmpty {
+            params["thread_ids"] = Array(marked)
+        } else if prompt.unmarked == "cursor" {
+            guard let t = selectedThreadId else { flash = L("No mail to work on"); return }
+            params["thread_ids"] = [t]
+        }
+        aiEarly = [:]
+        aiSort = AISort(runId: 0, title: prompt.label)
+        do {
+            let r: AIRunResult = try await client.call("ai_run", params)
+            guard aiSort?.runId == 0 else {
+                let _: CommandResult? = try? await client.call("ai_cancel", ["run_id": r.runId])
+                return
+            }
+            aiSort = AISort(runId: r.runId, title: prompt.label)
+            for e in aiEarly.removeValue(forKey: r.runId) ?? [] { aiEvent(e) }
+        } catch {
+            aiSort = nil
+            flash = AI.errorFlash(error)
+        }
+    }
+
+    /// Escape during a sorting: it stops; what is sorted stays.
+    func stopSort() async {
+        guard let sort = aiSort else { return }
+        aiSort = nil
+        flash = L("AI stopped")
+        if sort.runId > 0, let client = core {
+            let _: CommandResult? = try? await client.call("ai_cancel", ["run_id": sort.runId])
+        }
+    }
+
+    /// Whether the AI is on, from the core: suggestions are only asked
+    /// for then.
+    func refreshAIEnabled() async {
+        guard let client = core else { return }
+        let s: AIStatusResult? = try? await client.call("ai_status")
+        aiEnabled = s?.enabled ?? false
+        scheduleSuggestions()
+    }
+
+    /// The suggestions of the rows shown, a moment after they change (a
+    /// burst of reloads asks once).
+    func scheduleSuggestions() {
+        guard aiEnabled else {
+            if !aiSuggestions.isEmpty { aiSuggestions = [:] }
+            return
+        }
+        aiSuggestionsTask?.cancel()
+        aiSuggestionsTask = Task {
+            try? await Task.sleep(for: .milliseconds(50))
+            guard !Task.isCancelled, let client = core else { return }
+            let ids = threads.map(\.id)
+            guard !ids.isEmpty else { aiSuggestions = [:]; return }
+            guard let list: [AISuggestion] = try? await client.call("ai_suggestions", ["thread_ids": ids]) else { return }
+            guard !Task.isCancelled else { return }
+            aiSuggestions = Dictionary(list.map { ($0.threadId, $0) }, uniquingKeysWith: { a, _ in a })
+        }
+    }
+
+    /// The suggestion of the conversation under the cursor.
+    var selectedSuggestion: AISuggestion? {
+        selectedThreadId.flatMap { aiSuggestions[$0] }
+    }
+
+    /// Return on a conversation the AI suggested a target for: moved
+    /// there, as the target's key would (`ia.md`, section 11).
+    func acceptSuggestion() -> Bool {
+        guard let s = selectedSuggestion, let t = selectedThread else { return false }
+        moveTargets(to: s.target, only: [t])
+        return true
     }
 
     /// After missed events: the state of the run still waited for, from

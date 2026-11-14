@@ -58,6 +58,12 @@ impl Fake {
             AiError::Failed("fake provider: the system prompt has no TASK= line".into())
         })?;
         let text = match self.answers.get(task) {
+            // A test of sorting cannot know the ids of the conversations a
+            // batch holds: `@each-thread <target>` suggests that target for
+            // each `thread: N` of the message.
+            Some(FakeAnswer::Text(t)) if t.starts_with("@each-thread ") => {
+                each_thread(&req.message, &t["@each-thread ".len()..])
+            }
             Some(FakeAnswer::Text(t)) => t.clone(),
             Some(FakeAnswer::Error(e)) => return Err(e.clone()),
             None => {
@@ -90,6 +96,16 @@ impl Fake {
             duration_ms: Some(0),
         })
     }
+}
+
+/// The answer of `@each-thread <target>`.
+fn each_thread(message: &str, target: &str) -> String {
+    let items: Vec<serde_json::Value> = message
+        .lines()
+        .filter_map(|l| l.strip_prefix("thread: ")?.trim().parse::<i64>().ok())
+        .map(|t| serde_json::json!({"thread": t, "target": target.trim(), "reason": format!("Fake reason {t}.")}))
+        .collect();
+    serde_json::json!({ "items": items }).to_string()
 }
 
 /// The id after `TASK=` on the first line of a system prompt.
@@ -144,6 +160,18 @@ mod tests {
             .unwrap();
         assert_eq!(deltas, 0);
         assert_eq!(o.structured.unwrap()["subjects"][0], "A");
+    }
+
+    #[tokio::test]
+    async fn each_thread_answers_for_the_conversations_sent() {
+        let f = Fake::new().answer("triage", "@each-thread junk");
+        let mut r = req("TASK=triage", true);
+        r.message =
+            "<conversations>\n<item>\nthread: 4\n</item>\n<item>\nthread: 9\n</item>".into();
+        let o = f.run(&r, |_| {}).await.unwrap();
+        let items = o.structured.unwrap()["items"].clone();
+        assert_eq!(items[0]["thread"], 4);
+        assert_eq!(items[1]["target"], "junk");
     }
 
     #[tokio::test]

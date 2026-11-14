@@ -689,6 +689,9 @@ final class GeekController {
     private func handleMailKey(key: String, code: UInt16, shift: Bool = false) {
         switch code {
         case KeyCode.returnKey:
+            // A conversation the AI suggested a target for: Return moves it
+            // there (`ia.md`, section 11, "Quarantine").
+            if model.acceptSuggestion() { return }
             // In Drafts, Return reopens the draft, as `r` does.
             if model.currentRole == "drafts" {
                 startReply()
@@ -700,7 +703,10 @@ final class GeekController {
             if columns == 1 { openReader() }
             return
         case KeyCode.escape:
-            if reading {
+            // A sorting under way stops first: it is the last thing started.
+            if model.aiSort != nil {
+                Task { await model.stopSort() }
+            } else if reading {
                 // Back to the list first, before Escape's other steps
                 // (unmark, leave a filter…): it undoes the last thing done.
                 reading = false
@@ -2326,6 +2332,11 @@ final class GeekController {
     /// or on the conversation open, the mail under the reader's cursor for
     /// a prompt of one mail.
     private func runAI(_ p: AIPromptView, variant: AIVariantView?) {
+        // Several conversations: sorted in the background, the keys free.
+        if p.scope == "selection" {
+            Task { await model.startSort(p) }
+            return
+        }
         if model.composer != nil {
             Task { await model.startAI(p, variant: variant) }
             return
@@ -2349,7 +2360,10 @@ final class GeekController {
         // window): the menu of the reading screen, translation and security
         // check included. The list alone (one column): the list's. The two
         // cannot be one menu: their prompts share letters (`s`).
-        let name = compose ? "compose" : (columns == 1 && !reading) ? "list" : "reading"
+        //
+        // In Quarantine, always the list's: sorting is what the folder is
+        // for (`a` `s` sorts it), whatever the layout.
+        let name = Self.aiScreen(compose: compose, role: model.currentRole, columns: columns, reading: reading)
         let folder = compose ? nil : model.currentRole
         Task {
             guard let prompts = await model.aiPrompts(screen: name, folder: folder) else { return }
@@ -2360,6 +2374,16 @@ final class GeekController {
             choiceIndex = nil
             overlay = .choice(.ai(AIMenu(prompts: prompts)))
         }
+    }
+
+    /// The screen whose AI menu `a` (or ⌘I) opens: the reply's while one is
+    /// written; in Quarantine, the list's (sorting is what it is for);
+    /// elsewhere the reading one while a mail is shown, the list's on the
+    /// list alone. A pure function, tested alone.
+    nonisolated static func aiScreen(compose: Bool, role: String?, columns: Int, reading: Bool) -> String {
+        if compose { return "compose" }
+        if role == "quarantine" || (columns == 1 && !reading) { return "list" }
+        return "reading"
     }
 
     /// A key while the AI panel of the reply is open: the answer it gives

@@ -4109,6 +4109,66 @@
           }
         }
       }
+    },
+    "%@: %lld of %lld sorted · esc stop": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ : %lld sur %lld triés · esc arrêter"
+          }
+        }
+      }
+    },
+    "%@: sorting… · esc stop": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ : tri en cours… · esc arrêter"
+          }
+        }
+      }
+    },
+    "AI: %@ (↩) · %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "IA : %@ (↩) · %@"
+          }
+        }
+      }
+    },
+    "AI: %lld suggestions · ↩ on a row moves it there": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "IA : %lld suggestions · ↩ sur une ligne l'y déplace"
+          }
+        }
+      }
+    },
+    "AI: %lld suggestions, %lld batches without an answer · ↩ on a row moves it there": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "IA : %lld suggestions, %lld lots sans réponse · ↩ sur une ligne l'y déplace"
+          }
+        }
+      }
+    },
+    "AI suggests %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L'IA suggère %@"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

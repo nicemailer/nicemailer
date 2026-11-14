@@ -75,6 +75,26 @@ struct AIRulesTests {
         #expect(started.cursor == 4)
     }
 
+    @Test func theScreenOfTheMenuFollowsTheFolderAndTheLayout() {
+        let screen = GeekController.aiScreen
+        #expect(screen(true, "quarantine", 2, false) == "compose")
+        #expect(screen(false, "quarantine", 2, false) == "list", "Quarantine: sorting, whatever the layout")
+        #expect(screen(false, "quarantine", 1, true) == "list")
+        #expect(screen(false, "inbox", 2, false) == "reading")
+        #expect(screen(false, "inbox", 1, true) == "reading")
+        #expect(screen(false, "inbox", 1, false) == "list")
+        #expect(screen(false, nil, 3, false) == "reading")
+    }
+
+    @Test func theStatusBarSaysTheSortAndTheSuggestion() {
+        #expect(AI.sortLine(AISort(runId: 1, title: "Sort", done: 20, total: 47)) == L("%@: %lld of %lld sorted · esc stop", "Sort", 20, 47))
+        #expect(AI.sortLine(AISort(runId: 0, title: "Sort")) == L("%@: sorting… · esc stop", "Sort"))
+        let s = AISuggestion(runId: 1, threadId: 3, target: "newsletter", reason: "A shop's offers.")
+        #expect(AI.suggestionLine(s) == L("AI: %@ (↩) · %@", Role.name("newsletter"), "A shop's offers."))
+        #expect(AI.sortedFlash(found: 5, failedBatches: 0) == L("AI: %lld suggestions · ↩ on a row moves it there", 5))
+        #expect(AI.sortedFlash(found: 5, failedBatches: 2) == L("AI: %lld suggestions, %lld batches without an answer · ↩ on a row moves it there", 5, 2))
+    }
+
     @Test func theHintSaysTheKeys() {
         #expect(AI.hint(.running) == L("esc stop"))
         #expect(AI.hint(.proposal(.subjects(["A", "B"]))) == L("1–%lld choose · esc or n refuse", 2))
@@ -151,6 +171,14 @@ final class AIFakeState: @unchecked Sendable {
     private var _appliedBody = "Merci.\n\nOn Nov 7, Sender 1 wrote:\n> Hello"
     private var _appliedSubject = "Re: Subject 1"
     private var _lastPrompt = ""
+    private var _suggest = false
+    /// `ai_suggestions` suggests Archive for the first conversation asked.
+    var suggest: Bool { get { locked { _suggest } } set { locked { _suggest = newValue } } }
+
+    static let sortPrompt: [String: Any] = [
+        "id": "suggest-folder", "key": "s", "label": "Suggest a folder", "scope": "selection", "output": "targets",
+        "variants": [], "source": "builtin", "available": true, "unmarked": "cursor",
+    ]
 
     func locked<T>(_ f: () -> T) -> T {
         lock.lock()
@@ -190,8 +218,13 @@ final class AIFakeState: @unchecked Sendable {
             switch params["screen"] as? String {
             case "compose": return Self.prompts
             case "reading": return Self.mailPrompts
-            default: return [Self.prompts[3]]
+            default: return [Self.sortPrompt, Self.prompts[3]]
             }
+        case "ai_suggestions":
+            let ids = params["thread_ids"] as? [Int] ?? []
+            return locked({ _suggest }) && !ids.isEmpty
+                ? [["run_id": 7, "thread_id": ids[0], "target": "archive", "reason": "Done with it."]] as [[String: Any]]
+                : [[String: Any]]()
         case "ai_run":
             locked { _lastPrompt = params["prompt"] as? String ?? "" }
             return ["run_id": 7, "streamed": true] as [String: Any]
@@ -500,6 +533,62 @@ final class AIControllerTests {
         #expect(model.composer?.buffer.text.hasPrefix("On peut décaler ?\n\nOn Nov 7") == true, "\(model.composer?.buffer.text ?? "")")
         #expect(model.composer?.buffer.cursor == "On peut décaler ?".count)
         #expect(model.composer?.isDirty == true)
+    }
+
+    @Test func aSuggestionShowsAndReturnMovesThere() async throws {
+        ai.suggest = true
+        model.scheduleSuggestions()
+        _ = await eventually { !self.model.aiSuggestions.isEmpty }
+        let first = try #require(model.threads.first?.id)
+        #expect(model.aiSuggestions[first]?.target == "archive")
+        #expect(model.selectedThreadId == first)
+        #expect(model.selectedSuggestion?.reason == "Done with it.")
+        // Return moves it to the target suggested, that conversation only.
+        press("ret")
+        _ = await eventually { !self.core.moveCalls().isEmpty }
+        let moves = core.moveCalls()
+        #expect(moves.count == 1)
+        #expect(moves.first?["thread_id"] as? Int == first)
+        #expect(moves.first?["target"] as? String == "archive")
+    }
+
+    @Test func aSortRunsInTheBackgroundWithTheKeysFree() async throws {
+        controller.columns = 1
+        press("a")
+        _ = await eventually { self.aiMenu != nil }
+        press("s")
+        _ = await eventually { self.model.aiSort?.runId == 7 }
+        let run = try #require(core.calls("ai_run").last)
+        #expect(run["prompt"] as? String == "suggest-folder")
+        #expect(run["folder_ids"] as? [Int] == model.listedFolderIds)
+        // Nothing marked, `unmarked` cursor: the conversation under it.
+        #expect(run["thread_ids"] as? [Int] == [model.selectedThreadId!])
+        // The progress in the status bar; the keys are the list's.
+        event("AiProgress", ["run_id": .int(7), "done": .int(20), "total": .int(47)], transient: true)
+        #expect(model.aiSort?.done == 20 && model.aiSort?.total == 47)
+        let selected = model.selectedThreadId
+        press("j")
+        #expect(model.selectedThreadId != selected)
+        press("k")
+        // A batch's suggestions reload those of the rows.
+        ai.suggest = true
+        event("AiSuggestions", ["run_id": .int(7), "thread_ids": .ints([model.threads[0].id])])
+        _ = await eventually { !self.model.aiSuggestions.isEmpty }
+        // The end, said.
+        event("AiDone", ["run_id": .int(7)])
+        #expect(model.aiSort == nil)
+    }
+
+    @Test func escapeStopsASort() async {
+        controller.columns = 1
+        press("a")
+        _ = await eventually { self.aiMenu != nil }
+        press("s")
+        _ = await eventually { self.model.aiSort?.runId == 7 }
+        press("esc")
+        _ = await eventually { self.core.calls("ai_cancel").count == 1 }
+        #expect(model.aiSort == nil)
+        #expect(model.flash == L("AI stopped"))
     }
 
     @Test func aInTheListOpensTheMenuOfTheMails() async {

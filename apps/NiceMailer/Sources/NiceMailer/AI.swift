@@ -22,6 +22,9 @@ struct AIPromptView: Decodable, Equatable {
     let source: String
     /// Whether this version of the core can run it yet.
     let available: Bool
+    /// For a prompt of several conversations, what it takes when none is
+    /// marked: `cursor` or `folder`.
+    var unmarked: String? = nil
 }
 
 struct AIVariantView: Decodable, Equatable {
@@ -73,9 +76,11 @@ enum AIProposal: Decodable, Equatable {
     case verdict(risk: String, reasons: [String], raised: Bool)
     /// Texts to choose from; `then` is `reply` (start a reply with it).
     case choices([String], then: String)
+    /// A target per conversation sorted; the batches that gave none.
+    case targets([AISuggestion], failedBatches: Int)
 
     private enum Keys: String, CodingKey {
-        case kind, segments, unchanged, items, text, summary, actions, risk, reasons, raised, then
+        case kind, segments, unchanged, items, text, summary, actions, risk, reasons, raised, then, failedBatches
     }
 
     init(from decoder: Decoder) throws {
@@ -95,6 +100,8 @@ enum AIProposal: Decodable, Equatable {
                             raised: try c.decode(Bool.self, forKey: .raised))
         case "choices":
             self = .choices(try c.decode([String].self, forKey: .items), then: try c.decode(String.self, forKey: .then))
+        case "targets":
+            self = .targets(try c.decode([AISuggestion].self, forKey: .items), failedBatches: try c.decode(Int.self, forKey: .failedBatches))
         case let other:
             throw DecodingError.dataCorruptedError(forKey: .kind, in: c, debugDescription: "unknown proposal \(other)")
         }
@@ -106,6 +113,24 @@ struct AIAction: Decodable, Equatable {
     let task: String
     let owner: String
     let due: String
+}
+
+/// A target suggested for a conversation (`ai_suggestions`).
+struct AISuggestion: Decodable, Equatable {
+    let runId: Int
+    let threadId: Int
+    /// A folder role.
+    let target: String
+    let reason: String
+}
+
+/// A sorting of several conversations under way (`a` `s` in Quarantine):
+/// it does not take the keys; its progress is in the status bar.
+struct AISort: Equatable {
+    let runId: Int
+    let title: String
+    var done = 0
+    var total = 0
 }
 
 /// `ai_get_run` (only what the app uses).
@@ -199,7 +224,7 @@ enum AI {
             if isEscape || key == "n" { return .refuse }
             if let d = Int(key), d >= 1, d <= items.count { return .choose(d - 1) }
             return .hint
-        case .proposal(.text), .proposal(.summary), .proposal(.verdict):
+        case .proposal(.text), .proposal(.summary), .proposal(.verdict), .proposal(.targets):
             // Only read: nothing to accept.
             return isEscape || isReturn ? .close : .hint
         }
@@ -214,7 +239,7 @@ enum AI {
         case .proposal(.replace): L("↩ or y accept · esc or n refuse · ⌘Z after accepting undoes")
         case .proposal(.subjects(let items)): L("1–%lld choose · esc or n refuse", items.count)
         case .proposal(.choices(let items, _)): L("1–%lld reply with it · esc or n refuse", items.count)
-        case .proposal(.text), .proposal(.summary), .proposal(.verdict): L("esc close")
+        case .proposal(.text), .proposal(.summary), .proposal(.verdict), .proposal(.targets): L("esc close")
         }
     }
 
@@ -272,7 +297,27 @@ enum AI {
             return items.enumerated().map { "\($0.offset + 1). \($0.element)" }.joined(separator: "\n")
         case .replace(let segments, _):
             return diffText(segments)
+        case .targets(let items, _):
+            return items.map { "\($0.threadId) → \($0.target)" }.joined(separator: "\n")
         }
+    }
+
+    /// The status bar while a sorting goes on.
+    static func sortLine(_ s: AISort) -> String {
+        s.total > 0 ? L("%@: %lld of %lld sorted · esc stop", s.title, s.done, s.total) : L("%@: sorting… · esc stop", s.title)
+    }
+
+    /// The status bar for the conversation under the cursor, when the AI
+    /// suggested a target for it: the target, then why.
+    static func suggestionLine(_ s: AISuggestion) -> String {
+        L("AI: %@ (↩) · %@", Role.name(s.target), s.reason)
+    }
+
+    /// The end of a sorting, in the status bar.
+    static func sortedFlash(found: Int, failedBatches: Int) -> String {
+        failedBatches == 0
+            ? L("AI: %lld suggestions · ↩ on a row moves it there", found)
+            : L("AI: %lld suggestions, %lld batches without an answer · ↩ on a row moves it there", found, failedBatches)
     }
 
     /// The risk of a verdict, in the app's language.
