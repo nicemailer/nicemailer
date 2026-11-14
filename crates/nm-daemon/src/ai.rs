@@ -39,14 +39,15 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
-use nm_ai::answer::{self, Answer, Sent};
+use nm_ai::answer::{self, Answer, Finding, Sent};
+use nm_ai::message::Mail;
 use nm_ai::catalog::{self, Loaded};
 use nm_ai::prompt::{Input, Output, Prompt, Scope, Screen, Source as PromptSource};
 use nm_ai::{AiError, AiRequest, Provider};
 use nm_api::{
-    AiApplyParams, AiApplyResult, AiDiffPiece, AiListPromptsParams, AiPromptView, AiProposal, AiRunIdParams, AiRunParams,
+    AiActionView, AiApplyParams, AiApplyResult, AiDiffPiece, AiListPromptsParams, AiPromptView, AiProposal, AiRunIdParams, AiRunParams,
     AiRunResult, AiRunView, AiSegmentChange, AiStatusParams, AiStatusResult, AiVariantView, CommandResult, DraftView,
-    Event, RpcError, error_code,
+    Event, MessageView, RpcError, error_code,
 };
 use nm_core::Source;
 use nm_engine::config::{AiProviderKind, AiSettings};
@@ -78,12 +79,29 @@ pub(crate) struct AiState {
 #[derive(Clone)]
 struct Context {
     prompt: Prompt,
-    draft_id: i64,
-    /// The draft's revision when the run started.
-    revision: i64,
-    /// The draft's body then, and the byte ranges of the segments sent.
-    body: String,
-    ranges: Vec<Range<usize>>,
+    target: Target,
+    /// What the core found itself in the mail, for the floor of a security
+    /// verdict (`nm_ai::answer::apply_floor`).
+    findings: Vec<Finding>,
+}
+
+/// What a run works on.
+#[derive(Clone)]
+enum Target {
+    /// A draft, at a revision; its body then, and the byte ranges of the
+    /// segments sent.
+    Draft { draft_id: i64, revision: i64, body: String, ranges: Vec<Range<usize>> },
+    /// A mail and its conversation.
+    Mail,
+}
+
+impl Target {
+    fn segments(&self) -> usize {
+        match self {
+            Target::Draft { ranges, .. } => ranges.len(),
+            Target::Mail => 0,
+        }
+    }
 }
 
 struct Running {
@@ -164,9 +182,30 @@ fn settings(core: &Core) -> AiSettings {
 /// Whether this version of the core computes every input of the prompt
 /// from this screen (module documentation, "What is wired so far").
 fn available(p: &Prompt) -> bool {
-    p.scope == Scope::Draft
-        && p.inputs.iter().all(|i| matches!(i, Input::DraftOwnText | Input::DraftHeaders))
-        && matches!(p.output, Output::Replace | Output::Subjects)
+    match p.scope {
+        Scope::Draft => {
+            p.inputs.iter().all(|i| matches!(i, Input::DraftOwnText | Input::DraftHeaders))
+                && matches!(p.output, Output::Replace | Output::Subjects)
+        }
+        Scope::Message | Scope::Thread => {
+            p.inputs.iter().all(|i| {
+                matches!(
+                    i,
+                    Input::MessageText
+                        | Input::MessageHeaders
+                        | Input::MessageAuth
+                        | Input::ThreadText
+                        | Input::SenderHistory
+                        | Input::UserIdentity
+                )
+            }) && match p.output {
+                Output::Panel | Output::Summary | Output::Verdict => true,
+                Output::Choices => p.then == Some(nm_ai::prompt::Then::Reply),
+                _ => false,
+            }
+        }
+        Scope::Selection | Scope::Attachment => false,
+    }
 }
 
 /// The provider chosen by the settings. `NICEMAILER_FAKE_AI` names a JSON
@@ -309,6 +348,69 @@ pub(crate) async fn run(core: &Arc<Core>, p: AiRunParams, source: Source) -> Res
     // The parameters first (a variant missing, unknown), before reading
     // anything: building the system prompt checks the variant.
     let system = prompt.system(variant, &p.lang).map_err(|m| RpcError::new(error_code::INVALID_PARAMS, m))?;
+    let (message, target, target_json, findings) = match prompt.scope {
+        Scope::Draft => draft_inputs(core, &prompt, &p).await?,
+        _ => mail_inputs(core, &prompt, &p).await?,
+    };
+    let request = AiRequest {
+        system,
+        message,
+        model: prompt.model.clone().unwrap_or_else(|| s.model.clone()),
+        schema: prompt.output.schema(&[]),
+        max_output_tokens: prompt.max_output_tokens,
+    };
+    let provider = provider(core, &s).map_err(ai_error)?;
+
+    let input = format!("{}\n\n{}", request.system, request.message);
+    let row = (
+        prompt.id.clone(),
+        variant.map(|c| c.to_string()),
+        match prompt.source {
+            PromptSource::Builtin => "builtin",
+            PromptSource::User(_) => "user",
+        },
+        prompt.hash,
+        provider.name(),
+        request.model.clone(),
+        prompt.scope.as_str(),
+        p.lang.clone(),
+    );
+    let run_id = with_store(core, move |st| {
+        st.ai_run_start(&NewRun {
+            created_by: source,
+            prompt_id: &row.0,
+            variant: row.1.as_deref(),
+            prompt_source: row.2,
+            prompt_hash: &row.3,
+            provider: row.4,
+            model: &row.5,
+            scope: row.6,
+            target: &target_json,
+            lang: &row.7,
+            input: &input,
+        })
+    })
+    .await?;
+
+    let streamed = !prompt.output.is_structured();
+    let context = Context { prompt, target, findings };
+    core.ai.running.lock().unwrap().insert(run_id, Running { abort: None, context });
+    let task = tokio::spawn(execute(core.clone(), run_id, request, provider));
+    // The task may already have ended (a fake answer): then it is no longer
+    // in the map, and there is nothing left to abort.
+    if let Some(r) = core.ai.running.lock().unwrap().get_mut(&run_id) {
+        r.abort = Some(task.abort_handle());
+    }
+    Ok(AiRunResult { run_id, streamed })
+}
+
+/// The inputs of a draft prompt (`draft.own_text`, `draft.headers`): the
+/// message, the target, its JSON for the history, no findings.
+async fn draft_inputs(
+    core: &Arc<Core>,
+    prompt: &Prompt,
+    p: &AiRunParams,
+) -> Result<(String, Target, String, Vec<Finding>), RpcError> {
     let (Some(draft_id), Some(revision)) = (p.draft_id, p.revision) else {
         return Err(RpcError::new(error_code::INVALID_PARAMS, "this prompt needs draft_id and revision"));
     };
@@ -318,7 +420,6 @@ pub(crate) async fn run(core: &Arc<Core>, p: AiRunParams, source: Source) -> Res
         err.data = Some(serde_json::json!({ "revision": draft.revision }));
         return Err(err);
     }
-
     // The segments sent: the selection, or the user's own text.
     let body = draft.body.clone();
     let ranges: Vec<Range<usize>> = match p.selection {
@@ -344,58 +445,234 @@ pub(crate) async fn run(core: &Arc<Core>, p: AiRunParams, source: Source) -> Res
             _ => unreachable!("`available` lets only these inputs through"),
         });
     }
-    let message = sections.join("\n\n");
-    let request = AiRequest {
-        system,
-        message,
-        model: prompt.model.clone().unwrap_or_else(|| s.model.clone()),
-        schema: prompt.output.schema(&[]),
-        max_output_tokens: prompt.max_output_tokens,
-    };
-    let provider = provider(core, &s).map_err(ai_error)?;
+    let target_json = serde_json::json!({ "draft": draft_id }).to_string();
+    Ok((sections.join("\n\n"), Target::Draft { draft_id, revision, body, ranges }, target_json, Vec::new()))
+}
 
-    let input = format!("{}\n\n{}", request.system, request.message);
-    let target = serde_json::json!({ "draft": draft_id }).to_string();
-    let row = (
-        prompt.id.clone(),
-        variant.map(|c| c.to_string()),
-        match prompt.source {
-            PromptSource::Builtin => "builtin",
-            PromptSource::User(_) => "user",
-        },
-        prompt.hash,
-        provider.name(),
-        request.model.clone(),
-        prompt.scope.as_str(),
-        p.lang.clone(),
-    );
-    let run_id = with_store(core, move |st| {
-        st.ai_run_start(&NewRun {
-            created_by: source,
-            prompt_id: &row.0,
-            variant: row.1.as_deref(),
-            prompt_source: row.2,
-            prompt_hash: &row.3,
-            provider: row.4,
-            model: &row.5,
-            scope: row.6,
-            target: &target,
-            lang: &row.7,
-            input: &input,
-        })
+/// The inputs of a mail prompt, from the conversation as the reader shows
+/// it (`get_thread`): the mail is `message_id`, else the latest received
+/// one (the latest of all when every one is the user's).
+async fn mail_inputs(
+    core: &Arc<Core>,
+    prompt: &Prompt,
+    p: &AiRunParams,
+) -> Result<(String, Target, String, Vec<Finding>), RpcError> {
+    let Some(thread_id) = p.thread_id else {
+        return Err(RpcError::new(error_code::INVALID_PARAMS, "this prompt needs thread_id"));
+    };
+    // The user's addresses: those of `accounts.toml`, and those of the
+    // accounts in the database (an archive account imported from an mbox
+    // is in the database only).
+    let declared = crate::drafts::declared_addresses(core);
+    let (messages, own) = with_reader(core, move |st| {
+        let (_, messages) = st.get_thread(thread_id, &declared)?;
+        let mut own = declared;
+        let mut q = st.conn().prepare("SELECT lower(address) FROM account WHERE address IS NOT NULL")?;
+        for a in q.query_map([], |r| r.get::<_, String>(0))? {
+            let a = a?;
+            if !own.contains(&a) {
+                own.push(a);
+            }
+        }
+        Ok((messages, own))
     })
     .await?;
-
-    let streamed = !prompt.output.is_structured();
-    let context = Context { prompt, draft_id, revision, body, ranges };
-    core.ai.running.lock().unwrap().insert(run_id, Running { abort: None, context });
-    let task = tokio::spawn(execute(core.clone(), run_id, request, provider));
-    // The task may already have ended (a fake answer): then it is no longer
-    // in the map, and there is nothing left to abort.
-    if let Some(r) = core.ai.running.lock().unwrap().get_mut(&run_id) {
-        r.abort = Some(task.abort_handle());
+    let is_mine = |m: &MessageView| m.from_addr.as_deref().is_some_and(|a| own.contains(&a.to_lowercase()));
+    let message = match p.message_id {
+        Some(id) => messages
+            .iter()
+            .find(|m| m.id == id)
+            .ok_or_else(|| RpcError::new(error_code::NOT_FOUND, format!("no message {id} in thread {thread_id}")))?,
+        None => messages
+            .iter()
+            .rev()
+            .find(|m| !is_mine(m))
+            .or(messages.last())
+            .ok_or_else(|| RpcError::new(error_code::NOT_FOUND, format!("thread {thread_id} has no message")))?,
+    };
+    if message.body_text.is_none() {
+        return Err(ai_error(AiError::BadInput("this mail is still downloading: try again in a moment".into())));
     }
-    Ok(AiRunResult { run_id, streamed })
+    let mail = mail_of(message, is_mine(message));
+    let findings = findings(message);
+    let mut sections = Vec::new();
+    for input in &prompt.inputs {
+        sections.push(match input {
+            Input::MessageText => nm_ai::message::message_text(&mail),
+            Input::MessageHeaders => nm_ai::message::message_headers(&mail),
+            Input::MessageAuth => nm_ai::message::auth(&message.auth_result, &findings),
+            Input::ThreadText => {
+                let mails: Vec<Mail> =
+                    messages.iter().filter(|m| m.body_text.is_some()).map(|m| mail_of(m, is_mine(m))).collect();
+                nm_ai::message::thread_text(&mails)
+            }
+            Input::SenderHistory => {
+                let addr = message.from_addr.clone().unwrap_or_default().to_lowercase();
+                let lines = with_reader(core, move |st| sender_history(st, &addr)).await?;
+                nm_ai::message::sender_history(&lines)
+            }
+            Input::UserIdentity => nm_ai::message::identity(&own),
+            _ => unreachable!("`available` lets only these inputs through"),
+        });
+    }
+    let target_json = serde_json::json!({ "thread": thread_id, "message": message.id }).to_string();
+    Ok((sections.join("\n\n"), Target::Mail, target_json, findings))
+}
+
+/// "Name <address>", or what there is of it.
+fn label(name: Option<&str>, addr: Option<&str>) -> String {
+    match (name.map(str::trim).filter(|n| !n.is_empty()), addr) {
+        (Some(n), Some(a)) => format!("{n} <{a}>"),
+        (None, Some(a)) => a.to_string(),
+        (Some(n), None) => n.to_string(),
+        (None, None) => "(unknown sender)".to_string(),
+    }
+}
+
+/// The offset of this Mac's time zone at the time `at` (a Unix time), in
+/// seconds, for the dates given to the model: "next Tuesday" is read from
+/// the mail's local date. At that time, not now: a mail of June is in
+/// summer time even when read in November.
+fn local_offset(at: i64) -> i32 {
+    let now = at as libc::time_t;
+    // Rust note: `localtime_r` is a C function that fills a struct we own;
+    // `unsafe` because the compiler cannot check it, and `zeroed` gives the
+    // struct a valid starting value (every field of `tm` may be zero).
+    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+    let ok = unsafe { !libc::localtime_r(&now, &mut tm).is_null() };
+    if ok { tm.tm_gmtoff as i32 } else { 0 }
+}
+
+/// A mail of the reader as the inputs see it: what the sender wrote,
+/// interleaved quotes marked `> `, without the quoted history at its end
+/// or the copies of earlier mails (`docs/thread-display.md`).
+fn mail_of(m: &MessageView, mine: bool) -> Mail {
+    let text = if m.segments.is_empty() {
+        m.body_text.clone().unwrap_or_default()
+    } else {
+        m.segments
+            .iter()
+            .filter(|s| s.kind != "quote_tail" && s.kind != "copy")
+            .map(|s| {
+                if s.kind == "quote" {
+                    s.text.lines().map(|l| format!("> {l}")).collect::<Vec<_>>().join("\n")
+                } else {
+                    s.text.clone()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let addresses = |v: &[nm_api::AddressView]| v.iter().map(|a| label(a.name.as_deref(), Some(&a.addr))).collect();
+    Mail {
+        from: label(m.from_name.as_deref(), m.from_addr.as_deref()),
+        to: addresses(&m.to),
+        cc: addresses(&m.cc),
+        date: {
+            let at = m.date_sent.unwrap_or(m.date_received);
+            nm_core::compose::rfc5322_date(at, local_offset(at))
+        },
+        subject: m.subject.clone(),
+        text,
+        attachments: m.attachments.iter().map(|a| a.filename.clone().unwrap_or_else(|| a.mime_type.clone())).collect(),
+        mine,
+    }
+}
+
+/// The host of an `http` or `https` URL, lowercase, without user, port,
+/// path; `None` for another scheme.
+fn url_host(url: &str) -> Option<String> {
+    let rest = url.strip_prefix("https://").or_else(|| url.strip_prefix("http://"))?;
+    let authority = rest.split(['/', '?', '#']).next()?;
+    let host = authority.rsplit('@').next()?;
+    let host = if host.starts_with('[') { host.split(']').next().map(|h| format!("{h}]"))? } else { host.split(':').next()?.to_string() };
+    (!host.is_empty()).then(|| host.to_lowercase())
+}
+
+/// A site named by the text of a link ("www.mybank.com", "https://…"),
+/// lowercase; `None` for a text that names no site ("Click here").
+fn shown_host(text: &str) -> Option<String> {
+    let t = text.trim().trim_end_matches('/');
+    if t.contains(char::is_whitespace) || !t.contains('.') {
+        return None;
+    }
+    if let Some(h) = url_host(t) {
+        return Some(h);
+    }
+    let host = t.split(['/', '?', '#']).next()?.to_lowercase();
+    // A domain: letters, digits, dashes and dots, a letter at the end.
+    let ok = host.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '.')
+        && host.rsplit('.').next().is_some_and(|tld| tld.len() >= 2 && tld.chars().all(|c| c.is_ascii_alphabetic()));
+    ok.then_some(host)
+}
+
+fn is_ip(host: &str) -> bool {
+    host.starts_with('[') || (host.split('.').count() == 4 && host.split('.').all(|p| p.parse::<u8>().is_ok()))
+}
+
+/// What the core finds by itself in a mail, for the security check
+/// (`ia.md`, section 6, "Plancher"): a failed authentication, a link that
+/// shows one site and opens another, a link to a bare IP address. The
+/// Reply-To of the spec is not read yet: the reader does not give it.
+fn findings(m: &MessageView) -> Vec<Finding> {
+    let mut out: Vec<Finding> = Vec::new();
+    if m.auth_result == "fail" {
+        out.push(Finding { text: "the sender's authentication failed (SPF, DKIM, DMARC)".into(), strong: true });
+    }
+    for link in &m.links {
+        let Some(real) = url_host(&link.url) else { continue };
+        let text = if is_ip(&real) {
+            format!("a link opens the bare IP address {real}")
+        } else {
+            let Some(shown) = link.text.as_deref().and_then(shown_host) else { continue };
+            let org = nm_store::auth::organizational_domain;
+            if org(&shown) == org(&real) {
+                continue;
+            }
+            format!("a link shows {shown} but opens {real}")
+        };
+        if !out.iter().any(|f| f.text == text) {
+            out.push(Finding { text, strong: true });
+        }
+        if out.len() >= 10 {
+            break;
+        }
+    }
+    out
+}
+
+/// What the mailbox knows of a sender: the decision on the address and on
+/// its domain, how many mails it sent, whether the user wrote to it, and
+/// whether it is a person or a robot (`expediteurs.md`).
+fn sender_history(st: &nm_store::Store, addr: &str) -> Result<Vec<String>, nm_store::StoreError> {
+    use nm_store::rusqlite::OptionalExtension;
+    let mut lines = vec![format!("Address: {addr}")];
+    let row: Option<(Option<String>, i64, i64, Option<String>)> = st
+        .conn()
+        .query_row(
+            "SELECT screening_target, written_to, sender_count, coalesce(sender_kind_user, sender_kind)
+               FROM address WHERE addr = ?1",
+            [addr],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+        )
+        .optional()?;
+    match row {
+        None => lines.push("Never seen before this mail.".into()),
+        Some((decision, written_to, count, kind)) => {
+            lines.push(format!("Decision on the address: {}", decision.as_deref().unwrap_or("none")));
+            lines.push(format!("Mails received from it: {count}"));
+            lines.push(format!("The user has written to it: {}", if written_to != 0 { "yes" } else { "no" }));
+            lines.push(format!("Seen as: {}", kind.as_deref().unwrap_or("unknown")));
+        }
+    }
+    if let Some(domain) = nm_store::screening::domain_of(addr) {
+        let decision: Option<Option<String>> = st
+            .conn()
+            .query_row("SELECT screening_target FROM domain WHERE domain = ?1", [&domain], |r| r.get(0))
+            .optional()?;
+        lines.push(format!("Decision on its domain {domain}: {}", decision.flatten().as_deref().unwrap_or("none")));
+    }
+    Ok(lines)
 }
 
 fn draft_headers(d: &DraftView) -> String {
@@ -437,10 +714,15 @@ async fn execute(core: Arc<Core>, run_id: i64, request: AiRequest, provider: Pro
         Ok(o) => o,
         Err(e) => return fail(&core, run_id, e, None).await,
     };
-    let sent = Sent { segments: context.ranges.len(), threads: &[], targets: &[] };
+    let sent = Sent { segments: context.target.segments(), threads: &[], targets: &[] };
     match answer::read(context.prompt.output, &outcome, &sent) {
         Err(e) => fail(&core, run_id, e, Some(outcome.text.clone())).await,
         Ok(answer) => {
+            // The model may have missed what the core found itself.
+            let answer = match answer {
+                Answer::Verdict(v) => Answer::Verdict(answer::apply_floor(v, &context.findings)),
+                other => other,
+            };
             // Rust note: the closure given to `with_store` runs on another
             // thread and must own what it uses (`move`): `outcome` is moved
             // in, and the `RunDone` that borrows its text is built there.
@@ -499,19 +781,17 @@ pub(crate) async fn cancel(core: &Arc<Core>, p: AiRunIdParams) -> Result<Command
 
 /// The proposal of a finished run, as the client shows it.
 fn proposal(f: &Finished) -> Option<AiProposal> {
-    let c = &f.context;
-    match &f.answer {
-        Answer::Segments(new) => {
-            let body = nm_core::segments::splice(&c.body, &c.ranges, new).ok()?;
-            let segments: Vec<AiSegmentChange> = c
-                .ranges
+    match (&f.answer, &f.context.target) {
+        (Answer::Segments(new), Target::Draft { body: old_body, ranges, .. }) => {
+            let body = nm_core::segments::splice(old_body, ranges, new).ok()?;
+            let segments: Vec<AiSegmentChange> = ranges
                 .iter()
                 .zip(new)
                 .map(|(r, n)| {
-                    let old = &c.body[r.clone()];
+                    let old = &old_body[r.clone()];
                     AiSegmentChange {
-                        start: utf16_of_byte(&c.body, r.start),
-                        end: utf16_of_byte(&c.body, r.end),
+                        start: utf16_of_byte(old_body, r.start),
+                        end: utf16_of_byte(old_body, r.end),
                         old: old.to_string(),
                         new: n.clone(),
                         diff: nm_ai::diff::words(old.trim(), n)
@@ -525,12 +805,36 @@ fn proposal(f: &Finished) -> Option<AiProposal> {
                     }
                 })
                 .collect();
-            let unchanged = body == c.body;
+            let unchanged = body == *old_body;
             Some(AiProposal::Replace { segments, body, unchanged })
         }
-        Answer::Subjects(items) => Some(AiProposal::Subjects { items: items.clone() }),
+        (Answer::Subjects(items), _) => Some(AiProposal::Subjects { items: items.clone() }),
+        (Answer::Text(text), _) => Some(AiProposal::Text { text: text.clone() }),
+        (Answer::Summary { summary, actions }, _) => Some(AiProposal::Summary {
+            summary: summary.clone(),
+            actions: actions
+                .iter()
+                .map(|a| AiActionView { task: a.task.clone(), owner: a.owner.clone(), due: a.due.clone() })
+                .collect(),
+        }),
+        (Answer::Verdict(v), _) => {
+            Some(AiProposal::Verdict { risk: v.risk.as_str().into(), reasons: v.reasons.clone(), raised: v.raised })
+        }
+        (Answer::Choices(items), _) => Some(AiProposal::Choices {
+            items: items.clone(),
+            then: match f.context.prompt.then {
+                Some(nm_ai::prompt::Then::Insert) => "insert".into(),
+                _ => "reply".into(),
+            },
+        }),
         _ => None,
     }
+}
+
+/// Whether a proposal is only read (a translation, a summary, a verdict):
+/// nothing to apply, and closing it is no decision on it.
+fn read_only(a: &Answer) -> bool {
+    matches!(a, Answer::Text(_) | Answer::Summary { .. } | Answer::Verdict(_))
 }
 
 /// `ai_get_run`.
@@ -565,43 +869,46 @@ pub(crate) async fn apply(core: &Arc<Core>, p: AiApplyParams, source: Source) ->
         .unwrap()
         .remove(&p.run_id)
         .ok_or_else(|| RpcError::new(error_code::NOT_FOUND, format!("AI run {} has no proposal to apply", p.run_id)))?;
-    // Rust note: a closure that may fail, to put the proposal back on any
-    // refusal below: a client told "the draft changed" can still dismiss
-    // it, and a retry with the right revision still finds it.
-    let put_back = |f: Finished| {
+    // Any refusal below puts the proposal back: a client told "the draft
+    // changed" can still dismiss it, and a retry with the right revision or
+    // choice still finds it.
+    let put_back = |f: Finished, e: RpcError| {
         core.ai.finished.lock().unwrap().insert(p.run_id, f);
+        Err(e)
     };
-    let c = &finished.context;
+    let run_id = p.run_id;
+    // A choice the client applies itself (a quick reply starts a reply):
+    // the core records it and gives the text back.
+    if let Answer::Choices(items) = &finished.answer {
+        let Some(text) = p.choice.and_then(|i| items.get(i)).cloned() else {
+            return put_back(finished, RpcError::new(error_code::INVALID_PARAMS, "choose one of the texts (choice)"));
+        };
+        if let Err(e) = with_store(core, move |st| st.ai_run_decide(run_id, Decision::Accepted)).await {
+            return put_back(finished, e);
+        }
+        return Ok(AiApplyResult { draft: None, text: Some(text) });
+    }
+    let Target::Draft { draft_id, revision, body, ranges } = finished.context.target.clone() else {
+        return put_back(finished, RpcError::new(error_code::INVALID_PARAMS, "nothing to apply: close it with ai_dismiss"));
+    };
     // The text the AI saw is the text of that revision: a later one may
     // hold words typed since, which applying would erase.
-    if p.revision != c.revision {
-        let current = c.revision;
-        put_back(finished);
+    if p.revision != Some(revision) {
         let mut err = RpcError::new(error_code::REVISION_CONFLICT, "the draft changed since the AI read it: run it again");
-        err.data = Some(serde_json::json!({ "revision": current }));
-        return Err(err);
+        err.data = Some(serde_json::json!({ "revision": revision }));
+        return put_back(finished, err);
     }
     let edit = match &finished.answer {
-        Answer::Segments(new) => match nm_core::segments::splice(&c.body, &c.ranges, new) {
+        Answer::Segments(new) => match nm_core::segments::splice(&body, &ranges, new) {
             Ok(body) => DraftEdit { body: Some(body), ..Default::default() },
-            Err(m) => {
-                put_back(finished);
-                return Err(RpcError::new(error_code::INTERNAL_ERROR, m));
-            }
+            Err(m) => return put_back(finished, RpcError::new(error_code::INTERNAL_ERROR, m)),
         },
         Answer::Subjects(items) => match p.choice.and_then(|i| items.get(i)) {
             Some(subject) => DraftEdit { subject: Some(subject.clone()), ..Default::default() },
-            None => {
-                put_back(finished);
-                return Err(RpcError::new(error_code::INVALID_PARAMS, "choose one of the subjects (choice)"));
-            }
+            None => return put_back(finished, RpcError::new(error_code::INVALID_PARAMS, "choose one of the subjects (choice)")),
         },
-        _ => {
-            put_back(finished);
-            return Err(RpcError::new(error_code::INVALID_PARAMS, "this proposal cannot be applied yet"));
-        }
+        _ => return put_back(finished, RpcError::new(error_code::INVALID_PARAMS, "this proposal cannot be applied")),
     };
-    let (draft_id, revision, run_id) = (c.draft_id, c.revision, p.run_id);
     let saved = with_store(core, move |st| {
         st.edit_draft(draft_id, revision, &edit, source)?;
         st.ai_run_decide(run_id, Decision::Accepted)?;
@@ -609,25 +916,24 @@ pub(crate) async fn apply(core: &Arc<Core>, p: AiApplyParams, source: Source) ->
     })
     .await;
     match saved {
-        Ok(draft) => Ok(AiApplyResult { draft }),
-        Err(e) => {
-            put_back(finished);
-            Err(e)
-        }
+        Ok(draft) => Ok(AiApplyResult { draft: Some(draft), text: None }),
+        Err(e) => put_back(finished, e),
     }
 }
 
-/// `ai_dismiss`: the proposal is turned down; a run still going is
-/// cancelled.
+/// `ai_dismiss`: the proposal is turned down, or a proposal only read is
+/// closed (no decision then); a run still going is cancelled.
 pub(crate) async fn dismiss(core: &Arc<Core>, p: AiRunIdParams) -> Result<CommandResult, RpcError> {
     if core.ai.running.lock().unwrap().contains_key(&p.run_id) {
         return cancel(core, p).await;
     }
-    if core.ai.finished.lock().unwrap().remove(&p.run_id).is_none() {
+    let Some(finished) = core.ai.finished.lock().unwrap().remove(&p.run_id) else {
         return Err(RpcError::new(error_code::NOT_FOUND, format!("AI run {} has no proposal", p.run_id)));
+    };
+    if !read_only(&finished.answer) {
+        let id = p.run_id;
+        with_store(core, move |st| st.ai_run_decide(id, Decision::Rejected)).await?;
     }
-    let id = p.run_id;
-    with_store(core, move |st| st.ai_run_decide(id, Decision::Rejected)).await?;
     Ok(CommandResult { changed: 0 })
 }
 
@@ -663,6 +969,53 @@ pub(crate) fn start_upkeep(core: &Arc<Core>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hosts_are_read_from_urls_and_link_texts() {
+        assert_eq!(url_host("https://user@www.Bank.fr:8443/a?b#c").as_deref(), Some("www.bank.fr"));
+        assert_eq!(url_host("http://[2001:db8::1]/x").as_deref(), Some("[2001:db8::1]"));
+        assert_eq!(url_host("mailto:a@b.fr"), None);
+        assert_eq!(shown_host("www.mabanque.fr").as_deref(), Some("www.mabanque.fr"));
+        assert_eq!(shown_host("https://mabanque.fr/login").as_deref(), Some("mabanque.fr"));
+        assert_eq!(shown_host("mabanque.fr/espace").as_deref(), Some("mabanque.fr"));
+        for not_a_site in ["Cliquez ici", "Voir ma facture", "v2.0", "1.5", "a.b c"] {
+            assert_eq!(shown_host(not_a_site), None, "{not_a_site}");
+        }
+        assert!(is_ip("203.0.113.9") && is_ip("[::1]") && !is_ip("1.2.3") && !is_ip("www.a.fr"));
+    }
+
+    fn message(auth: &str, links: &[(&str, Option<&str>)]) -> MessageView {
+        let links: Vec<serde_json::Value> =
+            links.iter().map(|(u, t)| serde_json::json!({"url": u, "text": t})).collect();
+        serde_json::from_value(serde_json::json!({
+            "id": 1, "folder_id": 1, "folder_role": null, "subject": "s", "from_name": null, "from_addr": "a@b.fr",
+            "to": [], "cc": [], "date_sent": null, "date_received": 0, "body_text": "x", "is_seen": true,
+            "is_flagged": false, "is_answered": false, "has_attachments": false, "auth_result": auth,
+            "body_html": null, "has_remote_content": false, "from_body_format": null, "segments": [],
+            "only_quotes": false, "expanded": true, "show_recipients": false, "attachments": [],
+            "unsubscribe": null, "tracking_pixels": 0, "links": links, "verification_code": null,
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn findings_name_what_lies() {
+        let text = |m: &MessageView| findings(m).into_iter().map(|f| f.text).collect::<Vec<_>>();
+        // A link to the same organization under another name is fine.
+        assert!(text(&message("pass", &[("https://espace.mabanque.fr/x", Some("www.mabanque.fr"))])).is_empty());
+        assert!(text(&message("pass", &[("https://other.example/x", Some("Cliquez ici"))])).is_empty());
+        let t = text(&message("fail", &[
+            ("http://evil.example/login", Some("www.mabanque.fr")),
+            ("http://evil.example/login", Some("www.mabanque.fr")),
+            ("http://203.0.113.9/steal", Some("Cliquez")),
+        ]));
+        assert_eq!(t, [
+            "the sender's authentication failed (SPF, DKIM, DMARC)",
+            "a link shows www.mabanque.fr but opens evil.example",
+            "a link opens the bare IP address 203.0.113.9",
+        ]);
+        assert!(findings(&message("fail", &[])).iter().all(|f| f.strong));
+    }
 
     #[test]
     fn utf16_offsets_convert_both_ways() {

@@ -158,7 +158,7 @@ extension AppModel {
             do {
                 let r: AIApplyResult = try await client.call("ai_apply", params)
                 aiRun = nil
-                applied(r.draft, opened: run.composer)
+                if let d = r.draft { applied(d, opened: run.composer) }
             } catch {
                 flash = AI.errorFlash(error)
             }

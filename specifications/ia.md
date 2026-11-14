@@ -385,6 +385,8 @@ Le contrat est branché pour le jalon 1 (`crates/nm-daemon/src/ai.rs`, `docs/ai.
 - **`ai.max_parallel`** est lu au démarrage.
 - **Fournisseur factice** : `NICEMAILER_FAKE_AI` désigne un fichier JSON `{"<tâche>": "<réponse>"}`, pour les tests du noyau et les scénarios de l'app, comme `NICEMAILER_FAKE_NETWORK` pour l'envoi.
 - **Entretien** : au démarrage, les exécutions laissées `running` passent à `failed` ; la purge des textes passe au démarrage puis toutes les six heures.
+- **Prompts d'un mail** (novembre 2026, `docs/ai.md`, « Inputs of a mail ») : `ai_run` prend `thread_id`, et `message_id` pour un mail de la conversation (absent : le dernier reçu). Les entrées `message.text`, `message.headers`, `message.auth`, `thread.text`, `sender.history` et `user.identity` sont calculées ; `message.eml` et `targets` pas encore. Le Reply-To des constats n'est pas encore lu : la lecture ne le donne pas. Les propositions `text`, `summary` et `verdict` sont seulement lues : `ai_dismiss` les ferme sans décision. Une réponse rapide est appliquée par le client : `ai_apply {run_id, choice}` l'enregistre et rend son texte, et le client ouvre la réponse avec.
+- **Les dates des mails** données au modèle sont au décalage horaire de ce Mac **à la date du mail** : un mail de juin est en heure d'été même lu en novembre.
 
 Les sorties JSON ne sont pas affichées au fil de l'eau (un JSON partiel n'a pas de sens pour l'utilisateur) : le client montre l'attente, et pour un lot l'avancement. Les sorties texte le sont ; pour `replace`, le texte arrive dans le panneau, puis les différences s'affichent à la fin, une fois la réponse validée.
 
@@ -457,7 +459,7 @@ L'interrupteur est global : un compte ne peut pas être exclu en v1. Le format l
 
 0. **Vérifier le CLI `claude`** : fait le 14 novembre 2026 avec Claude Code 2.1.325 (section 3, « L'appel » et « Vérification à chaque appel »). Restent à observer : la limite d'usage atteinte, et le fournisseur `anthropic-api`, faute de clé API pendant l'essai. Après une mise à jour de Claude Code, `cargo test -p nm-ai --test real_claude -- --ignored` refait les essais essentiels avec le vrai binaire.
 1. **Crate `nm-ai`** : fait pour les fournisseurs `claude-code` et factice, le format, le chargement et la validation des prompts, les prompts intégrés et la lecture des réponses avec le plancher du verdict (`docs/ai.md`) ; restent `AnthropicApiProvider` et le rechargement des prompts (FSEvents, dans le noyau). La construction du message dépend des entrées : elle vient avec la phase 2. Testée sans réseau.
-2. **Entrées dans le noyau** : découpage en segments de `draft.own_text` et reconstruction (fait), puis les autres entrées.
+2. **Entrées dans le noyau** : découpage en segments de `draft.own_text` et reconstruction (fait), entrées d'un mail et d'une conversation (faites) ; restent `message.eml`, `selection.items`, `targets` et `attachment.text`.
 3. **Contrat et historique** : fait pour les prompts du brouillon (section 10, « Réalisé ») ; les autres portées viendront avec leurs entrées.
 4. **CLI** (section 12) : fait, sauf `ai key set` et `ai history`.
 5. **Jalon 1, la correction dans l'app** : fait (section 11, « Réalisé »), avec reformuler, traduire et les objets.

@@ -305,3 +305,188 @@ fn a_claude_binary_with_tools_never_gets_the_mail() {
     // The fake never read a third line: the mail was not written to it.
     assert!(!dir.path().join("claude.pid").exists());
 }
+
+// ---------------------------------------------------------------------------
+// Prompts on received mail (the reading and list screens)
+// ---------------------------------------------------------------------------
+
+const CONVERSATION: &str = "From a@x Tue Jun 23 19:20:56 2020
+From: Alice <alice@a.example>
+To: me@hey.example
+Subject: Visite
+Message-ID: <v1@a.example>
+Date: Tue, 23 Jun 2020 19:20:56 +0200
+
+Tu peux passer jeudi a 14h pour la visite ?
+
+From a@x Wed Jun 24 08:00:00 2020
+From: Me <me@hey.example>
+To: alice@a.example
+Subject: Re: Visite
+Message-ID: <v2@hey.example>
+In-Reply-To: <v1@a.example>
+References: <v1@a.example>
+Date: Wed, 24 Jun 2020 08:00:00 +0200
+
+Oui, je viendrai avec les cles.
+
+> Tu peux passer jeudi a 14h pour la visite ?
+
+From a@x Wed Jun 24 09:00:00 2020
+From: Alice <alice@a.example>
+To: me@hey.example
+Subject: Re: Visite
+Message-ID: <v3@a.example>
+In-Reply-To: <v2@hey.example>
+References: <v1@a.example> <v2@hey.example>
+Date: Wed, 24 Jun 2020 09:00:00 +0200
+
+Parfait, pense a la piece d'identite.
+
+From a@x Thu Jun 25 10:00:00 2020
+From: Ma Banque <support@mabanque.example>
+To: me@hey.example
+Subject: Votre compte
+Message-ID: <p1@mabanque.example>
+Date: Thu, 25 Jun 2020 10:00:00 +0200
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+
+<p>Confirmez vos informations : <a href=\"http://evil.example/login\">www.mabanque.fr</a></p>
+";
+
+/// A core with the AI on and fake answers, the conversation and the
+/// phishing mail imported; the ids of the conversation's thread and of
+/// the phishing mail's thread.
+fn mail_core(dir: &Path, answers: Value) -> (common::Core, Client, i64, i64) {
+    let core = core(dir, Some(answers), "");
+    let mut c = Client::connect_as(dir, "app");
+    let mbox = dir.join("mail.mbox");
+    std::fs::write(&mbox, CONVERSATION).unwrap();
+    c.call("subscribe", json!({})).unwrap();
+    c.call("import_mbox", json!({"path": mbox.to_str().unwrap(), "account": "hey", "address": "me@hey.example"})).unwrap();
+    c.event("ImportFinished", 30);
+    let db = nm_store::rusqlite::Connection::open_with_flags(dir.join("nicemailer.db"), nm_store::rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+    let thread = |id: &str| -> i64 { db.query_row("SELECT thread_id FROM message WHERE message_id_hdr = ?1", [id], |r| r.get(0)).unwrap() };
+    let (visit, bank) = (thread("v1@a.example"), thread("p1@mabanque.example"));
+    assert_eq!(visit, thread("v3@a.example"), "one conversation");
+    (core, c, visit, bank)
+}
+
+/// Runs `prompt` on a thread and waits for its proposal.
+fn run_mail(c: &mut Client, prompt: &str, thread: i64, variant: Option<&str>) -> (i64, Value) {
+    c.clear_events();
+    let r = c.call("ai_run", json!({"prompt": prompt, "variant": variant, "thread_id": thread, "lang": "fr"})).unwrap();
+    let id = r["run_id"].as_i64().unwrap();
+    loop {
+        let e = c.next_event();
+        if e["params"]["run_id"].as_i64() != Some(id) {
+            continue;
+        }
+        match e["method"].as_str() {
+            Some("AiDone") => break,
+            Some("AiFailed") => panic!("{e}"),
+            _ => {}
+        }
+    }
+    let v = c.call("ai_get_run", json!({"run_id": id})).unwrap();
+    (id, v["proposal"].clone())
+}
+
+/// What the model was sent, from the history.
+fn sent(dir: &Path, run_id: i64) -> String {
+    let db = nm_store::rusqlite::Connection::open_with_flags(dir.join("nicemailer.db"), nm_store::rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+    db.query_row("SELECT input FROM ai_run WHERE id = ?1", [run_id], |r| r.get(0)).unwrap()
+}
+
+#[test]
+fn a_conversation_is_summarized_in_the_apps_language() {
+    let dir = tempfile::tempdir().unwrap();
+    let answers = json!({"summarize-thread": "{\"summary\": \"Alice attend jeudi 14h.\", \"actions\": [{\"task\": \"Apporter la pièce d'identité\", \"owner\": \"you\", \"due\": \"jeudi\"}]}"});
+    let (_core, mut c, visit, _) = mail_core(dir.path(), answers);
+    let menu = c.call("ai_list_prompts", json!({"screen": "reading", "folder": "inbox", "lang": "fr"})).unwrap();
+    let available: Vec<&str> = menu.as_array().unwrap().iter().filter(|p| p["available"] == true).map(|p| p["id"].as_str().unwrap()).collect();
+    for id in ["summarize-thread", "quick-replies", "translate-message", "security-check", "dates"] {
+        assert!(available.contains(&id), "{id} in {available:?}");
+    }
+    let (id, p) = run_mail(&mut c, "summarize-thread", visit, None);
+    assert_eq!(p, json!({"kind": "summary", "summary": "Alice attend jeudi 14h.",
+        "actions": [{"task": "Apporter la pièce d'identité", "owner": "you", "due": "jeudi"}]}));
+    let input = sent(dir.path(), id);
+    // The three mails, oldest first, mine marked; the quoted history of my
+    // reply left out; the user's address; the app's language.
+    let (a, b, z) = (input.find("Tu peux passer").unwrap(), input.find("je viendrai").unwrap(), input.find("Parfait").unwrap());
+    assert!(a < b && b < z, "{input}");
+    assert_eq!(input.matches("Tu peux passer").count(), 1, "the quote of the reply is left out:\n{input}");
+    assert!(input.contains("Me <me@hey.example> (the user)"), "{input}");
+    assert!(input.contains("<user>\nThe user writes from: me@hey.example"), "{input}");
+    assert!(input.contains("Answer in French."), "{input}");
+    // Dates at the mail's own offset: June is summer time (+0200 in Paris,
+    // the zone the tests run in when TZ says so; any zone gives the same
+    // hour as the mail's own Date header here).
+    if std::env::var("TZ").as_deref() == Ok("Europe/Paris") {
+        assert!(input.contains("Tue, 23 Jun 2020 19:20:56 +0200"), "{input}");
+    }
+    // Closing a summary is no decision on it.
+    c.call("ai_dismiss", json!({"run_id": id})).unwrap();
+    assert_eq!(row(dir.path(), id).1, None);
+    // Nothing to apply.
+    assert_eq!(c.call("ai_apply", json!({"run_id": id})).unwrap_err()["code"], 1001);
+}
+
+#[test]
+fn a_mail_is_translated_with_the_variants_language() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_core, mut c, visit, _) = mail_core(dir.path(), json!({"translate-message": "Perfect, remember your ID."}));
+    let (id, p) = run_mail(&mut c, "translate-message", visit, Some("e"));
+    assert_eq!(p, json!({"kind": "text", "text": "Perfect, remember your ID."}));
+    let input = sent(dir.path(), id);
+    // The latest mail received, not mine, and the variant's language only.
+    assert!(input.contains("<email>\nParfait, pense a la piece d'identite."), "{input}");
+    assert!(!input.contains("je viendrai"), "{input}");
+    assert!(input.contains("Translate it into English.") && !input.contains("Answer in French"), "{input}");
+}
+
+#[test]
+fn a_quick_reply_is_chosen_and_given_back() {
+    let dir = tempfile::tempdir().unwrap();
+    let answers = json!({"quick-replies": "{\"choices\": [\"C'est noté !\", \"Je ne pourrai pas.\", \"On peut décaler ?\"]}"});
+    let (_core, mut c, visit, _) = mail_core(dir.path(), answers);
+    let (id, p) = run_mail(&mut c, "quick-replies", visit, None);
+    assert_eq!(p["kind"], "choices");
+    assert_eq!(p["then"], "reply");
+    assert_eq!(c.call("ai_apply", json!({"run_id": id})).unwrap_err()["code"], -32602, "a choice is needed");
+    let a = c.call("ai_apply", json!({"run_id": id, "choice": 2})).unwrap();
+    assert_eq!((a["text"].clone(), a["draft"].clone()), (json!("On peut décaler ?"), Value::Null));
+    assert_eq!(row(dir.path(), id).1.as_deref(), Some("accepted"));
+}
+
+#[test]
+fn a_low_verdict_is_raised_by_a_link_that_lies() {
+    let dir = tempfile::tempdir().unwrap();
+    let answers = json!({"security-check": "{\"risk\": \"low\", \"reasons\": [\"Looks like a normal notice.\"]}"});
+    let (_core, mut c, _, bank) = mail_core(dir.path(), answers);
+    let (id, p) = run_mail(&mut c, "security-check", bank, None);
+    assert_eq!(p["kind"], "verdict");
+    assert_eq!(p["risk"], "medium", "{p}");
+    assert_eq!(p["raised"], true);
+    assert_eq!(p["reasons"][0], "a link shows www.mabanque.fr but opens evil.example");
+    // The model saw it too, with the headers and the sender's history.
+    let input = sent(dir.path(), id);
+    assert!(input.contains("- a link shows www.mabanque.fr but opens evil.example"), "{input}");
+    assert!(input.contains("<sender>\nAddress: support@mabanque.example"), "{input}");
+    assert!(input.contains("From: Ma Banque <support@mabanque.example>"), "{input}");
+}
+
+#[test]
+fn a_mail_prompt_needs_its_conversation() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_core, mut c, visit, _) = mail_core(dir.path(), json!({}));
+    let e = c.call("ai_run", json!({"prompt": "dates", "lang": "fr"})).unwrap_err();
+    assert_eq!(e["code"], -32602);
+    let e = c.call("ai_run", json!({"prompt": "dates", "thread_id": visit, "message_id": 999999, "lang": "fr"})).unwrap_err();
+    assert_eq!(e["code"], 1001);
+    // Quarantine sorting is not wired yet.
+    let e = c.call("ai_run", json!({"prompt": "triage-quarantine", "thread_id": visit, "lang": "fr"})).unwrap_err();
+    assert_eq!(e["data"]["code"], "ai_bad_input");
+}

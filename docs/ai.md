@@ -2,7 +2,7 @@
 
 NiceMailer can ask a language model to help with mail: proofread a draft, summarize a conversation, suggest where a mail of the Quarantine should go. The rules are in `specifications/ia.md` (in French). This page describes what is built so far and how it is tested.
 
-**Status (November 2026):** the core runs the prompts of the compose screen (proofread, rewrite, translate, subjects) through the contract, with the user's own `claude` binary; the CLI (`nicemailer ai`) and the app (⌘I in a reply) run them. The prompts of the other screens, which need the inputs taken from a mail, and the API-key provider come next.
+**Status (November 2026):** the core runs the prompts of the compose screen (proofread, rewrite, translate, subjects) and those of a mail or a conversation (summary, translation, quick replies, security check, dates) through the contract, with the user's own `claude` binary. The CLI (`nicemailer ai`) and the app (⌘I in a reply) run the first ones. The sorting of the Quarantine, the attachments and the API-key provider come next.
 
 ## Providers
 
@@ -90,6 +90,23 @@ Proofreading must touch the user's words only. `nm_core::segments::own_segments(
 The rest, cut where quoted lines interrupt it, makes the segments; a reply written between quoted lines has several. A segment has no blank line or whitespace around it, and `splice` keeps the whitespace that surrounded the original, so the model never decides the layout. In doubt, a line is left out: then it is only not proofread. With a selection, the selection alone is one segment.
 
 `nm_ai::message::segments(texts)` writes them for the model as `<segment n="1">…</segment>`, the form `answer::segments` reads back. A text that already contains a segment tag is not sent (`ai_bad_input`).
+
+## Inputs of a mail
+
+The prompts of the reading and list screens take `thread_id` (and `message_id` for a mail of it; absent, the latest mail received, the latest of all when every one is the user's). The core builds their inputs from the conversation as the reader shows it (`get_thread`), in `crates/nm-daemon/src/ai.rs`, rendered by `nm_ai::message`:
+
+| Input | What the model gets |
+| --- | --- |
+| `message.text` | What the sender wrote: interleaved quotes marked `> `, the quoted history at the end and the copies of earlier mails left out (`docs/thread-display.md`); 16,000 characters at most, `[…]` when cut |
+| `message.headers` | From, To, Cc, the date (at the mail's own offset of this Mac's time zone: a mail of June is in summer time), Subject, the files attached |
+| `thread.text` | Every mail, oldest first, each as above and cut at 3,500 characters, the user's marked "(the user)"; beyond 16,000 in all, the oldest are left out and the section says how many |
+| `message.auth` | The authentication verdict, and what the core found: a failed authentication, a link whose text names another site than it opens (organizational domains compared, `nm_store::auth`), a link to a bare IP address |
+| `sender.history` | The decision on the address and on its domain, the mails received from it, whether the user wrote to it, person or robot |
+| `user.identity` | The user's addresses: those of `accounts.toml`, and of the accounts in the database (an archive account) |
+
+What the core found raises a `low` security verdict to `medium` (`answer::apply_floor`), its first strong finding first among the reasons. The Reply-To of the specification is not read yet: the reader does not give it.
+
+Their proposals: `text` (a translation, the dates), `summary` (with its action items), `verdict` (`risk`, `reasons`, `raised`), `choices` (`then: reply`). A text, a summary or a verdict is only read: `ai_dismiss` closes it without a decision, and `ai_apply` has nothing to do with it. A quick reply is applied by the client: `ai_apply {run_id, choice}` records it and gives its text back, and the client starts the reply with it.
 
 ## Answers
 
@@ -191,7 +208,8 @@ Tried on 14 November 2026 with Claude Code 2.1.325, Claude Pro, `claude-haiku-5-
 | `nm-cli` (unit, `ai.rs`) | The word diff as text, the export that keeps existing files and writes files that load as the built-in prompts, the status and the menu as text |
 | `tests/answer.rs` | Each output, accepted and refused, case by case; the recorded answers of phase 0 read; the floor of the verdict |
 | `nm-store`, `tests/ai_runs.rs` | A run from start to decision; ending and deciding once; failed and cancelled runs keep their raw answer; runs left running fail at start; the purge keeps everything but the texts and leaves running runs alone; suggestions follow their run and their conversation, and a batch is written whole or not at all |
-| `nm-daemon`, `tests/ai_rpc.rs` | The real core: a reply proofread from the menu to the saved draft, quotation untouched; nothing runs while the AI is off; what cannot work refused before any row is written; an answer with the wrong segments fails and is kept; a draft changed during the run is not overwritten; a subject chosen; a run cancelled and its `claude` process killed; a `claude` that announces tools never gets the mail |
+| `nm-daemon`, `tests/ai_rpc.rs` | The real core: a conversation summarized (the mails in order, the quote of a reply left out, the user marked, the app's language), a mail translated (the latest received, the variant's language), a quick reply chosen and given back, a low verdict raised by a link that lies, a mail prompt without its conversation; a reply proofread from the menu to the saved draft, quotation untouched; nothing runs while the AI is off; what cannot work refused before any row is written; an answer with the wrong segments fails and is kept; a draft changed during the run is not overwritten; a subject chosen; a run cancelled and its `claude` process killed; a `claude` that announces tools never gets the mail |
+| `nm-daemon` (unit, `ai.rs`) | The hosts of URLs and link texts ("Cliquez ici" names no site), the findings: authentication, a link that lies, a bare IP, the same organization under another name not flagged |
 | Swift, `AITests.swift` | The keys of the panel in each phase, the hint, the diff as text, the cursor after a replacement, the proposals decoded, the errors said; through the keys against `FakeCore`: ⌘I and the menu (a prompt not available yet, the variants), a proofreading saved, run, streamed, accepted and undone, Escape stopping a run and refusing a proposal, a failure, a subject chosen, an end that comes before the run's id or after a gap, the AI off, `a` in the list |
 | `UITests/ai.uiscript` | The app with a real core answering from `fixtures/ai.ai.json`: the menu (not typed), a prompt not available yet, the differences, a letter not typed, applied with the quotation untouched and the cursor after the words, ⌘Z, a variant refused, a subject chosen, `a` in the list |
 | `tests/real_claude.rs` | Ignored by default. The real binary, with the user's subscription: status, a prompt injection that must run nothing, a structured answer. Run it after an update of Claude Code: `cargo test -p nm-ai --test real_claude -- --ignored` |

@@ -107,6 +107,144 @@ mod tests {
     }
 }
 
+/// One mail, as the inputs of a prompt see it: built by the core from what
+/// the reader shows (`MessageView`), the history it quotes left out.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Mail {
+    /// "Name <address>", or the address.
+    pub from: String,
+    pub to: Vec<String>,
+    pub cc: Vec<String>,
+    /// As the reader shows it, in the app's time zone.
+    pub date: String,
+    pub subject: String,
+    /// What the sender wrote, interleaved quotes marked with `> `; without
+    /// the quoted history at the end.
+    pub text: String,
+    /// Names of the files attached.
+    pub attachments: Vec<String>,
+    /// Written by the user (from one of their addresses).
+    pub mine: bool,
+}
+
+/// Size limits of the inputs, in characters (`ia.md`, section 5, "Entrées").
+pub const MAX_MESSAGE_CHARS: usize = 16_000;
+pub const THREAD_PER_MESSAGE: usize = 3_500;
+pub const THREAD_TOTAL: usize = 16_000;
+
+/// The first `max` characters of a text, `[…]` at the end when it was cut
+/// (the prompts know that this marks a text cut, `ia.md`, section 5).
+pub fn clip(text: &str, max: usize) -> String {
+    let text = text.trim();
+    if text.chars().count() <= max {
+        return text.to_string();
+    }
+    let cut: String = text.chars().take(max).collect();
+    format!("{}\n[…]", cut.trim_end())
+}
+
+/// `message.text`: the mail's text.
+pub fn message_text(m: &Mail) -> String {
+    section("email", &clip(&m.text, MAX_MESSAGE_CHARS))
+}
+
+/// `message.headers`: From, To, Cc, Date, Subject, the files attached.
+pub fn message_headers(m: &Mail) -> String {
+    let mut lines = vec![format!("From: {}", m.from)];
+    if !m.to.is_empty() {
+        lines.push(format!("To: {}", m.to.join(", ")));
+    }
+    if !m.cc.is_empty() {
+        lines.push(format!("Cc: {}", m.cc.join(", ")));
+    }
+    lines.push(format!("Date: {}", m.date));
+    lines.push(format!("Subject: {}", m.subject));
+    lines.push(format!(
+        "Attachments: {}",
+        if m.attachments.is_empty() {
+            "(none)".to_string()
+        } else {
+            m.attachments.join(", ")
+        }
+    ));
+    section("headers", &lines.join("\n"))
+}
+
+/// `thread.text`: the mails of a conversation, oldest first, each cut at
+/// [`THREAD_PER_MESSAGE`]; beyond [`THREAD_TOTAL`] in all, the oldest are
+/// left out (the newest are the ones a summary or a reply needs), and the
+/// section says how many.
+pub fn thread_text(mails: &[Mail]) -> String {
+    let blocks: Vec<String> = mails
+        .iter()
+        .map(|m| {
+            let who = if m.mine {
+                format!("{} (the user)", m.from)
+            } else {
+                m.from.clone()
+            };
+            format!(
+                "--- From {who}, {}:\n{}",
+                m.date,
+                clip(&m.text, THREAD_PER_MESSAGE)
+            )
+        })
+        .collect();
+    // The newest first, while they fit.
+    let mut kept: Vec<&String> = Vec::new();
+    let mut size = 0;
+    for b in blocks.iter().rev() {
+        let n = b.chars().count();
+        if size + n > THREAD_TOTAL && !kept.is_empty() {
+            break;
+        }
+        size += n;
+        kept.push(b);
+    }
+    kept.reverse();
+    let left_out = blocks.len() - kept.len();
+    let mut text = String::new();
+    if left_out > 0 {
+        text.push_str(&format!("[{left_out} older message(s) left out]\n\n"));
+    }
+    text.push_str(
+        &kept
+            .iter()
+            .map(|b| b.as_str())
+            .collect::<Vec<_>>()
+            .join("\n\n"),
+    );
+    section("conversation", &text)
+}
+
+/// `message.auth`: the authentication verdict, and what the core found in
+/// the headers and links (`crate::answer::Finding`).
+pub fn auth(verdict: &str, findings: &[crate::answer::Finding]) -> String {
+    let mut lines = vec![format!(
+        "Authentication of the sender (SPF, DKIM, DMARC): {verdict}"
+    )];
+    if findings.is_empty() {
+        lines.push("Found by the app: nothing unusual in the headers and links.".into());
+    } else {
+        lines.push("Found by the app:".into());
+        lines.extend(findings.iter().map(|f| format!("- {}", f.text)));
+    }
+    section("authentication", &lines.join("\n"))
+}
+
+/// `sender.history`: what the mailbox knows of the sender.
+pub fn sender_history(lines: &[String]) -> String {
+    section("sender", &lines.join("\n"))
+}
+
+/// `user.identity`: who the user is.
+pub fn identity(addresses: &[String]) -> String {
+    section(
+        "user",
+        &format!("The user writes from: {}", addresses.join(", ")),
+    )
+}
+
 /// The text of a streamed `replace` answer as the user should see it while
 /// it comes: without the `<segment n="…">` tags, two segments apart by an
 /// empty line (`specifications/ia.md`, section 11, "Panneau IA").
@@ -219,6 +357,71 @@ fn tag_at(s: &str) -> Tag {
         }
     }
     Tag::Not
+}
+
+#[cfg(test)]
+mod mail_tests {
+    use super::*;
+
+    fn mail(from: &str, text: &str) -> Mail {
+        Mail {
+            from: from.into(),
+            date: "Nov 14".into(),
+            subject: "Plan".into(),
+            text: text.into(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn a_long_text_is_cut_and_says_so() {
+        assert_eq!(clip("  short  ", 10), "short");
+        let c = clip(&"é".repeat(30), 10);
+        assert_eq!(c, format!("{}\n[…]", "é".repeat(10)));
+    }
+
+    #[test]
+    fn headers_list_what_is_known() {
+        let mut m = mail("Alice <a@x.fr>", "Hi");
+        m.to = vec!["me@x.fr".into()];
+        m.attachments = vec!["devis.pdf".into()];
+        assert_eq!(
+            message_headers(&m),
+            "<headers>\nFrom: Alice <a@x.fr>\nTo: me@x.fr\nDate: Nov 14\nSubject: Plan\nAttachments: devis.pdf\n</headers>"
+        );
+    }
+
+    #[test]
+    fn a_conversation_keeps_its_newest_mails() {
+        let mut mails: Vec<Mail> = (0..10)
+            .map(|i| mail(&format!("P{i}"), &format!("{i}{}", "x".repeat(3_000))))
+            .collect();
+        mails[9].mine = true;
+        let t = thread_text(&mails);
+        assert!(t.contains("--- From P9 (the user)"));
+        assert!(t.contains("--- From P5,"));
+        assert!(
+            !t.contains("--- From P4,"),
+            "beyond the total, the oldest go"
+        );
+        assert!(t.contains("[5 older message(s) left out]"));
+        // In order, oldest first.
+        assert!(t.find("P5,").unwrap() < t.find("P9 ").unwrap());
+        // One mail longer than everything is still given, cut.
+        let one = thread_text(&[mail("A", &"y".repeat(50_000))]);
+        assert!(one.contains("[…]") && !one.contains("left out"));
+    }
+
+    #[test]
+    fn auth_says_what_was_found() {
+        let f = crate::answer::Finding {
+            text: "a link shows a.fr but opens b.ru".into(),
+            strong: true,
+        };
+        let a = auth("fail", &[f]);
+        assert!(a.contains("DMARC): fail") && a.contains("- a link shows a.fr but opens b.ru"));
+        assert!(auth("pass", &[]).contains("nothing unusual"));
+    }
 }
 
 #[cfg(test)]

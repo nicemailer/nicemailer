@@ -2531,6 +2531,13 @@ pub struct AiRunParams {
     /// Only this part of the draft's body.
     #[serde(default)]
     pub selection: Option<AiSelection>,
+    /// The conversation, for the prompts of the reading and list screens;
+    /// with `message_id`, the mail of it a `message` prompt works on (its
+    /// latest received when absent).
+    #[serde(default)]
+    pub thread_id: Option<i64>,
+    #[serde(default)]
+    pub message_id: Option<i64>,
     /// The app's language (`fr`), for the answers that follow it.
     pub lang: String,
 }
@@ -2582,6 +2589,25 @@ pub enum AiProposal {
     Replace { segments: Vec<AiSegmentChange>, body: String, unchanged: bool },
     /// Subject lines to choose from.
     Subjects { items: Vec<String> },
+    /// A text to read (a translation, the dates of a mail): nothing to
+    /// apply.
+    Text { text: String },
+    /// A summary and the action items of a conversation.
+    Summary { summary: String, actions: Vec<AiActionView> },
+    /// The phishing risk of a mail; `raised` when the core raised the
+    /// model's `low` because of what it found itself (`ia.md`, section 6).
+    Verdict { risk: String, reasons: Vec<String>, raised: bool },
+    /// Texts to choose from; `then` says what the one chosen does
+    /// (`reply`: starts a reply with it, `insert`: goes into the draft).
+    Choices { items: Vec<String>, then: String },
+}
+
+/// An action item of a summary; `owner` and `due` may be empty.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AiActionView {
+    pub task: String,
+    pub owner: String,
+    pub due: String,
 }
 
 /// Result of `ai_get_run`.
@@ -2607,7 +2633,9 @@ pub struct AiApplyParams {
     pub run_id: i64,
     /// The draft's revision the client shows: refused if it moved since the
     /// run started, so that a text typed meanwhile is never overwritten.
-    pub revision: i64,
+    /// Absent for a proposal that is not applied to a draft.
+    #[serde(default)]
+    pub revision: Option<i64>,
     /// For a list (`subjects`): the index of the one chosen.
     #[serde(default)]
     pub choice: Option<usize>,
@@ -2616,6 +2644,9 @@ pub struct AiApplyParams {
 /// Result of `ai_apply`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AiApplyResult {
-    /// The draft as saved.
-    pub draft: DraftView,
+    /// The draft as saved, for a proposal applied to a draft.
+    pub draft: Option<DraftView>,
+    /// The text chosen, for a choice the client applies itself (a quick
+    /// reply: the client starts the reply and puts the text in it).
+    pub text: Option<String>,
 }

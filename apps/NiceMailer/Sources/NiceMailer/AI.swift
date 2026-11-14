@@ -91,9 +91,11 @@ struct AIRunView: Decodable {
     let error: String?
 }
 
-/// `ai_apply`.
+/// `ai_apply`: the draft as saved, or the text chosen for the app to
+/// use (a quick reply).
 struct AIApplyResult: Decodable {
-    let draft: DraftView
+    let draft: DraftView?
+    let text: String?
 }
 
 /// The error codes of the AI (`nm-api`, `error_code`).
