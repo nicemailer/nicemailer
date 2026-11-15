@@ -181,6 +181,11 @@ struct AIRulesTests {
         #expect(AI.sortedFlash(found: 5, failedBatches: 2) == L("AI: %lld suggestions, %lld batches without an answer · ↩ on a row moves it there", 5, 2))
     }
 
+    @Test func theAIBlockOfTheStatusBarRemindsOfItsKey() {
+        #expect(GeekController.aiKeyLabel(composing: false) == "a")
+        #expect(GeekController.aiKeyLabel(composing: true) == "⌘I")
+    }
+
     @Test func theHintSaysTheKeys() {
         #expect(AI.hint(.running) == L("esc stop"))
         #expect(AI.hint(.proposal(.subjects(["A", "B"]))) == L("↩ or 1–%lld choose · ↑↓ move · esc or n refuse", 2))
@@ -755,6 +760,30 @@ final class AIControllerTests {
         // The keys are the list's again.
         press("j")
         #expect(model.selectedThreadId != selected)
+    }
+
+    @Test func aClickOnTheAIBlockOpensThePaletteOfItsTarget() async throws {
+        // Out of a reply: the palette of the mail, as `a`.
+        controller.openAIFromStatusBar()
+        _ = await eventually { self.paletteOpen }
+        #expect(core.calls("ai_list_prompts").last?["screen"] as? String == "mail")
+        press("esc")
+        #expect(!paletteOpen)
+        // In a reply: the palette of the reply, as ⌘I; nothing typed.
+        await reply()
+        controller.openAIFromStatusBar()
+        _ = await eventually { self.paletteOpen }
+        #expect(core.calls("ai_list_prompts").last?["screen"] as? String == "compose")
+        #expect(model.composer?.buffer.text.hasPrefix("merci\n") == true)
+        // A result shown: the click leaves it, no palette over it.
+        press("ret")
+        _ = await eventually { self.model.aiRun?.runId == 7 }
+        let lists = core.calls("ai_list_prompts").count
+        controller.openAIFromStatusBar()
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(!paletteOpen)
+        #expect(model.aiRun != nil)
+        #expect(core.calls("ai_list_prompts").count == lists)
     }
 
     @Test func aMessagePromptNamesTheMailUnderTheCursor() async throws {

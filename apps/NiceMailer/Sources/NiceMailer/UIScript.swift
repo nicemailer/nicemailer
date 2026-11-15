@@ -608,6 +608,9 @@ private final class Runner {
             "columns": "\(c.columns)",
             "reading": "\(c.reading)",
             "status_position": c.statusPosition.rawValue,
+            // The key the AI block of the status bar reminds of: `a`, or
+            // `⌘I` while a reply is written.
+            "status_ai_key": GeekController.aiKeyLabel(composing: m.composer != nil),
             "sort": m.sort,
             "body_format": m.bodyFormat,
             // Remote images (`RemoteImages.swift`): the switch offers

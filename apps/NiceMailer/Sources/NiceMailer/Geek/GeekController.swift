@@ -1230,6 +1230,21 @@ final class GeekController {
     /// Opens a prefix menu from a click on its block in the status bar:
     /// the folder (`;`: folders of the view, "Everything", screens), or the
     /// `m`, `s`, `v` icons.
+    /// A click on the AI block of the status bar: the AI palette, as `a`
+    /// (or ⌘I in a reply) opens it, for the same target (`openAI`). While a
+    /// result is shown, its panel keeps the keys and the click does
+    /// nothing: a new palette over it would hide what is being read.
+    func openAIFromStatusBar() {
+        guard model.aiRun == nil, activeChoice == nil else { return }
+        model.flash = nil
+        overlay = .none
+        openAI()
+    }
+
+    /// The key the AI block of the status bar reminds of: ⌘I while a reply
+    /// is written (a letter alone would be typed in it), `a` elsewhere.
+    nonisolated static func aiKeyLabel(composing: Bool) -> String { composing ? "⌘I" : "a" }
+
     func openMenuFromStatusBar(_ prefix: Prefix) {
         model.flash = nil
         overlay = .menu(prefix)

@@ -309,6 +309,17 @@ struct GeekStatusBar: View {
                         .uiTarget("status-\(p.rawValue)")
                         .padding(.leading, p == .save ? 0 : scaled(28))
                 }
+                // The AI, with the actions on the current mail: its palette
+                // works on the mail (or the reply) as `m` and `s` do. In
+                // Quarantine, where `m` and `s` go, it stays (sorting the
+                // folder is its first prompt) and stands alone after `v`.
+                StatusBlock(icon: "sparkles", text: "",
+                            key: GeekController.aiKeyLabel(composing: model.composer != nil))
+                    .onTapGesture { controller.openAIFromStatusBar() }
+                    .help(L("AI assistance"))
+                    .accessibilityLabel(L("AI assistance"))
+                    .uiTarget("status-ai")
+                    .padding(.leading, controller.directTargets.isEmpty ? 0 : scaled(28))
             }
             if case .contactFilter = controller.overlay {
                 HStack(spacing: 0) {

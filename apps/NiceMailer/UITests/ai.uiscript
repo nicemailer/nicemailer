@@ -36,6 +36,15 @@ expect ai_state = none
 expect compose_text ~ merci je vien vendredi|
 key cmd-z
 expect compose_text ~ merci je vien jeudi|
+# The AI block of the status bar reminds of ⌘I in a reply; a click opens
+# the same palette as ⌘I.
+expect status_ai_key = ⌘I
+click status:ai
+expect ai_placement = palette
+expect picker_first = Proofread
+key esc
+expect ai_placement = none
+expect compose_text ~ merci je vien jeudi|
 # Nothing selected: the palette of the whole text.
 key cmd-i
 expect ai_placement = palette
@@ -115,6 +124,8 @@ expect compose_subject = Confirmation pour jeudi
 # Out of the reply, with the mail shown, `a` opens the AI menu of the mail.
 key esc
 expect composing = false
+expect status_ai_key = a
+snap ai-status-block
 key a
 expect ai_placement = palette
 expect picker_first = Summarize
@@ -129,6 +140,9 @@ expect ai_title = Summarize
 expect ai_result ~ Victor asks whether the March invoice is ready.
 expect ai_result ~ - Send the March invoice (you)
 snap ai-summary
+# A click on the AI block, the panel open: nothing, the result stays.
+click status:ai
+expect ai_state = proposal
 # The panel takes the keys: `j` does not move the list.
 key j
 expect selected = 0

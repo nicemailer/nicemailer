@@ -4209,6 +4209,16 @@
           }
         }
       }
+    },
+    "AI assistance": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Assistance IA"
+          }
+        }
+      }
     }
   },
   "version": "1.0"
