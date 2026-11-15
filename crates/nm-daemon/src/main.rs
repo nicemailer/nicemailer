@@ -42,6 +42,7 @@
 mod ai;
 mod drafts;
 mod events;
+mod extract;
 mod setup;
 mod sync;
 
@@ -126,6 +127,13 @@ struct Args {
     /// au lieu du trousseau de session (tests, trousseau de développement).
     #[arg(long, env = "NICEMAILER_KEYCHAIN")]
     keychain: Option<PathBuf>,
+    /// Internal: reads the text of this attachment, writes it as one JSON
+    /// line and exits (`extract.rs`, the reader of PDF and DOCX files run
+    /// in a process of its own).
+    #[arg(long, hide = true, requires = "extract_kind")]
+    extract_text: Option<PathBuf>,
+    #[arg(long, hide = true)]
+    extract_kind: Option<String>,
 }
 
 /// State shared by all connections.
@@ -190,6 +198,12 @@ struct ImportState {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
+    // A child reading an attachment (`extract.rs`): nothing else, not even
+    // the data directory.
+    if let (Some(path), Some(kind)) = (&args.extract_text, &args.extract_kind) {
+        extract::child_main(path, kind);
+        return Ok(());
+    }
     // `--data-dir` (or the env variable) if given, otherwise the default.
     let data_dir = args.data_dir.clone().unwrap_or_else(nm_api::paths::data_dir);
     fs::create_dir_all(&data_dir).with_context(|| format!("création de {}", data_dir.display()))?;

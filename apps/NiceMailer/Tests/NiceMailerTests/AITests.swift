@@ -381,6 +381,12 @@ final class AIFakeState: @unchecked Sendable {
          "source": "builtin", "available": true],
     ]
 
+    /// The prompts of an attachment.
+    static let attachmentPrompts: [[String: Any]] = [
+        ["id": "summarize-attachment", "key": "r", "label": "Summarize", "scope": "attachment", "output": "panel",
+         "variants": [], "source": "builtin", "available": true],
+    ]
+
     /// The sender's card of `contact`.
     static let card: [String: Any] = [
         "name": "Alice Martin", "given": "Alice", "family": "Martin", "organization": "Agence A", "title": "",
@@ -425,6 +431,7 @@ final class AIFakeState: @unchecked Sendable {
             case "compose": return Self.prompts
             case "compose-selection": return Self.passagePrompts
             case "mail": return Self.mailPrompts
+            case "attachment": return Self.attachmentPrompts
             default: return [Self.sortPrompt, Self.prompts[3]]
             }
         case "ai_suggestions":
@@ -443,6 +450,7 @@ final class AIFakeState: @unchecked Sendable {
             case "alternatives": ["kind": "choices", "items": ["viens", "passe"], "then": "replace"]
             case "dates": ["kind": "events", "items": Self.events]
             case "contact": ["kind": "contact", "card": Self.card]
+            case "summarize-attachment": ["kind": "text", "text": "- Un devis de toiture, 4 800 €."]
             default: proposal
             }
             return ["state": "done", "proposal": p, "error": NSNull()] as [String: Any]
@@ -927,6 +935,38 @@ final class AIControllerTests {
         #expect(core.calls("ai_list_prompts").count == lists)
     }
 
+    @Test func theFilesTheAIReadsAreRowsOfTheMailsPalette() async throws {
+        // A conversation without a readable file: the mail's prompts only,
+        // and the core is not asked for those of an attachment.
+        press("a")
+        _ = await eventually { self.paletteOpen }
+        #expect(!paletteRows.contains { $0.contains("·") && $0.contains(".pdf") })
+        #expect(!core.calls("ai_list_prompts").contains { $0["screen"] as? String == "attachment" })
+        press("esc")
+        // Thread 4: devis.pdf can be read, the photo and the archive not.
+        model.selectedThreadId = 4
+        _ = await eventually { self.model.openThread?.id == 4 }
+        press("a")
+        _ = await eventually { self.paletteOpen && self.paletteRows.contains("r Summarize · devis.pdf") }
+        #expect(paletteRows.first == "r Summarize", "the mail's prompts first: \(paletteRows)")
+        #expect(paletteRows.filter { $0.contains(" · ") && !$0.contains("Into") }.count == 1, "\(paletteRows)")
+        let row = try #require(controller.pickerEntries(.ai).first { $0.label == "Summarize · devis.pdf" })
+        #expect(row.icon == "doc.richtext")
+        // Typing the file's name finds it; Return runs it on that file.
+        choose("devis")
+        _ = await eventually { self.model.aiRun?.runId == 7 }
+        let run = try #require(core.calls("ai_run").last)
+        #expect(run["prompt"] as? String == "summarize-attachment")
+        #expect(run["attachment_id"] as? Int == 41)
+        #expect(model.aiRun?.title == "Summarize · devis.pdf")
+        event("AiDone", ["run_id": .int(7)])
+        _ = await eventually { if case .proposal? = self.model.aiRun?.phase { true } else { false } }
+        let proposal = try #require({ if case .proposal(let p)? = model.aiRun?.phase { p } else { nil } }())
+        #expect(AI.resultText(proposal) == "- Un devis de toiture, 4 800 €.")
+        press("esc")
+        _ = await eventually { self.model.aiRun == nil }
+    }
+
     @Test func aMessagePromptNamesTheMailUnderTheCursor() async throws {
         press("a")
         _ = await eventually { self.paletteOpen }
@@ -1111,5 +1151,34 @@ final class AIControllerTests {
         #expect(core.calls("ai_list_prompts").last?["folder"] as? String == "inbox")
         choose("w")
         #expect(model.flash == L("Not available yet: %@", "Write from my notes"))
+    }
+}
+
+struct AIAttachmentTests {
+    func message(_ id: Int, _ files: [AttachmentView]) throws -> MessageView {
+        let json: [String: Any] = [
+            "id": id, "folder_id": 1, "folder_role": "inbox", "subject": "s", "from_name": NSNull(), "from_addr": "a@b.fr",
+            "to": [], "cc": [], "date_sent": NSNull(), "date_received": 0, "body_text": "x", "is_seen": true,
+            "is_flagged": false, "is_answered": false, "has_attachments": !files.isEmpty, "auth_result": "unknown",
+            "body_html": NSNull(), "has_remote_content": false, "from_body_format": NSNull(), "segments": [],
+            "only_quotes": false, "expanded": true, "show_recipients": false,
+            "attachments": files.map { ["id": $0.id, "filename": $0.filename as Any, "mime_type": $0.mimeType, "size": $0.size,
+                                        "readable": $0.readable as Any] },
+            "unsubscribe": NSNull(), "tracking_pixels": 0, "links": [], "verification_code": NSNull(),
+        ]
+        let d = JSONDecoder()
+        d.keyDecodingStrategy = .convertFromSnakeCase
+        return try d.decode(MessageView.self, from: JSONSerialization.data(withJSONObject: json))
+    }
+
+    @Test func theFilesTheAICanReadComeOnceWithTheirMail() throws {
+        let pdf = AttachmentView(id: 1, filename: "devis.pdf", mimeType: "application/pdf", size: 9, readable: true)
+        let photo = AttachmentView(id: 2, filename: "photo.jpg", mimeType: "image/jpeg", size: 9, readable: false)
+        let again = AttachmentView(id: 3, filename: "devis.pdf", mimeType: "application/pdf", size: 9, readable: true)
+        let notes = AttachmentView(id: 4, filename: "notes.txt", mimeType: "text/plain", size: 3, readable: true)
+        let older = AttachmentView(id: 5, filename: "old.pdf", mimeType: "application/pdf", size: 3)
+        let files = AI.readableAttachments([try message(10, [pdf, photo, older]), try message(11, [again, notes])])
+        #expect(files.map(\.file.id) == [1, 4], "the photo, the copy and a file of an older core are left out")
+        #expect(files.map(\.message) == [10, 11])
     }
 }

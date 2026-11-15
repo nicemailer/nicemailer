@@ -32,6 +32,13 @@ html5ever = "0.40"
 # sender's CSS reads with it (`css.rs`).
 cssparser = { version = "0.38", default-features = false }
 sha2 = "0.11"
+# The text of the attachments the AI summarizes (`nm-store`,
+# `attachment_text.rs`): PDF, and DOCX (a zip of XML files), read only,
+# deflate only (the one compression Word uses), no encryption, no writing.
+pdf-extract = "0.12"
+zip = { version = "9", default-features = false, features = ["deflate-flate2"] }
+# Text attachments in a legacy charset (Windows-1252), UTF-16 with a BOM.
+encoding_rs = "0.8"
 zstd = "0.14"
 tempfile = "3"
 libc = "0.2"

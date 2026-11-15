@@ -41,6 +41,7 @@ pub mod accounts;
 pub mod ai_runs;
 pub mod auth;
 pub mod attachments;
+pub mod attachment_text;
 mod commands;
 pub mod clean;
 pub mod draft_copies;

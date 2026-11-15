@@ -21,6 +21,9 @@ cssparser.workspace = true
 sha2.workspace = true
 zstd.workspace = true
 libc.workspace = true
+pdf-extract.workspace = true
+zip.workspace = true
+encoding_rs.workspace = true
 
 [dev-dependencies]
 zstd.workspace = true

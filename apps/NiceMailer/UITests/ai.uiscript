@@ -3,8 +3,8 @@
 # ⌘I on a word selected offers its other wordings, the first put in its
 # place by Return; without a selection, ⌘I opens the palette of the whole
 # text (not typed): typing filters, the
-# first row, highlighted, runs with Return; a prompt not available yet
-# says so, proofreading shows its differences, the keys do not reach the
+# first row, highlighted, runs with Return; writing from the notes
+# proposes a whole mail, refused; proofreading shows its differences, the keys do not reach the
 # text meanwhile, Return applies them (quotation untouched) and ⌘Z undoes
 # them; improving the writing, refused; a variant from the submenu,
 # refused with Escape; a subject chosen
@@ -56,10 +56,17 @@ expect picker_rows ~ Suggest subjects
 expect picker_rows ~ Write from my notes
 expect compose_text ~ merci je vien jeudi|
 snap ai-menu
+# Writing from the notes (`w`): the notes give way to a whole mail,
+# shown as differences; refused, the notes stay.
 type w
 key ret
-expect flash ~ Not available yet
+expect ai_state = proposal
+expect ai_title = Write from my notes
+expect ai_diff ~ {+Bonjour Victor,
+expect ai_diff ~ {+viens jeudi.\n\nBonne journée,\nAlex+}
+key esc
 expect ai_state = none
+expect compose_text ~ merci je vien jeudi|
 # Proofreading, the first row, highlighted: ⌘I then Return. The text is
 # saved, then proposed as differences.
 key cmd-i

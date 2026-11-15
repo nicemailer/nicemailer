@@ -91,12 +91,12 @@ fn a_reply_is_proofread_and_only_the_users_words_change() {
     let mut c = Client::connect_as(dir.path(), "app");
     let d = reply(dir.path(), &mut c, "oui je vien jeudi a 14h.\n");
 
-    // The compose menu: proofread can run, writing from notes cannot yet.
+    // The compose menu: every prompt of the whole text can run.
     let menu = c.call("ai_list_prompts", json!({"screen": "compose", "lang": "fr"})).unwrap();
     let find = |id: &str| menu.as_array().unwrap().iter().find(|p| p["id"] == id).unwrap().clone();
     assert_eq!((find("proofread")["key"].clone(), find("proofread")["label"].clone()), (json!("c"), json!("Corriger")));
     assert_eq!(find("proofread")["available"], true);
-    assert_eq!(find("write-from-notes")["available"], false);
+    assert_eq!(find("write-from-notes")["available"], true);
 
     c.clear_events();
     let r = run(&mut c, &d, "proofread").unwrap();
@@ -170,7 +170,7 @@ fn what_cannot_work_is_refused_before_anything_is_sent() {
     let d = reply(dir.path(), &mut c, "");
     let e = run(&mut c, &d, "proofread").unwrap_err();
     assert_eq!((e["code"].clone(), e["data"]["code"].clone()), (json!(1018), json!("ai_bad_input")), "{e}");
-    // A prompt not wired yet.
+    // No notes to write from either.
     let e = run(&mut c, &d, "write-from-notes").unwrap_err();
     assert_eq!(e["data"]["code"], "ai_bad_input");
     // An unknown prompt, a variant missing, a stale revision.
@@ -220,6 +220,60 @@ fn a_draft_changed_during_the_run_is_not_overwritten() {
     assert_eq!(row(dir.path(), id).1.as_deref(), Some("rejected"));
     let draft = c.call("open_draft", json!({"id": d["id"]})).unwrap();
     assert!(draft["body"].as_str().unwrap().starts_with("bonjour. Et merci !"));
+}
+
+#[test]
+fn a_mail_is_written_from_notes_in_the_language_of_the_mail_replied_to() {
+    let dir = tempfile::tempdir().unwrap();
+    let written = "Bonjour Alice,\n\nOui, je viens jeudi à 14h et j'apporte [document].\n\nBonne journée";
+    let answers = json!({"write-from-notes": format!("<segment n=\"1\">{written}</segment>")});
+    let _core = core(dir.path(), Some(answers), "");
+    let mut c = Client::connect_as(dir.path(), "app");
+    let d = reply(dir.path(), &mut c, "- ok jeudi 14h\n- j'apporte le doc\n\n-- \nMe\n\n");
+    c.clear_events();
+    let id = run(&mut c, &d, "write-from-notes").unwrap()["run_id"].as_i64().unwrap();
+    c.event("AiDone", 10);
+    let input = sent(dir.path(), id);
+    // The notes alone as the segment, the mail replied to below them, the
+    // user as the draft's From, told not to sign twice; the language rule
+    // follows the mail replied to.
+    assert!(input.contains("<segment n=\"1\">- ok jeudi 14h\n- j'apporte le doc</segment>"), "{input}");
+    assert!(input.contains("<replied>\nFrom: Alice <alice@a.example>\n"), "{input}");
+    assert!(input.contains("Subject: Devis\n\nTu viens jeudi ?\n</replied>"), "{input}");
+    assert!(input.contains("<user>\nThe user writes from: me@hey.example"), "{input}");
+    assert!(input.contains("without signing"), "{input}");
+    assert!(input.contains("Write in the language of the mail replied to"), "{input}");
+    // Accepted: the notes give way to the mail; signature and quotation stay.
+    let a = c.call("ai_apply", json!({"run_id": id, "revision": d["revision"]})).unwrap();
+    let body = a["draft"]["body"].as_str().unwrap();
+    assert_eq!(body, d["body"].as_str().unwrap().replace("- ok jeudi 14h\n- j'apporte le doc", written));
+    assert!(body.contains("-- \nMe\n") && body.contains("> Tu viens jeudi ?"), "{body}");
+    assert_eq!(row(dir.path(), id).1.as_deref(), Some("accepted"));
+}
+
+#[test]
+fn a_new_mail_is_written_from_notes_without_a_mail_replied_to() {
+    let dir = tempfile::tempdir().unwrap();
+    let answers = json!({"write-from-notes": "<segment n=\"1\">Hello Bob,\n\nSee you Monday.\n\nMe</segment>"});
+    let _core = core(dir.path(), Some(answers), "");
+    let mut c = Client::connect_as(dir.path(), "app");
+    // An account to write from: the import of the reply's mail makes it.
+    let _ = reply(dir.path(), &mut c, "");
+    let account: i64 = {
+        let db = nm_store::rusqlite::Connection::open_with_flags(dir.path().join("nicemailer.db"), nm_store::rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+        db.query_row("SELECT id FROM account LIMIT 1", [], |r| r.get(0)).unwrap()
+    };
+    let d = c.call("create_draft", json!({"kind": "new", "account": account})).unwrap()["draft"].clone();
+    let r = c.call("update_draft", json!({"id": d["id"], "revision": d["revision"], "body": "monday ok, thanks bob"})).unwrap();
+    let d = json!({"id": d["id"], "revision": r["revision"]});
+    c.clear_events();
+    let id = run(&mut c, &d, "write-from-notes").unwrap()["run_id"].as_i64().unwrap();
+    c.event("AiDone", 10);
+    let input = sent(dir.path(), id);
+    assert!(input.contains("<replied>\n(none: this is a new mail, not a reply)\n</replied>"), "{input}");
+    assert!(!input.contains("without signing"), "no signature in this draft: {input}");
+    let v = c.call("ai_get_run", json!({"run_id": id})).unwrap();
+    assert_eq!(v["proposal"]["body"], "Hello Bob,\n\nSee you Monday.\n\nMe");
 }
 
 #[test]
@@ -806,4 +860,192 @@ fn sorting_needs_its_folder_and_what_to_sort() {
     let triage = menu.as_array().unwrap().iter().find(|p| p["id"] == "triage-quarantine").unwrap().clone();
     assert_eq!((triage["available"].clone(), triage["unmarked"].clone()), (json!(true), json!("folder")));
     let _ = (quarantine, threads);
+}
+
+/// A one-page PDF that shows `text` in Helvetica, its offsets computed: in
+/// plain ASCII, so it travels in a mail without any encoding.
+fn pdf_of(text: &str) -> String {
+    let content = format!("BT /F1 12 Tf 72 720 Td ({text}) Tj ET");
+    let objects = [
+        "<< /Type /Catalog /Pages 2 0 R >>".to_string(),
+        "<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_string(),
+        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>".to_string(),
+        format!("<< /Length {} >>\nstream\n{content}\nendstream", content.len()),
+        "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>".to_string(),
+    ];
+    let mut out = String::from("%PDF-1.4\n");
+    let mut offsets = Vec::new();
+    for (i, o) in objects.iter().enumerate() {
+        offsets.push(out.len());
+        out.push_str(&format!("{} 0 obj\n{o}\nendobj\n", i + 1));
+    }
+    let xref = out.len();
+    out.push_str(&format!("xref\n0 {}\n0000000000 65535 f \n", objects.len() + 1));
+    for o in offsets {
+        out.push_str(&format!("{o:010} 00000 n \n"));
+    }
+    out.push_str(&format!("trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n", objects.len() + 1));
+    out
+}
+
+/// A mail with a PDF invoice, a damaged PDF and a picture attached; the
+/// core with fake answers, the mail imported; its attachments by name.
+fn attachments_core(dir: &Path, answers: Value) -> (common::Core, Client, std::collections::HashMap<String, Value>) {
+    let core = core(dir, Some(answers), "");
+    let mut c = Client::connect_as(dir, "app");
+    let mbox = format!(
+        "From a@x Tue Jun 23 19:20:56 2020
+From: Alice <alice@a.example>
+To: me@hey.example
+Subject: Facture
+Message-ID: <f1@a.example>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary=\"b\"
+
+--b
+Content-Type: text/plain
+
+Voici la facture.
+--b
+Content-Type: application/pdf; name=\"facture.pdf\"
+Content-Disposition: attachment; filename=\"facture.pdf\"
+
+{}
+--b
+Content-Type: application/octet-stream; name=\"casse.pdf\"
+Content-Disposition: attachment; filename=\"casse.pdf\"
+
+%PDF-1.4 nothing else
+--b
+Content-Type: image/png; name=\"logo.png\"
+Content-Disposition: attachment; filename=\"logo.png\"
+Content-Transfer-Encoding: base64
+
+iVBORw0KGgo=
+--b--
+",
+        pdf_of("Facture 2026-114 : 1 200 EUR")
+    );
+    let path = dir.join("attachments.mbox");
+    std::fs::write(&path, mbox).unwrap();
+    c.call("subscribe", json!({})).unwrap();
+    c.call("import_mbox", json!({"path": path.to_str().unwrap(), "account": "hey", "address": "me@hey.example"})).unwrap();
+    c.event("ImportFinished", 30);
+    let db = nm_store::rusqlite::Connection::open_with_flags(dir.join("nicemailer.db"), nm_store::rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+    let thread: i64 = db.query_row("SELECT thread_id FROM message WHERE message_id_hdr = 'f1@a.example'", [], |r| r.get(0)).unwrap();
+    let t = c.call("get_thread", json!({"thread_id": thread})).unwrap();
+    let files = t["messages"][0]["attachments"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|a| (a["filename"].as_str().unwrap().to_string(), a.clone()))
+        .collect();
+    (core, c, files)
+}
+
+fn run_attachment(c: &mut Client, attachment: &Value) -> Result<i64, Value> {
+    c.clear_events();
+    let r = c.call("ai_run", json!({"prompt": "summarize-attachment", "attachment_id": attachment["id"], "lang": "fr"}))?;
+    Ok(r["run_id"].as_i64().unwrap())
+}
+
+#[test]
+fn a_pdf_attached_is_read_in_its_own_process_and_summarized() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_core, mut c, files) = attachments_core(dir.path(), json!({"summarize-attachment": "- Une facture de 1 200 EUR."}));
+    // The reader knows which files the AI can read.
+    assert_eq!(files["facture.pdf"]["readable"], true);
+    assert_eq!(files["casse.pdf"]["readable"], true, "a PDF by its name");
+    assert_eq!(files["logo.png"]["readable"], false);
+    let menu = c.call("ai_list_prompts", json!({"screen": "attachment", "lang": "fr"})).unwrap();
+    assert_eq!(menu[0]["id"], "summarize-attachment");
+    assert_eq!((menu[0]["label"].as_str(), menu[0]["available"].as_bool()), (Some("Résumer"), Some(true)));
+
+    let id = run_attachment(&mut c, &files["facture.pdf"]).unwrap();
+    c.event("AiDone", 20);
+    let v = c.call("ai_get_run", json!({"run_id": id})).unwrap();
+    assert_eq!(v["proposal"], json!({"kind": "text", "text": "- Une facture de 1 200 EUR."}));
+    // The history holds the whole message, once read.
+    let input = sent(dir.path(), id);
+    assert!(input.contains("<attachment>\nFile: facture.pdf (pdf)\n\nFacture 2026-114 : 1 200 EUR\n</attachment>"), "{input}");
+    assert!(input.contains("Answer in French."), "{input}");
+    // Only read: closing it is no decision.
+    c.call("ai_dismiss", json!({"run_id": id})).unwrap();
+    assert_eq!(row(dir.path(), id).1, None);
+}
+
+#[test]
+fn an_attachment_that_cannot_be_read_sends_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_core, mut c, files) = attachments_core(dir.path(), json!({"summarize-attachment": "never sent"}));
+    // A picture: refused at once, no row.
+    let e = run_attachment(&mut c, &files["logo.png"]).unwrap_err();
+    assert_eq!(e["data"]["code"], "ai_bad_input", "{e}");
+    assert!(e["message"].as_str().unwrap().contains("logo.png"), "{e}");
+    assert_eq!(runs(dir.path()), 0);
+    // No attachment named, an unknown one.
+    let e = c.call("ai_run", json!({"prompt": "summarize-attachment", "lang": "fr"})).unwrap_err();
+    assert_eq!(e["code"], -32602);
+    assert_eq!(c.call("ai_run", json!({"prompt": "summarize-attachment", "attachment_id": 9999, "lang": "fr"})).unwrap_err()["code"], 1001);
+    // A damaged PDF: the run starts, then fails once read; the core goes on.
+    let id = run_attachment(&mut c, &files["casse.pdf"]).unwrap();
+    let f = c.event("AiFailed", 20);
+    assert_eq!((f["run_id"].as_i64(), f["code"].as_str()), (Some(id), Some("ai_bad_input")));
+    assert!(f["message"].as_str().unwrap().starts_with("casse.pdf: the file cannot be read"), "{f}");
+    let (state, _, _, output) = row(dir.path(), id);
+    assert_eq!((state.as_str(), output), ("failed", None), "nothing was sent, nothing came back");
+    assert!(c.call("ai_status", json!({})).is_ok(), "the core still answers");
+}
+
+#[test]
+fn a_reply_to_elsewhere_raises_a_low_verdict_on_its_own() {
+    let dir = tempfile::tempdir().unwrap();
+    let answers = json!({"security-check": "{\"risk\": \"low\", \"reasons\": [\"A routine notice from the bank.\"]}"});
+    let _core = core(dir.path(), Some(answers), "");
+    let mut c = Client::connect_as(dir.path(), "app");
+    // No link that lies, nothing but where the reply goes.
+    let mbox = "From a@x Thu Jun 25 10:00:00 2020
+From: Ma Banque <support@mabanque.example>
+Reply-To: Service client <support-mabanque@gmail.com>
+To: me@hey.example
+Subject: Votre compte
+Message-ID: <rt1@mabanque.example>
+Date: Thu, 25 Jun 2020 10:00:00 +0200
+
+Merci de nous confirmer votre identifiant en repondant a ce message.
+
+From a@x Thu Jun 25 11:00:00 2020
+From: Ma Banque <news@mabanque.example>
+Reply-To: <support@info.mabanque.example>
+To: me@hey.example
+Subject: Nouveautes
+Message-ID: <rt2@mabanque.example>
+Date: Thu, 25 Jun 2020 11:00:00 +0200
+
+Les nouveautes du mois.
+";
+    let path = dir.path().join("replyto.mbox");
+    std::fs::write(&path, mbox).unwrap();
+    c.call("subscribe", json!({})).unwrap();
+    c.call("import_mbox", json!({"path": path.to_str().unwrap(), "account": "hey", "address": "me@hey.example"})).unwrap();
+    c.event("ImportFinished", 30);
+    let db = nm_store::rusqlite::Connection::open_with_flags(dir.path().join("nicemailer.db"), nm_store::rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+    let thread = |id: &str| -> i64 { db.query_row("SELECT thread_id FROM message WHERE message_id_hdr = ?1", [id], |r| r.get(0)).unwrap() };
+    let (phishing, news) = (thread("rt1@mabanque.example"), thread("rt2@mabanque.example"));
+
+    // The reader gives the Reply-To.
+    let t = c.call("get_thread", json!({"thread_id": phishing})).unwrap();
+    assert_eq!(t["messages"][0]["reply_to"], json!([{"addr": "support-mabanque@gmail.com", "name": "Service client"}]));
+
+    let (id, p) = run_mail(&mut c, "security-check", phishing, None);
+    assert_eq!((p["risk"].as_str(), p["raised"].as_bool()), (Some("medium"), Some(true)), "{p}");
+    assert_eq!(p["reasons"][0], "replies go to support-mabanque@gmail.com, another domain than the sender's (mabanque.example)");
+    // The model saw it in the headers and among the findings.
+    let input = sent(dir.path(), id);
+    assert!(input.contains("From: Ma Banque <support@mabanque.example>\nReply-To: Service client <support-mabanque@gmail.com>"), "{input}");
+    assert!(input.contains("- replies go to support-mabanque@gmail.com"), "{input}");
+
+    // A Reply-To of the same organization: nothing found, the verdict kept.
+    let (_, p) = run_mail(&mut c, "security-check", news, None);
+    assert_eq!((p["risk"].as_str(), p["raised"].as_bool()), (Some("low"), Some(false)), "{p}");
 }

@@ -82,6 +82,14 @@ pub fn own_segments(body: &str) -> Vec<Range<usize>> {
     out
 }
 
+/// Whether the body holds a signature of the user (`-- ` alone on its
+/// line, outside the quotations). Writing a mail from notes then ends the
+/// text without signing it again: the signature does, below.
+pub fn has_signature(body: &str) -> bool {
+    let lines: Vec<(usize, &str)> = body.split_inclusive('\n').map(|l| (0, l)).collect();
+    classify(&lines).contains(&Kind::Signature)
+}
+
 /// The kind of each line.
 fn classify(lines: &[(usize, &str)]) -> Vec<Kind> {
     let content = |l: &str| l.trim_end_matches(['\n', '\r']).to_string();
@@ -207,6 +215,17 @@ mod tests {
         assert_eq!(texts("See you.\n--\nAchille\n"), ["See you."]);
         // Text after a quotation that follows a signature is the user's again.
         assert_eq!(texts("A\n-- \nSig\n> q\nB\n"), ["A", "B"]);
+    }
+
+    #[test]
+    fn a_signature_is_found_outside_the_quotations_only() {
+        assert!(has_signature("Notes\n\n-- \nAchille\n"));
+        assert!(has_signature("Notes\n--\nAchille\n> q\n"));
+        // A signature of the mail quoted is not the user's.
+        assert!(!has_signature("Notes\n\nOn Nov 7, Alice wrote:\n> Hi\n> -- \n> Alice\n"));
+        // Dashes with text are a line of the user's, not a separator.
+        assert!(!has_signature("Notes\n-- done\n"));
+        assert!(!has_signature(""));
     }
 
     #[test]

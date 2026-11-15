@@ -1011,6 +1011,11 @@ pub struct MessageView {
     pub from_addr: Option<String>,
     pub to: Vec<AddressView>,
     pub cc: Vec<AddressView>,
+    /// `Reply-To`: where a reply goes, when the sender says another
+    /// address than its From. Another domain than the From's is a strong
+    /// sign of phishing for the security check (`ia.md`, section 6).
+    #[serde(default)]
+    pub reply_to: Vec<AddressView>,
     /// `Date:` header, as claimed by the sender (may be missing or wrong).
     pub date_sent: Option<i64>,
     /// When the server received the message; trustworthy, used for sorting.
@@ -1118,6 +1123,12 @@ pub struct AttachmentView {
     pub mime_type: String,
     /// Decoded size in bytes.
     pub size: i64,
+    /// Whether the core can read its text, for the AI to summarize it
+    /// (`ia.md`, section 5, `attachment.text`): text, HTML, PDF, DOCX, a
+    /// mail attached. Not whether it holds any: a scanned PDF has none,
+    /// which reading it says.
+    #[serde(default)]
+    pub readable: bool,
 }
 
 /// A piece of a message's text (`MessageView.segments`).
@@ -2563,6 +2574,10 @@ pub struct AiRunParams {
     pub folder_ids: Option<Vec<i64>>,
     #[serde(default)]
     pub thread_ids: Option<Vec<i64>>,
+    /// The attachment, for the prompts of an attachment (its text is read
+    /// by the core: `AttachmentView::readable`).
+    #[serde(default)]
+    pub attachment_id: Option<i64>,
     /// The app's language (`fr`), for the answers that follow it.
     pub lang: String,
 }
