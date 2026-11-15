@@ -103,10 +103,12 @@ The whole theme (lists, status bar, menus, mails, including the HTML view, where
 
 The links panel (`l`) looks up the **senders of the conversation** in the Mac's address book (Contacts): the authors of its received messages, latest first; not the user's own messages (Sent, Drafts), nor the people in copy. For each card found: one row per phone number, named after the person and the card's label (`Alice Martin — mobile`, the number as the card writes it on the right), then **Card of Alice Martin**, which Return opens in Contacts. Return on a number calls it, as for the numbers of the mail. A number that is also in the mail (a signature) is listed once, under the name; a number shared by two cards (a switchboard), once under the first.
 
-- **Access**: macOS asks the first time `l` is pressed, never at launch. Refused, the panel shows the mail's links alone and the status bar says once per session where to allow it (System Settings, Privacy & Security, Contacts). Once allowed, the cards are read with the thread, so they are there when `l` opens.
+- **Sender in Contacts**: at the end of the line of each unfolded message (after the address), an icon says whether its sender is in the address book: a closed book when a card holds the address (whatever its case), a person with a question mark when none does. The user's own messages (Sent, Drafts) have none, nor does any message while the book cannot be read or has not been read yet for this conversation: no icon rather than a wrong "not in Contacts". The same icon in the text and the HTML readers; its tooltip (and VoiceOver) says which, and a click on it does what `ctrl-c` does for that message. A card created or changed in Contacts while the mail is open shows at once: the app reads the cards again when macOS says the book changed (`CNContactStoreDidChange`).
+- **`ctrl-c`**: on the sender of the current message (the one `ctrl-k` / `ctrl-j` or a click on a header made current, else the last unfolded one; a message of the user's own stands for the latest mail received before it), opens their card in Contacts when they have one, and otherwise copies their address to the clipboard (to create the card, or write to them). A book that cannot be read copies too. **`ctrl-C`** (with Shift) lists the mails of that sender from every folder, as Return on the contacts screen does (`contact: …` in the status bar; Escape goes back to the folder); in one column, the list comes back in place of the mail.
+- **Access**: macOS asks the first time `l` or `ctrl-c` is pressed, never at launch. Refused, the panel shows the mail's links alone and the status bar says once per session where to allow it (System Settings, Privacy & Security, Contacts). Once allowed, the cards are read with the thread, so they are there when `l` opens.
 - **Installed app only**: macOS asks only an app whose `Info.plist` says why (`NSContactsUsageDescription`, written by `make bundle`, in English and French). `make app` runs a bare executable: it does not read Contacts and says so once.
 - **Nothing is copied**: the cards are read on demand and kept for the session; nothing goes into NiceMailer's database or to the core. The lookup searches the cards' addresses (Contacts' own index), whatever their case, away from the main thread (`AddressBook.swift`).
-- **Tests**: `AddressBookTests` (rows of a card, `tel:` URLs, senders, the question asked from `l` only, a refusal said once) and `addressbook.uiscript` use a book of their own (`FixtureAddressBook`): the user's cards are never read, and macOS's real question is not covered by automated tests.
+- **Tests**: `AddressBookTests` (rows of a card, `tel:` URLs, senders, the question asked from `l` only, a refusal said once; the icon of each sender, `ctrl-c` opening a card or copying, a click on the icon, a card added in Contacts, `ctrl-C`), `addressbook.uiscript` and `sendercard.uiscript` use a book of their own (`FixtureAddressBook`): the user's cards are never read, and macOS's real question is not covered by automated tests.
 
 ### Calling a number
 
@@ -175,7 +177,7 @@ Actions apply to the **marked** mails if any (`J` / `K`), otherwise to the mail 
 | Key | Action |
 | --- | --- |
 | `j` `k` (or arrows) | next / previous mail |
-| `ctrl-d` `ctrl-u` | half a page down / up in the list, as in Zed: the cursor moves by half the rows that fit in the list, and stops on the first or last mail |
+| `ctrl-d` `ctrl-u` | half a page down / up in the list, as in Zed: the cursor moves by half the rows that fit in the list, and stops on the first or last mail. A long list is loaded 60 mails at a time as the cursor goes down: the next ones are asked for when it comes within 30 rows of the last mail loaded, so `j` and `ctrl-d` go on to the end of the list (All Mail of every account included) |
 | `J` `K`, shift-↓ shift-↑ | mark the mail and move (multiple selection) |
 | `f` | attribute selector (filters on the current list) |
 | `@` | account picker: **all** (unified view) or one account, keeping the folder role (Archive to Archive), or its Inbox |
@@ -188,6 +190,8 @@ Actions apply to the **marked** mails if any (`J` / `K`), otherwise to the mail 
 | `T` | show everything in the thread (folded mails, quotes, signatures) or go back to the simplified view |
 | `S` | skip to the text after the next quoted block |
 | `ctrl-k` / `ctrl-j` | previous / next message of the conversation: the current one folds, the other unfolds and is scrolled to (`thread-display.md`) |
+| `ctrl-c` | sender of the current message: their card in Contacts, or their address copied when they are not in it (see "Senders in the address book") |
+| `ctrl-C` | mails of the sender of the current message, from every folder; Escape goes back |
 | `u` | read / unread: all the targets become read if one of them is unread, else all become unread |
 | `U` | mark read, whatever the current state (a read mail stays read) |
 | `z` | undo the last move or decision, then the one before (see "Moves and decisions") |
@@ -241,7 +245,7 @@ The menu lists the folders in blocks separated by a blank line, the folder colum
 | `;o` | Work: Inbox, Todo and Waiting of the view together |
 | `;m` | All Mail: every folder of the view but Deleted, Junk and Banned |
 | `;e` | Everything: every folder of the view |
-| `;c` | Contacts: every known address, with its decision (or its domain's, after "@"), its origin ("human" or "robot", "*" when chosen by the user), groups and number of mails; `/` filters; `m` chooses the decision on the address, `M` on its domain (`i` Inbox, `n` Newsletter, `p` Paperwork, `b` Banned, `-` none); `o` chooses its origin (`h` human, `r` robot, `-` automatic, [senders.md](senders.md)); Return lists the contact's mails |
+| `;c` | Contacts: every known address, with its decision (or its domain's, after "@"), its origin ("human" or "robot", "*" when chosen by the user), groups and number of mails; `/` filters (Return closes the line and keeps the filter, also when the screen is left and opened again; while it is on, the status bar shows it as a chip, `/gazette ×`, which a click removes: `GeekController.contactsFilterChip`); `m` chooses the decision on the address, `M` on its domain (`i` Inbox, `n` Newsletter, `p` Paperwork, `b` Banned, `-` none); `o` chooses its origin (`h` human, `r` robot, `-` automatic, [senders.md](senders.md)); Return lists the contact's mails |
 | `;T` | Tags; Return lists the mails of the tag, in every account (uppercase: `;t` is Todo) |
 | `;g` | Groups; Return lists the mails of the group's members |
 | `;h` | History: the audit log, newest first |

@@ -55,6 +55,7 @@ enum Help {
                 HelpEntry(key: "T", label: L("show / hide quotes, signatures, folded mails")),
                 HelpEntry(key: "S", label: L("skip to the text after the next quote")),
                 HelpEntry(key: "l", label: L("links of the mail")),
+                HelpEntry(key: "^c", label: L("sender's card in Contacts, or copy address")),
             ]),
             HelpGroup(title: L("Select"), entries: [
                 HelpEntry(key: "J K", label: L("mark and move (multiple selection)")),
@@ -87,6 +88,7 @@ enum Help {
             HelpGroup(title: L("Find and go"), entries: [
                 HelpEntry(key: "/", label: L("search everywhere, in All Mail")),
                 HelpEntry(key: "f", label: L("filter by attributes")),
+                HelpEntry(key: "^C", label: L("mails of the sender")),
                 HelpEntry(key: "@", label: L("go to an account")),
                 HelpEntry(key: ";…", label: L("go to a folder or a screen")),
             ]),

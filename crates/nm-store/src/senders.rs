@@ -30,8 +30,11 @@ use crate::sender_kind::{self, Counts, Facts, MACHINE, NATURE_NONE};
 use crate::{Result, Store};
 
 /// The `sender_kind` of every mail of an address that the user did not
-/// write, from the verdict `?2` on the address `?1`: `robot` for an
-/// automatic mail itself (`MACHINE` bits, `?3`), else the verdict. Only the
+/// write, from the verdict `?2` on the address `?1`: `robot` for a mail
+/// whose clues hit the mask `?3`, else the verdict. The mask is `MACHINE`
+/// for a computed verdict (an automatic mail stays a robot), and 0 for a
+/// verdict forced by the user, which every mail then follows
+/// (`sender_kind::message_kind`; `x & 0 <> 0` is never true). Only the
 /// rows that change are written. The user's own mails (Sent, Drafts) keep
 /// `person`; those whose clues are not read yet (`sender_signals IS NULL`)
 /// wait for the catch-up, which sets them.
@@ -79,7 +82,7 @@ pub(crate) fn record(tx: &Connection, message_id: i64, from: Option<i64>, signal
             .execute(params![address, delta.count, delta.bulk, delta.list, delta.human, delta.client])?;
         }
         let verdict = refresh_address(tx, address)?;
-        sender_kind::message_kind(Some(signals), false, verdict)
+        sender_kind::message_kind(Some(signals), false, verdict.map(|v| v.0), verdict.is_some_and(|v| v.1))
     } else {
         // No sender: no verdict, the filter counts it with the robots.
         None
@@ -110,8 +113,9 @@ pub(crate) fn mark_written_to(tx: &Connection, addresses: &[i64]) -> Result<()> 
 
 /// Computes the verdict on the address `id` again from its counts, stores
 /// it, and copies the effective verdict (the user's, else the computed
-/// one) into its mails when it changed. Returns the effective verdict.
-pub(crate) fn refresh_address(tx: &Connection, id: i64) -> Result<Option<SenderKind>> {
+/// one) into its mails when it changed. Returns the effective verdict, and
+/// whether the user forced it (`None` for an unknown address).
+pub(crate) fn refresh_address(tx: &Connection, id: i64) -> Result<Option<(SenderKind, bool)>> {
     type Row = (String, Option<String>, Option<String>, bool, Counts, bool);
     let row: Option<Row> = tx
         .prepare_cached(
@@ -134,16 +138,20 @@ pub(crate) fn refresh_address(tx: &Connection, id: i64) -> Result<Option<SenderK
     }
     let before = user.or(stored);
     let after = user.unwrap_or(computed);
+    // A forced verdict does not move with the counts: its mails were
+    // written when the user chose it (`force_sender_kind`).
     if before != Some(after) {
-        propagate(tx, id, after)?;
+        propagate(tx, id, after, user.is_some())?;
     }
-    Ok(Some(after))
+    Ok(Some((after, user.is_some())))
 }
 
 /// Copies the verdict `kind` of the address `id` into its mails (see
-/// `PROPAGATE`).
-fn propagate(tx: &Connection, id: i64, kind: SenderKind) -> Result<usize> {
-    let n = tx.prepare_cached(PROPAGATE)?.execute(params![id, kind.as_str(), MACHINE])?;
+/// `PROPAGATE`): into all of them when the user `forced` it, else into
+/// those that are not automatic themselves.
+fn propagate(tx: &Connection, id: i64, kind: SenderKind, forced: bool) -> Result<usize> {
+    let mask = if forced { 0 } else { MACHINE };
+    let n = tx.prepare_cached(PROPAGATE)?.execute(params![id, kind.as_str(), mask])?;
     if n > 0 {
         tx.prepare_cached(ADDRESS_THREADS_HAS_PERSON)?.execute([id])?;
     }
@@ -202,22 +210,23 @@ pub(crate) fn force_sender_kind(
          VALUES (?1, 'address', ?2, 'sender_kind', json_object('before', ?3, 'after', ?4, 'undo_of', ?5))",
     )?
     .execute(params![source.as_str(), address_id, before, after, undo_of])?;
-    // The effective verdict before the change: the user's previous choice,
-    // else the computed one. Rewritten only if it differs now.
+    // Every mail already received from the address is rewritten to show the
+    // new decision (`expediteurs.md`, section 9). Even when the effective
+    // verdict stays the same: forcing "person" on an address computed as a
+    // person turns its newsletters into people's mails, and giving it back
+    // to the computation turns them into robots again. `PROPAGATE` writes
+    // only the rows that change, through `idx_message_from`.
     let computed: Option<String> =
         tx.prepare_cached("SELECT sender_kind FROM address WHERE id = ?1")?.query_row([address_id], |r| r.get(0))?;
-    let old = before.or_else(|| computed.clone()).as_deref().and_then(SenderKind::parse);
-    let new = kind.or_else(|| computed.as_deref().and_then(SenderKind::parse));
-    match new {
-        Some(k) if old != Some(k) => {
-            propagate(tx, address_id, k)?;
+    match kind.or_else(|| computed.as_deref().and_then(SenderKind::parse)) {
+        Some(k) => {
+            propagate(tx, address_id, k, kind.is_some())?;
         }
         // Given back to a computation that never ran (no mail counted):
         // compute it now.
         None => {
             refresh_address(tx, address_id)?;
         }
-        _ => {}
     }
     Ok(Some(true))
 }

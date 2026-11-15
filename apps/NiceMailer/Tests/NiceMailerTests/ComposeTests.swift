@@ -600,8 +600,9 @@ struct ComposeControllerTests {
         #expect(await eventually { model.composer != nil })
         #expect(core.calls("cancel_send").first?["id"] as? Int == 901)
         #expect(model.composer?.buffer.text == "Merci")
-        // Said once `openComposer` is done, a moment after the reply is
-        // back: waited for, not read at once.
+        // The flash comes after the reply is open again (`cancelSend` says
+        // it once `openComposer` returned): wait for it too, or a busy
+        // machine reads the flash of the sending.
         #expect(await eventually { model.flash == L("Sending cancelled: the reply is open again") })
     }
 

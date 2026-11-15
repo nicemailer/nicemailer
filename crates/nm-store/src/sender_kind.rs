@@ -64,7 +64,8 @@ pub const NATURE_NONE: i64 = 1 << 20;
 
 /// The bits of a message that was written by a machine itself, whoever its
 /// address belongs to (`expediteurs.md`, section 6): its `sender_kind` is
-/// `robot` whatever the verdict on its address.
+/// `robot` whatever the computed verdict on its address. A verdict forced
+/// by the user wins over these bits (see [`message_kind`]).
 pub const MACHINE: i64 = NATURE_AUTO | NATURE_BULK;
 
 /// The clues of a person that are not a reply: what rule 8 counts.
@@ -334,11 +335,17 @@ pub fn verdict(addr: &str, c: Counts, f: Facts) -> SenderKind {
 }
 
 /// The `sender_kind` of a message (`expediteurs.md`, section 6): `person`
-/// for the user's own mail, `robot` for an automatic mail whatever its
-/// address, else the verdict on its address.
-pub fn message_kind(signals: Option<i64>, own_mail: bool, address: Option<SenderKind>) -> Option<SenderKind> {
+/// for the user's own mail; the verdict on its address when the user forced
+/// it (`forced`), for every mail of the address, automatic ones included:
+/// the user's decision is on the sender, and all its mails must show it;
+/// else `robot` for an automatic mail whatever its address, else the
+/// computed verdict on its address.
+pub fn message_kind(signals: Option<i64>, own_mail: bool, address: Option<SenderKind>, forced: bool) -> Option<SenderKind> {
     if own_mail {
         return Some(SenderKind::Person);
+    }
+    if forced {
+        return address;
     }
     if signals.is_some_and(|s| s & MACHINE != 0) {
         return Some(SenderKind::Robot);
@@ -529,11 +536,17 @@ mod tests {
     #[test]
     fn message_kind_follows_the_message_then_the_address() {
         let bulk = NATURE_BULK | LIST_UNSUBSCRIBE;
-        assert_eq!(message_kind(Some(bulk), true, Some(Robot)), Some(Person));
-        assert_eq!(message_kind(Some(bulk), false, Some(Person)), Some(Robot));
-        assert_eq!(message_kind(Some(NATURE_AUTO), false, Some(Person)), Some(Robot));
-        assert_eq!(message_kind(Some(NATURE_HUMAN), false, Some(Person)), Some(Person));
-        assert_eq!(message_kind(None, false, None), None);
+        assert_eq!(message_kind(Some(bulk), true, Some(Robot), false), Some(Person));
+        assert_eq!(message_kind(Some(bulk), false, Some(Person), false), Some(Robot));
+        assert_eq!(message_kind(Some(NATURE_AUTO), false, Some(Person), false), Some(Robot));
+        assert_eq!(message_kind(Some(NATURE_HUMAN), false, Some(Person), false), Some(Person));
+        assert_eq!(message_kind(None, false, None, false), None);
+        // Forced by the user: every received mail follows the address, the
+        // automatic ones too; the user's own mails stay a person.
+        assert_eq!(message_kind(Some(bulk), false, Some(Person), true), Some(Person));
+        assert_eq!(message_kind(Some(NATURE_AUTO), false, Some(Person), true), Some(Person));
+        assert_eq!(message_kind(Some(NATURE_HUMAN), false, Some(Robot), true), Some(Robot));
+        assert_eq!(message_kind(Some(NATURE_HUMAN), true, Some(Robot), true), Some(Person));
     }
 
     #[test]

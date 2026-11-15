@@ -70,3 +70,31 @@ key k
 key k
 expect selected = 5
 expect reader_is_selected = true
+# A long list, gone down with ctrl-d only: the cursor loads the pages that
+# follow on its way (`AppModel.prefetchIfNearEnd`), with no mouse scroll.
+# All Mail of the seeded account holds more than three pages of 60.
+key ;
+key m
+expect folder = All Mail
+expect thread_count = 60
+key ctrl-d
+key ctrl-d
+key ctrl-d
+key ctrl-d
+key ctrl-d
+key ctrl-d
+expect thread_count > 120
+key ctrl-d
+key ctrl-d
+key ctrl-d
+key ctrl-d
+key ctrl-d
+key ctrl-d
+key ctrl-d
+key ctrl-d
+key ctrl-d
+key ctrl-d
+expect selected > 180
+expect thread_count > 210
+expect reader_is_selected = true
+snap navigation-deep

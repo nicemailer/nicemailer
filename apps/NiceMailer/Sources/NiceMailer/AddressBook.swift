@@ -13,7 +13,9 @@ import Foundation
 //   scenarios use a book of their own (`FixtureAddressBook`) and never the
 //   user's;
 // - `SystemAddressBook`: the Contacts framework;
-// - `ContactLinks`: the rows of `l`, as pure functions.
+// - `ContactLinks`: the rows of `l`, and whether each sender of the open
+//   thread is in the book (`SenderBook`, the icon at the end of its
+//   header line), as pure functions.
 
 /// Whether the app may read the address book.
 enum AddressBookAccess: Equatable, Sendable {
@@ -38,6 +40,11 @@ struct ContactCard: Equatable, Sendable, Identifiable {
     let name: String
     /// The phone numbers, in the card's order.
     let phones: [Phone]
+    /// The addresses of the lookup this card was found for, in lowercase:
+    /// filled by `cards(matching:)`, so that each sender of a thread can be
+    /// told apart (one card may hold several of them). Empty for a card
+    /// built by hand.
+    var emails: [String] = []
 
     struct Phone: Equatable, Sendable {
         /// "mobile", "work"…, translated by macOS; nil without a label.
@@ -56,8 +63,28 @@ protocol AddressBook: Sendable {
     /// Asks the user (macOS's own question, once); true if granted.
     func requestAccess() async -> Bool
     /// The cards holding one of `emails`, each once, in the order of the
-    /// addresses (the cards of the first address first).
+    /// addresses (the cards of the first address first); each card lists
+    /// the addresses of `emails` it holds (`ContactCard.emails`).
     func cards(matching emails: [String]) async -> [ContactCard]
+}
+
+extension Array where Element == ContactCard {
+    /// Adds `card`, found for `email`: a card already found for another
+    /// address only records this one too (a card is listed once).
+    ///
+    /// Swift note: an extension with a `where` clause adds methods to
+    /// arrays of cards only; `mutating` lets the method change the array
+    /// it is called on.
+    mutating func add(_ card: ContactCard, foundFor email: String) {
+        let email = email.lowercased()
+        if let i = firstIndex(where: { $0.id == card.id }) {
+            if !self[i].emails.contains(email) { self[i].emails.append(email) }
+        } else {
+            var found = card
+            found.emails = [email]
+            append(found)
+        }
+    }
 }
 
 /// The Mac's address book, through the Contacts framework.
@@ -107,14 +134,20 @@ final class SystemAddressBook: AddressBook, @unchecked Sendable {
                 // their case.
                 let predicate = CNContact.predicateForContacts(matchingEmailAddress: email)
                 guard let found = try? store.unifiedContacts(matching: predicate, keysToFetch: keys) else { continue }
-                for contact in found where !out.contains(where: { $0.id == contact.identifier }) {
+                for contact in found {
+                    // A card already found for another address of the
+                    // thread: it only records this one too.
+                    if let known = out.first(where: { $0.id == contact.identifier }) {
+                        out.add(known, foundFor: email)
+                        continue
+                    }
                     let name = CNContactFormatter.string(from: contact, style: .fullName)
                         ?? (contact.organizationName.isEmpty ? email : contact.organizationName)
                     let phones = contact.phoneNumbers.map { labeled in
                         ContactCard.Phone(label: labeled.label.map { CNLabeledValue<CNPhoneNumber>.localizedString(forLabel: $0) },
                                           number: labeled.value.stringValue)
                     }
-                    out.append(ContactCard(id: contact.identifier, name: name, phones: phones))
+                    out.add(ContactCard(id: contact.identifier, name: name, phones: phones), foundFor: email)
                 }
             }
             return out
@@ -129,7 +162,7 @@ final class FixtureAddressBook: AddressBook, @unchecked Sendable {
     private let lock = NSLock()
     private var state: AddressBookAccess
     private let grant: Bool
-    private let byEmail: [String: [ContactCard]]
+    private var byEmail: [String: [ContactCard]]
     /// The addresses looked up, for the tests.
     private(set) var lookups: [[String]] = []
 
@@ -142,6 +175,10 @@ final class FixtureAddressBook: AddressBook, @unchecked Sendable {
     var access: AddressBookAccess { lock.withLock { state } }
 
     func setAccess(_ access: AddressBookAccess) { lock.withLock { state = access } }
+
+    /// Changes the cards, as the user would in Contacts (then macOS posts
+    /// `CNContactStoreDidChange`, which the caller posts itself).
+    func setCards(_ cards: [String: [ContactCard]]) { lock.withLock { byEmail = cards } }
 
     func requestAccess() async -> Bool {
         lock.withLock {
@@ -157,7 +194,7 @@ final class FixtureAddressBook: AddressBook, @unchecked Sendable {
             guard state == .authorized else { return [] }
             var out: [ContactCard] = []
             for email in emails {
-                for card in byEmail[email.lowercased()] ?? [] where !out.contains(card) { out.append(card) }
+                for card in byEmail[email.lowercased()] ?? [] { out.add(card, foundFor: email) }
             }
             return out
         }
@@ -165,7 +202,8 @@ final class FixtureAddressBook: AddressBook, @unchecked Sendable {
 
     /// The book of the UI scenarios (`UITests/fixtures/sample.mbox`):
     /// Alice and Bob, the senders of "Chantier". Alice's work number is
-    /// also in the signature of one of her mails, as written there.
+    /// also in the signature of one of her mails, as written there. The
+    /// newsletter's sender is not in it.
     static func sample() -> FixtureAddressBook {
         FixtureAddressBook(access: .notDetermined, cards: [
             "alice@example.org": [ContactCard(id: "card-alice", name: "Alice Martin", phones: [
@@ -231,5 +269,57 @@ enum ContactLinks {
         guard !id.isEmpty, id.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == ":") })
         else { return nil }
         return URL(string: "addressbook://\(id)")
+    }
+}
+
+/// Whether the sender of a message is in the address book: the icon at the
+/// end of its header line in the reader (`docs/geek-ui.md`, "Sender in
+/// Contacts"; `ui.md`, "Expéditeur"). `ctrl-c` opens the card of a known
+/// sender, and copies the address of an unknown one.
+enum SenderBook: Hashable, Sendable {
+    case known
+    case unknown
+
+    /// The SF Symbol drawn: an address book for a sender in it; a person
+    /// with a question mark otherwise (SF Symbols has no struck-out book).
+    var symbol: String {
+        switch self {
+        case .known: "book.closed.fill"
+        case .unknown: "person.crop.circle.badge.questionmark"
+        }
+    }
+
+    /// The tooltip, and what VoiceOver reads.
+    var label: String {
+        switch self {
+        case .known: L("In Contacts (ctrl-c opens the card)")
+        case .unknown: L("Not in Contacts (ctrl-c copies the address)")
+        }
+    }
+
+    /// What UI scripts read (`reader_books`).
+    var name: String { self == .known ? "known" : "unknown" }
+
+    /// The status of each message of `thread` whose sender was looked up,
+    /// by message id. `cards`: the cards read for this thread; nil when
+    /// they were not (book not allowed, or not read yet): then nothing is
+    /// known and no icon is drawn, rather than a wrong "not in Contacts".
+    /// The user's own messages (Sent, Drafts) get none: their sender is
+    /// not looked up (`AppModel.threadSenders`).
+    static func statuses(_ thread: ThreadView, cards: [ContactCard]?) -> [Int: SenderBook] {
+        guard let cards else { return [:] }
+        let known = Set(cards.flatMap(\.emails))
+        var out: [Int: SenderBook] = [:]
+        for m in thread.messages where m.folderRole != "sent" && m.folderRole != "drafts" {
+            guard let addr = m.fromAddr?.lowercased(), !addr.isEmpty else { continue }
+            out[m.id] = known.contains(addr) ? .known : .unknown
+        }
+        return out
+    }
+
+    /// The card of `address` among `cards`, whatever its case.
+    static func card(of address: String, in cards: [ContactCard]) -> ContactCard? {
+        let addr = address.lowercased()
+        return cards.first { $0.emails.contains(addr) }
     }
 }

@@ -1,0 +1,56 @@
+# The address book's icon at the end of the line of each unfolded sender,
+# and ctrl-c / ctrl-C (`ui.md`, "Expéditeur"). The app reads a book of the
+# scenario's own (FixtureAddressBook.sample: Alice and Bob), never the
+# user's.
+key @
+type fixture
+key ret
+key ;
+key a
+key j
+key j
+key j
+expect selected_subject = Chantier
+# macOS was not asked yet: nothing is known, so no icon.
+expect reader_books !~ known
+# ctrl-c asks for Contacts (granted here), then opens the card of the
+# sender of the open message: Bob wrote the latest one.
+key ctrl-c
+expect opened_file = addressbook://card-bob
+expect flash ~ Bob Durand
+expect reader_books = bob@example.org known
+snap known
+# Every unfolded message has its icon (T unfolds them all); the user's own
+# reply has none. A click on an icon does what ctrl-c does, for that
+# message.
+key T
+expect reader_books = alice@example.org known | alice@example.org known | bob@example.org known
+click reader-book:0
+expect opened_file = addressbook://card-alice
+key T
+# ctrl-C: the sender's mails, from every folder; Escape goes back.
+key ctrl-C
+expect list_filter ~ bob@example.org
+snap list
+key esc
+expect list_filter !~ bob@example.org
+# The newsletter: its sender is not in the book, ctrl-c copies the address.
+key ;
+key a
+expect folder = Archive
+key k
+key k
+key k
+expect selected_subject = La lettre de novembre
+expect reader_books = news@example.net unknown
+key ctrl-c
+expect pasteboard = news@example.net
+expect flash ~ news@example.net
+snap unknown
+# The same icon in the HTML reader.
+key v
+key h
+expect body_format = html
+expect html_text ~ news@example.net
+wait 300
+snap unknown-html

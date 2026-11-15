@@ -237,10 +237,12 @@ fn forcing_a_verdict_rewrites_the_mails_and_undo_gives_it_back() {
     let out = e.store.set_sender_kind(id, Some(SenderKind::Person), Source::App).unwrap();
     let token = out.undo.expect("an undo token");
     assert_eq!(e.address_kind("hello@shop.example").as_deref(), Some("person"));
-    // The mail without clue follows the address; the newsletter itself stays a robot.
+    // Every mail already received follows the user's decision, the
+    // newsletter itself too (`expediteurs.md`, section 9).
     assert_eq!(e.kind(other).as_deref(), Some("person"));
     assert!(e.thread_has_person(other));
-    assert_eq!(e.kind(news).as_deref(), Some("robot"));
+    assert_eq!(e.kind(news).as_deref(), Some("person"));
+    assert!(e.thread_has_person(news));
     // Journaled.
     let audit: String = e
         .store
@@ -257,17 +259,60 @@ fn forcing_a_verdict_rewrites_the_mails_and_undo_gives_it_back() {
     assert_eq!(forced, None);
     assert_eq!(e.kind(other).as_deref(), Some("robot"));
     assert!(!e.thread_has_person(other));
+    assert_eq!(e.kind(news).as_deref(), Some("robot"));
+    assert!(!e.thread_has_person(news));
 
     // A forced verdict survives new mail: the computation never overrides it.
     e.store.set_sender_kind(id, Some(SenderKind::Person), Source::App).unwrap();
     let third = e.one(e.inbox, mail("hello@shop.example", "me@home.fr", "Encore", ""));
     assert_eq!(e.kind(third).as_deref(), Some("person"));
+    // A newsletter received after the choice follows it too.
+    let letter = e.one(e.inbox, mail("hello@shop.example", "me@home.fr", "Soldes d'hiver", NEWSLETTER));
+    assert_eq!(e.kind(letter).as_deref(), Some("person"));
     // Given back to the computation.
     e.store.set_sender_kind(id, None, Source::App).unwrap();
     assert_eq!(e.kind(third).as_deref(), Some("robot"));
+    assert_eq!(e.kind(letter).as_deref(), Some("robot"));
 
     // An unknown address is an error.
     assert!(e.store.set_sender_kind(99_999, Some(SenderKind::Robot), Source::App).is_err());
+}
+
+/// The effective verdict of a mixed address does not change when the user
+/// forces it to what it already is, but its mails do: the user's choice is
+/// on the sender, and its newsletters become a person's mails. Forcing
+/// robot turns its personal mails into robots; the user's own reply stays
+/// a person.
+#[test]
+fn forcing_the_computed_verdict_rewrites_the_automatic_mails_too() {
+    let mut e = Env::new();
+    let reply = e.one(e.sent, mail("me@home.fr", "galerie@art.example", "Visite", ""));
+    let personal = e.one(e.archive, mail("galerie@art.example", "me@home.fr", "Votre visite", APPLE_MAIL));
+    let letter = e.one(e.archive, mail("galerie@art.example", "me@home.fr", "Lettre de novembre", NEWSLETTER));
+    let away = e.one(e.archive, mail("galerie@art.example", "me@home.fr", "Absente", "Auto-Submitted: auto-replied\r\n"));
+    let id = e.address("galerie@art.example");
+    assert_eq!(e.address_kind("galerie@art.example").as_deref(), Some("person"));
+    assert_eq!(e.kind(letter).as_deref(), Some("robot"));
+
+    let out = e.store.set_sender_kind(id, Some(SenderKind::Person), Source::App).unwrap();
+    assert!(out.undo.is_some(), "a choice that rewrites mails can be undone");
+    assert_eq!(e.kind(personal).as_deref(), Some("person"));
+    assert_eq!(e.kind(letter).as_deref(), Some("person"));
+    assert_eq!(e.kind(away).as_deref(), Some("person"));
+    let human = ThreadFilter { human: Some(true), ..Default::default() };
+    assert_eq!(e.subjects(e.archive, &human).len(), 3);
+
+    e.store.set_sender_kind(id, Some(SenderKind::Robot), Source::App).unwrap();
+    assert_eq!(e.kind(personal).as_deref(), Some("robot"));
+    assert_eq!(e.kind(letter).as_deref(), Some("robot"));
+    assert_eq!(e.kind(away).as_deref(), Some("robot"));
+    assert_eq!(e.kind(reply).as_deref(), Some("person"));
+
+    // Back to the computation: the mixed address again.
+    e.store.set_sender_kind(id, None, Source::App).unwrap();
+    assert_eq!(e.kind(personal).as_deref(), Some("person"));
+    assert_eq!(e.kind(letter).as_deref(), Some("robot"));
+    assert_eq!(e.kind(away).as_deref(), Some("robot"));
 }
 
 #[test]

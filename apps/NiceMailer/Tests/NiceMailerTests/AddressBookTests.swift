@@ -1,4 +1,5 @@
 import AppKit
+import Contacts
 import Foundation
 import Testing
 @testable import NiceMailer
@@ -57,11 +58,17 @@ struct AddressBookTests {
         return thread
     }
 
-    /// One key: a character, `ret` or `esc`.
+    /// One key: a character, `ret`, `esc`, or `ctrl-X` (`ctrl-C` with
+    /// Shift, as the keyboard sends it).
     func press(_ key: String) {
-        let (chars, code) = key == "ret" ? ("\r", KeyCode.returnKey) : key == "esc" ? ("\u{1b}", KeyCode.escape) : (key, 0)
+        var (chars, code) = key == "ret" ? ("\r", KeyCode.returnKey) : key == "esc" ? ("\u{1b}", KeyCode.escape) : (key, 0)
+        var mods: NSEvent.ModifierFlags = []
+        if key.hasPrefix("ctrl-") {
+            chars = String(key.dropFirst(5))
+            mods = chars == chars.lowercased() ? .control : [.control, .shift]
+        }
         let event = NSEvent.keyEvent(
-            with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
+            with: .keyDown, location: .zero, modifierFlags: mods, timestamp: 0, windowNumber: 0, context: nil,
             characters: chars, charactersIgnoringModifiers: chars, isARepeat: false, keyCode: code)!
         #expect(controller.handle(event))
     }
@@ -159,5 +166,185 @@ struct AddressBookTests {
         press("l")
         _ = await eventually { model.flash != nil }
         #expect(model.flash == L("Contacts are only read by the installed app (make open)"))
+    }
+
+    // MARK: Sender in Contacts
+
+    /// A thread of messages (id, sender, folder role), each unfolded.
+    func thread(_ senders: [(Int, String, String)]) -> ThreadView {
+        let messages = senders.map { id, from, role in
+            MessageView(
+                id: id, folderId: 1, folderRole: role, subject: "S", fromName: "N", fromAddr: from,
+                to: [], cc: [], dateSent: nil, dateReceived: 1_700_000_000, bodyText: "", isSeen: true,
+                isFlagged: false, isAnswered: false, hasAttachments: false, authResult: "pass", bodyHtml: nil,
+                hasRemoteContent: false, fromBodyFormat: nil, segments: [], onlyQuotes: false, expanded: true,
+                showRecipients: false, attachments: [])
+        }
+        return ThreadView(id: 9, subject: "S", messages: messages, asOf: Position(epoch: "e", seq: 0))
+    }
+
+    @Test func eachReceivedSenderIsKnownOrNotOnceTheCardsAreRead() {
+        let t = thread([(10, "Alice@Example.org", "inbox"), (11, "me@example.com", "sent"), (12, "dave@example.org", "inbox")])
+        var cards: [ContactCard] = []
+        cards.add(ContactCard(id: "A", name: "Alice", phones: []), foundFor: "alice@example.org")
+        // Not read: nothing known, no icon (not a wrong "not in Contacts").
+        #expect(SenderBook.statuses(t, cards: nil).isEmpty)
+        // The user's own message gets none; the case of an address does
+        // not matter.
+        #expect(SenderBook.statuses(t, cards: cards) == [10: .known, 12: .unknown])
+        #expect(SenderBook.statuses(t, cards: []) == [10: .unknown, 12: .unknown])
+        #expect(SenderBook.card(of: "ALICE@example.org", in: cards)?.id == "A")
+        #expect(SenderBook.card(of: "dave@example.org", in: cards) == nil)
+    }
+
+    @Test func aCardFoundForTwoAddressesIsListedOnceWithBoth() {
+        var cards: [ContactCard] = []
+        let card = ContactCard(id: "A", name: "Alice", phones: [])
+        cards.add(card, foundFor: "alice@work.org")
+        cards.add(card, foundFor: "Alice@Home.org")
+        cards.add(card, foundFor: "alice@work.org")
+        #expect(cards.count == 1)
+        #expect(cards[0].emails == ["alice@work.org", "alice@home.org"])
+    }
+
+    @Test func theHeaderOfAnUnfoldedMessageCarriesItsIcon() {
+        let t = thread([(10, "alice@example.org", "inbox"), (12, "dave@example.org", "inbox")])
+        let blocks = ThreadDisplay.blocks(t, ThreadDisplay.State(showAll: true), book: [10: .known, 12: .unknown])
+        let books = blocks.compactMap { b -> SenderBook? in
+            if case .header(_, _, _, _, _, _, _, _, let book) = b { return book } else { return nil }
+        }
+        #expect(books == [.known, .unknown])
+        // Folded, the line is short: no icon.
+        let folded = ThreadDisplay.blocks(t, ThreadDisplay.State(folding: [10: false]), book: [10: .known])
+        guard case .header(10, true, _, _, _, _, _, _, let book) = folded.first else { Issue.record("\(folded)"); return }
+        #expect(book == nil)
+    }
+
+    @Test func theSenderActedOnIsTheCurrentMessageOrTheLatestReceivedBeforeIt() {
+        let t = thread([(10, "alice@example.org", "inbox"), (11, "me@example.com", "sent"), (12, "bob@example.org", "inbox"),
+                        (13, "me@example.com", "sent")])
+        // No current message: the last unfolded one, the user's own reply:
+        // Bob, who wrote before it.
+        #expect(ThreadDisplay.senderMessage(t, ThreadDisplay.State())?.id == 12)
+        #expect(ThreadDisplay.senderMessage(t, ThreadDisplay.State(current: 10))?.id == 10)
+        #expect(ThreadDisplay.senderMessage(t, ThreadDisplay.State(current: 11))?.id == 10)
+        // Only the user before it: the next mail received.
+        let mine = thread([(11, "me@example.com", "sent"), (12, "bob@example.org", "inbox")])
+        #expect(ThreadDisplay.senderMessage(mine, ThreadDisplay.State(current: 11))?.id == 12)
+        // The user alone: their own address.
+        let alone = thread([(11, "me@example.com", "sent")])
+        #expect(ThreadDisplay.senderMessage(alone, ThreadDisplay.State())?.id == 11)
+    }
+
+    @Test func theModelKnowsTheSendersOnceTheBookIsRead() async {
+        // Not asked yet: nothing known.
+        #expect(model.senderBook.isEmpty)
+        book.setAccess(.authorized)
+        await model.loadSenderCards(asking: false)
+        #expect(model.senderBook == [10: .known, 12: .known, 13: .known])
+        #expect(model.senderCard("ALICE@example.org")?.id == "A1:ABPerson")
+    }
+
+    @Test func ctrlCOpensTheCardOfAKnownSender() async {
+        book.setAccess(.authorized)
+        await model.loadSenderCards(asking: false)
+        var opened: [String] = []
+        model.openFile = { opened.append($0.absoluteString) }
+        // The current message: the last unfolded, Alice's (13).
+        press("ctrl-c")
+        _ = await eventually { !opened.isEmpty }
+        #expect(opened == ["addressbook://A1:ABPerson"])
+        #expect(model.flash == L("Card of %@ opened in Contacts", "Alice Martin"))
+        #expect(controller.pasteboard.string(forType: .string) == nil)
+    }
+
+    @Test func ctrlCCopiesTheAddressOfAnUnknownSender() async {
+        book.setAccess(.authorized)
+        book.setCards([:])
+        await model.loadSenderCards(asking: false)
+        #expect(model.senderBook[13] == .unknown)
+        var opened: [String] = []
+        model.openFile = { opened.append($0.absoluteString) }
+        press("ctrl-c")
+        _ = await eventually { model.flash != nil }
+        #expect(controller.pasteboard.string(forType: .string) == "alice@example.org")
+        #expect(model.flash == L("Copied: %@", "alice@example.org"))
+        #expect(opened.isEmpty)
+    }
+
+    @Test func ctrlCAsksForContactsTheFirstTime() async {
+        // Never asked: ctrl-c asks, as `l` does, then opens the card.
+        var opened: [String] = []
+        model.openFile = { opened.append($0.absoluteString) }
+        press("ctrl-c")
+        _ = await eventually { !opened.isEmpty }
+        #expect(book.access == .authorized)
+        #expect(opened == ["addressbook://A1:ABPerson"])
+    }
+
+    @Test func ctrlCCopiesWhenTheBookCannotBeRead() async {
+        book.setAccess(.denied)
+        press("ctrl-c")
+        _ = await eventually { controller.pasteboard.string(forType: .string) != nil }
+        #expect(controller.pasteboard.string(forType: .string) == "alice@example.org")
+    }
+
+    @Test func aClickOnTheIconDoesWhatCtrlCDoesForItsMessage() async {
+        book.setAccess(.authorized)
+        await model.loadSenderCards(asking: false)
+        var opened: [String] = []
+        model.openFile = { opened.append($0.absoluteString) }
+        #expect(controller.readerLink(URL(string: "nm://book/12")!, command: false))
+        _ = await eventually { !opened.isEmpty }
+        #expect(opened == ["addressbook://B1"])
+    }
+
+    @Test func aCardAddedInContactsShowsWithoutReopeningTheMail() async {
+        book.setAccess(.authorized)
+        book.setCards([:])
+        await model.loadSenderCards(asking: false)
+        #expect(model.senderBook[12] == .unknown)
+        book.setCards(["bob@example.org": [ContactCard(id: "B1", name: "Bob Durand", phones: [])]])
+        NotificationCenter.default.post(name: .CNContactStoreDidChange, object: nil)
+        _ = await eventually { model.senderBook[12] == .known }
+        #expect(model.senderBook[12] == .known)
+        #expect(model.senderBook[13] == .unknown)
+    }
+
+    @Test func ctrlShiftCListsTheMailsOfTheSender() async {
+        // The contacts of `Fixture` are c1@example.org… : thread 1's
+        // latest mail comes from c2 for this test.
+        let core = FakeCore { method, params in
+            var answer = AddressBookTests.answer(method, params)
+            if method == "get_thread", var t = answer as? [String: Any], var messages = t["messages"] as? [[String: Any]] {
+                messages[3]["from_addr"] = "C2@example.org"
+                t["messages"] = messages
+                answer = t
+            }
+            return answer
+        }
+        await model.attach(core)
+        model.selectedThreadId = 2
+        _ = await eventually { model.openThread?.id == 2 }
+        model.selectedThreadId = 1
+        _ = await eventually { model.openThread?.messages.last?.fromAddr == "C2@example.org" }
+        #expect(model.openThread?.messages.last?.fromAddr == "C2@example.org")
+        controller.reading = true
+        press("ctrl-C")
+        _ = await eventually { model.listFilter != nil }
+        #expect(model.listFilter == .contact(ContactView(id: 2, addr: "c2@example.org", name: nil, screeningTarget: nil,
+                                                         groups: [], messageCount: 2, senderKind: "robot",
+                                                         senderKindForced: true)))
+        #expect(!controller.reading)
+        // The core was asked for that address.
+        #expect(core.calls.contains { $0.method == "list_contacts" && $0.params["query"] as? String == "c2@example.org" })
+    }
+
+    @Test func ctrlShiftCSaysWhenTheCoreHasNoSuchContact() async {
+        // The thread's senders are not among the contacts of `Fixture`.
+        press("ctrl-C")
+        _ = await eventually { model.flash != nil }
+        #expect(model.flash == L("No contact %@", "alice@example.org"))
+        #expect(model.listFilter == nil)
     }
 }
