@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import PDFKit
 import Testing
 @testable import NiceMailer
 
@@ -1190,9 +1191,155 @@ struct GeekControllerTests {
         #expect(await eventually { core.calls("export_message").count == 1 })
         #expect(core.calls("export_message")[0]["format"] as? String == "eml")
         #expect(core.calls("export_message")[0]["dir"] as? String == "/tmp/nicemailer-tests")
-        // Not available yet: a message, no call.
+    }
+
+    // MARK: Saving as PDF (sp, sP)
+
+    @Test func spSavesAPDFOfTheLatestMailWithoutOverwriting() async throws {
+        let dir = try exportDir()
+        var opened: [String] = []
+        model.openFile = { opened.append($0.path) }
         press("s"); press("p")
-        #expect(core.calls("export_message").count == 1 && model.flash != nil)
+        #expect(await eventually { saved(dir) == ["2020-06-23 Subject 1.pdf"] })
+        #expect(core.calls("message_record").map { $0["message_id"] as? Int } == [10])
+        #expect(core.calls("export_message").isEmpty && opened.isEmpty)
+        let path = dir.appendingPathComponent("2020-06-23 Subject 1.pdf").path
+        #expect(await eventually { model.flash == L("Saved: %@", path) })
+        // The file is the plain PDF: the mail, no hash.
+        let text = try #require(PDFDocument(url: URL(fileURLWithPath: path))).string ?? ""
+        #expect(text.contains("Paragraph of 10."))
+        #expect(!text.contains("SHA-256"))
+        // Again: a second file, the first one kept.
+        press("s"); press("p")
+        #expect(await eventually { saved(dir) == ["2020-06-23 Subject 1 (2).pdf", "2020-06-23 Subject 1.pdf"] })
+    }
+
+    @Test func capitalPSavesThenOpensEveryMarkedMail() async throws {
+        let dir = try exportDir()
+        var opened: [String] = []
+        model.openFile = { opened.append(($0.path as NSString).lastPathComponent) }
+        press("J"); press("J")
+        press("s"); press("P")
+        #expect(await eventually { opened.count == 3 })
+        #expect(Set(opened) == ["2020-06-23 Subject 1.pdf", "2020-06-23 Subject 2.pdf", "2020-06-23 Subject 3.pdf"])
+        #expect(saved(dir).count == 3)
+        #expect(await eventually { model.flash == L("%lld mails saved to %@ and opened", 3, dir.lastPathComponent) })
+    }
+
+    @Test func siSavesTheEvidenceWithTheTechnicalInformationAndCapitalIOpensIt() async throws {
+        let dir = try exportDir()
+        var opened: [String] = []
+        model.openFile = { opened.append($0.path) }
+        // The last row of the menu.
+        #expect(controller.menuEntries(.save).last?.key == "i")
+        #expect(controller.menuEntries(.save).last?.label == L("as PDF with technical information"))
+        press("s"); press("i")
+        let path = dir.appendingPathComponent("2020-06-23 Subject 1.pdf").path
+        #expect(await eventually { saved(dir) == ["2020-06-23 Subject 1.pdf"] })
+        #expect(opened.isEmpty)
+        let text = try #require(PDFDocument(url: URL(fileURLWithPath: path))).string ?? ""
+        #expect(text.contains("SHA-256 " + String(repeating: "0f", count: 32)))
+        #expect(text.contains(L("Technical information")))
+        // `I` saves another one, then opens it.
+        press("s"); press("I")
+        #expect(await eventually { opened == [dir.appendingPathComponent("2020-06-23 Subject 1 (2).pdf").path] })
+        #expect(await eventually { model.flash?.hasPrefix(L("Saved and opened: %@", "")) == true })
+    }
+
+    /// Thread 2 as a conversation of two messages, 21 then 22 (unfolded),
+    /// the files of the fixture attached to 22 only.
+    func twoMessageConversation() async {
+        core.handler = { method, params in
+            guard method == "get_thread", params["thread_id"] as? Int == 2 else { return Fixture.answer(method, params) }
+            var thread = Fixture.threadView(2)
+            var first = (thread["messages"] as! [[String: Any]])[0]
+            var second = first
+            first["id"] = 21
+            first["expanded"] = false
+            second["id"] = 22
+            second["attachments"] = Fixture.attachments
+            thread["messages"] = [first, second]
+            return thread
+        }
+        model.selectedThreadId = 2
+        _ = await eventually { model.openThread?.messages.count == 2 }
+    }
+
+    @Test func everyExportOfSTakesTheMessageTheReaderIsOnNotAlwaysTheLatest() async throws {
+        let dir = try exportDir()
+        await twoMessageConversation()
+        // Nothing chosen: the latest, for every kind of export.
+        press("s"); press("p")
+        press("s"); press("e")
+        press("s"); press("c")
+        #expect(await eventually { core.calls("message_record").count == 1 && core.calls("export_message").count == 1
+                && core.calls("message_text").count == 1 })
+        #expect(core.calls("message_record")[0]["message_id"] as? Int == 22)
+        #expect(core.calls("export_message")[0]["message_id"] as? Int == 22)
+        #expect(core.calls("message_text")[0]["message_id"] as? Int == 22)
+        // ctrl-k to the first message: every export takes it.
+        press("ctrl-k")
+        #expect(controller.readerState.current == 21)
+        press("s"); press("c")
+        press("s"); press("e")
+        press("s"); press("t")
+        press("s"); press("M")
+        press("s"); press("p")
+        press("s"); press("i")
+        press("s"); press("I")
+        #expect(await eventually { core.calls("message_text").count == 2 && core.calls("export_message").count == 4
+                && core.calls("message_record").count == 4 })
+        #expect(core.calls("message_text").last?["message_id"] as? Int == 21)
+        #expect(core.calls("export_message").suffix(3).allSatisfy { $0["message_id"] as? Int == 21 })
+        #expect(core.calls("message_record").suffix(3).allSatisfy { $0["message_id"] as? Int == 21 })
+        #expect(await eventually { saved(dir).filter { $0.hasSuffix(".pdf") }.count == 4 })
+    }
+
+    @Test func attachmentsAreThoseOfTheChosenMessageElseOfTheWholeConversation() async throws {
+        let dir = try exportDir()
+        await twoMessageConversation()
+        // Nothing chosen: the files of the whole conversation (22's).
+        press("s"); press("a")
+        #expect(await eventually { saved(dir) == ["attachment-43", "devis.pdf", "photo.jpg"] })
+        // ctrl-k to 21, which has none: nothing saved, and said.
+        press("ctrl-k")
+        press("s"); press("a")
+        #expect(await eventually { model.flash == L("No attachment to save") })
+        #expect(saved(dir).count == 3)
+        // ctrl-j back to 22, chosen this time: its files again.
+        press("ctrl-j")
+        press("s"); press("g")
+        #expect(await eventually { saved(dir).count == 5 })
+    }
+
+    @Test func theExportedMessageIsTheReadersElseTheLatest() throws {
+        let m = { (id: Int) throws -> MessageView in
+            var json = Fixture.threadView(1)["messages"] as! [[String: Any]]
+            json[0]["id"] = id
+            return try CoreClient.decoder.decode(MessageView.self, from: JSONSerialization.data(withJSONObject: json[0]))
+        }
+        let t = ThreadView(id: 1, subject: "S", messages: [try m(1), try m(2), try m(3)], asOf: Position(epoch: "e", seq: 0))
+        #expect(AppModel.exportMessage(t, current: nil)?.id == 3)
+        #expect(AppModel.exportMessage(t, current: 1)?.id == 1)
+        // A message no longer in the thread: the latest.
+        #expect(AppModel.exportMessage(t, current: 99)?.id == 3)
+        #expect(AppModel.exportMessage(ThreadView(id: 2, subject: "S", messages: [], asOf: Position(epoch: "e", seq: 0)),
+                                    current: nil) == nil)
+        // Attachments: of the chosen message, else of every message.
+        #expect(AppModel.attachmentMessages(t, current: 2).map(\.id) == [2])
+        #expect(AppModel.attachmentMessages(t, current: nil).map(\.id) == [1, 2, 3])
+        #expect(AppModel.attachmentMessages(t, current: 99).map(\.id) == [1, 2, 3])
+    }
+
+    @Test func aPDFRefusedByTheCoreIsReported() async throws {
+        let dir = try exportDir()
+        core.handler = { method, params in
+            guard method == "message_record" else { return Fixture.answer(method, params) }
+            return CoreClient.RPCError(code: 1011, message: "raw damaged")
+        }
+        press("s"); press("p")
+        #expect(await eventually { model.lastError?.contains("raw damaged") == true })
+        #expect(saved(dir).isEmpty)
     }
 
     // MARK: Saving attachments (sa, sg)

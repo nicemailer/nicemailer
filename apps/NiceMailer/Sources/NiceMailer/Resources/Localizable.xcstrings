@@ -4239,6 +4239,306 @@
           }
         }
       }
+    },
+    "%@ (%@ bytes)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ (%@ octets)"
+          }
+        }
+      }
+    },
+    "%@ bytes": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ octets"
+          }
+        }
+      }
+    },
+    "%lld files, %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld fichiers, %@"
+          }
+        }
+      }
+    },
+    "(empty body)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "(corps vide)"
+          }
+        }
+      }
+    },
+    "(image shown in the body)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "(image affichée dans le corps)"
+          }
+        }
+      }
+    },
+    "(no name)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "(sans nom)"
+          }
+        }
+      }
+    },
+    "(no recipient)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "(aucun destinataire)"
+          }
+        }
+      }
+    },
+    "(no sender)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "(aucun expéditeur)"
+          }
+        }
+      }
+    },
+    "1 file, %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 fichier, %@"
+          }
+        }
+      }
+    },
+    "Attachments": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pièces jointes"
+          }
+        }
+      }
+    },
+    "Authors": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auteurs"
+          }
+        }
+      }
+    },
+    "Date header, as written": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En-tête Date, tel qu’écrit"
+          }
+        }
+      }
+    },
+    "Original message not available": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Message original non disponible"
+          }
+        }
+      }
+    },
+    "Page %lld / %lld": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Page %lld / %lld"
+          }
+        }
+      }
+    },
+    "Received by the server": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reçu par le serveur"
+          }
+        }
+      }
+    },
+    "Received on": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reçu le"
+          }
+        }
+      }
+    },
+    "Reply-To": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Répondre à"
+          }
+        }
+      }
+    },
+    "SHA-256 not available": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SHA-256 non disponible"
+          }
+        }
+      }
+    },
+    "SHA-256 of the original message": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SHA-256 du message original"
+          }
+        }
+      }
+    },
+    "Sent by": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Envoyé par"
+          }
+        }
+      }
+    },
+    "Sent on": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Envoyé le"
+          }
+        }
+      }
+    },
+    "Size of the original message": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Taille du message original"
+          }
+        }
+      }
+    },
+    "Technical information": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Informations techniques"
+          }
+        }
+      }
+    },
+    "The original message is not stored on this Mac: this document was made from the mail database, and cannot be checked against the original.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le message original n’est pas conservé sur ce Mac : ce document a été établi à partir de la base des mails et ne peut pas être vérifié par rapport à l’original."
+          }
+        }
+      }
+    },
+    "Trace headers, as written": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En-têtes de transit, tels qu’écrits"
+          }
+        }
+      }
+    },
+    "no Date header": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "pas d’en-tête Date"
+          }
+        }
+      }
+    },
+    "none": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "aucun"
+          }
+        }
+      }
+    },
+    "not available": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "non disponible"
+          }
+        }
+      }
+    },
+    "as PDF with technical information": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "en PDF avec les informations techniques"
+          }
+        }
+      }
+    },
+    "This document reproduces the mail as the server delivered it. Its original, with the signature of the sending domain, is the .eml file; its SHA-256 must be the one above (shasum -a 256 file.eml). The SHA-256 of each attachment is that of the file sent.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce document reproduit le mail tel que le serveur l’a remis. Son original, avec la signature du domaine expéditeur, est le fichier .eml ; son SHA-256 doit être celui indiqué ci-dessus (shasum -a 256 fichier.eml). Le SHA-256 de chaque pièce jointe est celui du fichier envoyé."
+          }
+        }
+      }
     }
   },
   "version": "1.0"

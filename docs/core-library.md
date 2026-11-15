@@ -42,6 +42,18 @@ The pixels are found by a pass of html5ever's tokenizer over the original HTML b
 
 The file goes to `dir` (absolute), by default `~/Downloads`, named `<date> <subject>.<ext>`. An existing file is never overwritten: ` (2)`, ` (3)`… is added.
 
+`message_record {message_id}` returns everything the app prints in the PDF of `sp` (`docs/geek-ui.md`, "Saving a mail as PDF"), read from the raw message when the core has it (`nm-store/src/record.rs`):
+
+- `from` (every author), `sender`, `reply_to`, `to`, `cc`, `bcc`: each `{addr, name}`, the name as written in this mail (the `address` table keeps only the last name seen for an address), in header order;
+- `date_header` (the `Date` header as written, with its time zone), `date_sent`, `date_received`;
+- `message_id`, `in_reply_to`, `references`, `account`, `folder` (its path), `auth_result`;
+- `body`: the text body with its paragraphs whole, as `message_text`;
+- `attachments`: `{part_id, filename, mime_type, size, inline, sha256}`, the hash and size of the decoded content, so that the hash is that of the file `get_attachment` gives;
+- `headers`: the trace headers as written, unfolded on one line and cut beyond 4,000 characters: `Return-Path`, `Received` (newest hop first), `Received-SPF`, `Authentication-Results`, `ARC-Authentication-Results`, `DKIM-Signature`, `ARC-Message-Signature`, `ARC-Seal`, `X-Mailer`, `User-Agent`;
+- `raw_size` and `raw_sha256`, the SHA-256 of the raw message, that is of the `.eml` file `export_message` writes.
+
+Without a raw file (a seeded mail, or one whose body has not been downloaded), the fields come from the database, `raw_sha256` and the attachment hashes are `null`, and `headers` is empty. A damaged raw file answers `1011` (`RAW_DAMAGED`) and is downloaded again, as for `export_message`.
+
 `message_text {message_id}` returns, as `text`, what the app puts on the clipboard (`sc`): the headers of the `txt` export, an empty line, then the text body with its paragraphs made whole again (`nm-store/src/paragraphs.rs`), and no line break at the end. The stored body keeps the line breaks of the sender's app; `paragraphs::unwrap` removes the ones a tool put there:
 
 - a format=flowed soft break: a line of at least 40 characters ending with a space is joined to the next;
@@ -180,7 +192,7 @@ reindex terminé : 31599 mails réanalysés, 350 corrigés sans relecture, 24299
 
 ## Tests
 
-`crates/nm-store/tests/library.rs` covers each of these features: pagination of both sorts, the per-sender display choice, history pagination and summaries, tag creation, idempotence, Unicode case and keyword collisions, group rules (sender of a thread, tombstones, revived group), contact filter and pagination, threads by contact, and export in the three formats without overwriting. `crates/nm-store/tests/attachments.rs` covers the attachments: listed per message, images of the HTML left out, inline photos of a text mail kept, extraction (content, read-only, quarantine, reuse, re-extraction after a purge), names that try to leave the directory, and the errors; `attachments.rs` itself covers the IMAP part numbers and the decoding. `crates/nm-store/tests/unsubscribe.rs` covers what reception stores for each kind of list mail, the view, the record of a one-click unsubscribe and the refusals; `unsubscribe.rs` the header and body formats; `crates/nm-proto` the POST, against a local HTTP server (no request leaves the machine).
+`crates/nm-store/tests/library.rs` covers each of these features: pagination of both sorts, the per-sender display choice, history pagination and summaries, tag creation, idempotence, Unicode case and keyword collisions, group rules (sender of a thread, tombstones, revived group), contact filter and pagination, threads by contact, and export in the three formats without overwriting. `crates/nm-store/tests/record.rs` covers `message_record`: names, every recipient, `Sender` and several authors, the `Date` header as written, the trace headers unfolded, the hashes of the raw message and of a decoded attachment, the fallback without raw file and a damaged one (`crates/nm-daemon/tests/record_rpc.rs`, the same through the socket). `crates/nm-store/tests/attachments.rs` covers the attachments: listed per message, images of the HTML left out, inline photos of a text mail kept, extraction (content, read-only, quarantine, reuse, re-extraction after a purge), names that try to leave the directory, and the errors; `attachments.rs` itself covers the IMAP part numbers and the decoding. `crates/nm-store/tests/unsubscribe.rs` covers what reception stores for each kind of list mail, the view, the record of a one-click unsubscribe and the refusals; `unsubscribe.rs` the header and body formats; `crates/nm-proto` the POST, against a local HTTP server (no request leaves the machine).
 
 ## Grouped commands
 

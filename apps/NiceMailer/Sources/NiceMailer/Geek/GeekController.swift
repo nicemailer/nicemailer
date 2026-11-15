@@ -1002,33 +1002,58 @@ final class GeekController {
             return entries
         case .save:
             return [
+                // Every row works on the mail the reader is on in the
+                // conversation shown (`readerState.current`, reached with
+                // `ctrl-k` / `ctrl-j` or a click on its header), as `r`
+                // does; the latest when none was chosen, and in the other
+                // marked conversations (`AppModel.exportMessage`).
+                //
                 // First: the most frequent use, the mail pasted elsewhere
                 // (a note, a document, a ticket), its paragraphs whole.
                 Entry(key: "c", label: L("to clipboard")) { [weak self] in
                     guard let self else { return }
-                    model.copyText(to: pasteboard)
+                    model.copyText(to: pasteboard, current: readerState.current)
                 },
-                Entry(key: "e", label: L("as .eml file")) { [model] in model.export("eml") },
+                Entry(key: "e", label: L("as .eml file")) { [weak self] in self?.export("eml") },
                 // The capital saves, then opens the file in front, in the
                 // app macOS gives it (TextEdit, Obsidian…): `T`, `M`, or
                 // ⌘-Return on the row (`ui.md`, menu `s`).
                 Entry(key: "t", label: L("as text file"), detail: L("%@: and open", "T"), detailStyle: .info,
-                      commandAction: { [model] in model.export("txt", open: true) }, altKey: "T") { [model] in
-                    model.export("txt")
+                      commandAction: { [weak self] in self?.export("txt", open: true) }, altKey: "T") { [weak self] in
+                    self?.export("txt")
                 },
                 Entry(key: "m", label: L("as Markdown file"), detail: L("%@: and open", "M"), detailStyle: .info,
-                      commandAction: { [model] in model.export("md", open: true) }, altKey: "M") { [model] in
-                    model.export("md")
+                      commandAction: { [weak self] in self?.export("md", open: true) }, altKey: "M") { [weak self] in
+                    self?.export("md")
                 },
-                // Every attachment of the marked threads (or of the one
-                // under the cursor), with or without the graphics.
-                Entry(key: "a", label: L("all attachments")) { [model] in
-                    model.saveAttachmentsOfTargets(includingGraphics: true)
+                // The attachments of the marked threads (or of the one
+                // under the cursor), with or without the graphics: of the
+                // mail the reader is on when one was chosen, else of every
+                // mail of the conversation (`AppModel.attachmentMessages`).
+                Entry(key: "a", label: L("all attachments")) { [weak self] in
+                    guard let self else { return }
+                    model.saveAttachmentsOfTargets(includingGraphics: true, current: readerState.current)
                 },
-                Entry(key: "g", label: L("attachments but graphics")) { [model] in
-                    model.saveAttachmentsOfTargets(includingGraphics: false)
+                Entry(key: "g", label: L("attachments but graphics")) { [weak self] in
+                    guard let self else { return }
+                    model.saveAttachmentsOfTargets(includingGraphics: false, current: readerState.current)
                 },
-                Entry(key: "p", label: L("as PDF"), disabled: true) {},
+                // A PDF to read or send: the mail and its parties, the page
+                // number alone at the foot (`MailPDF`), of the message the
+                // reader is on (`readerState.current`). `P` saves and opens
+                // it, as `T` and `M`.
+                Entry(key: "p", label: L("as PDF"), detail: L("%@: and open", "P"), detailStyle: .info,
+                      commandAction: { [weak self] in self?.exportPDF(.plain, open: true) }, altKey: "P") { [weak self] in
+                    self?.exportPDF(.plain)
+                },
+                // Last: the PDF to produce as evidence, with the technical
+                // information and the hashes of the original and of the
+                // attachments (`MailPDF.Kind.evidence`).
+                Entry(key: "i", label: L("as PDF with technical information"), detail: L("%@: and open", "I"),
+                      detailStyle: .info, commandAction: { [weak self] in self?.exportPDF(.evidence, open: true) },
+                      altKey: "I") { [weak self] in
+                    self?.exportPDF(.evidence)
+                },
             ]
         case .view:
             return [
@@ -1042,6 +1067,19 @@ final class GeekController {
                 Entry(key: "s", label: L("status bar: bottom, top, hidden")) { [weak self] in self?.cycleStatusBar() },
             ]
         }
+    }
+
+    /// `se`, `st`, `sm`: the file of the message the reader is on in the
+    /// open conversation, as `exportPDF`.
+    func export(_ format: String, open: Bool = false) {
+        model.export(format, open: open, current: readerState.current)
+    }
+
+    /// `sp`, `si`: the PDF of the message the reader is on in the open
+    /// conversation (set by `ctrl-k` / `ctrl-j` or a click on a header),
+    /// as `r` answers it; the latest when none was chosen.
+    func exportPDF(_ kind: MailPDF.Kind, open: Bool = false) {
+        model.exportPDF(kind, open: open, current: readerState.current)
     }
 
     private func cycleStatusBar() {

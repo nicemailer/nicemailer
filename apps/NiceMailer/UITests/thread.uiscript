@@ -70,3 +70,32 @@ key ctrl-j
 key ctrl-j
 expect flash ~ Last message of the conversation
 expect reader_text ~ ▾ Bob
+# sp / si: the PDF of the message the reader is on, so that a whole
+# conversation can be printed mail by mail. On Bob's (the latest): "Re
+# Chantier"; up to Alice's first mail: "Chantier", without "Re".
+key s
+key p
+expect flash ~ Re Chantier.pdf
+key ctrl-k
+key ctrl-k
+key ctrl-k
+expect reader_text ~ ▾ Alice · 30 oct. 11:00
+key s
+key i
+expect flash ~ Chantier.pdf
+expect flash !~ Re Chantier
+key s
+key p
+expect flash ~ Chantier (2).pdf
+expect flash !~ Re Chantier
+expect export_files = 3
+# The other rows of s take the same message: the clipboard and the .eml.
+key s
+key c
+expect pasteboard ~ Subject: Chantier
+expect pasteboard !~ Subject: Re:
+key s
+key e
+expect flash ~ Chantier.eml
+expect flash !~ Re Chantier
+expect export_files = 4

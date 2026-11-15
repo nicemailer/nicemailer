@@ -65,6 +65,7 @@ pub mod pool;
 mod queries;
 pub mod raw;
 pub mod reception;
+pub mod record;
 pub mod reindex;
 pub mod remote_images;
 pub mod screening;

@@ -63,6 +63,9 @@ pub mod method {
     /// The text of one message, each paragraph on one line, for the
     /// clipboard.
     pub const MESSAGE_TEXT: &str = "message_text";
+    /// Everything about one message read from its raw file, for printing
+    /// it as evidence (the PDF of `sp`).
+    pub const MESSAGE_RECORD: &str = "message_record";
     pub const GET_ATTACHMENT: &str = "get_attachment";
     pub const UNSUBSCRIBE: &str = "unsubscribe";
     /// Audit log, newest first (`tracabilite.md`).
@@ -1548,6 +1551,86 @@ pub struct MessageTextParams {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MessageTextResult {
     pub text: String,
+}
+
+/// Parameters of `message_record`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MessageRecordParams {
+    pub message_id: i64,
+}
+
+/// Result of `message_record`: one message as a piece of evidence
+/// (`ui.md`, menu `s`, "p as pdf"). Read from the raw message when the core
+/// has it (`raw_sha256` set): the names as written in this mail, every
+/// recipient, the `Date` header as written, the trace headers. Otherwise
+/// from the database, which the client says on the page.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MessageRecordView {
+    /// `Message-ID` header, without angle brackets.
+    pub message_id: Option<String>,
+    pub subject: String,
+    /// Usually one mailbox; several when the mail names several authors.
+    pub from: Vec<AddressView>,
+    /// `Sender` header: who sent the mail on behalf of `from`, if given.
+    pub sender: Option<AddressView>,
+    pub reply_to: Vec<AddressView>,
+    pub to: Vec<AddressView>,
+    pub cc: Vec<AddressView>,
+    /// Only known for mails the user sent (a received mail does not carry
+    /// its Bcc).
+    pub bcc: Vec<AddressView>,
+    /// `Date` header as written, with the sender's time zone
+    /// ("Tue, 23 Jun 2020 21:20:56 +0200").
+    pub date_header: Option<String>,
+    /// `Date` header, Unix seconds.
+    pub date_sent: Option<i64>,
+    /// When the server received the mail (IMAP INTERNALDATE), Unix seconds.
+    pub date_received: i64,
+    pub in_reply_to: Option<String>,
+    /// `References`, oldest first.
+    pub references: Vec<String>,
+    /// Account (`account.config_key`) and folder path holding the mail.
+    pub account: String,
+    pub folder: String,
+    /// Verdict of the sender's authentication: `pass`, `fail`, `none`,
+    /// `unknown` (`authentification-expediteur.md`).
+    pub auth_result: String,
+    /// Text body, paragraphs whole (`message_text`); `None` while the body
+    /// is not downloaded.
+    pub body: Option<String>,
+    pub attachments: Vec<RecordAttachmentView>,
+    /// Trace headers as written, one line each: Return-Path, Received
+    /// (newest hop first), Authentication-Results, DKIM-Signature…
+    pub headers: Vec<RecordHeaderView>,
+    /// Size of the raw message in bytes.
+    pub raw_size: Option<i64>,
+    /// SHA-256 of the raw message (the `.eml` of `se`), lowercase hex;
+    /// `None` when the core has no raw file for it.
+    pub raw_sha256: Option<String>,
+}
+
+/// An attachment of `MessageRecordView`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RecordAttachmentView {
+    /// IMAP part number ("2", "1.2").
+    pub part_id: String,
+    pub filename: Option<String>,
+    pub mime_type: String,
+    /// Decoded size in bytes.
+    pub size: i64,
+    /// An image shown inside the HTML body (`cid:`).
+    pub inline: bool,
+    /// SHA-256 of the decoded content, lowercase hex: the hash of the file
+    /// `get_attachment` gives. `None` without a raw file.
+    pub sha256: Option<String>,
+}
+
+/// A header field of `MessageRecordView.headers`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RecordHeaderView {
+    pub name: String,
+    /// Unfolded onto one line, cut beyond 4,000 characters.
+    pub value: String,
 }
 
 /// Parameters of `unsubscribe`.

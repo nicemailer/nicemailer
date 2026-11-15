@@ -396,6 +396,55 @@ struct MessageTextResult: Decodable {
     let text: String
 }
 
+/// Result of `message_record`: one mail as a piece of evidence, for the
+/// PDF of `sp` (`MailPDF`). Read by the core from the raw message when it
+/// has it (`rawSha256` set): the names as written in this mail, every
+/// recipient, the `Date` header as written, the trace headers.
+struct MessageRecord: Decodable {
+    let messageId: String?
+    let subject: String
+    let from: [AddressView]
+    let sender: AddressView?
+    let replyTo: [AddressView]
+    let to: [AddressView]
+    let cc: [AddressView]
+    let bcc: [AddressView]
+    /// `Date` header as written, with the sender's time zone.
+    let dateHeader: String?
+    let dateSent: Int?
+    let dateReceived: Int
+    let inReplyTo: String?
+    let references: [String]
+    let account: String
+    let folder: String
+    /// "pass", "fail", "none" or "unknown".
+    let authResult: String
+    /// Text body, paragraphs whole; nil while it is not downloaded.
+    let body: String?
+    let attachments: [RecordAttachment]
+    let headers: [RecordHeader]
+    let rawSize: Int?
+    /// SHA-256 of the raw message (the `.eml` of `se`), lowercase hex.
+    let rawSha256: String?
+}
+
+/// An attachment of `MessageRecord`, with the SHA-256 of its content.
+struct RecordAttachment: Decodable, Hashable {
+    let partId: String
+    let filename: String?
+    let mimeType: String
+    let size: Int
+    let inline: Bool
+    let sha256: String?
+}
+
+/// A trace header of `MessageRecord` (Received, DKIM-Signature…), on one
+/// line, as written.
+struct RecordHeader: Decodable, Hashable {
+    let name: String
+    let value: String
+}
+
 /// How to unsubscribe from a mailing list, as found by the core at
 /// reception.
 struct UnsubscribeView: Decodable, Hashable {

@@ -196,7 +196,7 @@ Actions apply to the **marked** mails if any (`J` / `K`), otherwise to the mail 
 | `*` | flag |
 | `/` | search everywhere: words anywhere, addresses included, in All Mail (see [Search](#search-)); Escape goes back |
 | `;` + key | go to a folder or a screen (see below) |
-| `s` + key | `sc` (first row) copies to the clipboard, for every marked conversation (or the one under the cursor) in the order of the list, the text of its latest mail: the headers of the text file (From, To, Cc, Date, Subject), then the body with **each paragraph on one line**, ready to paste into a document (see "Copying a mail" below); the status bar says “Devis toiture” copied to the clipboard, or how many mails. The other rows save to `~/Downloads`, for every marked conversation (or the one under the cursor): its latest mail with `se` .eml, `st` text, `sm` Markdown, and `sT` / `sM` to save then open the file in front, in the app macOS gives its type (TextEdit, Obsidian…; also ⌘-Return on the highlighted row; the row says "T: and open" on the right, muted; beyond 5 mails the files are saved but not opened, and the status bar says so); its attachments with `sa` all of them, `sg` all but the graphics (images: logos, signatures, photos). For attachments every message counts, and a file attached again to a reply is saved once. No file is overwritten |
+| `s` + key | `sc` (first row) copies to the clipboard, for every marked conversation (or the one under the cursor) in the order of the list, the text of its latest mail: the headers of the text file (From, To, Cc, Date, Subject), then the body with **each paragraph on one line**, ready to paste into a document (see "Copying a mail" below); the status bar says “Devis toiture” copied to the clipboard, or how many mails. The other rows save to `~/Downloads`, for every marked conversation (or the one under the cursor): one mail with `se` .eml, `st` text, `sm` Markdown, `sp` PDF, `si` PDF with the technical information (see "Saving a mail as PDF" below), and `sT` / `sM` / `sP` / `sI` to save then open the file in front, in the app macOS gives its type (TextEdit, Obsidian…; also ⌘-Return on the highlighted row; the row says "T: and open" on the right, muted; beyond 5 mails the files are saved but not opened, and the status bar says so); its attachments with `sa` all of them, `sg` all but the graphics (images: logos, signatures, photos). For attachments every message counts, unless a message was chosen in the conversation shown (then only its files), and a file attached again to a reply is saved once. Which mail: in the conversation shown, **the message the reader is on**, reached with `ctrl-k` / `ctrl-j` or a click on its header, as for `r`; the latest when none was chosen, and in every other marked conversation (`AppModel.exportMessage`). A whole conversation is exported mail by mail: `ctrl-k` up to the first message, `sp` (or `se`, `sc`…), `ctrl-j`, `sp`… No file is overwritten |
 | `v` + key | display: `v1` `v2` `v3` columns, `vc` sort by reception, `vm` sort by modification, `vh` text / HTML, `vi` remote images, `vs` status bar |
 | Return | with one column (`v1`), read the mail in the whole window and mark it read; Escape goes back to the list |
 | Space, shift-Space | with one column, on the list: Space reads the mail, as Return; with the mail on screen, scroll it a page down / up, as text or as HTML |
@@ -213,6 +213,28 @@ After a prefix (`;`, `m`, `s`, `v`), a menu lists the possible second keys, as i
 ### Copying a mail
 
 `sc` asks the core for the text of the mail (`message_text`, `docs/core-library.md`) and puts it on the clipboard. A text body often holds line breaks its writer never typed: the sender's mail app cut each paragraph every 72 characters or so (format=flowed, or plain hard wrapping), and HTML conversions pile up empty lines. Pasted as is into a document, each paragraph would become a column of short lines. The core joins these pieces back, so that a paragraph is one line, and leaves one empty line between paragraphs. What the writer did mean stays as written: quotes (`>`, each depth on its own), the signature after `-- `, list items, indented lines (code, addresses), tables (tabs), short lines (a greeting, a name), and blocks where every line ends a sentence. Where it cannot tell, it keeps the line break: a line too many is easier to fix than two paragraphs glued together.
+
+### Saving a mail as PDF
+
+Two PDFs, of one mail of every marked conversation (or of the one under the cursor): in the conversation shown, the message the reader is on, as for every row of `s` (see `s` + key above). The capital saves, then opens the file in front (Preview), as `sT` does. The app asks the core for the record of the mail (`message_record`, [core-library.md](core-library.md), "Saving a message"), read from the raw message the server delivered, and lays it out itself (`MailPDF.swift`), since only it has the text layout and fonts of macOS. Both are A4, set in Helvetica, and share their first part:
+
+- **the subject in bold**, as the title;
+- a block with **every party**, one address per line, the name as written in this very mail in bold and the address beside it: the author(s), `Sent by` (the `Sender` header) and `Reply-To` when they differ from the author, `To`, `Cc`, `Bcc` (only known for a mail the user sent); then **sent on** (the `Date` header) and **received on** (the server's reception date), both to the second with the time zone, and the number and size of the attachments; a thin rule closes it;
+- **the body**, whole, quotes (muted) and signature included; only the line breaks the sender's mail app inserted every 72 characters are removed (`message_text`), never a word;
+- **the attachments**: name, type and exact size.
+
+**`sp` (`P`), as PDF**, for every day: that is all, and the foot of each page holds only "Page n / N", centred.
+
+**`si` (`I`), as PDF with technical information**, the last row of the menu, to produce in a dispute or before a court, adds:
+
+- the **SHA-256 of each attachment**;
+- **technical information**: Message-ID, In-Reply-To, References, the `Date` header as written (with the sender's time zone), the size and the **SHA-256 of the original message**, then the trace headers as written (`Return-Path`, every `Received`, `Authentication-Results`, `DKIM-Signature`, `ARC-*`, `X-Mailer`), and a sentence that says how to check the PDF against the original `.eml`. The account and folder, the app's authentication verdict and the date of the export are left out: they describe the user's mailbox, not the mail;
+- **at the foot of every page**: "Page n / N" and the SHA-256 of the original message: a page taken out of the document still says which mail it belongs to, and that pages are missing;
+- the hash in the document information of the PDF.
+
+This PDF is a faithful, readable copy; the proof itself is the original message, with the DKIM signature of the sending domain. Save it too with `se`: `shasum -a 256 <file>.eml` gives the hash printed in the PDF. A mail without raw file (fake mail of `make seed`, or a body not downloaded yet) is printed from the database: the PDF says, in red, that it cannot be checked against the original.
+
+In both, a heading or a label never ends a page without what follows it. The identifiers and hashes are set in Menlo, where `0` and `O`, `1` and `l` differ. The colours are fixed (black on white even in dark mode), and characters Helvetica lacks (Chinese, emoji) are drawn with a fallback font, never dropped. The labels and dates follow the app's language. The file is named as the other exports, `<date> <subject>.pdf`, and never overwrites one (` (2)`…).
 
 ### Mouse
 
@@ -283,7 +305,6 @@ This holds while a Quarantine folder is listed (of an account, or of "all"). In 
 ## Not available yet
 
 - In the "edition" context: signatures, choosing the sending address ([sending.md](sending.md)).
-- Saving as PDF (`sp`).
 - A dark/light override independent of macOS (the palette follows the system appearance).
 
 ## Implementation notes

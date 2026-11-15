@@ -274,6 +274,10 @@ enum Fixture {
             return ["group_id": 1, "addr": "sender1@example.org", "changed": true]
         case "export_message":
             return ["path": "/tmp/x.eml"]
+        case "message_record":
+            // Message ids are thread ids × 10 in the fixture.
+            let id = params["message_id"] as? Int ?? 0
+            return FakeCore.record(id)
         case "message_text":
             // Message ids are thread ids × 10 in the fixture.
             let id = params["message_id"] as? Int ?? 0
@@ -314,4 +318,27 @@ func eventually(_ condition: () -> Bool) async -> Bool {
         try? await Task.sleep(for: .milliseconds(10))
     }
     return condition()
+}
+
+extension FakeCore {
+    /// A `message_record` answer for message `id` (thread `id / 10`), as
+    /// the core makes it from a raw message: one author, two recipients,
+    /// a copy, an attachment and two trace headers.
+    static func record(_ id: Int) -> [String: Any] {
+        [
+            "message_id": "\(id)@example.org", "subject": "Subject \(id / 10)",
+            "from": [["addr": "sender\(id / 10)@example.org", "name": "Sender \(id / 10)"]],
+            "sender": NSNull(), "reply_to": [[String: Any]](),
+            "to": [["addr": "me@example.org", "name": "Me"], ["addr": "bob@example.org", "name": NSNull()]],
+            "cc": [["addr": "carol@example.org", "name": "Carol"]], "bcc": [[String: Any]](),
+            "date_header": "Tue, 23 Jun 2020 21:20:56 +0200", "date_sent": 1_592_940_056, "date_received": 1_592_940_060,
+            "in_reply_to": NSNull(), "references": [String](), "account": "perso", "folder": "INBOX",
+            "auth_result": "pass", "body": "Hello,\n\nParagraph of \(id).",
+            "attachments": [["part_id": "2", "filename": "devis.pdf", "mime_type": "application/pdf", "size": 2048,
+                             "inline": false, "sha256": String(repeating: "ab", count: 32)]],
+            "headers": [["name": "Received", "value": "from mx.example.org by mx.me.org"],
+                        ["name": "DKIM-Signature", "value": "v=1; d=example.org; s=sel; b=xyz"]],
+            "raw_size": 4096, "raw_sha256": String(repeating: "0f", count: 32),
+        ]
+    }
 }

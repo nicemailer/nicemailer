@@ -254,5 +254,29 @@ key s
 key e
 expect export_files = 20
 expect flash ~ 2 mails saved
+# sp: a PDF of the latest mail of every marked conversation, read by the
+# core from the raw message; sP saves them again, never over the first
+# ones, and opens them.
+key s
+key p
+expect export_files = 22
+expect flash ~ 2 mails saved
+key s
+key P
+expect export_files = 24
+expect opened_file ~ (2).pdf
+expect flash ~ opened
+# si, the last row of the menu: the PDF with the technical information
+# (the evidence); sI opens it too.
+key s
+expect menu_rows ~ i as PDF with technical information
+key i
+expect export_files = 26
+expect flash ~ 2 mails saved
+key s
+key I
+expect export_files = 28
+expect opened_file ~ (4).pdf
+expect flash ~ opened
 key esc
 expect marked_count = 0

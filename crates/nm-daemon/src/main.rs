@@ -58,7 +58,7 @@ use std::sync::{Arc, Mutex};
 use anyhow::Context;
 use clap::Parser;
 use nm_api::{
-    AttachmentFileView, CommandResult, DEFAULT_LIMIT, Event, ExportMessageParams, ExportResult, FolderList, MessageTextParams, MessageTextResult,
+    AttachmentFileView, CommandResult, DEFAULT_LIMIT, Event, ExportMessageParams, ExportResult, FolderList, MessageRecordParams, MessageTextParams, MessageTextResult,
     GetAttachmentParams, GetThreadParams, LocateMessageParams, UnsubscribeParams, UnsubscribeResult,
     GroupMemberResult, HelloParams, HelloResult, ImportMboxParams, ImportStatus, Items, ListContactsParams,
     ListHistoryParams, ListTagsParams, ListThreadsParams, MAX_LIMIT, MoveThreadParams,
@@ -1380,6 +1380,15 @@ async fn call(core: &Arc<Core>, source: Source, req: Request) -> Result<Value, R
             let p: MessageTextParams = params(req.params)?;
             let text = with_reader(core, move |s| s.message_text(p.message_id)).await?;
             to_value(MessageTextResult { text })
+        }
+        method::MESSAGE_RECORD => {
+            // `ui.md`, menu `s`, "p as pdf": the client lays the record out.
+            // `repaired`: a damaged raw file is set aside and downloaded
+            // again, as for an export.
+            let p: MessageRecordParams = params(req.params)?;
+            let raw = core.raw.clone();
+            let record = sync::repaired(core, with_reader(core, move |s| s.message_record(&raw, p.message_id)).await).await?;
+            to_value(record)
         }
         method::UNSUBSCRIBE => {
             // `ui.md`, "Désabonnement". With one click (RFC 8058), the core

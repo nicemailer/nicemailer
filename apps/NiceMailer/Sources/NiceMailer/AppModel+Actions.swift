@@ -305,19 +305,22 @@ extension AppModel {
         return out
     }
 
-    /// `se`, `st`, `sm`: saves the latest message of each target thread
-    /// (the marked ones, or the one under the cursor) to `exportDirectory`,
-    /// by default ~/Downloads (chosen by the core). One file: its path in
-    /// the status bar; several: how many. `sT`, `sM` (`open`): then opens
-    /// the files in front, 5 at most (`maxOpened`).
-    func export(_ format: String, open: Bool = false) {
+    /// `se`, `st`, `sm`: saves one message of each target thread (the
+    /// marked ones, or the one under the cursor) to `exportDirectory`, by
+    /// default ~/Downloads (chosen by the core): in the conversation shown,
+    /// the one the reader is on (`current`, `exportMessage`), elsewhere the
+    /// latest. One file: its path in the status bar; several: how many.
+    /// `sT`, `sM` (`open`): then opens the files in front, 5 at most
+    /// (`maxOpened`).
+    func export(_ format: String, open: Bool = false, current: Int? = nil) {
         guard let client = core, !targetThreads.isEmpty else { return }
         let dir = exportDirectory
+        let shown = openThread?.id
         Task {
             var paths: [String] = []
             var firstError: Error?
             for thread in await targetThreadViews(client: client) {
-                guard let m = thread.messages.last else { continue }
+                guard let m = Self.exportMessage(thread, current: thread.id == shown ? current : nil) else { continue }
                 var params: [String: Any] = ["message_id": m.id, "format": format]
                 if let dir { params["dir"] = dir }
                 do {
@@ -325,52 +328,115 @@ extension AppModel {
                     paths.append(r.path)
                 } catch { firstError = firstError ?? error }
             }
-            // Opened in front, each in the app macOS gives its type; not
-            // beyond `maxOpened`, which would bury the screen in windows.
-            let opening = open && paths.count <= Self.maxOpened
-            if opening {
-                for path in paths { openFile(URL(fileURLWithPath: path)) }
-            }
-            if paths.count == 1 {
-                flash = opening ? L("Saved and opened: %@", paths[0]) : L("Saved: %@", paths[0])
-            } else if let first = paths.first {
-                let place = FileManager.default.displayName(atPath: (first as NSString).deletingLastPathComponent)
-                if opening {
-                    flash = L("%lld mails saved to %@ and opened", paths.count, place)
-                } else if open {
-                    flash = L("%lld mails saved to %@, not opened: more than %lld", paths.count, place, Self.maxOpened)
-                } else {
-                    flash = L("%lld mails saved to %@", paths.count, place)
-                }
-            } else if let firstError {
-                report(firstError)
-            }
+            saved(paths, open: open, firstError: firstError)
         }
     }
 
-    /// Files `export(_:open:)` opens at most: beyond, they are only saved.
+    /// `sp`, `sP`, `si`, `sI` (`ui.md`, menu `s`): saves one message of
+    /// each target thread as a PDF (`MailPDF`), plain or as evidence with
+    /// its technical information (`kind`), to `saveDirectory`, never
+    /// overwriting a file. The message is the one the reader is on in the
+    /// conversation shown (`current`, `exportMessage`), so that a whole
+    /// conversation can be printed mail by mail (`ctrl-k` / `ctrl-j`, then
+    /// `sp`); the latest of every other target thread. The core gives the
+    /// record of the mail, read from its raw message (`message_record`);
+    /// the app lays it out, since only it has the text layout and fonts of
+    /// macOS. `open`: then opens the files in front, as `sT` does.
+    func exportPDF(_ kind: MailPDF.Kind, open: Bool = false, current: Int? = nil) {
+        guard let client = core, !targetThreads.isEmpty else { return }
+        let dir = saveDirectory
+        let shown = openThread?.id
+        Task {
+            var paths: [String] = []
+            var firstError: Error?
+            for thread in await targetThreadViews(client: client) {
+                guard let m = Self.exportMessage(thread, current: thread.id == shown ? current : nil) else { continue }
+                do {
+                    let record: MessageRecord = try await client.call("message_record", ["message_id": m.id])
+                    // Laid out on the main actor: TextKit 1 objects belong
+                    // to one thread, and a mail takes milliseconds.
+                    let data = MailPDF.render(record, kind: kind)
+                    let name = MailPDF.fileName(subject: record.subject, received: record.dateReceived)
+                    // Written off the main thread: a long mail with many
+                    // pages is a few MB.
+                    let url = try await Task.detached { try MailPDF.write(data, in: dir, name: name) }.value
+                    paths.append(url.path)
+                } catch { firstError = firstError ?? error }
+            }
+            saved(paths, open: open, firstError: firstError)
+        }
+    }
+
+    /// The message of `thread` an export of the menu `s` takes (`sc`, `se`,
+    /// `st`, `sm`, `sp`, `si`): `current`, the one the reader is on, when it
+    /// belongs to the thread; else the latest, the one the reader shows
+    /// unfolded at the bottom. A whole conversation is thus exported mail by
+    /// mail with `ctrl-k` / `ctrl-j`. A pure function, tested alone.
+    nonisolated static func exportMessage(_ thread: ThreadView, current: Int?) -> MessageView? {
+        if let current, let m = thread.messages.first(where: { $0.id == current }) { return m }
+        return thread.messages.last
+    }
+
+    /// The messages of `thread` whose attachments `sa` / `sg` save: the one
+    /// the reader is on when one was chosen (`current`); otherwise every
+    /// message, the files of the whole conversation, as before a message
+    /// is chosen there is no single mail the user looks at.
+    nonisolated static func attachmentMessages(_ thread: ThreadView, current: Int?) -> [MessageView] {
+        if let current, let m = thread.messages.first(where: { $0.id == current }) { return [m] }
+        return thread.messages
+    }
+
+    /// What the status bar says once exports are written, and the files
+    /// opened when asked: one file, its path; several, how many. Opened in
+    /// front, each in the app macOS gives its type; not beyond
+    /// `maxOpened`, which would bury the screen in windows.
+    private func saved(_ paths: [String], open: Bool, firstError: Error?) {
+        let opening = open && paths.count <= Self.maxOpened
+        if opening {
+            for path in paths { openFile(URL(fileURLWithPath: path)) }
+        }
+        if paths.count == 1 {
+            flash = opening ? L("Saved and opened: %@", paths[0]) : L("Saved: %@", paths[0])
+        } else if let first = paths.first {
+            let place = FileManager.default.displayName(atPath: (first as NSString).deletingLastPathComponent)
+            if opening {
+                flash = L("%lld mails saved to %@ and opened", paths.count, place)
+            } else if open {
+                flash = L("%lld mails saved to %@, not opened: more than %lld", paths.count, place, Self.maxOpened)
+            } else {
+                flash = L("%lld mails saved to %@", paths.count, place)
+            }
+        } else if let firstError {
+            report(firstError)
+        }
+    }
+
+    /// Files `export(_:open:)` and `exportPDF(_:open:)` open at most: beyond,
+    /// they are only saved.
     static let maxOpened = 5
 
-    /// `sc` (`ui.md`, menu `s`): puts the text of the latest mail of every
-    /// target thread (the marked ones, or the one under the cursor) on
-    /// `pasteboard`, in the order of the list. The core gives each text
+    /// `sc` (`ui.md`, menu `s`): puts the text of one mail of every target
+    /// thread (the marked ones, or the one under the cursor) on
+    /// `pasteboard`, in the order of the list: in the conversation shown,
+    /// the one the reader is on (`current`), elsewhere the latest. The core gives each text
     /// with its paragraphs joined back, one line each (`message_text`):
     /// pasted into a document, a paragraph stays a paragraph, without the
     /// line breaks the sender's mail app put every 72 characters. The
     /// pasteboard is the controller's: the general one, a private one in
     /// tests and UI scripts.
-    func copyText(to pasteboard: NSPasteboard) {
+    func copyText(to pasteboard: NSPasteboard, current: Int? = nil) {
         guard let client = core, !targetThreads.isEmpty else { return }
+        let shown = openThread?.id
         Task {
             var texts: [String] = []
             var subjects: [String] = []
             var firstError: Error?
             for thread in await targetThreadViews(client: client) {
-                guard let m = thread.messages.last else { continue }
+                guard let m = Self.exportMessage(thread, current: thread.id == shown ? current : nil) else { continue }
                 do {
                     let r: MessageTextResult = try await client.call("message_text", ["message_id": m.id])
                     texts.append(r.text)
-                    subjects.append(thread.subject)
+                    subjects.append(m.subject)
                 } catch { firstError = firstError ?? error }
             }
             guard !texts.isEmpty else {
@@ -532,16 +598,20 @@ extension AppModel {
 
     /// `sa` / `sg` (`ui.md`, menu `s`): saves the attachments of the target
     /// threads, the marked ones or the one under the cursor, every message
-    /// of each thread; `sg` leaves the graphics out (logos, signature
+    /// of each thread, or in the conversation shown only the message the
+    /// reader is on when one was chosen (`current`, `attachmentMessages`);
+    /// `sg` leaves the graphics out (logos, signature
     /// images, photos: `AttachmentDisplay.isGraphic`). The threads that are
     /// not open are read from the core. Files the core cannot give (no raw
     /// message) are counted, not fatal.
-    func saveAttachmentsOfTargets(includingGraphics: Bool) {
+    func saveAttachmentsOfTargets(includingGraphics: Bool, current: Int? = nil) {
         guard let client = core, !targetThreads.isEmpty else { return }
+        let shown = openThread?.id
         Task {
             var files: [AttachmentView] = []
             for thread in await targetThreadViews(client: client) {
-                files += AttachmentDisplay.toSave(thread.messages.flatMap(\.attachments),
+                let messages = Self.attachmentMessages(thread, current: thread.id == shown ? current : nil)
+                files += AttachmentDisplay.toSave(messages.flatMap(\.attachments),
                                                   includingGraphics: includingGraphics)
             }
             guard !files.isEmpty else {
