@@ -47,8 +47,14 @@ enum CoreAgent {
     static func register() -> State {
         guard isBundled, !UIScript.isActive else { return .notBundled }
         let service = SMAppService.agent(plistName: plistName)
-        log.notice("agent status \(service.status.rawValue, privacy: .public)")
-        switch service.status {
+        // Read once: each read of `status` asks the system (a message to
+        // another process), and the second read here cost about a second
+        // of the app's launch, timed by the log of `connect`.
+        let asked = ContinuousClock.now
+        let status = service.status
+        let took = StartupTimings.milliseconds(ContinuousClock.now - asked)
+        log.notice("agent status \(status.rawValue, privacy: .public), read in \(took) ms")
+        switch status {
         case .enabled:
             return .enabled
         case .requiresApproval:
@@ -105,6 +111,10 @@ enum CoreAgent {
     /// Runs `launchctl`; its exit status (-1 if it could not run).
     @discardableResult
     private static func launchctl(_ arguments: [String]) -> Int32 {
+        let started = ContinuousClock.now
+        defer {
+            log.notice("launchctl \(arguments.first ?? "", privacy: .public) took \(StartupTimings.milliseconds(ContinuousClock.now - started)) ms")
+        }
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/bin/launchctl")
         p.arguments = arguments
