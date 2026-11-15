@@ -101,12 +101,13 @@ Les mails de l'adresse sont comptés par nature (`address.sender_*`), les répon
 `message.sender_kind` vaut :
 
 - `person` pour un mail de l'utilisateur (dossiers Sent et Drafts) : c'est une personne qui l'a écrit, et une conversation où l'utilisateur a répondu est une conversation entre personnes ;
+- le verdict forcé de son adresse, quand l'utilisateur l'a forcé : la décision porte sur l'expéditeur, tous ses mails reçus la reflètent, mails automatiques compris ;
 - `robot` pour un mail automatique lui-même (masse, relais de plateforme, réponse automatique), quelle que soit son adresse ;
-- sinon le verdict de son adresse.
+- sinon le verdict calculé de son adresse.
 
 Un mail sans expéditeur lisible n'a pas de verdict (`NULL`) : le filtre le range avec les robots.
 
-**Adresses mixtes.** 163 adresses classées personne ont au moins un mail de masse (1 643 mails), par exemple une galerie qui écrit à l'utilisateur et lui envoie aussi sa lettre d'information depuis la même adresse. Le filtre « humain » montre ses mails personnels et pas sa newsletter.
+**Adresses mixtes.** 163 adresses classées personne ont au moins un mail de masse (1 643 mails), par exemple une galerie qui écrit à l'utilisateur et lui envoie aussi sa lettre d'information depuis la même adresse. Le filtre « humain » montre ses mails personnels et pas sa newsletter, tant que l'adresse n'est pas forcée.
 
 Quand le verdict d'une adresse change (calcul ou choix de l'utilisateur), tous ses mails sont mis à jour dans la même transaction, par l'index `idx_message_from`.
 
@@ -134,6 +135,10 @@ Quand la Quarantine est listée, le nom de l'expéditeur de chaque ligne est pr�
 ## 9. Écran Contacts
 
 Chaque adresse affiche son verdict (« humain » ou « robot »), marqué quand il est forcé. La touche `o` (*origine*) ouvre le choix : `h` humain, `r` robot, `-` automatique (le calcul reprend la main). Le choix est journalisé (`audit_log`, action `sender_kind`) et annulable.
+
+Le choix met à jour tous les mails déjà reçus de l'adresse, dans la même transaction, pour refléter la nouvelle décision : forcer « humain » range aussi ses newsletters et ses réponses automatiques avec les humains, forcer « robot » range ses mails personnels avec les robots. C'est vrai même quand le verdict forcé est celui que le calcul donnait déjà : une adresse mixte forcée « humain » n'a plus de mails robots. Les mails reçus ensuite suivent le même choix. Revenir à « automatique » rend à chaque mail le verdict de la section 6 (ses mails automatiques redeviennent robots). Les mails de l'utilisateur (Sent, Drafts) restent `person`.
+
+Pourquoi : l'usage principal du choix est de corriger un faux robot, par exemple quelqu'un qui écrit depuis un CRM ou une plateforme d'envoi. Ses mails portent des indices de masse ; sans cette mise à jour, l'adresse serait marquée « humain » mais ses mails resteraient des robots, et le filtre « humain » ne les montrerait pas. Les adresses mixtes (section 6) gardent leur tri mail par mail tant qu'elles ne sont pas forcées.
 
 ## 10. Données
 

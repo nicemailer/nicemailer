@@ -46,7 +46,7 @@ Each received mail is counted on its sender's address by nature (`address.sender
 
 ## Verdict of a mail and of a conversation
 
-`message.sender_kind` is `person` for the user's own mails (Sent, Drafts), `robot` for a mail that is automatic itself (bulk, platform, automatic reply) whatever its address, else the verdict of its address. A shop that writes to the user and sends its newsletter from the same address is a person, and its newsletters are robots.
+`message.sender_kind` is `person` for the user's own mails (Sent, Drafts); the verdict of its address when the user forced it, for every received mail, automatic ones included; else `robot` for a mail that is automatic itself (bulk, platform, automatic reply) whatever its address, else the computed verdict of its address. A shop that writes to the user and sends its newsletter from the same address is a person, and its newsletters are robots, until the user forces the address.
 
 `thread.has_person` is 1 when a mail of the conversation, in any folder, is `person`. It is kept by `refresh_thread` like the other aggregates of a thread, and by `senders.rs` where mails change kind without it.
 
@@ -63,6 +63,8 @@ Each list row carries `correspondent_kind` (nm-api `ThreadSummary`): the `messag
 ## Contacts
 
 The Contacts screen shows the origin of each address, "human" or "robot", followed by "*" when the user chose it. `o` asks: `h` human, `r` robot, `-` automatic (the computation takes over again). The core method is `set_sender_kind` (`address_id`, `kind`: `person`, `robot` or absent); the choice is journaled (`audit_log`, action `sender_kind`) and undone by `undo` like a screening decision. It is not yet synchronized between Macs.
+
+The choice rewrites every mail already received from the address, in the same transaction, so that they all show the new decision (`force_sender_kind` in `senders.rs`): forced human, its newsletters and automatic replies become people's mails too; forced robot, its personal mails become robots. This is done even when the forced verdict equals the computed one (a mixed address forced human loses its robot mails). The mails received later follow the choice (`sender_kind::message_kind`, `forced`). Back to automatic, each mail gets the rule above again. In SQL, `PROPAGATE` tests the clues against a mask: `MACHINE` for a computed verdict, 0 for a forced one, so that one statement serves both and writes only the rows that change. No event is sent for these mails; the app that asked reloads its list (`AppModel.setSenderKind`).
 
 ## Catch-up of stored mail
 
@@ -91,7 +93,7 @@ The fake mailbox (`nicemailer seed`) has no headers to read: its mails get the c
 ## Tests
 
 - `crates/nm-store/src/sender_kind.rs` (unit): every clue and trap, the ten rules in order.
-- `crates/nm-store/tests/senders.rs`: verdicts at insertion, a mail written to an address, a mixed address, a discussion list, automatic replies, the filter (and the user's reply in Sent), forcing and undo, contacts, and the catch-up, which must give exactly what the insertion gives.
+- `crates/nm-store/tests/senders.rs`: verdicts at insertion, a mail written to an address, a mixed address, a discussion list, automatic replies, the filter (and the user's reply in Sent), forcing and undo (every received mail follows a forced verdict, automatic ones included, and a mixed address forced to its computed verdict), contacts, and the catch-up, which must give exactly what the insertion gives.
 - `crates/nm-store/src/raw.rs`: `read_header`. `crates/nm-store/src/seed.rs`: the fake mailbox is classified. `crates/nm-daemon/tests/workflow_rpc.rs`: `set_sender_kind` through the socket.
 - `crates/nm-store/tests/correspondent.rs` and the unit tests of `queries.rs`: `correspondent_kind` of a list row, the kind of the mail that names the correspondent.
 - App: `AttributesTests`, `GeekControllerTests` (the selector), `WorkflowTests` (`o` on Contacts, which reloads the list), `QuarantineTests` and `SenderColumnTests` (the icon of Quarantine), and the scenarios `UITests/senders.uiscript` and `UITests/quarantine.uiscript`.
