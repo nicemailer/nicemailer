@@ -645,10 +645,7 @@ final class AppModel {
             // Listen to events in a separate task, which runs as long as the
             // connection lives, while this function goes on.
             Task { await listen(c) }
-            watchAddressBook()
-            await loadUISettings()
-            await reloadAll()
-            openPendingDeepLink()
+            await startSession()
         } catch {
             // A core upgrading the mailbox does not answer yet: say so and
             // wait for it, then connect.
@@ -1601,9 +1598,25 @@ final class AppModel {
         connection = nil
         client = core
         status = .connected(coreVersion: "test")
+        await startSession()
+    }
+
+    /// What follows the connection (`connect`, and `attach` in the tests):
+    /// the settings, the folders and the first list, then a deep link
+    /// waiting for them.
+    ///
+    /// The settings of `[ui]` and the state of the AI do not decide what
+    /// the first list shows: they are asked at the same time as it, not
+    /// before it, which cost the launch two round trips to a core that has
+    /// just started.
+    private func startSession() async {
         watchAddressBook()
-        await refreshAIEnabled()
+        // Swift note: `async let` starts the call at once, in a child task;
+        // `await settings` waits for it where its result is needed (here,
+        // only to finish before this function returns).
+        async let settings: Void = loadUISettings()
         await reloadAll()
+        await settings
         openPendingDeepLink()
     }
 

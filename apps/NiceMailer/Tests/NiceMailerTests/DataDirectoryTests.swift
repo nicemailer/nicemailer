@@ -73,9 +73,10 @@ struct WindowChromeTests {
             method == "config_status" ? ["ui": ["title_bar": "shown"]] : Fixture.answer(method, params)
         }
         let model = AppModel()
-        await model.attach(core)
+        // Hidden by default, until the core says otherwise.
         #expect(model.titleBarHidden)
-        await model.loadUISettings()
+        // The session reads the settings with the first list.
+        await model.attach(core)
         #expect(!model.titleBarHidden)
     }
 }

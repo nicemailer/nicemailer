@@ -52,4 +52,26 @@ struct StartupTests {
         #expect(await eventually { model.startupPhase == .ready })
         #expect(model.startupTimings?.rows == 0)
     }
+
+    /// The settings and the state of the AI, slow to come, do not hold the
+    /// first list back: they are asked at the same time. Checked by order,
+    /// not by a duration, which a busy machine would make fail: the list is
+    /// there while the settings are still on their way (2 s each, when
+    /// `eventually` gives up after 1 s).
+    @Test func slowSettingsDoNotHoldTheFirstListBack() async {
+        let core = FakeCore(handler: Fixture.answer)
+        core.delays["config_status"] = .seconds(2)
+        core.delays["ai_status"] = .seconds(2)
+        let model = AppModel()
+        var sessionDone = false
+        let session = Task {
+            await model.attach(core)
+            sessionDone = true
+        }
+        #expect(await eventually { model.threads.count == 8 })
+        #expect(!sessionDone)
+        await session.value
+        #expect(core.calls("config_status").count == 1)
+        #expect(core.calls("ai_status").count == 1)
+    }
 }

@@ -74,6 +74,8 @@ An app without its CLI (`swift run`) uses the folder unchecked, as before; `NICE
 
 Until the first list is shown, the list and the status bar say what is happening instead of "No mail": "Connecting to the core…", then "Starting the core…" when no core answered and launchd is starting it, then "Loading the mail…" once connected (`AppModel.StartupPhase`).
 
+Once connected, the app asks for the folders and the first list at once; the settings of `[ui]` and the state of the AI are asked at the same time, not before (`AppModel.startSession`).
+
 Both sides time their part, so that a slow launch can be measured on the Mac where it happens:
 
 - the core, in `core.log`, once its socket is bound: `startup: socket ready after 1840 ms (store 1210, readers 4, settings 35, recovery 580, socket 11)` (the database opened, the read connections, the settings and accounts, the actions and drafts taken up again, the socket);
