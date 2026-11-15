@@ -893,6 +893,7 @@ impl Store {
                     // Filled by the second query below.
                     to: vec![],
                     cc: vec![],
+                    reply_to: vec![],
                     date_sent: r.get(6)?,
                     date_received: r.get(7)?,
                     body_text: r.get(8)?,
@@ -923,7 +924,7 @@ impl Store {
         let mut addr_stmt = self.conn.prepare_cached(
             "SELECT ma.role, a.addr, a.name FROM message_address ma
                JOIN address a ON a.id = ma.address_id
-              WHERE ma.message_id = ?1 AND ma.role IN ('to', 'cc')
+              WHERE ma.message_id = ?1 AND ma.role IN ('to', 'cc', 'reply_to')
               ORDER BY ma.role, ma.position",
         )?;
         // `&mut messages` iterates with mutable references, so each `m` can
@@ -933,7 +934,11 @@ impl Store {
             while let Some(r) = rows.next()? {
                 let role: String = r.get(0)?;
                 let view = AddressView { addr: r.get(1)?, name: r.get(2)? };
-                if role == "to" { m.to.push(view) } else { m.cc.push(view) }
+                match role.as_str() {
+                    "to" => m.to.push(view),
+                    "cc" => m.cc.push(view),
+                    _ => m.reply_to.push(view),
+                }
             }
         }
         // Attachments of the whole thread in one query, then dealt out to

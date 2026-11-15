@@ -115,6 +115,33 @@ mod tests {
     use crate::answer;
 
     #[test]
+    fn the_mail_replied_to_and_the_user_are_sections() {
+        let m = Mail {
+            from: "Alice <alice@a.example>".into(),
+            date: "Tue, 23 Jun 2020 19:20:56 +0200".into(),
+            subject: "Devis".into(),
+            text: "Tu viens jeudi ?".into(),
+            ..Default::default()
+        };
+        assert_eq!(
+            replied(Some(&m)),
+            "<replied>\nFrom: Alice <alice@a.example>\nDate: Tue, 23 Jun 2020 19:20:56 +0200\nSubject: Devis\n\nTu viens jeudi ?\n</replied>"
+        );
+        assert_eq!(replied(None), "<replied>\n(none: this is a new mail, not a reply)\n</replied>");
+        let long = Mail { text: "x".repeat(MAX_REPLIED_CHARS + 5), ..m };
+        assert!(replied(Some(&long)).ends_with("[…]\n</replied>"));
+        assert_eq!(draft_identity("Me <me@x.fr>", false), "<user>\nThe user writes from: Me <me@x.fr>\n</user>");
+        assert!(draft_identity("Me <me@x.fr>", true).contains("without signing"));
+    }
+
+    #[test]
+    fn an_attachment_comes_with_its_name_and_is_cut() {
+        assert_eq!(attachment_text("devis.pdf", "pdf", "Total : 12 €"), "<attachment>\nFile: devis.pdf (pdf)\n\nTotal : 12 €\n</attachment>");
+        let long = attachment_text("a.txt", "text", &"é".repeat(MAX_ATTACHMENT_CHARS + 1));
+        assert!(long.ends_with("[…]\n</attachment>"), "the model is told it is only the start");
+    }
+
+    #[test]
     fn a_passage_comes_with_its_draft_marked() {
         let body = "Bonjour Paul,\n\nJe viens jeudi.\n\nÀ bientôt";
         let start = body.find("viens").unwrap();
@@ -186,6 +213,8 @@ pub struct Mail {
     pub from: String,
     pub to: Vec<String>,
     pub cc: Vec<String>,
+    /// `Reply-To`, when the sender gives one: where a reply would go.
+    pub reply_to: Vec<String>,
     /// As the reader shows it, in the app's time zone.
     pub date: String,
     pub subject: String,
@@ -222,6 +251,9 @@ pub fn message_text(m: &Mail) -> String {
 /// `message.headers`: From, To, Cc, Date, Subject, the files attached.
 pub fn message_headers(m: &Mail) -> String {
     let mut lines = vec![format!("From: {}", m.from)];
+    if !m.reply_to.is_empty() {
+        lines.push(format!("Reply-To: {}", m.reply_to.join(", ")));
+    }
     if !m.to.is_empty() {
         lines.push(format!("To: {}", m.to.join(", ")));
     }
@@ -314,6 +346,51 @@ pub fn identity(addresses: &[String]) -> String {
         "user",
         &format!("The user writes from: {}", addresses.join(", ")),
     )
+}
+
+/// `user.identity` of a draft: the user as the draft's From names them
+/// ("Achille Martin <achille@…>"), which a mail written for them is signed
+/// with, and whether the draft already ends with their signature, which
+/// then signs it instead (`nm_core::segments::has_signature`).
+pub fn draft_identity(from: &str, signed: bool) -> String {
+    let mut text = format!("The user writes from: {from}");
+    if signed {
+        text.push_str(
+            "\nThe draft already ends with the user's signature, kept below your text: end with the closing \
+             words, without signing.",
+        );
+    }
+    section("user", &text)
+}
+
+/// Most characters of `draft.replied` (`ia.md`, section 5, "Entrées").
+pub const MAX_REPLIED_CHARS: usize = 8_000;
+
+/// `draft.replied`: the mail a draft answers, its headers then its text;
+/// for a new mail, a section that says there is none, so that the prompt's
+/// language rule (`Prompt::system`) knows to follow the notes.
+pub fn replied(mail: Option<&Mail>) -> String {
+    let Some(m) = mail else {
+        return section("replied", "(none: this is a new mail, not a reply)");
+    };
+    let text = format!(
+        "From: {}\nDate: {}\nSubject: {}\n\n{}",
+        m.from,
+        m.date,
+        m.subject,
+        clip(&m.text, MAX_REPLIED_CHARS)
+    );
+    section("replied", &text)
+}
+
+/// Most characters of `attachment.text` (`ia.md`, section 5, "Entrées").
+pub const MAX_ATTACHMENT_CHARS: usize = 20_000;
+
+/// `attachment.text`: the file's name and kind, then its text, cut at
+/// [`MAX_ATTACHMENT_CHARS`] (`[…]` then says it is only the start, which
+/// the summary prompt mentions).
+pub fn attachment_text(name: &str, kind: &str, text: &str) -> String {
+    section("attachment", &format!("File: {name} ({kind})\n\n{}", clip(text, MAX_ATTACHMENT_CHARS)))
 }
 
 /// One conversation of a batch (`selection.items`): its id, which the

@@ -26,12 +26,23 @@
 //! how it ended, under the map's lock: a cancelled run cannot then be
 //! recorded as done, nor a done one as cancelled.
 //!
+//! # Attachments
+//!
+//! The text of an attachment (`attachment.text`) is read in the run's
+//! task, not before `ai_run` answers: reading a long PDF takes a moment,
+//! and the commands of a connection run one after the other, so the
+//! client's other requests would wait behind it. A file that cannot be
+//! read then fails the run (`AiFailed`, `ai_bad_input`) instead of
+//! refusing `ai_run`; nothing was sent. The row first holds the system
+//! prompt alone, and the whole message once read (`ai_run_set_input`).
+//!
 //! # What is wired so far
 //!
-//! The prompts of the compose screen whose inputs are `draft.own_text` and
-//! `draft.headers` (proofread, rewrite, translate, subjects): the first
-//! milestone of `ia.md`, section 14. The others are listed with
-//! `available: false`, and `ai_run` refuses them with a clear message.
+//! Every scope and every built-in prompt. Not yet: the inputs
+//! `message.eml`, `draft.full` and `targets` outside a selection, the
+//! outputs `insert` and `reply`; a user's prompt that needs one is listed
+//! with `available: false` (`available`), and `ai_run` refuses it with a
+//! clear message.
 
 use std::collections::HashMap;
 use std::ops::Range;
@@ -52,6 +63,7 @@ use nm_api::{
 use nm_core::{FolderRole, Source};
 use nm_engine::config::{AiProviderKind, AiSettings};
 use nm_store::ai_runs::{Decision, NewRun, NewSuggestion, RunDone, RunEnd};
+use nm_store::attachment_text::{Kind as FileKind, Unreadable};
 use nm_store::drafts::DraftEdit;
 use tokio::sync::Semaphore;
 
@@ -98,20 +110,22 @@ enum Target {
     Mail { message: i64, sender: Option<String> },
     /// Several conversations, sorted in batches.
     Selection,
+    /// An attachment of the mail `message`.
+    Attachment { message: i64 },
 }
 
 impl Target {
     fn segments(&self) -> usize {
         match self {
             Target::Draft { ranges, .. } => ranges.len(),
-            Target::Mail { .. } | Target::Selection => 0,
+            Target::Mail { .. } | Target::Selection | Target::Attachment { .. } => 0,
         }
     }
 
     fn sender(&self) -> Option<&str> {
         match self {
             Target::Mail { sender, .. } => sender.as_deref(),
-            Target::Draft { .. } | Target::Selection => None,
+            Target::Draft { .. } | Target::Selection | Target::Attachment { .. } => None,
         }
     }
 }
@@ -201,7 +215,9 @@ fn settings(core: &Core) -> AiSettings {
 fn available(p: &Prompt) -> bool {
     match p.scope {
         Scope::Draft => {
-            p.inputs.iter().all(|i| matches!(i, Input::DraftOwnText | Input::DraftContext | Input::DraftHeaders))
+            p.inputs.iter().all(|i| {
+                matches!(i, Input::DraftOwnText | Input::DraftContext | Input::DraftHeaders | Input::DraftReplied | Input::UserIdentity)
+            })
                 && match p.output {
                     Output::Replace | Output::Subjects => true,
                     // Other wordings: the one chosen replaces the
@@ -230,7 +246,10 @@ fn available(p: &Prompt) -> bool {
         Scope::Selection => {
             p.output == Output::Targets && p.inputs.iter().all(|i| matches!(i, Input::SelectionItems | Input::Targets))
         }
-        Scope::Attachment => false,
+        Scope::Attachment => {
+            p.inputs.iter().all(|i| matches!(i, Input::AttachmentText | Input::UserIdentity))
+                && matches!(p.output, Output::Panel | Output::Summary)
+        }
     }
 }
 
@@ -377,9 +396,15 @@ pub(crate) async fn run(core: &Arc<Core>, p: AiRunParams, source: Source) -> Res
     if prompt.scope == Scope::Selection {
         return run_selection(core, &s, prompt, variant, system, &p, source).await;
     }
-    let (message, target, target_json, findings) = match prompt.scope {
-        Scope::Draft => draft_inputs(core, &prompt, &p).await?,
-        _ => mail_inputs(core, &prompt, &p).await?,
+    let (message, target, target_json, findings, deferred) = match prompt.scope {
+        Scope::Draft => with_nothing_deferred(draft_inputs(core, &prompt, &p).await?),
+        Scope::Attachment => {
+            let (target, json, deferred) = attachment_inputs(core, &prompt, &p).await?;
+            // The message is made once the file is read (module
+            // documentation, "Attachments").
+            (String::new(), target, json, Vec::new(), Some(deferred))
+        }
+        _ => with_nothing_deferred(mail_inputs(core, &prompt, &p).await?),
     };
     let request = AiRequest {
         system,
@@ -390,7 +415,10 @@ pub(crate) async fn run(core: &Arc<Core>, p: AiRunParams, source: Source) -> Res
     };
     let provider = provider(core, &s).map_err(ai_error)?;
 
-    let input = format!("{}\n\n{}", request.system, request.message);
+    let input = match &deferred {
+        None => format!("{}\n\n{}", request.system, request.message),
+        Some(d) => format!("{}\n\n[the text of {} is read next]", request.system, d.name),
+    };
     let row = (
         prompt.id.clone(),
         variant.map(|c| c.to_string()),
@@ -424,13 +452,68 @@ pub(crate) async fn run(core: &Arc<Core>, p: AiRunParams, source: Source) -> Res
     let streamed = !prompt.output.is_structured();
     let context = Context { prompt, target, findings };
     core.ai.running.lock().unwrap().insert(run_id, Running { abort: None, context });
-    let task = tokio::spawn(execute(core.clone(), run_id, request, provider));
+    let task = tokio::spawn(execute(core.clone(), run_id, request, provider, deferred));
     // The task may already have ended (a fake answer): then it is no longer
     // in the map, and there is nothing left to abort.
     if let Some(r) = core.ai.running.lock().unwrap().get_mut(&run_id) {
         r.abort = Some(task.abort_handle());
     }
     Ok(AiRunResult { run_id, streamed })
+}
+
+type Inputs = (String, Target, String, Vec<Finding>);
+
+fn with_nothing_deferred((message, target, json, findings): Inputs) -> (String, Target, String, Vec<Finding>, Option<Deferred>) {
+    (message, target, json, findings, None)
+}
+
+/// An attachment whose text the run's task reads before calling the
+/// provider (module documentation, "Attachments").
+struct Deferred {
+    path: PathBuf,
+    kind: FileKind,
+    /// The file's name, as the user sees it.
+    name: String,
+    /// The sections of the message in the prompt's order, `None` where the
+    /// attachment's text goes.
+    sections: Vec<Option<String>>,
+}
+
+/// The inputs of an attachment prompt: the file is extracted from the raw
+/// mail now (its path is all the task needs), its text read later.
+/// Refused at once: an attachment unknown, not downloaded, or of a kind
+/// whose text cannot be read (an image, an archive).
+async fn attachment_inputs(core: &Arc<Core>, prompt: &Prompt, p: &AiRunParams) -> Result<(Target, String, Deferred), RpcError> {
+    let Some(id) = p.attachment_id else {
+        return Err(RpcError::new(error_code::INVALID_PARAMS, "this prompt needs attachment_id"));
+    };
+    let (raw, files) = (core.raw.clone(), core.attachments.clone());
+    let declared = crate::drafts::declared_addresses(core);
+    let read = with_store(core, move |st| {
+        let file = st.get_attachment(&raw, &files, id)?;
+        let (message, thread): (i64, Option<i64>) = st.conn().query_row(
+            "SELECT m.id, m.thread_id FROM attachment a JOIN message m ON m.id = a.message_id WHERE a.id = ?1",
+            [id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )?;
+        Ok((file, message, thread, own_addresses(st, declared)?))
+    })
+    .await;
+    let (file, message, thread, own) = crate::sync::repaired(core, read).await?;
+    let Some(kind) = FileKind::of(&file.mime_type, Some(&file.filename)) else {
+        return Err(ai_error(AiError::BadInput(format!("{}: {}", file.filename, Unreadable::Unsupported))));
+    };
+    let sections = prompt
+        .inputs
+        .iter()
+        .map(|input| match input {
+            Input::AttachmentText => None,
+            Input::UserIdentity => Some(nm_ai::message::identity(&own)),
+            _ => unreachable!("`available` lets only these inputs through"),
+        })
+        .collect();
+    let json = serde_json::json!({ "attachment": id, "message": message, "thread": thread }).to_string();
+    Ok((Target::Attachment { message }, json, Deferred { path: file.path, kind, name: file.filename, sections }))
 }
 
 /// The inputs of a draft prompt (`draft.own_text`, `draft.headers`): the
@@ -489,11 +572,40 @@ async fn draft_inputs(
             // `on = "selection"` (the catalog checks it): one range.
             Input::DraftContext => nm_ai::message::draft_context(&body, ranges[0].clone()),
             Input::DraftHeaders => draft_headers(&draft),
+            Input::DraftReplied => {
+                let replied = replied_mail(core, &draft).await?;
+                nm_ai::message::replied(replied.as_ref())
+            }
+            // The draft's From is the user for this mail: the account it
+            // is sent from, with the name it signs with.
+            Input::UserIdentity => {
+                let from = label(draft.from.name.as_deref(), Some(&draft.from.addr));
+                nm_ai::message::draft_identity(&from, nm_core::segments::has_signature(&body))
+            }
             _ => unreachable!("`available` lets only these inputs through"),
         });
     }
     let target_json = serde_json::json!({ "draft": draft_id }).to_string();
     Ok((sections.join("\n\n"), Target::Draft { draft_id, revision, body, ranges }, target_json, Vec::new()))
+}
+
+/// The mail a draft replies to, as the inputs see it (`draft.replied`);
+/// `None` for a new mail or a forward, and for a reply whose mail is gone
+/// or not downloaded yet: the model then writes from the notes alone,
+/// rather than the run failing for a context it can do without.
+async fn replied_mail(core: &Arc<Core>, draft: &DraftView) -> Result<Option<Mail>, RpcError> {
+    let (Some(message_id), Some(thread_id)) = (draft.reply_to, draft.thread_id) else { return Ok(None) };
+    let declared = crate::drafts::declared_addresses(core);
+    let found = with_reader(core, move |st| {
+        let Ok((_, messages)) = st.get_thread(thread_id, &declared) else { return Ok(None) };
+        let own = own_addresses(st, declared)?;
+        Ok(messages.into_iter().find(|m| m.id == message_id).map(|m| {
+            let mine = m.from_addr.as_deref().is_some_and(|a| own.contains(&a.to_lowercase()));
+            (m, mine)
+        }))
+    })
+    .await?;
+    Ok(found.filter(|(m, _)| m.body_text.is_some()).map(|(m, mine)| mail_of(&m, mine)))
 }
 
 /// The inputs of a mail prompt, from the conversation as the reader shows
@@ -894,6 +1006,7 @@ fn mail_of(m: &MessageView, mine: bool) -> Mail {
         from: label(m.from_name.as_deref(), m.from_addr.as_deref()),
         to: addresses(&m.to),
         cc: addresses(&m.cc),
+        reply_to: addresses(&m.reply_to),
         date: {
             let at = m.date_sent.unwrap_or(m.date_received);
             nm_core::compose::rfc5322_date(at, local_offset(at))
@@ -932,18 +1045,62 @@ fn shown_host(text: &str) -> Option<String> {
     ok.then_some(host)
 }
 
+/// The Reply-To addresses that send a reply elsewhere than the sender, as
+/// findings: the classic phishing where the From is the bank's (and may
+/// even pass authentication, sent through a mailing service) while the
+/// reply goes to the swindler's mailbox.
+///
+/// - Another registrable domain than the From's (`mabanque.fr` and
+///   `gmail.com`) is one. A subdomain of the same organization
+///   (`news.mabanque.fr` replying to `support@mabanque.fr`) is not:
+///   domains are compared as `nm_store::auth::organizational_domain`.
+/// - On a public mail provider (`domaines-publics.md`), the same domain
+///   says nothing of the person: `alice@gmail.com` replying to
+///   `bob@gmail.com` is another mailbox, hence another person. Only the
+///   very same address is fine there.
+///
+/// No From, or a Reply-To that is the From itself: nothing.
+fn reply_elsewhere(from: Option<&str>, reply_to: &[&str]) -> Vec<String> {
+    use nm_store::auth::organizational_domain as org;
+    let Some(from) = from.map(|a| a.trim().to_lowercase()) else { return Vec::new() };
+    let Some(from_domain) = nm_store::screening::domain_of(&from) else { return Vec::new() };
+    let mut out = Vec::new();
+    for addr in reply_to {
+        let addr = addr.trim().to_lowercase();
+        if addr == from {
+            continue;
+        }
+        let Some(domain) = nm_store::screening::domain_of(&addr) else { continue };
+        let text = if org(&domain) != org(&from_domain) {
+            format!("replies go to {addr}, another domain than the sender's ({from_domain})")
+        } else if nm_store::sender_kind::is_public_domain(&org(&domain)) {
+            format!("replies go to {addr}, another mailbox than the sender's ({from}) on a public mail provider")
+        } else {
+            continue;
+        };
+        if !out.contains(&text) {
+            out.push(text);
+        }
+    }
+    out
+}
+
 fn is_ip(host: &str) -> bool {
     host.starts_with('[') || (host.split('.').count() == 4 && host.split('.').all(|p| p.parse::<u8>().is_ok()))
 }
 
 /// What the core finds by itself in a mail, for the security check
-/// (`ia.md`, section 6, "Plancher"): a failed authentication, a link that
-/// shows one site and opens another, a link to a bare IP address. The
-/// Reply-To of the spec is not read yet: the reader does not give it.
+/// (`ia.md`, section 6, "Plancher"): a failed authentication, a Reply-To
+/// that sends the reply elsewhere than the sender, a link that shows one
+/// site and opens another, a link to a bare IP address.
 fn findings(m: &MessageView) -> Vec<Finding> {
     let mut out: Vec<Finding> = Vec::new();
     if m.auth_result == "fail" {
         out.push(Finding { text: "the sender's authentication failed (SPF, DKIM, DMARC)".into(), strong: true });
+    }
+    let reply_to: Vec<&str> = m.reply_to.iter().map(|a| a.addr.as_str()).collect();
+    for text in reply_elsewhere(m.from_addr.as_deref(), &reply_to) {
+        out.push(Finding { text, strong: true });
     }
     for link in &m.links {
         let Some(real) = url_host(&link.url) else { continue };
@@ -1012,10 +1169,31 @@ fn draft_headers(d: &DraftView) -> String {
 }
 
 /// The task of one run (module documentation, "One run").
-async fn execute(core: Arc<Core>, run_id: i64, request: AiRequest, provider: Provider) {
+async fn execute(core: Arc<Core>, run_id: i64, mut request: AiRequest, provider: Provider, deferred: Option<Deferred>) {
     // Rust note: `acquire_owned` waits for a place and gives a permit that
     // frees it when dropped, at the end of this function, whatever happens.
     let Ok(_slot) = core.ai.slots.clone().acquire_owned().await else { return };
+    if let Some(d) = deferred {
+        match crate::extract::text(&d.path, d.kind).await {
+            Err(e) => {
+                // Nothing was sent: the input was not good, as for an empty
+                // draft, but known only now.
+                if core.ai.running.lock().unwrap().remove(&run_id).is_some() {
+                    fail(&core, run_id, AiError::BadInput(format!("{}: {e}", d.name)), None).await;
+                }
+                return;
+            }
+            Ok(text) => {
+                let attachment = nm_ai::message::attachment_text(&d.name, d.kind.as_str(), &text);
+                request.message =
+                    d.sections.into_iter().map(|s| s.unwrap_or_else(|| attachment.clone())).collect::<Vec<_>>().join("\n\n");
+                let input = format!("{}\n\n{}", request.system, request.message);
+                if let Err(e) = with_store(&core, move |st| st.ai_run_set_input(run_id, &input)).await {
+                    eprintln!("ai : message de l'exécution {run_id} non enregistré : {}", e.message);
+                }
+            }
+        }
+    }
     let events = core.clone();
     // The tags of the segments are hidden from the text shown as it comes
     // (`nm_ai::message::SegmentFilter`); other outputs are shown as they are.
@@ -1110,7 +1288,7 @@ pub(crate) async fn cancel(core: &Arc<Core>, p: AiRunIdParams) -> Result<Command
 /// book, one click goes back to the mail.
 fn mail_link(t: &Target) -> Option<String> {
     match t {
-        Target::Mail { message, .. } => Some(format!("nicemailer://m/{message}")),
+        Target::Mail { message, .. } | Target::Attachment { message } => Some(format!("nicemailer://m/{message}")),
         _ => None,
     }
 }
@@ -1426,11 +1604,16 @@ mod tests {
     }
 
     fn message(auth: &str, links: &[(&str, Option<&str>)]) -> MessageView {
+        message_replying_to(auth, links, &[])
+    }
+
+    fn message_replying_to(auth: &str, links: &[(&str, Option<&str>)], reply_to: &[&str]) -> MessageView {
+        let reply_to: Vec<serde_json::Value> = reply_to.iter().map(|a| serde_json::json!({"addr": a, "name": null})).collect();
         let links: Vec<serde_json::Value> =
             links.iter().map(|(u, t)| serde_json::json!({"url": u, "text": t})).collect();
         serde_json::from_value(serde_json::json!({
             "id": 1, "folder_id": 1, "folder_role": null, "subject": "s", "from_name": null, "from_addr": "a@b.fr",
-            "to": [], "cc": [], "date_sent": null, "date_received": 0, "body_text": "x", "is_seen": true,
+            "to": [], "cc": [], "reply_to": reply_to, "date_sent": null, "date_received": 0, "body_text": "x", "is_seen": true,
             "is_flagged": false, "is_answered": false, "has_attachments": false, "auth_result": auth,
             "body_html": null, "has_remote_content": false, "from_body_format": null, "segments": [],
             "only_quotes": false, "expanded": true, "show_recipients": false, "attachments": [],
@@ -1456,6 +1639,38 @@ mod tests {
             "a link opens the bare IP address 203.0.113.9",
         ]);
         assert!(findings(&message("fail", &[])).iter().all(|f| f.strong));
+        // A Reply-To elsewhere, strong, after the authentication and
+        // before the links.
+        let m = message_replying_to("fail", &[("http://203.0.113.9/x", Some("Cliquez"))], &["x@evil.example"]);
+        assert_eq!(text(&m), [
+            "the sender's authentication failed (SPF, DKIM, DMARC)",
+            "replies go to x@evil.example, another domain than the sender's (b.fr)",
+            "a link opens the bare IP address 203.0.113.9",
+        ]);
+        assert!(findings(&m).iter().all(|f| f.strong));
+    }
+
+    #[test]
+    fn a_reply_to_elsewhere_is_found() {
+        let f = |from: Option<&str>, rt: &[&str]| reply_elsewhere(from, rt);
+        assert_eq!(
+            f(Some("support@mabanque.fr"), &["Support-Mabanque@Gmail.com"]),
+            ["replies go to support-mabanque@gmail.com, another domain than the sender's (mabanque.fr)"]
+        );
+        // The same organization: a subdomain, another address of it.
+        assert!(f(Some("news@info.mabanque.fr"), &["support@mabanque.fr"]).is_empty());
+        assert!(f(Some("a@mabanque.co.uk"), &["b@x.mabanque.co.uk"]).is_empty());
+        // The From itself, whatever its case; no From; not an address.
+        assert!(f(Some("Alice@Gmail.com"), &["alice@gmail.com"]).is_empty());
+        assert!(f(None, &["a@evil.example"]).is_empty());
+        assert!(f(Some("a@mabanque.fr"), &["not an address"]).is_empty());
+        // A public provider: another mailbox there is another person.
+        assert_eq!(
+            f(Some("alice@gmail.com"), &["bob@gmail.com"]),
+            ["replies go to bob@gmail.com, another mailbox than the sender's (alice@gmail.com) on a public mail provider"]
+        );
+        // Twice the same: one finding.
+        assert_eq!(f(Some("a@mabanque.fr"), &["x@evil.example", "X@evil.example"]).len(), 1);
     }
 
     #[test]

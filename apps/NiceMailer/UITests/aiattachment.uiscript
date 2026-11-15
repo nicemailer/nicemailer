@@ -1,0 +1,55 @@
+# Summarizing an attachment (`ia.md`, sections 8 and 11; docs/ai.md): the
+# mail of fixtures/aiattachment.mbox has a PDF, a DOCX, a damaged PDF and
+# a picture; its answers come from fixtures/aiattachment.ai.json. `a` on
+# the mail shown offers the mail's prompts, then one row per file whose
+# text the core can read (not the picture); Return on a file's row runs
+# the summary on it: the core reads the PDF in a process of its own, the
+# panel shows the summary, `c` copies it, Escape closes it. A damaged file
+# fails, and says which file and why.
+# The imported mail is in Archive, of the account "fixture".
+key ;
+key a
+expect folder = Archive
+key @
+type fixture
+key ret
+expect account = fixture
+expect selected_subject = Facture et lettre de mission
+expect reader_attachments = 4
+key a
+expect ai_placement = palette
+expect picker_first = Summarize
+expect picker_rows ~ Summarize · facture.pdf | Summarize · lettre.docx | Summarize · contrat.pdf
+expect picker_rows !~ logo.png
+snap aiattachment-menu
+# The file found by its name.
+type facture
+expect picker_first = Summarize · facture.pdf
+key ret
+expect ai_state = proposal
+expect ai_placement = panel
+expect ai_title = Summarize · facture.pdf
+expect ai_result = - An invoice for 1,200 EUR, number 2026-114.
+snap aiattachment-summary
+key c
+expect pasteboard = - An invoice for 1,200 EUR, number 2026-114.
+expect ai_state = proposal
+key esc
+expect ai_state = none
+# The DOCX too.
+key a
+type lettre
+key ret
+expect ai_state = proposal
+expect ai_title = Summarize · lettre.docx
+key esc
+expect ai_state = none
+# A damaged PDF: the run fails, naming the file; Escape closes it.
+key a
+type contrat
+key ret
+expect ai_state = failed
+expect ai_error ~ contrat.pdf: the file cannot be read
+snap aiattachment-failed
+key esc
+expect ai_state = none

@@ -2465,6 +2465,19 @@ final class GeekController {
     func aiEntries() -> [Entry] {
         aiPrompts.flatMap { p -> [Entry] in
             let notYet = p.available ? nil : L("not yet")
+            // A prompt of an attachment: a row per file the AI can read,
+            // with its icon, found by typing its name.
+            if p.scope == "attachment" {
+                return aiAttachments.map { pair in
+                    let a = pair.file
+                    let name = AttachmentDisplay.name(a)
+                    return Entry(key: p.key, label: "\(p.label) · \(name)", disabled: !p.available, detail: notYet,
+                                 detailStyle: .info, icon: AttachmentDisplay.symbol(mimeType: a.mimeType, filename: a.filename),
+                                 keywords: [p.key, name]) { [weak self] in
+                        self?.chooseAttachmentAI(p, pair.file, message: pair.message)
+                    }
+                }
+            }
             guard !p.variants.isEmpty else {
                 return [Entry(key: p.key, label: p.label, disabled: !p.available, detail: notYet, detailStyle: .info,
                               keywords: [p.key]) { [weak self] in self?.chooseAI(p, variant: nil) }]
@@ -2478,6 +2491,18 @@ final class GeekController {
 
     /// The prompts of the AI palette open (`openAI`).
     var aiPrompts: [AIPromptView] = []
+    /// The files of the conversation the palette works on that the AI can
+    /// read, each with its mail: the rows of the prompts of an attachment.
+    var aiAttachments: [(message: Int, file: AttachmentView)] = []
+
+    private func chooseAttachmentAI(_ p: AIPromptView, _ file: AttachmentView, message: Int) {
+        guard p.available else {
+            model.flash = L("Not available yet: %@", p.label)
+            return
+        }
+        guard let thread = model.openThread?.id else { return }
+        Task { await model.startMailAI(p, variant: nil, thread: thread, message: message, attachment: file) }
+    }
 
     private func chooseAI(_ p: AIPromptView, variant: AIVariantView?) {
         guard p.available else {
@@ -2524,8 +2549,18 @@ final class GeekController {
         let name = passage != nil ? "compose-selection" : Self.aiScreen(compose: compose, marked: model.marked.count)
         model.aiPassage = passage
         let folder = compose ? nil : model.currentRole
+        // One mail of the conversation shown: its files the AI can read
+        // join the palette, after the mail's prompts. Not for a row under
+        // the cursor that is not shown: its files are not loaded.
+        let thread = Self.aiThread(marked: model.marked, open: model.openThread?.id, cursor: model.selectedThreadId)
+        let files = name == "mail" && thread != nil && thread == model.openThread?.id
+            ? AI.readableAttachments(model.openThread?.messages ?? []) : []
         Task {
-            guard let prompts = await model.aiPrompts(screen: name, folder: folder) else { return }
+            guard var prompts = await model.aiPrompts(screen: name, folder: folder) else { return }
+            if !files.isEmpty, let more = await model.aiPrompts(screen: "attachment", folder: folder) {
+                prompts += more
+            }
+            aiAttachments = files
             guard !prompts.isEmpty else {
                 model.flash = L("No AI prompt here")
                 return

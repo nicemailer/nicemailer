@@ -590,6 +590,19 @@ enum AI {
         return b
     }
 
+    /// The files of a conversation the AI can read (`AttachmentView.readable`),
+    /// in the reader's order, with the mail each is attached to; a file
+    /// attached again to a reply (same name, type and size) once, as `sa`
+    /// saves it. The AI palette of the mail offers a row per file and per
+    /// prompt of an attachment (`ia.md`, section 11, "Contexte").
+    static func readableAttachments(_ messages: [MessageView]) -> [(message: Int, file: AttachmentView)] {
+        var seen = Set<String>()
+        return messages.flatMap { m in m.attachments.map { (message: m.id, file: $0) } }.filter { pair in
+            let a = pair.file
+            return a.readable == true && seen.insert("\(a.filename ?? "")|\(a.mimeType)|\(a.size)").inserted
+        }
+    }
+
     /// The title of the panel: the prompt, and its variant.
     static func title(_ p: AIPromptView, variant: AIVariantView?) -> String {
         guard let v = variant else { return p.label }

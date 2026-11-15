@@ -1,0 +1,76 @@
+From x Wed Nov 11 09:00:00 2026
+From: Cabinet Martin <compta@martin.example>
+To: me@example.com
+Subject: Facture et lettre de mission
+Message-ID: <att1@martin.example>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="A"
+
+--A
+Content-Type: text/plain; charset=utf-8
+
+Bonjour, voici la facture et la lettre de mission.
+--A
+Content-Type: application/pdf; name="facture.pdf"
+Content-Disposition: attachment; filename="facture.pdf"
+
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>
+endobj
+4 0 obj
+<< /Length 59 >>
+stream
+BT /F1 12 Tf 72 720 Td (Facture 2026-114 : 1 200 EUR) Tj ET
+endstream
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000241 00000 n 
+0000000350 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+447
+%%EOF
+
+--A
+Content-Type: application/vnd.openxmlformats-officedocument.wordprocessingml.document; name="lettre.docx"
+Content-Disposition: attachment; filename="lettre.docx"
+Content-Transfer-Encoding: base64
+
+UEsDBBQAAAAIAM98b13HHBc8CgAAAAgAAAATAAAAW0NvbnRlbnRfVHlwZXNdLnhtbLMJqSxILda3
+AwBQSwMEFAAAAAgAz3xvXcgYLpG5AAAADwEAABEAAAB3b3JkL2RvY3VtZW50LnhtbG2PwW7CMAyG
+X8XKfSTjMEHVlhNoh50QPEDWGIjU2JGdUXh7GqRp0sTls2zr/3+73dzSCFcUjUydeV84A0gDh0jn
+zhwPu7eVAS2egh+ZsDN3VLPp26kJPPwkpAKzAWkzdeZSSm6s1eGCyeuCM9K8O7EkX+ZWznZiCVl4
+QNXZP4126dyHTT6SqZbfHO615gqpKP0XliIIASFFrUe2to4r5cn8X/HJxOKjoEIDa+dge9y/ENnf
+PPv3S/8AUEsBAhQDFAAAAAgAz3xvXcccFzwKAAAACAAAABMAAAAAAAAAAAAAAIABAAAAAFtDb250
+ZW50X1R5cGVzXS54bWxQSwECFAMUAAAACADPfG9dyBgukbkAAAAPAQAAEQAAAAAAAAAAAAAAgAE7
+AAAAd29yZC9kb2N1bWVudC54bWxQSwUGAAAAAAIAAgCAAAAAIwEAAAAA
+
+--A
+Content-Type: application/octet-stream; name="contrat.pdf"
+Content-Disposition: attachment; filename="contrat.pdf"
+
+%PDF-1.4 damaged
+--A
+Content-Type: image/png; name="logo.png"
+Content-Disposition: attachment; filename="logo.png"
+Content-Transfer-Encoding: base64
+
+iVBORw0KGgo=
+--A--
+

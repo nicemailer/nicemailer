@@ -475,6 +475,11 @@ struct AttachmentView: Decodable, Identifiable, Hashable {
     let mimeType: String
     /// Size in bytes.
     let size: Int
+    /// Whether the core can read its text, for the AI to summarize it
+    /// (text, HTML, PDF, DOCX, a mail attached). Swift note: an optional
+    /// decodes as `nil` when the key is missing, as from an older core;
+    /// a `var` with a default keeps it out of the memberwise initializer.
+    var readable: Bool? = nil
 }
 
 /// Result of `get_attachment`: the file extracted by the core. It belongs

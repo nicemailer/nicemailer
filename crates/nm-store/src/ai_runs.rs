@@ -147,6 +147,14 @@ impl Store {
         Ok(self.conn.last_insert_rowid())
     }
 
+    /// The message sent, once known: the text of an attachment is read in
+    /// the run's task, after the row is written, so the row first holds
+    /// the system prompt alone (`nm-daemon`, `ai.rs`, "Attachments").
+    pub fn ai_run_set_input(&mut self, id: i64, input: &str) -> Result<()> {
+        let n = self.conn.execute("UPDATE ai_run SET input = ?2 WHERE id = ?1 AND state = 'running'", params![id, input])?;
+        self.one(n, id, "is not running")
+    }
+
     /// Completes a running run with its answer.
     pub fn ai_run_done(&mut self, id: i64, d: &RunDone) -> Result<()> {
         // Rust note: `u64` does not fit SQLite's signed integers by itself;

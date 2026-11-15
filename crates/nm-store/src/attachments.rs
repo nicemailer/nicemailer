@@ -155,11 +155,14 @@ impl Store {
             let html: Option<String> = r.get(7)?;
             let in_body = inline
                 && matches!((&cid, &html), (Some(c), Some(h)) if h.contains(&format!("cid:{c}")));
+            let (filename, mime_type): (Option<String>, String) = (r.get(2)?, r.get(3)?);
+            let readable = crate::attachment_text::Kind::of(&mime_type, filename.as_deref()).is_some();
             Ok((r.get::<_, i64>(0)?, in_body.then_some(cid).flatten(), AttachmentView {
                 id: r.get(1)?,
-                filename: r.get(2)?,
-                mime_type: r.get(3)?,
+                filename,
+                mime_type,
                 size: r.get(4)?,
+                readable,
             }))
         })?;
         let mut out = ThreadAttachments::default();

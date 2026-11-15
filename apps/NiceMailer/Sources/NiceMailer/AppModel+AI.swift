@@ -82,14 +82,20 @@ extension AppModel {
 
     /// Runs a prompt on a conversation (`a` in the list or the reader):
     /// on the mail under the reader's cursor for a prompt of one mail, the
-    /// core choosing the latest received when there is none.
-    func startMailAI(_ prompt: AIPromptView, variant: AIVariantView?, thread: Int, message: Int?) async {
+    /// core choosing the latest received when there is none. For a prompt
+    /// of an attachment, on that file, `message` being its mail: the core
+    /// reads its text (PDF, DOCX…) before asking the AI.
+    func startMailAI(_ prompt: AIPromptView, variant: AIVariantView?, thread: Int, message: Int?,
+                     attachment: AttachmentView? = nil) async {
         guard aiRun == nil, let client = core else { return }
         aiEarly = [:]
         let target = AIRun.Target.mail(thread: thread, message: message)
-        aiRun = AIRun(runId: 0, title: AI.title(prompt, variant: variant), target: target)
+        // A file's prompt names the file: "Summarize · devis.pdf".
+        let title = attachment.map { "\(prompt.label) · \(AttachmentDisplay.name($0))" } ?? AI.title(prompt, variant: variant)
+        aiRun = AIRun(runId: 0, title: title, target: target)
         var params: [String: Any] = ["prompt": prompt.id, "thread_id": thread, "lang": AI.language]
         if let message, prompt.scope == "message" { params["message_id"] = message }
+        if let attachment { params["attachment_id"] = attachment.id }
         if let v = variant { params["variant"] = v.key }
         do {
             let r: AIRunResult = try await client.call("ai_run", params)

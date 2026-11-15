@@ -95,14 +95,14 @@ enum Fixture {
 
     /// Files attached to the message of thread 4.
     static let attachments: [[String: Any]] = [
-        ["id": 41, "filename": "devis.pdf", "mime_type": "application/pdf", "size": 245_000],
+        ["id": 41, "filename": "devis.pdf", "mime_type": "application/pdf", "size": 245_000, "readable": true],
         ["id": 42, "filename": "photo.jpg", "mime_type": "image/jpeg", "size": 1_200_000],
         ["id": 43, "filename": NSNull(), "mime_type": "application/zip", "size": 512],
     ]
 
     /// Files attached to the message of thread 6: a text file and a logo.
     static let otherAttachments: [[String: Any]] = [
-        ["id": 61, "filename": "notes.txt", "mime_type": "text/plain", "size": 120],
+        ["id": 61, "filename": "notes.txt", "mime_type": "text/plain", "size": 120, "readable": true],
         ["id": 62, "filename": "logo.png", "mime_type": "image/png", "size": 2_000],
     ]
 
