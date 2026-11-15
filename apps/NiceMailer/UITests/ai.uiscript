@@ -9,7 +9,8 @@
 # them; improving the writing, refused; a variant from the submenu,
 # refused with Escape; a subject chosen
 # with ↓ ↩; `a` with a mail shown: a summary, its dates (one saved as a
-# calendar file, one opened with ⌘↩), then a quick reply that
+# calendar file, one opened with ⌘↩), the sender's card (saved as a
+# .vcf, then opened with ⌘↩), then a quick reply that
 # starts the reply; `a` on the list alone offers the prompts of the row
 # under the cursor, and filing with several marked; in
 # Quarantine, `a` `s` sorts the folder, the rows show their target, Return
@@ -193,6 +194,36 @@ expect flash ~ and opened
 expect export_files = 2
 expect ai_state = proposal
 key esc
+expect ai_state = none
+# The sender's card: one block, Return saves it as a .vcf and closes the
+# panel; ⌘↩ on a second run saves it beside the first, then opens it,
+# which imports it into Contacts.
+key a
+type contact
+expect picker_first = Contact card
+key ret
+expect ai_state = proposal
+expect ai_title = Contact card
+expect ai_result ~ Victor Fontaine
+expect ai_result ~ Gérant · Agence Hublot
+expect ai_result ~ +33 6 12 34 56 78
+expect ai_result ~ 3 rue des Lilas, 69003 Lyon, France
+# A number with words and a link without its scheme: left out of the
+# card, and said under it.
+expect ai_result ~ Left out, not valid: 04 72 00 00 00 (standard), www.agence-hublot.example
+snap ai-contact
+key ret
+expect flash ~ Victor Fontaine.vcf
+expect export_files = 3
+expect ai_state = none
+key a
+type contact
+key ret
+expect ai_state = proposal
+key cmd-ret
+expect opened_file ~ Victor Fontaine (2).vcf
+expect flash ~ and opened
+expect export_files = 4
 expect ai_state = none
 # A quick reply starts the reply with it, above the quotation.
 key a

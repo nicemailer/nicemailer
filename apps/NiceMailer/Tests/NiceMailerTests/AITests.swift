@@ -69,6 +69,53 @@ struct AIRulesTests {
         #expect(AI.resultText(.events([])) == L("No date or appointment in this mail."))
     }
 
+    @Test func aContactCardIsSavedWithReturnAndOpenedWithCommandReturn() {
+        let card = AIProposal.contact(AIContact(
+            name: "Alice Martin", given: "Alice", family: "Martin", organization: "Acme", title: "", emails: ["alice@acme.fr"],
+            phones: [], address: AIAddress(street: "", locality: "", postcode: "", region: "", country: ""), urls: []))
+        func act(_ key: String = "", ret: Bool = false, esc: Bool = false, cmd: Bool = false, arrow: Int = 0) -> AIKeyAction {
+            AI.action(.proposal(card), key: key, isReturn: ret, isEscape: esc, arrow: arrow, isCommand: cmd)
+        }
+        #expect(act(ret: true) == .accept)
+        #expect(act(ret: true, cmd: true) == .open(0))
+        #expect(act(esc: true) == .refuse)
+        #expect(act(arrow: 1) == .hint, "one card: nothing to move")
+        #expect(act("1") == .hint)
+        #expect(act("c") == .copy)
+        #expect(AI.hint(.proposal(card)) == L("↩ save (.vcf) · ⌘↩ add to Contacts · esc close") + " · " + L("c copy"))
+        #expect(AI.copyText(card) == "Alice Martin\nAcme\nalice@acme.fr")
+    }
+
+    @Test func aContactCardReadsAsInTheAddressBook() {
+        let c = AIContact(
+            name: "", given: "Alice", family: "Martin", organization: "Acme", title: "Directrice",
+            emails: ["alice@acme.fr", "a@gmail.com"],
+            phones: [AIPhone(kind: "mobile", number: "+33 6 12 34 56 78"), AIPhone(kind: "fax", number: "01 23 45 67 89"),
+                     AIPhone(kind: "pager", number: "0123")],
+            address: AIAddress(street: "12 rue de la Paix\nBâtiment B", locality: "Paris", postcode: "75002", region: "", country: "France"),
+            urls: ["https://acme.fr"])
+        // The name from its parts when the whole is not given; the job and
+        // the company on one line; an unknown kind labelled as a phone.
+        #expect(AI.contactLines(c) == [
+            "Alice Martin", "Directrice · Acme", "alice@acme.fr", "a@gmail.com",
+            L("Mobile") + " +33 6 12 34 56 78", L("Fax") + " 01 23 45 67 89", L("Phone") + " 0123",
+            "12 rue de la Paix, Bâtiment B, 75002 Paris, France", "https://acme.fr",
+        ])
+        // Only an address: one line, nothing empty shown.
+        let bare = AIContact(name: "", given: "", family: "", organization: "", title: "", emails: ["x@y.fr"], phones: [],
+                             address: AIAddress(street: "", locality: "", postcode: "", region: "", country: ""), urls: [])
+        #expect(AI.contactLines(bare) == ["x@y.fr"])
+        #expect(AI.phoneLabel("work") == L("Work") && AI.phoneLabel("home") == L("Home"))
+        // What the core left out: said under the card (and to the UI
+        // scripts), not copied with it.
+        var odd = bare
+        odd.dropped = ["www.acme.fr", "06 12 (direct)"]
+        #expect(AI.droppedLine(bare) == nil)
+        #expect(AI.droppedLine(odd) == L("Left out, not valid: %@", "www.acme.fr, 06 12 (direct)"))
+        #expect(AI.resultText(.contact(odd)) == "x@y.fr\n" + AI.droppedLine(odd)!)
+        #expect(AI.copyText(.contact(odd)) == "x@y.fr")
+    }
+
     @Test func anAppointmentSaysWhenInTheUsersLanguage() {
         let fr = Locale(identifier: "fr_FR")
         func when(_ start: String, _ end: String = "", in locale: Locale) -> String {
@@ -330,6 +377,16 @@ final class AIFakeState: @unchecked Sendable {
          "variants": [["key": "e", "label": "Into English"]], "source": "builtin", "available": true],
         ["id": "dates", "key": "d", "label": "Dates and appointments", "scope": "message", "output": "events", "variants": [],
          "source": "builtin", "available": true],
+        ["id": "contact", "key": "v", "label": "Contact card", "scope": "message", "output": "contact", "variants": [],
+         "source": "builtin", "available": true],
+    ]
+
+    /// The sender's card of `contact`.
+    static let card: [String: Any] = [
+        "name": "Alice Martin", "given": "Alice", "family": "Martin", "organization": "Agence A", "title": "",
+        "emails": ["alice@a.example"], "phones": [["kind": "mobile", "number": "+33 6 12 34 56 78"]],
+        "address": ["street": "", "locality": "Paris", "postcode": "", "region": "", "country": ""], "urls": [],
+        "dropped": [],
     ]
 
     /// The appointments of `dates`.
@@ -385,6 +442,7 @@ final class AIFakeState: @unchecked Sendable {
             case "quick-replies": ["kind": "choices", "items": ["C'est noté !", "On peut décaler ?"], "then": "reply"]
             case "alternatives": ["kind": "choices", "items": ["viens", "passe"], "then": "replace"]
             case "dates": ["kind": "events", "items": Self.events]
+            case "contact": ["kind": "contact", "card": Self.card]
             default: proposal
             }
             return ["state": "done", "proposal": p, "error": NSNull()] as [String: Any]
@@ -393,6 +451,9 @@ final class AIFakeState: @unchecked Sendable {
             let name = (e["start"] as! String).prefix(10) + " " + (e["title"] as! String) + ".ics"
             return ["draft": NSNull(), "text": NSNull(),
                     "calendar": ["filename": name, "content": "BEGIN:VCALENDAR\r\nSUMMARY:\(e["title"]!)\r\nEND:VCALENDAR\r\n"]] as [String: Any]
+        case "ai_apply" where locked({ _lastPrompt }) == "contact":
+            return ["draft": NSNull(), "text": NSNull(),
+                    "contact": ["filename": "Alice Martin.vcf", "content": "BEGIN:VCARD\r\nFN:Alice Martin\r\nEND:VCARD\r\n"]] as [String: Any]
         case "ai_apply" where locked({ _lastPrompt }) == "quick-replies":
             let items = ["C'est noté !", "On peut décaler ?"]
             return ["draft": NSNull(), "text": items[params["choice"] as? Int ?? 0]] as [String: Any]
@@ -874,6 +935,50 @@ final class AIControllerTests {
         let run = try #require(core.calls("ai_run").last)
         #expect(run["variant"] as? String == "e")
         #expect(run["thread_id"] as? Int == model.openThread?.id)
+    }
+
+    @Test func theSendersCardIsSavedThenOpenedInContacts() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("NiceMailerTests-vcf-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        model.exportDirectory = dir.path
+        var opened: [URL] = []
+        model.openFile = { opened.append($0) }
+        func runContact() async {
+            press("a")
+            _ = await eventually { self.paletteOpen }
+            choose("contact")
+            _ = await eventually { self.model.aiRun?.runId == 7 }
+            event("AiDone", ["run_id": .int(7)])
+            _ = await eventually { if case .proposal(.contact)? = self.model.aiRun?.phase { true } else { false } }
+        }
+        await runContact()
+        guard case .proposal(.contact(let c))? = model.aiRun?.phase else { Issue.record("no card"); return }
+        #expect(c.emails == ["alice@a.example"])
+        // Return: saved, not opened; one card, so the panel closes.
+        press("ret")
+        _ = await eventually { self.model.aiRun == nil && self.model.flash != nil }
+        let first = dir.appendingPathComponent("Alice Martin.vcf")
+        #expect(try String(contentsOf: first, encoding: .utf8).contains("FN:Alice Martin"))
+        #expect(model.flash == L("%@ saved to %@", first.lastPathComponent, FileManager.default.displayName(atPath: dir.path)))
+        #expect(opened.isEmpty)
+        #expect(core.calls("ai_dismiss").isEmpty, "saved: nothing to turn down")
+        // ⌘Return: saved beside the first, without overwriting it, then
+        // opened, which imports it into Contacts.
+        await runContact()
+        press("cmd-ret")
+        _ = await eventually { !opened.isEmpty }
+        #expect(opened.map(\.lastPathComponent) == ["Alice Martin (2).vcf"])
+        #expect(FileManager.default.fileExists(atPath: opened[0].path))
+        #expect(model.flash == L("%@ saved to %@ and opened", opened[0].lastPathComponent, FileManager.default.displayName(atPath: dir.path)))
+        #expect(model.aiRun == nil)
+        // Escape closes a third without a file: turned down.
+        await runContact()
+        press("esc")
+        _ = await eventually { self.model.aiRun == nil }
+        _ = await eventually { self.core.calls("ai_dismiss").count == 1 }
+        #expect(core.calls("ai_dismiss").count == 1)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: dir.path).count == 2)
     }
 
     @Test func theAppointmentsOfAMailAreSavedOneByOneAsCalendarFiles() async throws {

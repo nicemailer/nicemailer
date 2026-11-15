@@ -13,6 +13,7 @@
 //! - [`answer`]: the strict checking of what the model answered;
 //! - [`diff`]: the word-level differences shown before a replacement;
 //! - [`ics`]: the calendar file of an appointment a mail mentions;
+//! - [`vcard`]: the contact card of the sender of a mail;
 //! - [`message`]: the user message sent to the model (the segments of the
 //!   draft so far).
 //!
@@ -28,6 +29,7 @@ pub mod message;
 pub mod prompt;
 pub mod provider;
 pub mod stream;
+pub mod vcard;
 
 pub use provider::{AiError, AiOutcome, AiRequest, Usage};
 

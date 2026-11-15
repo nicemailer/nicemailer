@@ -4539,6 +4539,156 @@
           }
         }
       }
+    },
+    "↩ save (.vcf) · ⌘↩ add to Contacts · esc close": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "↩ enregistrer (.vcf) · ⌘↩ ajouter aux Contacts · esc fermer"
+          }
+        }
+      }
+    },
+    "Mobile": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Portable"
+          }
+        }
+      }
+    },
+    "Work": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Travail"
+          }
+        }
+      }
+    },
+    "Home": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Domicile"
+          }
+        }
+      }
+    },
+    "Fax": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fax"
+          }
+        }
+      }
+    },
+    "Phone": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Téléphone"
+          }
+        }
+      }
+    },
+    "Left out, not valid: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Écarté, non valide : %@"
+          }
+        }
+      }
+    },
+    "In Contacts (ctrl-c opens the card)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dans Contacts (ctrl-c ouvre la fiche)"
+          }
+        }
+      }
+    },
+    "Not in Contacts (ctrl-c copies the address)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Absent de Contacts (ctrl-c copie l'adresse)"
+          }
+        }
+      }
+    },
+    "No sender to look up": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucun expéditeur à chercher"
+          }
+        }
+      }
+    },
+    "Card of %@ opened in Contacts": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fiche de %@ ouverte dans Contacts"
+          }
+        }
+      }
+    },
+    "No contact %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucun contact %@"
+          }
+        }
+      }
+    },
+    "mails of the sender": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "mails de l'expéditeur"
+          }
+        }
+      }
+    },
+    "sender's card in Contacts, or copy address": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "fiche de l'expéditeur, ou copier l'adresse"
+          }
+        }
+      }
+    },
+    "Contacts filtered on “%@”: click to show them all": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Contacts filtrés sur « %@ » : cliquer pour tous les afficher"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

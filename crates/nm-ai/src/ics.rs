@@ -214,23 +214,29 @@ pub fn calendar(event: &Event, uid: &str, stamp: i64, mail: Option<&str>) -> Str
 /// without the characters a file name cannot hold, the title cut at 60
 /// characters. The app adds " (2)" when the file exists.
 pub fn file_name(event: &Event) -> String {
-    let title: String = event
-        .title
+    let title = file_stem(&event.title);
+    let date = event.start.date().iso();
+    if title.is_empty() { format!("{date}.ics") } else { format!("{date} {title}.ics") }
+}
+
+/// A text made fit for a file name: the characters a file name cannot
+/// hold (or that Finder shows oddly) turned into spaces, runs of spaces
+/// made one, cut at 60 characters, no leading dot (the file would be
+/// hidden). Shared with the contact cards (`vcard::file_name`).
+pub(crate) fn file_stem(text: &str) -> String {
+    let clean: String = text
         .chars()
         .map(|c| if c.is_control() || "/\\:*?\"<>|".contains(c) { ' ' } else { c })
         .collect();
-    let title: String = title.split_whitespace().collect::<Vec<_>>().join(" ");
-    let title: String = title.chars().take(60).collect();
-    // A name starting with a dot would be hidden.
-    let title = title.trim_start_matches('.').trim();
-    let date = event.start.date().iso();
-    if title.is_empty() { format!("{date}.ics") } else { format!("{date} {title}.ics") }
+    let clean: String = clean.split_whitespace().collect::<Vec<_>>().join(" ");
+    let clean: String = clean.chars().take(60).collect();
+    clean.trim_start_matches('.').trim().to_string()
 }
 
 /// The text of a property value: backslash, semicolon, comma and line
 /// break escaped (RFC 5545, section 3.3.11). A carriage return is dropped:
 /// a CRLF in the text is one line break.
-fn escape(s: &str) -> String {
+pub(crate) fn escape(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {
         match c {
@@ -248,7 +254,7 @@ fn escape(s: &str) -> String {
 /// A content line folded at 75 bytes (RFC 5545, section 3.1): the rest
 /// goes on the next line after a CRLF and one space. A cut never splits a
 /// UTF-8 character, which would make the file unreadable.
-fn fold(line: &str) -> String {
+pub(crate) fn fold(line: &str) -> String {
     let mut out = String::with_capacity(line.len() + line.len() / 70 * 3);
     let mut width = 0;
     for c in line.chars() {
@@ -285,7 +291,7 @@ fn add_minutes(d: Date, h: u32, m: u32, minutes: u32) -> When {
 }
 
 /// Unix seconds as `YYYYMMDDTHHMMSSZ`.
-fn utc_stamp(secs: i64) -> String {
+pub(crate) fn utc_stamp(secs: i64) -> String {
     let days = secs.div_euclid(86_400);
     let rest = secs.rem_euclid(86_400);
     let (y, mo, d) = civil_from_days(days);

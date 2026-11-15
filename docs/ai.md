@@ -2,7 +2,7 @@
 
 NiceMailer can ask a language model to help with mail: proofread a draft, summarize a conversation, suggest where a mail of the Quarantine should go. The rules are in `specifications/ia.md` (in French). This page describes what is built so far and how it is tested.
 
-**Status (November 2026):** the core runs the prompts of the compose screen, those of several conversations (sorting the Quarantine) (proofread, rewrite, translate, subjects) and those of a mail or a conversation (summary, translation, quick replies, security check, dates) through the contract, with the user's own `claude` binary. The CLI (`nicemailer ai`) and the app (⌘I in a reply) run the first ones. The core also sorts several conversations in batches, and the app shows the targets on the rows of the Quarantine; the attachments and the API-key provider come next.
+**Status (November 2026):** the core runs the prompts of the compose screen, those of several conversations (sorting the Quarantine) (proofread, rewrite, translate, subjects) and those of a mail or a conversation (summary, translation, quick replies, security check, dates, contact card) through the contract, with the user's own `claude` binary. The CLI (`nicemailer ai`) and the app (⌘I in a reply) run the first ones. The core also sorts several conversations in batches, and the app shows the targets on the rows of the Quarantine; the attachments and the API-key provider come next.
 
 ## Providers
 
@@ -52,6 +52,7 @@ A prompt is a TOML file. The built-in ones are in `crates/nm-ai/prompts/`, compi
 | `translate-message` | one mail, `t` + language | The mail translated, in the panel |
 | `security-check` | one mail, `c` | Phishing risk and reasons |
 | `dates` | one mail, `d` | The dates and appointments of the mail, each saved as a calendar file (`.ics`) with Return, opened in Calendar with ⌘Return |
+| `contact` | one mail, `v` | The sender's contact card, saved as a vCard (`.vcf`) with Return, opened in Contacts with ⌘Return |
 | `summarize-attachment` | attachment, `r` | What the file is and what matters in it |
 | `triage-quarantine` | list in Quarantine, `s` | A target per conversation; with nothing marked, the whole folder |
 | `suggest-folder` | several marked elsewhere, `s` | A target per marked conversation |
@@ -111,7 +112,13 @@ The prompts of one mail take `thread_id` (and `message_id` for a mail of it; abs
 
 What the core found raises a `low` security verdict to `medium` (`answer::apply_floor`), its first strong finding first among the reasons. The Reply-To of the specification is not read yet: the reader does not give it.
 
-Their proposals: `text` (a translation), `summary` (with its action items), `verdict` (`risk`, `reasons`, `raised`), `choices` (`then: reply`), `events` (the dates). A text, a summary or a verdict is only read: `ai_dismiss` closes it without a decision, and `ai_apply` has nothing to do with it. A quick reply is applied by the client: `ai_apply {run_id, choice}` records it and gives its text back, and the client starts the reply with it.
+Their proposals: `text` (a translation), `summary` (with its action items), `verdict` (`risk`, `reasons`, `raised`), `choices` (`then: reply`), `events` (the dates), `contact` (the sender's card). A text, a summary or a verdict is only read: `ai_dismiss` closes it without a decision, and `ai_apply` has nothing to do with it. A quick reply is applied by the client: `ai_apply {run_id, choice}` records it and gives its text back, and the client starts the reply with it.
+
+### Contact card
+
+`contact` answers `{"contact": {"name", "given", "family", "organization", "title", "emails", "phones": [{"kind", "number"}], "address": {"street", "locality", "postcode", "region", "country"}, "urls"}}`: the sender of the mail (its From), from their signature and the From name, never another person of the mail. Every text may be empty, every list too. `answer::read` checks its shape strictly (an unknown or missing key, a list too long fail the run). A value that is not what it claims, an address that is not one (`alice at acme.fr`), a number with words (`06 12 34 56 78 (direct)`), a link without `http://` or `https://` (`www.acme.fr`), is **left out** of the card and listed in `dropped` (as written, cut at 80 characters), which the panel shows under the card: unlike a wrong date, one odd number does not make the rest of the card wrong, and failing would lose it. Nothing is mended: a value goes into the card as given, or not at all. A number is digits, spaces, `( ) - . /` and one `+` before the first digit (`+33 6…`, `(+33)6…`), 4 to 20 digits. A phone kind other than `mobile`, `work`, `home`, `fax`, `other` is read as `other`: it only labels the number. Two things are done by the core, as facts it knows: the From address is put first in `emails`, added if the model left it out, and an address, a number or a link given twice is kept once. A card with no name, company, address or number (no From, nothing found) fails.
+
+The proposal is `{"kind": "contact", "card": {…, "dropped": […]}}`. `ai_apply {run_id}` gives `contact: {filename, content}`: the vCard 3.0 text (RFC 2426, `nm_ai::vcard::card`), the version macOS Contacts reads and writes and every address book imports; lines ended by CRLF and folded at 75 bytes; `N` always given (a name the model could not split goes whole into the first name, since Contacts shows a card without `N` as "No name"); a company without a person shown as a company (`X-ABShowAs:COMPANY`); the From address `PREF`; the postal address as a work `ADR`; `UID` `nicemailer-ai-<run>@nicemailer`; the link of the mail, `nicemailer://m/<id>`, in `NOTE` (not in `URL`, which Contacts would show as the person's website). The file is named after the card, `Alice Martin.vcf`. There is one card: `ai_apply` accepts the run and ends it, and the client closes the panel; `ai_dismiss` without a file records a refusal.
 
 ### Dates and appointments
 
@@ -194,12 +201,12 @@ The palette offers the prompts of its **target**, not of the window's layout (`G
 |---|---|---|
 | The reply written (⌘I), nothing selected | `compose` | proofread, rewrite, translate, subjects… |
 | A passage selected in the reply (⌘I) | `compose-selection` | other wordings, then proofread, improve, rewrite, translate of the passage |
-| One mail: the one marked alone, else the one shown, else the row under the cursor | `mail` | summary, quick replies, translation, security check, dates |
+| One mail: the one marked alone, else the one shown, else the row under the cursor | `mail` | summary, quick replies, translation, security check, dates, contact card |
 | Several mails marked | `selection` | filing them (Suggest a folder; Sort the Quarantine there) |
 
 A summary or a quick reply means nothing for several mails, and filing one mail alone is what the folder keys are for. One exception, from the prompt rather than the folder: a prompt of a set that takes the whole folder when nothing is marked (`unmarked = "folder"`, the sorting of the Quarantine) is offered on one mail too, first, since it still has its folder to work on. So in Quarantine the palette sorts first, and the security check of the mail shown is right there. A prompt over several mails other than filing (summarizing a few newsletters) would only need a `selection` prompt: the screens are ready for it.
 
-Out of a reply, **`a`** opens the palette of one mail: summary, quick replies, translation into each language, security check, dates. A prompt of one mail works on the mail under the reader's cursor (`ctrl-j`, `ctrl-k`) when its conversation is shown, else on its latest mail received; a prompt of the conversation on all of it.
+Out of a reply, **`a`** opens the palette of one mail: summary, quick replies, translation into each language, security check, dates, contact card. A prompt of one mail works on the mail under the reader's cursor (`ctrl-j`, `ctrl-k`) when its conversation is shown, else on its latest mail received; a prompt of the conversation on all of it.
 
 ### A passage selected
 
@@ -219,6 +226,7 @@ A prompt chosen, the text is saved first (the core reads the draft as saved, at 
 | a mail's text, summary or verdict is shown | it | Escape or Return closes it |
 | a mail's dates are proposed | one block per appointment, spaced out, the first highlighted: when (in words, in the app's language), what, where, how the date was read | Return saves the calendar file of the one highlighted, ⌘Return saves it and opens it (Calendar imports it), ↑ ↓ move, a number chooses directly; the panel stays open for another; Escape closes it |
 | quick replies are proposed | the numbered list, the first highlighted | Return (the one highlighted, ↑ ↓ move it) or a number starts the reply with it; Escape or `n` refuses |
+| the sender's card is proposed | one highlighted block, as a card of the address book: the name, the job and company, the addresses, the numbers with their label (Mobile, Work, Home, Fax, Phone), the postal address, the links; under it, in grey, what was left out ("Left out, not valid: …") | Return saves the `.vcf` to Downloads (never overwriting: "(2)"), ⌘Return saves it and opens it (Contacts asks before adding it); the panel closes; `c` copies the card as text, without what was left out; Escape closes it without saving |
 | it failed | why, in the error colour | Escape or Return closes it |
 
 Whatever the result, **`c`** copies its whole text to the clipboard, and the panel stays open (a proposal can still be accepted): a summary with its action items, a verdict with its reasons, a translation, a list with its numbers ("1. …"), the appointments one per line, and for a replacement the **new text** rather than its differences (the segments rewritten, a blank line apart). There is nothing to copy while the run goes on, after a failure, when no change is proposed or no date found; the hint under the title says `c copy` only where it works (`AI.copyText`). The status bar says "Result copied to the clipboard".

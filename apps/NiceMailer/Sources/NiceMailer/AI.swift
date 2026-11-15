@@ -82,9 +82,12 @@ enum AIProposal: Decodable, Equatable {
     /// The appointments of a mail (`dates`): Return saves the one
     /// highlighted as a calendar file; none when the mail names no date.
     case events([AIEvent])
+    /// The sender's card (`contact`): Return saves it as a vCard file,
+    /// ⌘Return saves it and opens it in Contacts.
+    case contact(AIContact)
 
     private enum Keys: String, CodingKey {
-        case kind, segments, unchanged, items, text, summary, actions, risk, reasons, raised, then, failedBatches
+        case kind, segments, unchanged, items, text, summary, actions, risk, reasons, raised, then, failedBatches, card
     }
 
     init(from decoder: Decoder) throws {
@@ -106,6 +109,8 @@ enum AIProposal: Decodable, Equatable {
             self = .choices(try c.decode([String].self, forKey: .items), then: try c.decode(String.self, forKey: .then))
         case "events":
             self = .events(try c.decode([AIEvent].self, forKey: .items))
+        case "contact":
+            self = .contact(try c.decode(AIContact.self, forKey: .card))
         case "targets":
             self = .targets(try c.decode([AISuggestion].self, forKey: .items), failedBatches: try c.decode(Int.self, forKey: .failedBatches))
         case let other:
@@ -127,9 +132,45 @@ struct AIEvent: Decodable, Equatable {
     let details: String
 }
 
-/// The calendar file of an appointment (`ai_apply`), for the app to save:
+/// The contact card of the sender of a mail (`ia.md`, section 8, "Fiche
+/// contact"), as the core checked it: every text may be empty, the From
+/// address is the first of `emails`.
+struct AIContact: Decodable, Equatable {
+    let name: String
+    let given: String
+    let family: String
+    let organization: String
+    /// The job title.
+    let title: String
+    let emails: [String]
+    let phones: [AIPhone]
+    let address: AIAddress
+    let urls: [String]
+    /// What the model gave that the core left out, not being an address,
+    /// a number or a link: shown under the card, never in it.
+    var dropped: [String] = []
+}
+
+/// A phone number of a card; `kind` is `mobile`, `work`, `home`, `fax`
+/// or `other`.
+struct AIPhone: Decodable, Equatable {
+    let kind: String
+    let number: String
+}
+
+/// The postal address of a card; every part may be empty.
+struct AIAddress: Decodable, Equatable {
+    let street: String
+    let locality: String
+    let postcode: String
+    let region: String
+    let country: String
+}
+
+/// A file the core made for the app to save (`ai_apply`): the calendar
+/// file of an appointment, the vCard of a contact. The app writes it, as
 /// the core has no access to Downloads.
-struct AICalendarFile: Decodable, Equatable {
+struct AIFile: Decodable, Equatable {
     let filename: String
     let content: String
 }
@@ -172,7 +213,9 @@ struct AIApplyResult: Decodable {
     let draft: DraftView?
     let text: String?
     /// An appointment chosen: its calendar file.
-    var calendar: AICalendarFile? = nil
+    var calendar: AIFile? = nil
+    /// The sender's card: its vCard file.
+    var contact: AIFile? = nil
 }
 
 /// The error codes of the AI (`nm-api`, `error_code`).
@@ -232,8 +275,8 @@ enum AIKeyAction: Equatable {
     /// Highlight another text of the list: the index it moves to, kept
     /// within the list.
     case move(Int)
-    /// An appointment saved as a calendar file, then opened (⌘↩): the
-    /// file's app, Calendar, imports it.
+    /// An appointment or a contact card saved as a file, then opened (⌘↩):
+    /// the file's app, Calendar or Contacts, imports it.
     case open(Int)
     case refuse
     /// Stop the run still going.
@@ -281,6 +324,13 @@ enum AI {
             if arrow != 0 { return .move(min(max(0, choice + arrow), items.count - 1)) }
             if let d = Int(key), d >= 1, d <= items.count { return .choose(d - 1) }
             return .hint
+        case .proposal(.contact):
+            // One card, as one appointment: ↩ saves it, ⌘↩ saves and opens
+            // it, Escape closes without saving.
+            if isEscape { return .refuse }
+            if isReturn && isCommand { return .open(0) }
+            if isReturn { return .accept }
+            return .hint
         case .proposal(.subjects(let items)), .proposal(.choices(let items, _)):
             // Every list works the same way, as a picker does: the text
             // highlighted (the first, the best, until ↑ ↓ move it) is the
@@ -314,6 +364,8 @@ enum AI {
         switch p {
         case .replace(_, true), .targets, .events([]): return nil
         case .replace(let segments, false): return segments.map(\.new).joined(separator: "\n\n")
+        // The card alone: what was left out is a remark, not part of it.
+        case .contact(let c): return contactLines(c).joined(separator: "\n")
         default: return resultText(p)
         }
     }
@@ -330,6 +382,7 @@ enum AI {
         case .proposal(.choices(let items, _)): L("↩ or 1–%lld reply with it · ↑↓ move · esc or n refuse", items.count)
         case .proposal(.events(let items)) where items.isEmpty: L("esc close")
         case .proposal(.events(let items)): L("↩ or 1–%lld save (.ics) · ⌘↩ add to the calendar · ↑↓ move · esc close", items.count)
+        case .proposal(.contact): L("↩ save (.vcf) · ⌘↩ add to Contacts · esc close")
         case .proposal(.text), .proposal(.summary), .proposal(.verdict), .proposal(.targets): L("esc close")
         }
     }
@@ -395,6 +448,48 @@ enum AI {
             return items.enumerated().map { i, e in
                 ["\(i + 1). \(eventWhen(e))", e.title, e.location, e.details].filter { !$0.isEmpty }.joined(separator: " · ")
             }.joined(separator: "\n")
+        case .contact(let c):
+            return (contactLines(c) + [droppedLine(c)].compactMap { $0 }).joined(separator: "\n")
+        }
+    }
+
+    /// A card as the panel shows it, one line per piece, the empty ones
+    /// left out: the name, the job and company, the addresses, the
+    /// numbers with their label, the postal address, the links. A pure
+    /// function, shared by the panel, the copy (`c`) and the UI scripts.
+    static func contactLines(_ c: AIContact) -> [String] {
+        var lines: [String] = []
+        let name = c.name.isEmpty ? [c.given, c.family].filter { !$0.isEmpty }.joined(separator: " ") : c.name
+        if !name.isEmpty { lines.append(name) }
+        let job = [c.title, c.organization].filter { !$0.isEmpty }.joined(separator: " · ")
+        if !job.isEmpty { lines.append(job) }
+        lines += c.emails
+        lines += c.phones.map { phoneLabel($0.kind) + " " + $0.number }
+        let a = c.address
+        // The postcode before the town, as most of Europe writes it; the
+        // street may hold several lines, joined so one line stays one.
+        let town = [a.postcode, a.locality].filter { !$0.isEmpty }.joined(separator: " ")
+        let place = [a.street.replacingOccurrences(of: "\n", with: ", "), town, a.region, a.country].filter { !$0.isEmpty }
+        if !place.isEmpty { lines.append(place.joined(separator: ", ")) }
+        lines += c.urls
+        return lines
+    }
+
+    /// What the core left out of a card, in one line ("Left out, not
+    /// valid: www.acme.fr, 06 12 34 56 78 (direct)"); `nil` when nothing
+    /// was. The user sees why a number of the signature is missing.
+    static func droppedLine(_ c: AIContact) -> String? {
+        c.dropped.isEmpty ? nil : L("Left out, not valid: %@", c.dropped.joined(separator: ", "))
+    }
+
+    /// The label of a kind of phone number, in the user's language.
+    static func phoneLabel(_ kind: String) -> String {
+        switch kind {
+        case "mobile": L("Mobile")
+        case "work": L("Work")
+        case "home": L("Home")
+        case "fax": L("Fax")
+        default: L("Phone")
         }
     }
 

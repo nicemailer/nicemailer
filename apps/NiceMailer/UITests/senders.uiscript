@@ -1,5 +1,6 @@
 # People and robots (`specifications/expediteurs.md`): the attribute
-# human / robot of the selector, and the origin of a contact, forced with `o`.
+# human / robot of the selector, and the origin of a contact, forced with
+# `o`, which every mail already received from it follows.
 key ;
 key a
 expect folder = Archive
@@ -44,8 +45,49 @@ expect choice =
 expect contact_origin = human *
 expect flash = Marked as written by a person
 snap contacts-origin
+# Every mail already received from the contact follows the choice, its
+# newsletters too (bulk mails, robots by themselves): its mails are all
+# among the humans now.
+key ret
+expect screen = mail
+expect list_filter ~ contact
+expect thread_count > 0
+key f
+type human
+key ret
+expect filters = human
+expect thread_count > 0
+snap contact-human
+key esc
+# Back to the computation: its newsletters are robots again.
+key ;
+key c
+expect screen = contacts
+# The screen keeps its filter ("gazette"), shown as a chip in the status
+# bar: the contact is under the cursor.
+expect contacts_filter = gazette
+expect contacts_count > 0
+expect contact_origin = human *
+snap contacts-filter-chip
 key o
 key -
 expect contact_origin = robot
+key ret
+expect list_filter ~ contact
+# The chip "human" stayed on: none of its mails is a person's now.
+expect filters = human
+expect thread_count = 0
+snap contact-robot
+click chip:human
+expect thread_count > 0
+key esc
+expect screen = mail
+# A click on the chip of the contacts filter removes it: every contact again.
+key ;
+key c
+expect contacts_filter = gazette
+click chip:contacts
+expect contacts_filter =
+expect contacts_count > 1
 key esc
 expect screen = mail

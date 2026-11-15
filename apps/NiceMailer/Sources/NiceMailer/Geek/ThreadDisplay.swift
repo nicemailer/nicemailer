@@ -49,6 +49,23 @@ enum ThreadDisplay {
         return (s, ids[target])
     }
 
+    /// The message whose sender `ctrl-c` and `ctrl-C` act on (`ui.md`,
+    /// "Expéditeur"): the current message (`ctrl-k` / `ctrl-j`, a click on
+    /// a header), else the last unfolded one, as `step` starts from. A
+    /// message of the user's own (Sent, Drafts) stands for the latest mail
+    /// received before it, else after it: the user does not look
+    /// themselves up. Nil for an empty thread.
+    static func senderMessage(_ thread: ThreadView, _ state: State) -> MessageView? {
+        let messages = thread.messages
+        let unfolded = { (m: MessageView) in state.showAll || (state.folding[m.id] ?? m.expanded) }
+        guard let current = state.current.flatMap({ id in messages.firstIndex { $0.id == id } })
+            ?? messages.lastIndex(where: unfolded) ?? messages.indices.last else { return nil }
+        let received = { (m: MessageView) in m.folderRole != "sent" && m.folderRole != "drafts" }
+        if received(messages[current]) { return messages[current] }
+        return messages[..<current].last(where: received) ?? messages[current...].first(where: received)
+            ?? messages[current]
+    }
+
     enum Block: Hashable {
         /// A message header, one line (`ui.md`, "Expéditeur"). `folded`:
         /// "▸ name · date · @domain" and a snippet (`detail`); otherwise
@@ -57,9 +74,11 @@ enum ThreadDisplay {
         /// second line if worth showing (`detail`). The arrow, and folding
         /// by a click (`foldable`), only in a conversation: a single mail
         /// has nothing to fold. `files`: attachments of a folded message,
-        /// shown as a paperclip and their number.
+        /// shown as a paperclip and their number. `book`: whether the
+        /// sender of an unfolded message is in the address book, an icon at
+        /// the end of the line; nil when not known (`SenderBook`).
         case header(messageId: Int, folded: Bool, title: String, detail: String?, files: Int = 0,
-                    address: String? = nil, alert: Bool = false, foldable: Bool = true)
+                    address: String? = nil, alert: Bool = false, foldable: Bool = true, book: SenderBook? = nil)
         /// A visible segment.
         case segment(messageId: Int, index: Int, kind: String, text: String, depth: Int)
         /// A hidden segment, replaced by a "···" line that opens it.
@@ -73,7 +92,9 @@ enum ThreadDisplay {
         case separator
     }
 
-    static func blocks(_ thread: ThreadView, _ state: State) -> [Block] {
+    /// `book`: the senders found or not in the address book, by message id
+    /// (`AppModel.senderBook`).
+    static func blocks(_ thread: ThreadView, _ state: State, book: [Int: SenderBook] = [:]) -> [Block] {
         var out: [Block] = []
         // A conversation: each message folds, and shows an arrow.
         let conversation = thread.messages.count > 1
@@ -95,7 +116,8 @@ enum ThreadDisplay {
             // The address after the date, unless it is the name already.
             let address = m.fromName != nil ? m.fromAddr.flatMap { $0.isEmpty ? nil : $0 } : nil
             out.append(.header(messageId: m.id, folded: false, title: "\(conversation ? "▾ " : "")\(who) · \(date)",
-                               detail: recipients, address: address, alert: senderAlert(m), foldable: conversation))
+                               detail: recipients, address: address, alert: senderAlert(m), foldable: conversation,
+                               book: book[m.id]))
             if m.onlyQuotes && !state.showAll {
                 out.append(.note(messageId: m.id, text: L("only quotes earlier messages")))
             }
@@ -197,7 +219,7 @@ enum ThreadDisplay {
 
     /// Number of folded messages (UI script state, tests).
     static func foldedCount(_ blocks: [Block]) -> Int {
-        blocks.filter { if case .header(_, true, _, _, _, _, _, _) = $0 { return true } else { return false } }.count
+        blocks.filter { if case .header(_, true, _, _, _, _, _, _, _) = $0 { return true } else { return false } }.count
     }
 
     /// `S` (like mutt's "skip quoted"): from the scroll position `y`, the

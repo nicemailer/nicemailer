@@ -41,14 +41,14 @@ struct ThreadDisplayTests {
     @Test func foldedMessagesAreOneLineWithASnippet() {
         let blocks = ThreadDisplay.blocks(thread, .init())
         #expect(ThreadDisplay.foldedCount(blocks) == 2)
-        guard case .header(1, true, let title, let detail, _, _, _, _) = blocks[0] else { Issue.record("\(blocks[0])"); return }
+        guard case .header(1, true, let title, let detail, _, _, _, _, _) = blocks[0] else { Issue.record("\(blocks[0])"); return }
         // The arrow (a conversation), then name · date · @domain (`ui.md`,
         // "Expéditeur").
         #expect(title == "▸ Alice · \(Format.geekMessageDate(1_700_000_000)) · @x.org")
         #expect(detail == "Peux-tu passer jeudi ?")
         // A message that only quotes says so instead of a snippet.
-        let last = blocks.last { if case .header(3, _, _, _, _, _, _, _) = $0 { return true } else { return false } }
-        if case .header(_, true, _, let d, _, _, _, _) = last { #expect(d == L("only quotes earlier messages")) }
+        let last = blocks.last { if case .header(3, _, _, _, _, _, _, _, _) = $0 { return true } else { return false } }
+        if case .header(_, true, _, let d, _, _, _, _, _) = last { #expect(d == L("only quotes earlier messages")) }
     }
 
     @Test func unfoldedMessagesShowVisibleSegmentsAndHiddenLines() {
@@ -72,7 +72,7 @@ struct ThreadDisplayTests {
         let blocks = ThreadDisplay.blocks(ThreadView(id: 1, subject: "S", messages: [m], asOf: Position(epoch: "e", seq: 0)), .init())
         // A single mail: unfolded although the core says folded, no arrow,
         // no folding; the address is the name, not repeated.
-        guard case .header(4, false, let title, _, _, let address, _, let foldable) = blocks[0] else { Issue.record("\(blocks)"); return }
+        guard case .header(4, false, let title, _, _, let address, _, let foldable, _) = blocks[0] else { Issue.record("\(blocks)"); return }
         #expect(title == "zoe@x.org · \(Format.geekMessageDate(1_700_000_000))")
         #expect(address == nil && !foldable)
     }
@@ -156,7 +156,7 @@ struct ThreadDisplayTests {
         #expect(ThreadDisplay.recipients(quiet, .init(showAll: true)) == L("To: %@", "me@x.org"))
         // The text reader's header carries the same line.
         let blocks = ThreadDisplay.blocks(ThreadView(id: 1, subject: "S", messages: [m], asOf: Position(epoch: "e", seq: 0)), .init())
-        guard case .header(1, false, _, let detail, _, _, _, _) = blocks.first else { Issue.record("\(blocks)"); return }
+        guard case .header(1, false, _, let detail, _, _, _, _, _) = blocks.first else { Issue.record("\(blocks)"); return }
         #expect(detail == ThreadDisplay.recipients(m, .init()))
     }
 

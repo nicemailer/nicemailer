@@ -74,6 +74,8 @@ L'affichage est simplifié au maximum : chaque message montre ce qu'il apporte. 
 - Alerte : l'adresse passe dans la couleur d'alerte quand le mail a échoué à l'authentification, ou quand le nom affiché montre une autre adresse ou un autre domaine que le vrai (« service@paypal.com » <x7@promo-mail.ru>, « PayPal.com »). Un domaine du nom dont le vrai domaine se termine par lui ne compte pas (« Le Monde.fr » depuis news.lemonde.fr).
 - Un clic sur l'adresse la copie (la barre de statut le dit) ; ⌘-clic filtre la liste sur cet expéditeur (pastille « de : »).
 - Les destinataires gardent leur nom seul.
+- Carnet d'adresses : au bout de la ligne d'un message déplié, après l'adresse, une icône dit si l'expéditeur est dans le carnet d'adresses du Mac (Contacts) : un carnet s'il y est, une silhouette avec un point d'interrogation sinon. Aucune icône pour les messages de l'utilisateur, ni tant que le carnet n'a pas pu être lu (pas d'accès) : mieux vaut rien qu'un « absent » faux. Un clic sur l'icône fait comme `ctrl-c`.
+- `ctrl-c` : sur l'expéditeur du message courant, ouvre sa fiche dans Contacts s'il y est, sinon copie son adresse. `ctrl-C` (avec Maj) : liste les mails de cet expéditeur, tous dossiers confondus, comme Entrée sur l'écran des contacts.
 
 ### Images distantes
 
@@ -256,7 +258,7 @@ Les lettres sont celles des dossiers (`dossiers.md`) : `j` est réservé à la n
 ainsi ;i va à l’inbox, ;p va à Paperwork, ;t va à Todo, etc
 
 Le prefix ";" permet également d'aller aux autres écrans : 
-c Contact (liste des adresses, avec leur provenance « humain » ou « robot », suivie de « * » quand l'utilisateur l'a choisie ; / filtre ; m choisit la décision sur l'adresse, M sur son domaine : i Inbox, n Newsletter, p Paperwork, b Banned, - aucune ; o choisit la provenance : h humain, r robot, - automatique, voir `expediteurs.md` ; entrée liste les mails du contact, tous dossiers)
+c Contact (liste des adresses, avec leur provenance « humain » ou « robot », suivie de « * » quand l'utilisateur l'a choisie ; / filtre : entrée ferme la saisie et garde le filtre, qui reste aussi quand on quitte l'écran et qu'on y revient ; tant qu'il est actif, il est affiché en permanence dans la barre de statut, comme les pastilles des attributs (`/gazette ×`), et un clic dessus le retire ; m choisit la décision sur l'adresse, M sur son domaine : i Inbox, n Newsletter, p Paperwork, b Banned, - aucune ; o choisit la provenance : h humain, r robot, - automatique, voir `expediteurs.md` ; entrée liste les mails du contact, tous dossiers)
 h History (affichage de l'historique issu de l audit log, plus récent d'abord)
 T tag (majuscule : `;t` est Todo ; entrée liste les mails du tag, et des tags de même nom des autres comptes)
 g group (entrée liste les mails des membres du groupe)

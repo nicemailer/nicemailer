@@ -600,7 +600,10 @@ struct ComposeControllerTests {
         #expect(await eventually { model.composer != nil })
         #expect(core.calls("cancel_send").first?["id"] as? Int == 901)
         #expect(model.composer?.buffer.text == "Merci")
-        #expect(model.flash == L("Sending cancelled: the reply is open again"))
+        // The flash comes after the reply is open again (`cancelSend` says
+        // it once `openComposer` returned): wait for it too, or a busy
+        // machine reads the flash of the sending.
+        #expect(await eventually { model.flash == L("Sending cancelled: the reply is open again") })
     }
 
     /// ⇧⌘↩ asks where the conversation goes, then sends with that choice;

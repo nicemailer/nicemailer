@@ -321,6 +321,21 @@ struct GeekStatusBar: View {
                     .uiTarget("status-ai")
                     .padding(.leading, controller.directTargets.isEmpty ? 0 : scaled(28))
             }
+            if let query = controller.contactsFilterChip {
+                // The contacts filter, kept after Return: a chip like the
+                // attributes of the mail list, removed by a click.
+                Text("/" + query + " ×")
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .foregroundStyle(Palette.accentText)
+                    .padding(.horizontal, scaled(4))
+                    .overlay(Rectangle().stroke(Palette.accent.opacity(0.5), lineWidth: 1))
+                    .contentShape(Rectangle())
+                    .onTapGesture { controller.clearContactsFilter() }
+                    .help(L("Contacts filtered on “%@”: click to show them all", query))
+                    .accessibilityLabel(L("Contacts filtered on “%@”: click to show them all", query))
+                    .uiTarget("chip-contacts")
+            }
             if case .contactFilter = controller.overlay {
                 HStack(spacing: 0) {
                     Text("/")
@@ -897,7 +912,9 @@ private struct GeekReaderColumn: View {
             ComposerView(controller: controller)
         } else if let thread = model.openThread, thread.id == model.selectedThreadId {
             let state = controller.readerState
-            let blocks = ThreadDisplay.blocks(thread, state)
+            // The address book's icons are part of the blocks: the text is
+            // rebuilt when the cards arrive (`TextReader.refresh`).
+            let blocks = ThreadDisplay.blocks(thread, state, book: model.senderBook)
             VStack(spacing: 0) {
                 // The subject, then the controls of the mail; on two lines
                 // when the subject would not fit whole beside them
@@ -1057,6 +1074,8 @@ private struct GeekReaderColumn: View {
         .att a img { width: \(Int(scaled(13)))px; height: \(Int(scaled(13)))px; vertical-align: -2px; margin-right: 6px; }
         .att a span { display: block; color: #888; font-size: \(Int(scaled(11)))px; }
         summary img { width: \(Int(scaled(11)))px; height: \(Int(scaled(11)))px; vertical-align: -1px; }
+        /* The address book's icon keeps its own proportions. */
+        summary a.book img { width: auto; }
         /* No scroll bar in the geek theme (ui.md). */
         html { scrollbar-width: none; }
         ::-webkit-scrollbar { display: none; }
@@ -1084,6 +1103,12 @@ private struct GeekReaderColumn: View {
             if m.fromName != nil, let addr = m.fromAddr, !addr.isEmpty {
                 let alert = ThreadDisplay.senderAlert(m) ? " alert" : ""
                 address = " · <a class=\"addr\(alert)\" href=\"nm://sender/\(m.id)\">\(esc(addr))</a>"
+            }
+            // The address book's icon at the end of the line, as in the text
+            // reader: a link that does what `ctrl-c` does.
+            if unfolded, let book = model.senderBook[m.id] {
+                address += " &nbsp;<a class=\"book\" href=\"nm://book/\(m.id)\" title=\"\(esc(book.label))\">"
+                    + "<img src=\"\(Self.symbolDataURI(book.symbol))\" alt=\"\(esc(book.label))\"></a>"
             }
             var summary = unfolded ? "\(arrow)\(who) · \(date)\(address)"
                 : "\(arrow)\(who) · \(date)\(domain) — \(esc(ThreadDisplay.snippet(m)))"
@@ -1279,7 +1304,7 @@ private struct TextReader: NSViewRepresentable {
             switch b {
             case .separator:
                 add("\n", small)
-            case .header(let id, let folded, let title, let detail, let files, let address, let alert, let foldable):
+            case .header(let id, let folded, let title, let detail, let files, let address, let alert, let foldable, let book):
                 let titleAttrs: [NSAttributedString.Key: Any] = [
                     .font: Fonts.scaled(12, weight: folded ? .regular : .semibold),
                     .foregroundColor: folded ? muted : NSColor(Palette.text),
@@ -1297,6 +1322,14 @@ private struct TextReader: NSViewRepresentable {
                     ]
                     add(" · ", small)
                     add(address, addressAttrs, link: "nm://sender/\(id)")
+                }
+                if let book {
+                    // At the end of the line: the sender is in the address
+                    // book, or not. A click does what `ctrl-c` does (opens
+                    // the card, or copies the address).
+                    add("  ", small)
+                    out.append(Self.symbol(book.symbol, size: scaled(11), color: muted, link: "nm://book/\(id)",
+                                           label: book.label))
                 }
                 if folded && files > 0 {
                     // A paperclip and the number of files of the folded mail.
@@ -1336,10 +1369,12 @@ private struct TextReader: NSViewRepresentable {
 
     /// An SF Symbol as a character of the text, in `color`, aligned on the
     /// text around it.
-    static func symbol(_ name: String, size: CGFloat, color: NSColor, link: String? = nil) -> NSAttributedString {
+    /// `label`: the tooltip, and what VoiceOver reads.
+    static func symbol(_ name: String, size: CGFloat, color: NSColor, link: String? = nil, label: String? = nil)
+        -> NSAttributedString {
         let config = NSImage.SymbolConfiguration(pointSize: size, weight: .regular)
             .applying(NSImage.SymbolConfiguration(paletteColors: [color]))
-        guard let image = NSImage(systemSymbolName: name, accessibilityDescription: nil)?.withSymbolConfiguration(config)
+        guard let image = NSImage(systemSymbolName: name, accessibilityDescription: label)?.withSymbolConfiguration(config)
         else { return NSAttributedString() }
         let attachment = NSTextAttachment()
         attachment.image = image
@@ -1348,6 +1383,7 @@ private struct TextReader: NSViewRepresentable {
         if let link, let url = URL(string: link) {
             s.addAttribute(.link, value: url, range: NSRange(location: 0, length: s.length))
         }
+        if let label { s.addAttribute(.toolTip, value: label, range: NSRange(location: 0, length: s.length)) }
         return s
     }
 
@@ -1432,9 +1468,15 @@ private struct TextReader: NSViewRepresentable {
         }
         guard UIScript.isActive, let storage = text.textStorage else { return }
         UIScript.readerText = storage.string
-        var n = 0, files = 0, senders = 0
+        var n = 0, files = 0, senders = 0, books = 0
         storage.enumerateAttribute(.link, in: NSRange(location: 0, length: storage.length)) { value, range, _ in
             guard let url = value as? URL, url.scheme == "nm" else { return }
+            if url.host == "book" {
+                // The address book's icon of an unfolded message.
+                UIScript.frames["reader-book-\(books)"] = text.convert(rect(range), to: nil)
+                books += 1
+                return
+            }
             if url.host == "sender" {
                 // The sender's address of an unfolded message.
                 UIScript.frames["reader-sender-\(senders)"] = text.convert(rect(range), to: nil)

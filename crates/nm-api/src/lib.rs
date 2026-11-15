@@ -2714,6 +2714,52 @@ pub enum AiProposal {
     /// The appointments of a mail (`dates`); `ai_apply {choice}` gives the
     /// calendar file of one, and the proposal stays, to save another.
     Events { items: Vec<AiEventView> },
+    /// The sender's contact card (`contact`); `ai_apply` gives its vCard
+    /// file and ends the run.
+    Contact { card: AiContactView },
+}
+
+/// The contact card of the sender of a mail (`ia.md`, section 8, "Fiche
+/// contact"). Every text may be empty; the lists may be empty.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AiContactView {
+    /// The name as the sender signs.
+    pub name: String,
+    pub given: String,
+    pub family: String,
+    pub organization: String,
+    /// The job title.
+    pub title: String,
+    /// The From address first.
+    pub emails: Vec<String>,
+    pub phones: Vec<AiPhoneView>,
+    pub address: AiAddressView,
+    /// Full `http(s)://` links.
+    pub urls: Vec<String>,
+    /// What the model gave that is not an address, a number or a link, as
+    /// written: left out of the card, shown so the user knows.
+    #[serde(default)]
+    pub dropped: Vec<String>,
+}
+
+/// A phone number of a contact card.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AiPhoneView {
+    /// `mobile`, `work`, `home`, `fax` or `other`.
+    pub kind: String,
+    /// As the mail writes it.
+    pub number: String,
+}
+
+/// The postal address of a contact card; every part may be empty.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AiAddressView {
+    /// May hold several lines.
+    pub street: String,
+    pub locality: String,
+    pub postcode: String,
+    pub region: String,
+    pub country: String,
 }
 
 /// An appointment of a mail (`ia.md`, section 8, "Dates et rendez-vous").
@@ -2732,14 +2778,14 @@ pub struct AiEventView {
     pub details: String,
 }
 
-/// A calendar file to save (`ai_apply` on an appointment): the client
-/// writes it where the user's files go (the core has no access to
+/// A file to save (`ai_apply` on an appointment or a contact card): the
+/// client writes it where the user's files go (the core has no access to
 /// Downloads), under `filename` or a free variant of it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct AiCalendarFile {
-    /// `2026-11-20 Visite de l'appartement.ics`.
+pub struct AiFile {
+    /// `2026-11-20 Visite de l'appartement.ics`, `Alice Martin.vcf`.
     pub filename: String,
-    /// The iCalendar text (RFC 5545), CRLF line ends.
+    /// The iCalendar (RFC 5545) or vCard (RFC 2426) text, CRLF line ends.
     pub content: String,
 }
 
@@ -2815,5 +2861,8 @@ pub struct AiApplyResult {
     pub text: Option<String>,
     /// The calendar file of the appointment chosen, for the client to save.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub calendar: Option<AiCalendarFile>,
+    pub calendar: Option<AiFile>,
+    /// The vCard file of the sender's card, for the client to save.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contact: Option<AiFile>,
 }

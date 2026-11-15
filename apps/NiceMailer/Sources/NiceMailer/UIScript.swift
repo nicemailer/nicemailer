@@ -187,7 +187,8 @@ extension View {
 ///
 /// Targets: `thread:N` (N-th row of the list), `picker:N`,
 /// `screen:N`, `folder:NAME` (folder of the current view), `attachment:N` (N-th attachment tile of the text reader), `reader-link:N` (N-th header or
-/// "···" line of the reader).
+/// "···" line of the reader), `reader-book:N` (N-th address book icon of the
+/// text reader).
 @MainActor
 private final class Runner {
     let model: AppModel
@@ -395,6 +396,9 @@ private final class Runner {
             if name.hasPrefix("ctrl-") {
                 mods = .control
                 chars = String(name.dropFirst(5))
+                // `ctrl-C`: Shift is held, as on the keyboard (AppKit keeps
+                // the capital in the characters without modifiers).
+                if chars.count == 1, chars.uppercased() == chars, chars.lowercased() != chars { mods.insert(.shift) }
             } else if name.hasPrefix("cmd-") {
                 mods = .command
                 chars = String(name.dropFirst(4))
@@ -447,7 +451,7 @@ private final class Runner {
     func locate(_ target: String) async -> CGPoint? {
         let parts = target.split(separator: ":", maxSplits: 1).map(String.init)
         guard parts.count == 2 else { return nil }
-        if ["attachment", "reader-link", "reader-sender"].contains(parts[0]) {
+        if ["attachment", "reader-link", "reader-sender", "reader-book"].contains(parts[0]) {
             UIScript.remeasureReader?()
         }
         let id: String
@@ -601,6 +605,7 @@ private final class Runner {
             }(),
             "screen_index": "\(c.screenIndex)",
             "contacts_count": "\(c.contacts.count)",
+            "contacts_filter": c.contactsFilterChip ?? "",
             // The origin column of the contact under the cursor ("human",
             // "robot *" when forced; `expediteurs.md`, section 9).
             "contact_origin": c.contacts.indices.contains(c.screenIndex) ? c.contacts[c.screenIndex].originLabel : "",
@@ -673,6 +678,15 @@ private final class Runner {
             "reader_links": "\(UIScript.readerLinks)",
             "reader_folded": "\(m.openThread.map { ThreadDisplay.foldedCount(ThreadDisplay.blocks($0, c.readerState)) } ?? 0)",
             "show_all": "\(c.readerState.showAll)",
+            // The address book's icons drawn in the reader, in order: the
+            // sender of each unfolded message and whether they are in the
+            // book ("bob@example.org known | news@example.net unknown").
+            "reader_books": m.openThread.map { thread in
+                ThreadDisplay.blocks(thread, c.readerState, book: m.senderBook).compactMap { block -> String? in
+                    guard case .header(let id, _, _, _, _, _, _, _, let book?) = block else { return nil }
+                    return "\(thread.messages.first { $0.id == id }?.fromAddr ?? "") \(book.name)"
+                }.joined(separator: " | ")
+            } ?? "",
             "filters": m.attributes.chips.map(\.label).joined(separator: ", "),
             // Position of the first row of the open menu, in window
             // coordinates (origin bottom-left): where the menu is drawn.
@@ -738,7 +752,7 @@ private final class Runner {
             "ai_result": {
                 guard case .proposal(let p)? = m.aiRun?.phase else { return "" }
                 switch p {
-                case .text, .summary, .verdict, .choices, .events: return AI.resultText(p).replacingOccurrences(of: "\n", with: "\\n")
+                case .text, .summary, .verdict, .choices, .events, .contact: return AI.resultText(p).replacingOccurrences(of: "\n", with: "\\n")
                 default: return ""
                 }
             }(),

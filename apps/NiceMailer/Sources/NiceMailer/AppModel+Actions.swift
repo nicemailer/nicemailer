@@ -1,4 +1,5 @@
 import AppKit
+import Contacts
 import Foundation
 
 // Actions of the geek theme on the threads (`ui.md`, "Les opérations
@@ -678,6 +679,43 @@ extension AppModel {
     var contactLinks: [Link] {
         guard let id = openThread?.id, senderCardsThreadId == id else { return [] }
         return ContactLinks.links(senderCards)
+    }
+
+    /// Whether each sender of the open thread is in the address book, by
+    /// message id (`SenderBook.statuses`): empty until the cards of this
+    /// thread are read, so that no icon claims "not in Contacts" for a book
+    /// that was not read.
+    var senderBook: [Int: SenderBook] {
+        guard let thread = openThread else { return [:] }
+        return SenderBook.statuses(thread, cards: senderCardsThreadId == thread.id ? senderCards : nil)
+    }
+
+    /// The card of `address` if it is a sender of the open thread found in
+    /// the address book.
+    func senderCard(_ address: String) -> ContactCard? {
+        guard let id = openThread?.id, senderCardsThreadId == id else { return nil }
+        return SenderBook.card(of: address, in: senderCards)
+    }
+
+    /// Reads the cards again when the address book changes (a card created
+    /// in Contacts after `ctrl-c` copied the address): the icons of the
+    /// open thread follow without opening it again. macOS posts
+    /// `CNContactStoreDidChange` for changes made by any app. Installed
+    /// once, when the core answers (`connect`, `attach`).
+    ///
+    /// Swift note: the closure holds `self` weakly (`[weak self]`), so the
+    /// notification centre does not keep the model alive; it runs on the
+    /// main queue, which `MainActor.assumeIsolated` tells the compiler.
+    func watchAddressBook() {
+        guard addressBookObserver == nil else { return }
+        addressBookObserver = NotificationCenter.default.addObserver(
+            forName: .CNContactStoreDidChange, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                Task { await self.loadSenderCards(asking: false) }
+            }
+        }
     }
 
     /// Reads the cards of the open thread's senders. With `asking`, macOS's

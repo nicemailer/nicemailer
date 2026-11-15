@@ -571,6 +571,63 @@ fn appointments_closed_without_a_file_are_turned_down_and_bad_dates_fail() {
 }
 
 #[test]
+fn the_senders_card_is_given_as_a_vcard_with_the_from_address_first() {
+    let dir = tempfile::tempdir().unwrap();
+    // The model left the From address out and gave another one.
+    let answers = json!({"contact": json!({"contact": {
+        "name": "Alice Martin", "given": "Alice", "family": "Martin", "organization": "Agence A", "title": "Agente",
+        "emails": ["alice.martin@gmail.example"], "phones": [{"kind": "mobile", "number": "+33 6 12 34 56 78"}],
+        "address": {"street": "12 rue de la Paix", "locality": "Paris", "postcode": "75002", "region": "", "country": ""},
+        "urls": ["https://a.example"]}}).to_string()});
+    let (_core, mut c, visit, _) = mail_core(dir.path(), answers);
+    // Offered on a mail, with its letter.
+    let menu = c.call("ai_list_prompts", json!({"screen": "mail", "folder": "inbox", "lang": "fr"})).unwrap();
+    let item = menu.as_array().unwrap().iter().find(|p| p["id"] == "contact").cloned().unwrap();
+    assert_eq!((item["key"].as_str(), item["label"].as_str(), item["available"].as_bool()), (Some("v"), Some("Fiche contact"), Some(true)));
+    let (id, p) = run_mail(&mut c, "contact", visit, None);
+    assert_eq!(p["kind"], "contact");
+    assert_eq!(p["card"]["emails"], json!(["alice@a.example", "alice.martin@gmail.example"]), "the From first: {p}");
+    assert_eq!(p["card"]["phones"], json!([{"kind": "mobile", "number": "+33 6 12 34 56 78"}]));
+    assert_eq!(p["card"]["address"]["locality"], "Paris");
+    // The headers were sent: the model reads the From.
+    assert!(sent(dir.path(), id).contains("From: Alice <alice@a.example>"));
+    let a = c.call("ai_apply", json!({"run_id": id})).unwrap();
+    assert_eq!(a["contact"]["filename"], "Alice Martin.vcf");
+    assert!(a.get("calendar").is_none(), "{a}");
+    let v = a["contact"]["content"].as_str().unwrap();
+    assert!(v.starts_with("BEGIN:VCARD\r\nVERSION:3.0\r\n"), "{v}");
+    assert!(v.contains("\r\nN:Martin;Alice;;;\r\nFN:Alice Martin\r\nORG:Agence A\r\n"), "{v}");
+    assert!(v.contains("\r\nEMAIL;TYPE=INTERNET,PREF:alice@a.example\r\n"), "{v}");
+    assert!(v.contains(&format!("\r\nUID:nicemailer-ai-{id}@nicemailer\r\n")), "{v}");
+    let mail = row_target(dir.path(), id);
+    assert!(v.contains(&format!("\r\nNOTE:nicemailer://m/{mail}\r\n")), "{v}");
+    assert_eq!(row(dir.path(), id).1.as_deref(), Some("accepted"));
+    // One card: the run ends with it.
+    assert_eq!(c.call("ai_apply", json!({"run_id": id})).unwrap_err()["code"], 1001, "not found");
+}
+
+#[test]
+fn a_card_closed_unsaved_is_turned_down_and_a_bad_number_left_out() {
+    let dir = tempfile::tempdir().unwrap();
+    let answers = json!({"contact": json!({"contact": {
+        "name": "Alice", "given": "", "family": "", "organization": "", "title": "", "emails": [],
+        "phones": [{"kind": "work", "number": "01 23 45 67 89 (standard)"}, {"kind": "mobile", "number": "(+33)6 01 47 26 04"}],
+        "address": {"street": "", "locality": "", "postcode": "", "region": "", "country": ""}, "urls": []}}).to_string()});
+    let (_core, mut c, visit, _) = mail_core(dir.path(), answers);
+    // A number with words: left out and listed, the rest of the card kept.
+    let (id, p) = run_mail(&mut c, "contact", visit, None);
+    assert_eq!(p["card"]["phones"], json!([{"kind": "mobile", "number": "(+33)6 01 47 26 04"}]), "{p}");
+    assert_eq!(p["card"]["dropped"], json!(["01 23 45 67 89 (standard)"]), "{p}");
+    c.call("ai_dismiss", json!({"run_id": id})).unwrap();
+    assert_eq!(row(dir.path(), id).1.as_deref(), Some("rejected"));
+    // Its vCard holds only the number kept.
+    let (id, _) = run_mail(&mut c, "contact", visit, None);
+    let a = c.call("ai_apply", json!({"run_id": id})).unwrap();
+    let v = a["contact"]["content"].as_str().unwrap();
+    assert!(v.contains("TEL;TYPE=CELL,VOICE:(+33)6 01 47 26 04\r\n") && !v.contains("standard"), "{v}");
+}
+
+#[test]
 fn a_low_verdict_is_raised_by_a_link_that_lies() {
     let dir = tempfile::tempdir().unwrap();
     let answers = json!({"security-check": "{\"risk\": \"low\", \"reasons\": [\"Looks like a normal notice.\"]}"});
