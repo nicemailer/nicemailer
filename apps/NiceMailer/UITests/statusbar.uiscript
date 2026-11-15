@@ -2,6 +2,11 @@
 # key and by click, and the unified account "all".
 expect account = all
 expect folder = Inbox
+# The launch is over once the first list is shown, and it was timed
+# (`StartupTimings`, written to the system log); the status bar no longer
+# says "Loading the mail…".
+expect startup_phase = ready
+expect startup_ms > 0
 # The normal mode shows the app's icon at the left; the other modes are
 # written (a prefix waiting for its key: its letter).
 expect mode = NOR

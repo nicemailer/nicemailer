@@ -30,6 +30,43 @@ final class AppModel {
 
     // `private(set)`: readable from anywhere, writable only from this class.
     private(set) var status: Status = .connecting
+
+    /// Where the launch is, until the first list is shown: what the app
+    /// says while the list is still empty (`StartupPhase.message`), so that
+    /// a core that takes a few seconds to start does not look like an
+    /// empty mailbox.
+    enum StartupPhase: Equatable {
+        /// Opening the socket of a core already running.
+        case connecting
+        /// No core answered: launchd is starting it (`openSocket`).
+        case startingCore
+        /// Connected: the folders and the first list are loading.
+        case loading
+        /// The first list is shown.
+        case ready
+
+        /// The line shown in the empty list and the status bar; nil once
+        /// ready.
+        var message: String? {
+            switch self {
+            case .connecting: L("Connecting to the core…")
+            case .startingCore: L("Starting the core…")
+            case .loading: L("Loading the mail…")
+            case .ready: nil
+            }
+        }
+    }
+
+    private(set) var startupPhase: StartupPhase = .connecting
+    /// When the model was made, at the app's launch, to time it
+    /// (`StartupTimings`).
+    @ObservationIgnored private let created = ContinuousClock.now
+    /// How long the launch took, once the first list is shown.
+    @ObservationIgnored private(set) var startupTimings: StartupTimings?
+    /// When the socket answered, for `startupTimings`.
+    @ObservationIgnored private var socketOpened: ContinuousClock.Instant?
+    /// The app had to start the core (`openSocket`), for `startupTimings`.
+    @ObservationIgnored private var startedCore = false
     private(set) var folders: [FolderView] = []
     /// Threads of the selected folder, as far as loaded (pages are appended
     /// as the user scrolls).
@@ -594,6 +631,8 @@ final class AppModel {
         }
         do {
             let c = try await openSocket()
+            socketOpened = socketOpened ?? .now
+            if startupPhase != .ready { startupPhase = .loading }
             connection = c
             client = c
             let hello: HelloResult = try await c.call("hello", ["protocol_version": CoreClient.protocolVersion, "client": "app"])
@@ -684,6 +723,10 @@ final class AppModel {
                 // launchd was still noting the previous core's exit, is
                 // not the end of it.
                 if lastKick.map({ Date().timeIntervalSince($0) > 2 }) ?? true {
+                    // No core answered: it is being started, which takes
+                    // a moment (its database to open). Said as such.
+                    if startupPhase == .connecting { startupPhase = .startingCore }
+                    startedCore = true
                     CoreAgent.kickstart()
                     lastKick = Date()
                 }
@@ -1006,6 +1049,9 @@ final class AppModel {
                 // Setting the selection triggers `didSet`, which loads the list.
                 selectedFolderId = folders.first { $0.role == "inbox" }?.id ?? folders.first?.id
             }
+            // No folder at all (no account yet): no list will load, and
+            // the launch is over all the same; the list says "No mail".
+            if listedFolderIds.isEmpty && listFilter == nil { firstListShown() }
         } else {
             await reloadThreads(keepDepth: true)
         }
@@ -1025,7 +1071,11 @@ final class AppModel {
     func reloadThreads(keepDepth: Bool = false) async {
         let folderIds = listedFolderIds
         let listFilter = self.listFilter
-        guard let client, !folderIds.isEmpty || listFilter != nil else { threads = []; return }
+        guard let client, !folderIds.isEmpty || listFilter != nil else {
+            threads = []
+            if client != nil { firstListShown() }
+            return
+        }
         let sort = self.sort
         let filter = attributes
         // Read once: every page of this reload lists the same thing.
@@ -1074,6 +1124,7 @@ final class AppModel {
             stickyThreadId = kept.sticky
             nextCursor = cursor
             selectFirstIfNeeded(previous: keepDepth ? before : [])
+            firstListShown()
             // A page dropped while this reload ran (its cursor was replaced)
             // is asked again if the cursor still needs it.
             prefetchIfNearEnd()
@@ -1153,6 +1204,18 @@ final class AppModel {
         selectedThreadId = nil
         marked = []
         Task { await reloadThreads() }
+    }
+
+    /// The first list is shown: the launch is over. Its timings go to the
+    /// system log once (`StartupTimings`).
+    private func firstListShown() {
+        guard startupPhase != .ready else { return }
+        startupPhase = .ready
+        let now = ContinuousClock.now
+        let timings = StartupTimings(socket: (socketOpened ?? now) - created, firstList: now - created,
+                                     startedCore: startedCore, rows: threads.count)
+        startupTimings = timings
+        StartupTimings.log.notice("\(timings.line, privacy: .public)")
     }
 
     /// Loads the next page when the last row appears on screen (called by

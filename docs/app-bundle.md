@@ -70,6 +70,15 @@ The upgrade is made by the CLI (`nicemailer mailbox upgrade <folder>`) **before*
 
 An app without its CLI (`swift run`) uses the folder unchecked, as before; `NICEMAILER_CLI=<path>` names one (the UI scenarios do).
 
+## How long the launch takes
+
+Until the first list is shown, the list and the status bar say what is happening instead of "No mail": "Connecting to the core…", then "Starting the core…" when no core answered and launchd is starting it, then "Loading the mail…" once connected (`AppModel.StartupPhase`).
+
+Both sides time their part, so that a slow launch can be measured on the Mac where it happens:
+
+- the core, in `core.log`, once its socket is bound: `startup: socket ready after 1840 ms (store 1210, readers 4, settings 35, recovery 580, socket 11)` (the database opened, the read connections, the settings and accounts, the actions and drafts taken up again, the socket);
+- the app, in the system log (category `startup`), once its first list is shown: `first list after 2310 ms (60 rows; socket after 1840 ms, core started by the app)`, from the app's launch. Read it with `/usr/bin/log show --last 10m --predicate 'subsystem == "eu.nicemailer.app" AND category == "startup"'`.
+
 ## When the core cannot start
 
 A core that stops on an error writes why to `core-error.json` in its folder (`nm_api::StartupError`: `kind` `outdated`, `too_new` or `other`, the message, and what is missing or the versions), and removes it once a core starts there. When no core answers, the app shows that reason, in the user's language, instead of "unreachable", with a **Change Mailbox…** button beside "Try Again": the way out when the folder chosen is one the core refuses.

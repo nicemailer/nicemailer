@@ -233,7 +233,12 @@ async fn main() -> anyhow::Result<()> {
 async fn run(args: Args, data_dir: &Path) -> anyhow::Result<()> {
     let data_dir = data_dir.to_path_buf();
     let db_path = data_dir.join(nm_api::paths::DATABASE);
+    // How long each step before the socket takes: until the socket is
+    // bound, the app can only wait ("starting the core…"), so this is the
+    // part of the launch the user sees. Written once, when it is ready.
+    let mut clock = StartupClock::new();
     let mut store = open_store(&data_dir, &db_path).await?;
+    clock.mark("store");
     // Opened after the writing store, which creates or migrates the
     // database. Six connections for the clients: since the requests of a
     // connection run in parallel (`serve`), the app may have a list, a
@@ -243,6 +248,7 @@ async fn run(args: Args, data_dir: &Path) -> anyhow::Result<()> {
     // (32 MB at most, `Store::open_reader`), filled only when used.
     let readers = ReadPool::open(&db_path, 6).with_context(|| format!("lecture de {}", db_path.display()))?;
     let sync_readers = ReadPool::open(&db_path, 3).with_context(|| format!("lecture de {}", db_path.display()))?;
+    clock.mark("readers");
 
     // Settings, before the event log, whose sizes they give. An invalid
     // file does not stop the core: it starts with the defaults and no
@@ -272,6 +278,7 @@ async fn run(args: Args, data_dir: &Path) -> anyhow::Result<()> {
     let mut engine = Engine::new(config_path.clone(), secrets);
     let startup_events = engine.reload(&mut store, true)?;
     log_config(&engine);
+    clock.mark("settings");
     let settings = engine.config().events.clone();
     let ai_settings = engine.config().ai.clone();
 
@@ -337,6 +344,7 @@ async fn run(args: Args, data_dir: &Path) -> anyhow::Result<()> {
             }
         }
     }
+    clock.mark("recovery");
     // Kept alive until the end of `main`: dropping it stops the watch. A
     // watch that cannot start is not fatal: the file is then read at the
     // next start only.
@@ -361,6 +369,8 @@ async fn run(args: Args, data_dir: &Path) -> anyhow::Result<()> {
     // 0o600: only the current user can connect.
     fs::set_permissions(&socket_path, fs::Permissions::from_mode(0o600))?;
     eprintln!("nicemailer-core : base {}, socket {}", db_path.display(), socket_path.display());
+    clock.mark("socket");
+    eprintln!("{}", clock.line());
     start_reindex(&core)?;
     start_sender_backfill(&core)?;
     sync::start_gc(&core);
@@ -1735,6 +1745,39 @@ async fn start_import(core: &Arc<Core>, p: ImportMboxParams, source: Source) -> 
 /// No event is sent: a body only shows when a thread is opened, and an
 /// event per batch would make the app reload its list hundreds of times.
 /// A thread already open keeps its old body until opened again.
+/// The steps of the start up to the socket, each with its duration
+/// (`run`): one line in the log, such as `startup: socket ready after
+/// 1840 ms (store 1210, readers 4, settings 35, recovery 580, socket 11)`.
+struct StartupClock {
+    started: Instant,
+    last: Instant,
+    steps: Vec<(&'static str, Duration)>,
+}
+
+impl StartupClock {
+    fn new() -> StartupClock {
+        let now = Instant::now();
+        StartupClock { started: now, last: now, steps: Vec::new() }
+    }
+
+    /// Ends the step `name`, which began at the previous mark.
+    fn mark(&mut self, name: &'static str) {
+        let now = Instant::now();
+        self.steps.push((name, now - self.last));
+        self.last = now;
+    }
+
+    fn line(&self) -> String {
+        startup_line(self.last - self.started, &self.steps)
+    }
+}
+
+/// The log line of the start (`StartupClock`). A pure function, tested.
+fn startup_line(total: Duration, steps: &[(&str, Duration)]) -> String {
+    let steps: Vec<String> = steps.iter().map(|(name, d)| format!("{name} {}", d.as_millis())).collect();
+    format!("startup: socket ready after {} ms ({})", total.as_millis(), steps.join(", "))
+}
+
 fn start_reindex(core: &Arc<Core>) -> anyhow::Result<()> {
     let core = core.clone();
     // Everything happens on the reindex thread, the check included: the
@@ -1853,6 +1896,16 @@ fn run_import(core: Arc<Core>, job_id: u64, opts: ImportOptions) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The line of the start: the total, then each step in its order.
+    #[test]
+    fn the_startup_line_gives_each_step() {
+        let ms = Duration::from_millis;
+        assert_eq!(
+            startup_line(ms(1840), &[("store", ms(1210)), ("readers", ms(4)), ("socket", ms(11))]),
+            "startup: socket ready after 1840 ms (store 1210, readers 4, socket 11)"
+        );
+    }
 
     /// The line of a slow request: dated, its total, its wait for the
     /// database and the rest; a wait measured longer than the total (clocks

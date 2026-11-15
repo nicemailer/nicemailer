@@ -352,6 +352,8 @@ struct GeekStatusBar: View {
                 Text(message).foregroundStyle(Palette.error).lineLimit(1)
             } else if case .upgrading = model.status {
                 Text(L("upgrading the mailbox…")).foregroundStyle(Palette.muted).lineLimit(1)
+            } else if let starting = model.startupPhase.message {
+                Text(starting).foregroundStyle(Palette.muted).lineLimit(1)
             } else if let sort = model.aiSort {
                 Text(AI.sortLine(sort)).foregroundStyle(Palette.accentText).lineLimit(1)
             } else if controller.screen == .mail, model.composer == nil, let s = model.selectedSuggestion {
@@ -602,7 +604,11 @@ private struct GeekThreadRows: View {
                 .onAppear { if let id = model.selectedThreadId { proxy.scrollTo(id) } }
                 .overlay {
                     if model.threads.isEmpty {
-                        Text(L("No mail")).foregroundStyle(Palette.muted)
+                        // During the launch, what is happening (the core
+                        // starting, the list loading) rather than "No
+                        // mail", which an empty list would otherwise say
+                        // of a full mailbox.
+                        Text(model.startupPhase.message ?? L("No mail")).foregroundStyle(Palette.muted)
                     }
                 }
             }
