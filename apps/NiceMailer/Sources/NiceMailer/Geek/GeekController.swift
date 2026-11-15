@@ -395,6 +395,13 @@ final class GeekController {
                 senderClicked(address, command: command)
             }
             return true
+        case "book":
+            // The address book's icon: what `ctrl-c` does, for that message.
+            if let id = parts.first.flatMap(Int.init),
+               let m = model.openThread?.messages.first(where: { $0.id == id }) {
+                Task { await cardOrCopy(m) }
+            }
+            return true
         default:
             return false
         }
@@ -413,6 +420,58 @@ final class GeekController {
             pasteboard.clearContents()
             pasteboard.setString(address, forType: .string)
             model.flash = L("Copied: %@", address)
+        }
+    }
+
+    /// The message `ctrl-c` and `ctrl-C` act on (`ThreadDisplay.senderMessage`).
+    private var senderMessage: MessageView? {
+        model.openThread.flatMap { ThreadDisplay.senderMessage($0, readerState) }
+    }
+
+    /// `ctrl-c` (or a click on the address book's icon): opens the card of
+    /// the sender of `message` in Contacts when the address book holds it;
+    /// otherwise copies the address, to create the card or write to it
+    /// (`ui.md`, "Expéditeur"). An address book macOS has not asked about
+    /// yet is asked now, as `l` would: the answer decides between the two.
+    /// A book that cannot be read copies.
+    func cardOrCopy(_ message: MessageView? = nil) async {
+        guard let m = message ?? senderMessage, let address = m.fromAddr, !address.isEmpty else {
+            model.flash = L("No sender to look up")
+            return
+        }
+        if model.addressBook.access == .notDetermined { await model.loadSenderCards(asking: true) }
+        if let card = model.senderCard(address), let url = ContactLinks.cardURL(card.id) {
+            model.openFile(url)
+            model.flash = L("Card of %@ opened in Contacts", card.name)
+        } else {
+            pasteboard.clearContents()
+            pasteboard.setString(address, forType: .string)
+            model.flash = L("Copied: %@", address)
+        }
+    }
+
+    /// `ctrl-C`: the mails of the sender of the current message, from every
+    /// folder, as Return on the contacts screen lists them (a "contact:"
+    /// list, Escape goes back). The core knows every sender of a mail it
+    /// holds: the contact is the row of `list_contacts` with this very
+    /// address (the query also matches longer addresses and names).
+    func listSenderMails() async {
+        guard let m = senderMessage, let address = m.fromAddr?.lowercased(), !address.isEmpty,
+              let client = model.core else {
+            model.flash = L("No sender to look up")
+            return
+        }
+        do {
+            let page: Page<ContactView> = try await client.call("list_contacts", ["query": address, "limit": 50])
+            guard let contact = page.items.first(where: { $0.addr.lowercased() == address }) else {
+                model.flash = L("No contact %@", address)
+                return
+            }
+            // One column: back to the list, which now shows these mails.
+            reading = false
+            model.showThreads(of: .contact(contact))
+        } catch {
+            model.report(error)
         }
     }
 
@@ -648,6 +707,11 @@ final class GeekController {
             // conversation, as k / j move in the list.
             case "k" where screen == .mail: stepMessage(-1)
             case "j" where screen == .mail: stepMessage(1)
+            // ctrl-c: the sender's card in Contacts, or their address
+            // copied when they are not in it; ctrl-C (with Shift): the
+            // sender's mails (`ui.md`, "Expéditeur").
+            case "c" where screen == .mail: Task { await cardOrCopy() }
+            case "C" where screen == .mail: Task { await listSenderMails() }
             case "f": scrollReader(pages: 1)
             case "b": scrollReader(pages: -1)
             default: return false

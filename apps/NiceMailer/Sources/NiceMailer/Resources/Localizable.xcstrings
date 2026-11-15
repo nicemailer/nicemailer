@@ -4239,6 +4239,76 @@
           }
         }
       }
+    },
+    "In Contacts (ctrl-c opens the card)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dans Contacts (ctrl-c ouvre la fiche)"
+          }
+        }
+      }
+    },
+    "Not in Contacts (ctrl-c copies the address)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Absent de Contacts (ctrl-c copie l'adresse)"
+          }
+        }
+      }
+    },
+    "No sender to look up": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucun expéditeur à chercher"
+          }
+        }
+      }
+    },
+    "Card of %@ opened in Contacts": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fiche de %@ ouverte dans Contacts"
+          }
+        }
+      }
+    },
+    "No contact %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucun contact %@"
+          }
+        }
+      }
+    },
+    "mails of the sender": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "mails de l'expéditeur"
+          }
+        }
+      }
+    },
+    "sender's card in Contacts, or copy address": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "fiche de l'expéditeur, ou copier l'adresse"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

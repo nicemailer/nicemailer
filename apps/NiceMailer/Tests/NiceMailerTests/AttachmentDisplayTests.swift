@@ -116,7 +116,7 @@ struct AttachmentDisplayTests {
             onlyQuotes: false, expanded: true, showRecipients: false, attachments: [])
         t = ThreadView(id: 1, subject: "S", messages: [first, reply], asOf: t.asOf)
         let blocks = ThreadDisplay.blocks(t, .init())
-        guard case .header(7, true, _, _, let n, _, _, _) = blocks.first else { Issue.record("\(blocks)"); return }
+        guard case .header(7, true, _, _, let n, _, _, _, _) = blocks.first else { Issue.record("\(blocks)"); return }
         #expect(n == 2)
         #expect(!blocks.contains { if case .attachments = $0 { return true } else { return false } })
     }

@@ -104,6 +104,8 @@ final class AppModel {
     /// Whether the status bar already said, this session, that the
     /// address book cannot be read: said once, not at each `l`.
     @ObservationIgnored var addressBookRefusalShown = false
+    /// The observer of the address book's changes (`watchAddressBook`).
+    @ObservationIgnored var addressBookObserver: NSObjectProtocol?
 
     /// What `z` undoes, most recent last: moves and decisions of this
     /// session (`AppModel+Workflow.swift`).
@@ -602,6 +604,7 @@ final class AppModel {
             // Listen to events in a separate task, which runs as long as the
             // connection lives, while this function goes on.
             Task { await listen(c) }
+            watchAddressBook()
             await loadUISettings()
             await reloadAll()
             openPendingDeepLink()
@@ -1467,6 +1470,7 @@ final class AppModel {
         connection = nil
         client = core
         status = .connected(coreVersion: "test")
+        watchAddressBook()
         await refreshAIEnabled()
         await reloadAll()
         openPendingDeepLink()
