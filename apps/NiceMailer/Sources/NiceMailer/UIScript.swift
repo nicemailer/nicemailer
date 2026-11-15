@@ -605,6 +605,7 @@ private final class Runner {
             }(),
             "screen_index": "\(c.screenIndex)",
             "contacts_count": "\(c.contacts.count)",
+            "contacts_filter": c.contactsFilterChip ?? "",
             // The origin column of the contact under the cursor ("human",
             // "robot *" when forced; `expediteurs.md`, section 9).
             "contact_origin": c.contacts.indices.contains(c.screenIndex) ? c.contacts[c.screenIndex].originLabel : "",

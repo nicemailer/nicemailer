@@ -258,7 +258,7 @@ Les lettres sont celles des dossiers (`dossiers.md`) : `j` est réservé à la n
 ainsi ;i va à l’inbox, ;p va à Paperwork, ;t va à Todo, etc
 
 Le prefix ";" permet également d'aller aux autres écrans : 
-c Contact (liste des adresses, avec leur provenance « humain » ou « robot », suivie de « * » quand l'utilisateur l'a choisie ; / filtre ; m choisit la décision sur l'adresse, M sur son domaine : i Inbox, n Newsletter, p Paperwork, b Banned, - aucune ; o choisit la provenance : h humain, r robot, - automatique, voir `expediteurs.md` ; entrée liste les mails du contact, tous dossiers)
+c Contact (liste des adresses, avec leur provenance « humain » ou « robot », suivie de « * » quand l'utilisateur l'a choisie ; / filtre : entrée ferme la saisie et garde le filtre, qui reste aussi quand on quitte l'écran et qu'on y revient ; tant qu'il est actif, il est affiché en permanence dans la barre de statut, comme les pastilles des attributs (`/gazette ×`), et un clic dessus le retire ; m choisit la décision sur l'adresse, M sur son domaine : i Inbox, n Newsletter, p Paperwork, b Banned, - aucune ; o choisit la provenance : h humain, r robot, - automatique, voir `expediteurs.md` ; entrée liste les mails du contact, tous dossiers)
 h History (affichage de l'historique issu de l audit log, plus récent d'abord)
 T tag (majuscule : `;t` est Todo ; entrée liste les mails du tag, et des tags de même nom des autres comptes)
 g group (entrée liste les mails des membres du groupe)

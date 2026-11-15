@@ -346,6 +346,28 @@ struct GeekControllerTests {
         #expect(await eventually { core.calls("list_contacts").last?["query"] as? String == "ab" })
     }
 
+    /// The filter kept after Return is shown as a chip (`ui.md`, the `;c`
+    /// screen), also after leaving the screen and coming back; a click
+    /// on the chip removes it.
+    @Test func theContactsFilterKeptAfterReturnIsShownAsAChip() async {
+        press(";"); press("c")
+        #expect(controller.contactsFilterChip == nil)
+        press("/"); type("ab")
+        // While the line is open, it shows the text itself: no chip.
+        #expect(controller.contactsFilterChip == nil)
+        press("ret")
+        #expect(controller.contactsFilterChip == "ab")
+        // Left and opened again: still filtered, still shown.
+        press("esc")
+        #expect(controller.contactsFilterChip == nil)
+        press(";"); press("c")
+        #expect(controller.contactsFilterChip == "ab")
+        #expect(await eventually { core.calls("list_contacts").last?["query"] as? String == "ab" })
+        controller.clearContactsFilter()
+        #expect(controller.contactsFilterChip == nil)
+        #expect(await eventually { core.calls("list_contacts").last?["query"] == nil })
+    }
+
     // MARK: Pickers and search
 
     @Test func semicolonListsTheFoldersAndEverythingAndHIsFree() {

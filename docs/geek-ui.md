@@ -245,7 +245,7 @@ The menu lists the folders in blocks separated by a blank line, the folder colum
 | `;o` | Work: Inbox, Todo and Waiting of the view together |
 | `;m` | All Mail: every folder of the view but Deleted, Junk and Banned |
 | `;e` | Everything: every folder of the view |
-| `;c` | Contacts: every known address, with its decision (or its domain's, after "@"), its origin ("human" or "robot", "*" when chosen by the user), groups and number of mails; `/` filters; `m` chooses the decision on the address, `M` on its domain (`i` Inbox, `n` Newsletter, `p` Paperwork, `b` Banned, `-` none); `o` chooses its origin (`h` human, `r` robot, `-` automatic, [senders.md](senders.md)); Return lists the contact's mails |
+| `;c` | Contacts: every known address, with its decision (or its domain's, after "@"), its origin ("human" or "robot", "*" when chosen by the user), groups and number of mails; `/` filters (Return closes the line and keeps the filter, also when the screen is left and opened again; while it is on, the status bar shows it as a chip, `/gazette ×`, which a click removes: `GeekController.contactsFilterChip`); `m` chooses the decision on the address, `M` on its domain (`i` Inbox, `n` Newsletter, `p` Paperwork, `b` Banned, `-` none); `o` chooses its origin (`h` human, `r` robot, `-` automatic, [senders.md](senders.md)); Return lists the contact's mails |
 | `;T` | Tags; Return lists the mails of the tag, in every account (uppercase: `;t` is Todo) |
 | `;g` | Groups; Return lists the mails of the group's members |
 | `;h` | History: the audit log, newest first |

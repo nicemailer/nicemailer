@@ -321,6 +321,21 @@ struct GeekStatusBar: View {
                     .uiTarget("status-ai")
                     .padding(.leading, controller.directTargets.isEmpty ? 0 : scaled(28))
             }
+            if let query = controller.contactsFilterChip {
+                // The contacts filter, kept after Return: a chip like the
+                // attributes of the mail list, removed by a click.
+                Text("/" + query + " ×")
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .foregroundStyle(Palette.accentText)
+                    .padding(.horizontal, scaled(4))
+                    .overlay(Rectangle().stroke(Palette.accent.opacity(0.5), lineWidth: 1))
+                    .contentShape(Rectangle())
+                    .onTapGesture { controller.clearContactsFilter() }
+                    .help(L("Contacts filtered on “%@”: click to show them all", query))
+                    .accessibilityLabel(L("Contacts filtered on “%@”: click to show them all", query))
+                    .uiTarget("chip-contacts")
+            }
             if case .contactFilter = controller.overlay {
                 HStack(spacing: 0) {
                     Text("/")

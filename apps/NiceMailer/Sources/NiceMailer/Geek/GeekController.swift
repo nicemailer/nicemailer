@@ -2674,6 +2674,27 @@ final class GeekController {
         contactsFilterChanged()
     }
 
+    /// The contacts filter to show as a chip in the status bar (`/gazette ×`),
+    /// or `nil`. Return closes the input line but keeps the filter, and the
+    /// screen keeps it when the user leaves and comes back (to find the
+    /// search again after listing a contact's mails): without the chip the
+    /// list would be narrowed, or empty, with nothing on screen to say why.
+    /// While the line is open, it shows the text itself, with its cursor.
+    var contactsFilterChip: String? {
+        guard screen == .contacts, !contactsQuery.isEmpty else { return nil }
+        // Swift note: `if case` tests one case of an enum; here, "the input
+        // line is open".
+        if case .contactFilter = overlay { return nil }
+        return contactsQuery
+    }
+
+    /// A click on the chip of the contacts filter: the filter goes, and the
+    /// whole list comes back.
+    func clearContactsFilter() {
+        contactsQuery = ""
+        contactsFilterChanged()
+    }
+
     /// The contacts filter changed: the list is loaded again from its top.
     private func contactsFilterChanged() {
         screenIndex = 0

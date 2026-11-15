@@ -63,9 +63,12 @@ key esc
 key ;
 key c
 expect screen = contacts
-# The screen keeps its filter ("gazette"): the contact is under the cursor.
+# The screen keeps its filter ("gazette"), shown as a chip in the status
+# bar: the contact is under the cursor.
+expect contacts_filter = gazette
 expect contacts_count > 0
 expect contact_origin = human *
+snap contacts-filter-chip
 key o
 key -
 expect contact_origin = robot
@@ -77,5 +80,14 @@ expect thread_count = 0
 snap contact-robot
 click chip:human
 expect thread_count > 0
+key esc
+expect screen = mail
+# A click on the chip of the contacts filter removes it: every contact again.
+key ;
+key c
+expect contacts_filter = gazette
+click chip:contacts
+expect contacts_filter =
+expect contacts_count > 1
 key esc
 expect screen = mail

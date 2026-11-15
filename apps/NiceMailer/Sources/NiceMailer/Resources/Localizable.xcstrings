@@ -4309,6 +4309,16 @@
           }
         }
       }
+    },
+    "Contacts filtered on “%@”: click to show them all": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Contacts filtrés sur « %@ » : cliquer pour tous les afficher"
+          }
+        }
+      }
     }
   },
   "version": "1.0"
