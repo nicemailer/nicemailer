@@ -410,8 +410,16 @@ async fn run(args: Args, data_dir: &Path) -> anyhow::Result<()> {
     {
         let store = core.lock_store("close");
         match store.close_cleanly() {
-            Ok(true) => eprintln!("clean close: the next start skips the reconciliation of the two files"),
-            Ok(false) => eprintln!("clean close: not marked (a log could not be emptied); the next start reconciles"),
+            Ok(r) => eprintln!(
+                "clean close: {} (checkpoint main {} ms, body {} ms)",
+                if r.marked {
+                    "the next start skips the reconciliation of the two files"
+                } else {
+                    "not marked, a reader was still busy; the next start reconciles"
+                },
+                r.main.as_millis(),
+                r.body.as_millis()
+            ),
             Err(e) => eprintln!("clean close: not marked ({e}); the next start reconciles"),
         }
     }

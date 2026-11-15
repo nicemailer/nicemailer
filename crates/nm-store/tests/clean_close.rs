@@ -18,7 +18,7 @@ fn reconciled(steps: &[&str]) -> bool {
 fn closed_cleanly(dir: &Path) -> std::path::PathBuf {
     let path = dir.join("nicemailer.db");
     let store = Store::open(&path).unwrap();
-    assert!(store.close_cleanly().unwrap());
+    assert!(store.close_cleanly().unwrap().marked);
     drop(store);
     path
 }
@@ -103,5 +103,25 @@ fn a_damaged_mark_reconciles() {
 #[test]
 fn a_database_in_memory_is_never_marked() {
     let store = Store::open_in_memory().unwrap();
-    assert!(!store.close_cleanly().unwrap());
+    assert!(!store.close_cleanly().unwrap().marked);
+}
+
+/// A reader still in a read when the core stops: the log cannot be
+/// emptied, so no mark (the next start reconciles), and the close does not
+/// wait long for it: launchd kills a core that takes 20 s to stop.
+#[test]
+fn a_busy_reader_leaves_no_mark_and_no_long_wait() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("nicemailer.db");
+    let store = Store::open(&path).unwrap();
+    // Something in the log, then a reader that holds its snapshot.
+    store.conn().execute_batch("CREATE TABLE IF NOT EXISTS probe (x); INSERT INTO probe VALUES (1);").unwrap();
+    let reader = rusqlite::Connection::open(&path).unwrap();
+    reader.execute_batch("BEGIN; SELECT count(*) FROM probe;").unwrap();
+    let started = std::time::Instant::now();
+    let report = store.close_cleanly().unwrap();
+    assert!(!report.marked);
+    assert!(started.elapsed() < std::time::Duration::from_secs(2), "{:?}", started.elapsed());
+    assert!(!dir.path().join(clean_close::FILE).exists());
+    reader.execute_batch("COMMIT;").unwrap();
 }

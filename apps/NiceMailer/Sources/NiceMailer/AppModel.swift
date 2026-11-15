@@ -707,6 +707,16 @@ final class AppModel {
         await refreshAIEnabled()
     }
 
+    /// The longest wait between two tries to open the socket of a core
+    /// being started (`openSocket`).
+    nonisolated static let socketRetryMax = 0.1
+
+    /// The wait before the next try, after a wait of `delay` seconds:
+    /// doubled, up to `socketRetryMax`. A pure function, tested.
+    nonisolated static func nextSocketDelay(_ delay: Double) -> Double {
+        min(delay * 2, socketRetryMax)
+    }
+
     /// Opens the socket of the core. With the agent, a core that does not
     /// answer is started (`launchctl kickstart`), and waited for a few
     /// seconds, the time to open its database (`architecture.md`, section
@@ -738,7 +748,11 @@ final class AppModel {
                     lastKick = Date()
                 }
                 try? await Task.sleep(for: .seconds(delay))
-                delay = min(delay * 2, 0.5)
+                // At most 0.1 s between two tries: a try is a connect() on
+                // a local socket, which costs nothing, while each step of
+                // a longer wait was time the user waited after the core
+                // was ready (up to 0.5 s, measured at a launch).
+                delay = Self.nextSocketDelay(delay)
             }
         }
     }

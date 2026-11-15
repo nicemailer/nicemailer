@@ -377,6 +377,15 @@ impl ChangeSet {
     }
 }
 
+/// What [`Store::close_cleanly`] did: whether it marked the files, and
+/// how long the checkpoint of each took (the core writes it in its log).
+#[derive(Debug, Clone, Default)]
+pub struct CloseReport {
+    pub marked: bool,
+    pub main: std::time::Duration,
+    pub body: std::time::Duration,
+}
+
 /// The steps of [`Store::open_timed`], each with its duration, in order.
 #[derive(Debug, Clone)]
 pub struct OpeningSteps {
@@ -623,17 +632,39 @@ impl Store {
     /// read), nor for a database in memory. The caller holds the store
     /// lock, so that nothing writes between the checkpoint and the mark; a
     /// write after it changes the files, and the next opening reconciles.
-    pub fn close_cleanly(&self) -> Result<bool> {
+    pub fn close_cleanly(&self) -> Result<CloseReport> {
+        let mut report = CloseReport::default();
+        // A checkpoint that empties a log waits until no reader is in a
+        // read: with the usual timeout (5 s), once per file, a stop took
+        // 11.7 s, and launchd kills a core that does not stop within 20 s.
+        // A reader still busy after 200 ms: no mark, the next start
+        // reconciles. Restored after, for the tests that go on.
+        self.conn.execute_batch("PRAGMA busy_timeout = 200;")?;
         // `wal_checkpoint(TRUNCATE)` answers (busy, log pages, pages
         // checkpointed); busy = 1 when a reader kept it from finishing.
-        let busy = |schema: &str| -> Result<bool> {
-            Ok(self.conn.query_row(&format!("PRAGMA {schema}.wal_checkpoint(TRUNCATE)"), [], |r| r.get::<_, i64>(0))? != 0)
+        let checkpoint = |schema: &str| -> Result<(bool, std::time::Duration)> {
+            let started = std::time::Instant::now();
+            let busy = self.conn.query_row(&format!("PRAGMA {schema}.wal_checkpoint(TRUNCATE)"), [], |r| r.get::<_, i64>(0))? != 0;
+            Ok((busy, started.elapsed()))
         };
-        if busy("main")? || busy("body")? {
-            return Ok(false);
-        }
-        let Some(path) = self.conn.path().filter(|p| !p.is_empty()).map(Path::new) else { return Ok(false) };
-        Ok(clean_close::write(path, &body_path(path)))
+        let result = (|| -> Result<()> {
+            let (busy, took) = checkpoint("main")?;
+            report.main = took;
+            if busy {
+                return Ok(());
+            }
+            let (busy, took) = checkpoint("body")?;
+            report.body = took;
+            if busy {
+                return Ok(());
+            }
+            if let Some(path) = self.conn.path().filter(|p| !p.is_empty()).map(Path::new) {
+                report.marked = clean_close::write(path, &body_path(path));
+            }
+            Ok(())
+        })();
+        self.conn.execute_batch("PRAGMA busy_timeout = 5000;")?;
+        result.map(|()| report)
     }
 
     /// Updates the planner statistics after a large change (an import adds

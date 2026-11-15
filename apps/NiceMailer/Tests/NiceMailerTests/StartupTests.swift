@@ -74,4 +74,20 @@ struct StartupTests {
         #expect(core.calls("config_status").count == 1)
         #expect(core.calls("ai_status").count == 1)
     }
+
+    /// While the core starts, the app tries its socket at least every
+    /// 0.1 s: each longer wait was time lost after the core was ready.
+    @Test func theSocketIsTriedOftenWhileTheCoreStarts() {
+        #expect(AppModel.nextSocketDelay(0.05) == 0.1)
+        #expect(AppModel.nextSocketDelay(0.1) == 0.1)
+        var delay = 0.05
+        var waited = 0.0
+        for _ in 0..<20 {
+            waited += delay
+            delay = AppModel.nextSocketDelay(delay)
+        }
+        // Twenty tries cover about two seconds, never more than 0.1 s apart.
+        #expect(delay <= AppModel.socketRetryMax)
+        #expect(waited < 2.1)
+    }
 }
