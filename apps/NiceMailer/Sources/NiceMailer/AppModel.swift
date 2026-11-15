@@ -492,6 +492,8 @@ final class AppModel {
             }
             autoShown = auto ? selectedThreadId.map { ($0, Date()) } : nil
             Task { await loadOpenThread(markSeen: !auto) }
+            // Going down the list with the keys loads the rows that follow.
+            prefetchIfNearEnd()
         }
     }
 
@@ -573,7 +575,7 @@ final class AppModel {
     private var dirtyFolders = Set<Int>()
     private var dirtyThreads = Set<Int>()
 
-    private static let pageSize = 60
+    nonisolated static let pageSize = 60
 
     // MARK: - Connection
 
@@ -1029,21 +1031,31 @@ final class AppModel {
         // Read once: every page of this reload lists the same thing.
         let scope = Self.listScope(everything: everything, virtual: virtual, folderIds: folderIds, listFilter: listFilter)
         let filterParameters = Self.filterParameters(filter, listFilter: listFilter)
-        let wanted = keepDepth ? max(threads.count, Self.pageSize) : Self.pageSize
+        // How deep to load. With `keepDepth`, the depth is read again after
+        // each page, not once at the start: a deep list takes several pages
+        // to reload (a dozen at 2 000 rows), and the next page loaded
+        // meanwhile (`loadNextPage`, the user going down the list) makes the
+        // list deeper. Taken once, the depth of the start would have thrown
+        // that page away when this reload replaced the list, and the list
+        // stopped growing there.
+        // Swift note: a closure that reads `threads` sees its value at the
+        // time it is called: the main actor may have changed it during an
+        // `await`.
+        let wanted = { keepDepth ? max(self.threads.count, Self.pageSize) : Self.pageSize }
         var items: [ThreadSummary] = []
         var cursor: String?
         do {
             // `repeat { } while` runs the body at least once.
             repeat {
                 var params = scope
-                params["limit"] = min(200, wanted - items.count)
+                params["limit"] = min(200, wanted() - items.count)
                 params["sort"] = sort
                 if let filterParameters { params["filter"] = filterParameters }
                 if let cursor { params["cursor"] = cursor }
                 let page: Page<ThreadSummary> = try await client.call("list_threads", params)
                 items += page.items
                 cursor = page.nextCursor
-            } while cursor != nil && items.count < wanted
+            } while cursor != nil && items.count < wanted()
             // The user may have changed folder while we were loading: then
             // this result is stale and must not replace the new list.
             guard folderIds == listedFolderIds, sort == self.sort, filter == attributes, listFilter == self.listFilter else { return }
@@ -1062,6 +1074,9 @@ final class AppModel {
             stickyThreadId = kept.sticky
             nextCursor = cursor
             selectFirstIfNeeded(previous: keepDepth ? before : [])
+            // A page dropped while this reload ran (its cursor was replaced)
+            // is asked again if the cursor still needs it.
+            prefetchIfNearEnd()
         } catch { report(error) }
     }
 
@@ -1141,30 +1156,83 @@ final class AppModel {
     }
 
     /// Loads the next page when the last row appears on screen (called by
-    /// each row's `.task` in `ThreadList`).
+    /// each row's `.task` in `ThreadList` and `GeekThreadList`): the list
+    /// scrolled with the mouse or the trackpad.
     func loadMoreIfNeeded(after thread: ThreadSummary) async {
+        guard thread.id == threads.last?.id else { return }
+        await loadNextPage()
+    }
+
+    /// How close to the end of the loaded rows the cursor may come before
+    /// the next page is asked for: half a page, so that the rows are there
+    /// before the cursor reaches them.
+    nonisolated static let prefetchMargin = pageSize / 2
+
+    /// Whether the cursor at `index`, in a list of `count` loaded rows,
+    /// needs the next page (`prefetchMargin`). A pure function, tested alone.
+    nonisolated static func needsNextPage(selected index: Int?, count: Int) -> Bool {
+        guard let index else { return false }
+        return index >= count - prefetchMargin
+    }
+
+    /// Asks for the next page when the cursor comes near the end of the
+    /// loaded rows: after each move of the cursor, after a reload, after a
+    /// page.
+    ///
+    /// Why not only the last row's `.task`: that task runs once, when the
+    /// row appears. When the page it asked for was lost (replaced by a
+    /// reload of the list that ran at the same time, `reloadThreads`), the
+    /// last row was still the same and still on screen: nothing asked again,
+    /// and `ctrl-d` / `j` stopped at that row for good, however much mail
+    /// followed. The cursor is what the keys move, so it is what asks.
+    func prefetchIfNearEnd() {
+        guard nextCursor != nil, !loadingMore,
+              Self.needsNextPage(selected: threads.firstIndex { $0.id == selectedThreadId }, count: threads.count)
+        else { return }
+        Task { await loadNextPage() }
+    }
+
+    /// Loads the page after the loaded rows, unless one is loading. A page
+    /// whose list changed meanwhile is dropped, then asked again with the
+    /// new cursor if the cursor still needs it (`prefetchIfNearEnd`).
+    private func loadNextPage() async {
         let folderIds = listedFolderIds
         let listFilter = self.listFilter
         guard let client, !folderIds.isEmpty || listFilter != nil, let cursor = nextCursor,
-              !loadingMore, thread.id == threads.last?.id else { return }
+              !loadingMore else { return }
         let sort = self.sort
         let filter = attributes
         loadingMore = true
-        // `defer` runs when the function exits, whatever the path.
-        defer { loadingMore = false }
+        let page: Page<ThreadSummary>
         do {
             var params = Self.listScope(everything: everything, virtual: virtual, folderIds: folderIds, listFilter: listFilter)
             params["cursor"] = cursor
             params["limit"] = Self.pageSize
             params["sort"] = sort
             if let p = Self.filterParameters(filter, listFilter: listFilter) { params["filter"] = p }
-            let page: Page<ThreadSummary> = try await client.call("list_threads", params)
-            // Drop the page if the folder or the list changed meanwhile.
-            guard folderIds == listedFolderIds, cursor == nextCursor, sort == self.sort, filter == attributes,
-                  listFilter == self.listFilter else { return }
-            threads += page.items
+            page = try await client.call("list_threads", params)
+        } catch {
+            // No new attempt on its own: a core that fails would be asked
+            // again and again. The next move of the cursor asks again.
+            loadingMore = false
+            report(error)
+            return
+        }
+        loadingMore = false
+        // Keep the page only if the folder and the list did not change
+        // meanwhile; else it is asked again below, with the new cursor.
+        if folderIds == listedFolderIds, cursor == nextCursor, sort == self.sort, filter == attributes,
+           listFilter == self.listFilter {
+            // A thread already listed is not listed twice: its date may
+            // have gone back since the earlier page (its latest mail
+            // deleted, All Mail), and two rows with one id confuse
+            // `ForEach`.
+            let listed = Set(threads.map(\.id))
+            threads += page.items.filter { !listed.contains($0.id) }
             nextCursor = page.nextCursor
-        } catch { report(error) }
+        }
+        // A cursor that did not move would ask for the same page forever.
+        if nextCursor != cursor { prefetchIfNearEnd() }
     }
 
     /// `items` (a refreshed list), plus the selected thread if it left the

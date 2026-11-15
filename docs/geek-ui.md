@@ -177,7 +177,7 @@ Actions apply to the **marked** mails if any (`J` / `K`), otherwise to the mail 
 | Key | Action |
 | --- | --- |
 | `j` `k` (or arrows) | next / previous mail |
-| `ctrl-d` `ctrl-u` | half a page down / up in the list, as in Zed: the cursor moves by half the rows that fit in the list, and stops on the first or last mail |
+| `ctrl-d` `ctrl-u` | half a page down / up in the list, as in Zed: the cursor moves by half the rows that fit in the list, and stops on the first or last mail. A long list is loaded 60 mails at a time as the cursor goes down: the next ones are asked for when it comes within 30 rows of the last mail loaded, so `j` and `ctrl-d` go on to the end of the list (All Mail of every account included) |
 | `J` `K`, shift-↓ shift-↑ | mark the mail and move (multiple selection) |
 | `f` | attribute selector (filters on the current list) |
 | `@` | account picker: **all** (unified view) or one account, keeping the folder role (Archive to Archive), or its Inbox |
