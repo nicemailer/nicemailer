@@ -74,6 +74,13 @@ snap ai-proposal
 key x
 expect compose_text ~ merci je vien jeudi|
 expect ai_state = proposal
+# `c` copies the text proposed (not its differences); the panel stays.
+key c
+expect pasteboard ~ Merci, je viens jeudi.
+expect pasteboard !~ [-
+expect flash ~ copied
+expect ai_state = proposal
+expect compose_text ~ merci je vien jeudi|
 key ret
 expect ai_state = none
 expect flash ~ Applied
@@ -140,6 +147,13 @@ expect ai_title = Summarize
 expect ai_result ~ Victor asks whether the March invoice is ready.
 expect ai_result ~ - Send the March invoice (you)
 snap ai-summary
+# `c` copies the whole summary, its action items too; the panel stays.
+key c
+expect pasteboard ~ Victor asks whether the March invoice is ready.
+expect pasteboard ~ - Send the March invoice (you)
+expect pasteboard_lines = 2
+expect flash ~ copied
+expect ai_state = proposal
 # A click on the AI block, the panel open: nothing, the result stays.
 click status:ai
 expect ai_state = proposal

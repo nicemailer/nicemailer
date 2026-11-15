@@ -240,6 +240,9 @@ enum AIKeyAction: Equatable {
     case cancel
     /// Close a panel that has nothing to apply (a failure, no change).
     case close
+    /// Copy the whole text of the result to the clipboard (`c`); the panel
+    /// stays open, so the result can still be accepted or chosen.
+    case copy
     /// Not an answer: the status bar says which keys are.
     case hint
 }
@@ -251,6 +254,10 @@ enum AI {
     /// it, ↑ ↓ (`arrow` -1, +1) move it, a digit takes a text directly.
     static func action(_ phase: AIRun.Phase, key: String, isReturn: Bool, isEscape: Bool,
                        arrow: Int = 0, choice: Int = 0, isCommand: Bool = false) -> AIKeyAction {
+        // `c` copies the result, whatever its kind (`ia.md`, section 11,
+        // "Panneau IA"), before the keys of each kind: none of them uses
+        // `c`, and digits or `y` / `n` keep their meaning.
+        if key == "c", !isCommand, case .proposal(let p) = phase, copyText(p) != nil { return .copy }
         switch phase {
         case .running:
             return isEscape ? .cancel : .hint
@@ -289,8 +296,29 @@ enum AI {
         }
     }
 
-    /// The keys the panel answers to, under its title.
+    /// The keys the panel answers to, under its title: those of its kind,
+    /// then `c` when there is a text to copy.
     static func hint(_ phase: AIRun.Phase) -> String {
+        let base = baseHint(phase)
+        guard case .proposal(let p) = phase, copyText(p) != nil else { return base }
+        return base + " · " + L("c copy")
+    }
+
+    /// The text `c` copies: the result as it reads in the panel, without
+    /// numbers to strip by hand. A replacement gives the new text (the
+    /// segments rewritten, a blank line apart), not its differences; a list
+    /// gives its texts one per line, numbered as shown. `nil` when there is
+    /// nothing to copy: no change proposed, no date in the mail, the
+    /// targets of a sort (shown on the rows, not in the panel). A pure function, tested alone.
+    static func copyText(_ p: AIProposal) -> String? {
+        switch p {
+        case .replace(_, true), .targets, .events([]): return nil
+        case .replace(let segments, false): return segments.map(\.new).joined(separator: "\n\n")
+        default: return resultText(p)
+        }
+    }
+
+    private static func baseHint(_ phase: AIRun.Phase) -> String {
         switch phase {
         case .running: L("esc stop")
         case .failed: L("esc close")

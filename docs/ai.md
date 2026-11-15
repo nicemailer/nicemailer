@@ -221,6 +221,8 @@ A prompt chosen, the text is saved first (the core reads the draft as saved, at 
 | quick replies are proposed | the numbered list, the first highlighted | Return (the one highlighted, ↑ ↓ move it) or a number starts the reply with it; Escape or `n` refuses |
 | it failed | why, in the error colour | Escape or Return closes it |
 
+Whatever the result, **`c`** copies its whole text to the clipboard, and the panel stays open (a proposal can still be accepted): a summary with its action items, a verdict with its reasons, a translation, a list with its numbers ("1. …"), the appointments one per line, and for a replacement the **new text** rather than its differences (the segments rewritten, a blank line apart). There is nothing to copy while the run goes on, after a failure, when no change is proposed or no date found; the hint under the title says `c copy` only where it works (`AI.copyText`). The status bar says "Result copied to the clipboard".
+
 The panel takes every key while it is open: the text cannot change under a proposal, and a letter pressed only says which keys answer. Accepted, the text becomes the core's (`ai_apply`), the cursor going to the end of the words rewritten if it was in them; **⌘Z** then gives the text back, once, and only while it is still the one the AI gave.
 
 The rules are pure functions (`AI.swift`: the key answers, the hint, the cursor, the diff as text); the model calls the core (`AppModel+AI.swift`); the panel is `AIPanel` (`ComposerView.swift`). An AI event that comes before the answer of `ai_run` is kept and replayed once the run's id is known; the end of a run is taken even after a gap of events, and after missed events the app asks the core for the state of the run it waits for.

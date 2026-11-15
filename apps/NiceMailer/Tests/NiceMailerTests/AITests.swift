@@ -36,7 +36,7 @@ struct AIRulesTests {
         // Return takes the one highlighted: the first by default.
         #expect(act(.proposal(subjects), ret: true) == .choose(0))
         #expect(AI.action(.proposal(subjects), key: "", isReturn: true, isEscape: false, choice: 2) == .choose(2))
-        #expect(AI.hint(.proposal(subjects)) == L("↩ or 1–%lld choose · ↑↓ move · esc or n refuse", 3))
+        #expect(AI.hint(.proposal(subjects)) == L("↩ or 1–%lld choose · ↑↓ move · esc or n refuse", 3) + " · " + L("c copy"))
         // A failure: Escape or Return close it.
         #expect(act(.failed("x"), esc: true) == .close)
         #expect(act(.failed("x"), "n") == .hint)
@@ -60,7 +60,7 @@ struct AIRulesTests {
         #expect(act(two, "3") == .hint)
         #expect(act(two, esc: true) == .refuse)
         #expect(act(two, "n") == .hint, "nothing to turn down: Escape closes")
-        #expect(AI.hint(.proposal(two)) == L("↩ or 1–%lld save (.ics) · ⌘↩ add to the calendar · ↑↓ move · esc close", 2))
+        #expect(AI.hint(.proposal(two)) == L("↩ or 1–%lld save (.ics) · ⌘↩ add to the calendar · ↑↓ move · esc close", 2) + " · " + L("c copy"))
         // A mail without a date: only read.
         #expect(act(.events([]), ret: true) == .close)
         #expect(act(.events([]), esc: true) == .close)
@@ -116,14 +116,14 @@ struct AIRulesTests {
             #expect(act(p, ret: true) == .close)
             #expect(act(p, esc: true) == .close)
             #expect(act(p, "y") == .hint, "nothing to accept in \(p)")
-            #expect(AI.hint(.proposal(p)) == L("esc close"))
+            #expect(AI.hint(.proposal(p)) == L("esc close") + " · " + L("c copy"))
         }
         let replies = AIProposal.choices(["Oui", "Non"], then: "reply")
         #expect(act(replies, "1") == .choose(0))
         #expect(act(replies, "3") == .hint)
         #expect(act(replies, ret: true) == .choose(0), "the first, highlighted")
         #expect(act(replies, esc: true) == .refuse)
-        #expect(AI.hint(.proposal(replies)) == L("↩ or 1–%lld reply with it · ↑↓ move · esc or n refuse", 2))
+        #expect(AI.hint(.proposal(replies)) == L("↩ or 1–%lld reply with it · ↑↓ move · esc or n refuse", 2) + " · " + L("c copy"))
     }
 
     @Test func aResultReadsAsText() {
@@ -181,6 +181,45 @@ struct AIRulesTests {
         #expect(AI.sortedFlash(found: 5, failedBatches: 2) == L("AI: %lld suggestions, %lld batches without an answer · ↩ on a row moves it there", 5, 2))
     }
 
+    @Test func cCopiesTheWholeResultAndKeepsThePanelOpen() {
+        let summary = AIProposal.summary("Alice attend jeudi.", actions: [AIAction(task: "Réserver", owner: "", due: "")])
+        func act(_ p: AIProposal, _ key: String, command: Bool = false) -> AIKeyAction {
+            AI.action(.proposal(p), key: key, isReturn: false, isEscape: false, isCommand: command)
+        }
+        // Every result with a text answers `c`, before the keys of its kind.
+        #expect(act(summary, "c") == .copy)
+        #expect(act(.text("Hello"), "c") == .copy)
+        #expect(act(.verdict(risk: "low", reasons: [], raised: false), "c") == .copy)
+        #expect(act(.subjects(["A"]), "c") == .copy)
+        #expect(act(.choices(["Oui"], then: "reply"), "c") == .copy)
+        #expect(act(replace, "c") == .copy)
+        let e = AIEvent(title: "Visite", start: "2020-06-25T14:00", end: "", location: "", details: "")
+        #expect(act(.events([e]), "c") == .copy)
+        // Nothing to copy: no change, no date, the targets of a sort.
+        #expect(act(.replace(segments: [], unchanged: true), "c") == .hint)
+        #expect(act(.events([]), "c") == .hint)
+        #expect(act(.targets([], failedBatches: 0), "c") == .hint)
+        // Not while it runs or after a failure; not ⌘C, not `C`.
+        #expect(AI.action(.running, key: "c", isReturn: false, isEscape: false) == .hint)
+        #expect(AI.action(.failed("x"), key: "c", isReturn: false, isEscape: false) == .hint)
+        #expect(act(summary, "c", command: true) == .hint)
+        #expect(act(summary, "C") == .hint)
+
+        // What is copied: the text as read, a replacement's new text (not
+        // its differences), the segments a blank line apart.
+        #expect(AI.copyText(summary) == "Alice attend jeudi.\n- Réserver")
+        #expect(AI.copyText(replace) == "the")
+        let two = AIProposal.replace(segments: [
+            AISegmentChange(old: "a", new: "A.", diff: []), AISegmentChange(old: "b", new: "B.", diff: []),
+        ], unchanged: false)
+        #expect(AI.copyText(two) == "A.\n\nB.")
+        #expect(AI.copyText(.subjects(["Jeudi", "Vendredi"])) == "1. Jeudi\n2. Vendredi")
+        #expect(AI.copyText(.events([])) == nil)
+        // The hint names `c` only where it copies.
+        #expect(AI.hint(.proposal(summary)) == L("esc close") + " · " + L("c copy"))
+        #expect(AI.hint(.proposal(.events([]))) == L("esc close"))
+    }
+
     @Test func theAIBlockOfTheStatusBarRemindsOfItsKey() {
         #expect(GeekController.aiKeyLabel(composing: false) == "a")
         #expect(GeekController.aiKeyLabel(composing: true) == "⌘I")
@@ -188,7 +227,7 @@ struct AIRulesTests {
 
     @Test func theHintSaysTheKeys() {
         #expect(AI.hint(.running) == L("esc stop"))
-        #expect(AI.hint(.proposal(.subjects(["A", "B"]))) == L("↩ or 1–%lld choose · ↑↓ move · esc or n refuse", 2))
+        #expect(AI.hint(.proposal(.subjects(["A", "B"]))) == L("↩ or 1–%lld choose · ↑↓ move · esc or n refuse", 2) + " · " + L("c copy"))
         #expect(AI.hint(.proposal(.replace(segments: [], unchanged: true))) == L("No change to make · esc close"))
     }
 
@@ -584,7 +623,7 @@ final class AIControllerTests {
         #expect(selection["start"] as? Int == 14 && selection["end"] as? Int == 19)
         event("AiDone", ["run_id": .int(7)])
         _ = await eventually { if case .proposal? = self.model.aiRun?.phase { true } else { false } }
-        #expect(AI.hint(try #require(model.aiRun?.phase)) == L("↩ or 1–%lld replace the selection · ↑↓ move · esc or n refuse · ⌘Z after choosing undoes", 2))
+        #expect(AI.hint(try #require(model.aiRun?.phase)) == L("↩ or 1–%lld replace the selection · ↑↓ move · esc or n refuse · ⌘Z after choosing undoes", 2) + " · " + L("c copy"))
         // ↩ again takes the first, the best: the core puts it in the draft.
         let before = try #require(model.composer?.buffer.text)
         ai.appliedBody = before.replacingOccurrences(of: "jeudi", with: "viens")
@@ -752,7 +791,7 @@ final class AIControllerTests {
         let selected = model.selectedThreadId
         press("j")
         #expect(model.selectedThreadId == selected)
-        #expect(await eventually { self.model.flash == L("esc close") })
+        #expect(await eventually { self.model.flash == L("esc close") + " · " + L("c copy") })
         press("esc")
         _ = await eventually { self.model.aiRun == nil }
         #expect(core.calls("ai_dismiss").count == 1)
@@ -760,6 +799,47 @@ final class AIControllerTests {
         // The keys are the list's again.
         press("j")
         #expect(model.selectedThreadId != selected)
+    }
+
+    @Test func cInThePanelCopiesTheResultToTheClipboard() async throws {
+        // A summary of the mail: `c` copies all of it, action items too,
+        // and the panel stays open.
+        press("a")
+        _ = await eventually { self.paletteOpen }
+        choose("r")
+        _ = await eventually { self.model.aiRun?.runId == 7 }
+        // While it runs, there is nothing to copy yet.
+        press("c")
+        #expect(controller.pasteboard.string(forType: .string) == nil)
+        event("AiDone", ["run_id": .int(7)])
+        _ = await eventually { if case .proposal? = self.model.aiRun?.phase { true } else { false } }
+        press("c")
+        #expect(controller.pasteboard.string(forType: .string) == "Alice attend jeudi.\n- Apporter les clés (you) · jeudi")
+        #expect(model.flash == L("Result copied to the clipboard"))
+        #expect(model.aiRun != nil, "the panel stays open")
+        #expect(core.calls("ai_dismiss").isEmpty)
+        press("esc")
+        _ = await eventually { self.model.aiRun == nil }
+
+        // A proofreading of the reply: the text proposed, not its
+        // differences; the reply is untouched, the proposal still there.
+        await reply()
+        press("cmd-i")
+        _ = await eventually { self.paletteOpen }
+        choose("c")
+        _ = await eventually { self.model.aiRun?.runId == 7 }
+        event("AiDone", ["run_id": .int(7)])
+        _ = await eventually { if case .proposal? = self.model.aiRun?.phase { true } else { false } }
+        controller.pasteboard.clearContents()
+        press("c")
+        let proposal = try #require({ if case .proposal(let p)? = model.aiRun?.phase { p } else { nil } }())
+        #expect(controller.pasteboard.string(forType: .string) == AI.copyText(proposal))
+        #expect(model.composer?.buffer.text.hasPrefix("merci\n") == true)
+        #expect(core.calls("ai_apply").isEmpty)
+        // Return still accepts it.
+        press("ret")
+        _ = await eventually { self.model.aiRun == nil }
+        #expect(core.calls("ai_apply").count == 1)
     }
 
     @Test func aClickOnTheAIBlockOpensThePaletteOfItsTarget() async throws {
@@ -847,7 +927,9 @@ final class AIControllerTests {
         event("AiDone", ["run_id": .int(7)])
         _ = await eventually { if case .proposal? = self.model.aiRun?.phase { true } else { false } }
         press("2")
-        _ = await eventually { self.model.composer != nil }
+        // The reply opens first, then gets the text: wait for the text,
+        // not only the reply (waiting for the reply alone was flaky).
+        _ = await eventually { self.model.composer?.buffer.text.hasPrefix("On peut") == true }
         #expect(core.calls("ai_apply").last?["choice"] as? Int == 1)
         #expect(core.calls("ai_apply").last?["revision"] == nil, "no draft yet")
         #expect(model.aiRun == nil)

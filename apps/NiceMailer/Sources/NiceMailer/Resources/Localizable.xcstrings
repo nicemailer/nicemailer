@@ -4210,6 +4210,26 @@
         }
       }
     },
+    "c copy": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "c copier"
+          }
+        }
+      }
+    },
+    "Result copied to the clipboard": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Résultat copié dans le presse-papiers"
+          }
+        }
+      }
+    },
     "AI assistance": {
       "localizations": {
         "fr": {

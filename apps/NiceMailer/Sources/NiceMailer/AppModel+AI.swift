@@ -307,6 +307,10 @@ extension AppModel {
             if run.runId > 0 {
                 let _: CommandResult? = try? await client.call("ai_cancel", ["run_id": run.runId])
             }
+        case .copy:
+            // `GeekController.handleAIKey` copies it itself: the pasteboard
+            // is the controller's (a private one in tests).
+            break
         case .refuse, .close:
             aiRun = nil
             if case .proposal = run.phase {

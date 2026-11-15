@@ -2443,7 +2443,21 @@ final class GeekController {
             model.aiRun?.choice = i
             return
         }
+        if action == .copy {
+            copyAIResult(run)
+            return
+        }
         Task { await model.answerAI(action) }
+    }
+
+    /// `c` in the AI panel: the whole text of the result to the clipboard
+    /// (`AI.copyText`), to paste it in a note or another app. The panel
+    /// stays open: a proposal can still be accepted after it was copied.
+    func copyAIResult(_ run: AIRun) {
+        guard case .proposal(let p) = run.phase, let text = AI.copyText(p) else { return }
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
+        model.flash = L("Result copied to the clipboard")
     }
 
     /// ⌥⌘F or a click on "From": the choice of the address to send from,

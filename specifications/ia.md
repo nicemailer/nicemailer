@@ -418,7 +418,8 @@ Le résultat s'affiche dans un panneau sous l'en-tête du mail ou du brouillon :
 
 - `replace` : les différences mot à mot (supprimé barré, ajouté souligné, dans les couleurs du thème). ↩ ou `y` accepte, Échap ou `n` refuse. Accepter remplace le texte ; ⌘Z dans l'éditeur annule le remplacement, comme une frappe.
 - `choices`, `subjects` : une liste numérotée, **la première proposition sélectionnée par défaut** (novembre 2026) : les prompts donnent la meilleure en tête, ↩ la prend donc. ↑ ↓ déplacent la sélection, sans boucler ; ↩ prend la proposition sélectionnée, un chiffre en prend une directement. Toutes les listes se choisissent de la même façon, comme dans un sélecteur.
-- `panel`, `summary`, `verdict` : du texte, copiable (`c`) ; Échap ferme.
+- `panel`, `summary`, `verdict` : du texte ; Échap ferme.
+- **`c` copie tout le texte du résultat** dans le presse-papiers, quel qu'il soit (novembre 2026), et le panneau reste ouvert : un résumé avec ses actions, un verdict avec ses raisons, une liste avec ses numéros, les rendez-vous un par ligne ; pour un `replace`, le nouveau texte et non les différences. Rien à copier pendant l'attente, en échec, sans changement ni sans date.
 - `events` (novembre 2026) : un bloc par rendez-vous, aéré, et non une ligne de menu : la date en toutes lettres dans la langue de l'app, le titre, puis le lieu et la lecture de la date, chacun sur sa ligne. Le premier est sélectionné ; ↑ ↓ déplacent la sélection, ↩ enregistre le fichier `.ics` du rendez-vous sélectionné dans les Téléchargements (sans écraser : « (2) »), **⌘↩ l'enregistre puis l'ouvre**, ce qui l'importe dans Calendrier. Le panneau reste ouvert pour un autre ; Échap ferme. Sans date, une phrase le dit.
 - Pendant l'attente, Échap annule l'exécution.
 - En échec : le message de l'erreur, et pour une sortie invalide, « Réessayer » (`r`).
