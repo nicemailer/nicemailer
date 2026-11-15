@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import Observation
+import os
 
 /// State displayed by the app, and the actions the views can trigger.
 /// Everything that is a business rule (move targets, preselection,
@@ -1146,6 +1147,7 @@ final class AppModel {
             threads = kept.threads
             stickyThreadId = kept.sticky
             nextCursor = cursor
+            Self.listLog.info("list reloaded: \(self.threads.count) rows, \(cursor == nil ? "end of the list" : "more to come", privacy: .public)")
             selectFirstIfNeeded(previous: keepDepth ? before : [])
             firstListShown()
             // A page dropped while this reload ran (its cursor was replaced)
@@ -1272,11 +1274,23 @@ final class AppModel {
     /// and `ctrl-d` / `j` stopped at that row for good, however much mail
     /// followed. The cursor is what the keys move, so it is what asks.
     func prefetchIfNearEnd() {
-        guard nextCursor != nil, !loadingMore,
-              Self.needsNextPage(selected: threads.firstIndex { $0.id == selectedThreadId }, count: threads.count)
-        else { return }
+        let index = threads.firstIndex { $0.id == selectedThreadId }
+        guard Self.needsNextPage(selected: index, count: threads.count) else { return }
+        // Near the end and nothing asked: said in the log, since that is
+        // where a list that stops growing can be understood afterwards.
+        guard nextCursor != nil else { return }
+        guard !loadingMore else {
+            Self.listLog.info("next page not asked: one is loading (\(self.threads.count) rows)")
+            return
+        }
         Task { await loadNextPage() }
     }
+
+    /// The loading of the list's pages, in the system log (category
+    /// `list`, level info: `log show --info`): each page asked, added,
+    /// dropped and why, failed. A list that stops growing is explained
+    /// there.
+    nonisolated static let listLog = Logger(subsystem: "eu.nicemailer.app", category: "list")
 
     /// Loads the page after the loaded rows, unless one is loading. A page
     /// whose list changed meanwhile is dropped, then asked again with the
@@ -1289,6 +1303,8 @@ final class AppModel {
         let sort = self.sort
         let filter = attributes
         loadingMore = true
+        let rowsBefore = threads.count
+        Self.listLog.info("next page asked after \(rowsBefore) rows")
         let page: Page<ThreadSummary>
         do {
             var params = Self.listScope(everything: everything, virtual: virtual, folderIds: folderIds, listFilter: listFilter)
@@ -1301,6 +1317,7 @@ final class AppModel {
             // No new attempt on its own: a core that fails would be asked
             // again and again. The next move of the cursor asks again.
             loadingMore = false
+            Self.listLog.error("next page failed after \(rowsBefore) rows: \(error.localizedDescription, privacy: .public)")
             report(error)
             return
         }
@@ -1316,6 +1333,10 @@ final class AppModel {
             let listed = Set(threads.map(\.id))
             threads += page.items.filter { !listed.contains($0.id) }
             nextCursor = page.nextCursor
+            Self.listLog.info("next page added: \(self.threads.count) rows, \(page.nextCursor == nil ? "end of the list" : "more to come", privacy: .public)")
+        } else {
+            let why = cursor != nextCursor ? "the list was reloaded meanwhile" : "another list is shown"
+            Self.listLog.info("next page dropped after \(rowsBefore) rows: \(why, privacy: .public)")
         }
         // A cursor that did not move would ask for the same page forever.
         if nextCursor != cursor { prefetchIfNearEnd() }
@@ -1360,6 +1381,7 @@ final class AppModel {
                                         listed: listFilter == nil ? Set(folderIds) : Set(folders.map(\.id)))
         let before = threads
         threads = kept.threads
+        Self.listLog.info("list patched: \(ids.count) conversations, \(self.threads.count) rows")
         stickyThreadId = kept.sticky ?? stickyThreadId.flatMap { id in
             !ids.contains(id) && kept.threads.contains { $0.id == id } ? id : nil
         }
