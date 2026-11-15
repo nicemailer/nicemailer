@@ -233,7 +233,12 @@ async fn main() -> anyhow::Result<()> {
 async fn run(args: Args, data_dir: &Path) -> anyhow::Result<()> {
     let data_dir = data_dir.to_path_buf();
     let db_path = data_dir.join(nm_api::paths::DATABASE);
+    // How long each step before the socket takes: until the socket is
+    // bound, the app can only wait ("starting the core…"), so this is the
+    // part of the launch the user sees. Written once, when it is ready.
+    let mut clock = StartupClock::new();
     let mut store = open_store(&data_dir, &db_path).await?;
+    clock.mark("store");
     // Opened after the writing store, which creates or migrates the
     // database. Six connections for the clients: since the requests of a
     // connection run in parallel (`serve`), the app may have a list, a
@@ -243,6 +248,7 @@ async fn run(args: Args, data_dir: &Path) -> anyhow::Result<()> {
     // (32 MB at most, `Store::open_reader`), filled only when used.
     let readers = ReadPool::open(&db_path, 6).with_context(|| format!("lecture de {}", db_path.display()))?;
     let sync_readers = ReadPool::open(&db_path, 3).with_context(|| format!("lecture de {}", db_path.display()))?;
+    clock.mark("readers");
 
     // Settings, before the event log, whose sizes they give. An invalid
     // file does not stop the core: it starts with the defaults and no
@@ -272,6 +278,7 @@ async fn run(args: Args, data_dir: &Path) -> anyhow::Result<()> {
     let mut engine = Engine::new(config_path.clone(), secrets);
     let startup_events = engine.reload(&mut store, true)?;
     log_config(&engine);
+    clock.mark("settings");
     let settings = engine.config().events.clone();
     let ai_settings = engine.config().ai.clone();
 
@@ -337,6 +344,7 @@ async fn run(args: Args, data_dir: &Path) -> anyhow::Result<()> {
             }
         }
     }
+    clock.mark("recovery");
     // Kept alive until the end of `main`: dropping it stops the watch. A
     // watch that cannot start is not fatal: the file is then read at the
     // next start only.
@@ -361,6 +369,8 @@ async fn run(args: Args, data_dir: &Path) -> anyhow::Result<()> {
     // 0o600: only the current user can connect.
     fs::set_permissions(&socket_path, fs::Permissions::from_mode(0o600))?;
     eprintln!("nicemailer-core : base {}, socket {}", db_path.display(), socket_path.display());
+    clock.mark("socket");
+    eprintln!("{}", clock.line());
     start_reindex(&core)?;
     start_sender_backfill(&core)?;
     sync::start_gc(&core);
@@ -392,6 +402,27 @@ async fn run(args: Args, data_dir: &Path) -> anyhow::Result<()> {
     if let Some(syncer) = core.syncer.get() {
         syncer.stop_all(std::time::Duration::from_secs(2));
     }
+    // Both files emptied of their logs and marked, under the store lock so
+    // that nothing writes in between: the next start skips the
+    // reconciliation of the two files, most of its opening
+    // (`nm_store::clean_close`). A write after this changes the files, and
+    // the next start reconciles: never wrong, only slower.
+    {
+        let store = core.lock_store("close");
+        match store.close_cleanly() {
+            Ok(r) => eprintln!(
+                "clean close: {} (checkpoint main {} ms, body {} ms)",
+                if r.marked {
+                    "the next start skips the reconciliation of the two files"
+                } else {
+                    "not marked, a reader was still busy; the next start reconciles"
+                },
+                r.main.as_millis(),
+                r.body.as_millis()
+            ),
+            Err(e) => eprintln!("clean close: not marked ({e}); the next start reconciles"),
+        }
+    }
     cleanup(&socket_path);
     Ok(())
 }
@@ -411,6 +442,7 @@ async fn run(args: Args, data_dir: &Path) -> anyhow::Result<()> {
 ///   transaction: cancelled, it is rolled back, and done again at the next
 ///   start.
 async fn open_store(data_dir: &Path, db_path: &Path) -> anyhow::Result<Store> {
+    let inspecting = Instant::now();
     let upgrade = match nm_store::inspect::inspect(db_path) {
         nm_store::inspect::DatabaseState::Upgradable { from, to } => Some((from, to)),
         _ => None,
@@ -430,7 +462,8 @@ async fn open_store(data_dir: &Path, db_path: &Path) -> anyhow::Result<Store> {
     // Rust note: `spawn_blocking` runs a synchronous function on a thread
     // pool made for blocking work, and gives a future of its result; the
     // `Store` it returns can cross threads (`Send`).
-    let opening = tokio::task::spawn_blocking(move || Store::open(&path));
+    let inspected = inspecting.elapsed();
+    let opening = tokio::task::spawn_blocking(move || Store::open_timed(&path));
     let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
     let started = std::time::Instant::now();
     let result = tokio::select! {
@@ -444,7 +477,14 @@ async fn open_store(data_dir: &Path, db_path: &Path) -> anyhow::Result<Store> {
     {
         eprintln!("mise à jour de la base : version {from} vers {to} faite en {:.0} s", started.elapsed().as_secs_f64());
     }
-    result.with_context(|| format!("ouverture de {}", db_path.display()))
+    let (store, steps) = result.with_context(|| format!("ouverture de {}", db_path.display()))?;
+    // Each step of the opening, after the check of the file (`inspect`):
+    // the largest part of a slow start, on a real mailbox.
+    let mut all = vec![("inspect", inspected)];
+    all.extend(steps.steps);
+    let total = all.iter().map(|(_, d)| *d).sum();
+    eprintln!("{}", startup_line("store opened", total, &all));
+    Ok(store)
 }
 
 /// A stop while the database opens: the opening thread is abandoned with
@@ -1744,13 +1784,51 @@ async fn start_import(core: &Arc<Core>, p: ImportMboxParams, source: Source) -> 
 /// No event is sent: a body only shows when a thread is opened, and an
 /// event per batch would make the app reload its list hundreds of times.
 /// A thread already open keeps its old body until opened again.
+/// The steps of the start up to the socket, each with its duration
+/// (`run`): one line in the log, such as `startup: socket ready after
+/// 1840 ms (store 1210, readers 4, settings 35, recovery 580, socket 11)`.
+struct StartupClock {
+    started: Instant,
+    last: Instant,
+    steps: Vec<(&'static str, Duration)>,
+}
+
+impl StartupClock {
+    fn new() -> StartupClock {
+        let now = Instant::now();
+        StartupClock { started: now, last: now, steps: Vec::new() }
+    }
+
+    /// Ends the step `name`, which began at the previous mark.
+    fn mark(&mut self, name: &'static str) {
+        let now = Instant::now();
+        self.steps.push((name, now - self.last));
+        self.last = now;
+    }
+
+    fn line(&self) -> String {
+        startup_line("socket ready", self.last - self.started, &self.steps)
+    }
+}
+
+/// A log line of the start (`StartupClock`, `open_store`): what is
+/// ready, after how long, and each step. A pure function, tested.
+fn startup_line(what: &str, total: Duration, steps: &[(&str, Duration)]) -> String {
+    let steps: Vec<String> = steps.iter().map(|(name, d)| format!("{name} {}", d.as_millis())).collect();
+    format!("startup: {what} after {} ms ({})", total.as_millis(), steps.join(", "))
+}
+
 fn start_reindex(core: &Arc<Core>) -> anyhow::Result<()> {
     let core = core.clone();
     // Everything happens on the reindex thread, the check included: the
     // main thread must reach the loop that accepts connections at once
     // (a slow check here once left the app unanswered for 30 s).
     std::thread::Builder::new().name("nicemailer-reindex".into()).spawn(move || {
-        let pending = match nm_store::reindex::pending(&core.lock_store("reindex")) {
+        // Counted on a read connection, not under the store lock: the
+        // count reads indexes of both files, cold at the start (up to 2.5 s
+        // on a large mailbox), and held the lock meanwhile, so the app's
+        // first requests waited for it.
+        let pending = match core.readers.read(nm_store::reindex::pending) {
             Ok(0) => return,
             Ok(n) => n,
             Err(e) => return eprintln!("reindex : {e}"),
@@ -1785,7 +1863,8 @@ fn start_reindex(core: &Arc<Core>) -> anyhow::Result<()> {
 fn start_sender_backfill(core: &Arc<Core>) -> anyhow::Result<()> {
     let core = core.clone();
     std::thread::Builder::new().name("nicemailer-senders".into()).spawn(move || {
-        let pending = match nm_store::senders::pending(&core.lock_store("senders")) {
+        // On a read connection too (see `start_reindex`).
+        let pending = match core.readers.read(nm_store::senders::pending) {
             Ok(0) => return,
             Ok(n) => n,
             Err(e) => return eprintln!("personnes et robots : {e}"),
@@ -1862,6 +1941,16 @@ fn run_import(core: Arc<Core>, job_id: u64, opts: ImportOptions) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The line of the start: the total, then each step in its order.
+    #[test]
+    fn the_startup_line_gives_each_step() {
+        let ms = Duration::from_millis;
+        assert_eq!(
+            startup_line("socket ready", ms(1840), &[("store", ms(1210)), ("readers", ms(4)), ("socket", ms(11))]),
+            "startup: socket ready after 1840 ms (store 1210, readers 4, socket 11)"
+        );
+    }
 
     /// The line of a slow request: dated, its total, its wait for the
     /// database and the rest; a wait measured longer than the total (clocks

@@ -42,7 +42,11 @@ for script in "${scripts[@]}"; do
     script=$(cd "$(dirname "$script")" && pwd)/$(basename "$script")
     # Short path: the core's socket path must stay under 104 characters.
     dir=$(mktemp -d /tmp/nmuit.XXXXXX)
-    NICEMAILER_DATA_DIR="$dir" "$CLI" seed --threads 300 --seed 1 >/dev/null
+    # A scenario may ask for a bigger mailbox (fixtures/<scenario>.seed:
+    # a number of conversations), to go deep into a list.
+    threads=300
+    if [ -f "$APP/UITests/fixtures/$name.seed" ]; then threads=$(cat "$APP/UITests/fixtures/$name.seed"); fi
+    NICEMAILER_DATA_DIR="$dir" "$CLI" seed --threads "$threads" --seed 1 >/dev/null
     # A scenario may have settings of its own (fixtures/<scenario>.config.toml),
     # read by the core when it starts.
     if [ -f "$APP/UITests/fixtures/$name.config.toml" ]; then

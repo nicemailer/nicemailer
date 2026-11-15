@@ -4689,6 +4689,36 @@
           }
         }
       }
+    },
+    "Connecting to the core…": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connexion au noyau…"
+          }
+        }
+      }
+    },
+    "Starting the core…": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Démarrage du noyau…"
+          }
+        }
+      }
+    },
+    "Loading the mail…": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chargement des mails…"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

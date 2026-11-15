@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import Observation
+import os
 
 /// State displayed by the app, and the actions the views can trigger.
 /// Everything that is a business rule (move targets, preselection,
@@ -30,6 +31,43 @@ final class AppModel {
 
     // `private(set)`: readable from anywhere, writable only from this class.
     private(set) var status: Status = .connecting
+
+    /// Where the launch is, until the first list is shown: what the app
+    /// says while the list is still empty (`StartupPhase.message`), so that
+    /// a core that takes a few seconds to start does not look like an
+    /// empty mailbox.
+    enum StartupPhase: Equatable {
+        /// Opening the socket of a core already running.
+        case connecting
+        /// No core answered: launchd is starting it (`openSocket`).
+        case startingCore
+        /// Connected: the folders and the first list are loading.
+        case loading
+        /// The first list is shown.
+        case ready
+
+        /// The line shown in the empty list and the status bar; nil once
+        /// ready.
+        var message: String? {
+            switch self {
+            case .connecting: L("Connecting to the core…")
+            case .startingCore: L("Starting the core…")
+            case .loading: L("Loading the mail…")
+            case .ready: nil
+            }
+        }
+    }
+
+    private(set) var startupPhase: StartupPhase = .connecting
+    /// When the model was made, at the app's launch, to time it
+    /// (`StartupTimings`).
+    @ObservationIgnored private let created = ContinuousClock.now
+    /// How long the launch took, once the first list is shown.
+    @ObservationIgnored private(set) var startupTimings: StartupTimings?
+    /// When the socket answered, for `startupTimings`.
+    @ObservationIgnored private var socketOpened: ContinuousClock.Instant?
+    /// The app had to start the core (`openSocket`), for `startupTimings`.
+    @ObservationIgnored private var startedCore = false
     private(set) var folders: [FolderView] = []
     /// Threads of the selected folder, as far as loaded (pages are appended
     /// as the user scrolls).
@@ -569,11 +607,20 @@ final class AppModel {
     private var lastRefreshStart: ContinuousClock.Instant?
     /// How many reloads started: for the tests of the pacing.
     @ObservationIgnored private(set) var refreshCount = 0
+    /// How many refreshes reloaded the conversations that changed alone
+    /// (`patchThreads`), and how many the whole list: for the UI scripts.
+    @ObservationIgnored private(set) var patchCount = 0
+    @ObservationIgnored private(set) var wholeReloadCount = 0
     /// The pending debounced search, cancelled when a newer one replaces it.
     private var searchTask: Task<Void, Never>?
     /// Folders and threads invalidated by events since the last refresh.
     private var dirtyFolders = Set<Int>()
     private var dirtyThreads = Set<Int>()
+    /// Folders of those whose `FolderChanged` did not say that every
+    /// conversation that changed in them was announced (`threads_announced`,
+    /// `evenements.md`): a list showing one of them is reloaded whole; the
+    /// others only reload their conversations that changed (`patchThreads`).
+    private var unannouncedFolders = Set<Int>()
 
     nonisolated static let pageSize = 60
 
@@ -594,6 +641,8 @@ final class AppModel {
         }
         do {
             let c = try await openSocket()
+            socketOpened = socketOpened ?? .now
+            if startupPhase != .ready { startupPhase = .loading }
             connection = c
             client = c
             let hello: HelloResult = try await c.call("hello", ["protocol_version": CoreClient.protocolVersion, "client": "app"])
@@ -606,10 +655,7 @@ final class AppModel {
             // Listen to events in a separate task, which runs as long as the
             // connection lives, while this function goes on.
             Task { await listen(c) }
-            watchAddressBook()
-            await loadUISettings()
-            await reloadAll()
-            openPendingDeepLink()
+            await startSession()
         } catch {
             // A core upgrading the mailbox does not answer yet: say so and
             // wait for it, then connect.
@@ -661,6 +707,16 @@ final class AppModel {
         await refreshAIEnabled()
     }
 
+    /// The longest wait between two tries to open the socket of a core
+    /// being started (`openSocket`).
+    nonisolated static let socketRetryMax = 0.1
+
+    /// The wait before the next try, after a wait of `delay` seconds:
+    /// doubled, up to `socketRetryMax`. A pure function, tested.
+    nonisolated static func nextSocketDelay(_ delay: Double) -> Double {
+        min(delay * 2, socketRetryMax)
+    }
+
     /// Opens the socket of the core. With the agent, a core that does not
     /// answer is started (`launchctl kickstart`), and waited for a few
     /// seconds, the time to open its database (`architecture.md`, section
@@ -684,11 +740,19 @@ final class AppModel {
                 // launchd was still noting the previous core's exit, is
                 // not the end of it.
                 if lastKick.map({ Date().timeIntervalSince($0) > 2 }) ?? true {
+                    // No core answered: it is being started, which takes
+                    // a moment (its database to open). Said as such.
+                    if startupPhase == .connecting { startupPhase = .startingCore }
+                    startedCore = true
                     CoreAgent.kickstart()
                     lastKick = Date()
                 }
                 try? await Task.sleep(for: .seconds(delay))
-                delay = min(delay * 2, 0.5)
+                // At most 0.1 s between two tries: a try is a connect() on
+                // a local socket, which costs nothing, while each step of
+                // a longer wait was time the user waited after the core
+                // was ready (up to 0.5 s, measured at a launch).
+                delay = Self.nextSocketDelay(delay)
             }
         }
     }
@@ -855,7 +919,10 @@ final class AppModel {
         }
         switch e.method {
         case "FolderChanged":
-            if let f = e.params["folder_id"]?.int { dirtyFolders.insert(f) }
+            if let f = e.params["folder_id"]?.int {
+                dirtyFolders.insert(f)
+                if e.params["threads_announced"]?.bool != true { unannouncedFolders.insert(f) }
+            }
         case "ThreadChanged":
             if let t = e.params["thread_id"]?.int { dirtyThreads.insert(t) }
             for f in e.params["folder_ids"]?.ints ?? [] { dirtyFolders.insert(f) }
@@ -979,7 +1046,8 @@ final class AppModel {
             lastRefreshStart = ContinuousClock.now
             refreshCount += 1
             let folders = dirtyFolders, threads = dirtyThreads, full = refreshFull
-            dirtyFolders = []; dirtyThreads = []; refreshFull = false
+            let unannounced = unannouncedFolders
+            dirtyFolders = []; dirtyThreads = []; refreshFull = false; unannouncedFolders = []
             // Counters are cheap to reload: always refresh the sidebar.
             await reloadFolders()
             // The open thread first: the list refresh reads its new state to
@@ -988,7 +1056,20 @@ final class AppModel {
                 await loadOpenThread(markSeen: false)
             }
             if !listedFolderIds.isEmpty, full || !folders.isDisjoint(with: listedFolderIds) {
-                await reloadThreads(keepDepth: true)
+                // Only the conversations that changed when the core named
+                // them all (every listed folder announced), else the whole
+                // list, which is always right.
+                let announced = !full && unannounced.isDisjoint(with: listedFolderIds)
+                // Swift note: `&&` takes its right side as a closure, which
+                // cannot hold an `await`; hence the two steps.
+                var patched = false
+                if announced { patched = await patchThreads(threads) }
+                if patched {
+                    patchCount += 1
+                } else {
+                    wholeReloadCount += 1
+                    await reloadThreads(keepDepth: true)
+                }
             }
         }
     }
@@ -1006,6 +1087,9 @@ final class AppModel {
                 // Setting the selection triggers `didSet`, which loads the list.
                 selectedFolderId = folders.first { $0.role == "inbox" }?.id ?? folders.first?.id
             }
+            // No folder at all (no account yet): no list will load, and
+            // the launch is over all the same; the list says "No mail".
+            if listedFolderIds.isEmpty && listFilter == nil { firstListShown() }
         } else {
             await reloadThreads(keepDepth: true)
         }
@@ -1025,7 +1109,11 @@ final class AppModel {
     func reloadThreads(keepDepth: Bool = false) async {
         let folderIds = listedFolderIds
         let listFilter = self.listFilter
-        guard let client, !folderIds.isEmpty || listFilter != nil else { threads = []; return }
+        guard let client, !folderIds.isEmpty || listFilter != nil else {
+            threads = []
+            if client != nil { firstListShown() }
+            return
+        }
         let sort = self.sort
         let filter = attributes
         // Read once: every page of this reload lists the same thing.
@@ -1073,7 +1161,9 @@ final class AppModel {
             threads = kept.threads
             stickyThreadId = kept.sticky
             nextCursor = cursor
+            Self.listLog.info("list reloaded: \(self.threads.count) rows, \(cursor == nil ? "end of the list" : "more to come", privacy: .public)")
             selectFirstIfNeeded(previous: keepDepth ? before : [])
+            firstListShown()
             // A page dropped while this reload ran (its cursor was replaced)
             // is asked again if the cursor still needs it.
             prefetchIfNearEnd()
@@ -1155,6 +1245,18 @@ final class AppModel {
         Task { await reloadThreads() }
     }
 
+    /// The first list is shown: the launch is over. Its timings go to the
+    /// system log once (`StartupTimings`).
+    private func firstListShown() {
+        guard startupPhase != .ready else { return }
+        startupPhase = .ready
+        let now = ContinuousClock.now
+        let timings = StartupTimings(socket: (socketOpened ?? now) - created, firstList: now - created,
+                                     startedCore: startedCore, rows: threads.count)
+        startupTimings = timings
+        StartupTimings.log.notice("\(timings.line, privacy: .public)")
+    }
+
     /// Loads the next page when the last row appears on screen (called by
     /// each row's `.task` in `ThreadList` and `GeekThreadList`): the list
     /// scrolled with the mouse or the trackpad.
@@ -1186,11 +1288,23 @@ final class AppModel {
     /// and `ctrl-d` / `j` stopped at that row for good, however much mail
     /// followed. The cursor is what the keys move, so it is what asks.
     func prefetchIfNearEnd() {
-        guard nextCursor != nil, !loadingMore,
-              Self.needsNextPage(selected: threads.firstIndex { $0.id == selectedThreadId }, count: threads.count)
-        else { return }
+        let index = threads.firstIndex { $0.id == selectedThreadId }
+        guard Self.needsNextPage(selected: index, count: threads.count) else { return }
+        // Near the end and nothing asked: said in the log, since that is
+        // where a list that stops growing can be understood afterwards.
+        guard nextCursor != nil else { return }
+        guard !loadingMore else {
+            Self.listLog.info("next page not asked: one is loading (\(self.threads.count) rows)")
+            return
+        }
         Task { await loadNextPage() }
     }
+
+    /// The loading of the list's pages, in the system log (category
+    /// `list`, level info: `log show --info`): each page asked, added,
+    /// dropped and why, failed. A list that stops growing is explained
+    /// there.
+    nonisolated static let listLog = Logger(subsystem: "eu.nicemailer.app", category: "list")
 
     /// Loads the page after the loaded rows, unless one is loading. A page
     /// whose list changed meanwhile is dropped, then asked again with the
@@ -1203,6 +1317,8 @@ final class AppModel {
         let sort = self.sort
         let filter = attributes
         loadingMore = true
+        let rowsBefore = threads.count
+        Self.listLog.info("next page asked after \(rowsBefore) rows")
         let page: Page<ThreadSummary>
         do {
             var params = Self.listScope(everything: everything, virtual: virtual, folderIds: folderIds, listFilter: listFilter)
@@ -1215,6 +1331,7 @@ final class AppModel {
             // No new attempt on its own: a core that fails would be asked
             // again and again. The next move of the cursor asks again.
             loadingMore = false
+            Self.listLog.error("next page failed after \(rowsBefore) rows: \(error.localizedDescription, privacy: .public)")
             report(error)
             return
         }
@@ -1230,9 +1347,61 @@ final class AppModel {
             let listed = Set(threads.map(\.id))
             threads += page.items.filter { !listed.contains($0.id) }
             nextCursor = page.nextCursor
+            Self.listLog.info("next page added: \(self.threads.count) rows, \(page.nextCursor == nil ? "end of the list" : "more to come", privacy: .public)")
+        } else {
+            let why = cursor != nextCursor ? "the list was reloaded meanwhile" : "another list is shown"
+            Self.listLog.info("next page dropped after \(rowsBefore) rows: \(why, privacy: .public)")
         }
         // A cursor that did not move would ask for the same page forever.
         if nextCursor != cursor { prefetchIfNearEnd() }
+    }
+
+    /// Reloads the conversations `ids` of the list, and puts them at their
+    /// place (`ListPatch.patched`), instead of the whole list: the refresh
+    /// of a list after a change the core announced conversation by
+    /// conversation. Returns false when it cannot (too many conversations,
+    /// an error): the caller reloads the whole list then.
+    ///
+    /// The list is patched as it is when the answer arrives, not as it was
+    /// when the request left: a page loaded meanwhile (`loadNextPage`) is
+    /// kept.
+    func patchThreads(_ ids: Set<Int>) async -> Bool {
+        let folderIds = listedFolderIds
+        let listFilter = self.listFilter
+        guard let client, !ids.isEmpty, ids.count <= ListPatch.maxThreads,
+              !folderIds.isEmpty || listFilter != nil else { return false }
+        let sort = self.sort
+        let filter = attributes
+        var params = Self.listScope(everything: everything, virtual: virtual, folderIds: folderIds, listFilter: listFilter)
+        var criteria = Self.filterParameters(filter, listFilter: listFilter) ?? [:]
+        criteria["thread_ids"] = ids.sorted()
+        params["filter"] = criteria
+        params["limit"] = ids.count
+        params["sort"] = sort
+        let page: Page<ThreadSummary>
+        do {
+            page = try await client.call("list_threads", params)
+        } catch {
+            return false
+        }
+        // Another list meanwhile: it has its own load; nothing to patch.
+        guard folderIds == listedFolderIds, sort == self.sort, filter == attributes, listFilter == self.listFilter
+        else { return true }
+        let patched = ListPatch.patched(threads, changed: ids, fresh: page.items, complete: nextCursor == nil, sort: sort)
+        // The selected mail that stopped matching the list stays, as with a
+        // reload (`keepingSelected`); one kept so before and not changed
+        // now stays kept.
+        let kept = Self.keepingSelected(patched, previous: threads, selected: selectedThreadId, open: openThread,
+                                        listed: listFilter == nil ? Set(folderIds) : Set(folders.map(\.id)))
+        let before = threads
+        threads = kept.threads
+        Self.listLog.info("list patched: \(ids.count) conversations, \(self.threads.count) rows")
+        stickyThreadId = kept.sticky ?? stickyThreadId.flatMap { id in
+            !ids.contains(id) && kept.threads.contains { $0.id == id } ? id : nil
+        }
+        selectFirstIfNeeded(previous: before)
+        prefetchIfNearEnd()
+        return true
     }
 
     /// `items` (a refreshed list), plus the selected thread if it left the
@@ -1538,9 +1707,25 @@ final class AppModel {
         connection = nil
         client = core
         status = .connected(coreVersion: "test")
+        await startSession()
+    }
+
+    /// What follows the connection (`connect`, and `attach` in the tests):
+    /// the settings, the folders and the first list, then a deep link
+    /// waiting for them.
+    ///
+    /// The settings of `[ui]` and the state of the AI do not decide what
+    /// the first list shows: they are asked at the same time as it, not
+    /// before it, which cost the launch two round trips to a core that has
+    /// just started.
+    private func startSession() async {
         watchAddressBook()
-        await refreshAIEnabled()
+        // Swift note: `async let` starts the call at once, in a child task;
+        // `await settings` waits for it where its result is needed (here,
+        // only to finish before this function returns).
+        async let settings: Void = loadUISettings()
         await reloadAll()
+        await settings
         openPendingDeepLink()
     }
 

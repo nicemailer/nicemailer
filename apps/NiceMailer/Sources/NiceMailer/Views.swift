@@ -27,7 +27,7 @@ struct ContentView: View {
         Group {
             switch model.status {
             case .connecting:
-                ProgressView("Connexion au noyau…")
+                ProgressView(model.startupPhase.message ?? L("Connecting to the core…"))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             case .upgrading(let message):
                 UpgradingView(message: message)
@@ -240,7 +240,6 @@ struct ThreadColumn: View {
         if model.searchText.isEmpty {
             ThreadList()
                 .navigationTitle(model.selectedFolder?.name ?? "")
-                .navigationSubtitle(model.selectedFolder.map { "\($0.threadCount) conversations" } ?? "")
         } else {
             SearchResults()
                 .navigationTitle("Recherche")

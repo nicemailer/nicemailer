@@ -289,7 +289,8 @@ fn folder_counts_follow_the_folder_and_the_flags() {
     let u = env.thread(0, "y");
     env.mail(0, u, Some(FolderRole::Sent), 300, true);
     let count = |role: FolderRole| {
-        env.store.list_folders().unwrap().iter().find(|f| f.account_id == env.accounts[0] && f.role == Some(role)).unwrap().thread_count
+        let folder = env.store.list_folders().unwrap().iter().find(|f| f.account_id == env.accounts[0] && f.role == Some(role)).unwrap().id;
+        env.store.folder_thread_count(folder).unwrap()
     };
     assert_eq!(count(FolderRole::Inbox), 1);
     assert_eq!(count(FolderRole::Sent), 2);

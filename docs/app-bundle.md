@@ -28,7 +28,7 @@ At each launch the app registers the agent `eu.nicemailer.core` if it is not (`S
 - starts it again after a crash;
 - keeps it running when the app quits: mail is received and sorted, and pending sends leave.
 
-If the app does not find the core, it asks launchd to start it (`launchctl kickstart`, again every 2 s, and if launchd no longer knows the agent, after registering it again) and waits up to 8 seconds. Coming back to the app without a core (reopened before it had quite quit, for one) connects again at once, unless the core was stopped from the menu in this session. What the app does with the agent is in the system log: `/usr/bin/log show --last 1h --predicate 'subsystem == "eu.nicemailer.app"'` (in zsh, `log` alone is a builtin of the shell). If NiceMailer is turned off in System Settings > General > Login Items, the app says so, with a button that opens that panel.
+If the app does not find the core, it asks launchd to start it (`launchctl kickstart`, again every 2 s, and if launchd no longer knows the agent, after registering it again) and waits up to 8 seconds, trying the socket at least every 0.1 s (a longer wait between two tries was time lost once the core was ready). Coming back to the app without a core (reopened before it had quite quit, for one) connects again at once, unless the core was stopped from the menu in this session. What the app does with the agent is in the system log: `/usr/bin/log show --last 1h --predicate 'subsystem == "eu.nicemailer.app"'` (in zsh, `log` alone is a builtin of the shell). If NiceMailer is turned off in System Settings > General > Login Items, the app says so, with a button that opens that panel.
 
 The core of the agent writes its messages in `core.log` of its mailbox (renamed `core.log.1` beyond 10 MB): `tail -f "<mailbox>/core.log"`.
 
@@ -69,6 +69,17 @@ Choosing a folder the core cannot open used to restart the core on it, and leave
 The upgrade is made by the CLI (`nicemailer mailbox upgrade <folder>`) **before** the switch, while the current mailbox stays in use: the app waits only a few seconds for a core to answer, and a large mailbox takes longer to migrate. It cannot be undone: an older NiceMailer refuses the result, which the question says (copy the folder first to keep the old version able to open it). If it fails (a core already holds that folder, say), the current mailbox stays and the error is shown.
 
 An app without its CLI (`swift run`) uses the folder unchecked, as before; `NICEMAILER_CLI=<path>` names one (the UI scenarios do).
+
+## How long the launch takes
+
+Until the first list is shown, the list and the status bar say what is happening instead of "No mail": "Connecting to the core…", then "Starting the core…" when no core answered and launchd is starting it, then "Loading the mail…" once connected (`AppModel.StartupPhase`).
+
+Once connected, the app asks for the folders and the first list at once; the settings of `[ui]` and the state of the AI are asked at the same time, not before (`AppModel.startSession`).
+
+Both sides time their part, so that a slow launch can be measured on the Mac where it happens:
+
+- the core, in `core.log`, once its socket is bound: `startup: socket ready after 1840 ms (store 1210, readers 4, settings 35, recovery 580, socket 11)` (the database opened, the read connections, the settings and accounts, the actions and drafts taken up again, the socket), after the steps of the opening of the database: `startup: store opened after 949 ms (inspect 6, open 0, version 2, body file 1, schema 0, reconcile 931, statistics 6)`. The reconciliation of the two files, the longest step, is skipped after a clean stop of the core ([backup.md](backup.md), "Atomic commits");
+- the app, in the system log (category `startup`), once its first list is shown: `first list after 2310 ms (60 rows; socket after 1840 ms, core started by the app)`, from the app's launch. Read it with `/usr/bin/log show --last 10m --predicate 'subsystem == "eu.nicemailer.app" AND category == "startup"'`.
 
 ## When the core cannot start
 

@@ -68,7 +68,7 @@ The choice rewrites every mail already received from the address, in the same tr
 
 ## Catch-up of stored mail
 
-The mails stored before schema version 12 have no clues (`sender_signals IS NULL`, in the partial index `idx_message_sender_pending`). At start, the core launches a thread that reads them (`senders::backfill`):
+The mails stored before schema version 12 have no clues (`sender_signals IS NULL`, in the partial index `idx_message_sender_pending`). At start, the core launches a thread that counts them, on a read connection and through that index (named in the query: SQLite would otherwise read the whole table, 0.6 s at every start), then reads them (`senders::backfill`):
 
 - by batches of 500 mails, in the order of their ids;
 - the start of each raw file only (`RawStore::read_header`: decompressed up to the empty line that ends the headers), read in parallel without the store lock;

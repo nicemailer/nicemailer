@@ -177,7 +177,7 @@ Actions apply to the **marked** mails if any (`J` / `K`), otherwise to the mail 
 | Key | Action |
 | --- | --- |
 | `j` `k` (or arrows) | next / previous mail |
-| `ctrl-d` `ctrl-u` | half a page down / up in the list, as in Zed: the cursor moves by half the rows that fit in the list, and stops on the first or last mail. A long list is loaded 60 mails at a time as the cursor goes down: the next ones are asked for when it comes within 30 rows of the last mail loaded, so `j` and `ctrl-d` go on to the end of the list (All Mail of every account included) |
+| `ctrl-d` `ctrl-u` | half a page down / up in the list, as in Zed: the cursor moves by half the rows that fit in the list, and stops on the first or last mail. A long list is loaded 60 mails at a time as the cursor goes down: the next ones are asked for when it comes within 30 rows of the last mail loaded, so `j` and `ctrl-d` go on to the end of the list (All Mail of every account included). A change the core names conversation by conversation (a mail read, flagged, here or on another device) reloads only those conversations, at their place, whatever the depth of the list; any other change reloads the list (`AppModel.patchThreads`, `ListPatch`). Each page asked, added, dropped (the list reloaded meanwhile) or failed is written to the system log, category `list`: `/usr/bin/log show --info --last 10m --predicate 'subsystem == "eu.nicemailer.app" AND category == "list"'` |
 | `J` `K`, shift-↓ shift-↑ | mark the mail and move (multiple selection) |
 | `f` | attribute selector (filters on the current list) |
 | `@` | account picker: **all** (unified view) or one account, keeping the folder role (Archive to Archive), or its Inbox |

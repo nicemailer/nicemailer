@@ -43,6 +43,7 @@ pub mod auth;
 pub mod attachments;
 mod commands;
 pub mod clean;
+pub mod clean_close;
 pub mod draft_copies;
 pub mod drafts;
 pub mod css;
@@ -282,6 +283,15 @@ pub struct ChangeSet {
     pub threads: Vec<(i64, Vec<i64>)>,
     /// Folders whose counters or content changed.
     pub folders: BTreeSet<i64>,
+    /// Those of `folders` whose every conversation that changed is in
+    /// `threads` (`announce_threads`): a client that shows such a folder
+    /// may reload these conversations alone instead of the whole list
+    /// (`FolderChanged.threads_announced`, `evenements.md`). Empty by
+    /// default, which is always right: a folder not announced is reloaded
+    /// whole, as before. A change that touches a folder without saying
+    /// which conversations (an import, a first synchronization) never
+    /// announces it.
+    pub announced: BTreeSet<i64>,
     /// Accounts whose settings or state changed (`AccountChanged`).
     pub accounts: BTreeSet<i64>,
     /// New mail found by the synchronization, as `(message_id, folder_id)`
@@ -313,11 +323,36 @@ impl ChangeSet {
         self.messages.len()
     }
 
+    /// Says that every conversation that changed in `folders` is in
+    /// `threads`. Called only where that was checked: a change of flags,
+    /// a move of known conversations.
+    pub fn announce_threads(&mut self) {
+        self.announced = self.folders.clone();
+    }
+
+    /// The folders announced once `other` is added (`announced`): a folder
+    /// stays announced only if every change that touched it announced it.
+    /// An empty change set is neutral, so a batch built by merging into
+    /// `ChangeSet::default()` keeps what its parts said.
+    pub fn merged_announced(&self, other: &ChangeSet) -> BTreeSet<i64> {
+        self.folders
+            .union(&other.folders)
+            .copied()
+            .filter(|f| {
+                (!self.folders.contains(f) || self.announced.contains(f))
+                    && (!other.folders.contains(f) || other.announced.contains(f))
+            })
+            .collect()
+    }
+
     /// Adds the changes of `other`: a command on several threads, run in
     /// one transaction, reports them in one `ChangeSet` (one batch of
     /// events). A thread already listed keeps its first entry, with the
     /// folders of both.
     pub fn merge(&mut self, other: ChangeSet) {
+        // Before `other.threads` is moved out below (Rust note: a value
+        // partly moved can no longer be borrowed whole).
+        self.announced = self.merged_announced(&other);
         self.messages.extend(other.messages);
         for (thread, folders) in other.threads {
             match self.threads.iter_mut().find(|(t, _)| *t == thread) {
@@ -340,6 +375,35 @@ impl ChangeSet {
         self.sent.extend(other.sent);
         self.send_failed.extend(other.send_failed);
         self.send_partial.extend(other.send_partial);
+    }
+}
+
+/// What [`Store::close_cleanly`] did: whether it marked the files, and
+/// how long the checkpoint of each took (the core writes it in its log).
+#[derive(Debug, Clone, Default)]
+pub struct CloseReport {
+    pub marked: bool,
+    pub main: std::time::Duration,
+    pub body: std::time::Duration,
+}
+
+/// The steps of [`Store::open_timed`], each with its duration, in order.
+#[derive(Debug, Clone)]
+pub struct OpeningSteps {
+    last: std::time::Instant,
+    pub steps: Vec<(&'static str, std::time::Duration)>,
+}
+
+impl OpeningSteps {
+    fn new() -> OpeningSteps {
+        OpeningSteps { last: std::time::Instant::now(), steps: Vec::new() }
+    }
+
+    /// Ends the step `name`, which began at the previous mark.
+    fn mark(&mut self, name: &'static str) {
+        let now = std::time::Instant::now();
+        self.steps.push((name, now - self.last));
+        self.last = now;
     }
 }
 
@@ -411,11 +475,24 @@ impl Store {
     /// whose body file was deleted gets an empty one, and the
     /// reinterpretation fills it again from the raw files (`reindex.rs`).
     pub fn open(path: &Path) -> Result<Store> {
+        Ok(Self::open_timed(path)?.0)
+    }
+
+    /// [`Store::open`], and how long each step of the opening took, in
+    /// order: the core writes them in its log at start (`startup: …`), so
+    /// that a slow start can be read where it happens rather than guessed.
+    pub fn open_timed(path: &Path) -> Result<(Store, OpeningSteps)> {
+        let mut steps = OpeningSteps::new();
+        // Before anything opens the files: whether they are as the last
+        // clean close left them (`clean_close`). The mark goes either way.
+        let clean = clean_close::take(path, &body_path(path));
         let conn = Connection::open_with_flags(
             path,
             OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE,
         )?;
-        Self::init(conn, Some(&body_path(path)))
+        steps.mark("open");
+        let store = Self::init(conn, Some(&body_path(path)), clean, &mut steps)?;
+        Ok((store, steps))
     }
 
     /// Opens a read-only connection to an existing database, for the read
@@ -454,11 +531,13 @@ impl Store {
     /// In-memory database, used by tests: fast and thrown away at the end.
     /// Its body file is in memory too.
     pub fn open_in_memory() -> Result<Store> {
-        Self::init(Connection::open_in_memory()?, None)
+        Self::init(Connection::open_in_memory()?, None, false, &mut OpeningSteps::new())
     }
 
     /// Applies per-connection settings and creates or checks the schema.
-    fn init(conn: Connection, body: Option<&Path>) -> Result<Store> {
+    /// `clean`: the files are as a clean close left them
+    /// (`clean_close::take`), so the reconciliation of the two is skipped.
+    fn init(conn: Connection, body: Option<&Path>, clean: bool, steps: &mut OpeningSteps) -> Result<Store> {
         sql_log::install(&conn);
         // These pragmas are not stored in the database file: they must be
         // set on every new connection (see the header of schema.sql).
@@ -479,10 +558,12 @@ impl Store {
         // `query_row` runs a query expected to return one row and passes it to
         // the closure `|r| r.get(0)`, which reads column 0.
         let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+        steps.mark("version");
         // The body file, attached before the migrations: version 10 moves
         // the bodies into it. A new or deleted file gets its tables here.
         attach_body(&conn, body)?;
         create_body_schema(&conn)?;
+        steps.mark("body file");
         // Rust note: `mut` because migrating needs `&mut Connection` (a
         // transaction borrows the connection exclusively).
         let mut conn = conn;
@@ -514,10 +595,18 @@ impl Store {
                 }
             }
         }
+        steps.mark("schema");
         conn.execute_batch(TEMP_TRIGGERS)?;
         // The two files are not committed together (`schema_body.sql`):
         // make them agree after a crash, or after the body file was deleted.
-        reconcile_bodies(&conn)?;
+        // Not after a clean close, which left them in step: on a real
+        // mailbox, this is most of the opening (0.9 s, the body file cold).
+        if clean {
+            steps.mark("clean close, no reconcile");
+        } else {
+            reconcile_bodies(&conn)?;
+            steps.mark("reconcile");
+        }
         // Planner statistics (`sqlite_stat1`). Without them SQLite guesses how
         // selective each index is, and on a large mailbox it once preferred
         // an index that read a whole folder for every row of a list. The
@@ -526,6 +615,7 @@ impl Store {
         // connection opens: it analyzes only the tables that need it, with a
         // bounded effort, so it stays quick on a large database.
         refresh_statistics(&conn, "PRAGMA optimize = 0x10002;")?;
+        steps.mark("statistics");
         // The accounts whose changes go to the spool (`spool.rs`,
         // `set_server_accounts`): a table of this connection only, gone
         // when it closes, filled by the core from `accounts.toml`.
@@ -534,6 +624,48 @@ impl Store {
              CREATE TEMP TABLE IF NOT EXISTS read_only_account (id INTEGER PRIMARY KEY);",
         )?;
         Ok(Store { conn, server_accounts: BTreeSet::new(), fake_sending: false, outgoing: None })
+    }
+
+    /// The clean close of the core (`clean_close`): empties both
+    /// write-ahead logs into their files, then marks them, so that the next
+    /// opening may skip the reconciliation. Returns whether the mark was
+    /// written: not when a log could not be emptied (a reader still in a
+    /// read), nor for a database in memory. The caller holds the store
+    /// lock, so that nothing writes between the checkpoint and the mark; a
+    /// write after it changes the files, and the next opening reconciles.
+    pub fn close_cleanly(&self) -> Result<CloseReport> {
+        let mut report = CloseReport::default();
+        // A checkpoint that empties a log waits until no reader is in a
+        // read: with the usual timeout (5 s), once per file, a stop took
+        // 11.7 s, and launchd kills a core that does not stop within 20 s.
+        // A reader still busy after 200 ms: no mark, the next start
+        // reconciles. Restored after, for the tests that go on.
+        self.conn.execute_batch("PRAGMA busy_timeout = 200;")?;
+        // `wal_checkpoint(TRUNCATE)` answers (busy, log pages, pages
+        // checkpointed); busy = 1 when a reader kept it from finishing.
+        let checkpoint = |schema: &str| -> Result<(bool, std::time::Duration)> {
+            let started = std::time::Instant::now();
+            let busy = self.conn.query_row(&format!("PRAGMA {schema}.wal_checkpoint(TRUNCATE)"), [], |r| r.get::<_, i64>(0))? != 0;
+            Ok((busy, started.elapsed()))
+        };
+        let result = (|| -> Result<()> {
+            let (busy, took) = checkpoint("main")?;
+            report.main = took;
+            if busy {
+                return Ok(());
+            }
+            let (busy, took) = checkpoint("body")?;
+            report.body = took;
+            if busy {
+                return Ok(());
+            }
+            if let Some(path) = self.conn.path().filter(|p| !p.is_empty()).map(Path::new) {
+                report.marked = clean_close::write(path, &body_path(path));
+            }
+            Ok(())
+        })();
+        self.conn.execute_batch("PRAGMA busy_timeout = 5000;")?;
+        result.map(|()| report)
     }
 
     /// Updates the planner statistics after a large change (an import adds
@@ -968,6 +1100,37 @@ pub(crate) fn refresh_folder_counts(conn: &Connection, folder_id: i64) -> Result
 
 #[cfg(test)]
 mod tests {
+
+    /// A folder stays announced only if every change that touched it
+    /// announced it; an empty change set is neutral (`ChangeSet::merge`).
+    #[test]
+    fn announced_folders_merge_conservatively() {
+        let announced = |folders: &[i64]| {
+            let mut c = ChangeSet::default();
+            c.folders.extend(folders);
+            c.announce_threads();
+            c
+        };
+        let silent = |folders: &[i64]| {
+            let mut c = ChangeSet::default();
+            c.folders.extend(folders);
+            c
+        };
+        // Into an empty set: kept.
+        let mut c = ChangeSet::default();
+        c.merge(announced(&[1, 2]));
+        assert_eq!(c.announced, [1, 2].into());
+        // Folder 2 touched by a change that does not announce it: lost;
+        // folder 3, announced by the second, kept.
+        c.merge(silent(&[2]));
+        c.merge(announced(&[3]));
+        assert_eq!(c.announced, [1, 3].into());
+        assert_eq!(c.folders, [1, 2, 3].into());
+        // A silent change first, then an announced one: still silent.
+        let mut d = silent(&[4]);
+        d.merge(announced(&[4]));
+        assert!(d.announced.is_empty());
+    }
     use super::*;
 
     /// Every column `refresh_thread` maintains, for every thread.

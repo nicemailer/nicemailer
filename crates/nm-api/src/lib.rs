@@ -373,8 +373,17 @@ pub struct Position {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "method", content = "params")]
 pub enum Event {
-    /// The counters or the content of a folder changed.
-    FolderChanged { folder_id: i64 },
+    /// The counters or the content of a folder changed. With
+    /// `threads_announced`, every conversation that changed in it has its
+    /// own `ThreadChanged` in the same batch, before this event: a client
+    /// may reload those conversations alone rather than the whole list
+    /// (`evenements.md`). Without it (the default, left out of the JSON),
+    /// the client reloads the list.
+    FolderChanged {
+        folder_id: i64,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        threads_announced: bool,
+    },
     /// A thread changed; `folder_ids` lists the folders it was in before
     /// and after the change, so a client knows which lists to refresh.
     ThreadChanged { thread_id: i64, folder_ids: Vec<i64> },
@@ -655,6 +664,14 @@ pub struct ThreadFilter {
     /// with no overlap and no gap.
     #[serde(default)]
     pub human: Option<bool>,
+    /// Only these conversations, among those the list holds: a client
+    /// that knows which conversations changed (`FolderChanged` with
+    /// `threads_announced`) reloads them alone, with the scope and the
+    /// other criteria of its list, rather than the whole list. A
+    /// conversation that no longer belongs to the list is not returned.
+    /// Empty: no such criterion.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub thread_ids: Vec<i64>,
 }
 
 impl ThreadFilter {
@@ -902,8 +919,6 @@ pub struct FolderView {
     /// Number of messages in the folder.
     pub total_count: i64,
     pub unread_count: i64,
-    /// Number of threads in the folder.
-    pub thread_count: i64,
     /// Targets offered by the move command from this folder. Computed by
     /// the core so that clients never reimplement workflow rules.
     pub move_targets: Vec<FolderRole>,

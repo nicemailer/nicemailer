@@ -317,6 +317,7 @@ fn clone(o: &Outcome) -> Outcome {
 
 /// Merges the changes of one write into those of a batch.
 pub(crate) fn merge(into: &mut ChangeSet, from: ChangeSet) {
+    into.announced = into.merged_announced(&from);
     into.messages.extend(from.messages);
     for t in from.threads {
         if !into.threads.iter().any(|(id, _)| *id == t.0) {

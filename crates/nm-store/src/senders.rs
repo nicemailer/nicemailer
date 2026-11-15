@@ -294,9 +294,17 @@ pub struct BackfillReport {
 
 /// Messages whose clues are not read yet: what [`backfill`] would do.
 /// Counted on `idx_message_sender_pending`, which holds only them.
+///
+/// The partial index of those mails is named: SQLite does not choose it
+/// for a `count(*)` by itself, and read the whole table instead (0.6 s on
+/// 400,000 mails, at every start of the core, when nothing is pending).
+/// Through the index, a fraction of a millisecond.
 pub fn pending(store: &Store) -> Result<i64> {
-    Ok(store.conn.query_row("SELECT count(*) FROM message WHERE sender_signals IS NULL", [], |r| r.get(0))?)
+    Ok(store.conn.query_row(PENDING, [], |r| r.get(0))?)
 }
+
+/// The count of [`pending`], apart for the test of its plan.
+const PENDING: &str = "SELECT count(*) FROM message INDEXED BY idx_message_sender_pending WHERE sender_signals IS NULL";
 
 /// Reads the clues of every message stored before version 12
 /// (`expediteurs.md`, section 10), by batches of `batch_size`, in the order
@@ -376,4 +384,29 @@ fn read_signals(raw: &RawStore, hash: Option<&[u8]>) -> Option<i64> {
     let hash: Hash = hash?.try_into().ok()?;
     let header = raw.read_header(&hash).ok()?;
     Some(crate::ingest::parse_headers(&header).sender_signals)
+}
+
+#[cfg(test)]
+mod pending_tests {
+    use super::*;
+
+    /// The count of the mails to classify reads the partial index, not the
+    /// whole table: it runs at every start of the core.
+    #[test]
+    fn the_pending_count_reads_the_partial_index() {
+        let store = Store::open_in_memory().unwrap();
+        let plan: Vec<String> = store
+            .conn
+            .prepare(&format!("EXPLAIN QUERY PLAN {PENDING}"))
+            .unwrap()
+            .query_map([], |r| r.get::<_, String>(3))
+            .unwrap()
+            .collect::<std::result::Result<_, _>>()
+            .unwrap();
+        assert!(plan.iter().any(|p| p.contains("idx_message_sender_pending")), "{plan:?}");
+        // "SCAN message USING INDEX …" walks the small partial index; a bare
+        // "SCAN message" would read the whole table.
+        assert!(!plan.iter().any(|p| p == "SCAN message"), "{plan:?}");
+        assert_eq!(pending(&store).unwrap(), 0);
+    }
 }

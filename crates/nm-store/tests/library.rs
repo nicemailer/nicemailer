@@ -79,7 +79,7 @@ fn modified_sort_paginates_every_thread_once() {
             None => break,
         }
     }
-    let expected = store.list_folders().unwrap().into_iter().find(|f| f.id == archive).unwrap().thread_count;
+    let expected = store.folder_thread_count(archive).unwrap();
     assert_eq!(seen.len() as i64, expected);
 }
 
