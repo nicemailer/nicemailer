@@ -1460,7 +1460,9 @@ struct FilterSql {
     /// Their values, numbered from `?10`.
     values: Vec<Value>,
     /// The unread criterion reads the set of the unread threads first
-    /// (`UnreadPlan::Set`): `list_query` then reads `thread` by primary key.
+    /// (`UnreadPlan::Set`), or the list asks for given threads
+    /// (`ThreadFilter::thread_ids`): `list_query` then reads `thread` by
+    /// primary key, and sorts the few rows found.
     by_set: bool,
 }
 
@@ -1475,9 +1477,18 @@ struct FilterSql {
 /// only, no flagged mail at all), a per-row subquery ran for every thread of
 /// the mailbox, several seconds on 200 000 threads.
 fn filter_clause(f: &ThreadFilter, target: &Target, tags: &[i64], unread: UnreadPlan) -> FilterSql {
-    let by_set = f.seen == Some(false) && unread == UnreadPlan::Set;
+    // Given threads: read by primary key, never by walking a date index
+    // and testing each row (SQLite would choose that walk to avoid a
+    // sort, and read the whole list for a handful of rows).
+    let unread_set = f.seen == Some(false) && unread == UnreadPlan::Set;
+    let by_set = unread_set || !f.thread_ids.is_empty();
     let mut sql = String::new();
     let mut values: Vec<Value> = Vec::new();
+    if !f.thread_ids.is_empty() {
+        // Integers, written into the SQL text: no client text there.
+        let ids = f.thread_ids.iter().map(i64::to_string).collect::<Vec<_>>().join(",");
+        sql.push_str(&format!(" AND t.id IN ({ids})"));
+    }
     let thread = "t.id";
     // " AND <thread> IN (<set>)", or NOT IN for `false` / an exclusion.
     let member = |yes: bool, set: &str| format!(" AND {thread} {}IN ({set})", if yes { "" } else { "NOT " });
@@ -1486,7 +1497,7 @@ fn filter_clause(f: &ThreadFilter, target: &Target, tags: &[i64], unread: Unread
     // with an unread mail when they are few (`UnreadPlan`). Read: the common
     // case, a test during the walk stops early.
     if let Some(seen) = f.seen {
-        if by_set {
+        if unread_set {
             sql.push_str(&member(true, "SELECT thread_id FROM message WHERE is_seen = 0 AND thread_id IS NOT NULL"));
         }
         sql.push_str(if seen { " AND t.unread_count = 0" } else { " AND t.unread_count > 0" });
@@ -1817,6 +1828,7 @@ mod plan_tests {
             group_id: Some(1),
             address_id: Some(2),
             human: Some(true),
+            thread_ids: vec![],
         };
         let mut out = vec![("none", ThreadFilter::default())];
         out.push(("seen", ThreadFilter { seen: Some(false), ..Default::default() }));
@@ -1941,6 +1953,33 @@ mod plan_tests {
                     let steps = plan(&store, &sql, &values);
                     assert_eq!(steps.len(), 1, "{scope:?} {a:?} {sort:?}: {steps:?}");
                     assert!(steps[0].contains(&format!("USING INDEX {index}")), "{scope:?} {a:?} {sort:?}: {steps:?}");
+                }
+            }
+        }
+    }
+
+    /// Given threads (`ThreadFilter::thread_ids`, the reload of the
+    /// conversations that changed): read by primary key in every list,
+    /// whatever the scope, sort or cursor, never by a walk of a date
+    /// index; and the criterion "read" does not bring in the set of the
+    /// unread threads.
+    #[test]
+    fn given_threads_are_read_by_primary_key() {
+        let store = Store::open_in_memory().unwrap();
+        for seen in [None, Some(true)] {
+            let f = ThreadFilter { thread_ids: vec![3, 5, 8], seen, ..Default::default() };
+            let filter = filter_clause(&f, &Target::everything(), &[], UnreadPlan::Set);
+            assert!(filter.by_set);
+            assert!(filter.sql.contains("t.id IN (3,5,8)"), "{}", filter.sql);
+            assert!(!filter.sql.contains("is_seen = 0"), "{}", filter.sql);
+            for (scope, _) in scopes() {
+                for a in [Accounts::All, Accounts::One(1), Accounts::Some("1,2".into())] {
+                    for sort in [ThreadSort::Received, ThreadSort::Modified] {
+                        let (sql, values) = list_query(scope, &a, None, 4, sort, &filter);
+                        let steps = plan(&store, &sql, &values);
+                        let what = format!("{scope:?} {a:?} {sort:?} seen={seen:?}");
+                        assert!(steps[0].starts_with("SEARCH t USING INTEGER PRIMARY KEY"), "{what}: {steps:?}");
+                    }
                 }
             }
         }

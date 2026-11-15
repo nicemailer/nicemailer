@@ -671,6 +671,10 @@ private final class Runner {
             // startingCore, loading, ready; and how long it took, in
             // milliseconds, once ready.
             "startup_phase": "\(m.startupPhase)",
+            // Refreshes after the core's events: the conversations that
+            // changed alone, or the whole list (`AppModel.patchThreads`).
+            "list_patches": "\(m.patchCount)",
+            "list_reloads": "\(m.wholeReloadCount)",
             "startup_ms": m.startupTimings.map { "\(StartupTimings.milliseconds($0.firstList))" } ?? "",
             "sticky": m.stickyThreadId.map(String.init) ?? "",
             "reader_folder": m.selectedThreadFolderLabel ?? "",

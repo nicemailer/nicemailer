@@ -50,7 +50,13 @@ fn import_mbox_runs_in_the_background_and_reports_events() {
         let v = c.line();
         match v["method"].as_str() {
             Some("ImportProgress") => saw_progress = true,
-            Some("FolderChanged") => saw_folder = true,
+            Some("FolderChanged") => {
+                saw_folder = true;
+                // An import names no conversation (no `ThreadChanged` per
+                // mail): its folders are never announced, and a client
+                // reloads their whole list.
+                assert!(v["params"].get("threads_announced").is_none(), "{v}");
+            }
             Some("ImportFinished") if v["params"]["job_id"].as_u64() == Some(job) => break v["params"].clone(),
             _ => {}
         }

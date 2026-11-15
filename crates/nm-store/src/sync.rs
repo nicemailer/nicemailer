@@ -620,6 +620,14 @@ impl Store {
         // deleted or sent elsewhere (`draft_copies.rs`).
         if gone > 0 {
             crate::draft_copies::gone_elsewhere(&tx, &mut changes)?;
+        } else {
+            // Every thread whose flags changed is in `threads`, now in
+            // `changes.threads`: the folders may be reloaded by
+            // conversation (`ChangeSet::announced`). Not after mails
+            // vanished: the drafts above may change folders without
+            // naming their conversations, and an announced folder must
+            // hold no change left unsaid.
+            changes.announce_threads();
         }
         tx.commit()?;
         Ok((changes, gone as u32))

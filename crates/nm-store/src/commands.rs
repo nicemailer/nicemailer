@@ -557,5 +557,10 @@ fn finish_flag_change(
     }
     changes.folders = folders;
     changes.threads.push((thread_id, thread_folders));
+    // A flag changes this thread only, and it is listed above: a client
+    // may reload it alone (`ChangeSet::announced`). This is what happens
+    // when a mail is read under the cursor, a few times a minute while
+    // the user goes down a list.
+    changes.announce_threads();
     Ok(changes)
 }

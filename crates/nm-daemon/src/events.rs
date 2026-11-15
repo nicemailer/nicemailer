@@ -126,7 +126,8 @@ impl EventLog {
             self.push(Event::ThreadChanged { thread_id: *thread_id, folder_ids: folder_ids.clone() });
         }
         for folder_id in &changes.folders {
-            self.push(Event::FolderChanged { folder_id: *folder_id });
+            let threads_announced = changes.announced.contains(folder_id);
+            self.push(Event::FolderChanged { folder_id: *folder_id, threads_announced });
         }
         for account_id in &changes.accounts {
             self.push(Event::AccountChanged { account_id: *account_id });
@@ -249,11 +250,37 @@ mod tests {
     /// The JSON line has the notification shape, with the position in params.
     #[test]
     fn notification_carries_position() {
-        let line = EventLog::encode(&Event::FolderChanged { folder_id: 3 }, "e_1", 7);
+        let line = EventLog::encode(&Event::FolderChanged { folder_id: 3, threads_announced: false }, "e_1", 7);
         let v: serde_json::Value = serde_json::from_str(&line).unwrap();
         assert_eq!(v["method"], "FolderChanged");
         assert_eq!(v["params"]["folder_id"], 3);
         assert_eq!(v["params"]["seq"], 7);
+        // Not announced: the field is left out, the shape of before.
+        assert!(v["params"].get("threads_announced").is_none());
+    }
+
+    /// A folder whose threads were all announced says so in its
+    /// `FolderChanged`; the others of the same batch do not.
+    #[test]
+    fn announced_folders_say_so() {
+        let mut log = EventLog::new(10, 10);
+        let (_, mut rx) = log.subscribe(None);
+        let mut c = ChangeSet::default();
+        c.folders.insert(1);
+        c.threads.push((7, vec![1]));
+        c.announce_threads();
+        let mut other = ChangeSet::default();
+        other.folders.insert(2);
+        c.merge(other);
+        log.emit(&c);
+        let mut folders = Vec::new();
+        while let Ok((_, line)) = rx.try_recv() {
+            let v: serde_json::Value = serde_json::from_str(&line).unwrap();
+            if v["method"] == "FolderChanged" {
+                folders.push((v["params"]["folder_id"].as_i64().unwrap(), v["params"]["threads_announced"].as_bool()));
+            }
+        }
+        assert_eq!(folders, vec![(1, Some(true)), (2, None)]);
     }
 
     /// A transient event goes to the subscribers, without a sequence number

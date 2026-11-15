@@ -292,6 +292,7 @@ final class CoreClient: @unchecked Sendable {
 ///
 /// Swift note: enum cases can carry *associated values*, like Rust enums.
 enum JSONValue: Sendable, Equatable {
+    case bool(Bool)
     case int(Int)
     case string(String)
     case ints([Int])
@@ -301,6 +302,13 @@ enum JSONValue: Sendable, Equatable {
     /// Failable initializer (`init?`): may return nil. `case let i as Int`
     /// matches when the value can be cast to `Int`.
     init?(_ any: Any) {
+        // A JSON boolean arrives as an `NSNumber`, which `as Int` would
+        // also accept (true as 1): told apart by its Core Foundation type
+        // first.
+        if let n = any as? NSNumber, CFGetTypeID(n) == CFBooleanGetTypeID() {
+            self = .bool(n.boolValue)
+            return
+        }
         switch any {
         case let i as Int: self = .int(i)
         case let s as String: self = .string(s)
@@ -310,6 +318,8 @@ enum JSONValue: Sendable, Equatable {
         }
     }
 
+    /// The boolean, if this value is one.
+    var bool: Bool? { if case .bool(let b) = self { return b } else { return nil } }
     /// The integer, if this value is one.
     var int: Int? { if case .int(let i) = self { return i } else { return nil } }
     /// The integer list, or an empty list.

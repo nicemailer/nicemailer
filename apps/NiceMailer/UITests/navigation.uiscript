@@ -98,3 +98,11 @@ expect selected > 180
 expect thread_count > 210
 expect reader_is_selected = true
 snap navigation-deep
+# A mail marked unread deep in the list: the core names the conversation
+# that changed (`threads_announced`), and the app reloads it alone, not the
+# 200 rows above it; the list keeps its depth and the cursor its row.
+key u
+expect selected_unread > 0
+expect list_patches > 0
+expect thread_count > 210
+expect selected > 180

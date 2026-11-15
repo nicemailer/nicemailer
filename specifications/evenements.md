@@ -82,7 +82,7 @@ Les événements **séquencés** passent par le tampon et sont rejoués. Les év
 
 | Événement | Paramètres | Type | Signification |
 | --- | --- | --- | --- |
-| `FolderChanged` | `folder_id` | séquencé | Contenu ou compteurs du dossier modifiés |
+| `FolderChanged` | `folder_id`, `threads_announced` (présent et `true`, ou absent) | séquencé | Contenu ou compteurs du dossier modifiés. Avec `threads_announced`, chaque conversation modifiée dans ce dossier a son `ThreadChanged`, émis avant lui dans le même lot (voir « Rechargement par conversation ») |
 | `ThreadChanged` | `thread_id`, `folder_ids` | séquencé | Conversation créée, modifiée ou supprimée, dans les dossiers indiqués |
 | `MessageChanged` | `message_id`, `thread_id` | séquencé | Message modifié (flags, dossier, corps réinterprété, consultation) ou supprimé |
 | `MessageArrived` | `message_id`, `folder_id` | séquencé | Nouveau mail, trié dans le dossier indiqué ; sert aussi aux notifications. Émis après le `FolderChanged` du dossier, et jamais pendant la première synchronisation d'un dossier, dont tous les mails seraient « nouveaux » |
@@ -102,6 +102,8 @@ Les événements **séquencés** passent par le tampon et sont rejoués. Les év
 | `ImportFinished` | mêmes paramètres, plus `sent`, `archived`, `correspondents`, `seconds`, et `error` en cas d'échec | séquencé | Fin d'un import mbox, réussi ou non ; l'état reste disponible par `import_status` |
 
 `ImportProgress` est séquencé, contrairement à `SyncProgress` : il n'en part qu'un par lot de 500 mails (quelques-uns par seconde), et un événement transitoire ne porte pas de numéro de séquence, ce qui ferait croire à un trou aux clients qui vérifient la continuité. Pendant un import, chaque lot émet aussi `FolderChanged` pour les dossiers remplis, mais pas de `ThreadChanged` par conversation : des milliers d'événements par seconde satureraient le tampon de rejeu pour une information que `FolderChanged` suffit à transmettre (recharger la liste).
+
+**Rechargement par conversation.** Un client qui affiche une longue liste ne la recharge pas en entier à chaque mail lu : quand tous les `FolderChanged` d'un lot qui touchent sa liste portent `threads_announced`, il redemande seulement les conversations des `ThreadChanged` du lot, avec la portée et les critères de sa liste (`list_threads`, `filter.thread_ids`) : celles qui n'y sont plus en sortent, les autres prennent leur nouvelle place. Sinon, il recharge la liste. Le noyau ne pose l'indicateur que là où il est sûr que toutes les conversations modifiées sont nommées : changement de drapeau (lu, suivi) demandé par un client, drapeaux changés sur le serveur. Un import, une arrivée de mails, un déplacement, et tout changement fusionné avec l'un d'eux dans le même lot, ne le posent pas : en cas de doute, le client recharge, ce qui est toujours juste.
 
 **Un état ne repose jamais sur un événement seul.** Ce qu'un événement signale doit aussi pouvoir être obtenu par une requête, pour qu'un rechargement complet le retrouve. Par exemple, les demandes d'envoi en attente de confirmation sont listées par `list_pending_confirmations`, et l'état des comptes par `list_accounts`.
 

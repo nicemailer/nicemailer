@@ -606,11 +606,20 @@ final class AppModel {
     private var lastRefreshStart: ContinuousClock.Instant?
     /// How many reloads started: for the tests of the pacing.
     @ObservationIgnored private(set) var refreshCount = 0
+    /// How many refreshes reloaded the conversations that changed alone
+    /// (`patchThreads`), and how many the whole list: for the UI scripts.
+    @ObservationIgnored private(set) var patchCount = 0
+    @ObservationIgnored private(set) var wholeReloadCount = 0
     /// The pending debounced search, cancelled when a newer one replaces it.
     private var searchTask: Task<Void, Never>?
     /// Folders and threads invalidated by events since the last refresh.
     private var dirtyFolders = Set<Int>()
     private var dirtyThreads = Set<Int>()
+    /// Folders of those whose `FolderChanged` did not say that every
+    /// conversation that changed in them was announced (`threads_announced`,
+    /// `evenements.md`): a list showing one of them is reloaded whole; the
+    /// others only reload their conversations that changed (`patchThreads`).
+    private var unannouncedFolders = Set<Int>()
 
     nonisolated static let pageSize = 60
 
@@ -895,7 +904,10 @@ final class AppModel {
         }
         switch e.method {
         case "FolderChanged":
-            if let f = e.params["folder_id"]?.int { dirtyFolders.insert(f) }
+            if let f = e.params["folder_id"]?.int {
+                dirtyFolders.insert(f)
+                if e.params["threads_announced"]?.bool != true { unannouncedFolders.insert(f) }
+            }
         case "ThreadChanged":
             if let t = e.params["thread_id"]?.int { dirtyThreads.insert(t) }
             for f in e.params["folder_ids"]?.ints ?? [] { dirtyFolders.insert(f) }
@@ -1019,7 +1031,8 @@ final class AppModel {
             lastRefreshStart = ContinuousClock.now
             refreshCount += 1
             let folders = dirtyFolders, threads = dirtyThreads, full = refreshFull
-            dirtyFolders = []; dirtyThreads = []; refreshFull = false
+            let unannounced = unannouncedFolders
+            dirtyFolders = []; dirtyThreads = []; refreshFull = false; unannouncedFolders = []
             // Counters are cheap to reload: always refresh the sidebar.
             await reloadFolders()
             // The open thread first: the list refresh reads its new state to
@@ -1028,7 +1041,20 @@ final class AppModel {
                 await loadOpenThread(markSeen: false)
             }
             if !listedFolderIds.isEmpty, full || !folders.isDisjoint(with: listedFolderIds) {
-                await reloadThreads(keepDepth: true)
+                // Only the conversations that changed when the core named
+                // them all (every listed folder announced), else the whole
+                // list, which is always right.
+                let announced = !full && unannounced.isDisjoint(with: listedFolderIds)
+                // Swift note: `&&` takes its right side as a closure, which
+                // cannot hold an `await`; hence the two steps.
+                var patched = false
+                if announced { patched = await patchThreads(threads) }
+                if patched {
+                    patchCount += 1
+                } else {
+                    wholeReloadCount += 1
+                    await reloadThreads(keepDepth: true)
+                }
             }
         }
     }
@@ -1293,6 +1319,53 @@ final class AppModel {
         }
         // A cursor that did not move would ask for the same page forever.
         if nextCursor != cursor { prefetchIfNearEnd() }
+    }
+
+    /// Reloads the conversations `ids` of the list, and puts them at their
+    /// place (`ListPatch.patched`), instead of the whole list: the refresh
+    /// of a list after a change the core announced conversation by
+    /// conversation. Returns false when it cannot (too many conversations,
+    /// an error): the caller reloads the whole list then.
+    ///
+    /// The list is patched as it is when the answer arrives, not as it was
+    /// when the request left: a page loaded meanwhile (`loadNextPage`) is
+    /// kept.
+    func patchThreads(_ ids: Set<Int>) async -> Bool {
+        let folderIds = listedFolderIds
+        let listFilter = self.listFilter
+        guard let client, !ids.isEmpty, ids.count <= ListPatch.maxThreads,
+              !folderIds.isEmpty || listFilter != nil else { return false }
+        let sort = self.sort
+        let filter = attributes
+        var params = Self.listScope(everything: everything, virtual: virtual, folderIds: folderIds, listFilter: listFilter)
+        var criteria = Self.filterParameters(filter, listFilter: listFilter) ?? [:]
+        criteria["thread_ids"] = ids.sorted()
+        params["filter"] = criteria
+        params["limit"] = ids.count
+        params["sort"] = sort
+        let page: Page<ThreadSummary>
+        do {
+            page = try await client.call("list_threads", params)
+        } catch {
+            return false
+        }
+        // Another list meanwhile: it has its own load; nothing to patch.
+        guard folderIds == listedFolderIds, sort == self.sort, filter == attributes, listFilter == self.listFilter
+        else { return true }
+        let patched = ListPatch.patched(threads, changed: ids, fresh: page.items, complete: nextCursor == nil, sort: sort)
+        // The selected mail that stopped matching the list stays, as with a
+        // reload (`keepingSelected`); one kept so before and not changed
+        // now stays kept.
+        let kept = Self.keepingSelected(patched, previous: threads, selected: selectedThreadId, open: openThread,
+                                        listed: listFilter == nil ? Set(folderIds) : Set(folders.map(\.id)))
+        let before = threads
+        threads = kept.threads
+        stickyThreadId = kept.sticky ?? stickyThreadId.flatMap { id in
+            !ids.contains(id) && kept.threads.contains { $0.id == id } ? id : nil
+        }
+        selectFirstIfNeeded(previous: before)
+        prefetchIfNearEnd()
+        return true
     }
 
     /// `items` (a refreshed list), plus the selected thread if it left the

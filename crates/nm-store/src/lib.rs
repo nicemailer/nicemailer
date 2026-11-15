@@ -281,6 +281,15 @@ pub struct ChangeSet {
     pub threads: Vec<(i64, Vec<i64>)>,
     /// Folders whose counters or content changed.
     pub folders: BTreeSet<i64>,
+    /// Those of `folders` whose every conversation that changed is in
+    /// `threads` (`announce_threads`): a client that shows such a folder
+    /// may reload these conversations alone instead of the whole list
+    /// (`FolderChanged.threads_announced`, `evenements.md`). Empty by
+    /// default, which is always right: a folder not announced is reloaded
+    /// whole, as before. A change that touches a folder without saying
+    /// which conversations (an import, a first synchronization) never
+    /// announces it.
+    pub announced: BTreeSet<i64>,
     /// Accounts whose settings or state changed (`AccountChanged`).
     pub accounts: BTreeSet<i64>,
     /// New mail found by the synchronization, as `(message_id, folder_id)`
@@ -312,11 +321,36 @@ impl ChangeSet {
         self.messages.len()
     }
 
+    /// Says that every conversation that changed in `folders` is in
+    /// `threads`. Called only where that was checked: a change of flags,
+    /// a move of known conversations.
+    pub fn announce_threads(&mut self) {
+        self.announced = self.folders.clone();
+    }
+
+    /// The folders announced once `other` is added (`announced`): a folder
+    /// stays announced only if every change that touched it announced it.
+    /// An empty change set is neutral, so a batch built by merging into
+    /// `ChangeSet::default()` keeps what its parts said.
+    pub fn merged_announced(&self, other: &ChangeSet) -> BTreeSet<i64> {
+        self.folders
+            .union(&other.folders)
+            .copied()
+            .filter(|f| {
+                (!self.folders.contains(f) || self.announced.contains(f))
+                    && (!other.folders.contains(f) || other.announced.contains(f))
+            })
+            .collect()
+    }
+
     /// Adds the changes of `other`: a command on several threads, run in
     /// one transaction, reports them in one `ChangeSet` (one batch of
     /// events). A thread already listed keeps its first entry, with the
     /// folders of both.
     pub fn merge(&mut self, other: ChangeSet) {
+        // Before `other.threads` is moved out below (Rust note: a value
+        // partly moved can no longer be borrowed whole).
+        self.announced = self.merged_announced(&other);
         self.messages.extend(other.messages);
         for (thread, folders) in other.threads {
             match self.threads.iter_mut().find(|(t, _)| *t == thread) {
@@ -967,6 +1001,37 @@ pub(crate) fn refresh_folder_counts(conn: &Connection, folder_id: i64) -> Result
 
 #[cfg(test)]
 mod tests {
+
+    /// A folder stays announced only if every change that touched it
+    /// announced it; an empty change set is neutral (`ChangeSet::merge`).
+    #[test]
+    fn announced_folders_merge_conservatively() {
+        let announced = |folders: &[i64]| {
+            let mut c = ChangeSet::default();
+            c.folders.extend(folders);
+            c.announce_threads();
+            c
+        };
+        let silent = |folders: &[i64]| {
+            let mut c = ChangeSet::default();
+            c.folders.extend(folders);
+            c
+        };
+        // Into an empty set: kept.
+        let mut c = ChangeSet::default();
+        c.merge(announced(&[1, 2]));
+        assert_eq!(c.announced, [1, 2].into());
+        // Folder 2 touched by a change that does not announce it: lost;
+        // folder 3, announced by the second, kept.
+        c.merge(silent(&[2]));
+        c.merge(announced(&[3]));
+        assert_eq!(c.announced, [1, 3].into());
+        assert_eq!(c.folders, [1, 2, 3].into());
+        // A silent change first, then an announced one: still silent.
+        let mut d = silent(&[4]);
+        d.merge(announced(&[4]));
+        assert!(d.announced.is_empty());
+    }
     use super::*;
 
     /// Every column `refresh_thread` maintains, for every thread.
