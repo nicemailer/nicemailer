@@ -240,7 +240,6 @@ struct ThreadColumn: View {
         if model.searchText.isEmpty {
             ThreadList()
                 .navigationTitle(model.selectedFolder?.name ?? "")
-                .navigationSubtitle(model.selectedFolder.map { "\($0.threadCount) conversations" } ?? "")
         } else {
             SearchResults()
                 .navigationTitle("Recherche")

@@ -635,14 +635,13 @@ fn main() -> anyhow::Result<()> {
             // `{:>3}` right-aligns on 3 characters, `{:<12}` left-aligns on 12.
             for f in result["items"].as_array().into_iter().flatten() {
                 println!(
-                    "{:>3}  {:<8} {}  {:<12} {:>6} mails {:>6} unread {:>6} threads",
+                    "{:>3}  {:<8} {}  {:<12} {:>6} mails {:>6} unread",
                     f["id"],
                     f["account_name"].as_str().unwrap_or(""),
                     f["letter"].as_str().unwrap_or(" "),
                     f["name"].as_str().unwrap_or(""),
                     f["total_count"],
                     f["unread_count"],
-                    f["thread_count"],
                 );
             }
             Ok(())

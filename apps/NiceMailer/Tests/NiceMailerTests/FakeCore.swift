@@ -68,7 +68,7 @@ enum Fixture {
     static func folder(_ id: Int, _ role: String, _ name: String, _ letter: String, targets: [String]) -> [String: Any] {
         [
             "id": id, "role": role, "name": name, "letter": letter, "category": "work",
-            "total_count": 8, "unread_count": 2, "thread_count": 8, "move_targets": targets,
+            "total_count": 8, "unread_count": 2, "move_targets": targets,
             "account_id": 1, "account_name": "perso", "account_kind": "imap",
         ]
     }

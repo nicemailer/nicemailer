@@ -36,7 +36,7 @@ fn folder_id(store: &Store, role: FolderRole) -> i64 {
 fn pagination_covers_every_thread_once_in_order() {
     let store = seeded();
     let archive = folder_id(&store, FolderRole::Archive);
-    let expected = store.list_folders().unwrap().into_iter().find(|f| f.id == archive).unwrap().thread_count;
+    let expected = store.folder_thread_count(archive).unwrap();
     let mut seen = HashSet::new();
     let mut cursor: Option<String> = None;
     let mut last = (i64::MAX, i64::MAX);

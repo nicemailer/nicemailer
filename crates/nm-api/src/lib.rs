@@ -916,8 +916,6 @@ pub struct FolderView {
     /// Number of messages in the folder.
     pub total_count: i64,
     pub unread_count: i64,
-    /// Number of threads in the folder.
-    pub thread_count: i64,
     /// Targets offered by the move command from this folder. Computed by
     /// the core so that clients never reimplement workflow rules.
     pub move_targets: Vec<FolderRole>,

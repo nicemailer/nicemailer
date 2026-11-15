@@ -106,3 +106,17 @@ fn given_conversations_are_listed_with_the_lists_criteria() {
     let page = c.call("list_threads", json!({"everything": {}, "limit": 3, "filter": {"thread_ids": [999_999]}})).unwrap();
     assert!(ids(&page).is_empty());
 }
+
+/// `list_folders`, read at every refresh of the sidebar, sends no count of
+/// conversations: no interface shows it, and counting read the list index
+/// of every conversation (0.6 to 1.4 s just after the core started).
+#[test]
+fn the_folders_carry_no_count_of_conversations() {
+    let dir = tempfile::tempdir().unwrap();
+    let _core = start(dir.path());
+    let mut c = imported(dir.path());
+    let folders = c.call("list_folders", json!({})).unwrap();
+    let items = folders["items"].as_array().unwrap();
+    assert!(!items.is_empty());
+    assert!(items.iter().all(|f| f.get("thread_count").is_none() && f.get("unread_count").is_some()), "{folders}");
+}

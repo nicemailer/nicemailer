@@ -36,7 +36,6 @@ struct FolderView: Decodable, Identifiable, Hashable {
     let category: String?
     let totalCount: Int
     let unreadCount: Int
-    let threadCount: Int
     /// Targets offered by the move command from this folder, computed by
     /// the core: the app never decides on its own what is allowed.
     let moveTargets: [String]

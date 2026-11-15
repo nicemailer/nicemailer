@@ -171,9 +171,6 @@ impl Store {
               WHERE f.subscribed = 1 AND (f.role IS NULL OR f.role <> 'config')",
         )?;
         // Each folder with the position of its account, for the sort below.
-        // The number of conversations of each folder, counted once for all
-        // of them (`thread_counts`).
-        let counts = self.thread_counts()?;
         let mut items = stmt
             .query_map([], |r| {
                 let position: i64 = r.get(8)?;
@@ -189,7 +186,6 @@ impl Store {
                     category: role.map(|r| r.category()),
                     total_count: r.get(3)?,
                     unread_count: r.get(4)?,
-                    thread_count: 0,
                     // `unwrap_or_default` gives an empty `Vec` when there is no role.
                     move_targets: role.map(|r| r.move_targets()).unwrap_or_default(),
                     account_id: r.get(5)?,
@@ -215,18 +211,24 @@ impl Store {
                 f.name.clone(),
             )
         });
-        let items: Vec<FolderView> = items
-            .into_iter()
-            .map(|(_, mut f)| {
-                let key = match f.role {
-                    Some(r) => (f.account_id, Some(r), 0),
-                    None => (f.account_id, None, f.id),
-                };
-                f.thread_count = counts.get(&key).copied().unwrap_or(0);
-                f
-            })
-            .collect();
-        Ok(items)
+        // The number of conversations of each folder is not sent: no
+        // interface shows it, and counting them read the list index of
+        // every conversation of the mailbox, the longest part of this
+        // request (0.6 to 1.4 s just after the core started, on a real
+        // mailbox), at every refresh of the sidebar.
+        Ok(items.into_iter().map(|(_, f)| f).collect())
+    }
+
+    /// The number of conversations listed in the folder `folder_id`, by
+    /// the rule of the lists (`dossiers.md`, "Dossier d'une conversation"):
+    /// for the tests that check the lists against it. No request sends it.
+    pub fn folder_thread_count(&self, folder_id: i64) -> Result<i64> {
+        let (role, account) = self.folder_role_and_account(folder_id)?;
+        let key = match role {
+            Some(r) => (account, Some(r), 0),
+            None => (account, None, folder_id),
+        };
+        Ok(self.thread_counts()?.get(&key).copied().unwrap_or(0))
     }
 
     /// The number of conversations of each folder, keyed by (account, role,
