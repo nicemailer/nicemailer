@@ -122,7 +122,7 @@ Say version 3:
 
 ### When it runs
 
-At start, the core launches a thread (`start_reindex`, `crates/nm-daemon/src/main.rs`) that counts the bodies older than `PARSER_VERSION`, plus the messages that have no body (their first parse failed). If there are none, it stops at once. The count and the work list are read from the index `idx_message_body_parser`, never from the bodies themselves: a join with `message_body` reads the whole text of every mail, which took 30 s on a large mailbox.
+At start, the core launches a thread (`start_reindex`, `crates/nm-daemon/src/main.rs`) that counts the bodies older than `PARSER_VERSION`, plus the messages that have no body (their first parse failed). If there are none, it stops at once. The count runs on a read connection, not under the store lock: cold, at the start, it took up to 2.5 s on a large mailbox, and the app's first requests waited for the lock meanwhile. The count and the work list are read from the index `idx_message_body_parser`, never from the bodies themselves: a join with `message_body` reads the whole text of every mail, which took 30 s on a large mailbox.
 
 The core's log shows it:
 

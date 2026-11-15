@@ -1784,7 +1784,11 @@ fn start_reindex(core: &Arc<Core>) -> anyhow::Result<()> {
     // main thread must reach the loop that accepts connections at once
     // (a slow check here once left the app unanswered for 30 s).
     std::thread::Builder::new().name("nicemailer-reindex".into()).spawn(move || {
-        let pending = match nm_store::reindex::pending(&core.lock_store("reindex")) {
+        // Counted on a read connection, not under the store lock: the
+        // count reads indexes of both files, cold at the start (up to 2.5 s
+        // on a large mailbox), and held the lock meanwhile, so the app's
+        // first requests waited for it.
+        let pending = match core.readers.read(nm_store::reindex::pending) {
             Ok(0) => return,
             Ok(n) => n,
             Err(e) => return eprintln!("reindex : {e}"),
@@ -1819,7 +1823,8 @@ fn start_reindex(core: &Arc<Core>) -> anyhow::Result<()> {
 fn start_sender_backfill(core: &Arc<Core>) -> anyhow::Result<()> {
     let core = core.clone();
     std::thread::Builder::new().name("nicemailer-senders".into()).spawn(move || {
-        let pending = match nm_store::senders::pending(&core.lock_store("senders")) {
+        // On a read connection too (see `start_reindex`).
+        let pending = match core.readers.read(nm_store::senders::pending) {
             Ok(0) => return,
             Ok(n) => n,
             Err(e) => return eprintln!("personnes et robots : {e}"),
