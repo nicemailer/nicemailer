@@ -43,6 +43,7 @@ pub mod auth;
 pub mod attachments;
 mod commands;
 pub mod clean;
+pub mod clean_close;
 pub mod draft_copies;
 pub mod drafts;
 pub mod css;
@@ -376,6 +377,26 @@ impl ChangeSet {
     }
 }
 
+/// The steps of [`Store::open_timed`], each with its duration, in order.
+#[derive(Debug, Clone)]
+pub struct OpeningSteps {
+    last: std::time::Instant,
+    pub steps: Vec<(&'static str, std::time::Duration)>,
+}
+
+impl OpeningSteps {
+    fn new() -> OpeningSteps {
+        OpeningSteps { last: std::time::Instant::now(), steps: Vec::new() }
+    }
+
+    /// Ends the step `name`, which began at the previous mark.
+    fn mark(&mut self, name: &'static str) {
+        let now = std::time::Instant::now();
+        self.steps.push((name, now - self.last));
+        self.last = now;
+    }
+}
+
 /// Handle on the database. There is a single writing `Store` in the core,
 /// protected by a mutex (see `nm-daemon`), so only one write happens at a
 /// time. Queries run on read-only stores of a [`pool::ReadPool`].
@@ -444,11 +465,24 @@ impl Store {
     /// whose body file was deleted gets an empty one, and the
     /// reinterpretation fills it again from the raw files (`reindex.rs`).
     pub fn open(path: &Path) -> Result<Store> {
+        Ok(Self::open_timed(path)?.0)
+    }
+
+    /// [`Store::open`], and how long each step of the opening took, in
+    /// order: the core writes them in its log at start (`startup: …`), so
+    /// that a slow start can be read where it happens rather than guessed.
+    pub fn open_timed(path: &Path) -> Result<(Store, OpeningSteps)> {
+        let mut steps = OpeningSteps::new();
+        // Before anything opens the files: whether they are as the last
+        // clean close left them (`clean_close`). The mark goes either way.
+        let clean = clean_close::take(path, &body_path(path));
         let conn = Connection::open_with_flags(
             path,
             OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE,
         )?;
-        Self::init(conn, Some(&body_path(path)))
+        steps.mark("open");
+        let store = Self::init(conn, Some(&body_path(path)), clean, &mut steps)?;
+        Ok((store, steps))
     }
 
     /// Opens a read-only connection to an existing database, for the read
@@ -487,11 +521,13 @@ impl Store {
     /// In-memory database, used by tests: fast and thrown away at the end.
     /// Its body file is in memory too.
     pub fn open_in_memory() -> Result<Store> {
-        Self::init(Connection::open_in_memory()?, None)
+        Self::init(Connection::open_in_memory()?, None, false, &mut OpeningSteps::new())
     }
 
     /// Applies per-connection settings and creates or checks the schema.
-    fn init(conn: Connection, body: Option<&Path>) -> Result<Store> {
+    /// `clean`: the files are as a clean close left them
+    /// (`clean_close::take`), so the reconciliation of the two is skipped.
+    fn init(conn: Connection, body: Option<&Path>, clean: bool, steps: &mut OpeningSteps) -> Result<Store> {
         sql_log::install(&conn);
         // These pragmas are not stored in the database file: they must be
         // set on every new connection (see the header of schema.sql).
@@ -512,10 +548,12 @@ impl Store {
         // `query_row` runs a query expected to return one row and passes it to
         // the closure `|r| r.get(0)`, which reads column 0.
         let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+        steps.mark("version");
         // The body file, attached before the migrations: version 10 moves
         // the bodies into it. A new or deleted file gets its tables here.
         attach_body(&conn, body)?;
         create_body_schema(&conn)?;
+        steps.mark("body file");
         // Rust note: `mut` because migrating needs `&mut Connection` (a
         // transaction borrows the connection exclusively).
         let mut conn = conn;
@@ -547,10 +585,18 @@ impl Store {
                 }
             }
         }
+        steps.mark("schema");
         conn.execute_batch(TEMP_TRIGGERS)?;
         // The two files are not committed together (`schema_body.sql`):
         // make them agree after a crash, or after the body file was deleted.
-        reconcile_bodies(&conn)?;
+        // Not after a clean close, which left them in step: on a real
+        // mailbox, this is most of the opening (0.9 s, the body file cold).
+        if clean {
+            steps.mark("clean close, no reconcile");
+        } else {
+            reconcile_bodies(&conn)?;
+            steps.mark("reconcile");
+        }
         // Planner statistics (`sqlite_stat1`). Without them SQLite guesses how
         // selective each index is, and on a large mailbox it once preferred
         // an index that read a whole folder for every row of a list. The
@@ -559,6 +605,7 @@ impl Store {
         // connection opens: it analyzes only the tables that need it, with a
         // bounded effort, so it stays quick on a large database.
         refresh_statistics(&conn, "PRAGMA optimize = 0x10002;")?;
+        steps.mark("statistics");
         // The accounts whose changes go to the spool (`spool.rs`,
         // `set_server_accounts`): a table of this connection only, gone
         // when it closes, filled by the core from `accounts.toml`.
@@ -567,6 +614,26 @@ impl Store {
              CREATE TEMP TABLE IF NOT EXISTS read_only_account (id INTEGER PRIMARY KEY);",
         )?;
         Ok(Store { conn, server_accounts: BTreeSet::new(), fake_sending: false, outgoing: None })
+    }
+
+    /// The clean close of the core (`clean_close`): empties both
+    /// write-ahead logs into their files, then marks them, so that the next
+    /// opening may skip the reconciliation. Returns whether the mark was
+    /// written: not when a log could not be emptied (a reader still in a
+    /// read), nor for a database in memory. The caller holds the store
+    /// lock, so that nothing writes between the checkpoint and the mark; a
+    /// write after it changes the files, and the next opening reconciles.
+    pub fn close_cleanly(&self) -> Result<bool> {
+        // `wal_checkpoint(TRUNCATE)` answers (busy, log pages, pages
+        // checkpointed); busy = 1 when a reader kept it from finishing.
+        let busy = |schema: &str| -> Result<bool> {
+            Ok(self.conn.query_row(&format!("PRAGMA {schema}.wal_checkpoint(TRUNCATE)"), [], |r| r.get::<_, i64>(0))? != 0)
+        };
+        if busy("main")? || busy("body")? {
+            return Ok(false);
+        }
+        let Some(path) = self.conn.path().filter(|p| !p.is_empty()).map(Path::new) else { return Ok(false) };
+        Ok(clean_close::write(path, &body_path(path)))
     }
 
     /// Updates the planner statistics after a large change (an import adds

@@ -402,6 +402,19 @@ async fn run(args: Args, data_dir: &Path) -> anyhow::Result<()> {
     if let Some(syncer) = core.syncer.get() {
         syncer.stop_all(std::time::Duration::from_secs(2));
     }
+    // Both files emptied of their logs and marked, under the store lock so
+    // that nothing writes in between: the next start skips the
+    // reconciliation of the two files, most of its opening
+    // (`nm_store::clean_close`). A write after this changes the files, and
+    // the next start reconciles: never wrong, only slower.
+    {
+        let store = core.lock_store("close");
+        match store.close_cleanly() {
+            Ok(true) => eprintln!("clean close: the next start skips the reconciliation of the two files"),
+            Ok(false) => eprintln!("clean close: not marked (a log could not be emptied); the next start reconciles"),
+            Err(e) => eprintln!("clean close: not marked ({e}); the next start reconciles"),
+        }
+    }
     cleanup(&socket_path);
     Ok(())
 }
@@ -421,6 +434,7 @@ async fn run(args: Args, data_dir: &Path) -> anyhow::Result<()> {
 ///   transaction: cancelled, it is rolled back, and done again at the next
 ///   start.
 async fn open_store(data_dir: &Path, db_path: &Path) -> anyhow::Result<Store> {
+    let inspecting = Instant::now();
     let upgrade = match nm_store::inspect::inspect(db_path) {
         nm_store::inspect::DatabaseState::Upgradable { from, to } => Some((from, to)),
         _ => None,
@@ -440,7 +454,8 @@ async fn open_store(data_dir: &Path, db_path: &Path) -> anyhow::Result<Store> {
     // Rust note: `spawn_blocking` runs a synchronous function on a thread
     // pool made for blocking work, and gives a future of its result; the
     // `Store` it returns can cross threads (`Send`).
-    let opening = tokio::task::spawn_blocking(move || Store::open(&path));
+    let inspected = inspecting.elapsed();
+    let opening = tokio::task::spawn_blocking(move || Store::open_timed(&path));
     let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
     let started = std::time::Instant::now();
     let result = tokio::select! {
@@ -454,7 +469,14 @@ async fn open_store(data_dir: &Path, db_path: &Path) -> anyhow::Result<Store> {
     {
         eprintln!("mise à jour de la base : version {from} vers {to} faite en {:.0} s", started.elapsed().as_secs_f64());
     }
-    result.with_context(|| format!("ouverture de {}", db_path.display()))
+    let (store, steps) = result.with_context(|| format!("ouverture de {}", db_path.display()))?;
+    // Each step of the opening, after the check of the file (`inspect`):
+    // the largest part of a slow start, on a real mailbox.
+    let mut all = vec![("inspect", inspected)];
+    all.extend(steps.steps);
+    let total = all.iter().map(|(_, d)| *d).sum();
+    eprintln!("{}", startup_line("store opened", total, &all));
+    Ok(store)
 }
 
 /// A stop while the database opens: the opening thread is abandoned with
@@ -1768,14 +1790,15 @@ impl StartupClock {
     }
 
     fn line(&self) -> String {
-        startup_line(self.last - self.started, &self.steps)
+        startup_line("socket ready", self.last - self.started, &self.steps)
     }
 }
 
-/// The log line of the start (`StartupClock`). A pure function, tested.
-fn startup_line(total: Duration, steps: &[(&str, Duration)]) -> String {
+/// A log line of the start (`StartupClock`, `open_store`): what is
+/// ready, after how long, and each step. A pure function, tested.
+fn startup_line(what: &str, total: Duration, steps: &[(&str, Duration)]) -> String {
     let steps: Vec<String> = steps.iter().map(|(name, d)| format!("{name} {}", d.as_millis())).collect();
-    format!("startup: socket ready after {} ms ({})", total.as_millis(), steps.join(", "))
+    format!("startup: {what} after {} ms ({})", total.as_millis(), steps.join(", "))
 }
 
 fn start_reindex(core: &Arc<Core>) -> anyhow::Result<()> {
@@ -1907,7 +1930,7 @@ mod tests {
     fn the_startup_line_gives_each_step() {
         let ms = Duration::from_millis;
         assert_eq!(
-            startup_line(ms(1840), &[("store", ms(1210)), ("readers", ms(4)), ("socket", ms(11))]),
+            startup_line("socket ready", ms(1840), &[("store", ms(1210)), ("readers", ms(4)), ("socket", ms(11))]),
             "startup: socket ready after 1840 ms (store 1210, readers 4, socket 11)"
         );
     }

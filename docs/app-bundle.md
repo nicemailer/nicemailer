@@ -78,7 +78,7 @@ Once connected, the app asks for the folders and the first list at once; the set
 
 Both sides time their part, so that a slow launch can be measured on the Mac where it happens:
 
-- the core, in `core.log`, once its socket is bound: `startup: socket ready after 1840 ms (store 1210, readers 4, settings 35, recovery 580, socket 11)` (the database opened, the read connections, the settings and accounts, the actions and drafts taken up again, the socket);
+- the core, in `core.log`, once its socket is bound: `startup: socket ready after 1840 ms (store 1210, readers 4, settings 35, recovery 580, socket 11)` (the database opened, the read connections, the settings and accounts, the actions and drafts taken up again, the socket), after the steps of the opening of the database: `startup: store opened after 949 ms (inspect 6, open 0, version 2, body file 1, schema 0, reconcile 931, statistics 6)`. The reconciliation of the two files, the longest step, is skipped after a clean stop of the core ([backup.md](backup.md), "Atomic commits");
 - the app, in the system log (category `startup`), once its first list is shown: `first list after 2310 ms (60 rows; socket after 1840 ms, core started by the app)`, from the app's launch. Read it with `/usr/bin/log show --last 10m --predicate 'subsystem == "eu.nicemailer.app" AND category == "startup"'`.
 
 ## When the core cannot start
