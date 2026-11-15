@@ -333,11 +333,26 @@ extension AppModel {
                 // save another date of the mail (the core keeps the
                 // proposal).
                 if let file = r.calendar {
-                    let dest = try await saveCalendarFile(file)
+                    let dest = try await saveAIFile(file)
                     let place = FileManager.default.displayName(atPath: saveDirectory.path)
                     if case .open = action {
                         // Opened with its default app, Calendar, which asks
                         // which calendar to add it to.
+                        openFile(dest)
+                        flash = L("%@ saved to %@ and opened", dest.lastPathComponent, place)
+                    } else {
+                        flash = L("%@ saved to %@", dest.lastPathComponent, place)
+                    }
+                    return
+                }
+                // The sender's card: saved, and opened with ⌘↩ (Contacts,
+                // the default app of a .vcf, asks before adding it). One
+                // card: the core ended the run, the panel closes.
+                if let file = r.contact {
+                    aiRun = nil
+                    let dest = try await saveAIFile(file)
+                    let place = FileManager.default.displayName(atPath: saveDirectory.path)
+                    if case .open = action {
                         openFile(dest)
                         flash = L("%@ saved to %@ and opened", dest.lastPathComponent, place)
                     } else {
@@ -406,11 +421,12 @@ extension AppModel {
         return true
     }
 
-    /// Writes the calendar file of an appointment to `saveDirectory`
-    /// (~/Downloads by default), under its name or a free variant of it
-    /// ("… (2).ics"), never overwriting a file; returns where. Opening it
-    /// adds the event to Calendar; the app does not, the user decides.
-    func saveCalendarFile(_ file: AICalendarFile) async throws -> URL {
+    /// Writes a file of the AI (the calendar file of an appointment, the
+    /// vCard of a contact) to `saveDirectory` (~/Downloads by default),
+    /// under its name or a free variant of it ("… (2).ics"), never
+    /// overwriting a file; returns where. Opening it adds the event to
+    /// Calendar or the card to Contacts; the app does not, the user decides.
+    func saveAIFile(_ file: AIFile) async throws -> URL {
         let dir = saveDirectory
         // Written off the main thread, like the copies of attachments.
         return try await Task.detached {

@@ -41,6 +41,7 @@ const NONE: Sent = Sent {
     segments: 0,
     threads: &[],
     targets: &[],
+    sender: None,
 };
 
 #[test]
@@ -365,6 +366,7 @@ fn targets_are_checked_against_what_was_sent() {
         segments: 0,
         threads: &[10, 11, 12],
         targets: &[FolderRole::Inbox, FolderRole::Newsletter, FolderRole::Junk],
+        sender: None,
     };
     let v = json!({"items": [
         {"thread": 10, "target": "newsletter", "reason": "A store's weekly offers."},
@@ -525,4 +527,94 @@ fn appointments_with_dates_written_otherwise_are_refused() {
     assert!(one(missing).contains("location is missing"));
     let eleven: Vec<Value> = (0..11).map(|i| ev(&format!("E{i}"), "2026-11-20", "")).collect();
     assert!(refused(read(Output::Events, &structured(json!({"events": eleven})), &NONE)).contains("11 events, at most 10"));
+}
+
+/// A contact answer, every field given and empty but the name.
+fn card(name: &str) -> Value {
+    json!({"name": name, "given": "", "family": "", "organization": "", "title": "", "emails": [], "phones": [],
+           "address": {"street": "", "locality": "", "postcode": "", "region": "", "country": ""}, "urls": []})
+}
+
+const FROM_ALICE: Sent = Sent {
+    sender: Some("alice@acme.fr"),
+    ..NONE
+};
+
+#[test]
+fn a_contact_is_read_with_the_sender_address_first() {
+    use nm_ai::vcard::PhoneKind;
+    let o = structured(json!({"contact": {
+        "name": "Alice Martin", "given": "Alice", "family": "Martin", "organization": "Acme", "title": "Directrice",
+        "emails": ["a.martin@gmail.com", "ALICE@acme.fr", "a.martin@gmail.com"],
+        "phones": [{"kind": "mobile", "number": "+33 6 12 34 56 78"}, {"kind": "work", "number": "01 23 45 67 89"},
+                   {"kind": "home", "number": "+33 6 12 34 56 78"}],
+        "address": {"street": "12 rue de la Paix", "locality": "Paris", "postcode": "75002", "region": "", "country": "France"},
+        "urls": ["https://acme.fr", "https://acme.fr"]}}));
+    let Answer::Contact(c) = read(Output::Contact, &o, &FROM_ALICE).unwrap() else { panic!() };
+    // The From first, the same address in capitals and the repeated one
+    // kept once.
+    assert_eq!(c.emails, ["alice@acme.fr", "a.martin@gmail.com"]);
+    assert_eq!(c.phones.len(), 2, "a number given twice is kept once");
+    assert_eq!(c.phones[0].kind, PhoneKind::Mobile);
+    assert_eq!(c.address.locality, "Paris");
+    assert_eq!(c.urls, ["https://acme.fr"]);
+    // The model forgot the From address: the core adds it.
+    let Answer::Contact(c) = read(Output::Contact, &structured(json!({"contact": card("Alice")})), &FROM_ALICE).unwrap() else {
+        panic!()
+    };
+    assert_eq!(c.emails, ["alice@acme.fr"]);
+    // Given as text, fenced, by a provider without structured output.
+    let fenced = text(&format!("```json\n{}\n```", json!({"contact": card("Alice")})));
+    assert!(matches!(read(Output::Contact, &fenced, &FROM_ALICE).unwrap(), Answer::Contact(c) if c.name == "Alice"));
+}
+
+#[test]
+fn values_written_otherwise_are_left_out_of_the_card_and_listed() {
+    let mut c = card("Alice");
+    c["emails"] = json!(["alice at acme.fr", "alice.m@gmail.example"]);
+    c["phones"] = json!([
+        {"kind": "mobile", "number": "06 12 34 56 78 (direct)"},
+        {"kind": "work", "number": "(+33)6 01 47 26 04"},
+        {"kind": "cell", "number": "0612345678"},
+        {"kind": "work", "number": "1".repeat(50)}]);
+    c["urls"] = json!(["www.acme.fr", "https://acme.fr"]);
+    let Answer::Contact(k) = read(Output::Contact, &structured(json!({"contact": c})), &FROM_ALICE).unwrap() else { panic!() };
+    // The rest of the card is kept, nothing mended.
+    assert_eq!(k.name, "Alice");
+    assert_eq!(k.emails, ["alice@acme.fr", "alice.m@gmail.example"]);
+    assert_eq!(k.phones.iter().map(|p| p.number.as_str()).collect::<Vec<_>>(), ["(+33)6 01 47 26 04", "0612345678"]);
+    // A kind outside the list only labels the number: read as other.
+    assert_eq!(k.phones[1].kind, nm_ai::vcard::PhoneKind::Other);
+    assert_eq!(k.urls, ["https://acme.fr"]);
+    assert_eq!(k.dropped, ["alice at acme.fr", "06 12 34 56 78 (direct)", &"1".repeat(50), "www.acme.fr"]);
+    // A long value is listed cut.
+    let mut c = card("Alice");
+    c["urls"] = json!(["x".repeat(200)]);
+    let Answer::Contact(k) = read(Output::Contact, &structured(json!({"contact": c})), &FROM_ALICE).unwrap() else { panic!() };
+    assert_eq!(k.dropped, ["x".repeat(80)]);
+}
+
+#[test]
+fn a_contact_of_another_shape_is_refused() {
+    let one = |f: &dyn Fn(&mut Value)| {
+        let mut c = card("Alice");
+        f(&mut c);
+        refused(read(Output::Contact, &structured(json!({"contact": c})), &FROM_ALICE))
+    };
+    assert!(one(&|c| c["birthday"] = json!("")).contains("unexpected key \"birthday\" in the contact"));
+    assert!(one(&|c| c["address"]["floor"] = json!("2")).contains("unexpected key \"floor\" in the address"));
+    assert!(one(&|c| { c.as_object_mut().unwrap().remove("title"); }).contains("title is missing"));
+    assert!(one(&|c| c["emails"] = json!(vec!["a@b.fr"; 6])).contains("6 emails, at most 5"));
+    assert!(one(&|c| c["phones"] = json!([{"kind": "work"}])).contains("number is missing"));
+    assert!(one(&|c| c["urls"] = json!([3])).contains("a link is not a string"));
+    // No From and nothing found: no card.
+    let r = refused(read(Output::Contact, &structured(json!({"contact": card("")})), &NONE));
+    assert!(r.contains("no name, company, address or number"), "{r}");
+    // A company alone, or a number alone, is a card.
+    let mut c = card("");
+    c["organization"] = json!("Acme");
+    assert!(read(Output::Contact, &structured(json!({"contact": c})), &NONE).is_ok());
+    let mut c = card("");
+    c["phones"] = json!([{"kind": "other", "number": "0123"}]);
+    assert!(read(Output::Contact, &structured(json!({"contact": c})), &NONE).is_ok());
 }

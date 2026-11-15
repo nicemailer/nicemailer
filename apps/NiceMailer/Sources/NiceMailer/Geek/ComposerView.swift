@@ -496,6 +496,27 @@ struct AIEventCard: View {
     }
 }
 
+/// The sender's card in the AI panel (`contact`): the name in the accent
+/// colour, then each piece on its own line (`AI.contactLines`), as a card
+/// of the address book reads. Highlighted as a whole: it is what Return
+/// saves.
+struct AIContactCard: View {
+    let contact: AIContact
+
+    var body: some View {
+        let lines = AI.contactLines(contact)
+        VStack(alignment: .leading, spacing: scaled(3)) {
+            ForEach(Array(lines.enumerated()), id: \.offset) { i, line in
+                Text(line).foregroundStyle(i == 0 ? Palette.accentText : Palette.text)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, scaled(6))
+        .padding(.horizontal, scaled(8))
+        .background(RoundedRectangle(cornerRadius: 4).fill(Palette.cursor))
+    }
+}
+
 struct AIPanel: View {
     let run: AIRun
     /// How tall the text may grow before it scrolls.
@@ -565,6 +586,13 @@ struct AIPanel: View {
             VStack(alignment: .leading, spacing: scaled(8)) {
                 ForEach(Array(items.enumerated()), id: \.offset) { i, e in
                     AIEventCard(index: i, event: e, selected: i == run.choice)
+                }
+            }
+        case .proposal(.contact(let c)):
+            VStack(alignment: .leading, spacing: scaled(4)) {
+                AIContactCard(contact: c)
+                if let line = AI.droppedLine(c) {
+                    Text(line).foregroundStyle(Palette.muted)
                 }
             }
         case .proposal(.text(let text)):

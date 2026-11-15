@@ -247,10 +247,12 @@ pub enum Output {
     /// The appointments a mail mentions, each one a calendar file to save
     /// (`nm_ai::ics`).
     Events,
+    /// The sender's contact card, a vCard file to save (`nm_ai::vcard`).
+    Contact,
 }
 
 impl Output {
-    pub const ALL: [Output; 10] = [
+    pub const ALL: [Output; 11] = [
         Output::Replace,
         Output::Insert,
         Output::Reply,
@@ -261,6 +263,7 @@ impl Output {
         Output::Verdict,
         Output::Targets,
         Output::Events,
+        Output::Contact,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -275,6 +278,7 @@ impl Output {
             Output::Verdict => "verdict",
             Output::Targets => "targets",
             Output::Events => "events",
+            Output::Contact => "contact",
         }
     }
 
@@ -294,6 +298,8 @@ impl Output {
             Output::Verdict => &[Message],
             Output::Targets => &[Selection],
             Output::Events => &[Message, Thread],
+            // The sender of one mail: a conversation has several.
+            Output::Contact => &[Message],
         }
     }
 
@@ -308,6 +314,7 @@ impl Output {
                 | Output::Verdict
                 | Output::Targets
                 | Output::Events
+                | Output::Contact
         )
     }
 
@@ -366,6 +373,31 @@ impl Output {
                         "location": {"type": "string"},
                         "details": {"type": "string"}}}}}
             }),
+            // As for events: every field required, the empty string or the
+            // empty list for "none".
+            Output::Contact => {
+                let text = || json!({"type": "string"});
+                let kinds: Vec<&str> = crate::vcard::PhoneKind::ALL.iter().map(|k| k.as_str()).collect();
+                json!({
+                    "type": "object", "additionalProperties": false, "required": ["contact"],
+                    "properties": {"contact": {
+                        "type": "object", "additionalProperties": false,
+                        "required": ["name", "given", "family", "organization", "title", "emails", "phones", "address", "urls"],
+                        "properties": {
+                            "name": text(), "given": text(), "family": text(), "organization": text(), "title": text(),
+                            "emails": {"type": "array", "maxItems": 5, "items": {"type": "string"}},
+                            "phones": {"type": "array", "maxItems": 6, "items": {
+                                "type": "object", "additionalProperties": false, "required": ["kind", "number"],
+                                "properties": {"kind": {"type": "string", "enum": kinds}, "number": text()}}},
+                            "address": {
+                                "type": "object", "additionalProperties": false,
+                                "required": ["street", "locality", "postcode", "region", "country"],
+                                "properties": {"street": text(), "locality": text(), "postcode": text(),
+                                               "region": text(), "country": text()}},
+                            "urls": {"type": "array", "maxItems": 5, "items": {"type": "string",
+                                     "description": "a full link, starting with https:// or http://"}}}}}
+                })
+            }
             Output::Replace | Output::Insert | Output::Reply | Output::Panel => return None,
         })
     }
@@ -389,6 +421,11 @@ impl Output {
             | Output::Summary
             | Output::Verdict
             | Output::Targets => "Answer with JSON matching the given schema.",
+            Output::Contact => {
+                "Answer with JSON matching the given schema. Leave a field empty (or a list empty) when the mail \
+                 does not give it. Write each email address alone (alice@example.com), each phone number with \
+                 digits, spaces and + ( ) - . / only, and each link in full, starting with https:// or http://."
+            }
             Output::Events => {
                 "Answer with JSON matching the given schema. Write start and end as YYYY-MM-DD for a whole day, \
                  or YYYY-MM-DDTHH:MM (24-hour clock, the time as the mail gives it, no time zone) for a time; \

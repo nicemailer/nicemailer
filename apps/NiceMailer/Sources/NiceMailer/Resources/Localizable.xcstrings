@@ -3830,6 +3830,76 @@
         }
       }
     },
+    "↩ save (.vcf) · ⌘↩ add to Contacts · esc close": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "↩ enregistrer (.vcf) · ⌘↩ ajouter aux Contacts · esc fermer"
+          }
+        }
+      }
+    },
+    "Mobile": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Portable"
+          }
+        }
+      }
+    },
+    "Work": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Travail"
+          }
+        }
+      }
+    },
+    "Home": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Domicile"
+          }
+        }
+      }
+    },
+    "Fax": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fax"
+          }
+        }
+      }
+    },
+    "Phone": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Téléphone"
+          }
+        }
+      }
+    },
+    "Left out, not valid: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Écarté, non valide : %@"
+          }
+        }
+      }
+    },
     "No date or appointment in this mail.": {
       "localizations": {
         "fr": {

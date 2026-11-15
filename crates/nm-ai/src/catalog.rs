@@ -81,6 +81,7 @@ pub const BUILTIN: &[(&str, &str)] = &[
         include_str!("../prompts/security-check.toml"),
     ),
     ("dates.toml", include_str!("../prompts/dates.toml")),
+    ("contact.toml", include_str!("../prompts/contact.toml")),
     (
         "summarize-attachment.toml",
         include_str!("../prompts/summarize-attachment.toml"),

@@ -153,7 +153,8 @@ fn the_menus_of_the_spec() {
             "quick-replies",
             "translate-message",
             "security-check",
-            "dates"
+            "dates",
+            "contact"
         ]
     );
     // One mail in Quarantine: the sorting of the whole folder first, as it
@@ -167,7 +168,8 @@ fn the_menus_of_the_spec() {
             "quick-replies",
             "translate-message",
             "security-check",
-            "dates"
+            "dates",
+            "contact"
         ]
     );
     // Several mails marked: filing them, nothing that needs one mail.
@@ -184,7 +186,7 @@ fn the_menus_of_the_spec() {
         .into_iter()
         .map(|k| k.0)
         .collect();
-    assert_eq!(k, ['s', 'r', 'p', 't', 'c', 'd']);
+    assert_eq!(k, ['s', 'r', 'p', 't', 'c', 'd', 'v']);
     let q = l
         .catalog
         .menu(Screen::Selection, Some(FolderRole::Quarantine));

@@ -1,0 +1,29 @@
+# Built-in prompt (specifications/ia.md, section 8): the contact card of
+# the sender of a mail, shown in the panel and saved as a vCard file (.vcf)
+# with Return, opened in Contacts with Cmd-Return (`nm_ai::vcard`). The
+# core checks every address, number and link (`answer::read`) and puts the
+# From address first.
+version = 1
+id = "contact"
+scope = "message"
+key = "v"
+label = { en = "Contact card", fr = "Fiche contact" }
+input = ["message.headers", "message.text"]
+output = "contact"
+
+system = """
+Build the contact card of the sender of the email, the person in its From header, for an address book:
+- name: the sender's name as they sign or as the From header gives it; given and family: their first
+  and last name when you can tell them apart, otherwise empty;
+- organization and title: their company and job title, from the signature;
+- emails: their email addresses (the From one, and the others of the signature);
+- phones: their phone numbers, each with its kind (mobile, work, home, fax, other) as the signature
+  labels it ("Mob.", "Tél.", "Fax"); a landline without a label is work, a number in a personal mail
+  without a label is other;
+- address: their postal address, split into its parts; urls: their website and profile links.
+Read the sender's signature, the From name and what the sender says about themselves. Use only what
+the mail says: nothing guessed from the domain, no detail of another person (those quoted, those in
+copy, those the mail mentions, a colleague's number in the signature), no detail of the quoted history
+unless it is the sender's own signature. A sender who gives nothing but their name gets a card with
+their name and address only.
+"""

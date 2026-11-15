@@ -31,6 +31,8 @@ Obsidian opens links of other apps through macOS, which needs NiceMailer to be i
 
 The calendar files of the AI's "Dates and appointments" (`docs/ai.md`) carry the link of their mail, as the event's URL and the last line of its notes: from Calendar, a click goes back to the mail that set the appointment.
 
+The contact cards of the AI's "Contact card" carry it too, in their note: from Contacts, the card leads back to the mail it was made from.
+
 ## Installing the app for links
 
 macOS gives a URL only to an app bundle that declares its scheme. `make app` (`swift run`) starts a bare executable, which macOS cannot reach, so the links need:

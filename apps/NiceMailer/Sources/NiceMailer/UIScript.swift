@@ -738,7 +738,7 @@ private final class Runner {
             "ai_result": {
                 guard case .proposal(let p)? = m.aiRun?.phase else { return "" }
                 switch p {
-                case .text, .summary, .verdict, .choices, .events: return AI.resultText(p).replacingOccurrences(of: "\n", with: "\\n")
+                case .text, .summary, .verdict, .choices, .events, .contact: return AI.resultText(p).replacingOccurrences(of: "\n", with: "\\n")
                 default: return ""
                 }
             }(),

@@ -16,6 +16,7 @@ use nm_core::FolderRole;
 use serde_json::{Map, Value};
 
 use crate::ics::{Event, When};
+use crate::vcard::{self, Address, Contact, Phone, PhoneKind};
 use crate::prompt::Output;
 use crate::provider::{AiError, AiOutcome};
 
@@ -50,6 +51,8 @@ pub enum Answer {
     /// `events`: the appointments of a mail, in the order of the answer;
     /// none when the mail names no date.
     Events(Vec<Event>),
+    /// `contact`: the sender's card, the From address first.
+    Contact(Contact),
 }
 
 /// One action item of a summary. `owner` and `due` may be empty.
@@ -102,6 +105,9 @@ pub struct Sent<'a> {
     pub threads: &'a [i64],
     /// `targets`: the targets offered.
     pub targets: &'a [FolderRole],
+    /// `contact`: the address the mail came from (its From), which the
+    /// card must hold whether the model gave it or not.
+    pub sender: Option<&'a str>,
 }
 
 /// Checks an answer (see the module's documentation).
@@ -124,6 +130,7 @@ pub fn read(output: Output, outcome: &AiOutcome, sent: &Sent) -> Result<Answer, 
             Output::Verdict => verdict(obj),
             Output::Targets => targets(obj, sent),
             Output::Events => events(obj),
+            Output::Contact => contact(obj, sent),
             _ => unreachable!("is_structured covers exactly these outputs"),
         };
     }
@@ -470,6 +477,132 @@ fn events(obj: &Map<String, Value>) -> Result<Answer, AiError> {
         });
     }
     Ok(Answer::Events(out))
+}
+
+/// `{"contact": {"name", "given", "family", "organization", "title",
+/// "emails", "phones", "address", "urls"}}`: the sender's card
+/// (`ia.md`, section 8, "Fiche contact").
+///
+/// The shape is checked strictly (unknown or missing keys, lists too long:
+/// the run fails, as for every answer). A value is checked too, but an
+/// address, a number or a link written another way ("alice at acme.fr",
+/// "06 12 34 56 78 (direct)", "www.acme.fr") is **left out** of the card,
+/// and listed in `dropped` for the panel to say so, rather than failing the
+/// run: unlike a date, one odd number does not make the rest of the card
+/// wrong, and the card would be lost for it. Nothing is mended: a value is
+/// kept as given or left out, so the card never dials or writes to
+/// something the mail did not say. A phone kind outside the list is read as
+/// `other`: it only labels the number.
+///
+/// Two things are done by the core, as facts it knows rather than guesses:
+/// the From address is put first (added when the model left it out), and an
+/// address, a number or a link given twice is kept once.
+fn contact(obj: &Map<String, Value>, sent: &Sent) -> Result<Answer, AiError> {
+    only_keys(obj, &["contact"], "the answer")?;
+    let c = obj
+        .get("contact")
+        .and_then(Value::as_object)
+        .ok_or_else(|| invalid("contact is missing or not an object"))?;
+    only_keys(
+        c,
+        &["name", "given", "family", "organization", "title", "emails", "phones", "address", "urls"],
+        "the contact",
+    )?;
+    // A list of objects or strings, at most `max`.
+    let list = |key: &str, max: usize| -> Result<&Vec<Value>, AiError> {
+        let l = c.get(key).and_then(Value::as_array).ok_or_else(|| invalid(format!("{key} is missing or not a list")))?;
+        if l.len() > max {
+            return Err(invalid(format!("{} {key}, at most {max} expected", l.len())));
+        }
+        Ok(l)
+    };
+    let text_of = |v: &Value, what: &str| -> Result<String, AiError> {
+        v.as_str().map(|s| s.trim().to_string()).ok_or_else(|| invalid(format!("{what} is not a string")))
+    };
+
+    let mut dropped: Vec<String> = Vec::new();
+    // What is left out, as the model wrote it, cut for the panel.
+    let drop = |dropped: &mut Vec<String>, v: &str| dropped.push(v.chars().take(80).collect());
+    let mut emails: Vec<String> = Vec::new();
+    // Rust note: `Option<&str>` is `Copy`, so `sent.sender` is read here
+    // without moving anything out of `sent`, which is only borrowed.
+    let from = sent.sender.map(str::trim).filter(|s| vcard::is_email(s));
+    if let Some(from) = from {
+        emails.push(from.to_string());
+    }
+    for v in list("emails", 5)? {
+        let e = text_of(v, "an email")?;
+        if !vcard::is_email(&e) {
+            drop(&mut dropped, &e);
+            continue;
+        }
+        // Addresses compare without case: Alice@Acme.fr is alice@acme.fr.
+        if !emails.iter().any(|x| x.eq_ignore_ascii_case(&e)) {
+            emails.push(e);
+        }
+    }
+
+    let mut phones = Vec::new();
+    for v in list("phones", 6)? {
+        let p = v.as_object().ok_or_else(|| invalid("a phone is not an object"))?;
+        only_keys(p, &["kind", "number"], "a phone")?;
+        let kind = PhoneKind::parse(&string(p, "kind", 20, false)?).unwrap_or(PhoneKind::Other);
+        let number = p
+            .get("number")
+            .ok_or_else(|| invalid("number is missing"))
+            .and_then(|v| text_of(v, "a number"))?;
+        if !vcard::is_phone(&number) {
+            drop(&mut dropped, &number);
+            continue;
+        }
+        if !phones.iter().any(|x: &Phone| x.number == number) {
+            phones.push(Phone { kind, number });
+        }
+    }
+
+    let a = c
+        .get("address")
+        .and_then(Value::as_object)
+        .ok_or_else(|| invalid("address is missing or not an object"))?;
+    only_keys(a, &["street", "locality", "postcode", "region", "country"], "the address")?;
+    let address = Address {
+        street: string(a, "street", 300, false)?,
+        locality: string(a, "locality", 100, false)?,
+        postcode: string(a, "postcode", 20, false)?,
+        region: string(a, "region", 100, false)?,
+        country: string(a, "country", 100, false)?,
+    };
+
+    let mut urls: Vec<String> = Vec::new();
+    for v in list("urls", 5)? {
+        let u = text_of(v, "a link")?;
+        if !vcard::is_url(&u) {
+            drop(&mut dropped, &u);
+            continue;
+        }
+        if !urls.contains(&u) {
+            urls.push(u);
+        }
+    }
+
+    let contact = Contact {
+        name: string(c, "name", 200, false)?,
+        given: string(c, "given", 100, false)?,
+        family: string(c, "family", 100, false)?,
+        organization: string(c, "organization", 200, false)?,
+        title: string(c, "title", 200, false)?,
+        emails,
+        phones,
+        address,
+        urls,
+        dropped,
+    };
+    // Without a From (a mail of an unknown sender) and with nothing found,
+    // there is no card to make.
+    if contact.display_name().is_empty() && contact.phones.is_empty() {
+        return Err(invalid("the contact has no name, company, address or number"));
+    }
+    Ok(Answer::Contact(contact))
 }
 
 /// One fact the core found by itself in a mail, for the floor of the
