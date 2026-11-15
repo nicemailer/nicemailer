@@ -49,6 +49,38 @@ key cmd-a
 expect compose_selection ~ wrote:
 key right
 expect compose_selection = 
+# ⇧⌥↓ selects to the end of the paragraph, then of the next one at each
+# press, as in macOS; ⇧⌥↑ comes back the same way.
+key cmd-up
+key shift-alt-down
+expect compose_selection = Merci d'avance, je regarde
+key shift-alt-down
+expect compose_selection = Merci d'avance, je regarde\nAchill
+snap reply-paragraphs
+key shift-alt-up
+expect compose_selection = Merci d'avance, je regarde\n
+# The subject edits as a macOS field: ⌘A, ⌘C ⌘X ⌘V, ⇧⌥→ a word.
+key shift-tab
+expect compose_focus = subject
+key cmd-a
+expect compose_subject_selection ~ Re:
+key cmd-c
+expect pasteboard ~ Re:
+key cmd-left
+key shift-alt-right
+expect compose_subject_selection = Re
+snap subject-word
+key cmd-a
+key cmd-x
+expect compose_subject = 
+key cmd-v
+expect compose_subject ~ Re:
+key ret
+expect compose_focus = body
+# Back to the end of the text, for what follows.
+key cmd-a
+key right
+expect compose_selection = 
 # Another app (Kerlig, a grammar checker) works on the selected text
 # through the accessibility API: the reply's text is the focused element,
 # its selection is readable, and what the app writes back replaces it.

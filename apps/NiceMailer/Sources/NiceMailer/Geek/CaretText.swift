@@ -22,12 +22,29 @@ struct CaretText: View {
     var body: some View {
         if line.selectedAll {
             // A whole-text selection (a recipient taken back with ⌫, the
-            // current words of Subject…): highlighted, with no caret,
+            // current words of Subject…, ⌘A): highlighted, with no caret,
             // since typing or ⌫ replaces all of it at once.
             Text(line.text).background(Palette.cursor)
+        } else if let range = line.selection {
+            // A part selected (⇧⌥← a word): that part highlighted, in the
+            // same single `Text` so the letters do not move; no caret, as
+            // in a macOS field with a selection.
+            Text(Self.highlighted(line.text, range))
         } else {
             caret
         }
+    }
+
+    /// The text with the characters of `range` on the selection colour.
+    /// Swift note: an `AttributedString` carries styles on ranges of its
+    /// characters; its indexes are walked to, like those of a `String`.
+    static func highlighted(_ text: String, _ range: Range<Int>) -> AttributedString {
+        var out = AttributedString(text)
+        let chars = out.characters
+        let start = chars.index(chars.startIndex, offsetBy: range.lowerBound)
+        let end = chars.index(chars.startIndex, offsetBy: range.upperBound)
+        out[start..<end].backgroundColor = Palette.cursor
+        return out
     }
 
     private var caret: some View {

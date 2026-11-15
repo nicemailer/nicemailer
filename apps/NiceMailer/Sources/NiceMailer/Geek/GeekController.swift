@@ -1763,8 +1763,10 @@ final class GeekController {
             if command {
                 navigate(towardStart: delta < 0) { if delta < 0 { $0.moveToStart() } else { $0.moveToEnd() } }
             } else if option {
-                // ⌥↑ ⌥↓: the start of the line, or the end, as in macOS.
-                navigate(towardStart: delta < 0) { if delta < 0 { $0.moveToLineStart() } else { $0.moveToLineEnd() } }
+                // ⌥↑ ⌥↓: the start of the paragraph, or its end, then the
+                // next one at each press, as in macOS: ⇧⌥↓ selects several
+                // paragraphs.
+                navigate(towardStart: delta < 0) { if delta < 0 { $0.moveToParagraphStart() } else { $0.moveToParagraphEnd() } }
             } else {
                 navigate(towardStart: delta < 0) { self.moveComposeVertically(&$0, delta) }
                 vertical = true
@@ -1890,6 +1892,12 @@ final class GeekController {
             Task { await model.commitRecipientLine() }
             return
         }
+        // ⌘A ⌘C ⌘X on the address being typed (⌘V above).
+        if let change = editClipboard(&c.line, key: key, mods: mods) {
+            model.composer = c
+            if change == .text { model.suggestRecipients() }
+            return
+        }
         if let change = Self.edit(&c.line, key: key, code: code, mods: mods) {
             model.composer = c
             if change == .text { model.suggestRecipients() }
@@ -1967,8 +1975,8 @@ final class GeekController {
             focusCompose(.body)
             return
         }
-        if command, key.lowercased() == "v" {
-            c.subjectLine.insert(LineEdit.pasted(pasteboard.string(forType: .string) ?? ""))
+        if editClipboard(&c.subjectLine, key: key, mods: mods) != nil {
+            // ⌘A ⌘C ⌘X ⌘V; the subject is saved below if it changed.
         } else if Self.edit(&c.subjectLine, key: key, code: event.keyCode, mods: mods) == nil {
             guard !command, !mods.contains(.control), let text = event.characters, LineEdit.isTypable(text) else { return }
             c.subjectLine.insert(text)
@@ -2046,25 +2054,28 @@ final class GeekController {
     /// Applies an editing key to a line being typed, with the shortcuts of
     /// every macOS text field: ← →, ⌥← ⌥→ by word, ⌘← ⌘→ (and Home, End,
     /// `ctrl-a`, `ctrl-e`) to the ends, ⌫ and ⌦, ⌥⌫ a word, ⌘⌫ everything
-    /// before the cursor. Returns `nil` for any other key.
+    /// before the cursor. With Shift, each move selects instead (⇧←, ⇧⌥→ a
+    /// word, ⇧⌘← to the start…), as in every macOS field. Returns `nil`
+    /// for any other key.
     ///
     /// Swift note: `inout` lets the function change the caller's variable
     /// (passed with `&`), here the picker's or the contacts filter's line.
     static func edit(_ line: inout LineEdit, key: String, code: UInt16, mods: NSEvent.ModifierFlags) -> LineChange? {
         let option = mods.contains(.option), command = mods.contains(.command)
+        // A move, plain or extending the selection with Shift.
+        func move(_ m: (inout LineEdit) -> Void) -> LineChange {
+            if mods.contains(.shift) { line.extend(m) } else { m(&line) }
+            return .cursor
+        }
         switch code {
         case KeyCode.left:
-            if command { line.moveToStart() } else if option { line.moveWordLeft() } else { line.moveLeft() }
-            return .cursor
+            return move { l in if command { l.moveToStart() } else if option { l.moveWordLeft() } else { l.moveLeft() } }
         case KeyCode.right:
-            if command { line.moveToEnd() } else if option { line.moveWordRight() } else { line.moveRight() }
-            return .cursor
+            return move { l in if command { l.moveToEnd() } else if option { l.moveWordRight() } else { l.moveRight() } }
         case KeyCode.home:
-            line.moveToStart()
-            return .cursor
+            return move { $0.moveToStart() }
         case KeyCode.end:
-            line.moveToEnd()
-            return .cursor
+            return move { $0.moveToEnd() }
         case KeyCode.delete:
             if command { line.deleteToStart() } else if option { line.deleteWordBackward() } else { line.deleteBackward() }
             return .text
@@ -2085,6 +2096,33 @@ final class GeekController {
             }
         }
         return nil
+    }
+
+    /// ⌘A, ⌘C, ⌘X and ⌘V in a field of the reply (subject, recipients), as
+    /// in every macOS field: select all, copy or cut the selection
+    /// (nothing selected: nothing copied), paste on one line
+    /// (`LineEdit.pasted`). `nil` for another key, or another modifier
+    /// with ⌘ (⇧⌘V and ⌥⌘V are other commands).
+    func editClipboard(_ line: inout LineEdit, key: String, mods: NSEvent.ModifierFlags) -> LineChange? {
+        guard mods.contains(.command), mods.isDisjoint(with: [.option, .shift, .control]) else { return nil }
+        switch key.lowercased() {
+        case "a":
+            line.selectAll()
+            return .cursor
+        case "c", "x":
+            let selected = line.selectedText
+            guard !selected.isEmpty else { return .cursor }
+            pasteboard.clearContents()
+            pasteboard.setString(selected, forType: .string)
+            guard key.lowercased() == "x" else { return .cursor }
+            line.deleteBackward()
+            return .text
+        case "v":
+            line.insert(LineEdit.pasted(pasteboard.string(forType: .string) ?? ""))
+            return .text
+        default:
+            return nil
+        }
     }
 
     /// ⌘ keys while a line is typed: ⌘V pastes the text copied in any app,

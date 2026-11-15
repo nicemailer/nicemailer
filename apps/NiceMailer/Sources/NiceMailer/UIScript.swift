@@ -384,6 +384,8 @@ private final class Runner {
         case "shift-cmd-left": chars = "\u{F702}"; code = KeyCode.left; mods = [.function, .shift, .command]
         case "shift-cmd-right": chars = "\u{F703}"; code = KeyCode.right; mods = [.function, .shift, .command]
         case "shift-cmd-up": chars = "\u{F700}"; code = KeyCode.up; mods = [.function, .shift, .command]
+        case "shift-alt-up": chars = "\u{F700}"; code = KeyCode.up; mods = [.function, .shift, .option]
+        case "shift-alt-down": chars = "\u{F701}"; code = KeyCode.down; mods = [.function, .shift, .option]
         case "shift-cmd-down": chars = "\u{F701}"; code = KeyCode.down; mods = [.function, .shift, .command]
         case "cmd-up": chars = "\u{F700}"; code = KeyCode.up; mods = [.function, .command]
         case "cmd-down": chars = "\u{F701}"; code = KeyCode.down; mods = [.function, .command]
@@ -782,6 +784,8 @@ private final class Runner {
             "compose_bcc": m.composer.map { $0.headers.bcc.map(\.addr).joined(separator: ",") } ?? "",
             "compose_bcc_shown": "\(m.composer?.showsBcc ?? false)",
             "compose_subject": m.composer?.headers.subject ?? "",
+            // The part of the subject selected (⇧⌥←, ⌘A), empty when none.
+            "compose_subject_selection": m.composer?.subjectLine.selectedText ?? "",
             "compose_focus": m.composer?.focus.rawValue ?? "",
             "compose_line": m.composer.map { $0.line.beforeCursor + "|" + String($0.line.text.dropFirst($0.line.cursor)) } ?? "",
             // The line is a whole-text selection (an address taken back

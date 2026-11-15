@@ -1,7 +1,8 @@
 import Foundation
 
-/// A one-line text being edited, with its insertion point: the text typed
-/// in a picker (`F`, `/`, `@`, `t`, `g`, `l`) or in the contacts filter.
+/// A one-line text being edited, with its insertion point and its
+/// selection: the text typed in a picker (`F`, `/`, `@`, `t`, `g`, `l`), in
+/// the contacts filter, or in a field of the reply (subject, recipients).
 ///
 /// The geek theme reads every key itself (`GeekController.handle`) instead
 /// of giving the focus to a `TextField`, so that no key is ever eaten by a
@@ -23,13 +24,33 @@ struct LineEdit: Equatable {
     /// or an emoji made of several code points), so that one arrow press
     /// always moves over one visible letter.
     private(set) var cursor: Int
-    /// The whole text is selected, as in a macOS field reached with Tab:
-    /// typing or pasting replaces it, Delete clears it, and an arrow ends
-    /// the selection (← at the start, → at the end) to edit it instead.
-    /// A value panel opens this way on the current value of its attribute
-    /// (Subject…, Text…): what is typed replaces it, and the old value is
-    /// seen rather than silently kept.
-    private(set) var selectedAll: Bool
+    /// Where the selection began, as in every macOS text field: the
+    /// selected text runs from here to the cursor, on either side of it.
+    /// `nil`, or equal to the cursor: nothing is selected. A move with
+    /// Shift (⇧← ⇧⌥→ ⇧⌘←…) keeps it and moves the cursor (`extend`);
+    /// typing or pasting replaces the selection, ⌫ removes it, and an
+    /// arrow alone ends it (← at its start, → at its end).
+    /// The same rules as the text of a reply (`TextBuffer`, "Selection").
+    private(set) var anchor: Int?
+
+    /// The whole text is selected, as in a macOS field reached with Tab or
+    /// after ⌘A. A value panel opens this way on the current value of its
+    /// attribute (Subject…, Text…): what is typed replaces it, and the old
+    /// value is seen rather than silently kept.
+    var selectedAll: Bool { !text.isEmpty && selection == 0..<text.count }
+
+    /// The characters selected, from the first to after the last; `nil`
+    /// when nothing is.
+    var selection: Range<Int>? {
+        guard let a = anchor, a != cursor else { return nil }
+        return min(a, cursor)..<max(a, cursor)
+    }
+
+    /// The text selected (⌘C, ⌘X), empty when nothing is.
+    var selectedText: String {
+        guard let r = selection else { return "" }
+        return String(text[index(r.lowerBound)..<index(r.upperBound)])
+    }
 
     /// Longest text kept: a picker filters a list, and a paste of a whole
     /// mail by mistake should not slow every key down.
@@ -40,7 +61,7 @@ struct LineEdit: Equatable {
     init(_ text: String = "", selected: Bool = false) {
         self.text = Self.clean(text)
         cursor = self.text.count
-        selectedAll = selected && !self.text.isEmpty
+        anchor = selected && !self.text.isEmpty ? 0 : nil
     }
 
     var isEmpty: Bool { text.isEmpty }
@@ -49,6 +70,25 @@ struct LineEdit: Equatable {
     var beforeCursor: String { String(text.prefix(cursor)) }
     var afterCursor: String { String(text.dropFirst(cursor)) }
 
+    // MARK: Selecting
+
+    /// A move with Shift: `move` moves the cursor, the anchor stays where
+    /// the selection began (here, if nothing was selected).
+    /// Swift note: `(inout LineEdit) -> Void` is a function that may change
+    /// the value it is given; `move(&self)` hands it this very value.
+    mutating func extend(_ move: (inout LineEdit) -> Void) {
+        let a = anchor ?? cursor
+        anchor = nil
+        move(&self)
+        anchor = a == cursor ? nil : a
+    }
+
+    /// ⌘A: the whole text.
+    mutating func selectAll() {
+        anchor = text.isEmpty ? nil : 0
+        cursor = text.count
+    }
+
     // MARK: Editing
 
     /// Inserts text at the cursor, which moves after it. Typed keys and
@@ -56,7 +96,7 @@ struct LineEdit: Equatable {
     mutating func insert(_ s: String) {
         let piece = Self.clean(s)
         guard !piece.isEmpty else { return }
-        if selectedAll { clear() }
+        deleteSelection()
         let room = Self.maxLength - text.count
         guard room > 0 else { return }
         let kept = String(piece.prefix(room))
@@ -67,7 +107,7 @@ struct LineEdit: Equatable {
 
     /// Delete (⌫): removes the character left of the cursor.
     mutating func deleteBackward() {
-        if selectedAll { clear(); return }
+        if deleteSelection() { return }
         guard cursor > 0 else { return }
         text.remove(at: index(cursor - 1))
         cursor -= 1
@@ -75,7 +115,7 @@ struct LineEdit: Equatable {
 
     /// Forward delete (⌦, fn-⌫): removes the character right of the cursor.
     mutating func deleteForward() {
-        if selectedAll { clear(); return }
+        if deleteSelection() { return }
         guard cursor < text.count else { return }
         text.remove(at: index(cursor))
     }
@@ -83,7 +123,7 @@ struct LineEdit: Equatable {
     /// ⌥⌫: removes the word left of the cursor (and the spaces after it),
     /// as in every macOS text field.
     mutating func deleteWordBackward() {
-        if selectedAll { clear(); return }
+        if deleteSelection() { return }
         let start = wordStart(before: cursor)
         text.removeSubrange(index(start)..<index(cursor))
         cursor = start
@@ -91,16 +131,18 @@ struct LineEdit: Equatable {
 
     /// ⌘⌫: removes everything left of the cursor.
     mutating func deleteToStart() {
-        if selectedAll { clear(); return }
+        if deleteSelection() { return }
         text.removeSubrange(text.startIndex..<index(cursor))
         cursor = 0
     }
 
     // MARK: Moving
 
-    // A move with the whole text selected ends the selection at the side
-    // the arrow points to, as in every macOS field: ← puts the cursor
-    // before the text, → after it.
+    // A move with a selection ends it at the side the arrow points to, as
+    // in every macOS field: ← puts the cursor at its start, → at its end;
+    // ⌥← ⌥→ then go on by a word from there, ⌘← ⌘→ to the ends of the
+    // line. Under `extend` (Shift), the anchor is cleared first, so these
+    // only move.
 
     mutating func moveLeft() {
         if endSelection(atStart: true) { return }
@@ -110,16 +152,16 @@ struct LineEdit: Equatable {
         if endSelection(atStart: false) { return }
         cursor = min(text.count, cursor + 1)
     }
-    mutating func moveToStart() { selectedAll = false; cursor = 0 }
-    mutating func moveToEnd() { selectedAll = false; cursor = text.count }
-    /// ⌥←: to the start of the word left of the cursor.
+    mutating func moveToStart() { anchor = nil; cursor = 0 }
+    mutating func moveToEnd() { anchor = nil; cursor = text.count }
+    /// ⌥←: to the start of the word left of the cursor (of the selection).
     mutating func moveWordLeft() {
-        if endSelection(atStart: true) { return }
+        endSelection(atStart: true)
         cursor = wordStart(before: cursor)
     }
-    /// ⌥→: to the end of the word right of the cursor.
+    /// ⌥→: to the end of the word right of the cursor (of the selection).
     mutating func moveWordRight() {
-        if endSelection(atStart: false) { return }
+        endSelection(atStart: false)
         let chars = Array(text)
         var i = cursor
         while i < chars.count, !Self.isWordCharacter(chars[i]) { i += 1 }
@@ -173,19 +215,24 @@ struct LineEdit: Equatable {
 
     // MARK: Helpers
 
-    /// Empties the text (a selected text replaced or deleted).
-    private mutating func clear() {
-        text = ""
-        cursor = 0
-        selectedAll = false
+    /// Removes the selected text, the cursor where it began. Returns
+    /// whether something was selected (the deletion is then done).
+    @discardableResult
+    private mutating func deleteSelection() -> Bool {
+        defer { anchor = nil }
+        guard let r = selection else { return false }
+        text.removeSubrange(index(r.lowerBound)..<index(r.upperBound))
+        cursor = r.lowerBound
+        return true
     }
 
-    /// Ends a whole-text selection, the cursor at one end. Returns whether
-    /// there was one (the move is then done).
+    /// Ends the selection, the cursor at its start or its end. Returns
+    /// whether there was one (for ← →, the move is then done).
+    @discardableResult
     private mutating func endSelection(atStart: Bool) -> Bool {
-        guard selectedAll else { return false }
-        selectedAll = false
-        cursor = atStart ? 0 : text.count
+        defer { anchor = nil }
+        guard let r = selection else { return false }
+        cursor = atStart ? r.lowerBound : r.upperBound
         return true
     }
 

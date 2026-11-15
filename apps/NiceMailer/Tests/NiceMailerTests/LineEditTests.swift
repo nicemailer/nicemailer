@@ -119,4 +119,48 @@ struct LineEditTests {
         line.insert("y")
         #expect(line.text.count == LineEdit.maxLength && !line.text.contains("y"))
     }
+
+    @Test func shiftMovesSelectAPartAsInAMacField() {
+        // ⇧⌥←: the word before the cursor; again: the one before it too.
+        var line = LineEdit("Re: devis toiture")
+        line.extend { $0.moveWordLeft() }
+        #expect(line.selectedText == "toiture" && line.selection == 10..<17)
+        line.extend { $0.moveWordLeft() }
+        #expect(line.selectedText == "devis toiture")
+        // ⇧→ shrinks it from the cursor's side, the anchor staying put.
+        line.extend { $0.moveRight() }
+        #expect(line.selectedText == "evis toiture")
+        // Back over the anchor: nothing selected.
+        var back = LineEdit("abc")
+        back.extend { $0.moveLeft() }
+        back.extend { $0.moveRight() }
+        #expect(back.selection == nil && back.cursor == 3)
+        // Typing replaces the part selected, the cursor after it.
+        line.insert("X")
+        #expect(line.text == "Re: dX" && line.cursor == 6 && line.selection == nil)
+        // ⌫ removes it; ⌥⌫ too, and no more than it.
+        line = LineEdit("un deux trois")
+        line.extend { $0.moveWordLeft() }
+        line.deleteWordBackward()
+        #expect(line.text == "un deux " && line.cursor == 8)
+        // ⇧⌘←: to the start; ← ends it at its start, ⌥→ from its end.
+        line = LineEdit("un deux trois")
+        line.extend { $0.moveToStart() }
+        #expect(line.selectedAll)
+        line.moveLeft()
+        #expect(line.cursor == 0 && line.selection == nil)
+        line.extend { $0.moveWordRight() }
+        #expect(line.selectedText == "un")
+        line.moveWordRight()
+        #expect(line.cursor == 7 && line.selection == nil)
+    }
+
+    @Test func commandASelectsTheWholeLine() {
+        var line = LineEdit("devis")
+        line.selectAll()
+        #expect(line.selectedAll && line.selectedText == "devis")
+        var empty = LineEdit()
+        empty.selectAll()
+        #expect(empty.selection == nil)
+    }
 }

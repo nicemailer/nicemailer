@@ -391,6 +391,10 @@ struct ComposeControllerTests {
         case "shift-cmd-left": chars = "\u{F702}"; code = KeyCode.left; mods = [.function, .shift, .command]
         case "shift-cmd-up": chars = "\u{F700}"; code = KeyCode.up; mods = [.function, .shift, .command]
         case "shift-down": chars = "\u{F701}"; code = KeyCode.down; mods = [.function, .shift]
+        case "cmd-up": chars = "\u{F700}"; code = KeyCode.up; mods = [.function, .command]
+        case "cmd-left": chars = "\u{F702}"; code = KeyCode.left; mods = [.function, .command]
+        case "shift-alt-down": chars = "\u{F701}"; code = KeyCode.down; mods = [.function, .shift, .option]
+        case "shift-alt-right": chars = "\u{F703}"; code = KeyCode.right; mods = [.function, .shift, .option]
         case "cmd-q": chars = "q"; mods = .command
         case "cmd-A": chars = "A"; mods = [.command, .shift]
         case "tab": chars = "\t"; code = KeyCode.tab
@@ -812,6 +816,51 @@ struct ComposeControllerTests {
         type("x")
         #expect(model.composer?.buffer.text.hasPrefix("x") == true)
         #expect(await eventually { core.calls("update_draft").last?["subject"] as? String == "Re: Subject 1 (suite)" })
+    }
+
+    /// The subject answers the editing keys of every macOS field: ⇧⌥← a
+    /// word, ⌘A all, ⌘C ⌘X ⌘V, typing over a selection.
+    @Test func theSubjectSelectsLikeAMacField() async {
+        await reply()
+        press("shift-tab")
+        #expect(model.composer?.focus == .subject)
+        press("shift-alt-left")
+        #expect(model.composer?.subjectLine.selectedText == "1")
+        press("shift-alt-left")
+        #expect(model.composer?.subjectLine.selectedText == "Subject 1")
+        press("cmd-c")
+        #expect(controller.pasteboard.string(forType: .string) == "Subject 1")
+        type("Devis")
+        #expect(model.composer?.headers.subject == "Re: Devis")
+        press("cmd-a")
+        #expect(model.composer?.subjectLine.selectedAll == true)
+        press("cmd-x")
+        #expect(model.composer?.headers.subject == "")
+        #expect(controller.pasteboard.string(forType: .string) == "Re: Devis")
+        press("cmd-v")
+        #expect(model.composer?.headers.subject == "Re: Devis")
+        // ⇧⌥→ from the start selects the first word; ⌘A is not the list's
+        // "mark all" here.
+        press("cmd-left")
+        press("shift-alt-right")
+        #expect(model.composer?.subjectLine.selectedText == "Re")
+        #expect(model.marked.isEmpty)
+        #expect(await eventually { core.calls("update_draft").last?["subject"] as? String == "Re: Devis" })
+    }
+
+    /// ⇧⌥↓ in the text selects paragraph after paragraph.
+    @Test func shiftOptionDownSelectsSeveralParagraphs() async {
+        await reply()
+        type("Bonjour,")
+        press("ret")
+        type("merci.")
+        press("cmd-up")
+        press("shift-alt-down")
+        #expect(model.composer?.buffer.selectedText == "Bonjour,")
+        press("shift-alt-down")
+        #expect(model.composer?.buffer.selectedText == "Bonjour,\nmerci.")
+        press("shift-alt-down")
+        #expect(model.composer?.buffer.selectedText == "Bonjour,\nmerci.\n", "on into the empty line under it")
     }
 
     /// Escape closes the suggestions first, then leaves the reply.

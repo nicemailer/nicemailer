@@ -209,6 +209,20 @@ struct TextBuffer: Equatable {
     mutating func moveToLineStart() { goalColumn = nil; cursor = lineStart(of: cursor) }
     /// End, ⌘→, `ctrl-e`: the end of the line.
     mutating func moveToLineEnd() { goalColumn = nil; cursor = lineEnd(of: cursor) }
+    /// ⌥↑: the start of the paragraph; already there, the start of the
+    /// one before, as in every macOS text view. So ⇧⌥↑ pressed again
+    /// selects paragraph after paragraph instead of staying put.
+    mutating func moveToParagraphStart() {
+        goalColumn = nil
+        let start = lineStart(of: cursor)
+        cursor = start == cursor && cursor > 0 ? lineStart(of: cursor - 1) : start
+    }
+    /// ⌥↓: the end of the paragraph; already there, the end of the next.
+    mutating func moveToParagraphEnd() {
+        goalColumn = nil
+        let end = lineEnd(of: cursor)
+        cursor = end == cursor && cursor < text.count ? lineEnd(of: cursor + 1) : end
+    }
     /// ⌘↑: the start of the text.
     mutating func moveToStart() { goalColumn = nil; cursor = 0 }
     /// ⌘↓: the end of the text.

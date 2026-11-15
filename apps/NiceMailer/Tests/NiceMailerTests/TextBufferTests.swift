@@ -190,4 +190,29 @@ struct TextBufferTests {
         u.extend { $0.moveRight() }
         #expect(u.utf16Selection == NSRange(location: 0, length: 2))
     }
+
+    @Test func optionUpAndDownGoOnByParagraph() {
+        // ⌥↓ goes to the end of the paragraph, then of the next one at each
+        // press, as in macOS: ⇧⌥↓ thus selects paragraph after paragraph.
+        var b = TextBuffer("un\ndeux\n\ntrois")
+        b.moveTo(0)
+        b.extend { $0.moveToParagraphEnd() }
+        #expect(b.selectedText == "un")
+        b.extend { $0.moveToParagraphEnd() }
+        #expect(b.selectedText == "un\ndeux")
+        b.extend { $0.moveToParagraphEnd() }
+        #expect(b.selectedText == "un\ndeux\n", "the empty line is a paragraph")
+        b.extend { $0.moveToParagraphEnd() }
+        b.extend { $0.moveToParagraphEnd() }
+        #expect(b.selectedText == b.text, "it stops at the end")
+        // ⌥↑ the same way back, from inside a paragraph to its start first.
+        var u = TextBuffer("un\ndeux")
+        u.moveTo(6)
+        u.moveToParagraphStart()
+        #expect(u.cursor == 3)
+        u.moveToParagraphStart()
+        #expect(u.cursor == 0)
+        u.moveToParagraphStart()
+        #expect(u.cursor == 0)
+    }
 }
