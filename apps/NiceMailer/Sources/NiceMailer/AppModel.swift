@@ -753,6 +753,9 @@ final class AppModel {
     private func openSocket() async throws -> CoreClient {
         let deadline = Date().addingTimeInterval(8)
         var lastKick: Date?
+        // At most one repair per try: a core that launchd still refuses
+        // after it (a damaged bundle) is not registered over and over.
+        var repaired = false
         var delay = 0.05
         while true {
             do {
@@ -773,7 +776,16 @@ final class AppModel {
                     // a moment (its database to open). Said as such.
                     if startupPhase == .connecting { startupPhase = .startingCore }
                     startedCore = true
-                    CoreAgent.kickstart()
+                    // From the second ask on, 2 s without a core: launchd
+                    // may be refusing it, because the agent was registered
+                    // for a core signed differently (`CoreAgent.
+                    // repairIfSpawnRefused`). Checked before asking again,
+                    // and never on the first ask, the fast path.
+                    if lastKick != nil, !repaired, CoreAgent.repairIfSpawnRefused() {
+                        repaired = true
+                    } else {
+                        CoreAgent.kickstart()
+                    }
                     lastKick = Date()
                 }
                 try? await Task.sleep(for: .seconds(delay))

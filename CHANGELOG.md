@@ -11,6 +11,10 @@ How to write it:
 
 ## Unreleased
 
+### Fixed
+
+- The app no longer stays without its core after a new version, signed differently, replaces the installed one.
+
 ## 0.1.0 — 2026-11-16
 
 First release, for testers. Apple Silicon Macs only, macOS 14 or later. No automatic updates: to update, download the new version and replace the app in Applications.

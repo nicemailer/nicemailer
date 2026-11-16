@@ -92,6 +92,44 @@ enum CoreAgent {
         return true
     }
 
+    /// Registers the agent again when launchd refuses to start its core,
+    /// and says whether it did (then asks for the core once more).
+    ///
+    /// Why: when the app registers the agent, launchd records a launch
+    /// constraint made from the core's signature at that moment: its
+    /// identifier, its team, and its *validation category* (Apple
+    /// Development, Developer ID…). A core signed differently, such as a
+    /// release installed over a development build or the reverse, no
+    /// longer meets it: launchd refuses to start it ("spawn failed", exit
+    /// 78) while `launchctl kickstart` still returns 0, and the core stays
+    /// unreachable. Registering again records the constraint of the core
+    /// now in the bundle. `docs/app-bundle.md`, "Signature".
+    ///
+    /// Called only on the slow path (no core answered for 2 s): one more
+    /// `launchctl print`, never on a normal launch.
+    @discardableResult
+    static func repairIfSpawnRefused() -> Bool {
+        guard let printed = launchctlOutput(["print", target]), spawnRefused(printed) else { return false }
+        log.error("launchd refuses to start the core (spawn failed): registering the agent again")
+        let service = SMAppService.agent(plistName: plistName)
+        try? service.unregister()
+        try? service.register()
+        let again = launchctl(["kickstart", target])
+        log.notice("registered again after a refused spawn, kickstart: \(again)")
+        return true
+    }
+
+    /// Whether the output of `launchctl print` says that launchd failed to
+    /// start the program, rather than the program having run and left.
+    /// A pure function, tested. The core never exits with 78 itself: a
+    /// core that ran and stopped shows "job state = exited" instead.
+    nonisolated static func spawnRefused(_ printed: String) -> Bool {
+        printed.split(separator: "\n").contains { line in
+            let parts = line.split(separator: "=", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
+            return parts.count == 2 && parts[0] == "job state" && parts[1] == "spawn failed"
+        }
+    }
+
     /// Stops the core: SIGTERM, which it handles by finishing its work and
     /// leaving with code 0, so that launchd does not start it again
     /// (`KeepAlive` restarts only a failure). It starts again at the next
@@ -107,6 +145,28 @@ enum CoreAgent {
     }
 
     private static var target: String { "gui/\(getuid())/\(label)" }
+
+    /// Runs `launchctl` and returns what it printed, or nil when it failed
+    /// (agent not loaded) or could not run.
+    private static func launchctlOutput(_ arguments: [String]) -> String? {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+        p.arguments = arguments
+        let pipe = Pipe()
+        p.standardOutput = pipe
+        p.standardError = FileHandle.nullDevice
+        do {
+            try p.run()
+        } catch {
+            return nil
+        }
+        // Read before waiting: a full pipe would block launchctl, and
+        // waitUntilExit would then never return.
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        p.waitUntilExit()
+        guard p.terminationStatus == 0 else { return nil }
+        return String(decoding: data, as: UTF8.self)
+    }
 
     /// Runs `launchctl`; its exit status (-1 if it could not run).
     @discardableResult
