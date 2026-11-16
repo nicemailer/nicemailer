@@ -48,7 +48,7 @@ if [ -z "$IDENTITY" ]; then
   echo "the passwords saved by this build will not be readable by the next one." >&2
   IDENTITY="NiceMailer Dev"
 fi
-codesign --force --sign "$IDENTITY" --keychain "$KEYCHAIN" --identifier org.nicemailer.core \
+codesign --force --sign "$IDENTITY" --keychain "$KEYCHAIN" --identifier eu.nicemailer.core \
   --options runtime "${CODESIGN_TIMESTAMP:---timestamp=none}" "$BIN"
 # The Team ID is what the Keychain partition is made of: say which.
 codesign -dvv "$BIN" 2>&1 | grep -E '^(Authority|TeamIdentifier)=' | head -2 | sed 's/^/sign-core: /' >&2

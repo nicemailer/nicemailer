@@ -14,7 +14,7 @@
 # it, recognized by its code signature. A Rust binary is signed by the
 # linker with a signature of its own content, so every rebuild would be a
 # new application, refused (the core never shows Keychain dialogs). Signed
-# with this certificate and the identifier org.nicemailer.core, every build
+# with this certificate and the identifier eu.nicemailer.core, every build
 # is the same application. See docs/configuration.md, "Passwords".
 #
 # The certificate is self-signed and not marked as trusted (that would need

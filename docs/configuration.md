@@ -155,7 +155,7 @@ An item of the Keychain has an access list: the application that saved it reads 
 
 ### Development: an Apple Development certificate, once
 
-macOS recognizes an application by its code signature. A Rust binary is signed by the linker with a signature of its own content, so every rebuild of the core would be a new application, refused by the items the previous build saved. `make core` therefore signs the core (`scripts/sign-core.sh`, identifier `org.nicemailer.core`).
+macOS recognizes an application by its code signature. A Rust binary is signed by the linker with a signature of its own content, so every rebuild of the core would be a new application, refused by the items the previous build saved. `make core` therefore signs the core (`scripts/sign-core.sh`, identifier `eu.nicemailer.core`).
 
 The certificate must carry an Apple **Team ID**. Besides its access list, an item of the login keychain has a *partition*, which macOS sets from the signature of the program that created it:
 

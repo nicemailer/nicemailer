@@ -73,7 +73,7 @@ while read -r REL IDENT; do
   fi
 done <<'LIST'
 Contents/MacOS/NiceMailer eu.nicemailer.NiceMailer
-Contents/Helpers/nicemailer-core org.nicemailer.core
+Contents/Helpers/nicemailer-core eu.nicemailer.core
 Contents/Helpers/nicemailer eu.nicemailer.cli
 Contents/Helpers/nicemailer-mcp eu.nicemailer.mcp
 LIST

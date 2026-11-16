@@ -103,7 +103,7 @@ A core newer than the mailbox it opens upgrades its database first (`docs/migrat
 | Program | Identifier | Entitlements |
 | --- | --- | --- |
 | `Contents/MacOS/NiceMailer` | `eu.nicemailer.NiceMailer` | `apps/NiceMailer/NiceMailer.entitlements`: the address book only |
-| `Contents/Helpers/nicemailer-core` | `org.nicemailer.core` (`scripts/sign-core.sh`) | none |
+| `Contents/Helpers/nicemailer-core` | `eu.nicemailer.core` (`scripts/sign-core.sh`) | none |
 | `Contents/Helpers/nicemailer` | `eu.nicemailer.cli` | none |
 | `Contents/Helpers/nicemailer-mcp` | `eu.nicemailer.mcp` | none |
 
