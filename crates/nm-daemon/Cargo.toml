@@ -26,5 +26,9 @@ libc.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+# The MCP server, run in the tests against this core (`tests/mcp_proxy.rs`).
+nm-mcp = { path = "../nm-mcp" }
+# Builds the DOCX attached to the mails of the MCP tests.
+zip.workspace = true
 # Reads what the test SMTP server (Mailpit) received (`tests/send_rpc.rs`).
 ureq = { workspace = true, features = ["json"] }

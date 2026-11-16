@@ -82,6 +82,7 @@ pub struct Config {
     pub audit: AuditSettings,
     pub compose: ComposeSettings,
     pub ai: AiSettings,
+    pub mcp: McpSettings,
     /// IMAP accounts, by key (`[accounts.<key>]` of `accounts.toml`).
     ///
     /// Rust note: a `BTreeMap` is a map sorted by key, so accounts are
@@ -103,6 +104,7 @@ impl Default for Config {
             audit: AuditSettings::default(),
             compose: ComposeSettings::default(),
             ai: AiSettings::default(),
+            mcp: McpSettings::default(),
             accounts: BTreeMap::new(),
         }
     }
@@ -261,6 +263,26 @@ pub struct ComposeSettings {
 impl Default for ComposeSettings {
     fn default() -> Self {
         ComposeSettings { undo_send_seconds: nm_core::compose::UNDO_SEND_DEFAULT_SECS, format: "text" }
+    }
+}
+
+/// `[mcp]` (`mcp.md`, section 11): the bounds of the answers of the MCP
+/// server, `nicemailer-mcp`, which reads them by `config_status`. None of
+/// them is a right of the agent: those are constants of the core, or
+/// protected settings (`mcp.md`, section 4), never keys of this file,
+/// which an agent able to write files could change.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct McpSettings {
+    /// Characters of one message in `get_conversation`.
+    pub message_chars: u64,
+    /// Characters of the text of a whole answer.
+    pub response_chars: u64,
+}
+
+impl Default for McpSettings {
+    fn default() -> Self {
+        let d = nm_api::McpConfig::default();
+        McpSettings { message_chars: d.message_chars, response_chars: d.response_chars }
     }
 }
 
@@ -897,6 +919,18 @@ impl<'t> Reader<'t> {
             }
         };
 
+        let mcp = match self.table(&mut s, "mcp")? {
+            None => d.mcp,
+            Some(mut t) => {
+                let m = McpSettings {
+                    message_chars: self.int(&mut t, "message_chars", d.mcp.message_chars, 1_000..=100_000)?,
+                    response_chars: self.int(&mut t, "response_chars", d.mcp.response_chars, 4_000..=200_000)?,
+                };
+                self.finish(t);
+                m
+            }
+        };
+
         // The accounts are in `accounts.toml`. Found here, they are an error
         // rather than a warning: ignoring them would start the core without
         // the user's accounts, and silently.
@@ -910,7 +944,7 @@ impl<'t> Reader<'t> {
             });
         }
         self.finish(s);
-        Ok(Config { version, core, sync, config_sync, events, import, raw, ui, audit, compose, ai, accounts: BTreeMap::new() })
+        Ok(Config { version, core, sync, config_sync, events, import, raw, ui, audit, compose, ai, mcp, accounts: BTreeMap::new() })
     }
 
     /// `accounts.toml`: its `version` and its `[accounts.<key>]` tables,
@@ -1399,6 +1433,16 @@ max_folder_items = {ai_max_folder_items}
 # Days before the texts sent and received are purged from the history
 # of runs; the rest (prompt, date, cost) is kept. 1 to 3650.
 history_days = {ai_history_days}
+
+[mcp]
+# AI agents (Claude Desktop, Claude Code) reading the mailbox through
+# nicemailer-mcp. These only bound the length of its answers; what an
+# agent may do is set in the app, not here.
+# Characters of one message when an agent reads a conversation; the rest
+# is read message by message. 1000 to 100000.
+message_chars = {mcp_message_chars}
+# Characters of the text of one answer. 4000 to 200000.
+response_chars = {mcp_response_chars}
 "#,
         version = d.version,
         background_sorting = d.core.background_sorting,
@@ -1431,5 +1475,7 @@ history_days = {ai_history_days}
         ai_batch_size = d.ai.batch_size,
         ai_max_folder_items = d.ai.max_folder_items,
         ai_history_days = d.ai.history_days,
+        mcp_message_chars = d.mcp.message_chars,
+        mcp_response_chars = d.mcp.response_chars,
     )
 }

@@ -25,6 +25,7 @@ User and developer documentation, in English. It is written together with the co
 | [editor.md](editor.md) | The editor of a mail's text: a standard Mac text field (Tiptap in a web view), text only or formatted, its keys, pasting, what the core sends, the protocol, building it |
 | [sending.md](sending.md) | Replying to a mail: the reply screen, what the core prepares, sending through SMTP with an undo delay, the copy in Sent, the filing, failures, the SMTP password |
 | [core-library.md](core-library.md) | Core methods behind the screens: sort by modification, text/HTML per sender, export, history, tags, groups, contacts |
+| [mcp.md](mcp.md) | AI agents (Claude Desktop, Claude Code, any MCP client) reading the mailbox and preparing drafts through `nicemailer-mcp`: connecting them from the app, the tools, what an agent may and may not do (enforced by the core), the answers, the tests |
 | [ai.md](ai.md) | AI assistance: the providers (the user's `claude` binary, a fake for tests), the safety check that proves at every call that the binary has no tool, the built-in prompts and how to write your own, the tests |
 
 Features of the first working version that predate this folder (fake-mail seed, folders and moves, search, events) are described in the main `README.md` and still need their own pages.

@@ -202,6 +202,49 @@ fn human(source: Source) -> Result<(), RpcError> {
     }
 }
 
+/// Who may start a draft: a human's client, or an AI agent
+/// (`mcp.md`, section 4: it prepares drafts, the user reviews them).
+fn author(source: Source) -> Result<(), RpcError> {
+    match source {
+        Source::Mcp => Ok(()),
+        s => human(s),
+    }
+}
+
+/// Who may change the draft `id`: a human's client any draft, an AI agent
+/// only the drafts it started (`draft.created_by = 'mcp'`, `mcp.md`,
+/// section 4). The user's drafts stay readable to the agent, never
+/// rewritten by it: an agent that read a hostile mail must not change what
+/// the user is writing.
+///
+/// Checked before the change, outside its transaction: `created_by` never
+/// changes once the row is written, so there is no window for a race.
+async fn writer(core: &Arc<Core>, source: Source, id: i64) -> Result<(), RpcError> {
+    if source != Source::Mcp {
+        return human(source);
+    }
+    let created_by: Option<String> = with_reader(core, move |s| {
+        Ok(s.conn().query_row("SELECT created_by FROM draft WHERE id = ?1", [id], |r| r.get(0)).ok())
+    })
+    .await?;
+    match created_by.as_deref() {
+        None => Err(RpcError::new(error_code::NOT_FOUND, format!("no draft {id}"))),
+        Some(by) => agent_may_change(id, by),
+    }
+}
+
+/// The rule of [`writer`] for an agent, from the draft's `created_by`.
+fn agent_may_change(id: i64, created_by: &str) -> Result<(), RpcError> {
+    if created_by == Source::Mcp.as_str() {
+        Ok(())
+    } else {
+        Err(RpcError::new(
+            error_code::FORBIDDEN,
+            format!("draft {id} was written by the user: AI agents may read it, not change it; start a new draft instead"),
+        ))
+    }
+}
+
 /// `prepare_draft`: what `r`, `R`, `f` or `c` opens, computed on a
 /// connection of the read pool, without writing anything (`reponse.md`,
 /// section 5): the draft already started to the mail (`reused`), or the
@@ -239,14 +282,32 @@ pub async fn prepare(core: &Arc<Core>, p: CreateDraftParams, source: Source) -> 
 /// started to the same mail if any. The app calls it at the first save of
 /// a draft `prepare_draft` proposed, with the text typed in `body`.
 pub async fn create(core: &Arc<Core>, p: CreateDraftParams, source: Source) -> Result<CreateDraftResult, RpcError> {
-    human(source)?;
+    author(source)?;
+    let result = create_any(core, p, source).await?;
+    // The reply already started to this mail is given back (one reply per
+    // mail): an agent may not take over the user's.
+    if source == Source::Mcp && result.reused {
+        let id = result.draft.id;
+        writer(core, source, id).await.map_err(|_| {
+            RpcError::new(
+                error_code::FORBIDDEN,
+                format!("the user has already started a reply to this mail (draft {id}): AI agents may read it, not change it"),
+            )
+        })?;
+    }
+    Ok(result)
+}
+
+/// [`create`], once the source is allowed.
+async fn create_any(core: &Arc<Core>, p: CreateDraftParams, source: Source) -> Result<CreateDraftResult, RpcError> {
     // A first save in the formatted mode: the draft is written, then its
     // body saved as HTML in one more revision. The rules that write a
     // draft (the quotation, the recipients) stay those of a text draft.
     if p.body_format.as_deref() == Some("html")
         && let Some(html) = p.body.clone()
     {
-        let mut result = Box::pin(create(core, CreateDraftParams { body: Some(String::new()), body_format: None, ..p }, source)).await?;
+        let mut result =
+            Box::pin(create_any(core, CreateDraftParams { body: Some(String::new()), body_format: None, ..p }, source)).await?;
         let (id, revision) = (result.draft.id, result.draft.revision);
         let edit = DraftEdit { body: Some(html), body_format: Some("html".into()), ..DraftEdit::default() };
         result.draft = with_store(core, move |s| {
@@ -340,7 +401,7 @@ pub async fn open(core: &Arc<Core>, p: DraftIdParams) -> Result<DraftView, RpcEr
 /// `update_draft`: what changed since the last save, the body at each pause,
 /// the recipients and the subject when edited.
 pub async fn update(core: &Arc<Core>, p: UpdateDraftParams, source: Source) -> Result<UpdateDraftResult, RpcError> {
-    human(source)?;
+    writer(core, source, p.id).await?;
     let list = |l: Option<Vec<AddressView>>| l.map(|l| l.into_iter().map(|a| Mailbox { addr: a.addr, name: a.name }).collect());
     // The sender: an address of an account that can send, now; its name
     // is the one `accounts.toml` gives it.
@@ -370,7 +431,7 @@ pub async fn update(core: &Arc<Core>, p: UpdateDraftParams, source: Source) -> R
 /// `add_draft_attachment`: the file the app put in `incoming.noindex`,
 /// taken by the core (`nm_store::outgoing`).
 pub async fn add_attachment(core: &Arc<Core>, p: AddDraftAttachmentParams, source: Source) -> Result<AddDraftAttachmentResult, RpcError> {
-    human(source)?;
+    writer(core, source, p.id).await?;
     let (revision, attachment, warning) = with_store(core, move |s| {
         s.add_draft_attachment(p.id, p.revision, &p.staged, &p.filename, p.mime_type.as_deref(), source)
     })
@@ -379,7 +440,7 @@ pub async fn add_attachment(core: &Arc<Core>, p: AddDraftAttachmentParams, sourc
 }
 
 pub async fn remove_attachment(core: &Arc<Core>, p: RemoveDraftAttachmentParams, source: Source) -> Result<UpdateDraftResult, RpcError> {
-    human(source)?;
+    writer(core, source, p.id).await?;
     let revision = with_store(core, move |s| s.remove_draft_attachment(p.id, p.revision, p.attachment_id, source)).await?;
     Ok(UpdateDraftResult { revision })
 }
@@ -433,7 +494,7 @@ pub async fn suggest(core: &Arc<Core>, p: SuggestRecipientsParams) -> Result<Sug
 }
 
 pub async fn discard(core: &Arc<Core>, p: DraftIdParams, source: Source) -> Result<DraftView, RpcError> {
-    human(source)?;
+    writer(core, source, p.id).await?;
     let core2 = core.clone();
     with_store(core, move |s| {
         let (view, changes) = s.discard_draft(p.id, source)?;
@@ -448,7 +509,7 @@ pub async fn discard(core: &Arc<Core>, p: DraftIdParams, source: Source) -> Resu
 /// copy, it becomes the row of Drafts, and goes to the server's Drafts
 /// (`nm-store`, `draft_copies.rs`).
 pub async fn close(core: &Arc<Core>, p: DraftIdParams, source: Source) -> Result<(), RpcError> {
-    human(source)?;
+    writer(core, source, p.id).await?;
     let core2 = core.clone();
     with_store(core, move |s| close_now(&core2, s, p.id, source)).await
 }

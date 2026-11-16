@@ -61,6 +61,15 @@ fn parse_pair(cursor: &str) -> Result<(i64, i64)> {
     Ok((a.parse().map_err(|_| bad())?, b.parse().map_err(|_| bad())?))
 }
 
+/// What `list_history_filtered` keeps; everything by default.
+#[derive(Debug, Clone, Default)]
+pub struct HistoryFilter {
+    /// Lines written at this Unix time or later.
+    pub since: Option<i64>,
+    /// Lines of these sources (`Source::as_str`); every source when empty.
+    pub sources: Vec<String>,
+}
+
 impl Store {
     // ----------------------------------------------------------------
     // Display preference
@@ -271,32 +280,68 @@ impl Store {
 
     /// One page of the audit log, newest first (`tracabilite.md`).
     pub fn list_history(&self, cursor: Option<&str>, limit: u32) -> Result<(Vec<HistoryEntry>, Option<String>)> {
+        self.list_history_filtered(cursor, limit, &HistoryFilter::default())
+    }
+
+    /// One page of the audit log, newest first, of the lines `filter` keeps:
+    /// written since a date, by some sources (`tracabilite.md`, section 6;
+    /// `mcp.md`, `agent_history`).
+    ///
+    /// The SQL is built with only the clauses needed, rather than one
+    /// statement with `?1 IS NULL OR …` for each: SQLite would then read the
+    /// cursor as a filter, not as the place to start in the date index, and
+    /// every page would read the log again from its newest line. There are
+    /// at most eight variants, each prepared once (`prepare_cached`).
+    ///
+    /// A filter on the sources reads the date index and skips the other
+    /// sources' lines: no index on `created_by`, which would need a new
+    /// schema version (and the upgrade of every mailbox) for a list read
+    /// rarely; `since` bounds what is read.
+    pub fn list_history_filtered(
+        &self,
+        cursor: Option<&str>,
+        limit: u32,
+        filter: &HistoryFilter,
+    ) -> Result<(Vec<HistoryEntry>, Option<String>)> {
         let fetch = i64::from(limit) + 1;
         type Row = (i64, i64, String, String, i64, String, Option<String>);
         let map = |r: &rusqlite::Row| -> rusqlite::Result<Row> {
             Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?))
         };
-        let rows: Vec<Row> = match cursor {
-            None => self
-                .conn
-                .prepare_cached(
-                    "SELECT id, date_created, created_by, entity, entity_id, action, detail
-                       FROM audit_log ORDER BY date_created DESC, id DESC LIMIT ?1",
-                )?
-                .query_map([fetch], map)?
-                .collect::<std::result::Result<_, _>>()?,
-            Some(c) => {
-                let (d, id) = parse_pair(c)?;
-                self.conn
-                    .prepare_cached(
-                        "SELECT id, date_created, created_by, entity, entity_id, action, detail
-                           FROM audit_log WHERE (date_created, id) < (?1, ?2)
-                          ORDER BY date_created DESC, id DESC LIMIT ?3",
-                    )?
-                    .query_map(params![d, id, fetch], map)?
-                    .collect::<std::result::Result<_, _>>()?
+        // Rust note: `Box<dyn ToSql>` holds values of different types
+        // (integers, a string) in one list of SQL parameters.
+        let mut clauses: Vec<&str> = Vec::new();
+        let mut values: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+        if let Some(c) = cursor {
+            let (d, id) = parse_pair(c)?;
+            clauses.push("(date_created, id) < (?, ?)");
+            values.push(Box::new(d));
+            values.push(Box::new(id));
+        }
+        if let Some(since) = filter.since {
+            clauses.push("date_created >= ?");
+            values.push(Box::new(since));
+        }
+        if !filter.sources.is_empty() {
+            for s in &filter.sources {
+                if Source::parse(s).is_none() {
+                    return Err(StoreError::InvalidParams(format!("unknown source: {s}")));
+                }
             }
-        };
+            clauses.push("created_by IN (SELECT value FROM json_each(?))");
+            values.push(Box::new(serde_json::to_string(&filter.sources).unwrap_or_default()));
+        }
+        let where_clause = if clauses.is_empty() { String::new() } else { format!("WHERE {}", clauses.join(" AND ")) };
+        values.push(Box::new(fetch));
+        let sql = format!(
+            "SELECT id, date_created, created_by, entity, entity_id, action, detail
+               FROM audit_log {where_clause} ORDER BY date_created DESC, id DESC LIMIT ?"
+        );
+        let rows: Vec<Row> = self
+            .conn
+            .prepare_cached(&sql)?
+            .query_map(rusqlite::params_from_iter(values.iter()), map)?
+            .collect::<std::result::Result<_, _>>()?;
         let has_more = rows.len() as i64 > i64::from(limit);
         let mut items = Vec::new();
         for (id, date, source, entity, entity_id, action, detail) in rows.into_iter().take(limit as usize) {

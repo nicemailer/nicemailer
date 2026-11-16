@@ -1,6 +1,6 @@
 # NiceMailer : serveur MCP
 
-Statut : proposition (novembre 2026), à valider. Rien n'est réalisé. Complète `architecture.md` (sections 4, 5 et 9), `brouillons.md`, `configuration.md` (section 7, réglages protégés), `evenements.md`, `tracabilite.md` et `mise-a-jour.md`.
+Statut : phases 1 (lecture) et 2 (brouillons) réalisées en novembre 2026, phases 3 et 4 à faire ; les écarts décidés en codant sont à la section 14. Documentation : `docs/mcp.md`. Complète `architecture.md` (sections 4, 5 et 9), `brouillons.md`, `configuration.md` (section 7, réglages protégés), `evenements.md`, `tracabilite.md` et `mise-a-jour.md`.
 
 ## 1. Objet
 
@@ -14,7 +14,7 @@ L'assistance IA intégrée à l'app (`ia.md`) est un autre sujet : là, c'est le
 - **Les droits sont appliqués par le noyau, pas par le proxy.** Le proxy n'expose que les outils autorisés, mais c'est le noyau qui refuse une méthode interdite à la source `mcp`. Un proxy modifié, ou un autre programme qui se déclarerait `mcp`, n'obtient rien de plus.
 - **Le contenu d'un mail est une donnée hostile.** L'agent est un LLM qui lit des mails écrits par n'importe qui et qui dispose d'outils. Toute action dont l'effet sort de la boîte (envoi, désabonnement, chargement d'une image distante) passe par un geste de l'utilisateur dans l'app, ou n'est pas offerte.
 - **Lecture d'abord, chaque droit de plus est un geste dans l'app.** Par défaut, l'agent lit et prépare des brouillons. Ranger les mails est un réglage protégé ; envoyer demande toujours une confirmation.
-- **Des outils pensés pour les tâches, pas un miroir du contrat.** Le contrat a plus de 80 méthodes, dont beaucoup ne servent qu'à l'interface (curseurs d'affichage, `prepare_draft`, sondes de compte). L'agent reçoit une quinzaine d'outils, chacun correspondant à une intention (« lister les conversations », « lire une conversation »).
+- **Des outils pensés pour les tâches, pas un miroir du contrat.** Le contrat a plus de 70 méthodes, dont beaucoup ne servent qu'à l'interface (curseurs d'affichage, `prepare_draft`, sondes de compte). L'agent reçoit une quinzaine d'outils, chacun correspondant à une intention (« lister les conversations », « lire une conversation »).
 - **Des réponses compactes.** Chaque octet renvoyé occupe le contexte du modèle. Les réponses omettent ce qui ne sert qu'à l'affichage (HTML, segments de mise en page, positions d'événements) et bornent les textes longs.
 
 ### Pourquoi un serveur MCP plutôt qu'une skill qui décrit le CLI
@@ -35,7 +35,7 @@ Une skill reste utile **en complément** : décrire des façons de travailler (�
 
 - **stdio.** Le client MCP lance `nicemailer-mcp` et lui parle sur l'entrée et la sortie standard. Pas de transport HTTP : il ouvrirait un accès réseau à la boîte, ce que seul le serveur web doit faire, après activation dans l'app.
 - **Version du protocole.** La dernière version stable de MCP au moment du codage, qui permet les sorties structurées (`structuredContent`, `outputSchema`), les annotations d'outils et les notifications d'avancement. Le proxy accepte les versions plus anciennes que négocie le client, en dégradant ce qui manque (texte seul au lieu de la sortie structurée).
-- **Bibliothèque.** Le SDK Rust officiel (`rmcp`) par défaut : il gère la négociation, les schémas et les annulations. Si la crate se révèle trop instable ou trop lourde, une implémentation directe du sous-ensemble utile reste possible, puisque MCP est lui aussi du JSON-RPC sur des lignes. Décision prise en codant.
+- **Bibliothèque.** Implémentation directe du sous-ensemble utile (décidé en codant, section 14) : MCP est lui aussi du JSON-RPC sur des lignes, et le serveur n'a besoin que de `initialize`, `tools/list`, `tools/call`, `ping`, des annulations et des notifications d'avancement.
 - **Journal.** La sortie standard appartient au protocole : le proxy écrit son journal sur la sortie d'erreur (que Claude Desktop recueille dans ses journaux), jamais sur la sortie standard.
 
 ### Connexion au noyau
@@ -323,3 +323,17 @@ App :
 - **Nouveaux mails.** Prévenir l'agent de l'arrivée d'un mail (ressources MCP et abonnement) : peu de clients le gèrent aujourd'hui, et un agent ne tourne pas en permanence. Pas en v1.
 - **Paquet `.mcpb`.** Une extension Claude Desktop installable par double-clic éviterait d'écrire dans la configuration d'une autre app. Mais elle embarquerait une copie du binaire, hors du bundle signé et non mise à jour avec lui. À comparer quand la phase 1 sera faite.
 - **Plusieurs agents.** Claude Desktop et Claude Code lancent chacun leur proxy : deux connexions `mcp` indiscernables pour les droits et les limites, qui sont donc partagées. Faut-il distinguer les agents dans `agent_history` par le `clientInfo` déclaré, en sachant qu'il n'est pas vérifié ?
+
+## 14. Décisions prises en codant (phases 1 et 2)
+
+- **Pas de `rmcp`.** Le sous-ensemble utile tient en quelques centaines de lignes (`nm-mcp/src/server.rs`) dont chaque octet écrit sur la sortie standard est le nôtre ; le SDK apportait des dépendances et des macros pour des schémas écrits à la main de toute façon, et son API bouge encore (version 3.x). Versions acceptées : 2025-11-25, 2025-06-18, 2025-03-26, 2024-11-05.
+- **Arguments hors schéma : erreur d'outil**, pas erreur de protocole (écart à la section 7, « Erreurs ») : un modèle corrige un appel dont l'erreur lui parvient, ce que recommande MCP depuis 2025-11-25. Un outil inconnu reste une erreur de protocole.
+- **Outil `get_draft` ajouté** (lecture d'un brouillon par `open_draft`) : `update_draft` remplace le corps entier, et l'agent doit pouvoir relire un brouillon après un `REVISION_CONFLICT`, comme la section 5 le demande.
+- **Ligne de citation** (question ouverte de la section 13) : un paramètre `quote_header` de `create_draft`, que l'agent écrit dans la langue de sa réponse ; sans lui, le proxy écrit une ligne en anglais à partir de la date et de l'expéditeur du mail. Rien n'est ajouté au noyau.
+- **Installation par le helper.** L'écriture de la configuration de Claude Desktop est faite par `nicemailer-mcp claude-desktop install|status|remove` (`nm-mcp/src/install.rs`), que l'app lance : les règles du fichier sont en Rust, testées une fois. Les clés du fichier sont réécrites triées (sans conséquence pour Claude Desktop).
+- **Un menu plutôt que les réglages.** L'app n'a pas encore de fenêtre de réglages : les trois gestes de la section 3 sont dans le menu de l'app, « Agents IA ». Ils iront dans la section « Agents IA » des réglages quand elle existera, avec l'état de chaque intégration.
+- **`agent_history` est vide en phases 1 et 2** : les brouillons ne sont pas inscrits dans `audit_log` (`tracabilite.md`), et l'agent ne fait rien d'autre. L'historique servira à partir de la phase 4.
+- **Liste des méthodes de `mcp`** : les lectures dont les outils ont besoin, `config_status` (les bornes de `[mcp]`), et les méthodes de brouillon ; `prepare_draft` n'y est pas (l'écran de l'app ; l'agent écrit tout de suite), ni `export_message`, `message_record`, `list_contacts`, `list_groups`. Une ouverture de plus est un changement de `rights.rs`.
+- **Filtre par source de `list_history`** sans index sur `created_by` : il parcourt l'index des dates ; un index exigerait une nouvelle version du schéma, donc la mise à niveau de chaque boîte, pour une liste rarement lue. `since` borne la lecture.
+- **`attachment_text`** garde en mémoire les quatre derniers textes lus : un agent qui lit un PDF page après page ne relance pas le lecteur à chaque page.
+

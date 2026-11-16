@@ -1,0 +1,22 @@
+# AI agents (docs/mcp.md): the menu "AI Agents", with the helper of the
+# build (NICEMAILER_MCP). Claude Desktop's configuration is a file of the
+# scenario's data directory, never the user's.
+expect agents_available = true
+expect claude_desktop_entry !~ nicemailer
+# The launch repairs only an entry that exists: none yet.
+agents repair
+expect claude_desktop_entry !~ nicemailer
+agents claude-desktop
+expect flash ~ restart Claude Desktop
+expect claude_desktop_entry ~ nicemailer-mcp
+agents claude-desktop
+expect flash ~ already connected
+# The command for Claude Code and the block for another client, copied.
+agents claude-code
+expect flash ~ paste it in a terminal
+expect pasteboard ~ claude mcp add --scope user nicemailer -- /
+expect pasteboard ~ nicemailer-mcp
+agents config
+expect flash ~ Configuration copied
+expect pasteboard ~ "nicemailer"
+expect pasteboard ~ "command"

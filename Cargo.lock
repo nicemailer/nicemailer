@@ -1487,6 +1487,7 @@ dependencies = [
  "nm-api",
  "nm-core",
  "nm-engine",
+ "nm-mcp",
  "nm-proto",
  "nm-store",
  "rand 0.9.5",
@@ -1495,6 +1496,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "ureq",
+ "zip",
 ]
 
 [[package]]
@@ -1515,6 +1517,22 @@ dependencies = [
  "tempfile",
  "tokio",
  "toml_edit",
+]
+
+[[package]]
+name = "nm-mcp"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "libc",
+ "nm-api",
+ "nm-core",
+ "rand 0.9.5",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
 ]
 
 [[package]]

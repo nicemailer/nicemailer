@@ -1,6 +1,6 @@
 # NiceMailer.app: the app, its core, and the mailbox
 
-`make bundle` builds `NiceMailer.app` and installs it in `/Applications`. The app carries everything: its core, the CLI, and the launch agent that runs the core. Open it from the Finder like any app; no `make core` is needed.
+`make bundle` builds `NiceMailer.app` and installs it in `/Applications`. The app carries everything: its core, the CLI, the MCP server for AI agents, and the launch agent that runs the core. Open it from the Finder like any app; no `make core` is needed.
 
 ```
 NiceMailer.app/Contents/
@@ -8,6 +8,7 @@ NiceMailer.app/Contents/
 ├── MacOS/NiceMailer                              the app
 ├── Helpers/nicemailer-core                       the core
 ├── Helpers/nicemailer                            the CLI
+├── Helpers/nicemailer-mcp                        the MCP server for AI agents (mcp.md)
 └── Library/LaunchAgents/eu.nicemailer.core.plist the agent of the core
 ```
 

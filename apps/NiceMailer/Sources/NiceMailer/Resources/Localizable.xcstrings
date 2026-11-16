@@ -1,6 +1,96 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "AI Agents": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agents IA"
+          }
+        }
+      }
+    },
+    "Connect to Claude Desktop": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connecter à Claude Desktop"
+          }
+        }
+      }
+    },
+    "Copy Command for Claude Code": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copier la commande pour Claude Code"
+          }
+        }
+      }
+    },
+    "Copy MCP Configuration": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copier la configuration MCP"
+          }
+        }
+      }
+    },
+    "NiceMailer is connected to Claude Desktop: restart Claude Desktop to use it": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "NiceMailer est connecté à Claude Desktop : relancez Claude Desktop pour l'utiliser"
+          }
+        }
+      }
+    },
+    "NiceMailer is already connected to Claude Desktop": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "NiceMailer est déjà connecté à Claude Desktop"
+          }
+        }
+      }
+    },
+    "Claude Desktop could not be connected: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossible de connecter Claude Desktop : %@"
+          }
+        }
+      }
+    },
+    "Command copied: paste it in a terminal": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Commande copiée : collez-la dans un terminal"
+          }
+        }
+      }
+    },
+    "Configuration copied: paste it in the settings of your AI client": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configuration copiée : collez-la dans les réglages de votre client IA"
+          }
+        }
+      }
+    },
     "human": {
       "localizations": {
         "fr": {

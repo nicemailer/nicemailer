@@ -1,6 +1,6 @@
 # The core contract
 
-Every client (the Swift app, the `nicemailer` CLI, later the TUI, the web and MCP) talks to the core through one contract: JSON-RPC 2.0 requests on the core's Unix socket, plus the events it pushes to subscribed clients (`specifications/architecture.md`, "Règles du contrat"). The method names are defined in `crates/nm-api/src/lib.rs` (module `method`), together with their parameter and result types.
+Every client (the Swift app, the `nicemailer` CLI, the MCP server `nicemailer-mcp`, later the TUI and the web) talks to the core through one contract: JSON-RPC 2.0 requests on the core's Unix socket, plus the events it pushes to subscribed clients (`specifications/architecture.md`, "Règles du contrat"). The method names are defined in `crates/nm-api/src/lib.rs` (module `method`), together with their parameter and result types.
 
 This page lists every method, what it does, and the CLI command that uses it, if there is one. In the CLI column, "—" means no dedicated command.
 
@@ -16,6 +16,10 @@ Tests in `crates/nm-cli/src/contract_doc.rs` (run by `make test`) fail as soon a
 The tests cannot check that a description is still true. A change to what a method or a command does updates its row here in the same change.
 
 When adding a method, declare it in `nm_api::method` with its comment and add its row to the right table, then fill the CLI column if a command calls it. A new CLI source file that calls the core must be added to `CLI_SOURCES` in `contract_doc.rs`.
+
+## What each client may call
+
+The core checks the source a client declared in `hello` before running a method (`crates/nm-daemon/src/rights.rs`). The app, the CLI and the TUI may call every method (sending is reserved to them). An AI agent, the source `mcp` (`nicemailer-mcp`, `mcp.md`), gets only an allowlist: the reading methods its tools use, `config_status`, and the draft methods, on its own drafts only (`created_by = 'mcp'`); every other method is refused with `FORBIDDEN` (1007), and a method added to the contract stays refused to agents until it is added to that list. The source is declared, not yet checked against the client's signature (`specifications/architecture.md`, section 9).
 
 ## Calling any method from the CLI
 
@@ -52,6 +56,7 @@ A dedicated command prints readable output, asks for confirmation when needed an
 | `message_record` | Everything about one message, read from its raw file, for printing it as evidence. | — |
 | `export_message` | Writes one message to a file (`.eml`, `.txt`, `.md`). | — |
 | `get_attachment` | Extracts an attachment from the raw message on first use and returns its read-only path. | — |
+| `attachment_text` | The text of an attachment (text, HTML, PDF, DOCX, mail attached), one page of characters at a time (`offset`, `limit`, `next_offset`); a file whose text cannot be read gives `unreadable` and its path instead of an error. Used by `read_attachment` of `nicemailer-mcp` (`mcp.md`). | — |
 | `set_body_format` | Remembers whether the mails of an address are shown as text or HTML. | — |
 
 ## Acting on threads
@@ -65,7 +70,7 @@ A dedicated command prints readable output, asks for confirmation when needed an
 | `tag_thread` | Adds or removes a tag on every message of one or several threads. Creates the tag if needed. | — |
 | `list_tags` | The tags of an account, or of every account, with their message counts. | — |
 | `unsubscribe` | Unsubscribes from a mailing list: in one click when the core can, otherwise returns the page or `mailto:` to open. | — |
-| `list_history` | The audit log, newest first, paginated (`specifications/tracabilite.md`). | — |
+| `list_history` | The audit log, newest first, paginated (`specifications/tracabilite.md`); `since` (Unix time) and `sources` (`["mcp"]`: what AI agents did) filter it. | — |
 | `undo` | Undoes a move or a decision, from the token it returned. | `nicemailer undo <token>` |
 
 ## Screening, senders, groups, contacts
@@ -91,7 +96,7 @@ A dedicated command prints readable output, asks for confirmation when needed an
 | Method | What it does | CLI |
 | --- | --- | --- |
 | `list_accounts` | Every account (IMAP and archive) with its state, in display order. | `nicemailer accounts` |
-| `config_status` | The state of `config.toml` and `accounts.toml`: paths, the error that makes the core refuse them, warnings. | — (`nicemailer config check` checks the files itself, without the core.) |
+| `config_status` | The state of `config.toml` and `accounts.toml`: paths, the error that makes the core refuse them, warnings, and the settings the clients apply themselves (`ui`, `mcp`). | — (`nicemailer config check` checks the files itself, without the core.) |
 | `discover_account` | Finds the servers of an address before the account exists: provider, IMAP server, SMTP servers to try. | Step 1 of `nicemailer account add`. |
 | `test_account` | Tries the IMAP server of an account not created yet: capabilities, folders with proposed roles, counts for the import. | Step 2 of `account add`. |
 | `count_archive` | Exact count of the mails the initial archiving would move. | Step 3 of `account add` (`--archive-read-before`, `--archive-unread-before`, `--no-archive`). |

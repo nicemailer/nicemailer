@@ -101,6 +101,112 @@ pub(crate) async fn in_child(exe: &Path, path: &Path, kind: Kind, timeout: Durat
     }
 }
 
+// ---------------------------------------------------------------------------
+// `attachment_text` (`mcp.md`, section 8)
+// ---------------------------------------------------------------------------
+
+/// Texts read lately, newest last: an agent reads a long PDF page after
+/// page, and each page would otherwise start a reader again (a child
+/// process, up to a second for a long PDF). Keyed by the attachment and
+/// the path of its file, which never changes once extracted (the file is
+/// read-only; extracted again after a purge, it gets the same content).
+///
+/// Rust note: a `static` lives as long as the process; `Mutex::new` and
+/// `VecDeque::new` are `const fn`, so it needs no lazy initialization.
+static RECENT: std::sync::Mutex<std::collections::VecDeque<Recent>> = std::sync::Mutex::new(std::collections::VecDeque::new());
+
+/// Texts kept in [`RECENT`]: at most 100,000 characters each
+/// (`attachment_text::MAX_TEXT_CHARS`), so a few megabytes at worst.
+const RECENT_MAX: usize = 4;
+
+struct Recent {
+    attachment_id: i64,
+    path: std::path::PathBuf,
+    text: std::sync::Arc<Result<String, Unreadable>>,
+}
+
+/// The text of a file, from [`RECENT`] or read now.
+async fn cached_text(attachment_id: i64, path: &Path, kind: Kind) -> std::sync::Arc<Result<String, Unreadable>> {
+    {
+        let recent = RECENT.lock().unwrap();
+        if let Some(r) = recent.iter().find(|r| r.attachment_id == attachment_id && r.path == path) {
+            return r.text.clone();
+        }
+    }
+    // The lock is not held while reading: two pages asked at once may
+    // read the file twice, which is only slower.
+    let read = std::sync::Arc::new(text(path, kind).await);
+    // A reading stopped by the delay is not kept: the next try may be on
+    // a less busy machine.
+    if !matches!(read.as_ref(), Err(Unreadable::Damaged(_))) {
+        let mut recent = RECENT.lock().unwrap();
+        recent.retain(|r| r.attachment_id != attachment_id);
+        recent.push_back(Recent { attachment_id, path: path.to_path_buf(), text: read.clone() });
+        while recent.len() > RECENT_MAX {
+            recent.pop_front();
+        }
+    }
+    read
+}
+
+/// One page of `text`, in characters: the page, the start of the next one
+/// (`None` on the last), and the characters of the whole text. A pure
+/// function, tested: the pages of a text, end to end, are the text.
+pub(crate) fn page(text: &str, offset: u64, limit: u64) -> (String, Option<u64>, u64) {
+    let total = text.chars().count() as u64;
+    let start = offset.min(total);
+    let end = start.saturating_add(limit.max(1)).min(total);
+    // Rust note: a `str` is indexed by bytes; `char_indices` gives the byte
+    // where each character starts, so the cut never falls inside one.
+    let byte = |n: u64| text.char_indices().nth(n as usize).map(|(b, _)| b).unwrap_or(text.len());
+    let piece = text[byte(start)..byte(end)].to_string();
+    (piece, (end < total).then_some(end), total)
+}
+
+/// `attachment_text`: the file extracted from the raw mail as for
+/// `get_attachment`, then its text read as for the AI assistance, one page
+/// at a time. A kind of file whose text cannot be read, or a file that
+/// fails to read, is an answer with `unreadable`, not an error: the path
+/// still serves a client that can open files.
+pub(crate) async fn attachment_text(
+    core: &std::sync::Arc<crate::Core>,
+    p: nm_api::AttachmentTextParams,
+) -> Result<nm_api::AttachmentTextResult, nm_api::RpcError> {
+    let (raw, files) = (core.raw.clone(), core.attachments.clone());
+    let id = p.attachment_id;
+    let file = crate::sync::repaired(core, crate::with_store(core, move |s| s.get_attachment(&raw, &files, id)).await).await?;
+    let mut result = nm_api::AttachmentTextResult {
+        path: file.path.display().to_string(),
+        filename: file.filename.clone(),
+        mime_type: file.mime_type.clone(),
+        size: file.size,
+        kind: None,
+        text: None,
+        unreadable: None,
+        offset: p.offset.unwrap_or(0),
+        next_offset: None,
+        total_chars: 0,
+        cut: false,
+    };
+    let Some(kind) = Kind::of(&file.mime_type, Some(&file.filename)) else {
+        result.unreadable = Some(Unreadable::Unsupported.to_string());
+        return Ok(result);
+    };
+    result.kind = Some(kind.as_str().into());
+    match cached_text(id, &file.path, kind).await.as_ref() {
+        Err(e) => result.unreadable = Some(e.to_string()),
+        Ok(text) => {
+            let limit = p.limit.unwrap_or(nm_api::ATTACHMENT_TEXT_DEFAULT_CHARS).clamp(1, nm_api::ATTACHMENT_TEXT_MAX_CHARS);
+            let (piece, next, total) = page(text, result.offset, limit);
+            result.text = Some(piece);
+            result.next_offset = next;
+            result.total_chars = total;
+            result.cut = total >= attachment_text::MAX_TEXT_CHARS as u64;
+        }
+    }
+    Ok(result)
+}
+
 /// The child's one line: the text, or why there is none.
 #[derive(serde::Serialize, serde::Deserialize)]
 struct Answer {
@@ -219,6 +325,34 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
         assert!(!alive, "the reader {pid} is still running");
+    }
+
+    #[test]
+    fn the_pages_of_a_text_are_the_text_without_gap_or_overlap() {
+        // Characters of one, two, three and four bytes: a page must never
+        // cut one.
+        let text = "aé€😀".repeat(25);
+        for limit in [1, 3, 7, 40, 100, 1_000] {
+            let mut joined = String::new();
+            let mut offset = 0;
+            loop {
+                let (piece, next, total) = page(&text, offset, limit);
+                assert_eq!(total, 100);
+                assert!(piece.chars().count() as u64 <= limit);
+                joined.push_str(&piece);
+                match next {
+                    Some(n) => {
+                        assert_eq!(n, offset + piece.chars().count() as u64);
+                        offset = n;
+                    }
+                    None => break,
+                }
+            }
+            assert_eq!(joined, text, "limit {limit}");
+        }
+        // Past the end: an empty last page, not an error.
+        assert_eq!(page("abc", 10, 5), (String::new(), None, 3));
+        assert_eq!(page("", 0, 5), (String::new(), None, 0));
     }
 
     #[tokio::test]
