@@ -21,6 +21,7 @@ User and developer documentation, in English. It is written together with the co
 | [imap.md](imap.md) | The IMAP client of the core: connection, certificates, login, commands and their fallbacks, large messages, failures, IDLE, `nicemailer imap probe` |
 | [deep-links.md](deep-links.md) | The URL of each mail, `nicemailer://m/<id>`: copying it from `l` (Markdown for Obsidian), opening it, `make bundle` |
 | [app-bundle.md](app-bundle.md) | `NiceMailer.app` in `/Applications`: its core run by a launch agent, stopping it, choosing the mailbox (⌥ at launch, Change Mailbox…), `make bundle` |
+| [editor.md](editor.md) | The editor of a mail's text: a standard Mac text field (Tiptap in a web view), text only or formatted, its keys, pasting, what the core sends, the protocol, building it |
 | [sending.md](sending.md) | Replying to a mail: the reply screen, what the core prepares, sending through SMTP with an undo delay, the copy in Sent, the filing, failures, the SMTP password |
 | [core-library.md](core-library.md) | Core methods behind the screens: sort by modification, text/HTML per sender, export, history, tags, groups, contacts |
 | [ai.md](ai.md) | AI assistance: the providers (the user's `claude` binary, a fake for tests), the safety check that proves at every call that the binary has no tool, the built-in prompts and how to write your own, the tests |

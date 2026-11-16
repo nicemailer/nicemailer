@@ -87,6 +87,8 @@ extension AppModel {
     func openComposer(_ draft: DraftView, kind: DraftKind? = nil, quoteHeader: String = "") async -> UUID {
         let c = Composer(draft: draft, kind: kind, quoteHeader: quoteHeader)
         composer = c
+        editorState = EditorStateView()
+        loadEditor(c)
         guard let client = core else { return c.opened }
         if let r: ListSendersResult = try? await client.call("list_senders", [:]) {
             senders = r.items
@@ -117,6 +119,86 @@ extension AppModel {
         composer?.headers.sendAccountId = s.accountId
         flash = L("Sending from %@", Compose.senderLabel(s))
         composerChanged()
+    }
+
+    /// Opens the draft in the editor. A proposal of the core (written as
+    /// text) opens in the formatted mode when `compose.format` says so,
+    /// converted by the editor (`edition.md`, section 3): it stays a text
+    /// draft until the user changes something, so that a proposal left as
+    /// it was is still written nowhere.
+    func loadEditor(_ c: Composer) {
+        ensureEditor()
+        let formatted = !c.isWritten && c.format == .text && composeFormats.defaultFormat == "html"
+        editor?.load(mode: formatted ? .html : c.format, content: c.body, fromText: formatted, cursor: 0, focus: c.focus == .body, formats: composeFormats)
+    }
+
+    /// The editor reported its content, after its pause (`changed`): saved
+    /// now, the pause being the editor's.
+    func editorChanged(_ e: EditorContent) {
+        guard var c = composer else { return }
+        c.body = e.content
+        c.format = e.mode
+        composer = c
+        composeSaveTask?.cancel()
+        Task { await saveComposer() }
+    }
+
+    /// The content as the editor holds it now, the last key typed included
+    /// (`flush`), into the model. False when the editor did not answer:
+    /// the caller then does not send or close on an older text.
+    func takeEditorContent() async -> Bool {
+        guard let editor else { return true }
+        guard let e = await editor.flush() else { return false }
+        // Nothing changed in the editor since the draft was loaded: the
+        // model's text is the draft's. (A proposal shown formatted is still
+        // a text draft: left as it was, it is written nowhere.)
+        guard e.revision > 0, var c = composer else { return true }
+        c.body = e.content
+        c.format = e.mode
+        composer = c
+        return true
+    }
+
+    /// ⇧⌘T: text only ↔ formatted (`edition.md`, section 3). To formatted,
+    /// the editor converts the text. To text only, the core makes the text
+    /// of the HTML (`html_to_text`, the text part of the mail sent); if the
+    /// draft has formatting that would be lost, a first ⇧⌘T only says so,
+    /// and a second one within five seconds converts.
+    func toggleComposeFormat() async {
+        guard composer != nil, let editor else { return }
+        guard await takeEditorContent(), let c = composer else {
+            flash = L("The text could not be read: try again")
+            return
+        }
+        switch c.format {
+        case .text:
+            formatLossArmed = nil
+            editor.setMode(.html, content: c.body)
+            flash = L("Formatted text · ⇧⌘T for text only")
+        case .html:
+            guard let client = core else { return }
+            do {
+                let r: HtmlToTextResult = try await client.call("html_to_text", ["html": c.body])
+                if r.formatted, (formatLossArmed.map { Date().timeIntervalSince($0) > 5 } ?? true) {
+                    formatLossArmed = Date()
+                    flash = L("The formatting will be lost · ⇧⌘T again to convert")
+                    return
+                }
+                formatLossArmed = nil
+                guard composer?.opened == c.opened else { return }
+                editor.setMode(.text, content: r.text)
+                flash = L("Text only · ⇧⌘T for formatted text")
+            } catch {
+                flash = Self.composeErrorFlash(error)
+            }
+        }
+    }
+
+    /// ⌥⇧⌘V: the text of the pasteboard, without its formatting, in place
+    /// of the selection ("Paste and Match Style" of the Mac).
+    func pastePlain(_ text: String) {
+        guard composer != nil, !text.isEmpty else { return }
+        editor?.replaceSelection(text: text)
     }
 
     /// The text typed changed: saved after `Compose.saveDelay` without
@@ -151,13 +233,14 @@ extension AppModel {
         // What is sent: the text and the headers as they are now. Typing
         // may go on during the call; what is typed meanwhile stays dirty
         // and goes with the next save.
-        let text = c.buffer.text, headers = c.headers
+        let text = c.body, format = c.format, headers = c.headers
         do {
             let r: UpdateDraftResult = try await client.call("update_draft", Compose.saveParams(c))
             // The user may have left, or started another reply, meanwhile.
             if composer?.opened == c.opened {
                 composer?.revision = r.revision
                 composer?.saved = text
+                composer?.savedFormat = format
                 composer?.savedHeaders = headers
             }
         } catch {
@@ -408,6 +491,14 @@ extension AppModel {
             // An address typed but not yet made one is kept; a text that is
             // not one keeps the draft open, to be corrected rather than lost.
             guard await commitRecipientLine() else { return }
+            // The last keys typed, which the editor's pause has not reported.
+            guard await takeEditorContent() else {
+                flash = L("The text could not be read: try again")
+                return
+            }
+            // Said now, with the text the editor gave: "nothing written"
+            // only when nothing was.
+            flash = Compose.keptFlash(composer ?? c)
             await saveComposer()
             // A proposal left as it was is written nowhere: nothing to close.
             let id = composer?.isWritten == true ? composer?.draft.id : nil
@@ -419,14 +510,15 @@ extension AppModel {
                 flash = Self.composeErrorFlash(error)
             }
         }
-        flash = Compose.keptFlash(c)
     }
 
-    /// ⌘⌫: the draft is abandoned; `z` gives it back with its text.
+    /// ⌘⎋: the draft is abandoned; `z` gives it back with its text.
     func discardComposer() async {
-        guard let client = core, let c = composer else { return }
+        guard let client = core, composer != nil else { return }
         composeSaveTask?.cancel()
+        _ = await takeEditorContent()
         await composeSaving?.value
+        guard let c = composer else { return }
         do {
             // A proposal never written: nothing to discard in the core.
             if let written = composer, written.isWritten {
@@ -435,7 +527,8 @@ extension AppModel {
             composer = nil
             let kind: DraftKind = c.draft.kind == "forward" ? .forward : c.draft.kind == "new" ? .new : .replyAll
             if c.draft.replyTo != nil || c.draft.forwardOf != nil || kind == .new {
-                let gone = DiscardedDraft(replyTo: c.draft.replyTo ?? c.draft.forwardOf, body: c.buffer.text, kind: kind, account: c.draft.accountId)
+                let gone = DiscardedDraft(replyTo: c.draft.replyTo ?? c.draft.forwardOf, body: c.body, kind: kind,
+                                          format: c.format, account: c.draft.accountId)
                 pushUndo(UndoStep(tokens: [], label: L("reply abandoned"), restoreDraft: gone))
             }
             flash = L("Reply abandoned · z to restore it")
@@ -454,6 +547,12 @@ extension AppModel {
         // is not one stops the sending, to be corrected.
         guard await commitRecipientLine() else { return }
         composeSaveTask?.cancel()
+        // The very last key typed goes with the mail (`edition.md`,
+        // section 8, "Envoi sans perte"): never an older text.
+        guard await takeEditorContent() else {
+            flash = L("Not sent: the text could not be read · try again")
+            return
+        }
         await composeSaving?.value
         // The headers are saved first: `send_draft` takes the body only.
         if composer.map({ $0.headers != $0.savedHeaders }) == true { await saveComposer() }
@@ -465,7 +564,7 @@ extension AppModel {
         // A reply sent as proposed, without a word typed, is written now.
         guard await ensureWritten(), let c = composer else { return }
         do {
-            var params: [String: Any] = ["id": c.draft.id, "revision": c.revision, "body": c.buffer.text]
+            var params: [String: Any] = ["id": c.draft.id, "revision": c.revision, "body": c.body, "body_format": c.format.rawValue]
             if let afterSend { params["after_send"] = afterSend }
             let r: SendDraftResult = try await client.call("send_draft", params)
             composer = nil
@@ -508,7 +607,15 @@ extension AppModel {
             let mark = flashCount
             let r: CreateDraftResult = try await client.call("prepare_draft", params)
             let opened = await openComposer(r.draft, kind: d.kind)
-            guard composer?.opened == opened else { return }
+            guard composer?.opened == opened, var c = composer else { return }
+            // A formatted text: the core proposed it as text; it is given
+            // back as it was, in its mode.
+            if d.format == .html {
+                c.body = d.body
+                c.format = .html
+                composer = c
+                editor?.load(mode: .html, content: d.body, fromText: false, cursor: 0, focus: c.focus == .body, formats: composeFormats)
+            }
             if composer?.isWritten == false {
                 composer?.saved = ""
                 composerChanged()

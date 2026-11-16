@@ -160,6 +160,13 @@ pub mod method {
     /// Reads the addresses typed or pasted in a recipient line (`reponse.md`,
     /// section 6): the ones understood, and the pieces that are not one.
     pub const PARSE_ADDRESSES: &str = "parse_addresses";
+    /// The closed lists of the formatted mode (fonts, sizes, colours) and
+    /// the mode a draft starts in (`edition.md`, sections 3 and 5).
+    pub const COMPOSE_FORMATS: &str = "compose_formats";
+    /// The plain text of the HTML of a formatted draft, and whether it has
+    /// any formatting: what the editor shows when a draft goes back to
+    /// text only (`edition.md`, section 3).
+    pub const HTML_TO_TEXT: &str = "html_to_text";
     /// The addresses to suggest for the text typed in a recipient line,
     /// those the user writes to most first.
     pub const SUGGEST_RECIPIENTS: &str = "suggest_recipients";
@@ -1249,6 +1256,10 @@ pub struct CreateDraftParams {
     /// abandoned by mistake (`z` after `discard_draft`).
     #[serde(default)]
     pub body: Option<String>,
+    /// The format of `body` when it is given: `text` (the default) or
+    /// `html`, the editor's formatted text (`edition.md`, section 3).
+    #[serde(default)]
+    pub body_format: Option<String>,
 }
 
 /// Params of `open_draft`, `close_draft`, `discard_draft`, `cancel_send`.
@@ -1285,6 +1296,11 @@ pub struct UpdateDraftParams {
     /// that is not one of the account's.
     #[serde(default)]
     pub from: Option<DraftSender>,
+    /// `text` (text only) or `html` (formatted: `body` is the editor's
+    /// HTML), `edition.md`, section 3. Sent with the body when the user
+    /// switches mode (`⇧⌘T`).
+    #[serde(default)]
+    pub body_format: Option<String>,
 }
 
 /// The address a draft is sent from, and the account it belongs to.
@@ -1352,6 +1368,55 @@ pub struct RemoveDraftAttachmentParams {
     pub attachment_id: i64,
 }
 
+/// A font with known fallbacks (`nm_core::formats::FONTS`): its name, and
+/// the CSS stack sent. The editor offers every font of the machine; these
+/// give the common ones their fallbacks.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FontView {
+    pub name: String,
+    pub stack: String,
+}
+
+/// A size of the formatted mode: its key, the number shown (`18`), and
+/// the CSS value sent (`18px`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SizeView {
+    pub key: String,
+    pub css: String,
+}
+
+/// A colour of the palette: a key the client translates, its `#rrggbb`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ColorView {
+    pub key: String,
+    pub hex: String,
+}
+
+/// Result of `compose_formats` (`nm_core::formats`): the editor offers
+/// exactly what the core lets through when the mail leaves.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ComposeFormatsResult {
+    pub fonts: Vec<FontView>,
+    pub sizes: Vec<SizeView>,
+    pub colors: Vec<ColorView>,
+    /// `text` or `html`: the mode a new draft starts in (`compose.format`).
+    pub default_format: String,
+}
+
+/// Params of `html_to_text`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HtmlToTextParams {
+    pub html: String,
+}
+
+/// Result of `html_to_text`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HtmlToTextResult {
+    pub text: String,
+    /// The HTML has formatting that text only loses.
+    pub formatted: bool,
+}
+
 /// Params of `parse_addresses`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ParseAddressesParams {
@@ -1392,6 +1457,9 @@ pub struct SendDraftParams {
     pub id: i64,
     pub revision: i64,
     pub body: String,
+    /// The format of `body`, `text` or `html`; absent: the draft's.
+    #[serde(default)]
+    pub body_format: Option<String>,
     /// Where to file the conversation after sending (`⇧⌘↩`), saved with
     /// the draft. Absent: the choice saved earlier, if any (a send
     /// cancelled with `z`), else the core's preselection.
@@ -1423,6 +1491,10 @@ pub struct DraftView {
     pub bcc: Vec<AddressView>,
     pub subject: String,
     pub body: String,
+    /// `text`: `body` is the text; `html`: it is the HTML of the editor's
+    /// formatted mode (`edition.md`, section 3).
+    #[serde(default = "text_format")]
+    pub body_format: String,
     /// In a forward proposed by `prepare_draft`, the files of the mail it
     /// will take, each with a negative id: they are copied, and get their
     /// real id, when `create_draft` writes the forward.
@@ -1451,6 +1523,10 @@ pub struct DraftView {
     pub after_send: Option<AfterSend>,
     /// When a draft `sending` leaves, Unix seconds.
     pub send_at: Option<i64>,
+}
+
+fn text_format() -> String {
+    "text".into()
 }
 
 /// Result of `prepare_draft` and `create_draft`.

@@ -26,7 +26,7 @@ key r
 expect compose_written = true
 expect flash ~ Reply resumed
 expect compose_text ~ Merci
-key cmd-del
+key cmd-esc
 expect composing = false
 # A forward of the newsletter of the archive account, with its files.
 key @

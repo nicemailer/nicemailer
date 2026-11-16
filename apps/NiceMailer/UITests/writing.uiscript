@@ -9,7 +9,7 @@ expect composing = true
 expect compose_to ~ @
 expect compose_cc = 
 expect compose_focus = body
-key cmd-del
+key cmd-esc
 expect composing = false
 # A forward.
 key F

@@ -11,26 +11,40 @@ XCODE ?= /Applications/Xcode.app/Contents/Developer
 THREADS ?= 2500
 
 # These targets are commands, not files to produce.
-.PHONY: dev-cert build test swift-test ui-test bench seed autoconfig core core-stop core-start app bundle open imap-up imap-down imap-test volume-test
+.PHONY: editor editor-test dev-cert build test swift-test ui-test bench seed autoconfig core core-stop core-start app bundle open imap-up imap-down imap-test volume-test
 
-build:
+# The editor of a mail's text (apps/editor, TypeScript, specifications/
+# edition.md): its dependencies installed from the lock file, then bundled
+# into the app's resources (Resources/Editor, never committed). Every target
+# that builds the app depends on it; it needs Node (version in .nvmrc).
+editor: apps/editor/node_modules/.package-lock.json
+	cd apps/editor && node build.mjs
+
+apps/editor/node_modules/.package-lock.json: apps/editor/package-lock.json
+	cd apps/editor && npm ci --no-audit --no-fund
+
+# The editor's own tests (Vitest, jsdom) and its type check.
+editor-test: apps/editor/node_modules/.package-lock.json
+	cd apps/editor && npx tsc --noEmit -p . && npx vitest run
+
+build: editor
 	cargo build --release
 	cd apps/NiceMailer && DEVELOPER_DIR=$(XCODE) swift build
 
 # Every test that runs without a window: Rust (core), Python scripts and
 # Swift unit tests.
-test:
+test: editor editor-test
 	cargo test
 	python3 -m unittest discover -s scripts/tests
 	cd apps/NiceMailer && DEVELOPER_DIR=$(XCODE) swift test
 
-swift-test:
+swift-test: editor
 	cd apps/NiceMailer && DEVELOPER_DIR=$(XCODE) swift test
 
 # Scripted UI tests of the app (apps/NiceMailer/UITests). Each scenario runs
 # on a fresh database; the app stays in the background, off screen, and never
 # takes the keyboard, so this can run while you work.
-ui-test:
+ui-test: editor
 	scripts/ui-test.sh
 
 # Times the thread lists of the core on a generated mailbox of 100,000
@@ -67,7 +81,7 @@ core:
 dev-cert:
 	scripts/dev-cert.sh
 
-app:
+app: editor
 	cd apps/NiceMailer && DEVELOPER_DIR=$(XCODE) swift run
 
 # Test IMAP servers (dev/dovecot/compose.yaml), run by OrbStack or Docker:
@@ -109,12 +123,12 @@ imap-down:
 # nicemailer://m/<id> open it (docs/deep-links.md). NICEMAILER_DATA_DIR, if
 # set, becomes the mailbox chosen; NICEMAILER_FAKE_NETWORK, if set, makes
 # its core pretend to send.
-bundle:
+bundle: editor
 	DEVELOPER_DIR=$(XCODE) scripts/make-bundle.sh
 
 # Same, then quit the installed app if it runs and launch the new one. Its
 # core is started by launchd: no `make core` needed.
-open:
+open: editor
 	DEVELOPER_DIR=$(XCODE) scripts/make-bundle.sh --open
 
 # Stops the core started by the agent of NiceMailer.app: it finishes its

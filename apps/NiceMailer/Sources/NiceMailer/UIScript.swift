@@ -1,4 +1,5 @@
 import AppKit
+import WebKit
 import SwiftUI
 
 /// Scripted UI testing of the geek theme (see `UITests/README.md`).
@@ -76,8 +77,6 @@ enum UIScript {
     /// (`mailbox`): the switch itself is never made in UI script mode, which
     /// must not change the user's mailbox nor restart a core.
     static var mailboxesSwitched: [String] = []
-    /// Lines of the reply's text as drawn (`ComposerTextView`).
-    static var composeLines = 0
     /// Measures again where the text reader's links and tiles are, in the
     /// window (`TextReader`): before a click on one of them.
     static var remeasureReader: (() -> Void)?
@@ -98,8 +97,8 @@ enum UIScript {
         let host = NSHostingView(rootView: GeekRootView().environment(model))
         // Borderless: the content fills the window (no title bar to offset
         // coordinates), and macOS lets it sit entirely off screen.
-        let w = NSWindow(contentRect: NSRect(x: -30_000, y: -30_000, width: 1400, height: 900),
-                         styleMask: [.borderless], backing: .buffered, defer: false)
+        let w = ScriptWindow(contentRect: NSRect(x: -30_000, y: -30_000, width: 1400, height: 900),
+                             styleMask: [.borderless], backing: .buffered, defer: false)
         w.contentView = host
         w.isReleasedWhenClosed = false
         w.alphaValue = 0
@@ -309,20 +308,6 @@ private final class Runner {
                 try? await Task.sleep(for: .milliseconds(50))
                 click(at: point, modifiers: mods, count: 2)
             }
-        case "axselect", "axreplace":
-            // What an app such as Kerlig does through the accessibility
-            // API: select a range of the reply ("axselect 6 5"), or write
-            // the text that replaces the selection.
-            guard let view = controller.composerView else {
-                fail(lineNumber, line, "no reply open")
-                return
-            }
-            if command == "axselect" {
-                let n = arg.split(separator: " ").compactMap { Int($0) }
-                if n.count == 2 { view.setAccessibilitySelectedTextRange(NSRange(location: n[0], length: n[1])) }
-            } else {
-                view.setAccessibilitySelectedText(arg)
-            }
         case "resize":
             let wh = arg.split(separator: "x").compactMap { Double($0) }
             if wh.count == 2, let w = window {
@@ -332,6 +317,10 @@ private final class Runner {
             }
         case "snap":
             snap(arg)
+        case "snapeditor":
+            // The editor's page, which a snapshot of the window cannot see
+            // (WebKit draws it in another process): WebKit's own snapshot.
+            await snapEditor(arg)
         case "wait":
             try? await Task.sleep(for: .milliseconds(Int(arg) ?? 100))
         case "expect":
@@ -377,6 +366,13 @@ private final class Runner {
         case "fdel": chars = "\u{F728}"; code = KeyCode.forwardDelete; mods = .function
         case "alt-del": chars = "\u{7f}"; code = KeyCode.delete; mods = .option
         case "cmd-del": chars = "\u{7f}"; code = KeyCode.delete; mods = .command
+        // The reply's commands of the editor (`edition.md`, section 7).
+        case "cmd-esc": chars = "\u{1b}"; code = KeyCode.escape; mods = .command
+        case "shift-cmd-t": chars = "T"; code = 17; mods = [.command, .shift]
+        case "shift-alt-cmd-v": chars = "v"; code = 9; mods = [.command, .shift, .option]
+        case "shift-ret": chars = "\r"; code = KeyCode.returnKey; mods = .shift
+        // `#` starts a comment in a script line.
+        case "hash": chars = "#"
         // Selecting in the text of a reply: Shift with the moves.
         case "shift-left": chars = "\u{F702}"; code = KeyCode.left; mods = [.function, .shift]
         case "shift-right": chars = "\u{F703}"; code = KeyCode.right; mods = [.function, .shift]
@@ -409,6 +405,25 @@ private final class Runner {
             windowNumber: w.windowNumber, context: nil, characters: chars, charactersIgnoringModifiers: chars,
             isARepeat: false, keyCode: code)
         else { return }
+        // The reply's text has the keys: what the app does not take goes to
+        // the editor's web view. Delivered to it directly, as the clicks
+        // are (`click`): the app is never active, and AppKit would give a
+        // key nowhere in a window that is not the key window.
+        if let c = model.composer, c.focus == .body, controller.screen == .mail, controller.overlay == .none {
+            if !controller.handle(e) {
+                let web = controller.editorView
+                if web.window?.firstResponder !== web { web.window?.makeFirstResponder(web) }
+                if !(mods.contains(.command) && web.performKeyEquivalent(with: e)) {
+                    web.keyDown(with: e)
+                    if let up = NSEvent.keyEvent(with: .keyUp, location: .zero, modifierFlags: mods, timestamp: e.timestamp,
+                                                 windowNumber: w.windowNumber, context: nil, characters: chars,
+                                                 charactersIgnoringModifiers: chars, isARepeat: false, keyCode: code) {
+                        web.keyUp(with: up)
+                    }
+                }
+            }
+            return
+        }
         NSApp.sendEvent(e)
     }
 
@@ -467,6 +482,16 @@ private final class Runner {
         }
         guard await waitUntil(seconds: 3, { UIScript.frames[id] != nil }), let f = UIScript.frames[id] else { return nil }
         return CGPoint(x: f.midX, y: f.midY)
+    }
+
+    func snapEditor(_ name: String) async {
+        guard let web = controller.editorView as? WKWebView else { return }
+        let image: NSImage? = await withCheckedContinuation { c in
+            web.takeSnapshot(with: nil) { image, _ in c.resume(returning: image) }
+        }
+        guard let tiff = image?.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff) else { return }
+        try? rep.representation(using: .png, properties: [:])?
+            .write(to: UIScript.outDir.appendingPathComponent("\(name).png"))
     }
 
     func snap(_ name: String) {
@@ -820,23 +845,45 @@ private final class Runner {
             "compose_suggestion_index": m.composer?.suggestionIndex.map(String.init) ?? "",
             "compose_after": m.composer.flatMap { Compose.afterSend($0.draft) } ?? "",
             "compose_after_line": m.composer.flatMap { Compose.afterSendLine($0.draft) } ?? "",
+            // The text as the editor last reported it, `|` at the cursor in
+            // text only (its offsets are UTF-16 units, as `NSString`'s).
             "compose_text": m.composer.map { c in
-                let t = c.buffer.text
-                let i = t.index(t.startIndex, offsetBy: c.buffer.cursor)
-                return (t[..<i] + "|" + t[i...]).replacingOccurrences(of: "\n", with: "\\n")
+                let t = c.body as NSString
+                guard c.format == .text, let r = m.editorState.textRange, r.start <= t.length else {
+                    return c.body.replacingOccurrences(of: "\n", with: "\\n")
+                }
+                return (t.substring(to: r.start) + "|" + t.substring(from: r.start)).replacingOccurrences(of: "\n", with: "\\n")
             } ?? "",
+            "compose_format": m.composer?.format.rawValue ?? "",
+            "editor_ready": "\((m.editor as? EditorBridge)?.isReady ?? false)",
+            "editor_focused": "\(m.editorState.focused)",
+            "editor_modal": "\(m.editorState.modal)",
+            "editor_marks": [m.editorState.marks.bold ? "bold" : nil, m.editorState.marks.italic ? "italic" : nil,
+                             m.editorState.marks.underline ? "underline" : nil, m.editorState.marks.link ? "link" : nil]
+                .compactMap { $0 }.joined(separator: ","),
+            "editor_block": m.editorState.block,
+            "editor_recent_fonts": MacFonts.recent.joined(separator: ","),
             "compose_saved": m.composer.map { "\(!$0.isDirty)" } ?? "",
             "compose_written": m.composer.map { "\($0.isWritten)" } ?? "",
             // The text selected in the reply (line breaks as `\n`).
-            "compose_selection": (m.composer?.buffer.selectedText ?? "").replacingOccurrences(of: "\n", with: "\\n"),
-            "compose_lines": "\(UIScript.composeLines)",
+            "compose_selection": m.editorState.selection.replacingOccurrences(of: "\n", with: "\\n"),
             "sending_count": "\(m.sending.count)",
             "fullscreen_toggles": "\(UIScript.fullScreenToggles)",
-            // What the accessibility API gives another app (Kerlig): the
-            // focused element is the reply's text, and its selected text.
-            "ax_focused": "\(controller.composerView.map { $0.window?.firstResponder === $0 } ?? false)",
-            "ax_selected_text": controller.composerView?.accessibilitySelectedText() ?? "",
-            "ax_settable": "\(controller.composerView?.isAccessibilitySelectorAllowed(#selector(NSView.setAccessibilitySelectedText(_:))) ?? false)",
+            // The reply's text is the window's focused view: what the
+            // accessibility API gives another app (Kerlig) is WebKit's.
+            "ax_focused": "\(controller.editorView.window?.firstResponder === controller.editorView)",
+            "editor_messages": (m.editor as? EditorBridge).map { $0.received.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: ",") } ?? "",
+            "editor_in_window": "\(controller.editorView.window != nil)",
         ]
     }
+}
+
+/// The window of UI script mode. It says it is the key window, without the
+/// app ever being activated: WebKit gives its page the focus, and so the
+/// keys, only in the key window, and the editor of a reply's text is a web
+/// view (`EditorWebView.swift`). Nothing reaches the user's keyboard: the
+/// app stays inactive, the window off screen and transparent.
+final class ScriptWindow: NSWindow {
+    override var isKeyWindow: Bool { true }
+    override var canBecomeKey: Bool { true }
 }

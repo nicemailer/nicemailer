@@ -13,8 +13,10 @@ How a reply is written in the app and sent by the core. The rules are those of `
 | ⌘↩ | the reply | send, after the undo delay (5 s); the status bar says "Sending in 5 s · z to cancel" |
 | ⇧⌘↩ | the reply | "Send, then file the conversation in": `a` Archive, `w` Waiting, `t` Todo, `s` leave it where it is (trial); the key (or a click) sends, Escape goes back to the text. On a new mail, "Send, then file this mail in": the mail written is what is filed, and `s` leaves it in Sent |
 | Escape | the reply | back to the mail; the reply goes to Drafts (here and on the server), and `r` on the mail, or `r` / Return on the draft in Drafts, reopens it |
-| ⌘⌫ | the reply | abandon the reply; `z` gives it back with its text |
-| ⇥ ⇧⇥ | the reply | next / previous field: To, Cc, Bcc (when shown), Subject, the text; in the text ⇥ is typed, ⇧⇥ goes up to the subject |
+| ⌘⎋ | the reply | abandon the reply; `z` gives it back with its text (⌘⌫ is the Mac's "delete to the start of the line", in the text) |
+| ⇧⌘T | the reply | text only ↔ formatted text ([editor.md](editor.md)) |
+| ⌃I | the reply | the AI menu ([ai.md](ai.md)); ⌘I is the italic |
+| ⇥ ⇧⇥ | the reply | next / previous field: To, Cc, Bcc (when shown), Subject, the text; in the text they indent or outdent a list item, and elsewhere ⇧⇥ goes back to the field before the text (⇥ types a tab in text only) |
 | ⌥⌘B | the reply | show the Bcc line and go to it |
 | ⌥⌘F | the reply | "Send from": choose the address, and so the account, the mail leaves from (a click on the line "From" too); below |
 | ⇧⌘A | the reply | attach files (the open panel); a drop on the reply, or ⌘V of files copied in the Finder, attaches too |
@@ -22,11 +24,7 @@ How a reply is written in the app and sent by the core. The rules are those of `
 
 The reply takes the reader's place (the whole window with one column), with the mode `EDT` in the status bar. From the top: the sending address with the key of the account that sends ("Me <me@x.fr> · perso"), To, Cc and Bcc (Bcc only when it has addresses or ⌥⌘B opened it), one tag per address, wrapping when long, the subject, "After sending: Archive" when the conversation will be filed, then the text. The cursor starts at the top, above the line introducing the quotation ("On Nov 7, 2026, at 10:12, Alice <alice@x.fr> wrote:", in the app's language) and the quoted mail.
 
-While the reply is open every key is text: letters, Return, Delete (⌥ a word), ⌦, the arrows (⌥ by word, ⌘ to the ends of the line, ⌘↑ ⌘↓ to the ends of the text, ⌥↑ ⌥↓ to the start or the end of the paragraph, then of the one before or after at each press, as in macOS), Home, End, `ctrl-a`, `ctrl-e`, ⌘V, and a click in the text puts the cursor there.
-
-As in any macOS text view, **Shift with any of these moves selects** (⇧←, ⇧⌥→ a word, ⇧⌘← to the start of the line, ⇧↓, ⇧⌥↓ paragraph after paragraph, ⇧⌘↓ to the end of the text…), as does a Shift-click; ⌘A selects everything. The selection is highlighted and the caret hidden. Typing or pasting replaces it, Delete removes it, ⌘C copies it, ⌘X cuts it; ← and → without Shift end it at its start or its end. Selecting by dragging the mouse is not there yet.
-
-**Other apps** that work on the selected text of the front app (Kerlig, a grammar checker, the Services menu) see the reply as any macOS text: its text view is the window's focused element, its selection is the reply's, and what the app writes back (through the accessibility API, a Service, or ⌘V) replaces the selection as if typed, and is saved. The view is not editable by AppKit (the keys stay the controller's): it hands what it receives to `GeekController.replaceComposeSelection`. ↑ and ↓ follow the lines as drawn, so they move inside a long wrapped paragraph.
+**The text is a standard Mac text field**: the editor of [editor.md](editor.md) (Tiptap, in a web view). Every key there is the Mac's (the arrows with ⌥ and ⌘, Shift to select, ⌘A ⌘C ⌘X ⌘V, ⌘Z ⇧⌘Z, the Emacs keys), and so are the mouse (a click, a double-click, dragging to select), spelling, dictation, Writing Tools, the Services menu and the apps that work on the selected text (Kerlig). The app takes only its own commands, all with a modifier (the table above): any other key goes to the editor. The editor reports the text after each pause of typing, and the app saves it then; ⌘↩, Escape and ⌘⎋ first ask the editor for the text as it is (`flush`), so the very last key typed is never lost.
 
 **The subject and the address being typed** are one-line fields with the same editing keys as any macOS field (`LineEdit`): ← →, ⌥← ⌥→ by word, ⌘← ⌘→ and Home, End to the ends, ⌫, ⌥⌫ a word, and Shift with any of these moves selects (⇧⌥← the word before the cursor, again the one before it). ⌘A selects the whole line, ⌘C copies the selection, ⌘X cuts it, ⌘V pastes on one line (a pasted list of addresses becomes addresses at once). Typing or pasting replaces the selection, ⌫ removes it, ← and → end it at its start or its end. In the subject, ⌘A selects the subject, not every mail of the list.
 
@@ -135,7 +133,7 @@ send_draft ─▶ action `send` (phase smtp), due after the undo delay ─▶ SM
      └── cancel_send ─────┘ (while queued)
 ```
 
-`send_draft` freezes the draft (`sending`), builds the MIME message (`text/plain; format=flowed`, lines cut at 72 characters for sending only, `quoted-printable` when not ASCII, headers encoded in RFC 2047) and queues an action `send` in `pending_action`, due after `compose.undo_send_seconds`.
+`send_draft` freezes the draft (`sending`), builds the MIME message (`text/plain; format=flowed`, lines cut at 72 characters for sending only, `quoted-printable` when not ASCII, headers encoded in RFC 2047) and queues an action `send` in `pending_action`, due after `compose.undo_send_seconds`. A formatted draft with some formatting leaves as `multipart/alternative`, its text then its HTML, cleaned and styled by the core ([editor.md](editor.md), "What leaves").
 
 Each account with `[smtp]` has a **sender**, a thread of its worker with its own connections (`nm-engine`, `sync/send.rs`). It sleeps until the next mail is due, or until a mail is queued or cancelled, then:
 
@@ -167,16 +165,18 @@ The app, the TUI and the CLI. An agent (MCP) or the web server get `FORBIDDEN`: 
 | Method | Parameters | Result |
 | --- | --- | --- |
 | `prepare_draft` | the same as `create_draft` | `{draft, reused, warning}`, writing nothing and never waiting for a write: the draft already started (`reused`), else the proposal (`id` 0, `revision` 0; a forward's files with negative ids) |
-| `create_draft` | `kind?` (`reply_all`, `reply_sender`, `forward`, `new`), `reply_to?`, `account?` (a new mail), `quote_header`, `body?` (the text typed in a proposal, or an abandoned text restored) | `{draft, reused, warning}` |
+| `create_draft` | `kind?` (`reply_all`, `reply_sender`, `forward`, `new`), `reply_to?`, `account?` (a new mail), `quote_header`, `body?` (the text typed in a proposal, or an abandoned text restored), `body_format?` (`html`: `body` is the editor's HTML) | `{draft, reused, warning}` |
+| `compose_formats` | none | `{fonts, sizes, colors, default_format}`: the closed lists of the formatted mode, and `compose.format` |
+| `html_to_text` | `html` | `{text, formatted}`: the text a formatted draft becomes in text only, the text part of the mail sent |
 | `open_draft`, `close_draft` | `id` | `DraftView`, nothing |
-| `update_draft` | `id`, `revision`, and what changed: `body?`, `subject?`, `to?`, `cc?`, `bcc?` (whole lists of `{addr, name}`), `from?` (`{account_id, addr}`, one of `list_senders`) | `{revision}`; `REVISION_CONFLICT` (1012), `DRAFT_SENDING` (1013), `INVALID_PARAMS` for an address that is not one (or not the account's), `CANNOT_SEND` (1015) for an account that cannot send |
+| `update_draft` | `id`, `revision`, and what changed: `body?` with `body_format?` (`text` or `html`), `subject?`, `to?`, `cc?`, `bcc?` (whole lists of `{addr, name}`), `from?` (`{account_id, addr}`, one of `list_senders`) | `{revision}`; `REVISION_CONFLICT` (1012), `DRAFT_SENDING` (1013), `INVALID_PARAMS` for an address that is not one (or not the account's), `CANNOT_SEND` (1015) for an account that cannot send |
 | `add_draft_attachment` | `id`, `revision`, `staged`, `filename`, `mime_type?` | `{revision, attachment, warning}`; `INVALID_PARAMS` (not a staged file, beyond 100 MB) |
 | `remove_draft_attachment` | `id`, `revision`, `attachment_id` | `{revision}` |
 | `parse_addresses` | `text` | `{addresses, invalid}` |
 | `suggest_recipients` | `query`, `limit?` (8, at most 50) | `{items}` of `{addr, name}` |
 | `list_senders` | none | `{items}` of `{account_id, account, addr, name}`: every address of every account that can send, in the order of the accounts |
 | `discard_draft` | `id` | the `DraftView` abandoned |
-| `send_draft` | `id`, `revision`, `body`, `after_send?` (`archive`, `waiting`, `todo`, `stay`; saved in the draft; absent: the one saved, else the preselection) | `{send_at}`; `CANNOT_SEND` (1015), also when the account that sends no longer can (`accounts.toml` changed) |
+| `send_draft` | `id`, `revision`, `body`, `body_format?`, `after_send?` (`archive`, `waiting`, `todo`, `stay`; saved in the draft; absent: the one saved, else the preselection) | `{send_at}`; `CANNOT_SEND` (1015), also when the account that sends no longer can (`accounts.toml` changed) |
 | `cancel_send` | `id` | `DraftView`, editable; `SEND_ALREADY_STARTED` (1014) |
 
 `prepare_draft` and `create_draft` return `BODY_PENDING` (1016) when the mail's body is not downloaded yet; the core asks for it first. Events: `DraftSent {draft_id, message_id, thread_id, moved_to, filing, undo}` (`filing`: a new mail's own filing, applied once the copy in Sent is made, and not covered by `undo`), `SendFailed {draft_id, reply_to, reason}`, `SendPartial {draft_id, refused}`.
@@ -186,6 +186,7 @@ The app, the TUI and the CLI. An agent (MCP) or the web server get `FORBIDDEN`: 
 | Key | Default | |
 | --- | --- | --- |
 | `compose.undo_send_seconds` | 5 | 0 to 30; 0 sends at once |
+| `compose.format` | `text` | `html`: a new mail, a reply and a forward start formatted |
 | `accounts.<key>.save_sent` | `auto` | `always`, `never` |
 | `accounts.<key>.smtp` | none | without it the account cannot send; its mails are answered from another account |
 
@@ -196,7 +197,7 @@ The app, the TUI and the CLI. An agent (MCP) or the web server get `FORBIDDEN`: 
 - `nm-store` (`tests/drafts.rs`): a reply, a forward (its files listed, not copied) and a new mail proposed on a connection made `query_only` (proof that nothing is written), refused as the draft would be, then written exactly as proposed; the first save writing the text typed; the draft prepared, reused, revisions, the filing chosen (kept after `cancel_send`, winning over the preselection, `stay` touching nothing), recipients and subject edited (one revision, refused addresses), Bcc in the envelope and the copy only (and its decision), suggestions by use, files attached and removed (refusals, sizes), a mail with files sent and its files collected, orphans swept after the grace delay, `R`, a forward with its files (and without raw file), a new mail dropped when blank, a mail of an account that cannot send answered from another (the account the mail was sent to preferred, queued and claimed on the account that sends, kept in its Sent, the conversation filed in its own account), the sender changed (one revision, back to the draft's own account); `outgoing.rs`: a staged file taken once by its content, only a plain name taken, the undo delay and `cancel_send`, `data_sent`, the acceptance in one transaction (Sent row, filing, decisions, undo), replay, the copy's UID and the attachment by the synchronization, a fresh Sent row kept by a pass, failures, partial refusals, restore, repair.
 - `nm-daemon` (`tests/send_rpc.rs`, `make imap-test`): the real core against Dovecot and Mailpit: a reply sent, copied to Sent, filed on the server, nothing twice after a pass, undo, on both servers; a mail of an archive account answered from the IMAP account (its From, its SMTP server, its Sent on the server); a send cancelled in time; a refused recipient; a refused login then the SMTP password saved; an agent refused.
 - `nm-daemon` (`tests/fake_send_rpc.rs`): `prepare_draft` answered while a write holds the lock (`NICEMAILER_TEST_WRITE_DELAY_MS`), nothing written, then `create_draft` with the text typed and `prepare_draft` reusing it, refused to an agent; an archive account refused, then pretending to send with `NICEMAILER_FAKE_NETWORK`; `after_send` through the socket (`stay` saved, `inbox` refused); `parse_addresses`, `suggest_recipients`, headers saved by `update_draft`; a staged file attached and sent; the kinds of draft (`R`, `F`, `c`, a blank new mail dropped at closing); an archive mail answered from an account of `accounts.toml` (`list_senders`, the sender changed, an archive account and a foreign address refused, the `send` queued on the account that sends, a new mail asked from the archive account).
-- App: `TextBufferTests`, `ComposeTests` (pure rules, among them `createParams` and `Composer.written`, and the keys through `GeekController` against `FakeCore`: `r` writes nothing, the first pause writes, Escape on a proposal leaves nothing, ⌘⌫ before the pause discards nothing, a proposal sent is written first, written once when two need it, a refusal leaves the text open), `UITests/proposal.uiscript`, `UITests/compose.uiscript`, `UITests/recipients.uiscript`, `UITests/attachments.uiscript`, `UITests/writing.uiscript` and `UITests/sender.uiscript`.
+- App: `ComposeTests` (pure rules, among them `createParams` and `Composer.written`, and the keys through `GeekController` against `FakeCore` and a fake editor, `FakeEditor`: `r` writes nothing, the first pause writes, Escape on a proposal leaves nothing, ⌘⎋ before the pause discards nothing, a proposal sent is written first, written once when two need it, a refusal leaves the text open, the editing keys left to the editor, ⌘↩ sending the last key typed, ⇧⌘T); the editor's own tests are in [editor.md](editor.md), `UITests/proposal.uiscript`, `UITests/compose.uiscript`, `UITests/recipients.uiscript`, `UITests/attachments.uiscript`, `UITests/writing.uiscript` and `UITests/sender.uiscript`.
 
 ## Pretending to send
 

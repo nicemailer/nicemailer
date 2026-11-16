@@ -253,11 +253,14 @@ pub struct ComposeSettings {
     /// Seconds a mail waits after `⌘↩` before it leaves, during which `z`
     /// cancels it; 0: at once, no cancelling.
     pub undo_send_seconds: u64,
+    /// The mode a new mail, a reply or a forward starts in: `text` (text
+    /// only, the default) or `html` (formatted), `edition.md`, section 3.
+    pub format: &'static str,
 }
 
 impl Default for ComposeSettings {
     fn default() -> Self {
-        ComposeSettings { undo_send_seconds: nm_core::compose::UNDO_SEND_DEFAULT_SECS }
+        ComposeSettings { undo_send_seconds: nm_core::compose::UNDO_SEND_DEFAULT_SECS, format: "text" }
     }
 }
 
@@ -854,6 +857,7 @@ impl<'t> Reader<'t> {
                         d.compose.undo_send_seconds,
                         0..=nm_core::compose::UNDO_SEND_MAX_SECS,
                     )?,
+                    format: self.choice(&mut t, "format", &["text", "html"])?.unwrap_or(d.compose.format),
                 };
                 self.finish(t);
                 c
@@ -1365,6 +1369,9 @@ retention_days = {retention_days}
 # Seconds a mail waits after Cmd-Return before it leaves, during which
 # z cancels it. 0 to 30; 0 sends at once.
 undo_send_seconds = {undo_send_seconds}
+# The mode a new mail starts in: "text" (text only) or "html"
+# (formatted, with the formatting bar). Shift-Cmd-T switches a draft.
+format = "{compose_format}"
 
 [ai]
 # Allow mail to be sent to an AI provider, to proofread a draft, summarize
@@ -1415,6 +1422,7 @@ history_days = {ai_history_days}
         auto_confirm_calls = d.ui.auto_confirm_calls,
         retention_days = d.audit.retention_days,
         undo_send_seconds = d.compose.undo_send_seconds,
+        compose_format = d.compose.format,
         ai_enabled = d.ai.enabled,
         ai_provider = d.ai.provider.as_str(),
         ai_model = d.ai.model,

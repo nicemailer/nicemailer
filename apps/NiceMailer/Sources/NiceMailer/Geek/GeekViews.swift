@@ -25,6 +25,19 @@ struct GeekRootView: View {
         .onAppear {
             let c = GeekController(model: model)
             controller = c
+            // The editor of the replies' text (`EditorWebView.swift`), made
+            // by the model once the first list is shown (`ensureEditor`).
+            // The model and the controller live as long as the app.
+            let m = model
+            model.makeEditor = { [weak c] in
+                let bridge = EditorBridge.shared
+                bridge.onChanged = { content in m.editorChanged(content) }
+                bridge.onState = { state in c?.editorStateChanged(state) }
+                bridge.onLeave = { c?.leaveText() }
+                bridge.onFiles = { urls in Task { await m.attach(urls) } }
+                return bridge
+            }
+            if model.startupPhase == .ready { model.ensureEditor() }
             // Swift note: the closure receives every key-down event of the
             // app before the views do. Returning nil swallows the event;
             // returning it lets AppKit go on (menus, ⌘ shortcuts).

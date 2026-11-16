@@ -24,6 +24,9 @@ let package = Package(
                 .copy("Resources/Fonts"),
                 // Dark Reader, run in the HTML reader (`DarkMode.swift`).
                 .copy("Resources/DarkReader"),
+                // The editor of a mail's text (`apps/editor`, built by
+                // `make editor`, never committed; `EditorWebView.swift`).
+                .copy("Resources/Editor"),
                 // The app's icon for the status bar (`scripts/make-icon.sh`).
                 .copy("Resources/Icon"),
                 .process("Resources/Localizable.xcstrings"),

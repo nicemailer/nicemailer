@@ -10,6 +10,7 @@
 //! are rendered by `cargo doc`.
 
 pub mod compose;
+pub mod formats;
 pub mod segments;
 
 use serde::{Deserialize, Serialize};

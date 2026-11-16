@@ -154,6 +154,6 @@ L'événement `DraftChanged {id}` signale une adoption ou un conflit, pour que l
 
 ## 10. Questions ouvertes
 
-- **Format de rédaction.** Texte brut, HTML, Markdown ? `body_format` le prévoit, mais l'éditeur n'est pas spécifié.
+- **Format de rédaction.** Proposé : texte seul ou mis en forme (HTML), dans le composant d'édition Tiptap (`edition.md`).
 - **`Message-ID` chez les autres clients.** Mail sur iOS, Thunderbird et les webmails conservent-ils le `Message-ID` d'un brouillon qu'ils modifient ? À tester : cela décide si l'adoption est automatique ou si l'utilisateur voit deux brouillons.
 - **Fenêtre ouverte longtemps.** Faut-il envoyer quand même une copie au serveur après une longue inactivité (une heure ?), pour qu'une fenêtre oubliée ne prive pas le téléphone du brouillon ?

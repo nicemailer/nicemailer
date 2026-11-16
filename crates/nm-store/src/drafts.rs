@@ -195,6 +195,25 @@ pub struct DraftEdit {
     /// The account that sends, and the address, checked by the daemon
     /// against `accounts.toml` (`reponse.md`, section 4 ter).
     pub from: Option<(i64, Mailbox)>,
+    /// `text` (text only) or `html` (formatted, the editor's HTML in
+    /// `body`), `edition.md`, section 3. Anything else is refused.
+    pub body_format: Option<String>,
+}
+
+/// Checks a draft's format and the size of its body: `text` or `html`,
+/// and an HTML body of at most `mail_html::MAX_HTML_BYTES`
+/// (`edition.md`, section 11).
+fn check_body(format: &str, body: &str) -> Result<()> {
+    match format {
+        "text" => Ok(()),
+        "html" if body.len() <= crate::mail_html::MAX_HTML_BYTES => Ok(()),
+        "html" => Err(StoreError::InvalidParams(format!(
+            "the formatted text is too big: {} bytes, {} at most",
+            body.len(),
+            crate::mail_html::MAX_HTML_BYTES
+        ))),
+        other => Err(StoreError::InvalidParams(format!("unknown body format: {other}"))),
+    }
 }
 
 /// The recipients of a draft, `(to, cc, bcc)`.
@@ -233,12 +252,12 @@ fn send_action(conn: &Connection, draft_id: i64) -> Result<Option<(i64, String, 
 /// The view of a draft, with its preselected filing and, if it is being
 /// sent, when it leaves.
 pub(crate) fn draft_view(conn: &Connection, id: i64) -> Result<DraftView> {
-    type Row = (i64, String, Option<String>, String, String, String, Option<i64>, i64, String, Option<i64>, Option<String>, Option<i64>, i64);
+    type Row = (i64, String, Option<String>, String, String, String, Option<i64>, i64, String, Option<i64>, Option<String>, Option<i64>, i64, String);
     let row: Option<Row> = conn
         .prepare_cached(
             "SELECT d.account_id, d.from_addr, d.from_name, d.recipients, d.subject, d.body, d.reply_to_message_id,
                     d.revision, d.state, m.thread_id, d.after_send, d.forward_of_message_id,
-                    coalesce(d.send_account_id, d.account_id)
+                    coalesce(d.send_account_id, d.account_id), d.body_format
                FROM draft d LEFT JOIN message m ON m.id = d.reply_to_message_id WHERE d.id = ?1",
         )?
         .query_row([id], |r| {
@@ -256,6 +275,7 @@ pub(crate) fn draft_view(conn: &Connection, id: i64) -> Result<DraftView> {
                 r.get(10)?,
                 r.get(11)?,
                 r.get(12)?,
+                r.get(13)?,
             ))
         })
         .optional()?;
@@ -273,6 +293,7 @@ pub(crate) fn draft_view(conn: &Connection, id: i64) -> Result<DraftView> {
         after_send,
         forward_of,
         send_account_id,
+        body_format,
     )) = row
     else {
         return Err(StoreError::NotFound(format!("brouillon {id}")));
@@ -294,6 +315,7 @@ pub(crate) fn draft_view(conn: &Connection, id: i64) -> Result<DraftView> {
         bcc: bcc.iter().map(view_of).collect(),
         subject,
         body,
+        body_format,
         attachments,
         revision,
         state,
@@ -644,10 +666,18 @@ impl Store {
     /// in Drafts: `c` then Escape leaves nothing behind. Returns whether
     /// it was.
     pub fn drop_if_blank(&mut self, id: i64) -> Result<bool> {
+        // A formatted draft's body is HTML: `<p></p>` is blank too. Its
+        // text is what counts, so the body is read and judged here.
+        let row: Option<(String, String)> =
+            self.conn.query_row("SELECT body, body_format FROM draft WHERE id = ?1", [id], |r| Ok((r.get(0)?, r.get(1)?))).optional()?;
+        let Some((body, format)) = row else { return Ok(false) };
+        let text = if format == "html" { crate::mail_html::to_text(&body).0 } else { body };
+        if !text.trim().is_empty() {
+            return Ok(false);
+        }
         Ok(self.conn.execute(
             "DELETE FROM draft WHERE id = ?1 AND reply_to_message_id IS NULL AND forward_of_message_id IS NULL
                 AND message_id IS NULL AND state = 'editing' AND recipients = '[]' AND trim(subject) = ''
-                AND trim(body, ' ' || char(10) || char(13) || char(9)) = ''
                 AND NOT EXISTS (SELECT 1 FROM draft_attachment WHERE draft_id = ?1)",
             [id],
         )? > 0)
@@ -683,11 +713,11 @@ impl Store {
     pub fn edit_draft(&mut self, id: i64, revision: i64, edit: &DraftEdit, source: Source) -> Result<i64> {
         let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let rev = editable(&tx, id, revision)?;
-        type Row = (String, String, String, i64, String, Option<String>, Option<i64>);
-        let (recipients, subject, body, account_id, from_addr, from_name, send_account): Row = tx.query_row(
-            "SELECT recipients, subject, body, account_id, from_addr, from_name, send_account_id FROM draft WHERE id = ?1",
+        type Row = (String, String, String, i64, String, Option<String>, Option<i64>, String);
+        let (recipients, subject, body, account_id, from_addr, from_name, send_account, body_format): Row = tx.query_row(
+            "SELECT recipients, subject, body, account_id, from_addr, from_name, send_account_id, body_format FROM draft WHERE id = ?1",
             [id],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?)),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?, r.get(7)?)),
         )?;
         let new_recipients = if edit.to.is_some() || edit.cc.is_some() || edit.bcc.is_some() {
             let (to, cc, bcc) = recipients_of(&recipients);
@@ -702,6 +732,8 @@ impl Store {
         };
         let new_subject = edit.subject.as_deref().map(compose::clean_subject).unwrap_or(subject);
         let new_body = edit.body.as_deref().unwrap_or(&body);
+        let new_format = edit.body_format.as_deref().unwrap_or(&body_format);
+        check_body(new_format, new_body)?;
         // The sender: NULL in `send_account_id` when the draft's own
         // account sends, so that the column only says "another account".
         let (new_send, new_from) = match &edit.from {
@@ -715,10 +747,11 @@ impl Store {
         let n = tx.execute(
             "UPDATE draft SET recipients = ?2, subject = ?3, body = ?4, revision = revision + 1,
                     date_modified = unixepoch(), modified_by = ?5,
-                    send_account_id = ?6, from_addr = ?7, from_name = ?8
+                    send_account_id = ?6, from_addr = ?7, from_name = ?8, body_format = ?9
               WHERE id = ?1 AND (recipients <> ?2 OR subject <> ?3 OR body <> ?4
-                                 OR send_account_id IS NOT ?6 OR from_addr <> ?7 OR from_name IS NOT ?8)",
-            params![id, new_recipients, new_subject, new_body, source.as_str(), new_send, new_from.addr, new_from.name],
+                                 OR send_account_id IS NOT ?6 OR from_addr <> ?7 OR from_name IS NOT ?8
+                                 OR body_format <> ?9)",
+            params![id, new_recipients, new_subject, new_body, source.as_str(), new_send, new_from.addr, new_from.name, new_format],
         )?;
         tx.commit()?;
         Ok(if n > 0 { rev + 1 } else { rev })
@@ -862,6 +895,7 @@ impl Store {
         id: i64,
         revision: i64,
         body: &str,
+        body_format: Option<&str>,
         after_send: Option<AfterSend>,
         delay_secs: u64,
         user_agent: &str,
@@ -869,7 +903,7 @@ impl Store {
     ) -> Result<(i64, ChangeSet)> {
         let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let rev = editable(&tx, id, revision)?;
-        save_body(&tx, id, rev, body, source)?;
+        save_body(&tx, id, rev, body, body_format, source)?;
         if let Some(choice) = after_send {
             tx.execute("UPDATE draft SET after_send = ?2 WHERE id = ?1", params![id, choice.as_str()])?;
         }
@@ -1349,14 +1383,14 @@ fn message_bytes(p: &Value, outgoing: Option<&OutgoingStore>) -> Option<(Vec<u8>
 /// the mail it answers. `draft_revision`: for a copy in Drafts
 /// (`X-NiceMailer-Draft-Revision`), `None` for the mail sent.
 fn build_draft(conn: &Connection, id: i64, user_agent: &str, draft_revision: Option<i64>, outgoing: Option<&OutgoingStore>) -> Result<Built> {
-    type Row = (i64, String, Option<String>, String, String, String, String, Option<i64>);
-    let (account_id, from_addr, from_name, recipients, subject, body, msgid, reply_to): Row = conn
+    type Row = (i64, String, Option<String>, String, String, String, String, Option<i64>, String);
+    let (account_id, from_addr, from_name, recipients, subject, body, msgid, reply_to, body_format): Row = conn
         .query_row(
             "SELECT coalesce(send_account_id, account_id), from_addr, from_name, recipients, subject, body, message_id_hdr,
-                    reply_to_message_id
+                    reply_to_message_id, body_format
                FROM draft WHERE id = ?1",
             [id],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?, r.get(7)?)),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?, r.get(7)?, r.get(8)?)),
         )
         .optional()?
         .ok_or_else(|| StoreError::NotFound(format!("brouillon {id}")))?;
@@ -1398,8 +1432,21 @@ fn build_draft(conn: &Connection, id: i64, user_agent: &str, draft_revision: Opt
         .zip(&data)
         .map(|((a, _), bytes)| compose::Attachment { filename: &a.filename, mime_type: &a.mime_type, data: bytes })
         .collect();
-    let copy = compose::build_message(&headers, &body, &files);
-    let mime = if bcc.is_empty() { copy.clone() } else { compose::build_message(&compose::Outgoing { bcc: &[], ..headers }, &body, &files) };
+    // A formatted draft (`edition.md`, section 10): its HTML cleaned and
+    // styled by the core, its text drawn from it. Without any formatting,
+    // it leaves as text only, exactly as a text draft.
+    let (text, html) = if body_format == "html" {
+        let o = crate::mail_html::outgoing(&body);
+        (o.text, o.formatted.then_some(o.html))
+    } else {
+        (body, None)
+    };
+    let copy = compose::build_message_with_html(&headers, &text, html.as_deref(), &files);
+    let mime = if bcc.is_empty() {
+        copy.clone()
+    } else {
+        compose::build_message_with_html(&compose::Outgoing { bcc: &[], ..headers }, &text, html.as_deref(), &files)
+    };
     Ok(Built { account_id, from_addr, rcpt, mime, copy, msgid, date: t, attached: !files.is_empty() })
 }
 
@@ -1507,6 +1554,7 @@ impl Plan {
             bcc: Vec::new(),
             subject: self.subject.clone(),
             body: self.body.clone(),
+            body_format: "text".into(),
             attachments,
             revision: 0,
             state: "editing".into(),
@@ -1715,12 +1763,16 @@ fn editable(tx: &Transaction, id: i64, revision: i64) -> Result<i64> {
     Ok(current)
 }
 
-/// Writes the body, a new revision if it changed; returns the revision.
-fn save_body(tx: &Transaction, id: i64, rev: i64, body: &str, source: Source) -> Result<i64> {
+/// Writes the body, and its format when given, a new revision if either
+/// changed; returns the revision.
+fn save_body(tx: &Transaction, id: i64, rev: i64, body: &str, body_format: Option<&str>, source: Source) -> Result<i64> {
+    let current: String = tx.query_row("SELECT body_format FROM draft WHERE id = ?1", [id], |r| r.get(0))?;
+    let format = body_format.unwrap_or(&current);
+    check_body(format, body)?;
     let n = tx.execute(
-        "UPDATE draft SET body = ?2, revision = revision + 1, date_modified = unixepoch(), modified_by = ?3
-          WHERE id = ?1 AND body <> ?2",
-        params![id, body, source.as_str()],
+        "UPDATE draft SET body = ?2, body_format = ?4, revision = revision + 1, date_modified = unixepoch(), modified_by = ?3
+          WHERE id = ?1 AND (body <> ?2 OR body_format <> ?4)",
+        params![id, body, source.as_str(), format],
     )?;
     Ok(if n > 0 { rev + 1 } else { rev })
 }

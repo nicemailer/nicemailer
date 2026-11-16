@@ -32,7 +32,7 @@ Le noyau ne connaît aucune interface : il expose un contrat unique, et chaque f
 
 1. **Noyau agnostique.** `nm-core` et `nm-engine` ne dépendent jamais d'une crate d'interface. Les dépendances vont toujours des adaptateurs vers le noyau.
 2. **Un seul contrat.** Commandes, requêtes et événements forment la seule surface partagée. Swift l'utilise comme le CLI, le TUI, le web et le MCP.
-3. **Aucune logique métier côté Swift.** Si le front décide du threading, des règles de tri ou des brouillons, cette logique sera dupliquée dans les autres interfaces. Swift fait de l'affichage et de l'interaction.
+3. **Aucune logique métier côté Swift.** Si le front décide du threading, des règles de tri ou des brouillons, cette logique sera dupliquée dans les autres interfaces. Swift fait de l'affichage et de l'interaction. Exception délimitée : l'édition du texte d'un mail est confiée à un composant d'édition web (Tiptap), commun à toutes les interfaces graphiques ; il porte la logique d'édition (schéma, collage), et le noyau garde la règle de ce qui est envoyé (`edition.md`, section 2).
 4. **Un seul propriétaire de l'état.** Un unique processus noyau possède la base SQLite et la synchro ; tous les clients lui parlent.
 5. **Vues prêtes à afficher.** Le contrat expose des structures de présentation (`ThreadSummary`, `MessageView`) plutôt que des lignes brutes de la base.
 6. **Pagination partout.** Jamais de « charge tout » : une fenêtre et un curseur, pour tenir la promesse de fluidité.

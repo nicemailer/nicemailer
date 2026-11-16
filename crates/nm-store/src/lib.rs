@@ -57,6 +57,7 @@ pub mod insert;
 pub mod ingest;
 pub mod library;
 pub mod links;
+pub mod mail_html;
 pub mod phones;
 pub mod codes;
 pub mod mbox;

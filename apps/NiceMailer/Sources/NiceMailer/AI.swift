@@ -405,7 +405,7 @@ enum AI {
     /// Where the cursor goes when the AI's text replaces `old`: before
     /// what changed, it stays; after it, it keeps its distance to the end;
     /// inside it, it goes to the end of the new words (the user was typing
-    /// there). Positions in `Character`s, those of `TextBuffer`.
+    /// there). Positions in `Character`s.
     static func cursorAfter(old: String, new: String, cursor: Int) -> Int {
         let a = Array(old), b = Array(new)
         var prefix = 0
@@ -578,16 +578,11 @@ enum AI {
     /// A quick reply put at the start of a reply: alone above the
     /// quotation of a new reply; an empty line apart from the words of a
     /// reply already started. The cursor right after it.
-    static func insertReply(_ text: String, into buffer: TextBuffer) -> TextBuffer {
-        var b = buffer
-        b.moveToStart()
-        b.insert(text)
-        if !b.text.dropFirst(text.count).hasPrefix("\n") {
-            b.insert("\n\n")
-            b.moveLeft()
-            b.moveLeft()
-        }
-        return b
+    static func insertReply(_ text: String, into body: String) -> (body: String, cursor: Int) {
+        var out = text
+        if !body.hasPrefix("\n") { out += "\n\n" }
+        out += body
+        return (out, text.utf16.count)
     }
 
     /// The files of a conversation the AI can read (`AttachmentView.readable`),

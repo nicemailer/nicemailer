@@ -192,6 +192,12 @@ enum Fixture {
                     "warning": NSNull()]
         case "remove_draft_attachment":
             return ["revision": (params["revision"] as? Int ?? 1) + 1]
+        case "html_to_text":
+            // A small stand-in for `mail_html::to_text`: a paragraph per
+            // line, the tags dropped; formatted when it has a `<strong>`.
+            let html = params["html"] as? String ?? ""
+            let text = html.replacingOccurrences(of: "</p>", with: "\n").replacingOccurrences(of: "<[^>]*>", with: "", options: .regularExpression)
+            return ["text": text.hasSuffix("\n") ? String(text.dropLast()) : text, "formatted": html.contains("<strong>")]
         case "parse_addresses":
             // A small stand-in for `compose::parse_address_list`: pieces
             // separated by commas, an address when it has an `@`.

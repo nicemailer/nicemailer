@@ -1,5 +1,5 @@
 ## Languages
-- Code comments (Rust and Swift, including doc comments `///` and `//!`) and the README are written in English.
+- Code comments (Rust, Swift and TypeScript, including doc comments `///`, `//!` and `/** */`) and the README are written in English.
 - French remains the reference language for the specifications (`specifications/`).
 - The CLI (`nicemailer`) is in English only: clap `///` comments on CLI arguments (clap turns them into `--help` text), output and error messages.
 - The Swift app is localized and follows the user's language preferences (macOS system or per-app language). English and French are supported by default; English is the fallback. No user-facing string is hard-coded in a single language: every UI string goes through localization (String Catalog).
@@ -11,9 +11,9 @@
 
 ## Comment style
 
-This is the owner's first Rust and Swift project. Comments should be detailed enough to teach:
+This is the owner's first Rust, Swift and TypeScript project. Comments should be detailed enough to teach:
 - explain why the code does what it does (design choice, spec rule, trade-off), not only what;
-- briefly explain language idioms the first time they appear in a file (ownership and borrowing, `Result`/`?`, lifetimes, traits, `async`/tokio; in Swift: optionals, `@Observable`, `@MainActor`, continuations, SwiftUI bindings), prefixed with "Rust note:" or "Swift note:" when it is a general language point;
+- briefly explain language idioms the first time they appear in a file (ownership and borrowing, `Result`/`?`, lifetimes, traits, `async`/tokio; in Swift: optionals, `@Observable`, `@MainActor`, continuations, SwiftUI bindings; in TypeScript: unions, `declare module`, `async`), prefixed with "Rust note:", "Swift note:" or "TypeScript note:" when it is a general language point;
 - point to the relevant spec file when the code implements a rule from it.
 
 ## Engineering priorities

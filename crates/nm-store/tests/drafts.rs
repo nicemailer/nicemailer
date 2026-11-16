@@ -107,7 +107,7 @@ impl Env {
 
     /// The draft sent and accepted by the server at once.
     fn send_now(&mut self, draft: &nm_api::DraftView, after: Option<AfterSend>) -> nm_store::ChangeSet {
-        let (_, _) = self.s.send_draft(draft.id, draft.revision, &format!("Merci.{}", draft.body), after, 0, "NiceMailer/test", Source::App).unwrap();
+        let (_, _) = self.s.send_draft(draft.id, draft.revision, &format!("Merci.{}", draft.body), None, after, 0, "NiceMailer/test", Source::App).unwrap();
         let jobs = self.s.send_claim(self.acc).unwrap();
         assert_eq!(jobs.len(), 1);
         let written = self.raw.write(&jobs[0].mime).unwrap();
@@ -210,7 +210,7 @@ fn sending_waits_for_the_undo_delay_and_can_be_cancelled() {
     let mut e = env();
     let m = e.deliver("inbox", &alice("m1@a.example"));
     let d = e.reply(m);
-    let (send_at, changes) = e.s.send_draft(d.id, d.revision, "Merci", None, 5, "NiceMailer/test", Source::App).unwrap();
+    let (send_at, changes) = e.s.send_draft(d.id, d.revision, "Merci", None, None, 5, "NiceMailer/test", Source::App).unwrap();
     assert!(changes.sending.contains(&e.acc));
     let v = e.s.get_draft(d.id).unwrap();
     assert_eq!(v.state, "sending");
@@ -230,7 +230,7 @@ fn sending_waits_for_the_undo_delay_and_can_be_cancelled() {
     assert_eq!(e.int("SELECT count(*) FROM pending_action WHERE state = 'cancelled'"), 1);
     assert_eq!(e.s.send_next_due(e.acc).unwrap(), None);
     // Sent again, and claimed once due.
-    e.s.send_draft(d.id, v.revision, "Merci !", None, 0, "NiceMailer/test", Source::App).unwrap();
+    e.s.send_draft(d.id, v.revision, "Merci !", None, None, 0, "NiceMailer/test", Source::App).unwrap();
     let jobs = e.s.send_claim(e.acc).unwrap();
     assert_eq!(jobs.len(), 1);
     let j = &jobs[0];
@@ -251,7 +251,7 @@ fn once_the_server_may_have_it_cancelling_is_refused() {
     let mut e = env();
     let m = e.deliver("inbox", &alice("m1@a.example"));
     let d = e.reply(m);
-    e.s.send_draft(d.id, d.revision, "x", None, 0, "t", Source::App).unwrap();
+    e.s.send_draft(d.id, d.revision, "x", None, None, 0, "t", Source::App).unwrap();
     let j = e.s.send_claim(e.acc).unwrap().remove(0);
     e.s.send_data_started(j.action_id).unwrap();
     // The connection broke after the end of the message: queued again,
@@ -412,7 +412,7 @@ fn the_filing_chosen_is_kept_and_wins() {
     let m = e.deliver("inbox", &alice("m@a.example"));
     let d = e.reply(m);
     assert_eq!((d.after_send_target, d.after_send), (Some(FolderRole::Archive), None));
-    let (_, _) = e.s.send_draft(d.id, d.revision, "Merci", Some(AfterSend::Waiting), 5, "NiceMailer/test", Source::App).unwrap();
+    let (_, _) = e.s.send_draft(d.id, d.revision, "Merci", None, Some(AfterSend::Waiting), 5, "NiceMailer/test", Source::App).unwrap();
     // `z`: the draft comes back with its choice, the preselection unchanged.
     let (v, _) = e.s.cancel_send(d.id, Source::App).unwrap();
     assert_eq!((v.after_send_target, v.after_send), (Some(FolderRole::Archive), Some(AfterSend::Waiting)));
@@ -423,7 +423,7 @@ fn the_filing_chosen_is_kept_and_wins() {
     // A choice made later replaces the earlier one.
     let n = e.deliver("inbox", &alice("n@a.example"));
     let d = e.reply(n);
-    e.s.send_draft(d.id, d.revision, "Merci", Some(AfterSend::Todo), 5, "NiceMailer/test", Source::App).unwrap();
+    e.s.send_draft(d.id, d.revision, "Merci", None, Some(AfterSend::Todo), 5, "NiceMailer/test", Source::App).unwrap();
     let (v, _) = e.s.cancel_send(d.id, Source::App).unwrap();
     e.send_now(&v, Some(AfterSend::Archive));
     assert_eq!(e.role_of(n), "archive");
@@ -465,7 +465,7 @@ fn a_definitive_failure_gives_the_draft_back() {
     let mut e = env();
     let m = e.deliver("inbox", &alice("m1@a.example"));
     let d = e.reply(m);
-    e.s.send_draft(d.id, d.revision, "Merci", None, 0, "t", Source::App).unwrap();
+    e.s.send_draft(d.id, d.revision, "Merci", None, None, 0, "t", Source::App).unwrap();
     let j = e.s.send_claim(e.acc).unwrap().remove(0);
     // Temporary: later, with the spool's delays.
     e.s.send_retry(j.action_id, "connection refused").unwrap();
@@ -479,7 +479,7 @@ fn a_definitive_failure_gives_the_draft_back() {
     assert_eq!((v.state.as_str(), v.body.as_str()), ("editing", "Merci"));
     assert_eq!(e.role_of(m), "inbox");
     // The 8th temporary failure is definitive.
-    e.s.send_draft(d.id, v.revision, "Merci", None, 0, "t", Source::App).unwrap();
+    e.s.send_draft(d.id, v.revision, "Merci", None, None, 0, "t", Source::App).unwrap();
     let j = e.s.send_claim(e.acc).unwrap().remove(0);
     e.s.conn().execute("UPDATE pending_action SET attempts = 7 WHERE id = ?1", [j.action_id]).unwrap();
     let c = e.s.send_retry(j.action_id, "timeout").unwrap();
@@ -506,7 +506,7 @@ fn partial_refusals_are_reported() {
     let mut e = env();
     let m = e.deliver("inbox", &alice("m1@a.example"));
     let d = e.reply(m);
-    e.s.send_draft(d.id, d.revision, "x", None, 0, "t", Source::App).unwrap();
+    e.s.send_draft(d.id, d.revision, "x", None, None, 0, "t", Source::App).unwrap();
     let j = e.s.send_claim(e.acc).unwrap().remove(0);
     let written = e.raw.write(&j.mime).unwrap();
     let c = e.s.send_accepted(j.action_id, &written, &["carol@c.example (550 unknown)".into()], &e.ids.own()).unwrap();
@@ -519,11 +519,11 @@ fn a_draft_without_recipient_is_not_sent() {
     let m = e.deliver("inbox", &alice("m1@a.example"));
     let d = e.reply(m);
     e.s.conn().execute("UPDATE draft SET recipients = '[]'", []).unwrap();
-    assert!(matches!(e.s.send_draft(d.id, d.revision, "x", None, 0, "t", Source::App), Err(StoreError::CannotSend(_))));
+    assert!(matches!(e.s.send_draft(d.id, d.revision, "x", None, None, 0, "t", Source::App), Err(StoreError::CannotSend(_))));
     assert_eq!(e.s.get_draft(d.id).unwrap().state, "editing");
     // A refused send saves nothing, not even the filing chosen. (A target
     // outside the four choices cannot be asked: `AfterSend` has none.)
-    assert!(e.s.send_draft(d.id, d.revision, "x", Some(AfterSend::Todo), 0, "t", Source::App).is_err());
+    assert!(e.s.send_draft(d.id, d.revision, "x", None, Some(AfterSend::Todo), 0, "t", Source::App).is_err());
     assert_eq!(e.s.get_draft(d.id).unwrap().after_send, None);
 }
 
@@ -547,7 +547,7 @@ fn a_frozen_draft_without_action_is_repaired_at_start() {
     let mut e = env();
     let m = e.deliver("inbox", &alice("m1@a.example"));
     let d = e.reply(m);
-    e.s.send_draft(d.id, d.revision, "x", None, 60, "t", Source::App).unwrap();
+    e.s.send_draft(d.id, d.revision, "x", None, None, 60, "t", Source::App).unwrap();
     assert_eq!(e.s.repair_drafts().unwrap(), 0);
     e.s.conn().execute("DELETE FROM pending_action", []).unwrap();
     assert_eq!(e.s.repair_drafts().unwrap(), 1);
@@ -799,7 +799,7 @@ fn bcc_is_in_the_envelope_and_the_copy_only() {
     let d = e.reply(m);
     let edit = DraftEdit { bcc: Some(vec![mb("boss@b.example", Some("Boss"))]), ..DraftEdit::default() };
     let rev = e.s.edit_draft(d.id, d.revision, &edit, Source::App).unwrap();
-    e.s.send_draft(d.id, rev, "Merci", None, 0, "NiceMailer/test", Source::App).unwrap();
+    e.s.send_draft(d.id, rev, "Merci", None, None, 0, "NiceMailer/test", Source::App).unwrap();
     let jobs = e.s.send_claim(e.acc).unwrap();
     let j = &jobs[0];
     assert!(j.rcpt.contains(&"boss@b.example".to_string()));
@@ -823,7 +823,7 @@ fn without_bcc_the_copy_is_the_mail() {
     let mut e = env();
     let m = e.deliver("inbox", &alice("m@a.example"));
     let d = e.reply(m);
-    e.s.send_draft(d.id, d.revision, "Merci", None, 0, "NiceMailer/test", Source::App).unwrap();
+    e.s.send_draft(d.id, d.revision, "Merci", None, None, 0, "NiceMailer/test", Source::App).unwrap();
     assert_eq!(e.int("SELECT count(*) FROM pending_action WHERE json_extract(payload, '$.mime_copy') IS NOT NULL"), 0);
     let jobs = e.s.send_claim(e.acc).unwrap();
     assert_eq!(jobs[0].copy, jobs[0].mime);
@@ -974,7 +974,7 @@ fn a_mail_with_attachments_is_sent_then_its_files_collected() {
     // A copy for Drafts carries the file.
     let draft_copy = e.s.draft_to_close(d.id, "t").unwrap().unwrap();
     assert_eq!(parse(&draft_copy).attachments.len(), 1);
-    e.s.send_draft(d.id, rev, "Ci-joint.", None, 0, "NiceMailer/test", Source::App).unwrap();
+    e.s.send_draft(d.id, rev, "Ci-joint.", None, None, 0, "NiceMailer/test", Source::App).unwrap();
     assert_eq!(e.int("SELECT count(*) FROM pending_action WHERE kind = 'send' AND json_extract(payload, '$.mime') IS NULL AND json_extract(payload, '$.mime_blob') IS NOT NULL"), 1);
     let jobs = e.s.send_claim(e.acc).unwrap();
     let j = &jobs[0];
@@ -1091,7 +1091,7 @@ fn a_forward_carries_the_mail_and_its_files() {
     let rev = e.s.edit_draft(d.id, d.revision, &DraftEdit { to: Some(vec![mb("dan@d.example", None)]), ..Default::default() }, Source::App).unwrap();
     // A filing asked for anyway (another client): a forward files
     // nothing, neither the conversation forwarded nor its own copy.
-    e.s.send_draft(d.id, rev, &d.body, Some(AfterSend::Waiting), 0, "t", Source::App).unwrap();
+    e.s.send_draft(d.id, rev, &d.body, None, Some(AfterSend::Waiting), 0, "t", Source::App).unwrap();
     let jobs = e.s.send_claim(e.acc).unwrap();
     let parsed = parse(&jobs[0].mime);
     assert!(parsed.in_reply_to.is_none());
@@ -1155,7 +1155,7 @@ fn a_new_mail_is_filed_once_its_copy_in_sent_is_made() {
     let rev = e.s.edit_draft(d.id, d.revision, &DraftEdit { to: Some(vec![mb("dan@d.example", None)]), ..Default::default() }, Source::App).unwrap();
     // Nothing to preselect: the conversation does not exist yet.
     assert_eq!(e.s.get_draft(d.id).unwrap().after_send_target, None);
-    e.s.send_draft(d.id, rev, "Bonjour Dan.", Some(AfterSend::Waiting), 0, "NiceMailer/test", Source::App).unwrap();
+    e.s.send_draft(d.id, rev, "Bonjour Dan.", None, Some(AfterSend::Waiting), 0, "NiceMailer/test", Source::App).unwrap();
     // The choice is kept in the draft, like a reply's.
     assert_eq!(e.s.get_draft(d.id).unwrap().after_send, Some(AfterSend::Waiting));
     let jobs = e.s.send_claim(e.acc).unwrap();
@@ -1200,7 +1200,7 @@ fn a_mail_i_sent_shows_who_it_went_to() {
     let d = e.s.create_new_draft(e.acc, &e.ids, None, Source::App).unwrap();
     use nm_store::drafts::DraftEdit;
     let rev = e.s.edit_draft(d.id, d.revision, &DraftEdit { to: Some(vec![mb("dan@d.example", None)]), ..Default::default() }, Source::App).unwrap();
-    e.s.send_draft(d.id, rev, "Bonjour Dan.", Some(AfterSend::Waiting), 0, "NiceMailer/test", Source::App).unwrap();
+    e.s.send_draft(d.id, rev, "Bonjour Dan.", None, Some(AfterSend::Waiting), 0, "NiceMailer/test", Source::App).unwrap();
     let jobs = e.s.send_claim(e.acc).unwrap();
     let written = e.raw.write(&jobs[0].copy).unwrap();
     let c = e.s.send_accepted(jobs[0].action_id, &written, &[], &e.ids.own()).unwrap();
@@ -1224,7 +1224,7 @@ fn a_new_mail_without_a_choice_stays_in_sent() {
     let d = e.s.create_new_draft(e.acc, &e.ids, None, Source::App).unwrap();
     use nm_store::drafts::DraftEdit;
     let rev = e.s.edit_draft(d.id, d.revision, &DraftEdit { to: Some(vec![mb("dan@d.example", None)]), ..Default::default() }, Source::App).unwrap();
-    e.s.send_draft(d.id, rev, "Bonjour.", None, 0, "NiceMailer/test", Source::App).unwrap();
+    e.s.send_draft(d.id, rev, "Bonjour.", None, None, 0, "NiceMailer/test", Source::App).unwrap();
     let jobs = e.s.send_claim(e.acc).unwrap();
     let written = e.raw.write(&jobs[0].copy).unwrap();
     let c = e.s.send_accepted(jobs[0].action_id, &written, &[], &e.ids.own()).unwrap();
@@ -1236,7 +1236,7 @@ fn a_new_mail_without_a_choice_stays_in_sent() {
     // The trial option `stay` on a new mail: the same, nothing moves.
     let d = e.s.create_new_draft(e.acc, &e.ids, None, Source::App).unwrap();
     let rev = e.s.edit_draft(d.id, d.revision, &DraftEdit { to: Some(vec![mb("eve@e.example", None)]), ..Default::default() }, Source::App).unwrap();
-    e.s.send_draft(d.id, rev, "Bonjour.", Some(AfterSend::Stay), 0, "NiceMailer/test", Source::App).unwrap();
+    e.s.send_draft(d.id, rev, "Bonjour.", None, Some(AfterSend::Stay), 0, "NiceMailer/test", Source::App).unwrap();
     let jobs = e.s.send_claim(e.acc).unwrap();
     let written = e.raw.write(&jobs[0].copy).unwrap();
     let c = e.s.send_accepted(jobs[0].action_id, &written, &[], &e.ids.own()).unwrap();
@@ -1308,7 +1308,7 @@ fn a_mail_of_an_account_that_cannot_send_is_answered_from_another() {
     assert!(matches!(e.s.create_reply_draft(third, false, &none, "x", None, Source::App), Err(StoreError::CannotSend(_))));
 
     // Sending: queued on the account that sends, which alone claims it.
-    e.s.send_draft(d.id, d.revision, "Merci.", None, 0, "NiceMailer/test", Source::App).unwrap();
+    e.s.send_draft(d.id, d.revision, "Merci.", None, None, 0, "NiceMailer/test", Source::App).unwrap();
     assert_eq!(e.int("SELECT account_id FROM pending_action WHERE kind = 'send'"), sales);
     assert!(e.s.send_claim(e.acc).unwrap().is_empty());
     let jobs = e.s.send_claim(sales).unwrap();
@@ -1353,7 +1353,7 @@ fn the_sender_of_a_draft_can_be_changed() {
     // The same again: nothing changes.
     assert_eq!(e.s.edit_draft(d.id, rev, &to_work, Source::App).unwrap(), rev);
     // The mail sent carries the new From, queued on `work`.
-    e.s.send_draft(d.id, rev, "Merci.", None, 30, "t", Source::App).unwrap();
+    e.s.send_draft(d.id, rev, "Merci.", None, None, 30, "t", Source::App).unwrap();
     assert_eq!(e.int("SELECT account_id FROM pending_action WHERE kind = 'send'"), work);
     let (v, changes) = e.s.cancel_send(d.id, Source::App).unwrap();
     assert_eq!(changes.sending, BTreeSet::from([work]));
@@ -1575,9 +1575,117 @@ fn a_draft_being_sent_is_not_deleted() {
     let nm_store::draft_copies::DraftWork::Append { action_id, .. } = work[0].clone() else { panic!() };
     e.s.draft_appended(action_id, Some(8)).unwrap();
     let v = e.s.get_draft(d.id).unwrap();
-    e.s.send_draft(d.id, v.revision, "Merci", None, 30, "t", Source::App).unwrap();
+    e.s.send_draft(d.id, v.revision, "Merci", None, None, 30, "t", Source::App).unwrap();
     let row: i64 = e.int("SELECT message_id FROM draft");
     let thread = thread_of(&e, m);
     assert!(matches!(delete_from_drafts(&mut e, thread), Err(StoreError::DraftSending)));
     assert_eq!(e.role_of(row), "drafts");
+}
+
+// ------------------------------------------------------------
+// Formatted drafts (`specifications/edition.md`, sections 3, 10, 11)
+// ------------------------------------------------------------
+
+/// The MIME message the sender would get for the draft, once sent.
+fn sent_mime(e: &mut Env, id: i64, revision: i64, body: &str, format: Option<&str>) -> String {
+    e.s.send_draft(id, revision, body, format, None, 0, "NiceMailer/test", Source::App).unwrap();
+    let jobs = e.s.send_claim(e.acc).unwrap();
+    assert_eq!(jobs.len(), 1);
+    String::from_utf8(jobs[0].mime.clone()).unwrap()
+}
+
+#[test]
+fn a_draft_starts_in_text_and_switches_to_html() {
+    let mut e = env();
+    let m = e.deliver("inbox", &alice("f1@a.example"));
+    let d = e.reply(m);
+    assert_eq!(d.body_format, "text");
+    let edit = nm_store::drafts::DraftEdit {
+        body: Some("<p>Merci</p>".into()),
+        body_format: Some("html".into()),
+        ..Default::default()
+    };
+    let rev = e.s.edit_draft(d.id, d.revision, &edit, Source::App).unwrap();
+    assert_eq!(rev, d.revision + 1);
+    let v = e.s.get_draft(d.id).unwrap();
+    assert_eq!((v.body.as_str(), v.body_format.as_str()), ("<p>Merci</p>", "html"));
+    // Only the format changing is a change too.
+    let back = nm_store::drafts::DraftEdit { body_format: Some("text".into()), ..Default::default() };
+    assert_eq!(e.s.edit_draft(d.id, rev, &back, Source::App).unwrap(), rev + 1);
+}
+
+#[test]
+fn an_unknown_format_or_a_huge_html_is_refused() {
+    let mut e = env();
+    let m = e.deliver("inbox", &alice("f2@a.example"));
+    let d = e.reply(m);
+    let bad = nm_store::drafts::DraftEdit { body_format: Some("markdown".into()), ..Default::default() };
+    assert!(matches!(e.s.edit_draft(d.id, d.revision, &bad, Source::App), Err(StoreError::InvalidParams(_))));
+    let huge = "x".repeat(nm_store::mail_html::MAX_HTML_BYTES + 1);
+    let edit = nm_store::drafts::DraftEdit { body: Some(huge), body_format: Some("html".into()), ..Default::default() };
+    assert!(matches!(e.s.edit_draft(d.id, d.revision, &edit, Source::App), Err(StoreError::InvalidParams(_))));
+    // Nothing was saved.
+    assert_eq!(e.s.get_draft(d.id).unwrap().revision, d.revision);
+}
+
+#[test]
+fn a_formatted_draft_leaves_as_text_and_html() {
+    let mut e = env();
+    let m = e.deliver("inbox", &alice("f3@a.example"));
+    let d = e.reply(m);
+    let html = "<p>Voici <strong>le plan</strong> :</p><ul><li><p>un</p></li><li><p>deux</p></li></ul><p><script>x()</script></p>";
+    let mime = sent_mime(&mut e, d.id, d.revision, html, Some("html"));
+    assert!(mime.contains("Content-Type: multipart/alternative;\r\n boundary="), "{mime}");
+    let text_at = mime.find("Content-Type: text/plain; charset=utf-8; format=flowed").unwrap();
+    let html_at = mime.find("Content-Type: text/html; charset=utf-8").unwrap();
+    // The preferred version, HTML, comes last (RFC 2046).
+    assert!(text_at < html_at);
+    assert!(mime.contains("Voici le plan :"));
+    assert!(mime.contains("- un"));
+    assert!(mime.contains("<strong>le plan</strong>"));
+    assert!(!mime.contains("script"), "the core cleaned the HTML: {mime}");
+}
+
+#[test]
+fn a_formatted_draft_without_formatting_leaves_as_text_only() {
+    let mut e = env();
+    let m = e.deliver("inbox", &alice("f4@a.example"));
+    let d = e.reply(m);
+    let html = "<p>Merci.</p><p></p><blockquote><p>Voici le devis.</p></blockquote>";
+    let mime = sent_mime(&mut e, d.id, d.revision, html, Some("html"));
+    assert!(!mime.contains("multipart/alternative"), "{mime}");
+    assert!(!mime.contains("text/html"));
+    assert!(mime.contains("Merci.\r\n\r\n> Voici le devis."), "{mime}");
+}
+
+#[test]
+fn a_formatted_draft_with_files_nests_the_alternative() {
+    let mut e = env();
+    let m = e.deliver("inbox", &alice("f5@a.example"));
+    let d = e.reply(m);
+    let staged = e._dir.path().join("incoming.noindex");
+    std::fs::create_dir_all(&staged).unwrap();
+    std::fs::write(staged.join("file-1"), b"%PDF-1.4 test").unwrap();
+    let (rev, _, _) = e.s.add_draft_attachment(d.id, d.revision, "file-1", "devis.pdf", Some("application/pdf"), Source::App).unwrap();
+    e.s.send_draft(d.id, rev, "<p><em>Ci-joint</em>.</p>", Some("html"), None, 0, "t", Source::App).unwrap();
+    let jobs = e.s.send_claim(e.acc).unwrap();
+    let mime = String::from_utf8(jobs[0].mime.clone()).unwrap();
+    let mixed = mime.find("multipart/mixed").unwrap();
+    let alternative = mime.find("multipart/alternative").unwrap();
+    let file = mime.find("devis.pdf").unwrap();
+    assert!(mixed < alternative && alternative < file, "{mime}");
+}
+
+#[test]
+fn a_new_formatted_mail_left_empty_is_dropped() {
+    let mut e = env();
+    let ids = e.ids.clone();
+    let d = e.s.create_new_draft(e.acc, &ids, None, Source::App).unwrap();
+    let edit = nm_store::drafts::DraftEdit { body: Some("<p></p><p> </p>".into()), body_format: Some("html".into()), ..Default::default() };
+    e.s.edit_draft(d.id, d.revision, &edit, Source::App).unwrap();
+    assert!(e.s.drop_if_blank(d.id).unwrap());
+    let d = e.s.create_new_draft(e.acc, &ids, None, Source::App).unwrap();
+    let edit = nm_store::drafts::DraftEdit { body: Some("<p>Salut</p>".into()), body_format: Some("html".into()), ..Default::default() };
+    e.s.edit_draft(d.id, d.revision, &edit, Source::App).unwrap();
+    assert!(!e.s.drop_if_blank(d.id).unwrap());
 }

@@ -30,7 +30,7 @@ struct LineEdit: Equatable {
     /// Shift (⇧← ⇧⌥→ ⇧⌘←…) keeps it and moves the cursor (`extend`);
     /// typing or pasting replaces the selection, ⌫ removes it, and an
     /// arrow alone ends it (← at its start, → at its end).
-    /// The same rules as the text of a reply (`TextBuffer`, "Selection").
+    /// The same rules as every macOS text field ("Selection").
     private(set) var anchor: Int?
 
     /// The whole text is selected, as in a macOS field reached with Tab or

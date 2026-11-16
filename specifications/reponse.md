@@ -16,7 +16,7 @@ Statut : validé pour la v1 (7 novembre 2026). Cette spécification décrit la p
 | Dans la v1 | Plus tard |
 | --- | --- |
 | Réponse à tous (`r`) ; réponse à l'expéditeur seul (`R`), transfert (`F`), nouveau mail (`c`) ajoutés en novembre 2026 (section 4 bis) | |
-| Texte seul, sans mise en forme | Mise en forme, HTML |
+| Texte seul, sans mise en forme | Mise en forme, HTML (`edition.md`, proposé) |
 | Brouillon enregistré en local (table `draft`) | Copie dans Drafts sur le serveur, `append_draft`, conflits entre appareils (`brouillons.md`, sections 5 et 6) |
 | Destinataires calculés par le noyau, puis lignes À, Cc et Cci éditables, objet éditable (ajoutés en novembre 2026, section 6) | |
 | Rangement présélectionné par le noyau, affiché ; choix manuel à l'envoi par `⇧⌘↩` (ajouté en novembre 2026, section 8) | |
@@ -83,7 +83,7 @@ La citation fait partie du texte éditable : l'utilisateur peut la raccourcir ou
 - **`c` : nouveau mail**, dans le contexte navigation, depuis la liste ou un mail. Il part du compte de la vue (dans la vue de tous les comptes, celui du mail sélectionné ; sinon, le premier compte d'`accounts.toml` qui peut envoyer), de son adresse principale. Tout est vide ; les touches vont à À. **Laissé vide** (aucun destinataire, objet, texte ni fichier), Échap l'abandonne au lieu de le garder dans Drafts (« Mail vide abandonné »).
 - **Quarantine** refuse `R` et `F` comme `r` : on range d'abord.
 - **Échap avec un texte qui n'est pas une adresse** dans une ligne de destinataires laisse le brouillon ouvert, pour corriger plutôt que perdre.
-- `z` après `⌘⌫` recrée un transfert ou un nouveau mail avec son texte, comme une réponse.
+- `z` après `⌘⎋` recrée un transfert ou un nouveau mail avec son texte, comme une réponse.
 
 ## 4 ter. Le compte d'envoi (ajouté en novembre 2026)
 
@@ -99,10 +99,10 @@ La citation fait partie du texte éditable : l'utilisateur peut la raccourcir ou
 
 La v1 applique la section 4 de `brouillons.md` sans le serveur :
 
-- **Proposition, puis création** (modifié en novembre 2026) : `r` (comme `R`, `F`, `c`) ouvre l'écran sur une proposition du noyau, `prepare_draft`, qui calcule l'adresse d'expédition, les destinataires, l'objet et le corps initial sans rien écrire : l'écran s'ouvre sans attendre l'écriture en base, que la synchronisation ou un import occupent parfois des secondes. La proposition n'a pas d'identifiant (`id` 0). `create_draft` crée la ligne `draft` (avec un `Message-ID` neuf, `reply_to_message_id`, et le texte tapé comme corps) quand il y a quelque chose à garder : la première pause de frappe, un fichier joint, l'envoi. Une proposition quittée sans rien écrire (Échap, `⌘⌫`) ne laisse rien ; la barre d'état dit « Rien d'écrit : aucun brouillon gardé ». Si un autre client a créé entre-temps la réponse au même mail, `create_draft` la renvoie, et le texte tapé ici la remplace à la sauvegarde suivante.
+- **Proposition, puis création** (modifié en novembre 2026) : `r` (comme `R`, `F`, `c`) ouvre l'écran sur une proposition du noyau, `prepare_draft`, qui calcule l'adresse d'expédition, les destinataires, l'objet et le corps initial sans rien écrire : l'écran s'ouvre sans attendre l'écriture en base, que la synchronisation ou un import occupent parfois des secondes. La proposition n'a pas d'identifiant (`id` 0). `create_draft` crée la ligne `draft` (avec un `Message-ID` neuf, `reply_to_message_id`, et le texte tapé comme corps) quand il y a quelque chose à garder : la première pause de frappe, un fichier joint, l'envoi. Une proposition quittée sans rien écrire (Échap, `⌘⎋`) ne laisse rien ; la barre d'état dit « Rien d'écrit : aucun brouillon gardé ». Si un autre client a créé entre-temps la réponse au même mail, `create_draft` la renvoie, et le texte tapé ici la remplace à la sauvegarde suivante.
 - **Rédaction** : le client envoie le corps (`update_draft`) à chaque pause de frappe (0,5 s sans frappe), et à la sortie de la zone de saisie. La révision protège contre l'écrasement (`brouillons.md`, section 8).
 - **Échap** : ramène au mail, et garde le brouillon. Le prochain `r` sur ce mail le rouvre (section 3).
-- **Abandon** : `⌘⌫` dans la zone de saisie abandonne le brouillon (`discard_draft`) et ramène au mail. `z` le restaure, avec son texte, tant que l'app n'a pas été quittée : l'app garde le texte abandonné et le propose de nouveau (`prepare_draft` avec `body`), écrit à la pause suivante avec un nouveau `Message-ID`.
+- **Abandon** : `⌘⎋` (`⌘⌫` jusqu'en novembre 2026, rendu au champ de texte, `edition.md`, section 7) dans la zone de saisie abandonne le brouillon (`discard_draft`) et ramène au mail. `z` le restaure, avec son texte, tant que l'app n'a pas été quittée : l'app garde le texte abandonné et le propose de nouveau (`prepare_draft` avec `body`), écrit à la pause suivante avec un nouveau `Message-ID`.
 - **Plantage** : le brouillon est en base à la dernière pause de frappe ; rien n'est perdu au-delà de 0,5 s de frappe. Une proposition sans frappe n'a rien à perdre : le noyau la recalcule au prochain `r`.
 
 **Fermeture : le dossier Drafts** (ajouté après la v1, novembre 2026). Échap ferme le brouillon (`close_draft`) : il devient une ligne du dossier Drafts, complète, dans la conversation du mail auquel il répond, et une action `append_draft` le copie dans le dossier Drafts du serveur (`brouillons.md`, sections 4 et 5). Le noyau qui redémarre ferme de même les brouillons modifiés depuis leur dernière copie. Dans Drafts, `r` ou Entrée rouvre le brouillon. Envoyé ou abandonné, il quitte Drafts, ici et sur le serveur. Des modifications faites ailleurs (section 6 de `brouillons.md`), seuls les cas simples sont traités : copie supprimée ou envoyée ailleurs. Les brouillons écrits sur le téléphone restent en lecture seule. Le détail est dans `docs/sending.md`, « Drafts ».
@@ -115,9 +115,9 @@ La zone de réponse **remplace le lecteur**, dans la même fenêtre. De haut en 
 2. **À**, **Cc** et **Cci** : une étiquette par adresse, qui passent à la ligne quand la largeur est remplie. Cci n'est affichée que si elle a des adresses ou si `⌥⌘B` l'a ouverte.
 3. **Objet**, modifiable.
 4. **Après l'envoi** : la cible du rangement (« Après l'envoi : Archive »), discrète. Absente quand la conversation reste en place (section 8).
-5. **La zone de saisie** : texte seul, police à chasse fixe de l'app, retour à la ligne visuel à la largeur de la zone, sans coupure dans le texte. Le curseur est en tête.
+5. **La zone de saisie** : le composant d'édition de `edition.md`, en texte seul (police à chasse fixe de l'app) ou mis en forme, retour à la ligne visuel à la largeur de la zone, sans coupure dans le texte. Le curseur est en tête.
 
-La barre d'état affiche le mode `EDT` (contexte « edition » de `ui.md`), et la ligne du titre rappelle les trois raccourcis ci-dessous. Le texte est édité par l'app elle-même, pas par un champ AppKit (`docs/sending.md`) : ↑ et ↓ suivent les lignes affichées, un clic place le curseur.
+La barre d'état affiche le mode `EDT` (contexte « edition » de `ui.md`), et la ligne du titre rappelle les trois raccourcis ci-dessous. Le texte est un champ de texte standard du Mac (`edition.md`, novembre 2026 ; il était édité par l'app elle-même) : ses touches, sa souris, ses intégrations sont celles du Mac.
 
 Raccourcis de la zone de réponse (contexte « edition » de `ui.md`) :
 
@@ -127,7 +127,7 @@ Raccourcis de la zone de réponse (contexte « edition » de `ui.md`) :
 | `⇧⌘↩` | Choisir le rangement, puis envoyer (section 8) |
 | `⌥⌘F` | Choisir l'adresse, donc le compte, d'envoi (section 4 ter) |
 | `Échap` | Revenir au mail, garder le brouillon |
-| `⌘⌫` | Abandonner le brouillon |
+| `⌘⎋` | Abandonner le brouillon |
 
 Les touches d'une lettre (navigation, dossiers) sont du texte tapé dans ce contexte : aucune ne déclenche de commande.
 
@@ -301,7 +301,7 @@ Ces commandes sont réservées à l'app, à la TUI et au CLI : un agent (MCP) ou
 - **`nm-store`** : cycle de vie du brouillon (création, réutilisation, révision, abandon et restauration, `sending` non modifiable), réponse depuis un autre compte (file, Sent et rangement chacun dans son compte), expéditeur changé, fin d'envoi en une transaction (ligne Sent, rangement, décisions, suppression du brouillon), rejouée sans doublon.
 - **`nm-engine`**, contre le Dovecot de `dev/` avec un service de soumission SMTP : envoi réel, copie dans Sent avec `APPENDUID`, rattachement par la synchronisation sans doublon, échec temporaire puis reprise, `5xx` définitif, destinataire refusé, délai d'annulation et `cancel_send`, plantage pendant le délai.
 - **`nm-daemon`** : les commandes par le socket, erreurs et événements.
-- **App** : tests unitaires (`GeekController` contre `FakeCore` : `r`, Échap, `⌘↩`, `⌘⌫`, `z` pendant le délai et après) et scénario `.uiscript` (répondre, taper, envoyer, voir la conversation rangée).
+- **App** : tests unitaires (`GeekController` contre `FakeCore` : `r`, Échap, `⌘↩`, `⌘⎋`, `z` pendant le délai et après) et scénario `.uiscript` (répondre, taper, envoyer, voir la conversation rangée).
 
 ## 14. Questions ouvertes
 

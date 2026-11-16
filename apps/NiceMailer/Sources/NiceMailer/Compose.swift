@@ -25,6 +25,9 @@ struct DraftView: Decodable, Equatable {
     let bcc: [AddressView]
     let subject: String
     let body: String
+    /// `text`: `body` is the text; `html`: it is the HTML of the editor's
+    /// formatted mode (`edition.md`, section 3). Absent from an older core.
+    var bodyFormat: String?
     let attachments: [DraftAttachmentView]
     let revision: Int
     /// `editing` or `sending`.
@@ -76,6 +79,13 @@ enum DraftKind: String {
 
 struct UpdateDraftResult: Decodable {
     let revision: Int
+}
+
+/// The result of `html_to_text`: the text of a formatted draft, and whether
+/// it had formatting that text only loses (`edition.md`, section 3).
+struct HtmlToTextResult: Decodable {
+    let text: String
+    let formatted: Bool
 }
 
 struct SendDraftResult: Decodable {
@@ -181,12 +191,6 @@ struct ComposeHeaders: Equatable {
 /// written (`create_draft`, with the text typed) only when there is
 /// something to keep: the first pause of typing, a file attached, the
 /// sending (`AppModel.ensureWritten`). Closed before, it leaves nothing.
-/// The text of a reply before and after an AI proposal was accepted.
-struct AIUndo: Equatable {
-    let before: String
-    let after: String
-}
-
 struct Composer: Equatable {
     var draft: DraftView
     /// Which opening of the reply screen this is: the answers of the core
@@ -197,12 +201,18 @@ struct Composer: Equatable {
     /// quotation: what `create_draft` needs to write a proposed draft.
     var kind: DraftKind
     var quoteHeader: String
-    var buffer: TextBuffer
+    /// The text (text only) or the HTML (formatted) of the draft, as the
+    /// editor last gave it (`EditorBridge`, `changed` and `flushed`): the
+    /// editor holds the text being typed, the model what it reported.
+    var body: String
+    /// The mode of `body`.
+    var format: ComposeFormat
     /// The revision of the draft the text was last saved at: `update_draft`
     /// sends it, and gets the next one back.
     var revision: Int
-    /// The text last saved, to save only what changed.
+    /// The text and its mode last saved, to save only what changed.
     var saved: String
+    var savedFormat: ComposeFormat
     /// The recipients and the subject as edited, and as last saved.
     var headers: ComposeHeaders
     var savedHeaders: ComposeHeaders
@@ -223,20 +233,16 @@ struct Composer: Equatable {
     /// the one ↑ ↓ highlighted.
     var suggestions: [AddressView] = []
     var suggestionIndex: Int?
-    /// The text before and after the last AI proposal accepted, for ⌘Z
-    /// (`AppModel.undoAI`): undone only while the text is still the one the
-    /// AI gave, so that ⌘Z never erases what was typed since.
-    var aiUndo: AIUndo?
 
     init(draft: DraftView, kind: DraftKind? = nil, quoteHeader: String = "") {
         self.draft = draft
         self.kind = kind ?? DraftKind(view: draft.kind)
         self.quoteHeader = quoteHeader
-        // The cursor at the start: the reply is written above the
-        // quotation (`reponse.md`, section 4).
-        buffer = TextBuffer(draft.body, cursor: 0)
+        body = draft.body
+        format = ComposeFormat(rawValue: draft.bodyFormat ?? "text") ?? .text
         revision = draft.revision
-        saved = buffer.text
+        saved = draft.body
+        savedFormat = format
         headers = ComposeHeaders(draft)
         savedHeaders = headers
         subjectLine = LineEdit(draft.subject)
@@ -251,10 +257,11 @@ struct Composer: Equatable {
     /// it in Drafts (`drop_if_blank`).
     var isBlank: Bool {
         draft.kind == "new" && headers.all.isEmpty && headers.subject.trimmingCharacters(in: .whitespaces).isEmpty
-            && buffer.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachments.isEmpty && line.text.isEmpty
+            && Compose.visibleText(body, format).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && attachments.isEmpty && line.text.isEmpty
     }
 
-    var isDirty: Bool { buffer.text != saved || headers != savedHeaders }
+    var isDirty: Bool { body != saved || format != savedFormat || headers != savedHeaders }
 
     /// The draft is a row of the core: a proposal has id 0 (SQLite ids
     /// start at 1). Until then, no call that takes an id can be made.
@@ -272,6 +279,7 @@ struct Composer: Equatable {
         draft = d
         revision = d.revision
         saved = d.body
+        savedFormat = ComposeFormat(rawValue: d.bodyFormat ?? "text") ?? .text
         savedHeaders = ComposeHeaders(d)
         attachments = d.attachments
         attachmentIndex = min(attachmentIndex, max(0, attachments.count - 1))
@@ -339,6 +347,45 @@ struct Composer: Equatable {
 /// Rules and texts of the reply screen, as pure functions (tested without
 /// a core).
 enum Compose {
+    /// The text a reader sees in a body: itself in text only; in the
+    /// formatted mode, the HTML without its tags (for "is it blank?" only:
+    /// the core makes the real text, `html_to_text`).
+    static func visibleText(_ body: String, _ format: ComposeFormat) -> String {
+        guard format == .html else { return body }
+        let noTags = body.replacingOccurrences(of: "<[^>]*>", with: " ", options: .regularExpression)
+        return noTags.replacingOccurrences(of: "&nbsp;", with: " ").replacingOccurrences(of: "&[a-zA-Z#0-9]+;", with: "x", options: .regularExpression)
+    }
+
+    /// The part of `old` that `new` replaced, in UTF-16 units of `old` (the
+    /// units of the editor's text and of `NSString`), and the new words:
+    /// what a change of the AI the core applied does to the text, sent to
+    /// the editor as one step of undo (`EditorBridge.replaceRange`).
+    static func changedRange(old: String, new: String) -> (start: Int, end: Int, text: String) {
+        let a = Array(old.utf16), b = Array(new.utf16)
+        if a == b { return (a.count, a.count, "") }
+        var prefix = 0
+        while prefix < a.count, prefix < b.count, a[prefix] == b[prefix] { prefix += 1 }
+        var suffix = 0
+        while suffix < a.count - prefix, suffix < b.count - prefix, a[a.count - 1 - suffix] == b[b.count - 1 - suffix] { suffix += 1 }
+        // Never inside a surrogate pair (an emoji is two units): the cut
+        // moves to the edge of the character.
+        if prefix > 0, prefix < a.count, UTF16.isTrailSurrogate(a[prefix]) { prefix -= 1 }
+        if prefix > 0, prefix < b.count, UTF16.isTrailSurrogate(b[prefix]) { prefix -= 1 }
+        if suffix > 0, a.count - suffix < a.count, UTF16.isTrailSurrogate(a[a.count - suffix]) { suffix -= 1 }
+        if suffix > 0, b.count - suffix < b.count, UTF16.isTrailSurrogate(b[b.count - suffix]) { suffix -= 1 }
+        suffix = min(suffix, a.count - prefix, b.count - prefix)
+        // Whole words: "jeudi" rewritten "vendredi" shares "di", but the
+        // word changed, and the cursor goes after it, not inside.
+        func isWord(_ u: UInt16) -> Bool {
+            guard let s = Unicode.Scalar(u) else { return true }  // half of a pair
+            return CharacterSet.alphanumerics.contains(s)
+        }
+        while prefix > 0, isWord(a[prefix - 1]) { prefix -= 1 }
+        while suffix > 0, isWord(a[a.count - suffix]) { suffix -= 1 }
+        let text = String(decoding: b[prefix..<(b.count - suffix)], as: UTF16.self)
+        return (prefix, a.count - suffix, text)
+    }
+
     /// Delay without typing before the text is saved (`reponse.md`,
     /// section 5): a crash loses at most this much typing.
     static let saveDelay: Duration = .milliseconds(500)
@@ -400,7 +447,8 @@ enum Compose {
     /// the core would write. The recipients, the subject and the sender
     /// edited meanwhile follow with `update_draft` (`saveParams`).
     static func createParams(_ c: Composer) -> [String: Any] {
-        var p: [String: Any] = ["kind": c.kind.rawValue, "quote_header": c.quoteHeader, "body": c.buffer.text]
+        var p: [String: Any] = ["kind": c.kind.rawValue, "quote_header": c.quoteHeader, "body": c.body,
+                                "body_format": c.format.rawValue]
         switch c.kind {
         case .new: p["account"] = c.draft.accountId
         case .forward: if let m = c.draft.forwardOf { p["reply_to"] = m }
@@ -414,7 +462,10 @@ enum Compose {
     static func saveParams(_ c: Composer) -> [String: Any] {
         // Only for a draft written (`AppModel.ensureWritten` first).
         var p: [String: Any] = ["id": c.draft.id, "revision": c.revision]
-        if c.buffer.text != c.saved { p["body"] = c.buffer.text }
+        if c.body != c.saved || c.format != c.savedFormat {
+            p["body"] = c.body
+            p["body_format"] = c.format.rawValue
+        }
         let h = c.headers, s = c.savedHeaders
         let list = { (l: [AddressView]) -> [[String: Any]] in l.map { ["addr": $0.addr, "name": $0.name ?? NSNull()] } }
         if h.to != s.to { p["to"] = list(h.to) }

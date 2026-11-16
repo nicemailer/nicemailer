@@ -32,8 +32,8 @@
 use std::sync::Arc;
 
 use nm_api::{
-    AddDraftAttachmentParams, AddDraftAttachmentResult, AddressView, CreateDraftParams, CreateDraftResult, DraftIdParams, DraftKind, DraftView,
-    ListSendersResult, ParseAddressesParams, ParseAddressesResult, RemoveDraftAttachmentParams, RpcError, SendDraftParams, SendDraftResult,
+    AddDraftAttachmentParams, AddDraftAttachmentResult, AddressView, ColorView, ComposeFormatsResult, CreateDraftParams, CreateDraftResult,
+    DraftIdParams, DraftKind, DraftView, FontView, HtmlToTextParams, HtmlToTextResult, ListSendersResult, SizeView, ParseAddressesParams, ParseAddressesResult, RemoveDraftAttachmentParams, RpcError, SendDraftParams, SendDraftResult,
     SenderView, SuggestRecipientsParams, SuggestRecipientsResult, UpdateDraftParams, UpdateDraftResult, error_code,
 };
 use nm_core::Source;
@@ -240,6 +240,22 @@ pub async fn prepare(core: &Arc<Core>, p: CreateDraftParams, source: Source) -> 
 /// a draft `prepare_draft` proposed, with the text typed in `body`.
 pub async fn create(core: &Arc<Core>, p: CreateDraftParams, source: Source) -> Result<CreateDraftResult, RpcError> {
     human(source)?;
+    // A first save in the formatted mode: the draft is written, then its
+    // body saved as HTML in one more revision. The rules that write a
+    // draft (the quotation, the recipients) stay those of a text draft.
+    if p.body_format.as_deref() == Some("html")
+        && let Some(html) = p.body.clone()
+    {
+        let mut result = Box::pin(create(core, CreateDraftParams { body: Some(String::new()), body_format: None, ..p }, source)).await?;
+        let (id, revision) = (result.draft.id, result.draft.revision);
+        let edit = DraftEdit { body: Some(html), body_format: Some("html".into()), ..DraftEdit::default() };
+        result.draft = with_store(core, move |s| {
+            s.edit_draft(id, revision, &edit, source)?;
+            s.get_draft(id)
+        })
+        .await?;
+        return Ok(result);
+    }
     if p.kind == DraftKind::New {
         let (account_id, s) = new_mail_account(core, p.account).await?;
         let draft = with_store(core, move |st| st.create_new_draft(account_id, &s.identities, p.body.as_deref(), source)).await?;
@@ -338,7 +354,15 @@ pub async fn update(core: &Arc<Core>, p: UpdateDraftParams, source: Source) -> R
         }
         None => None,
     };
-    let edit = DraftEdit { body: p.body, subject: p.subject, to: list(p.to), cc: list(p.cc), bcc: list(p.bcc), from };
+    let edit = DraftEdit {
+        body: p.body,
+        subject: p.subject,
+        to: list(p.to),
+        cc: list(p.cc),
+        bcc: list(p.bcc),
+        from,
+        body_format: p.body_format,
+    };
     let revision = with_store(core, move |s| s.edit_draft(p.id, p.revision, &edit, source)).await?;
     Ok(UpdateDraftResult { revision })
 }
@@ -358,6 +382,29 @@ pub async fn remove_attachment(core: &Arc<Core>, p: RemoveDraftAttachmentParams,
     human(source)?;
     let revision = with_store(core, move |s| s.remove_draft_attachment(p.id, p.revision, p.attachment_id, source)).await?;
     Ok(UpdateDraftResult { revision })
+}
+
+/// `compose_formats`: the lists of `nm_core::formats`, and the mode a
+/// draft starts in (`compose.format`).
+pub fn compose_formats(core: &Arc<Core>) -> ComposeFormatsResult {
+    use nm_core::formats::{COLORS, FONTS, SIZES};
+    let default_format = core.engine.lock().unwrap().config().compose.format.to_string();
+    ComposeFormatsResult {
+        fonts: FONTS.iter().map(|f| FontView { name: f.name.into(), stack: f.stack.into() }).collect(),
+        sizes: SIZES.iter().map(|s| SizeView { key: s.key.into(), css: s.css.into() }).collect(),
+        colors: COLORS.iter().map(|c| ColorView { key: c.key.into(), hex: c.hex.into() }).collect(),
+        default_format,
+    }
+}
+
+/// `html_to_text`: the text a formatted draft becomes in text only, the
+/// same as its text part when sent (`nm_store::mail_html`).
+pub fn html_to_text(p: HtmlToTextParams) -> Result<HtmlToTextResult, RpcError> {
+    if p.html.len() > nm_store::mail_html::MAX_HTML_BYTES {
+        return Err(RpcError::new(error_code::INVALID_PARAMS, "the formatted text is too big"));
+    }
+    let (text, formatted) = nm_store::mail_html::to_text(&p.html);
+    Ok(HtmlToTextResult { text, formatted })
 }
 
 /// `parse_addresses`: a pure function of the text (`compose::parse_address_list`),
@@ -438,7 +485,7 @@ pub async fn send(core: &Arc<Core>, p: SendDraftParams, source: Source) -> Resul
     let ua = USER_AGENT;
     let core2 = core.clone();
     let send_at = with_store(core, move |s| {
-        let (at, changes) = s.send_draft(p.id, p.revision, &p.body, p.after_send, delay, ua, source)?;
+        let (at, changes) = s.send_draft(p.id, p.revision, &p.body, p.body_format.as_deref(), p.after_send, delay, ua, source)?;
         core2.events.lock().unwrap().emit(&changes);
         sync::wake(&core2, &changes);
         Ok(at)

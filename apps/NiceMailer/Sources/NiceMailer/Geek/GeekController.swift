@@ -270,13 +270,28 @@ final class GeekController {
         (NSApp.keyWindow ?? NSApp.mainWindow)?.toggleFullScreen(nil)
     }
 
-    /// The text view of the reply (`ComposerTextView`), to move the
-    /// cursor by the lines as drawn (↑ ↓ in a wrapped paragraph). `nil` in
-    /// the unit tests: the lines of the text are used then.
-    weak var composerView: ComposerNSTextView?
-    /// Horizontal position ↑ and ↓ aim for in the drawn lines, kept while
-    /// moving vertically.
-    @ObservationIgnored var composeGoalX: CGFloat?
+    /// The view of the reply's text: the editor's web view
+    /// (`EditorBridge`), or an empty view with a fake editor (the tests).
+    var editorView: NSView {
+        if let bridge = model.editor as? EditorBridge { return bridge.webView }
+        return placeholderEditorView
+    }
+    @ObservationIgnored private lazy var placeholderEditorView = NSView()
+
+    /// The editor of the reply's text says what is under its cursor: a
+    /// click in the text, while another field had the keys, gives them to
+    /// the text.
+    /// `⇧⇥` outside a list in the text (the editor's `leave`): the keys go
+    /// to the field before the text, as ⇧⇥ does from any field.
+    func leaveText() {
+        guard let c = model.composer else { return }
+        focusCompose(c.field(after: .body, backward: true))
+    }
+
+    func editorStateChanged(_ s: EditorStateView) {
+        model.editorState = s
+        if s.focused, let c = model.composer, c.focus != .body { focusCompose(.body) }
+    }
 
     /// Display choices of the open thread.
     var readerState: ThreadDisplay.State {
@@ -1345,7 +1360,7 @@ final class GeekController {
 
     /// The key the AI block of the status bar reminds of: ⌘I while a reply
     /// is written (a letter alone would be typed in it), `a` elsewhere.
-    nonisolated static func aiKeyLabel(composing: Bool) -> String { composing ? "⌘I" : "a" }
+    nonisolated static func aiKeyLabel(composing: Bool) -> String { composing ? "⌃I" : "a" }
 
     func openMenuFromStatusBar(_ prefix: Prefix) {
         model.flash = nil
@@ -1739,15 +1754,21 @@ final class GeekController {
             handleAIKey(event, run: run)
             return true
         }
-        // ⌘I: the AI menu of the reply (`ia.md`, section 11): a letter
-        // alone would be typed, and ctrl-a is already "start of line".
-        if command, !option, !control, event.charactersIgnoringModifiers?.lowercased() == "i" {
+        // ⌃I: the AI menu of the reply (`ia.md`, section 11; `edition.md`,
+        // section 7): ⌘I is the Mac's italic, in the editor.
+        if control, !command, !option, event.charactersIgnoringModifiers?.lowercased() == "i" {
             openAI()
             return true
         }
-        // ⌘Z right after an AI proposal accepted gives the text back;
-        // otherwise it goes on to the menus, as before.
-        if command, !option, !control, event.charactersIgnoringModifiers?.lowercased() == "z", model.undoAI() {
+        // ⌘⎋: the draft is abandoned. ⌘⌫ is the Mac's "delete to the start
+        // of the line", in the editor; ⌥⎋ is its "Speak selection".
+        if code == KeyCode.escape, command {
+            Task { await model.discardComposer() }
+            return true
+        }
+        // ⇧⌘T: text only ↔ formatted, as "Make Plain Text" in Mail.
+        if command, mods.contains(.shift), !option, !control, event.charactersIgnoringModifiers?.lowercased() == "t" {
+            Task { await model.toggleComposeFormat() }
             return true
         }
         // ⇧⌘↩: choose where the conversation goes, then send. Only when
@@ -1771,6 +1792,10 @@ final class GeekController {
             Task { await model.sendComposer() }
             return true
         }
+        // A dialog of the editor (the link, a menu of the bar) has Escape.
+        if code == KeyCode.escape, model.composer?.focus == .body, model.editorState.modal {
+            return false
+        }
         if code == KeyCode.escape {
             // Suggestions shown: Escape closes them, and only them.
             if model.composer?.suggestions.isEmpty == false {
@@ -1779,10 +1804,6 @@ final class GeekController {
                 return true
             }
             model.leaveComposer()
-            return true
-        }
-        if code == KeyCode.delete, command {
-            Task { await model.discardComposer() }
             return true
         }
         // ⇧⌘A: attach files (as in Mail).
@@ -1801,11 +1822,12 @@ final class GeekController {
             focusCompose(.bcc)
             return true
         }
-        guard var c = model.composer else { return true }
+        guard let c = model.composer else { return true }
         let shift = mods.contains(.shift)
         // Tab and ⇧Tab go from field to field (`Composer.fields`); in the
-        // text, Tab is typed (an indent), ⇧Tab goes back to the subject.
-        if code == KeyCode.tab, !command, !control, c.focus != .body || shift {
+        // text, they are the editor's: an indent in a list, ⇧⇥ elsewhere
+        // back to the subject (the editor's `leave`).
+        if code == KeyCode.tab, !command, !control, c.focus != .body {
             focusCompose(c.field(after: c.focus, backward: shift))
             return true
         }
@@ -1820,115 +1842,43 @@ final class GeekController {
             handleRecipientKey(event, mods: mods)
             return true
         case .body:
-            break
+            return handleBodyKey(event, mods: mods)
         }
-        var changed = false
-        var vertical = false
-        // A move key: with Shift it extends the selection; without, it ends
-        // it, ← and → by going to its start or end and no further, the
-        // other moves from there (`TextBuffer`, "Selection").
-        func navigate(towardStart: Bool, collapseOnly: Bool = false, _ move: (inout TextBuffer) -> Void) {
-            if shift {
-                c.buffer.extend(move)
-            } else if c.buffer.collapse(toStart: towardStart) {
-                if !collapseOnly { move(&c.buffer) }
-            } else {
-                move(&c.buffer)
+    }
+
+    /// A key while the text has the focus: the editor's, but for the
+    /// app's few commands, all with a modifier (`edition.md`, section 7).
+    /// Returns `false` to let the key go to the editor's web view.
+    private func handleBodyKey(_ event: NSEvent, mods: NSEvent.ModifierFlags) -> Bool {
+        // The editor's page still loading (just after the launch): its key,
+        // kept until it can take it, never lost.
+        if model.editor?.keepKeyUntilReady(event) == true { return true }
+        let command = mods.contains(.command), option = mods.contains(.option), shift = mods.contains(.shift)
+        let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
+        if command, key == "v" {
+            // Files copied in the Finder are attached, not pasted as their
+            // names (⌘V and ⌥⇧⌘V alike).
+            let files = (pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL]) ?? []
+            if !files.isEmpty {
+                Task { await model.attach(files) }
+                return true
             }
-        }
-        switch code {
-        case KeyCode.returnKey:
-            c.buffer.newline(); changed = true
-        case KeyCode.delete:
-            if option { c.buffer.deleteWordBackward() } else { c.buffer.deleteBackward() }
-            changed = true
-        case KeyCode.forwardDelete:
-            c.buffer.deleteForward(); changed = true
-        case KeyCode.left:
-            if command {
-                navigate(towardStart: true) { $0.moveToLineStart() }
-            } else if option {
-                navigate(towardStart: true) { $0.moveWordLeft() }
-            } else {
-                navigate(towardStart: true, collapseOnly: true) { $0.moveLeft() }
-            }
-        case KeyCode.right:
-            if command {
-                navigate(towardStart: false) { $0.moveToLineEnd() }
-            } else if option {
-                navigate(towardStart: false) { $0.moveWordRight() }
-            } else {
-                navigate(towardStart: false, collapseOnly: true) { $0.moveRight() }
-            }
-        case KeyCode.up, KeyCode.down:
-            let delta = code == KeyCode.up ? -1 : 1
-            if command {
-                navigate(towardStart: delta < 0) { if delta < 0 { $0.moveToStart() } else { $0.moveToEnd() } }
-            } else if option {
-                // ⌥↑ ⌥↓: the start of the paragraph, or its end, then the
-                // next one at each press, as in macOS: ⇧⌥↓ selects several
-                // paragraphs.
-                navigate(towardStart: delta < 0) { if delta < 0 { $0.moveToParagraphStart() } else { $0.moveToParagraphEnd() } }
-            } else {
-                navigate(towardStart: delta < 0) { self.moveComposeVertically(&$0, delta) }
-                vertical = true
-            }
-        case KeyCode.home:
-            navigate(towardStart: true) { $0.moveToLineStart() }
-        case KeyCode.end:
-            navigate(towardStart: false) { $0.moveToLineEnd() }
-        default:
-            let key = event.charactersIgnoringModifiers ?? ""
-            if command {
-                switch key.lowercased() {
-                case "v":
-                    // Files copied in the Finder are attached, not pasted
-                    // as their names.
-                    let files = (pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL]) ?? []
-                    if !files.isEmpty {
-                        Task { await model.attach(files) }
-                        return true
-                    }
-                    c.buffer.insert(pasteboard.string(forType: .string) ?? "")
-                    changed = true
-                case "a":
-                    c.buffer.selectAll()
-                case "c", "x":
-                    // Copy (and cut) the selection; nothing selected:
-                    // nothing copied, as in every macOS text view.
-                    let selected = c.buffer.selectedText
-                    guard !selected.isEmpty else { break }
-                    pasteboard.clearContents()
-                    pasteboard.setString(selected, forType: .string)
-                    if key.lowercased() == "x" {
-                        c.buffer.deleteBackward()
-                        changed = true
-                    }
-                case "+", "=":
-                    textSize.bigger()
-                case "-":
-                    textSize.smaller()
-                case "0":
-                    textSize.reset()
-                default:
-                    // The menus' shortcuts (⌘Q, ⌘W…).
-                    return false
-                }
-            } else if control {
-                switch key {
-                case "a": navigate(towardStart: true) { $0.moveToLineStart() }
-                case "e": navigate(towardStart: false) { $0.moveToLineEnd() }
-                default: break
-                }
-            } else if let text = event.characters, LineEdit.isTypable(text) || text == "\t" {
-                c.buffer.insert(text)
-                changed = true
+            // ⌥⇧⌘V: the text alone, at the style of the cursor.
+            if option, shift {
+                model.pastePlain(pasteboard.string(forType: .string) ?? "")
+                return true
             }
         }
-        if !vertical { composeGoalX = nil }
-        model.composer = c
-        if changed { model.composerChanged() }
-        return true
+        // The size of the whole interface, never WebKit's zoom.
+        if command, !option {
+            switch key {
+            case "+", "=": textSize.bigger(); return true
+            case "-": textSize.smaller(); return true
+            case "0": textSize.reset(); return true
+            default: break
+            }
+        }
+        return false
     }
 
     /// Moves the keys to another field of the reply. The text typed in the
@@ -1943,7 +1893,9 @@ final class GeekController {
         c.suggestionIndex = nil
         if field == .bcc { c.showsBcc = true }
         if field == .subject { c.subjectLine = LineEdit(c.headers.subject) }
+        let leftText = c.focus != .body && model.composer?.focus == .body
         model.composer = c
+        if field == .body { model.editor?.focus() } else if leftText { model.editor?.blur() }
         if let pending { Task { await model.commitRecipients(pending.text, to: pending.field) } }
     }
 
@@ -2090,62 +2042,6 @@ final class GeekController {
         c.headers.subject = c.subjectLine.text
         model.composer = c
         model.composerChanged()
-    }
-
-    /// ↑ ↓ in the reply: by the lines as drawn when the view is there (a
-    /// long paragraph wraps on several), else by the lines of the text.
-    private func moveComposeVertically(_ buffer: inout TextBuffer, _ delta: Int) {
-        if let view = composerView,
-           let (utf16, x) = view.verticalMove(from: buffer.utf16Cursor, delta: delta, goalX: composeGoalX) {
-            buffer.moveTo(buffer.position(fromUTF16: utf16))
-            composeGoalX = x
-        } else {
-            buffer.moveVertically(delta)
-        }
-    }
-
-    /// Text written into the reply by another app (Kerlig, a Service,
-    /// through the accessibility API): it replaces the selection, as if
-    /// typed, and is saved like typing. An empty text deletes the selection.
-    func replaceComposeSelection(_ text: String) {
-        guard var c = model.composer else { return }
-        if text.isEmpty {
-            guard c.buffer.selection != nil else { return }
-            c.buffer.deleteBackward()
-        } else {
-            c.buffer.insert(text)
-        }
-        composeGoalX = nil
-        model.composer = c
-        model.composerChanged()
-    }
-
-    /// Another app selects a range of the reply, in UTF-16 units.
-    func selectCompose(utf16 range: NSRange) {
-        guard var c = model.composer else { return }
-        let start = c.buffer.position(fromUTF16: range.location)
-        let end = c.buffer.position(fromUTF16: NSMaxRange(range))
-        c.buffer.clearSelection()
-        c.buffer.moveTo(start)
-        c.buffer.extend { $0.moveTo(end) }
-        composeGoalX = nil
-        model.composer = c
-    }
-
-    /// A click in the text of the reply: the cursor goes there; with
-    /// Shift, the selection extends to there, as in every macOS text view.
-    func clickCompose(utf16 offset: Int, extend: Bool = false) {
-        focusCompose(.body)
-        guard var c = model.composer else { return }
-        let position = c.buffer.position(fromUTF16: offset)
-        if extend {
-            c.buffer.extend { $0.moveTo(position) }
-        } else {
-            c.buffer.clearSelection()
-            c.buffer.moveTo(position)
-        }
-        composeGoalX = nil
-        model.composer = c
     }
 
     // MARK: - Line editing
@@ -2542,10 +2438,18 @@ final class GeekController {
     func openAI() {
         let compose = model.composer != nil && screen == .mail
         guard compose || screen == .mail else { return }
+        // The AI reads and rewrites text: a formatted draft is not offered
+        // to it yet (`edition.md`, section 14).
+        if compose, model.composer?.format == .html {
+            model.flash = L("The AI works on text only for now · ⇧⌘T for text only")
+            return
+        }
         // In the reply, the text selected decides: its prompts (other
         // wordings…) work on it alone; none, the whole text. The
         // passage is kept as it was when ⌘I was pressed.
-        let passage = compose ? model.composer?.buffer.utf16Selection : nil
+        let passage: NSRange? = compose
+            ? model.editorState.textRange.flatMap { $0.end > $0.start ? NSRange(location: $0.start, length: $0.end - $0.start) : nil }
+            : nil
         let name = passage != nil ? "compose-selection" : Self.aiScreen(compose: compose, marked: model.marked.count)
         model.aiPassage = passage
         let folder = compose ? nil : model.currentRole

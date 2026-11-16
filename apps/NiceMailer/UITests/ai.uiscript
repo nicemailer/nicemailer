@@ -1,7 +1,7 @@
 # The AI assistance in a reply (`ia.md`, section 11; docs/ai.md), its
 # prompts answered by the core from fixtures/ai.ai.json (NICEMAILER_FAKE_AI):
-# ⌘I on a word selected offers its other wordings, the first put in its
-# place by Return; without a selection, ⌘I opens the palette of the whole
+# ⌃I on a word selected offers its other wordings, the first put in its
+# place by Return; without a selection, ⌃I opens the palette of the whole
 # text (not typed): typing filters, the
 # first row, highlighted, runs with Return; writing from the notes
 # proposes a whole mail, refused; proofreading shows its differences, the keys do not reach the
@@ -16,13 +16,15 @@
 # Quarantine, `a` `s` sorts the folder, the rows show their target, Return
 # moves one there.
 expect folder = Inbox
+expect reader_subject ~ La facture de mars
 key r
 expect composing = true
+expect editor_focused = true
 type merci je vien jeudi
 # A word selected: the palette of a passage, its other wordings first;
-# ⌘I ↩ ↩ puts the first one in its place, ⌘Z gives the word back.
+# ⌃I ↩ ↩ puts the first one in its place, ⌘Z gives the word back.
 key shift-alt-left
-key cmd-i
+key ctrl-i
 expect picker_first = Other wordings
 expect picker_rows ~ Improve writing
 expect picker_rows !~ Suggest subjects
@@ -35,11 +37,15 @@ snap ai-passage
 key ret
 expect ai_state = none
 expect compose_text ~ merci je vien vendredi|
+# ⌘Z is the editor's: the word comes back, selected again, as in any Mac
+# text view.
 key cmd-z
-expect compose_text ~ merci je vien jeudi|
-# The AI block of the status bar reminds of ⌘I in a reply; a click opens
-# the same palette as ⌘I.
-expect status_ai_key = ⌘I
+expect compose_text ~ merci je vien |jeudi
+expect compose_selection = jeudi
+key right
+# The AI block of the status bar reminds of ⌃I in a reply; a click opens
+# the same palette as ⌃I.
+expect status_ai_key = ⌃I
 click status:ai
 expect ai_placement = palette
 expect picker_first = Proofread
@@ -47,7 +53,7 @@ key esc
 expect ai_placement = none
 expect compose_text ~ merci je vien jeudi|
 # Nothing selected: the palette of the whole text.
-key cmd-i
+key ctrl-i
 expect ai_placement = palette
 expect picker_first = Proofread
 expect picker_rows ~ Proofread | Improve writing | Rewrite · More formal
@@ -67,9 +73,9 @@ expect ai_diff ~ {+viens jeudi.\n\nBonne journée,\nAlex+}
 key esc
 expect ai_state = none
 expect compose_text ~ merci je vien jeudi|
-# Proofreading, the first row, highlighted: ⌘I then Return. The text is
+# Proofreading, the first row, highlighted: ⌃I then Return. The text is
 # saved, then proposed as differences.
-key cmd-i
+key ctrl-i
 expect picker_index = 0
 key ret
 expect ai_state = proposal
@@ -97,12 +103,12 @@ expect compose_text ~ Merci, je viens jeudi.|
 expect compose_text ~ wrote:
 expect compose_text ~ \n> 
 snap ai-applied
+# ⌘Z is the editor's: the AI's change was one step of its undo.
 key cmd-z
 expect compose_text ~ merci je vien jeudi
-expect flash ~ undone
 expect compose_saved = true
 # Improving the writing of the whole text (`i`): its differences, refused.
-key cmd-i
+key ctrl-i
 type i
 expect picker_first = Improve writing
 key ret
@@ -114,7 +120,7 @@ expect ai_state = none
 expect compose_text ~ merci je vien jeudi
 # A variant, a row of the palette found by its letters (`rc`), refused:
 # the text stays.
-key cmd-i
+key ctrl-i
 type rc
 expect picker_first = Rewrite · Shorter
 key ret
@@ -124,7 +130,7 @@ key esc
 expect ai_state = none
 expect compose_text ~ merci je vien jeudi
 # Subjects (`o`): the first highlighted, ↓ moves to the second, Return takes it.
-key cmd-i
+key ctrl-i
 type o
 key ret
 expect ai_state = proposal

@@ -10,3 +10,6 @@
 /mail-export/
 __pycache__/
 /dev/dovecot/tls/
+
+# The editor bundle, built by `make editor` (apps/editor), never committed.
+/apps/NiceMailer/Sources/NiceMailer/Resources/Editor/

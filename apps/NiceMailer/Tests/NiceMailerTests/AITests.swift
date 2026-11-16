@@ -184,12 +184,14 @@ struct AIRulesTests {
     }
 
     @Test func aQuickReplyGoesAboveTheQuotationApartFromWordsAlreadyTyped() {
-        let fresh = AI.insertReply("Oui.", into: TextBuffer("\n\nOn Nov 7, A wrote:\n> Hi"))
-        #expect(fresh.text == "Oui.\n\nOn Nov 7, A wrote:\n> Hi")
+        let fresh = AI.insertReply("Oui.", into: "\n\nOn Nov 7, A wrote:\n> Hi")
+        #expect(fresh.body == "Oui.\n\nOn Nov 7, A wrote:\n> Hi")
         #expect(fresh.cursor == 4)
-        let started = AI.insertReply("Oui.", into: TextBuffer("merci\n\nOn Nov 7, A wrote:\n> Hi", cursor: 3))
-        #expect(started.text == "Oui.\n\nmerci\n\nOn Nov 7, A wrote:\n> Hi")
+        let started = AI.insertReply("Oui.", into: "merci\n\nOn Nov 7, A wrote:\n> Hi")
+        #expect(started.body == "Oui.\n\nmerci\n\nOn Nov 7, A wrote:\n> Hi")
         #expect(started.cursor == 4)
+        // The cursor in UTF-16 units, the editor's.
+        #expect(AI.insertReply("Oui 🎉", into: "x").cursor == 6)
     }
 
     @Test func theScreenOfThePaletteFollowsItsTarget() {
@@ -269,7 +271,7 @@ struct AIRulesTests {
 
     @Test func theAIBlockOfTheStatusBarRemindsOfItsKey() {
         #expect(GeekController.aiKeyLabel(composing: false) == "a")
-        #expect(GeekController.aiKeyLabel(composing: true) == "⌘I")
+        #expect(GeekController.aiKeyLabel(composing: true) == "⌃I")
     }
 
     @Test func theHintSaysTheKeys() {
@@ -483,11 +485,13 @@ final class AIControllerTests {
     let core: FakeCore
     let model = AppModel()
     let controller: GeekController
+    let editor: FakeEditor
 
     init() async {
         let state = ai
         core = FakeCore { method, params in state.answer(method, params) }
         let defaults = TestDefaults.make()
+        editor = FakeEditor(model: model)
         controller = GeekController(model: model, defaults: defaults, textSize: TextSize(defaults: defaults))
         controller.pasteboard = NSPasteboard(name: NSPasteboard.Name("NiceMailerTests-\(UUID().uuidString)"))
         model.openFile = { _ in }
@@ -508,11 +512,17 @@ final class AIControllerTests {
         case "down": chars = "\u{F701}"; code = KeyCode.down; mods = .function
         default:
             if name.hasPrefix("cmd-") { mods = .command; chars = String(name.dropFirst(4)) }
+            if name.hasPrefix("ctrl-") { mods = .control; chars = String(name.dropFirst(5)) }
         }
         let event = NSEvent.keyEvent(
             with: .keyDown, location: .zero, modifierFlags: mods, timestamp: 0, windowNumber: 0, context: nil,
             characters: chars, charactersIgnoringModifiers: chars, isARepeat: false, keyCode: code)!
-        _ = controller.handle(event)
+        // What the app lets through while the text has the keys is the
+        // editor's (`FakeEditor`).
+        if !controller.handle(event), model.composer?.focus == .body, controller.overlay == .none, model.aiRun == nil,
+           mods.intersection([.command, .control]).isEmpty {
+            editor.key(chars)
+        }
     }
 
     func type(_ text: String) {
@@ -547,7 +557,7 @@ final class AIControllerTests {
 
     @Test func cmdIOpensThePaletteOfTheReplyWithItsVariantsAsRows() async throws {
         await reply()
-        press("cmd-i")
+        press("ctrl-i")
         _ = await eventually { self.paletteOpen }
         #expect(controller.aiPlacement == "palette")
         // The most used first; a variant is a row of its own.
@@ -555,14 +565,14 @@ final class AIControllerTests {
                                 "w Write from my notes"])
         #expect(core.calls("ai_list_prompts").last?["screen"] as? String == "compose")
         // ⌘I was not typed; a letter typed filters, it is not the text's.
-        #expect(model.composer?.buffer.text.hasPrefix("merci\n") == true)
+        #expect(model.composer?.body.hasPrefix("merci\n") == true)
         type("formal")
         #expect(paletteRows.first == "rf Rewrite · More formal")
-        #expect(model.composer?.buffer.text.hasPrefix("merci\n") == true)
+        #expect(model.composer?.body.hasPrefix("merci\n") == true)
         press("esc")
         #expect(!paletteOpen)
         // A prompt not available yet says so, and starts nothing.
-        press("cmd-i")
+        press("ctrl-i")
         _ = await eventually { self.paletteOpen }
         choose("w")
         #expect(model.flash == L("Not available yet: %@", "Write from my notes"))
@@ -572,7 +582,7 @@ final class AIControllerTests {
     @Test func theFirstRowIsHighlightedSoReturnRunsIt() async throws {
         // ⌘I then Return: the first prompt of the reply, proofreading.
         await reply()
-        press("cmd-i")
+        press("ctrl-i")
         _ = await eventually { self.paletteOpen }
         #expect(controller.pickerIndex == 0)
         press("ret")
@@ -581,7 +591,7 @@ final class AIControllerTests {
         press("esc")
         _ = await eventually { self.model.aiRun == nil }
         // A prompt's letters bring it first: `rc`, rewrite shorter.
-        press("cmd-i")
+        press("ctrl-i")
         _ = await eventually { self.paletteOpen }
         choose("rc")
         _ = await eventually { self.model.aiRun?.runId == 7 }
@@ -624,7 +634,7 @@ final class AIControllerTests {
 
     @Test func aProofreadingRunsIsShownAndAccepted() async throws {
         await reply()
-        press("cmd-i")
+        press("ctrl-i")
         _ = await eventually { self.paletteOpen }
         choose("c")
         _ = await eventually { self.model.aiRun?.runId == 7 }
@@ -645,7 +655,7 @@ final class AIControllerTests {
         event("AiDelta", ["run_id": .int(7), "text": .string("ci.")], transient: true)
         #expect(model.aiRun?.text == "Merci.")
         type("zz")
-        #expect(model.composer?.buffer.text.hasPrefix("merci\n") == true)
+        #expect(model.composer?.body.hasPrefix("merci\n") == true)
         // The answer to a key goes through a task: the message comes a
         // moment later.
         #expect(await eventually { self.model.flash == L("esc stop") })
@@ -656,30 +666,29 @@ final class AIControllerTests {
         _ = await eventually { self.model.aiRun == nil }
         let apply = try #require(core.calls("ai_apply").last)
         #expect(apply["run_id"] as? Int == 7)
-        #expect(model.composer?.buffer.text == ai.appliedBody)
+        #expect(model.composer?.body == ai.appliedBody)
         #expect(model.composer?.isDirty == false, "what the core saved is the saved text")
         #expect(model.flash == L("Applied · ⌘Z undoes it"))
-
-        // ⌘Z gives the text back, and saves it.
-        press("cmd-z")
-        #expect(model.composer?.buffer.text.hasPrefix("merci\n") == true)
-        #expect(model.composer?.isDirty == true)
-        #expect(model.flash == L("AI change undone"))
-        // Once: a second ⌘Z is not the AI's.
-        #expect(model.undoAI() == false)
+        // The change went to the editor as one range: its own ⌘Z undoes it.
+        #expect(editor.content == ai.appliedBody)
+        #expect(editor.ranges.count == 1)
     }
 
     @Test func aPassageSelectedGetsItsOwnPaletteAndItsChoiceReplacesIt() async throws {
         await reply("merci je vien jeudi")
         // Nothing selected: the palette of the whole text.
-        press("cmd-i")
+        press("ctrl-i")
         _ = await eventually { self.paletteOpen }
         #expect(core.calls("ai_list_prompts").last?["screen"] as? String == "compose")
         press("esc")
         // "jeudi" selected: the palette of a passage, other wordings first.
-        model.composer?.buffer.extend { $0.moveWordLeft() }
-        #expect(model.composer?.buffer.selectedText == "jeudi")
-        press("cmd-i")
+        // (The editor says what is selected, in UTF-16 units of the text.)
+        var selected = EditorStateView()
+        selected.textRange = .init(start: 14, end: 19)
+        selected.selection = "jeudi"
+        selected.empty = false
+        editor.post(selected)
+        press("ctrl-i")
         _ = await eventually { self.paletteOpen }
         #expect(core.calls("ai_list_prompts").last?["screen"] as? String == "compose-selection")
         #expect(paletteRows.first == "a Other wordings")
@@ -694,20 +703,20 @@ final class AIControllerTests {
         _ = await eventually { if case .proposal? = self.model.aiRun?.phase { true } else { false } }
         #expect(AI.hint(try #require(model.aiRun?.phase)) == L("↩ or 1–%lld replace the selection · ↑↓ move · esc or n refuse · ⌘Z after choosing undoes", 2) + " · " + L("c copy"))
         // ↩ again takes the first, the best: the core puts it in the draft.
-        let before = try #require(model.composer?.buffer.text)
+        let before = try #require(model.composer?.body)
         ai.appliedBody = before.replacingOccurrences(of: "jeudi", with: "viens")
+        editor.post(EditorStateView())
         press("ret")
         _ = await eventually { self.model.aiRun == nil }
         let apply = try #require(core.calls("ai_apply").last)
         #expect(apply["choice"] as? Int == 0)
         #expect(apply["revision"] != nil)
-        #expect(model.composer?.buffer.text == ai.appliedBody)
-        // The cursor after the new word, though the selection was made
-        // leftwards (the cursor at its start).
-        #expect(model.composer?.buffer.cursor == "merci je vien viens".count)
+        #expect(model.composer?.body == ai.appliedBody)
+        // The cursor after the new word, in the editor.
+        #expect(editor.cursor == "merci je vien viens".utf16.count)
         #expect(model.flash == L("Applied · ⌘Z undoes it"))
         // Nothing selected again: the next ⌘I works on the whole text.
-        press("cmd-i")
+        press("ctrl-i")
         _ = await eventually { self.paletteOpen }
         #expect(core.calls("ai_list_prompts").last?["screen"] as? String == "compose")
         press("ret")
@@ -717,7 +726,7 @@ final class AIControllerTests {
 
     @Test func escapeRefusesAProposalAndStopsARun() async throws {
         await reply()
-        press("cmd-i")
+        press("ctrl-i")
         _ = await eventually { self.paletteOpen }
         choose("c")
         _ = await eventually { self.model.aiRun?.runId == 7 }
@@ -731,7 +740,7 @@ final class AIControllerTests {
         #expect(model.aiRun == nil)
 
         // Again, up to the proposal, then refused.
-        press("cmd-i")
+        press("ctrl-i")
         _ = await eventually { self.paletteOpen }
         choose("c")
         _ = await eventually { self.model.aiRun?.runId == 7 }
@@ -741,12 +750,12 @@ final class AIControllerTests {
         _ = await eventually { self.core.calls("ai_dismiss").count == 1 }
         #expect(model.aiRun == nil)
         #expect(core.calls("ai_apply").isEmpty)
-        #expect(model.composer?.buffer.text.hasPrefix("merci\n") == true, "\(model.composer?.buffer.text ?? "")")
+        #expect(model.composer?.body.hasPrefix("merci\n") == true, "\(model.composer?.body ?? "")")
     }
 
     @Test func aFailureIsShownThenClosed() async {
         await reply()
-        press("cmd-i")
+        press("ctrl-i")
         _ = await eventually { self.paletteOpen }
         choose("c")
         _ = await eventually { self.model.aiRun?.runId == 7 }
@@ -762,7 +771,7 @@ final class AIControllerTests {
         ai.appliedBody = "merci\n\nOn Nov 7, Sender 1 wrote:\n> Hello"
         ai.appliedSubject = "Confirmation pour jeudi"
         await reply()
-        press("cmd-i")
+        press("ctrl-i")
         _ = await eventually { self.paletteOpen }
         choose("o")
         _ = await eventually { self.model.aiRun?.runId == 7 }
@@ -774,7 +783,7 @@ final class AIControllerTests {
         #expect(model.composer?.headers.subject == "Confirmation pour jeudi")
         #expect(model.composer?.subjectLine.text == "Confirmation pour jeudi")
         #expect(model.composer?.isDirty == false)
-        #expect(model.composer?.aiUndo == nil, "a subject is not undone by ⌘Z in the text")
+        #expect(editor.ranges.isEmpty, "a subject is not the text's change")
     }
 
     @Test func aSubjectIsChosenWithTheArrowsAndReturn() async throws {
@@ -782,7 +791,7 @@ final class AIControllerTests {
         ai.appliedBody = "merci\n\nOn Nov 7, Sender 1 wrote:\n> Hello"
         ai.appliedSubject = "Confirmation pour jeudi"
         await reply()
-        press("cmd-i")
+        press("ctrl-i")
         _ = await eventually { self.paletteOpen }
         choose("o")
         _ = await eventually { self.model.aiRun?.runId == 7 }
@@ -795,7 +804,7 @@ final class AIControllerTests {
         press("down")
         press("up")
         #expect(model.aiRun?.choice == 1)
-        #expect(model.composer?.buffer.text.hasPrefix("merci") == true)
+        #expect(model.composer?.body.hasPrefix("merci") == true)
         press("ret")
         _ = await eventually { self.model.aiRun == nil }
         #expect(core.calls("ai_apply").last?["choice"] as? Int == 1)
@@ -806,7 +815,7 @@ final class AIControllerTests {
         // The core ends the run before `ai_run` has answered.
         core.delays["ai_run"] = .milliseconds(200)
         await reply()
-        press("cmd-i")
+        press("ctrl-i")
         _ = await eventually { self.paletteOpen }
         choose("c")
         _ = await eventually { self.model.aiRun != nil }
@@ -818,7 +827,7 @@ final class AIControllerTests {
 
     @Test func anEndAfterAGapIsNotLost() async {
         await reply()
-        press("cmd-i")
+        press("ctrl-i")
         _ = await eventually { self.paletteOpen }
         choose("c")
         _ = await eventually { self.model.aiRun?.runId == 7 }
@@ -830,7 +839,7 @@ final class AIControllerTests {
     @Test func theAIOffSaysHowToTurnItOn() async {
         ai.enabled = false
         await reply()
-        press("cmd-i")
+        press("ctrl-i")
         _ = await eventually { self.model.flash == L("The AI is off: set ai.enabled = true in config.toml") }
         #expect(!paletteOpen)
         #expect(core.calls("ai_list_prompts").isEmpty)
@@ -893,7 +902,7 @@ final class AIControllerTests {
         // A proofreading of the reply: the text proposed, not its
         // differences; the reply is untouched, the proposal still there.
         await reply()
-        press("cmd-i")
+        press("ctrl-i")
         _ = await eventually { self.paletteOpen }
         choose("c")
         _ = await eventually { self.model.aiRun?.runId == 7 }
@@ -903,7 +912,7 @@ final class AIControllerTests {
         press("c")
         let proposal = try #require({ if case .proposal(let p)? = model.aiRun?.phase { p } else { nil } }())
         #expect(controller.pasteboard.string(forType: .string) == AI.copyText(proposal))
-        #expect(model.composer?.buffer.text.hasPrefix("merci\n") == true)
+        #expect(model.composer?.body.hasPrefix("merci\n") == true)
         #expect(core.calls("ai_apply").isEmpty)
         // Return still accepts it.
         press("ret")
@@ -923,7 +932,7 @@ final class AIControllerTests {
         controller.openAIFromStatusBar()
         _ = await eventually { self.paletteOpen }
         #expect(core.calls("ai_list_prompts").last?["screen"] as? String == "compose")
-        #expect(model.composer?.buffer.text.hasPrefix("merci\n") == true)
+        #expect(model.composer?.body.hasPrefix("merci\n") == true)
         // A result shown: the click leaves it, no palette over it.
         press("ret")
         _ = await eventually { self.model.aiRun?.runId == 7 }
@@ -1074,15 +1083,15 @@ final class AIControllerTests {
         press("2")
         // The reply opens first, then gets the text: wait for the text,
         // not only the reply (waiting for the reply alone was flaky).
-        _ = await eventually { self.model.composer?.buffer.text.hasPrefix("On peut") == true }
+        _ = await eventually { self.model.composer?.body.hasPrefix("On peut") == true }
         #expect(core.calls("ai_apply").last?["choice"] as? Int == 1)
         #expect(core.calls("ai_apply").last?["revision"] == nil, "no draft yet")
         #expect(model.aiRun == nil)
         // The reply to the mail, the text above the quotation, the cursor
         // after it, to be saved as if typed.
         #expect(core.calls("prepare_draft").count == 1)
-        #expect(model.composer?.buffer.text.hasPrefix("On peut décaler ?\n\nOn Nov 7") == true, "\(model.composer?.buffer.text ?? "")")
-        #expect(model.composer?.buffer.cursor == "On peut décaler ?".count)
+        #expect(model.composer?.body.hasPrefix("On peut décaler ?\n\nOn Nov 7") == true, "\(model.composer?.body ?? "")")
+        #expect(editor.loads.last?.cursor == "On peut décaler ?".utf16.count)
         #expect(model.composer?.isDirty == true)
     }
 

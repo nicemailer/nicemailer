@@ -29,6 +29,8 @@ struct DiscardedDraft: Equatable {
     let replyTo: Int?
     let body: String
     var kind: DraftKind = .replyAll
+    /// The mode of `body` (`edition.md`, section 3).
+    var format: ComposeFormat = .text
     /// The account of a new mail.
     var account: Int? = nil
 }

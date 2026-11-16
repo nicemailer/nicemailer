@@ -544,6 +544,12 @@ async fn draft_inputs(
         }
         _ => {}
     }
+    // A formatted draft holds HTML: the AI reads and rewrites text, and
+    // splicing its answer into the HTML would break it. Refused until the
+    // AI works on formatted text (`edition.md`, section 14).
+    if draft.body_format == "html" {
+        return Err(ai_error(AiError::BadInput("the AI works on text only for now: switch the draft to text (Shift-Cmd-T)".into())));
+    }
     // The segments sent: the selection, or the user's own text.
     let body = draft.body.clone();
     let ranges: Vec<Range<usize>> = match p.selection {

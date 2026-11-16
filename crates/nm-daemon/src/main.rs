@@ -676,6 +676,8 @@ fn runs_in_parallel(method: &str) -> bool {
             | method::PREPARE_DRAFT
             | method::OPEN_DRAFT
             | method::PARSE_ADDRESSES
+            | method::COMPOSE_FORMATS
+            | method::HTML_TO_TEXT
             | method::SUGGEST_RECIPIENTS
             | method::LIST_SENDERS
             | method::SYNC_STATUS
@@ -1599,6 +1601,8 @@ async fn call(core: &Arc<Core>, source: Source, req: Request) -> Result<Value, R
         method::ADD_DRAFT_ATTACHMENT => to_value(drafts::add_attachment(core, params(req.params)?, source).await?),
         method::REMOVE_DRAFT_ATTACHMENT => to_value(drafts::remove_attachment(core, params(req.params)?, source).await?),
         method::PARSE_ADDRESSES => to_value(drafts::parse_addresses(params(req.params)?)),
+        method::COMPOSE_FORMATS => to_value(drafts::compose_formats(core)),
+        method::HTML_TO_TEXT => to_value(drafts::html_to_text(params(req.params)?)?),
         method::SUGGEST_RECIPIENTS => to_value(drafts::suggest(core, params(req.params)?).await?),
         method::LIST_SENDERS => to_value(drafts::list_senders(core).await?),
         method::CLOSE_DRAFT => {

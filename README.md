@@ -22,7 +22,7 @@ apps/
 
 ## Running
 
-You need Rust and Xcode: the Command Line Tools alone do not ship the SwiftUI macros.
+You need Rust and Xcode: the Command Line Tools alone do not ship the SwiftUI macros. You also need Node (version in `apps/editor/.nvmrc`): the editor of a mail's text is a TypeScript component, bundled into the app by `make editor`, on which every target that builds the app depends ([docs/editor.md](docs/editor.md)).
 
 ```sh
 make seed     # creates ~/Library/Application Support/NiceMailer/nicemailer.db (≈ 4,500 mails)

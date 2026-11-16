@@ -1,0 +1,141 @@
+/* The look of the editor (specifications/edition.md, section 4). Colours,
+   font and size come from the host's theme, as CSS variables set by
+   `MailEditor.applyTheme`. */
+
+:root {
+  --nm-font: -apple-system, system-ui, sans-serif;
+  --nm-size: 14px;
+  --nm-text: #1d1d1f;
+  --nm-background: transparent;
+  --nm-muted: #8a8a8e;
+  --nm-accent: #0a64d6;
+  --nm-selection: rgba(10, 100, 214, 0.25);
+  --nm-border: #d0d0d4;
+  --nm-panel: #f2f2f4;
+  color-scheme: light dark;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--nm-background);
+  color: var(--nm-text);
+  font-family: var(--nm-font);
+  font-size: var(--nm-size);
+}
+
+#editor {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.nm-text {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.ProseMirror {
+  min-height: 100%;
+  box-sizing: border-box;
+  padding: 12px;
+  outline: none;
+  line-height: 1.45;
+  caret-color: var(--nm-accent);
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.ProseMirror ::selection, .ProseMirror::selection {
+  background: var(--nm-selection);
+}
+
+/* One paragraph is one line, as in the mail sent (`mail_html.rs`). */
+.ProseMirror p { margin: 0; min-height: 1.45em; }
+.ProseMirror h1 { font-size: 1.7em; margin: 0.6em 0 0.3em; line-height: 1.25; }
+.ProseMirror h2 { font-size: 1.43em; margin: 0.6em 0 0.3em; line-height: 1.25; }
+.ProseMirror h3 { font-size: 1.2em; margin: 0.5em 0 0.25em; line-height: 1.25; }
+.ProseMirror ul, .ProseMirror ol { margin: 0; padding-left: 1.6em; }
+.ProseMirror li > p { margin: 0; }
+.ProseMirror blockquote {
+  margin: 0 0 0 0.8ex;
+  padding-left: 1ex;
+  border-left: 2px solid var(--nm-border);
+  color: var(--nm-muted);
+}
+.ProseMirror a { color: var(--nm-accent); text-decoration: underline; cursor: text; }
+
+/* Text only: the app's fixed-width font, tabs at 4. */
+#editor[data-mode="text"] .ProseMirror { tab-size: 4; }
+
+/* Formatted: a proportional font for the text, as the reader sees it. */
+#editor[data-mode="html"] .ProseMirror {
+  font-family: -apple-system, system-ui, "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+
+.nm-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--nm-border);
+  font-family: -apple-system, system-ui, sans-serif;
+  font-size: 12px;
+}
+.nm-toolbar[hidden] { display: none; }
+.nm-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.nm-button {
+  font: inherit;
+  min-width: 24px;
+  height: 22px;
+  padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--nm-text);
+  cursor: default;
+}
+.nm-button[aria-pressed="true"] {
+  background: var(--nm-panel);
+  border-color: var(--nm-border);
+  color: var(--nm-accent);
+}
+.nm-bold { font-weight: 700; }
+.nm-italic { font-style: italic; }
+.nm-underline { text-decoration: underline; }
+.nm-select {
+  font: inherit;
+  height: 22px;
+  color: var(--nm-text);
+  background: var(--nm-panel);
+  border: 1px solid var(--nm-border);
+  border-radius: 5px;
+}
+/* A native menu is as wide as its longest option: some font names of the
+   Mac are long ("Hiragino Kaku Gothic StdN"). */
+.nm-font { max-width: 180px; }
+.nm-separator { width: 1px; height: 16px; background: var(--nm-border); margin: 0 2px; }
+
+.nm-dialog {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 6px 8px;
+  background: var(--nm-panel);
+  border-bottom: 1px solid var(--nm-border);
+  font-family: -apple-system, system-ui, sans-serif;
+  font-size: 12px;
+}
+.nm-dialog[hidden] { display: none; }
+.nm-dialog input {
+  font: inherit;
+  padding: 2px 6px;
+  color: var(--nm-text);
+  background: var(--nm-background);
+  border: 1px solid var(--nm-border);
+  border-radius: 4px;
+}
+.nm-dialog input[hidden] { display: none; }
+.nm-link-url { flex: 1; }
+.nm-error { color: #d6312b; }

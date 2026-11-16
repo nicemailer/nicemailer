@@ -1,6 +1,6 @@
 # Replying to a mail (`reponse.md`): `r` on the mail of the Inbox (account
 # perso), the text typed above the quotation, Escape keeps the draft and `r`
-# resumes it, ⌘⌫ abandons it and `z` gives it back, ⌘↩ queues it and `z`
+# resumes it, ⌘⎋ abandons it and `z` gives it back, ⌘↩ queues it and `z`
 # cancels it during the undo delay, then ⌘↩ sends it for good: the
 # conversation is filed in Archive, and `z` puts it back. The core of the
 # UI tests sends nothing anywhere (NICEMAILER_FAKE_NETWORK).
@@ -19,8 +19,8 @@ expect compose_text ~ wrote:
 expect compose_text ~ \n> 
 snap reply-open
 # Letters are text, not commands: `d` does not archive, `j` does not move.
-type Merci d'avance, je regarde
-expect compose_text ~ Merci d'avance, je regarde|
+type Merci beaucoup, je regarde
+expect compose_text ~ Merci beaucoup, je regarde|
 expect selected = 0
 key ret
 type Achille
@@ -34,13 +34,14 @@ key up
 expect compose_text ~ Merc|i
 key cmd-right
 expect compose_text ~ je regarde|\n
+# The text is the editor's (`edition.md`): the Mac's own editing keys.
 # Shift with the arrows selects, as in any macOS text view: by word with
 # ⌥, to the start of the line with ⌘; → ends the selection at its end.
 key shift-alt-left
 expect compose_selection = regarde
 snap reply-selection
 key shift-cmd-left
-expect compose_selection = Merci d'avance, je regarde
+expect compose_selection = Merci beaucoup, je regarde
 key right
 expect compose_selection = 
 expect compose_text ~ je regarde|\n
@@ -52,13 +53,14 @@ expect compose_selection =
 # ⇧⌥↓ selects to the end of the paragraph, then of the next one at each
 # press, as in macOS; ⇧⌥↑ comes back the same way.
 key cmd-up
+# (WebKit's paragraph takes its line break.)
 key shift-alt-down
-expect compose_selection = Merci d'avance, je regarde
+expect compose_selection = Merci beaucoup, je regarde\n
 key shift-alt-down
-expect compose_selection = Merci d'avance, je regarde\nAchill
+expect compose_selection = Merci beaucoup, je regarde\nAchill\n
 snap reply-paragraphs
 key shift-alt-up
-expect compose_selection = Merci d'avance, je regarde\n
+expect compose_selection = Merci beaucoup, je regarde\n
 # The subject edits as a macOS field: ⌘A, ⌘C ⌘X ⌘V, ⇧⌥→ a word.
 key shift-tab
 expect compose_focus = subject
@@ -81,27 +83,13 @@ expect compose_focus = body
 key cmd-a
 key right
 expect compose_selection = 
-# Another app (Kerlig, a grammar checker) works on the selected text
-# through the accessibility API: the reply's text is the focused element,
-# its selection is readable, and what the app writes back replaces it.
-key shift-alt-left
+# The reply's text is the window's focused view: what another app
+# (Kerlig, a grammar checker) works on through the accessibility API.
 expect ax_focused = true
-expect ax_settable = true
-expect compose_selection = Victor\n
-expect ax_selected_text ~ Victor
-axselect 8 6
-expect compose_selection = avance
-expect ax_selected_text = avance
-axreplace AVANCE
-expect compose_text ~ Merci d'AVANCE|, je regarde
-expect compose_saved = true
-axselect 8 6
-axreplace avance
-expect compose_text ~ Merci d'avance|, je regarde
 # Saved after a pause of typing.
 expect compose_saved = true
-expect compose_lines > 3
 snap reply-typed
+snapeditor reply-typed-text
 # Escape: back to the mail, the draft kept; `r` resumes it.
 key esc
 expect composing = false
@@ -127,8 +115,8 @@ key r
 expect composing = true
 expect flash ~ resumed
 expect compose_text ~ je regarde\nAchill
-# ⌘⌫ abandons it, `z` gives it back with its text.
-key cmd-del
+# ⌘⎋ abandons it, `z` gives it back with its text.
+key cmd-esc
 expect composing = false
 expect flash ~ abandoned
 key z

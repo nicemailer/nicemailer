@@ -184,6 +184,27 @@ final class AppModel {
     /// The reply being written (`AppModel+Compose.swift`); nil when the
     /// reader shows the mail.
     var composer: Composer?
+    /// The editor of the reply's text (`EditorBridge`, `edition.md`): set
+    /// by the window at launch, a fake one in the unit tests.
+    @ObservationIgnored var editor: MailTextEditor?
+    /// Makes the editor (the window sets it at launch): called once the
+    /// first list is shown, so that WebKit's start does not slow the
+    /// launch down, or at the first reply opened before that.
+    @ObservationIgnored var makeEditor: (() -> MailTextEditor)?
+
+    /// The editor, made now if it was not yet (`makeEditor`).
+    func ensureEditor() {
+        if editor == nil, let make = makeEditor { editor = make() }
+    }
+    /// The lists of the formatted mode and the mode a draft starts in, from
+    /// the core (`compose_formats`, `edition.md`, section 5).
+    @ObservationIgnored var composeFormats = ComposeFormats.empty
+    /// What is under the editor's cursor, as it last said: the AI palette's
+    /// passage, the UI scenarios.
+    var editorState = EditorStateView()
+    /// ⇧⌘T asked to go back to text only, the formatting to be lost: a
+    /// second ⇧⌘T within a few seconds confirms (`toggleComposeFormat`).
+    @ObservationIgnored var formatLossArmed: Date?
     /// The AI run shown in the panel of the reply (`AppModel+AI.swift`);
     /// nil when the panel is closed.
     var aiRun: AIRun?
@@ -703,6 +724,12 @@ final class AppModel {
         if let status: ConfigStatusView = try? await client.call("config_status", [:]), let ui = status.ui {
             titleBarHidden = ui.titleBar != "shown"
             autoConfirmCalls = ui.autoConfirmCalls ?? false
+        }
+        // The lists of the formatted mode and the mode a draft starts in
+        // (`edition.md`, section 5): an older core without them leaves the
+        // formatted mode with no font, size or colour to choose.
+        if let formats: ComposeFormats = try? await client.call("compose_formats", [:]) {
+            composeFormats = formats
         }
         await refreshAIEnabled()
     }
@@ -1250,6 +1277,9 @@ final class AppModel {
     private func firstListShown() {
         guard startupPhase != .ready else { return }
         startupPhase = .ready
+        // The editor of the replies' text, loaded now, after the first list,
+        // so that `r` opens it without waiting for WebKit.
+        Task { @MainActor in self.ensureEditor() }
         let now = ContinuousClock.now
         let timings = StartupTimings(socket: (socketOpened ?? now) - created, firstList: now - created,
                                      startedCore: startedCore, rows: threads.count)

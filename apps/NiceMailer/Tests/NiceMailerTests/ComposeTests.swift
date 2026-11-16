@@ -201,9 +201,13 @@ struct ComposeRulesTests {
     @Test func onlyWhatChangedIsSaved() throws {
         var c = Composer(draft: try draft(target: "archive", chosen: nil))
         #expect(Set(Compose.saveParams(c).keys) == ["id", "revision"])
-        c.buffer.insert("x")
-        #expect(Set(Compose.saveParams(c).keys) == ["id", "revision", "body"])
-        c.saved = c.buffer.text
+        c.body = "x" + c.body
+        #expect(Set(Compose.saveParams(c).keys) == ["id", "revision", "body", "body_format"])
+        c.saved = c.body
+        // The mode alone changing is saved too, with the body.
+        c.format = .html
+        #expect(Compose.saveParams(c)["body_format"] as? String == "html")
+        c.savedFormat = .html
         c.headers.bcc = [AddressView(addr: "b@x.fr", name: "B")]
         c.headers.subject = "Autre"
         let p = Compose.saveParams(c)
@@ -222,12 +226,13 @@ struct ComposeRulesTests {
         let proposal = try decode(Fixture.opened("prepare_draft", Fixture.draft(replyTo: 10)))
         var c = Composer(draft: proposal, kind: .replySender, quoteHeader: "On Nov 7, Sender 1 wrote:")
         #expect(!c.isWritten)
-        c.buffer.insert("Merci ")
+        c.body = "Merci " + c.body
         let p = Compose.createParams(c)
         #expect(p["kind"] as? String == "reply_sender")
         #expect(p["reply_to"] as? Int == 10)
         #expect(p["quote_header"] as? String == "On Nov 7, Sender 1 wrote:")
-        #expect(p["body"] as? String == c.buffer.text)
+        #expect(p["body"] as? String == c.body)
+        #expect(p["body_format"] as? String == "text")
         #expect(p["account"] == nil)
         var forward = Fixture.draft(replyTo: 10)
         forward["kind"] = "forward"
@@ -253,13 +258,13 @@ struct ComposeRulesTests {
         forward["attachments"] = [["id": 77, "filename": "devis.pdf", "mime_type": "application/pdf", "size": 8]]
         var c = Composer(draft: try decode(Fixture.opened("prepare_draft", forward)))
         #expect(c.attachments.map(\.id) == [-1])
-        c.buffer.insert("Voici")
-        let typed = c.buffer.text
+        c.body = "Voici" + c.body
+        let typed = c.body
         // The core wrote "Voi": the start of the text, typed before the call.
         c.written(try decode(forward.merging(["body": "Voi"]) { $1 }))
         #expect(c.isWritten && c.draft.id == 901 && c.revision == 1)
         #expect(c.attachments.map(\.id) == [77])
-        #expect(c.buffer.text == typed)
+        #expect(c.body == typed)
         // "ci" typed while `create_draft` ran: saved next.
         #expect(c.isDirty)
     }
@@ -269,7 +274,7 @@ struct ComposeRulesTests {
         let c = Composer(draft: try decode(Fixture.opened("prepare_draft", Fixture.draft(replyTo: 10))))
         #expect(Compose.keptFlash(c) == L("Nothing written: no draft kept"))
         var typed = c
-        typed.buffer.insert("x")
+        typed.body = "x" + typed.body
         #expect(Compose.keptFlash(typed) == L("Reply kept in Drafts · r to resume"))
         let written = Composer(draft: try decode(Fixture.draft(replyTo: 10)))
         #expect(Compose.keptFlash(written) == L("Reply kept in Drafts · r to resume"))
@@ -337,7 +342,8 @@ struct ComposeRulesTests {
         let json = Fixture.draft(replyTo: 10)
         let d = try CoreClient.decoder.decode(DraftView.self, from: JSONSerialization.data(withJSONObject: json))
         let c = Composer(draft: d)
-        #expect(c.buffer.cursor == 0)
+        #expect(c.body == d.body)
+        #expect(c.format == .text)
         #expect(!c.isDirty)
         #expect(c.revision == 1)
     }
@@ -357,10 +363,14 @@ struct ComposeControllerTests {
     let core = FakeCore(handler: Fixture.answer)
     let model = AppModel()
     let controller: GeekController
+    let editor: FakeEditor
 
     init() async {
         let defaults = TestDefaults.make()
+        editor = FakeEditor(model: model)
         controller = GeekController(model: model, defaults: defaults, textSize: TextSize(defaults: defaults))
+        let c = controller
+        editor.onLeave = { c.leaveText() }
         controller.pasteboard = NSPasteboard(name: NSPasteboard.Name("NiceMailerTests-\(UUID().uuidString)"))
         model.openFile = { _ in }
         model.addressBook = FixtureAddressBook(cards: [:])
@@ -379,6 +389,9 @@ struct ComposeControllerTests {
         case "shift-cmd-ret": chars = "\r"; code = KeyCode.returnKey; mods = [.command, .shift]
         case "del": chars = "\u{7f}"; code = KeyCode.delete
         case "cmd-del": chars = "\u{7f}"; code = KeyCode.delete; mods = .command
+        case "cmd-esc": chars = "\u{1b}"; code = KeyCode.escape; mods = .command
+        case "shift-cmd-t": chars = "T"; mods = [.command, .shift]
+        case "shift-alt-cmd-v": chars = "v"; mods = [.command, .shift, .option]
         case "alt-del": chars = "\u{7f}"; code = KeyCode.delete; mods = .option
         case "left": chars = "\u{F702}"; code = KeyCode.left; mods = .function
         case "right": chars = "\u{F703}"; code = KeyCode.right; mods = .function
@@ -409,7 +422,12 @@ struct ComposeControllerTests {
         let event = NSEvent.keyEvent(
             with: .keyDown, location: .zero, modifierFlags: mods, timestamp: 0, windowNumber: 0, context: nil,
             characters: chars, charactersIgnoringModifiers: chars, isARepeat: false, keyCode: code)!
-        _ = controller.handle(event)
+        // What the app does not take, while the text has the keys, goes to
+        // the editor (`handleBodyKey`); with ⌘ or ⌃, nothing is typed.
+        if !controller.handle(event), model.composer?.focus == .body, controller.overlay == .none,
+           mods.intersection([.command, .control]).isEmpty {
+            editor.key(chars)
+        }
     }
 
     func type(_ text: String) {
@@ -434,131 +452,123 @@ struct ComposeControllerTests {
         #expect(header.contains("Sender 1 <sender1@example.org>"), "\(header)")
         let c = try #require(model.composer)
         #expect(c.draft.subject == "Re: Subject 1")
-        #expect(c.buffer.cursor == 0)
+        // The editor opened on the draft, in text only, the cursor at the
+        // start (above the quotation), with the keys.
+        let load = try #require(editor.loads.last)
+        #expect(load == FakeEditor.Load(mode: .text, content: c.draft.body, fromText: false, cursor: 0, focus: true))
         // `r` again while writing: a letter of the text, not a second draft.
         press("r")
         #expect(core.calls("prepare_draft").count == 1)
-        #expect(model.composer?.buffer.text.hasPrefix("r") == true)
+        #expect(model.composer?.body.hasPrefix("r") == true)
+    }
+
+    /// A proposal opens formatted when `compose.format` says so: converted
+    /// by the editor, but still a text draft until something changes, so
+    /// that leaving it writes nothing (`edition.md`, section 3).
+    @Test func aProposalOpensFormattedWhenTheSettingSaysSo() async throws {
+        model.composeFormats = ComposeFormats(fonts: [], sizes: [], colors: [], defaultFormat: "html")
+        await reply()
+        let load = try #require(editor.loads.last)
+        #expect(load.mode == .html && load.fromText)
+        #expect(model.composer?.format == .text)
+        #expect(model.composer?.isDirty == false)
+        press("esc")
+        #expect(await eventually { model.composer == nil })
+        #expect(core.calls("create_draft").isEmpty)
     }
 
     @Test func lettersAreTextNotCommands() async {
         await reply()
         type("djk;m")
-        #expect(model.composer?.buffer.text.hasPrefix("djk;m\n") == true)
+        #expect(model.composer?.body.hasPrefix("djk;m\n") == true)
         #expect(core.calls("move_thread").isEmpty)
         #expect(controller.overlay == .none)
         #expect(model.selectedThreadId == model.threads.first?.id)
     }
 
-    @Test func editingKeys() async {
+    /// In the text, every key but the app's few commands goes to the editor
+    /// (`edition.md`, section 7): the Mac's editing keys, ⌘B ⌘I ⌘U, ⌘Z,
+    /// ⌘A, ⌘C ⌘X ⌘V, ⌘⌫, ⇥ and ⇧⇥.
+    @Test func theEditingKeysAreTheEditors() async {
         await reply()
-        type("Merci")
-        press("ret")
-        type("Bye")
-        press("del")
-        press("left")
-        press("alt-del")
-        #expect(model.composer?.buffer.text.hasPrefix("Merci\ny\n") == true)
-        press("up")
-        #expect(model.composer?.buffer.position.line == 0)
-        press("cmd-down")
-        #expect(model.composer?.buffer.cursor == model.composer?.buffer.text.count)
-        press("ctrl-a")
-        #expect(model.composer?.buffer.position.column == 0)
-        // ⌘V pastes several lines as they are.
+        let event = { (chars: String, code: UInt16, mods: NSEvent.ModifierFlags) in
+            NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: mods, timestamp: 0, windowNumber: 0, context: nil,
+                             characters: chars, charactersIgnoringModifiers: chars, isARepeat: false, keyCode: code)!
+        }
+        let left: [(String, UInt16, NSEvent.ModifierFlags)] = [
+            ("b", 11, .command), ("i", 34, .command), ("u", 32, .command), ("k", 40, .command), ("z", 6, .command),
+            ("Z", 6, [.command, .shift]), ("a", 0, .command), ("c", 8, .command), ("x", 7, .command), ("v", 9, .command),
+            ("\u{7f}", KeyCode.delete, .command), ("\u{7f}", KeyCode.delete, .option), ("\u{F702}", KeyCode.left, [.function, .option]),
+            ("\u{F700}", KeyCode.up, [.function, .shift, .option]), ("\t", KeyCode.tab, []), ("\u{19}", KeyCode.tab, .shift),
+            ("e", 14, .control), ("1", 18, [.command, .option]), ("7", 26, [.command, .shift]), ("q", 12, .command),
+        ]
+        for (chars, code, mods) in left {
+            #expect(controller.handle(event(chars, code, mods)) == false, "\(chars) \(mods)")
+        }
+        #expect(model.composer != nil)
+        #expect(model.composer?.focus == .body)
+        #expect(core.calls("discard_draft").isEmpty)
+    }
+
+    /// ⌃I opens the AI menu (⌘I is the italic); ⌘⎋ abandons the draft (⌘⌫
+    /// is the Mac's "delete to the start of the line").
+    @Test func theAppsCommandsInTheText() async {
+        await reply()
+        press("cmd-del")
+        #expect(model.composer != nil, "⌘⌫ is the editor's")
+        press("cmd-esc")
+        #expect(await eventually { model.composer == nil })
+        #expect(model.flash == L("Reply abandoned · z to restore it"))
+    }
+
+    /// Escape belongs to a dialog of the editor while one is open (the
+    /// link, a menu of the bar), then leaves the reply again.
+    @Test func escapeIsTheEditorsWhileItsDialogIsOpen() async {
+        await reply()
+        var s = EditorStateView()
+        s.modal = true
+        editor.post(s)
+        let esc = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
+                                   characters: "\u{1b}", charactersIgnoringModifiers: "\u{1b}", isARepeat: false, keyCode: KeyCode.escape)!
+        #expect(controller.handle(esc) == false)
+        #expect(model.composer != nil)
+        editor.post(EditorStateView())
+        press("esc")
+        #expect(await eventually { model.composer == nil })
+    }
+
+    /// ⌥⇧⌘V puts the text of the pasteboard alone in place of the
+    /// selection; files copied in the Finder are attached either way.
+    @Test func pasteAndMatchStyle() async {
+        await reply()
         controller.pasteboard.clearContents()
         controller.pasteboard.setString("one\ntwo", forType: .string)
-        press("cmd-v")
-        #expect(model.composer?.buffer.text.contains("one\ntwo") == true)
-        // The menus' shortcuts go on to AppKit.
-        let q = NSEvent.keyEvent(
-            with: .keyDown, location: .zero, modifierFlags: .command, timestamp: 0, windowNumber: 0, context: nil,
-            characters: "q", charactersIgnoringModifiers: "q", isARepeat: false, keyCode: 0)!
-        #expect(controller.handle(q) == false)
+        press("shift-alt-cmd-v")
+        #expect(editor.replacements == ["one\ntwo"])
+        #expect(model.composer?.body.hasPrefix("one\ntwo") == true)
     }
 
-    @Test func shiftWithTheArrowsSelects() async {
+    /// A click in the text while another field has the keys gives them to
+    /// the text: the editor says it has the focus.
+    @Test func aClickInTheTextGivesItTheKeys() async {
         await reply()
-        type("Merci Alice")
-        press("shift-alt-left")
-        #expect(model.composer?.buffer.selectedText == "Alice")
-        press("shift-left")
-        #expect(model.composer?.buffer.selectedText == " Alice")
-        // ← ends the selection at its start, without moving further.
-        press("left")
-        #expect(model.composer?.buffer.selection == nil)
-        #expect(model.composer?.buffer.cursor == 5)
-        press("shift-right")
-        press("shift-right")
-        #expect(model.composer?.buffer.selectedText == " A")
-        // → at its end.
-        press("right")
-        #expect(model.composer?.buffer.cursor == 7)
-        // ⇧⌘←: to the start of the line; typing replaces it.
-        press("shift-cmd-left")
-        #expect(model.composer?.buffer.selectedText == "Merci A")
-        type("Bonjour a")
-        #expect(model.composer?.buffer.text.hasPrefix("Bonjour alice\n") == true)
-        // ⇧↓ goes down a line, ⇧⌘↑ to the start of the text.
-        press("shift-down")
-        #expect(model.composer?.buffer.selectedText.hasSuffix("\n") == true)
-        press("shift-cmd-up")
-        #expect(model.composer?.buffer.selectedText == "Bonjour a")
+        press("shift-tab")
+        #expect(model.composer?.focus == .subject)
+        #expect(editor.blurCount == 1)
+        var s = EditorStateView()
+        s.focused = true
+        controller.editorStateChanged(s)
+        #expect(model.composer?.focus == .body)
+        #expect(editor.focusCount >= 1)
     }
 
-    @Test func copyCutAndSelectAll() async {
+    /// What another app writes into the text (Writing Tools, a grammar
+    /// checker) is the editor's change like any other: saved.
+    @Test func anotherAppsChangeIsSaved() async {
         await reply()
-        type("Merci")
-        press("shift-alt-left")
-        press("cmd-c")
-        #expect(controller.pasteboard.string(forType: .string) == "Merci")
-        #expect(model.composer?.buffer.text.hasPrefix("Merci") == true)
-        press("cmd-x")
-        #expect(model.composer?.buffer.text.hasPrefix("\n\n") == true)
-        #expect(controller.pasteboard.string(forType: .string) == "Merci")
-        press("cmd-v")
-        #expect(model.composer?.buffer.text.hasPrefix("Merci\n") == true)
-        press("cmd-a")
-        #expect(model.composer?.buffer.selectedText == model.composer?.buffer.text)
-        // Delete empties the whole reply; ⌘⌫ still abandons it.
-        press("del")
-        #expect(model.composer?.buffer.text == "")
-        // Nothing selected: ⌘C copies nothing.
-        controller.pasteboard.clearContents()
-        press("cmd-c")
-        #expect(controller.pasteboard.string(forType: .string) == nil)
-    }
-
-    @Test func aShiftClickExtendsTheSelection() async {
-        await reply()
-        type("Merci")
-        controller.clickCompose(utf16: 2)
-        #expect(model.composer?.buffer.cursor == 2)
-        controller.clickCompose(utf16: 5, extend: true)
-        #expect(model.composer?.buffer.selectedText == "rci")
-        controller.clickCompose(utf16: 0)
-        #expect(model.composer?.buffer.selection == nil)
-    }
-
-    /// Kerlig and the like: they select through the accessibility API, and
-    /// write the corrected text back in place of the selection.
-    @Test func anotherAppSelectsAndReplaces() async {
-        await reply()
-        type("Merci beaucop")
-        controller.selectCompose(utf16: NSRange(location: 6, length: 7))
-        #expect(model.composer?.buffer.selectedText == "beaucop")
-        controller.replaceComposeSelection("beaucoup")
-        #expect(model.composer?.buffer.text.hasPrefix("Merci beaucoup\n") == true)
-        #expect(model.composer?.buffer.cursor == 14)
-        // Saved like typing: the first save writes the draft with it.
+        editor.userTyped("Merci beaucoup ", at: 0)
         let saved = { (core.calls("update_draft").last ?? core.calls("create_draft").last)?["body"] as? String }
-        #expect(await eventually { saved() == model.composer?.buffer.text })
-        // An empty text deletes the selection, and nothing without one.
-        controller.selectCompose(utf16: NSRange(location: 0, length: 6))
-        controller.replaceComposeSelection("")
-        #expect(model.composer?.buffer.text.hasPrefix("beaucoup\n") == true)
-        controller.replaceComposeSelection("")
-        #expect(model.composer?.buffer.text.hasPrefix("beaucoup\n") == true)
+        #expect(await eventually { saved()?.hasPrefix("Merci beaucoup ") == true })
     }
 
     /// The first pause writes the draft proposed, with the text typed
@@ -599,7 +609,7 @@ struct ComposeControllerTests {
         press("z")
         #expect(await eventually { model.composer != nil })
         #expect(core.calls("cancel_send").first?["id"] as? Int == 901)
-        #expect(model.composer?.buffer.text == "Merci")
+        #expect(model.composer?.body.hasPrefix("Merci") == true)
         // The flash comes after the reply is open again (`cancelSend` says
         // it once `openComposer` returned): wait for it too, or a busy
         // machine reads the flash of the sending.
@@ -624,7 +634,7 @@ struct ComposeControllerTests {
         #expect(controller.activeChoice == nil)
         #expect(model.composer != nil)
         type("!")
-        #expect(model.composer?.buffer.text.hasPrefix("Merci!") == true)
+        #expect(model.composer?.body.hasPrefix("Merci!") == true)
         #expect(core.calls("send_draft").isEmpty)
         // `w`: sent, the conversation to go to Waiting.
         press("shift-cmd-ret")
@@ -817,7 +827,7 @@ struct ComposeControllerTests {
         press("ret")
         #expect(model.composer?.focus == .body)
         type("x")
-        #expect(model.composer?.buffer.text.hasPrefix("x") == true)
+        #expect(model.composer?.body.hasPrefix("x") == true)
         #expect(await eventually { core.calls("update_draft").last?["subject"] as? String == "Re: Subject 1 (suite)" })
     }
 
@@ -849,21 +859,6 @@ struct ComposeControllerTests {
         #expect(model.composer?.subjectLine.selectedText == "Re")
         #expect(model.marked.isEmpty)
         #expect(await eventually { core.calls("update_draft").last?["subject"] as? String == "Re: Devis" })
-    }
-
-    /// ⇧⌥↓ in the text selects paragraph after paragraph.
-    @Test func shiftOptionDownSelectsSeveralParagraphs() async {
-        await reply()
-        type("Bonjour,")
-        press("ret")
-        type("merci.")
-        press("cmd-up")
-        press("shift-alt-down")
-        #expect(model.composer?.buffer.selectedText == "Bonjour,")
-        press("shift-alt-down")
-        #expect(model.composer?.buffer.selectedText == "Bonjour,\nmerci.")
-        press("shift-alt-down")
-        #expect(model.composer?.buffer.selectedText == "Bonjour,\nmerci.\n", "on into the empty line under it")
     }
 
     /// Escape closes the suggestions first, then leaves the reply.
@@ -931,7 +926,8 @@ struct ComposeControllerTests {
         controller.pasteboard.writeObjects([file as NSURL])
         press("cmd-v")
         #expect(await eventually { model.composer?.attachments.count == 1 })
-        #expect(model.composer?.buffer.text.hasPrefix("\n") == true)
+        #expect(model.composer?.body.hasPrefix("\n") == true)
+        #expect(editor.keys.isEmpty, "not pasted as text")
         await model.attach([incoming.deletingLastPathComponent()])
         #expect(model.flash == L("A folder cannot be attached: %@", incoming.deletingLastPathComponent().lastPathComponent))
         #expect(core.calls("add_draft_attachment").count == 1)
@@ -970,7 +966,7 @@ struct ComposeControllerTests {
         type("Mon texte")
         // Written at the pause, then abandoned: the core drops it.
         #expect(await eventually { core.calls("create_draft").count == 1 })
-        press("cmd-del")
+        press("cmd-esc")
         #expect(await eventually { model.composer == nil })
         #expect(core.calls("discard_draft").first?["id"] as? Int == 901)
         #expect(model.flash == L("Reply abandoned · z to restore it"))
@@ -989,14 +985,17 @@ struct ComposeControllerTests {
     /// the core; `z` gives the text back all the same.
     @Test func aReplyAbandonedBeforeThePauseWasNeverWritten() async {
         await reply()
+        editor.reportsChanges = false
         type("Vite")
-        press("cmd-del")
+        press("cmd-esc")
         #expect(await eventually { model.composer == nil })
         #expect(core.calls("create_draft").isEmpty)
         #expect(core.calls("discard_draft").isEmpty)
         #expect(model.flash == L("Reply abandoned · z to restore it"))
         press("z")
-        #expect(await eventually { model.composer?.buffer.text.hasPrefix("Vite") == true })
+        // The text the editor still held (its pause had not come) is given
+        // back too: taken with `flush` before abandoning.
+        #expect(await eventually { model.composer?.body.hasPrefix("Vite") == true })
     }
 
     /// `r` then Escape without a word: nothing written, nothing closed,
@@ -1029,7 +1028,7 @@ struct ComposeControllerTests {
     /// the pause saves): it is written once, the others wait for it.
     @Test func theDraftIsWrittenOnce() async {
         await reply()
-        model.composer?.buffer = TextBuffer("Merci", cursor: 5)
+        model.composer?.body = "Merci"
         async let a = model.ensureWritten()
         async let b = model.ensureWritten()
         let (x, y) = await (a, b)
@@ -1048,7 +1047,7 @@ struct ComposeControllerTests {
         type("Merci")
         #expect(await eventually { model.flash == L("Cannot send: %@", "no [smtp]") })
         #expect(model.composer?.isWritten == false)
-        #expect(model.composer?.buffer.text.hasPrefix("Merci") == true)
+        #expect(model.composer?.body.hasPrefix("Merci") == true)
         #expect(core.calls("update_draft").isEmpty)
     }
 
@@ -1099,7 +1098,7 @@ struct ComposeControllerTests {
         #expect(model.flash == L("Sending from %@", "Me at work <me@work.example> · work"))
         // Letters are text again.
         type("x")
-        #expect(model.composer?.buffer.text.hasPrefix("x") == true)
+        #expect(model.composer?.body.hasPrefix("x") == true)
         press("cmd-ret")
         #expect(await eventually { core.calls("send_draft").count == 1 })
         let from = core.calls("update_draft").compactMap { $0["from"] as? [String: Any] }.last
@@ -1240,38 +1239,123 @@ struct ComposeControllerTests {
     }
 }
 
-/// The text view of the reply, as other apps see it through the
-/// accessibility API and the Services (`ComposerNSTextView`).
+/// The editor's text and the core: ⌘↩ sends the very last key, ⇧⌘T
+/// switches the mode (`edition.md`, sections 3 and 8).
 @MainActor
-struct ComposerAccessibilityTests {
-    @Test func theSelectionIsReadAndWhatIsWrittenGoesToTheReply() {
-        let view = ComposerNSTextView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
-        view.isEditable = false
-        view.isSelectable = true
-        view.string = "Merci beaucop"
-        view.setSelectedRange(NSRange(location: 6, length: 7))
-        #expect(view.accessibilitySelectedText() == "beaucop")
-        var replaced: [String] = []
-        var selected: [NSRange] = []
-        view.onReplaceSelection = { replaced.append($0) }
-        view.onSelect = { selected.append($0) }
-        // Not editable, yet the setters are allowed: they go to the reply.
-        #expect(view.isAccessibilitySelectorAllowed(#selector(NSView.setAccessibilitySelectedText(_:))))
-        #expect(view.isAccessibilitySelectorAllowed(#selector(NSView.setAccessibilityValue(_:))))
-        view.setAccessibilitySelectedText("beaucoup")
-        view.setAccessibilitySelectedTextRange(NSRange(location: 0, length: 5))
-        #expect(replaced == ["beaucoup"])
-        #expect(selected == [NSRange(location: 0, length: 5)])
-        // The whole value: everything selected, then replaced.
-        view.setAccessibilityValue("Tout neuf")
-        #expect(selected.last == NSRange(location: 0, length: 13))
-        #expect(replaced.last == "Tout neuf")
-        // A Service sends the selection and gets its answer back.
-        #expect(view.validRequestor(forSendType: .string, returnType: .string) as? ComposerNSTextView === view)
-        let pb = NSPasteboard(name: NSPasteboard.Name("NiceMailerTests-\(UUID().uuidString)"))
-        pb.clearContents()
-        pb.setString("corrigé", forType: .string)
-        #expect(view.readSelection(from: pb, type: .string))
-        #expect(replaced.last == "corrigé")
+struct EditorFlowTests {
+    let core = FakeCore(handler: Fixture.answer)
+    let model = AppModel()
+    let controller: GeekController
+    let editor: FakeEditor
+
+    init() async {
+        let defaults = TestDefaults.make()
+        editor = FakeEditor(model: model)
+        controller = GeekController(model: model, defaults: defaults, textSize: TextSize(defaults: defaults))
+        let c = controller
+        editor.onLeave = { c.leaveText() }
+        controller.pasteboard = NSPasteboard(name: NSPasteboard.Name("NiceMailerTests-\(UUID().uuidString)"))
+        model.openFile = { _ in }
+        model.addressBook = FixtureAddressBook(cards: [:])
+        await model.attach(core)
+        _ = await eventually { model.threads.count == 8 && model.openThread != nil }
+        controller.handle(Self.key("r"))
+        _ = await eventually { model.composer != nil }
+    }
+
+    static func key(_ chars: String, code: UInt16 = 0, _ mods: NSEvent.ModifierFlags = []) -> NSEvent {
+        NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: mods, timestamp: 0, windowNumber: 0, context: nil,
+                         characters: chars, charactersIgnoringModifiers: chars, isARepeat: false, keyCode: code)!
+    }
+
+    /// The editor had not reported the last keys yet (its pause): ⌘↩ asks
+    /// for them first, and they leave with the mail.
+    @Test func commandReturnSendsTheLastKeyTyped() async {
+        editor.reportsChanges = false
+        editor.key("M")
+        editor.key("!")
+        #expect(model.composer?.body.hasPrefix("M!") == false)
+        controller.handle(Self.key("\r", code: KeyCode.returnKey, .command))
+        #expect(await eventually { core.calls("send_draft").count == 1 })
+        #expect(editor.flushCount >= 1)
+        #expect((core.calls("send_draft").first?["body"] as? String)?.hasPrefix("M!") == true)
+        #expect(core.calls("send_draft").first?["body_format"] as? String == "text")
+    }
+
+    /// An editor that does not answer: nothing is sent on an older text.
+    @Test func noAnswerNoSending() async {
+        editor.answersFlush = false
+        controller.handle(Self.key("\r", code: KeyCode.returnKey, .command))
+        #expect(await eventually { model.flash == L("Not sent: the text could not be read · try again") })
+        #expect(core.calls("send_draft").isEmpty)
+        #expect(model.composer != nil)
+    }
+
+    /// Escape keeps the last keys too.
+    @Test func escapeKeepsTheLastKeyTyped() async {
+        editor.reportsChanges = false
+        editor.key("K")
+        controller.handle(Self.key("\u{1b}", code: KeyCode.escape))
+        #expect(await eventually { core.calls("create_draft").count == 1 })
+        #expect((core.calls("create_draft").first?["body"] as? String)?.hasPrefix("K") == true)
+    }
+
+    /// ⇧⌘T: to formatted, the editor converts the text and the draft is
+    /// saved as HTML; back to text only, the core gives the text.
+    @Test func shiftCommandTSwitchesTheMode() async throws {
+        controller.handle(Self.key("T", [.command, .shift]))
+        #expect(await eventually { editor.modes.count == 1 })
+        #expect(editor.modes.first?.mode == .html)
+        #expect(await eventually { model.composer?.format == .html })
+        let saved = { (core.calls("update_draft").last ?? core.calls("create_draft").last) }
+        #expect(await eventually { saved()?["body_format"] as? String == "html" })
+        #expect((saved()?["body"] as? String)?.hasPrefix("<p>") == true)
+        // Back: the core makes the text of the HTML (`html_to_text`).
+        controller.handle(Self.key("T", [.command, .shift]))
+        #expect(await eventually { editor.modes.count == 2 })
+        #expect(core.calls("html_to_text").count == 1)
+        #expect(editor.modes.last?.mode == .text)
+        #expect(await eventually { model.composer?.format == .text })
+    }
+
+    /// Formatting would be lost: the first ⇧⌘T says so, the second converts.
+    @Test func losingTheFormattingIsConfirmed() async {
+        core.handler = { method, params in
+            method == "html_to_text" ? ["text": "Bold", "formatted": true] : Fixture.answer(method, params)
+        }
+        controller.handle(Self.key("T", [.command, .shift]))
+        #expect(await eventually { model.composer?.format == .html })
+        controller.handle(Self.key("T", [.command, .shift]))
+        #expect(await eventually { model.flash == L("The formatting will be lost · ⇧⌘T again to convert") })
+        #expect(editor.modes.count == 1)
+        controller.handle(Self.key("T", [.command, .shift]))
+        #expect(await eventually { editor.modes.count == 2 })
+        #expect(editor.modes.last?.content == "Bold")
+    }
+
+    /// The AI reads text only for now: a formatted draft is not offered.
+    @Test func theAIRefusesAFormattedDraft() async {
+        controller.handle(Self.key("T", [.command, .shift]))
+        #expect(await eventually { model.composer?.format == .html })
+        controller.handle(Self.key("i", code: 34, .control))
+        #expect(model.flash == L("The AI works on text only for now · ⇧⌘T for text only"))
+        #expect(model.aiRun == nil)
+    }
+
+    /// A change of the AI the core applied goes to the editor as one range,
+    /// so that ⌘Z there gives the words back.
+    @Test func theChangedRangeOfATextIsItsWholeWords() {
+        // The whole word: the cursor goes after it.
+        let r = Compose.changedRange(old: "Merci beaucop.\n> Hi", new: "Merci beaucoup.\n> Hi")
+        #expect(r.start == 6 && r.end == 13 && r.text == "beaucoup")
+        let w = Compose.changedRange(old: "je vien jeudi", new: "je vien vendredi")
+        #expect(w.start == 8 && w.end == 13 && w.text == "vendredi")
+        let all = Compose.changedRange(old: "abc", new: "xyz")
+        #expect(all.start == 0 && all.end == 3 && all.text == "xyz")
+        // Never inside an emoji (two UTF-16 units).
+        let emoji = Compose.changedRange(old: "a 😀 b", new: "a 😃 b")
+        #expect(emoji.start == 2 && emoji.end == 4 && emoji.text == "😃")
+        let same = Compose.changedRange(old: "x", new: "x")
+        #expect(same.start == 1 && same.end == 1 && same.text == "")
     }
 }

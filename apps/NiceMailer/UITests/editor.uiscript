@@ -1,0 +1,110 @@
+# The editor of a reply's text (`edition.md`, `docs/editor.md`): a standard
+# text field, Tiptap in a web view, with real keys. Text only by default;
+# ⇧⌘T to the formatted mode and back; the typing shortcuts and ⌘B; ⌥⇧⌘V;
+# the last key typed sent with ⌘↩; ⌘⎋ abandons.
+appearance light
+expect folder = Inbox
+expect reader_subject ~ La facture de mars
+key r
+expect composing = true
+expect editor_ready = true
+expect compose_focus = body
+expect editor_focused = true
+expect compose_format = text
+# Accents, typed as keys, at the start: above the quotation.
+type Très bien, à jeudi.
+expect compose_text ~ Très bien, à jeudi.|\n
+expect compose_text ~ wrote:\n>
+expect compose_saved = true
+expect compose_written = true
+# ⌥⇧⌘V: the text of the private pasteboard, alone, at the cursor.
+key space
+clipboard Merci.\nAlex
+key shift-alt-cmd-v
+expect compose_text ~ à jeudi. Merci.\nAlex|
+# ⇧⇥ outside a list: back to the subject; a click in the text would give
+# it the keys again, ⇥ from the subject does.
+key shift-tab
+expect compose_focus = subject
+expect editor_focused = false
+key tab
+expect compose_focus = body
+expect editor_focused = true
+# To the formatted mode: the quotation becomes a quotation block.
+key shift-cmd-t
+expect compose_format = html
+expect flash ~ Formatted text
+expect compose_text ~ <blockquote>
+# The typing shortcut of a heading, at the start of the first line.
+key cmd-up
+key hash
+key hash
+key space
+expect editor_block = h2
+expect compose_text ~ <h2>Très bien
+# ⌘B, then typed: bold; ⌘B again ends it.
+key cmd-down
+key cmd-up
+key down
+key cmd-right
+# WebKit tells the page of a cursor moved a moment later: ⌘B right after
+# would apply to the place before the move.
+wait 300
+key cmd-b
+key space
+type important
+key cmd-b
+expect compose_text ~ <strong> important</strong>
+snapeditor editor-formatted
+# Back to text only: the formatting would be lost, a second ⇧⌘T converts.
+key shift-cmd-t
+expect flash ~ formatting will be lost
+expect compose_format = html
+key shift-cmd-t
+expect compose_format = text
+expect compose_text ~ Très bien, à jeudi.
+expect compose_text !~ <h2>
+expect compose_text ~ > Bonjour
+# And formatted again, to send it formatted.
+key shift-cmd-t
+expect compose_format = html
+wait 300
+key cmd-b
+type Fin
+# Sent at once, before the editor's pause: the last word goes with it.
+key cmd-ret
+expect composing = false
+wait 4500
+expect flash ~ Sent
+key ;
+key s
+expect folder = Sent
+expect selected_subject ~ facture de mars
+expect reader_text ~ Fin
+expect reader_text ~ Très bien, à jeudi.
+# ⌘⎋ abandons a draft; ⌘⌫ in the text is the editor's.
+key ;
+key i
+expect folder = Inbox
+key j
+expect reader_subject !~ La facture de mars
+key r
+expect composing = true
+expect editor_focused = true
+type Brouillon
+key cmd-del
+expect composing = true
+key cmd-esc
+expect composing = false
+expect flash ~ abandoned
+# The editor takes the app's theme: dark too.
+appearance dark
+expect reader_subject !~ La facture de mars
+key r
+expect composing = true
+expect editor_focused = true
+type Sombre
+snapeditor editor-dark
+key cmd-esc
+expect composing = false
+appearance light

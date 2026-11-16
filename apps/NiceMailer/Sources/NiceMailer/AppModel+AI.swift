@@ -380,23 +380,23 @@ extension AppModel {
     private func replyWith(_ text: String, current: Int?) async {
         await startReply(current: current)
         guard var c = composer else { return }
-        c.buffer = AI.insertReply(text, into: c.buffer)
+        let (body, cursor) = AI.insertReply(text, into: c.body)
+        c.body = body
         composer = c
+        editor?.load(mode: c.format, content: body, fromText: false, cursor: cursor, focus: c.focus == .body, formats: composeFormats)
         composerChanged()
     }
 
-    /// The draft as `ai_apply` saved it: the text (kept for ⌘Z) or the
-    /// subject, and the revision.
+    /// The draft as `ai_apply` saved it: the text or the subject, and the
+    /// revision. The text changed by the AI goes to the editor as one step
+    /// of its undo (`replaceRange`): ⌘Z there gives the words back, as for
+    /// anything typed (`edition.md`, section 7).
     private func applied(_ d: DraftView, opened: UUID) {
         guard var c = composer, c.opened == opened else { return }
-        let before = c.buffer.text
-        if d.body != before {
-            // A passage selected (other wordings…): from its end,
-            // so the cursor lands after the new words, where writing goes
-            // on, whichever way the selection was made.
-            let from = c.buffer.selection?.upperBound ?? c.buffer.cursor
-            c.buffer = TextBuffer(d.body, cursor: AI.cursorAfter(old: before, new: d.body, cursor: from))
-            c.aiUndo = AIUndo(before: before, after: c.buffer.text)
+        if d.body != c.body {
+            let change = Compose.changedRange(old: c.body, new: d.body)
+            editor?.replaceRange(start: change.start, end: change.end, text: change.text)
+            c.body = d.body
             flash = L("Applied · ⌘Z undoes it")
         }
         if d.subject != c.headers.subject {
@@ -406,25 +406,9 @@ extension AppModel {
             flash = L("Subject: %@", d.subject)
         }
         c.revision = d.revision
-        c.saved = c.buffer.text
+        c.saved = d.body
+        c.savedFormat = ComposeFormat(rawValue: d.bodyFormat ?? "text") ?? .text
         composer = c
-    }
-
-    /// ⌘Z in the reply: the text before the last AI proposal accepted, if
-    /// it is still the text the AI gave. True when something was undone.
-    func undoAI() -> Bool {
-        guard var c = composer, let u = c.aiUndo else { return false }
-        c.aiUndo = nil
-        guard c.buffer.text == u.after else {
-            composer = c
-            flash = L("The text changed since the AI's change: nothing undone")
-            return true
-        }
-        c.buffer = TextBuffer(u.before, cursor: AI.cursorAfter(old: u.after, new: u.before, cursor: c.buffer.cursor))
-        composer = c
-        flash = L("AI change undone")
-        composerChanged()
-        return true
     }
 
     /// Writes a file of the AI (the calendar file of an appointment, the

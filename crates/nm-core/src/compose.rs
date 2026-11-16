@@ -703,11 +703,22 @@ pub fn clean_mime_type(t: &str) -> String {
 /// Lines end with CRLF. `Bcc` is written when `h.bcc` is not empty: the
 /// caller gives an empty list for the mail sent.
 pub fn build_message(h: &Outgoing, body: &str, attachments: &[Attachment]) -> Vec<u8> {
+    build_message_with_html(h, body, None, attachments)
+}
+
+/// [`build_message`] with an HTML version of the text (`edition.md`,
+/// section 10, "MIME"): with `html`, the body is a `multipart/alternative`
+/// of the text, then the HTML (`text/html; charset=utf-8`, in
+/// `quoted-printable`). RFC 2046 puts the preferred version last, so the
+/// HTML comes second; a reader that knows no HTML shows the text. `html`
+/// is the whole document, already cleaned by the caller (`nm-store`,
+/// `mail_html.rs`): this function only encodes it.
+pub fn build_message_with_html(h: &Outgoing, body: &str, html: Option<&str>, attachments: &[Attachment]) -> Vec<u8> {
     let files: usize = attachments
         .iter()
         .map(|a| encoded_size(a.data.len() as u64) as usize + 512)
         .sum();
-    let mut out = String::with_capacity(body.len() + 1024 + files);
+    let mut out = String::with_capacity(body.len() + html.map_or(0, |h| h.len() * 11 / 10) + 1024 + files);
     header(&mut out, "From", &mailbox(h.from));
     if !h.to.is_empty() {
         address_list(&mut out, "To", h.to);
@@ -745,11 +756,14 @@ pub fn build_message(h: &Outgoing, body: &str, attachments: &[Attachment]) -> Ve
     // same draft gives the same bytes. Base64 and quoted-printable never
     // hold `=_`; a text sent as is that holds it goes in quoted-printable.
     let boundary = format!("=_nm_{}", &hex_digest(h.message_id)[..24]);
+    // The boundary of the alternative, inside the mixed one when there are
+    // files: another name, since a part may not hold its parent's.
+    let alternative = format!("=_nm_alt_{}", &hex_digest(h.message_id)[..24]);
     let plain = text.is_ascii()
         && text.split("\r\n").all(|l| l.len() <= 998)
-        && !(!attachments.is_empty() && text.contains(&boundary));
+        && !((!attachments.is_empty() || html.is_some()) && text.contains("=_nm_"));
     if attachments.is_empty() {
-        text_part(&mut out, &text, plain);
+        body_parts(&mut out, &text, plain, html, &alternative);
         return out.into_bytes();
     }
     header(
@@ -759,7 +773,7 @@ pub fn build_message(h: &Outgoing, body: &str, attachments: &[Attachment]) -> Ve
     );
     out.push_str("\r\n");
     let _ = write!(out, "--{boundary}\r\n");
-    text_part(&mut out, &text, plain);
+    body_parts(&mut out, &text, plain, html, &alternative);
     for a in attachments {
         let _ = write!(out, "--{boundary}\r\n");
         let name = clean_filename(a.filename);
@@ -792,6 +806,34 @@ pub fn build_message(h: &Outgoing, body: &str, attachments: &[Attachment]) -> Ve
     }
     let _ = write!(out, "--{boundary}--\r\n");
     out.into_bytes()
+}
+
+/// The body of the mail: the text part alone, or, with `html`, a
+/// `multipart/alternative` of the text and the HTML.
+fn body_parts(out: &mut String, text: &str, plain: bool, html: Option<&str>, boundary: &str) {
+    let Some(html) = html else {
+        text_part(out, text, plain);
+        return;
+    };
+    // Folded: on one line the header would pass 78 characters.
+    header(out, "Content-Type", &format!("multipart/alternative;\r\n boundary=\"{boundary}\""));
+    out.push_str("\r\n");
+    let _ = write!(out, "--{boundary}\r\n");
+    text_part(out, text, plain);
+    let _ = write!(out, "--{boundary}\r\n");
+    header(out, "Content-Type", "text/html; charset=utf-8");
+    header(out, "Content-Transfer-Encoding", "quoted-printable");
+    out.push_str("\r\n");
+    // Quoted-printable works on lines ended by CRLF; the document's own
+    // line breaks become those. Its spaces before a line end are encoded
+    // (`=20`), which HTML does not care about either way.
+    let mut lines = String::with_capacity(html.len() + 64);
+    for line in html.lines() {
+        lines.push_str(line);
+        lines.push_str("\r\n");
+    }
+    quoted_printable(out, &lines);
+    let _ = write!(out, "--{boundary}--\r\n");
 }
 
 /// The headers and the text of the body part.
@@ -1801,6 +1843,52 @@ mod tests {
             user_agent: "t",
             draft_revision: None,
         }
+    }
+
+    #[test]
+    fn an_html_version_makes_an_alternative() {
+        let from = Mailbox::new("me@x.fr", None);
+        let to = [Mailbox::new("a@x.fr", None)];
+        let html = "<!DOCTYPE html>\n<p style=\"margin: 0;\">Très <strong>bien</strong> = oui</p>\n";
+        let mime = String::from_utf8(build_message_with_html(&headers(&from, &to), "Très bien = oui", Some(html), &[])).unwrap();
+        let alt = format!("=_nm_alt_{}", &hex_digest("id@x.fr")[..24]);
+        assert!(mime.contains(&format!("Content-Type: multipart/alternative;\r\n boundary=\"{alt}\"\r\n")), "{mime}");
+        assert_eq!(mime.matches(&format!("--{alt}\r\n")).count(), 2);
+        assert!(mime.ends_with(&format!("--{alt}--\r\n")));
+        let text = mime.find("Content-Type: text/plain").unwrap();
+        let html_at = mime.find("Content-Type: text/html; charset=utf-8\r\nContent-Transfer-Encoding: quoted-printable\r\n").unwrap();
+        assert!(text < html_at);
+        // Quoted-printable: `=` and non-ASCII encoded, lines kept short.
+        assert!(mime.contains("style=3D\"margin: 0;\">Tr=C3=A8s <strong>bien</strong> =3D oui</p>"), "{mime}");
+        assert!(mime.split("\r\n").all(|l| l.len() <= 78), "{mime}");
+        // Without HTML, the message is exactly the one of `build_message`.
+        assert_eq!(
+            build_message_with_html(&headers(&from, &to), "x", None, &[]),
+            build_message(&headers(&from, &to), "x", &[])
+        );
+    }
+
+    #[test]
+    fn an_alternative_with_files_is_inside_the_mixed_part() {
+        let from = Mailbox::new("me@x.fr", None);
+        let to = [Mailbox::new("a@x.fr", None)];
+        let files = [Attachment { filename: "a.txt", mime_type: "text/plain", data: b"hi" }];
+        let mime = String::from_utf8(build_message_with_html(&headers(&from, &to), "x", Some("<p>x</p>"), &files)).unwrap();
+        let mixed = format!("=_nm_{}", &hex_digest("id@x.fr")[..24]);
+        let alt = format!("=_nm_alt_{}", &hex_digest("id@x.fr")[..24]);
+        let first = mime.find(&format!("--{mixed}\r\nContent-Type: multipart/alternative;\r\n boundary=\"{alt}\"")).unwrap();
+        let end_alt = mime.find(&format!("--{alt}--\r\n")).unwrap();
+        let file = mime.find("filename=\"a.txt\"").unwrap();
+        assert!(first < end_alt && end_alt < file, "{mime}");
+        assert!(mime.ends_with(&format!("--{mixed}--\r\n")));
+    }
+
+    #[test]
+    fn a_text_holding_the_boundary_prefix_is_encoded() {
+        let from = Mailbox::new("me@x.fr", None);
+        let to = [Mailbox::new("a@x.fr", None)];
+        let mime = String::from_utf8(build_message_with_html(&headers(&from, &to), "see =_nm_ here", Some("<p>x</p>"), &[])).unwrap();
+        assert!(!mime.contains("see =_nm_"), "{mime}");
     }
 
     #[test]

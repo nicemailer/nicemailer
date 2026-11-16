@@ -1,0 +1,39 @@
+{
+  "name": "nicemailer-editor",
+  "private": true,
+  "description": "The editor of a mail's text (specifications/edition.md): Tiptap, bundled into one script for the app and any other host.",
+  "license": "UNLICENSED",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "check": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@tiptap/core": "3.34.0",
+    "@tiptap/extension-blockquote": "3.34.0",
+    "@tiptap/extension-bold": "3.34.0",
+    "@tiptap/extension-document": "3.34.0",
+    "@tiptap/extension-hard-break": "3.34.0",
+    "@tiptap/extension-heading": "3.34.0",
+    "@tiptap/extension-italic": "3.34.0",
+    "@tiptap/extension-link": "3.34.0",
+    "@tiptap/extension-list": "3.34.0",
+    "@tiptap/extension-paragraph": "3.34.0",
+    "@tiptap/extension-text": "3.34.0",
+    "@tiptap/extension-text-style": "3.34.0",
+    "@tiptap/extension-underline": "3.34.0",
+    "@tiptap/extensions": "3.34.0",
+    "@tiptap/pm": "3.34.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "esbuild": "0.28.2",
+    "jsdom": "31.0.1",
+    "typescript": "7.0.2",
+    "vitest": "5.1.0"
+  }
+}

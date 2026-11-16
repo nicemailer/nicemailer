@@ -3770,16 +3770,6 @@
         }
       }
     },
-    "⌘↩ send · ⇧⌘↩ send then… · ⌥⌘F from · Esc keep · ⌘⌫ abandon": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "⌘↩ envoyer · ⇧⌘↩ envoyer puis… · ⌥⌘F expéditeur · Échap garder · ⌘⌫ abandonner"
-          }
-        }
-      }
-    },
     "Calling…": {
       "localizations": {
         "fr": {
@@ -4716,6 +4706,386 @@
           "stringUnit": {
             "state": "translated",
             "value": "Chargement des mails…"
+          }
+        }
+      }
+    },
+    "Address of the link": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Adresse du lien"
+          }
+        }
+      }
+    },
+    "Blue": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bleu"
+          }
+        }
+      }
+    },
+    "Green": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vert"
+          }
+        }
+      }
+    },
+    "Grey": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gris"
+          }
+        }
+      }
+    },
+    "Orange": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Orange"
+          }
+        }
+      }
+    },
+    "Pink": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rose"
+          }
+        }
+      }
+    },
+    "Purple": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Violet"
+          }
+        }
+      }
+    },
+    "Red": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rouge"
+          }
+        }
+      }
+    },
+    "Teal": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bleu-vert"
+          }
+        }
+      }
+    },
+    "Bold (⌘B)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gras (⌘B)"
+          }
+        }
+      }
+    },
+    "Italic (⌘I)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Italique (⌘I)"
+          }
+        }
+      }
+    },
+    "Underline (⌘U)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Souligné (⌘U)"
+          }
+        }
+      }
+    },
+    "Bulleted list (⇧⌘8)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Liste à puces (⇧⌘8)"
+          }
+        }
+      }
+    },
+    "Numbered list (⇧⌘7)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Liste numérotée (⇧⌘7)"
+          }
+        }
+      }
+    },
+    "Colour": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couleur"
+          }
+        }
+      }
+    },
+    "Default colour": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couleur par défaut"
+          }
+        }
+      }
+    },
+    "Default font": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Police par défaut"
+          }
+        }
+      }
+    },
+    "Font": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Police"
+          }
+        }
+      }
+    },
+    "Formatted text · ⇧⌘T for text only": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Texte mis en forme · ⇧⌘T pour le texte seul"
+          }
+        }
+      }
+    },
+    "Text only · ⇧⌘T for formatted text": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Texte seul · ⇧⌘T pour le texte mis en forme"
+          }
+        }
+      }
+    },
+    "Heading 1 (⌥⌘1)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Titre 1 (⌥⌘1)"
+          }
+        }
+      }
+    },
+    "Heading 2 (⌥⌘2)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Titre 2 (⌥⌘2)"
+          }
+        }
+      }
+    },
+    "Heading 3 (⌥⌘3)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Titre 3 (⌥⌘3)"
+          }
+        }
+      }
+    },
+    "Recently used": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Utilisées récemment"
+          }
+        }
+      }
+    },
+    "All fonts": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Toutes les polices"
+          }
+        }
+      }
+    },
+    "Normal size": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Taille normale"
+          }
+        }
+      }
+    },
+    "Size": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Taille"
+          }
+        }
+      }
+    },
+    "Link (⌘K)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lien (⌘K)"
+          }
+        }
+      }
+    },
+    "Not a link: http, https or mailto only": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pas un lien : http, https ou mailto seulement"
+          }
+        }
+      }
+    },
+    "Not sent: the text could not be read · try again": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Non envoyé : le texte n'a pas pu être lu · réessayez"
+          }
+        }
+      }
+    },
+    "Quotation (⇧⌘B)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Citation (⇧⌘B)"
+          }
+        }
+      }
+    },
+    "Text of the link": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Texte du lien"
+          }
+        }
+      }
+    },
+    "Text of the mail": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Texte du mail"
+          }
+        }
+      }
+    },
+    "The AI works on text only for now · ⇧⌘T for text only": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L'IA ne travaille que sur du texte pour l'instant · ⇧⌘T pour le texte seul"
+          }
+        }
+      }
+    },
+    "The formatting will be lost · ⇧⌘T again to convert": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La mise en forme sera perdue · ⇧⌘T de nouveau pour convertir"
+          }
+        }
+      }
+    },
+    "The text could not be read: try again": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le texte n'a pas pu être lu : réessayez"
+          }
+        }
+      }
+    },
+    "⌘↩ send · ⇧⌘↩ send then… · ⌥⌘F from · ⇧⌘T format · Esc keep · ⌘⎋ abandon": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "⌘↩ envoyer · ⇧⌘↩ envoyer puis… · ⌥⌘F expéditeur · ⇧⌘T format · Échap garder · ⌘⎋ abandonner"
+          }
+        }
+      }
+    },
+    "in a reply: text only or formatted text": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "dans une réponse : texte seul ou mis en forme"
           }
         }
       }
