@@ -43,6 +43,7 @@ mod ai;
 mod drafts;
 mod events;
 mod extract;
+mod rights;
 mod setup;
 mod sync;
 
@@ -1245,6 +1246,8 @@ fn session_call(core: &Arc<Core>, session: &mut Session, req: &Request) -> Optio
 /// or in the ordered task of the connection (see [`serve`]): it gets the
 /// session's source, never the session.
 async fn call(core: &Arc<Core>, source: Source, req: Request) -> Result<Value, RpcError> {
+    // What this source may ask, before anything runs (`rights.rs`).
+    rights::check(source, &req.method)?;
     // Event position, read *before* running a query and returned as `as_of`.
     // Any event with a higher seq may not be reflected in the data, so the
     // client knows it must apply it.
@@ -1508,9 +1511,12 @@ async fn call(core: &Arc<Core>, source: Source, req: Request) -> Result<Value, R
         method::LIST_HISTORY => {
             let p: ListHistoryParams = params(req.params)?;
             let as_of = as_of();
-            let (items, next_cursor) = with_reader(core, move |s| s.list_history(p.cursor.as_deref(), limit(p.limit))).await?;
+            let filter = nm_store::library::HistoryFilter { since: p.since, sources: p.sources };
+            let (items, next_cursor) =
+                with_reader(core, move |s| s.list_history_filtered(p.cursor.as_deref(), limit(p.limit), &filter)).await?;
             to_value(Page { items, next_cursor, as_of })
         }
+        method::ATTACHMENT_TEXT => to_value(extract::attachment_text(core, params(req.params)?).await?),
         method::LIST_TAGS => {
             let p: ListTagsParams = params(req.params)?;
             let as_of = as_of();
@@ -1663,6 +1669,10 @@ async fn call(core: &Arc<Core>, source: Source, req: Request) -> Result<Value, R
                 ui: nm_api::UiConfig {
                     title_bar: engine.config().ui.title_bar.as_str().into(),
                     auto_confirm_calls: engine.config().ui.auto_confirm_calls,
+                },
+                mcp: nm_api::McpConfig {
+                    message_chars: engine.config().mcp.message_chars,
+                    response_chars: engine.config().mcp.response_chars,
                 },
                 as_of,
             })

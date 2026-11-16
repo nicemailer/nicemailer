@@ -144,6 +144,54 @@ fn history_lists_actions_newest_first_with_a_summary() {
 }
 
 #[test]
+fn history_filters_by_source_and_date_and_pages_through_them() {
+    use nm_store::library::HistoryFilter;
+    let mut store = seeded();
+    let (thread, inbox) = inbox_thread(&store);
+    store.move_thread(thread, FolderRole::Todo, Some(inbox), MoveOptions::default(), Source::App).unwrap();
+    // Lines of the agent, written by hand: three, at known dates, among
+    // the seed's own lines and the move above.
+    for date in [1_000, 2_000, 3_000] {
+        store
+            .conn()
+            .execute(
+                "INSERT INTO audit_log (date_created, created_by, entity, entity_id, action) VALUES (?1, 'mcp', 'message', 1, 'move')",
+                [date],
+            )
+            .unwrap();
+    }
+    let mcp = HistoryFilter { since: None, sources: vec!["mcp".into()] };
+    let (items, next) = store.list_history_filtered(None, 10, &mcp).unwrap();
+    assert_eq!(items.iter().map(|e| e.date).collect::<Vec<_>>(), [3_000, 2_000, 1_000]);
+    assert!(items.iter().all(|e| e.source == "mcp"));
+    assert_eq!(next, None);
+    // Pages of one: each line once, with the filter kept from page to page.
+    let mut dates = Vec::new();
+    let mut cursor: Option<String> = None;
+    loop {
+        let (items, next) = store.list_history_filtered(cursor.as_deref(), 1, &mcp).unwrap();
+        dates.extend(items.iter().map(|e| e.date));
+        match next {
+            Some(c) => cursor = Some(c),
+            None => break,
+        }
+    }
+    assert_eq!(dates, [3_000, 2_000, 1_000]);
+    // Since: the date itself included.
+    let since = HistoryFilter { since: Some(2_000), sources: vec!["mcp".into()] };
+    let (items, _) = store.list_history_filtered(None, 10, &since).unwrap();
+    assert_eq!(items.iter().map(|e| e.date).collect::<Vec<_>>(), [3_000, 2_000]);
+    // Several sources; the move of the app is among them.
+    let both = HistoryFilter { since: None, sources: vec!["mcp".into(), "app".into()] };
+    let (items, _) = store.list_history_filtered(None, 50, &both).unwrap();
+    assert!(items.iter().any(|e| e.source == "app"));
+    assert_eq!(items.iter().filter(|e| e.source == "mcp").count(), 3);
+    // An unknown source is a mistake of the client, not an empty list.
+    let bad = HistoryFilter { since: None, sources: vec!["robot".into()] };
+    assert!(matches!(store.list_history_filtered(None, 10, &bad), Err(StoreError::InvalidParams(_))));
+}
+
+#[test]
 fn tags_are_created_listed_shown_and_removed() {
     let mut store = seeded();
     let (thread, inbox) = inbox_thread(&store);

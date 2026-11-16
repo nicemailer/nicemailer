@@ -7,6 +7,8 @@
 //! helper, hence `allow(dead_code)`.
 #![allow(dead_code)]
 
+pub mod fixtures;
+
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 use std::path::Path;

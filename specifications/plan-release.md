@@ -40,7 +40,7 @@ Pour une app de mail qui garde des mots de passe et tourne en agent de fond, seu
 1. **Mode release du bundle.** `make-bundle.sh --release <dossier>` (ou un script `scripts/make-release.sh`) :
    - construit le `.app` dans le dossier de sortie, sans l'installer ni toucher à l'app installée ;
    - signe de l'intérieur vers l'extérieur (helpers, puis app) avec l'identité Developer ID (`$SIGN_IDENTITY`), `--options runtime --timestamp` ;
-   - garde les identifiants de signature actuels (`org.nicemailer.core`, `org.nicemailer.cli`), sur lesquels reposera la vérification des clients ;
+   - garde les identifiants de signature actuels (`org.nicemailer.core`, `eu.nicemailer.cli`, `eu.nicemailer.mcp`), sur lesquels reposera la vérification des clients ; le noyau garde `org.nicemailer.core`, dont dépend l'accès aux mots de passe du trousseau ;
    - n'injecte aucune variable de développement dans l'agent (`NICEMAILER_FAKE_NETWORK`) ;
    - vérifie le résultat : `codesign --verify --deep --strict`, et refuse un arbre git modifié (`--dirty`).
 2. **Versions.** Version tirée du tag `vX.Y.Z` → `CFBundleShortVersionString` ; `CFBundleVersion` entier croissant (par exemple le nombre de commits, `git rev-list --count HEAD`). Même version dans `Cargo.toml` (`workspace.package.version`) ; le CLI l'affiche (`nicemailer --version`).

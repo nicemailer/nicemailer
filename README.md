@@ -16,6 +16,7 @@ crates/
   nm-api/      JSON-RPC contract: methods, views, events, error codes
   nm-daemon/   nicemailer-core binary: JSON-RPC server on a Unix socket
   nm-cli/      nicemailer binary: socket client, seed and import-mbox commands
+  nm-mcp/      nicemailer-mcp binary: MCP server for AI agents (docs/mcp.md)
 apps/
   NiceMailer/  SwiftUI app (Swift Package)
 ```

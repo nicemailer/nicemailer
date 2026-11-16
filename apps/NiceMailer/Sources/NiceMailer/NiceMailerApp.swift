@@ -68,6 +68,9 @@ struct NiceMailerApp: App {
                     await model.changeMailbox(to: url)
                     return
                 }
+                // The app moved since Claude Desktop was connected: its
+                // entry follows (`AgentSetup`), in the background.
+                Task { await model.repairClaudeDesktop() }
                 await model.connect()
             }
         }
@@ -79,6 +82,15 @@ struct NiceMailerApp: App {
                     if let url = MailboxChooser.choose() { Task { await model.changeMailbox(to: url) } }
                 }
                 Button(L("Stop the Core")) { model.stopCore() }
+                // AI agents reading the mailbox through `nicemailer-mcp`
+                // (`AgentSetup`, `docs/mcp.md`); disabled without the
+                // helper (`swift run`).
+                Menu(L("AI Agents")) {
+                    Button(L("Connect to Claude Desktop")) { Task { await model.connectClaudeDesktop() } }
+                    Button(L("Copy Command for Claude Code")) { model.copyClaudeCodeCommand() }
+                    Button(L("Copy MCP Configuration")) { model.copyMCPConfiguration() }
+                }
+                .disabled(AgentSetup.find() == nil)
             }
             // Adds a "Reload" item (⌘R) to the View menu.
             CommandGroup(after: .toolbar) {

@@ -10,7 +10,7 @@
 # - the signing identifier is the expected one: the Keychain items of the
 #   core and, later, the rights each client gets from the core
 #   (architecture.md, section 9) are tied to it;
-# - all three are signed by the same team: the Keychain partition of the
+# - all four are signed by the same team: the Keychain partition of the
 #   passwords is "teamid:<team>" (docs/configuration.md, "Passwords");
 # - the app declares the address book entitlement (NiceMailer.entitlements),
 #   without which the hardened runtime refuses the Contacts.
@@ -74,10 +74,11 @@ while read -r REL IDENT; do
 done <<'LIST'
 Contents/MacOS/NiceMailer eu.nicemailer.NiceMailer
 Contents/Helpers/nicemailer-core org.nicemailer.core
-Contents/Helpers/nicemailer org.nicemailer.cli
+Contents/Helpers/nicemailer eu.nicemailer.cli
+Contents/Helpers/nicemailer-mcp eu.nicemailer.mcp
 LIST
 
-# One team for all three: `sort -u` leaves one line when they agree.
+# One team for all four: `sort -u` leaves one line when they agree.
 if [ "$(printf '%s\n' $TEAMS | sort -u | wc -l | tr -d ' ')" != 1 ]; then
   fail "signed by several teams:$TEAMS"
 fi

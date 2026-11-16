@@ -1,6 +1,6 @@
 # NiceMailer.app: the app, its core, and the mailbox
 
-`make bundle` builds `NiceMailer.app` and installs it in `/Applications`. The app carries everything: its core, the CLI, and the launch agent that runs the core. Open it from the Finder like any app; no `make core` is needed.
+`make bundle` builds `NiceMailer.app` and installs it in `/Applications`. The app carries everything: its core, the CLI, the MCP server for AI agents, and the launch agent that runs the core. Open it from the Finder like any app; no `make core` is needed.
 
 ```
 NiceMailer.app/Contents/
@@ -8,6 +8,7 @@ NiceMailer.app/Contents/
 ├── MacOS/NiceMailer                              the app
 ├── Helpers/nicemailer-core                       the core
 ├── Helpers/nicemailer                            the CLI
+├── Helpers/nicemailer-mcp                        the MCP server for AI agents (mcp.md)
 └── Library/LaunchAgents/eu.nicemailer.core.plist the agent of the core
 ```
 
@@ -97,13 +98,14 @@ A core newer than the mailbox it opens upgrades its database first (`docs/migrat
 
 ## Signature
 
-`make bundle` signs the app and its helpers from the inside out (the core, the CLI, then the app), all with the **hardened runtime**, which notarization requires. A development build is signed the same way, so that it meets the same restrictions every day rather than on the day of a release.
+`make bundle` signs the app and its helpers from the inside out (the core, the CLI, the MCP server, then the app), all with the **hardened runtime**, which notarization requires. A development build is signed the same way, so that it meets the same restrictions every day rather than on the day of a release.
 
 | Program | Identifier | Entitlements |
 | --- | --- | --- |
 | `Contents/MacOS/NiceMailer` | `eu.nicemailer.NiceMailer` | `apps/NiceMailer/NiceMailer.entitlements`: the address book only |
 | `Contents/Helpers/nicemailer-core` | `org.nicemailer.core` (`scripts/sign-core.sh`) | none |
-| `Contents/Helpers/nicemailer` | `org.nicemailer.cli` | none |
+| `Contents/Helpers/nicemailer` | `eu.nicemailer.cli` | none |
+| `Contents/Helpers/nicemailer-mcp` | `eu.nicemailer.mcp` | none |
 
 Under the hardened runtime, a protected resource must be declared: without `com.apple.security.personal-information.addressbook`, macOS refuses the Contacts without asking (`docs/geek-ui.md`, "Senders in the address book"). The editor's WebKit runs in WebKit's own processes and needs no entitlement from the app.
 

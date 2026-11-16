@@ -78,6 +78,9 @@ pub mod method {
     pub const MESSAGE_RECORD: &str = "message_record";
     /// The file of an attachment, extracted from the raw message on first use.
     pub const GET_ATTACHMENT: &str = "get_attachment";
+    /// The text of an attachment (text, HTML, PDF, DOCX, mail attached),
+    /// one page of characters at a time (`mcp.md`, section 8).
+    pub const ATTACHMENT_TEXT: &str = "attachment_text";
     /// Unsubscribes from a list: in one click, or gives the page to open.
     pub const UNSUBSCRIBE: &str = "unsubscribe";
     /// Audit log, newest first (`tracabilite.md`).
@@ -1785,6 +1788,61 @@ pub struct AttachmentFileView {
     pub size: i64,
 }
 
+/// Parameters of `attachment_text`: one page of the text of an attachment,
+/// counted in characters (Unicode scalar values, what Rust's `chars`
+/// counts), so that a page never cuts a character in two.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AttachmentTextParams {
+    pub attachment_id: i64,
+    /// First character of the page; 0 when absent.
+    #[serde(default)]
+    pub offset: Option<u64>,
+    /// Characters of the page: [`ATTACHMENT_TEXT_DEFAULT_CHARS`] when
+    /// absent, [`ATTACHMENT_TEXT_MAX_CHARS`] at most.
+    #[serde(default)]
+    pub limit: Option<u64>,
+}
+
+/// Default page of `attachment_text`, in characters.
+pub const ATTACHMENT_TEXT_DEFAULT_CHARS: u64 = 40_000;
+/// Largest page of `attachment_text`: the whole text the core reads of a
+/// file (`nm_store::attachment_text::MAX_TEXT_CHARS`).
+pub const ATTACHMENT_TEXT_MAX_CHARS: u64 = 100_000;
+
+/// Result of `attachment_text`. A file whose text cannot be read (an
+/// image, a scan, a file protected by a password) is not an error: `text`
+/// is absent and `unreadable` says why, so that a client that can open
+/// files still gets the `path`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AttachmentTextResult {
+    /// The file, as `get_attachment` gives it (`AttachmentFileView`).
+    pub path: String,
+    pub filename: String,
+    pub mime_type: String,
+    pub size: i64,
+    /// How it was read: `text`, `html`, `pdf`, `docx` or `mail`; absent
+    /// for a kind of file whose text is not read.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    /// The page asked for.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    /// Why there is no text, in English.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unreadable: Option<String>,
+    /// First character of the page.
+    pub offset: u64,
+    /// First character of the next page; absent on the last one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_offset: Option<u64>,
+    /// Characters of the whole text read.
+    pub total_chars: u64,
+    /// The text reached the most the core reads of a file
+    /// ([`ATTACHMENT_TEXT_MAX_CHARS`]): the end of the file is not in it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub cut: bool,
+}
+
 /// Result of `export_message`: where the file was written. An existing
 /// file is never overwritten: " (2)", " (3)"… is added to the name.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1799,6 +1857,14 @@ pub struct ListHistoryParams {
     pub cursor: Option<String>,
     #[serde(default)]
     pub limit: Option<u32>,
+    /// Only the lines written since this Unix time, included
+    /// (`tracabilite.md`, section 6).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub since: Option<i64>,
+    /// Only the lines of these sources (`app`, `mcp`…); every source when
+    /// empty. What an AI agent did is `["mcp"]` (`mcp.md`, `agent_history`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sources: Vec<String>,
 }
 
 /// One `audit_log` line.
@@ -2075,7 +2141,28 @@ pub struct ConfigStatus {
     /// The settings of `[ui]` the app applies itself.
     #[serde(default)]
     pub ui: UiConfig,
+    /// The settings of `[mcp]` the MCP server applies itself.
+    #[serde(default)]
+    pub mcp: McpConfig,
     pub as_of: Position,
+}
+
+/// The settings of `[mcp]` of `config.toml` (`mcp.md`, section 11): the
+/// bounds of the answers of `nicemailer-mcp`, which reads them with
+/// `config_status`. Raising them gives the agent longer answers, never a
+/// right.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct McpConfig {
+    /// Characters of one message in `get_conversation`.
+    pub message_chars: u64,
+    /// Characters of the text of a whole answer.
+    pub response_chars: u64,
+}
+
+impl Default for McpConfig {
+    fn default() -> Self {
+        McpConfig { message_chars: 8_000, response_chars: 40_000 }
+    }
 }
 
 /// The settings of `[ui]` of `config.toml` the app applies itself

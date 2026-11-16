@@ -176,6 +176,7 @@ extension View {
 /// | --- | --- |
 /// | `key K` | one key: a character, or `esc` `ret` `del` `up` `down` `space` `shift-space` `shift-up` `shift-down` `cmd-ret` `shift-cmd-ret`, or `ctrl-X` / `cmd-X` |
 /// | `type TEXT` | each character of TEXT as a key |
+/// | `agents ACTION` | an item of the menu "AI Agents": `claude-desktop`, `claude-code`, `config`, or `repair` (the launch) |
 /// | `clipboard TEXT` | puts TEXT (`\n` for a line break) on the pasteboard ⌘V reads |
 /// | `click TARGET [cmd] [shift]` | a mouse click on a row |
 /// | `dblclick TARGET` | two clicks |
@@ -290,6 +291,19 @@ private final class Runner {
             } else {
                 controller.pasteboard.clearContents()
                 controller.pasteboard.writeObjects(urls as [NSURL])
+            }
+        case "agents":
+            // The items of the menu "AI Agents" (`AgentSetup`), as a click
+            // on them would run them: `agents claude-desktop`,
+            // `agents claude-code`, `agents config`, `agents repair` (what
+            // the launch does). Claude Desktop's configuration is a file of
+            // the scenario's data directory, never the user's.
+            switch arg {
+            case "claude-desktop": await model.connectClaudeDesktop()
+            case "claude-code": model.copyClaudeCodeCommand(to: controller.pasteboard)
+            case "config": model.copyMCPConfiguration(to: controller.pasteboard)
+            case "repair": await model.repairClaudeDesktop()
+            default: fail(lineNumber, line, "unknown agents action")
             }
         case "clipboard":
             controller.pasteboard.clearContents()
@@ -667,6 +681,18 @@ private final class Runner {
             // mail copied with `sc`), and its number of lines (`sc` keeps
             // one line per paragraph).
             "pasteboard": controller.pasteboard.string(forType: .string) ?? "",
+            // The menu "AI Agents" has its helper (`NICEMAILER_MCP`), and
+            // the command of NiceMailer's entry in the scenario's Claude
+            // Desktop configuration, empty when there is none.
+            "agents_available": AgentSetup.find() == nil ? "false" : "true",
+            "claude_desktop_entry": {
+                let file = DataDirectory.current.appendingPathComponent("claude_desktop_config.json")
+                guard let data = try? Data(contentsOf: file),
+                      let o = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+                      let servers = o["mcpServers"] as? [String: Any],
+                      let entry = servers["nicemailer"] as? [String: Any] else { return "" }
+                return entry["command"] as? String ?? ""
+            }(),
             "pasteboard_lines": "\((controller.pasteboard.string(forType: .string) ?? "").split(separator: "\n", omittingEmptySubsequences: false).count)",
             "reader_subject": m.openThread?.subject ?? "",
             // The reader shows the mail under the cursor (not one passed

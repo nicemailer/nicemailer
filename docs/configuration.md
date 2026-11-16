@@ -228,6 +228,7 @@ At start, the files are created if missing, then read before the core accepts cl
  "error": {"file": "config.toml", "line": 12, "key": "sync.poll_interval_secs", "message": "must be between 30 and 86400"},
  "warnings": [{"file": "config.toml", "line": 4, "key": "core.turbo", "message": "unknown key, ignored"}],
  "ui": {"title_bar": "hidden", "auto_confirm_calls": false},
+ "mcp": {"message_chars": 8000, "response_chars": 40000},
  "as_of": {"epoch": "e_…", "seq": 7}}
 ```
 
@@ -274,6 +275,10 @@ They are all in `config.toml`; `nicemailer config defaults` prints them all. Ran
 | `ai.batch_size` | 20 | 1 to 100 | not yet: conversations per call when several are processed |
 | `ai.max_folder_items` | 500 | 1 to 5000 | not yet: most conversations sent when a prompt takes the whole folder |
 | `ai.history_days` | 30 | 1 to 3650 | not yet: days before the texts of the run history are purged |
+| `mcp.message_chars` | 8000 | 1000 to 100000 | yes: characters of one message when an AI agent reads a conversation ([mcp.md](mcp.md)); read by `nicemailer-mcp` at each call |
+| `mcp.response_chars` | 40000 | 4000 to 200000 | yes: characters of the text of one answer to an AI agent ([mcp.md](mcp.md)) |
+
+The `[mcp]` keys only bound the length of the answers to an AI agent: what an agent may do is never a key of this file, which an agent able to write files could change ([mcp.md](mcp.md), "Rights").
 
 "At start": the value is read when the core starts; a change is accepted and announced, and applies at the next start. Every key is validated today, so a file valid now stays valid when the key starts being used.
 

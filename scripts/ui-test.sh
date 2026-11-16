@@ -18,6 +18,8 @@ cargo build --release --quiet --manifest-path "$ROOT/Cargo.toml"
 (cd "$APP" && DEVELOPER_DIR="$XCODE" swift build --quiet)
 
 CLI="$ROOT/target/release/nicemailer"
+# The MCP server, for the menu "AI Agents" (agents.uiscript, docs/mcp.md).
+MCP="$ROOT/target/release/nicemailer-mcp"
 CORE="$ROOT/target/release/nicemailer-core"
 # NICEMAILER_UI_BIN plays the scenarios with another build of the app, such
 # as the executable of NiceMailer.app (`make bundle`).
@@ -83,7 +85,7 @@ for script in "${scripts[@]}"; do
     # perl's alarm gives the app 120 s at most (macOS has no `timeout`).
     # `-AppleLanguages (en)`: English UI whatever the machine's language, so
     # that expected messages do not depend on it.
-    if NICEMAILER_DATA_DIR="$dir" NICEMAILER_CLI="$CLI" NICEMAILER_UI_SCRIPT="$script" NICEMAILER_UI_OUT="$OUT/$name" \
+    if NICEMAILER_DATA_DIR="$dir" NICEMAILER_CLI="$CLI" NICEMAILER_MCP="$MCP" NICEMAILER_UI_SCRIPT="$script" NICEMAILER_UI_OUT="$OUT/$name" \
         NICEMAILER_EXPORT_DIR="$dir/exports" perl -e 'alarm shift; exec @ARGV' 120 "$BIN" -AppleLanguages "(en)" 2>"$OUT/$name.log"; then
         echo "PASS $name"
     else

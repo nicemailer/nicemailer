@@ -1,7 +1,8 @@
 #!/bin/bash
 # Builds NiceMailer.app and installs it (`make bundle`, docs/app-bundle.md).
 #
-# The app carries its core and the CLI (Contents/Helpers), and the launch
+# The app carries its core, the CLI and the MCP server for AI agents
+# (Contents/Helpers, docs/mcp.md), and the launch
 # agent that declares the core (Contents/Library/LaunchAgents): at its
 # launch the app registers the agent, and launchd starts the core, keeps it
 # running when the app quits, and starts it at each session. The Info.plist
@@ -71,15 +72,15 @@ echo "Building the app (release)…"
 (cd "$PKG" && DEVELOPER_DIR="$XCODE" swift build -c release --product NiceMailer)
 BIN_DIR="$(cd "$PKG" && DEVELOPER_DIR="$XCODE" swift build -c release --show-bin-path)"
 
-echo "Building the core and the CLI (release)…"
-cargo build --release --quiet --manifest-path "$ROOT/Cargo.toml" --bin nicemailer-core --bin nicemailer
+echo "Building the core, the CLI and the MCP server (release)…"
+cargo build --release --quiet --manifest-path "$ROOT/Cargo.toml" --bin nicemailer-core --bin nicemailer --bin nicemailer-mcp
 
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
 APP="$STAGE/NiceMailer.app"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Helpers" "$APP/Contents/Library/LaunchAgents"
 cp "$BIN_DIR/NiceMailer" "$APP/Contents/MacOS/NiceMailer"
-cp "$ROOT/target/release/nicemailer-core" "$ROOT/target/release/nicemailer" "$APP/Contents/Helpers/"
+cp "$ROOT/target/release/nicemailer-core" "$ROOT/target/release/nicemailer" "$ROOT/target/release/nicemailer-mcp" "$APP/Contents/Helpers/"
 
 # The agent of the core (architecture.md, section 6): started at once when
 # the app registers it, at each session, and again after a crash; a stop
@@ -174,8 +175,10 @@ plutil -lint "$APP/Contents/Resources/fr.lproj/InfoPlist.strings" >/dev/null
 # on this Mac, but the core cannot read the passwords saved by another
 # build, and check-signature.sh below says so.
 SIGN_IDENTITY="$IDENTITY" CODESIGN_TIMESTAMP="$TIMESTAMP" "$ROOT/scripts/sign-core.sh" "$APP/Contents/Helpers/nicemailer-core"
-codesign --force --sign "${IDENTITY:--}" --identifier org.nicemailer.cli \
+codesign --force --sign "${IDENTITY:--}" --identifier eu.nicemailer.cli \
   --options runtime "$TIMESTAMP" "$APP/Contents/Helpers/nicemailer" >/dev/null
+codesign --force --sign "${IDENTITY:--}" --identifier eu.nicemailer.mcp \
+  --options runtime "$TIMESTAMP" "$APP/Contents/Helpers/nicemailer-mcp" >/dev/null
 codesign --force --sign "${IDENTITY:--}" --identifier eu.nicemailer.NiceMailer \
   --options runtime "$TIMESTAMP" --entitlements "$PKG/NiceMailer.entitlements" "$APP" >/dev/null
 
