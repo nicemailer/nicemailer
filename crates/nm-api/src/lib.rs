@@ -38,17 +38,27 @@ pub const MAX_LIMIT: u32 = 200;
 /// Rust note: `pub mod` declares a nested module (a namespace). Constants
 /// are then used as `method::HELLO`.
 pub mod method {
+    /// First call of every client: checks the protocol version, names the client.
     pub const HELLO: &str = "hello";
+    /// Answers `"pong"`: checks the core is alive.
     pub const PING: &str = "ping";
+    /// Subscribes the connection to the core's events, replaying the missed ones.
     pub const SUBSCRIBE: &str = "subscribe";
+    /// Every folder of every account, with its role and counts.
     pub const LIST_FOLDERS: &str = "list_folders";
+    /// A page of threads of a folder, of several folders, or of "Everything".
     pub const LIST_THREADS: &str = "list_threads";
+    /// A whole thread, ready to display.
     pub const GET_THREAD: &str = "get_thread";
+    /// Full-text search from the text typed by the user.
     pub const SEARCH: &str = "search";
+    /// Moves a thread to the folder of a role; returns an undo token.
     pub const MOVE_THREAD: &str = "move_thread";
     /// Several threads moved in one request (`MoveThreadsParams`).
     pub const MOVE_THREADS: &str = "move_threads";
+    /// Marks one or several threads as read or unread.
     pub const SET_THREAD_SEEN: &str = "set_thread_seen";
+    /// Flags or unflags one or several threads.
     pub const SET_THREAD_FLAGGED: &str = "set_thread_flagged";
     /// Starts the import of an mbox file into an archive account; the work
     /// continues in the background and reports through `ImportProgress` and
@@ -66,7 +76,9 @@ pub mod method {
     /// Everything about one message read from its raw file, for printing
     /// it as evidence (the PDF of `sp`).
     pub const MESSAGE_RECORD: &str = "message_record";
+    /// The file of an attachment, extracted from the raw message on first use.
     pub const GET_ATTACHMENT: &str = "get_attachment";
+    /// Unsubscribes from a list: in one click, or gives the page to open.
     pub const UNSUBSCRIBE: &str = "unsubscribe";
     /// Audit log, newest first (`tracabilite.md`).
     pub const LIST_HISTORY: &str = "list_history";
@@ -156,6 +168,7 @@ pub mod method {
     /// Attaches a file the app put in `incoming.noindex` (`brouillons.md`,
     /// section 7).
     pub const ADD_DRAFT_ATTACHMENT: &str = "add_draft_attachment";
+    /// Removes an attachment from a draft.
     pub const REMOVE_DRAFT_ATTACHMENT: &str = "remove_draft_attachment";
     /// Reads the addresses typed or pasted in a recipient line (`reponse.md`,
     /// section 6): the ones understood, and the pieces that are not one.

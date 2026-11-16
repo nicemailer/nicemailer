@@ -4,6 +4,7 @@ User and developer documentation, in English. It is written together with the co
 
 | Page | Content |
 | --- | --- |
+| [contract.md](contract.md) | Every method of the core contract (JSON-RPC on the socket), what it does, and the CLI command that uses it |
 | [import-mbox.md](import-mbox.md) | Importing a whole mailbox from an mbox file into an archive account |
 | [accounts.md](accounts.md) | Creating an IMAP account (its servers found from the address, through the database of mail providers and the MX of its domain; the SMTP server tried) with its initial import (archiving on the server, correspondents), folder roles, renaming and removing an account, how `accounts.toml` is written |
 | [sync.md](sync.md) | The synchronization of the IMAP accounts, server to database: passes, moves made elsewhere, IDLE, failures, `nicemailer sync status | now | verify` |

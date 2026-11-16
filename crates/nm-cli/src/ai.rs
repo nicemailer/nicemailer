@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, bail};
 use clap::Subcommand;
+use nm_api::method;
 use serde_json::{Value, json};
 
 use crate::Client;
@@ -100,13 +101,13 @@ pub fn run(data_dir: &Path, action: AiAction) -> anyhow::Result<()> {
     match action {
         AiAction::Status { check } => {
             let mut c = Client::connect(data_dir)?;
-            let s = c.call("ai_status", json!({ "check": check }))?;
+            let s = c.call(method::AI_STATUS, json!({ "check": check }))?;
             print!("{}", status_text(&s));
             Ok(())
         }
         AiAction::Prompts { action: PromptsAction::List { screen, folder, lang } } => {
             let mut c = Client::connect(data_dir)?;
-            let list = c.call("ai_list_prompts", json!({ "screen": screen, "folder": folder, "lang": lang }))?;
+            let list = c.call(method::AI_LIST_PROMPTS, json!({ "screen": screen, "folder": folder, "lang": lang }))?;
             print!("{}", prompts_text(&list));
             Ok(())
         }
@@ -263,13 +264,13 @@ fn run_prompt(
 ) -> anyhow::Result<()> {
     let mut c = Client::connect(data_dir)?;
     // Subscribe before starting, so that no fragment and no end is missed.
-    c.call("subscribe", json!({}))?;
+    c.call(method::SUBSCRIBE, json!({}))?;
     // The draft's revision, as the app has it; opened and closed again as
     // the app does around an edit.
-    let d = c.call("open_draft", json!({ "id": draft }))?;
+    let d = c.call(method::OPEN_DRAFT, json!({ "id": draft }))?;
     let revision = d["revision"].as_i64().unwrap_or_default();
     let result = start_and_follow(&mut c, prompt, draft, revision, variant, lang, apply, choice);
-    let _ = c.call("close_draft", json!({ "id": draft }));
+    let _ = c.call(method::CLOSE_DRAFT, json!({ "id": draft }));
     result
 }
 
@@ -285,7 +286,7 @@ fn start_and_follow(
     choice: Option<usize>,
 ) -> anyhow::Result<()> {
     let (started, early) = c.call_keeping_events(
-        "ai_run",
+        method::AI_RUN,
         json!({ "prompt": prompt, "variant": variant, "draft_id": draft, "revision": revision, "lang": lang }),
     )?;
     let run_id = started["run_id"].as_i64().unwrap_or_default();
@@ -316,16 +317,16 @@ fn start_and_follow(
     if streamed {
         eprintln!();
     }
-    let view = c.call("ai_get_run", json!({ "run_id": run_id }))?;
+    let view = c.call(method::AI_GET_RUN, json!({ "run_id": run_id }))?;
     let proposal = &view["proposal"];
     print!("{}", proposal_text(proposal));
     if !apply {
-        let _ = c.call("ai_dismiss", json!({ "run_id": run_id }));
+        let _ = c.call(method::AI_DISMISS, json!({ "run_id": run_id }));
         eprintln!("Not applied (--apply to apply it).");
         return Ok(());
     }
     if proposal["unchanged"] == true {
-        let _ = c.call("ai_dismiss", json!({ "run_id": run_id }));
+        let _ = c.call(method::AI_DISMISS, json!({ "run_id": run_id }));
         return Ok(());
     }
     let choice = match (proposal["kind"].as_str(), choice) {
@@ -333,7 +334,7 @@ fn start_and_follow(
         (_, Some(0)) => bail!("--choice counts from 1"),
         (_, c) => c.map(|n| n - 1),
     };
-    let applied = c.call("ai_apply", json!({ "run_id": run_id, "revision": revision, "choice": choice }))?;
+    let applied = c.call(method::AI_APPLY, json!({ "run_id": run_id, "revision": revision, "choice": choice }))?;
     eprintln!("Applied: the draft is at revision {}.", applied["draft"]["revision"]);
     Ok(())
 }

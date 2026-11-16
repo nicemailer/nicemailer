@@ -22,6 +22,8 @@ This is the owner's first Rust, Swift and TypeScript project. Comments should be
 
 ## Documentation
 - The application documentation lives in `docs/`, is written in English, and is produced together with the code: a change that adds or modifies a feature updates `docs/` in the same change.
+- `docs/contract.md` lists every method of the contract and the CLI command that uses it. A change that adds, removes or renames a method, changes what one does, or changes a CLI command that calls the core updates that page in the same change. The tests in `crates/nm-cli/src/contract_doc.rs` catch missing or stale methods and commands, not outdated descriptions.
+- The CLI calls the core through the `nm_api::method` constants, never a method name in a string.
 
 ## Testing the app
 Every UI feature of the Swift app is tested twice, in the same change as the feature:

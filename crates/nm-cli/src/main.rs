@@ -17,10 +17,12 @@ use std::path::{Path, PathBuf};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 mod ai;
+#[cfg(test)]
+mod contract_doc;
 
 use anyhow::{Context, bail};
 use clap::{Parser, Subcommand};
-use nm_api::{PROTOCOL_VERSION, Response, paths};
+use nm_api::{PROTOCOL_VERSION, Response, method, paths};
 use nm_store::Store;
 use nm_store::seed::{SeedOptions, seed};
 // `json!` builds a JSON value with a JSON-like syntax.
@@ -609,7 +611,7 @@ fn main() -> anyhow::Result<()> {
         }
         Command::ImportStatus => {
             let mut client = Client::connect(&data_dir)?;
-            let status = client.call("import_status", Value::Null)?;
+            let status = client.call(method::IMPORT_STATUS, Value::Null)?;
             if status.is_null() {
                 println!("No import since the core started.");
             } else {
@@ -629,7 +631,7 @@ fn main() -> anyhow::Result<()> {
         }
         Command::Folders => {
             let mut client = Client::connect(&data_dir)?;
-            let result = client.call("list_folders", Value::Null)?;
+            let result = client.call(method::LIST_FOLDERS, Value::Null)?;
             // `as_array()` returns `Option<&Vec<Value>>`; `into_iter().flatten()`
             // iterates over the elements, or over nothing if it is `None`.
             // `{:>3}` right-aligns on 3 characters, `{:<12}` left-aligns on 12.
@@ -648,20 +650,20 @@ fn main() -> anyhow::Result<()> {
         }
         Command::Address { addr, target } => {
             let mut client = Client::connect(&data_dir)?;
-            let result = client.call("set_address_screening", json!({ "addr": addr, "target": decision_target(&target)? }))?;
+            let result = client.call(method::SET_ADDRESS_SCREENING, json!({ "addr": addr, "target": decision_target(&target)? }))?;
             print_workflow(&result);
             Ok(())
         }
         Command::Domain { domain, target } => {
             let mut client = Client::connect(&data_dir)?;
             let result =
-                client.call("set_domain_screening", json!({ "domain": domain, "target": decision_target(&target)? }))?;
+                client.call(method::SET_DOMAIN_SCREENING, json!({ "domain": domain, "target": decision_target(&target)? }))?;
             print_workflow(&result);
             Ok(())
         }
         Command::Undo { token } => {
             let mut client = Client::connect(&data_dir)?;
-            let result = client.call("undo", json!({ "token": token }))?;
+            let result = client.call(method::UNDO, json!({ "token": token }))?;
             print_workflow(&result);
             Ok(())
         }
@@ -674,8 +676,8 @@ fn main() -> anyhow::Result<()> {
             let mut client = Client::connect(&data_dir)?;
             let what = if smtp { "SMTP" } else { "IMAP" };
             let password = read_password(&format!("{what} password of {key}: "))?;
-            client.call("set_password", json!({ "account": key, "password": password, "smtp": smtp }))?;
-            let result = client.call("list_accounts", Value::Null)?;
+            client.call(method::SET_PASSWORD, json!({ "account": key, "password": password, "smtp": smtp }))?;
+            let result = client.call(method::LIST_ACCOUNTS, Value::Null)?;
             let account = result["items"].as_array().into_iter().flatten().find(|a| a["key"] == key.as_str());
             match account.and_then(|a| a["error"].as_str()) {
                 Some(e) => println!("Saved, but the account still has an error: {e}"),
@@ -716,7 +718,7 @@ fn main() -> anyhow::Result<()> {
 
             // Where the servers come from, before any password is asked.
             let d: nm_api::DiscoveryReport =
-                serde_json::from_value(client.call("discover_account", json!({ "email": email, "imap": given }))?)?;
+                serde_json::from_value(client.call(method::DISCOVER_ACCOUNT, json!({ "email": email, "imap": given }))?)?;
             println!("Finding the servers of {email}");
             let key = match key {
                 Some(k) => k,
@@ -725,7 +727,7 @@ fn main() -> anyhow::Result<()> {
                     d.key.clone()
                 }
             };
-            let accounts = client.call("list_accounts", Value::Null)?["items"].as_array().cloned().unwrap_or_default();
+            let accounts = client.call(method::LIST_ACCOUNTS, Value::Null)?["items"].as_array().cloned().unwrap_or_default();
             if accounts.iter().any(|a| a["key"].as_str() == Some(key.as_str())) {
                 bail!("an account {key} exists already: give another key after `add`");
             }
@@ -745,7 +747,7 @@ fn main() -> anyhow::Result<()> {
             let password = read_password(&format!("IMAP password of {email}: "))?;
             eprintln!("Trying {host}…");
             let r: nm_api::TestAccountReport =
-                serde_json::from_value(client.call("test_account", json!({ "email": email, "imap": imap, "password": password }))?)?;
+                serde_json::from_value(client.call(method::TEST_ACCOUNT, json!({ "email": email, "imap": imap, "password": password }))?)?;
             print_probe(&r.probe);
             println!();
             println!("Inbox: {} mails, {} unread.", r.inbox_messages, r.inbox_unseen);
@@ -760,7 +762,7 @@ fn main() -> anyhow::Result<()> {
             };
             if read_before.is_some() || unread_before.is_some() {
                 let n: nm_api::ArchiveCount = serde_json::from_value(client.call(
-                    "count_archive",
+                    method::COUNT_ARCHIVE,
                     json!({ "email": email, "imap": imap, "password": password, "uidnext": r.inbox_uidnext,
                             "read_before": read_before, "unread_before": unread_before }),
                 )?)?;
@@ -802,7 +804,7 @@ fn main() -> anyhow::Result<()> {
                 println!("Trying the SMTP servers, in order (the first that works is kept):");
                 eprintln!("  …");
                 let t: nm_api::SmtpTestReport = serde_json::from_value(client.call(
-                    "test_smtp",
+                    method::TEST_SMTP,
                     json!({ "email": email, "imap": imap, "password": password, "candidates": d.smtp }),
                 )?)?;
                 for (i, a) in t.attempts.iter().enumerate() {
@@ -832,7 +834,7 @@ fn main() -> anyhow::Result<()> {
                 bail!("nothing created");
             }
             let res: nm_api::AddAccountResult = serde_json::from_value(client.call(
-                "add_account",
+                method::ADD_ACCOUNT,
                 json!({ "key": key, "email": email, "display_name": display_name, "imap": imap, "password": password,
                         "roles": roles, "uidnext": r.inbox_uidnext, "archive_read_before": read_before,
                         "archive_unread_before": unread_before, "correspondents": !no_correspondents, "read_only": read_only,
@@ -851,7 +853,7 @@ fn main() -> anyhow::Result<()> {
         Command::Account { action: AccountAction::Roles { key, roles, create_missing } } => {
             let mut client = Client::connect(&data_dir)?;
             let roles = parse_roles(&roles)?;
-            let created = client.call("set_folder_roles", json!({ "account": key, "roles": roles, "create_missing": create_missing }))?;
+            let created = client.call(method::SET_FOLDER_ROLES, json!({ "account": key, "roles": roles, "create_missing": create_missing }))?;
             for c in created.as_array().into_iter().flatten() {
                 println!("Created on the server: {}", c.as_str().unwrap_or_default());
             }
@@ -860,7 +862,7 @@ fn main() -> anyhow::Result<()> {
         }
         Command::Account { action: AccountAction::Rename { from, to } } => {
             let mut client = Client::connect(&data_dir)?;
-            client.call("rename_account", json!({ "from": from, "to": to }))?;
+            client.call(method::RENAME_ACCOUNT, json!({ "from": from, "to": to }))?;
             println!("Account {from} is now {to}.");
             Ok(())
         }
@@ -875,13 +877,13 @@ fn main() -> anyhow::Result<()> {
                     bail!("nothing deleted");
                 }
             }
-            client.call("remove_account", json!({ "account": key }))?;
+            client.call(method::REMOVE_ACCOUNT, json!({ "account": key }))?;
             println!("Account {key} deleted.");
             Ok(())
         }
         Command::Account { action: AccountAction::Order { keys } } => {
             let mut client = Client::connect(&data_dir)?;
-            let items = client.call("list_accounts", Value::Null)?["items"].as_array().cloned().unwrap_or_default();
+            let items = client.call(method::LIST_ACCOUNTS, Value::Null)?["items"].as_array().cloned().unwrap_or_default();
             let mut ids = Vec::new();
             for k in &keys {
                 match items.iter().find(|a| a["key"].as_str() == Some(k.as_str())) {
@@ -889,7 +891,7 @@ fn main() -> anyhow::Result<()> {
                     None => bail!("no account {k} (see `nicemailer accounts`)"),
                 }
             }
-            client.call("set_account_order", json!({ "account_ids": ids }))?;
+            client.call(method::SET_ACCOUNT_ORDER, json!({ "account_ids": ids }))?;
             for (i, k) in keys.iter().enumerate() {
                 println!("{}. {k}", i + 1);
             }
@@ -897,7 +899,7 @@ fn main() -> anyhow::Result<()> {
         }
         Command::Raw { action: RawAction::Gc } => {
             let mut client = Client::connect(&data_dir)?;
-            let r: nm_api::RawGcResult = serde_json::from_value(client.call("raw_gc", Value::Null)?)?;
+            let r: nm_api::RawGcResult = serde_json::from_value(client.call(method::RAW_GC, Value::Null)?)?;
             println!(
                 "{} raw files no mail referenced, {} temporary files, {} orphans, {} attachment folders deleted.",
                 r.blobs, r.temporary, r.orphans, r.attachment_dirs
@@ -908,7 +910,7 @@ fn main() -> anyhow::Result<()> {
             let mut client = Client::connect(&data_dir)?;
             match action {
                 SyncAction::Status { key, json } => {
-                    let r = client.call("sync_status", json!({ "account": key }))?;
+                    let r = client.call(method::SYNC_STATUS, json!({ "account": key }))?;
                     if json {
                         println!("{}", serde_json::to_string_pretty(&r)?);
                     } else {
@@ -916,11 +918,11 @@ fn main() -> anyhow::Result<()> {
                     }
                 }
                 SyncAction::Now { key } => {
-                    client.call("sync_now", json!({ "account": key }))?;
+                    client.call(method::SYNC_NOW, json!({ "account": key }))?;
                     println!("Synchronization asked; follow it with: nicemailer sync status");
                 }
                 SyncAction::Verify { key, skip_hash, repair, json } => {
-                    let r = client.call("sync_verify", json!({ "account": key, "skip_hash": skip_hash, "repair": repair }))?;
+                    let r = client.call(method::SYNC_VERIFY, json!({ "account": key, "skip_hash": skip_hash, "repair": repair }))?;
                     let report: nm_api::SyncVerifyReport = serde_json::from_value(r.clone())?;
                     if json {
                         println!("{}", serde_json::to_string_pretty(&r)?);
@@ -939,7 +941,7 @@ fn main() -> anyhow::Result<()> {
         }
         Command::Imap { action: ImapAction::Probe { key, json } } => {
             let mut client = Client::connect(&data_dir)?;
-            let report = client.call("probe_account", json!({ "account": key }))?;
+            let report = client.call(method::PROBE_ACCOUNT, json!({ "account": key }))?;
             if json {
                 println!("{}", serde_json::to_string_pretty(&report)?);
             } else {
@@ -950,7 +952,7 @@ fn main() -> anyhow::Result<()> {
         }
         Command::Accounts => {
             let mut client = Client::connect(&data_dir)?;
-            let result = client.call("list_accounts", Value::Null)?;
+            let result = client.call(method::LIST_ACCOUNTS, Value::Null)?;
             let items = result["items"].as_array().cloned().unwrap_or_default();
             if items.is_empty() {
                 println!(
@@ -976,7 +978,7 @@ fn main() -> anyhow::Result<()> {
         }
         Command::Watch => {
             let mut client = Client::connect(&data_dir)?;
-            let pos = client.call("subscribe", json!({}))?;
+            let pos = client.call(method::SUBSCRIBE, json!({}))?;
             eprintln!("subscribed from {pos}");
             // Print every line pushed by the core, until it closes the
             // connection (then `read_line` returns an error and `?` exits).
@@ -1268,9 +1270,9 @@ fn run_import(data_dir: &Path, file: &Path, account: &str, address: &str, corres
     let path = fs::canonicalize(file).with_context(|| format!("{}", file.display()))?;
     let mut client = Client::connect(data_dir)?;
     // Subscribe *before* starting, so no event of this import can be missed.
-    client.call("subscribe", json!({}))?;
+    client.call(method::SUBSCRIBE, json!({}))?;
     let started = client.call(
-        "import_mbox",
+        method::IMPORT_MBOX,
         json!({
             "path": path.to_string_lossy(),
             "account": account,
@@ -1312,7 +1314,7 @@ fn run_import(data_dir: &Path, file: &Path, account: &str, address: &str, corres
             }
             // Missed events (this client fell behind): ask for the state.
             Some("ResyncRequired") => {
-                let status = client.call("import_status", Value::Null)?;
+                let status = client.call(method::IMPORT_STATUS, Value::Null)?;
                 if status["job_id"].as_u64() == Some(job_id) && status["running"] == false {
                     print_status(&status);
                     return Ok(());
@@ -1364,7 +1366,7 @@ impl Client {
             .with_context(|| format!("cannot connect to {}: is the core running? (make core)", path.display()))?;
         let reader = BufReader::new(stream.try_clone()?);
         let mut client = Client { stream, reader, next_id: 1 };
-        client.call("hello", json!({"protocol_version": PROTOCOL_VERSION, "client": "cli"}))?;
+        client.call(method::HELLO, json!({"protocol_version": PROTOCOL_VERSION, "client": "cli"}))?;
         Ok(client)
     }
 
