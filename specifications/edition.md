@@ -213,7 +213,7 @@ Avec des pièces jointes, `multipart/mixed` dont la première partie est la pré
 ## 14. Questions ouvertes
 
 - **`⌃I`** : vérifier qu'aucune commande de texte de WebKit ne l'utilise (en ASCII, `⌃I` est la tabulation) ; l'app la prend de toute façon avant l'éditeur.
-- **IA et mise en forme** : réalisé, l'IA ne travaille que sur un brouillon en texte seul ; l'app le dit sur un brouillon mis en forme (« L'IA ne travaille que sur du texte pour l'instant · ⇧⌘T pour le texte seul ») et le noyau refuse `ai_run`. Ses textes appliqués vont à l'éditeur comme une seule étape d'annulation (`replaceRange`). Lui donner le HTML, pour qu'elle garde gras et listes, est une évolution de `ia.md`.
+- **IA et mise en forme** : réalisé (novembre 2026, d'abord refusée sur un brouillon mis en forme). Sur tout le texte, l'IA reçoit et rend les blocs de l'utilisateur en HTML ; le noyau nettoie sa réponse et la remet à la place des blocs ; l'éditeur prend le HTML entier en une étape d'annulation (`replaceContent`). Sur un passage sélectionné, elle travaille sur du texte, et l'éditeur remet sa réponse à la place du passage avec sa mise en forme (`replaceRange`). Détail dans `ia.md`, section 5.
 - **Les deux teintes de couleur restantes**, et les valeurs exactes de la palette : avec le design, vérifiées en contraste sur fond blanc et sur fond sombre.
 - **Signature** : quand elle existera, elle utilise ce schéma.
 - **Images dans le texte** : exclues en v1 ; le schéma de la base les prévoit (`content_id`, `is_inline`).

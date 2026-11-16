@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SAVE_PAUSE_MS } from '../src/mailEditor'
 import { PROTOCOL_VERSION } from '../src/protocol'
+import { documentText, textOffsetToPos } from '../src/text'
 import { FakeHost, loadMessage, open, settle } from './helpers'
 import { MailEditor } from '../src/mailEditor'
 
@@ -287,6 +288,39 @@ describe('text offsets in the protocol', () => {
     expect(editor.content()).toBe('Line one\nLine two.\n> Hi')
     editor.current!.commands.undo()
     expect(editor.content()).toBe('Merci beaucop.\n> Hi')
+  })
+
+  it('formatted, measures the selection in the text of its blocks', async () => {
+    // The text the core measures a passage in (`AiView::view`): a line per
+    // paragraph, heading or list item, a ⇧↩ a line break too.
+    const { editor } = open('html', '<h2>Plan</h2><ul><li><p>un</p></li></ul><p>Je <strong>viens</strong><br>jeudi</p>')
+    expect(documentText(editor.current!.state.doc)).toBe('Plan\nun\nJe viens\njeudi')
+    const doc = editor.current!.state.doc
+    const from = textOffsetToPos(doc, 11)
+    const to = textOffsetToPos(doc, 16)
+    expect(doc.textBetween(from, to)).toBe('viens')
+    editor.current!.commands.setTextSelection({ from, to })
+    expect(editor.state().textRange).toEqual({ start: 11, end: 16 })
+  })
+
+  it('formatted, a passage replaced keeps its formatting, in one step of undo', () => {
+    const { host, editor } = open('html', '<h2>Plan</h2><p>Je <strong>viens</strong> jeudi.</p>')
+    host.post({ type: 'replaceRange', start: 8, end: 13, text: 'arrive' })
+    expect(editor.content()).toBe('<h2>Plan</h2><p>Je <strong>arrive</strong> jeudi.</p>')
+    editor.current!.commands.undo()
+    expect(editor.content()).toBe('<h2>Plan</h2><p>Je <strong>viens</strong> jeudi.</p>')
+  })
+
+  it('formatted, the whole HTML is replaced in one step of undo', () => {
+    vi.useFakeTimers()
+    const { host, editor } = open('html', '<p>oui</p>')
+    host.post({ type: 'replaceContent', html: '<p>Oui, <em>merci</em>.</p>' })
+    expect(editor.content()).toBe('<p>Oui, <em>merci</em>.</p>')
+    vi.advanceTimersByTime(SAVE_PAUSE_MS * 2)
+    expect(host.last('changed')?.content).toBe('<p>Oui, <em>merci</em>.</p>')
+    editor.current!.commands.undo()
+    expect(editor.content()).toBe('<p>oui</p>')
+    vi.useRealTimers()
   })
 
   it('a formatted load can convert a text, without reporting a change', () => {

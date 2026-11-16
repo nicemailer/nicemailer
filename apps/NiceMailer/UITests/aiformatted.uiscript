@@ -1,0 +1,52 @@
+# The AI in a formatted reply (`ia.md`, section 5; docs/ai.md), its prompts
+# answered by the core from fixtures/aiformatted.ai.json: a word in bold
+# selected gets its other wordings, the one chosen put in its place in
+# bold, ⌘Z gives it back; proofreading the whole text rewrites the user's
+# blocks as HTML, the bold kept and the quotation untouched, ⌘Z undoes it.
+expect folder = Inbox
+expect reader_subject ~ La facture de mars
+key r
+expect composing = true
+expect editor_focused = true
+type merci je vien jeudi
+expect compose_text ~ merci je vien jeudi|
+key shift-cmd-t
+expect compose_format = html
+expect compose_text ~ <p>merci je vien jeudi</p><p></p><p>On
+# "jeudi" in bold: the end of the first line, the word selected, ⌘B.
+key cmd-up
+key cmd-right
+key shift-alt-left
+wait 300
+key cmd-b
+expect compose_text ~ <p>merci je vien <strong>jeudi</strong></p>
+# ⌃I on the word: its other wordings; Return takes the first, in bold.
+key ctrl-i
+expect picker_first = Other wordings
+key ret
+expect ai_state = proposal
+expect ai_result ~ 1. vendredi
+key ret
+expect ai_state = none
+expect flash ~ Applied
+expect compose_text ~ <p>merci je vien <strong>vendredi</strong></p>
+key cmd-z
+expect compose_text ~ <p>merci je vien <strong>jeudi</strong></p>
+# Nothing selected: proofreading the whole text, as HTML.
+key right
+wait 300
+key ctrl-i
+expect picker_first = Proofread
+key ret
+expect ai_state = proposal
+expect ai_diff ~ {+viens jeudi.+}
+snap aiformatted-proposal
+key ret
+expect ai_state = none
+expect compose_text ~ <p>Merci, je viens <strong>jeudi</strong>.</p>
+expect compose_text ~ <blockquote>
+snapeditor aiformatted-applied
+key cmd-z
+expect compose_text ~ <p>merci je vien <strong>jeudi</strong></p>
+key cmd-esc
+expect composing = false

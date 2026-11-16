@@ -5040,16 +5040,6 @@
         }
       }
     },
-    "The AI works on text only for now · ⇧⌘T for text only": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "L'IA ne travaille que sur du texte pour l'instant · ⇧⌘T pour le texte seul"
-          }
-        }
-      }
-    },
     "The formatting will be lost · ⇧⌘T again to convert": {
       "localizations": {
         "fr": {

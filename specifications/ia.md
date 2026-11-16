@@ -217,6 +217,11 @@ Les segments restants sont le texte de l'utilisateur. Une réponse écrite entre
 
 Avec une sélection, seule la sélection est envoyée, en un segment, même si elle contient des lignes citées : l'utilisateur a choisi.
 
+**Brouillon mis en forme** (`edition.md`, réalisé en novembre 2026). Le noyau lit le HTML du brouillon (`nm_store::mail_html::ai_view`) :
+
+- **Tout le texte** : un segment est une suite de blocs de premier niveau de l'utilisateur (paragraphes, titres, listes). Les blocs qui ne sont pas les siens se reconnaissent par les règles ci-dessus, appliquées au texte que chaque bloc donne dans la partie texte du mail (`> ` devant une ligne citée) : citation, introduction, transfert, signature. Les segments partent en HTML, précédés d'une consigne (`<format>`) qui demande de rendre le même HTML, chaque balise autour des mêmes mots. La réponse est nettoyée par la liste fermée de l'envoi ; un texte sans paragraphe devient un paragraphe par ligne. Elle remplace les blocs ; les différences affichées sont celles du texte.
+- **Un passage sélectionné** : la sélection est mesurée dans le texte des blocs (une ligne par paragraphe, titre ou élément de liste, sans marque de liste ni de citation), le même dans l'éditeur et dans le noyau, et part en texte, avec ce texte pour contexte. Le noyau ne peut pas insérer un texte dans du HTML à une position du texte sans casser ses balises : à l'application, il vérifie que le brouillon est à la révision lue et rend le nouveau texte, que l'éditeur met à la place du passage avec sa mise en forme (un mot en gras remplacé reste en gras).
+
 Un texte qui contient déjà une balise `<segment` ou `</segment>` n'est pas envoyé (`ai_bad_input`) : la réponse ne pourrait plus être lue sans deviner à quel segment appartient quel texte. Rendre la réponse sans rien changer redonne le corps à l'octet près ; c'est vérifié sur des milliers de corps tirés au hasard.
 
 ## 6. Ce qu'un prompt reçoit

@@ -101,8 +101,9 @@ struct Context {
 #[derive(Clone)]
 enum Target {
     /// A draft, at a revision; its body then, and the byte ranges of the
-    /// segments sent.
-    Draft { draft_id: i64, revision: i64, body: String, ranges: Vec<Range<usize>> },
+    /// segments sent. `format` says what `body` is (a formatted draft is
+    /// read through `nm_store::mail_html::ai_view`).
+    Draft { draft_id: i64, revision: i64, body: String, ranges: Vec<Range<usize>>, format: DraftText },
     /// A mail and its conversation; `message` is the mail read, which a
     /// calendar file or a contact card links back to
     /// (`nicemailer://m/<id>`); `sender` its From address, which a contact
@@ -112,6 +113,25 @@ enum Target {
     Selection,
     /// An attachment of the mail `message`.
     Attachment { message: i64 },
+}
+
+/// What the AI works on in a draft, and how its answer goes back.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DraftText {
+    /// A text draft: `body` is the draft's text; the core splices the answer
+    /// in it (`ai_apply`).
+    Text,
+    /// A formatted draft, its whole text: `body` is its HTML as
+    /// `ai_view` wrote it, the segments runs of the user's blocks, sent and
+    /// answered as HTML; the core splices the answer, cleaned, in it.
+    Html,
+    /// A passage selected in a formatted draft: `body` is the editor's text
+    /// view of it (`AiView::view`), where the selection was measured. The
+    /// core cannot splice a text into HTML at a text offset without
+    /// breaking its tags: `ai_apply` gives the new text back, and the
+    /// editor puts it in place of the passage, keeping the formatting of
+    /// its first character (`replaceRange`).
+    HtmlPassage,
 }
 
 impl Target {
@@ -544,14 +564,22 @@ async fn draft_inputs(
         }
         _ => {}
     }
-    // A formatted draft holds HTML: the AI reads and rewrites text, and
-    // splicing its answer into the HTML would break it. Refused until the
-    // AI works on formatted text (`edition.md`, section 14).
-    if draft.body_format == "html" {
-        return Err(ai_error(AiError::BadInput("the AI works on text only for now: switch the draft to text (Shift-Cmd-T)".into())));
-    }
+    // A formatted draft (`edition.md`): its whole text goes as HTML, the
+    // user's blocks rewritten as blocks; a passage goes as text, measured
+    // in the editor's text view of the HTML.
+    let view = (draft.body_format == "html").then(|| nm_store::mail_html::ai_view(&draft.body));
+    let format = match (&view, p.selection.is_some()) {
+        (None, _) => DraftText::Text,
+        (Some(_), false) => DraftText::Html,
+        (Some(_), true) => DraftText::HtmlPassage,
+    };
+    // `body`: the text the ranges are in (see `DraftText`).
+    let body = match (&view, format) {
+        (Some(v), DraftText::Html) => v.html.clone(),
+        (Some(v), _) => v.view.clone(),
+        (None, _) => draft.body.clone(),
+    };
     // The segments sent: the selection, or the user's own text.
-    let body = draft.body.clone();
     let ranges: Vec<Range<usize>> = match p.selection {
         Some(sel) => {
             let (Some(a), Some(b)) = (byte_of_utf16(&body, sel.start), byte_of_utf16(&body, sel.end)) else {
@@ -563,18 +591,34 @@ async fn draft_inputs(
             // One range: a selection is one segment.
             std::iter::once(a..b).collect()
         }
-        None => nm_core::segments::own_segments(&body),
+        None => match &view {
+            Some(v) => v.own.clone(),
+            None => nm_core::segments::own_segments(&body),
+        },
     };
     let texts: Vec<&str> = ranges.iter().map(|r| &body[r.clone()]).collect();
+    // What a prompt that reads the text without rewriting it sees: the
+    // plain text of the user's blocks, for a formatted draft.
+    let read: Vec<&str> = match (&view, format) {
+        (Some(v), DraftText::Html) => v.own_text.iter().map(String::as_str).collect(),
+        _ => texts.clone(),
+    };
+    let signed = match &view {
+        Some(v) => v.signature,
+        None => nm_core::segments::has_signature(&body),
+    };
     let mut sections = Vec::new();
     for input in &prompt.inputs {
         sections.push(match input {
+            Input::DraftOwnText if prompt.output == Output::Replace && format == DraftText::Html => {
+                nm_ai::message::html_segments(&texts).map_err(ai_error)?
+            }
             Input::DraftOwnText if prompt.output == Output::Replace => nm_ai::message::segments(&texts).map_err(ai_error)?,
             // The passage alone, then the draft around it (`DraftContext`).
             Input::DraftOwnText if prompt.on == On::Selection => {
                 nm_ai::message::passage(texts.first().copied().unwrap_or("")).map_err(ai_error)?
             }
-            Input::DraftOwnText => nm_ai::message::draft_text(&texts).map_err(ai_error)?,
+            Input::DraftOwnText => nm_ai::message::draft_text(&read).map_err(ai_error)?,
             // `on = "selection"` (the catalog checks it): one range.
             Input::DraftContext => nm_ai::message::draft_context(&body, ranges[0].clone()),
             Input::DraftHeaders => draft_headers(&draft),
@@ -586,13 +630,13 @@ async fn draft_inputs(
             // is sent from, with the name it signs with.
             Input::UserIdentity => {
                 let from = label(draft.from.name.as_deref(), Some(&draft.from.addr));
-                nm_ai::message::draft_identity(&from, nm_core::segments::has_signature(&body))
+                nm_ai::message::draft_identity(&from, signed)
             }
             _ => unreachable!("`available` lets only these inputs through"),
         });
     }
     let target_json = serde_json::json!({ "draft": draft_id }).to_string();
-    Ok((sections.join("\n\n"), Target::Draft { draft_id, revision, body, ranges }, target_json, Vec::new()))
+    Ok((sections.join("\n\n"), Target::Draft { draft_id, revision, body, ranges, format }, target_json, Vec::new()))
 }
 
 /// The mail a draft replies to, as the inputs see it (`draft.replied`);
@@ -1299,22 +1343,40 @@ fn mail_link(t: &Target) -> Option<String> {
     }
 }
 
+/// The segments the AI gave back, as they go into the body: for a
+/// formatted draft, cleaned and made blocks of the editor
+/// (`mail_html::ai_block`); a text as it came otherwise.
+fn new_segments(new: &[String], format: DraftText) -> Vec<String> {
+    match format {
+        DraftText::Html => new.iter().map(|n| nm_store::mail_html::ai_block(n)).collect(),
+        DraftText::Text | DraftText::HtmlPassage => new.to_vec(),
+    }
+}
+
 /// The proposal of a finished run, as the client shows it.
 fn proposal(run_id: i64, f: &Finished) -> Option<AiProposal> {
     match (&f.answer, &f.context.target) {
-        (Answer::Segments(new), Target::Draft { body: old_body, ranges, .. }) => {
-            let body = nm_core::segments::splice(old_body, ranges, new).ok()?;
+        (Answer::Segments(new), Target::Draft { body: old_body, ranges, format, .. }) => {
+            let new = new_segments(new, *format);
+            let body = nm_core::segments::splice(old_body, ranges, &new).ok()?;
+            // A formatted draft's segments are HTML: the differences shown
+            // are those of their text, as the user reads it.
+            let shown = |html: &str| match format {
+                DraftText::Html => nm_store::mail_html::to_text(html).0,
+                _ => html.to_string(),
+            };
             let segments: Vec<AiSegmentChange> = ranges
                 .iter()
-                .zip(new)
+                .zip(&new)
                 .map(|(r, n)| {
-                    let old = &old_body[r.clone()];
+                    let (old, n) = (shown(&old_body[r.clone()]), shown(n));
+                    let old = old.as_str();
                     AiSegmentChange {
                         start: utf16_of_byte(old_body, r.start),
                         end: utf16_of_byte(old_body, r.end),
                         old: old.to_string(),
                         new: n.clone(),
-                        diff: nm_ai::diff::words(old.trim(), n)
+                        diff: nm_ai::diff::words(old.trim(), &n)
                             .into_iter()
                             .map(|p| match p {
                                 nm_ai::diff::Piece::Same(t) => AiDiffPiece { kind: "same".into(), text: t },
@@ -1506,7 +1568,7 @@ pub(crate) async fn apply(core: &Arc<Core>, p: AiApplyParams, source: Source) ->
         }
         return Ok(AiApplyResult { draft: None, text: Some(text), calendar: None, contact: None });
     }
-    let Target::Draft { draft_id, revision, body, ranges } = finished.context.target.clone() else {
+    let Target::Draft { draft_id, revision, body, ranges, format } = finished.context.target.clone() else {
         return put_back(finished, RpcError::new(error_code::INVALID_PARAMS, "nothing to apply: close it with ai_dismiss"));
     };
     // The text the AI saw is the text of that revision: a later one may
@@ -1516,8 +1578,34 @@ pub(crate) async fn apply(core: &Arc<Core>, p: AiApplyParams, source: Source) ->
         err.data = Some(serde_json::json!({ "revision": revision }));
         return put_back(finished, err);
     }
+    // A passage of a formatted draft: the new text goes back to the client,
+    // whose editor puts it in place of the passage (`DraftText`), once
+    // sure the draft is still the one the AI read.
+    if format == DraftText::HtmlPassage {
+        let text = match &finished.answer {
+            Answer::Segments(new) => new.first().cloned(),
+            Answer::Choices(items) => p.choice.and_then(|i| items.get(i)).cloned(),
+            _ => None,
+        };
+        let Some(text) = text else {
+            return put_back(finished, RpcError::new(error_code::INVALID_PARAMS, "choose one of the texts (choice)"));
+        };
+        let current = match with_reader(core, move |st| st.get_draft(draft_id)).await {
+            Ok(d) => d.revision,
+            Err(e) => return put_back(finished, e),
+        };
+        if current != revision {
+            let mut err = RpcError::new(error_code::REVISION_CONFLICT, "the draft changed since the AI read it: run it again");
+            err.data = Some(serde_json::json!({ "revision": current }));
+            return put_back(finished, err);
+        }
+        if let Err(e) = with_store(core, move |st| st.ai_run_decide(run_id, Decision::Accepted)).await {
+            return put_back(finished, e);
+        }
+        return Ok(AiApplyResult { draft: None, text: Some(text), calendar: None, contact: None });
+    }
     let edit = match &finished.answer {
-        Answer::Segments(new) => match nm_core::segments::splice(&body, &ranges, new) {
+        Answer::Segments(new) => match nm_core::segments::splice(&body, &ranges, &new_segments(new, format)) {
             Ok(body) => DraftEdit { body: Some(body), ..Default::default() },
             Err(m) => return put_back(finished, RpcError::new(error_code::INTERNAL_ERROR, m)),
         },

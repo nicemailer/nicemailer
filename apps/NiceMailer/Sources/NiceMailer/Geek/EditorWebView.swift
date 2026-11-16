@@ -90,8 +90,13 @@ protocol MailTextEditor: AnyObject {
     func setMode(_ mode: ComposeFormat, content: String)
     /// Puts a text in place of the selection, in one step of undo.
     func replaceSelection(text: String)
-    /// Text only: replaces a range of the text (UTF-16 units).
+    /// Replaces a range of the document's text (UTF-16 units: the text in
+    /// text only, a line per text block formatted), in one step of undo;
+    /// formatted, the new text keeps the formatting of the passage.
     func replaceRange(start: Int, end: Int, text: String)
+    /// Formatted mode: the whole HTML replaced, in one step of undo (the
+    /// user's blocks the AI rewrote).
+    func replaceContent(html: String)
     /// Gives the keys to the text, or takes them back.
     func focus()
     func blur()
@@ -223,6 +228,10 @@ final class EditorBridge: NSObject, MailTextEditor, WKScriptMessageHandler, WKNa
 
     func replaceRange(start: Int, end: Int, text: String) {
         send(["type": "replaceRange", "start": start, "end": end, "text": text])
+    }
+
+    func replaceContent(html: String) {
+        send(["type": "replaceContent", "html": html])
     }
 
     func focus() {

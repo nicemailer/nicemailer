@@ -85,6 +85,11 @@ export class MailEditor {
       case 'replaceRange':
         this.replaceRange(message.start, message.end, message.text)
         break
+      case 'replaceContent':
+        // The whole HTML the AI rewrote (formatted mode): one step of
+        // undo, a `changed` at the pause as for anything typed.
+        if (this.mode === 'html') this.editor?.commands.setContent(message.html)
+        break
       case 'blur':
         this.link.close()
         this.editor?.commands.blur()
@@ -258,15 +263,27 @@ export class MailEditor {
 
   /** Text only: replaces a range of the text, in one step of undo, the
    * cursor after the new words (where an AI change leaves the writing). */
+  /**
+   * Replaces a range of the document's text (`documentText`: the text
+   * itself in text only, its text blocks formatted) by `text`, in one step
+   * of undo. Formatted, a text of one line takes the formatting of the
+   * passage it replaces (`insertText` keeps the marks that run across
+   * it): a word in bold replaced by the AI stays in bold.
+   */
   private replaceRange(start: number, end: number, text: string): void {
     const e = this.editor
-    if (!e || this.mode !== 'text') return
+    if (!e) return
     const view = e.view
     const doc = view.state.doc
     const from = textOffsetToPos(doc, start)
     const to = textOffsetToPos(doc, Math.max(start, end))
-    const nodes = textToParagraphs(text).map(p => view.state.schema.nodeFromJSON(p))
-    const tr = view.state.tr.replaceRange(from, to, new Slice(Fragment.from(nodes), 1, 1))
+    const tr = view.state.tr
+    if (this.mode === 'html' && !text.includes('\n')) {
+      tr.insertText(text, from, to)
+    } else {
+      const nodes = textToParagraphs(text).map(p => view.state.schema.nodeFromJSON(p))
+      tr.replaceRange(from, to, new Slice(Fragment.from(nodes), 1, 1))
+    }
     // The cursor after the new words, where the writing goes on.
     tr.setSelection(TextSelection.near(tr.doc.resolve(tr.mapping.map(to, 1))))
     view.dispatch(tr.scrollIntoView())
@@ -318,10 +335,9 @@ export class MailEditor {
           ? 'h3'
           : 'paragraph'
     const selection = e ? e.state.doc.textBetween(e.state.selection.from, e.state.selection.to, '\n') : ''
-    const range =
-      e && this.mode === 'text'
-        ? { start: posToTextOffset(e.state.doc, e.state.selection.from), end: posToTextOffset(e.state.doc, e.state.selection.to) }
-        : null
+    const range = e
+      ? { start: posToTextOffset(e.state.doc, e.state.selection.from), end: posToTextOffset(e.state.doc, e.state.selection.to) }
+      : null
     return {
       type: 'state',
       modal: this.link.isOpen || this.toolbar.hasFocus(),

@@ -1333,15 +1333,6 @@ struct EditorFlowTests {
         #expect(editor.modes.last?.content == "Bold")
     }
 
-    /// The AI reads text only for now: a formatted draft is not offered.
-    @Test func theAIRefusesAFormattedDraft() async {
-        controller.handle(Self.key("T", [.command, .shift]))
-        #expect(await eventually { model.composer?.format == .html })
-        controller.handle(Self.key("i", code: 34, .control))
-        #expect(model.flash == L("The AI works on text only for now · ⇧⌘T for text only"))
-        #expect(model.aiRun == nil)
-    }
-
     /// A change of the AI the core applied goes to the editor as one range,
     /// so that ⌘Z there gives the words back.
     @Test func theChangedRangeOfATextIsItsWholeWords() {

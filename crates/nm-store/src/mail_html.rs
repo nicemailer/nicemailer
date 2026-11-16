@@ -30,6 +30,7 @@ use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;
+use std::ops::Range;
 
 use html5ever::tendril::StrTendril;
 use html5ever::tokenizer::{BufferQueue, TagKind, Token, TokenSink, TokenSinkResult, Tokenizer, TokenizerOpts};
@@ -450,6 +451,183 @@ fn inline_into(nodes: &[Node], lines: &mut Vec<String>) {
     }
 }
 
+// ─── The AI on a formatted draft ───────────────────────────────────────
+//
+// `ia.md`, section 5, "Le texte écrit par l'utilisateur", for a draft in
+// the formatted mode: the AI rewrites the user's own blocks as HTML (the
+// headings, lists, bold and links stay where they were), and a passage
+// selected in the editor as text.
+
+/// A formatted draft as the AI reads it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AiView {
+    /// The body cleaned ([`clean`]) and written again, block after block,
+    /// with nothing between them: the ranges of `own` are in it, and it is
+    /// the body the AI's answer is spliced into.
+    pub html: String,
+    /// The user's own text: byte ranges of `html`, each a run of
+    /// consecutive top-level blocks (paragraphs, headings, lists) that are
+    /// neither the quotation, its introduction ("… wrote:"), a forwarded
+    /// mail nor the signature. Blank paragraphs at the edges of a run stay
+    /// outside it, as blank lines do in a text draft.
+    pub own: Vec<Range<usize>>,
+    /// The plain text of each range of `own` ([`to_text`]), for the prompts
+    /// that read the draft without rewriting it (subjects).
+    pub own_text: Vec<String>,
+    /// The text the editor measures a selection in: one line per text
+    /// block (paragraph, heading, the paragraph of a list item, at any
+    /// depth), joined by `\n`, a line break inside one being `\n` too.
+    /// No marker, no quotation sign: the same text as the editor's
+    /// `htmlView` (`apps/editor/src/text.ts`), offset for offset.
+    pub view: String,
+    /// The draft ends with a signature (`-- `).
+    pub signature: bool,
+}
+
+/// The blocks of a formatted draft the AI may rewrite, and its text view.
+///
+/// Which blocks are the user's is decided as for a text draft
+/// (`nm_core::segments::own_segments`), on the text each top-level block
+/// gives in the text part of the mail ([`to_text`]: `> ` before a quoted
+/// line, `- ` before a list item): the rules of the quotation, of its
+/// introduction, of a forward and of the signature are the same, and a
+/// block is the user's if its lines are.
+pub fn ai_view(body: &str) -> AiView {
+    let nodes: Vec<Node> = parse(&clean(body))
+        .into_iter()
+        .filter(|n| !matches!(n, Node::Text(t) if t.trim().is_empty()))
+        .collect();
+    // Each block written plainly, and its lines in the text of the mail.
+    let mut html = String::new();
+    let mut spans = Vec::new(); // (byte range in html, byte range in text, blank)
+    let mut text = String::new();
+    for n in &nodes {
+        let start = html.len();
+        write_plain(&mut html, n);
+        let mut lines = Vec::new();
+        blocks(std::slice::from_ref(n), &mut lines);
+        if !text.is_empty() {
+            text.push('\n');
+        }
+        let t_start = text.len();
+        text.push_str(&lines.join("\n"));
+        let blank = lines.iter().all(|l| l.trim().is_empty());
+        spans.push((start..html.len(), t_start..text.len(), blank));
+    }
+    let own_ranges = nm_core::segments::own_segments(&text);
+    // A block is the user's if its text lies in one of the user's ranges;
+    // a blank one only inside a range, never at its edge.
+    let is_own = |t: &Range<usize>, blank: bool| {
+        own_ranges.iter().any(|r| if blank { r.start <= t.start && t.start < r.end } else { r.start < t.end && t.start < r.end })
+    };
+    let mut own: Vec<Range<usize>> = Vec::new();
+    let mut previous_own = false;
+    for (h, t, blank) in &spans {
+        let mine = is_own(t, *blank);
+        if mine {
+            match own.last_mut() {
+                Some(last) if previous_own => last.end = h.end,
+                _ => own.push(h.clone()),
+            }
+        }
+        previous_own = mine;
+    }
+    let own_text = own.iter().map(|r| to_text(&html[r.clone()]).0).collect();
+    let mut view_lines = Vec::new();
+    view_blocks(&nodes, &mut view_lines);
+    AiView { html, own, own_text, view: view_lines.join("\n"), signature: nm_core::segments::has_signature(&text) }
+}
+
+/// The lines of the editor's text view (see [`AiView::view`]).
+fn view_blocks(nodes: &[Node], lines: &mut Vec<String>) {
+    for n in nodes {
+        if let Node::Element { name, children, .. } = n {
+            match name.as_str() {
+                "p" | "h1" | "h2" | "h3" => lines.push(inline_text(children)),
+                _ => view_blocks(children, lines),
+            }
+        }
+    }
+}
+
+/// Writes a node as it is, without the styles of [`write_styled`]: the
+/// HTML of a draft, for the editor to read back.
+fn write_plain(out: &mut String, node: &Node) {
+    match node {
+        Node::Text(t) => escape(out, t),
+        Node::Element { name, attrs, children } => {
+            let _ = write!(out, "<{name}");
+            for (k, v) in attrs {
+                let _ = write!(out, " {k}=\"");
+                escape(out, v);
+                out.push('"');
+            }
+            out.push('>');
+            if name == "br" {
+                return;
+            }
+            for c in children {
+                write_plain(out, c);
+            }
+            let _ = write!(out, "</{name}>");
+        }
+    }
+}
+
+/// A segment the AI gave back for a formatted draft, made a run of blocks
+/// again: cleaned ([`clean`]: only the tags and values of the editor, so a
+/// model that invents a `<table>` or a `<script>` gets its text only), and
+/// text found outside any block made paragraphs, one per line, as the
+/// editor makes a pasted text. The model is asked for HTML, but may answer
+/// in plain text: the answer is then still the user's paragraphs.
+pub fn ai_block(answer: &str) -> String {
+    let nodes = parse(&clean(answer));
+    let mut out = String::new();
+    let mut loose: Vec<Node> = Vec::new();
+    // Loose inline content: a paragraph per line of its text, the inline
+    // tags (`<strong>`) kept on the words of their line.
+    let flush = |loose: &mut Vec<Node>, out: &mut String| {
+        if loose.is_empty() {
+            return;
+        }
+        let mut paragraph = String::new();
+        let end = |paragraph: &mut String, out: &mut String| {
+            out.push_str("<p>");
+            out.push_str(paragraph.trim());
+            out.push_str("</p>");
+            paragraph.clear();
+        };
+        for n in loose.iter() {
+            match n {
+                Node::Text(t) => {
+                    let mut parts = t.split('\n').peekable();
+                    while let Some(part) = parts.next() {
+                        escape(&mut paragraph, part);
+                        if parts.peek().is_some() {
+                            end(&mut paragraph, out);
+                        }
+                    }
+                }
+                _ => write_plain(&mut paragraph, n),
+            }
+        }
+        end(&mut paragraph, out);
+        loose.clear();
+    };
+    for n in nodes {
+        match &n {
+            Node::Element { name, .. } if matches!(name.as_str(), "p" | "h1" | "h2" | "h3" | "ul" | "ol" | "blockquote") => {
+                flush(&mut loose, &mut out);
+                write_plain(&mut out, &n);
+            }
+            Node::Text(t) if t.trim().is_empty() && loose.is_empty() => {}
+            _ => loose.push(n),
+        }
+    }
+    flush(&mut loose, &mut out);
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -586,5 +764,40 @@ mod tests {
     fn text_between_blocks_is_a_paragraph() {
         assert_eq!(text("loose<p>p</p>tail"), "loose\np\ntail");
         assert_eq!(text(""), "");
+    }
+
+    /// A reply as the editor writes it: the user's text, a blank line, the
+    /// introduction, the quotation; then a signature.
+    const REPLY: &str = "<p>Très <strong>bien</strong>,</p><p></p><ul><li><p>un</p></li></ul><p></p><p>-- </p><p>Alex</p><p>On Nov 16, Victor wrote:</p><blockquote><p>Bonjour</p></blockquote>";
+
+    #[test]
+    fn ai_view_keeps_the_users_blocks_only() {
+        let v = ai_view(REPLY);
+        let own: Vec<&str> = v.own.iter().map(|r| &v.html[r.clone()]).collect();
+        assert_eq!(own, ["<p>Très <strong>bien</strong>,</p><p></p><ul><li><p>un</p></li></ul>"]);
+        assert_eq!(v.own_text, ["Très bien,\n\n- un"]);
+        assert!(v.signature);
+        // The text view: a line per text block, no marker, no quotation sign.
+        assert_eq!(v.view, "Très bien,\n\nun\n\n-- \nAlex\nOn Nov 16, Victor wrote:\nBonjour");
+        // A text written between quoted blocks is a second run.
+        let v = ai_view("<p>Oui.</p><blockquote><p>Q1</p></blockquote><p>Non.</p><blockquote><p>Q2</p></blockquote>");
+        let own: Vec<&str> = v.own.iter().map(|r| &v.html[r.clone()]).collect();
+        assert_eq!(own, ["<p>Oui.</p>", "<p>Non.</p>"]);
+    }
+
+    #[test]
+    fn ai_view_reads_entities_and_breaks_as_the_editor() {
+        let v = ai_view("<p>a&nbsp;&amp;&lt;b<br>c</p><h2>T</h2>");
+        assert_eq!(v.view, "a\u{a0}&<b\nc\nT");
+        assert_eq!(v.html, "<p>a&nbsp;&amp;&lt;b<br>c</p><h2>T</h2>");
+    }
+
+    #[test]
+    fn ai_answers_become_blocks_of_the_editor() {
+        assert_eq!(ai_block("<p>Très <strong>bien</strong></p><h2>T</h2>"), "<p>Très <strong>bien</strong></p><h2>T</h2>");
+        // Plain text: a paragraph per line; inline tags kept on their line.
+        assert_eq!(ai_block("Un\n\nDeux <em>x</em>"), "<p>Un</p><p></p><p>Deux <em>x</em></p>");
+        // What the editor cannot hold leaves, its text stays.
+        assert_eq!(ai_block("<table><tr><td>x</td></tr></table><script>y</script>"), "<p>x</p>");
     }
 }

@@ -80,6 +80,14 @@ final class FakeEditor: MailTextEditor {
         report()
     }
 
+    private(set) var contents: [String] = []
+    func replaceContent(html: String) {
+        contents.append(html)
+        content = html
+        revision += 1
+        report()
+    }
+
     func keepKeyUntilReady(_ event: NSEvent) -> Bool { false }
 
     func focus() { focusCount += 1 }

@@ -25,7 +25,8 @@ The page is `index.html` with `editor.js` and `editor.css` (`node build.mjs --ou
 | `theme` | `theme` | New colours or text size. |
 | `setMode` | `mode`, `content` | Switches mode. `content` is a text in both directions: to formatted, the editor converts it; to text only, it is the host's text of the HTML (the core's `html_to_text`). A `changed` follows at once. |
 | `replaceSelection` | `text?` or `html?` | Puts it in place of the selection, in one step of undo. A text is a paragraph per line; an HTML (formatted mode) is read through the schema, as a paste. |
-| `replaceRange` | `start`, `end`, `text` | Text only: replaces the range (UTF-16 units of the text), in one step of undo, the cursor after the new words. |
+| `replaceRange` | `start`, `end`, `text` | Replaces the range (UTF-16 units of the document's text: the text in text only, a line per paragraph, heading or list item formatted), in one step of undo, the cursor after the new words. Formatted, a text of one line takes the formatting of the passage it replaces. |
+| `replaceContent` | `html` | Formatted mode: the whole HTML replaced, in one step of undo (the AI rewrote the user's blocks). A `changed` follows at the pause. |
 | `flush` | `id` | Asks for the content now; answered by `flushed` with the same `id`, at once. |
 | `focus` | | Gives the text the focus. |
 | `blur` | | The keys went to another field. |
@@ -43,7 +44,7 @@ The page is `index.html` with `editor.js` and `editor.css` (`node build.mjs --ou
 | `ready` | `v` | The page is loaded. Messages sent before are lost: the host queues them. |
 | `changed` | `content`, `mode`, `revision` | At the first pause of 0.5 s after a change, once; and at once after `setMode`. `revision` counts the changes since the last `load`. |
 | `flushed` | `id`, `content`, `mode`, `revision` | The answer to `flush`. Revision 0: nothing changed since the load. |
-| `state` | `modal`, `focused`, `textRange`, `empty`, `selection`, `marks` (`bold`, `italic`, `underline`, `link`), `block` (`paragraph`, `h1`…`h3`), `bulletList`, `orderedList`, `blockquote`, `color`, `font`, `size` | What is under the cursor, at most once per turn of the event loop. `modal`: a dialog of the editor (the link) or its bar has the keys, Escape is its. `textRange`: in text only, the selection in UTF-16 units of the text. `selection`: the text selected, 20,000 characters at most. |
+| `state` | `modal`, `focused`, `textRange`, `empty`, `selection`, `marks` (`bold`, `italic`, `underline`, `link`), `block` (`paragraph`, `h1`…`h3`), `bulletList`, `orderedList`, `blockquote`, `color`, `font`, `size` | What is under the cursor, at most once per turn of the event loop. `modal`: a dialog of the editor (the link) or its bar has the keys, Escape is its. `textRange`: the selection in UTF-16 units of the document's text (in text only the text; formatted, a line per paragraph, heading or list item, a `⇧↩` a line break: the text the core measures a passage in, `AiView::view`). `selection`: the text selected, 20,000 characters at most. |
 | `leave` | `direction` (`previous`) | ⇧⇥ outside a list: the host gives the keys to the field before the text. |
 | `fontUsed` | `name` | A font was chosen in the bar's menu: the host puts it first in `recentFonts`. |
 

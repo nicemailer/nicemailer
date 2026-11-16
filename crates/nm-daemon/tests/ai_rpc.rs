@@ -1049,3 +1049,69 @@ Les nouveautes du mois.
     let (_, p) = run_mail(&mut c, "security-check", news, None);
     assert_eq!((p["risk"].as_str(), p["raised"].as_bool()), (Some("low"), Some(false)), "{p}");
 }
+
+/// A formatted reply (`edition.md`): `html` above the quotation, as the
+/// editor writes it; returns the draft.
+fn formatted_reply(dir: &Path, c: &mut Client, html: &str) -> Value {
+    let d = reply(dir, c, "");
+    let body = format!("{html}<p>{QUOTE}</p><blockquote><p>Tu viens jeudi ?</p></blockquote>");
+    let r = c.call("update_draft", json!({"id": d["id"], "revision": d["revision"], "body": body, "body_format": "html"})).unwrap();
+    let mut d = d;
+    d["revision"] = r["revision"].clone();
+    d["body"] = json!(body);
+    d
+}
+
+#[test]
+fn a_formatted_reply_is_proofread_as_html_and_keeps_its_formatting() {
+    let dir = tempfile::tempdir().unwrap();
+    // The model keeps the tags, and adds one the editor cannot hold.
+    let answers = json!({"proofread": "<segment n=\"1\"><p>Oui, je viens <strong>jeudi</strong> à 14h.</p><ul><li><p>le devis</p></li></ul><table><tr><td>x</td></tr></table></segment>"});
+    let _core = core(dir.path(), Some(answers), "");
+    let mut c = Client::connect_as(dir.path(), "app");
+    let d = formatted_reply(dir.path(), &mut c, "<p>oui je vien <strong>jeudi</strong> a 14h.</p><ul><li><p>le devi</p></li></ul><p></p>");
+    c.clear_events();
+    let id = run(&mut c, &d, "proofread").unwrap()["run_id"].as_i64().unwrap();
+    c.event("AiDone", 10);
+    // Sent: the user's blocks as HTML, after the note on the format; not
+    // the quotation, nor its introduction.
+    let input = sent(dir.path(), id);
+    assert!(input.contains("<format>"), "{input}");
+    assert!(input.contains("<segment n=\"1\"><p>oui je vien <strong>jeudi</strong> a 14h.</p><ul><li><p>le devi</p></li></ul></segment>"), "{input}");
+    assert!(!input.contains("Tu viens jeudi"), "{input}");
+    // The differences are shown on the text.
+    let v = c.call("ai_get_run", json!({"run_id": id})).unwrap();
+    let seg = &v["proposal"]["segments"][0];
+    assert_eq!(seg["old"], "oui je vien jeudi a 14h.\n- le devi");
+    assert_eq!(seg["new"], "Oui, je viens jeudi à 14h.\n- le devis\nx");
+    // Applied: the blocks replaced, cleaned; the quotation untouched.
+    let a = c.call("ai_apply", json!({"run_id": id, "revision": d["revision"]})).unwrap();
+    let body = a["draft"]["body"].as_str().unwrap();
+    assert!(body.starts_with("<p>Oui, je viens <strong>jeudi</strong> à 14h.</p><ul><li><p>le devis</p></li></ul><p>x</p><p></p>"), "{body}");
+    assert!(body.ends_with("<blockquote><p>Tu viens jeudi ?</p></blockquote>"), "{body}");
+    assert!(!body.contains("table"), "{body}");
+    assert_eq!(a["draft"]["body_format"], "html");
+}
+
+#[test]
+fn a_passage_of_a_formatted_reply_is_given_back_for_the_editor() {
+    let dir = tempfile::tempdir().unwrap();
+    let answers = json!({"alternatives": "{\"choices\": [\"passe\", \"arrive\"]}"});
+    let _core = core(dir.path(), Some(answers), "");
+    let mut c = Client::connect_as(dir.path(), "app");
+    let d = formatted_reply(dir.path(), &mut c, "<h2>Plan</h2><p>Je <strong>viens</strong> jeudi.</p>");
+    // "viens" in the editor's text view: "Plan\nJe viens jeudi.".
+    let p = json!({"prompt": "alternatives", "draft_id": d["id"], "revision": d["revision"], "lang": "fr", "selection": {"start": 8, "end": 13}});
+    c.clear_events();
+    let id = c.call("ai_run", p).unwrap()["run_id"].as_i64().unwrap();
+    c.event("AiDone", 10);
+    let input = sent(dir.path(), id);
+    assert!(input.contains("<passage>\nviens\n</passage>"), "{input}");
+    assert!(input.contains("<draft>\nPlan\nJe <selected>viens</selected> jeudi."), "{input}");
+    // The text chosen comes back, the draft unchanged: the editor puts it
+    // in place of the passage.
+    let a = c.call("ai_apply", json!({"run_id": id, "revision": d["revision"], "choice": 1})).unwrap();
+    assert_eq!(a["text"], "arrive");
+    assert!(a["draft"].is_null());
+    assert_eq!(row(dir.path(), id).1.as_deref(), Some("accepted"));
+}

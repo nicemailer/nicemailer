@@ -369,6 +369,10 @@ extension AppModel {
                 aiRun = nil
                 if let d = r.draft, let opened = run.composer { applied(d, opened: opened) }
                 if let text = r.text, case .mail(_, let message) = run.target { await replyWith(text, current: message) }
+                // A passage of a formatted reply: the core gives the text
+                // back, the editor puts it in place of the passage, with
+                // its formatting (`ia.md`, section 5).
+                if let text = r.text, let opened = run.composer { replacedPassage(text, opened: opened) }
             } catch {
                 flash = AI.errorFlash(error)
             }
@@ -387,6 +391,15 @@ extension AppModel {
         composerChanged()
     }
 
+    /// The AI's text for the passage of a formatted reply, put in its place
+    /// by the editor, as one step of its undo. The draft is saved at the
+    /// editor's next `changed`, as if typed.
+    private func replacedPassage(_ text: String, opened: UUID) {
+        guard let c = composer, c.opened == opened, let passage = aiPassage else { return }
+        editor?.replaceRange(start: passage.location, end: passage.location + passage.length, text: text)
+        flash = L("Applied · ⌘Z undoes it")
+    }
+
     /// The draft as `ai_apply` saved it: the text or the subject, and the
     /// revision. The text changed by the AI goes to the editor as one step
     /// of its undo (`replaceRange`): ⌘Z there gives the words back, as for
@@ -394,8 +407,15 @@ extension AppModel {
     private func applied(_ d: DraftView, opened: UUID) {
         guard var c = composer, c.opened == opened else { return }
         if d.body != c.body {
-            let change = Compose.changedRange(old: c.body, new: d.body)
-            editor?.replaceRange(start: change.start, end: change.end, text: change.text)
+            // Formatted, the core rewrote the user's blocks as HTML: the
+            // editor takes the whole HTML (one step of undo); in text only,
+            // the smallest range that changed.
+            if c.format == .html {
+                editor?.replaceContent(html: d.body)
+            } else {
+                let change = Compose.changedRange(old: c.body, new: d.body)
+                editor?.replaceRange(start: change.start, end: change.end, text: change.text)
+            }
             c.body = d.body
             flash = L("Applied · ⌘Z undoes it")
         }

@@ -79,35 +79,60 @@ export function textToParagraphs(text: string): JSONContent[] {
 }
 
 /**
- * The document position of an offset of the text (UTF-16 units) in a text
- * only document: each paragraph is one line, and the line break between
- * two counts one unit. ProseMirror counts the characters of a text in the
- * same units (JavaScript string lengths), and a paragraph's start and end
- * one position each.
+ * The text blocks of a document (paragraphs and headings, at any depth:
+ * in a list item, a quotation), each with the position where its content
+ * starts. They are the lines of the document's text, in both modes: in
+ * text only every paragraph is a line; formatted, the same text the core
+ * measures a selection in (`nm_store::mail_html::AiView::view`).
+ */
+function textblocks(doc: PMNode): { node: PMNode; start: number }[] {
+  const out: { node: PMNode; start: number }[] = []
+  doc.descendants((node, pos) => {
+    if (!node.isTextblock) return true
+    out.push({ node, start: pos + 1 })
+    return false
+  })
+  return out
+}
+
+/**
+ * The document's text: a line per text block, a line break inside one
+ * (`⇧↩`) a line break too. Inside a block, a character is one position
+ * and one unit of the text (JavaScript strings count UTF-16 units, as
+ * ProseMirror does), and a line break one of each: an offset in a block
+ * is its position minus the block's start.
+ */
+export function documentText(doc: PMNode): string {
+  return textblocks(doc)
+    .map(b => b.node.textBetween(0, b.node.content.size, undefined, '\n'))
+    .join('\n')
+}
+
+/**
+ * The document position of an offset of the text (UTF-16 units of
+ * `documentText`): the line break between two blocks counts one unit.
  */
 export function textOffsetToPos(doc: PMNode, offset: number): number {
   let left = Math.max(0, offset)
-  let pos = 0
-  for (let i = 0; i < doc.childCount; i++) {
-    const p = doc.child(i)
-    const length = p.textContent.length
-    if (left <= length || i === doc.childCount - 1) return pos + 1 + Math.min(left, length)
+  const blocks = textblocks(doc)
+  for (let i = 0; i < blocks.length; i++) {
+    const { node, start } = blocks[i]!
+    const length = node.content.size
+    if (left <= length || i === blocks.length - 1) return start + Math.min(left, length)
     left -= length + 1
-    pos += p.nodeSize
   }
   return 1
 }
 
-/** The offset of the text (UTF-16 units) of a document position. */
+/** The offset of the text (UTF-16 units of `documentText`) of a document
+ * position; a position between blocks counts as the start of the next. */
 export function posToTextOffset(doc: PMNode, pos: number): number {
   let offset = 0
-  let start = 0
-  for (let i = 0; i < doc.childCount; i++) {
-    const p = doc.child(i)
-    const end = start + p.nodeSize
-    if (pos < end) return offset + Math.min(Math.max(0, pos - start - 1), p.textContent.length)
-    offset += p.textContent.length + 1
-    start = end
+  const blocks = textblocks(doc)
+  for (const { node, start } of blocks) {
+    const length = node.content.size
+    if (pos <= start + length) return offset + Math.min(Math.max(0, pos - start), length)
+    offset += length + 1
   }
   return Math.max(0, offset - 1)
 }

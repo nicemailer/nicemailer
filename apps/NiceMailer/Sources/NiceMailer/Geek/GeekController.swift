@@ -2438,15 +2438,11 @@ final class GeekController {
     func openAI() {
         let compose = model.composer != nil && screen == .mail
         guard compose || screen == .mail else { return }
-        // The AI reads and rewrites text: a formatted draft is not offered
-        // to it yet (`edition.md`, section 14).
-        if compose, model.composer?.format == .html {
-            model.flash = L("The AI works on text only for now · ⇧⌘T for text only")
-            return
-        }
         // In the reply, the text selected decides: its prompts (other
         // wordings…) work on it alone; none, the whole text. The
-        // passage is kept as it was when ⌘I was pressed.
+        // passage is kept as it was when ⌃I was pressed, in the units of
+        // the editor's text (a line per text block when formatted: the
+        // core measures it in the same text, `ia.md`, section 5).
         let passage: NSRange? = compose
             ? model.editorState.textRange.flatMap { $0.end > $0.start ? NSRange(location: $0.start, length: $0.end - $0.start) : nil }
             : nil

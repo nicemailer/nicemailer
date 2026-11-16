@@ -82,13 +82,23 @@ export interface ReplaceSelectionMessage {
   html?: string
 }
 
-/** Text only: replaces the range `start`..`end` (UTF-16 units of the
- * text) with `text`, in one step of undo (an AI change the core applied). */
+/** Replaces the range `start`..`end` of the document's text (UTF-16 units
+ * of `documentText`: the text in text only, a line per text block
+ * formatted) with `text`, in one step of undo: an AI change the core
+ * applied (text only), a passage the AI rewrote (formatted, where the
+ * text keeps the formatting of the passage). */
 export interface ReplaceRangeMessage {
   type: 'replaceRange'
   start: number
   end: number
   text: string
+}
+
+/** Formatted mode: the whole HTML replaced, in one step of undo (the AI
+ * rewrote the user's blocks, `ai_apply`). */
+export interface ReplaceContentMessage {
+  type: 'replaceContent'
+  html: string
 }
 
 export interface FlushMessage {
@@ -111,6 +121,7 @@ export type HostMessage =
   | SetModeMessage
   | ReplaceSelectionMessage
   | ReplaceRangeMessage
+  | ReplaceContentMessage
   | FlushMessage
   | FocusMessage
   | BlurMessage
@@ -146,8 +157,10 @@ export interface EditorState {
   modal: boolean
   /** The text has the focus (a click in it gives it the keys). */
   focused: boolean
-  /** Text only: the selection in UTF-16 units of the text, the cursor
-   * when `start == end` (the AI's passage, the UI scenarios). */
+  /** The selection in UTF-16 units of the document's text
+   * (`documentText`: the text in text only, a line per text block
+   * formatted), the cursor when `start == end` (the AI's passage, the UI
+   * scenarios). */
   textRange: { start: number; end: number } | null
   /** Nothing is selected. */
   empty: boolean

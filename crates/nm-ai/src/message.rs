@@ -32,6 +32,27 @@ pub fn segments(texts: &[&str]) -> Result<String, AiError> {
     Ok(out)
 }
 
+/// The segments of a formatted draft (`draft.own_text` of a `replace`
+/// prompt): the user's blocks as HTML, numbered as [`segments`] numbers
+/// them, after a note that tells the model to answer in the same HTML. Its
+/// formatting (headings, lists, bold, links) then stays on the words it
+/// was on; the core cleans the answer before it goes into the draft
+/// (`nm_store::mail_html::ai_block`), whatever the model wrote.
+pub fn html_segments(texts: &[&str]) -> Result<String, AiError> {
+    let segments = segments(texts)?;
+    Ok(format!(
+        "{}\n\n{segments}",
+        section(
+            "format",
+            "Each segment is HTML, as a mail editor writes it: paragraphs <p> (an empty <p></p> is a blank \
+             line), headings <h1> to <h3>, lists <ul> and <ol> of <li><p>…</p></li>, <strong>, <em>, <u>, \
+             links <a href>, <span style> and <br>. Give each segment back as HTML of the same kinds: keep \
+             each tag around the words it formats, one <p> per paragraph, and no other tag. Write the text \
+             as HTML text: &amp; for &, &lt; for <."
+        )
+    ))
+}
+
 /// The user's text for an output that does not replace it (subjects, …):
 /// the segments one after the other, in a `<draft>` section.
 pub fn draft_text(texts: &[&str]) -> Result<String, AiError> {

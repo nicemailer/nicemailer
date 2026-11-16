@@ -351,6 +351,12 @@ final class AIFakeState: @unchecked Sendable {
     private var _appliedSubject = "Re: Subject 1"
     private var _lastPrompt = ""
     private var _suggest = false
+    private var _passageText: String?
+    /// `ai_apply` answers a text for the passage of a formatted reply
+    /// (`DraftText::HtmlPassage` in the core) instead of a draft.
+    var passageText: String? { get { locked { _passageText } } set { locked { _passageText = newValue } } }
+    /// `ai_apply` answers a formatted draft (`body_format: html`).
+    var appliedFormat = "text"
     /// `ai_suggestions` suggests Archive for the first conversation asked.
     var suggest: Bool { get { locked { _suggest } } set { locked { _suggest = newValue } } }
 
@@ -467,9 +473,12 @@ final class AIFakeState: @unchecked Sendable {
         case "ai_apply" where locked({ _lastPrompt }) == "quick-replies":
             let items = ["C'est noté !", "On peut décaler ?"]
             return ["draft": NSNull(), "text": items[params["choice"] as? Int ?? 0]] as [String: Any]
+        case "ai_apply" where passageText != nil:
+            return ["draft": NSNull(), "text": passageText!] as [String: Any]
         case "ai_apply":
             var d = Fixture.draft(replyTo: 10, body: appliedBody, revision: (params["revision"] as? Int ?? 1) + 1)
             d["subject"] = appliedSubject
+            d["body_format"] = appliedFormat
             return ["draft": d]
         case "ai_dismiss", "ai_cancel": return ["changed": 0]
         default: return Fixture.answer(method, params)
@@ -722,6 +731,55 @@ final class AIControllerTests {
         press("ret")
         _ = await eventually { self.core.calls("ai_run").count == 2 }
         #expect(core.calls("ai_run").last?["selection"] == nil)
+    }
+
+    /// A formatted reply (`edition.md`): the AI is offered; the core
+    /// rewrote the user's blocks as HTML, which the editor takes whole, as
+    /// one step of its undo.
+    @Test func aFormattedReplyIsRewrittenAsHTMLByTheEditor() async throws {
+        await reply("merci")
+        await model.toggleComposeFormat()
+        #expect(model.composer?.format == .html)
+        press("ctrl-i")
+        _ = await eventually { self.paletteOpen }
+        #expect(model.flash != L("The AI works on text only for now · ⇧⌘T for text only"))
+        choose("c")
+        _ = await eventually { self.model.aiRun?.runId == 7 }
+        ai.appliedBody = "<p>Merci.</p><p>On Nov 7, Sender 1 wrote:</p><blockquote><p>Hello</p></blockquote>"
+        ai.appliedFormat = "html"
+        event("AiDone", ["run_id": .int(7)])
+        _ = await eventually { if case .proposal? = self.model.aiRun?.phase { true } else { false } }
+        press("ret")
+        _ = await eventually { self.model.aiRun == nil }
+        #expect(editor.contents == [ai.appliedBody])
+        #expect(editor.ranges.isEmpty)
+        #expect(model.composer?.body == ai.appliedBody)
+        #expect(model.flash == L("Applied · ⌘Z undoes it"))
+    }
+
+    /// A passage of a formatted reply: the core gives the text back, and
+    /// the editor puts it in place of the passage, measured in its text.
+    @Test func aPassageOfAFormattedReplyIsReplacedByTheEditor() async throws {
+        await reply("merci je vien jeudi")
+        await model.toggleComposeFormat()
+        var selected = EditorStateView()
+        selected.textRange = .init(start: 14, end: 19)
+        selected.selection = "jeudi"
+        selected.empty = false
+        editor.post(selected)
+        press("ctrl-i")
+        _ = await eventually { self.paletteOpen }
+        press("ret")
+        _ = await eventually { self.model.aiRun?.runId == 7 }
+        let selection = try #require(core.calls("ai_run").last?["selection"] as? [String: Any])
+        #expect(selection["start"] as? Int == 14 && selection["end"] as? Int == 19)
+        event("AiDone", ["run_id": .int(7)])
+        _ = await eventually { if case .proposal? = self.model.aiRun?.phase { true } else { false } }
+        ai.passageText = "vendredi"
+        press("ret")
+        _ = await eventually { self.model.aiRun == nil }
+        #expect(editor.ranges.last?.start == 14 && editor.ranges.last?.end == 19 && editor.ranges.last?.text == "vendredi")
+        #expect(model.flash == L("Applied · ⌘Z undoes it"))
     }
 
     @Test func escapeRefusesAProposalAndStopsARun() async throws {
