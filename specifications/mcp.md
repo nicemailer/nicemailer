@@ -1,6 +1,6 @@
 # NiceMailer : serveur MCP
 
-Statut : proposition (novembre 2026), à valider. Rien n'est réalisé. Complète `architecture.md` (sections 4, 5 et 9), `brouillons.md`, `configuration.md` (section 7, réglages protégés), `evenements.md`, `tracabilite.md` et `mise-a-jour.md`.
+Statut : proposition (novembre 2026), à valider. Rien n'est réalisé. Complète `architecture.md` (sections 4, 5 et 9), `brouillons.md`, `configuration.md` (section 7, réglages protégés), `evenements.md`, `groupes.md`, `tracabilite.md` et `mise-a-jour.md`.
 
 ## 1. Objet
 
@@ -14,7 +14,7 @@ L'assistance IA intégrée à l'app (`ia.md`) est un autre sujet : là, c'est le
 - **Les droits sont appliqués par le noyau, pas par le proxy.** Le proxy n'expose que les outils autorisés, mais c'est le noyau qui refuse une méthode interdite à la source `mcp`. Un proxy modifié, ou un autre programme qui se déclarerait `mcp`, n'obtient rien de plus.
 - **Le contenu d'un mail est une donnée hostile.** L'agent est un LLM qui lit des mails écrits par n'importe qui et qui dispose d'outils. Toute action dont l'effet sort de la boîte (envoi, désabonnement, chargement d'une image distante) passe par un geste de l'utilisateur dans l'app, ou n'est pas offerte.
 - **Lecture d'abord, chaque droit de plus est un geste dans l'app.** Par défaut, l'agent lit et prépare des brouillons. Ranger les mails est un réglage protégé ; envoyer demande toujours une confirmation.
-- **Des outils pensés pour les tâches, pas un miroir du contrat.** Le contrat a plus de 80 méthodes, dont beaucoup ne servent qu'à l'interface (curseurs d'affichage, `prepare_draft`, sondes de compte). L'agent reçoit une quinzaine d'outils, chacun correspondant à une intention (« lister les conversations », « lire une conversation »).
+- **Des outils pensés pour les tâches, pas un miroir du contrat.** Le contrat a plus de 80 méthodes, dont beaucoup ne servent qu'à l'interface (curseurs d'affichage, `prepare_draft`, sondes de compte). L'agent reçoit une vingtaine d'outils, chacun correspondant à une intention (« lister les conversations », « lire une conversation »).
 - **Des réponses compactes.** Chaque octet renvoyé occupe le contexte du modèle. Les réponses omettent ce qui ne sert qu'à l'affichage (HTML, segments de mise en page, positions d'événements) et bornent les textes longs.
 
 ### Pourquoi un serveur MCP plutôt qu'une skill qui décrit le CLI
@@ -82,6 +82,7 @@ Ce tableau précise la ligne « MCP » d'`architecture.md`, section 9.
 | Brouillons | Créer, modifier et abandonner **ses** brouillons (`draft.created_by = 'mcp'`). Ceux de l'utilisateur sont en lecture seule : l'agent ne réécrit pas ce que l'utilisateur rédige |
 | Envoi | Seulement de ses brouillons, **toujours après confirmation dans l'app** (section 6) |
 | Rangement (déplacer, lu/non lu, drapeau, étiquettes, annuler) | Désactivé par défaut. Réglage protégé « Autoriser l'agent à ranger les mails », modifiable dans l'app seulement (`configuration.md`, section 7) |
+| Groupes de contacts (`groupes.md`) | Créer un groupe, le renommer, changer sa couleur et sa place, ajouter et retirer des membres : oui, sans réglage protégé. Supprimer un groupe : non, l'utilisateur le fait dans l'app |
 | Confirmer un expéditeur suspect d'usurpation (`confirm_suspect`) | Jamais, même avec le rangement autorisé |
 | Décisions de screening par un déplacement (vers Newsletter, Paperwork, Banned, ou Inbox depuis Quarantine ou Banned) | Comme le rangement, avec les règles de `dossiers.md` |
 | Décisions de screening directes, sans mail (`set_address_screening`, `set_domain_screening`, `set_sender_kind`) | Non (question ouverte) |
@@ -101,6 +102,7 @@ Des constantes du noyau, pas des clés de `config.toml` : un agent qui écrit de
 | Demandes d'envoi | 10 par heure ; au plus 3 en attente de confirmation |
 | Conversations déplacées vers Deleted, Junk ou Banned | 200 par heure |
 | Autres commandes de rangement | 60 par minute |
+| Commandes de groupes (création, modification, membres) | 60 par minute ; au plus 100 adresses par commande |
 
 Au-delà, la commande est refusée par une erreur dédiée (`RATE_LIMITED`, avec le délai avant la prochaine tentative possible) et le refus est inscrit dans `audit_log`.
 
@@ -112,7 +114,8 @@ Les noms sont en anglais, comme le CLI. Chaque outil porte les annotations MCP q
 
 | Outil | Paramètres | Appels du contrat | Réponse |
 | --- | --- | --- | --- |
-| `mailbox_overview` | — | `list_accounts`, `list_folders`, `list_tags` | Comptes (clé, adresse, état), dossiers par compte (identifiant, rôle, nom, non lus), étiquettes |
+| `mailbox_overview` | — | `list_accounts`, `list_folders`, `list_tags`, `list_groups` | Comptes (clé, adresse, état), dossiers par compte (identifiant, rôle, nom, non lus), étiquettes, groupes (identifiant, nom, couleur, nombre de membres) |
+| `list_group_members` | `group` (nom ou identifiant), `cursor?`, `limit?` | `list_group_members` (nouveau) | Les adresses du groupe, avec leur nom affiché, par ordre alphabétique |
 | `list_conversations` | `folder` (rôle ou identifiant), `account?`, `filter?`, `sort?`, `cursor?`, `limit?` | `list_threads` | Une page de conversations (section 7) |
 | `search_messages` | `query`, `limit?` | `search` | Messages trouvés, avec l'extrait qui correspond |
 | `get_conversation` | `thread_id`, `include_quoted?` | `get_thread` | Les messages de la conversation, texte réduit (section 7) |
@@ -124,8 +127,9 @@ Les noms sont en anglais, comme le CLI. Chaque outil porte les annotations MCP q
 Précisions :
 
 - **`folder`** accepte un rôle (`inbox`, `todo`, `waiting`, `archive`, `sent`, `drafts`, `newsletter`, `paperwork`, `quarantine`, `deleted`, `junk`, `banned`), un dossier virtuel (`work`, `all_mail`, `everything`), ou un identifiant de dossier lu dans `mailbox_overview`. Un rôle sans `account` désigne les dossiers de ce rôle dans tous les comptes, comme la vue unifiée de l'app (`folder_ids`) ; le proxy les trouve par `list_folders`, sans règle à lui.
-- **`filter`** reprend un sous-ensemble de `ThreadFilter` : `unread`, `flagged`, `attachments`, `answered`, `human`, `from`, `not_from`, `to`, `text`, `subject`, `contains`, `after`, `before`, `tag`. Un critère inconnu est refusé, comme dans le contrat.
+- **`filter`** reprend un sous-ensemble de `ThreadFilter` : `unread`, `flagged`, `attachments`, `answered`, `human`, `from`, `not_from`, `to`, `text`, `subject`, `contains`, `after`, `before`, `tag`, `group`. Un critère inconnu est refusé, comme dans le contrat.
 - **`search_messages`** et le critère `contains` se recouvrent. Les deux sont gardés : `search_messages` cherche dans toute la boîte et renvoie l'extrait qui correspond ; `list_conversations` filtre un dossier et renvoie des conversations.
+- **Conversations d'un groupe** : `list_conversations` accepte le critère `group` (nom ou identifiant, traduit en `group_id` de `ThreadFilter`), avec le dossier virtuel `everything` (« qu'ont écrit les membres de Famille cette semaine ? »).
 - **`get_message`** sert quand `get_conversation` a tronqué un texte ou caché une citation, et pour les en-têtes complets.
 - **`read_attachment`** lit les formats que le noyau sait lire pour l'assistance IA (`ia.md`, section 5, `attachment.text` : texte, HTML, PDF, DOCX, mail joint). Pour un autre format, ou un PDF scanné sans texte, la réponse le dit et donne seulement le chemin (`architecture.md`, section 5, « Pièces jointes : transfert par chemin »), utilisable par un agent qui a accès aux fichiers. Les images ne sont pas renvoyées en v1 (question ouverte).
 
@@ -143,6 +147,24 @@ Précisions :
 - **Adresses.** `to`, `cc` et `bcc` sont des chaînes libres, passées par `parse_addresses` ; une adresse refusée fait échouer l'outil avec l'adresse en cause.
 - **`attach_file`** donne au noyau un chemin qu'il lit avec les droits de l'utilisateur (`architecture.md`, section 5) : l'agent peut joindre n'importe quel fichier que l'utilisateur peut lire. C'est sans danger tant que rien ne part sans confirmation, et c'est pourquoi la confirmation affiche le chemin d'origine de chaque pièce jointe.
 - **Ligne de citation** (`quote_header`) : le contrat attend du client qu'il l'écrive dans sa langue. Le proxy n'a pas de traductions ; voir les questions ouvertes.
+
+### Groupes (phase 2)
+
+| Outil | Paramètres | Appels du contrat |
+| --- | --- | --- |
+| `create_group` | `name`, `color?`, `members?` (adresses ou `thread_id`) | `create_group` (nouveau), `set_group_member` |
+| `update_group` | `group` (nom ou identifiant), `name?`, `color?`, `position?` | `update_group` (nouveau) |
+| `add_to_group` | `group`, `members` (adresses ou `thread_id`), `create?` | `set_group_member` |
+| `remove_from_group` | `group`, `members` | `set_group_member` (`remove`) |
+
+- **Pourquoi sans réglage protégé.** Un groupe ne change ni le tri ni le screening (`groupes.md`, section 2) et ne fait rien sortir de la boîte : l'erreur qu'une injection peut provoquer (un inconnu ajouté à « VIP », un membre retiré) est visible, sans fuite, et se rattrape depuis l'historique (`agent_history`, puis l'app). Classer ses contacts est aussi une demande naturelle à un agent (« mets tous les gens de l'association dans un groupe »).
+- **Pas de suppression de groupe.** Elle n'a pas d'annulation, et un groupe recréé sous le même nom repart vide (`groupes.md`, section 3, « Règles ») : une injection qui supprime « Famille » ferait perdre la liste. L'agent peut vider un groupe membre par membre, ce qui reste dans l'historique et se refait ; la suppression reste un geste de l'utilisateur dans l'app. `delete_group` est donc absent de la liste des méthodes de `mcp`.
+- **Création explicite.** `create_group` échoue si un groupe actif porte déjà ce nom, sans casse (`ALREADY_EXISTS`, avec l'identifiant du groupe existant) : l'agent ne fusionne pas par erreur sa liste dans un groupe de l'utilisateur. `add_to_group` vers un groupe inconnu échoue (`NOT_FOUND`), sauf avec `create: true` ; sans cette règle, une faute de frappe (« Famile ») créerait un second groupe en silence, alors que `set_group_member` crée le groupe au besoin pour l'app.
+- **Membres.** Une adresse est passée par `parse_addresses` ; une adresse refusée fait échouer l'outil avec l'adresse en cause, avant toute modification. Un `thread_id` désigne l'expéditeur de la conversation, comme dans l'app (`groupes.md`, section 6). Une adresse jamais vue est créée avec `created_by = 'mcp'`. Tous les membres d'un appel sont ajoutés (ou retirés) dans une seule transaction : un échec n'en laisse pas la moitié.
+- **Réponse** : le groupe (identifiant, nom), et pour chaque membre l'adresse et `changed` (faux s'il y figurait déjà, ou n'y figurait pas pour un retrait), pour que l'agent rapporte ce qu'il a vraiment fait.
+- **Couleur** : `#rrggbb`, ou `null` pour la couleur par défaut ; une autre forme est refusée par le noyau. **Position** : la place dans la liste, à partir de 0 ; les groupes suivants sont décalés.
+- **Synchronisation.** Les groupes passent sur les autres Mac de l'utilisateur, et dans le document d'une boîte partagée quand un membre y a été vu (`groupes.md`, section 4). La description de `create_group` et `update_group` le dit, pour que l'agent ne donne pas à un groupe un nom que l'utilisateur ne voudrait pas montrer aux collègues de cette boîte.
+- **Si un groupe prend un jour un effet sur le tri** (`groupes.md`, section 8, question 2 : un membre accepté en Inbox d'office), modifier un groupe devient une façon d'accepter un expéditeur : ces outils passent alors sous le réglage de rangement (`mcp.allow_filing`), avec la question ouverte sur l'acceptation en Inbox. La spécification de cet effet devra le prévoir.
 
 ### Envoi confirmé (phase 3)
 
@@ -244,6 +266,8 @@ Comme pour l'assistance intégrée, cette consigne réduit le risque sans le sup
 | `attachment_text(attachment_id, offset?, limit?)` | 1 | Texte extrait d'une pièce jointe (`nm-store`, `attachment_text`), déjà lu pour l'assistance IA ; servira aussi au CLI |
 | Filtre par source de `list_history` | 1 | `list_history` n'a aujourd'hui qu'un curseur et une limite ; `tracabilite.md` (section 6) prévoit `since` et `sources` |
 | Brouillons limités à ceux de l'agent | 2 | `update_draft`, `add_draft_attachment`, `remove_draft_attachment`, `discard_draft`, `send_draft` refusés à `mcp` sur un brouillon dont `created_by` n'est pas `mcp` |
+| `create_group {name, color?}`, `update_group {group_id, name?, color?, position?}`, `list_group_members {group_id, cursor?, limit?}` | 2 | Section 5, « Groupes » ; prévus par `groupes.md` (section 6), utiles aussi à l'app et au CLI ; nouvelle erreur `ALREADY_EXISTS` (nom déjà pris, `data` : identifiant existant) |
+| `set_group_member` : plusieurs adresses (`addrs`) en une transaction, et refus de créer le groupe sur demande (`create: false`) | 2 | Section 5, « Groupes » ; `create` vaut vrai par défaut, l'app garde son comportement |
 | Ligne de citation par défaut | 2 | Voir les questions ouvertes |
 | Vérification de la signature des clients | avant 3 | `architecture.md`, section 9 |
 | `send_request`, état `awaiting_confirmation` du brouillon | 3 | Section 6 |
@@ -267,7 +291,7 @@ La fenêtre de confirmation d'envoi est décrite à la section 6.
 Chaque phase est livrable seule, avec ses tests et la page `docs/mcp.md` mise à jour.
 
 1. **Lecture.** Binaire `nicemailer-mcp` dans le bundle, outils de lecture, liste des méthodes autorisées par source, `attachment_text`, installation depuis l'app. Utile seule : résumer, retrouver, répondre à « qu'est-ce qui m'attend ? ».
-2. **Brouillons.** Outils de brouillon. L'agent prépare, l'utilisateur relit et envoie depuis l'app.
+2. **Brouillons et groupes.** Outils de brouillon. L'agent prépare, l'utilisateur relit et envoie depuis l'app. Outils de groupes et ajouts correspondants au contrat ; les deux moitiés sont indépendantes et peuvent être livrées séparément.
 3. **Envoi confirmé.** Après la vérification de signature : demandes, fenêtre de confirmation, limites de débit.
 4. **Rangement.** Réglage protégé et outils de rangement.
 
@@ -291,6 +315,7 @@ Noyau :
 - Chaque méthode hors de la liste de `mcp` est refusée par `FORBIDDEN` ; une méthode ajoutée au contrat sans être ouverte à `mcp` est refusée (test qui parcourt `nm_api::method`).
 - `set_password`, `confirm_send`, `mark_viewed` et la modification d'un réglage protégé : refusés à `mcp`.
 - Brouillon de l'utilisateur : lisible par `mcp`, toute modification refusée.
+- Groupes : `create_group`, `update_group` et `set_group_member` acceptés pour `mcp` sans réglage protégé ; `delete_group` refusé ; `create_group` d'un nom pris à la casse près (« Équipe », « équipe ») refusé avec l'identifiant existant ; `set_group_member` avec `create: false` vers un groupe inconnu refusé sans rien créer ; plusieurs adresses dont une invalide : aucune modification ; `modified_by = 'mcp'` et lignes `add_member`, `remove_member`, `create`, `update` dans `audit_log` ; position : les autres groupes décalés sans trou ni doublon ; couleur mal formée refusée ; limite de 100 adresses par commande.
 - Rangement refusé tant que `mcp.allow_filing` est faux, accepté ensuite ; `confirm_suspect` ignoré pour `mcp`.
 - Déplacement par l'agent vers Junk : ce mail seulement, aucune décision ; vers Banned : décision sur l'adresse et rangement des autres mails ; d'un mail suspect vers Banned : ce mail seulement, comme pour l'app (`dossiers.md`).
 - Toute modification faite par l'agent : `modified_by = 'mcp'` et ligne dans `audit_log` (`tracabilite.md`, section 9).
@@ -302,6 +327,7 @@ Proxy (`nm-mcp`, contre un noyau de test) :
 
 - `initialize` répond sans noyau ; le premier outil démarre la connexion.
 - Chaque outil : schéma d'entrée, schéma de sortie respecté, champs vides omis, dates ISO.
+- Groupes : `group` par nom ou par identifiant ; `add_to_group` vers un groupe inconnu sans `create` : erreur d'outil, aucun groupe créé ; `changed` rapporté par membre ; critère `group` de `list_conversations`.
 - `get_conversation` : jamais de `body_html` ; citations cachées sans `include_quoted`, présentes avec ; bornes de texte et `truncated`.
 - `folder` par rôle sans compte : les dossiers de ce rôle dans tous les comptes.
 - Noyau en maintenance puis disponible ; noyau qui redémarre entre deux appels.

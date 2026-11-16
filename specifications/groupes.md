@@ -91,7 +91,9 @@ Implémenté :
 - `set_group_member {group, addr | thread_id, remove}` : ajoute (ou retire) une adresse, ou l'expéditeur d'une conversation (auteur de son dernier mail hors Sent et Drafts), au groupe nommé, créé au besoin. Ajouter un membre déjà présent ne change rien (`changed: false`) ;
 - `list_threads {everything: {}, filter: {group_id}}` : conversations dont un mail vient d'un membre ou lui est adressé (To, Cc), tous dossiers, les plus récentes d'abord (sur la date affichée), paginées, combinables avec les autres attributs (« non lus du groupe »).
 
-Envisagé : `update_group` (nom, couleur, position), `delete_group`, `list_group_members`, et un événement `GroupChanged {group_id}`.
+Envisagé : `create_group` (nom, couleur ; refuse un nom pris), `update_group` (nom, couleur, position), `delete_group`, `list_group_members`, plusieurs adresses par `set_group_member` en une transaction, et un événement `GroupChanged {group_id}`. Le serveur MCP en a besoin, sauf `delete_group`, qu'il n'ouvre pas à l'agent (`mcp.md`, section 5, « Groupes »).
+
+**Droits de l'agent MCP** : il crée, renomme et modifie les groupes et leurs membres sans réglage protégé, mais ne supprime pas de groupe (`mcp.md`, section 4). Un usage qui donnerait aux groupes un effet sur le tri (section 8, question 2) doit revoir ce droit.
 
 ## 7. Tests exigés
 

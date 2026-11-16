@@ -322,7 +322,7 @@ En développement, les builds signés ad hoc ne satisfont pas l'exigence. Une ex
 | App         | oui     | oui                                                        | oui                                | oui                 |
 | CLI, TUI    | oui     | oui                                                        | oui                                | oui                 |
 | Serveur web | oui     | oui                                                        | oui                                | non                 |
-| MCP (agent) | oui     | désactivé par défaut, activable dans l'app seulement (réglage protégé) | **toujours soumis à confirmation** | non                 |
+| MCP (agent) | oui     | désactivé par défaut, activable dans l'app seulement (réglage protégé) ; groupes de contacts permis, sauf leur suppression (`mcp.md`, section 4) | **toujours soumis à confirmation** | non                 |
 
 Les réglages qui étendent les droits d'un client (modification par l'agent MCP, activation du serveur web) sont des **réglages protégés** : ils ne sont pas dans `config.toml` ni `accounts.toml`, que n'importe quel programme peut modifier, mais en base, et seule l'app peut les changer (`configuration.md`, section 7). Les autres réglages sont dans `config.toml`, les comptes dans `accounts.toml` ; la colonne « Comptes et réglages » désigne leur modification par le contrat.
 
