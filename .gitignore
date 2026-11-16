@@ -13,3 +13,6 @@ __pycache__/
 
 # The editor bundle, built by `make editor` (apps/editor), never committed.
 /apps/NiceMailer/Sources/NiceMailer/Resources/Editor/
+
+# Releases built by scripts/make-release.sh (`make release`).
+/dist/

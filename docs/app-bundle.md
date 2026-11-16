@@ -97,7 +97,57 @@ A core newer than the mailbox it opens upgrades its database first (`docs/migrat
 
 ## Signature
 
-The app and its helpers are signed with the Apple Development identity of the Mac, as `make core` signs its core (`scripts/sign-core.sh`, identifier `org.nicemailer.core`): the Keychain sees both cores as the same program, and the passwords saved by one are readable by the other ([configuration.md](configuration.md), "Passwords"). Without that identity the bundle is signed ad hoc: it runs, but its core cannot read the passwords saved by another build.
+`make bundle` signs the app and its helpers from the inside out (the core, the CLI, then the app), all with the **hardened runtime**, which notarization requires. A development build is signed the same way, so that it meets the same restrictions every day rather than on the day of a release.
+
+| Program | Identifier | Entitlements |
+| --- | --- | --- |
+| `Contents/MacOS/NiceMailer` | `eu.nicemailer.NiceMailer` | `apps/NiceMailer/NiceMailer.entitlements`: the address book only |
+| `Contents/Helpers/nicemailer-core` | `org.nicemailer.core` (`scripts/sign-core.sh`) | none |
+| `Contents/Helpers/nicemailer` | `org.nicemailer.cli` | none |
+
+Under the hardened runtime, a protected resource must be declared: without `com.apple.security.personal-information.addressbook`, macOS refuses the Contacts without asking (`docs/geek-ui.md`, "Senders in the address book"). The editor's WebKit runs in WebKit's own processes and needs no entitlement from the app.
+
+**Development** (`make bundle`, `make core`): the Apple Development identity of the Mac, no secure timestamp (offline, faster). The Keychain sees the core of the app and the one of `make core` as the same program, and the passwords saved by one are readable by the other ([configuration.md](configuration.md), "Passwords"). Without that identity the bundle is signed ad hoc: it runs, but its core cannot read the passwords saved by another build, and `make bundle` warns.
+
+**Release** (`make release`): the **Developer ID Application** identity, the one Gatekeeper accepts outside the App Store, and a secure timestamp from Apple on each signature. `$SIGN_IDENTITY` (a SHA-1 hash or a name) chooses among several identities.
+
+`scripts/check-signature.sh [--release] <NiceMailer.app>` checks a bundle, and `make bundle` and `make release` run it: valid seal, hardened runtime, the identifiers above, one team for the three programs (the Keychain partition is `teamid:<team>`), arm64 code, the address book entitlement; with `--release`, a Developer ID Application, a secure timestamp and no `get-task-allow`. A release that fails it is not built; a development build that fails it installs with a warning.
+
+The seal of the app records every resource by its hash, but a helper by its signature requirement (identifier and team): a helper re-signed by the same identity still passes the seal, which is why each helper is checked on its own.
+
+### Creating the Developer ID certificate
+
+Once, by the Account Holder of the paid Apple Developer team:
+
+1. Xcode → Settings → Accounts → the paid team (not "Personal Team") → **Manage Certificates…** → **+** → **Developer ID Application**.
+2. `security find-identity -v -p codesigning` must list `"Developer ID Application: … (<team>)"`. If not valid, install the intermediate "Developer ID - G2" from <https://www.apple.com/certificateauthority/> into the login keychain.
+3. Export the certificate with its private key (Keychain Access → Export, `.p12` with a password) and keep it outside the repository: a lost key cannot sign again, and the CI will need it.
+
+The notarization credentials, once: an app-specific password (<https://account.apple.com>, Sign-In and Security), then `xcrun notarytool store-credentials nicemailer --apple-id <Apple ID> --team-id <team>`, which keeps it in the keychain under the profile `nicemailer`.
+
+## Versions
+
+| Key of `Info.plist` | Value | Why |
+| --- | --- | --- |
+| `CFBundleShortVersionString` | `version` of `[workspace.package]` in `Cargo.toml` | One version for the app, the core and `nicemailer --version` |
+| `CFBundleVersion` | number of commits (`git rev-list --count HEAD`) | macOS, and later Sparkle, compare it to know the newer build: it must only grow |
+| `NMGitDescribe` | `git describe --tags --always --dirty` | Traces a build to its commit |
+
+A release bumps `version` in `Cargo.toml` in a commit of its own, then is tagged `v<version>`.
+
+## Releases
+
+`make release` (`scripts/make-release.sh`) writes `dist/<version>-<time>/NiceMailer-<version>.dmg`, a new directory each time:
+
+1. `scripts/make-bundle.sh --release`: refuses uncommitted changes and `NICEMAILER_FAKE_NETWORK`; signs with the Developer ID; runs `check-signature.sh --release`; installs nothing and leaves the running app and its core alone.
+2. A disk image with the app and a link to `/Applications`, signed.
+3. Notarization (`notarytool submit --wait`, a few minutes); on a refusal, Apple's log, which names each problem, is printed.
+4. The ticket stapled to the image (`stapler`), so that the first launch is accepted offline.
+5. Gatekeeper's verdict (`spctl`) on the image and on the app in it.
+
+It publishes nothing: it ends by printing the SHA-256 and the commands that tag and create the GitHub release. `make release-check` stops after step 2, to check the signature without Apple. Before publishing, the image is tried on another Mac or user account (`specifications/plan-release.md`, section 5).
+
+Known limit: arm64 only (`specifications/plan-release.md`, section 2).
 
 ## Not done yet (`architecture.md`, section 6)
 

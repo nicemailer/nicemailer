@@ -11,7 +11,7 @@ XCODE ?= /Applications/Xcode.app/Contents/Developer
 THREADS ?= 2500
 
 # These targets are commands, not files to produce.
-.PHONY: editor editor-test dev-cert build test swift-test ui-test bench seed autoconfig core core-stop core-start app bundle open imap-up imap-down imap-test volume-test
+.PHONY: editor editor-test dev-cert build test swift-test ui-test bench seed autoconfig core core-stop core-start app bundle open release release-check imap-up imap-down imap-test volume-test
 
 # The editor of a mail's text (apps/editor, TypeScript, specifications/
 # edition.md): its dependencies installed from the lock file, then bundled
@@ -130,6 +130,18 @@ bundle: editor
 # core is started by launchd: no `make core` needed.
 open: editor
 	DEVELOPER_DIR=$(XCODE) scripts/make-bundle.sh --open
+
+# The disk image of a release (docs/app-bundle.md, "Releases"): the app
+# signed with the Developer ID Application identity, notarized by Apple,
+# its ticket stapled; written to dist/<version>-<time>/. Needs a clean
+# working tree and the notarytool profile "nicemailer" (NOTARY_PROFILE=…
+# for another). Publishes nothing: the tag and the GitHub release follow.
+release: editor
+	DEVELOPER_DIR=$(XCODE) scripts/make-release.sh
+
+# The same without notarization: checks the Developer ID signature offline.
+release-check: editor
+	DEVELOPER_DIR=$(XCODE) scripts/make-release.sh --no-notarize
 
 # Stops the core started by the agent of NiceMailer.app: it finishes its
 # work and leaves with code 0, which launchd does not restart. It starts

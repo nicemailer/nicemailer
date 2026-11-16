@@ -17,6 +17,15 @@
 # rebuild. (A keychain made by `security create-keychain` gets no
 # partition, which is why the tests on throwaway keychains did not show it.)
 #
+# Hardened runtime (`--options runtime`), always: notarization requires it
+# for a release, and a development build signed the same way meets the same
+# restrictions every day instead of on the day of a release
+# (docs/app-bundle.md, "Signature"). The core needs no entitlement under it.
+#
+# Secure timestamp: none by default (offline, and faster); a release sets
+# CODESIGN_TIMESTAMP=--timestamp, since notarization requires one
+# (scripts/make-bundle.sh --release).
+#
 # Usage: scripts/sign-core.sh <binary>
 set -euo pipefail
 BIN=$1
@@ -39,6 +48,7 @@ if [ -z "$IDENTITY" ]; then
   echo "the passwords saved by this build will not be readable by the next one." >&2
   IDENTITY="NiceMailer Dev"
 fi
-codesign --force --sign "$IDENTITY" --keychain "$KEYCHAIN" --identifier org.nicemailer.core "$BIN"
+codesign --force --sign "$IDENTITY" --keychain "$KEYCHAIN" --identifier org.nicemailer.core \
+  --options runtime "${CODESIGN_TIMESTAMP:---timestamp=none}" "$BIN"
 # The Team ID is what the Keychain partition is made of: say which.
 codesign -dvv "$BIN" 2>&1 | grep -E '^(Authority|TeamIdentifier)=' | head -2 | sed 's/^/sign-core: /' >&2

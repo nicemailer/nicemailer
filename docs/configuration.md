@@ -178,7 +178,7 @@ A keychain made by `security create-keychain`, as the tests use, gets no partiti
 
 A core run without signing (`cargo run`) works, but cannot read the passwords saved by `make core`; its accounts say so. A password saved by a build with another signature cannot be read or replaced by the signed core: delete the item `NiceMailer: <key> (IMAP)` in Keychain Access, then save the password again.
 
-The shipped core will be signed by the Developer ID of the same team, whose partition `teamid:` plays the same role.
+The released core is signed by the Developer ID Application identity (`make release`, [app-bundle.md](app-bundle.md), "Signature"), whose partition `teamid:<team>` plays the same role. When the Apple Development and Developer ID certificates belong to the same team, the passwords saved by development builds stay readable by the released core; otherwise they must be saved again once.
 
 Limit, the one the specification accepts (`configuration.md`, section 7): a program running as the user can use the development certificate to sign itself as the core. The protection is aimed at agents and edits of the file, not at malware on the Mac.
 
@@ -297,6 +297,7 @@ For a closer look, `NICEMAILER_SQL_LOG` in the core's environment logs every SQL
 | `crates/nm-engine/src/secrets.rs` | `Secrets`, `check` and `imap_password` (the binding to the server), `MemorySecrets` for tests |
 | `crates/nm-engine/src/keychain.rs` | The Keychain: items, `never_prompt` |
 | `scripts/sign-core.sh`, `scripts/dev-cert.sh` | The signature of `make core` (Apple Development, else the self-signed fallback) |
+| `scripts/check-signature.sh`, `scripts/make-release.sh` | The checks of a signed bundle, and the signed and notarized release ([app-bundle.md](app-bundle.md), "Releases") |
 | `crates/nm-engine/src/lib.rs` | `Engine`: reload, refusals, accounts and their errors, events |
 | `crates/nm-store/src/accounts.rs` | `sync_config_accounts`, `list_account_rows`, `set_account_order`, `record_config_reload` |
 | `crates/nm-store/src/pool.rs` | `ReadPool` |

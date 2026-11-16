@@ -9,8 +9,14 @@
 # note opens the mail (docs/deep-links.md).
 #
 # Usage: scripts/make-bundle.sh [--open] [install dir]   (default: /Applications)
+#        scripts/make-bundle.sh --release <output dir>
 # --open (`make open`): once built, quits the installed app if it runs,
 # installs the new one and launches it.
+# --release (`make release`, through scripts/make-release.sh): builds the
+# app to distribute (docs/app-bundle.md, "Signature"): signed with the
+# Developer ID Application identity and a secure timestamp, from a clean
+# working tree, and written to <output dir> without installing anything,
+# quitting the running app or touching its core.
 # NICEMAILER_DATA_DIR, if set, becomes the mailbox chosen (the file
 # `data-dir` of ~/Library/Application Support/NiceMailer), as "Change
 # Mailbox…" in the app would.
@@ -20,8 +26,44 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OPEN=0
+RELEASE=0
 if [ "${1:-}" = "--open" ]; then OPEN=1; shift; fi
+if [ "${1:-}" = "--release" ]; then RELEASE=1; shift; fi
 DEST="${1:-/Applications}"
+if [ "$RELEASE" = 1 ]; then
+  if [ -z "${1:-}" ]; then echo "usage: make-bundle.sh --release <output dir>" >&2; exit 1; fi
+  if [ -e "$DEST/NiceMailer.app" ]; then
+    echo "$DEST/NiceMailer.app already exists: give a new output directory." >&2; exit 1
+  fi
+  # What is shipped must be what is committed: a release built from
+  # uncommitted changes could never be rebuilt nor traced to a commit.
+  if [ -n "$(git -C "$ROOT" status --porcelain)" ]; then
+    echo "The working tree has uncommitted changes: commit them before a release." >&2; exit 1
+  fi
+  # A development switch must never reach users: their core would only
+  # pretend to send (docs/sending.md, "Pretending to send").
+  if [ -n "${NICEMAILER_FAKE_NETWORK:-}" ]; then
+    echo "NICEMAILER_FAKE_NETWORK is set: unset it before a release." >&2; exit 1
+  fi
+fi
+
+# The identity that signs the core, the CLI and the app (docs/app-bundle.md,
+# "Signature"). Always the SHA-1 hash rather than the name: two
+# certificates may share a name after a renewal.
+if [ "$RELEASE" = 1 ]; then
+  # Developer ID Application: the one certificate Gatekeeper accepts for an
+  # app distributed outside the App Store, and the one notarization takes.
+  IDENTITY="${SIGN_IDENTITY:-$(security find-identity -v -p codesigning 2>/dev/null | awk '/"Developer ID Application: / { print $2; exit }')}"
+  if [ -z "$IDENTITY" ]; then
+    echo "No Developer ID Application identity in the keychain (docs/app-bundle.md, \"Signature\")." >&2; exit 1
+  fi
+  # Notarization requires a secure timestamp from Apple's server on each
+  # signature (online; a development build does without).
+  TIMESTAMP=--timestamp
+else
+  IDENTITY="${SIGN_IDENTITY:-$(security find-identity -v -p codesigning 2>/dev/null | awk '/"Apple Development: / { print $2; exit }')}"
+  TIMESTAMP=--timestamp=none
+fi
 XCODE="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
 PKG="$ROOT/apps/NiceMailer"
 
@@ -43,6 +85,7 @@ cp "$ROOT/target/release/nicemailer-core" "$ROOT/target/release/nicemailer" "$AP
 # the app registers it, at each session, and again after a crash; a stop
 # with code 0 (Stop the Core, `make core-stop`) is not restarted.
 AGENT_ENV="<key>NICEMAILER_LOG_IN_DATA_DIR</key><string>1</string>"
+# (In a release, NICEMAILER_FAKE_NETWORK was refused above.)
 if [ -n "${NICEMAILER_FAKE_NETWORK:-}" ]; then
   AGENT_ENV="$AGENT_ENV<key>NICEMAILER_FAKE_NETWORK</key><string>1</string>"
 fi
@@ -67,7 +110,18 @@ cp -R "$BIN_DIR/NiceMailer_NiceMailer.bundle" "$APP/Contents/Resources/"
 # The icon (design/icon/README.md; scripts/make-icon.sh makes it).
 cp "$ROOT/design/icon/app/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 
-VERSION="$(git -C "$ROOT" describe --always --dirty 2>/dev/null || echo dev)"
+# Versions (docs/app-bundle.md, "Versions"):
+# - CFBundleShortVersionString, the version users see, is the one of the
+#   Rust workspace (`[workspace.package]` of Cargo.toml), so that the app,
+#   the core and `nicemailer --version` always say the same;
+# - CFBundleVersion, which macOS and later Sparkle compare to know which
+#   build is newer, must be a number that only grows: the count of commits
+#   of the history, which grows with every commit of master;
+# - NMGitDescribe, our own key, names the exact commit (and "-dirty" for a
+#   development build with uncommitted changes), to trace a build.
+SHORT_VERSION="$(sed -n 's/^version = "\(.*\)"$/\1/p' "$ROOT/Cargo.toml" | head -1)"
+BUILD_NUMBER="$(git -C "$ROOT" rev-list --count HEAD 2>/dev/null || echo 0)"
+GIT_DESCRIBE="$(git -C "$ROOT" describe --tags --always --dirty 2>/dev/null || echo unknown)"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -80,8 +134,9 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleExecutable</key><string>NiceMailer</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>0.1</string>
-  <key>CFBundleVersion</key><string>${VERSION}</string>
+  <key>CFBundleShortVersionString</key><string>${SHORT_VERSION}</string>
+  <key>CFBundleVersion</key><string>${BUILD_NUMBER}</string>
+  <key>NMGitDescribe</key><string>${GIT_DESCRIBE}</string>
   <key>CFBundleDevelopmentRegion</key><string>en</string>
   <key>CFBundleLocalizations</key><array><string>en</string><string>fr</string></array>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
@@ -107,16 +162,35 @@ cat > "$APP/Contents/Resources/fr.lproj/InfoPlist.strings" <<'STRINGS'
 STRINGS
 plutil -lint "$APP/Contents/Resources/fr.lproj/InfoPlist.strings" >/dev/null
 
-# Signed with the Apple Development identity, as `make core` signs the
-# core (scripts/sign-core.sh): the Keychain then sees the core of the app
-# and the one of `make core` as the same program, and the passwords saved
-# by either are readable by both. The helpers first, then the app around
-# them. Without that identity, an ad-hoc signature: it runs on this Mac,
-# but the core cannot read the passwords saved by another build.
-"$ROOT/scripts/sign-core.sh" "$APP/Contents/Helpers/nicemailer-core"
-IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null | awk '/"Apple Development: / { print $2; exit }')"
-codesign --force --sign "${IDENTITY:--}" --identifier org.nicemailer.cli "$APP/Contents/Helpers/nicemailer" >/dev/null
-codesign --force --sign "${IDENTITY:--}" "$APP" >/dev/null
+# Signed from the inside out, as Apple requires: the helpers first, then
+# the app, whose seal records every file it contains and, for each helper,
+# the requirement its signature must meet (identifier and team). All with
+# the hardened runtime,
+# which notarization requires; the app with its entitlements.
+# In development, the Apple Development identity, as `make core` signs its
+# core (scripts/sign-core.sh): the Keychain sees the core of the app and the
+# one of `make core` as the same program, and the passwords saved by either
+# are readable by both. Without that identity, an ad-hoc signature: it runs
+# on this Mac, but the core cannot read the passwords saved by another
+# build, and check-signature.sh below says so.
+SIGN_IDENTITY="$IDENTITY" CODESIGN_TIMESTAMP="$TIMESTAMP" "$ROOT/scripts/sign-core.sh" "$APP/Contents/Helpers/nicemailer-core"
+codesign --force --sign "${IDENTITY:--}" --identifier org.nicemailer.cli \
+  --options runtime "$TIMESTAMP" "$APP/Contents/Helpers/nicemailer" >/dev/null
+codesign --force --sign "${IDENTITY:--}" --identifier eu.nicemailer.NiceMailer \
+  --options runtime "$TIMESTAMP" --entitlements "$PKG/NiceMailer.entitlements" "$APP" >/dev/null
+
+if [ "$RELEASE" = 1 ]; then
+  "$ROOT/scripts/check-signature.sh" --release "$APP"
+  mkdir -p "$DEST"
+  # ditto rather than cp: it keeps every attribute and the signatures as
+  # they are, as Apple advises for signed bundles.
+  ditto "$APP" "$DEST/NiceMailer.app"
+  echo "Built $DEST/NiceMailer.app, version $SHORT_VERSION (build $BUILD_NUMBER, $GIT_DESCRIBE)."
+  exit 0
+fi
+# A development build without a team (ad hoc) still installs, with a
+# warning: it runs on this Mac, which is all it is for.
+"$ROOT/scripts/check-signature.sh" "$APP" || echo "Warning: this build would not pass a release (see above)." >&2
 
 # Built: only now is the running app quit, so that it stays usable during
 # the build. SIGTERM rather than an Apple Event "quit", which would make
