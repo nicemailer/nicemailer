@@ -54,15 +54,16 @@ fi
 if [ "$RELEASE" = 1 ]; then
   # Developer ID Application: the one certificate Gatekeeper accepts for an
   # app distributed outside the App Store, and the one notarization takes.
-  IDENTITY="${SIGN_IDENTITY:-$(security find-identity -v -p codesigning 2>/dev/null | awk '/"Developer ID Application: / { print $2; exit }')}"
-  if [ -z "$IDENTITY" ]; then
-    echo "No Developer ID Application identity in the keychain (docs/app-bundle.md, \"Signature\")." >&2; exit 1
-  fi
+  # scripts/signing-identity.sh fails, with the reason, when there is none.
+  IDENTITY="${SIGN_IDENTITY:-$("$ROOT/scripts/signing-identity.sh" --release)}"
   # Notarization requires a secure timestamp from Apple's server on each
   # signature (online; a development build does without).
   TIMESTAMP=--timestamp
 else
-  IDENTITY="${SIGN_IDENTITY:-$(security find-identity -v -p codesigning 2>/dev/null | awk '/"Apple Development: / { print $2; exit }')}"
+  # Apple Development, of the team of the Developer ID when there is one,
+  # so that a release installed over this build, or the reverse, keeps its
+  # core startable and its passwords (scripts/signing-identity.sh says why).
+  IDENTITY="${SIGN_IDENTITY:-$("$ROOT/scripts/signing-identity.sh")}"
   TIMESTAMP=--timestamp=none
 fi
 XCODE="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"

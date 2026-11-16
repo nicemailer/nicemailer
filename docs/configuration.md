@@ -167,12 +167,12 @@ The certificate must carry an Apple **Team ID**. Besides its access list, an ite
 An Apple Development certificate is free with an Apple ID, once:
 
 1. Xcode → Settings → Accounts → **+** → Apple ID; a "Personal Team" appears.
-2. Select it → **Manage Certificates…** → **+** → **Apple Development**.
+2. Select the team that holds the Developer ID Application certificate of releases (a Personal Team when there is none) → **Manage Certificates…** → **+** → **Apple Development**. The same team for both keeps the passwords readable when a release replaces a development build, or the reverse (see below).
 3. `security find-identity -v -p codesigning` must list it as valid. If it says `0 valid identities found`, the intermediate certificate of Apple that issued it is missing: install "Worldwide Developer Relations - G3" from <https://www.apple.com/certificateauthority/> (double-click, login keychain).
 
 At the first signature macOS may ask whether `codesign` may use the key: answer **Always Allow**. Renewing the certificate, every year, keeps the Team ID and the name the access list checks: the saved passwords should stay readable (not yet observed: the first renewal will tell).
 
-`sign-core.sh` uses `$SIGN_IDENTITY` when set, else the first valid Apple Development identity, else the self-signed `NiceMailer Dev` (`make dev-cert`) with a warning: a core signed with it reads its passwords until the next rebuild only.
+`sign-core.sh` uses `$SIGN_IDENTITY` when set, else the Apple Development identity chosen by `scripts/signing-identity.sh` (the one of the team of the Developer ID, else the first one, with a warning), else the self-signed `NiceMailer Dev` (`make dev-cert`) with a warning: a core signed with it reads its passwords until the next rebuild only.
 
 A keychain made by `security create-keychain`, as the tests use, gets no partition: there, two builds signed with the same self-signed certificate do share their items. This is why the first design, which relied on `NiceMailer Dev` alone, passed its tests and failed on the login keychain.
 
@@ -301,6 +301,7 @@ For a closer look, `NICEMAILER_SQL_LOG` in the core's environment logs every SQL
 | `crates/nm-engine/src/watch.rs` | The watch of the files |
 | `crates/nm-engine/src/secrets.rs` | `Secrets`, `check` and `imap_password` (the binding to the server), `MemorySecrets` for tests |
 | `crates/nm-engine/src/keychain.rs` | The Keychain: items, `never_prompt` |
+| `scripts/signing-identity.sh` | The identity that signs a development build or a release (`scripts/tests/test_signing_identity.py`) |
 | `scripts/sign-core.sh`, `scripts/dev-cert.sh` | The signature of `make core` (Apple Development, else the self-signed fallback) |
 | `scripts/check-signature.sh`, `scripts/make-release.sh` | The checks of a signed bundle, and the signed and notarized release ([app-bundle.md](app-bundle.md), "Releases") |
 | `crates/nm-engine/src/lib.rs` | `Engine`: reload, refusals, accounts and their errors, events |
