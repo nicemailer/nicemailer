@@ -61,6 +61,8 @@ struct NiceMailerApp: App {
             // `.task` starts async work when the view appears.
             .task {
                 guard !UIScript.isActive else { return }
+                // Sparkle, in the background (`Updater`, `docs/updates.md`).
+                Updater.shared.start(model: model)
                 // The geek theme opens on the unified view "all".
                 model.startUnified = theme == .geek
                 // ⌥ held at launch: choose the mailbox first, like Photos.
@@ -78,6 +80,11 @@ struct NiceMailerApp: App {
             // The mailbox and the core (`docs/app-bundle.md`), in the app's
             // menu, after "About".
             CommandGroup(after: .appInfo) {
+                // Sparkle's check, at once (`Updater`); disabled in a build
+                // without updates (`swift run`, no key).
+                Button(L("Check for Updates…")) { Updater.shared.checkForUpdates() }
+                    .disabled(!Updater.shared.canCheck)
+                Divider()
                 Button(L("Change Mailbox…")) {
                     if let url = MailboxChooser.choose() { Task { await model.changeMailbox(to: url) } }
                 }
@@ -143,6 +150,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Quit when the window is closed (macOS apps otherwise keep running).
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+
+    /// An update waits to be installed at quit (`Updater`): the quit is
+    /// delayed the time to prepare the core (`prepare_update`, at most 5
+    /// s), so that it is in maintenance while Sparkle replaces the bundle.
+    @MainActor
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard Updater.shared.installsOnQuit, let model = Updater.shared.model, !model.installingUpdate else {
+            return .terminateNow
+        }
+        Task { @MainActor in
+            await model.prepareUpdate(limit: .seconds(5))
+            NSApp.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
+    }
 }
 
 /// The panel that chooses a mailbox: a folder holding the data of NiceMailer

@@ -48,7 +48,7 @@ impl From<CoreError> for ToolError {
                 _ => format!("NiceMailer could not do it: {} (error {})", e.message, e.code),
             },
             CoreError::Unreachable(m) => m,
-            CoreError::Maintenance => "NiceMailer is updating its mailbox: try again in a minute".into(),
+            CoreError::Maintenance => "NiceMailer is being updated or is upgrading its mailbox: try again in a minute".into(),
             CoreError::Lost => {
                 "the connection to NiceMailer was lost (it restarted): check whether the change was made before retrying".into()
             }

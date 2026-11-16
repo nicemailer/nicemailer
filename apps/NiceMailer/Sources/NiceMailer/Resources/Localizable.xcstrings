@@ -373,7 +373,7 @@
       }
     },
     "%lld min %lld s": {
-      "comment": "Minutes and seconds since the upgrade of the mailbox started.",
+      "comment": "Minutes and seconds since a maintenance of the core began.",
       "localizations": {
         "fr": {
           "stringUnit": {
@@ -1999,17 +1999,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Le noyau ne peut pas ouvrir cette base : elle a été écrite par une version plus récente de NiceMailer (format de données %1$lld ; celle-ci lit le %2$lld). Mettez NiceMailer à jour, ou choisissez une autre base."
-          }
-        }
-      }
-    },
-    "The core is upgrading this mailbox to the data format %lld (from %lld), for %@. It is done once, and can take a few minutes on a large mailbox: NiceMailer opens as soon as it ends. Do not stop the core meanwhile.": {
-      "comment": "Screen shown while the core migrates the database: target version, source version, elapsed time.",
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Le noyau met à jour cette base au format de données %lld (depuis %lld), depuis %@. C'est fait une seule fois, et peut prendre quelques minutes sur une grosse base : NiceMailer s'ouvre dès que c'est fini. N'arrêtez pas le noyau pendant ce temps."
           }
         }
       }
@@ -5166,6 +5155,83 @@
           "stringUnit": {
             "state": "translated",
             "value": "dans une réponse : texte seul ou mis en forme"
+          }
+        }
+      }
+    },
+    "The core is upgrading this mailbox to the data format %lld (from %lld, now at %lld), for %@. It is done once, and can take a few minutes on a large mailbox: NiceMailer opens as soon as it ends. Do not stop the core meanwhile.": {
+      "comment": "Screen shown while the core migrates the database: target version, source version, version reached so far, elapsed time.",
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le noyau met à jour cette base au format de données %lld (depuis %lld, actuellement %lld), depuis %@. C'est fait une seule fois, et peut prendre quelques minutes sur une grosse base : NiceMailer s'ouvre dès que c'est fini. N'arrêtez pas le noyau pendant ce temps."
+          }
+        }
+      }
+    },
+    "NiceMailer is being updated. It opens again as soon as the new version is installed.": {
+      "comment": "Screen shown while an update of NiceMailer is installed (the core serves no client).",
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mise à jour de NiceMailer en cours. NiceMailer se rouvre dès que la nouvelle version est installée."
+          }
+        }
+      }
+    },
+    "The upgrade of this mailbox failed (%@). It was put back as the previous version of NiceMailer left it: nothing is lost. Try again, or install the previous version of NiceMailer; the details are in core.log of the mailbox.": {
+      "comment": "Screen shown when the migration of the database failed and its backup was put back; the core's error.",
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La mise à jour de cette base a échoué (%@). Elle a été remise dans l'état où la version précédente de NiceMailer l'avait laissée : rien n'est perdu. Réessayez, ou réinstallez la version précédente de NiceMailer ; le détail est dans core.log de la base."
+          }
+        }
+      }
+    },
+    "updating NiceMailer…": {
+      "comment": "Status bar while an update of NiceMailer is installed.",
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "mise à jour de NiceMailer…"
+          }
+        }
+      }
+    },
+    "mailbox unavailable": {
+      "comment": "Status bar when the core cannot open the mailbox (newer data format, failed upgrade).",
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "base indisponible"
+          }
+        }
+      }
+    },
+    "Show the Core Log": {
+      "comment": "Button of the screen without a core, after a failed upgrade of the database: opens core.log.",
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Afficher le journal du noyau"
+          }
+        }
+      }
+    },
+    "Check for Updates…": {
+      "comment": "Menu item of the app menu: asks Sparkle for a newer version now.",
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rechercher les mises à jour…"
           }
         }
       }

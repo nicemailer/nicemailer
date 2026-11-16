@@ -246,7 +246,7 @@ They are all in `config.toml`; `nicemailer config defaults` prints them all. Ran
 | --- | --- | --- | --- |
 | `core.background_sorting` | true | | no |
 | `core.idle_exit_secs` | 60 | 1 to 86400 | no |
-| `core.update_timeout_secs` | 900 | 60 to 86400 | no |
+| `core.update_timeout_secs` | 900 | 1 to 86400 | yes, at each `prepare_update` ([updates.md](updates.md)) |
 | `sync.poll_interval_secs` | 300 | 30 to 86400 | yes, when a worker starts ([sync.md](sync.md)) |
 | `sync.max_connections` | 2 | 1 to 2 | yes, when a worker starts: connections per account ([sync.md](sync.md)) |
 | `config_sync.push_delay_secs` | 5 | 0 to 3600 | no |

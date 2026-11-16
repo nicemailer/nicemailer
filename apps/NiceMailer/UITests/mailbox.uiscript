@@ -44,14 +44,37 @@ expect mailbox_upgrading =
 mailbox mailboxes/old
 expect mailbox_question =
 expect mailbox_switched = empty,old,old
-# The core upgrading the mailbox (`core-upgrading.json`, written by the core
-# before its migrations; here with the app's own pid): the app says so and
-# waits, instead of "unreachable" (`docs/app-bundle.md`).
-upgrade 9 10
-expect core_status ~ upgrading:
-expect core_status ~ data format 10
+# The core in maintenance (`docs/updates.md`): it answers every client with
+# the reason, which the app shows and waits for, instead of "unreachable".
+# Here the core of the scenario plays it, as the app's probe would read it.
+# An update of NiceMailer being installed:
+maintenance update
+expect core_status ~ maintenance: updating NiceMailer
+expect core_status ~ It opens again as soon as the new version is installed
+snap updating
+# Then the new core upgrading the mailbox, with its progress: shown as the
+# probe answers it, without starting a core.
+maintenance migration 9 13 11
+expect core_status ~ maintenance: upgrading the mailbox
+expect core_status ~ data format 13 (from 9, now at 11)
 expect core_status ~ 1 min
 snap upgrading
-# The file gone, the app goes on.
-upgrade off
+# Served again: the app goes on.
+maintenance off
 expect core_status = connected
+# A migration that failed: not waited for; the reason, kept for "Try Again"
+# (which restarts the core) and the core's log.
+maintenance migration 9 13 9
+maintenance migration_failed 9 13
+expect core_status ~ failed: The upgrade of this mailbox failed (disque plein)
+expect last_maintenance = migration_failed
+maintenance off
+expect core_status = connected
+expect last_maintenance =
+# A mailbox written by a newer NiceMailer, the same way.
+maintenance newer_schema 14 13
+expect core_status ~ written by a newer version of NiceMailer (data format 14; this one reads 13)
+maintenance off
+expect core_status = connected
+# No updates in a UI scenario: Sparkle never starts there.
+expect updates_available = false

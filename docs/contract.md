@@ -19,7 +19,7 @@ When adding a method, declare it in `nm_api::method` with its comment and add it
 
 ## What each client may call
 
-The core checks the source a client declared in `hello` before running a method (`crates/nm-daemon/src/rights.rs`). The app, the CLI and the TUI may call every method (sending is reserved to them). An AI agent, the source `mcp` (`nicemailer-mcp`, `mcp.md`), gets only an allowlist: the reading methods its tools use, `config_status`, and the draft methods, on its own drafts only (`created_by = 'mcp'`); every other method is refused with `FORBIDDEN` (1007), and a method added to the contract stays refused to agents until it is added to that list. The source is declared, not yet checked against the client's signature (`specifications/architecture.md`, section 9).
+The core checks the source a client declared in `hello` before running a method (`crates/nm-daemon/src/rights.rs`). The app, the CLI and the TUI may call every method (sending is reserved to them), except the update's (`prepare_update`, `cancel_update`), reserved to the app. An AI agent, the source `mcp` (`nicemailer-mcp`, `mcp.md`), gets only an allowlist: the reading methods its tools use, `config_status`, and the draft methods, on its own drafts only (`created_by = 'mcp'`); every other method is refused with `FORBIDDEN` (1007), and a method added to the contract stays refused to agents until it is added to that list. The source is declared, not yet checked against the client's signature (`specifications/architecture.md`, section 9).
 
 ## Calling any method from the CLI
 
@@ -39,7 +39,7 @@ A dedicated command prints readable output, asks for confirmation when needed an
 
 | Method | What it does | CLI |
 | --- | --- | --- |
-| `hello` | First call of every client: checks the protocol version, gives the core version, names the client (recorded as `modified_by`). | Made automatically on connection. |
+| `hello` | First call of every client: checks the protocol version, gives the core version, names the client (recorded as `modified_by`). In maintenance, refused with `MAINTENANCE` (1003), whose `data` says why ([updates.md](updates.md)), except for the app during an update. | Made automatically on connection; `--wait` waits for the end of an update or a migration. |
 | `ping` | Answers `"pong"`: checks the core is alive. | — (`nicemailer call ping`) |
 | `subscribe` | Subscribes the connection to the core's events. With `since`, replays the events the client missed, if the core still has them. | `nicemailer watch` prints the events as they happen. |
 
@@ -152,6 +152,15 @@ A dedicated command prints readable output, asks for confirmation when needed an
 | `ai_suggestions` | The suggested targets waiting for the user, for the threads shown. | — |
 | `ai_dismiss_suggestion` | Sets one suggested target aside. | — |
 
+## Updates of NiceMailer
+
+Reserved to the app, which Sparkle updates ([updates.md](updates.md)); the CLI, the TUI, the web and agents get `FORBIDDEN`.
+
+| Method | What it does | CLI |
+| --- | --- | --- |
+| `prepare_update` | Called just before the update is installed: the core enters maintenance (every other client gets `MAINTENANCE`, 1003, and is disconnected), stops its IMAP workers, waits for the write in progress, and stays alive until its program is replaced, `cancel_update`, or `core.update_timeout_secs`. Answers the timeout. | — |
+| `cancel_update` | The update was abandoned: the core leaves the maintenance and starts its workers again. Answers whether an update was being prepared. | — |
+
 ## CLI commands outside the contract
 
 These commands work on files directly and do not go through the core:
@@ -163,4 +172,4 @@ These commands work on files directly and do not go through the core:
 
 ## Coverage
 
-Of the 73 methods, 32 are used by a dedicated CLI command. The reading of mail, the actions on threads and the drafts have no dedicated command yet, only `nicemailer call`. The CLI is meant to be the test bench of the contract (`specifications/architecture.md`, step 4), so these are the gaps to fill first.
+Of the 75 methods, 32 are used by a dedicated CLI command. The reading of mail, the actions on threads and the drafts have no dedicated command yet, only `nicemailer call`. The CLI is meant to be the test bench of the contract (`specifications/architecture.md`, step 4), so these are the gaps to fill first.

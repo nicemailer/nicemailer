@@ -17,8 +17,14 @@ use rusqlite::{Connection, TransactionBehavior, params};
 use crate::Result;
 use crate::encoded_words::decode_leftovers;
 
-/// Upgrades the database from `version` to `SCHEMA_VERSION`.
-pub(crate) fn migrate(conn: &mut Connection, mut version: i64) -> Result<()> {
+/// Upgrades the database from `version` to `SCHEMA_VERSION`. `on_version`
+/// is called with each version reached, once its step is committed: the
+/// core shows it as the progress of the migration (`mise-a-jour.md`,
+/// section 4).
+///
+/// Rust note: `&dyn Fn(i64)` borrows any function or closure taking an
+/// `i64`; `dyn` means the exact type is only known at run time.
+pub(crate) fn migrate(conn: &mut Connection, mut version: i64, on_version: &dyn Fn(i64)) -> Result<()> {
     while version < crate::SCHEMA_VERSION {
         // Rust note: `TransactionBehavior::Immediate` takes the write lock
         // at once (`BEGIN IMMEDIATE`), so no other connection can write
@@ -44,6 +50,7 @@ pub(crate) fn migrate(conn: &mut Connection, mut version: i64) -> Result<()> {
         // written into the SQL text (an integer of ours, not user input).
         tx.execute_batch(&format!("PRAGMA user_version = {version}"))?;
         tx.commit()?;
+        on_version(version);
     }
     Ok(())
 }

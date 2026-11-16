@@ -19,6 +19,9 @@
 //! program that says `app` gets the app's rights. That is why sending by
 //! an agent (phase 3 of `mcp.md`) waits for the signature check.
 //!
+//! The update of NiceMailer (`prepare_update`, `cancel_update`) is reserved
+//! to the app, which Sparkle updates (`mise-a-jour.md`, section 3).
+//!
 //! Finer rules live with the methods they limit: an agent changes only its
 //! own drafts (`drafts.rs`, `writer`), never saves a password
 //! (`set_password`).
@@ -69,9 +72,18 @@ pub(crate) const MCP_ALLOWED: &[&str] = &[
 pub(crate) fn check(source: Source, method: &str) -> Result<(), RpcError> {
     match source {
         Source::Mcp if !MCP_ALLOWED.contains(&method) => Err(RpcError::new(error_code::FORBIDDEN, refusal(method))),
+        // The update of NiceMailer is the app's: it is the one Sparkle
+        // replaces (`mise-a-jour.md`, section 3). Another client that put
+        // the core in maintenance would only lock everyone out.
+        Source::Cli | Source::Tui | Source::Web if UPDATE_METHODS.contains(&method) => {
+            Err(RpcError::new(error_code::FORBIDDEN, format!("{method} is reserved to NiceMailer.app, which installs the updates")))
+        }
         _ => Ok(()),
     }
 }
+
+/// The methods of the update (`update.rs`), reserved to the app.
+const UPDATE_METHODS: &[&str] = &[method::PREPARE_UPDATE, method::CANCEL_UPDATE];
 
 /// The message of a refusal, in English, written for the agent to act on
 /// or to tell the user: what it may do instead, where a right is given.
@@ -133,9 +145,11 @@ mod tests {
                     assert_eq!(e.code, error_code::FORBIDDEN, "{m}");
                 }
             }
-            // The other sources are not limited here.
-            for source in [Source::App, Source::Cli, Source::Tui] {
-                assert!(check(source, m).is_ok(), "{m} refused to {source:?}");
+            // The app may call everything; the CLI and the TUI everything
+            // but the update.
+            assert!(check(Source::App, m).is_ok(), "{m} refused to the app");
+            for source in [Source::Cli, Source::Tui] {
+                assert_eq!(check(source, m).is_ok(), !UPDATE_METHODS.contains(&m.as_str()), "{m} for {source:?}");
             }
         }
         // Every method of the list exists: a typo would open nothing and
@@ -172,6 +186,16 @@ mod tests {
         }
         // A method that does not exist is refused too, not routed.
         assert!(check(Source::Mcp, "drop_database").is_err());
+    }
+
+    #[test]
+    fn only_the_app_prepares_or_cancels_an_update() {
+        for m in UPDATE_METHODS {
+            assert!(check(Source::App, m).is_ok());
+            for source in [Source::Cli, Source::Tui, Source::Web, Source::Mcp] {
+                assert_eq!(check(source, m).unwrap_err().code, error_code::FORBIDDEN, "{m} for {source:?}");
+            }
+        }
     }
 
     #[test]

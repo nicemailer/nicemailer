@@ -12,9 +12,17 @@ let package = Package(
     defaultLocalization: "en",
     // `@Observable` and `.onKeyPress` need macOS 14.
     platforms: [.macOS(.v14)],
+    // Sparkle updates the app from the releases of NiceMailer
+    // (`docs/updates.md`). An exact version: the framework is shipped
+    // inside the app and signed with it, and a release must be rebuildable
+    // with the same one. Its binary comes from Sparkle's GitHub release.
+    dependencies: [
+        .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.10.1"),
+    ],
     targets: [
         .executableTarget(
             name: "NiceMailer",
+            dependencies: [.product(name: "Sparkle", package: "Sparkle")],
             path: "Sources/NiceMailer",
             // Files bundled with the app, reachable through `Bundle.module`.
             // `.copy` keeps the Fonts folder as is (fonts are registered at
@@ -33,7 +41,15 @@ let package = Package(
             ],
             // Swift 5 language mode: Swift 6's strict concurrency checking
             // is not enabled yet, to keep this first version simple.
-            swiftSettings: [.swiftLanguageMode(.v5)]
+            swiftSettings: [.swiftLanguageMode(.v5)],
+            // Where the app looks for Sparkle.framework: in `Contents/
+            // Frameworks` of the bundle (`scripts/make-bundle.sh`), and next
+            // to the executable, where SwiftPM puts it (`swift run`, the UI
+            // scenarios). SwiftPM adds neither by itself.
+            linkerSettings: [.unsafeFlags([
+                "-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks",
+                "-Xlinker", "-rpath", "-Xlinker", "@executable_path",
+            ])]
         ),
         // Unit tests (`swift test`): selection rules, keyboard handling of the
         // geek theme against a fake core, formatting and localization. The

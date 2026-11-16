@@ -4,14 +4,17 @@
 # that a signature that notarization or the Keychain would refuse fails the
 # build here, not on the Mac of a user.
 #
-# Checked on the app and on each of its helpers (the core and the CLI):
+# Checked on the app, on each of its helpers (the core, the CLI, the MCP
+# server) and on the programs of Sparkle.framework:
 # - the signature is valid, and the app's seal covers its helpers;
 # - the hardened runtime is on (notarization refuses a program without it);
 # - the signing identifier is the expected one: the Keychain items of the
 #   core and, later, the rights each client gets from the core
 #   (architecture.md, section 9) are tied to it;
-# - all four are signed by the same team: the Keychain partition of the
-#   passwords is "teamid:<team>" (docs/configuration.md, "Passwords");
+# - all are signed by the same team: the Keychain partition of the
+#   passwords is "teamid:<team>" (docs/configuration.md, "Passwords"), and
+#   Sparkle's programs (docs/updates.md) are re-signed by it, as
+#   notarization requires;
 # - the app declares the address book entitlement (NiceMailer.entitlements),
 #   without which the hardened runtime refuses the Contacts.
 # With --release, also:
@@ -76,9 +79,14 @@ Contents/MacOS/NiceMailer eu.nicemailer.NiceMailer
 Contents/Helpers/nicemailer-core eu.nicemailer.core
 Contents/Helpers/nicemailer eu.nicemailer.cli
 Contents/Helpers/nicemailer-mcp eu.nicemailer.mcp
+Contents/Frameworks/Sparkle.framework/Versions/B/Sparkle org.sparkle-project.Sparkle
+Contents/Frameworks/Sparkle.framework/Versions/B/Autoupdate Autoupdate
+Contents/Frameworks/Sparkle.framework/Versions/B/Updater.app/Contents/MacOS/Updater org.sparkle-project.Sparkle.Updater
+Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Installer.xpc/Contents/MacOS/Installer org.sparkle-project.InstallerLauncher
+Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Downloader.xpc/Contents/MacOS/Downloader org.sparkle-project.DownloaderService
 LIST
 
-# One team for all four: `sort -u` leaves one line when they agree.
+# One team for all: `sort -u` leaves one line when they agree.
 if [ "$(printf '%s\n' $TEAMS | sort -u | wc -l | tr -d ' ')" != 1 ]; then
   fail "signed by several teams:$TEAMS"
 fi

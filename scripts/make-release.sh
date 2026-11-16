@@ -14,6 +14,10 @@
 # 4. Stapling: the ticket of the notarization is attached to the image, so
 #    that Gatekeeper accepts it even offline on the first launch.
 # 5. Gatekeeper's own verdict on the result (`spctl`), as on a user's Mac.
+# 6. The appcast of the release (docs/updates.md): the image signed with
+#    the EdDSA key of the updates (Sparkle's `sign_update`, which reads the
+#    private key from the keychain), and appcast.xml written next to it
+#    (scripts/make-appcast.py), to publish as an asset of the release.
 #
 # Before the build of a release (not with --no-notarize, which only checks
 # the signature, between two releases too), two checks that would
@@ -56,6 +60,23 @@ if [ "$NOTARIZE" = 1 ]; then
   # are known to be there, so that a refusal leaves nothing in dist/.
   # (Under `set -e`, a failing command substitution stops the script.)
   NOTES_TEXT="$(python3 -I "$ROOT/scripts/release-notes.py" "$VERSION" "$ROOT/CHANGELOG.md")"
+fi
+
+# The key of the updates, checked before the long build: the private key in
+# the keychain must be the one whose public half the apps carry
+# (apps/NiceMailer/sparkle-public-key). Signed with another, the update
+# would be refused by every user (docs/updates.md, "Keys").
+if [ "$NOTARIZE" = 1 ]; then
+  XCODE="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
+  (cd "$ROOT/apps/NiceMailer" && DEVELOPER_DIR="$XCODE" swift package resolve >/dev/null)
+  # `-p` prints the public key of the keychain's private key, and creates
+  # nothing.
+  KEYCHAIN_KEY="$("$ROOT/apps/NiceMailer/.build/artifacts/sparkle/Sparkle/bin/generate_keys" -p 2>/dev/null || true)"
+  APP_KEY="$(tr -d '[:space:]' < "$ROOT/apps/NiceMailer/sparkle-public-key" 2>/dev/null || true)"
+  if [ -z "$KEYCHAIN_KEY" ] || [ "$KEYCHAIN_KEY" != "$APP_KEY" ]; then
+    echo "The Sparkle key of the keychain does not match apps/NiceMailer/sparkle-public-key (docs/updates.md, \"Keys\")." >&2
+    exit 1
+  fi
 fi
 mkdir -p "$OUT"
 
@@ -107,14 +128,31 @@ spctl --assess --type execute -v "$MOUNT/NiceMailer.app" || { hdiutil detach -qu
 hdiutil detach -quiet "$MOUNT"
 
 printf '%s\n' "$NOTES_TEXT" > "$NOTES"
+
+echo "Signing the update for Sparkle…"
+# Sparkle's tools come with its package (apps/NiceMailer/Package.swift),
+# downloaded by the build of the app.
+SIGN_UPDATE="$ROOT/apps/NiceMailer/.build/artifacts/sparkle/Sparkle/bin/sign_update"
+# `-p` prints the signature alone; the private key is the one
+# `generate_keys` put in the keychain (docs/updates.md, "Keys").
+ED_SIGNATURE="$("$SIGN_UPDATE" -p "$DMG")"
+BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Contents/Info.plist")"
+APPCAST="$OUT/appcast.xml"
+python3 -I "$ROOT/scripts/make-appcast.py" --version "$VERSION" --build "$BUILD" \
+  --url "https://github.com/nicemailer/nicemailer/releases/download/v$VERSION/$(basename "$DMG")" \
+  --signature "$ED_SIGNATURE" --length "$(stat -f %z "$DMG")" --notes "$NOTES" > "$APPCAST"
+
 SHA="$(shasum -a 256 "$DMG" | cut -d' ' -f1)"
 cat <<DONE
 
 Release ready: $DMG
 SHA-256: $SHA
 
+Appcast: $APPCAST
+
 Test it on another Mac or user account (specifications/plan-release.md,
-section 5), then publish:
+section 5), then publish. Not as a pre-release: the apps find the appcast
+at releases/latest, which skips pre-releases (docs/updates.md).
   git tag v$VERSION && git push origin v$VERSION
-  gh release create v$VERSION "$DMG" --prerelease --title "NiceMailer $VERSION" --notes-file "$NOTES"
+  gh release create v$VERSION "$DMG" "$APPCAST" --title "NiceMailer $VERSION" --notes-file "$NOTES"
 DONE

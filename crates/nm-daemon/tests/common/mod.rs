@@ -61,6 +61,53 @@ impl Client {
         Client::connect_as(dir, "cli")
     }
 
+    /// Connects declaring the client `client`, and returns the error of
+    /// its `hello` if the core refused it (a maintenance).
+    pub fn try_connect_as(dir: &Path, client: &str) -> Result<Client, Value> {
+        let stream = Self::socket(dir);
+        let reader = BufReader::new(stream.try_clone().unwrap());
+        let mut c = Client { stream, reader, next_id: 1, pending: Default::default() };
+        c.call("hello", json!({"protocol_version": 1, "client": client}))?;
+        Ok(c)
+    }
+
+    /// Connects as `client` once the core serves clients: a maintenance
+    /// (a migration, an update) is waited for, at most 30 seconds.
+    pub fn connect_until_served(dir: &Path, client: &str) -> Client {
+        let deadline = Instant::now() + Duration::from_secs(30);
+        loop {
+            match Client::try_connect_as(dir, client) {
+                Ok(c) => return c,
+                Err(e) if e["code"] == 1003 && Instant::now() < deadline => std::thread::sleep(Duration::from_millis(100)),
+                Err(e) => panic!("hello refused: {e}"),
+            }
+        }
+    }
+
+    /// The socket of the core of `dir`, waited for (the core needs a
+    /// moment to create it).
+    fn socket(dir: &Path) -> UnixStream {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let stream = loop {
+            match UnixStream::connect(dir.join("core.sock")) {
+                Ok(s) => break s,
+                Err(_) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(50)),
+                Err(e) => panic!("core not reachable: {e}"),
+            }
+        };
+        stream.set_read_timeout(Some(Duration::from_secs(30))).unwrap();
+        stream
+    }
+
+    /// The next line, or None when the core closed the connection.
+    pub fn try_line(&mut self) -> Option<Value> {
+        let mut l = String::new();
+        match self.reader.read_line(&mut l) {
+            Ok(0) | Err(_) => None,
+            Ok(_) => Some(serde_json::from_str(&l).unwrap()),
+        }
+    }
+
     /// Connects declaring the client `client` (`app`, `cli`, `mcp`…).
     pub fn connect_as(dir: &Path, client: &str) -> Client {
         // The core needs a moment to create its socket.

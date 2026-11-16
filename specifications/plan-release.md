@@ -11,7 +11,7 @@ La chaîne de publication est décrite dans `architecture.md`, section 10, mais 
 - `scripts/make-bundle.sh` installe l'app dans `/Applications` et la signe avec le certificat **Apple Development** (`scripts/sign-core.sh`). Ce certificat ne peut pas être notarisé : sur un autre Mac, Gatekeeper bloque l'app.
 - Le *hardened runtime* (`codesign --options runtime`), obligatoire pour la notarisation, n'est pas activé ; les signatures ne sont pas horodatées (`--timestamp`).
 - `CFBundleShortVersionString` est figé à `0.1` ; `CFBundleVersion` vaut `git describe`, qui n'est pas un nombre croissant (Sparkle compare ce champ).
-- Ni Sparkle ni `prepare_update` / `cancel_update` (`mise-a-jour.md`) ne sont implémentés : pas de mise à jour automatique.
+- ~~Ni Sparkle ni `prepare_update` / `cancel_update` (`mise-a-jour.md`) ne sont implémentés.~~ Réalisés (`docs/updates.md`) ; restent à créer la paire de clés EdDSA (`generate_keys`) et à publier les releases sans `--prerelease`, l'appcast étant lu sur `releases/latest`.
 - Le noyau ne vérifie pas encore la signature des clients (`architecture.md`, section 9) : changer d'identité de signature ne casse donc rien de ce côté.
 - Binaires arm64 seulement.
 - Le README est faux : il dit encore « no IMAP, no SMTP, no LaunchAgent and no code signing ».
@@ -93,7 +93,7 @@ Sur un autre compte utilisateur, ou mieux sur un autre Mac, à partir du DMG té
 ## 6. Ensuite
 
 1. **CI GitHub Actions** (runner macOS, déclenchée par un tag `vX.Y.Z`) reprenant le script de la section 4. Secrets : certificat `.p12` en base64 et son mot de passe, clé API App Store Connect pour `notarytool`.
-2. **Sparkle** et `prepare_update` / `cancel_update` (`mise-a-jour.md`) : `appcast.xml` signé EdDSA, en asset de release ou sur GitHub Pages ; clé privée Sparkle en secret.
+2. ~~**Sparkle** et `prepare_update` / `cancel_update`~~ : réalisés, `appcast.xml` signé EdDSA en asset de release (`make release`, `docs/updates.md`). Pour la CI : clé privée Sparkle en secret.
 3. **Cask Homebrew** (`architecture.md`, section 10, « Canal complémentaire »).
 4. **Vérification de la signature des clients** par le noyau (`architecture.md`, section 9), contre l'équipe Developer ID.
 5. Binaires universels, si Intel est retenu.

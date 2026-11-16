@@ -73,6 +73,7 @@ pub mod reindex;
 pub mod remote_images;
 pub mod screening;
 pub mod unsubscribe;
+pub mod upgrade;
 pub mod seed;
 pub mod senders;
 pub mod sender_kind;
@@ -484,6 +485,14 @@ impl Store {
     /// order: the core writes them in its log at start (`startup: …`), so
     /// that a slow start can be read where it happens rather than guessed.
     pub fn open_timed(path: &Path) -> Result<(Store, OpeningSteps)> {
+        Self::open_migrating(path, &|_| {})
+    }
+
+    /// [`Store::open_timed`], calling `on_version` with each schema version
+    /// reached while it migrates the database (`migrations::migrate`): the
+    /// progress the core announces during a migration (`mise-a-jour.md`,
+    /// section 4).
+    pub fn open_migrating(path: &Path, on_version: &dyn Fn(i64)) -> Result<(Store, OpeningSteps)> {
         let mut steps = OpeningSteps::new();
         // Before anything opens the files: whether they are as the last
         // clean close left them (`clean_close`). The mark goes either way.
@@ -493,7 +502,7 @@ impl Store {
             OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE,
         )?;
         steps.mark("open");
-        let store = Self::init(conn, Some(&body_path(path)), clean, &mut steps)?;
+        let store = Self::init(conn, Some(&body_path(path)), clean, &mut steps, on_version)?;
         Ok((store, steps))
     }
 
@@ -533,13 +542,19 @@ impl Store {
     /// In-memory database, used by tests: fast and thrown away at the end.
     /// Its body file is in memory too.
     pub fn open_in_memory() -> Result<Store> {
-        Self::init(Connection::open_in_memory()?, None, false, &mut OpeningSteps::new())
+        Self::init(Connection::open_in_memory()?, None, false, &mut OpeningSteps::new(), &|_| {})
     }
 
     /// Applies per-connection settings and creates or checks the schema.
     /// `clean`: the files are as a clean close left them
     /// (`clean_close::take`), so the reconciliation of the two is skipped.
-    fn init(conn: Connection, body: Option<&Path>, clean: bool, steps: &mut OpeningSteps) -> Result<Store> {
+    fn init(
+        conn: Connection,
+        body: Option<&Path>,
+        clean: bool,
+        steps: &mut OpeningSteps,
+        on_version: &dyn Fn(i64),
+    ) -> Result<Store> {
         sql_log::install(&conn);
         // These pragmas are not stored in the database file: they must be
         // set on every new connection (see the header of schema.sql).
@@ -587,7 +602,7 @@ impl Store {
             // An earlier version: check it is a complete one, then upgrade it.
             v => {
                 check_schema(&conn, v)?;
-                migrations::migrate(&mut conn, v)?;
+                migrations::migrate(&mut conn, v, on_version)?;
                 // The bodies just left the main file (version 10): give its
                 // pages back to the disk, once. `VACUUM` rewrites only the
                 // pages in use (about a tenth of the file on a real

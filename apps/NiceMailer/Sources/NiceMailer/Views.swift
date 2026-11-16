@@ -29,8 +29,8 @@ struct ContentView: View {
             case .connecting:
                 ProgressView(model.startupPhase.message ?? L("Connecting to the core…"))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-            case .upgrading(let message):
-                UpgradingView(message: message)
+            case .maintenance(let text, _):
+                UpgradingView(message: text)
             case .failed(let message):
                 ConnectionErrorView(message: message)
             case .connected:
@@ -106,7 +106,8 @@ struct ContentView: View {
 }
 
 /// Shown when the core cannot be reached, with the command to start it.
-/// The core upgrades the mailbox (`AppModel.waitForUpgrade`): what is
+/// The core is in a maintenance that ends by itself, an update or an
+/// upgrade of the mailbox (`AppModel.waitOutMaintenance`): what is
 /// happening, the mailbox, and a spinner; the app goes on by itself.
 struct UpgradingView: View {
     let message: String
@@ -153,9 +154,16 @@ struct ConnectionErrorView: View {
                 Button(L("Change Mailbox…")) {
                     if let url = MailboxChooser.choose() { Task { await model.changeMailbox(to: url) } }
                 }
+                // A migration that failed: its details are in the core's
+                // log, which the user may send (`mise-a-jour.md`, section 4).
+                if model.lastMaintenance?.reason == .migrationFailed {
+                    Button(L("Show the Core Log")) {
+                        model.openFile(DataDirectory.current.appendingPathComponent("core.log"))
+                    }
+                    .uiTarget("show-core-log")
+                }
                 Button(L("Try Again")) {
-                    model.coreStoppedByUser = false
-                    Task { await model.connect() }
+                    Task { await model.retry() }
                 }
                     .keyboardShortcut(.defaultAction)
             }

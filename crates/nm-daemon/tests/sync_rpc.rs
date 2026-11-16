@@ -693,3 +693,56 @@ fn a_damaged_raw_file_is_fetched_again_and_a_deleted_mail_collected() {
     assert_eq!(r["blobs"], 1, "{r}");
     verify_ok(&mut c);
 }
+
+/// Actions of the spool queued before an update run after it, once each
+/// (`mise-a-jour.md`, section 7): five moves, then at once the app prepares
+/// the update (the workers stop, what was not sent stays queued), the core
+/// is stopped as `launchctl kickstart -k` does, and the new core sends the
+/// rest. The server and the database then agree, each mail in Archive once.
+#[test]
+#[ignore = "needs the test servers: make imap-up, then make imap-test"]
+fn actions_queued_before_an_update_run_after_it_once() {
+    let dir = tempfile::tempdir().unwrap();
+    let user = new_user();
+    let mut phone = Phone::open(FULL, &user);
+    phone.create("Archive");
+    let ids = ["u1", "u2", "u3", "u4", "u5"];
+    for id in ids {
+        phone.deliver("INBOX", id, &[]);
+    }
+    let (core, mut c) = core(dir.path(), FULL, &user, "");
+    settled(&mut c, 0);
+    let mut app = Client::connect_as(dir.path(), "app");
+    for id in ids {
+        let (m, _, _) = message_id_of(dir.path(), id);
+        let thread: i64 = db(dir.path()).query_row("SELECT thread_id FROM message WHERE id = ?1", [m], |r| r.get(0)).unwrap();
+        c.call("move_thread", json!({"thread_id": thread, "target": "archive"})).unwrap();
+    }
+    app.call("prepare_update", json!({})).unwrap();
+    // Nothing is served now: the CLI's connection was closed.
+    assert!(Client::try_connect_as(dir.path(), "cli").is_err());
+    let mut core = core;
+    unsafe { libc::kill(core.pid() as i32, libc::SIGTERM) };
+    assert!(core.exit_status(20).success());
+
+    let _core = start(dir.path());
+    let mut c = Client::connect_until_served(dir.path(), "cli");
+    settled(&mut c, 0);
+    verify_ok(&mut c);
+    for id in ids {
+        assert_eq!(message_id_of(dir.path(), id).1, "Archive", "{id}");
+    }
+    let pending: i64 = db(dir.path())
+        .query_row("SELECT count(*) FROM pending_action WHERE state IN ('queued', 'running')", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(pending, 0);
+    // No move sent twice: one action done per mail.
+    let done: i64 = db(dir.path())
+        .query_row("SELECT count(*) FROM pending_action WHERE kind = 'move' AND state = 'done'", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(done, ids.len() as i64);
+    let archived: i64 = db(dir.path())
+        .query_row("SELECT count(*) FROM message m JOIN folder f ON f.id = m.folder_id WHERE f.path = 'Archive'", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(archived, ids.len() as i64, "each mail once");
+}

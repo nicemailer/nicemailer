@@ -1,6 +1,6 @@
 # NiceMailer : mise à jour et migration
 
-Statut : validé. Complète la section 6 de `architecture.md` (processus et packaging).
+Statut : validé, réalisé (novembre 2026, `docs/updates.md`). Complète la section 6 de `architecture.md` (processus et packaging). Les précisions apportées à la réalisation sont reportées dans les sections concernées (« Réalisation »).
 
 ## 1. Objet et principe
 
@@ -15,6 +15,8 @@ Pendant une mise à jour ou une migration, le noyau est en **mode maintenance**.
 - Le noyau **reste à l'écoute** sur son socket, mais répond à toute poignée de main par l'erreur `Maintenance`, puis ferme la connexion. L'erreur porte la raison (`update`, `migration`, `newer_schema`, `migration_failed`) et, pour une migration, son avancement.
 - Les connexions déjà ouvertes reçoivent la même erreur et sont fermées.
 
+**Exception pendant une mise à jour : l'app.** C'est elle qui pilote la mise à jour, et elle doit pouvoir l'annuler, depuis sa connexion ou une nouvelle (app relancée après un plantage). Sa poignée de main est acceptée et sa connexion reste ouverte, mais toute autre requête que `prepare_update` et `cancel_update` reçoit l'erreur `Maintenance`, `subscribe` compris : c'est ainsi qu'une nouvelle connexion de l'app l'apprend. Pendant une migration, il n'y a pas d'exception : la base n'est pas ouverte.
+
 **Pourquoi ne pas simplement refuser les connexions.** Un client qui ne peut pas se connecter applique la procédure de démarrage à la demande (`architecture.md`, section 6) : il lance `launchctl kickstart`, puis abandonne au bout de 3 s avec un message trompeur. Pendant le remplacement du bundle, ce `kickstart` pourrait même lancer un binaire à moitié remplacé. Avec une réponse `Maintenance` explicite, le client sait qu'il doit attendre, et ne tente aucun démarrage.
 
 ## 3. Déroulement d'une mise à jour
@@ -24,12 +26,14 @@ Pendant une mise à jour ou une migration, le noyau est en **mode maintenance**.
    - passe en mode maintenance (raison `update`) ;
    - termine les transactions en cours et ferme les connexions IMAP ; les actions du spool restent en file (`queued`) ;
    - **reste en vie** en mode maintenance. S'il s'arrêtait, un client qui se connecte relancerait l'ancien binaire par `kickstart`.
-3. **Sparkle remplace le bundle** et relance l'app.
-4. **L'app exécute `launchctl kickstart -k`** : l'ancien noyau reçoit SIGTERM et s'arrête, le nouveau démarre.
+3. **Sparkle remplace le bundle** et relance l'app. Le noyau surveille son propre exécutable pendant la mise à jour : dès qu'il est remplacé, il se ferme proprement et sort avec le code 75, que launchd relance (`KeepAlive`) depuis le nouveau bundle. Cela couvre aussi l'installation à la fermeture de l'app, où Sparkle ne relance pas l'app.
+4. **L'app exécute `launchctl kickstart -k`** si le noyau n'a pas sa version (poignée de main) : l'ancien noyau reçoit SIGTERM et s'arrête, le nouveau démarre. Une fois par lancement de l'app.
 5. **Le nouveau noyau** prend le verrou d'instance, se met à l'écoute, applique les migrations nécessaires (section 4) en mode maintenance (raison `migration`), puis sort du mode maintenance.
 6. **Les clients se reconnectent.** L'époque a changé : leur abonnement reçoit `ResyncRequired` et ils rechargent leurs vues (`evenements.md`).
 
-**Mise à jour abandonnée** (échec du téléchargement, refus de l'utilisateur, plantage de l'app) : l'app envoie `cancel_update` si elle le peut. Sinon, le noyau sort de lui-même du mode maintenance après `core.update_timeout_secs` (900 s par défaut).
+**Mise à jour abandonnée** (échec du téléchargement, refus de l'utilisateur, plantage de l'app) : l'app envoie `cancel_update` si elle le peut. Sinon, le noyau sort de lui-même du mode maintenance après `core.update_timeout_secs` (900 s par défaut). Une app relancée qui trouve le noyau dans la maintenance d'une mise à jour qu'elle n'a pas préparée (même version qu'elle) l'annule aussitôt.
+
+**Réalisation.** `prepare_update` est envoyée au moment où Sparkle installe : juste avant le remplacement (« Installer et relancer », report de la relance par le délégué de Sparkle), ou à la fermeture de l'app (installation à la fermeture : la fermeture est retardée le temps de la réponse, 5 s au plus).
 
 `prepare_update` et `cancel_update` ne sont acceptées que de l'app (vérification de signature, `architecture.md`, section 9).
 
@@ -45,7 +49,9 @@ Au démarrage, le noyau compare `PRAGMA user_version` à la version de schéma q
 
 Déroulement d'une migration :
 
-1. Sauvegarder la base par l'API de sauvegarde de SQLite dans `nicemailer.db.bak-v<ancienne version>`. Les fichiers bruts ne sont pas concernés : leur format ne dépend pas du schéma.
+1. Sauvegarder la base dans `nicemailer.db.bak-v<ancienne version>`. Les fichiers bruts ne sont pas concernés : leur format ne dépend pas du schéma.
+
+   **Réalisation.** Copie des deux fichiers de la base (`nicemailer.db` et `nicemailer_body.db`, depuis la version 10 une migration peut toucher l'un ou l'autre) avec leurs journaux WAL, par `std::fs::copy`, qui clone le fichier sur APFS : instantané, sans place prise tant que les fichiers ne divergent pas. L'API de sauvegarde de SQLite aurait recopié 11 Go de corps (plusieurs minutes, autant d'espace libre) avant chaque migration. La copie est sûre : le noyau tient le verrou du dossier et copie avant d'ouvrir la base. Si la copie échoue, la migration n'est pas lancée. `nicemailer mailbox upgrade` fait de même.
 2. Appliquer les migrations manquantes dans l'ordre, chacune dans une transaction, en mettant `user_version` à jour dans la même transaction.
 3. En cas d'échec, restaurer la sauvegarde et rester en mode maintenance avec la raison `migration_failed`. L'app affiche l'erreur et propose d'exporter un rapport ; elle ne relance pas la migration d'elle-même.
 4. En cas de succès, garder la sauvegarde jusqu'à la mise à jour suivante, puis la supprimer.
@@ -57,8 +63,8 @@ Une migration longue (grosse base) publie son avancement dans la réponse `Maint
 | Client | Réponse `Maintenance` |
 | --- | --- |
 | App | Bandeau « Mise à jour de NiceMailer… » ou « Mise à jour de la base… », avec l'avancement ; nouvelle tentative de connexion toutes les secondes. Pour `newer_schema` et `migration_failed`, message d'erreur avec la marche à suivre. |
-| CLI | Message explicite et code de sortie dédié. Avec l'option `--wait`, attend la fin de la maintenance. |
-| TUI, MCP | Message d'attente, nouvelle tentative toutes les secondes. |
+| CLI | Message explicite et code de sortie dédié (75, `EX_TEMPFAIL`). Avec l'option `--wait`, attend la fin de la maintenance (`update`, `migration` ; échec immédiat pour `newer_schema` et `migration_failed`). |
+| TUI, MCP | Message d'attente, nouvelle tentative toutes les secondes (30 s au plus pour le MCP). |
 
 ## 6. Paramètres
 

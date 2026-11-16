@@ -9,6 +9,7 @@ NiceMailer.app/Contents/
 ├── Helpers/nicemailer-core                       the core
 ├── Helpers/nicemailer                            the CLI
 ├── Helpers/nicemailer-mcp                        the MCP server for AI agents (mcp.md)
+├── Frameworks/Sparkle.framework                  the updates (updates.md)
 └── Library/LaunchAgents/eu.nicemailer.core.plist the agent of the core
 ```
 
@@ -84,17 +85,24 @@ Both sides time their part, so that a slow launch can be measured on the Mac whe
 
 ## When the core cannot start
 
-A core that stops on an error writes why to `core-error.json` in its folder (`nm_api::StartupError`: `kind` `outdated`, `too_new` or `other`, the message, and what is missing or the versions), and removes it once a core starts there. When no core answers, the app shows that reason, in the user's language, instead of "unreachable", with a **Change Mailbox…** button beside "Try Again": the way out when the folder chosen is one the core refuses.
+A core that stops on an error writes why to `core-error.json` in its folder (`nm_api::StartupError`: `kind` `outdated` or `other`, the message, and what is missing), and removes it once a core starts there. When no core answers, the app shows that reason, in the user's language, instead of "unreachable", with a **Change Mailbox…** button beside "Try Again": the way out when the folder chosen is one the core refuses.
 
 The core still exits with a failure there, so launchd starts it again every 10 seconds (`KeepAlive` restarts a failed exit); each attempt fails the same way and rewrites the file. Harmless, if useless, until another mailbox is chosen.
 
+A database the core can read but must not serve does not stop it: one written by a newer NiceMailer, or one whose upgrade failed. The core stays, in maintenance, and tells every client why ([updates.md](updates.md)); the app shows it on the same screen, with **Show the Core Log** after a failed upgrade, whose **Try Again** restarts the core.
+
 ## While the core upgrades the mailbox
 
-A core newer than the mailbox it opens upgrades its database first (`docs/migrations.md`), and its socket only opens afterwards. Most upgrades take a fraction of a second, but some take minutes on a large mailbox (version 10 copies the bodies to their own file: 4 minutes for 400,000 mails). So:
+A core newer than the mailbox it opens upgrades its database first ([migrations.md](migrations.md)). Most upgrades take a fraction of a second, but some take minutes on a large mailbox (version 10 copies the bodies to their own file: 4 minutes for 400,000 mails). So ([updates.md](updates.md), "The core in maintenance"):
 
-- **The core says so.** Before migrating, it writes `core-upgrading.json` in its folder (`nm_api::UpgradeStatus`: the versions, its pid, when it started), and removes it once the database is open. Its log says it too: `mise à jour de la base : version 9 vers 10`.
-- **The app waits.** When no core answers and that file names a process that runs, the app shows "The core is upgrading this mailbox to the data format 10 (from 9), for 1 min 15 s…" with a spinner, instead of "unreachable", and checks again every second; it connects as soon as the file is gone (`AppModel.waitForUpgrade`). A file left by a core that was killed names a process that is gone: it is ignored.
+- **The core says so.** It opens its socket before migrating, and answers every client with the error `MAINTENANCE`, reason `migration`, the versions and the one reached so far. Its log says it too: `mise à jour de la base : version 9 vers 13`, then `version 10 atteinte`…
+- **The app waits.** It shows "The core is upgrading this mailbox to the data format 13 (from 9, now at 11), for 1 min 15 s…" with a spinner, instead of "unreachable", asks again every second without starting a core, and connects as soon as the core serves (`AppModel.waitOutMaintenance`).
+- **The database is copied first** and put back if the upgrade fails ([updates.md](updates.md), "The database upgraded").
 - **A stop cancels it cleanly.** The opening runs on a thread of its own while the core watches for SIGTERM and Ctrl-C. A stop during the upgrade leaves with code 0, which launchd does not restart; the upgrade of a version is one transaction, rolled back, and done again from the start at the next launch. Before, a SIGTERM killed the core in the middle of the upgrade (its handler was not installed yet): launchd took it for a failure, started it again, and the upgrade started over every time, so the core seemed to refuse to stop.
+
+## Updates
+
+Sparkle updates the app, its core and its helpers together, from the GitHub releases: **NiceMailer > Check for Updates…**, or once a day in the background. The core is put in maintenance while the bundle is replaced, then restarted from the new one. Everything is in [updates.md](updates.md).
 
 ## Signature
 
@@ -132,7 +140,7 @@ The notarization credentials, once: an app-specific password (<https://account.a
 | Key of `Info.plist` | Value | Why |
 | --- | --- | --- |
 | `CFBundleShortVersionString` | `version` of `[workspace.package]` in `Cargo.toml` | One version for the app, the core and `nicemailer --version` |
-| `CFBundleVersion` | number of commits (`git rev-list --count HEAD`) | macOS, and later Sparkle, compare it to know the newer build: it must only grow |
+| `CFBundleVersion` | number of commits (`git rev-list --count HEAD`) | macOS and Sparkle compare it to know the newer build: it must only grow |
 | `NMGitDescribe` | `git describe --tags --always --dirty` | Traces a build to its commit |
 
 A release bumps `version` in `Cargo.toml` in a commit of its own, then is tagged `v<version>`.
@@ -171,4 +179,4 @@ Known limit: arm64 only (`specifications/plan-release.md`, section 2).
 
 ## Tests
 
-`crates/nm-api` (`paths::resolve`), `crates/nm-daemon/tests/agent_rpc.rs` (a second core leaves with code 0; `core.log` written), `crates/nm-daemon/tests/startup_rpc.rs` (`core-error.json` written for an early development database and for a newer one, removed at the next start; `core-upgrading.json` written during an upgrade, and a SIGTERM then leaving with code 0, the database left at its version), `UpgradeWaitTests` (the file read as the core writes it, a dead pid ignored, the wait), `DataDirectoryTests` (the same rule in the app; no agent outside a bundle), `MailboxCheckTests` (what each answer of the CLI makes the app do, the question and its keys, a failed upgrade, the reason shown without a core), and the scenario `mailbox.uiscript` (the upgrading screen; refusals, a new folder, the question answered by Escape then by a click, the upgraded mailbox used without a question). The registration with launchd and the stop were checked by hand on this Mac: `launchctl print gui/$UID/eu.nicemailer.core` shows the core running, then `not running`, `last exit code = 0` after `make core-stop`.
+`crates/nm-api` (`paths::resolve`), `crates/nm-daemon/tests/agent_rpc.rs` (a second core leaves with code 0; `core.log` written), `crates/nm-daemon/tests/startup_rpc.rs` (`core-error.json` written for an early development database, removed at the next start), `crates/nm-daemon/tests/update_rpc.rs` (the maintenance during an upgrade, a SIGTERM then leaving with code 0, the database left at its version; a newer database; [updates.md](updates.md)), `MaintenanceTests` (the wait), `DataDirectoryTests` (the same rule in the app; no agent outside a bundle), `MailboxCheckTests` (what each answer of the CLI makes the app do, the question and its keys, a failed upgrade, the reason shown without a core), and the scenario `mailbox.uiscript` (the screens of an update and an upgrade; refusals, a new folder, the question answered by Escape then by a click, the upgraded mailbox used without a question). The registration with launchd and the stop were checked by hand on this Mac: `launchctl print gui/$UID/eu.nicemailer.core` shows the core running, then `not running`, `last exit code = 0` after `make core-stop`.

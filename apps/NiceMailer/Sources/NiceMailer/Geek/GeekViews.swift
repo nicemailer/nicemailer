@@ -83,9 +83,10 @@ private struct GeekWindow: View {
     }
 
     @ViewBuilder private var content: some View {
-        if case .upgrading(let message) = model.status {
-            // The core upgrades the mailbox: say so, the app waits.
-            UpgradingView(message: message).font(.geek(12))
+        if case .maintenance(let text, _) = model.status {
+            // NiceMailer updated, or the mailbox upgraded: say so, the app
+            // waits.
+            UpgradingView(message: text).font(.geek(12))
         } else if case .failed(let message) = model.status, !UIScript.isActive {
             // No core: what to do, and the button that allows it.
             ConnectionErrorView(message: message).font(.geek(12))
@@ -363,8 +364,8 @@ struct GeekStatusBar: View {
                 Text(flash).foregroundStyle(Palette.muted).lineLimit(1).truncationMode(.middle)
             } else if case .failed(let message) = model.status {
                 Text(message).foregroundStyle(Palette.error).lineLimit(1)
-            } else if case .upgrading = model.status {
-                Text(L("upgrading the mailbox…")).foregroundStyle(Palette.muted).lineLimit(1)
+            } else if case .maintenance(_, let short) = model.status {
+                Text(short).foregroundStyle(Palette.muted).lineLimit(1)
             } else if let starting = model.startupPhase.message {
                 Text(starting).foregroundStyle(Palette.muted).lineLimit(1)
             } else if let sort = model.aiSort {

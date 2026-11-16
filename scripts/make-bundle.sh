@@ -23,6 +23,11 @@
 # Mailbox…" in the app would.
 # NICEMAILER_FAKE_NETWORK, if set, is given to the core of the agent:
 # sending is pretended (docs/sending.md).
+# Updates (docs/updates.md): Sparkle.framework is carried in
+# Contents/Frameworks, and Info.plist names the feed (SPARKLE_FEED_URL, by
+# default the appcast.xml of the latest GitHub release) and the public key
+# that signs it (apps/NiceMailer/sparkle-public-key). A development build
+# without that file has no updates; a release refuses to be built without it.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -46,6 +51,19 @@ if [ "$RELEASE" = 1 ]; then
   if [ -n "${NICEMAILER_FAKE_NETWORK:-}" ]; then
     echo "NICEMAILER_FAKE_NETWORK is set: unset it before a release." >&2; exit 1
   fi
+fi
+
+# The feed of the updates and the public half of the EdDSA key that signs
+# them (docs/updates.md, "Keys"). The key is public: it is committed.
+FEED_URL="${SPARKLE_FEED_URL:-https://github.com/nicemailer/nicemailer/releases/latest/download/appcast.xml}"
+KEY_FILE="$ROOT/apps/NiceMailer/sparkle-public-key"
+SPARKLE_KEY="$(tr -d '[:space:]' < "$KEY_FILE" 2>/dev/null || true)"
+if [ -z "$SPARKLE_KEY" ]; then
+  if [ "$RELEASE" = 1 ]; then
+    echo "No Sparkle public key in $KEY_FILE: a release could never be updated. Make the keys once (docs/updates.md, \"Keys\")." >&2
+    exit 1
+  fi
+  echo "Note: no $KEY_FILE, this build has no updates (docs/updates.md)." >&2
 fi
 
 # The identity that signs the core, the CLI and the app (docs/app-bundle.md,
@@ -79,8 +97,12 @@ cargo build --release --quiet --manifest-path "$ROOT/Cargo.toml" --bin nicemaile
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
 APP="$STAGE/NiceMailer.app"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Helpers" "$APP/Contents/Library/LaunchAgents"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Helpers" "$APP/Contents/Library/LaunchAgents" "$APP/Contents/Frameworks"
 cp "$BIN_DIR/NiceMailer" "$APP/Contents/MacOS/NiceMailer"
+# Sparkle (docs/updates.md), where the app looks for it (Package.swift,
+# rpath @executable_path/../Frameworks). ditto keeps the symbolic links of
+# the framework, which its signature covers.
+ditto "$BIN_DIR/Sparkle.framework" "$APP/Contents/Frameworks/Sparkle.framework"
 cp "$ROOT/target/release/nicemailer-core" "$ROOT/target/release/nicemailer" "$ROOT/target/release/nicemailer-mcp" "$APP/Contents/Helpers/"
 
 # The agent of the core (architecture.md, section 6): started at once when
@@ -116,7 +138,7 @@ cp "$ROOT/design/icon/app/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 # - CFBundleShortVersionString, the version users see, is the one of the
 #   Rust workspace (`[workspace.package]` of Cargo.toml), so that the app,
 #   the core and `nicemailer --version` always say the same;
-# - CFBundleVersion, which macOS and later Sparkle compare to know which
+# - CFBundleVersion, which macOS and Sparkle compare to know which
 #   build is newer, must be a number that only grows: the count of commits
 #   of the history, which grows with every commit of master;
 # - NMGitDescribe, our own key, names the exact commit (and "-dirty" for a
@@ -145,6 +167,9 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>LSApplicationCategoryType</key><string>public.app-category.productivity</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSContactsUsageDescription</key><string>NiceMailer shows the phone numbers and the card of the senders of a conversation among the links of the mail (l). Nothing is copied or sent.</string>
+  <key>SUFeedURL</key><string>${FEED_URL}</string>
+  ${SPARKLE_KEY:+<key>SUPublicEDKey</key><string>${SPARKLE_KEY}</string>}
+  <key>SUEnableAutomaticChecks</key><true/>
   <key>CFBundleURLTypes</key>
   <array>
     <dict>
@@ -180,6 +205,18 @@ codesign --force --sign "${IDENTITY:--}" --identifier eu.nicemailer.cli \
   --options runtime "$TIMESTAMP" "$APP/Contents/Helpers/nicemailer" >/dev/null
 codesign --force --sign "${IDENTITY:--}" --identifier eu.nicemailer.mcp \
   --options runtime "$TIMESTAMP" "$APP/Contents/Helpers/nicemailer-mcp" >/dev/null
+# Sparkle's programs, from the inside out as its documentation says
+# ("Sandboxing and code signing"): its two XPC services (the downloader
+# keeps its entitlements), the installer (Autoupdate), the window of the
+# progress (Updater.app), then the framework. Re-signed by our identity:
+# notarization and the hardened runtime need one team for the whole app.
+SPARKLE="$APP/Contents/Frameworks/Sparkle.framework/Versions/B"
+codesign --force --sign "${IDENTITY:--}" --options runtime "$TIMESTAMP" "$SPARKLE/XPCServices/Installer.xpc" >/dev/null
+codesign --force --sign "${IDENTITY:--}" --options runtime "$TIMESTAMP" --preserve-metadata=entitlements \
+  "$SPARKLE/XPCServices/Downloader.xpc" >/dev/null
+codesign --force --sign "${IDENTITY:--}" --options runtime "$TIMESTAMP" "$SPARKLE/Autoupdate" >/dev/null
+codesign --force --sign "${IDENTITY:--}" --options runtime "$TIMESTAMP" "$SPARKLE/Updater.app" >/dev/null
+codesign --force --sign "${IDENTITY:--}" --options runtime "$TIMESTAMP" "$APP/Contents/Frameworks/Sparkle.framework" >/dev/null
 codesign --force --sign "${IDENTITY:--}" --identifier eu.nicemailer.NiceMailer \
   --options runtime "$TIMESTAMP" --entitlements "$PKG/NiceMailer.entitlements" "$APP" >/dev/null
 

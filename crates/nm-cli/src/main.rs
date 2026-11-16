@@ -31,11 +31,20 @@ use serde_json::{Value, json};
 /// Top-level arguments. `global = true` makes `--data-dir` accepted after
 /// any subcommand too.
 #[derive(Parser)]
-#[command(name = "nicemailer", version, about = "NiceMailer command-line client")]
+#[command(
+    name = "nicemailer",
+    version,
+    about = "NiceMailer command-line client",
+    after_help = "Exit status: 0 on success, 75 when the core is in maintenance (NiceMailer being updated, its database upgraded or unusable), 1 on any other error."
+)]
 struct Cli {
     /// Data directory (database, socket).
     #[arg(long, global = true, env = "NICEMAILER_DATA_DIR")]
     data_dir: Option<PathBuf>,
+    /// While NiceMailer is being updated or upgrades its database, wait for
+    /// it to finish instead of failing.
+    #[arg(long, global = true)]
+    wait: bool,
     #[command(subcommand)]
     command: Command,
 }
@@ -599,8 +608,86 @@ fn print_workflow(result: &Value) {
     }
 }
 
-fn main() -> anyhow::Result<()> {
+/// The exit status of a command refused because the core is in
+/// maintenance (`mise-a-jour.md`, section 5): 75, `EX_TEMPFAIL` of
+/// `sysexits.h`, "try again later", so that a script can tell it from a
+/// failure.
+const MAINTENANCE_EXIT: u8 = 75;
+
+/// `--wait`, read by [`Client::connect`]. A process-wide switch rather
+/// than one more parameter for each of the commands that connect.
+///
+/// Rust note: an `AtomicBool` can be read and written from anywhere
+/// without a lock (and `static` items must be thread-safe).
+static WAIT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// The core refused the request because it is in maintenance: why, and
+/// what to do, for the user.
+#[derive(Debug)]
+struct InMaintenance(nm_api::Maintenance);
+
+impl std::fmt::Display for InMaintenance {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use nm_api::MaintenanceReason as R;
+        let m = &self.0;
+        let n = |v: Option<i64>| v.unwrap_or(0);
+        match m.reason {
+            R::Update => write!(f, "NiceMailer is being updated; try again in a moment, or add --wait"),
+            R::Migration => write!(
+                f,
+                "NiceMailer is upgrading its database (data format {} to {}, now at {}); try again in a moment, or add --wait",
+                n(m.from),
+                n(m.to),
+                n(m.at)
+            ),
+            R::NewerSchema => write!(
+                f,
+                "this mailbox was written by a newer NiceMailer (data format {}, this one reads {}): install the newer NiceMailer, or choose another mailbox in the app",
+                n(m.from),
+                n(m.to)
+            ),
+            R::MigrationFailed => write!(
+                f,
+                "the upgrade of the database failed, and the database was put back as it was: {}. Details in core.log of the mailbox; the next start of the core tries again",
+                m.message.as_deref().unwrap_or("unknown error")
+            ),
+        }
+    }
+}
+
+impl std::error::Error for InMaintenance {}
+
+/// The maintenance of a line from the core, if it is a refusal for one:
+/// the answer to a request, or the line a connection gets when a
+/// maintenance closes it (no id).
+fn maintenance_of(error: &nm_api::RpcError) -> Option<InMaintenance> {
+    if error.code != nm_api::error_code::MAINTENANCE {
+        return None;
+    }
+    serde_json::from_value(error.data.clone()?).ok().map(InMaintenance)
+}
+
+/// Runs the command; the exit status says how it went (`--help`): 75 for
+/// a core in maintenance, which a script may want to try again later.
+fn main() -> std::process::ExitCode {
+    match run() {
+        Ok(()) => std::process::ExitCode::SUCCESS,
+        Err(e) => {
+            // `{:?}` on an `anyhow::Error` prints it with its causes, as
+            // `fn main() -> anyhow::Result<()>` did.
+            eprintln!("Error: {e:?}");
+            if e.chain().any(|c| c.is::<InMaintenance>()) {
+                std::process::ExitCode::from(MAINTENANCE_EXIT)
+            } else {
+                std::process::ExitCode::FAILURE
+            }
+        }
+    }
+}
+
+fn run() -> anyhow::Result<()> {
     let cli = Cli::parse();
+    WAIT.store(cli.wait, std::sync::atomic::Ordering::Relaxed);
     let data_dir = cli.data_dir.unwrap_or_else(paths::data_dir);
     // Matching on an enum variant with fields extracts them: `seed: s`
     // renames the `seed` field to `s`, to avoid shadowing the `seed` function.
@@ -1152,8 +1239,8 @@ fn run_mailbox(action: MailboxAction) -> anyhow::Result<()> {
         }
         MailboxAction::Upgrade { dir } => {
             let db = dir.join(paths::DATABASE);
-            match nm_store::inspect::inspect(&db) {
-                S::Upgradable { .. } => {}
+            let from = match nm_store::inspect::inspect(&db) {
+                S::Upgradable { from, .. } => from,
                 S::Current => {
                     println!("{}: already current, nothing to do", dir.display());
                     return Ok(());
@@ -1166,7 +1253,7 @@ fn run_mailbox(action: MailboxAction) -> anyhow::Result<()> {
                     bail!("{}: schema version {found} is newer than this NiceMailer's ({expected})", dir.display())
                 }
                 S::Unreadable { message } => bail!("{}: {message}", dir.display()),
-            }
+            };
             // The core is the only owner of a database it uses: take its lock
             // for the time of the upgrade, as `seed` does.
             let lock = File::create(dir.join("lock"))?;
@@ -1174,10 +1261,13 @@ fn run_mailbox(action: MailboxAction) -> anyhow::Result<()> {
                 bail!("a core is using {}: choose this mailbox in the app, or stop that core first", dir.display());
             }
             let start = Instant::now();
-            // `Store::open` migrates, one version per transaction
-            // (`migrations.rs`): interrupted, the database stays at the
-            // last version reached, consistent, and upgrading again goes on.
-            drop(Store::open(&db).with_context(|| format!("upgrading {}", db.display()))?);
+            // As the core does at its start (`mise-a-jour.md`, section 4):
+            // the database is copied first (`nicemailer.db.bak-v<from>`),
+            // migrated one version per transaction, and put back as it was
+            // if a version fails (`nm_store::upgrade`).
+            let (store, _) = nm_store::upgrade::migrate(&db, from, &|v| eprintln!("  version {v} reached"))
+                .with_context(|| format!("upgrading {}", db.display()))?;
+            drop(store);
             println!(
                 "{}: upgraded to schema version {} in {:.1} s",
                 dir.display(),
@@ -1359,8 +1449,29 @@ struct Client {
 }
 
 impl Client {
-    /// Connects to the core and performs the `hello` handshake.
+    /// Connects to the core and performs the `hello` handshake. A core in
+    /// maintenance refuses it ([`InMaintenance`]); with `--wait`, an update
+    /// or a migration is waited for, trying again every second
+    /// (`mise-a-jour.md`, section 5), and a maintenance that only the user
+    /// can end fails at once.
     fn connect(data_dir: &std::path::Path) -> anyhow::Result<Client> {
+        let mut told = false;
+        loop {
+            match Self::connect_once(data_dir) {
+                Err(e) if WAIT.load(std::sync::atomic::Ordering::Relaxed) => {
+                    let Some(m) = e.downcast_ref::<InMaintenance>().filter(|m| m.0.is_transient()) else { return Err(e) };
+                    if !told {
+                        told = true;
+                        eprintln!("Waiting: {}…", m.to_string().split(';').next().unwrap_or_default());
+                    }
+                    std::thread::sleep(std::time::Duration::from_secs(1));
+                }
+                other => return other,
+            }
+        }
+    }
+
+    fn connect_once(data_dir: &std::path::Path) -> anyhow::Result<Client> {
         let path = data_dir.join(paths::SOCKET);
         let stream = UnixStream::connect(&path)
             .with_context(|| format!("cannot connect to {}: is the core running? (make core)", path.display()))?;
@@ -1368,6 +1479,25 @@ impl Client {
         let mut client = Client { stream, reader, next_id: 1 };
         client.call(method::HELLO, json!({"protocol_version": PROTOCOL_VERSION, "client": "cli"}))?;
         Ok(client)
+    }
+
+    /// The error of a response, turned into an error of the command: a
+    /// maintenance as [`InMaintenance`], anything else with its code.
+    fn failure(e: nm_api::RpcError) -> anyhow::Error {
+        match maintenance_of(&e) {
+            Some(m) => m.into(),
+            None => anyhow::anyhow!("error {}: {}", e.code, e.message),
+        }
+    }
+
+    /// A line without an id that says the core closed the connection for a
+    /// maintenance (`update.rs` of the core): that error, else None.
+    fn closing(v: &Value) -> Option<anyhow::Error> {
+        if !v.get("id").is_some_and(Value::is_null) {
+            return None;
+        }
+        let e: nm_api::RpcError = serde_json::from_value(v.get("error")?.clone()).ok()?;
+        maintenance_of(&e).map(Into::into)
     }
 
     /// Reads one line from the core, without the trailing newline.
@@ -1390,11 +1520,14 @@ impl Client {
         let mut events = Vec::new();
         loop {
             let v: Value = serde_json::from_str(&self.read_line()?)?;
+            if let Some(e) = Self::closing(&v) {
+                return Err(e);
+            }
             match v.get("id").and_then(Value::as_u64) {
                 Some(i) if i == id => {
                     let r: Response = serde_json::from_value(v)?;
                     if let Some(e) = r.error {
-                        bail!("error {}: {}", e.code, e.message);
+                        return Err(Self::failure(e));
                     }
                     return Ok((r.result.unwrap_or(Value::Null), events));
                 }
@@ -1416,6 +1549,9 @@ impl Client {
         loop {
             let line = self.read_line()?;
             let v: Value = serde_json::from_str(&line)?;
+            if let Some(e) = Self::closing(&v) {
+                return Err(e);
+            }
             // Skip lines that are not the response to this request: these are
             // event notifications, which can arrive at any time after
             // `subscribe`.
@@ -1424,7 +1560,7 @@ impl Client {
             }
             let r: Response = serde_json::from_value(v)?;
             if let Some(e) = r.error {
-                bail!("error {}: {}", e.code, e.message);
+                return Err(Self::failure(e));
             }
             return Ok(r.result.unwrap_or(Value::Null));
         }

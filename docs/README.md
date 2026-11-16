@@ -17,6 +17,7 @@ User and developer documentation, in English. It is written together with the co
 | [testing.md](testing.md) | How the core and the app are tested: Rust tests, Swift unit tests, scripted UI tests |
 | [folder-workflow.md](folder-workflow.md) | Moving mail: the decision on the sender, filing its other mails, authentication, domain decisions, undo |
 | [backup.md](backup.md) | The two database files (`nicemailer.db`, and `nicemailer_body.db` for the bodies and the search index), what to back up, `nicemailer mailbox backup`, rebuilding the body file |
+| [updates.md](updates.md) | Updates by Sparkle: the core in maintenance while the app is replaced or the database upgraded, `prepare_update`, the backup around a migration, what each client does, the keys and the appcast of a release |
 | [migrations.md](migrations.md) | Upgrading a database: schema migrations at opening, reinterpretation of stored mail after a parser change, and how to add either |
 | [configuration.md](configuration.md) | Settings in `config.toml` and accounts in `accounts.toml`: where they are, how they are created at the first start, what is checked, how changes apply while the core runs, passwords in development, the read pool |
 | [imap.md](imap.md) | The IMAP client of the core: connection, certificates, login, commands and their fallbacks, large messages, failures, IDLE, `nicemailer imap probe` |

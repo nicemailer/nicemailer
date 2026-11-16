@@ -65,6 +65,11 @@ enum UIScript {
     static var confirmedCalls: [String] = []
     /// What the open panel of ⇧⌘A answers (`files`).
     static var chosenFiles: [URL] = []
+    /// The maintenance the core of the scenario plays (`maintenance`), what
+    /// the app's probe answers; and the status before it, given back by
+    /// `maintenance off` without reconnecting.
+    static var scriptedMaintenance: CoreMaintenance?
+    static var statusBeforeMaintenance: AppModel.Status?
     /// Lines of the reader's title line, 1 or 2 (`ReaderTitleBar`).
     static var titleLines = 0
     /// Titles of the help's groups, column by column (`HelpPanel`).
@@ -255,24 +260,33 @@ private final class Runner {
                 "denied": .denied, "unavailable": .unavailable, "authorized": .authorized, "undetermined": .notDetermined,
             ]
             if let book = model.addressBook as? FixtureAddressBook, let value = access[arg] { book.setAccess(value) }
-        case "upgrade":
-            // `upgrade 9 10`: the core of the scenario announced as upgrading
-            // the mailbox, as a real core does before its migrations
-            // (`core-upgrading.json`, with the app's own pid, which runs);
-            // the app shows its screen and waits. `upgrade off`: the file
-            // removed, the wait ends.
-            let file = DataDirectory.current.appendingPathComponent("core-upgrading.json")
+        case "maintenance":
+            // `maintenance migration 9 10 9`, `maintenance update`,
+            // `maintenance newer_schema 14 13`, `maintenance
+            // migration_failed 9 13`: the core of the scenario plays a core
+            // in maintenance, as its probe would answer it
+            // (`AppModel.waitOutMaintenance`), begun 75 s ago. Changed while
+            // the app waits, the next probe shows it. `maintenance off`:
+            // the core serves again; the status before it comes back.
             if arg == "off" {
-                try? FileManager.default.removeItem(at: file)
+                UIScript.scriptedMaintenance = nil
+                try? await Task.sleep(for: .milliseconds(300))
+                if let before = UIScript.statusBeforeMaintenance { model.showStatusForScript(before) }
+                UIScript.statusBeforeMaintenance = nil
             } else {
-                let v = arg.split(separator: " ").compactMap { Int($0) }
-                let report = UpgradeReport(from: v.first ?? 0, to: v.last ?? 0, pid: getpid(),
-                                           startedAt: Int(Date().timeIntervalSince1970) - 75)
-                let encoder = JSONEncoder()
-                encoder.keyEncodingStrategy = .convertToSnakeCase
-                try? encoder.encode(report).write(to: file)
-                Task { _ = await model.waitForUpgrade() }
-                try? await Task.sleep(for: .milliseconds(100))
+                let words = arg.split(separator: " ").map(String.init)
+                let n = words.dropFirst().compactMap { Int($0) }
+                let m = CoreMaintenance(reason: CoreMaintenance.Reason(rawValue: words.first ?? "") ?? .update,
+                                        from: n.first, to: n.dropFirst().first, at: n.dropFirst(2).first,
+                                        since: Int(Date().timeIntervalSince1970) - 75,
+                                        message: "disque plein")
+                let waiting = UIScript.scriptedMaintenance?.isTransient == true
+                UIScript.scriptedMaintenance = m
+                if UIScript.statusBeforeMaintenance == nil { UIScript.statusBeforeMaintenance = model.status }
+                if !waiting {
+                    Task { _ = await model.waitOutMaintenance(m, every: .milliseconds(100)) { UIScript.scriptedMaintenance } }
+                }
+                try? await Task.sleep(for: .milliseconds(300))
             }
         case "mailbox":
             // "Change Mailbox…" with this folder, as the panel would give
@@ -708,16 +722,20 @@ private final class Runner {
             "mailbox_switched": UIScript.mailboxesSwitched.joined(separator: ","),
             "mailbox_question": m.pendingUpgrade.map { "\($0.url.lastPathComponent) \($0.from)->\($0.to)" } ?? "",
             "mailbox_upgrading": m.upgradingMailbox?.lastPathComponent ?? "",
-            // The connection: connecting, connected, upgrading: <message>,
-            // failed: <message>.
+            // The connection: connecting, connected, maintenance: <short>
+            // | <message>, failed: <message>.
             "core_status": {
                 switch m.status {
                 case .connecting: "connecting"
                 case .connected: "connected"
-                case .upgrading(let message): "upgrading: \(message)"
+                case .maintenance(let text, let short): "maintenance: \(short) | \(text)"
                 case .failed(let message): "failed: \(message)"
                 }
             }(),
+            // The maintenance that left the app without a core: its reason.
+            "last_maintenance": m.lastMaintenance?.reason.rawValue ?? "",
+            // "Check for Updates…" can be used (`Updater`).
+            "updates_available": "\(Updater.shared.canCheck)",
             // The launch (`AppModel.StartupPhase`): connecting,
             // startingCore, loading, ready; and how long it took, in
             // milliseconds, once ready.

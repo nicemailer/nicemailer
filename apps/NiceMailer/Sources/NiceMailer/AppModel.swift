@@ -23,9 +23,11 @@ final class AppModel {
     enum Status: Equatable {
         case connecting
         case connected(coreVersion: String)
-        /// The core is upgrading the mailbox (`UpgradeReport`): the message,
-        /// updated every second while the app waits.
-        case upgrading(String)
+        /// The core is in maintenance (`CoreMaintenance`): NiceMailer being
+        /// updated, or the mailbox upgraded. The text of the screen and the
+        /// few words of the status bar, updated every second while the app
+        /// waits (`waitOutMaintenance`).
+        case maintenance(text: String, short: String)
         case failed(String)
     }
 
@@ -647,6 +649,21 @@ final class AppModel {
 
     nonisolated static let pageSize = 60
 
+    /// The last maintenance that left the app without a core
+    /// (`newer_schema`, `migration_failed`): "Try Again" restarts the core
+    /// after a failed migration (`retry`), and the screen offers its log.
+    private(set) var lastMaintenance: CoreMaintenance?
+    /// The core was restarted once because its version was not the app's
+    /// (`coreNeedsRestart`): never twice in a launch, so that an app run
+    /// against another core (development) does not restart it in a loop.
+    @ObservationIgnored private var restartedCoreForVersion = false
+    /// An update left over by an earlier launch was cancelled once
+    /// (`connect`).
+    @ObservationIgnored private var cancelledStaleUpdate = false
+    /// This app is installing an update (`prepareUpdate`): the maintenance
+    /// of the core is its own, waited for rather than cancelled.
+    @ObservationIgnored private(set) var installingUpdate = false
+
     // MARK: - Connection
 
     /// Connects to the core, performs the handshake, subscribes to events
@@ -669,6 +686,21 @@ final class AppModel {
             connection = c
             client = c
             let hello: HelloResult = try await c.call("hello", ["protocol_version": CoreClient.protocolVersion, "client": "app"])
+            // The core still runs the version before an update: Sparkle
+            // replaced the bundle, and the app, relaunched, restarts the core
+            // from it (`mise-a-jour.md`, section 3, step 4). The core also
+            // leaves by itself once its program is replaced; this covers a
+            // core that did not (an update installed by hand, an app copied
+            // over the old one).
+            if Self.coreNeedsRestart(coreVersion: hello.coreVersion, appVersion: Self.appVersion,
+                                     agent: agentState, alreadyRestarted: restartedCoreForVersion) {
+                restartedCoreForVersion = true
+                CoreAgent.log.notice("core \(hello.coreVersion, privacy: .public) is not the app's \(Self.appVersion ?? "?", privacy: .public): restarted")
+                c.disconnect()
+                CoreAgent.kickstart(restart: true)
+                await connect()
+                return
+            }
             // Subscribe *before* loading data (`evenements.md`, section 7):
             // a change happening during the loading will then be announced by
             // an event, instead of being silently missed.
@@ -680,37 +712,138 @@ final class AppModel {
             Task { await listen(c) }
             await startSession()
         } catch {
-            // A core upgrading the mailbox does not answer yet: say so and
-            // wait for it, then connect.
-            if await waitForUpgrade() {
-                await connect()
+            // Inside `catch`, the error is implicitly named `error`. A core
+            // in maintenance says why (`CoreMaintenance`): waited for, or
+            // shown, never "unreachable" (`mise-a-jour.md`, section 5).
+            if let m = CoreMaintenance(error: error) ?? connection?.closedForMaintenance {
+                // The maintenance of an update this app is not installing:
+                // left by an earlier launch that prepared it, then crashed
+                // or saw Sparkle fail (the version is the core's, or the
+                // core would have been restarted above). Cancelled once,
+                // rather than waited for until `core.update_timeout_secs`.
+                if m.reason == .update, !installingUpdate, !cancelledStaleUpdate, let c = connection {
+                    cancelledStaleUpdate = true
+                    CoreAgent.log.notice("an update prepared by an earlier launch: cancelled")
+                    let _: CancelUpdateResult? = try? await c.call("cancel_update", [:])
+                    await connect()
+                    return
+                }
+                if await waitOutMaintenance(m) { await connect() }
                 return
             }
-            // Inside `catch`, the error is implicitly named `error`. A core
-            // that stopped on an error said why in its folder: that reason
-            // is more useful than "unreachable".
+            // A core that stopped on an error said why in its folder: that
+            // reason is more useful than "unreachable".
             status = .failed(Self.noCoreMessage(error.localizedDescription,
                                                 report: StartupErrorReport.read(in: DataDirectory.current)))
         }
     }
 
-    /// While the core of the current mailbox upgrades it (`UpgradeReport`),
-    /// shows `.upgrading` and waits, checking every second. Returns whether
-    /// it waited. A core killed meanwhile leaves the file behind but no
-    /// process: the wait ends, and the usual screen says what follows.
-    /// `dir` and `every` are parameters for the tests.
-    func waitForUpgrade(in dir: URL = DataDirectory.current, every: Duration = .seconds(1)) async -> Bool {
-        let before = status
-        var waited = false
-        while let report = UpgradeReport.read(in: dir), report.isRunning {
-            waited = true
-            status = .upgrading(report.message())
-            try? await Task.sleep(for: every)
+    /// Sets the status as a UI scenario plays it (`UIScript`,
+    /// `maintenance off`): back to the screen before a maintenance it
+    /// played, without reconnecting to the scenario's core.
+    func showStatusForScript(_ s: Status) {
+        guard UIScript.isActive else { return }
+        status = s
+        lastMaintenance = nil
+    }
+
+    /// "Try Again" of the screen without a core. After a failed migration,
+    /// the core stays in maintenance until it is restarted: restarted, it
+    /// tries the migration again. Only on this button: the app never tries
+    /// a migration again by itself (`mise-a-jour.md`, section 4).
+    func retry() async {
+        coreStoppedByUser = false
+        if lastMaintenance?.reason == .migrationFailed, agentState == .enabled {
+            CoreAgent.kickstart(restart: true)
         }
-        // The UI scripts show this screen on a running core (`UIScript`,
-        // `upgrade`): back to it afterwards, without reconnecting.
-        if waited && UIScript.isActive { status = before }
-        return waited
+        await connect()
+    }
+
+    /// While the core is in a maintenance that ends by itself (an update,
+    /// a migration), shows it and asks again every second (`probe`), without
+    /// starting a core: it runs. Returns true once the core serves again,
+    /// false when the maintenance needs the user (`newer_schema`,
+    /// `migration_failed`), whose reason is then the screen's.
+    /// `every` and `probe` are parameters for the tests.
+    func waitOutMaintenance(_ first: CoreMaintenance, every: Duration = .seconds(1),
+                            probe: (() async -> CoreMaintenance?)? = nil) async -> Bool {
+        let probe = probe ?? { await Self.probeMaintenance() }
+        var m = first
+        lastMaintenance = nil
+        while m.isTransient {
+            status = .maintenance(text: m.text(), short: m.shortText)
+            try? await Task.sleep(for: every)
+            guard let next = await probe() else { return true }
+            m = next
+        }
+        lastMaintenance = m
+        status = .failed(m.text())
+        return false
+    }
+
+    /// The maintenance of the core, asked on a connection of its own: the
+    /// app's `hello` is answered during an update, and its `subscribe`
+    /// refused. Nil when the core serves (or cannot be reached: `connect`
+    /// then says what follows).
+    nonisolated static func probeMaintenance() async -> CoreMaintenance? {
+        guard let c = try? CoreClient() else { return nil }
+        defer { c.disconnect() }
+        do {
+            let _: HelloResult = try await c.call("hello", ["protocol_version": CoreClient.protocolVersion, "client": "app"])
+            let _: SubscribeResult = try await c.call("subscribe", [:])
+            return nil
+        } catch {
+            return CoreMaintenance(error: error) ?? c.closedForMaintenance
+        }
+    }
+
+    /// The version of the app (`CFBundleShortVersionString`), nil outside a
+    /// bundle (`swift run`).
+    nonisolated static var appVersion: String? {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+    }
+
+    /// Whether the core must be restarted because it is not of the app's
+    /// version: only the core of the agent, which the app can restart
+    /// (`CoreAgent`), and once a launch. A pure function, tested.
+    nonisolated static func coreNeedsRestart(coreVersion: String, appVersion: String?,
+                                             agent: CoreAgent.State, alreadyRestarted: Bool) -> Bool {
+        guard agent == .enabled, !alreadyRestarted, let appVersion else { return false }
+        return coreVersion != appVersion
+    }
+
+    /// Called by the updater just before Sparkle installs an update
+    /// (`Updater`): the core enters maintenance, stops its IMAP workers and
+    /// stays alive until it is replaced (`mise-a-jour.md`, section 3, step
+    /// 2). Waits at most `limit` for its answer: the core stops its workers
+    /// in at most 5 s; a core that does not answer must not hold the update.
+    func prepareUpdate(limit: Duration = .seconds(10)) async {
+        installingUpdate = true
+        guard let client else { return }
+        // Swift note: a task group runs both children at once; the first
+        // to finish wins, and `cancelAll` stops the other.
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask {
+                do {
+                    let r: PrepareUpdateResult = try await client.call("prepare_update", [:])
+                    CoreAgent.log.notice("update prepared; the core waits \(r.timeoutSecs) s at most")
+                } catch {
+                    CoreAgent.log.error("prepare_update: \(error.localizedDescription, privacy: .public)")
+                }
+            }
+            group.addTask { try? await Task.sleep(for: limit) }
+            await group.next()
+            group.cancelAll()
+        }
+    }
+
+    /// The update was abandoned after `prepareUpdate` (Sparkle failed to
+    /// install it): the core serves again.
+    func cancelUpdate() async {
+        guard installingUpdate else { return }
+        installingUpdate = false
+        let _: CancelUpdateResult? = try? await client?.call("cancel_update", [:])
+        await connect()
     }
 
     /// What the screen without a core says: the reason the core left in its
@@ -761,9 +894,6 @@ final class AppModel {
             do {
                 return try CoreClient()
             } catch {
-                // Upgrading: no use waiting 8 s for a socket that opens
-                // after the upgrade (`connect` waits for it).
-                if UpgradeReport.read(in: DataDirectory.current)?.isRunning == true { throw error }
                 guard agentState == .enabled, Date() < deadline else {
                     CoreAgent.log.error("no core: \(error.localizedDescription, privacy: .public)")
                     throw error

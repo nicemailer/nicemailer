@@ -11,6 +11,12 @@ How to write it:
 
 ## Unreleased
 
+### Added
+
+- NiceMailer updates itself: it checks for a new version once a day, or at once with NiceMailer > Check for Updates…, and installs it with its background core.
+- While NiceMailer is updated or upgrades its mailbox, the app, the `nicemailer` command and AI agents say so and wait, instead of reporting that NiceMailer is not running. `nicemailer --wait` waits for the end; without it, the command exits with status 75.
+- The mailbox is copied before each upgrade of its data format, and put back as it was if the upgrade fails: nothing is lost, and the previous version of NiceMailer can still open it.
+
 ### Fixed
 
 - The app no longer stays without its core after a new version, signed differently, replaces the installed one.

@@ -794,7 +794,7 @@ impl<'t> Reader<'t> {
                 let c = CoreSettings {
                     background_sorting: self.bool(&mut t, "background_sorting", d.core.background_sorting)?,
                     idle_exit_secs: self.int(&mut t, "idle_exit_secs", d.core.idle_exit_secs, 1..=86_400)?,
-                    update_timeout_secs: self.int(&mut t, "update_timeout_secs", d.core.update_timeout_secs, 60..=86_400)?,
+                    update_timeout_secs: self.int(&mut t, "update_timeout_secs", d.core.update_timeout_secs, 1..=86_400)?,
                 };
                 self.finish(t);
                 c

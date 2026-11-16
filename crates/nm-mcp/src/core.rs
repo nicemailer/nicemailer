@@ -12,10 +12,13 @@
 //!   `NICEMAILER_DATA_DIR` or `--data-dir`, the core of launchd would serve
 //!   another directory, so it is not started (and a test never starts the
 //!   user's core).
-//! - **Maintenance.** While the core upgrades the database
-//!   (`core-upgrading.json`, `mise-a-jour.md`), the proxy waits, trying
-//!   every second for 30 seconds, and says so through the progress
-//!   notifications of the tool call.
+//! - **Maintenance.** While NiceMailer is updated or the core upgrades the
+//!   database, the core answers the error `MAINTENANCE` and closes the
+//!   connection (`mise-a-jour.md`, section 2): the proxy waits, trying
+//!   every second for 30 seconds, without starting a core, and says so
+//!   through the progress notifications of the tool call. A maintenance
+//!   that only the user can end (a database written by a newer NiceMailer,
+//!   a migration that failed) is not waited for: the agent gets its reason.
 //! - **Several calls at once.** An MCP client may run tools in parallel:
 //!   requests are written as they come, each with its id, and a task reads
 //!   the responses and hands each to the call waiting for it.
@@ -45,7 +48,8 @@ pub enum CoreError {
     Rpc(RpcError),
     /// No core: the message says what to do.
     Unreachable(String),
-    /// The core is upgrading the mailbox, still after the wait.
+    /// The core is still in maintenance after the wait (an update, an
+    /// upgrade of the mailbox).
     Maintenance,
     /// The connection closed before the answer: the core stopped or
     /// restarted. The request may or may not have run.
@@ -115,10 +119,15 @@ impl CoreLink {
             let conn = self.connection(progress).await?;
             match conn.call(method, params.clone()).await {
                 Err(CoreError::Rpc(e)) if e.code == error_code::MAINTENANCE => {
+                    // The core closes the connection after this error.
+                    self.forget(&conn).await;
+                    if let Some(reason) = lasting(&e) {
+                        return Err(CoreError::Unreachable(reason));
+                    }
                     if started.elapsed() >= self.waits.maintenance {
                         return Err(CoreError::Maintenance);
                     }
-                    progress("NiceMailer is updating its mailbox; waiting");
+                    progress("NiceMailer is being updated or is upgrading its mailbox; waiting");
                     tokio::time::sleep(self.waits.maintenance_step).await;
                 }
                 Err(CoreError::Lost) => {
@@ -184,7 +193,11 @@ impl CoreLink {
                     let conn = Conn::start(dir.clone(), stream);
                     match conn.call(method::HELLO, json!({"protocol_version": PROTOCOL_VERSION, "client": "mcp"})).await {
                         Ok(_) => return Ok(conn),
-                        Err(CoreError::Rpc(e)) if e.code == error_code::MAINTENANCE => {}
+                        Err(CoreError::Rpc(e)) if e.code == error_code::MAINTENANCE => {
+                            if let Some(reason) = lasting(&e) {
+                                return Err(CoreError::Unreachable(reason));
+                            }
+                        }
                         Err(CoreError::Rpc(e)) if e.code == error_code::PROTOCOL_VERSION => {
                             return Err(CoreError::Unreachable(format!(
                                 "this nicemailer-mcp and the running NiceMailer core do not speak the same protocol ({}): update NiceMailer",
@@ -196,7 +209,6 @@ impl CoreLink {
                         Err(_) => {}
                     }
                 }
-                Err(_) if upgrading(&dir) => {}
                 Err(_) => {
                     if std::mem::take(&mut in_maintenance) {
                         started = Instant::now();
@@ -214,12 +226,13 @@ impl CoreLink {
                     continue;
                 }
             }
-            // The core is upgrading the mailbox: waited for, longer.
+            // NiceMailer is updated, or the core upgrades the mailbox:
+            // waited for, longer.
             in_maintenance = true;
             if first_try.elapsed() >= self.waits.maintenance {
                 return Err(CoreError::Maintenance);
             }
-            progress("NiceMailer is updating its mailbox; waiting");
+            progress("NiceMailer is being updated or is upgrading its mailbox; waiting");
             tokio::time::sleep(self.waits.maintenance_step).await;
         }
     }
@@ -238,15 +251,12 @@ fn unreachable_message(dir: &Path, chosen_in_app: bool) -> String {
     }
 }
 
-/// Whether the core is upgrading the database of `dir`: its file
-/// `core-upgrading.json` names a process still alive. A file left by a
-/// core that crashed during the upgrade is not a maintenance.
-fn upgrading(dir: &Path) -> bool {
-    let Ok(text) = std::fs::read_to_string(dir.join(paths::UPGRADING)) else { return false };
-    let Ok(status) = serde_json::from_str::<nm_api::UpgradeStatus>(&text) else { return false };
-    // Rust note: signal 0 sends nothing; it only says whether the process
-    // exists (and may be signalled by us).
-    unsafe { libc::kill(status.pid as libc::pid_t, 0) == 0 }
+/// The reason of a maintenance that does not end by itself
+/// (`nm_api::Maintenance::is_transient`): waiting for it is useless, the
+/// user must act. None for an update or a migration, which end.
+fn lasting(e: &RpcError) -> Option<String> {
+    let m: nm_api::Maintenance = serde_json::from_value(e.data.clone()?).ok()?;
+    (!m.is_transient()).then(|| format!("NiceMailer cannot open its mailbox: {}. Ask the user to open NiceMailer", e.message))
 }
 
 /// `launchctl kickstart gui/<uid>/eu.nicemailer.core`: starts the core of

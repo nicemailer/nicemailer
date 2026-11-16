@@ -35,6 +35,8 @@ final class CoreClient: @unchecked Sendable {
         /// The error's structured details (`data`), its text values only:
         /// for `confirmationRequired`, the address and the verdict.
         var data: [String: String] = [:]
+        /// The whole `data`, as JSON: for `maintenance`, a `CoreMaintenance`.
+        var rawData: Data?
         var errorDescription: String? { "\(message) (code \(code))" }
 
         /// A favorable decision on a sender suspected of spoofing waits for
@@ -42,6 +44,9 @@ final class CoreClient: @unchecked Sendable {
         static let confirmationRequired = 1005
         /// What was asked for does not exist (a deep link to a deleted mail).
         static let notFound = 1001
+        /// The core is in maintenance (`CoreMaintenance`): an update, a
+        /// migration of the database, or a database it cannot open.
+        static let maintenance = 1003
     }
 
     /// Socket-level failures. User-facing texts stay in French.
@@ -80,6 +85,16 @@ final class CoreClient: @unchecked Sendable {
     /// Requests awaiting their response, by id.
     private var pending: [Int: CheckedContinuation<Data, Error>] = [:]
     private var closed = false
+    /// The maintenance that made the core close this connection, if any:
+    /// its last line, without an id (`mise-a-jour.md`, section 2).
+    private var closingMaintenance: CoreMaintenance?
+
+    /// Why the core closed the connection, when a maintenance did.
+    var closedForMaintenance: CoreMaintenance? {
+        lock.lock()
+        defer { lock.unlock() }
+        return closingMaintenance
+    }
 
     /// `<data dir>/core.sock`, with the same data directory as the core
     /// (`DataDirectory`: `NICEMAILER_DATA_DIR`, else the mailbox chosen in
@@ -257,15 +272,22 @@ final class CoreClient: @unchecked Sendable {
         // `try?` turns an error into nil; `as? [String: Any]` checks that the
         // JSON is an object. Invalid lines are ignored.
         guard let obj = try? JSONSerialization.jsonObject(with: line) as? [String: Any] else { return }
+        // An error without an id (`"id": null`) answers no request: the
+        // core says why it closes the connection.
+        if obj["id"] is NSNull, let err = obj["error"] as? [String: Any] {
+            let error = Self.rpcError(err)
+            lock.lock()
+            closingMaintenance = CoreMaintenance(error: error)
+            lock.unlock()
+            return
+        }
         if let id = obj["id"] as? Int {
             lock.lock()
             let c = pending.removeValue(forKey: id)
             lock.unlock()
             guard let c else { return }
             if let err = obj["error"] as? [String: Any] {
-                let data = (err["data"] as? [String: Any])?.compactMapValues { $0 as? String } ?? [:]
-                c.resume(throwing: RPCError(code: err["code"] as? Int ?? 0, message: err["message"] as? String ?? "erreur",
-                                            data: data))
+                c.resume(throwing: Self.rpcError(err))
             } else {
                 // Re-encode `result` alone, so that `call` can decode it with
                 // `JSONDecoder` into the expected struct. `.fragmentsAllowed`
@@ -283,6 +305,17 @@ final class CoreClient: @unchecked Sendable {
                 params: params.compactMapValues(JSONValue.init)
             ))
         }
+    }
+}
+
+extension CoreClient {
+    /// The error of a response's `error` member: its code, message, text
+    /// values of `data`, and the whole `data` as JSON.
+    static func rpcError(_ err: [String: Any]) -> RPCError {
+        let data = err["data"]
+        return RPCError(code: err["code"] as? Int ?? 0, message: err["message"] as? String ?? "erreur",
+                        data: (data as? [String: Any])?.compactMapValues { $0 as? String } ?? [:],
+                        rawData: data.flatMap { try? JSONSerialization.data(withJSONObject: $0) })
     }
 }
 

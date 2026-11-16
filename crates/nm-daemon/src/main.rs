@@ -46,6 +46,7 @@ mod extract;
 mod rights;
 mod setup;
 mod sync;
+mod update;
 
 use std::fs::{self, File};
 // Unix-specific extension trait that adds `from_mode` (chmod-style
@@ -183,6 +184,12 @@ struct Core {
     syncer: std::sync::OnceLock<nm_engine::sync::Syncer>,
     /// The AI assistance: prompts, runs, proposals (`ai.rs`).
     ai: ai::AiState,
+    /// The maintenance under way, if any (`update.rs`): every request is
+    /// refused meanwhile, and the connections close.
+    maintenance: update::State,
+    /// Raised by each `prepare_update` and `cancel_update`: a timer or a
+    /// watch of an earlier update sees it changed and stops (`update.rs`).
+    update_generation: std::sync::atomic::AtomicU64,
 }
 
 /// Imports run one at a time, on a dedicated thread (see `start_import`).
@@ -252,7 +259,12 @@ async fn run(args: Args, data_dir: &Path) -> anyhow::Result<()> {
     // bound, the app can only wait ("starting the core…"), so this is the
     // part of the launch the user sees. Written once, when it is ready.
     let mut clock = StartupClock::new();
-    let mut store = open_store(&data_dir, &db_path).await?;
+    let socket_path = data_dir.join(nm_api::paths::SOCKET);
+    // The maintenance of the core (`update.rs`). A migration happens in
+    // it: the socket is then opened before the database, to answer
+    // `MAINTENANCE` meanwhile (`open_store`), and handed over afterwards.
+    let maintenance = update::state();
+    let (mut store, early_listener) = open_store(&db_path, &socket_path, &maintenance).await?;
     clock.mark("store");
     // Opened after the writing store, which creates or migrates the
     // database. Six connections for the clients: since the requests of a
@@ -326,6 +338,8 @@ async fn run(args: Args, data_dir: &Path) -> anyhow::Result<()> {
         import: Mutex::new(ImportState::default()),
         syncer: std::sync::OnceLock::new(),
         ai: ai::AiState::new(&config_path, &data_dir, &ai_settings),
+        maintenance,
+        update_generation: std::sync::atomic::AtomicU64::new(0),
     });
     // The workers of the IMAP accounts of the file (`plan-imap.md`,
     // phase 4). They only start working once the socket is up: their
@@ -374,15 +388,13 @@ async fn run(args: Args, data_dir: &Path) -> anyhow::Result<()> {
         }
     };
 
-    let socket_path = data_dir.join(nm_api::paths::SOCKET);
-    // A socket file left behind by a crash would make `bind` fail. Thanks to
-    // the lock above, we know no other core is using it.
-    let _ = fs::remove_file(&socket_path);
-    let listener = UnixListener::bind(&socket_path)?;
+    // Bound already when the database was migrated (`open_store`).
+    let listener = match early_listener {
+        Some(l) => l,
+        None => bind(&socket_path)?,
+    };
     // Started: a reason left by a previous failed start no longer applies.
     let _ = fs::remove_file(data_dir.join(nm_api::paths::STARTUP_ERROR));
-    // 0o600: only the current user can connect.
-    fs::set_permissions(&socket_path, fs::Permissions::from_mode(0o600))?;
     eprintln!("nicemailer-core : base {}, socket {}", db_path.display(), socket_path.display());
     clock.mark("socket");
     eprintln!("{}", clock.line());
@@ -442,85 +454,162 @@ async fn run(args: Args, data_dir: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Opens the writing store, which migrates an older database first
-/// (`docs/migrations.md`). A migration can take minutes on a large mailbox
-/// (version 10 copies the bodies: 4 minutes for 400,000 mails), and the
-/// socket only opens after it, so:
-/// - `core-upgrading.json` says it is under way (`nm_api::UpgradeStatus`):
-///   the app shows "upgrading" and waits, instead of "unreachable";
-/// - the opening runs on a thread of its own while this task watches for
-///   SIGTERM and Ctrl-C. Before, a stop during a migration killed the core
-///   (its signal handler was not installed yet): launchd saw a failure,
-///   started it again (`KeepAlive`), and the migration started over each
-///   time. Now a stop cancels the migration and leaves with code 0, which
-///   launchd does not restart. The migration of a version is one
-///   transaction: cancelled, it is rolled back, and done again at the next
-///   start.
-async fn open_store(data_dir: &Path, db_path: &Path) -> anyhow::Result<Store> {
+/// Creates the socket at `path`, readable by the current user only.
+fn bind(path: &Path) -> anyhow::Result<UnixListener> {
+    // A socket file left behind by a crash would make `bind` fail. Thanks to
+    // the lock of the data directory, we know no other core is using it.
+    let _ = fs::remove_file(path);
+    let listener = UnixListener::bind(path)?;
+    // 0o600: only the current user can connect.
+    fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
+    Ok(listener)
+}
+
+/// Opens the writing store. A database of an earlier version is migrated
+/// first, in maintenance (`mise-a-jour.md`, section 4; `update.rs`):
+///
+/// - the socket is opened at once, and every client gets the error
+///   `MAINTENANCE` (reason `migration`, with the version reached so far)
+///   rather than no answer, so that it waits instead of starting a core;
+///   the socket is returned, to serve once the database is open;
+/// - the database is copied first, and put back if the migration fails
+///   (`nm_store::upgrade`); the core then stays in maintenance
+///   (`migration_failed`) until it is stopped;
+/// - a database written by a newer NiceMailer is never opened: the core
+///   stays in maintenance (`newer_schema`) until it is stopped.
+///
+/// A migration can take minutes on a large mailbox (version 10 copies the
+/// bodies: 4 minutes for 400,000 mails). It runs on a thread of its own
+/// while this task answers the clients and watches for SIGTERM and Ctrl-C:
+/// a stop cancels it and leaves with code 0, which launchd does not
+/// restart. The migration of a version is one transaction: cancelled, it
+/// is rolled back, and the migration starts again at the next start.
+async fn open_store(
+    db_path: &Path,
+    socket_path: &Path,
+    maintenance: &update::State,
+) -> anyhow::Result<(Store, Option<UnixListener>)> {
+    use nm_api::MaintenanceReason;
+    use nm_store::inspect::DatabaseState;
     let inspecting = Instant::now();
-    let upgrade = match nm_store::inspect::inspect(db_path) {
-        nm_store::inspect::DatabaseState::Upgradable { from, to } => Some((from, to)),
-        _ => None,
+    let state = nm_store::inspect::inspect(db_path);
+    let inspected = inspecting.elapsed();
+    let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
+    let (from, to) = match state {
+        DatabaseState::Upgradable { from, to } => (from, to),
+        DatabaseState::TooNew { found, expected } => {
+            // Never opened, never written: an older core does not know
+            // what the newer columns mean.
+            eprintln!(
+                "base de version {found}, plus récente que celle de ce noyau ({expected}) : aucune écriture, mode maintenance jusqu'à l'arrêt"
+            );
+            let mut m = update::begin(MaintenanceReason::NewerSchema);
+            (m.from, m.to) = (Some(found), Some(expected));
+            maintenance.send_replace(Some(m));
+            serve_maintenance_until_stopped(bind(socket_path)?, maintenance, &mut sigterm).await
+        }
+        // A new database, a current one, or one the opening refuses with
+        // its own error (an early development database).
+        _ => {
+            let (store, steps) = Store::open_timed(db_path).with_context(|| format!("ouverture de {}", db_path.display()))?;
+            log_opening(inspected, steps);
+            return Ok((store, None));
+        }
     };
-    let status_path = data_dir.join(nm_api::paths::UPGRADING);
-    if let Some((from, to)) = upgrade {
-        eprintln!("mise à jour de la base : version {from} vers {to}, peut prendre plusieurs minutes");
-        let status = nm_api::UpgradeStatus {
-            from,
-            to,
-            pid: std::process::id(),
-            started_at: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0),
-        };
-        write_atomically(&status_path, &serde_json::to_string(&status).expect("plain struct"));
-    }
+    let listener = bind(socket_path)?;
+    let mut m = update::begin(MaintenanceReason::Migration);
+    (m.from, m.to, m.at) = (Some(from), Some(to), Some(from));
+    maintenance.send_replace(Some(m));
+    eprintln!("mise à jour de la base : version {from} vers {to}, peut prendre plusieurs minutes");
+    let started = Instant::now();
     let path = db_path.to_path_buf();
+    let progress = maintenance.clone();
     // Rust note: `spawn_blocking` runs a synchronous function on a thread
     // pool made for blocking work, and gives a future of its result; the
     // `Store` it returns can cross threads (`Send`).
-    let inspected = inspecting.elapsed();
-    let opening = tokio::task::spawn_blocking(move || Store::open_timed(&path));
-    let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
-    let started = std::time::Instant::now();
-    let result = tokio::select! {
-        r = opening => r.map_err(|e| anyhow::anyhow!("ouverture interrompue : {e}"))?,
-        _ = sigterm.recv() => stopped_while_opening(&status_path, upgrade.is_some()),
-        _ = tokio::signal::ctrl_c() => stopped_while_opening(&status_path, upgrade.is_some()),
+    let mut opening = tokio::task::spawn_blocking(move || {
+        nm_store::upgrade::migrate(&path, from, &|v| {
+            eprintln!("mise à jour de la base : version {v} atteinte");
+            progress.send_modify(|m| {
+                if let Some(m) = m {
+                    m.at = Some(v);
+                }
+            });
+        })
+    });
+    let result = loop {
+        tokio::select! {
+            // Rust note: `&mut opening` polls the future without moving it,
+            // so the loop can wait on it again after a client.
+            r = &mut opening => break r.map_err(|e| anyhow::anyhow!("ouverture interrompue : {e}"))?,
+            accepted = listener.accept() => {
+                let (stream, _) = accepted?;
+                tokio::spawn(update::serve_refusing(stream, maintenance.subscribe()));
+            }
+            _ = sigterm.recv() => stopped_while_opening(),
+            _ = tokio::signal::ctrl_c() => stopped_while_opening(),
+        }
     };
-    let _ = fs::remove_file(&status_path);
-    if let Some((from, to)) = upgrade
-        && result.is_ok()
-    {
-        eprintln!("mise à jour de la base : version {from} vers {to} faite en {:.0} s", started.elapsed().as_secs_f64());
+    match result {
+        Ok((store, steps)) => {
+            eprintln!("mise à jour de la base : version {from} vers {to} faite en {:.0} s", started.elapsed().as_secs_f64());
+            log_opening(inspected, steps);
+            maintenance.send_replace(None);
+            Ok((store, Some(listener)))
+        }
+        Err(e) => {
+            // The app shows the error and offers the log; it does not try
+            // again by itself (`mise-a-jour.md`, section 4).
+            eprintln!("mise à jour de la base : échec, {e} ; mode maintenance jusqu'à l'arrêt");
+            let mut m = update::begin(MaintenanceReason::MigrationFailed);
+            (m.from, m.to, m.message) = (Some(from), Some(to), Some(e.to_string()));
+            maintenance.send_replace(Some(m));
+            serve_maintenance_until_stopped(listener, maintenance, &mut sigterm).await
+        }
     }
-    let (store, steps) = result.with_context(|| format!("ouverture de {}", db_path.display()))?;
-    // Each step of the opening, after the check of the file (`inspect`):
-    // the largest part of a slow start, on a real mailbox.
+}
+
+/// Each step of the opening, after the check of the file (`inspect`): the
+/// largest part of a slow start, on a real mailbox.
+fn log_opening(inspected: Duration, steps: nm_store::OpeningSteps) {
     let mut all = vec![("inspect", inspected)];
     all.extend(steps.steps);
     let total = all.iter().map(|(_, d)| *d).sum();
     eprintln!("{}", startup_line("store opened", total, &all));
-    Ok(store)
+}
+
+/// A maintenance that only a stop ends (`newer_schema`,
+/// `migration_failed`): every client gets its error, until SIGTERM or
+/// Ctrl-C, then the core leaves with code 0. Not a failure: launchd would
+/// start the core again every 10 seconds, for the same answer.
+async fn serve_maintenance_until_stopped(
+    listener: UnixListener,
+    maintenance: &update::State,
+    sigterm: &mut tokio::signal::unix::Signal,
+) -> ! {
+    loop {
+        tokio::select! {
+            accepted = listener.accept() => {
+                if let Ok((stream, _)) = accepted {
+                    tokio::spawn(update::serve_refusing(stream, maintenance.subscribe()));
+                }
+            }
+            _ = sigterm.recv() => break,
+            _ = tokio::signal::ctrl_c() => break,
+        }
+    }
+    if let Some(path) = listener.local_addr().ok().and_then(|a| a.as_pathname().map(Path::to_path_buf)) {
+        cleanup(&path);
+    }
+    std::process::exit(0)
 }
 
 /// A stop while the database opens: the opening thread is abandoned with
 /// the process, and SQLite rolls its transaction back at the next opening.
 /// Code 0, so that launchd does not start the core again at once.
-fn stopped_while_opening(status_path: &Path, upgrading: bool) -> ! {
-    let _ = fs::remove_file(status_path);
-    if upgrading {
-        eprintln!("arrêt demandé pendant la mise à jour de la base : annulée, elle reprendra au prochain démarrage");
-    }
+fn stopped_while_opening() -> ! {
+    eprintln!("arrêt demandé pendant la mise à jour de la base : annulée, elle reprendra au prochain démarrage");
     std::process::exit(0)
-}
-
-/// Writes `text` to `path` through a temporary file and a rename, so that
-/// a reader never sees half a file.
-fn write_atomically(path: &Path, text: &str) {
-    let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-    let tmp = path.with_file_name(format!(".{name}.tmp"));
-    if let Err(e) = fs::write(&tmp, text).and_then(|()| fs::rename(&tmp, path)) {
-        eprintln!("{} : écriture impossible ({e})", path.display());
-    }
 }
 
 /// Writes why the core could not run to `core-error.json` of its data
@@ -739,8 +828,29 @@ async fn serve(core: Arc<Core>, stream: UnixStream) -> anyhow::Result<()> {
     let mut session = Session { hello: false, source: Source::Cli, out: out.clone(), subscribed: false };
     // `BufReader` buffers the reads; `lines()` splits the stream on newlines.
     let mut lines = BufReader::new(read).lines();
-    // `next_line` returns `Ok(None)` when the client closes the connection.
-    while let Some(line) = lines.next_line().await? {
+    // A maintenance that begins closes the connection (`update.rs`).
+    let mut maintenance = core.maintenance.subscribe();
+    let mut closed_for = None;
+    loop {
+        // `next_line` returns `Ok(None)` when the client closes the
+        // connection.
+        let line = tokio::select! {
+            line = lines.next_line() => match line? {
+                Some(line) => line,
+                None => break,
+            },
+            // Rust note: `wait_for` returns at once if the value already
+            // matches, else when it changes to one that does. The `if`
+            // after it is a precondition: the branch is left out of the
+            // `select!` for the app, whose connection stays open during an
+            // update (`update.rs`): it must be able to cancel it. And
+            // before `hello`, which says who the client is: a `hello`
+            // refused by the maintenance closes the connection below.
+            m = maintenance.wait_for(Option::is_some), if session.hello && session.source != Source::App => {
+                closed_for = m.ok().and_then(|m| m.as_ref().map(nm_api::Maintenance::error));
+                break;
+            }
+        };
         if line.trim().is_empty() {
             continue;
         }
@@ -757,7 +867,9 @@ async fn serve(core: Arc<Core>, stream: UnixStream) -> anyhow::Result<()> {
             }
         };
         if let Some(result) = session_call(&core, &mut session, &req) {
-            if respond(&out, req.id.map(|id| reply(id, result))).await.is_err() {
+            // A client let in by no maintenance: told so, then closed.
+            let refused = req.method == method::HELLO && matches!(&result, Err(e) if e.code == error_code::MAINTENANCE);
+            if respond(&out, req.id.map(|id| reply(id, result))).await.is_err() || refused {
                 break;
             }
             continue;
@@ -787,6 +899,12 @@ async fn serve(core: Arc<Core>, stream: UnixStream) -> anyhow::Result<()> {
     // running hold a sender each: the writer waits for them too.
     drop(ordered_tx);
     let _ = ordered.await;
+    // Closed by a maintenance: the client is told why, after the answers
+    // of what it asked before (`prepare_update` itself, for the app). No
+    // id: it answers no request in particular (JSON-RPC, "id: null").
+    if let Some(error) = closed_for {
+        let _ = respond(&out, Some(Response::err(Value::Null, error))).await;
+    }
     drop(session);
     drop(out);
     let _ = writer.await;
@@ -1107,8 +1225,10 @@ fn reload_config(core: &Arc<Core>) {
     };
     drop(engine);
     // The workers follow the accounts of the file (`sync.rs`); a file
-    // changed may also fix what stopped one (a user name).
-    if changed {
+    // changed may also fix what stopped one (a user name). Not while an
+    // update is prepared, which stopped them: they start again when it is
+    // cancelled (`update.rs`, `leave`), with the file as it is then.
+    if changed && core.maintenance.borrow().is_none() {
         sync::apply(core, &mut store);
         if let Some(syncer) = core.syncer.get() {
             syncer.kick();
@@ -1203,13 +1323,23 @@ fn session_call(core: &Arc<Core>, session: &mut Session, req: &Request) -> Optio
             }
             // Provisional: the identity will come from the client's code
             // signature, never from what the client declares.
-            session.source = match p.client.as_deref() {
+            let source = match p.client.as_deref() {
                 Some("app") => Source::App,
                 Some("tui") => Source::Tui,
                 Some("mcp") => Source::Mcp,
                 Some("web") => Source::Web,
                 _ => Source::Cli,
             };
+            // In maintenance, only the app is let in, to prepare or cancel
+            // the update (`update.rs`); every other request of it is
+            // refused by `call`. The others get the maintenance's error,
+            // and the connection closes.
+            if source != Source::App
+                && let Some(e) = update::refusal(&core.maintenance)
+            {
+                return Err(e);
+            }
+            session.source = source;
             session.hello = true;
             to_value(HelloResult {
                 protocol_version: PROTOCOL_VERSION,
@@ -1220,6 +1350,11 @@ fn session_call(core: &Arc<Core>, session: &mut Session, req: &Request) -> Optio
         })(),
         _ if !session.hello => Err(RpcError::new(error_code::PROTOCOL_VERSION, "poignée de main `hello` attendue")),
         method::SUBSCRIBE => (|| {
+            // Nothing to follow during a maintenance: the app learns of it
+            // here, after its `hello`.
+            if let Some(e) = update::refusal(&core.maintenance) {
+                return Err(e);
+            }
             let p: SubscribeParams = params(req.params.clone())?;
             if session.subscribed {
                 return Err(RpcError::new(error_code::INVALID_REQUEST, "déjà abonné"));
@@ -1248,11 +1383,22 @@ fn session_call(core: &Arc<Core>, session: &mut Session, req: &Request) -> Optio
 async fn call(core: &Arc<Core>, source: Source, req: Request) -> Result<Value, RpcError> {
     // What this source may ask, before anything runs (`rights.rs`).
     rights::check(source, &req.method)?;
+    // In maintenance, nothing runs (`update.rs`): a request read just
+    // before it began, and still queued, is refused like a new client.
+    // Only the update's own methods go on: `prepare_update` again, and
+    // `cancel_update` to leave it.
+    if !matches!(req.method.as_str(), method::PREPARE_UPDATE | method::CANCEL_UPDATE)
+        && let Some(e) = update::refusal(&core.maintenance)
+    {
+        return Err(e);
+    }
     // Event position, read *before* running a query and returned as `as_of`.
     // Any event with a higher seq may not be reflected in the data, so the
     // client knows it must apply it.
     let as_of = || core.events.lock().unwrap().position();
     match req.method.as_str() {
+        method::PREPARE_UPDATE => to_value(update::prepare(core).await?),
+        method::CANCEL_UPDATE => to_value(update::cancel(core).await?),
         method::LIST_FOLDERS => {
             let as_of = as_of();
             let items = with_reader(core, |s| s.list_folders()).await?;

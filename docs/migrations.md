@@ -43,7 +43,7 @@ The reasons for the indexes of version 2, with measurements, are in `specificati
 2. **Read `PRAGMA user_version`, then attach the body file** (`nicemailer_body.db`, [backup.md](backup.md)) as `body`, creating its tables when it is new or was deleted.
 3. **Decide:**
    - `0`: an empty file. `schema.sql` is run as is, and the database is at the latest version. A body file found next to it is emptied: it belonged to a database that is gone.
-   - Greater than `SCHEMA_VERSION`: the database was written by a newer core. It is refused with `SchemaTooNew` ("version du schéma N plus récente que celle du code"), and nothing is touched: an older core does not know what the newer columns mean, and writing to them could corrupt the data.
+   - Greater than `SCHEMA_VERSION`: the database was written by a newer core. It is refused with `SchemaTooNew` ("version du schéma N plus récente que celle du code"), and nothing is touched (the core does not even open it: it stays in maintenance, `newer_schema`, [updates.md](updates.md)): an older core does not know what the newer columns mean, and writing to them could corrupt the data.
    - Otherwise, an earlier version (or the current one): `check_schema` checks it is complete (below), then `migrations::migrate` upgrades it. At the current version there is nothing to migrate.
    - After a migration from before version 10, `VACUUM main` gives back the pages the bodies left.
 3b. **The two files tied together.** The TEMP triggers that follow `message` into the body file are created, and `reconcile_bodies` makes the two files agree after a crash between their commits, unless the last close was clean and nothing touched the files since ([backup.md](backup.md), "Atomic commits"). The core writes how long each step of the opening took in its log: `startup: store opened after 949 ms (inspect 6, open 0, version 2, body file 1, schema 0, reconcile 931, statistics 6)`.
@@ -82,7 +82,7 @@ nicemailer mailbox upgrade <folder>        # migrates it to this version
 
 `check` (`nm_store::inspect`) applies the rules of `Store::open` without writing: the file is opened without the right to create it, the connection is `query_only`, and the answer is one of `new` (no file, an empty one, or version 0 without tables), `current`, `upgradable {from, to}`, `outdated {missing}` (what `check_schema` finds missing: an incomplete version 1, below), `too_new {found, expected}`, or `unreadable {message}`. The JSON adds `path` and `in_use` (a core holds the folder's lock).
 
-`upgrade` refuses anything but `upgradable`, takes the folder's lock as a core would (it fails if a core uses the folder), and opens the database with `Store::open`, which migrates it one version per transaction, as at a core's start.
+`upgrade` refuses anything but `upgradable`, takes the folder's lock as a core would (it fails if a core uses the folder), and migrates the database as at a core's start: copied first, one version per transaction, the copy put back if a version fails (`nm_store::upgrade::migrate`).
 
 ### Limits
 
@@ -93,7 +93,8 @@ nicemailer mailbox upgrade <folder>        # migrates it to this version
   ```
 
   (Stop the core first, or copy `nicemailer.db-wal` too: recent writes may still be there.)
-- **The app waits during a migration.** `Store::open` runs before the core creates its socket, so the app cannot connect until the migration is over (about 30 s for version 2 on 275,000 mails), and the core prints nothing meanwhile. Keep migrations short: what can wait belongs to the reinterpretation.
+- **Nothing is served during a migration.** The core answers every client with `MAINTENANCE` and the version reached so far until it is over (about 30 s for version 2 on 275,000 mails; [updates.md](updates.md)). Keep migrations short: what can wait belongs to the reinterpretation.
+- **A backup around each migration.** The core (and `nicemailer mailbox upgrade`) copies both files of the database before migrating (`nicemailer.db.bak-v<version>`, a clone on APFS), puts the copy back if a version fails, and keeps it until the next migration (`nm_store::upgrade`, [updates.md](updates.md), "The database upgraded"). The copy by hand below is still the way to keep a mailbox the previous NiceMailer can open after a successful upgrade.
 - **One big transaction.** A step that rewrites many rows grows the WAL file (`nicemailer.db-wal`) by about as much; it is folded back into the database at the next checkpoints.
 
 ## Adding a schema version

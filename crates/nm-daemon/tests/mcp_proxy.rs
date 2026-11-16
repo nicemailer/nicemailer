@@ -402,29 +402,34 @@ async fn a_core_restarted_between_two_calls_is_found_again() {
     assert_eq!(v["accounts"][0]["key"], "hey");
 }
 
+/// The app prepares an update (`prepare_update`): the core answers
+/// `MAINTENANCE` to the proxy, which waits with progress, then answers once
+/// the app cancels it (`mise-a-jour.md`, section 5).
 #[tokio::test(flavor = "multi_thread")]
 async fn a_core_in_maintenance_is_waited_for_with_progress() {
     let dir = tempfile::tempdir().unwrap();
-    drop(prepared(dir.path(), ""));
-    let _ = std::fs::remove_file(dir.path().join("core.sock"));
-    // The core is upgrading the database: its file names a live process
-    // (this test).
-    let upgrading = dir.path().join("core-upgrading.json");
-    std::fs::write(&upgrading, json!({"from": 12, "to": 13, "pid": std::process::id(), "started_at": 0}).to_string()).unwrap();
+    let _core = prepared(dir.path(), "");
+    let dir2 = dir.path().to_path_buf();
+    let mut app = tokio::task::spawn_blocking(move || {
+        let mut app = Client::connect_as(&dir2, "app");
+        app.call("prepare_update", json!({})).unwrap();
+        app
+    })
+    .await
+    .unwrap();
     let mut a = Agent::start(dir.path(), "2025-11-25").await;
     let id = a.ask("tools/call", json!({"name": "mailbox_overview", "arguments": {}, "_meta": {"progressToken": "p1"}})).await;
     // Longer than the start wait (300 ms): only the maintenance waits so.
     tokio::time::sleep(Duration::from_millis(900)).await;
-    std::fs::remove_file(&upgrading).unwrap();
-    let dir2 = dir.path().to_path_buf();
-    let _core = tokio::task::spawn_blocking(move || start_with(&dir2, &[("NICEMAILER_FAKE_NETWORK", "1")])).await.unwrap();
+    // The app cancels the update: the core serves its clients again.
+    tokio::task::spawn_blocking(move || app.call("cancel_update", json!({})).unwrap()).await.unwrap();
     let r = a.response(id).await;
     assert_eq!(r["result"]["isError"], false, "{r}");
     assert_eq!(r["result"]["structuredContent"]["accounts"][0]["key"], "hey");
     let progress: Vec<&Value> = a.notifications.iter().filter(|n| n["method"] == "notifications/progress").collect();
     assert!(!progress.is_empty());
     assert!(progress.iter().all(|n| n["params"]["progressToken"] == "p1"));
-    assert!(progress[0]["params"]["message"].as_str().unwrap().contains("updating"), "{:?}", progress[0]);
+    assert!(progress[0]["params"]["message"].as_str().unwrap().contains("updated"), "{:?}", progress[0]);
 }
 
 #[tokio::test(flavor = "multi_thread")]

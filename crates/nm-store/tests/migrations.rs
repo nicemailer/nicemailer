@@ -247,3 +247,60 @@ fn version_5_keeps_the_drafts_and_accepts_stay() {
     let integrity: String = conn.query_row("PRAGMA foreign_key_check", [], |r| r.get(0)).unwrap_or_else(|_| "ok".into());
     assert_eq!(integrity, "ok");
 }
+
+/// A migration that fails halfway (`mise-a-jour.md`, section 7): a version
+/// 1 database that already holds a table `ai_run`, which version 13
+/// creates. Versions 2 to 12 are committed, then 13 fails: without the
+/// backup, the database would stay at 12, a version no released NiceMailer
+/// wrote. With it (`nm_store::upgrade::migrate`), the database is back at
+/// version 1, its rows intact, and no backup is left over.
+#[test]
+fn a_migration_failing_halfway_puts_the_database_back() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("nicemailer.db");
+    version_1(&db);
+    Connection::open(&db).unwrap().execute_batch("CREATE TABLE ai_run (x);").unwrap();
+    let reached = std::cell::RefCell::new(Vec::new());
+    let result = nm_store::upgrade::migrate(&db, 1, &|v| reached.borrow_mut().push(v));
+    let Err(error) = result else { panic!("version 13 must fail on the table already there") };
+    assert!(
+        matches!(&error, nm_store::upgrade::MigrationError::Migration { restored: Ok(()), .. }),
+        "{error}"
+    );
+    assert!(error.to_string().contains("remise dans son état"), "{error}");
+    // Each step committed was announced, up to the one before the failure.
+    assert_eq!(*reached.borrow(), (2..SCHEMA_VERSION).collect::<Vec<_>>());
+    let conn = Connection::open(&db).unwrap();
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0)).unwrap();
+    assert_eq!(version, 1);
+    // A name version 2 would have decoded is still encoded: the data is
+    // the one of version 1.
+    let from: String = conn.query_row("SELECT from_name FROM message WHERE id = 1", [], |r| r.get(0)).unwrap();
+    assert_eq!(from, "Achille Ber=?ISO-8859-1?B?6A==?=s");
+    let left: Vec<String> = std::fs::read_dir(dir.path())
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .filter(|n| n.contains(".bak-v"))
+        .collect();
+    assert!(left.is_empty(), "{left:?}");
+}
+
+/// A migration that succeeds keeps its backup (version 1 here), which
+/// opens as a database of that version, and removes the backups of the
+/// migrations before it.
+#[test]
+fn a_successful_migration_keeps_its_backup_until_the_next_one() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("nicemailer.db");
+    version_1(&db);
+    std::fs::write(dir.path().join("nicemailer.db.bak-v0"), "older").unwrap();
+    let (store, _) = nm_store::upgrade::migrate(&db, 1, &|_| {}).unwrap();
+    drop(store);
+    assert!(!dir.path().join("nicemailer.db.bak-v0").exists());
+    let backup = dir.path().join("nicemailer.db.bak-v1");
+    let version: i64 =
+        Connection::open(&backup).unwrap().query_row("PRAGMA user_version", [], |r| r.get(0)).unwrap();
+    assert_eq!(version, 1);
+    let version: i64 = Connection::open(&db).unwrap().query_row("PRAGMA user_version", [], |r| r.get(0)).unwrap();
+    assert_eq!(version, SCHEMA_VERSION);
+}

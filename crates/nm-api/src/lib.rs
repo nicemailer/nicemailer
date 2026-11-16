@@ -219,6 +219,15 @@ pub mod method {
     pub const AI_SUGGESTIONS: &str = "ai_suggestions";
     /// Sets one suggested target aside.
     pub const AI_DISMISS_SUGGESTION: &str = "ai_dismiss_suggestion";
+    /// The app is about to install an update of NiceMailer
+    /// (`mise-a-jour.md`, section 3): the core enters maintenance
+    /// (`Maintenance`, reason `update`), stops its IMAP workers, and serves
+    /// no client until it is replaced, `cancel_update` is called, or
+    /// `core.update_timeout_secs` passes. Reserved to the app.
+    pub const PREPARE_UPDATE: &str = "prepare_update";
+    /// The update was abandoned: the core leaves the maintenance of
+    /// `prepare_update` and starts its workers again. Reserved to the app.
+    pub const CANCEL_UPDATE: &str = "cancel_update";
 }
 
 /// Stable error codes. Negative codes are the ones defined by the JSON-RPC
@@ -240,7 +249,11 @@ pub mod error_code {
     pub const NOT_FOUND: i64 = 1001;
     /// Move refused by the workflow rules (e.g. moving to Quarantine).
     pub const INVALID_MOVE: i64 = 1002;
-    /// The core is busy with maintenance (migration, rebuild). Not used yet.
+    /// The core is in maintenance (`mise-a-jour.md`, section 2): an update
+    /// being installed, a migration of the database, or a database it
+    /// cannot open. It serves no request; `data` is a [`crate::Maintenance`]
+    /// that says why. The connection is closed
+    /// after this error: try again later, without starting a core.
     pub const MAINTENANCE: i64 = 1003;
     /// An import is already running: only one at a time.
     pub const BUSY: i64 = 1004;
@@ -2179,22 +2192,101 @@ pub struct UiConfig {
     pub auto_confirm_calls: bool,
 }
 
-/// The core is upgrading the database of its data directory (schema
-/// migrations, `docs/migrations.md`): written to `paths::UPGRADING` before
-/// the migrations start and removed when they end. The core answers no
-/// client meanwhile (its socket opens after the database), so the app reads
-/// this file to say "upgrading" rather than "unreachable", and waits
-/// (`docs/app-bundle.md`, "While the core upgrades the mailbox").
+/// Why the core is in maintenance (`mise-a-jour.md`, section 2).
+///
+/// Rust note: `rename_all = "snake_case"` writes each variant in JSON as
+/// `update`, `migration`, `newer_schema` and `migration_failed`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MaintenanceReason {
+    /// An update of NiceMailer is being installed (`prepare_update`).
+    Update,
+    /// The database is being upgraded to the schema of this core.
+    Migration,
+    /// The database was written by a newer NiceMailer: this core does not
+    /// touch it, and stays in maintenance until it is replaced.
+    NewerSchema,
+    /// The migration failed: the database was put back as it was before,
+    /// and the core stays in maintenance until it is restarted.
+    MigrationFailed,
+}
+
+/// The `data` of the error `MAINTENANCE`: why the core serves no client,
+/// and for a migration, how far it is. The core answers it to every
+/// handshake while in maintenance, and sends it to the connections open
+/// when the maintenance begins, before closing them (`mise-a-jour.md`,
+/// section 2).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct UpgradeStatus {
-    /// Schema version of the database, and the version it is brought to.
-    pub from: i64,
-    pub to: i64,
-    /// The core's process: a file left by a core that was killed names a
-    /// process that no longer runs, and is ignored.
-    pub pid: u32,
-    /// When it started, in seconds since 1970.
-    pub started_at: u64,
+pub struct Maintenance {
+    pub reason: MaintenanceReason,
+    /// `migration`, `migration_failed`: the schema version of the database
+    /// before the migration. `newer_schema`: the version of the database.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from: Option<i64>,
+    /// `migration`, `migration_failed`, `newer_schema`: the schema version
+    /// of this core.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to: Option<i64>,
+    /// `migration`: the version the database has reached so far (`from`
+    /// at first, one more after each step), the progress shown.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub at: Option<i64>,
+    /// When the maintenance began, in seconds since 1970.
+    pub since: u64,
+    /// `migration_failed`: the error, as the core logged it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+}
+
+impl Maintenance {
+    /// The error answered to a client: code `MAINTENANCE`, this value as
+    /// its `data`, and a message for logs.
+    pub fn error(&self) -> RpcError {
+        let message = match self.reason {
+            MaintenanceReason::Update => "NiceMailer is being updated".to_string(),
+            MaintenanceReason::Migration => format!(
+                "the database is being upgraded (version {} to {})",
+                self.from.unwrap_or(0),
+                self.to.unwrap_or(0)
+            ),
+            MaintenanceReason::NewerSchema => format!(
+                "the database was written by a newer NiceMailer (version {}, this core reads {})",
+                self.from.unwrap_or(0),
+                self.to.unwrap_or(0)
+            ),
+            MaintenanceReason::MigrationFailed => {
+                format!("the upgrade of the database failed: {}", self.message.as_deref().unwrap_or("unknown error"))
+            }
+        };
+        RpcError {
+            code: error_code::MAINTENANCE,
+            message,
+            data: Some(serde_json::to_value(self).expect("plain struct")),
+        }
+    }
+
+    /// Whether the maintenance ends by itself (an update, a migration), so
+    /// that a client waits; `newer_schema` and `migration_failed` need the
+    /// user (another version of NiceMailer, a restart).
+    pub fn is_transient(&self) -> bool {
+        matches!(self.reason, MaintenanceReason::Update | MaintenanceReason::Migration)
+    }
+}
+
+/// The answer of `prepare_update`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PrepareUpdateResult {
+    /// After this many seconds without being replaced or `cancel_update`,
+    /// the core leaves the maintenance by itself
+    /// (`core.update_timeout_secs`).
+    pub timeout_secs: u64,
+}
+
+/// The answer of `cancel_update`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CancelUpdateResult {
+    /// Whether an update was being prepared (false: nothing to cancel).
+    pub cancelled: bool,
 }
 
 /// Why the core could not run on a data directory: written by the core to
@@ -2299,10 +2391,6 @@ pub mod paths {
     /// (`StartupError`, JSON), inside the data directory. Removed once a
     /// core runs there.
     pub const STARTUP_ERROR: &str = "core-error.json";
-    /// The database is being upgraded (`UpgradeStatus`, JSON), inside the
-    /// data directory: written by the core before migrating, removed once
-    /// the database is open (or the upgrade stopped).
-    pub const UPGRADING: &str = "core-upgrading.json";
 }
 
 // ---------------------------------------------------------------------------

@@ -503,6 +503,16 @@ struct HelloResult: Decodable {
     let coreVersion: String
 }
 
+/// The answer of `prepare_update` (`nm_api::PrepareUpdateResult`).
+struct PrepareUpdateResult: Decodable {
+    let timeoutSecs: Int
+}
+
+/// The answer of `cancel_update` (`nm_api::CancelUpdateResult`).
+struct CancelUpdateResult: Decodable {
+    let cancelled: Bool
+}
+
 struct SubscribeResult: Decodable {
     let epoch: String
     let seq: Int
