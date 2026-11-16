@@ -137,15 +137,27 @@ A release bumps `version` in `Cargo.toml` in a commit of its own, then is tagged
 
 ## Releases
 
-`make release` (`scripts/make-release.sh`) writes `dist/<version>-<time>/NiceMailer-<version>.dmg`, a new directory each time:
+`make release` (`scripts/make-release.sh`) writes `dist/<version>-<time>/NiceMailer-<version>.dmg` and `notes.md`, a new directory each time:
 
+0. Before building, it refuses a version whose tag `v<version>` already exists (the version of `Cargo.toml` was not raised) and a changelog that does not give its notes ("Release notes" below).
 1. `scripts/make-bundle.sh --release`: refuses uncommitted changes and `NICEMAILER_FAKE_NETWORK`; signs with the Developer ID; runs `check-signature.sh --release`; installs nothing and leaves the running app and its core alone.
 2. A disk image with the app and a link to `/Applications`, signed.
 3. Notarization (`notarytool submit --wait`, a few minutes); on a refusal, Apple's log, which names each problem, is printed.
 4. The ticket stapled to the image (`stapler`), so that the first launch is accepted offline.
 5. Gatekeeper's verdict (`spctl`) on the image and on the app in it.
 
-It publishes nothing: it ends by printing the SHA-256 and the commands that tag and create the GitHub release. `make release-check` stops after step 2, to check the signature without Apple. Before publishing, the image is tried on another Mac or user account (`specifications/plan-release.md`, section 5).
+It publishes nothing: it ends by printing the SHA-256 and the commands that tag and create the GitHub release with `--notes-file <dist/…/notes.md>`. `make release-check` skips step 0 and stops after step 2, to check the signature without Apple, between two releases too. Before publishing, the image is tried on another Mac or user account (`specifications/plan-release.md`, section 5).
+
+## Release notes
+
+The notes of each release come from `CHANGELOG.md` at the root of the repository, written by hand for users (its header gives the rules):
+
+- a change users can notice adds its entry under `## Unreleased` in the same commit;
+- the commit that raises `version` in `Cargo.toml` renames that section to `## <version> — <YYYY-MM-DD>` and starts a new, empty `## Unreleased` above it.
+
+`scripts/release-notes.py <version>` prints the body of the section of a version, up to the next `## ` heading, and refuses (exit code 1, with what to fix) a version without a section or with an empty one, and entries left under `## Unreleased`, which would be changes shipped without their notes. `make release` runs it before the build. Commit messages are not used: they are written for developers.
+
+Tests: `scripts/tests/test_release_notes.py` (`make test`), which also checks that `CHANGELOG.md` has a section for the version of `Cargo.toml`.
 
 Known limit: arm64 only (`specifications/plan-release.md`, section 2).
 

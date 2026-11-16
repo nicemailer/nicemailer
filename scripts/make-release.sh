@@ -15,6 +15,15 @@
 #    that Gatekeeper accepts it even offline on the first launch.
 # 5. Gatekeeper's own verdict on the result (`spctl`), as on a user's Mac.
 #
+# Before the build of a release (not with --no-notarize, which only checks
+# the signature, between two releases too), two checks that would
+# otherwise fail after it:
+# - the tag v<version> must not exist yet: an existing one means the
+#   version of Cargo.toml was not raised since the last release;
+# - CHANGELOG.md must give the notes of the version (scripts/release-notes.py),
+#   written to notes.md next to the image for `gh release create --notes-file`
+#   (docs/app-bundle.md, "Release notes").
+#
 # Nothing is published: tagging, pushing and the GitHub release are left to
 # the person who runs it (the commands are printed at the end).
 #
@@ -35,6 +44,19 @@ VERSION="$(sed -n 's/^version = "\(.*\)"$/\1/p' "$ROOT/Cargo.toml" | head -1)"
 # earlier attempt (nor deletes anything).
 OUT="$ROOT/dist/$VERSION-$(date +%Y%m%d-%H%M%S)"
 DMG="$OUT/NiceMailer-$VERSION.dmg"
+NOTES="$OUT/notes.md"
+
+NOTES_TEXT=""
+if [ "$NOTARIZE" = 1 ]; then
+  if git -C "$ROOT" rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null; then
+    echo "The tag v$VERSION already exists: raise \`version\` in Cargo.toml (and its section in CHANGELOG.md)." >&2
+    exit 1
+  fi
+  # Read into a variable first: the directory is only made once the notes
+  # are known to be there, so that a refusal leaves nothing in dist/.
+  # (Under `set -e`, a failing command substitution stops the script.)
+  NOTES_TEXT="$(python3 -I "$ROOT/scripts/release-notes.py" "$VERSION" "$ROOT/CHANGELOG.md")"
+fi
 mkdir -p "$OUT"
 
 # Checked before the long build: notarization would fail at the very end.
@@ -84,6 +106,7 @@ hdiutil attach -quiet -nobrowse -readonly -mountpoint "$MOUNT" "$DMG"
 spctl --assess --type execute -v "$MOUNT/NiceMailer.app" || { hdiutil detach -quiet "$MOUNT"; exit 1; }
 hdiutil detach -quiet "$MOUNT"
 
+printf '%s\n' "$NOTES_TEXT" > "$NOTES"
 SHA="$(shasum -a 256 "$DMG" | cut -d' ' -f1)"
 cat <<DONE
 
@@ -93,5 +116,5 @@ SHA-256: $SHA
 Test it on another Mac or user account (specifications/plan-release.md,
 section 5), then publish:
   git tag v$VERSION && git push origin v$VERSION
-  gh release create v$VERSION "$DMG" --prerelease --title "NiceMailer $VERSION" --notes-file <notes>
+  gh release create v$VERSION "$DMG" --prerelease --title "NiceMailer $VERSION" --notes-file "$NOTES"
 DONE
