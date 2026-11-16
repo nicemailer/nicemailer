@@ -205,7 +205,7 @@ Un seul agent, `eu.nicemailer.core`, enregistré par l'app à chaque lancement s
 <key>BundleProgram</key>               <string>Contents/Helpers/nicemailer-core</string>
 <key>RunAtLoad</key>                   <true/>
 <key>KeepAlive</key>                   <dict><key>SuccessfulExit</key><false/></dict>
-<key>AssociatedBundleIdentifiers</key> <string>eu.nicemailer.app</string>
+<key>AssociatedBundleIdentifiers</key> <string>eu.nicemailer.NiceMailer</string>
 ```
 
 ### Cycle de vie du noyau
@@ -304,7 +304,7 @@ Un processus de l'utilisateur qui peut se connecter au socket peut aussi lire di
 2. obtient la signature du processus par `SecCodeCopyGuestWithAttributes` (attribut `kSecGuestAttributeAudit`) et la valide par `SecCodeCheckValidity` contre l'exigence :
    ```
    anchor apple generic and certificate leaf[subject.OU] = "<TEAM_ID>"
-     and identifier in ("eu.nicemailer.app", "eu.nicemailer.cli", "eu.nicemailer.tui",
+     and identifier in ("eu.nicemailer.NiceMailer", "eu.nicemailer.cli", "eu.nicemailer.tui",
                         "eu.nicemailer.mcp", "eu.nicemailer.web")
    ```
 3. ferme la connexion si la vérification échoue, et l'inscrit au journal.
@@ -346,7 +346,7 @@ La sécurité du serveur web reste à spécifier. Les points connus sont :
 Un mail entrant est un contenu hostile, lu par un LLM qui dispose d'outils. Sans confirmation, une instruction cachée dans un mail suffirait à exfiltrer des données par un envoi. Le noyau applique donc la règle suivante à toute commande `send_message` venant du client MCP :
 
 1. Le message est mis en attente de confirmation. Il n'entre pas dans la file d'envoi.
-2. Le noyau émet l'événement `SendConfirmationRequested`. Le noyau ne lance pas l'app (principe 8) : c'est le proxy MCP qui, recevant la demande de confirmation, ouvre l'app si elle est fermée (`open -b eu.nicemailer.app`). À son ouverture, l'app récupère les demandes en attente par `list_pending_confirmations`.
+2. Le noyau émet l'événement `SendConfirmationRequested`. Le noyau ne lance pas l'app (principe 8) : c'est le proxy MCP qui, recevant la demande de confirmation, ouvre l'app si elle est fermée (`open -g -b eu.nicemailer.NiceMailer`). À son ouverture, l'app récupère les demandes en attente par `list_pending_confirmations`.
 3. L'app affiche le message complet (destinataires, objet, corps, pièces jointes) avec « Envoyer » et « Refuser ».
 4. Seule l'app peut confirmer : la commande `confirm_send` est refusée à tout autre client, MCP compris.
 5. Sans réponse après un délai (paramètre à fixer), la demande expire et vaut refus.
