@@ -21,6 +21,10 @@ How to write it:
 
 - The app no longer stays without its core after a new version, signed differently, replaces the installed one.
 
+### Removed
+
+- File > New Window and window tabs: a second window only mirrored the first one and reconnected to the core. Windows with their own folder and selection will come back later.
+
 ## 0.1.0 — 2026-11-16
 
 First release, for testers. Apple Silicon Macs only, macOS 14 or later. No automatic updates: to update, download the new version and replace the app in Applications.

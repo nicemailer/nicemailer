@@ -736,6 +736,14 @@ private final class Runner {
             "last_maintenance": m.lastMaintenance?.reason.rawValue ?? "",
             // "Check for Updates…" can be used (`Updater`).
             "updates_available": "\(Updater.shared.canCheck)",
+            // Menu items that would open another window (`SingleWindow`),
+            // comma-separated: empty while the app keeps a single window.
+            "window_openers": SingleWindow.windowOpeners(in: NSApp.mainMenu).joined(separator: ","),
+            // Menus of the menu bar, so that an empty `window_openers` is
+            // not read before SwiftUI has built them.
+            "menu_count": "\(NSApp.mainMenu?.items.count ?? 0)",
+            // macOS window tabs allowed (`SingleWindow.disableTabs`).
+            "window_tabs": "\(NSWindow.allowsAutomaticWindowTabbing)",
             // The launch (`AppModel.StartupPhase`): connecting,
             // startingCore, loading, ready; and how long it took, in
             // milliseconds, once ready.

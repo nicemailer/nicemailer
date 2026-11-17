@@ -77,6 +77,12 @@ struct NiceMailerApp: App {
             }
         }
         .commands {
+            // No File > New Window (⌘N): every window would share the one
+            // model above, so a second window only mirrored the first and
+            // reconnected to the core (`SingleWindow`, `ui.md`,
+            // "Fenêtres"). Swift note: `replacing:` with an empty body
+            // removes the standard items of that group.
+            CommandGroup(replacing: .newItem) {}
             // The mailbox and the core (`docs/app-bundle.md`), in the app's
             // menu, after "About".
             CommandGroup(after: .appInfo) {
@@ -132,6 +138,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Fonts.register()
+        // No window tabs either, in UI script mode too (`windows.uiscript`
+        // checks it): their "+" would open a second window.
+        SingleWindow.disableTabs()
         AppDelegate.optionAtLaunch = NSEvent.modifierFlags.contains(.option)
         // UI script mode (automated tests): never take the keyboard or the
         // screen from the user. `.accessory` = no Dock icon, not activated.

@@ -1,0 +1,9 @@
+# A single window (`ui.md`, "Fenêtres"): every window shares one model, so
+# a second one would only mirror the first. No menu item opens another
+# window: no File > New Window (⌘N), no window tabs and their "+".
+# `expect` waits up to 5 s: SwiftUI builds the menus after the launch.
+# The menu bar is built (app, File, Edit, View, Window, Help…): an empty
+# list below is not read before the menus exist.
+expect menu_count > 4
+expect window_tabs = false
+expect window_openers =

@@ -36,6 +36,48 @@ La fenêtre principale permet de lister les mails en deux colonnes :
 
 Lors de l'ouverture d'une fenêtre, le premier mail est systématiquement sélectionné dans la liste, de sorte que la partie de droite affiche quelque chose. 
 
+### Fenêtres
+
+État (17 novembre 2026) : **une seule fenêtre**. Toutes les fenêtres partageaient le même modèle (`AppModel`) : dossier affiché, mail sélectionné, recherche, réponse en cours. Une deuxième fenêtre n'était qu'un miroir de la première, et son ouverture reconnectait l'app au noyau. Fichier > Nouvelle fenêtre (⌘N) et les onglets de macOS sont donc retirés (`SingleWindow`), jusqu'à ce que chaque fenêtre ait son propre contexte, décrit ci-dessous.
+
+**Une fenêtre, un contexte.** Chaque fenêtre est une lecture indépendante de la même boîte. Lui appartiennent :
+- ce que la liste montre : la vue (« all » ou un compte), le dossier ou le dossier virtuel, la liste d'un tag, d'un groupe ou d'un contact, la recherche, les attributs (`f`), le tri ;
+- le mail sélectionné, la lecture (message atteint, texte ou HTML de cet affichage, défilement), les mails marqués (`J` `K`) ;
+- l'écran (mails, contacts, historique, tags, groupes) et son filtre, le menu ou le sélecteur ouvert, la question en attente ;
+- la réponse en cours d'écriture et l'IA qui y travaille, le tri par l'IA en cours (`a` `s`) ;
+- le message de la barre de statut ;
+- la pile d'annulation : `z` défait la dernière action faite **dans cette fenêtre** (comme Mail ; une pile commune ferait défaire, depuis une fenêtre, une action qu'on n'y voit pas).
+
+Sont communs à toute l'app :
+- la connexion au noyau (une seule, quel que soit le nombre de fenêtres), son état (démarrage, maintenance, mise à jour, arrêt par le menu), la boîte utilisée ;
+- la liste des dossiers et leurs compteurs, les comptes, les adresses d'envoi, l'état de l'IA ;
+- les réglages (`config.toml`, `[ui]`), le thème, la taille du texte, les choix mémorisés par expéditeur (texte ou HTML, images distantes), l'accès au carnet d'adresses.
+
+**Cohérence.** Les fenêtres ne se parlent pas. Une action faite dans l'une (déplacement, lu, drapeau, tag) atteint les autres par les événements du noyau, comme une action du CLI, d'un agent MCP ou du téléphone (`evenements.md`) : chaque fenêtre recharge ce qu'elle affiche. Le mail sélectionné qu'une autre fenêtre a déplacé suit donc la même règle que s'il l'avait été par le téléphone. La connexion reçoit les événements une seule fois et les remet à chaque fenêtre.
+
+**Ouvrir une fenêtre.** Fichier > Nouvelle fenêtre (⌘N ; la touche `c` du thème geek reste celle du nouveau mail). La nouvelle fenêtre s'ouvre sur la vue et le dossier de la fenêtre au premier plan, avec la sélection d'une ouverture : le premier mail. Elle ne recopie ni la recherche, ni les marques, ni la réponse en cours. Les onglets de macOS sont acceptés : un onglet est une fenêtre.
+
+**Clavier et menus.** Les touches vont à la fenêtre clé seulement. Les commandes de menu qui portent sur ce qu'on voit (Recharger, Présentation) visent la fenêtre au premier plan. Celles qui portent sur toute l'app (Changer de boîte…, Arrêter le noyau, Agents IA, Thème, taille du texte) valent pour toutes les fenêtres : changer de boîte recharge chacune.
+
+**Liens vers un mail** (`nicemailer://m/<id>`, `docs/deep-links.md`) : ouverts dans la fenêtre au premier plan ; sans fenêtre, dans une nouvelle.
+
+**Rédaction.** Une réponse appartient à sa fenêtre : chaque fenêtre a son propre éditeur. Un brouillon ne s'ouvre que dans une fenêtre à la fois : le reprendre (`r`) depuis une autre amène au premier plan celle qui l'a ouvert. Le noyau protège de toute façon le brouillon par sa révision (`brouillons.md`, `update_draft`). Fermer une fenêtre dont la réponse est en cours la garde, comme Échap, et vaut fermeture de la fenêtre de rédaction : le brouillon part au serveur (`brouillons.md`).
+
+**Fermeture et relancement.** Fermer la dernière fenêtre quitte l'app, comme aujourd'hui. Au relancement, les fenêtres rouvrent à leur place, chacune sur sa vue et son dossier, avec la sélection d'une ouverture ; recherche, marques et menus ne sont pas restaurés.
+
+**Préférences d'affichage.** Le nombre de colonnes, la position de la barre de statut et la largeur de la liste sont propres à chaque fenêtre. La dernière modifiée sert de défaut à la fenêtre suivante.
+
+**Thèmes.** Ces règles valent pour tous les thèmes : le contexte est dans le modèle, pas dans les vues.
+
+**Vitesse.** Une fenêtre de plus ne coûte qu'une requête paginée par rechargement (`architecture.md`, « Pagination partout ») : ni seconde connexion, ni seconde copie des dossiers. Une fenêtre réduite dans le Dock ou cachée peut attendre d'être de nouveau visible pour recharger.
+
+**Tests.** Tests unitaires : deux fenêtres sur un même faux noyau (`FakeCore`), sélections et dossiers indépendants, un événement remis aux deux, `z` propre à chacune. Scénario d'interface : une deuxième fenêtre ouverte, chacune sur un dossier, une action dans la première visible dans la seconde, les touches de l'une sans effet sur l'autre, un brouillon refusé dans la seconde fenêtre.
+
+Questions ouvertes :
+- ⌘N pour une nouvelle fenêtre, ou pour un nouveau mail comme Mail (la touche `c` existe déjà dans le thème geek, pas dans le thème classique) ?
+- Le thème classique doit-il avoir le multi-fenêtre dès la première version, ou le thème geek d'abord ?
+- Faut-il, à terme, un panneau divisé dans une même fenêtre (deux listes côte à côte) ? Il reposerait sur le même contexte par liste.
+
 ### Liste
 
 - Chaque ligne : le point des non lus, la date, l'expéditeur, un trombone s'il y a des pièces jointes, le sujet et ses tags, (dans Everything) le dossier, le nombre de messages de la conversation, le drapeau.
