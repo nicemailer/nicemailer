@@ -477,6 +477,24 @@ struct GeekControllerTests {
         #expect(await eventually { core.calls("set_group_member").count == 1 })
         #expect(core.calls("set_group_member")[0]["group"] as? String == "Amis")
         #expect(core.calls("set_group_member")[0]["thread_id"] as? Int == 1)
+        // The groups are read again: the folder column and the Group…
+        // panel show the new group or member.
+        let before = core.calls("list_groups").count
+        #expect(await eventually { core.calls("list_groups").count > before })
+        #expect(model.flash == L("Added to %@: %@", "Amis", "sender1@example.org"))
+    }
+
+    @Test func aRefusedThreadIsNotReportedAsAlreadyInTheGroup() async {
+        // The core refuses a thread with nobody but the user (`groupes.md`,
+        // "Adresses de l'utilisateur"): no one was added, nor was anyone
+        // already there.
+        core.handler = { method, params in
+            guard method == "set_group_member" else { return Fixture.answer(method, params) }
+            return CoreClient.RPCError(code: -32004, message: "correspondant de la conversation 1")
+        }
+        press("g"); type("Amis"); press("ret")
+        #expect(await eventually { model.flash == L("Nobody to add to %@", "Amis") })
+        #expect(model.lastError != nil)
     }
 
     @Test func theLinkPickerListsTheLinksOfTheMail() {
@@ -1678,6 +1696,105 @@ struct GeekControllerTests {
         press("f"); type(L("robot")); press("ret")
         #expect(model.attributes.human == false)
         #expect(await eventually { (core.calls("list_threads").last?["filter"] as? [String: Any])?["human"] as? Bool == false })
+    }
+
+    // MARK: Groups
+
+    /// Group… (`ui.md`, "Sélecteur d'attributs"): the existing groups, most
+    /// relevant first; Return chooses one and the panel stays open for
+    /// another; `-` excludes; the core gets their ids.
+    @Test func theGroupPanelOffersTheGroupsAndTakesSeveral() async {
+        press("f"); type(L("Group…"))
+        #expect(controller.pickerEntries(.attributes).first?.label == L("Group…"))
+        press("ret")
+        #expect(controller.overlay == .picker(.attributeValue(.group)))
+        #expect(controller.pickerHint(.attributeValue(.group)) != nil)
+        #expect(await eventually { controller.pickerEntries(.attributeValue(.group)).count == 2 })
+        // VIP changed last, Famille receives the most mail: one each.
+        #expect(controller.pickerEntries(.attributeValue(.group)).map(\.label) == ["VIP", "Famille"])
+        #expect(controller.pickerEntries(.attributeValue(.group))[1].detail == L("%lld members", 3))
+        press("ret")
+        #expect(model.attributes.groups.map(\.name) == ["VIP"])
+        // Still open, the chosen group marked and under the cursor.
+        #expect(controller.overlay == .picker(.attributeValue(.group)))
+        #expect(controller.pickerEntries(.attributeValue(.group)).map(\.key) == ["•", " "])
+        #expect(controller.pickerIndex == 0)
+        // Typing narrows the rows; a second group is OR-ed.
+        type("fam")
+        #expect(controller.pickerEntries(.attributeValue(.group)).map(\.label) == ["Famille"])
+        press("ret")
+        #expect(model.attributes.groups.map(\.id) == [1, 2])
+        #expect(controller.pickerQuery.isEmpty)
+        #expect(await eventually {
+            (core.calls("list_threads").last?["filter"] as? [String: Any])?["group_ids"] as? [Int] == [1, 2]
+        })
+        // The current folder stays: the list is narrowed, not replaced.
+        #expect((core.calls("list_threads").last?["folder_ids"] as? [Int]) == [1])
+        // "-" turns the rows into exclusions; excluding VIP removes it from
+        // the wanted groups.
+        type("-vip")
+        #expect(controller.pickerEntries(.attributeValue(.group)).map(\.label) == [L("not %@", "VIP")])
+        press("ret")
+        #expect(model.attributes.groups.map(\.id) == [2] && model.attributes.notGroups.map(\.id) == [1])
+        #expect(model.attributes.chips.map(\.label) == [L("group: %@", "Famille"), L("not group: %@", "VIP")])
+        #expect(await eventually {
+            (core.calls("list_threads").last?["filter"] as? [String: Any])?["not_group_ids"] as? [Int] == [1]
+        })
+        // Return on a chosen group removes it.
+        let famille = controller.pickerEntries(.attributeValue(.group)).firstIndex { $0.keywords == ["Famille"] } ?? -1
+        controller.pickerIndex = famille
+        press("ret")
+        #expect(model.attributes.groups.isEmpty)
+        press("esc")
+        #expect(controller.overlay == .none)
+        // Chosen again in the selector, Group… is marked active.
+        press("f")
+        #expect(controller.pickerEntries(.attributes).first { $0.label == L("Group…") }?.key == "•")
+    }
+
+    @Test func theGroupPanelSaysWhenThereIsNoGroup() async {
+        core.handler = { method, params in
+            method == "list_groups" ? ["items": [], "as_of": Fixture.position] : Fixture.answer(method, params)
+        }
+        await model.loadGroups()
+        controller.openGroupPanel()
+        let rows = controller.pickerEntries(.attributeValue(.group))
+        #expect(rows.count == 1 && rows[0].disabled)
+        press("ret")
+        #expect(model.attributes.isEmpty)
+        #expect(controller.columnGroups.rows.isEmpty)
+    }
+
+    /// The folder column (`ui.md`, "Groupes dans la colonne des dossiers"):
+    /// a click narrows the current list, a second one removes the group,
+    /// ⌘-click excludes it, Escape clears it as any attribute.
+    @Test func aClickOnAGroupOfTheColumnNarrowsTheCurrentList() async {
+        #expect(await eventually { model.groups.count == 2 })
+        #expect(controller.columnGroups.rows.map(\.name) == ["VIP", "Famille"] && controller.columnGroups.hidden == 0)
+        let vip = model.groups[0], famille = model.groups[1]
+        #expect(!controller.isHighlighted(vip) && !controller.isHighlighted(famille))
+        controller.clickGroup(vip, .none)
+        // Highlighted like the current folder, which stays highlighted.
+        #expect(controller.isHighlighted(vip) && !controller.isHighlighted(famille))
+        controller.clickGroup(famille, .none)
+        #expect(model.attributes.groups.map(\.id) == [1, 2])
+        #expect(model.selectedFolderId == 1)
+        #expect(await eventually {
+            (core.calls("list_threads").last?["filter"] as? [String: Any])?["group_ids"] as? [Int] == [1, 2]
+        })
+        controller.clickGroup(vip, .none)
+        #expect(model.attributes.groups.map(\.id) == [2])
+        #expect(!controller.isHighlighted(vip))
+        controller.clickGroup(vip, .command)
+        #expect(model.attributes.notGroups.map(\.id) == [1])
+        // An excluded group filters the list too: highlighted as well.
+        #expect(controller.isHighlighted(vip))
+        // Another folder keeps them, as every attribute.
+        controller.goToFolder(3)
+        #expect(model.attributes.groupChoice(2) == true && model.attributes.groupChoice(1) == false)
+        press("esc")
+        #expect(model.attributes.isEmpty)
+        #expect(!controller.isHighlighted(vip) && !controller.isHighlighted(famille))
     }
 
     @Test func attributesWithAValueExpandThePanel() async {

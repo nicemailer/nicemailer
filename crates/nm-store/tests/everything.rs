@@ -25,7 +25,7 @@ fn store() -> (Store, Vec<i64>) {
     }
     for t in [threads[3], threads[300], threads[900]] {
         // A thread without a received mail has no sender to add: skip it.
-        let _ = store.set_group_member("Équipe", None, Some(t), false, nm_core::Source::App);
+        let _ = store.set_group_member("Équipe", None, Some(t), false, &[], nm_core::Source::App);
     }
     let folders = store.list_folders().unwrap().iter().map(|f| f.id).collect();
     (store, folders)

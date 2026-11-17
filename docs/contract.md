@@ -80,8 +80,8 @@ A dedicated command prints readable output, asks for confirmation when needed an
 | `set_address_screening` | Takes, changes or removes the screening decision on an address, and files the mails already received from it. | `nicemailer address <addr> <inbox\|newsletter\|paperwork\|banned\|none>`. Prints the undo token. |
 | `set_domain_screening` | The same for a domain and its subdomains, for the addresses that have no decision of their own. | `nicemailer domain <domain> <target>` |
 | `set_sender_kind` | Forces an address to be a person or a robot, or hands it back to the computed verdict (`senders.md`). | — |
-| `list_groups` | The contact groups. | — |
-| `set_group_member` | Adds or removes an address, or the sender of a thread, in a group. Creates the group if needed. | — |
+| `list_groups` | The contact groups, with their member count, latest change and mails received from their members. | — |
+| `set_group_member` | Adds or removes an address, or the person a thread is with, in a group. Creates the group if needed. Refuses the user's own addresses. | — |
 | `list_contacts` | The known addresses, with their decision and groups. | — |
 
 ## Import

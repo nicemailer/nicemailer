@@ -180,23 +180,35 @@ extension AppModel {
         }
     }
 
-    /// Adds the sender of each target thread to the group `name`.
+    /// Adds the person each target thread is with to the group `name`.
+    /// The core picks that person (the one the sender column names) and
+    /// never adds one of the user's addresses (`groupes.md`, "Adresses de
+    /// l'utilisateur"): a thread with nobody else is refused.
     func addSendersToGroup(_ name: String) {
         guard let client = core else { return }
         let targets = targetThreads
         guard !targets.isEmpty, !name.isEmpty else { return }
         Task {
             var added: [String] = []
+            var refused = false
             for t in targets {
                 do {
                     let r: GroupMemberResult = try await client.call(
                         "set_group_member", ["group": name, "thread_id": t.id])
                     if r.changed { added.append(r.addr) }
-                } catch { report(error) }
+                } catch {
+                    refused = true
+                    report(error)
+                }
             }
-            flash = added.isEmpty
-                ? L("Already in %@", name)
-                : L("Added to %@: %@", name, added.joined(separator: ", "))
+            // "Already in" only when every thread answered so: a refused
+            // thread added nobody, which it would misreport.
+            flash = !added.isEmpty
+                ? L("Added to %@: %@", name, added.joined(separator: ", "))
+                : refused ? L("Nobody to add to %@", name) : L("Already in %@", name)
+            // A new group, or a new member (its date and mail count
+            // change): the folder column and the Group… panel follow.
+            await loadGroups()
         }
     }
 

@@ -30,9 +30,15 @@ Layout choices (columns, status bar position, list width) are remembered.
 
 As in Zed, **⌘+** (or **⌘=**, which needs no Shift on AZERTY keyboards) makes the whole interface bigger, **⌘−** smaller, and **⌘0** brings it back to the default size, one point at a time between 9 and 24 points (default 12). The same commands are in the View menu. Everything follows a single base size: fonts, row heights, column widths, menus, pickers and the HTML view. The size is remembered.
 
+## Groups in the folder column
+
+In the three-column layout (`v3`), the contact groups are listed under the folders, after a "Groups" title (`GeekColumnGroups`). A click on a group narrows the **current list** (the folder, the unified folder, Everything, a tag's list…) to the mails of its members: it adds the group to the Group… attribute, with its chip in the status bar; a second click removes it. Several groups are OR-ed. ⌘-click excludes the group instead ("not group: …"). A group that filters the list is marked `•` (excluded: `−`, struck through) in the accent colour; the others show `@`. Its row also has the grey background of the current folder (`GeekController.isHighlighted`), whether it was chosen by a click or in the Group… panel of `f`, wanted or excluded: the folder and the active groups together say what the list shows. Like every attribute, the groups stay when the folder changes, and Escape removes them. No group, no block.
+
+The column shows eight groups at most (`GroupRanking.columnLimit`). With more, it keeps the most relevant ones and ends with "N more…", which opens the Group… panel listing them all (the "Groups" title opens it too). Relevance takes two signals from `list_groups`: the latest change of the group or of its members (`date_modified`), and the mails received from its members (`mail_count`). The two rankings are interleaved: the most recent group, then the biggest one not taken yet, then the next most recent, and so on, ties kept in display order. A score mixing a date and a count would need weights with no natural value; the interleaving needs none, and a new group shows at once while a big old one stays. The groups filtering the list are always shown, even past the limit. The rows keep the display order (the order the groups were made in), so a group never jumps to another row, only in or out. The groups are read again with the folders (at each change the core announces) and after `g`; the core has no group event yet.
+
 ## Attributes (filters)
 
-The magnifier after the folder in the status bar (key **F**, or a click) opens the attribute selector. Attributes narrow the current list (folder of an account, or of "all", or the mails of a tag, a group or a contact, whose status bar then shows the magnifier and the chips after "tag: …"), combined with AND; a thread qualifies when its mails in the listed folders match (in Everything, every folder: a thread shown in Sent because your reply is its latest mail is still seen with the mail it answers).
+The magnifier after the folder in the status bar (key **f**, or a click) opens the attribute selector. Attributes narrow the current list (folder of an account, or of "all", or the mails of a tag, a group or a contact, whose status bar then shows the magnifier and the chips after "tag: …"), combined with AND; a thread qualifies when its mails in the listed folders match (in Everything, every folder: a thread shown in Sent because your reply is its latest mail is still seen with the mail it answers).
 
 | Attribute | Values (English / French rows) | Typed to reach it (English / French) |
 | --- | --- | --- |
@@ -44,6 +50,7 @@ The magnifier after the folder in the status bar (key **F**, or a click) opens t
 | origin ([senders.md](senders.md)) | human / robot — humain / robot: a mail of the conversation, in any folder, was written by a person, or none was. Listed last so the letters above stay | `h` `ro`, hidden words `person`, `machine` — `h` `ro`, `personne`, `automate` |
 | From… — De… | part of a name or address, or a domain written `@acme.fr`; contacts suggested as you type; several values OR-ed; `-value` excludes. The name is the contact's, not the display name of each mail | `fr`, `sender` — `de`, `exp` |
 | To… — À… | same, on To and Cc | `to`, `cc` — `a`, `cc`, `dest` |
+| Group… — Groupe… | the contact groups (see "Groups in the folder column" below): a mail of the conversation in the listed folders is from a member of the group or to one (To, Cc). The panel lists every group, those chosen first (`•` wanted, `−` excluded), then the most relevant ones (`GroupRanking`), each with its number of members; typing narrows them by name. Return chooses a group, or removes it, and the panel **stays open** for another one: several groups are OR-ed. `-name` turns the rows into exclusions ("not VIP"); a group is wanted or excluded, never both. Escape closes the panel. Chips: "group: VIP", "not group: VIP". Without any group, the panel says that `g` makes one | `g`, `members`, `team` — `g`, `membres`, `équipe` |
 | Text… — Texte… | words of the subject and body, never the addresses; each word a prefix, accents ignored; `-word` excludes | `te` — `te` |
 | Subject… — Sujet… | words of the subject only; `-word` excludes | `su`, `title` — `su`, `objet` |
 | Conversation date… — Date conversation… | the date of the conversation, that of its latest mail (as shown in the list): today, last 7 days, last 30 days, this year, older than a year, or "after" / "before" a typed date, or newer / older than a typed duration (see "Typed dates" below); the two bounds add up to an interval. The frequent one: it costs nothing | `cd` — `da`, `dc`, `quand` |
@@ -186,7 +193,7 @@ Actions apply to the **marked** mails if any (`J` / `K`), otherwise to the mail 
 | `m` + letter | move to a folder (`mt` Todo, `md` Deleted…); only allowed targets are offered. In Quarantine, the letter alone (`i n p x b d`), see "Quarantine" |
 | Delete | move to Deleted |
 | `t` | tag picker: choose a tag, or type a new name; the same tag again removes it |
-| `g` | group picker: adds the sender to a group (new name: the group is created) |
+| `g` | group picker: adds the person the conversation is with (the one the sender column names, never you) to a group (new name: the group is created) |
 | `T` | show everything in the thread (folded mails, quotes, signatures) or go back to the simplified view |
 | `S` | skip to the text after the next quoted block |
 | `ctrl-k` / `ctrl-j` | previous / next message of the conversation: the current one folds, the other unfolds and is scrolled to (`thread-display.md`) |
@@ -248,6 +255,7 @@ The keyboard comes first, but every list can also be used with the mouse:
 | --- | --- | --- |
 | Mail list | select the mail, unmark the others | ⌘-click marks or unmarks a mail (the current one joins the selection); ⇧-click marks every mail from the current one to the clicked one; with one column (`v1`), a double-click reads the mail in the whole window |
 | Folders (3 columns) | go to the folder | |
+| Groups (3 columns, under the folders) | narrow the current list to the group's members, or no longer | ⌘-click excludes the group; "Groups" and "N more…" open the Group… panel |
 | Account or folder in the status bar | open the account or folder picker | |
 | Pickers and menus | choose the row | a click outside closes them |
 | Contacts, tags, groups | select the row | double-click lists its mails |

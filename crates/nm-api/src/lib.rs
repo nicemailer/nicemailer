@@ -91,7 +91,8 @@ pub mod method {
     pub const TAG_THREAD: &str = "tag_thread";
     /// Contact groups (`groupes.md`).
     pub const LIST_GROUPS: &str = "list_groups";
-    /// Adds (or removes) an address, or the sender of a thread, to a group.
+    /// Adds (or removes) an address, or the person a thread is with, to a
+    /// group. The user's own addresses are refused (`groupes.md`).
     pub const SET_GROUP_MEMBER: &str = "set_group_member";
     /// Known addresses, with their decision and groups.
     pub const LIST_CONTACTS: &str = "list_contacts";
@@ -677,6 +678,18 @@ pub struct ThreadFilter {
     /// in the listed folders is from one of them or to them (To, Cc).
     #[serde(default)]
     pub group_id: Option<i64>,
+    /// Of the members of one of these groups, OR-ed: the Group… attribute
+    /// of the selector (`ui.md`, "Sélecteur d'attributs"), and the groups
+    /// clicked in the folder column. Each group is read like `group_id`;
+    /// `group_id` (a group's own list) and these combine by "and": the
+    /// list of VIP narrowed to the members of Family. Empty: no criterion.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub group_ids: Vec<i64>,
+    /// Of the members of none of these groups: a thread is left out as soon
+    /// as one of its messages in the listed folders is from a member or to
+    /// one (To, Cc), the rule of `not_from` (`ui.md`, "Négation").
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub not_group_ids: Vec<i64>,
     /// Of this contact (an `address` id): a message of the thread in the
     /// listed folders is from it or to it (To, Cc).
     #[serde(default)]
@@ -1924,6 +1937,16 @@ pub struct GroupView {
     pub name: String,
     pub color: Option<String>,
     pub member_count: i64,
+    /// Latest change of the group (Unix time): its own row (name, color,
+    /// position) or one of its memberships (added, removed). With
+    /// `mail_count`, how a client picks the groups worth showing when it
+    /// has room for a few only (`groupes.md`, section 6).
+    pub date_modified: i64,
+    /// Mails received from the members, all accounts (the sum of their
+    /// `address.sender_count`, automatic replies left out). A counter kept
+    /// by ingestion: reading it costs one row per member, never a count of
+    /// the mails.
+    pub mail_count: i64,
 }
 
 /// Parameters of `set_group_member`. Give either `addr` or `thread_id`
@@ -1935,6 +1958,8 @@ pub struct SetGroupMemberParams {
     pub group: String,
     #[serde(default)]
     pub addr: Option<String>,
+    /// The thread whose correspondent is added: its latest author who is
+    /// not the user, else the first recipient of the user's latest mail.
     #[serde(default)]
     pub thread_id: Option<i64>,
     /// Remove the address from the group instead of adding it.

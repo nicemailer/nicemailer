@@ -1540,9 +1540,13 @@ async fn call(core: &Arc<Core>, source: Source, req: Request) -> Result<Value, R
         }
         method::SET_GROUP_MEMBER => {
             let p: SetGroupMemberParams = params(req.params)?;
-            let (group_id, addr, changed) =
-                with_store(core, move |s| s.set_group_member(&p.group, p.addr.as_deref(), p.thread_id, p.remove, source))
-                    .await?;
+            // The addresses of `accounts.toml`: none can join a group
+            // (`groupes.md`, "Adresses de l'utilisateur").
+            let own = drafts::declared_addresses(core);
+            let (group_id, addr, changed) = with_store(core, move |s| {
+                s.set_group_member(&p.group, p.addr.as_deref(), p.thread_id, p.remove, &own, source)
+            })
+            .await?;
             to_value(GroupMemberResult { group_id, addr, changed })
         }
         method::LIST_CONTACTS => {

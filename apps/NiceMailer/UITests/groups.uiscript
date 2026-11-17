@@ -1,0 +1,127 @@
+# Contact groups as a filter (ui.md, "Groupes dans la colonne des
+# dossiers"): Group… in the attribute selector (f), and the groups listed
+# under the folders of the three-column layout.
+key v
+key 3
+expect columns = 3
+expect folder = Inbox
+# No group yet: no block under the folders, and Group… says how to make one.
+expect column_groups =
+key f
+type Group
+key ret
+expect overlay = picker(NiceMailer.GeekController.PickerKind.attributeValue(NiceMailer.AttributeField.group))
+expect picker_first ~ No group yet
+key ret
+expect filters =
+# Two groups, from the senders of the first two mails (g).
+key g
+type VIP
+key ret
+expect flash ~ VIP
+key j
+key g
+type Famille
+key ret
+expect flash ~ Famille
+# Listed under the folders, in display order (the order they were made in),
+# as soon as made.
+expect column_groups = VIP, Famille
+expect column_groups_hidden = 0
+expect column_groups_highlighted =
+snap column-groups
+# A click narrows the current list to the mails of the group's members:
+# the folder stays, the chip says it.
+click group:VIP
+expect filters = group: VIP
+expect folder = Inbox
+expect thread_count > 0
+# Highlighted with the grey row of the current folder.
+expect column_groups_highlighted = VIP
+snap column-group-filter
+# A second group is OR-ed; a second click removes a group.
+click group:Famille
+expect filters = group: VIP, group: Famille
+click group:VIP
+expect filters = group: Famille
+expect column_groups_highlighted = Famille
+# ⌘-click excludes a group, highlighted too.
+click group:VIP cmd
+expect filters = group: Famille, not group: VIP
+expect column_groups_highlighted = VIP, Famille
+# Kept in another folder, as every attribute; Escape removes them.
+click folder:Archive
+expect folder = Archive
+expect filters = group: Famille, not group: VIP
+click folder:Inbox
+key esc
+expect filters =
+expect column_groups_highlighted =
+# The Group… panel of f: every group, Return chooses one and the panel stays
+# open for another; "-" turns the rows into exclusions.
+key f
+type Group
+key ret
+expect picker_count = 2
+snap group-panel
+key ret
+expect overlay = picker(NiceMailer.GeekController.PickerKind.attributeValue(NiceMailer.AttributeField.group))
+expect filters ~ group:
+key down
+key ret
+expect filters ~ Famille
+expect filters ~ VIP
+snap group-panel-two
+type -vip
+expect picker_first = not VIP
+key ret
+expect filters = group: Famille, not group: VIP
+key esc
+expect overlay = none
+expect thread_count > 0
+# Chosen in the panel: highlighted in the column as after a click.
+expect column_groups_highlighted = VIP, Famille
+snap column-groups-highlighted
+key esc
+expect filters =
+# The title of the block opens the same panel.
+click groups:title
+expect overlay = picker(NiceMailer.GeekController.PickerKind.attributeValue(NiceMailer.AttributeField.group))
+key esc
+# More groups than room (eight): the most relevant ones, and "N more…",
+# which opens the panel listing them all.
+key j
+key g
+type G3
+key ret
+key j
+key g
+type G4
+key ret
+key j
+key g
+type G5
+key ret
+key j
+key g
+type G6
+key ret
+key j
+key g
+type G7
+key ret
+key j
+key g
+type G8
+key ret
+key j
+key g
+type G9
+key ret
+expect groups_count = 9
+expect column_groups_hidden = 1
+snap column-groups-more
+click groups:more
+expect overlay = picker(NiceMailer.GeekController.PickerKind.attributeValue(NiceMailer.AttributeField.group))
+expect picker_count = 9
+key esc

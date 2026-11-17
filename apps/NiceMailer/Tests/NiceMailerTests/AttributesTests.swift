@@ -15,6 +15,36 @@ struct AttributesTests {
         #expect(f.seen == nil && f.isEmpty)
     }
 
+    /// Group… (`ui.md`, "Sélecteur d'attributs"): several groups, sent by
+    /// id; a group is wanted or excluded, never both; its chip names it and
+    /// removes it by its id.
+    @Test func groupsAreChosenByTheirIdAndExcludedLikeFrom() {
+        let vip = ThreadFilter.GroupRef(id: 1, name: "VIP")
+        let team = ThreadFilter.GroupRef(id: 7, name: "Équipe")
+        var f = ThreadFilter()
+        f.toggleGroup(vip)
+        f.toggleGroup(team)
+        #expect(f.parameters["group_ids"] as? [Int] == [1, 7])
+        #expect(f.parameters["not_group_ids"] == nil)
+        #expect(f.isActive(.group) && f.groupChoice(1) == true && f.groupChoice(3) == nil)
+        #expect(f.chips.map(\.label) == [L("group: %@", "VIP"), L("group: %@", "Équipe")])
+        // Excluded: leaves the wanted ones.
+        f.toggleGroup(vip, excluded: true)
+        #expect(f.parameters["group_ids"] as? [Int] == [7])
+        #expect(f.parameters["not_group_ids"] as? [Int] == [1])
+        #expect(f.groupChoice(1) == false)
+        #expect(f.chips.map(\.id) == ["group:7", "not_group:1"])
+        // Chosen again on the same side: removed.
+        f.toggleGroup(vip, excluded: true)
+        #expect(f.notGroups.isEmpty)
+        // A chip removes its own group.
+        f.remove("group:7")
+        #expect(f.isEmpty && !f.isActive(.group))
+        // Typed values do not reach groups (`add` is for From… and the words).
+        f.add(.group, "VIP")
+        #expect(f.isEmpty && f.words(of: .group) == nil)
+    }
+
     /// Human / robot (`expediteurs.md`, section 8): one yes / no attribute,
     /// sent to the core as `human`, the opposite replacing the other.
     @Test func humanAndRobotAreOneAttribute() {

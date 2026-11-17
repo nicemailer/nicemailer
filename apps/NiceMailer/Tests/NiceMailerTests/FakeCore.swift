@@ -73,6 +73,13 @@ enum Fixture {
         ]
     }
 
+    /// Two contact groups, in the core's display order: VIP, changed last,
+    /// and Famille, which receives the most mail (`GroupRanking`).
+    static let groups: [[String: Any]] = [
+        ["id": 1, "name": "VIP", "color": NSNull(), "member_count": 2, "date_modified": 200, "mail_count": 5],
+        ["id": 2, "name": "Famille", "color": NSNull(), "member_count": 3, "date_modified": 100, "mail_count": 50],
+    ]
+
     static let folders: [[String: Any]] = [
         folder(1, "inbox", "Inbox", "I", targets: ["todo", "waiting", "archive", "deleted", "junk"]),
         folder(2, "todo", "Todo", "T", targets: ["inbox", "archive", "deleted"]),
@@ -243,8 +250,10 @@ enum Fixture {
             return ["items": items, "next_cursor": NSNull(), "as_of": position]
         case "list_history":
             return ["items": [], "next_cursor": NSNull(), "as_of": position]
-        case "list_tags", "list_groups":
+        case "list_tags":
             return ["items": [], "as_of": position]
+        case "list_groups":
+            return ["items": groups, "as_of": position]
         case "move_thread":
             // A move from the Inbox decides nothing; one to Newsletter
             // decides on the sender and files two other mails.

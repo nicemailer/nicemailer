@@ -1,6 +1,6 @@
 # NiceMailer : groupes de contacts
 
-Statut : modèle de données validé. Implémenté dans le noyau : `list_groups`, `set_group_member` (ajout et retrait, création du groupe), groupes d'un contact (`list_contacts`) et conversations des membres (critère `group_id` de `list_threads`). Pas encore : renommage, couleur, ordre, suppression d'un groupe, synchronisation. Complète `modele de donnees.md` et `schema.sql`.
+Statut : modèle de données validé. Implémenté dans le noyau : `list_groups`, `set_group_member` (ajout et retrait, création du groupe), groupes d'un contact (`list_contacts`) et conversations des membres (critères `group_id`, `group_ids` et `not_group_ids` de `list_threads`) ; dans l'app, attribut Groupe… et groupes de la colonne des dossiers (`ui.md`). Pas encore : renommage, couleur, ordre, suppression d'un groupe, synchronisation. Complète `modele de donnees.md` et `schema.sql`.
 
 ## 1. Objet
 
@@ -46,6 +46,7 @@ Index : la clé primaire sert à lister les membres d'un groupe ; `idx_contact_g
 
 - **Supprimer un groupe** pose `date_deleted` ; ses lignes de membres restent (elles ne sont plus lues). Le recréer sous le même nom réutilise la ligne supprimée et ses membres sont retirés (`date_removed`) : un groupe recréé part vide, l'utilisateur n'attend pas le retour des anciens membres.
 - **Retirer une adresse** pose `date_removed` ; la remettre efface `date_removed`.
+- **Adresses de l'utilisateur** (ajouté en novembre 2026) : aucune des adresses de l'utilisateur (celles de `accounts.toml`, comptes et identités, et celles des comptes d'archives) ne peut être membre d'un groupe. Un groupe réunit des gens avec qui l'utilisateur échange ; l'y mettre rendait le filtre du groupe vrai pour presque toute la boîte (chaque mail qu'il envoie ou reçoit le nomme). `set_group_member` refuse de l'ajouter, et chaque lecture de `accounts.toml` (au démarrage du noyau, puis à chaque modification) retire des groupes celles qui y sont, comme un retrait ordinaire (pierre tombale, historique) : une adresse ajoutée à un groupe avant d'être déclarée, ou avant la règle, en sort.
 - **Supprimer une adresse** de la base (cas rare, aucune commande ne le fait aujourd'hui) supprime ses appartenances (`ON DELETE CASCADE`).
 - Les pierres tombales ne sont jamais purgées, comme celles des tags et des décisions : sans elles, un élément supprimé reviendrait depuis un autre Mac.
 
@@ -87,9 +88,11 @@ Format, dans le document `nicemailer-config.json` :
 
 Implémenté :
 
-- `list_groups` : groupes non supprimés, dans l'ordre d'affichage, avec le nombre de membres ;
-- `set_group_member {group, addr | thread_id, remove}` : ajoute (ou retire) une adresse, ou l'expéditeur d'une conversation (auteur de son dernier mail hors Sent et Drafts), au groupe nommé, créé au besoin. Ajouter un membre déjà présent ne change rien (`changed: false`) ;
+- `list_groups` : groupes non supprimés, dans l'ordre d'affichage, avec le nombre de membres, la date de dernière modification (`date_modified` : le groupe ou une de ses appartenances, retraits compris) et le nombre de mails reçus des membres actifs (`mail_count`, somme de leurs `address.sender_count`). Ces deux derniers servent à un client qui n'a de place que pour quelques groupes (`ui.md`, « Groupes dans la colonne des dossiers ») ; leur coût suit le nombre de membres, jamais le nombre de mails ;
+- `set_group_member {group, addr | thread_id, remove}` : ajoute (ou retire) une adresse, ou la personne avec qui est une conversation, au groupe nommé, créé au besoin. Ajouter un membre déjà présent ne change rien (`changed: false`) ;
+  La personne d'une conversation est celle que nomme la colonne De de la liste (`ui.md`, « Liste ») : le dernier auteur qui n'est pas l'utilisateur, sinon, quand l'utilisateur a écrit seul, le premier destinataire de son dernier mail (À avant Cc) qui n'est pas lui ; les brouillons ne comptent pas. Avant, c'était l'auteur du dernier mail hors Sent et Drafts : la réponse de l'utilisateur rangée avec la conversation (Archive, Waiting…) le désignait lui-même. Une adresse de l'utilisateur est refusée (« Adresses de l'utilisateur »).
 - `list_threads {everything: {}, filter: {group_id}}` : conversations dont un mail vient d'un membre ou lui est adressé (To, Cc), tous dossiers, les plus récentes d'abord (sur la date affichée), paginées, combinables avec les autres attributs (« non lus du groupe »).
+- `filter: {group_ids: [...], not_group_ids: [...]}` de `list_threads`, dans toute liste (un dossier compris) : les conversations des membres d'un des groupes (« ou »), et aucune d'un membre des groupes exclus (règle de `not_from`, `ui.md`, « Négation »). `group_id` et `group_ids` se combinent par « et ».
 
 Envisagé : `create_group` (nom, couleur ; refuse un nom pris), `update_group` (nom, couleur, position), `delete_group`, `list_group_members`, plusieurs adresses par `set_group_member` en une transaction, et un événement `GroupChanged {group_id}`. Le serveur MCP en a besoin, sauf `delete_group`, qu'il n'ouvre pas à l'agent (`mcp.md`, section 5, « Groupes »).
 
@@ -100,12 +103,13 @@ Envisagé : `create_group` (nom, couleur ; refuse un nom pris), `update_group` (
 - Une adresse dans plusieurs groupes ; une adresse ajoutée deux fois au même groupe n'y figure qu'une fois.
 - Deux groupes actifs de même nom, à la casse près : refusé. Nom d'un groupe supprimé : réutilisable, la ligne est reprise et le groupe repart vide.
 - Retrait puis remise d'un membre : une seule ligne, `date_removed` effacé.
+- Ajout par conversation : la personne avec qui elle est, jamais l'utilisateur, même quand sa réponse est rangée dans Archive ; une adresse de l'utilisateur, donnée ou trouvée, refusée ; celles déjà dans un groupe retirées à la lecture de `accounts.toml`.
 - Synchronisation : suppression d'un groupe et retrait d'un membre propagés par les pierres tombales ; fusion indépendante de l'ordre ; groupe de même nom reçu d'un autre Mac renommé « (2) ».
 - Confidentialité : une appartenance d'une adresse jamais vue dans la boîte n'est pas écrite ; un groupe sans appartenance écrite non plus.
 
 ## 8. Questions ouvertes
 
-1. **Usages** : vue « VIP » dans la barre latérale (conversations des membres, tous dossiers confondus), badge dans la liste, notifications réservées à certains groupes, filtre de recherche (`group:vip`).
+1. **Usages** : badge dans la liste, notifications réservées à certains groupes. Faits (novembre 2026) : groupes dans la colonne des dossiers, qui filtrent la vue courante, et attribut Groupe… du sélecteur `f` (`ui.md`).
 2. **Effet sur le screening** : un membre d'un groupe devrait-il recevoir automatiquement la décision `inbox` ? Pour l'instant non (section 2).
 3. **Personnes** : regrouper plusieurs adresses d'une même personne (fiche contact) changerait le membre d'un groupe, de l'adresse à la personne.
 4. **Domaines** : permettre « tout `@monentreprise.fr` dans Équipe ».

@@ -1,7 +1,7 @@
 import Foundation
 
 /// Attributes narrowing the mail list (`ui.md`, attribute selector, key
-/// `F`): the app's mirror of the core's `ThreadFilter`. The core does the
+/// `f`): the app's mirror of the core's `ThreadFilter`. The core does the
 /// filtering; this holds the user's choices, turns them into request
 /// parameters and into the chips of the status bar.
 ///
@@ -25,6 +25,13 @@ struct ThreadFilter: Equatable {
     var to: [String] = []
     /// To or Cc none of these.
     var notTo: [String] = []
+    /// Of the members of one of these groups (OR-ed): Group… of the
+    /// selector, or a group clicked in the folder column (`ui.md`,
+    /// "Groupes dans la colonne des dossiers"). A group is kept with its
+    /// name, which its chip shows, and sent by its id.
+    var groups: [GroupRef] = []
+    /// Of the members of none of these groups (`ui.md`, "Négation").
+    var notGroups: [GroupRef] = []
     /// Words anywhere, addresses included: the `/` search, the widest one.
     var contains: String?
     /// Words of the subject or body (Text…); `-word` excludes a word.
@@ -49,6 +56,37 @@ struct ThreadFilter: Equatable {
     var mailBeforeLabel: String?
 
     var isEmpty: Bool { self == ThreadFilter() }
+
+    /// A group chosen as an attribute: its id for the core, its name for the
+    /// chip (the group list may not be loaded when the chip is drawn).
+    struct GroupRef: Equatable, Hashable {
+        let id: Int
+        let name: String
+    }
+
+    /// Adds `group` to the wanted groups (`excluded`: to the excluded ones),
+    /// or removes it when it is already there: a group is chosen and
+    /// unchosen by the same row, as a yes / no attribute. A group is wanted
+    /// or excluded, never both: the last choice wins, as for From… and To….
+    mutating func toggleGroup(_ group: GroupRef, excluded: Bool = false) {
+        func flip(_ wanted: inout [GroupRef], _ other: inout [GroupRef]) {
+            other.removeAll { $0.id == group.id }
+            if let i = wanted.firstIndex(where: { $0.id == group.id }) {
+                wanted.remove(at: i)
+            } else {
+                wanted.append(group)
+            }
+        }
+        if excluded { flip(&notGroups, &groups) } else { flip(&groups, &notGroups) }
+    }
+
+    /// Whether the group with this id is wanted (`true`), excluded
+    /// (`false`) or not an attribute (`nil`).
+    func groupChoice(_ id: Int) -> Bool? {
+        if groups.contains(where: { $0.id == id }) { return true }
+        if notGroups.contains(where: { $0.id == id }) { return false }
+        return nil
+    }
 
     /// The yes / no attributes. `human` comes last so that the letters
     /// reaching the others do not change (`r` stays "répondus" in French).
@@ -123,6 +161,8 @@ struct ThreadFilter: Equatable {
         if !notFrom.isEmpty { p["not_from"] = notFrom }
         if !to.isEmpty { p["to"] = to }
         if !notTo.isEmpty { p["not_to"] = notTo }
+        if !groups.isEmpty { p["group_ids"] = groups.map(\.id) }
+        if !notGroups.isEmpty { p["not_group_ids"] = notGroups.map(\.id) }
         if let contains, !contains.isEmpty { p["contains"] = contains }
         if let text, !text.isEmpty { p["text"] = text }
         if let subject, !subject.isEmpty { p["subject"] = subject }
@@ -148,6 +188,9 @@ struct ThreadFilter: Equatable {
         for (i, v) in notFrom.enumerated() { out.append(Chip(id: "not_from:\(i)", label: L("not from: %@", v))) }
         for (i, v) in to.enumerated() { out.append(Chip(id: "to:\(i)", label: L("to: %@", v))) }
         for (i, v) in notTo.enumerated() { out.append(Chip(id: "not_to:\(i)", label: L("not to: %@", v))) }
+        // By the group's id: a rename cannot make a chip remove another one.
+        for g in groups { out.append(Chip(id: "group:\(g.id)", label: L("group: %@", g.name))) }
+        for g in notGroups { out.append(Chip(id: "not_group:\(g.id)", label: L("not group: %@", g.name))) }
         // Excluded words keep their dash: "text: renouvellement -facture".
         if let text { out.append(Chip(id: "text", label: L("text: %@", text))) }
         if let subject { out.append(Chip(id: "subject", label: L("subject: %@", subject))) }
@@ -173,6 +216,8 @@ struct ThreadFilter: Equatable {
         case "not_from": if let i = parts.last.flatMap(Int.init), notFrom.indices.contains(i) { notFrom.remove(at: i) }
         case "to": if let i = parts.last.flatMap(Int.init), to.indices.contains(i) { to.remove(at: i) }
         case "not_to": if let i = parts.last.flatMap(Int.init), notTo.indices.contains(i) { notTo.remove(at: i) }
+        case "group": if let id = parts.last.flatMap(Int.init) { groups.removeAll { $0.id == id } }
+        case "not_group": if let id = parts.last.flatMap(Int.init) { notGroups.removeAll { $0.id == id } }
         case "contains": contains = nil
         case "text": text = nil
         case "subject": subject = nil
@@ -229,7 +274,8 @@ struct ThreadFilter: Equatable {
         case .to: if out { put(v, into: &notTo, &to) } else { put(v, into: &to, &notTo) }
         case .text: text = words()
         case .subject: subject = words()
-        case .date, .mailDate: break
+        // Groups are chosen from a list, by `toggleGroup`, not typed.
+        case .group, .date, .mailDate: break
         }
     }
 
@@ -262,7 +308,7 @@ struct ThreadFilter: Equatable {
         switch field {
         case .text: text
         case .subject: subject
-        case .from, .to, .date, .mailDate: nil
+        case .from, .to, .group, .date, .mailDate: nil
         }
     }
 
@@ -271,7 +317,7 @@ struct ThreadFilter: Equatable {
         switch field {
         case .text: text = nil
         case .subject: subject = nil
-        case .from, .to, .date, .mailDate: break
+        case .from, .to, .group, .date, .mailDate: break
         }
     }
 
@@ -280,6 +326,7 @@ struct ThreadFilter: Equatable {
         switch field {
         case .from: !from.isEmpty || !notFrom.isEmpty
         case .to: !to.isEmpty || !notTo.isEmpty
+        case .group: !groups.isEmpty || !notGroups.isEmpty
         case .text: text != nil
         case .subject: subject != nil
         case .date: after != nil || before != nil
@@ -291,15 +338,17 @@ struct ThreadFilter: Equatable {
 /// The attributes whose value is chosen in the expanded panel ("…").
 /// `date` is Conversation date…, the frequent one, listed first so that
 /// `da` reaches it; `mailDate` is Mail date… (`ui.md`, "Deux critères de
-/// date").
+/// date"). `group` (Group…) follows To…: the three attributes about people
+/// come together.
 enum AttributeField: String, CaseIterable {
-    case from, to, text, subject, date, mailDate
+    case from, to, group, text, subject, date, mailDate
 
     /// Name in the selector, with "…" since a value follows.
     var title: String {
         switch self {
         case .from: L("From…")
         case .to: L("To…")
+        case .group: L("Group…")
         case .text: L("Text…")
         case .subject: L("Subject…")
         case .date: L("Conversation date…")
@@ -316,6 +365,7 @@ enum AttributeField: String, CaseIterable {
         let words: String = switch self {
         case .from: L("sender")
         case .to: L("recipient cc")
+        case .group: L("members contacts vip team family")
         case .text: L("text words body")
         case .subject: L("title")
         case .date: L("when day period")

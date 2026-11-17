@@ -233,7 +233,9 @@ final class GeekController {
     var history: [HistoryEntry] = []
     var historyCursor: String?
     var tags: [TagView] = []
-    var groups: [GroupView] = []
+    /// The contact groups, kept by the model: the folder column, the Group…
+    /// panel, the `g` picker and the groups screen show the same list.
+    var groups: [GroupView] { model.groups }
     /// Row under the cursor on the current screen.
     var screenIndex = 0
 
@@ -1450,6 +1452,7 @@ final class GeekController {
         case .attributeValue(.date), .attributeValue(.mailDate): L("or type a date (2026-10-01, 1/10/2026, 011026, 261001) or a duration (10d, 3w, 6m, 1y)")
         case .attributeValue(.text): L("words of the subject or body; -word to exclude")
         case .attributeValue(.subject): L("words of the subject; -word to exclude")
+        case .attributeValue(.group): L("↩ chooses or removes a group, several allowed; -name to exclude; esc closes")
         case .attributeValue: L("a name, an address or @domain; -value to exclude")
         case .search: L("words: subject, sender, recipients or body")
         case .ai: L("type to filter, or a prompt's letters · ↩ runs the first row")
@@ -1598,6 +1601,9 @@ final class GeekController {
                 self?.pickerIndex = 0
                 self?.valueSuggestions = []
                 self?.overlay = .picker(.attributeValue(field))
+                // The groups may have changed elsewhere (the CLI, the MCP
+                // agent): the panel shows them as loaded, then as read.
+                if field == .group { Task { await self?.loadGroups() } }
             })
         }
         if !a.isEmpty {
@@ -1626,6 +1632,8 @@ final class GeekController {
             return excluded ? [exclude] : [add, exclude]
         }
         switch field {
+        case .group:
+            return groupEntries()
         case .from, .to:
             var entries: [Entry] = []
             if !value.isEmpty { entries += rows(value, value, detail: detail) }
@@ -1666,6 +1674,88 @@ final class GeekController {
                              detailStyle: empty ? .count : .info) { [model] in model.attributes.setDate(p, on: field) }
             }
         }
+    }
+
+    /// Rows of the Group… panel (`ui.md`, "Sélecteur d'attributs"): every
+    /// group, those already chosen first ("•" wanted, "−" excluded), then
+    /// the others, most relevant first (`GroupRanking.ranked`), each with
+    /// its number of members. Typing narrows them by name; a leading `-`
+    /// turns the rows into exclusions ("not VIP"), as in From….
+    ///
+    /// Return chooses the group, or unchooses it, and the panel **stays
+    /// open** (`chooseGroup`): one filters on one group or several, and the
+    /// list behind it follows each choice. Escape closes it.
+    private func groupEntries() -> [Entry] {
+        let (value, excluded) = ThreadFilter.parse(pickerQuery)
+        guard !groups.isEmpty else {
+            return [Entry(key: " ", label: L("No group yet: g adds the sender of a mail to one"), disabled: true) {}]
+        }
+        let a = model.attributes
+        let ranked = GroupRanking.ranked(groups)
+        let ordered = ranked.filter { a.groupChoice($0.id) != nil } + ranked.filter { a.groupChoice($0.id) == nil }
+        let entries = ordered.map { g in
+            let ref = ThreadFilter.GroupRef(id: g.id, name: g.name)
+            let key = switch a.groupChoice(g.id) {
+            case true?: "•"
+            case false?: "−"
+            case nil: " "
+            }
+            return Entry(key: key, label: excluded ? L("not %@", g.name) : g.name,
+                         detail: g.memberCount == 1 ? L("1 member") : L("%lld members", g.memberCount), detailStyle: .info,
+                         keywords: [g.name]) { [weak self] in self?.chooseGroup(ref, excluded: excluded) }
+        }
+        return PickerMatch.filter(entries, query: value, label: \.label, keywords: \.keywords)
+    }
+
+    /// A row of the Group… panel chosen: the group is added to the
+    /// attributes, or removed, and the panel opens again, its text cleared
+    /// and the cursor on that group, ready for the next one.
+    private func chooseGroup(_ group: ThreadFilter.GroupRef, excluded: Bool) {
+        model.attributes.toggleGroup(group, excluded: excluded)
+        pickerLine = LineEdit("")
+        overlay = .picker(.attributeValue(.group))
+        pickerIndex = pickerEntries(.attributeValue(.group)).firstIndex { $0.keywords == [group.name] } ?? 0
+    }
+
+    /// A click on a group of the folder column (`ui.md`, "Groupes dans la
+    /// colonne des dossiers"): the current list is narrowed to the mails of
+    /// its members, or no longer, the same attribute as Group… (its chip in
+    /// the status bar, removed by a click or Escape). ⌘-click excludes the
+    /// group instead.
+    func clickGroup(_ g: GroupView, _ mods: ClickModifiers) {
+        model.flash = nil
+        overlay = .none
+        model.attributes.toggleGroup(ThreadFilter.GroupRef(id: g.id, name: g.name), excluded: mods == .command)
+    }
+
+    /// The Group… panel opened directly: the "Groups" title of the folder
+    /// column, or its "N more…" row when some groups had no room.
+    func openGroupPanel() {
+        model.flash = nil
+        if screen != .mail { screen = .mail }
+        pickerLine = LineEdit("")
+        pickerIndex = 0
+        valueSuggestions = []
+        overlay = .picker(.attributeValue(.group))
+        Task { await loadGroups() }
+    }
+
+    /// What the folder column shows under the folders: the most relevant
+    /// groups (`GroupRanking.shown`), those filtering the list always
+    /// among them, and how many are left out.
+    /// Whether a group of the folder column has the grey background of the
+    /// current folder (`ui.md`, "Groupes dans la colonne des dossiers"): it
+    /// filters the list, wanted or excluded, whether chosen by a click or
+    /// through the Group… panel of `f`. Both kinds shape what the list
+    /// shows, so both stand out like the folder does; the marker and the
+    /// strikethrough still tell them apart.
+    func isHighlighted(_ g: GroupView) -> Bool {
+        model.attributes.groupChoice(g.id) != nil
+    }
+
+    var columnGroups: (rows: [GroupView], hidden: Int) {
+        let a = model.attributes
+        return GroupRanking.shown(groups, active: Set((a.groups + a.notGroups).map(\.id)))
     }
 
     /// Existing names, plus "+ <typed text>" to create a new one when the
@@ -2717,11 +2807,7 @@ final class GeekController {
     }
 
     func loadGroups() async {
-        guard let client = model.core else { return }
-        do {
-            let list: Items<GroupView> = try await client.call("list_groups", [:])
-            groups = list.items
-        } catch { model.report(error) }
+        await model.loadGroups()
     }
 }
 

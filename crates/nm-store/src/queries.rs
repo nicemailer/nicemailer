@@ -837,7 +837,7 @@ impl Store {
     /// (`accounts.toml`, which the database does not hold) and those of
     /// the archive accounts, which it does (`account.address`). A handful
     /// of rows, read once per thread opened.
-    fn own_addresses(&self, given: &[String]) -> Result<BTreeSet<String>> {
+    pub(crate) fn own_addresses(&self, given: &[String]) -> Result<BTreeSet<String>> {
         let mut out: BTreeSet<String> = given.iter().map(|a| a.trim().to_lowercase()).filter(|a| !a.is_empty()).collect();
         let mut stmt = self.conn.prepare_cached("SELECT address FROM account WHERE address IS NOT NULL")?;
         for a in stmt.query_map([], |r| r.get::<_, String>(0))? {
@@ -1121,6 +1121,56 @@ fn list_query(
 fn is_mine(from_addr: Option<&str>, role: Option<FolderRole>, own: &BTreeSet<String>) -> bool {
     from_addr.is_some_and(|a| own.contains(&a.trim().to_lowercase()))
         || matches!(role, Some(FolderRole::Sent) | Some(FolderRole::Drafts))
+}
+
+/// The address of the person a conversation is with, for `g` (adding "the
+/// sender" to a group, `groupes.md`): the latest author who is not the
+/// user, else, when the user wrote every mail, the first recipient of the
+/// latest one who is not the user either. The same person the sender
+/// column names (`correspondent`), never one of the user's addresses:
+/// those cannot be members of a group (`groupes.md`, "Adresses de
+/// l'utilisateur").
+///
+/// It used to be "the author of the latest mail outside Sent and Drafts",
+/// which picked the user whenever their reply was filed with the
+/// conversation (in Archive, Waiting, …): the group then held the user,
+/// and its filter matched every mail they sent or received.
+///
+/// Drafts are left out: a reply being written has not been sent. `own`
+/// is lowercase (`own_addresses`). A handful of rows, read through
+/// `idx_message_thread` and the primary key of `message_address`.
+pub(crate) fn thread_correspondent_addr(
+    conn: &rusqlite::Connection,
+    thread_id: i64,
+    own: &BTreeSet<String>,
+) -> Result<Option<String>> {
+    let mails: Vec<(i64, Option<String>, Option<FolderRole>)> = conn
+        .prepare_cached(
+            "SELECT m.id, m.from_addr, f.role FROM message m JOIN folder f ON f.id = m.folder_id
+              WHERE m.thread_id = ?1 AND coalesce(f.role, '') <> 'drafts'
+              ORDER BY m.date_received DESC, m.id DESC",
+        )?
+        .query_map([thread_id], |r| Ok((r.get(0)?, r.get(1)?, role_of(r.get(2)?))))?
+        .collect::<std::result::Result<_, _>>()?;
+    // Rust note: `find_map` walks the iterator and stops at the first
+    // closure that returns `Some`, returning that value.
+    let author = mails.iter().find_map(|(_, addr, role)| {
+        let a = addr.as_deref().map(|a| a.trim().to_lowercase()).filter(|a| !a.is_empty())?;
+        (!is_mine(Some(&a), *role, own)).then_some(a)
+    });
+    if author.is_some() {
+        return Ok(author);
+    }
+    let Some((latest, _, _)) = mails.first() else { return Ok(None) };
+    let recipients: Vec<String> = conn
+        .prepare_cached(
+            "SELECT a.addr FROM message_address ma JOIN address a ON a.id = ma.address_id
+              WHERE ma.message_id = ?1 AND ma.role IN ('to', 'cc', 'bcc')
+              ORDER BY ma.role = 'to' DESC, ma.role = 'cc' DESC, ma.position",
+        )?
+        .query_map([latest], |r| r.get(0))?
+        .collect::<std::result::Result<_, _>>()?;
+    Ok(recipients.into_iter().map(|a| a.trim().to_lowercase()).find(|a| !a.is_empty() && !own.contains(a)))
 }
 
 /// A mail of a thread, as a list row reads it (`THREAD_MESSAGES`).
@@ -1610,6 +1660,18 @@ fn filter_clause(f: &ThreadFilter, target: &Target, tags: &[i64], unread: Unread
         let members = format!("SELECT address_id FROM contact_group_member WHERE group_id = {g} AND date_removed IS NULL");
         sql.push_str(&member(true, &people(&members)));
     }
+    // Group… of the selector: the members of any of the wanted groups (one
+    // set, the members of all of them), and none of the excluded ones. A
+    // group's id is an integer, bound like the others.
+    for (wanted, ids) in [(true, &f.group_ids), (false, &f.not_group_ids)] {
+        if ids.is_empty() {
+            continue;
+        }
+        let ids = ids.iter().map(|g| bind(Value::Integer(*g))).collect::<Vec<_>>().join(", ");
+        let members =
+            format!("SELECT address_id FROM contact_group_member WHERE group_id IN ({ids}) AND date_removed IS NULL");
+        sql.push_str(&member(wanted, &people(&members)));
+    }
     if let Some(address) = f.address_id {
         let a = bind(Value::Integer(address));
         sql.push_str(&member(true, &people(&a)));
@@ -1833,6 +1895,8 @@ mod plan_tests {
             mail_before: Some(2),
             tag: Some("Clients".into()),
             group_id: Some(1),
+            group_ids: vec![1, 2],
+            not_group_ids: vec![3],
             address_id: Some(2),
             human: Some(true),
             thread_ids: vec![],
@@ -1853,6 +1917,8 @@ mod plan_tests {
         out.push(("mail dates", ThreadFilter { mail_after: Some(1), mail_before: Some(2), ..Default::default() }));
         out.push(("tag", ThreadFilter { tag: Some("Clients".into()), ..Default::default() }));
         out.push(("group", ThreadFilter { group_id: Some(1), ..Default::default() }));
+        out.push(("groups", ThreadFilter { group_ids: vec![1, 2], ..Default::default() }));
+        out.push(("not groups", ThreadFilter { not_group_ids: vec![1, 2], ..Default::default() }));
         out.push(("contact", ThreadFilter { address_id: Some(2), ..Default::default() }));
         all.conversation = Some(true);
         out.push(("all", all));

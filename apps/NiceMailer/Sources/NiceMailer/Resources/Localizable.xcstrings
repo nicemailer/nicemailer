@@ -691,6 +691,16 @@
         }
       }
     },
+    "Nobody to add to %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Personne à ajouter à %@"
+          }
+        }
+      }
+    },
     "Answer with one of the keys, or esc": {
       "localizations": {
         "fr": {
@@ -3080,7 +3090,7 @@
       }
     },
     "not %@": {
-      "comment": "A value to exclude in the From…, To…, Text… and Subject… panels.",
+      "comment": "A value to exclude in the From…, To…, Group…, Text… and Subject… panels.",
       "localizations": {
         "fr": {
           "stringUnit": {
@@ -5166,6 +5176,123 @@
           "stringUnit": {
             "state": "translated",
             "value": "dans une réponse : texte seul ou mis en forme"
+          }
+        }
+      }
+    },
+    "Group…": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Groupe…"
+          }
+        }
+      }
+    },
+    "members contacts vip team family": {
+      "comment": "Hidden search words of the Group… attribute in the f selector, separated by spaces.",
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "membres contacts vip équipe famille"
+          }
+        }
+      }
+    },
+    "not group: %@": {
+      "comment": "Chip of a group excluded from the list (Group… attribute).",
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "hors groupe : %@"
+          }
+        }
+      }
+    },
+    "No group yet: g adds the sender of a mail to one": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucun groupe : g ajoute l'expéditeur d'un mail à un groupe"
+          }
+        }
+      }
+    },
+    "↩ chooses or removes a group, several allowed; -name to exclude; esc closes": {
+      "comment": "Input line of the Group… panel while nothing is typed.",
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "↩ choisit ou retire un groupe, plusieurs possibles ; -nom pour exclure ; échap ferme"
+          }
+        }
+      }
+    },
+    "group %@, filtering the list": {
+      "comment": "VoiceOver label of a group of the folder column that filters the list.",
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "groupe %@, filtre la liste"
+          }
+        }
+      }
+    },
+    "group %@, excluded from the list": {
+      "comment": "VoiceOver label of a group of the folder column excluded from the list.",
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "groupe %@, exclu de la liste"
+          }
+        }
+      }
+    },
+    "group %@": {
+      "comment": "VoiceOver label of a group of the folder column.",
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "groupe %@"
+          }
+        }
+      }
+    },
+    "%lld more…": {
+      "comment": "Last row of the groups of the folder column: the groups left out, which a click shows in the Group… panel.",
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld autres…"
+          }
+        }
+      }
+    },
+    "1 member": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 membre"
+          }
+        }
+      }
+    },
+    "1 more…": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 autre…"
           }
         }
       }

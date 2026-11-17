@@ -229,33 +229,111 @@ fn tags_are_created_listed_shown_and_removed() {
     assert_eq!(kws, vec!["Cafe", "Cafe_2"]);
 }
 
+/// Thread ids of a list, as a set.
+fn ids(list: &[ThreadSummary]) -> std::collections::BTreeSet<i64> {
+    list.iter().map(|t| t.id).collect()
+}
+
+#[test]
+fn several_groups_are_or_ed_excluded_ones_left_out() {
+    let mut store = seeded();
+    // Two Inbox threads from two different senders, each in a group.
+    let inbox = folder_id(&store, FolderRole::Inbox);
+    let (threads, _) = store.list_threads(inbox, None, 40, ThreadSort::Received).unwrap();
+    let (alpha, a, _) = store.set_group_member("Alpha", None, Some(threads[0].id), false, &[], Source::App).unwrap();
+    let mut beta = None;
+    for t in &threads[1..] {
+        let (g, b, _) = store.set_group_member("Beta", None, Some(t.id), false, &[], Source::App).unwrap();
+        if b != a {
+            beta = Some(g);
+            break;
+        }
+        store.set_group_member("Beta", Some(&b), None, true, &[], Source::App).unwrap();
+    }
+    let beta = beta.expect("two senders among 40 threads");
+    let of = |store: &Store, f: ThreadFilter| everything(store, &f);
+    let only_a = of(&store, ThreadFilter { group_ids: vec![alpha], ..Default::default() });
+    let only_b = of(&store, ThreadFilter { group_ids: vec![beta], ..Default::default() });
+    assert!(!only_a.is_empty() && !only_b.is_empty());
+    // The same as the group's own criterion.
+    assert_eq!(ids(&only_a), ids(&of(&store, ThreadFilter { group_id: Some(alpha), ..Default::default() })));
+    // Several groups: the threads of either, once each, newest first.
+    let both = of(&store, ThreadFilter { group_ids: vec![alpha, beta], ..Default::default() });
+    assert_eq!(ids(&both), ids(&only_a).union(&ids(&only_b)).copied().collect());
+    assert_eq!(both.len(), ids(&both).len());
+    assert!(newest_first(&both));
+    // Excluded: none of the group's threads, every other one (Everything
+    // lists every folder, so the exclusion sees every mail).
+    let all = of(&store, ThreadFilter::default());
+    let not_a = of(&store, ThreadFilter { not_group_ids: vec![alpha], ..Default::default() });
+    assert!(ids(&not_a).is_disjoint(&ids(&only_a)));
+    assert_eq!(not_a.len() + only_a.len(), all.len());
+    // A group's list narrowed by another group: "and".
+    let a_and_b = of(&store, ThreadFilter { group_id: Some(alpha), group_ids: vec![beta], ..Default::default() });
+    assert_eq!(ids(&a_and_b), ids(&only_a).intersection(&ids(&only_b)).copied().collect());
+    // Combined with an attribute: unread mails of either group.
+    let unread = of(&store, ThreadFilter { group_ids: vec![alpha, beta], seen: Some(false), ..Default::default() });
+    assert!(unread.iter().all(|t| t.unread_count > 0 && ids(&both).contains(&t.id)));
+}
+
+#[test]
+fn list_groups_gives_what_ranks_a_group() {
+    let mut store = seeded();
+    let (thread, _) = inbox_thread(&store);
+    let (gid, addr, _) = store.set_group_member("VIP", None, Some(thread), false, &[], Source::App).unwrap();
+    // An empty group (its only member removed) and an untouched one.
+    store.set_group_member("Old", Some("gone@x.example"), None, false, &[], Source::App).unwrap();
+    store.set_group_member("Old", Some("gone@x.example"), None, true, &[], Source::App).unwrap();
+    let sender_count: i64 = store
+        .conn()
+        .query_row("SELECT sender_count FROM address WHERE addr = ?1", [&addr], |r| r.get(0))
+        .unwrap();
+    assert!(sender_count > 0);
+    let groups = store.list_groups().unwrap();
+    let vip = groups.iter().find(|g| g.id == gid).unwrap();
+    assert_eq!((vip.member_count, vip.mail_count), (1, sender_count));
+    let old = groups.iter().find(|g| g.name == "Old").unwrap();
+    assert_eq!((old.member_count, old.mail_count), (0, 0));
+    // The date follows the memberships, the removal included: a member
+    // changed later makes the group more recent than its row.
+    store.conn().execute("UPDATE contact_group SET date_modified = 100", []).unwrap();
+    store.conn().execute("UPDATE contact_group_member SET date_modified = 200 WHERE group_id = ?1", [gid]).unwrap();
+    store.conn().execute("UPDATE contact_group_member SET date_modified = 300 WHERE group_id = ?1", [old.id]).unwrap();
+    let groups = store.list_groups().unwrap();
+    let date = |id: i64| groups.iter().find(|g| g.id == id).unwrap().date_modified;
+    assert_eq!((date(gid), date(old.id)), (200, 300));
+    // Without any membership, the group's own row.
+    store.conn().execute("DELETE FROM contact_group_member WHERE group_id = ?1", [old.id]).unwrap();
+    assert_eq!(store.list_groups().unwrap().iter().find(|g| g.id == old.id).unwrap().date_modified, 100);
+}
+
 #[test]
 fn group_membership_follows_the_rules_of_groupes_md() {
     let mut store = seeded();
     let (thread, _) = inbox_thread(&store);
     // The sender of the thread (not the user, whose mails are in Sent).
-    let (gid, addr, changed) = store.set_group_member("VIP", None, Some(thread), false, Source::App).unwrap();
+    let (gid, addr, changed) = store.set_group_member("VIP", None, Some(thread), false, &[], Source::App).unwrap();
     assert!(changed && addr.contains('@'));
     let (_, msgs) = store.get_thread(thread, &[]).unwrap();
     assert!(msgs.iter().any(|m| m.from_addr.as_deref() == Some(addr.as_str()) && m.folder_role != Some(FolderRole::Sent)));
     // Adding twice changes nothing; "vip" is the same group.
-    assert!(!store.set_group_member("vip", Some(&addr), None, false, Source::App).unwrap().2);
+    assert!(!store.set_group_member("vip", Some(&addr), None, false, &[], Source::App).unwrap().2);
     assert_eq!(store.list_groups().unwrap()[0].member_count, 1);
     // Several groups for one address.
-    store.set_group_member("Équipe", Some(&addr), None, false, Source::App).unwrap();
+    store.set_group_member("Équipe", Some(&addr), None, false, &[], Source::App).unwrap();
     let (contacts, _) = store.list_contacts(Some(&addr), None, 10).unwrap();
     assert_eq!(contacts[0].groups, vec!["VIP", "Équipe"]);
     // Threads of the group include this thread, newest first.
     let of_group = everything(&store, &ThreadFilter { group_id: Some(gid), ..Default::default() });
     assert!(of_group.iter().any(|t| t.id == thread) && newest_first(&of_group));
     // Removal is a tombstone; adding back clears it.
-    assert!(store.set_group_member("VIP", Some(&addr), None, true, Source::App).unwrap().2);
+    assert!(store.set_group_member("VIP", Some(&addr), None, true, &[], Source::App).unwrap().2);
     let removed: Option<i64> = store
         .conn()
         .query_row("SELECT date_removed FROM contact_group_member WHERE group_id = ?1", [gid], |r| r.get(0))
         .unwrap();
     assert!(removed.is_some());
-    store.set_group_member("VIP", Some(&addr), None, false, Source::App).unwrap();
+    store.set_group_member("VIP", Some(&addr), None, false, &[], Source::App).unwrap();
     let rows: i64 = store
         .conn()
         .query_row("SELECT count(*) FROM contact_group_member WHERE group_id = ?1 AND date_removed IS NULL", [gid], |r| r.get(0))
@@ -263,7 +341,7 @@ fn group_membership_follows_the_rules_of_groupes_md() {
     assert_eq!(rows, 1);
     // A deleted group recreated under its name reuses the row and starts empty.
     store.conn().execute("UPDATE contact_group SET date_deleted = 1 WHERE id = ?1", [gid]).unwrap();
-    let (gid2, _, _) = store.set_group_member("VIP", Some("new@x.example"), None, false, Source::App).unwrap();
+    let (gid2, _, _) = store.set_group_member("VIP", Some("new@x.example"), None, false, &[], Source::App).unwrap();
     assert_eq!(gid2, gid);
     let vip = store.list_groups().unwrap().into_iter().find(|g| g.id == gid).unwrap();
     assert_eq!(vip.member_count, 1);

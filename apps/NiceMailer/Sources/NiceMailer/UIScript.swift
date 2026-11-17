@@ -651,6 +651,13 @@ private final class Runner {
             "history_count": "\(c.history.count)",
             "tags_count": "\(c.tags.count)",
             "groups_count": "\(c.groups.count)",
+            // The groups of the folder column, in order, and how many had
+            // no room ("N more…", `GroupRanking.shown`).
+            "column_groups": c.columnGroups.rows.map(\.name).joined(separator: ", "),
+            "column_groups_hidden": "\(c.columnGroups.hidden)",
+            // The groups of the column drawn with the grey row of the
+            // current folder (`GeekController.isHighlighted`).
+            "column_groups_highlighted": c.columnGroups.rows.filter(c.isHighlighted).map(\.name).joined(separator: ", "),
             "columns": "\(c.columns)",
             "reading": "\(c.reading)",
             "status_position": c.statusPosition.rawValue,

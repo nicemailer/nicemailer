@@ -346,6 +346,15 @@ struct GroupView: Decodable, Identifiable, Hashable {
     let name: String
     let color: String?
     let memberCount: Int
+    /// Latest change of the group or of one of its memberships (Unix time),
+    /// and the mails received from its members: what ranks the groups when
+    /// the folder column has no room for all of them (`GroupRanking`).
+    ///
+    /// Swift note: a `var` with a default value is still decoded (the core
+    /// always sends both keys); the default only lets a test build a
+    /// `GroupView` without them through the memberwise initializer.
+    var dateModified: Int = 0
+    var mailCount: Int = 0
 }
 
 struct ContactView: Decodable, Identifiable, Hashable {

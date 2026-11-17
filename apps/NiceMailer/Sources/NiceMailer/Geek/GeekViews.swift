@@ -109,7 +109,7 @@ private struct GeekWindow: View {
         case .groups:
             NamesScreen(
                 controller: controller, title: L("Groups"),
-                rows: controller.groups.map { ($0.name, L("%lld members", $0.memberCount)) })
+                rows: controller.groups.map { ($0.name, $0.memberCount == 1 ? L("1 member") : L("%lld members", $0.memberCount)) })
         }
     }
 
@@ -553,9 +553,74 @@ private struct GeekFolderColumn: View {
                     // The same blocks as the ; menu.
                     .padding(.top, i > 0 && folders[i - 1].group != f.group ? scaled(10) : 0)
                 }
+                GeekColumnGroups(controller: controller)
             }
         }
         .scrollIndicators(.never)
+    }
+}
+
+/// The contact groups, under the folders (`ui.md`, "Groupes dans la colonne
+/// des dossiers"). A click on a group narrows the current list to the mails
+/// of its members (the Group… attribute, chip in the status bar), a second
+/// click removes it; ⌘-click excludes it. Several groups combine by "or".
+/// With more groups than room, the most relevant ones are shown
+/// (`GroupRanking`) and a last row "N more…" opens the Group… panel, which
+/// lists them all. No groups: no block at all, not even its title.
+private struct GeekColumnGroups: View {
+    @Environment(AppModel.self) private var model
+    let controller: GeekController
+
+    var body: some View {
+        let (rows, hidden) = controller.columnGroups
+        if !rows.isEmpty {
+            Text(L("Groups"))
+                .foregroundStyle(Palette.muted)
+                .padding(.top, scaled(14)).padding(.bottom, scaled(2)).padding(.horizontal, 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+                .onTapGesture { controller.openGroupPanel() }
+                .uiTarget("groups-title")
+            ForEach(rows) { g in
+                let choice = model.attributes.groupChoice(g.id)
+                HStack(spacing: 6) {
+                    // Where a folder has its letter: "•" when the group
+                    // filters the list, "−" when it is excluded, as in the
+                    // Group… panel.
+                    Text(choice == true ? "•" : choice == false ? "−" : "@")
+                        .foregroundStyle(choice == nil ? Palette.muted : Palette.accentText)
+                    Text(g.name)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .foregroundStyle(choice == nil ? Palette.text : Palette.accentText)
+                        .strikethrough(choice == false)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 8)
+                .frame(height: scaled(20))
+                // The same grey row as the current folder above.
+                .background(controller.isHighlighted(g) ? Palette.cursor : Color.clear)
+                .contentShape(Rectangle())
+                .onClick { controller.clickGroup(g, $0) }
+                .uiTarget("group-\(g.name)")
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(choice == true ? L("group %@, filtering the list", g.name)
+                                    : choice == false ? L("group %@, excluded from the list", g.name)
+                                    : L("group %@", g.name))
+                .accessibilityAddTraits(.isButton)
+            }
+            if hidden > 0 {
+                // Two keys rather than plural variations: `L()` formats with
+                // `String(format:)`, which does not apply them.
+                Text(hidden == 1 ? L("1 more…") : L("%lld more…", hidden))
+                    .foregroundStyle(Palette.muted)
+                    .padding(.horizontal, 8)
+                    .frame(maxWidth: .infinity, minHeight: scaled(20), alignment: .leading)
+                    .contentShape(Rectangle())
+                    .onTapGesture { controller.openGroupPanel() }
+                    .uiTarget("groups-more")
+            }
+        }
     }
 }
 

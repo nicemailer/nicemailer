@@ -69,6 +69,10 @@ final class AppModel {
     /// The app had to start the core (`openSocket`), for `startupTimings`.
     @ObservationIgnored private var startedCore = false
     private(set) var folders: [FolderView] = []
+    /// The contact groups (`list_groups`), in display order: the folder
+    /// column lists them under the folders, the Group… attribute offers
+    /// them (`ui.md`, "Groupes dans la colonne des dossiers").
+    private(set) var groups: [GroupView] = []
     /// Threads of the selected folder, as far as loaded (pages are appended
     /// as the user scrolls).
     // Settable from `AppModel+Actions.swift` (optimistic updates); a
@@ -1138,9 +1142,25 @@ final class AppModel {
 
     func reloadFolders() async {
         guard let client else { return }
+        // The groups with the folders, so that the folder column shows both,
+        // and a group made elsewhere (the CLI, the MCP agent) appears at
+        // the next change. Not awaited: the first list never waits for them
+        // (a few hundred microseconds in the core, but one more round trip).
+        Task { await loadGroups() }
         do {
             let list: FolderList = try await client.call("list_folders")
             folders = list.items
+        } catch { report(error) }
+    }
+
+    /// Reads the contact groups again (`list_groups`). The core gives no
+    /// event for them yet (`groupes.md`, section 6): the app reloads them
+    /// after its own changes and with the folders.
+    func loadGroups() async {
+        guard let client else { return }
+        do {
+            let list: Items<GroupView> = try await client.call("list_groups", [:])
+            if list.items != groups { groups = list.items }
         } catch { report(error) }
     }
 

@@ -546,41 +546,106 @@ impl Store {
     // Contact groups (groupes.md)
     // ----------------------------------------------------------------
 
-    /// Groups not deleted, in display order, with their member count.
+    /// Groups not deleted, in display order, with their member count, their
+    /// latest change and the mails received from their members.
+    ///
+    /// One pass over the memberships, read through the primary key
+    /// `(group_id, address_id)`, and one row of `address` per active member
+    /// for its `sender_count`: the cost follows the number of members,
+    /// never the number of mails (on 275,000 mails, the count of a group's
+    /// mails takes 150 ms; this, a few hundred microseconds). The removed
+    /// members count for the date (a removal is a change of the group), not
+    /// for the other two.
     pub fn list_groups(&self) -> Result<Vec<GroupView>> {
         let mut stmt = self.conn.prepare_cached(
-            "SELECT g.id, g.name, g.color,
-                    (SELECT count(*) FROM contact_group_member gm WHERE gm.group_id = g.id AND gm.date_removed IS NULL)
-               FROM contact_group g WHERE g.date_deleted IS NULL
+            "SELECT g.id, g.name, g.color, count(a.id), coalesce(sum(a.sender_count), 0),
+                    max(g.date_modified, coalesce(max(gm.date_modified), 0))
+               FROM contact_group g
+               LEFT JOIN contact_group_member gm ON gm.group_id = g.id
+               LEFT JOIN address a ON a.id = gm.address_id AND gm.date_removed IS NULL
+              WHERE g.date_deleted IS NULL
+              GROUP BY g.id
               ORDER BY g.position, g.name COLLATE NOCASE",
         )?;
         let items = stmt
-            .query_map([], |r| Ok(GroupView { id: r.get(0)?, name: r.get(1)?, color: r.get(2)?, member_count: r.get(3)? }))?
+            .query_map([], |r| {
+                Ok(GroupView {
+                    id: r.get(0)?,
+                    name: r.get(1)?,
+                    color: r.get(2)?,
+                    member_count: r.get(3)?,
+                    mail_count: r.get(4)?,
+                    date_modified: r.get(5)?,
+                })
+            })?
             .collect::<std::result::Result<_, _>>()?;
         Ok(items)
     }
 
-    /// Adds `addr`, or the sender of `thread_id`, to the group `group`
+    /// Removes the user's addresses (`own`, as for `set_group_member`) from
+    /// every group: a tombstone, as any removal, recorded in the history.
+    /// Called with each reading of `accounts.toml`, so that an address
+    /// declared after it was put in a group, or put there before the rule
+    /// (`groupes.md`, "Adresses de l'utilisateur"), leaves it. Returns the
+    /// number of memberships removed; usually none, at the cost of one
+    /// indexed lookup per address.
+    pub fn remove_own_from_groups(&mut self, own: &[String], source: Source) -> Result<usize> {
+        let own: Vec<String> = self.own_addresses(own)?.into_iter().collect();
+        if own.is_empty() {
+            return Ok(0);
+        }
+        let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let marks = vec!["?"; own.len()].join(", ");
+        let found: Vec<(i64, i64, String)> = tx
+            .prepare(&format!(
+                "SELECT gm.group_id, gm.address_id, a.addr FROM address a
+                   JOIN contact_group_member gm ON gm.address_id = a.id AND gm.date_removed IS NULL
+                  WHERE a.addr IN ({marks})"
+            ))?
+            .query_map(rusqlite::params_from_iter(&own), |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+            .collect::<std::result::Result<_, _>>()?;
+        for (group_id, address_id, addr) in &found {
+            tx.execute(
+                "UPDATE contact_group_member SET date_removed = unixepoch(), date_modified = unixepoch(), modified_by = ?3
+                  WHERE group_id = ?1 AND address_id = ?2",
+                params![group_id, address_id, source.as_str()],
+            )?;
+            audit(&tx, source, "contact_group", *group_id, "remove_member", serde_json::json!({"addr": addr}))?;
+        }
+        tx.commit()?;
+        Ok(found.len())
+    }
+
+    /// Adds `addr`, or the person `thread_id` is with, to the group `group`
     /// (created if needed), or removes it. Returns (group id, address,
     /// whether anything changed).
     ///
     /// Rules of `groupes.md`, section 3: a deleted group recreated under the
     /// same name reuses its row and starts empty; removing a member is a
     /// tombstone (`date_removed`), adding it back clears it.
+    ///
+    /// `own`: the addresses `accounts.toml` declares, which only the caller
+    /// (the daemon) knows; those of the archive accounts are added. None of
+    /// them can be added (`groupes.md`, "Adresses de l'utilisateur"): a
+    /// group is people the user writes with, and the user in a group makes
+    /// its filter match every mail. Removing one stays possible.
     pub fn set_group_member(
         &mut self,
         group: &str,
         addr: Option<&str>,
         thread_id: Option<i64>,
         remove: bool,
+        own: &[String],
         source: Source,
     ) -> Result<(i64, String, bool)> {
         let group = group.trim();
         if group.is_empty() || group.chars().count() > 64 {
             return Err(StoreError::InvalidParams("nom de groupe vide ou trop long (64 caractères au plus)".into()));
         }
+        // Read before the transaction: it borrows the connection mutably.
+        let own = self.own_addresses(own)?;
         let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        // The address: given, or the thread's sender.
+        // The address: given, or the person the thread is with.
         let addr = match (addr, thread_id) {
             (Some(a), _) => {
                 let a = a.trim().to_lowercase();
@@ -589,19 +654,15 @@ impl Store {
                 }
                 a
             }
-            (None, Some(t)) => tx
-                .query_row(
-                    "SELECT a.addr FROM message m JOIN folder f ON f.id = m.folder_id
-                       JOIN address a ON a.id = m.from_address_id
-                      WHERE m.thread_id = ?1 AND coalesce(f.role, '') NOT IN ('sent', 'drafts')
-                      ORDER BY m.date_received DESC, m.id DESC LIMIT 1",
-                    [t],
-                    |r| r.get(0),
-                )
-                .optional()?
-                .ok_or_else(|| StoreError::NotFound(format!("expéditeur de la conversation {t}")))?,
+            (None, Some(t)) => crate::queries::thread_correspondent_addr(&tx, t, &own)?
+                .ok_or_else(|| StoreError::NotFound(format!("correspondant de la conversation {t}")))?,
             (None, None) => return Err(StoreError::InvalidParams("addr ou thread_id requis".into())),
         };
+        if !remove && own.contains(&addr) {
+            return Err(StoreError::InvalidParams(format!(
+                "{addr} est une adresse de l'utilisateur : elle ne peut pas être membre d'un groupe"
+            )));
+        }
         let address_id: i64 = match tx
             .query_row("SELECT id FROM address WHERE addr = ?1", [&addr], |r| r.get(0))
             .optional()?
