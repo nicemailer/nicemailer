@@ -204,7 +204,8 @@ private struct GeekWindow: View {
             // as much of its width as is useful.
             GeometryReader { geometry in
                 PickerPopup(controller: controller, kind: kind,
-                            width: PickerPopup.width(kind, available: geometry.size.width, scale: TextSize.shared.scale))
+                            width: PickerPopup.width(kind, available: geometry.size.width, scale: TextSize.shared.scale),
+                            available: geometry.size.height)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         case .none, .contactFilter, .choice:
@@ -938,12 +939,18 @@ private struct GeekThreadRow: View {
 /// when the subject is not cut.
 struct ReaderTitleBar<Controls: View>: View {
     let subject: String
+    /// The thread's tags and the groups of the person it is with, after
+    /// the subject (`ui.md`, "Tags et groupes dans l'en-tête"); none while
+    /// a reply is written.
+    var tags: [String] = []
+    var groups: [String] = []
     @ViewBuilder let controls: () -> Controls
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
             HStack(spacing: scaled(8)) {
                 subjectText
+                labels
                 Spacer(minLength: scaled(16))
                 controls()
             }
@@ -953,7 +960,10 @@ struct ReaderTitleBar<Controls: View>: View {
                 subjectText
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .frame(height: scaled(24))
+                // On two lines, the labels open the line of the controls:
+                // the subject keeps the whole width.
                 HStack(spacing: scaled(8)) {
+                    labels
                     Spacer(minLength: 0)
                     controls()
                 }
@@ -975,6 +985,28 @@ struct ReaderTitleBar<Controls: View>: View {
         Text(subject).font(.geek(13, weight: .bold)).lineLimit(1)
             .textSelection(.enabled)
             .help(subject)
+    }
+
+    /// `#tag` as in the list rows, `@group` as in the folder column: the
+    /// same marks say the same things everywhere. Never cut: a label is
+    /// short, and the layout goes to two lines rather than hide one.
+    ///
+    /// Swift note: `@ViewBuilder` lets a property return different views
+    /// from an `if`; an empty `HStack` would still take a spacing slot.
+    @ViewBuilder
+    private var labels: some View {
+        if !tags.isEmpty || !groups.isEmpty {
+            HStack(spacing: scaled(6)) {
+                ForEach(tags, id: \.self) { Text("#\($0)") }
+                ForEach(groups, id: \.self) { Text("@\($0)") }
+            }
+            .font(.geek(12))
+            .foregroundStyle(Palette.accentText)
+            .lineLimit(1)
+            .fixedSize()
+            .accessibilityElement(children: .combine)
+            .help(LabelChoices.headerHelp(tags: tags, groups: groups))
+        }
     }
 
     /// In UI script mode, which layout is shown (`title_lines`).
@@ -1003,7 +1035,9 @@ private struct GeekReaderColumn: View {
                 // The subject, then the controls of the mail; on two lines
                 // when the subject would not fit whole beside them
                 // (`ReaderTitleBar`).
-                ReaderTitleBar(subject: thread.subject) { titleControls(state) }
+                ReaderTitleBar(subject: thread.subject, tags: thread.labels.tags, groups: thread.labels.groups) {
+                    titleControls(state)
+                }
                 Palette.separator.frame(height: 1)
                 if model.bodyFormat != "text" {
                     let page = threadHTML(thread, state)
@@ -1924,6 +1958,8 @@ struct PickerPopup: View {
     let kind: GeekController.PickerKind
     /// Width of the panel (`width(_:available:scale:)`).
     let width: CGFloat
+    /// The height of the window's content: a panel never goes past it.
+    var available: CGFloat = .infinity
 
     /// Width of a picker panel, in points, for a window content `available`
     /// points wide at the text size `scale`:
@@ -1950,11 +1986,26 @@ struct PickerPopup: View {
     /// The panel's height, fixed so that it does not jump while typing
     /// filters the rows: taller for the panels that show details. Shared
     /// with the AI result, which takes the palette's place.
+    ///
+    /// The attribute selector (`f`) is as tall as all its rows: its rows
+    /// are few and fixed, and one that had to be scrolled to was missed
+    /// (Mail date… and "clear" were below the edge until November 2026).
     static func height(_ kind: GeekController.PickerKind, scale: CGFloat) -> CGFloat {
         switch kind {
+        case .attributes: (headerHeight + 1 + CGFloat(GeekController.attributeRowCount) * rowHeight + 4) * scale
         case .attributeValue, .search, .links: 440 * scale
         default: 320 * scale
         }
+    }
+
+    /// Height of the input line and of a row, at the default text size.
+    static let headerHeight: CGFloat = 24
+    static let rowHeight: CGFloat = 20
+
+    /// `height`, kept inside a window `available` points tall, with a
+    /// margin above and below: in a short window, the rows scroll.
+    static func height(_ kind: GeekController.PickerKind, scale: CGFloat, available: CGFloat) -> CGFloat {
+        min(height(kind, scale: scale), max(available - 2 * 16 * scale, 120 * scale))
     }
 
     var body: some View {
@@ -1975,7 +2026,7 @@ struct PickerPopup: View {
                 Text("\(entries.count)").foregroundStyle(Palette.muted)
             }
             .padding(.horizontal, 8)
-            .frame(height: scaled(24))
+            .frame(height: scaled(Self.headerHeight))
             .uiTarget("picker-header")
             Palette.separator.frame(height: 1)
             ScrollViewReader { proxy in
@@ -2010,7 +2061,7 @@ struct PickerPopup: View {
                                 }
                             }
                             .padding(.horizontal, 8)
-                            .frame(height: scaled(20))
+                            .frame(height: scaled(Self.rowHeight))
                             .background(i == current ? Palette.cursor : Color.clear)
                             .contentShape(Rectangle())
                             .onTapGesture { controller.clickPicker(kind, i) }
@@ -2028,12 +2079,23 @@ struct PickerPopup: View {
         }
         // An attribute with a value gets a bigger panel at once (`ui.md`),
         // and so do the links of a mail.
-        .frame(width: width, height: Self.height(kind, scale: TextSize.shared.scale))
-        .onAppear { if UIScript.isActive { UIScript.pickerWidth = width } }
+        .frame(width: width, height: panelHeight)
+        .onAppear {
+            if UIScript.isActive {
+                UIScript.pickerWidth = width
+                UIScript.pickerVisibleRows = visibleRows
+            }
+        }
+        .onChange(of: panelHeight) { _, _ in if UIScript.isActive { UIScript.pickerVisibleRows = visibleRows } }
         .onChange(of: width) { _, w in if UIScript.isActive { UIScript.pickerWidth = w } }
         .background(Palette.popup)
         .overlay(Rectangle().stroke(Palette.separator, lineWidth: 1))
     }
+
+    private var panelHeight: CGFloat { Self.height(kind, scale: TextSize.shared.scale, available: available) }
+
+    /// Rows that fit below the input line without scrolling (UI scripts).
+    private var visibleRows: Int { Int((panelHeight - scaled(Self.headerHeight) - 1) / scaled(Self.rowHeight)) }
 
     /// Rows in two halves, text and address (the links of `l`).
     private var halves: Bool { kind == .links }

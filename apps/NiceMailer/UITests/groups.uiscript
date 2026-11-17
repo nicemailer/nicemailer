@@ -62,7 +62,8 @@ expect column_groups_highlighted =
 key f
 type Group
 key ret
-expect picker_count = 2
+# The two groups, then "without group".
+expect picker_count = 3
 snap group-panel
 key ret
 expect overlay = picker(NiceMailer.GeekController.PickerKind.attributeValue(NiceMailer.AttributeField.group))
@@ -123,5 +124,5 @@ expect column_groups_hidden = 1
 snap column-groups-more
 click groups:more
 expect overlay = picker(NiceMailer.GeekController.PickerKind.attributeValue(NiceMailer.AttributeField.group))
-expect picker_count = 9
+expect picker_count = 10
 key esc

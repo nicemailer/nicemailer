@@ -164,13 +164,14 @@ extension AppModel {
         }
     }
 
-    /// Adds the tag `name` to the target threads, or removes it if every
-    /// target already carries it (the same key toggles).
-    func tagTargets(_ name: String) {
+    /// Adds the tag `name` to the target threads, or removes it from them:
+    /// the `t` picker has a row for each action (`LabelChoices`).
+    func tagTargets(_ name: String, remove: Bool) {
         guard let client = core else { return }
-        let targets = targetThreads
+        // Removing: only the threads that have the tag, so that the core
+        // does no work for the others and the message counts them right.
+        let targets = remove ? targetThreads.filter { $0.tags.contains(name) } : targetThreads
         guard !targets.isEmpty, !name.isEmpty else { return }
-        let remove = targets.allSatisfy { $0.tags.contains(name) }
         flash = remove ? L("Tag removed: %@", name) : L("Tagged: %@", name)
         Task {
             do {
@@ -180,35 +181,61 @@ extension AppModel {
         }
     }
 
-    /// Adds the person each target thread is with to the group `name`.
-    /// The core picks that person (the one the sender column names) and
-    /// never adds one of the user's addresses (`groupes.md`, "Adresses de
-    /// l'utilisateur"): a thread with nobody else is refused.
-    func addSendersToGroup(_ name: String) {
+    /// Adds the person each target thread is with to the group `name`, or
+    /// removes them from it. The core picks that person (the one the
+    /// sender column names) and never adds one of the user's addresses
+    /// (`groupes.md`, "Adresses de l'utilisateur"): a thread with nobody
+    /// else is refused.
+    func setSendersGroup(_ name: String, remove: Bool) {
         guard let client = core else { return }
         let targets = targetThreads
         guard !targets.isEmpty, !name.isEmpty else { return }
         Task {
-            var added: [String] = []
+            var changed: [String] = []
             var refused = false
             for t in targets {
                 do {
                     let r: GroupMemberResult = try await client.call(
-                        "set_group_member", ["group": name, "thread_id": t.id])
-                    if r.changed { added.append(r.addr) }
+                        "set_group_member", ["group": name, "thread_id": t.id, "remove": remove])
+                    // Two threads with the same person: named once.
+                    if r.changed, !changed.contains(r.addr) { changed.append(r.addr) }
                 } catch {
                     refused = true
                     report(error)
                 }
             }
-            // "Already in" only when every thread answered so: a refused
-            // thread added nobody, which it would misreport.
-            flash = !added.isEmpty
-                ? L("Added to %@: %@", name, added.joined(separator: ", "))
-                : refused ? L("Nobody to add to %@", name) : L("Already in %@", name)
-            // A new group, or a new member (its date and mail count
-            // change): the folder column and the Group… panel follow.
+            let who = changed.joined(separator: ", ")
+            if remove {
+                flash = changed.isEmpty ? L("Not in %@", name) : L("Removed from %@: %@", name, who)
+            } else {
+                // "Already in" only when every thread answered so: a
+                // refused thread added nobody, which it would misreport.
+                flash = !changed.isEmpty ? L("Added to %@: %@", name, who)
+                    : refused ? L("Nobody to add to %@", name) : L("Already in %@", name)
+            }
+            // A new group, or a member more or less (its date and mail
+            // count change): the folder column and the Group… panel
+            // follow. No event says a membership changed: the header of
+            // the open thread, which names its person's groups, is read
+            // again here.
             await loadGroups()
+            await reloadOpenThread()
+        }
+    }
+
+    /// The tags and groups of the threads `ids` (`thread_labels`), for the
+    /// rows of `t` and `g`; `[]` when the core cannot answer (the picker
+    /// then only adds).
+    func threadLabels(_ ids: [Int]) async -> [ThreadLabels] {
+        guard let client = core, !ids.isEmpty else { return [] }
+        do {
+            // The core reads 1,000 threads at most (`MAX_LABEL_THREADS`):
+            // beyond, the groups of the first ones are offered for removal.
+            let r: Items<ThreadLabels> = try await client.call("thread_labels", ["thread_ids": Array(ids.prefix(1000))])
+            return r.items
+        } catch {
+            report(error)
+            return []
         }
     }
 

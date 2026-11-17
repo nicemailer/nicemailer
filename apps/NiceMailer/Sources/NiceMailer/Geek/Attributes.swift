@@ -32,6 +32,16 @@ struct ThreadFilter: Equatable {
     var groups: [GroupRef] = []
     /// Of the members of none of these groups (`ui.md`, "Négation").
     var notGroups: [GroupRef] = []
+    /// Tagged with one of these tags (OR-ed): Tag… of the selector. Names,
+    /// as the core reads them: the tags of that name in every account.
+    var tags: [String] = []
+    /// Tagged with none of these (`ui.md`, "Négation").
+    var notTags: [String] = []
+    /// "without tag" of Tag…: no mail of the conversation has a tag.
+    var noTag = false
+    /// "without group" of Group…: no mail of the conversation is from or
+    /// to a member of a group.
+    var noGroup = false
     /// Words anywhere, addresses included: the `/` search, the widest one.
     var contains: String?
     /// Words of the subject or body (Text…); `-word` excludes a word.
@@ -77,7 +87,46 @@ struct ThreadFilter: Equatable {
                 wanted.append(group)
             }
         }
-        if excluded { flip(&notGroups, &groups) } else { flip(&groups, &notGroups) }
+        if excluded { flip(&notGroups, &groups) } else { flip(&groups, &notGroups); noGroup = false }
+    }
+
+    /// Chooses or unchooses "without group". With it, a wanted group would
+    /// leave the list empty: it goes, as "without group" goes when a group
+    /// is wanted (`toggleGroup`). Excluded groups stay: they say nothing
+    /// more, and keep the choice made.
+    mutating func toggleNoGroup() {
+        noGroup.toggle()
+        if noGroup { groups = [] }
+    }
+
+    /// `toggleNoGroup` for "without tag".
+    mutating func toggleNoTag() {
+        noTag.toggle()
+        if noTag { tags = [] }
+    }
+
+    /// `toggleGroup` for a tag, by its name, compared without case as the
+    /// core does ("urgent" and "Urgent" are one tag).
+    mutating func toggleTag(_ name: String, excluded: Bool = false) {
+        func same(_ s: String) -> Bool { s.caseInsensitiveCompare(name) == .orderedSame }
+        func flip(_ wanted: inout [String], _ other: inout [String]) {
+            other.removeAll(where: same)
+            if let i = wanted.firstIndex(where: same) {
+                wanted.remove(at: i)
+            } else {
+                wanted.append(name)
+            }
+        }
+        if excluded { flip(&notTags, &tags) } else { flip(&tags, &notTags); noTag = false }
+    }
+
+    /// Whether the tag `name` is wanted (`true`), excluded (`false`) or not
+    /// an attribute (`nil`).
+    func tagChoice(_ name: String) -> Bool? {
+        func same(_ s: String) -> Bool { s.caseInsensitiveCompare(name) == .orderedSame }
+        if tags.contains(where: same) { return true }
+        if notTags.contains(where: same) { return false }
+        return nil
     }
 
     /// Whether the group with this id is wanted (`true`), excluded
@@ -163,6 +212,10 @@ struct ThreadFilter: Equatable {
         if !notTo.isEmpty { p["not_to"] = notTo }
         if !groups.isEmpty { p["group_ids"] = groups.map(\.id) }
         if !notGroups.isEmpty { p["not_group_ids"] = notGroups.map(\.id) }
+        if !tags.isEmpty { p["tags"] = tags }
+        if !notTags.isEmpty { p["not_tags"] = notTags }
+        if noTag { p["no_tag"] = true }
+        if noGroup { p["no_group"] = true }
         if let contains, !contains.isEmpty { p["contains"] = contains }
         if let text, !text.isEmpty { p["text"] = text }
         if let subject, !subject.isEmpty { p["subject"] = subject }
@@ -191,6 +244,12 @@ struct ThreadFilter: Equatable {
         // By the group's id: a rename cannot make a chip remove another one.
         for g in groups { out.append(Chip(id: "group:\(g.id)", label: L("group: %@", g.name))) }
         for g in notGroups { out.append(Chip(id: "not_group:\(g.id)", label: L("not group: %@", g.name))) }
+        if noGroup { out.append(Chip(id: "no_group", label: L("without group"))) }
+        // By the name, which may hold a ":": `remove` keeps all after the
+        // first one.
+        for t in tags { out.append(Chip(id: "tag:\(t)", label: L("tag: %@", t))) }
+        for t in notTags { out.append(Chip(id: "not_tag:\(t)", label: L("not tag: %@", t))) }
+        if noTag { out.append(Chip(id: "no_tag", label: L("without tag"))) }
         // Excluded words keep their dash: "text: renouvellement -facture".
         if let text { out.append(Chip(id: "text", label: L("text: %@", text))) }
         if let subject { out.append(Chip(id: "subject", label: L("subject: %@", subject))) }
@@ -211,7 +270,14 @@ struct ThreadFilter: Equatable {
             return
         }
         let parts = chip.split(separator: ":").map(String.init)
+        // Swift note: `maxSplits: 1` cuts at the first ":" only, so a
+        // tag named "a:b" comes back whole.
+        let rest = chip.split(separator: ":", maxSplits: 1).dropFirst().first.map(String.init) ?? ""
         switch parts.first {
+        case "no_tag": noTag = false
+        case "no_group": noGroup = false
+        case "tag": tags.removeAll { $0 == rest }
+        case "not_tag": notTags.removeAll { $0 == rest }
         case "from": if let i = parts.last.flatMap(Int.init), from.indices.contains(i) { from.remove(at: i) }
         case "not_from": if let i = parts.last.flatMap(Int.init), notFrom.indices.contains(i) { notFrom.remove(at: i) }
         case "to": if let i = parts.last.flatMap(Int.init), to.indices.contains(i) { to.remove(at: i) }
@@ -274,8 +340,9 @@ struct ThreadFilter: Equatable {
         case .to: if out { put(v, into: &notTo, &to) } else { put(v, into: &to, &notTo) }
         case .text: text = words()
         case .subject: subject = words()
-        // Groups are chosen from a list, by `toggleGroup`, not typed.
-        case .group, .date, .mailDate: break
+        // Groups and tags are chosen from a list (`toggleGroup`,
+        // `toggleTag`), not typed.
+        case .group, .tag, .date, .mailDate: break
         }
     }
 
@@ -308,7 +375,7 @@ struct ThreadFilter: Equatable {
         switch field {
         case .text: text
         case .subject: subject
-        case .from, .to, .group, .date, .mailDate: nil
+        case .from, .to, .group, .tag, .date, .mailDate: nil
         }
     }
 
@@ -317,7 +384,7 @@ struct ThreadFilter: Equatable {
         switch field {
         case .text: text = nil
         case .subject: subject = nil
-        case .from, .to, .group, .date, .mailDate: break
+        case .from, .to, .group, .tag, .date, .mailDate: break
         }
     }
 
@@ -326,7 +393,8 @@ struct ThreadFilter: Equatable {
         switch field {
         case .from: !from.isEmpty || !notFrom.isEmpty
         case .to: !to.isEmpty || !notTo.isEmpty
-        case .group: !groups.isEmpty || !notGroups.isEmpty
+        case .group: !groups.isEmpty || !notGroups.isEmpty || noGroup
+        case .tag: !tags.isEmpty || !notTags.isEmpty || noTag
         case .text: text != nil
         case .subject: subject != nil
         case .date: after != nil || before != nil
@@ -339,9 +407,10 @@ struct ThreadFilter: Equatable {
 /// `date` is Conversation date…, the frequent one, listed first so that
 /// `da` reaches it; `mailDate` is Mail date… (`ui.md`, "Deux critères de
 /// date"). `group` (Group…) follows To…: the three attributes about people
-/// come together.
+/// come together. `tag` (Tag…, added in November 2026) follows them: like
+/// Group…, a list to choose from.
 enum AttributeField: String, CaseIterable {
-    case from, to, group, text, subject, date, mailDate
+    case from, to, group, tag, text, subject, date, mailDate
 
     /// Name in the selector, with "…" since a value follows.
     var title: String {
@@ -349,6 +418,7 @@ enum AttributeField: String, CaseIterable {
         case .from: L("From…")
         case .to: L("To…")
         case .group: L("Group…")
+        case .tag: L("Tag…")
         case .text: L("Text…")
         case .subject: L("Subject…")
         case .date: L("Conversation date…")
@@ -366,6 +436,7 @@ enum AttributeField: String, CaseIterable {
         case .from: L("sender")
         case .to: L("recipient cc")
         case .group: L("members contacts vip team family")
+        case .tag: L("label keyword")
         case .text: L("text words body")
         case .subject: L("title")
         case .date: L("when day period")

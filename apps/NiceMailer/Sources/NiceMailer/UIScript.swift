@@ -71,6 +71,8 @@ enum UIScript {
     static var helpColumns: [[String]] = []
     /// Width of the open picker panel, in points (`PickerPopup.width`).
     static var pickerWidth: CGFloat = 0
+    /// Rows of the open picker that fit without scrolling (`PickerPopup`).
+    static var pickerVisibleRows = 0
     /// Times ⌃⌘F asked for full screen (never applied in UI script mode).
     static var fullScreenToggles = 0
     /// The mailbox folders "Change Mailbox…" switched to, in order
@@ -598,6 +600,9 @@ private final class Runner {
             "selected_unread": "\(sel?.unreadCount ?? 0)",
             "selected_flagged": "\(sel?.isFlagged ?? false)",
             "selected_tags": sel?.tags.joined(separator: ",") ?? "",
+            // The labels of the open thread's header (`ReaderTitleBar`).
+            "header_tags": m.openThread?.labels.tags.joined(separator: ",") ?? "",
+            "header_groups": m.openThread?.labels.groups.joined(separator: ",") ?? "",
             "marked": markedIdx.map(String.init).joined(separator: ","),
             "marked_count": "\(m.marked.count)",
             // Marked rows still unread, and flagged: grouped actions
@@ -622,6 +627,11 @@ private final class Runner {
             // Width of the open picker panel, in whole points.
             "picker_width": {
                 if case .picker = c.overlay { return "\(Int(UIScript.pickerWidth.rounded()))" }
+                return ""
+            }(),
+            // Rows of the open picker below its bottom edge, to scroll to.
+            "picker_hidden_rows": {
+                if case .picker = c.overlay { return "\(max(0, pickerRows.count - UIScript.pickerVisibleRows))" }
                 return ""
             }(),
             // Every row of the open picker, in order, " | " between them.

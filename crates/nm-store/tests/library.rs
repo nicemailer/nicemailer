@@ -671,3 +671,82 @@ fn a_tag_name_lists_the_tags_of_that_name_in_every_account() {
     let one = everything(&store, &ThreadFilter { tag: Some("Clients".into()), ..Default::default() });
     assert_eq!(one.iter().map(|t| t.id).collect::<Vec<_>>(), vec![seeded_thread]);
 }
+
+#[test]
+fn the_tag_attribute_wants_one_of_its_tags_and_excludes_others() {
+    // Tag… of the selector (`ui.md`, "Sélecteur d'attributs"): several
+    // tags OR-ed, exclusions, combined with the other criteria.
+    let mut store = seeded();
+    let inbox = folder_id(&store, FolderRole::Inbox);
+    let (items, _) = store.list_threads(inbox, None, 3, ThreadSort::Received).unwrap();
+    let (a, b, c) = (items[0].id, items[1].id, items[2].id);
+    store.tag_thread(a, "Urgent", false, Source::App).unwrap();
+    store.tag_thread(b, "Équipe", false, Source::App).unwrap();
+    store.tag_thread(c, "Urgent", false, Source::App).unwrap();
+    store.tag_thread(c, "Équipe", false, Source::App).unwrap();
+    let ids = |f: ThreadFilter| {
+        let mut v: Vec<i64> = everything(&store, &f).iter().map(|t| t.id).collect();
+        v.sort();
+        v
+    };
+    let sorted = |mut v: Vec<i64>| {
+        v.sort();
+        v
+    };
+    let names = |n: &[&str]| n.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+    // OR-ed, names without case (Unicode included).
+    assert_eq!(ids(ThreadFilter { tags: names(&["urgent"]), ..Default::default() }), sorted(vec![a, c]));
+    assert_eq!(ids(ThreadFilter { tags: names(&["URGENT", "équipe"]), ..Default::default() }), sorted(vec![a, b, c]));
+    // Excluded: a thread with the tag leaves, whatever its other tags.
+    let not_urgent = ids(ThreadFilter { not_tags: names(&["Urgent"]), ..Default::default() });
+    assert!(not_urgent.contains(&b) && !not_urgent.contains(&a) && !not_urgent.contains(&c));
+    assert_eq!(not_urgent.len(), everything(&store, &ThreadFilter::default()).len() - 2);
+    // Wanted and excluded together; with `tag` (a tag's own list) by "and".
+    assert_eq!(
+        ids(ThreadFilter { tags: names(&["Équipe"]), not_tags: names(&["Urgent"]), ..Default::default() }),
+        vec![b]
+    );
+    assert_eq!(ids(ThreadFilter { tag: Some("Urgent".into()), tags: names(&["Équipe"]), ..Default::default() }), vec![c]);
+    // A name no tag has: wanted, nothing; excluded, nothing left out.
+    assert!(ids(ThreadFilter { tags: names(&["Inconnu"]), ..Default::default() }).is_empty());
+    assert_eq!(
+        ids(ThreadFilter { not_tags: names(&["Inconnu"]), ..Default::default() }).len(),
+        everything(&store, &ThreadFilter::default()).len()
+    );
+}
+
+#[test]
+fn without_tag_and_without_group_leave_out_every_tag_and_every_member() {
+    // "without tag" of Tag… and "without group" of Group… (`ui.md`,
+    // "Sélecteur d'attributs").
+    let mut store = seeded();
+    let inbox = folder_id(&store, FolderRole::Inbox);
+    let (items, _) = store.list_threads(inbox, None, 3, ThreadSort::Received).unwrap();
+    let (a, b) = (items[0].id, items[1].id);
+    let all = everything(&store, &ThreadFilter::default()).len();
+    let ids = |s: &Store, f: ThreadFilter| everything(s, &f).iter().map(|t| t.id).collect::<Vec<_>>();
+
+    // Without tag: every thread while there is none; then not a tagged one.
+    assert_eq!(ids(&store, ThreadFilter { no_tag: true, ..Default::default() }).len(), all);
+    store.tag_thread(a, "Urgent", false, Source::App).unwrap();
+    store.tag_thread(b, "Calme", false, Source::App).unwrap();
+    let untagged = ids(&store, ThreadFilter { no_tag: true, ..Default::default() });
+    assert_eq!(untagged.len(), all - 2);
+    assert!(!untagged.contains(&a) && !untagged.contains(&b));
+    // A deleted tag no longer counts.
+    store.conn().execute("UPDATE tag SET date_deleted = unixepoch() WHERE name = 'Calme'", []).unwrap();
+    assert!(ids(&store, ThreadFilter { no_tag: true, ..Default::default() }).contains(&b));
+
+    // Without group: every thread while nobody is in one; then none of
+    // the members' threads, those of a deleted group back.
+    assert_eq!(ids(&store, ThreadFilter { no_group: true, ..Default::default() }).len(), all);
+    store.set_group_member("VIP", None, Some(a), false, &[], Source::App).unwrap();
+    let in_vip = ids(&store, ThreadFilter { group_ids: vec![store.list_groups().unwrap()[0].id], ..Default::default() });
+    let outside = ids(&store, ThreadFilter { no_group: true, ..Default::default() });
+    assert!(in_vip.contains(&a) && !outside.contains(&a));
+    // The two lists split the mailbox, with no overlap and no gap.
+    assert_eq!(in_vip.len() + outside.len(), all);
+    assert!(in_vip.iter().all(|t| !outside.contains(t)));
+    store.conn().execute("UPDATE contact_group SET date_deleted = unixepoch()", []).unwrap();
+    assert_eq!(ids(&store, ThreadFilter { no_group: true, ..Default::default() }).len(), all);
+}

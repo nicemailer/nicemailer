@@ -236,6 +236,9 @@ final class GeekController {
     /// The contact groups, kept by the model: the folder column, the Group…
     /// panel, the `g` picker and the groups screen show the same list.
     var groups: [GroupView] { model.groups }
+    /// The groups of the mails the `g` picker aims at, once the core said
+    /// (`heldGroups`); `nil` while it has not.
+    var pickerGroupLabels: [ThreadLabels]?
     /// Row under the cursor on the current screen.
     var screenIndex = 0
 
@@ -1317,7 +1320,14 @@ final class GeekController {
         case .tag:
             Task { await loadTags() }
         case .group:
-            Task { await loadGroups() }
+            pickerGroupLabels = nil
+            let ids = model.targetThreads.map(\.id)
+            Task {
+                await loadGroups()
+                let labels = await model.threadLabels(ids)
+                // Still the picker of the same mails.
+                if overlay == .picker(.group), model.targetThreads.map(\.id) == ids { pickerGroupLabels = labels }
+            }
         case .links:
             // The senders' cards join the links; on the first `l`, macOS
             // asks whether the app may read Contacts. The rows appear
@@ -1453,6 +1463,7 @@ final class GeekController {
         case .attributeValue(.text): L("words of the subject or body; -word to exclude")
         case .attributeValue(.subject): L("words of the subject; -word to exclude")
         case .attributeValue(.group): L("↩ chooses or removes a group, several allowed; -name to exclude; esc closes")
+        case .attributeValue(.tag): L("↩ chooses or removes a tag, several allowed; -name to exclude; esc closes")
         case .attributeValue: L("a name, an address or @domain; -value to exclude")
         case .search: L("words: subject, sender, recipients or body")
         case .ai: L("type to filter, or a prompt's letters · ↩ runs the first row")
@@ -1563,11 +1574,22 @@ final class GeekController {
                 return e
             }
         case .tag:
-            let accountId = model.folders.first { $0.id == model.selectedThread?.folderId }?.accountId
-            let names = tags.filter { accountId == nil || $0.accountId == accountId }.map(\.name)
-            all = withNew(names) { [model] name in model.tagTargets(name) }
+            // The tags of every account: a tag belongs to one account
+            // (an IMAP keyword of its mailbox), but the user thinks of it
+            // by its name, as `;T` does when it lists the mails of every
+            // tag of that name. Choosing a tag another account has creates
+            // it in the mail's own account (`tag_thread`). Before (November
+            // 2026), only the tags of the current mail's account were
+            // offered: with several accounts, the list was often empty.
+            // A name several accounts share is one row (`LabelChoices`).
+            let names = tags.map(\.name)
+            all = labelEntries(names, held: model.targetThreads.map(\.tags)) { [model] name, remove in
+                model.tagTargets(name, remove: remove)
+            }
         case .group:
-            all = withNew(groups.map(\.name)) { [model] name in model.addSendersToGroup(name) }
+            all = labelEntries(groups.map(\.name), held: heldGroups) { [model] name, remove in
+                model.setSendersGroup(name, remove: remove)
+            }
         case .ai:
             all = aiEntries()
         }
@@ -1576,6 +1598,10 @@ final class GeekController {
         return PickerMatch.filter(all, query: pickerQuery, label: \.label,
                                   keywords: \.keywords, pinned: { $0.key == "+" })
     }
+
+    /// Rows of the attribute selector with "clear" (`attributeEntries`):
+    /// the panel is that tall (`PickerPopup.height`).
+    static var attributeRowCount: Int { ThreadFilter.Flag.allCases.count * 2 + AttributeField.allCases.count + 1 }
 
     /// The attribute selector: each yes / no attribute with its two values
     /// (an active one is marked "•", choosing it again removes it), then the
@@ -1604,6 +1630,7 @@ final class GeekController {
                 // The groups may have changed elsewhere (the CLI, the MCP
                 // agent): the panel shows them as loaded, then as read.
                 if field == .group { Task { await self?.loadGroups() } }
+                if field == .tag { Task { await self?.loadTags() } }
             })
         }
         if !a.isEmpty {
@@ -1634,6 +1661,8 @@ final class GeekController {
         switch field {
         case .group:
             return groupEntries()
+        case .tag:
+            return tagEntries()
         case .from, .to:
             var entries: [Entry] = []
             if !value.isEmpty { entries += rows(value, value, detail: detail) }
@@ -1704,7 +1733,24 @@ final class GeekController {
                          detail: g.memberCount == 1 ? L("1 member") : L("%lld members", g.memberCount), detailStyle: .info,
                          keywords: [g.name]) { [weak self] in self?.chooseGroup(ref, excluded: excluded) }
         }
-        return PickerMatch.filter(entries, query: value, label: \.label, keywords: \.keywords)
+        // "without group": last, so that Return on the first row still
+        // takes the most relevant group; first once chosen, as the chosen
+        // groups. Not among the exclusions ("-" typed): it is one already.
+        let none = Entry(key: a.noGroup ? "•" : " ", label: L("without group"), keywords: L("none no").split(separator: " ").map(String.init)) {
+            [weak self] in self?.chooseNone(.group)
+        }
+        let rows = excluded ? entries : a.noGroup ? [none] + entries : entries + [none]
+        return PickerMatch.filter(rows, query: value, label: \.label, keywords: \.keywords)
+    }
+
+    /// "without group" or "without tag" chosen in its panel: as a group or
+    /// a tag, the panel opens again on its row.
+    private func chooseNone(_ field: AttributeField) {
+        if field == .group { model.attributes.toggleNoGroup() } else { model.attributes.toggleNoTag() }
+        pickerLine = LineEdit("")
+        overlay = .picker(.attributeValue(field))
+        let label = field == .group ? L("without group") : L("without tag")
+        pickerIndex = pickerEntries(.attributeValue(field)).firstIndex { $0.label == label } ?? 0
     }
 
     /// A row of the Group… panel chosen: the group is added to the
@@ -1715,6 +1761,64 @@ final class GeekController {
         pickerLine = LineEdit("")
         overlay = .picker(.attributeValue(.group))
         pickerIndex = pickerEntries(.attributeValue(.group)).firstIndex { $0.keywords == [group.name] } ?? 0
+    }
+
+    /// Rows of the Tag… panel, as those of Group…: every tag, one row per
+    /// name (the tags of that name in every account are one criterion),
+    /// those chosen first ("•" wanted, "−" excluded), then the others,
+    /// most used first, each with its number of mails. Typing narrows them;
+    /// a leading `-` turns them into exclusions. Return chooses or
+    /// unchooses one and the panel stays open (`chooseTag`).
+    private func tagEntries() -> [Entry] {
+        let (value, excluded) = ThreadFilter.parse(pickerQuery)
+        let a = model.attributes
+        // One row per name, its mails counted in every account; the names
+        // chosen stay listed even when no tag has them any more, so that
+        // they can be removed here too.
+        var counts: [String: Int] = [:]
+        var names: [String] = []
+        for t in tags {
+            let key = t.name.lowercased()
+            if counts[key] == nil { names.append(t.name) }
+            counts[key, default: 0] += t.messageCount
+        }
+        for n in a.tags + a.notTags where counts[n.lowercased()] == nil {
+            counts[n.lowercased()] = 0
+            names.append(n)
+        }
+        guard !names.isEmpty else {
+            return [Entry(key: " ", label: L("No tag yet: t tags the mail under the cursor"), disabled: true) {}]
+        }
+        // Swift note: `sorted(by:)` is stable, so equal counts keep the
+        // order of `list_tags`.
+        let ranked = names.sorted { counts[$0.lowercased()]! > counts[$1.lowercased()]! }
+        let ordered = ranked.filter { a.tagChoice($0) != nil } + ranked.filter { a.tagChoice($0) == nil }
+        let entries = ordered.map { name in
+            let key = switch a.tagChoice(name) {
+            case true?: "•"
+            case false?: "−"
+            case nil: " "
+            }
+            let n = counts[name.lowercased()] ?? 0
+            return Entry(key: key, label: excluded ? L("not %@", name) : name,
+                         detail: n == 1 ? L("1 mail") : L("%lld mails", n), detailStyle: .info,
+                         keywords: [name]) { [weak self] in self?.chooseTag(name, excluded: excluded) }
+        }
+        let none = Entry(key: a.noTag ? "•" : " ", label: L("without tag"), keywords: L("none no").split(separator: " ").map(String.init)) {
+            [weak self] in self?.chooseNone(.tag)
+        }
+        // Placed as "without group" (`groupEntries`).
+        let rows = excluded ? entries : a.noTag ? [none] + entries : entries + [none]
+        return PickerMatch.filter(rows, query: value, label: \.label, keywords: \.keywords)
+    }
+
+    /// A row of the Tag… panel chosen: as `chooseGroup`, the panel opens
+    /// again on that tag, ready for the next one.
+    private func chooseTag(_ name: String, excluded: Bool) {
+        model.attributes.toggleTag(name, excluded: excluded)
+        pickerLine = LineEdit("")
+        overlay = .picker(.attributeValue(.tag))
+        pickerIndex = pickerEntries(.attributeValue(.tag)).firstIndex { $0.keywords == [name] } ?? 0
     }
 
     /// A click on a group of the folder column (`ui.md`, "Groupes dans la
@@ -1758,15 +1862,43 @@ final class GeekController {
         return GroupRanking.shown(groups, active: Set((a.groups + a.notGroups).map(\.id)))
     }
 
-    /// Existing names, plus "+ <typed text>" to create a new one when the
-    /// text matches none of them exactly.
-    private func withNew(_ names: [String], _ apply: @escaping @MainActor (String) -> Void) -> [Entry] {
-        var entries = names.map { name in Entry(key: " ", label: name) { apply(name) } }
+    /// The rows of `t` and `g` (`LabelChoices`): "remove X" for the names
+    /// some aimed mails have, "X" for the names to add, plus "+ <typed
+    /// text>" to create a new one when the text matches no existing name.
+    /// With several mails, a row says how many of them have its name.
+    private func labelEntries(_ names: [String], held: [[String]],
+                              _ apply: @escaping @MainActor (String, Bool) -> Void) -> [Entry] {
+        let several = held.count > 1
+        var entries = LabelChoices.rows(names: names, held: held).map { row in
+            Entry(key: row.remove ? "−" : " ",
+                  label: row.remove ? L("remove %@", row.name) : row.name,
+                  detail: several && row.held > 0 ? L("%lld of %lld", row.held, held.count) : nil,
+                  detailStyle: .info,
+                  // Typing the name finds both rows, in any language.
+                  keywords: [row.name]) { apply(row.name, row.remove) }
+        }
         let typed = pickerQuery.trimmingCharacters(in: .whitespaces)
-        if !typed.isEmpty, !names.contains(where: { $0.compare(typed, options: [.caseInsensitive]) == .orderedSame }) {
-            entries.insert(Entry(key: "+", label: typed) { apply(typed) }, at: 0)
+        let all = names + held.flatMap { $0 }
+        if !typed.isEmpty, !all.contains(where: { $0.compare(typed, options: [.caseInsensitive]) == .orderedSame }) {
+            entries.insert(Entry(key: "+", label: typed) { apply(typed, false) }, at: 0)
         }
         return entries
+    }
+
+    /// The groups of the person of each mail `g` aims at: read from the
+    /// core when the picker opens (`thread_labels`). Until it answers, the
+    /// open thread's header gives them when it is the only mail aimed at,
+    /// so that its removal rows show at once.
+    var heldGroups: [[String]] {
+        let targets = model.targetThreads
+        if let labels = pickerGroupLabels {
+            let byThread = Dictionary(labels.map { ($0.threadId, $0.groups) }) { first, _ in first }
+            return targets.map { byThread[$0.id] ?? [] }
+        }
+        if targets.count == 1, let open = model.openThread, open.id == targets[0].id {
+            return [open.labels.groups]
+        }
+        return targets.map { _ in [] }
     }
 
     private func handlePickerKey(_ kind: PickerKind, key: String, code: UInt16, mods: NSEvent.ModifierFlags) {

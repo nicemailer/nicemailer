@@ -65,7 +65,7 @@ use nm_api::{
     GroupMemberResult, HelloParams, HelloResult, ImportMboxParams, ImportStatus, Items, ListContactsParams,
     ListHistoryParams, ListTagsParams, ListThreadsParams, MAX_LIMIT, MoveThreadParams,
     PROTOCOL_VERSION, Page, ProbeAccountParams, ProbeReport, Request, Response, RpcError, SearchParams, SearchResult, SetBodyFormatParams,
-    SetGroupMemberParams, SetThreadFlaggedParams, SetThreadSeenParams, SubscribeParams, SubscribeResult,
+    SetGroupMemberParams, SetThreadFlaggedParams, ThreadLabelsParams, SetThreadSeenParams, SubscribeParams, SubscribeResult,
     SetAddressScreeningParams, SetDomainScreeningParams, SetSenderKindParams, TagThreadParams, ThreadView, UndoParams, error_code,
     method, ConfigStatus, SetAccountOrderParams, SetPasswordParams,
 };
@@ -672,6 +672,7 @@ fn runs_in_parallel(method: &str) -> bool {
             | method::LIST_HISTORY
             | method::LIST_TAGS
             | method::LIST_GROUPS
+            | method::THREAD_LABELS
             | method::LIST_CONTACTS
             | method::LIST_ACCOUNTS
             | method::PREPARE_DRAFT
@@ -1315,11 +1316,21 @@ async fn call(core: &Arc<Core>, source: Source, req: Request) -> Result<Value, R
             // holds: the store shows the recipients of the mails they
             // sent (`present_thread`, `docs/thread-display.md`).
             let own = drafts::declared_addresses(core);
-            let ((subject, messages), missing) =
-                with_reader(core, move |s| Ok((s.get_thread(thread_id, &own)?, s.thread_bodies_missing(thread_id)?))).await?;
+            let ((subject, messages), labels, missing) = with_reader(core, move |s| {
+                Ok((s.get_thread(thread_id, &own)?, s.thread_labels(thread_id, &own)?, s.thread_bodies_missing(thread_id)?))
+            })
+            .await?;
             // Bodies not downloaded yet: the user is waiting for them.
             sync::prioritize(core, missing);
-            to_value(ThreadView { id: p.thread_id, subject, messages, as_of })
+            to_value(ThreadView {
+                id: p.thread_id,
+                subject,
+                messages,
+                tags: labels.tags,
+                correspondent: labels.correspondent,
+                correspondent_groups: labels.groups,
+                as_of,
+            })
         }
         method::LOCATE_MESSAGE => {
             let p: LocateMessageParams = params(req.params)?;
@@ -1548,6 +1559,24 @@ async fn call(core: &Arc<Core>, source: Source, req: Request) -> Result<Value, R
             })
             .await?;
             to_value(GroupMemberResult { group_id, addr, changed })
+        }
+        method::THREAD_LABELS => {
+            let p: ThreadLabelsParams = params(req.params)?;
+            if p.thread_ids.len() > nm_api::MAX_LABEL_THREADS {
+                return Err(RpcError::new(
+                    error_code::INVALID_PARAMS,
+                    format!("thread_ids: {} at most", nm_api::MAX_LABEL_THREADS),
+                ));
+            }
+            // As for `set_group_member`: the person of each thread is never
+            // one of the user's addresses.
+            let own = drafts::declared_addresses(core);
+            let as_of = as_of();
+            let items = with_reader(core, move |s| {
+                p.thread_ids.iter().map(|&t| s.thread_labels(t, &own)).collect::<Result<Vec<_>, _>>()
+            })
+            .await?;
+            to_value(Items { items, as_of })
         }
         method::LIST_CONTACTS => {
             let p: ListContactsParams = params(req.params)?;

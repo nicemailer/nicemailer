@@ -2434,16 +2434,6 @@
         }
       }
     },
-    "add the sender to a group": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ajouter l'expéditeur à un groupe"
-          }
-        }
-      }
-    },
     "after %@": {
       "localizations": {
         "fr": {
@@ -5293,6 +5283,166 @@
           "stringUnit": {
             "state": "translated",
             "value": "1 autre…"
+          }
+        }
+      }
+    },
+    "%lld of %lld": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld sur %2$lld"
+          }
+        }
+      }
+    },
+    "Not in %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pas dans %@"
+          }
+        }
+      }
+    },
+    "Removed from %@: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retiré de %1$@ : %2$@"
+          }
+        }
+      }
+    },
+    "Tags: %@ (t to change)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tags : %@ (t pour les changer)"
+          }
+        }
+      }
+    },
+    "Groups of the sender: %@ (g to change)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Groupes de l'expéditeur : %@ (g pour les changer)"
+          }
+        }
+      }
+    },
+    "add / remove a tag": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ajouter / retirer un tag"
+          }
+        }
+      }
+    },
+    "add / remove a group": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ajouter / retirer un groupe"
+          }
+        }
+      }
+    },
+    "Tag…": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tag…"
+          }
+        }
+      }
+    },
+    "label keyword": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "étiquette libellé mot-clé"
+          }
+        }
+      }
+    },
+    "not tag: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "hors tag : %@"
+          }
+        }
+      }
+    },
+    "No tag yet: t tags the mail under the cursor": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucun tag : t tague le mail sous le curseur"
+          }
+        }
+      }
+    },
+    "↩ chooses or removes a tag, several allowed; -name to exclude; esc closes": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "↩ choisit ou retire un tag, plusieurs possibles ; -nom pour exclure ; échap ferme"
+          }
+        }
+      }
+    },
+    "1 mail": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 mail"
+          }
+        }
+      }
+    },
+    "without group": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "sans groupe"
+          }
+        }
+      }
+    },
+    "without tag": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "sans tag"
+          }
+        }
+      }
+    },
+    "none no": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "aucun sans"
           }
         }
       }

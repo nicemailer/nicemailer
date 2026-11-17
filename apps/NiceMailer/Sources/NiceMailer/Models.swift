@@ -230,6 +230,30 @@ struct ThreadView: Decodable {
     let subject: String
     let messages: [MessageView]
     let asOf: Position
+    /// Names of the thread's tags, and the groups of the person it is with
+    /// (`correspondent`, the one `g` adds): shown in the header (`ui.md`,
+    /// "Tags et groupes dans l'en-tête").
+    ///
+    /// Swift note: optionals with a default, so that a core that does not
+    /// send them still decodes, and that the tests build a `ThreadView`
+    /// without them; `labels` reads them as plain arrays.
+    var tags: [String]? = nil
+    var correspondent: String? = nil
+    var correspondentGroups: [String]? = nil
+}
+
+extension ThreadView {
+    /// The tags and groups the header shows, `[]` when the core sent none.
+    var labels: (tags: [String], groups: [String]) { (tags ?? [], correspondentGroups ?? []) }
+}
+
+/// The tags of a thread, the person it is with and that person's groups
+/// (`thread_labels`): what `t` and `g` can remove from a selection.
+struct ThreadLabels: Decodable, Hashable {
+    let threadId: Int
+    let tags: [String]
+    let correspondent: String?
+    let groups: [String]
 }
 
 /// A search result (a message, not a thread).

@@ -13,10 +13,16 @@ How to write it:
 
 ### Added
 
+- The open mail shows its tags and the groups of its sender after the subject.
+- `t` and `g` offer to remove a tag or a group, for one mail or a selection: each action has its own row, and with several mails each row says how many of them have it.
+- Tag… in the attribute selector (`f`): the list narrowed to the mails with one of the chosen tags, or without them.
+- "without tag" in Tag… and "without group" in Group…: the mails with no tag, or of nobody in a group.
 - Contact groups as a filter: Group… in the attribute selector (`f`), and the groups listed under the folders in three columns; a click filters the list, and the active groups are highlighted like the current folder.
 
 ### Fixed
 
+- The attribute selector (`f`) shows all its rows at once, without scrolling.
+- The tag picker (`t`) lists the tags of every account, not only those of the mail's account, which left it empty for a mail of another account.
 - `g` adds the person the conversation is with, no longer yourself when your reply was filed with it; your own addresses can no longer be in a group, and those already there are removed.
 
 - The app no longer stays without its core after a new version, signed differently, replaces the installed one.

@@ -293,21 +293,34 @@ impl Store {
         Ok(out)
     }
 
-    /// Ids of the active tags named like the `tag` criterion of `filter`,
-    /// in every account (each account has its own tags, and the unified
-    /// view shows "Clients" once). Names are compared in Rust, without
-    /// case: SQLite's NOCASE only folds ASCII, so "Équipe" and "équipe"
-    /// would differ (the same rule as `tag_thread`). An account has few
-    /// tags, reading them all is cheap. Empty without a `tag` criterion.
-    fn tag_ids(&self, filter: &ThreadFilter) -> Result<Vec<i64>> {
-        let Some(wanted) = filter.tag.as_deref().map(|t| t.trim().to_lowercase()) else { return Ok(vec![]) };
+    /// Ids of the active tags named by the tag criteria of `filter` (`tag`,
+    /// `tags`, `not_tags`), in every account (each account has its own
+    /// tags, and the unified view shows "Clients" once). Names are compared
+    /// in Rust, without case: SQLite's NOCASE only folds ASCII, so "Équipe"
+    /// and "équipe" would differ (the same rule as `tag_thread`). An
+    /// account has few tags, reading them all is cheap; nothing is read
+    /// without a tag criterion.
+    fn tag_ids(&self, filter: &ThreadFilter) -> Result<TagIds> {
+        let lower = |names: &[String]| names.iter().map(|t| t.trim().to_lowercase()).collect::<Vec<_>>();
+        let tag = filter.tag.as_deref().map(|t| t.trim().to_lowercase());
+        let (wanted, excluded) = (lower(&filter.tags), lower(&filter.not_tags));
+        let mut ids = TagIds::default();
+        if tag.is_none() && wanted.is_empty() && excluded.is_empty() {
+            return Ok(ids);
+        }
         let mut stmt = self.conn.prepare_cached("SELECT id, name FROM tag WHERE date_deleted IS NULL")?;
         let rows = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))?;
-        let mut ids = Vec::new();
         for row in rows {
             let (id, name) = row?;
-            if name.to_lowercase() == wanted {
-                ids.push(id);
+            let name = name.to_lowercase();
+            if tag.as_ref() == Some(&name) {
+                ids.tag.push(id);
+            }
+            if wanted.contains(&name) {
+                ids.wanted.push(id);
+            }
+            if excluded.contains(&name) {
+                ids.excluded.push(id);
             }
         }
         Ok(ids)
@@ -782,19 +795,7 @@ impl Store {
             None
         };
 
-        // Tags of the thread: keywords of its messages that are declared in
-        // `tag` (other keywords are technical, `modele de donnees.md`).
-        let tags: Vec<String> = self
-            .conn
-            .prepare_cached(
-                "SELECT DISTINCT t.name FROM message m
-                   JOIN message_keyword mk ON mk.message_id = m.id
-                   JOIN tag t ON t.account_id = m.account_id AND t.keyword = mk.keyword AND t.date_deleted IS NULL
-                  WHERE m.thread_id = ?1
-                  ORDER BY t.name",
-            )?
-            .query_map([thread_id], |r| r.get(0))?
-            .collect::<std::result::Result<_, _>>()?;
+        let tags = thread_tag_names(&self.conn, thread_id)?;
 
         // Rust note: `subject` alone is shorthand for `subject: subject`.
         Ok(ThreadSummary {
@@ -1173,6 +1174,35 @@ pub(crate) fn thread_correspondent_addr(
     Ok(recipients.into_iter().map(|a| a.trim().to_lowercase()).find(|a| !a.is_empty() && !own.contains(a)))
 }
 
+/// Names of a thread's tags, sorted: keywords of its messages that are
+/// declared in `tag` (other keywords are technical, `modele de
+/// donnees.md`). Shared by the list rows (`ThreadSummary::tags`) and the
+/// open thread (`Store::thread_labels`), so that both say the same.
+pub(crate) fn thread_tag_names(conn: &rusqlite::Connection, thread_id: i64) -> Result<Vec<String>> {
+    Ok(conn
+        .prepare_cached(
+            "SELECT DISTINCT t.name FROM message m
+               JOIN message_keyword mk ON mk.message_id = m.id
+               JOIN tag t ON t.account_id = m.account_id AND t.keyword = mk.keyword AND t.date_deleted IS NULL
+              WHERE m.thread_id = ?1
+              ORDER BY t.name",
+        )?
+        .query_map([thread_id], |r| r.get(0))?
+        .collect::<std::result::Result<_, _>>()?)
+}
+
+/// The tags the tag criteria of a filter name (`Store::tag_ids`): ids of
+/// the store, integers written into the SQL text (no client text there).
+#[derive(Debug, Clone, Default)]
+struct TagIds {
+    /// Named by `tag`.
+    tag: Vec<i64>,
+    /// Named by `tags`.
+    wanted: Vec<i64>,
+    /// Named by `not_tags`.
+    excluded: Vec<i64>,
+}
+
 /// A mail of a thread, as a list row reads it (`THREAD_MESSAGES`).
 struct ListMail {
     id: i64,
@@ -1533,7 +1563,7 @@ struct FilterSql {
 /// has a page of matching rows: with a rare criterion (a sender seen in 2009
 /// only, no flagged mail at all), a per-row subquery ran for every thread of
 /// the mailbox, several seconds on 200 000 threads.
-fn filter_clause(f: &ThreadFilter, target: &Target, tags: &[i64], unread: UnreadPlan) -> FilterSql {
+fn filter_clause(f: &ThreadFilter, target: &Target, tags: &TagIds, unread: UnreadPlan) -> FilterSql {
     // Given threads: read by primary key, never by walking a date index
     // and testing each row (SQLite would choose that walk to avoid a
     // sort, and read the whole list for a handful of rows).
@@ -1623,24 +1653,46 @@ fn filter_clause(f: &ThreadFilter, target: &Target, tags: &[i64], unread: Unread
         }
     }
     // A tag: a message of the thread carries the keyword of one of the tags
-    // of that name (`tags`, resolved by `tag_ids`), in that tag's account.
-    // Read from `idx_message_keyword_kw`. Like the flag, it looks at the
-    // whole thread. A name no tag has matches nothing.
-    if f.tag.is_some() {
-        if tags.is_empty() {
+    // named (resolved by `tag_ids`), in that tag's account. Read from
+    // `idx_message_keyword_kw`. Like the flag, it looks at the whole thread.
+    // `tag` (a tag's list) and `tags` (Tag… of the selector, OR-ed) each
+    // need one of their tags, and a name no tag has matches nothing;
+    // `not_tags` leaves out the threads with one of its tags.
+    let tagged = |ids: &[i64]| {
+        let ids = ids.iter().map(i64::to_string).collect::<Vec<_>>().join(",");
+        format!(
+            "SELECT m.thread_id FROM tag tg
+               JOIN message_keyword mk ON mk.keyword = tg.keyword
+               JOIN message m ON m.id = mk.message_id AND m.account_id = tg.account_id
+              WHERE tg.id IN ({ids}) AND m.thread_id IS NOT NULL"
+        )
+    };
+    for (asked, ids) in [(f.tag.is_some(), &tags.tag), (!f.tags.is_empty(), &tags.wanted)] {
+        if !asked {
+            continue;
+        }
+        if ids.is_empty() {
             sql.push_str(" AND 0");
         } else {
-            let ids = tags.iter().map(i64::to_string).collect::<Vec<_>>().join(",");
-            sql.push_str(&member(
-                true,
-                &format!(
-                    "SELECT m.thread_id FROM tag tg
-                       JOIN message_keyword mk ON mk.keyword = tg.keyword
-                       JOIN message m ON m.id = mk.message_id AND m.account_id = tg.account_id
-                      WHERE tg.id IN ({ids}) AND m.thread_id IS NOT NULL"
-                ),
-            ));
+            sql.push_str(&member(true, &tagged(ids)));
         }
+    }
+    if !tags.excluded.is_empty() {
+        sql.push_str(&member(false, &tagged(&tags.excluded)));
+    }
+    // Without tag: no message carries the keyword of an active tag of its
+    // account. The tags are few: the set is read from
+    // `idx_message_keyword_kw`, one keyword at a time. `CROSS JOIN` keeps
+    // that order (SQLite never reorders it): left free, the planner
+    // scanned every keyword of the mailbox, the technical ones included.
+    if f.no_tag {
+        sql.push_str(&member(
+            false,
+            "SELECT m.thread_id FROM tag tg
+               CROSS JOIN message_keyword mk ON mk.keyword = tg.keyword
+               CROSS JOIN message m ON m.id = mk.message_id AND m.account_id = tg.account_id
+              WHERE tg.date_deleted IS NULL AND m.thread_id IS NOT NULL",
+        ));
     }
     // A group or a contact: a message of the thread in the listed folders
     // is from one of the addresses or to them (To, Cc) (`groupes.md`). One
@@ -1671,6 +1723,13 @@ fn filter_clause(f: &ThreadFilter, target: &Target, tags: &[i64], unread: Unread
         let members =
             format!("SELECT address_id FROM contact_group_member WHERE group_id IN ({ids}) AND date_removed IS NULL");
         sql.push_str(&member(wanted, &people(&members)));
+    }
+    // Without group: the members of every active group, left out.
+    if f.no_group {
+        let members = "SELECT gm.address_id FROM contact_group_member gm
+                         JOIN contact_group g ON g.id = gm.group_id AND g.date_deleted IS NULL
+                        WHERE gm.date_removed IS NULL";
+        sql.push_str(&member(false, &people(members)));
     }
     if let Some(address) = f.address_id {
         let a = bind(Value::Integer(address));
@@ -1894,9 +1953,13 @@ mod plan_tests {
             mail_after: Some(1),
             mail_before: Some(2),
             tag: Some("Clients".into()),
+            tags: v("Urgent"),
+            not_tags: v("Spam"),
+            no_tag: false,
             group_id: Some(1),
             group_ids: vec![1, 2],
             not_group_ids: vec![3],
+            no_group: false,
             address_id: Some(2),
             human: Some(true),
             thread_ids: vec![],
@@ -1909,6 +1972,10 @@ mod plan_tests {
         out.push(("attachments", ThreadFilter { attachments: Some(true), ..Default::default() }));
         out.push(("human", ThreadFilter { human: Some(true), ..Default::default() }));
         out.push(("robot", ThreadFilter { human: Some(false), ..Default::default() }));
+        out.push(("tags", ThreadFilter { tags: v("Urgent"), ..Default::default() }));
+        out.push(("not tags", ThreadFilter { not_tags: v("Spam"), ..Default::default() }));
+        out.push(("no tag", ThreadFilter { no_tag: true, ..Default::default() }));
+        out.push(("no group", ThreadFilter { no_group: true, ..Default::default() }));
         out.push(("from", ThreadFilter { from: v("alice"), ..Default::default() }));
         out.push(("not from", ThreadFilter { not_from: v("@acme.fr"), ..Default::default() }));
         out.push(("to", ThreadFilter { to: v("bob"), ..Default::default() }));
@@ -1930,7 +1997,10 @@ mod plan_tests {
     /// of `thread`, walked newest first and stopped after a page, the
     /// address table (a LIKE needs to read it), the full-text index (it
     /// answers a MATCH itself) and the partial index of the messages with
-    /// attachments, and that of the unread mails. A correlated subquery (one run per row of the list) is
+    /// attachments, that of the unread mails, the tags (a few rows per
+    /// account: "without tag" reads them all, then each one's mails through
+    /// `idx_message_keyword_kw`) and the active group members ("without
+    /// group"). A correlated subquery (one run per row of the list) is
     /// never allowed, nor reading a whole folder through `idx_message_list`
     /// (a range of dates in it, for Mail date…, is fine).
     fn check(what: &str, steps: &[String]) {
@@ -1945,7 +2015,13 @@ mod plan_tests {
                     "SCAN m USING COVERING INDEX idx_message_thread_attachments", "SCAN CONSTANT ROW",
                     // The unread mails only, read when they are few
                     // (`UnreadPlan::Set`).
-                    "SCAN message USING INDEX idx_message_unread"];
+                    "SCAN message USING INDEX idx_message_unread",
+                    // Every tag, for "without tag": a few rows.
+                    "SCAN tg",
+                    // Every active membership, for "without group", through
+                    // the partial index of the active ones: a few rows per
+                    // group.
+                    "SCAN gm USING INDEX idx_contact_group_member_address"];
                 assert!(allowed.iter().any(|a| step.starts_with(a)), "{what}: full scan `{step}`: {steps:?}");
             }
         }
@@ -1990,7 +2066,8 @@ mod plan_tests {
         for (scope, _) in scopes() {
             for target in [Target::folders("1,2,3"), Target::everything()] {
                 for ((name, f), unread) in filters().into_iter().flat_map(|x| [(x.clone(), UnreadPlan::Walk), (x, UnreadPlan::Set)]) {
-                    let filter = filter_clause(&f, &target, &[1, 2], unread);
+                    let tags = TagIds { tag: vec![1, 2], wanted: vec![1], excluded: vec![2] };
+                    let filter = filter_clause(&f, &target, &tags, unread);
                     for a in &accounts {
                         for sort in [ThreadSort::Received, ThreadSort::Modified] {
                             for after in [None, Some((1, 1))] {
@@ -2041,7 +2118,7 @@ mod plan_tests {
         let store = Store::open_in_memory().unwrap();
         for seen in [None, Some(true)] {
             let f = ThreadFilter { thread_ids: vec![3, 5, 8], seen, ..Default::default() };
-            let filter = filter_clause(&f, &Target::everything(), &[], UnreadPlan::Set);
+            let filter = filter_clause(&f, &Target::everything(), &TagIds::default(), UnreadPlan::Set);
             assert!(filter.by_set);
             assert!(filter.sql.contains("t.id IN (3,5,8)"), "{}", filter.sql);
             assert!(!filter.sql.contains("is_seen = 0"), "{}", filter.sql);
@@ -2070,7 +2147,7 @@ mod plan_tests {
             for a in [Accounts::All, Accounts::One(1), Accounts::Some("1,2".into())] {
                 for sort in [ThreadSort::Received, ThreadSort::Modified] {
                     for after in [None, Some((1, 1))] {
-                        let filter = filter_clause(&f, &Target::everything(), &[], UnreadPlan::Set);
+                        let filter = filter_clause(&f, &Target::everything(), &TagIds::default(), UnreadPlan::Set);
                         assert!(filter.by_set);
                         let (sql, values) = list_query(scope, &a, after, 61, sort, &filter);
                         let steps = plan(&store, &sql, &values);
@@ -2084,8 +2161,8 @@ mod plan_tests {
         // Another criterion than unread keeps the walk: the set is only for
         // "unread".
         let read = ThreadFilter { seen: Some(true), ..Default::default() };
-        assert!(!filter_clause(&read, &Target::everything(), &[], UnreadPlan::Set).by_set);
-        assert!(!filter_clause(&ThreadFilter::default(), &Target::everything(), &[], UnreadPlan::Set).by_set);
+        assert!(!filter_clause(&read, &Target::everything(), &TagIds::default(), UnreadPlan::Set).by_set);
+        assert!(!filter_clause(&ThreadFilter::default(), &Target::everything(), &TagIds::default(), UnreadPlan::Set).by_set);
     }
 
     /// The switch follows the unread mails of the listed folders.
@@ -2134,7 +2211,7 @@ mod plan_tests {
         ).unwrap();
         let f = ThreadFilter { seen: Some(false), ..Default::default() };
         let pages = |scope: Scope, unread: UnreadPlan| -> Vec<i64> {
-            let filter = filter_clause(&f, &Target::everything(), &[], unread);
+            let filter = filter_clause(&f, &Target::everything(), &TagIds::default(), unread);
             let mut out = Vec::new();
             let mut after = None;
             loop {
@@ -2161,7 +2238,7 @@ mod plan_tests {
         let store = Store::open_in_memory().unwrap();
         let f = ThreadFilter { mail_after: Some(1), mail_before: Some(2), ..Default::default() };
         for target in [Target::folders("1"), Target::everything()] {
-            let filter = filter_clause(&f, &target, &[], UnreadPlan::Walk);
+            let filter = filter_clause(&f, &target, &TagIds::default(), UnreadPlan::Walk);
             let (sql, values) = list_query(Scope::Everything, &Accounts::All, None, 61, ThreadSort::Received, &filter);
             let steps = plan(&store, &sql, &values);
             check("mail date", &steps);

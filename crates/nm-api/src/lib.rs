@@ -94,6 +94,9 @@ pub mod method {
     /// Adds (or removes) an address, or the person a thread is with, to a
     /// group. The user's own addresses are refused (`groupes.md`).
     pub const SET_GROUP_MEMBER: &str = "set_group_member";
+    /// Tags of some threads, the person each is with and that person's
+    /// groups: what `t` and `g` can remove from a selection (`ui.md`).
+    pub const THREAD_LABELS: &str = "thread_labels";
     /// Known addresses, with their decision and groups.
     pub const LIST_CONTACTS: &str = "list_contacts";
     /// Takes, changes or removes the screening decision on an address, and
@@ -674,6 +677,22 @@ pub struct ThreadFilter {
     /// account has its own "Clients"), compared without case.
     #[serde(default)]
     pub tag: Option<String>,
+    /// Tagged with one of these tags, OR-ed: the Tag… attribute of the
+    /// selector (`ui.md`, "Sélecteur d'attributs"). Each name is read like
+    /// `tag` (every account, without case); `tag` (a tag's own list) and
+    /// these combine by "and". A name no tag has matches nothing. Empty:
+    /// no criterion.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<String>,
+    /// Tagged with none of these: a thread is left out as soon as one of
+    /// its messages carries one of them (the rule of `not_from`, `ui.md`,
+    /// "Négation"). A name no tag has leaves nothing out.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub not_tags: Vec<String>,
+    /// Without any tag: no message of the thread carries one ("without
+    /// tag" of Tag…). `false`, the default, is no criterion.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub no_tag: bool,
     /// Of the members of this group (`groupes.md`): a message of the thread
     /// in the listed folders is from one of them or to them (To, Cc).
     #[serde(default)]
@@ -690,6 +709,12 @@ pub struct ThreadFilter {
     /// one (To, Cc), the rule of `not_from` (`ui.md`, "Négation").
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub not_group_ids: Vec<i64>,
+    /// Of nobody in a group: no message of the thread in the listed folders
+    /// is from a member of any group or to one ("without group" of
+    /// Group…), the rule of `not_group_ids` for every group. `false`, the
+    /// default, is no criterion.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub no_group: bool,
     /// Of this contact (an `address` id): a message of the thread in the
     /// listed folders is from it or to it (To, Cc).
     #[serde(default)]
@@ -735,6 +760,33 @@ pub enum ThreadSort {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GetThreadParams {
     pub thread_id: i64,
+}
+
+/// Params of `thread_labels`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ThreadLabelsParams {
+    /// The threads, at most `MAX_LABEL_THREADS`.
+    pub thread_ids: Vec<i64>,
+}
+
+/// Most threads one `thread_labels` reads: a selection made with ⌘A on a
+/// long list stays answered in a few milliseconds (three indexed reads per
+/// thread), and a client never waits on an unbounded request.
+pub const MAX_LABEL_THREADS: usize = 1000;
+
+/// The tags of a thread, the person it is with and that person's groups
+/// (`thread_labels`, and the same fields in `ThreadView`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ThreadLabels {
+    pub thread_id: i64,
+    /// Names of the thread's tags, sorted.
+    pub tags: Vec<String>,
+    /// Address of the person the thread is with (the one `set_group_member`
+    /// takes for `thread_id`), lowercase; `None` when it names nobody but
+    /// the user.
+    pub correspondent: Option<String>,
+    /// Groups that person is in, in display order.
+    pub groups: Vec<String>,
 }
 
 /// Params of `locate_message`.
@@ -1211,6 +1263,16 @@ pub struct ThreadView {
     pub subject: String,
     /// Every message of the thread, across all folders, sorted by date.
     pub messages: Vec<MessageView>,
+    /// Names of the thread's tags, sorted: shown in the header (`ui.md`,
+    /// "Tags et groupes dans l'en-tête").
+    #[serde(default)]
+    pub tags: Vec<String>,
+    /// The person the thread is with (`ThreadLabels::correspondent`).
+    #[serde(default)]
+    pub correspondent: Option<String>,
+    /// Groups of that person, in display order, shown in the header.
+    #[serde(default)]
+    pub correspondent_groups: Vec<String>,
     pub as_of: Position,
 }
 

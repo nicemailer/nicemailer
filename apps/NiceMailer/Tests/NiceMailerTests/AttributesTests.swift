@@ -45,6 +45,57 @@ struct AttributesTests {
         #expect(f.isEmpty && f.words(of: .group) == nil)
     }
 
+    /// Tag… (`ui.md`, "Sélecteur d'attributs"): tags by name, without
+    /// case, OR-ed, excluded like a group; the core gets `tags` and
+    /// `not_tags`.
+    @Test func tagsAreChosenByNameAndExcludedLikeGroups() {
+        var f = ThreadFilter()
+        f.toggleTag("Urgent")
+        f.toggleTag("Équipe")
+        #expect(f.parameters["tags"] as? [String] == ["Urgent", "Équipe"])
+        #expect(f.parameters["not_tags"] == nil)
+        // Without case: "urgent" is the tag already chosen.
+        #expect(f.isActive(.tag) && f.tagChoice("urgent") == true && f.tagChoice("Calme") == nil)
+        #expect(f.chips.map(\.label) == [L("tag: %@", "Urgent"), L("tag: %@", "Équipe")])
+        f.toggleTag("urgent", excluded: true)
+        #expect(f.parameters["tags"] as? [String] == ["Équipe"])
+        #expect(f.parameters["not_tags"] as? [String] == ["urgent"])
+        #expect(f.tagChoice("Urgent") == false)
+        #expect(f.chips.map(\.id) == ["tag:Équipe", "not_tag:urgent"])
+        // Chosen again on the same side: removed.
+        f.toggleTag("URGENT", excluded: true)
+        #expect(f.notTags.isEmpty)
+        // A chip removes its own tag, even with a ":" in its name.
+        f.toggleTag("projet:toit")
+        f.remove("tag:projet:toit")
+        f.remove("tag:Équipe")
+        #expect(f.isEmpty && !f.isActive(.tag))
+        // Typed values do not reach tags.
+        f.add(.tag, "Urgent")
+        #expect(f.isEmpty && f.words(of: .tag) == nil)
+    }
+
+    @Test func withoutGroupAndAWantedGroupReplaceEachOther() {
+        var f = ThreadFilter()
+        let vip = ThreadFilter.GroupRef(id: 1, name: "VIP")
+        f.toggleGroup(vip)
+        f.toggleGroup(ThreadFilter.GroupRef(id: 2, name: "Club"), excluded: true)
+        f.toggleNoGroup()
+        // The wanted group goes; the excluded one stays.
+        #expect(f.noGroup && f.groups.isEmpty && f.notGroups.map(\.id) == [2])
+        #expect(f.parameters["no_group"] as? Bool == true)
+        #expect(f.chips.map(\.id) == ["not_group:2", "no_group"])
+        f.toggleGroup(vip)
+        #expect(!f.noGroup && f.parameters["no_group"] == nil)
+        // The same for tags; a chip removes it.
+        f.toggleTag("Urgent")
+        f.toggleNoTag()
+        #expect(f.noTag && f.tags.isEmpty && f.isActive(.tag))
+        #expect(f.chips.last?.label == L("without tag"))
+        f.remove("no_tag")
+        #expect(!f.noTag && !f.isActive(.tag))
+    }
+
     /// Human / robot (`expediteurs.md`, section 8): one yes / no attribute,
     /// sent to the core as `human`, the opposite replacing the other.
     @Test func humanAndRobotAreOneAttribute() {

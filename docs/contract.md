@@ -49,7 +49,7 @@ A dedicated command prints readable output, asks for confirmation when needed an
 | --- | --- | --- |
 | `list_folders` | Every folder of every account, with its role and counts. | `nicemailer folders` prints account, folder, total and unread. |
 | `list_threads` | A page of threads (`ThreadSummary`) of a folder, of several folders (unified view) or of "Everything", with filters, sort and an opaque cursor. | — |
-| `get_thread` | A whole thread, ready to display (`ThreadView`, `MessageView`). | — |
+| `get_thread` | A whole thread, ready to display (`ThreadView`, `MessageView`), with its tags, the person it is with and that person's groups. | — |
 | `search` | Full-text search from plain text typed by the user. | — |
 | `locate_message` | The thread and folder of a message, from its id: what opens a `nicemailer://m/<id>` link (`deep-links.md`). | — |
 | `message_text` | The text of one message, one line per paragraph, for the clipboard. | — |
@@ -82,6 +82,7 @@ A dedicated command prints readable output, asks for confirmation when needed an
 | `set_sender_kind` | Forces an address to be a person or a robot, or hands it back to the computed verdict (`senders.md`). | — |
 | `list_groups` | The contact groups, with their member count, latest change and mails received from their members. | — |
 | `set_group_member` | Adds or removes an address, or the person a thread is with, in a group. Creates the group if needed. Refuses the user's own addresses. | — |
+| `thread_labels` | For up to 1,000 threads: their tags, the person each is with and that person's groups, so that a client can offer to remove them from a selection. | — |
 | `list_contacts` | The known addresses, with their decision and groups. | — |
 
 ## Import

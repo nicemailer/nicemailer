@@ -8,7 +8,7 @@ use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use nm_api::{ContactView, ExportFormat, GroupView, HistoryEntry, TagView};
+use nm_api::{ContactView, ExportFormat, GroupView, HistoryEntry, TagView, ThreadLabels};
 use nm_core::Source;
 use rusqlite::{OptionalExtension, Transaction, TransactionBehavior, params};
 use serde_json::Value;
@@ -580,6 +580,39 @@ impl Store {
             })?
             .collect::<std::result::Result<_, _>>()?;
         Ok(items)
+    }
+
+    /// What the header of the open thread shows besides its subject: the
+    /// thread's tags, the person it is with and the groups that person is
+    /// in (`ui.md`, "Tags et groupes dans l'en-tête").
+    ///
+    /// The person is the one `set_group_member` takes for this thread
+    /// (`thread_correspondent_addr`): the header then names the groups that
+    /// `g` can remove them from, never the groups of someone else of the
+    /// thread. `own` as for `set_group_member`.
+    ///
+    /// A few indexed reads (the thread's messages, then the person's
+    /// memberships through `idx_contact_group_member_address`), done once
+    /// per thread opened.
+    pub fn thread_labels(&self, thread_id: i64, own: &[String]) -> Result<ThreadLabels> {
+        let own = self.own_addresses(own)?;
+        let tags = crate::queries::thread_tag_names(&self.conn, thread_id)?;
+        let correspondent = crate::queries::thread_correspondent_addr(&self.conn, thread_id, &own)?;
+        let groups = match &correspondent {
+            None => vec![],
+            Some(addr) => self
+                .conn
+                .prepare_cached(
+                    "SELECT g.name FROM address a
+                       JOIN contact_group_member gm ON gm.address_id = a.id AND gm.date_removed IS NULL
+                       JOIN contact_group g ON g.id = gm.group_id AND g.date_deleted IS NULL
+                      WHERE a.addr = ?1
+                      ORDER BY g.position, g.name COLLATE NOCASE",
+                )?
+                .query_map([addr], |r| r.get(0))?
+                .collect::<std::result::Result<_, _>>()?,
+        };
+        Ok(ThreadLabels { thread_id, tags, correspondent, groups })
     }
 
     /// Removes the user's addresses (`own`, as for `set_group_member`) from

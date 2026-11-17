@@ -139,7 +139,9 @@ enum Fixture {
             // What the core finds in the text above (`links.rs`).
             "links": [["url": "https://example.org/\(id)", "text": NSNull()]],
         ]
-        return ["id": id, "subject": "Subject \(id)", "messages": [message], "as_of": position]
+        // No tag, no group: a test that needs some answers its own.
+        return ["id": id, "subject": "Subject \(id)", "messages": [message], "tags": [String](),
+                "correspondent": "sender\(id)@example.org", "correspondent_groups": [String](), "as_of": position]
     }
 
     /// The draft of a reply to the message `replyTo` (thread × 10 in the
@@ -287,6 +289,13 @@ enum Fixture {
             return ["changed": 0, "moved": 0, "filed": 0, "decision": NSNull(), "undo": "11:11"]
         case "set_group_member":
             return ["group_id": 1, "addr": "sender1@example.org", "changed": true]
+        case "thread_labels":
+            // Nobody in a group, as in `threadView`.
+            let ids = params["thread_ids"] as? [Int] ?? []
+            let items: [[String: Any]] = ids.map {
+                ["thread_id": $0, "tags": [String](), "correspondent": "sender\($0)@example.org", "groups": [String]()]
+            }
+            return ["items": items, "as_of": position]
         case "export_message":
             return ["path": "/tmp/x.eml"]
         case "message_record":

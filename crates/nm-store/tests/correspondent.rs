@@ -337,3 +337,54 @@ fn reading_the_accounts_removes_the_users_addresses_from_the_groups() {
     assert_eq!(removed, 2);
     assert_eq!(s.remove_own_from_groups(&own, Source::ConfigSync).unwrap(), 0);
 }
+
+#[test]
+fn the_labels_of_a_thread_name_its_tags_and_the_groups_of_its_person() {
+    // The header of the open thread, and what `t` and `g` can remove
+    // (`ui.md`, "Tags et groupes dans l'en-tête").
+    let mut s = store();
+    let answered = thread_of(&s, "Answered");
+    // Nothing yet: no tag, no group, but the person is known.
+    let l = s.thread_labels(answered, &[]).unwrap();
+    assert_eq!((l.thread_id, l.correspondent.as_deref()), (answered, Some("alice@x.org")));
+    assert!(l.tags.is_empty() && l.groups.is_empty());
+
+    s.tag_thread(answered, "Urgent", false, Source::App).unwrap();
+    s.tag_thread(answered, "Clients", false, Source::App).unwrap();
+    // Two groups of Alice, created in this order (display order), and
+    // one of Bob, who is not the person of this thread.
+    added(&mut s, "Answered", &[]).unwrap();
+    s.set_group_member("VIP", Some("alice@x.org"), None, false, &[], Source::App).unwrap();
+    s.set_group_member("Team", Some("bob@x.org"), None, false, &[], Source::App).unwrap();
+    let l = s.thread_labels(answered, &[]).unwrap();
+    assert_eq!(l.tags, ["Clients", "Urgent"]);
+    assert_eq!(l.groups, ["Clients", "VIP"]);
+    // The same tags as the list row.
+    assert_eq!(row(&s, "Answered", &[]).tags, l.tags);
+
+    // A removed member, or a deleted group, is no longer named.
+    s.set_group_member("VIP", None, Some(answered), true, &[], Source::App).unwrap();
+    s.conn().execute("UPDATE contact_group SET date_deleted = unixepoch() WHERE name = 'Clients'", []).unwrap();
+    assert!(s.thread_labels(answered, &[]).unwrap().groups.is_empty());
+}
+
+#[test]
+fn a_thread_with_nobody_else_has_no_groups() {
+    // The user wrote to themselves: no person, so no group, even though
+    // the user's address was put in one before the rule.
+    let mut s = store();
+    let t = thread_of(&s, "Declared address");
+    let own = vec!["work@x.org".to_string()];
+    s.conn().execute("UPDATE message SET from_addr = 'me@x.org' WHERE thread_id = ?1", [t]).unwrap();
+    s.conn()
+        .execute(
+            "DELETE FROM message_address WHERE message_id IN (SELECT id FROM message WHERE thread_id = ?1)
+               AND address_id <> (SELECT id FROM address WHERE addr = 'work@x.org')",
+            [t],
+        )
+        .unwrap();
+    s.set_group_member("Clients", Some("work@x.org"), None, false, &[], Source::App).unwrap();
+    let l = s.thread_labels(t, &own).unwrap();
+    assert_eq!(l.correspondent, None);
+    assert!(l.groups.is_empty());
+}
