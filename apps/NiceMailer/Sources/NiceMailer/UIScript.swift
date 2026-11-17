@@ -145,9 +145,56 @@ enum UIScript {
 
     static var testWindow: NSWindow? { window }
 
-    /// Records the frame of a clickable row (see `View.uiTarget`).
+    // MARK: Preferences
+
+    /// The Preferences window, while a scenario has it open (`preferences`):
+    /// a second off-screen window, like the first. Keys, clicks, `snap` and
+    /// `resize` go to it while it is open.
+    static private(set) var preferencesWindow: NSWindow?
+    /// The objects of its accounts pane, once it appeared
+    /// (`preferencesOpened`), for `Runner.state()`.
+    static private(set) weak var preferencesList: AccountsList?
+    static private(set) weak var preferencesSetup: AccountSetup?
+    /// The stand-in that answers the creation methods (`UIScriptSetupCore`).
+    static private(set) var setupCore: UIScriptSetupCore?
+
+    /// Called by `AccountsPane` when it appears (does nothing outside UI
+    /// script mode).
+    static func preferencesOpened(list: AccountsList, setup: AccountSetup) {
+        guard isActive else { return }
+        preferencesList = list
+        preferencesSetup = setup
+    }
+
+    /// Opens the Preferences as the app menu's "Settings…" would, on the
+    /// script's model, with the creation methods answered by
+    /// `UIScriptSetupCore`: no mail server, no DNS, nothing written.
+    static func openPreferences() {
+        guard preferencesWindow == nil, let model, let core = model.core else { return }
+        let fake = UIScriptSetupCore(real: core)
+        setupCore = fake
+        model.accountsCoreOverride = fake
+        let host = NSHostingView(rootView: PreferencesView().environment(model))
+        let w = ScriptWindow(contentRect: NSRect(x: -30_000, y: -32_000, width: 720, height: 540),
+                             styleMask: [.borderless], backing: .buffered, defer: false)
+        w.contentView = host
+        w.isReleasedWhenClosed = false
+        w.alphaValue = 0
+        w.orderFrontRegardless()
+        preferencesWindow = w
+    }
+
+    static func closePreferences() {
+        preferencesWindow?.close()
+        preferencesWindow = nil
+        frames = frames.filter { !$0.key.hasPrefix("prefs-") }
+    }
+
+    /// Records the frame of a clickable row (see `View.uiTarget`). The
+    /// rows of the Preferences (`prefs-…`) are in their own window.
     static func record(_ id: String, _ globalFrame: CGRect) {
-        guard let content = window?.contentView else { return }
+        let w = id.hasPrefix("prefs-") ? preferencesWindow : window
+        guard let content = w?.contentView else { return }
         // SwiftUI's global space has its origin at the top-left of the
         // window content; AppKit events use the bottom-left corner.
         frames[id] = CGRect(
@@ -203,7 +250,9 @@ private final class Runner {
         self.controller = controller
     }
 
-    var window: NSWindow? { UIScript.testWindow }
+    /// Where keys, clicks and snapshots go: the Preferences while they are
+    /// open, else the main window.
+    var window: NSWindow? { UIScript.preferencesWindow ?? UIScript.testWindow }
 
     func run(path: String) async -> Int {
         try? FileManager.default.createDirectory(at: UIScript.outDir, withIntermediateDirectories: true)
@@ -307,6 +356,16 @@ private final class Runner {
             case "repair": await model.repairClaudeDesktop()
             default: fail(lineNumber, line, "unknown agents action")
             }
+        case "preferences":
+            // `preferences` opens them, `preferences close` closes them.
+            if arg == "close" {
+                UIScript.closePreferences()
+            } else {
+                UIScript.openPreferences()
+                if !(await waitUntil(seconds: 5, { UIScript.preferencesList?.loaded == true })) {
+                    fail(lineNumber, line, "the Preferences did not load their accounts")
+                }
+            }
         case "clipboard":
             controller.pasteboard.clearContents()
             controller.pasteboard.setString(arg.replacingOccurrences(of: "\\n", with: "\n"), forType: .string)
@@ -315,10 +374,13 @@ private final class Runner {
             var mods: NSEvent.ModifierFlags = []
             if words.contains("cmd") { mods.insert(.command) }
             if words.contains("shift") { mods.insert(.shift) }
-            guard let target = words.first, let point = await locate(target) else {
+            guard let target = words.first, var point = await locate(target) else {
                 fail(lineNumber, line, "target not found")
                 return
             }
+            // `right`: near the right edge rather than in the middle, where
+            // a row of a settings form has its control (a checkbox).
+            if words.contains("right"), let f = frame(target) { point.x = f.maxX - 10 }
             click(at: point, modifiers: mods, count: 1)
             if command == "dblclick" {
                 try? await Task.sleep(for: .milliseconds(50))
@@ -425,6 +487,14 @@ private final class Runner {
         // the editor's web view. Delivered to it directly, as the clicks
         // are (`click`): the app is never active, and AppKit would give a
         // key nowhere in a window that is not the key window.
+        // The Preferences: the window gives the key to its first responder,
+        // the field being edited; Return, to the default button.
+        if w === UIScript.preferencesWindow {
+            if !(w.firstResponder?.performKeyEquivalent(with: e) ?? false), !w.performKeyEquivalent(with: e) {
+                w.sendEvent(e)
+            }
+            return
+        }
         if let c = model.composer, c.focus == .body, controller.screen == .mail, controller.overlay == .none {
             if !controller.handle(e) {
                 let web = controller.editorView
@@ -453,7 +523,13 @@ private final class Runner {
     func click(at point: CGPoint, modifiers: NSEvent.ModifierFlags, count: Int) {
         guard let w = window, let content = w.contentView else { return }
         let target = content.hitTest(point) ?? content
-        if target is NSTextView {
+        // The controls of the Preferences follow the click the same way: a
+        // text field starts editing, a button waits to be released, a
+        // table selects its row, each in a loop; from the view hit or any
+        // view around it.
+        let tracks = sequence(first: target, next: { $0.superview })
+            .contains { $0 is NSTextView || $0 is NSControl || $0 is NSTableView }
+        if tracks {
             // A text view follows a click in a tracking loop that waits for
             // the mouse up: queue it first, then send the mouse down.
             guard let down = NSEvent.mouseEvent(
@@ -476,6 +552,13 @@ private final class Runner {
             else { continue }
             if type == .leftMouseDown { target.mouseDown(with: e) } else { target.mouseUp(with: e) }
         }
+    }
+
+    /// Frame of a target already located (`locate`), by the same id.
+    func frame(_ target: String) -> CGRect? {
+        let parts = target.split(separator: ":", maxSplits: 1).map(String.init)
+        guard parts.count == 2 else { return nil }
+        return UIScript.frames["\(parts[0])-\(parts[1])"]
     }
 
     /// Center of a target row, waiting for it to be laid out.
@@ -573,7 +656,7 @@ private final class Runner {
             if case .picker(let k) = c.overlay { return c.pickerEntries(k).map(\.label) }
             return []
         }()
-        return [
+        let main: [String: String] = [
             "screen": "\(c.screen)",
             // The rows of the Tags or Groups screen, by name: `Urgent, Calme`.
             "screen_rows": c.screen == .tags ? c.screenTags.map(\.name).joined(separator: ", ")
@@ -921,7 +1004,50 @@ private final class Runner {
             "editor_messages": (m.editor as? EditorBridge).map { $0.received.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: ",") } ?? "",
             "editor_in_window": "\(controller.editorView.window != nil)",
         ]
+        return main.merging(preferencesState()) { $1 }
     }
+
+    /// The Preferences' fields (`UITests/README.md`): empty while closed.
+    func preferencesState() -> [String: String] {
+        guard let list = UIScript.preferencesList, let s = UIScript.preferencesSetup else { return [:] }
+        let names: [AccountSetup.Section: String] = [.imap: "imap", .smtpPassword: "smtp-password", .smtp: "smtp", .importScreen: "import"]
+        let sections = s.sectionsShown.compactMap { names[$0] }
+        let selection: String = {
+            switch list.selection {
+            case .add: return "add"
+            case .account(let id): return list.items.first { $0.id == id }?.key ?? "\(id)"
+            case nil: return ""
+            }
+        }()
+        let focused: String = {
+            guard let w = UIScript.preferencesWindow, let r = w.firstResponder as? NSText,
+                  let field = r.delegate as? NSView else { return "" }
+            return UIScript.frames.first { $0.key.hasPrefix("prefs-") && $0.value.contains(field.convert(field.bounds, to: nil).center) }?.key ?? "?"
+        }()
+        return [
+            "prefs_accounts": list.items.map(\.key).joined(separator: ","),
+            "prefs_selection": selection,
+            "prefs_error": list.error ?? "",
+            "prefs_focus": focused,
+            "setup_email": s.email,
+            "setup_name": s.displayName,
+            "setup_password_set": "\(!s.password.isEmpty)",
+            "setup_sections": sections.joined(separator: ","),
+            "setup_imap_host": s.imapServer?.host ?? "",
+            "setup_imap_reason": s.imapReason ?? "",
+            "setup_smtp_host": s.smtpServer?.host ?? "",
+            "setup_smtp_reason": s.smtpReason ?? "",
+            "setup_smtp_password_reason": s.smtpPasswordReason ?? "",
+            "setup_error": s.error ?? "",
+            "setup_busy": s.busy ?? "",
+            "setup_added": s.added ?? "",
+            "setup_calls": (UIScript.setupCore?.calls ?? []).joined(separator: " | "),
+        ]
+    }
+}
+
+private extension CGRect {
+    var center: CGPoint { CGPoint(x: midX, y: midY) }
 }
 
 /// The window of UI script mode. It says it is the key window, without the

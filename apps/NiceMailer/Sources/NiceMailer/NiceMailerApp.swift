@@ -115,6 +115,15 @@ struct NiceMailerApp: App {
                 .pickerStyle(.inline)
             }
         }
+        // The Preferences (`PreferencesView`): SwiftUI adds "Settings…"
+        // (⌘,) to the app menu, named as the system names it ("Réglages…"
+        // in French). The same model as the main window: one core, one
+        // connection. UI script mode opens its own (`UIScript`).
+        Settings {
+            if !UIScript.isActive {
+                PreferencesView().environment(model)
+            }
+        }
     }
 }
 

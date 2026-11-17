@@ -103,10 +103,10 @@ A dedicated command prints readable output, asks for confirmation when needed an
 | `list_accounts` | Every account (IMAP and archive) with its state, in display order. | `nicemailer accounts` |
 | `config_status` | The state of `config.toml` and `accounts.toml`: paths, the error that makes the core refuse them, warnings, and the settings the clients apply themselves (`ui`, `mcp`). | — (`nicemailer config check` checks the files itself, without the core.) |
 | `discover_account` | Finds the servers of an address before the account exists: provider, IMAP server, SMTP servers to try. | Step 1 of `nicemailer account add`. |
-| `test_account` | Tries the IMAP server of an account not created yet: capabilities, folders with proposed roles, counts for the import. | Step 2 of `account add`. |
+| `test_account` | Tries the IMAP server of an account not created yet: capabilities, folders with proposed roles, counts for the import. A failure says in `data.reason` whether the password (`auth`) or the server (`connect`) is at fault. | Step 2 of `account add`. |
 | `count_archive` | Exact count of the mails the initial archiving would move. | Step 3 of `account add` (`--archive-read-before`, `--archive-unread-before`, `--no-archive`). |
-| `test_smtp` | Tries SMTP servers in order, until one accepts the login. | Step 4 of `account add` (skipped with `--no-smtp`). |
-| `add_account` | Creates an IMAP account: folders, roles, initial import, password, `accounts.toml`. | Last step of `nicemailer account add [key] --email <addr> [--host …] [--role ROLE=FOLDER] [--read-only] [--yes]` (`accounts.md`) |
+| `test_smtp` | Tries SMTP servers in order, until one accepts the login; names the one that refused the password (`refused`) when none did. With `smtp_password`, tries that password instead of the IMAP one, on any server. | Step 4 of `account add` (skipped with `--no-smtp`). |
+| `add_account` | Creates an IMAP account: folders, roles, initial import, password (and the SMTP server's own, `smtp_password`), `accounts.toml`. | Last step of `nicemailer account add [key] --email <addr> [--host …] [--role ROLE=FOLDER] [--read-only] [--yes]` (`accounts.md`) |
 | `set_folder_roles` | Changes the workflow role of folders of an account. | `nicemailer account roles <key> todo=Todo archive=Archives [--create-missing]` |
 | `rename_account` | Renames the key of an account, keeping its data. | `nicemailer account rename <from> <to>` |
 | `remove_account` | Deletes an account, its data in NiceMailer and its password. The mail on the server is not touched. | `nicemailer account remove <key> [--yes]` |

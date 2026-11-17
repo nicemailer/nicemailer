@@ -272,7 +272,11 @@ pub mod error_code {
     /// since it was saved, OAuth2. The message says what to do.
     pub const ACCOUNT_NOT_READY: i64 = 1008;
     /// The mail server could not be reached, refused the login, or failed;
-    /// the message holds its answer.
+    /// the message holds its answer. From the account creation methods
+    /// (`test_account`, `count_archive`, `add_account`), `data.reason` says
+    /// which: `auth` (the user name or the password refused), `connect`
+    /// (no connection, TLS refused, no answer in time), `server` (anything
+    /// else), so that a client points at the field to correct.
     pub const SERVER: i64 = 1009;
     /// A command that changes the mail of a read-only account
     /// (`read_only = true` in `accounts.toml`).
@@ -2693,6 +2697,11 @@ pub struct AddAccountParams {
     /// account cannot send until one is added.
     #[serde(default)]
     pub smtp: Option<ImapParams>,
+    /// The password of that SMTP server, when it is not the IMAP one:
+    /// saved in the Keychain (`smtp:<key>`, bound to the SMTP server), as
+    /// `set_password` with `smtp` would. Refused without `smtp`.
+    #[serde(default)]
+    pub smtp_password: Option<String>,
 }
 
 fn yes() -> bool {
@@ -2797,6 +2806,11 @@ pub struct TestSmtpParams {
     /// SMTP server of the same host or organization.
     pub imap: ImapParams,
     pub password: String,
+    /// The password of the SMTP server itself, when the user gave one (the
+    /// server refused the IMAP password, or belongs to another
+    /// organization): tried on every candidate, whatever its organization.
+    #[serde(default)]
+    pub smtp_password: Option<String>,
     /// Tried in this order; the first that works is chosen.
     pub candidates: Vec<ServerCandidate>,
 }
@@ -2807,13 +2821,19 @@ pub struct SmtpTestReport {
     pub attempts: Vec<SmtpAttempt>,
     /// Index in `attempts` of the server chosen, if one worked.
     pub chosen: Option<usize>,
+    /// When none worked: index of the first server that refused the
+    /// password (`auth_refused`). It is the right server, short of its own
+    /// password: a client asks for it and tries again with `smtp_password`.
+    #[serde(default)]
+    pub refused: Option<usize>,
 }
 
 /// One SMTP server tried.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SmtpAttempt {
     pub candidate: ServerCandidate,
-    /// `logged_in`: the password was accepted; `reachable`: the server
+    /// `logged_in`: the password was accepted; `auth_refused`: the server
+    /// refused it (it needs a password of its own); `reachable`: the server
     /// answered, the password was not tried (another organization than the
     /// IMAP server: it will need its own password); `no_login`: the server
     /// offers no login (a relay, not a submission server); `failed`.

@@ -1,6 +1,6 @@
 # Creating, renaming and removing an IMAP account
 
-How an IMAP account is created with its initial import, its folder roles changed, its key renamed, or the account deleted. This is phase 7 of `specifications/plan-imap.md`; the rules are in `specifications/import-initial.md`, `specifications/dossiers.md` ("A la création du compte") and `specifications/configuration.md` (sections 5 and 6). The core does it all (`crates/nm-daemon/src/setup.rs`, `crates/nm-engine/src/setup.rs` and `config_write.rs`, `crates/nm-store/src/setup.rs`); the CLI asks and shows.
+How an IMAP account is created with its initial import (from the CLI, or from the app's Preferences: [In the app](#in-the-app)), its folder roles changed, its key renamed, or the account deleted. This is phase 7 of `specifications/plan-imap.md`; the rules are in `specifications/import-initial.md`, `specifications/dossiers.md` ("A la création du compte") and `specifications/configuration.md` (sections 5 and 6). The core does it all (`crates/nm-daemon/src/setup.rs`, `crates/nm-engine/src/setup.rs` and `config_write.rs`, `crates/nm-store/src/setup.rs`); the CLI asks and shows.
 
 These commands carry a password or delete mail: only the app, the TUI and the CLI may call them, never an agent (error `1007`).
 
@@ -92,10 +92,13 @@ Then, once the IMAP server accepted the password, `test_smtp` tries the SMTP ser
 | --- | --- | --- |
 | `logged_in` | a server of the IMAP server's organization (same host, or same organizational domain: `imap.gmail.com` and `smtp.gmail.com`) accepted the IMAP password | yes; it sends with the IMAP password |
 | `reachable` | a server of **another** organization answered and offers a login. The IMAP password is not sent there: the sender would not use it there either ([sending.md](sending.md), "Password") | yes; the command says to save its password with `nicemailer account password <key> --smtp` |
+| `auth_refused` | a server of the IMAP server's organization refused the IMAP password (an app password needed for SMTP, say) | not at once: the next server is tried. If none works, this one is kept (`refused` in the report) and the command says to save its password with `nicemailer account password <key> --smtp` |
 | `no_login` | the server answered but offers no login: a relay, not a server to send from | no |
-| `failed` | no connection, TLS refused, login refused: the reason is printed | no |
+| `failed` | no connection, TLS refused, a login method NiceMailer does not speak (OAuth2 only): the reason is printed | no |
 
-Nothing is sent: the connection ends with `QUIT`. When no server works, the account is created without `[smtp]` and the command says it cannot send until one is added; meanwhile its mails are answered from another account that can ([sending.md](sending.md), "Choosing the sender").
+`test_smtp` takes an optional `smtp_password`: the password the user gave for the SMTP server itself. It is then tried on every server, whatever its organization (it is meant for SMTP, so sending it there is what the user asked), and the outcomes are `logged_in` or `auth_refused`. The app uses it to check the password before the account is created (below); `add_account` saves it in the Keychain with the account (`smtp_password`, item `smtp:<key>`, bound to the SMTP server), as `nicemailer account password <key> --smtp` would.
+
+Nothing is sent: the connection ends with `QUIT`. When no server works and none refused the password, the account is created without `[smtp]` and the command says it cannot send until one is added; meanwhile its mails are answered from another account that can ([sending.md](sending.md), "Choosing the sender").
 
 ### The archiving on the server
 
@@ -107,6 +110,33 @@ The worker sends the `initial_archive` action before anything else, and the Inbo
 - **Journal**: one `initial_archive` row on the account, with the criteria and the number of mails moved; not one per mail.
 
 The mails already in the mailbox are synchronized without screening (below the boundary); the addresses met then are marked `imported_from = 'imap_initial'`. After the import, every new mail is screened ([screening.md](screening.md)): a sender of the history without decision goes to Quarantine with their next mail.
+
+## In the app
+
+The app menu's **Settings…** (⌘,, "Réglages…" in French) opens the Preferences (`apps/NiceMailer/Sources/NiceMailer/Preferences/`). Their **Accounts** tab lists every account in display order (the order of the account picker `@` and of the folder column), with what is wrong with it (disabled, cannot connect, archive of an mbox import). An account selected shows its address, name, key and state; changing its key or servers, or removing it, is still done with the CLI.
+
+**Order.** A drag in the list, or the ↑ ↓ buttons under it, moves the account selected. The list shows the new order at once and sends all of it with `set_account_order`; if the core refuses, the list is read again from the core.
+
+**Adding an account.** The **+** button (and the tab itself, when there is no account yet) shows a form of three fields:
+
+- the address;
+- the password of the mailbox;
+- the name shown in "From", proposed from the accounts already set: the first, in display order, that has one (a name typed is never replaced).
+
+"Add Account" then runs the steps of `nicemailer account add`, without asking anything else while the steps succeed. Each step's result is kept: pressing the button again after filling a field asked for goes on from where it stopped, and changing a field forgets only what depended on it (a new address starts again from scratch, a new password tries the IMAP server again). Other fields are shown, below the three, only when a step shows they are needed, each with why:
+
+| What happened | What is asked |
+| --- | --- |
+| `discover_account` found no IMAP server: the domain and its MX are not in the database, the DNS lookup failed, the domain has no MX, or the provider takes only OAuth2 | the IMAP server (host, port, SSL/TLS or STARTTLS, user name), prefilled with `imap.<domain>` on port 993; the servers are then looked for again with it, for its SMTP guesses |
+| `test_account` could not connect (`data.reason` = `connect`) | the IMAP server, prefilled with the one tried |
+| `test_account` refused the password (`data.reason` = `auth`) | nothing new: the error points at the password |
+| the SMTP server refused the IMAP password (`refused`), or belongs to another organization (`reachable`) | the password of the SMTP server, then tried on that server alone with `smtp_password`; refused again, it is asked again. Or **Add the account without sending for now**, its password to save later |
+| no SMTP server to try, or none answered | the SMTP server, prefilled with the first tried (or `smtp.<domain>` on port 465), or **Add the account without sending for now** |
+| the Inbox is above the thresholds (`offer_archive`) | the import screen ([import-initial.md](../specifications/import-initial.md), section 3): the two archiving boxes and the correspondents' box, checked, with the exact counts of `test_account` for the default dates (read and unread mails do not overlap, so unchecking one subtracts its count without counting again). The dates are the defaults; changing them is for the CLI for now |
+
+A section that appears is scrolled into view, and the cursor goes to the field asked for. The key is the one `discover_account` proposes, never asked. Under the threshold the correspondents are accepted and nothing is archived, as the CLI does. Once added, the form empties (the name of "From" stays for the next account), says what happens next (the mail being downloaded, or the old mail being archived), and the list shows the account.
+
+Only the app, the TUI and the CLI may call these methods (error `1007`): an agent cannot add an account.
 
 ## Trying NiceMailer on a mailbox in production
 
@@ -178,8 +208,11 @@ An account written in `accounts.toml` by hand (or by an agent: its password can 
 | `crates/nm-proto/src/dns.rs` (unit) | MX sorted by preference, the null MX dropped; with the network (`--ignored`): Gmail's MX, a domain that does not exist |
 | `crates/nm-cli/src/main.rs` (unit) | the rule of the key, each step of the discovery and each SMTP outcome put in words |
 | `scripts/tests/test_update_autoconfig.py` (`make test`) | the conversion: servers kept, POP3-only providers and clear text dropped and counted, placeholders, a missing SMTP user name, invalid values, a domain claimed twice, entities and files outside `ispdb/` never read; the committed file well formed |
+| `crates/nm-engine/src/discover.rs` (unit) | `test_smtp` against a scripted SMTP server on the loopback: the IMAP password tried on the same organization, refused (`auth_refused`, `refused`) and the next server tried, a later server taking it; the SMTP password given tried on another organization, accepted then refused; a server offering only OAuth2 failing without a password tried; nothing listening |
 | `crates/nm-engine/src/config_write.rs` (unit) | the `[smtp]` table written without default; adding keeps comments and order, comments at the end stay above, into an empty file, no default written, keys checked; renaming keeps the tables in place; removing takes only the account; atomic write, a hand edit kept, an invalid result writes nothing, no temporary file left |
 | `crates/nm-engine/src/setup.rs` (unit) | dates and the archiving's search |
 | `crates/nm-store/tests/setup.rs` | the account row, roles moved, correspondents (decided, removed, own address), the archiving's life (claimed, retried, done with its journal row, failed), the Inbox waiting for it, addresses of a first synchronization marked imported, rename and remove |
 | `crates/nm-engine/tests/keychain.rs` | a password removed |
-| `crates/nm-daemon/tests/setup_rpc.rs` (`make imap-up`, `make imap-test`) | against Mailpit: SMTP servers tried in order (no answer, then the password accepted, the third not tried), a wrong password, the password not sent to another organization, the guesses for a given host, the key of a first then of a second account of a domain, `[smtp]` written by `add_account`, an agent refused. Against Dovecot: a small Inbox left as it is, the people written to accepted, a mail arriving during the screen screened, the file written with its comment, an imported sender's next mail in Quarantine; old mail archived on the server exactly as counted, flagged mail left; an archiving interrupted after a batch resumed without loss or duplicate; an account renamed with its data and password, then removed, the server untouched; an agent refused |
+| `crates/nm-daemon/tests/setup_rpc.rs` (`make imap-up`, `make imap-test`) | against Mailpit: SMTP servers tried in order (no answer, then the password accepted, the third not tried), a wrong password, the password not sent to another organization, the guesses for a given host, the key of a first then of a second account of a domain, `[smtp]` written by `add_account`, an agent refused. Against Dovecot: a small Inbox left as it is, the people written to accepted, a mail arriving during the screen screened, the file written with its comment, an imported sender's next mail in Quarantine; old mail archived on the server exactly as counted, flagged mail left; an archiving interrupted after a batch resumed without loss or duplicate; an account renamed with its data and password, then removed, the server untouched; an agent refused. Against Mailpit too: a wrong SMTP password `auth_refused` and `refused`, the SMTP password given apart accepted, a wrong IMAP password with `data.reason` = `auth`. Without the servers: an unreachable IMAP server with `data.reason` = `connect`, an SMTP password without SMTP server or empty refused |
+| `apps/NiceMailer/Tests/NiceMailerTests/AccountSetupTests.swift` (`make swift-test`) | the app's flow against a fake core: three fields enough when the servers are found (what `add_account` receives); the name of "From" proposed and never replacing a typed one; an address or password missing said without a call; the IMAP server asked when the MX does not tell it, for an OAuth2-only provider, after a connection failure, a wrong port refused; a refused password pointing at it and only the IMAP test run again; the SMTP password asked when the server refuses the IMAP one or is of another organization, refused again, then saved; an SMTP server asked when none answers, or the account added without one; the import screen shown once, its boxes changing what is archived; a new address starting again; a refused creation keeping the form; the order of the list after a drag, the ↑ ↓ moves sending the whole order, a refused move reading the core's order again |
+| `apps/NiceMailer/UITests/preferences.uiscript` (`make ui-test`) | the Preferences played with real keys and clicks, the creation methods answered without any server (`UIScriptSetupCore`): the accounts in order, moved up and down; a domain unknown asking for its IMAP server, then added; a wrong password; an SMTP server refusing the mailbox password, a wrong SMTP password, the right one; the import screen with the unread mail kept; no SMTP server and the account added without sending; the keys back to the main window once closed |

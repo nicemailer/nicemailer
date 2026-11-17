@@ -184,6 +184,16 @@ final class AppModel {
     /// core) in the unit tests and the UI scenarios, which must never
     /// change the user's mailbox; it receives the folder chosen.
     @ObservationIgnored var switchMailboxOverride: ((URL) async -> Void)?
+    /// Where the Preferences send the account creation methods: the core,
+    /// unless UI script mode puts its stand-in in between
+    /// (`UIScriptSetupCore`), which answers them without any mail server.
+    @ObservationIgnored var accountsCoreOverride: (any CoreCalling)?
+    /// The core the Preferences talk to.
+    var accountsCore: (any CoreCalling)? { accountsCoreOverride ?? core }
+    /// Goes up each time the core announces that an account changed
+    /// (`AccountChanged`, `AccountError`, `ConfigChanged`): the account list
+    /// of the Preferences reads it again.
+    private(set) var accountsRevision = 0
 
     /// The reply being written (`AppModel+Compose.swift`); nil when the
     /// reader shows the mail.
@@ -972,8 +982,16 @@ final class AppModel {
             if let t = e.params["thread_id"]?.int { dirtyThreads.insert(t) }
             for f in e.params["folder_ids"]?.ints ?? [] { dirtyFolders.insert(f) }
         case "ConfigChanged":
-            // `config.toml` applied: its `[ui]` may have changed.
+            // `config.toml` applied: its `[ui]` may have changed, and
+            // `accounts.toml` its accounts.
+            accountsRevision += 1
             Task { await loadUISettings() }
+            return
+        case "AccountChanged", "AccountError":
+            // An account added, moved, enabled, refused by its server: the
+            // Preferences list it again. Its folders come with their own
+            // `FolderChanged`.
+            accountsRevision += 1
             return
         case "DraftSent", "SendFailed", "SendPartial":
             draftEvent(e.method, e.params)

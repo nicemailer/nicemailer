@@ -18,6 +18,13 @@ Pendant le développement, il y a un menu thème qui permet de basculer d'un th�
 
 État (3 novembre 2026) : le thème geek est implémenté ; classic correspond à la première interface ; design n'existe pas encore et affiche classic.
 
+### Préférences
+
+Ajouté en novembre 2026. Le menu de l'app « Réglages… » (⌘,) ouvre les Préférences, communes aux trois thèmes, avec les contrôles standard du Mac : une fenêtre de réglages n'est pas le lieu des touches du thème geek. Un onglet par sujet ; le premier est **Comptes** (`docs/accounts.md`, « In the app »).
+
+- **Liste des comptes**, dans l'ordre d'affichage (celui du sélecteur `@` et de la colonne des dossiers), avec ce qui ne va pas (désactivé, connexion impossible, archive d'un import mbox). Un glisser-déposer ou les flèches ↑ ↓ sous la liste changent l'ordre ; la liste le montre aussitôt et l'envoie au noyau.
+- **Ajout d'un compte** : trois champs seulement, l'adresse, le mot de passe et le nom affiché dans « De ». Le nom est repris du premier compte qui en a un, dans l'ordre d'affichage, tant que l'utilisateur n'a pas tapé le sien. Le noyau trouve les serveurs (par le domaine, sinon par son MX) ; d'autres champs n'apparaissent, sous les trois premiers et avec leur raison, que si l'essai le demande : le serveur IMAP quand ni le domaine ni le MX ne le donnent (ou qu'il ne répond pas) ; le mot de passe du serveur SMTP quand il refuse celui de la boîte (mot de passe d'application) ou qu'il appartient à un autre fournisseur (le mot de passe de la boîte ne lui est jamais envoyé) ; le serveur SMTP quand aucun ne répond, ou l'ajout « sans envoi pour l'instant » ; l'écran d'import (`import-initial.md`, section 3) quand l'Inbox dépasse les seuils, avec les dates par défaut. La clé du compte n'est jamais demandée. Chaque étape réussie est gardée : un nouvel appui sur « Ajouter le compte » reprend là où l'essai s'était arrêté.
+
 ### Thème geek : choix retenus
 
 - Police monospace pour l'interface (SF Mono) ; corps des mails en **iA Writer Mono V**, livrée avec l'app (licence SIL OFL).

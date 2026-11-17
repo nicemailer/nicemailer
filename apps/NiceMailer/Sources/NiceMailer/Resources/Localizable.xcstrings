@@ -5636,6 +5636,576 @@
           }
         }
       }
+    },
+    "%@ added: %@ old mails are being archived on the server.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ ajouté : %@ anciens mails sont en cours d’archivage sur le serveur."
+          }
+        }
+      }
+    },
+    "%@ added: its mail is being downloaded.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ ajouté : ses mails sont en cours de téléchargement."
+          }
+        }
+      }
+    },
+    "%@ has no mail server (no MX record). Give the IMAP server.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ n’a pas de serveur de mail (aucun enregistrement MX). Indiquez le serveur IMAP."
+          }
+        }
+      }
+    },
+    "%@ is not run by the provider of %@: NiceMailer does not send it your mailbox password. Enter the password of this SMTP server.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ n’est pas géré par le fournisseur de %@ : NiceMailer ne lui envoie pas le mot de passe de votre boîte. Saisissez le mot de passe de ce serveur SMTP."
+          }
+        }
+      }
+    },
+    "%@ only accepts a sign-in NiceMailer does not support yet (OAuth2). Give another IMAP server if your provider has one.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ n’accepte qu’une connexion que NiceMailer ne gère pas encore (OAuth2). Indiquez un autre serveur IMAP si votre fournisseur en propose un."
+          }
+        }
+      }
+    },
+    "%@ refused the password: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ a refusé le mot de passe : %@"
+          }
+        }
+      }
+    },
+    "%@ refused this password too (%@).": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ a refusé ce mot de passe aussi (%@)."
+          }
+        }
+      }
+    },
+    "%@ refused your mailbox password (%@): it needs a password of its own, such as an app password.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ a refusé le mot de passe de votre boîte (%@) : il lui faut son propre mot de passe, par exemple un mot de passe d’application."
+          }
+        }
+      }
+    },
+    "Accounts": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Comptes"
+          }
+        }
+      }
+    },
+    "Active": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Actif"
+          }
+        }
+      }
+    },
+    "Add Account": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ajouter le compte"
+          }
+        }
+      }
+    },
+    "Add an account": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ajouter un compte"
+          }
+        }
+      }
+    },
+    "Add the account without sending for now": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ajouter le compte sans envoi pour l’instant"
+          }
+        }
+      }
+    },
+    "Adding %@…": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ajout de %@…"
+          }
+        }
+      }
+    },
+    "Address": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Adresse"
+          }
+        }
+      }
+    },
+    "Archive (mbox import)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Archive (import mbox)"
+          }
+        }
+      }
+    },
+    "Archive the read mails received before %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Archiver les mails lus reçus avant le %@"
+          }
+        }
+      }
+    },
+    "Archive the unread mails received before %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Archiver les mails non lus reçus avant le %@"
+          }
+        }
+      }
+    },
+    "Cannot connect": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connexion impossible"
+          }
+        }
+      }
+    },
+    "Connecting to %@…": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connexion à %@…"
+          }
+        }
+      }
+    },
+    "Disabled: no longer in accounts.toml": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Désactivé : n’est plus dans accounts.toml"
+          }
+        }
+      }
+    },
+    "Email address": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Adresse mail"
+          }
+        }
+      }
+    },
+    "Enter the IMAP server and its port.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Indiquez le serveur IMAP et son port."
+          }
+        }
+      }
+    },
+    "Enter the SMTP server and its port.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Indiquez le serveur SMTP et son port."
+          }
+        }
+      }
+    },
+    "Enter the password of the SMTP server.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saisissez le mot de passe du serveur SMTP."
+          }
+        }
+      }
+    },
+    "Enter the password of the mailbox.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saisissez le mot de passe de la boîte."
+          }
+        }
+      }
+    },
+    "Enter the whole address, like name@example.com.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saisissez l’adresse complète, comme nom@example.com."
+          }
+        }
+      }
+    },
+    "Flagged mails stay in the Inbox.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les mails marqués d’un drapeau restent dans la boîte de réception."
+          }
+        }
+      }
+    },
+    "Incoming mail (IMAP)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Réception (IMAP)"
+          }
+        }
+      }
+    },
+    "Key in accounts.toml": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clé dans accounts.toml"
+          }
+        }
+      }
+    },
+    "Looking for the servers of %@…": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recherche des serveurs de %@…"
+          }
+        }
+      }
+    },
+    "Mail already in the mailbox": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mails déjà présents dans la boîte"
+          }
+        }
+      }
+    },
+    "Move the account down": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Descendre le compte"
+          }
+        }
+      }
+    },
+    "Move the account up": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Monter le compte"
+          }
+        }
+      }
+    },
+    "Name shown in “From”": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nom affiché dans « De »"
+          }
+        }
+      }
+    },
+    "NiceMailer could not connect to %@: %@. Check the IMAP server.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "NiceMailer n’a pas pu se connecter à %@ : %@. Vérifiez le serveur IMAP."
+          }
+        }
+      }
+    },
+    "NiceMailer could not look up the mail servers of %@ (%@). Give the IMAP server.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "NiceMailer n’a pas pu trouver les serveurs de mail de %@ (%@). Indiquez le serveur IMAP."
+          }
+        }
+      }
+    },
+    "NiceMailer does not know the provider of %@ (its mail goes to %@). Give the IMAP server.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "NiceMailer ne connaît pas le fournisseur de %@ (ses mails arrivent sur %@). Indiquez le serveur IMAP."
+          }
+        }
+      }
+    },
+    "NiceMailer does not know the provider of %@. Give the IMAP server.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "NiceMailer ne connaît pas le fournisseur de %@. Indiquez le serveur IMAP."
+          }
+        }
+      }
+    },
+    "NiceMailer finds the servers from the address. It asks for more only if it needs to.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "NiceMailer trouve les serveurs à partir de l’adresse. Il ne demande autre chose que s’il en a besoin."
+          }
+        }
+      }
+    },
+    "NiceMailer found no server to send mail from %@. Give the SMTP server, or add the account without sending for now.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "NiceMailer n’a trouvé aucun serveur pour envoyer des mails depuis %@. Indiquez le serveur SMTP, ou ajoutez le compte sans envoi pour l’instant."
+          }
+        }
+      }
+    },
+    "No server to send mail worked (%@). Check the SMTP server, or add the account without sending for now.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucun serveur d’envoi n’a fonctionné (%@). Vérifiez le serveur SMTP, ou ajoutez le compte sans envoi pour l’instant."
+          }
+        }
+      }
+    },
+    "Other senders go through the Quarantine with their next mail.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les autres expéditeurs passeront par la Quarantine à leur prochain mail."
+          }
+        }
+      }
+    },
+    "Outgoing mail (SMTP)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Envoi (SMTP)"
+          }
+        }
+      }
+    },
+    "Password": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mot de passe"
+          }
+        }
+      }
+    },
+    "Port": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Port"
+          }
+        }
+      }
+    },
+    "SMTP password": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mot de passe SMTP"
+          }
+        }
+      }
+    },
+    "Security": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sécurité"
+          }
+        }
+      }
+    },
+    "Server": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Serveur"
+          }
+        }
+      }
+    },
+    "State": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "État"
+          }
+        }
+      }
+    },
+    "The address": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L’adresse"
+          }
+        }
+      }
+    },
+    "The people you have written to (%@) arrive straight in the Inbox.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les personnes à qui vous avez déjà écrit (%@) arriveront directement dans la boîte de réception."
+          }
+        }
+      }
+    },
+    "Trying the server to send mail…": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Essai du serveur d’envoi…"
+          }
+        }
+      }
+    },
+    "User name": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nom d’utilisateur"
+          }
+        }
+      }
+    },
+    "Your Inbox holds %@ mails, %@ of them unread.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Votre boîte de réception contient %@ mails, dont %@ non lus."
+          }
+        }
+      }
+    },
+    "Your name": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Votre nom"
+          }
+        }
+      }
+    },
+    "→ %@ mails will be archived, %@ will stay in the Inbox.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "→ %@ mails seront archivés, %@ resteront dans la boîte de réception."
+          }
+        }
+      }
     }
   },
   "version": "1.0"

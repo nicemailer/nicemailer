@@ -493,6 +493,11 @@ fn smtp_attempt_line(a: &nm_api::SmtpAttempt, key: &str) -> String {
              (save its own password after the creation: nicemailer account password {key} --smtp)."
         ),
         "no_login" => "answers but offers no login: a relay, not a server to send from.".into(),
+        "auth_refused" => format!(
+            "refused the IMAP password ({}): it needs its own \
+             (save it after the creation: nicemailer account password {key} --smtp).",
+            a.detail.as_deref().unwrap_or("?")
+        ),
         _ => format!("failed: {}.", a.detail.as_deref().unwrap_or("?")),
     };
     format!("{}: {what}", server_label(&a.candidate.server))
@@ -824,10 +829,22 @@ fn main() -> anyhow::Result<()> {
                         // Second: whether it needs its own password.
                         Some((a.candidate.server.clone(), a.outcome == "reachable"))
                     }
-                    None => {
-                        println!("SMTP: no server worked; the account is created without [smtp] and cannot send until one is added to accounts.toml.");
-                        None
-                    }
+                    // None worked, but one refused the password: the
+                    // right server, short of its own password. Kept, like
+                    // a server of another organization.
+                    None => match t.refused.map(|i| &t.attempts[i]) {
+                        Some(a) => {
+                            println!(
+                                "SMTP: {} will be written to [accounts.{key}.smtp]; it needs its own password.",
+                                server_label(&a.candidate.server)
+                            );
+                            Some((a.candidate.server.clone(), true))
+                        }
+                        None => {
+                            println!("SMTP: no server worked; the account is created without [smtp] and cannot send until one is added to accounts.toml.");
+                            None
+                        }
+                    },
                 }
             };
             if !yes && !confirm("Create the account? [y/N] ")? {
@@ -1538,6 +1555,9 @@ mod tests {
         assert_eq!(smtp_attempt_line(&a("logged_in", None), "k"), "smtp.x.fr:465 (tls): logged in with the IMAP password.");
         assert!(smtp_attempt_line(&a("reachable", None), "k").contains("nicemailer account password k --smtp"));
         assert!(smtp_attempt_line(&a("no_login", None), "k").contains("offers no login"));
+        let refused = smtp_attempt_line(&a("auth_refused", Some("the server refused the login: 535 bad")), "k");
+        assert!(refused.contains("refused the IMAP password (the server refused the login: 535 bad)"), "{refused}");
+        assert!(refused.contains("nicemailer account password k --smtp"), "{refused}");
         assert_eq!(smtp_attempt_line(&a("failed", Some("cannot connect to smtp.x.fr")), "k"), "smtp.x.fr:465 (tls): failed: cannot connect to smtp.x.fr.");
     }
 }

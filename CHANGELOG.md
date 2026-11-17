@@ -18,6 +18,8 @@ How to write it:
 - Tag… in the attribute selector (`f`): the list narrowed to the mails with one of the chosen tags, or without them.
 - "without tag" in Tag… and "without group" in Group…: the mails with no tag, or of nobody in a group.
 - Rename (`r`) or delete (`d`) a tag or a group from the Tags (`;T`) and Groups (`;g`) screens. Deleting a tag takes it off all its mails, on the server too.
+- Preferences (Settings…, ⌘,) with an Accounts tab: add a mail account from its address, password and name, NiceMailer finding its servers and asking for more only when needed; the accounts listed, and their order changed.
+- When the SMTP server refuses the mailbox password, `nicemailer account add` keeps it and says to save its own password, instead of creating the account without a server to send from.
 - The Tags screen shows one row per tag name, its mails counted in every account.
 - Contact groups as a filter: Group… in the attribute selector (`f`), and the groups listed under the folders in three columns; a click filters the list, and the active groups are highlighted like the current folder.
 

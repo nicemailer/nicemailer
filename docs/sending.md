@@ -154,7 +154,7 @@ At start, the core queues the interrupted actions again and makes editable any d
 
 ## Password
 
-The sender uses the SMTP password of the account if one was saved (`nicemailer account password <key> --smtp`, item `smtp:<key>` of the Keychain, bound to the SMTP server), else the IMAP password, **only** when the SMTP server is the IMAP server or of the same organizational domain (`smtp.gmail.com` and `imap.gmail.com`). Otherwise the sending is refused with a message saying to save the SMTP password: an `accounts.toml` changed to point `[smtp]` elsewhere must not receive the IMAP password.
+The sender uses the SMTP password of the account if one was saved (`nicemailer account password <key> --smtp`, or asked by the app's Preferences when the account is added: [accounts.md](accounts.md), "In the app"; item `smtp:<key>` of the Keychain, bound to the SMTP server), else the IMAP password, **only** when the SMTP server is the IMAP server or of the same organizational domain (`smtp.gmail.com` and `imap.gmail.com`). Otherwise the sending is refused with a message saying to save the SMTP password: an `accounts.toml` changed to point `[smtp]` elsewhere must not receive the IMAP password.
 
 ## Who may send
 

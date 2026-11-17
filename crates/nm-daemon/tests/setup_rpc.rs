@@ -487,13 +487,26 @@ fn smtp_servers_are_tried_in_order_and_the_one_that_works_is_written() {
     assert_eq!(outcomes, ["failed", "logged_in"], "{r:#}");
     assert_eq!(r["chosen"], 1);
 
-    // A wrong password: refused, nothing chosen.
+    // A wrong password: refused, nothing chosen, the server named as the
+    // one that refused it.
     let r = c
         .call("test_smtp", json!({"email": me, "imap": imap(&user), "password": "wrong", "candidates": [{"server": smtps("nicemailer"), "origin": "given"}]}))
         .unwrap();
-    assert_eq!(r["attempts"][0]["outcome"], "failed");
+    assert_eq!(r["attempts"][0]["outcome"], "auth_refused");
     assert!(r["attempts"][0]["detail"].as_str().unwrap().contains("refused the login"), "{r:#}");
-    assert_eq!(r["chosen"], Value::Null);
+    assert_eq!((&r["chosen"], &r["refused"]), (&Value::Null, &json!(0)), "{r:#}");
+    // The SMTP password given apart is the one tried.
+    let r = c
+        .call(
+            "test_smtp",
+            json!({"email": me, "imap": imap(&user), "password": "wrong", "smtp_password": "smtp-secret",
+                   "candidates": [{"server": smtps("nicemailer"), "origin": "given"}]}),
+        )
+        .unwrap();
+    assert_eq!((r["attempts"][0]["outcome"].as_str(), r["chosen"].as_u64()), (Some("logged_in"), Some(0)), "{r:#}");
+    // A wrong IMAP password says so in `data.reason`.
+    let e = c.call("test_account", json!({"email": me, "imap": imap(&user), "password": "wrong"})).unwrap_err();
+    assert_eq!((e["code"].as_i64(), e["data"]["reason"].as_str()), (Some(1009), Some("auth")), "{e:#}");
 
     // An IMAP server of another organization: the password is not tried,
     // the server is kept as reachable.
@@ -531,4 +544,32 @@ fn smtp_servers_are_tried_in_order_and_the_one_that_works_is_written() {
     ] {
         assert_eq!(agent.call(method, params).unwrap_err()["code"], 1007, "{method}");
     }
+}
+
+/// The creation methods' refusals that need no server: an unreachable
+/// IMAP server said as such (`data.reason`: `connect`), so that the app
+/// points at the server rather than at the password; an SMTP password
+/// without an SMTP server, or empty, refused before anything is done.
+#[test]
+fn a_server_that_does_not_answer_and_a_stray_smtp_password_are_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_core, mut c) = core(dir.path(), "");
+    let nothing = json!({ "host": "127.0.0.1", "port": 1, "security": "tls" });
+    let e = c.call("test_account", json!({"email": "me@example.com", "imap": nothing, "password": "pw"})).unwrap_err();
+    assert_eq!((e["code"].as_i64(), e["data"]["reason"].as_str()), (Some(1009), Some("connect")), "{e:#}");
+
+    let e = c
+        .call("add_account", json!({"key": "k", "email": "me@example.com", "imap": nothing, "password": "pw", "smtp_password": "s"}))
+        .unwrap_err();
+    assert_eq!(e["code"], -32602, "{e:#}");
+    assert!(e["message"].as_str().unwrap().contains("without an SMTP server"), "{e:#}");
+    let e = c
+        .call(
+            "test_smtp",
+            json!({"email": "me@example.com", "imap": nothing, "password": "pw", "smtp_password": "", "candidates": []}),
+        )
+        .unwrap_err();
+    assert_eq!(e["code"], -32602, "{e:#}");
+    // Nothing written.
+    assert!(!std::fs::read_to_string(dir.path().join("accounts.toml")).unwrap_or_default().contains("[accounts.k]"));
 }

@@ -46,6 +46,19 @@ fn server(e: impl std::fmt::Display) -> RpcError {
     RpcError::new(error_code::SERVER, e.to_string())
 }
 
+/// An IMAP failure of the creation methods, with `data.reason` telling a
+/// client which field to correct (`error_code::SERVER`): the password
+/// (`auth`), the server (`connect`), or neither (`server`).
+fn imap_failure(e: nm_proto::imap::ImapError) -> RpcError {
+    use nm_proto::imap::ImapError as E;
+    let reason = match &e {
+        E::AuthFailed(_) => "auth",
+        E::Connect(_) | E::Tls(_) | E::Timeout(_) | E::Closed | E::Bye(_) | E::Io(_) => "connect",
+        _ => "server",
+    };
+    RpcError { code: error_code::SERVER, message: e.to_string(), data: Some(serde_json::json!({ "reason": reason })) }
+}
+
 fn invalid(e: impl std::fmt::Display) -> RpcError {
     RpcError::new(error_code::INVALID_PARAMS, e.to_string())
 }
@@ -65,7 +78,7 @@ pub async fn test_account(core: &Arc<Core>, p: TestAccountParams, source: Source
     let spec = setup::spec_of(&p.imap).map_err(invalid)?;
     let user = setup::username_of(&p.imap, &p.email);
     let import = core.engine.lock().unwrap().config().import.clone();
-    setup::test_account(&spec, &user, &p.password, &own(&p.email, &p.identities), &import, now()).await.map_err(server)
+    setup::test_account(&spec, &user, &p.password, &own(&p.email, &p.identities), &import, now()).await.map_err(imap_failure)
 }
 
 /// `discover_account`: the servers of an address, from the database of
@@ -102,7 +115,10 @@ pub async fn test_smtp(p: TestSmtpParams, source: Source) -> Result<SmtpTestRepo
     for c in &p.candidates {
         setup::spec_of(&c.server).map_err(invalid)?;
     }
-    Ok(nm_engine::discover::test_smtp(&p.email, &p.imap, &p.password, &p.candidates).await)
+    if p.smtp_password.as_deref() == Some("") {
+        return Err(invalid("empty SMTP password"));
+    }
+    Ok(nm_engine::discover::test_smtp(&p.email, &p.imap, &p.password, p.smtp_password.as_deref(), &p.candidates).await)
 }
 
 /// The `security` of `accounts.toml` from the client's word, checked.
@@ -122,9 +138,9 @@ pub async fn count_archive(p: CountArchiveParams, source: Source) -> Result<Arch
     for d in [&p.read_before, &p.unread_before].into_iter().flatten() {
         setup::parse_day(d).ok_or_else(|| invalid(format!("date {d:?}: YYYY-MM-DD expected")))?;
     }
-    let mut s = setup::open(&spec, &user, &p.password).await.map_err(server)?;
+    let mut s = setup::open(&spec, &user, &p.password).await.map_err(imap_failure)?;
     s.forbid_writes();
-    let n = setup::count_archive(&mut s, p.uidnext, p.read_before.as_deref(), p.unread_before.as_deref()).await.map_err(server)?;
+    let n = setup::count_archive(&mut s, p.uidnext, p.read_before.as_deref(), p.unread_before.as_deref()).await.map_err(imap_failure)?;
     s.logout().await;
     Ok(n)
 }
@@ -191,9 +207,18 @@ pub async fn add_account(core: &Arc<Core>, p: AddAccountParams, source: Source) 
         }),
         None => None,
     };
+    let smtp_password = match (&p.smtp_password, &smtp) {
+        (None, _) => None,
+        (Some(pw), _) if pw.is_empty() => return Err(invalid("empty SMTP password")),
+        (Some(_), None) => return Err(invalid("an SMTP password without an SMTP server")),
+        (Some(pw), Some(s)) => Some(Credential {
+            binding: Binding { host: s.host.clone(), username: s.username.clone() },
+            secret: nm_engine::config::SecretString::new(pw.clone()),
+        }),
+    };
 
     // 1 and 2: the server.
-    let mut s = setup::open(&spec, &user, &p.password).await.map_err(server)?;
+    let mut s = setup::open(&spec, &user, &p.password).await.map_err(imap_failure)?;
     if p.read_only {
         s.forbid_writes();
     }
@@ -262,10 +287,20 @@ pub async fn add_account(core: &Arc<Core>, p: AddAccountParams, source: Source) 
     };
     let key = p.key.clone();
     let secrets2 = secrets.clone();
-    tokio::task::spawn_blocking(move || secrets2.set_imap(&key, &credential))
-        .await
-        .map_err(|e| RpcError::new(error_code::INTERNAL_ERROR, e.to_string()))?
-        .map_err(|e| RpcError::new(error_code::SECRETS, e))?;
+    // The SMTP password saved apart, bound to the SMTP server, as
+    // `set_password` with `smtp` does: the sender takes it before the IMAP
+    // one (`docs/sending.md`, "Password"). Saved before the file, so that
+    // the worker the file starts finds it.
+    tokio::task::spawn_blocking(move || {
+        secrets2.set_imap(&key, &credential)?;
+        match &smtp_password {
+            Some(c) => secrets2.set_smtp(&key, c),
+            None => Ok(()),
+        }
+    })
+    .await
+    .map_err(|e| RpcError::new(error_code::INTERNAL_ERROR, e.to_string()))?
+    .map_err(|e| RpcError::new(error_code::SECRETS, e))?;
 
     // 5: the file, then applied.
     let new = NewAccount {
