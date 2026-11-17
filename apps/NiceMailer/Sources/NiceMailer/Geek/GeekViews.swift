@@ -1992,7 +1992,9 @@ struct PickerPopup: View {
     /// (Mail date… and "clear" were below the edge until November 2026).
     static func height(_ kind: GeekController.PickerKind, scale: CGFloat) -> CGFloat {
         switch kind {
-        case .attributes: (headerHeight + 1 + CGFloat(GeekController.attributeRowCount) * rowHeight + 4) * scale
+        case .attributes:
+            (headerHeight + 1 + CGFloat(GeekController.attributeRowCount) * rowHeight
+                + CGFloat(GeekController.attributeGapCount) * gapHeight + 4) * scale
         case .attributeValue, .search, .links: 440 * scale
         default: 320 * scale
         }
@@ -2001,6 +2003,9 @@ struct PickerPopup: View {
     /// Height of the input line and of a row, at the default text size.
     static let headerHeight: CGFloat = 24
     static let rowHeight: CGFloat = 20
+    /// The line between two groups of rows (`Entry.gapBefore`: the pairs
+    /// of the attribute selector), with its space above and below.
+    static let gapHeight: CGFloat = 7
 
     /// `height`, kept inside a window `available` points tall, with a
     /// margin above and below: in a short window, the rows scroll.
@@ -2033,6 +2038,13 @@ struct PickerPopup: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(Array(entries.enumerated()), id: \.offset) { i, e in
+                            // A thin line, discreet, between two groups of
+                            // rows: the pairs of the attribute selector.
+                            if e.gapBefore {
+                                Palette.separator.opacity(0.6).frame(height: 1)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, scaled((Self.gapHeight - 1) / 2))
+                            }
                             HStack(spacing: 8) {
                                 Text(e.key).foregroundStyle(Palette.muted).frame(width: scaled(22), alignment: .leading)
                                 if let icon = e.icon {
@@ -2095,7 +2107,10 @@ struct PickerPopup: View {
     private var panelHeight: CGFloat { Self.height(kind, scale: TextSize.shared.scale, available: available) }
 
     /// Rows that fit below the input line without scrolling (UI scripts).
-    private var visibleRows: Int { Int((panelHeight - scaled(Self.headerHeight) - 1) / scaled(Self.rowHeight)) }
+    private var visibleRows: Int {
+        let gaps = CGFloat(controller.pickerEntries(kind).filter(\.gapBefore).count) * scaled(Self.gapHeight)
+        return Int((panelHeight - scaled(Self.headerHeight) - 1 - gaps) / scaled(Self.rowHeight))
+    }
 
     /// Rows in two halves, text and address (the links of `l`).
     private var halves: Bool { kind == .links }

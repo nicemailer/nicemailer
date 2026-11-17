@@ -1605,32 +1605,56 @@ final class GeekController {
             return renameEntries(kind, old: old, id: id)
         }
         // Best matches first, so that Return takes the row the user meant
-        // (`PickerMatch`); the "+ typed text" row always stays.
-        return PickerMatch.filter(all, query: pickerQuery, label: \.label,
-                                  keywords: \.keywords, pinned: { $0.key == "+" })
+        // (`PickerMatch`); the "+ typed text" row always stays. Once
+        // something is typed, the rows are ranked, no longer in their
+        // pairs: no line between them.
+        let ranked = PickerMatch.filter(all, query: pickerQuery, label: \.label,
+                                        keywords: \.keywords, pinned: { $0.key == "+" })
+        return pickerQuery.isEmpty ? ranked : ranked.map { var e = $0; e.gapBefore = false; return e }
     }
 
     /// Rows of the attribute selector with "clear" (`attributeEntries`):
     /// the panel is that tall (`PickerPopup.height`).
-    static var attributeRowCount: Int { ThreadFilter.Flag.allCases.count * 2 + AttributeField.allCases.count + 1 }
+    static var attributeRowCount: Int { ThreadFilter.selectorLayout.joined().count + 1 }
 
-    /// The attribute selector: each yes / no attribute with its two values
-    /// (an active one is marked "•", choosing it again removes it), then the
-    /// attributes with a value, which expand the panel, then "clear".
+    /// Lines between its pairs of rows, "clear" included: the panel is
+    /// that much taller (`PickerPopup.gapHeight`).
+    static var attributeGapCount: Int { ThreadFilter.selectorLayout.count }
+
+    /// The attribute selector, in the pairs of `ThreadFilter.selectorLayout`,
+    /// a line between two pairs (`gapBefore`): each value of a yes / no
+    /// attribute (an active one is marked "•", choosing it again removes
+    /// it), and the attributes with a value, which expand the panel; then
+    /// "clear". Every row starts with a capital.
     private var attributeEntries: [Entry] {
         let a = model.attributes
         var entries: [Entry] = []
-        for flag in ThreadFilter.Flag.allCases {
-            // Unread before read, then "with" before "without".
-            for value in flag == .seen ? [false, true] : [true, false] {
-                entries.append(Entry(key: a.value(flag) == value ? "•" : " ", label: ThreadFilter.label(flag, value),
-                                     keywords: ThreadFilter.keywords(flag, value)) {
-                    [model] in model.attributes.toggle(flag, value)
-                })
+        for (n, pair) in ThreadFilter.selectorLayout.enumerated() {
+            for (i, row) in pair.enumerated() {
+                var e = attributeEntry(row, a)
+                e.gapBefore = n > 0 && i == 0
+                entries.append(e)
             }
         }
-        for field in AttributeField.allCases {
-            entries.append(Entry(key: a.isActive(field) ? "•" : " ", label: field.title, keywords: field.keywords) { [weak self] in
+        if !a.isEmpty {
+            entries.append(Entry(key: "×", label: ThreadFilter.capitalizedFirst(L("clear all attributes")), gapBefore: true) {
+                [model] in model.attributes = ThreadFilter()
+            })
+        }
+        return entries
+    }
+
+    /// One row of the attribute selector.
+    private func attributeEntry(_ row: ThreadFilter.SelectorRow, _ a: ThreadFilter) -> Entry {
+        switch row {
+        case .flag(let flag, let value):
+            return Entry(key: a.value(flag) == value ? "•" : " ",
+                         label: ThreadFilter.capitalizedFirst(ThreadFilter.label(flag, value)),
+                         keywords: ThreadFilter.keywords(flag, value)) {
+                [model] in model.attributes.toggle(flag, value)
+            }
+        case .field(let field):
+            return Entry(key: a.isActive(field) ? "•" : " ", label: field.title, keywords: field.keywords) { [weak self] in
                 // The panel grows at once to choose the value (`ui.md`).
                 // Text… and Subject… open on their current words, selected:
                 // typing replaces them (`ThreadFilter.add`).
@@ -1642,12 +1666,8 @@ final class GeekController {
                 // agent): the panel shows them as loaded, then as read.
                 if field == .group { Task { await self?.loadGroups() } }
                 if field == .tag { Task { await self?.loadTags() } }
-            })
+            }
         }
-        if !a.isEmpty {
-            entries.append(Entry(key: "×", label: L("clear all attributes")) { [model] in model.attributes = ThreadFilter() })
-        }
-        return entries
     }
 
     /// Rows of the expanded panel of `field` (`ui.md`, "Négation"): the

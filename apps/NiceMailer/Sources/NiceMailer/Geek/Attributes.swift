@@ -202,13 +202,49 @@ struct ThreadFilter: Equatable {
         case (.flagged, false): L("not flagged")
         case (.attachments, true): L("with attachments")
         case (.attachments, false): L("without attachments")
-        case (.answered, true): L("answered")
-        case (.answered, false): L("not answered")
+        // "with my reply", not "answered": what counts is a reply of the
+        // user, which "answered" did not say (`ui.md`, "Sélecteur
+        // d'attributs").
+        case (.answered, true): L("with my reply")
+        case (.answered, false): L("without my reply")
         case (.conversation, true): L("conversation")
         case (.conversation, false): L("single mail")
         case (.human, true): L("human")
         case (.human, false): L("robot")
         }
+    }
+
+    /// One row of the attribute selector (`f`): a value of a yes / no
+    /// attribute, or an attribute with a value, whose panel opens.
+    enum SelectorRow: Equatable {
+        case flag(Flag, Bool)
+        case field(AttributeField)
+    }
+
+    /// The rows of the attribute selector, in pairs that go together (an
+    /// attribute and its opposite, or two of a kind: From… and To…), each
+    /// pair apart from the next by a thin line (`ui.md`, "Sélecteur
+    /// d'attributs"). Before (November 2026), the yes / no attributes came
+    /// first, then those with a value, in one block: the user did not see
+    /// which rows were the two sides of one attribute.
+    static let selectorLayout: [[SelectorRow]] = [
+        [.flag(.seen, false), .flag(.seen, true)],
+        [.flag(.flagged, true), .flag(.flagged, false)],
+        [.field(.from), .field(.to)],
+        [.field(.subject), .field(.text)],
+        [.field(.date), .field(.mailDate)],
+        [.field(.group), .field(.tag)],
+        [.flag(.human, true), .flag(.human, false)],
+        [.flag(.attachments, true), .flag(.attachments, false)],
+        [.flag(.answered, true), .flag(.answered, false)],
+        [.flag(.conversation, true), .flag(.conversation, false)],
+    ]
+
+    /// `s` with its first letter in capitals, as every row of the selector
+    /// starts ("Non lus"); the chips keep the label as it is ("non lus").
+    static func capitalizedFirst(_ s: String) -> String {
+        guard let first = s.first else { return s }
+        return first.uppercased() + s.dropFirst()
     }
 
     /// Hidden words that also find a yes / no value in the selector, like
@@ -218,6 +254,12 @@ struct ThreadFilter: Equatable {
         let words: String = switch (flag, value) {
         case (.human, true): L("person people")
         case (.human, false): L("machine automatic bulk")
+        // The former label still finds the row.
+        case (.answered, true): L("answered replied")
+        case (.answered, false): L("unanswered")
+        // In English, "co" now reaches Conversation date… first (its pair
+        // comes earlier): "thread" reaches the conversations.
+        case (.conversation, true): L("thread several")
         default: ""
         }
         return words.split(separator: " ").map(String.init)

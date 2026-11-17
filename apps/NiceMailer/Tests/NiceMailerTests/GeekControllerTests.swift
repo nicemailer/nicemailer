@@ -1879,7 +1879,7 @@ struct GeekControllerTests {
         #expect(controller.overlay == .picker(.attributes))
         let labels = controller.pickerEntries(.attributes).map(\.label)
         // Compared with the translations: tests run in the machine's language.
-        #expect(Array(labels.prefix(2)) == [L("unread"), L("read")])
+        #expect(Array(labels.prefix(2)) == [ThreadFilter.capitalizedFirst(L("unread")), ThreadFilter.capitalizedFirst(L("read"))])
         #expect(labels.contains(L("From…")) && labels.contains(L("Conversation date…")))
         type(L("unread")); press("ret")
         #expect(model.attributes.seen == false)
@@ -1893,13 +1893,13 @@ struct GeekControllerTests {
         // The opposite value contains the typed word ("unread" / "non lus")
         // and is listed first: ranking puts the exact one under Return.
         press("f"); type(L("read"))
-        #expect(controller.pickerEntries(.attributes).first?.label == L("read"))
+        #expect(controller.pickerEntries(.attributes).first?.label == ThreadFilter.capitalizedFirst(L("read")))
         press("ret")
         #expect(model.attributes.seen == true)
         // Initials reach a negative value.
         let initials = String(PickerMatch.words(PickerMatch.normalize(L("not flagged"))).compactMap(\.first))
         press("f"); type(initials)
-        #expect(controller.pickerEntries(.attributes).first?.label == L("not flagged"))
+        #expect(controller.pickerEntries(.attributes).first?.label == ThreadFilter.capitalizedFirst(L("not flagged")))
         press("ret")
         #expect(model.attributes.flagged == false)
         // A hidden search word reaches To….
@@ -1907,16 +1907,60 @@ struct GeekControllerTests {
         #expect(controller.pickerEntries(.attributes).first?.label == L("To…"))
     }
 
+    @Test func theSelectorListsItsRowsInPairsWithALineBetween() {
+        // `ui.md`, "Sélecteur d'attributs": the order asked for, every row
+        // with a capital, a thin line before each pair but the first.
+        model.attributes.toggle(.seen, false)
+        press("f")
+        let entries = controller.pickerEntries(.attributes)
+        let C = ThreadFilter.capitalizedFirst
+        #expect(entries.map(\.label) == [
+            C(L("unread")), C(L("read")),
+            C(L("flagged")), C(L("not flagged")),
+            L("From…"), L("To…"),
+            L("Subject…"), L("Text…"),
+            L("Conversation date…"), L("Mail date…"),
+            L("Group…"), L("Tag…"),
+            C(L("human")), C(L("robot")),
+            C(L("with attachments")), C(L("without attachments")),
+            C(L("with my reply")), C(L("without my reply")),
+            C(L("conversation")), C(L("single mail")),
+            C(L("clear all attributes")),
+        ])
+        #expect(entries.allSatisfy { $0.label.first.map { String($0) == String($0).uppercased() } ?? false })
+        // A line before rows 2, 4, 6…, and before "clear".
+        #expect(entries.indices.filter { entries[$0].gapBefore } == [2, 4, 6, 8, 10, 12, 14, 16, 18, 20])
+        // Typed: ranked rows, no line.
+        type("a")
+        #expect(controller.pickerEntries(.attributes).allSatisfy { !$0.gapBefore })
+        // Every attribute is in the layout once.
+        let rows = ThreadFilter.selectorLayout.joined()
+        #expect(rows.count == ThreadFilter.Flag.allCases.count * 2 + AttributeField.allCases.count)
+        #expect(Set(rows.map { "\($0)" }).count == rows.count)
+        // The panel is tall enough for the rows and the lines.
+        #expect(PickerPopup.height(.attributes, scale: 1)
+            == PickerPopup.headerHeight + 1 + CGFloat(entries.count) * PickerPopup.rowHeight + 10 * PickerPopup.gapHeight + 4)
+    }
+
+    @Test func withMyReplyIsStillFoundByItsFormerName() {
+        press("f"); type(L("answered replied").split(separator: " ").first.map(String.init) ?? "")
+        #expect(controller.pickerEntries(.attributes).first?.label == ThreadFilter.capitalizedFirst(L("with my reply")))
+        press("ret")
+        #expect(model.attributes.answered == true)
+        // The chip keeps the label as it is.
+        #expect(model.attributes.chips.map(\.label) == [L("with my reply")])
+    }
+
     @Test func humanAndRobotAreReachedInTheSelectorAndSentToTheCore() async {
         press("f")
         let labels = controller.pickerEntries(.attributes).map(\.label)
-        #expect(labels.contains(L("human")) && labels.contains(L("robot")))
+        #expect(labels.contains(ThreadFilter.capitalizedFirst(L("human"))) && labels.contains(ThreadFilter.capitalizedFirst(L("robot"))))
         type(L("human")); press("ret")
         #expect(model.attributes.human == true)
         #expect(await eventually { (core.calls("list_threads").last?["filter"] as? [String: Any])?["human"] as? Bool == true })
         // A hidden word reaches it too: "person" (French "personne").
         press("f"); type(L("person people").split(separator: " ").first.map(String.init) ?? "")
-        #expect(controller.pickerEntries(.attributes).first?.label == L("human"))
+        #expect(controller.pickerEntries(.attributes).first?.label == ThreadFilter.capitalizedFirst(L("human")))
         press("esc")
         // The opposite replaces it.
         press("f"); type(L("robot")); press("ret")

@@ -21,6 +21,10 @@ How to write it:
 - The Tags screen shows one row per tag name, its mails counted in every account.
 - Contact groups as a filter: Group… in the attribute selector (`f`), and the groups listed under the folders in three columns; a click filters the list, and the active groups are highlighted like the current folder.
 
+### Changed
+
+- The attribute selector (`f`) lists its rows in pairs, a thin line between them: Unread / Read, Flagged / Not flagged, From… / To…, Subject… / Text…, the two dates, Group… / Tag…, Human / Robot, attachments, your reply, conversations. "Answered" is now "With my reply".
+
 ### Fixed
 
 - The "answered" attribute finds the conversations you replied to from NiceMailer or from a mail client that does not mark the mail as answered: a reply of yours in Sent is enough.

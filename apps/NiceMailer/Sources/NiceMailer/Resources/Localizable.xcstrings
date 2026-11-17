@@ -2454,16 +2454,6 @@
         }
       }
     },
-    "answered": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "répondus"
-          }
-        }
-      }
-    },
     "anywhere: %@": {
       "localizations": {
         "fr": {
@@ -3086,16 +3076,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "pas %@"
-          }
-        }
-      }
-    },
-    "not answered": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "sans ma réponse"
           }
         }
       }
@@ -5603,6 +5583,56 @@
           "stringUnit": {
             "state": "translated",
             "value": "Renommer le groupe"
+          }
+        }
+      }
+    },
+    "with my reply": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "avec ma réponse"
+          }
+        }
+      }
+    },
+    "without my reply": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "sans ma réponse"
+          }
+        }
+      }
+    },
+    "answered replied": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "répondus répondu"
+          }
+        }
+      }
+    },
+    "unanswered": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "non répondus"
+          }
+        }
+      }
+    },
+    "thread several": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "fil plusieurs"
           }
         }
       }
