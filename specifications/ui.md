@@ -18,6 +18,8 @@ Pendant le développement, il y a un menu thème qui permet de basculer d'un th�
 
 État (3 novembre 2026) : le thème geek est implémenté ; classic correspond à la première interface ; design n'existe pas encore et affiche classic.
 
+Les touches citées dans ce document sont celles par défaut ; l'utilisateur peut les redéfinir dans `keymap.toml` (`raccourcis.md`).
+
 ### Préférences
 
 Ajouté en novembre 2026. Le menu de l'app « Réglages… » (⌘,) ouvre les Préférences, communes aux trois thèmes, avec les contrôles standard du Mac : une fenêtre de réglages n'est pas le lieu des touches du thème geek. Un onglet par sujet ; le premier est **Comptes** (`docs/accounts.md`, « In the app »).

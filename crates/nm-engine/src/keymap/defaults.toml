@@ -1,0 +1,209 @@
+version = 1
+
+[everywhere]
+"ctrl-cmd-f" = "window.full_screen"          # full screen, and back
+"cmd-+" = "text.bigger"                       # bigger text
+"cmd-=" = "text.bigger"                       # bigger text (`+` needs Shift on some layouts)
+"cmd--" = "text.smaller"                      # smaller text
+"cmd-0" = "text.reset"                        # default text size
+"cmd-r" = "app.reload"                        # reload (View menu)
+
+[normal]
+";" = "menu.goto"                             # go to a folder or a screen
+"?" = "help.show"                             # the list of keys
+z = "undo.last"                               # undo the last move or decision
+
+[mail]
+j = "list.down"                               # next mail
+down = "list.down"                            # next mail
+k = "list.up"                                 # previous mail
+up = "list.up"                                # previous mail
+J = "list.mark_down"                          # mark and move down
+"shift-down" = "list.mark_down"               # mark and move down
+K = "list.mark_up"                            # mark and move up
+"shift-up" = "list.mark_up"                   # mark and move up
+"cmd-a" = "list.mark_all"                     # mark every mail of the list
+"ctrl-d" = "list.half_page_down"              # half a page down in the list
+"ctrl-u" = "list.half_page_up"                # half a page up in the list
+"ctrl-j" = "message.next"                     # next message of the conversation
+"ctrl-k" = "message.previous"                 # previous message of the conversation
+enter = "mail.open"                           # AI suggestion, draft, or the mail in the whole window
+space = "reader.open_or_page_down"            # open the mail (one column), else a page down
+"ctrl-f" = "reader.page_down"                 # a page down in the mail
+"shift-space" = "reader.page_up"              # a page up in the mail
+"ctrl-b" = "reader.page_up"                   # a page up in the mail
+T = "reader.toggle_all"                       # show / hide quotes, signatures, folded mails
+S = "reader.skip_quoted"                      # skip to the text after the next quote
+l = "picker.links"                            # links of the mail
+"ctrl-c" = "sender.card_or_copy"              # sender's card in Contacts, or copy the address
+"ctrl-shift-c" = "sender.mails"               # mails of the sender
+d = "mail.archive"                            # done (archive)
+m = "menu.move"                               # move to a folder
+backspace = "mail.delete"                     # delete
+del = "mail.delete"                           # delete
+u = "mail.toggle_seen"                        # read / unread
+U = "mail.mark_seen"                          # mark as read
+"*" = "mail.toggle_flag"                      # flag
+t = "picker.tag"                              # add / remove a tag
+g = "picker.group"                            # add / remove a group
+s = "menu.save"                               # save
+"cmd-u" = "mail.unsubscribe"                  # unsubscribe from the list
+r = "compose.reply_all"                       # reply to all
+R = "compose.reply_sender"                    # reply to the sender only
+F = "compose.forward"                         # forward
+c = "compose.new"                             # write a new mail
+a = "ai.menu"                                 # AI menu of the mail or of the list
+"/" = "picker.search"                         # search everywhere, in All Mail
+f = "picker.attributes"                       # filter by attributes
+"@" = "picker.accounts"                       # go to an account
+v = "menu.view"                               # display
+
+[quarantine]
+i = "move.inbox"                              # move to Inbox, without `m`
+n = "move.newsletter"                         # move to Newsletter
+p = "move.paperwork"                          # move to Paperwork
+x = "move.junk"                               # move to Junk
+b = "move.banned"                             # move to Banned
+d = "move.deleted"                            # move to Deleted
+
+[screen]
+j = "screen.down"                             # next row
+down = "screen.down"                          # next row
+k = "screen.up"                               # previous row
+up = "screen.up"                              # previous row
+enter = "screen.open"                         # mails of the contact, tag or group
+l = "screen.open"                             # mails of the contact, tag or group
+
+[contacts]
+"/" = "contacts.filter"                       # filter the contacts
+m = "contacts.decide_address"                 # decision on the address
+M = "contacts.decide_domain"                  # decision on the domain
+o = "contacts.sender_kind"                    # a person or a robot
+
+[tags]
+r = "label.rename"                            # rename the tag
+d = "label.delete"                            # delete the tag
+
+[groups]
+r = "label.rename"                            # rename the group
+d = "label.delete"                            # delete the group
+
+[menu_navigation]
+down = "menu.next"                            # highlight the next row
+up = "menu.previous"                          # highlight the previous row
+enter = "menu.choose"                         # choose the highlighted row
+"cmd-enter" = "menu.choose_alt"               # the row's second action (save, then open)
+
+[picker]
+down = "picker.next"                          # next row
+"ctrl-n" = "picker.next"                      # next row
+"ctrl-j" = "picker.next"                      # next row
+up = "picker.previous"                        # previous row
+"ctrl-p" = "picker.previous"                  # previous row
+"ctrl-k" = "picker.previous"                  # previous row
+enter = "picker.choose"                       # choose the row
+"cmd-enter" = "picker.choose_alt"             # the row's second action (a file: save and open)
+
+[contact_filter]
+enter = "contact_filter.close"                # close the line, keep the filter
+
+[line_edit]
+"ctrl-a" = "line.start"                       # to the start of the line
+"cmd-left" = "line.start"                     # to the start of the line
+home = "line.start"                           # to the start of the line
+"ctrl-e" = "line.end"                         # to the end of the line
+"cmd-right" = "line.end"                      # to the end of the line
+end = "line.end"                              # to the end of the line
+"alt-left" = "line.word_left"                 # one word left
+"alt-right" = "line.word_right"               # one word right
+"alt-backspace" = "line.delete_word"          # delete the word before the cursor
+"cmd-backspace" = "line.delete_to_start"      # delete to the start of the line
+"cmd-a" = "line.select_all"                   # select all
+"cmd-c" = "line.copy"                         # copy
+"cmd-x" = "line.cut"                          # cut
+"cmd-v" = "line.paste"                        # paste, on one line
+
+[choice]
+down = "choice.next"                          # next answer
+up = "choice.previous"                        # previous answer
+enter = "choice.choose"                       # choose the highlighted answer
+
+[ai_panel]
+y = "ai.accept"                               # accept the proposal
+n = "ai.refuse"                               # refuse the proposal
+c = "ai.copy"                                 # copy the proposal
+enter = "ai.confirm"                          # accept, or choose the highlighted row
+"cmd-enter" = "ai.open"                       # an appointment or a contact saved, then opened
+down = "ai.next"                              # next row
+up = "ai.previous"                            # previous row
+
+[compose]
+"cmd-enter" = "compose.send"                  # send
+"cmd-shift-enter" = "compose.file_and_send"   # choose where the conversation goes, then send
+"cmd-esc" = "compose.abandon"                 # abandon the draft
+"ctrl-i" = "ai.compose_menu"                  # AI menu of the reply
+"cmd-shift-t" = "compose.toggle_plain"        # text only or formatted text
+"cmd-shift-a" = "compose.attach"              # attach files
+"cmd-alt-f" = "compose.from"                  # the address and account the mail is sent from
+"cmd-alt-b" = "compose.bcc"                   # the Bcc line
+tab = "compose.next_field"                    # next field (outside the text)
+"shift-tab" = "compose.previous_field"        # previous field (outside the text)
+"cmd-v" = "compose.paste"                     # files of the Finder attached, else the text pasted
+"cmd-alt-shift-v" = "compose.paste_plain"     # paste the text alone
+
+[menu.move]
+i = "move.inbox"                              # Inbox
+t = "move.todo"                               # Todo
+w = "move.waiting"                            # Waiting
+a = "move.archive"                            # Archive
+n = "move.newsletter"                         # Newsletter
+p = "move.paperwork"                          # Paperwork
+q = "move.quarantine"                         # Quarantine
+d = "move.deleted"                            # Deleted
+x = "move.junk"                               # Junk
+b = "move.banned"                             # Banned
+
+[menu.goto]
+i = "goto.inbox"                              # Inbox
+t = "goto.todo"                               # Todo
+w = "goto.waiting"                            # Waiting
+o = "goto.work"                               # Work (Inbox, Todo and Waiting)
+a = "goto.archive"                            # Archive
+n = "goto.newsletter"                         # Newsletter
+p = "goto.paperwork"                          # Paperwork
+s = "goto.sent"                               # Sent
+r = "goto.drafts"                             # Drafts
+m = "goto.all_mail"                           # All Mail
+q = "goto.quarantine"                         # Quarantine
+d = "goto.deleted"                            # Deleted
+x = "goto.junk"                               # Junk
+b = "goto.banned"                             # Banned
+e = "goto.everything"                         # Everything
+c = "goto.contacts"                           # the Contacts screen
+T = "goto.tags"                               # the Tags screen
+g = "goto.groups"                             # the Groups screen
+h = "goto.history"                            # the History screen
+
+[menu.save]
+c = "save.clipboard"                          # to the clipboard
+e = "save.eml"                                # as .eml file
+t = "save.text"                               # as text file
+T = "save.text_open"                          # as text file, then open it
+m = "save.markdown"                           # as Markdown file
+M = "save.markdown_open"                      # as Markdown file, then open it
+a = "save.attachments"                        # all attachments
+g = "save.attachments_no_graphics"            # attachments but graphics
+p = "save.pdf"                                # as PDF
+P = "save.pdf_open"                           # as PDF, then open it
+i = "save.pdf_evidence"                       # as PDF with technical information
+I = "save.pdf_evidence_open"                  # as PDF with technical information, then open it
+
+[menu.view]
+1 = "view.one_column"                         # one column
+2 = "view.two_columns"                        # two columns
+3 = "view.three_columns"                      # three columns
+c = "view.sort_received"                      # sort by reception date
+m = "view.sort_modified"                      # sort by modification date
+h = "view.toggle_html"                        # text / HTML
+i = "view.toggle_remote_images"               # remote images
+s = "view.cycle_status_bar"                   # status bar: bottom, top, hidden

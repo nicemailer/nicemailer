@@ -161,6 +161,13 @@ final class AppModel {
     /// `ui.title_bar` of `config.toml`: the title bar of the window is
     /// hidden (the default), or shown (`WindowChrome`).
     var titleBarHidden = true
+    /// The keys of the geek theme: the defaults until the core answers, then
+    /// those of `keymap.toml` (`keymap_get`, `docs/keymap.md`).
+    var keymap: Keymap = .defaults
+    /// Why `keymap.toml` is refused, while it is: the previous keys stay,
+    /// and the status bar says so until the file is fixed.
+    var keymapProblem: KeymapProblem?
+
     /// `ui.auto_confirm_calls` of `config.toml`: a number called from the
     /// app is confirmed by the app itself (`CallConfirmation`). Off by
     /// default: it needs the Accessibility permission.
@@ -868,6 +875,15 @@ final class AppModel {
 
     /// Reads the settings of `[ui]` the app applies itself. A core that
     /// does not give them leaves the defaults.
+    /// Reads the keys in effect from the core (`keymap_get`). An older core
+    /// without the method leaves the defaults.
+    func loadKeymap() async {
+        guard let client, let view: KeymapView = try? await client.call("keymap_get", [:]) else { return }
+        let new = Keymap(contexts: view.contexts, menus: view.menus)
+        if new != keymap { keymap = new }
+        keymapProblem = view.error
+    }
+
     func loadUISettings() async {
         guard let client else { return }
         if let status: ConfigStatusView = try? await client.call("config_status", [:]), let ui = status.ui {
@@ -1116,6 +1132,13 @@ final class AppModel {
             // `accounts.toml` its accounts.
             accountsRevision += 1
             Task { await loadUISettings() }
+            return
+        case "KeymapChanged":
+            Task { await loadKeymap() }
+            return
+        case "ConfigError" where e.params["file"]?.string == "keymap.toml":
+            // The keys stay those in effect: only the message changes.
+            Task { await loadKeymap() }
             return
         case "AccountChanged", "AccountError":
             // An account added, moved, enabled, refused by its server: the
@@ -1962,8 +1985,10 @@ final class AppModel {
         // `await settings` waits for it where its result is needed (here,
         // only to finish before this function returns).
         async let settings: Void = loadUISettings()
+        async let keys: Void = loadKeymap()
         await reloadAll()
         await settings
+        await keys
         openPendingDeepLink()
     }
 

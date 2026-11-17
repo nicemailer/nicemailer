@@ -1,0 +1,50 @@
+# keymap.toml (fixtures/keymap.keymap.toml, docs/keymap.md): keys redefined
+# by the user act, and the screen shows the keys in effect.
+expect folder = Inbox
+expect keymap_problem = 
+# The status bar reminds of the moved key of the move menu.
+expect status_keys ~ m=M
+expect status_keys ~ folder=;
+# d does nothing any more; e archives.
+key d
+expect flash = No command d
+key e
+expect flash ~ moved to Archive
+# m does nothing; M opens the move menu.
+key m
+expect flash = No command m
+key M
+expect overlay = menu(NiceMailer.GeekController.Prefix.move)
+expect mode = M
+key esc
+expect overlay = none
+# A menu of the user, on x: its rows, a row's key runs it.
+key x
+expect overlay ~ user
+expect menu_rows ~ c to clipboard
+expect menu_rows ~ v one column
+snap keymap-user-menu
+key v
+expect overlay = none
+expect columns = 1
+# The menu `;` and the folder column: Inbox on k.
+key ;
+expect menu_rows ~ k Inbox
+expect menu_rows !~ i Inbox
+key esc
+expect folder_keys ~ k Inbox
+# A direct key of goto: Archive, then I back to the Inbox.
+key ;
+key a
+expect folder = Archive
+key I
+expect folder = Inbox
+# The help shows the keys in effect, and the menu of the user.
+key ?
+expect help_rows ~ e done (archive)
+expect help_rows ~ M… move to a folder
+expect help_rows ~ x… mine
+expect help_rows !~ d done
+snap keymap-help
+key esc
+expect overlay = none

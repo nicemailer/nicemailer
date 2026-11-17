@@ -167,6 +167,9 @@ struct Core {
     test_write_delay: Option<Duration>,
     /// Settings applied and state of the accounts (`nm-engine`).
     engine: Mutex<Engine>,
+    /// The keys of the app, `keymap.toml` (`raccourcis.md`). Apart from the
+    /// engine: the file is read and refused on its own.
+    keymap: Mutex<nm_engine::keymap::KeymapFile>,
     events: Mutex<EventLog>,
     /// `events.client_queue`: lines a client may have waiting.
     client_queue: usize,
@@ -315,8 +318,14 @@ async fn run(args: Args, data_dir: &Path) -> anyhow::Result<()> {
     let outgoing = nm_store::outgoing::OutgoingStore::open(&data_dir)
         .with_context(|| format!("fichiers à envoyer dans {}", data_dir.display()))?;
     store.set_outgoing(outgoing.clone());
+    // The keys: a file refused at start is reported like config.toml's
+    // (`ConfigError`), with the defaults in effect.
+    let keymap_path = nm_engine::keymap::path(&config_path);
+    let mut keymap = nm_engine::keymap::KeymapFile::new(keymap_path.clone());
+    let keymap_events = keymap.reload(true);
+    log_keymap(&keymap);
     let mut events = EventLog::new(settings.replay_buffer as usize, settings.client_queue as usize);
-    for e in startup_events {
+    for e in startup_events.into_iter().chain(keymap_events) {
         events.push(e);
     }
     // `Arc` so that every connection task can hold a pointer to the shared
@@ -330,6 +339,7 @@ async fn run(args: Args, data_dir: &Path) -> anyhow::Result<()> {
             .and_then(|v| v.parse().ok())
             .map(Duration::from_millis),
         engine: Mutex::new(engine),
+        keymap: Mutex::new(keymap),
         events: Mutex::new(events),
         client_queue: settings.client_queue as usize,
         raw,
@@ -379,7 +389,12 @@ async fn run(args: Args, data_dir: &Path) -> anyhow::Result<()> {
     // next start only.
     let _watch = {
         let core = core.clone();
-        match nm_engine::watch::watch(&[&config_path, &accounts_path], move || reload_config(&core)) {
+        // One watch for the three files: a change to any reads them again,
+        // and each reload skips a file whose text did not change.
+        match nm_engine::watch::watch(&[&config_path, &accounts_path, &keymap_path], move || {
+            reload_config(&core);
+            reload_keymap(&core);
+        }) {
             Ok(w) => Some(w),
             Err(e) => {
                 eprintln!("config : surveillance impossible ({e}) ; les fichiers seront relus au prochain démarrage");
@@ -773,6 +788,7 @@ fn runs_in_parallel(method: &str) -> bool {
             | method::LIST_SENDERS
             | method::SYNC_STATUS
             | method::CONFIG_STATUS
+            | method::KEYMAP_GET
     )
 }
 
@@ -1234,6 +1250,32 @@ fn reload_config(core: &Arc<Core>) {
         if let Some(syncer) = core.syncer.get() {
             syncer.kick();
         }
+    }
+}
+
+/// Reads `keymap.toml` again after a change seen by the watch, and emits
+/// `KeymapChanged` or `ConfigError`. It needs neither the store nor the
+/// engine: a keymap only matters to the app.
+fn reload_keymap(core: &Arc<Core>) {
+    let mut keymap = core.keymap.lock().unwrap();
+    let events = keymap.reload(false);
+    if !events.is_empty() {
+        log_keymap(&keymap);
+    }
+    let mut log = core.events.lock().unwrap();
+    for e in events {
+        log.push(e);
+    }
+}
+
+/// Prints the state of `keymap.toml` on the core's standard error.
+fn log_keymap(keymap: &nm_engine::keymap::KeymapFile) {
+    match keymap.error() {
+        Some(p) => eprintln!("keymap : refusée, touches précédentes conservées : {p}"),
+        None => eprintln!("keymap : {}", keymap.path().display()),
+    }
+    for w in keymap.warnings() {
+        eprintln!("keymap : avertissement : {w}");
     }
 }
 
@@ -1863,6 +1905,18 @@ async fn call(core: &Arc<Core>, source: Source, req: Request) -> Result<Value, R
         method::SET_ACCOUNT_ORDER => {
             let p: SetAccountOrderParams = params(req.params)?;
             command(core, move |s| s.set_account_order(&p.account_ids, source)).await
+        }
+        method::KEYMAP_GET => {
+            let keymap = core.keymap.lock().unwrap();
+            let (contexts, menus) = nm_engine::keymap::view(keymap.keymap());
+            to_value(nm_api::KeymapView {
+                path: keymap.path().display().to_string(),
+                exists: keymap.path().exists(),
+                contexts,
+                menus,
+                error: keymap.error().map(nm_engine::problem_view),
+                warnings: keymap.warnings().iter().map(nm_engine::problem_view).collect(),
+            })
         }
         method::CONFIG_STATUS => {
             let as_of = as_of();

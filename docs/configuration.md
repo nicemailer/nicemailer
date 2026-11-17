@@ -7,6 +7,8 @@ The settings of NiceMailer are in two TOML text files that the core reads at sta
 
 The specification is `specifications/configuration.md`; this page describes what is implemented (phase 1 of `specifications/plan-imap.md`).
 
+A third file next to them, **`keymap.toml`**, redefines the keys of the app: see [keymap.md](keymap.md). It is created and watched like the other two, but checked on its own: a mistake in it never refuses `config.toml` or `accounts.toml`.
+
 Two files rather than one: the general settings can be shared between Macs, or published in a dotfiles repository, without the addresses and servers of the accounts, which are personal and differ from one Mac to the next. Neither file holds a password.
 
 ## Where the files are

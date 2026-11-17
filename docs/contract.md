@@ -102,6 +102,7 @@ A dedicated command prints readable output, asks for confirmation when needed an
 | --- | --- | --- |
 | `list_accounts` | Every account (IMAP and archive) with its state, in display order, and whether it is only looked at (`read_only`). | `nicemailer accounts` |
 | `config_status` | The state of `config.toml` and `accounts.toml`: paths, the error that makes the core refuse them, warnings, and the settings the clients apply themselves (`ui`, `mcp`). | — (`nicemailer config check` checks the files itself, without the core.) |
+| `keymap_get` | The keys of the app: the defaults with `keymap.toml` applied, by context and by menu, each key in its canonical spelling; the error that makes the core refuse the file (the previous keys then stay), and warnings. `KeymapChanged` says when to read it again (`keymap.md`). | — (`nicemailer keymap check` and `show` read the file themselves, without the core.) |
 | `discover_account` | Finds the servers of an address before the account exists: provider, IMAP server, SMTP servers to try. | Step 1 of `nicemailer account add`. |
 | `test_account` | Tries the IMAP server of an account not created yet: capabilities, folders with proposed roles, the folder each role will get and whether it exists (`roles`), counts for the import. A failure says in `data.reason` whether the password (`auth`) or the server (`connect`) is at fault. | Step 2 of `account add`. |
 | `count_archive` | Exact count of the mails the initial archiving would move. | Step 3 of `account add` (`--archive-read-before`, `--archive-unread-before`, `--no-archive`). |
@@ -175,6 +176,7 @@ These commands work on files directly and do not go through the core:
 - `nicemailer seed`: fills the database with fake mail. The core must be stopped.
 - `nicemailer mailbox check | upgrade | backup`: the database of a mailbox folder (`migrations.md`, `backup.md`).
 - `nicemailer config check | defaults | path`: the settings files (`configuration.md`).
+- `nicemailer keymap check | defaults | show`: the keys of the app, `keymap.toml` (`keymap.md`).
 - `nicemailer ai prompts export | check`: the prompt files (`ai.md`).
 
 ## Coverage

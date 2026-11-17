@@ -198,7 +198,7 @@ private struct GeekWindow: View {
                 menu.padding(12)
             }
         case .help:
-            HelpPanel(groups: Help.groups)
+            HelpPanel(groups: Help.groups(controller.keymap))
         case .picker(let kind):
             // Swift note: a `GeometryReader` gives its content the size it
             // is offered, here the window's content: the links panel takes
@@ -220,6 +220,8 @@ private struct GeekWindow: View {
         case .goto: L("Go to")
         case .save: L("Save")
         case .view: L("Display")
+        // A menu of the user (`[menu.<name>]`): its name.
+        case .user(let name): name
         }
     }
 }
@@ -277,10 +279,11 @@ struct GeekStatusBar: View {
                 // Account ("all" for the unified view) and folder, each with
                 // its icon and the key that opens its picker; a click opens
                 // it too.
-                StatusBlock(icon: "at", text: model.scopeName, key: "@")
+                StatusBlock(icon: "at", text: model.scopeName, key: controller.keyLabel(.pickerAccounts))
                     .onTapGesture { controller.openPickerFromStatusBar(.accounts) }
                     .uiTarget("status-account")
-                StatusBlock(icon: GeekController.Prefix.goto.icon, text: model.currentFolderName, key: ";")
+                StatusBlock(icon: GeekController.Prefix.goto.icon, text: model.currentFolderName,
+                            key: controller.menuKeyLabel(.goto))
                     .menuAnchor(.goto, controller)
                     .onTapGesture { controller.openMenuFromStatusBar(.goto) }
                     .uiTarget("status-folder")
@@ -294,7 +297,7 @@ struct GeekStatusBar: View {
                 // contact list ("unread mails of the group"): the magnifier
                 // opens the selector (`F`); each active attribute is a chip,
                 // removed by a click.
-                StatusBlock(icon: "magnifyingglass", text: "", key: "f")
+                StatusBlock(icon: "magnifyingglass", text: "", key: controller.keyLabel(.pickerAttributes))
                     .onTapGesture { controller.openPickerFromStatusBar(.attributes) }
                     .uiTarget("status-attributes")
                 ForEach(model.attributes.chips) { chip in
@@ -318,10 +321,10 @@ struct GeekStatusBar: View {
                 // the right end of the bar instead (`quarantineTargets`).
                 let prefixes: [GeekController.Prefix] = controller.directTargets.isEmpty ? [.view, .move, .save] : [.view]
                 ForEach(prefixes, id: \.self) { p in
-                    StatusBlock(icon: p.icon, text: "", key: p.rawValue)
+                    StatusBlock(icon: p.icon, text: "", key: controller.menuKeyLabel(p))
                         .menuAnchor(p, controller)
                         .onTapGesture { controller.openMenuFromStatusBar(p) }
-                        .uiTarget("status-\(p.rawValue)")
+                        .uiTarget("status-\(p.uiID)")
                         .padding(.leading, p == .save ? 0 : scaled(28))
                 }
                 // The AI, with the actions on the current mail: its palette
@@ -329,7 +332,7 @@ struct GeekStatusBar: View {
                 // Quarantine, where `m` and `s` go, it stays (sorting the
                 // folder is its first prompt) and stands alone after `v`.
                 StatusBlock(icon: "sparkles", text: "",
-                            key: GeekController.aiKeyLabel(composing: model.composer != nil))
+                            key: controller.aiKeyLabel(composing: model.composer != nil))
                     .onTapGesture { controller.openAIFromStatusBar() }
                     .help(L("AI assistance"))
                     .accessibilityLabel(L("AI assistance"))
@@ -367,13 +370,18 @@ struct GeekStatusBar: View {
                 Text(message).foregroundStyle(Palette.error).lineLimit(1)
             } else if case .maintenance(_, let short) = model.status {
                 Text(short).foregroundStyle(Palette.muted).lineLimit(1)
+            } else if let problem = model.keymapProblem {
+                // `keymap.toml` refused: the previous keys stay, and this
+                // stays until the file is fixed (`raccourcis.md`, 3).
+                Text(L("keymap.toml refused, previous keys kept: %@", problem.text))
+                    .foregroundStyle(Palette.error).lineLimit(1).truncationMode(.middle)
             } else if let starting = model.startupPhase.message {
                 Text(starting).foregroundStyle(Palette.muted).lineLimit(1)
             } else if let sort = model.aiSort {
                 Text(AI.sortLine(sort)).foregroundStyle(Palette.accentText).lineLimit(1)
             } else if controller.screen == .mail, model.composer == nil, let s = model.selectedSuggestion {
                 // Why the AI suggests a target for the mail under the cursor.
-                Text(AI.suggestionLine(s)).foregroundStyle(Palette.accentText).lineLimit(1).truncationMode(.tail)
+                Text(AI.suggestionLine(s, keymap: model.keymap)).foregroundStyle(Palette.accentText).lineLimit(1).truncationMode(.tail)
             }
             if !model.marked.isEmpty {
                 Text(L("%lld marked", model.marked.count)).foregroundStyle(Palette.markedBar)
@@ -383,7 +391,7 @@ struct GeekStatusBar: View {
             // The list of keys, last at the right end and on every screen:
             // a reminder that `?` exists, for whoever has not learned it
             // yet; a click opens it too.
-            StatusBlock(icon: "questionmark.circle", text: "", key: "?")
+            StatusBlock(icon: "questionmark.circle", text: "", key: controller.keyLabel(.helpShow))
                 .onTapGesture { controller.toggleHelpFromStatusBar() }
                 .help(L("Keys"))
                 .uiTarget("status-help")
@@ -415,7 +423,8 @@ extension GeekStatusBar {
                     .foregroundStyle(Palette.muted)
                     .accessibilityLabel(L("Move"))
                 ForEach(targets, id: \.self) { role in
-                    StatusBlock(icon: nil, text: Role.name(role), key: Role.letter(role).lowercased())
+                    StatusBlock(icon: nil, text: Role.name(role),
+                                key: KeyAction(rawValue: "move." + role).map(controller.keyLabel) ?? "")
                         .onTapGesture { controller.moveFromStatusBar(role) }
                         .uiTarget("status-target-\(role)")
                 }
@@ -536,7 +545,8 @@ private struct GeekFolderColumn: View {
                 let folders = controller.scopeFolders
                 ForEach(Array(folders.enumerated()), id: \.element.id) { i, f in
                     HStack(spacing: 6) {
-                        Text(f.letter.lowercased()).foregroundStyle(Palette.muted)
+                        // The key of the folder in the menu `;` (`goto.<role>`).
+                        Text(controller.gotoKeyLabel(f)).foregroundStyle(Palette.muted)
                         if f.virtual != nil {
                             VirtualFolderLabel(name: f.name)
                         } else {
@@ -1066,7 +1076,7 @@ private struct GeekReaderColumn: View {
             if let at = offer.senderUnsubscribedAt {
                 Text(UnsubscribeDisplay.done(at)).foregroundStyle(Palette.muted)
             } else {
-                let label = UnsubscribeDisplay.label(offer)
+                let label = UnsubscribeDisplay.label(offer, key: controller.keyLabel(.mailUnsubscribe))
                 HStack(spacing: scaled(4)) {
                     Text(label.text)
                     if let symbol = label.symbol { Image(systemName: symbol) }
@@ -2198,7 +2208,11 @@ private struct ContactsScreen: View {
 
     var body: some View {
         ScreenList(
-            title: L("Contacts"), hint: L("/ filter · m: decision · M: domain decision · o: human or robot · return: their mails · esc: back"),
+            title: L("Contacts"),
+            hint: L("%@ filter · %@: decision · %@: domain decision · %@: human or robot · %@: their mails · esc: back",
+                    controller.screenKey(.contactsFilter), controller.screenKey(.contactsDecideAddress),
+                    controller.screenKey(.contactsDecideDomain), controller.screenKey(.contactsSenderKind),
+                    controller.screenKey(.screenOpen)),
             count: controller.contacts.count, index: controller.screenIndex,
             onClick: { controller.clickScreenRow($0) }
         ) { i in
@@ -2253,7 +2267,9 @@ private struct NamesScreen: View {
 
     var body: some View {
         ScreenList(
-            title: title, hint: L("return: their mails · r: rename · d: delete · esc: back"), count: rows.count, index: controller.screenIndex,
+            title: title,
+            hint: L("%@: their mails · %@: rename · %@: delete · esc: back", controller.screenKey(.screenOpen),
+                    controller.screenKey(.labelRename), controller.screenKey(.labelDelete)), count: rows.count, index: controller.screenIndex,
             onClick: { controller.clickScreenRow($0) }
         ) { i in
             HStack(spacing: 8) {

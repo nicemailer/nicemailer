@@ -124,6 +124,10 @@ pub mod method {
     /// State of `config.toml` and `accounts.toml`: paths, error refusing
     /// them, warnings (`ConfigStatus`).
     pub const CONFIG_STATUS: &str = "config_status";
+    /// The keys of the app: the defaults with `keymap.toml` applied, by
+    /// context and by menu, and why the file is refused (`KeymapView`,
+    /// `raccourcis.md`).
+    pub const KEYMAP_GET: &str = "keymap_get";
     /// Changes the display order of the accounts (account picker, sidebar).
     pub const SET_ACCOUNT_ORDER: &str = "set_account_order";
     /// Saves the IMAP password of an account in the Keychain, for the
@@ -469,6 +473,11 @@ pub enum Event {
     /// Empty `keys` after a `ConfigError`: the files are valid again,
     /// without any change to the settings applied.
     ConfigChanged { keys: Vec<String> },
+    /// A new `keymap.toml` was applied, or the file is valid again after a
+    /// `ConfigError` about it: read it again with `keymap_get`. A refused
+    /// file gives `ConfigError` with `file` `keymap.toml`, and the previous
+    /// keys stay (`raccourcis.md`, section 3).
+    KeymapChanged {},
     /// `config.toml` or `accounts.toml` is invalid and both were refused
     /// whole: the previous settings stay applied (`configuration.md`,
     /// section 4). `file` names the file at fault (`config.toml` or
@@ -2260,11 +2269,11 @@ pub struct SetAccountOrderParams {
     pub account_ids: Vec<i64>,
 }
 
-/// A problem of `config.toml` or `accounts.toml`: why it was refused, or a
-/// warning.
+/// A problem of `config.toml`, `accounts.toml` or `keymap.toml`: why it was
+/// refused, or a warning.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ConfigProblem {
-    /// The file: `config.toml` or `accounts.toml`.
+    /// The file: `config.toml`, `accounts.toml` or `keymap.toml`.
     #[serde(default)]
     pub file: String,
     /// Line, from 1.
@@ -2272,6 +2281,49 @@ pub struct ConfigProblem {
     /// Dotted key, e.g. `accounts.perso.imap.port`.
     pub key: Option<String>,
     pub message: String,
+}
+
+/// Result of `keymap_get`: the keys in effect (`raccourcis.md`, section 9).
+///
+/// Already resolved: the defaults with the file applied. Each key is in its
+/// canonical spelling (`ctrl-shift-c`, `J`), which the app builds the same
+/// way from a key press, so finding a key is comparing two strings.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct KeymapView {
+    /// Path of the `keymap.toml` read by the core, next to `config.toml`.
+    pub path: String,
+    /// Whether it exists; missing, every key is a default.
+    pub exists: bool,
+    /// The keys of each context (`mail`, `compose`…), in the order of the
+    /// file. A key is looked for in the context, then in its parents; an
+    /// action `none` hides the key of a parent.
+    pub contexts: BTreeMap<String, Vec<KeyBinding>>,
+    /// The menus, the built-in ones first, their rows in display order.
+    pub menus: Vec<KeymapMenu>,
+    /// Why the file on disk is refused; the keys of `contexts` are then the
+    /// previous ones (or the defaults, at start).
+    pub error: Option<ConfigProblem>,
+    /// Lines ignored (unknown actions), and menus no key opens.
+    pub warnings: Vec<ConfigProblem>,
+}
+
+/// One key and its action, in `KeymapView`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct KeyBinding {
+    /// Canonical spelling: `ctrl-cmd-alt-shift-` then the key.
+    pub key: String,
+    /// The action (`mail.archive`), or `none`.
+    pub action: String,
+}
+
+/// A menu of `KeymapView`: `[menu.<name>]`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct KeymapMenu {
+    pub name: String,
+    /// Provided by the app (`move`, `goto`, `save`, `view`), or made by the
+    /// user, who opens it with the action `menu.<name>`.
+    pub builtin: bool,
+    pub entries: Vec<KeyBinding>,
 }
 
 /// Result of `config_status`.

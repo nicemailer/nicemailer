@@ -510,10 +510,11 @@ enum Compose {
 
     /// The status bar when a reply starts from another account than the
     /// mail's, which cannot send: which one sends, and how to change it.
-    static func otherSenderFlash(_ d: DraftView, senders: [SenderView]) -> String? {
+    static func otherSenderFlash(_ d: DraftView, senders: [SenderView], keymap: Keymap = .defaults) -> String? {
         guard d.sendAccountId != d.accountId, d.kind != "new" else { return nil }
         let h = ComposeHeaders(d)
-        return L("This account cannot send: from %@ · ⌥⌘F to change", fromLine(h, senders: senders))
+        return L("This account cannot send: from %@ · %@ to change", fromLine(h, senders: senders),
+                 keymap.mention(.composeFrom, in: Keymap.composeChain))
     }
 
     /// Whether a key typed in a recipient line ends the address: `,` and

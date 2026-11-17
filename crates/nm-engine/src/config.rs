@@ -598,7 +598,7 @@ fn document<'a>(text: &'a str, file: &'static str) -> Result<toml_edit::Document
 }
 
 /// Line (from 1) of the byte `offset` of `text`.
-fn line_of(text: &str, offset: usize) -> u32 {
+pub(crate) fn line_of(text: &str, offset: usize) -> u32 {
     let end = offset.min(text.len());
     text.as_bytes()[..end].iter().filter(|&&b| b == b'\n').count() as u32 + 1
 }

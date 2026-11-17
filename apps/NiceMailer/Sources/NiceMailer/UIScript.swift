@@ -698,6 +698,23 @@ private final class Runner {
             // Move targets shown in the status bar in Quarantine, in place
             // of the `m` block: `inbox,newsletter,…`, empty elsewhere.
             "status_targets": c.directTargets.joined(separator: ","),
+            // The keys the status bar reminds of (`keymap.toml`):
+            // `account=@ folder=; attributes=f v=v m=m s=s ai=a help=?`.
+            "status_keys": [
+                "account=" + c.keyLabel(.pickerAccounts), "folder=" + c.menuKeyLabel(.goto),
+                "attributes=" + c.keyLabel(.pickerAttributes), "v=" + c.menuKeyLabel(.view),
+                "m=" + c.menuKeyLabel(.move), "s=" + c.menuKeyLabel(.save),
+                "ai=" + c.aiKeyLabel(composing: m.composer != nil), "help=" + c.keyLabel(.helpShow),
+            ].joined(separator: " "),
+            // The lines of the help, `key label`, ` | ` between (while it
+            // is open).
+            "help_rows": c.overlay == .help
+                ? Help.groups(c.keymap).flatMap(\.entries).map { "\($0.key) \($0.label)" }.joined(separator: " | ") : "",
+            // Why keymap.toml is refused, empty when it is applied.
+            "keymap_problem": m.keymapProblem?.text ?? "",
+            // The keys of the folders in the folder column (`;` menu), as
+            // `i Inbox, t Todo…`.
+            "folder_keys": c.scopeFolders.map { "\(c.gotoKeyLabel($0)) \($0.name)" }.joined(separator: ", "),
             "mode_icon": "\(c.showsAppIcon && AppIcon.statusImage != nil)",
             "location": c.locationLabel,
             "flash": m.flash ?? "",
@@ -788,7 +805,7 @@ private final class Runner {
             "status_position": c.statusPosition.rawValue,
             // The key the AI block of the status bar reminds of: `a`, or
             // `⌘I` while a reply is written.
-            "status_ai_key": GeekController.aiKeyLabel(composing: m.composer != nil),
+            "status_ai_key": c.aiKeyLabel(composing: m.composer != nil),
             "sort": m.sort,
             "body_format": m.bodyFormat,
             // Remote images (`RemoteImages.swift`): the switch offers

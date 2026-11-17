@@ -28,21 +28,24 @@ enum UnsubscribeDisplay {
     /// header (clean: done by the core in one click, or a page / address
     /// the list gives for that) or a link found in the mail's text (a page
     /// of the sender, opened in the browser).
-    static func label(_ u: UnsubscribeView) -> Label {
+    ///
+    /// `key`: the key of `mail.unsubscribe` (⌘U by default), recalled in
+    /// the tooltip.
+    static func label(_ u: UnsubscribeView, key: String = "⌘U") -> Label {
         if u.source == "body" {
             return Label(text: L("unsubscribe"), symbol: "link",
-                         help: L("Opens the unsubscribe link found in the text of the mail, in the browser (⌘U)"))
+                         help: L("Opens the unsubscribe link found in the text of the mail, in the browser (%@)", key))
         }
         switch u.method {
         case "one_click":
             return Label(text: L("unsubscribe"), symbol: nil,
-                         help: L("Unsubscribes at once, without opening anything (⌘U)"))
+                         help: L("Unsubscribes at once, without opening anything (%@)", key))
         case "mail":
             return Label(text: L("unsubscribe"), symbol: "envelope",
-                         help: L("Opens the unsubscribe mail of the list in Mail (⌘U)"))
+                         help: L("Opens the unsubscribe mail of the list in Mail (%@)", key))
         default:
             return Label(text: L("unsubscribe"), symbol: "arrow.up.right.square",
-                         help: L("Opens the unsubscribe page of the list in the browser (⌘U)"))
+                         help: L("Opens the unsubscribe page of the list in the browser (%@)", key))
         }
     }
 

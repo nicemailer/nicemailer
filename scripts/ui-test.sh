@@ -54,6 +54,11 @@ for script in "${scripts[@]}"; do
     if [ -f "$APP/UITests/fixtures/$name.config.toml" ]; then
         cp "$APP/UITests/fixtures/$name.config.toml" "$dir/config.toml"
     fi
+    # ... and keys of its own (fixtures/<scenario>.keymap.toml, docs/keymap.md),
+    # next to config.toml, where the core reads them.
+    if [ -f "$APP/UITests/fixtures/$name.keymap.toml" ]; then
+        cp "$APP/UITests/fixtures/$name.keymap.toml" "$dir/keymap.toml"
+    fi
     # A scenario may answer the AI prompts from a table
     # (fixtures/<scenario>.ai.json, `NICEMAILER_FAKE_AI`, docs/ai.md): no
     # AI provider is ever called by the UI tests.

@@ -13,15 +13,58 @@ import Observation
 ///
 /// Key model, as in Helix and Vim: in the normal mode a key is an action
 /// (`d`, `r`…) or a *prefix* (`m`, `;`, `s`, `v`) that waits for a second
-/// key and shows a menu of what it can be.
+/// key and shows a menu of what it can be. Which key does what comes from
+/// the keymap (`Keymap`, `keymap.toml`, `docs/keymap.md`): the keys named
+/// in the comments are the defaults.
 @MainActor
 @Observable
 final class GeekController {
     // MARK: - Types
 
-    /// A prefix key and the menu it opens.
-    enum Prefix: String, CaseIterable {
-        case move = "m", goto = ";", save = "s", view = "v"
+    /// A menu opened by a key, a *prefix* as in Helix: the four of the app
+    /// (`m`, `;`, `s`, `v` by default) and those of the user (`[menu.<name>]`
+    /// of `keymap.toml`, `raccourcis.md`, section 7).
+    ///
+    /// Swift note: an enum case may carry a value (`user(String)`); such an
+    /// enum cannot have raw values, so the names are a property.
+    enum Prefix: Hashable {
+        case move, goto, save, view
+        /// A menu of the user, by its name.
+        case user(String)
+
+        /// The menus of the app, which have a block in the status bar.
+        static let builtins: [Prefix] = [.move, .goto, .save, .view]
+
+        /// Its name in the keymap: `[menu.save]`, opened by `menu.save`.
+        var name: String {
+            switch self {
+            case .move: "move"
+            case .goto: "goto"
+            case .save: "save"
+            case .view: "view"
+            case .user(let n): n
+            }
+        }
+
+        /// The menu of a name of the keymap.
+        init(name: String) {
+            self = Self.builtins.first { $0.name == name } ?? .user(name)
+        }
+
+        /// The action that opens it, for the built-in menus.
+        var action: KeyAction? { KeyAction(rawValue: "menu." + name) }
+
+        /// Id of its block in the UI scripts (`status-m`): the default key,
+        /// fixed whatever the keymap says, so that a scenario stays valid.
+        var uiID: String {
+            switch self {
+            case .move: "m"
+            case .goto: ";"
+            case .save: "s"
+            case .view: "v"
+            case .user(let n): n
+            }
+        }
 
         /// Icon of its block in the status bar (SF Symbols).
         var icon: String {
@@ -30,6 +73,7 @@ final class GeekController {
             case .goto: "folder"
             case .save: "square.and.arrow.down"
             case .view: "eye"
+            case .user: "list.bullet"
             }
         }
     }
@@ -128,14 +172,20 @@ final class GeekController {
         var commandAction: (@MainActor () -> Void)? = nil
         /// In a menu, a second key that runs `commandAction`: `T` for "as
         /// text file, then open", next to `t` on the same row (`ui.md`,
-        /// menu `s`). The row says so in its detail.
+        /// menu `s`). The row says so in its detail. Shown; `altChord` is
+        /// its spelling, compared with the key pressed.
         var altKey: String? = nil
+        var altChord: String? = nil
         /// Hidden words that also find the row when typed (`cc` for "To…"),
         /// never shown (`PickerMatch`).
         var keywords: [String] = []
         /// A virtual folder in the menu `;`: drawn apart from the real
         /// folders (`ui.md`, "Dossiers virtuels").
         var virtual = false
+        /// The spelling of the row's key in a menu (`ctrl-x`, `T`), compared
+        /// with the key pressed (`KeyChord`); `nil`: `key` itself (the
+        /// answers of a question, a letter or `-`).
+        var chord: String? = nil
         let action: @MainActor () -> Void
         var id: String { key + label }
     }
@@ -323,7 +373,8 @@ final class GeekController {
             s.revealed = []
         }
         readerState = s
-        model.flash = s.showAll ? L("Whole conversation shown (T)") : L("Simplified conversation (T)")
+        let key = keymap.mention(.readerToggleAll, in: Keymap.mailChain)
+        model.flash = s.showAll ? L("Whole conversation shown (%@)", key) : L("Simplified conversation (%@)", key)
     }
 
     /// The message the reader scrolls to once laid out (`stepMessage`);
@@ -537,7 +588,7 @@ final class GeekController {
         if model.composer != nil, screen == .mail, overlay == .none { return "EDT" }
         return switch overlay {
         case .none, .help: "NOR"
-        case .menu(let p): p.rawValue
+        case .menu(let p): menuKeyLabel(p)
         case .picker: "PCK"
         case .contactFilter: "/"
         case .choice: "ASK"
@@ -570,93 +621,79 @@ final class GeekController {
 
     // MARK: - Key handling
 
+    /// The keys in effect: the defaults with `keymap.toml` applied
+    /// (`AppModel.keymap`, `docs/keymap.md`).
+    var keymap: Keymap { model.keymap }
+
+    /// The contexts a key is looked for in, most precise first, for what
+    /// has the keys now (`raccourcis.md`, section 5.1). The first context
+    /// that has the key decides; `everywhere` comes last in every chain.
+    ///
+    /// A line of a reply (the subject, a recipient line) looks in
+    /// `line_edit`, then in `compose`: ⌘V pastes on one line there, and
+    /// ⌘↩ still sends.
+    var keyChain: [KeyContext] {
+        if activeChoice != nil { return [.choice, .everywhere] }
+        if let c = model.composer, screen == .mail, overlay == .none {
+            if model.aiRun != nil { return [.aiPanel, .everywhere] }
+            switch c.focus {
+            case .body, .attachments: return [.compose, .everywhere]
+            case .subject, .to, .cc, .bcc: return [.lineEdit, .compose, .everywhere]
+            }
+        }
+        if let run = model.aiRun, run.composer == nil, overlay == .none { return [.aiPanel, .everywhere] }
+        switch overlay {
+        case .menu: return [.menuNavigation, .everywhere]
+        case .help: return [.everywhere]
+        case .picker: return [.picker, .lineEdit, .everywhere]
+        case .contactFilter: return [.contactFilter, .lineEdit, .everywhere]
+        case .choice, .none: break
+        }
+        switch screen {
+        case .mail: return quarantineListed ? [.quarantine, .mail, .normal, .everywhere] : [.mail, .normal, .everywhere]
+        case .contacts: return [.contacts, .screen, .normal, .everywhere]
+        case .tags: return [.tags, .screen, .normal, .everywhere]
+        case .groups: return [.groups, .screen, .normal, .everywhere]
+        case .history: return [.screen, .normal, .everywhere]
+        }
+    }
+
+    /// The chain of the mail screen in normal mode, for the reminders of
+    /// the status bar and the help, whatever has the keys now.
+    var mailChain: [KeyContext] { quarantineListed ? [.quarantine, .mail, .normal, .everywhere] : [.mail, .normal, .everywhere] }
+
+    /// The key of `action` on the mail screen, as shown (`m`, `⌃I`), or
+    /// `""` when no key runs it: the reminders of the status bar.
+    func keyLabel(_ action: KeyAction) -> String {
+        let chain: [KeyContext] = action == .aiComposeMenu ? [.compose, .everywhere] : mailChain
+        return keymap.label(action, in: chain)
+    }
+
     /// Handles one key press. Returns `true` if the key was used (it then
-    /// goes no further), `false` to let AppKit process it (⌘ shortcuts).
+    /// goes no further), `false` to let AppKit process it (the ⌘ keys of
+    /// the menus, the keys of the reply's editor).
+    ///
+    /// The key is spelled as the keymap spells it (`KeyChord`), looked for
+    /// in the contexts of what has the keys (`keyChain`), and its action
+    /// run (`perform`). What is not an action stays with each panel: the
+    /// letters typed in a picker, the answers of a question, the rows of a
+    /// menu, and Escape, which always goes back (`raccourcis.md`, 4.4).
     func handle(_ event: NSEvent) -> Bool {
         let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        // ⌃⌘F: full screen, and back, wherever the keys go (the list, a
-        // panel, a reply being written). Handled here rather than left to
-        // the View menu, whose shortcut macOS now shows as fn-F.
-        // The key is known by its place (keyCode 3, the F of QWERTY and
-        // AZERTY alike) or by its letter: with ⌃ held, AppKit may give the
-        // control character 0x06 rather than "f".
-        if mods.contains(.command), mods.contains(.control),
-           event.keyCode == 3 || event.charactersIgnoringModifiers?.lowercased() == "f" {
-            toggleFullScreen()
-            return true
-        }
-        // ⌘-Return in a picker: the row's command action (a file of `l`:
-        // saved and opened), or its usual one.
-        if mods.contains(.command), event.keyCode == KeyCode.returnKey, case .picker(let kind) = overlay {
-            model.flash = nil
-            overlay = .none
-            let entries = pickerEntries(kind)
-            if entries.indices.contains(pickerIndex) {
-                let e = entries[pickerIndex]
-                (e.commandAction ?? e.action)()
-            }
-            return true
-        }
-        // ⌘-Return in a prefix menu: the highlighted row's second action
-        // (`sT`: save, then open), or its usual one.
-        if mods.contains(.command), event.keyCode == KeyCode.returnKey, case .menu = overlay {
-            if let i = menuIndex { chooseMenuEntry(i, command: true) } else { overlay = .none }
-            return true
-        }
-        // While text is typed (a picker, the contacts filter), ⌘V pastes and
-        // ⌘ with the arrows or Delete edits the line, as in any text field.
-        // This comes before the other ⌘ shortcuts, which do not apply there.
-        if mods.contains(.command), let edited = editTypedLine(event, mods: mods) {
-            return edited
-        }
+        let key = KeyChord.of(event)
+        let chain = keyChain
         // The reply being written takes every key (`reponse.md`, section
         // 6): the letters are text, not commands.
         if model.composer != nil, screen == .mail, overlay == .none, activeChoice == nil {
-            return handleComposeKey(event, mods: mods)
+            return handleComposeKey(event, key: key, chain: chain, mods: mods)
         }
-        // ⌘U: unsubscribe from the list of the open mail (`ui.md`,
-        // "Désabonnement"), with ⌘ because it cannot be undone and `u` alone
-        // toggles read / unread. Only on the mail screen, without a panel.
-        if mods.contains(.command), event.charactersIgnoringModifiers?.lowercased() == "u" {
-            guard screen == .mail, overlay == .none else { return false }
-            model.flash = nil
-            model.unsubscribe()
-            return true
-        }
-        // ⌘A: marks every mail of the list as shown now (the rows loaded so
-        // far, as far as one can scroll), for a grouped action (`ui.md`,
-        // "Liste"). On the mail screen, without a panel; Escape unmarks.
-        if mods.contains(.command), event.charactersIgnoringModifiers?.lowercased() == "a" {
-            guard screen == .mail, overlay == .none else { return false }
-            markAll()
-            return true
-        }
-        // ⌘↩ in the AI panel of a mail: an appointment saved, then opened
-        // (`AI.action`). Here, before the other ⌘ shortcuts, which leave
-        // ⌘ keys to the menus.
-        if mods.contains(.command), event.keyCode == KeyCode.returnKey,
-           let run = model.aiRun, run.composer == nil, overlay == .none {
-            model.flash = nil
-            handleAIKey(event, run: run)
-            return true
-        }
-        if mods.contains(.command) {
-            // Text size (`TextSize`): handled here so that ⌘= works too (on
-            // AZERTY, `+` needs Shift) and in every keyboard layout. The
-            // View menu has the same commands.
-            switch event.characters ?? "" {
-            case "+", "=": textSize.bigger()
-            case "-": textSize.smaller()
-            case "0": textSize.reset()
-            // Other ⌘ shortcuts belong to the menus (⌘Q, ⌘R…).
-            default: return false
-            }
-            model.flash = L("Text size: %lld pt", Int(textSize.size))
-            return true
-        }
-        let control = mods.contains(.control)
-        let key = (control ? event.charactersIgnoringModifiers : event.characters) ?? ""
-        let code = event.keyCode
+        let action = keymap.action(key, in: chain)
+        // A menu of the user (`[menu.<name>]`), opened by its own key.
+        let userMenu = action == nil && overlay == .none && activeChoice == nil ? keymap.userMenu(key, in: chain) : nil
+        // A ⌘ key no context takes goes on to the menus of the app (⌘Q,
+        // ⌘,…), and leaves the message on screen; but for a move of a line
+        // with Shift added (⇧⌘→), which selects.
+        if action == nil, userMenu == nil, mods.contains(.command), shiftedLineMove(key, in: chain) == nil { return false }
 
         // Any key clears the previous message, as in Helix.
         model.flash = nil
@@ -664,224 +701,341 @@ final class GeekController {
 
         // A question waits for its answer before anything else.
         if let choice = activeChoice {
-            handleChoiceKey(choice, key: key, code: code)
+            handleChoiceKey(choice, key: key, action: action, code: event.keyCode)
             return true
         }
         // The AI panel of a mail takes every key while it is open, as the
         // one of a reply does (`AI.action`).
         if let run = model.aiRun, run.composer == nil, overlay == .none {
-            handleAIKey(event, run: run)
+            handleAIKey(event, key: key, action: action, run: run)
             return true
         }
-
         switch overlay {
         case .menu(let prefix):
-            // The arrows highlight a row without closing the menu: down
-            // starts on the first row, up on the last, and both turn around
-            // (`stepDown`, `stepUp`); Return chooses it (`ui.md`).
-            let count = menuEntries(prefix).count
-            switch code {
-            case KeyCode.down:
-                menuIndex = menuIndex.map { Self.stepDown($0, count: count) } ?? 0
-                return true
-            case KeyCode.up:
-                menuIndex = menuIndex.map { Self.stepUp($0, count: count) } ?? max(0, count - 1)
-                return true
-            case KeyCode.returnKey:
-                // (⌘-Return is handled at the top of `handle`.)
-                if let i = menuIndex { chooseMenuEntry(i) } else { overlay = .none }
-                return true
-            default:
-                break
-            }
-            overlay = .none
-            if code == KeyCode.escape { return true }
-            let entries = menuEntries(prefix)
-            if let entry = entries.first(where: { $0.key == key }) {
-                if entry.disabled {
-                    model.flash = L("Not available yet: %@", entry.label)
-                } else {
-                    entry.action()
-                }
-            } else if let entry = entries.first(where: { $0.altKey == key }), let second = entry.commandAction {
-                second()
-            } else {
-                model.flash = L("No command %@%@", prefix.rawValue, key)
-            }
+            handleMenuKey(prefix, key: key, action: action, code: event.keyCode)
             return true
         case .help:
+            // A key of `everywhere` (the text size, full screen) keeps the
+            // list open; any other closes it.
+            if let action, perform(action) { return true }
             overlay = .none
             return true
         case .picker(let kind):
-            handlePickerKey(kind, key: key, code: code, mods: mods)
+            handlePickerKey(kind, event: event, key: key, action: action, mods: mods)
             return true
         case .contactFilter:
-            handleContactFilterInput(key: key, code: code, mods: mods)
+            handleContactFilterInput(event: event, key: key, action: action, mods: mods)
             return true
         case .choice, .none:
             break
         }
 
-        if control {
-            switch key {
-            // As in Zed and vim, ctrl-d / ctrl-u move by half a page in the
-            // list the cursor belongs to (j / k move it too); the mail keeps
-            // Space, shift-Space, ctrl-f and ctrl-b (`ui.md`).
-            case "d" where screen == .mail: moveCursor(halfPage)
-            case "u" where screen == .mail: moveCursor(-halfPage)
-            // Other screens: used, but nothing to do (no beep).
-            case "d", "u": break
-            // ctrl-k / ctrl-j: the previous / next message of the
-            // conversation, as k / j move in the list.
-            case "k" where screen == .mail: stepMessage(-1)
-            case "j" where screen == .mail: stepMessage(1)
-            // ctrl-c: the sender's card in Contacts, or their address
-            // copied when they are not in it; ctrl-C (with Shift): the
-            // sender's mails (`ui.md`, "Expéditeur").
-            case "c" where screen == .mail: Task { await cardOrCopy() }
-            case "C" where screen == .mail: Task { await listSenderMails() }
-            case "f": scrollReader(pages: 1)
-            case "b": scrollReader(pages: -1)
-            default: return false
-            }
+        if let action, perform(action) { return true }
+        if let userMenu {
+            overlay = .menu(.user(userMenu))
             return true
         }
+        if event.keyCode == KeyCode.escape {
+            if screen != .mail { screen = .mail } else { mailEscape() }
+            return true
+        }
+        // A ⌃ key without an action: AppKit's (a beep), as before.
+        if mods.contains(.control) { return false }
+        if screen == .mail, !key.isEmpty { model.flash = L("No command %@", KeyChord.display(key)) }
+        return true
+    }
 
-        // Keys common to every screen.
-        switch key {
-        case ";":
+    /// Escape on the mail screen: undoes the last thing started or shown,
+    /// one step per press (`ui.md`). Not configurable: Escape always goes
+    /// back.
+    private func mailEscape() {
+        // A sorting under way stops first: it is the last thing started.
+        if model.aiSort != nil {
+            Task { await model.stopSort() }
+        } else if reading {
+            // Back to the list first, before Escape's other steps
+            // (unmark, leave a filter…): it undoes the last thing done.
+            reading = false
+        } else if !model.marked.isEmpty {
+            model.marked = []
+        } else if model.listFilter != nil {
+            // Back from a tag, group or contact list to the folder.
+            model.leaveFilter()
+        } else if !model.attributes.isEmpty || searchOrigin != nil {
+            // Then the attributes go, and after a `/` search, the list
+            // goes back to where `/` was pressed.
+            model.attributes = ThreadFilter()
+            returnFromSearch()
+        }
+    }
+
+    /// Runs an action of the keymap. Returns `false` when it does nothing
+    /// here, so the key goes on as if it had no action: a ⌘ key then
+    /// reaches the menus.
+    ///
+    /// The actions of the panels (a picker, a menu, a question, the AI
+    /// panel, a line, a reply) are run by their own handlers, which know
+    /// the panel's state; reaching them here means the panel is not open.
+    @discardableResult
+    func perform(_ action: KeyAction) -> Bool {
+        // In Quarantine, the only decision is where the mail goes: the
+        // actions that change it otherwise say why they do nothing
+        // (`quarantineRefused`).
+        if quarantineListed, screen == .mail, overlay == .none, action.refusedInQuarantine {
+            model.flash = L("In Quarantine, a mail can only be moved or flagged")
+            return true
+        }
+        if let role = action.moveRole {
+            moveTo(role)
+            return true
+        }
+        if action.gotoRole != nil || action.gotoVirtual != nil {
+            goTo(action)
+            return true
+        }
+        if let s = action.gotoScreen {
+            open(s)
+            return true
+        }
+        switch action {
+        // everywhere
+        case .windowFullScreen:
+            toggleFullScreen()
+        case .textBigger, .textSmaller, .textReset:
+            switch action {
+            case .textBigger: textSize.bigger()
+            case .textSmaller: textSize.smaller()
+            default: textSize.reset()
+            }
+            model.flash = L("Text size: %lld pt", Int(textSize.size))
+        case .appReload:
+            Task { await model.reloadAll() }
+        // normal
+        case .menuGoto:
             overlay = .menu(.goto)
-            return true
-        case "?":
+        case .helpShow:
             overlay = .help
-            return true
-        case "z":
+        case .undoLast:
             // Undo the last move or decision, from any screen.
             Task {
                 await model.undoLast()
                 if screen == .contacts { await loadContacts(reset: false, keep: true) }
             }
-            return true
-        default:
-            break
-        }
-        if code == KeyCode.escape, screen != .mail {
-            screen = .mail
-            return true
-        }
-        if screen != .mail {
-            handleScreenKey(key: key, code: code)
-            return true
-        }
-        handleMailKey(key: key, code: code, shift: mods.contains(.shift))
-        return true
-    }
-
-    /// Normal mode on the mail screen. `shift`: Shift is held, read only
-    /// for Space and the arrows (their character does not change with
-    /// Shift).
-    private func handleMailKey(key: String, code: UInt16, shift: Bool = false) {
-        switch code {
-        case KeyCode.returnKey:
+        // mail: the list
+        case .listDown: moveCursor(1)
+        case .listUp: moveCursor(-1)
+        case .listMarkDown: model.markAndMove(1)
+        case .listMarkUp: model.markAndMove(-1)
+        case .listMarkAll:
+            // Every mail of the list as shown now (the rows loaded so far,
+            // as far as one can scroll), for a grouped action (`ui.md`,
+            // "Liste"); Escape unmarks.
+            markAll()
+        // As in Zed and vim, ctrl-d / ctrl-u move by half a page in the
+        // list the cursor belongs to (j / k move it too).
+        case .listHalfPageDown: moveCursor(halfPage)
+        case .listHalfPageUp: moveCursor(-halfPage)
+        case .messageNext: stepMessage(1)
+        case .messagePrevious: stepMessage(-1)
+        case .mailOpen:
             // A conversation the AI suggested a target for: Return moves it
             // there (`ia.md`, section 11, "Quarantine").
-            if model.acceptSuggestion() { return }
+            if model.acceptSuggestion() { return true }
             // In Drafts, Return reopens the draft, as `r` does.
             if model.currentRole == "drafts" {
                 startReply()
-                return
+                return true
             }
             // One column shows the list only: Return reads the mail under
             // the cursor in the whole window (`ui.md`, `v1`). With two or
             // three columns the mail is already shown: nothing to do.
             if columns == 1 { openReader() }
-            return
-        case KeyCode.escape:
-            // A sorting under way stops first: it is the last thing started.
-            if model.aiSort != nil {
-                Task { await model.stopSort() }
-            } else if reading {
-                // Back to the list first, before Escape's other steps
-                // (unmark, leave a filter…): it undoes the last thing done.
-                reading = false
-            } else if !model.marked.isEmpty {
-                model.marked = []
-            } else if model.listFilter != nil {
-                // Back from a tag, group or contact list to the folder.
-                model.leaveFilter()
-            } else if !model.attributes.isEmpty || searchOrigin != nil {
-                // Then the attributes go, and after a `/` search, the list
-                // goes back to where `/` was pressed.
-                model.attributes = ThreadFilter()
-                returnFromSearch()
-            }
-            return
-        case KeyCode.delete, KeyCode.forwardDelete:
-            model.moveTargets(to: "deleted")
-            return
-        // Shift with an arrow marks the mail and moves, like J / K (the
-        // arrow's character does not change with Shift, so it is read here).
-        case KeyCode.down:
-            if shift { model.markAndMove(1) } else { moveCursor(1) }
-            return
-        case KeyCode.up:
-            if shift { model.markAndMove(-1) } else { moveCursor(-1) }
-            return
-        default:
-            break
-        }
-        // In Quarantine, the folder letters move at once, and the keys that
-        // would change the mail otherwise are refused (`directTargets`).
-        if handleQuarantineKey(key) { return }
-        switch key {
-        case "j": moveCursor(1)
-        case "k": moveCursor(-1)
-        case "J": model.markAndMove(1)
-        case "K": model.markAndMove(-1)
-        case "@": openPicker(.accounts)
-        // `f` the attribute selector, the search one uses most; `F` the
-        // forward (swapped in November 2026, `ui.md`).
-        case "f": openPicker(.attributes)
-        case "l": openPicker(.links)
-        case " ":
+        case .readerOpenOrPageDown:
             // One column, on the list: Space opens the mail, as Return
-            // does. With the mail on screen, it scrolls it (shift: up).
-            if columns == 1, !reading, !shift {
-                openReader()
+            // does. With the mail on screen, it scrolls it.
+            if columns == 1, !reading { openReader() } else { scrollReader(pages: 1) }
+        case .readerPageDown: scrollReader(pages: 1)
+        case .readerPageUp: scrollReader(pages: -1)
+        case .readerToggleAll: toggleShowAll()
+        case .readerSkipQuoted: skipQuoted()
+        case .pickerLinks: openPicker(.links)
+        // The sender's card in Contacts, or their address copied when they
+        // are not in it; the sender's mails (`ui.md`, "Expéditeur").
+        case .senderCardOrCopy: Task { await cardOrCopy() }
+        case .senderMails: Task { await listSenderMails() }
+        case .mailArchive: model.moveTargets(to: "archive")
+        case .menuMove:
+            if quarantineListed {
+                // The menu would only repeat what the status bar shows:
+                // say which keys to press instead.
+                let letters = directTargets.map { keyLabel(KeyAction(rawValue: "move." + $0) ?? .menuMove) }
+                model.flash = L("In Quarantine, press the folder's key: %@", letters.joined(separator: " "))
             } else {
-                scrollReader(pages: shift ? -1 : 1)
+                overlay = .menu(.move)
             }
-        case "d": model.moveTargets(to: "archive")
-        case "u": model.toggleSeenTargets()
-        case "U": model.markTargetsSeen()
-        case "*": model.toggleFlagTargets()
-        case "t": openPicker(.tag)
-        case "T": toggleShowAll()
-        case "S": skipQuoted()
-        case "g": openPicker(.group)
-        case "/": openPicker(.search)
-        case "r":
-            // A reply to all (`reponse.md`); `R` to the sender alone; `F` a
-            // forward; `c` a new mail.
-            startReply()
-        case "R":
-            startReply(kind: .replySender)
-        case "F":
-            startReply(kind: .forward)
-        case "a":
-            // The AI menu of the list, or of the mail read (`ia.md`,
-            // section 11); in the reply, ⌘I.
-            openAI()
-        case "c":
+        case .mailDelete: model.moveTargets(to: "deleted")
+        case .mailToggleSeen: model.toggleSeenTargets()
+        case .mailMarkSeen: model.markTargetsSeen()
+        case .mailToggleFlag: model.toggleFlagTargets()
+        case .pickerTag: openPicker(.tag)
+        case .pickerGroup: openPicker(.group)
+        case .menuSave: overlay = .menu(.save)
+        case .mailUnsubscribe:
+            // ⌘U by default (`ui.md`, "Désabonnement"): it cannot be undone,
+            // and `u` alone toggles read / unread.
+            model.unsubscribe()
+        // A reply to all (`reponse.md`); to the sender alone; a forward; a
+        // new mail.
+        case .composeReplyAll: startReply()
+        case .composeReplySender: startReply(kind: .replySender)
+        case .composeForward: startReply(kind: .forward)
+        case .composeNew:
             Task {
                 await model.startNewMail()
                 if model.composer != nil, columns == 1 { reading = true }
             }
-        case "m", "s", "v":
-            if let p = Prefix(rawValue: key) { overlay = .menu(p) }
+        case .aiMenu:
+            // The AI menu of the list, or of the mail read (`ia.md`,
+            // section 11); in the reply, `ai.compose_menu`.
+            openAI()
+        case .pickerSearch: openPicker(.search)
+        case .pickerAttributes: openPicker(.attributes)
+        case .pickerAccounts: openPicker(.accounts)
+        case .menuView: overlay = .menu(.view)
+        // The rows of the menus `s` and `v`, also bound to keys of their
+        // own when the user wants.
+        case .saveClipboard: model.copyText(to: pasteboard, current: readerState.current)
+        case .saveEml: export("eml")
+        case .saveText: export("txt")
+        case .saveTextOpen: export("txt", open: true)
+        case .saveMarkdown: export("md")
+        case .saveMarkdownOpen: export("md", open: true)
+        case .saveAttachments: model.saveAttachmentsOfTargets(includingGraphics: true, current: readerState.current)
+        case .saveAttachmentsNoGraphics: model.saveAttachmentsOfTargets(includingGraphics: false, current: readerState.current)
+        case .savePdf: exportPDF(.plain)
+        case .savePdfOpen: exportPDF(.plain, open: true)
+        case .savePdfEvidence: exportPDF(.evidence)
+        case .savePdfEvidenceOpen: exportPDF(.evidence, open: true)
+        case .viewOneColumn: columns = 1
+        case .viewTwoColumns: columns = 2
+        case .viewThreeColumns: columns = 3
+        case .viewSortReceived: model.sort = "received"
+        case .viewSortModified: model.sort = "modified"
+        case .viewToggleHtml: model.toggleBodyFormat()
+        case .viewToggleRemoteImages: model.toggleRemoteImages()
+        case .viewCycleStatusBar: cycleStatusBar()
+        // The screens
+        case .screenDown:
+            screenIndex = min(screenCount - 1, screenIndex + 1)
+            loadMoreIfNeeded()
+        case .screenUp:
+            screenIndex = max(0, screenIndex - 1)
+        case .screenOpen:
+            activateScreenRow()
+        case .contactsFilter:
+            overlay = .contactFilter
+        case .contactsDecideAddress, .contactsDecideDomain:
+            // The decision on the contact's address, or on its domain.
+            guard contacts.indices.contains(screenIndex) else { return true }
+            let c = contacts[screenIndex]
+            let domain = action == .contactsDecideDomain
+            guard let name = domain ? Self.domain(of: c.addr) : c.addr else { return true }
+            choiceIndex = nil
+            overlay = .choice(.decision(name: name, domain: domain, current: domain ? c.domainTarget : c.screeningTarget))
+        case .contactsSenderKind:
+            // A person or a robot.
+            guard contacts.indices.contains(screenIndex) else { return true }
+            let c = contacts[screenIndex]
+            choiceIndex = nil
+            overlay = .choice(.senderKind(addressId: c.id, addr: c.addr, current: c.senderKind, forced: c.forced))
+        case .labelRename, .labelDelete:
+            // Rename, or delete, the tag or group under the cursor (`ui.md`,
+            // "Écrans Tags et Groupes"); nothing on the other screens.
+            guard let label = screenLabel else { return true }
+            if action == .labelRename {
+                openRename(label.kind, name: label.name, id: label.id)
+            } else {
+                choiceIndex = nil
+                overlay = .choice(.deleteLabel(label.kind, name: label.name, id: label.id, count: label.count))
+            }
+        // The panels and the reply run their own actions (see above).
         default:
-            if !key.isEmpty { model.flash = L("No command %@", key) }
+            return false
         }
+        return true
+    }
+
+    /// `move.<role>`, from a key of `[mail]`, `[quarantine]` or a menu: the
+    /// marked mails (or the one under the cursor) go there, if the core
+    /// allows it from their folder (`move_targets`, `dossiers.md`).
+    func moveTo(_ role: String) {
+        let folderId = model.selectedThread?.folderId ?? model.selectedFolderId
+        let targets = model.folders.first { $0.id == folderId }?.moveTargets ?? []
+        guard targets.contains(role) else {
+            model.flash = L("Cannot move to %@ from this folder", Role.name(role))
+            return
+        }
+        model.moveTargets(to: role)
+    }
+
+    /// `goto.<role>` or a virtual folder: the folder of the view (`;`), if
+    /// it has one.
+    private func goTo(_ action: KeyAction) {
+        let target = scopeFolders.first { f in
+            if let v = action.gotoVirtual { return f.virtual == v }
+            return f.virtual == nil && f.role == action.gotoRole
+        }
+        guard let target else {
+            model.flash = L("No such folder in this view: %@", action.label)
+            return
+        }
+        open(target)
+    }
+
+    /// The menu of `prefix` has the keys (`ui.md`): the arrows highlight a
+    /// row without closing it, Return chooses it, a row's key runs it at
+    /// once.
+    private func handleMenuKey(_ prefix: Prefix, key: String, action: KeyAction?, code: UInt16) {
+        let entries = menuEntries(prefix)
+        let count = entries.count
+        switch action {
+        case .menuNext?:
+            // Down starts on the first row, up on the last, and both turn
+            // around (`stepDown`, `stepUp`).
+            menuIndex = menuIndex.map { Self.stepDown($0, count: count) } ?? 0
+            return
+        case .menuPrevious?:
+            menuIndex = menuIndex.map { Self.stepUp($0, count: count) } ?? max(0, count - 1)
+            return
+        case .menuChoose?:
+            if let i = menuIndex { chooseMenuEntry(i) } else { overlay = .none }
+            return
+        case .menuChooseAlt?:
+            // The highlighted row's second action (`sT`: save, then open),
+            // or its usual one.
+            if let i = menuIndex { chooseMenuEntry(i, command: true) } else { overlay = .none }
+            return
+        default:
+            break
+        }
+        if code == KeyCode.escape {
+            overlay = .none
+            return
+        }
+        if let i = entries.firstIndex(where: { ($0.chord ?? $0.key) == key }) {
+            chooseMenuEntry(i)
+            return
+        }
+        if let entry = entries.first(where: { $0.altChord == key }), let second = entry.commandAction {
+            overlay = .none
+            second()
+            return
+        }
+        // A key of `everywhere` (the text size, full screen): the menu
+        // stays open.
+        if let action, perform(action) { return }
+        overlay = .none
+        model.flash = L("No command %@%@", menuKeyLabel(prefix), KeyChord.display(key))
     }
 
     // MARK: - Quarantine
@@ -892,11 +1046,12 @@ final class GeekController {
     /// In Quarantine the only decision to take on a mail is where it goes
     /// (`dossiers.md`, "Cibles proposées": Inbox, Newsletter, Paperwork,
     /// Junk, Banned, Deleted), so the status bar shows these targets at its
-    /// right end, in place of the `m` and `s` blocks and `i` does what `mi` does elsewhere: one key
-    /// less for the most repeated gesture of the folder. Their letters (`i n
-    /// p x b d`) are free in the normal mode, except `d`, which archives
-    /// elsewhere; Archive is not a target from Quarantine, so `d` takes the
-    /// meaning `md` has there (Deleted, which `z` undoes).
+    /// right end, in place of the `m` and `s` blocks, and `i` does what `mi`
+    /// does elsewhere: one key less for the most repeated gesture of the
+    /// folder. Their keys are those of `[quarantine]` in the keymap (by
+    /// default `i n p x b d`: free in the normal mode, except `d`, which
+    /// archives elsewhere; Archive is not a target from Quarantine, so `d`
+    /// takes the meaning `md` has there, Deleted, which `z` undoes).
     ///
     /// Only while a Quarantine folder itself is listed (of an account, or of
     /// "all"): not in "Everything" nor in a tag, group or contact list,
@@ -904,47 +1059,28 @@ final class GeekController {
     /// The targets are the core's (`move_targets`) for the folder of the mail
     /// under the cursor, as for the `m` menu: no list is written here twice.
     var directTargets: [String] {
-        guard screen == .mail, model.listFilter == nil, model.currentRole == "quarantine" else { return [] }
+        guard screen == .mail, quarantineListed else { return [] }
         let folderId = model.selectedThread?.folderId ?? model.selectedFolderId
         return model.folders.first { $0.id == folderId }?.moveTargets ?? []
     }
 
-    /// Keys refused in Quarantine: those that change the mail other than by
-    /// moving it or flagging it. Reading state (`u` `U`: viewing never marks
-    /// read there, so marking by hand would only blur which mails still wait
-    /// for a decision), tags and groups (the sender is not accepted yet),
-    /// the replies (`r`, `R`: writing to the sender would accept it,
-    /// `dossiers.md`, "Écrire à quelqu'un vaut décision Inbox", outside the
-    /// workflow of the folder), the forward (`F`: a mail not sorted yet is
-    /// not passed on; move it first), and saving (`s`: its block leaves the status bar, the mail
-    /// is to be sorted, not kept). What stays: navigation, display, links,
-    /// `*`, `z`.
-    static let quarantineRefused: Set<String> = ["u", "U", "t", "g", "r", "R", "F", "s"]
+    /// Whether a Quarantine folder itself is listed: `[quarantine]` of the
+    /// keymap applies (`raccourcis.md`, section 5.1).
+    var quarantineListed: Bool { model.listFilter == nil && model.currentRole == "quarantine" }
 
-    /// A key pressed while Quarantine is listed: a target's letter moves the
-    /// marked mails (or the one under the cursor) there; `m` and the refused
-    /// keys say why nothing happens. Returns `true` when the key was used
-    /// here, `false` to let the normal mode handle it.
-    private func handleQuarantineKey(_ key: String) -> Bool {
-        guard model.listFilter == nil, model.currentRole == "quarantine" else { return false }
-        let targets = directTargets
-        if let role = targets.first(where: { Role.letter($0).lowercased() == key }) {
-            model.moveTargets(to: role)
-            return true
-        }
-        if key == "m" {
-            // The menu would only repeat what the status bar shows: say
-            // which keys to press instead.
-            let letters = targets.map { Role.letter($0).lowercased() }.joined(separator: " ")
-            model.flash = L("In Quarantine, press the folder's key: %@", letters)
-            return true
-        }
-        if Self.quarantineRefused.contains(key) {
-            model.flash = L("In Quarantine, a mail can only be moved or flagged")
-            return true
-        }
-        return false
-    }
+    /// The actions refused in Quarantine: those that change the mail other
+    /// than by moving it or flagging it (`KeyAction.refusedInQuarantine`).
+    /// Reading state (viewing never marks read there, so marking by hand
+    /// would only blur which mails still wait for a decision), tags and
+    /// groups (the sender is not accepted yet), the replies (writing to the
+    /// sender would accept it, `dossiers.md`, "Écrire à quelqu'un vaut
+    /// décision Inbox", outside the workflow of the folder), the forward (a
+    /// mail not sorted yet is not passed on; move it first), and saving (its
+    /// block leaves the status bar, the mail is to be sorted, not kept).
+    /// What stays: navigation, display, links, the flag, undo. Refused by
+    /// action, not by key: a user who moves `u` to another key finds it
+    /// refused there too.
+    static var quarantineRefused: Set<KeyAction> { Set(KeyAction.allCases.filter(\.refusedInQuarantine)) }
 
     /// A click on a target of the status bar in Quarantine: the same as its
     /// key.
@@ -1058,106 +1194,82 @@ final class GeekController {
 
     // MARK: - Menus
 
-    /// Entries of a prefix menu (`ui.md`).
+    /// Entries of a menu (`ui.md`), from the keymap: its rows in their
+    /// order, each with its key and the label of its action
+    /// (`raccourcis.md`, section 7).
     func menuEntries(_ prefix: Prefix) -> [Entry] {
+        let rows = keymap.menu(prefix.name)?.entries ?? []
         switch prefix {
         case .move:
             // Only the targets allowed from the current thread's folder; the
-            // core computes them (`move_targets`).
+            // core computes them (`move_targets`). A target without a key
+            // in the menu is not offered.
             let folderId = model.selectedThread?.folderId ?? model.selectedFolderId
             let targets = model.folders.first { $0.id == folderId }?.moveTargets ?? []
-            return targets.map { role in
-                Entry(key: Role.letter(role).lowercased(), label: Role.name(role)) { [model] in
-                    model.moveTargets(to: role)
-                }
+            return rows.compactMap { row -> Entry? in
+                guard let action = KeyAction(rawValue: row.action) else { return nil }
+                if let role = action.moveRole, !targets.contains(role) { return nil }
+                return entry(row, action)
             }
         case .goto:
             // Folders of the current view ("all" or one account) in blocks
             // (`ui.md`, `folderGroups`), Everything, then the screens:
-            // Contacts, Tags, Groups, and History on its own.
+            // Contacts, Tags, Groups, and History on its own. The folders
+            // keep the order of the view; the menu gives their keys.
             var entries: [Entry] = []
             var group: Int?
-            for f in scopeFolders where !f.letter.isEmpty {
+            var shown: Set<String> = []
+            for f in scopeFolders {
+                guard let action = KeyAction.goto(role: f.role, virtual: f.virtual),
+                      let key = keymap.menuKey("goto", action) else { continue }
+                shown.insert(action.rawValue)
                 entries.append(Entry(
-                    key: f.key, label: f.name,
+                    key: KeyChord.display(key), label: f.name,
                     gapBefore: group != nil && group != f.group, detail: f.unread > 0 ? "\(f.unread)" : nil,
-                    virtual: f.virtual != nil
+                    virtual: f.virtual != nil, chord: key
                 ) { [weak self] in self?.open(f) })
                 group = f.group
             }
-            entries += [
-                Entry(key: "c", label: L("Contacts"), gapBefore: true) { [weak self] in self?.open(.contacts) },
-                Entry(key: "T", label: L("Tags")) { [weak self] in self?.open(.tags) },
-                Entry(key: "g", label: L("Groups")) { [weak self] in self?.open(.groups) },
-                Entry(key: "h", label: L("History"), gapBefore: true) { [weak self] in self?.open(.history) },
-            ]
+            // The screens, then whatever else the user put in the menu.
+            var gap = true
+            for row in rows {
+                guard let action = KeyAction(rawValue: row.action), !shown.contains(row.action) else { continue }
+                // A folder the view does not have is not offered.
+                if action.gotoRole != nil || action.gotoVirtual != nil { continue }
+                var e = entry(row, action)
+                e.gapBefore = gap || action == .gotoHistory
+                gap = false
+                entries.append(e)
+            }
             return entries
-        case .save:
-            return [
-                // Every row works on the mail the reader is on in the
-                // conversation shown (`readerState.current`, reached with
-                // `ctrl-k` / `ctrl-j` or a click on its header), as `r`
-                // does; the latest when none was chosen, and in the other
-                // marked conversations (`AppModel.exportMessage`).
-                //
-                // First: the most frequent use, the mail pasted elsewhere
-                // (a note, a document, a ticket), its paragraphs whole.
-                Entry(key: "c", label: L("to clipboard")) { [weak self] in
-                    guard let self else { return }
-                    model.copyText(to: pasteboard, current: readerState.current)
-                },
-                Entry(key: "e", label: L("as .eml file")) { [weak self] in self?.export("eml") },
-                // The capital saves, then opens the file in front, in the
-                // app macOS gives it (TextEdit, Obsidian…): `T`, `M`, or
-                // ⌘-Return on the row (`ui.md`, menu `s`).
-                Entry(key: "t", label: L("as text file"), detail: L("%@: and open", "T"), detailStyle: .info,
-                      commandAction: { [weak self] in self?.export("txt", open: true) }, altKey: "T") { [weak self] in
-                    self?.export("txt")
-                },
-                Entry(key: "m", label: L("as Markdown file"), detail: L("%@: and open", "M"), detailStyle: .info,
-                      commandAction: { [weak self] in self?.export("md", open: true) }, altKey: "M") { [weak self] in
-                    self?.export("md")
-                },
-                // The attachments of the marked threads (or of the one
-                // under the cursor), with or without the graphics: of the
-                // mail the reader is on when one was chosen, else of every
-                // mail of the conversation (`AppModel.attachmentMessages`).
-                Entry(key: "a", label: L("all attachments")) { [weak self] in
-                    guard let self else { return }
-                    model.saveAttachmentsOfTargets(includingGraphics: true, current: readerState.current)
-                },
-                Entry(key: "g", label: L("attachments but graphics")) { [weak self] in
-                    guard let self else { return }
-                    model.saveAttachmentsOfTargets(includingGraphics: false, current: readerState.current)
-                },
-                // A PDF to read or send: the mail and its parties, the page
-                // number alone at the foot (`MailPDF`), of the message the
-                // reader is on (`readerState.current`). `P` saves and opens
-                // it, as `T` and `M`.
-                Entry(key: "p", label: L("as PDF"), detail: L("%@: and open", "P"), detailStyle: .info,
-                      commandAction: { [weak self] in self?.exportPDF(.plain, open: true) }, altKey: "P") { [weak self] in
-                    self?.exportPDF(.plain)
-                },
-                // Last: the PDF to produce as evidence, with the technical
-                // information and the hashes of the original and of the
-                // attachments (`MailPDF.Kind.evidence`).
-                Entry(key: "i", label: L("as PDF with technical information"), detail: L("%@: and open", "I"),
-                      detailStyle: .info, commandAction: { [weak self] in self?.exportPDF(.evidence, open: true) },
-                      altKey: "I") { [weak self] in
-                    self?.exportPDF(.evidence)
-                },
-            ]
-        case .view:
-            return [
-                Entry(key: "1", label: L("one column")) { [weak self] in self?.columns = 1 },
-                Entry(key: "2", label: L("two columns")) { [weak self] in self?.columns = 2 },
-                Entry(key: "3", label: L("three columns")) { [weak self] in self?.columns = 3 },
-                Entry(key: "c", label: L("sort by reception date")) { [model] in model.sort = "received" },
-                Entry(key: "m", label: L("sort by modification date")) { [model] in model.sort = "modified" },
-                Entry(key: "h", label: L("text / HTML")) { [model] in model.toggleBodyFormat() },
-                Entry(key: "i", label: L("remote images")) { [model] in model.toggleRemoteImages() },
-                Entry(key: "s", label: L("status bar: bottom, top, hidden")) { [weak self] in self?.cycleStatusBar() },
-            ]
+        case .save, .view, .user:
+            // A `save.*` row and its `_open` variant make one row: the
+            // variant's key on its right ("T: and open"), and ⌘-Return on
+            // the row runs it (`ui.md`, menu `s`).
+            let actions = Set(rows.map(\.action))
+            return rows.compactMap { row -> Entry? in
+                guard let action = KeyAction(rawValue: row.action) else { return nil }
+                if action.isOpenVariant, let base = KeyAction(rawValue: String(row.action.dropLast(5))),
+                   actions.contains(base.rawValue) {
+                    return nil
+                }
+                var e = entry(row, action)
+                if let variant = action.openVariant, let alt = rows.first(where: { $0.action == variant.rawValue }) {
+                    e.detail = L("%@: and open", KeyChord.display(alt.key))
+                    e.detailStyle = .info
+                    e.commandAction = { [weak self] in self?.perform(variant) }
+                    e.altKey = KeyChord.display(alt.key)
+                    e.altChord = alt.key
+                }
+                return e
+            }
+        }
+    }
+
+    /// The row of a menu for a binding of the keymap.
+    private func entry(_ row: Keymap.Binding, _ action: KeyAction) -> Entry {
+        Entry(key: KeyChord.display(row.key), label: action.label, chord: row.key) { [weak self] in
+            self?.perform(action)
         }
     }
 
@@ -1378,9 +1490,37 @@ final class GeekController {
         openAI()
     }
 
-    /// The key the AI block of the status bar reminds of: ⌘I while a reply
-    /// is written (a letter alone would be typed in it), `a` elsewhere.
-    nonisolated static func aiKeyLabel(composing: Bool) -> String { composing ? "⌃I" : "a" }
+    /// The key the AI block of the status bar reminds of: that of
+    /// `ai.compose_menu` while a reply is written (⌃I: a letter alone would
+    /// be typed in it), of `ai.menu` elsewhere (`a`).
+    func aiKeyLabel(composing: Bool) -> String { keyLabel(composing ? .aiComposeMenu : .aiMenu) }
+
+    /// The key of `action` on the current screen (Contacts, Tags, Groups),
+    /// for the hint under its title.
+    func screenKey(_ action: KeyAction) -> String {
+        let chain: [KeyContext] = switch screen {
+        case .contacts: [.contacts, .screen, .normal, .everywhere]
+        case .tags: [.tags, .screen, .normal, .everywhere]
+        case .groups: [.groups, .screen, .normal, .everywhere]
+        default: [.screen, .normal, .everywhere]
+        }
+        return keymap.mention(action, in: chain)
+    }
+
+    /// The key of a folder in the menu `;` (`goto.<role>`), as the folder
+    /// column shows it: `i` for Inbox; `" "` for a folder without one.
+    func gotoKeyLabel(_ f: ScopeFolder) -> String {
+        guard let action = KeyAction.goto(role: f.role, virtual: f.virtual),
+              let key = keymap.menuKey("goto", action) else { return " " }
+        return KeyChord.display(key)
+    }
+
+    /// The key that opens the menu `prefix`, as shown (`m`), or its name
+    /// when no key opens it (its block of the status bar still does).
+    func menuKeyLabel(_ prefix: Prefix) -> String {
+        let label = keymap.label(raw: "menu." + prefix.name, in: mailChain)
+        return label.isEmpty ? prefix.name : label
+    }
 
     func openMenuFromStatusBar(_ prefix: Prefix) {
         model.flash = nil
@@ -1466,16 +1606,17 @@ final class GeekController {
     /// empty was never seen, and typed dates went unnoticed. `nil` for the
     /// pickers whose rows say it all.
     func pickerHint(_ kind: PickerKind) -> String? {
-        switch kind {
+        let ok = keymap.mention(.pickerChoose, in: Keymap.pickerChain)
+        return switch kind {
         case .attributeValue(.date), .attributeValue(.mailDate): L("or type a date (2026-10-01, 1/10/2026, 011026, 261001) or a duration (10d, 3w, 6m, 1y)")
         case .attributeValue(.text): L("words of the subject or body; -word to exclude")
         case .attributeValue(.subject): L("words of the subject; -word to exclude")
-        case .attributeValue(.group): L("↩ chooses or removes a group, several allowed; -name to exclude; esc closes")
-        case .attributeValue(.tag): L("↩ chooses or removes a tag, several allowed; -name to exclude; esc closes")
+        case .attributeValue(.group): L("%@ chooses or removes a group, several allowed; -name to exclude; esc closes", ok)
+        case .attributeValue(.tag): L("%@ chooses or removes a tag, several allowed; -name to exclude; esc closes", ok)
         case .attributeValue: L("a name, an address or @domain; -value to exclude")
         case .search: L("words: subject, sender, recipients or body")
-        case .ai: L("type to filter, or a prompt's letters · ↩ runs the first row")
-        case .rename: L("the new name · ↩ renames · esc cancels")
+        case .ai: L("type to filter, or a prompt's letters · %@ runs the first row", ok)
+        case .rename: L("the new name · %@ renames · esc cancels", ok)
         default: nil
         }
     }
@@ -1932,41 +2073,50 @@ final class GeekController {
         return targets.map { _ in [] }
     }
 
-    private func handlePickerKey(_ kind: PickerKind, key: String, code: UInt16, mods: NSEvent.ModifierFlags) {
-        let control = mods.contains(.control)
+    private func handlePickerKey(_ kind: PickerKind, event: NSEvent, key: String, action: KeyAction?,
+                                 mods: NSEvent.ModifierFlags) {
         let entries = pickerEntries(kind)
-        // Moving in the text and deleting (`LineEdit`).
-        if let change = Self.edit(&pickerLine, key: key, code: code, mods: mods) {
+        // Moving in the text and deleting (`LineEdit`, `editLine`).
+        if let change = editLine(&pickerLine, event: event, key: key) {
             if change == .text { pickerTextChanged(kind) }
             return
         }
-        switch code {
-        case KeyCode.escape:
-            overlay = .none
+        switch action {
+        // Helix's picker keys by default: ↓ ↑, ctrl-n / ctrl-p (and
+        // ctrl-j / ctrl-k).
+        case .pickerNext?:
+            pickerIndex = Self.stepDown(pickerIndex, count: entries.count)
             return
-        case KeyCode.returnKey:
+        case .pickerPrevious?:
+            pickerIndex = Self.stepUp(pickerIndex, count: entries.count)
+            return
+        case .pickerChoose?:
             overlay = .none
             if entries.indices.contains(pickerIndex) { entries[pickerIndex].action() }
             return
-        case KeyCode.down:
-            pickerIndex = Self.stepDown(pickerIndex, count: entries.count)
+        case .pickerChooseAlt?:
+            // The row's command action (a file of `l`: saved and opened),
+            // or its usual one.
+            overlay = .none
+            if entries.indices.contains(pickerIndex) {
+                let e = entries[pickerIndex]
+                (e.commandAction ?? e.action)()
+            }
             return
-        case KeyCode.up:
-            pickerIndex = Self.stepUp(pickerIndex, count: entries.count)
-            return
-        default:
+        case let a?:
+            // A key of `everywhere` (the text size, full screen).
+            if perform(a) { return }
+        case nil:
             break
         }
-        // Helix's picker keys: ctrl-n / ctrl-p (and ctrl-j / ctrl-k).
-        if control {
-            if key == "n" || key == "j" { pickerIndex = Self.stepDown(pickerIndex, count: entries.count) }
-            if key == "p" || key == "k" { pickerIndex = Self.stepUp(pickerIndex, count: entries.count) }
+        if event.keyCode == KeyCode.escape {
+            overlay = .none
             return
         }
-        if LineEdit.isTypable(key) {
-            pickerLine.insert(key)
-            pickerTextChanged(kind)
-        }
+        guard !mods.contains(.control), !mods.contains(.command), let text = event.characters,
+              LineEdit.isTypable(text) else { return }
+        pickerLine.insert(text)
+        pickerTextChanged(kind)
     }
 
     /// After the text of a picker changed: the best match is on top again,
@@ -1992,66 +2142,97 @@ final class GeekController {
         }
     }
 
-    /// A key while the reply is written (`reponse.md`, section 6): ⌘↩
-    /// sends, Escape goes back to the mail and keeps the draft, ⌘⌫
-    /// abandons it; the other keys edit the text, with the shortcuts of
-    /// every macOS text view. Returns `false` for the ⌘ shortcuts of the
-    /// menus (⌘Q…), which go on as usual.
-    private func handleComposeKey(_ event: NSEvent, mods: NSEvent.ModifierFlags) -> Bool {
-        let command = mods.contains(.command), option = mods.contains(.option), control = mods.contains(.control)
+    /// A key while the reply is written (`reponse.md`, section 6): the
+    /// actions of `[compose]` (⌘↩ sends, ⌘⎋ abandons the draft…), Escape
+    /// goes back to the mail and keeps the draft; the other keys edit the
+    /// text, with the shortcuts of every macOS text view. Returns `false`
+    /// for the keys the editor of the text takes, and for the ⌘ shortcuts
+    /// of the menus (⌘Q…), which go on as usual.
+    private func handleComposeKey(_ event: NSEvent, key: String, chain: [KeyContext],
+                                  mods: NSEvent.ModifierFlags) -> Bool {
         let code = event.keyCode
         model.flash = nil
         model.lastError = nil
+        let action = keymap.action(key, in: chain)
         // The AI panel takes every key while it is open (`AI.action`).
         if let run = model.aiRun {
-            handleAIKey(event, run: run)
+            handleAIKey(event, key: key, action: action, run: run)
             return true
         }
-        // ⌃I: the AI menu of the reply (`ia.md`, section 11; `edition.md`,
-        // section 7): ⌘I is the Mac's italic, in the editor.
-        if control, !command, !option, event.charactersIgnoringModifiers?.lowercased() == "i" {
+        guard let c = model.composer else { return true }
+        switch action {
+        case .aiComposeMenu?:
+            // The AI menu of the reply (`ia.md`, section 11; `edition.md`,
+            // section 7): ⌃I by default, ⌘I being the Mac's italic.
             openAI()
             return true
-        }
-        // ⌘⎋: the draft is abandoned. ⌘⌫ is the Mac's "delete to the start
-        // of the line", in the editor; ⌥⎋ is its "Speak selection".
-        if code == KeyCode.escape, command {
+        case .composeAbandon?:
+            // ⌘⎋ by default: ⌘⌫ is the Mac's "delete to the start of the
+            // line", in the editor; ⌥⎋ is its "Speak selection".
             Task { await model.discardComposer() }
             return true
-        }
-        // ⇧⌘T: text only ↔ formatted, as "Make Plain Text" in Mail.
-        if command, mods.contains(.shift), !option, !control, event.charactersIgnoringModifiers?.lowercased() == "t" {
+        case .composeTogglePlain?:
+            // ⇧⌘T: text only ↔ formatted, as "Make Plain Text" in Mail.
             Task { await model.toggleComposeFormat() }
             return true
-        }
-        // ⇧⌘↩: choose where the conversation goes, then send. Only when
-        // there is something to file: a conversation outside the Inbox,
-        // Todo and Waiting stays where it is whatever the choice, and a
-        // forward files nothing. A new mail files itself (`Compose
-        // .offersFiling`, `reponse.md`, section 8).
-        if code == KeyCode.returnKey, command, mods.contains(.shift) {
-            guard let d = model.composer?.draft else { return true }
-            if !Compose.offersFiling(d) {
-                model.flash = d.kind == "forward"
-                    ? L("A forward files nothing: ⌘↩ to send")
-                    : L("This conversation stays where it is: nothing to choose · ⌘↩ to send")
+        case .composeFileAndSend?:
+            // Choose where the conversation goes, then send. Only when
+            // there is something to file: a conversation outside the Inbox,
+            // Todo and Waiting stays where it is whatever the choice, and a
+            // forward files nothing. A new mail files itself (`Compose
+            // .offersFiling`, `reponse.md`, section 8).
+            let send = keyLabel(.composeSend, in: chain)
+            if !Compose.offersFiling(c.draft) {
+                model.flash = c.draft.kind == "forward"
+                    ? L("A forward files nothing: %@ to send", send)
+                    : L("This conversation stays where it is: nothing to choose · %@ to send", send)
             } else {
                 choiceIndex = nil
                 overlay = .choice(.sendThen)
             }
             return true
-        }
-        if code == KeyCode.returnKey, command {
+        case .composeSend?:
             Task { await model.sendComposer() }
             return true
-        }
-        // A dialog of the editor (the link, a menu of the bar) has Escape.
-        if code == KeyCode.escape, model.composer?.focus == .body, model.editorState.modal {
-            return false
+        case .composeAttach?:
+            // ⇧⌘A: attach files (as in Mail).
+            Task { await model.chooseAttachments() }
+            return true
+        case .composeFrom?:
+            // ⌥⌘F: the address, and the account, the mail is sent from.
+            chooseSender()
+            return true
+        case .composeBcc?:
+            // ⌥⌘B: the Bcc line, shown and focused (as in Mail).
+            model.composer?.showsBcc = true
+            focusCompose(.bcc)
+            return true
+        case .composeNextField?, .composePreviousField?:
+            // Tab and ⇧Tab go from field to field (`Composer.fields`); in
+            // the text, they are the editor's: an indent in a list, ⇧⇥
+            // elsewhere back to the subject (the editor's `leave`).
+            if c.focus != .body {
+                focusCompose(c.field(after: c.focus, backward: action == .composePreviousField))
+                return true
+            }
+        case .composePaste?, .composePastePlain?:
+            guard c.focus == .body else { return true }
+            // The editor's page still loading: the key waits for it.
+            if model.editor?.keepKeyUntilReady(event) == true { return true }
+            return pasteInBody(plain: action == .composePastePlain)
+        case let a?:
+            // A key of `everywhere`: the text size of the whole interface
+            // (never WebKit's zoom), full screen.
+            if perform(a) { return true }
+        case nil:
+            break
         }
         if code == KeyCode.escape {
+            // A dialog of the editor (the link, a menu of the bar) has
+            // Escape.
+            if c.focus == .body, model.editorState.modal { return false }
             // Suggestions shown: Escape closes them, and only them.
-            if model.composer?.suggestions.isEmpty == false {
+            if c.suggestions.isEmpty == false {
                 model.composer?.suggestions = []
                 model.composer?.suggestionIndex = nil
                 return true
@@ -2059,79 +2240,42 @@ final class GeekController {
             model.leaveComposer()
             return true
         }
-        // ⇧⌘A: attach files (as in Mail).
-        if command, mods.contains(.shift), event.charactersIgnoringModifiers?.lowercased() == "a" {
-            Task { await model.chooseAttachments() }
-            return true
-        }
-        // ⌥⌘F: the address, and the account, the mail is sent from.
-        if command, option, event.charactersIgnoringModifiers?.lowercased() == "f" {
-            chooseSender()
-            return true
-        }
-        // ⌥⌘B: the Bcc line, shown and focused (as in Mail).
-        if command, option, event.charactersIgnoringModifiers?.lowercased() == "b" {
-            model.composer?.showsBcc = true
-            focusCompose(.bcc)
-            return true
-        }
-        guard let c = model.composer else { return true }
-        let shift = mods.contains(.shift)
-        // Tab and ⇧Tab go from field to field (`Composer.fields`); in the
-        // text, they are the editor's: an indent in a list, ⇧⇥ elsewhere
-        // back to the subject (the editor's `leave`).
-        if code == KeyCode.tab, !command, !control, c.focus != .body {
-            focusCompose(c.field(after: c.focus, backward: shift))
-            return true
-        }
         switch c.focus {
         case .subject:
-            handleSubjectKey(event, mods: mods)
+            handleSubjectKey(event, key: key, mods: mods)
             return true
         case .attachments:
             handleAttachmentKey(event)
             return true
         case .to, .cc, .bcc:
-            handleRecipientKey(event, mods: mods)
+            handleRecipientKey(event, key: key, action: action, mods: mods)
             return true
         case .body:
-            return handleBodyKey(event, mods: mods)
+            // The editor's page still loading (just after the launch): its
+            // key, kept until it can take it, never lost.
+            if model.editor?.keepKeyUntilReady(event) == true { return true }
+            return false
         }
     }
 
-    /// A key while the text has the focus: the editor's, but for the
-    /// app's few commands, all with a modifier (`edition.md`, section 7).
-    /// Returns `false` to let the key go to the editor's web view.
-    private func handleBodyKey(_ event: NSEvent, mods: NSEvent.ModifierFlags) -> Bool {
-        // The editor's page still loading (just after the launch): its key,
-        // kept until it can take it, never lost.
-        if model.editor?.keepKeyUntilReady(event) == true { return true }
-        let command = mods.contains(.command), option = mods.contains(.option), shift = mods.contains(.shift)
-        let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
-        if command, key == "v" {
-            // Files copied in the Finder are attached, not pasted as their
-            // names (⌘V and ⌥⇧⌘V alike).
-            let files = (pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL]) ?? []
-            if !files.isEmpty {
-                Task { await model.attach(files) }
-                return true
-            }
-            // ⌥⇧⌘V: the text alone, at the style of the cursor.
-            if option, shift {
-                model.pastePlain(pasteboard.string(forType: .string) ?? "")
-                return true
-            }
+    /// `compose.paste` (⌘V) and `compose.paste_plain` (⌥⇧⌘V) in the text:
+    /// files copied in the Finder are attached, not pasted as their names;
+    /// otherwise the text alone at the style of the cursor, or, for ⌘V,
+    /// the editor's own paste (`false`: the key goes to it).
+    private func pasteInBody(plain: Bool) -> Bool {
+        let files = (pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL]) ?? []
+        if !files.isEmpty {
+            Task { await model.attach(files) }
+            return true
         }
-        // The size of the whole interface, never WebKit's zoom.
-        if command, !option {
-            switch key {
-            case "+", "=": textSize.bigger(); return true
-            case "-": textSize.smaller(); return true
-            case "0": textSize.reset(); return true
-            default: break
-            }
-        }
-        return false
+        guard plain else { return false }
+        model.pastePlain(pasteboard.string(forType: .string) ?? "")
+        return true
+    }
+
+    /// The key of `action` in `chain`, as shown, for a message.
+    private func keyLabel(_ action: KeyAction, in chain: [KeyContext]) -> String {
+        keymap.label(action, in: chain)
     }
 
     /// Moves the keys to another field of the reply. The text typed in the
@@ -2156,22 +2300,24 @@ final class GeekController {
     /// with the editing keys of a text field; Return, `,` or `;` make it an
     /// address; ↑ ↓ choose among the suggestions, Return or Tab takes one;
     /// ⌫ on an empty line takes the last address back, selected: a
-    /// second ⌫ removes it, typing replaces it, an arrow corrects it.
-    private func handleRecipientKey(_ event: NSEvent, mods: NSEvent.ModifierFlags) {
+    /// second ⌫ removes it, typing replaces it, an arrow corrects it. These
+    /// are the behaviour of the field, not actions of the keymap
+    /// (`raccourcis.md`, section 5.3); the line's actions are
+    /// (`[line_edit]`).
+    private func handleRecipientKey(_ event: NSEvent, key: String, action: KeyAction?, mods: NSEvent.ModifierFlags) {
         guard var c = model.composer else { return }
-        let key = event.charactersIgnoringModifiers ?? ""
         let code = event.keyCode
         let command = mods.contains(.command)
         switch code {
-        case KeyCode.down where !c.suggestions.isEmpty:
+        case KeyCode.down where !c.suggestions.isEmpty && mods.isDisjoint(with: [.command, .option, .control]):
             c.suggestionIndex = c.suggestionIndex.map { Self.stepDown($0, count: c.suggestions.count) } ?? 0
             model.composer = c
             return
-        case KeyCode.up where !c.suggestions.isEmpty:
+        case KeyCode.up where !c.suggestions.isEmpty && mods.isDisjoint(with: [.command, .option, .control]):
             c.suggestionIndex = c.suggestionIndex.map { Self.stepUp($0, count: c.suggestions.count) } ?? c.suggestions.count - 1
             model.composer = c
             return
-        case KeyCode.returnKey:
+        case KeyCode.returnKey where !command:
             if let i = c.suggestionIndex {
                 model.chooseSuggestion(i)
             } else if c.line.text.trimmingCharacters(in: .whitespaces).isEmpty {
@@ -2192,20 +2338,14 @@ final class GeekController {
         default:
             break
         }
-        if command, key.lowercased() == "v" {
+        if action == .linePaste {
             // A pasted list becomes addresses at once.
             c.line.insert(LineEdit.pasted(pasteboard.string(forType: .string) ?? ""))
             model.composer = c
             Task { await model.commitRecipientLine() }
             return
         }
-        // ⌘A ⌘C ⌘X on the address being typed (⌘V above).
-        if let change = editClipboard(&c.line, key: key, mods: mods) {
-            model.composer = c
-            if change == .text { model.suggestRecipients() }
-            return
-        }
-        if let change = Self.edit(&c.line, key: key, code: code, mods: mods) {
+        if let change = editLine(&c.line, event: event, key: key) {
             model.composer = c
             if change == .text { model.suggestRecipients() }
             return
@@ -2274,17 +2414,14 @@ final class GeekController {
     }
 
     /// A key in the subject: a one-line text field; Return goes to the text.
-    private func handleSubjectKey(_ event: NSEvent, mods: NSEvent.ModifierFlags) {
+    private func handleSubjectKey(_ event: NSEvent, key: String, mods: NSEvent.ModifierFlags) {
         guard var c = model.composer else { return }
-        let key = event.charactersIgnoringModifiers ?? ""
         let command = mods.contains(.command)
-        if event.keyCode == KeyCode.returnKey {
+        if event.keyCode == KeyCode.returnKey, !command {
             focusCompose(.body)
             return
         }
-        if editClipboard(&c.subjectLine, key: key, mods: mods) != nil {
-            // ⌘A ⌘C ⌘X ⌘V; the subject is saved below if it changed.
-        } else if Self.edit(&c.subjectLine, key: key, code: event.keyCode, mods: mods) == nil {
+        if editLine(&c.subjectLine, event: event, key: key) == nil {
             guard !command, !mods.contains(.control), let text = event.characters, LineEdit.isTypable(text) else { return }
             c.subjectLine.insert(text)
         }
@@ -2302,115 +2439,97 @@ final class GeekController {
     /// What an editing key changed.
     enum LineChange { case text, cursor }
 
-    /// Applies an editing key to a line being typed, with the shortcuts of
-    /// every macOS text field: ← →, ⌥← ⌥→ by word, ⌘← ⌘→ (and Home, End,
-    /// `ctrl-a`, `ctrl-e`) to the ends, ⌫ and ⌦, ⌥⌫ a word, ⌘⌫ everything
-    /// before the cursor. With Shift, each move selects instead (⇧←, ⇧⌥→ a
-    /// word, ⇧⌘← to the start…), as in every macOS field. Returns `nil`
+    /// A key of a line being typed (a picker, the contacts filter, the
+    /// subject or a recipient line of a reply), with the shortcuts of
+    /// every macOS text field: the fixed keys (`editFixed`), then the
+    /// actions of `[line_edit]` (`applyLine`). Shift added to the key of a
+    /// move selects instead (⇧⌥→ a word, ⇧⌘← to the start…), without a
+    /// binding of its own (`raccourcis.md`, section 5.2). Returns `nil`
     /// for any other key.
     ///
     /// Swift note: `inout` lets the function change the caller's variable
     /// (passed with `&`), here the picker's or the contacts filter's line.
-    static func edit(_ line: inout LineEdit, key: String, code: UInt16, mods: NSEvent.ModifierFlags) -> LineChange? {
-        let option = mods.contains(.option), command = mods.contains(.command)
-        // A move, plain or extending the selection with Shift.
-        func move(_ m: (inout LineEdit) -> Void) -> LineChange {
-            if mods.contains(.shift) { line.extend(m) } else { m(&line) }
-            return .cursor
-        }
-        switch code {
-        case KeyCode.left:
-            return move { l in if command { l.moveToStart() } else if option { l.moveWordLeft() } else { l.moveLeft() } }
-        case KeyCode.right:
-            return move { l in if command { l.moveToEnd() } else if option { l.moveWordRight() } else { l.moveRight() } }
-        case KeyCode.home:
-            return move { $0.moveToStart() }
-        case KeyCode.end:
-            return move { $0.moveToEnd() }
-        case KeyCode.delete:
-            if command { line.deleteToStart() } else if option { line.deleteWordBackward() } else { line.deleteBackward() }
-            return .text
-        case KeyCode.forwardDelete:
-            line.deleteForward()
-            return .text
-        default:
-            break
-        }
-        // Emacs keys that every macOS text field knows, by their letter
-        // (on any keyboard layout). `ctrl-n` / `ctrl-p` stay the picker's
-        // (Helix).
-        if mods.contains(.control) {
-            switch key {
-            case "a": line.moveToStart(); return .cursor
-            case "e": line.moveToEnd(); return .cursor
-            default: break
-            }
-        }
+    func editLine(_ line: inout LineEdit, event: NSEvent, key: String) -> LineChange? {
+        if let change = Self.editFixed(&line, code: event.keyCode, mods: event.modifierFlags) { return change }
+        let chain = keyChain
+        if let a = keymap.action(key, in: chain) { return applyLine(a, to: &line, extend: false) }
+        if let a = shiftedLineMove(key, in: chain) { return applyLine(a, to: &line, extend: true) }
         return nil
     }
 
-    /// ⌘A, ⌘C, ⌘X and ⌘V in a field of the reply (subject, recipients), as
-    /// in every macOS field: select all, copy or cut the selection
-    /// (nothing selected: nothing copied), paste on one line
-    /// (`LineEdit.pasted`). `nil` for another key, or another modifier
-    /// with ⌘ (⇧⌘V and ⌥⌘V are other commands).
-    func editClipboard(_ line: inout LineEdit, key: String, mods: NSEvent.ModifierFlags) -> LineChange? {
-        guard mods.contains(.command), mods.isDisjoint(with: [.option, .shift, .control]) else { return nil }
-        switch key.lowercased() {
-        case "a":
-            line.selectAll()
+    /// The move a Shift turns into a selection: `alt-shift-left` when only
+    /// `alt-left` is bound (to `line.word_left`). `nil` otherwise.
+    func shiftedLineMove(_ key: String, in chain: [KeyContext]) -> KeyAction? {
+        guard chain.contains(.lineEdit), keymap.action(key, in: chain) == nil, let plain = KeyChord.withoutShift(key),
+              let a = keymap.action(plain, in: chain), a.isLineMove else { return nil }
+        return a
+    }
+
+    /// The keys of a line that are not in the keymap (`raccourcis.md`,
+    /// section 5.3): ← → (Shift selects), ⌫ and ⌦, without ⌘ ⌥ ⌃.
+    static func editFixed(_ line: inout LineEdit, code: UInt16, mods: NSEvent.ModifierFlags) -> LineChange? {
+        let mods = mods.intersection(.deviceIndependentFlagsMask)
+        guard mods.isDisjoint(with: [.command, .option, .control]) else { return nil }
+        let shift = mods.contains(.shift)
+        switch code {
+        case KeyCode.left:
+            if shift { line.extend { $0.moveLeft() } } else { line.moveLeft() }
             return .cursor
-        case "c", "x":
-            let selected = line.selectedText
-            guard !selected.isEmpty else { return .cursor }
-            pasteboard.clearContents()
-            pasteboard.setString(selected, forType: .string)
-            guard key.lowercased() == "x" else { return .cursor }
+        case KeyCode.right:
+            if shift { line.extend { $0.moveRight() } } else { line.moveRight() }
+            return .cursor
+        case KeyCode.delete:
             line.deleteBackward()
             return .text
-        case "v":
-            line.insert(LineEdit.pasted(pasteboard.string(forType: .string) ?? ""))
+        case KeyCode.forwardDelete:
+            line.deleteForward()
             return .text
         default:
             return nil
         }
     }
 
-    /// ⌘ keys while a line is typed: ⌘V pastes the text copied in any app,
-    /// ⌘← ⌘→ ⌘⌫ edit (`edit`). `nil` when no line is being typed or the
-    /// key is another ⌘ shortcut, which then goes on as usual.
-    private func editTypedLine(_ event: NSEvent, mods: NSEvent.ModifierFlags) -> Bool? {
-        let kind: PickerKind?
-        switch overlay {
-        case .picker(let k): kind = k
-        case .contactFilter: kind = nil
-        default: return nil
+    /// An action of `[line_edit]` applied to `line`: the ends (⌘← ⌘→, Home,
+    /// End, `ctrl-a`, `ctrl-e` by default), by word (⌥← ⌥→), ⌥⌫ a word, ⌘⌫
+    /// everything before the cursor, and ⌘A ⌘C ⌘X ⌘V: select all, copy or
+    /// cut the selection (nothing selected: nothing copied), paste on one
+    /// line (`LineEdit.pasted`). `extend`: the move selects. `nil` for an
+    /// action that is not a line's.
+    func applyLine(_ action: KeyAction, to line: inout LineEdit, extend: Bool) -> LineChange? {
+        func move(_ m: (inout LineEdit) -> Void) -> LineChange {
+            if extend { line.extend(m) } else { m(&line) }
+            return .cursor
         }
-        guard activeChoice == nil else { return nil }
-        let isPaste = event.charactersIgnoringModifiers?.lowercased() == "v"
-        // Only ⌘ alone pastes: ⌥⌘V and ⇧⌘V are other commands elsewhere.
-        if isPaste, mods.isDisjoint(with: [.option, .shift, .control]) {
-            model.flash = nil
+        switch action {
+        case .lineStart: return move { $0.moveToStart() }
+        case .lineEnd: return move { $0.moveToEnd() }
+        case .lineWordLeft: return move { $0.moveWordLeft() }
+        case .lineWordRight: return move { $0.moveWordRight() }
+        case .lineDeleteWord:
+            line.deleteWordBackward()
+            return .text
+        case .lineDeleteToStart:
+            line.deleteToStart()
+            return .text
+        case .lineSelectAll:
+            line.selectAll()
+            return .cursor
+        case .lineCopy, .lineCut:
+            let selected = line.selectedText
+            guard !selected.isEmpty else { return .cursor }
+            pasteboard.clearContents()
+            pasteboard.setString(selected, forType: .string)
+            guard action == .lineCut else { return .cursor }
+            line.deleteBackward()
+            return .text
+        case .linePaste:
             let text = LineEdit.pasted(pasteboard.string(forType: .string) ?? "")
-            guard !text.isEmpty else { return true }
-            if let kind {
-                pickerLine.insert(text)
-                pickerTextChanged(kind)
-            } else {
-                contactsLine.insert(text)
-                contactsFilterChanged()
-            }
-            return true
+            guard !text.isEmpty else { return .cursor }
+            line.insert(text)
+            return .text
+        default:
+            return nil
         }
-        let key = event.charactersIgnoringModifiers ?? ""
-        if let kind {
-            guard let change = Self.edit(&pickerLine, key: key, code: event.keyCode, mods: mods) else { return nil }
-            if change == .text { pickerTextChanged(kind) }
-        } else {
-            guard let change = Self.edit(&contactsLine, key: key, code: event.keyCode, mods: mods) else { return nil }
-            if change == .text { contactsFilterChanged() }
-        }
-        return true
     }
 
     // MARK: - Search
@@ -2491,49 +2610,6 @@ final class GeekController {
         case .tags: screenTags.count
         case .groups: groups.count
         case .mail: 0
-        }
-    }
-
-    private func handleScreenKey(key: String, code: UInt16) {
-        if code == KeyCode.down || key == "j" {
-            screenIndex = min(screenCount - 1, screenIndex + 1)
-            loadMoreIfNeeded()
-            return
-        }
-        if code == KeyCode.up || key == "k" {
-            screenIndex = max(0, screenIndex - 1)
-            return
-        }
-        if code == KeyCode.returnKey || key == "l" {
-            activateScreenRow()
-            return
-        }
-        if key == "/", screen == .contacts {
-            overlay = .contactFilter
-        }
-        // `m`: decision on the contact's address; `M`: on its domain.
-        if key == "m" || key == "M", screen == .contacts, contacts.indices.contains(screenIndex) {
-            let c = contacts[screenIndex]
-            let domain = key == "M"
-            guard let name = domain ? Self.domain(of: c.addr) : c.addr else { return }
-            choiceIndex = nil
-            overlay = .choice(.decision(name: name, domain: domain, current: domain ? c.domainTarget : c.screeningTarget))
-        }
-        // `o` (origin): a person or a robot.
-        if key == "o", screen == .contacts, contacts.indices.contains(screenIndex) {
-            let c = contacts[screenIndex]
-            choiceIndex = nil
-            overlay = .choice(.senderKind(addressId: c.id, addr: c.addr, current: c.senderKind, forced: c.forced))
-        }
-        // `r`: rename, `d`: delete the tag or group under the cursor
-        // (`ui.md`, "Écrans Tags et Groupes").
-        if key == "r" || key == "d", let label = screenLabel {
-            if key == "r" {
-                openRename(label.kind, name: label.name, id: label.id)
-            } else {
-                choiceIndex = nil
-                overlay = .choice(.deleteLabel(label.kind, name: label.name, id: label.id, count: label.count))
-            }
         }
     }
 
@@ -2856,24 +2932,41 @@ final class GeekController {
 
     /// A key while the AI panel of the reply is open: the answer it gives
     /// (`AI.action`), and nothing reaches the text.
-    private func handleAIKey(_ event: NSEvent, run: AIRun) {
-        let arrow = event.keyCode == KeyCode.up ? -1 : event.keyCode == KeyCode.down ? 1 : 0
-        let action = AI.action(run.phase, key: event.charactersIgnoringModifiers ?? "",
-                               isReturn: event.keyCode == KeyCode.returnKey, isEscape: event.keyCode == KeyCode.escape,
-                               arrow: arrow, choice: run.choice,
-                               isCommand: event.modifierFlags.contains(.command))
+    private func handleAIKey(_ event: NSEvent, key: String, action: KeyAction?, run: AIRun) {
+        // The actions of `[ai_panel]` become what `AI.action` reads (a pure
+        // function, tested on its own): the letters it knows (`y`, `n`,
+        // `c`), Return, ⌘-Return, the arrows. A digit chooses a row, and
+        // Escape refuses or stops: these are not in the keymap.
+        var letter = ""
+        var isReturn = false, isCommand = false, arrow = 0
+        switch action {
+        case .aiAccept?: letter = "y"
+        case .aiRefuse?: letter = "n"
+        case .aiCopy?: letter = "c"
+        case .aiConfirm?: isReturn = true
+        case .aiOpen?: isReturn = true; isCommand = true
+        case .aiNext?: arrow = 1
+        case .aiPrevious?: arrow = -1
+        case let a?:
+            // A key of `everywhere` (the text size, full screen).
+            if perform(a) { return }
+        case nil:
+            if key.count == 1, key.first?.isASCII == true, key.first?.isNumber == true { letter = key }
+        }
+        let result = AI.action(run.phase, key: letter, isReturn: isReturn, isEscape: event.keyCode == KeyCode.escape,
+                               arrow: arrow, choice: run.choice, isCommand: isCommand)
         // A move is applied at once, not in a `Task`: the next arrow
         // (a key held down repeats it) must read the choice it left, or
         // two quick ↓ would move by one.
-        if case .move(let i) = action {
+        if case .move(let i) = result {
             model.aiRun?.choice = i
             return
         }
-        if action == .copy {
+        if result == .copy {
             copyAIResult(run)
             return
         }
-        Task { await model.answerAI(action) }
+        Task { await model.answerAI(result) }
     }
 
     /// `c` in the AI panel: the whole text of the result to the clipboard
@@ -2921,28 +3014,33 @@ final class GeekController {
         }
     }
 
-    private func handleChoiceKey(_ c: Choice, key: String, code: UInt16) {
+    private func handleChoiceKey(_ c: Choice, key: String, action: KeyAction?, code: UInt16) {
         let entries = choiceEntries(c)
-        switch code {
-        case KeyCode.down:
+        switch action {
+        case .choiceNext?:
             choiceIndex = choiceIndex.map { Self.stepDown($0, count: entries.count) } ?? 0
             return
-        case KeyCode.up:
+        case .choicePrevious?:
             choiceIndex = choiceIndex.map { Self.stepUp($0, count: entries.count) } ?? max(0, entries.count - 1)
             return
-        case KeyCode.returnKey:
+        case .choiceChoose?:
             if let i = choiceIndex { chooseChoiceEntry(i) }
-            return
-        case KeyCode.escape:
-            closeChoice()
-            if case .suspect = c { model.cancelSuspect() }
-            if case .mailboxUpgrade = c { model.cancelMailboxUpgrade() }
             return
         default:
             break
         }
-        if let i = entries.firstIndex(where: { $0.key == key }) {
+        if code == KeyCode.escape {
+            closeChoice()
+            if case .suspect = c { model.cancelSuspect() }
+            if case .mailboxUpgrade = c { model.cancelMailboxUpgrade() }
+            return
+        }
+        // The answers have their letters, shown with the question: not in
+        // the keymap (`raccourcis.md`, section 5.3).
+        if let i = entries.firstIndex(where: { ($0.chord ?? $0.key) == key }) {
             chooseChoiceEntry(i)
+        } else if let action, perform(action) {
+            // A key of `everywhere` (full screen): the question stays.
         } else if !key.isEmpty {
             model.flash = L("Answer with one of the keys, or esc")
         }
@@ -2979,21 +3077,24 @@ final class GeekController {
         }
     }
 
-    private func handleContactFilterInput(key: String, code: UInt16, mods: NSEvent.ModifierFlags) {
-        if let change = Self.edit(&contactsLine, key: key, code: code, mods: mods) {
+    private func handleContactFilterInput(event: NSEvent, key: String, action: KeyAction?, mods: NSEvent.ModifierFlags) {
+        if let change = editLine(&contactsLine, event: event, key: key) {
             if change == .text { contactsFilterChanged() }
             return
         }
-        switch code {
-        case KeyCode.escape:
-            overlay = .none
-            contactsQuery = ""
-        case KeyCode.returnKey:
+        if action == .contactFilterClose {
+            // The line closes, the filter stays (its chip says so).
             overlay = .none
             return
-        default:
-            guard !mods.contains(.control), LineEdit.isTypable(key) else { return }
-            contactsLine.insert(key)
+        }
+        if let action, perform(action) { return }
+        if event.keyCode == KeyCode.escape {
+            overlay = .none
+            contactsQuery = ""
+        } else {
+            guard !mods.contains(.control), !mods.contains(.command), let text = event.characters,
+                  LineEdit.isTypable(text) else { return }
+            contactsLine.insert(text)
         }
         contactsFilterChanged()
     }

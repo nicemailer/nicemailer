@@ -36,7 +36,7 @@ struct AIRulesTests {
         // Return takes the one highlighted: the first by default.
         #expect(act(.proposal(subjects), ret: true) == .choose(0))
         #expect(AI.action(.proposal(subjects), key: "", isReturn: true, isEscape: false, choice: 2) == .choose(2))
-        #expect(AI.hint(.proposal(subjects)) == L("↩ or 1–%lld choose · ↑↓ move · esc or n refuse", 3) + " · " + L("c copy"))
+        #expect(AI.hint(.proposal(subjects)) == L("%@ or 1–%lld choose · %@ move · esc or %@ refuse", "↩", 3, "↑↓", "n") + " · " + L("%@ copy", "c"))
         // A failure: Escape or Return close it.
         #expect(act(.failed("x"), esc: true) == .close)
         #expect(act(.failed("x"), "n") == .hint)
@@ -60,7 +60,7 @@ struct AIRulesTests {
         #expect(act(two, "3") == .hint)
         #expect(act(two, esc: true) == .refuse)
         #expect(act(two, "n") == .hint, "nothing to turn down: Escape closes")
-        #expect(AI.hint(.proposal(two)) == L("↩ or 1–%lld save (.ics) · ⌘↩ add to the calendar · ↑↓ move · esc close", 2) + " · " + L("c copy"))
+        #expect(AI.hint(.proposal(two)) == L("%@ or 1–%lld save (.ics) · %@ add to the calendar · %@ move · esc close", "↩", 2, "⌘↩", "↑↓") + " · " + L("%@ copy", "c"))
         // A mail without a date: only read.
         #expect(act(.events([]), ret: true) == .close)
         #expect(act(.events([]), esc: true) == .close)
@@ -82,7 +82,7 @@ struct AIRulesTests {
         #expect(act(arrow: 1) == .hint, "one card: nothing to move")
         #expect(act("1") == .hint)
         #expect(act("c") == .copy)
-        #expect(AI.hint(.proposal(card)) == L("↩ save (.vcf) · ⌘↩ add to Contacts · esc close") + " · " + L("c copy"))
+        #expect(AI.hint(.proposal(card)) == L("%@ save (.vcf) · %@ add to Contacts · esc close", "↩", "⌘↩") + " · " + L("%@ copy", "c"))
         #expect(AI.copyText(card) == "Alice Martin\nAcme\nalice@acme.fr")
     }
 
@@ -163,14 +163,14 @@ struct AIRulesTests {
             #expect(act(p, ret: true) == .close)
             #expect(act(p, esc: true) == .close)
             #expect(act(p, "y") == .hint, "nothing to accept in \(p)")
-            #expect(AI.hint(.proposal(p)) == L("esc close") + " · " + L("c copy"))
+            #expect(AI.hint(.proposal(p)) == L("esc close") + " · " + L("%@ copy", "c"))
         }
         let replies = AIProposal.choices(["Oui", "Non"], then: "reply")
         #expect(act(replies, "1") == .choose(0))
         #expect(act(replies, "3") == .hint)
         #expect(act(replies, ret: true) == .choose(0), "the first, highlighted")
         #expect(act(replies, esc: true) == .refuse)
-        #expect(AI.hint(.proposal(replies)) == L("↩ or 1–%lld reply with it · ↑↓ move · esc or n refuse", 2) + " · " + L("c copy"))
+        #expect(AI.hint(.proposal(replies)) == L("%@ or 1–%lld reply with it · %@ move · esc or %@ refuse", "↩", 2, "↑↓", "n") + " · " + L("%@ copy", "c"))
     }
 
     @Test func aResultReadsAsText() {
@@ -225,9 +225,9 @@ struct AIRulesTests {
         #expect(AI.sortLine(AISort(runId: 1, title: "Sort", done: 20, total: 47)) == L("%@: %lld of %lld sorted · esc stop", "Sort", 20, 47))
         #expect(AI.sortLine(AISort(runId: 0, title: "Sort")) == L("%@: sorting… · esc stop", "Sort"))
         let s = AISuggestion(runId: 1, threadId: 3, target: "newsletter", reason: "A shop's offers.")
-        #expect(AI.suggestionLine(s) == L("AI: %@ (↩) · %@", Role.name("newsletter"), "A shop's offers."))
-        #expect(AI.sortedFlash(found: 5, failedBatches: 0) == L("AI: %lld suggestions · ↩ on a row moves it there", 5))
-        #expect(AI.sortedFlash(found: 5, failedBatches: 2) == L("AI: %lld suggestions, %lld batches without an answer · ↩ on a row moves it there", 5, 2))
+        #expect(AI.suggestionLine(s) == L("AI: %@ (%@) · %@", Role.name("newsletter"), "↩", "A shop's offers."))
+        #expect(AI.sortedFlash(found: 5, failedBatches: 0) == L("AI: %lld suggestions · %@ on a row moves it there", 5, "↩"))
+        #expect(AI.sortedFlash(found: 5, failedBatches: 2) == L("AI: %lld suggestions, %lld batches without an answer · %@ on a row moves it there", 5, 2, "↩"))
     }
 
     @Test func cCopiesTheWholeResultAndKeepsThePanelOpen() {
@@ -265,18 +265,21 @@ struct AIRulesTests {
         #expect(AI.copyText(.subjects(["Jeudi", "Vendredi"])) == "1. Jeudi\n2. Vendredi")
         #expect(AI.copyText(.events([])) == nil)
         // The hint names `c` only where it copies.
-        #expect(AI.hint(.proposal(summary)) == L("esc close") + " · " + L("c copy"))
+        #expect(AI.hint(.proposal(summary)) == L("esc close") + " · " + L("%@ copy", "c"))
         #expect(AI.hint(.proposal(.events([]))) == L("esc close"))
     }
 
+    @MainActor
     @Test func theAIBlockOfTheStatusBarRemindsOfItsKey() {
-        #expect(GeekController.aiKeyLabel(composing: false) == "a")
-        #expect(GeekController.aiKeyLabel(composing: true) == "⌃I")
+        let defaults = TestDefaults.make()
+        let controller = GeekController(model: AppModel(), defaults: defaults, textSize: TextSize(defaults: defaults))
+        #expect(controller.aiKeyLabel(composing: false) == "a")
+        #expect(controller.aiKeyLabel(composing: true) == "⌃I")
     }
 
     @Test func theHintSaysTheKeys() {
         #expect(AI.hint(.running) == L("esc stop"))
-        #expect(AI.hint(.proposal(.subjects(["A", "B"]))) == L("↩ or 1–%lld choose · ↑↓ move · esc or n refuse", 2) + " · " + L("c copy"))
+        #expect(AI.hint(.proposal(.subjects(["A", "B"]))) == L("%@ or 1–%lld choose · %@ move · esc or %@ refuse", "↩", 2, "↑↓", "n") + " · " + L("%@ copy", "c"))
         #expect(AI.hint(.proposal(.replace(segments: [], unchanged: true))) == L("No change to make · esc close"))
     }
 
@@ -710,7 +713,7 @@ final class AIControllerTests {
         #expect(selection["start"] as? Int == 14 && selection["end"] as? Int == 19)
         event("AiDone", ["run_id": .int(7)])
         _ = await eventually { if case .proposal? = self.model.aiRun?.phase { true } else { false } }
-        #expect(AI.hint(try #require(model.aiRun?.phase)) == L("↩ or 1–%lld replace the selection · ↑↓ move · esc or n refuse · ⌘Z after choosing undoes", 2) + " · " + L("c copy"))
+        #expect(AI.hint(try #require(model.aiRun?.phase)) == L("%@ or 1–%lld replace the selection · %@ move · esc or %@ refuse · ⌘Z after choosing undoes", "↩", 2, "↑↓", "n") + " · " + L("%@ copy", "c"))
         // ↩ again takes the first, the best: the core puts it in the draft.
         let before = try #require(model.composer?.body)
         ai.appliedBody = before.replacingOccurrences(of: "jeudi", with: "viens")
@@ -927,7 +930,7 @@ final class AIControllerTests {
         let selected = model.selectedThreadId
         press("j")
         #expect(model.selectedThreadId == selected)
-        #expect(await eventually { self.model.flash == L("esc close") + " · " + L("c copy") })
+        #expect(await eventually { self.model.flash == L("esc close") + " · " + L("%@ copy", "c") })
         press("esc")
         _ = await eventually { self.model.aiRun == nil }
         #expect(core.calls("ai_dismiss").count == 1)

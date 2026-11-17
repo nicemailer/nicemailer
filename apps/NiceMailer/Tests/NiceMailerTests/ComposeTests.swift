@@ -320,7 +320,7 @@ struct ComposeRulesTests {
         json["send_account_id"] = 2
         json["from"] = ["addr": "me@work.example", "name": "Me at work"]
         let d = try CoreClient.decoder.decode(DraftView.self, from: JSONSerialization.data(withJSONObject: json))
-        #expect(Compose.otherSenderFlash(d, senders: senders) == L("This account cannot send: from %@ · ⌥⌘F to change", "Me at work <me@work.example> · work"))
+        #expect(Compose.otherSenderFlash(d, senders: senders) == L("This account cannot send: from %@ · %@ to change", "Me at work <me@work.example> · work", "⌥⌘F"))
         json["kind"] = "new"
         let n = try CoreClient.decoder.decode(DraftView.self, from: JSONSerialization.data(withJSONObject: json))
         #expect(Compose.otherSenderFlash(n, senders: senders) == nil)
@@ -703,7 +703,7 @@ struct ComposeControllerTests {
         #expect(await eventually { model.composer != nil })
         press("shift-cmd-ret")
         #expect(controller.activeChoice == nil)
-        #expect(model.flash == L("A forward files nothing: ⌘↩ to send"))
+        #expect(model.flash == L("A forward files nothing: %@ to send", "⌘↩"))
         #expect(core.calls("send_draft").isEmpty)
     }
 
@@ -719,7 +719,7 @@ struct ComposeControllerTests {
         await reply()
         press("shift-cmd-ret")
         #expect(controller.activeChoice == nil)
-        #expect(model.flash == L("This conversation stays where it is: nothing to choose · ⌘↩ to send"))
+        #expect(model.flash == L("This conversation stays where it is: nothing to choose · %@ to send", "⌘↩"))
         #expect(core.calls("send_draft").isEmpty)
     }
 
@@ -1130,7 +1130,7 @@ struct ComposeControllerTests {
             return ["draft": Fixture.opened(method, d), "reused": false]
         }
         await reply()
-        #expect(await eventually { model.flash == L("This account cannot send: from %@ · ⌥⌘F to change", "Me at work <me@work.example> · work") })
+        #expect(await eventually { model.flash == L("This account cannot send: from %@ · %@ to change", "Me at work <me@work.example> · work", "⌥⌘F") })
     }
 
     @Test func aMailThatCannotBeAnsweredSaysWhy() async {
@@ -1222,10 +1222,11 @@ struct ComposeControllerTests {
         #expect(core.calls("close_draft").isEmpty)
     }
 
-    /// Quarantine refuses `R` and `f` like `r`.
+    /// Quarantine refuses the reply to the sender and the forward like the
+    /// reply to all (`r`, `R`, `F` by default), not a new mail (`c`).
     @Test func quarantineRefusesTheRepliesAndTheForward() {
-        #expect(GeekController.quarantineRefused.isSuperset(of: ["r", "R", "F"]))
-        #expect(!GeekController.quarantineRefused.contains("c"))
+        #expect(GeekController.quarantineRefused.isSuperset(of: [.composeReplyAll, .composeReplySender, .composeForward]))
+        #expect(!GeekController.quarantineRefused.contains(.composeNew))
     }
 
     @Test func oneColumnShowsTheReplyInTheWholeWindow() async {
@@ -1326,7 +1327,7 @@ struct EditorFlowTests {
         controller.handle(Self.key("T", [.command, .shift]))
         #expect(await eventually { model.composer?.format == .html })
         controller.handle(Self.key("T", [.command, .shift]))
-        #expect(await eventually { model.flash == L("The formatting will be lost · ⇧⌘T again to convert") })
+        #expect(await eventually { model.flash == L("The formatting will be lost · %@ again to convert", "⇧⌘T") })
         #expect(editor.modes.count == 1)
         controller.handle(Self.key("T", [.command, .shift]))
         #expect(await eventually { editor.modes.count == 2 })

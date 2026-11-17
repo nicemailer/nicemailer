@@ -18,7 +18,12 @@ struct ComposerView: View {
         if let c = model.composer {
             VStack(alignment: .leading, spacing: 0) {
                 ReaderTitleBar(subject: c.headers.subject) {
-                    Text(L("⌘↩ send · ⇧⌘↩ send then… · ⌥⌘F from · ⇧⌘T format · Esc keep · ⌘⎋ abandon")).foregroundStyle(Palette.muted).lineLimit(1)
+                    // The keys of `[compose]` in effect (`keymap.toml`).
+                    let k = { (a: KeyAction) in model.keymap.mention(a, in: Keymap.composeChain) }
+                    Text(L("%@ send · %@ send then… · %@ from · %@ format · Esc keep · %@ abandon",
+                           k(.composeSend), k(.composeFileAndSend), k(.composeFrom), k(.composeTogglePlain),
+                           k(.composeAbandon)))
+                        .foregroundStyle(Palette.muted).lineLimit(1)
                 }
                 Palette.separator.frame(height: 1)
                 VStack(alignment: .leading, spacing: scaled(2)) {
@@ -324,6 +329,8 @@ struct AIContactCard: View {
 }
 
 struct AIPanel: View {
+    // The keys the panel's hints cite (`keymap.toml`).
+    @Environment(AppModel.self) private var model
     let run: AIRun
     /// How tall the text may grow before it scrolls.
     var maxTextHeight: CGFloat = scaled(220)
@@ -335,7 +342,7 @@ struct AIPanel: View {
                 if case .running = run.phase {
                     ProgressView().controlSize(.small)
                 }
-                Text(AI.hint(run.phase)).foregroundStyle(Palette.muted).lineLimit(1)
+                Text(AI.hint(run.phase, keymap: model.keymap)).foregroundStyle(Palette.muted).lineLimit(1)
                 Spacer(minLength: 0)
             }
             ScrollView {
@@ -406,7 +413,8 @@ struct AIPanel: View {
         case .proposal(.targets(let items, _)):
             // A sorting shows on the rows of the list, not in a panel;
             // listed here only for completeness.
-            Text(L("AI: %lld suggestions · ↩ on a row moves it there", items.count)).foregroundStyle(Palette.muted)
+            Text(L("AI: %lld suggestions · %@ on a row moves it there", items.count, model.keymap.mention(.mailOpen, in: Keymap.mailChain)))
+                .foregroundStyle(Palette.muted)
         case .proposal(.summary(let summary, let actions)):
             VStack(alignment: .leading, spacing: scaled(4)) {
                 Text(summary).foregroundStyle(Palette.text)

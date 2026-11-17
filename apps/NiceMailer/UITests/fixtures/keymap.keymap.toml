@@ -1,0 +1,19 @@
+# The keys of the keymap scenario (docs/keymap.md): only what differs from
+# the defaults.
+version = 1
+
+[mail]
+e = "mail.archive"        # archive with e
+d = "none"                # d no longer archives
+m = "none"                # the move menu moves to M
+M = "menu.move"
+x = "menu.mine"           # a menu of the user
+I = "goto.inbox"          # straight to the Inbox, without `;`
+
+[menu.mine]
+c = "save.clipboard"
+v = "view.one_column"
+
+[menu.goto]
+k = "goto.inbox"          # Inbox on k in the menu `;`
+i = "none"
