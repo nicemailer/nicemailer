@@ -4411,16 +4411,6 @@
         }
       }
     },
-    "AI: %@": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "IA : %@"
-          }
-        }
-      }
-    },
     "The reply could not be saved: try again": {
       "localizations": {
         "fr": {
@@ -8178,6 +8168,46 @@
           "stringUnit": {
             "state": "translated",
             "value": "NiceMailer n’a pas pu le faire : %@"
+          }
+        }
+      }
+    },
+    "The server refused the change: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le serveur a refusé la modification : %@"
+          }
+        }
+      }
+    },
+    "The server could not be reached after %@ attempts: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le serveur est resté injoignable après %1$@ tentatives : %2$@"
+          }
+        }
+      }
+    },
+    "The mail server refused the mail: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le serveur d’envoi a refusé le mail : %@"
+          }
+        }
+      }
+    },
+    "Cancelled": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Annulé"
           }
         }
       }

@@ -1065,8 +1065,9 @@ struct ComposeControllerTests {
         press("z")
         #expect(await eventually { core.calls("undo").first?["token"] as? String == "5:9" })
         // Refused for good, or in part.
-        model.draftEvent("SendFailed", ["draft_id": .int(902), "reason": .string("550 no such user")])
-        #expect(model.flash == L("Not sent: %@ · r on the mail to reopen the reply", "550 no such user"))
+        model.draftEvent("SendFailed", ["draft_id": .int(902), "message": .string("the mail server refused the mail: 550 no such user"),
+                                        "why": .object(["reason": "smtp_refused", "server_text": "550 no such user"])])
+        #expect(model.flash == L("Not sent: %@ · r on the mail to reopen the reply", L("The mail server refused the mail: %@", "550 no such user")))
         model.draftEvent("SendPartial", ["draft_id": .int(903), "refused": .strings(["bad@x.fr (550 unknown)"])])
         #expect(model.flash == L("Sent, but the server refused: %@", "bad@x.fr (550 unknown)"))
         // A new mail filed with ⇧⌘↩: the core applies it once the copy in

@@ -235,6 +235,7 @@ fn a_password_saved_by_the_cli_goes_to_the_keychain() {
     loop {
         let e = c.event("AccountError", 15);
         if e["error"].as_str().unwrap().contains("save the password again") {
+            assert_eq!(e["why"]["reason"], "password_server_changed", "{e}");
             break;
         }
         assert!(std::time::Instant::now() < deadline, "no binding error, last: {e}");

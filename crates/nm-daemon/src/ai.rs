@@ -1299,7 +1299,8 @@ async fn fail(core: &Arc<Core>, run_id: i64, e: AiError, output: Option<String>)
     if let Err(err) = stored {
         eprintln!("ai : échec de l'exécution {run_id} non enregistré : {}", err.message);
     }
-    core.events.lock().unwrap().push(Event::AiFailed { run_id, code: e.code().into(), message: e.to_string() });
+    let why = e.why();
+    core.events.lock().unwrap().push(Event::AiFailed { run_id, code: e.code().into(), message: why.message(), why: why.data() });
 }
 
 /// `ai_cancel`.
@@ -1314,10 +1315,12 @@ pub(crate) async fn cancel(core: &Arc<Core>, p: AiRunIdParams) -> Result<Command
     }
     let run_id = p.run_id;
     with_store(core, move |st| st.ai_run_end(run_id, RunEnd::Cancelled, "ai_cancelled: cancelled", None)).await?;
+    let why = nm_api::Why::from(reason::AI_CANCELLED);
     core.events.lock().unwrap().push(Event::AiFailed {
         run_id,
         code: "ai_cancelled".into(),
-        message: "cancelled".into(),
+        message: why.message(),
+        why: why.data(),
     });
     Ok(CommandResult { changed: 0 })
 }

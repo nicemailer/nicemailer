@@ -195,6 +195,8 @@ A failed request answers a JSON-RPC error: a `code` (the family, `nm_api::error_
 - A value whose key ends with `_text` was written by someone else (the mail server, the system, the AI provider): it is cited as it is, never translated. `detail` is a technical precision in English, for the generic reasons (`invalid_params`, `not_found`, `internal`…), which are mistakes of a client's program rather than of the user.
 - Some codes add to `data` values outside the sentence: the AI's `code` (`ai.md`), the current `revision` of a draft. The `data` of `MAINTENANCE` (1003) is a whole `Maintenance`, whose `reason` is one of the four at the end of the table.
 
+Events and results that say why something failed carry the same object as `why`, beside their English text: `AccountError` and the accounts of `list_accounts` (`error`, `why`), `ActionReverted`, `SendFailed` and `AiFailed` (`message`, `why`). `SendPartial` gives each refused address with the server's answer, cited. Some texts stay technical details in English, cited by the app inside its own sentence: the problems of the settings files (`ConfigProblem`), the error of a core that could not start (`StartupError`), a lookup of MX servers (`mx_error`), a one-click unsubscribe that failed, the CLI's error when it checks a mailbox, and the error of a past AI run read back with `ai_get_run`.
+
 The app, the core, the CLI and the MCP server are shipped and updated together, so no client meets a reason it does not know: the list is not versioned. Tests keep it whole: the reasons below are exactly those of `nm_api::reason`, with the values of their sentences (`crates/nm-cli/src/contract_doc.rs`); each one is used by the code; the app writes each one, or says it is generic (`LocalizationTests`).
 
 | Reason | Values | English message |
@@ -256,6 +258,9 @@ The app, the core, the CLI and the MCP server are shipped and updated together, 
 | `draft_copying` | — | this draft is being copied to the server: try again in a moment |
 | `body_pending` | — | the body of this mail is not downloaded yet: it is asked for, try again in a moment |
 | `raw_damaged` | `hash` | the raw file of this mail is damaged ({hash}): it is set aside and downloaded again from the server if possible |
+| `server_refused_change` | `server_text` | the server refused the change: {server_text} |
+| `attempts_failed` | `attempts`, `server_text` | {attempts} attempts failed, the last: {server_text} |
+| `smtp_refused` | `server_text` | the mail server refused the mail: {server_text} |
 | `move_refused` | `target`, `from` | {target} is not a target from {from} |
 | `confirmation_required` | `addr`, `verdict` | confirmation required: probable spoofing of {addr} (verdict {verdict}) |
 | `tag_name_invalid` | — | a tag name has 1 to 64 characters |
@@ -292,6 +297,7 @@ The app, the core, the CLI and the MCP server are shipped and updated together, 
 | `ai_folder_empty` | — | this folder is empty: nothing to sort |
 | `ai_mark_to_sort` | — | mark the conversations to sort, or put the cursor on one |
 | `ai_draft_unsaved` | — | the draft changed since: save it and run again |
+| `ai_cancelled` | — | cancelled |
 | `ai_draft_changed` | — | the draft changed since the AI read it: run it again |
 | `file_unsupported` | `file` | {file}: this kind of file has no text the AI can read |
 | `file_too_large` | `file`, `size_mb` | {file}: the file is too large to read ({size_mb} MB, 50 MB at most) |

@@ -822,8 +822,10 @@ final class AIControllerTests {
         _ = await eventually { self.paletteOpen }
         choose("c")
         _ = await eventually { self.model.aiRun?.runId == 7 }
-        event("AiFailed", ["run_id": .int(7), "code": .string("ai_not_logged_in"), "message": .string("run claude to sign in")])
-        #expect(model.aiRun?.phase == .failed("run claude to sign in"))
+        // Said from its reason, in the app's language.
+        event("AiFailed", ["run_id": .int(7), "code": .string("ai_not_logged_in"), "message": .string("run claude to sign in"),
+                           "why": .object(["reason": "ai_not_logged_in"])])
+        #expect(model.aiRun?.phase == .failed(L("Claude Code is not signed in: run claude in a terminal to sign in")))
         press("esc")
         _ = await eventually { self.model.aiRun == nil }
         #expect(core.calls("ai_dismiss").isEmpty, "nothing to dismiss after a failure")

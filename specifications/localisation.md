@@ -1,6 +1,6 @@
 # Localisation : plan de travail
 
-Statut : dates, pluriels et phrases construites par morceaux corrigés dans l'app (`docs/localization.md`) ; erreurs des requêtes décrites par une raison, écrites par l'app, transmises aux agents (section 3.1, lot 1). Le reste est à faire, dans l'ordre de la section 3.
+Statut : dates, pluriels et phrases construites par morceaux corrigés dans l'app (`docs/localization.md`) ; erreurs des requêtes, des événements et des résultats décrites par une raison, écrites par l'app, transmises aux agents (section 3.1). Le reste est à faire, dans l'ordre de la section 3.
 
 Ce document est le plan pour qu'une troisième langue ne soit plus qu'une question de traduction. Les règles déjà en place sont dans `docs/localization.md` ; quand une étape est livrée, ses règles y passent et l'étape est rayée ici.
 
@@ -28,7 +28,7 @@ Reste (section 3) : le texte produit par le noyau, le texte écrit dans les mail
 
 ### 3.1 Le noyau décrit, l'app écrit
 
-C'est le premier chantier, parce qu'il change le contrat : plus tard, il coûte plus cher (clients, MCP, documentation, tests). Il se fait en deux lots : les erreurs des requêtes (fait), puis le texte des événements et des résultats.
+C'est le premier chantier, parce qu'il change le contrat : plus tard, il coûte plus cher (clients, MCP, documentation, tests). Il s'est fait en deux lots : les erreurs des requêtes, puis le texte des événements et des résultats.
 
 **Constat.**
 
@@ -62,7 +62,9 @@ Une partie de ces textes est du noyau (« the draft changed since: save it and r
 
 **Écart avec le plan de tests.** Le plan voulait un test qui provoque chaque raison. Il n'existe pas : à la place, `contract_doc.rs` vérifie que chaque raison est donnée par le code (une raison oubliée échoue), et les tests existants provoquent les raisons qu'ils couvraient déjà par leur texte (désormais par leur raison). Une raison donnée au mauvais endroit, ou avec une valeur manquante, n'est donc pas détectée partout ; `every_template_is_completed_by_its_values` vérifie seulement que les valeurs déclarées complètent la phrase.
 
-**Lot 2, à faire : le texte des événements et des résultats.** Les événements (`ActionReverted.reason`, `SendFailed.reason`, `SendPartial.refused`, `AiFailed.message`), le message d'une maintenance, l'erreur d'un compte dans `list_accounts` (`AccountError`, pour laquelle `Refusal::why` existe déjà), le statut d'import et de synchronisation, et la sortie d'erreur du CLI lue par « Change Mailbox… » portent encore du texte anglais, que l'app affiche tel quel.
+**Lot 2, livré : le texte des événements et des résultats.** `AccountError` et les comptes de `list_accounts`, `ActionReverted`, `SendFailed` et `AiFailed` portent `why`, le même objet que `data` d'une erreur, à côté de leur texte anglais (`message`, `error`) ; l'app l'écrit (`CoreReason.text(why:message:)`). Raisons ajoutées : `server_refused_change`, `attempts_failed`, `smtp_refused`, `ai_cancelled`. Une connexion qui échoue pendant la synchronisation est dite `imap_failed` avec le texte de l'erreur cité, qu'elle vienne du serveur ou du trousseau : l'imprécision est assumée, le texte cité dit la cause.
+
+Restent en anglais, cités comme des détails techniques dans une phrase de l'app : `SendPartial.refused` (l'adresse et la réponse du serveur), `ConfigProblem` (l'erreur de l'analyseur TOML), `StartupError.message` (un noyau qui n'a pas démarré), `mx_error`, l'échec d'un désabonnement en un clic, l'erreur du CLI lue par « Change Mailbox… », et l'erreur d'une exécution d'IA relue par `ai_get_run` (`AiRunView.error`, enregistrée en texte dans `ai_run` ; la dire par sa raison demanderait de l'y enregistrer, une migration, pour un cas que l'app ne voit qu'après avoir manqué l'événement `AiFailed`).
 
 **Inventaire et ordre.** Toutes les erreurs ne sont pas vues par un utilisateur : `INVALID_PARAMS` et `METHOD_NOT_FOUND` sont des erreurs de programmation, qui restent en anglais dans les journaux et dans une phrase générique à l'écran. L'inventaire classe les 108 erreurs en trois groupes : vue par l'utilisateur (une raison, une clé), erreur de programmation (`message` seulement), texte de tiers (`server_text`). On commence par les erreurs affichées par l'app aujourd'hui (tableau ci-dessus).
 

@@ -417,6 +417,7 @@ fn a_refused_login_waits_for_a_new_password() {
     c.call("set_password", json!({"account": "dovecot", "password": "wrong"})).unwrap();
     let e = c.event("AccountError", 30);
     assert!(e["error"].as_str().unwrap().contains("refused the login"), "{e}");
+    assert_eq!(e["why"]["reason"], "imap_auth_refused", "{e}");
     // No new attempt on its own: a server may lock an account that keeps
     // sending a wrong password.
     std::thread::sleep(Duration::from_secs(8));
@@ -459,7 +460,9 @@ fn a_move_the_server_refuses_is_undone_and_announced() {
     let e = c.event("ActionReverted", 30);
     assert_eq!(e["message_id"], id);
     assert_eq!(e["kind"], "move");
-    assert!(e["reason"].as_str().unwrap().contains("doesn't exist"), "the server's answer: {e}");
+    assert!(e["message"].as_str().unwrap().contains("doesn't exist"), "{e}");
+    assert_eq!(e["why"]["reason"], "server_refused_change", "{e}");
+    assert!(e["why"]["server_text"].as_str().unwrap().contains("doesn't exist"), "the server's answer, cited: {e}");
     let (_, path, uid) = message_id_of(dir.path(), "r");
     assert_eq!(path, "INBOX", "back where it was");
     assert!(uid > 0);

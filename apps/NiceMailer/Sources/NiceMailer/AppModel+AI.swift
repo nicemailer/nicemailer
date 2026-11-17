@@ -154,7 +154,7 @@ extension AppModel {
                 aiRun = nil
                 return
             }
-            run.phase = .failed(e.params["message"]?.string ?? L("The AI failed"))
+            run.phase = .failed(CoreReason.text(why: e.params["why"]?.object, message: e.params["message"]?.string) ?? L("The AI failed"))
             aiRun = run
         default:
             break
@@ -181,7 +181,7 @@ extension AppModel {
         case "AiFailed":
             aiSort = nil
             if e.params["code"]?.string != "ai_cancelled" {
-                flash = L("AI: %@", e.params["message"]?.string ?? L("The AI failed"))
+                flash = CoreReason.text(why: e.params["why"]?.object, message: e.params["message"]?.string) ?? L("The AI failed")
             }
         default:
             break

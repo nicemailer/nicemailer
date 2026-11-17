@@ -151,7 +151,10 @@ struct AccountInfo: Decodable, Identifiable, Equatable {
     let email: String?
     let displayName: String?
     let enabled: Bool
+    /// Why it cannot connect, in English (`message`), and as a reason
+    /// (`why`): `shownError` is what the app says.
     let error: String?
+    var why: CoreWhy? = nil
     let position: Int
     /// Only looked at (`read_only = true`): nothing is changed on its
     /// server until it is organized. Swift note: an optional property of a
@@ -160,6 +163,9 @@ struct AccountInfo: Decodable, Identifiable, Equatable {
     var readOnly: Bool? = nil
 
     var isReadOnly: Bool { readOnly == true }
+
+    /// The account's error in the user's language (`CoreReason`).
+    var shownError: String? { CoreReason.text(why: why?.values, message: error) }
 }
 
 struct AccountInfoList: Decodable {

@@ -136,8 +136,8 @@ impl EventLog {
         for (message_id, folder_id) in &changes.arrived {
             self.push(Event::MessageArrived { message_id: *message_id, folder_id: *folder_id });
         }
-        for (message_id, kind, reason) in &changes.reverted {
-            self.push(Event::ActionReverted { message_id: *message_id, kind: kind.clone(), reason: reason.clone() });
+        for (message_id, kind, why) in &changes.reverted {
+            self.push(Event::ActionReverted { message_id: *message_id, kind: kind.clone(), message: why.message(), why: why.data() });
         }
         // After the messages and folders: a client that shows the status
         // "sent, filed in Archive" finds the lists already refreshed.
@@ -154,8 +154,8 @@ impl EventLog {
         for (draft_id, refused) in &changes.send_partial {
             self.push(Event::SendPartial { draft_id: *draft_id, refused: refused.clone() });
         }
-        for (draft_id, reply_to, reason) in &changes.send_failed {
-            self.push(Event::SendFailed { draft_id: *draft_id, reply_to: *reply_to, reason: reason.clone() });
+        for (draft_id, reply_to, why) in &changes.send_failed {
+            self.push(Event::SendFailed { draft_id: *draft_id, reply_to: *reply_to, message: why.message(), why: why.data() });
         }
     }
 

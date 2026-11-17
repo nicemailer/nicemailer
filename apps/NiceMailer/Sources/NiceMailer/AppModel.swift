@@ -1133,8 +1133,8 @@ final class AppModel {
             // (`modele de donnees.md`, section 6). Said in the status bar,
             // without stopping the user; the lists follow from the
             // `ThreadChanged` and `FolderChanged` that come with it.
-            if case .string(let kind)? = e.params["kind"], case .string(let reason)? = e.params["reason"] {
-                flash = AppModel.revertedFlash(kind: kind, reason: reason)
+            if case .string(let kind)? = e.params["kind"] {
+                flash = AppModel.revertedFlash(kind: kind, why: e.params["why"]?.object ?? [:], message: e.params["message"]?.string ?? "")
             }
             return
         case "MessageChanged":
@@ -1180,10 +1180,14 @@ final class AppModel {
     }
 
     /// The status bar message of an `ActionReverted` event: what the server
-    /// refused, and its answer.
-    nonisolated static func revertedFlash(kind: String, reason: String) -> String {
+    /// refused, and why: its own answer, cited, or the reason's sentence
+    /// (`attempts_failed`).
+    nonisolated static func revertedFlash(kind: String, why: [String: String], message: String) -> String {
         let what = kind == "move" ? L("The server refused the move") : L("The server refused the change")
-        return what + " · " + L("undone: %@", reason)
+        let detail = why["reason"] == "server_refused_change"
+            ? why["server_text"] ?? message
+            : CoreReason.text(why: why, message: message) ?? message
+        return what + " · " + L("undone: %@", detail)
     }
 
     nonisolated static func order(of e: CoreClient.Event, after last: Position?) -> EventOrder {

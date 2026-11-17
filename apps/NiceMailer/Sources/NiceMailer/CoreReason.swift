@@ -56,6 +56,17 @@ enum CoreReason {
         return L("NiceMailer could not do it: %@", error.message)
     }
 
+    /// What the app says of a `why` of an event or a result (`AccountError`,
+    /// `SendFailed`…): its reason's sentence, else the core's English
+    /// `message`, else nil.
+    static func text(why: [String: String]?, message: String?) -> String? {
+        if let why, let reason = why["reason"], let s = sentence(reason, why) { return s }
+        if let reason = why?["reason"], !generic.contains(reason) {
+            log.error("no sentence for the reason \(reason, privacy: .public)")
+        }
+        return message
+    }
+
     /// The sentence of `reason` with its values, nil for a generic or an
     /// unknown reason.
     ///
@@ -105,6 +116,9 @@ enum CoreReason {
         case "draft_copying": L("This draft is being copied to the server: try again in a moment")
         case "body_pending": L("The text of this mail is still downloading: try again in a moment")
         case "raw_damaged": L("The file of this mail is damaged: it is downloaded again from the server if possible")
+        case "server_refused_change": L("The server refused the change: %@", v("server_text"))
+        case "attempts_failed": L("The server could not be reached after %@ attempts: %@", v("attempts"), v("server_text"))
+        case "smtp_refused": L("The mail server refused the mail: %@", v("server_text"))
         case "move_refused": L("This move is not offered from this folder")
         case "confirmation_required": L("The mail of %@ may be forged: confirm first", v("addr"))
         case "tag_name_invalid": L("A tag name has 1 to 64 characters")
@@ -141,6 +155,7 @@ enum CoreReason {
         case "ai_folder_empty": L("This folder is empty: nothing to sort")
         case "ai_mark_to_sort": L("Mark the conversations to sort, or put the cursor on one")
         case "ai_draft_unsaved": L("The reply changed since: run it again")
+        case "ai_cancelled": L("Cancelled")
         case "ai_draft_changed": L("The reply changed since the AI read it: run it again")
         case "file_unsupported": L("%@: this kind of file has no text the AI can read", v("file"))
         case "file_too_large": L("%@ is too large to read (%@ MB, 50 MB at most)", v("file"), v("size_mb"))
@@ -152,6 +167,49 @@ enum CoreReason {
         case "newer_schema": L("This mailbox was written by a newer version of NiceMailer: update NiceMailer to open it")
         case "migration_failed": L("The upgrade of the mailbox failed: %@", v("message"))
         default: nil
+        }
+    }
+}
+
+/// A reason and its values as a result carries them (`AccountView.why`),
+/// decoded as text.
+///
+/// Swift note: the app's `JSONDecoder` converts snake_case keys to
+/// camelCase (`keyDecodingStrategy`), the keys of a dictionary included:
+/// `server_text` arrives as `serverText`. The keys of a reason's values
+/// are lowercase words joined by `_`, so the conversion is undone here,
+/// and `CoreReason` reads the names of the contract.
+struct CoreWhy: Decodable, Equatable, Sendable {
+    let values: [String: String]
+
+    init(values: [String: String]) { self.values = values }
+
+    init(from decoder: Decoder) throws {
+        struct Key: CodingKey {
+            var stringValue: String
+            var intValue: Int? { nil }
+            init?(stringValue: String) { self.stringValue = stringValue }
+            init?(intValue: Int) { nil }
+        }
+        let c = try decoder.container(keyedBy: Key.self)
+        var out: [String: String] = [:]
+        for key in c.allKeys {
+            let name = CoreWhy.snake(key.stringValue)
+            if let s = try? c.decode(String.self, forKey: key) {
+                out[name] = s
+            } else if let n = try? c.decode(Int.self, forKey: key) {
+                out[name] = String(n)
+            } else if let list = try? c.decode([String].self, forKey: key) {
+                out[name] = list.joined(separator: ", ")
+            }
+        }
+        values = out
+    }
+
+    /// `serverText` back to `server_text`.
+    static func snake(_ key: String) -> String {
+        key.reduce(into: "") { out, c in
+            if c.isUppercase { out += "_" + c.lowercased() } else { out.append(c) }
         }
     }
 }

@@ -193,6 +193,7 @@ fn an_answer_with_the_wrong_segments_fails_and_is_kept() {
     let id = run(&mut c, &d, "proofread").unwrap()["run_id"].as_i64().unwrap();
     let f = c.event("AiFailed", 10);
     assert_eq!((f["run_id"].as_i64(), f["code"].as_str()), (Some(id), Some("ai_invalid_output")));
+    assert_eq!(f["why"]["reason"], "ai_invalid_output", "{f}");
     let (state, _, error, output) = row(dir.path(), id);
     assert_eq!(state, "failed");
     assert!(error.unwrap().starts_with("ai_invalid_output"));
@@ -387,6 +388,7 @@ fn a_run_is_cancelled_and_its_process_killed() {
     c.call("ai_cancel", json!({"run_id": id})).unwrap();
     let f = c.event("AiFailed", 10);
     assert_eq!((f["run_id"].as_i64(), f["code"].as_str()), (Some(id), Some("ai_cancelled")));
+    assert_eq!(f["why"]["reason"], "ai_cancelled", "{f}");
     assert_eq!(row(dir.path(), id).0, "cancelled");
     // The process is gone: `kill(pid, 0)` checks it exists.
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);

@@ -522,6 +522,15 @@ pub mod reason {
         /// The raw file of the mail is damaged.
         RAW_DAMAGED = "raw_damaged": "the raw file of this mail is damaged ({hash}): it is set aside and downloaded again from the server if possible";
 
+        // --- Changes sent to the server, undone (`ActionReverted`, `SendFailed`) ---
+
+        /// The server refused a change made in NiceMailer, for good.
+        SERVER_REFUSED_CHANGE = "server_refused_change": "the server refused the change: {server_text}";
+        /// A change or a mail could not reach the server after its attempts.
+        ATTEMPTS_FAILED = "attempts_failed": "{attempts} attempts failed, the last: {server_text}";
+        /// The mail server refused the mail, for good.
+        SMTP_REFUSED = "smtp_refused": "the mail server refused the mail: {server_text}";
+
         // --- Moving mail ---
 
         /// The target is not offered from this folder.
@@ -605,6 +614,8 @@ pub mod reason {
         AI_MARK_TO_SORT = "ai_mark_to_sort": "mark the conversations to sort, or put the cursor on one";
         /// The draft sent is not the saved one.
         AI_DRAFT_UNSAVED = "ai_draft_unsaved": "the draft changed since: save it and run again";
+        /// The run was cancelled (`AiFailed`, code `ai_cancelled`).
+        AI_CANCELLED = "ai_cancelled": "cancelled";
         /// The draft changed since the AI read it.
         AI_DRAFT_CHANGED = "ai_draft_changed": "the draft changed since the AI read it: run it again";
         /// An attachment of a kind with no text to read.
@@ -860,10 +871,11 @@ pub enum Event {
     /// An account was created, enabled again, disabled, or its settings or
     /// state changed: reload it with `list_accounts`.
     AccountChanged { account_id: i64 },
-    /// An account cannot connect or authenticate; `error` says why. The
-    /// state stays available in `list_accounts` until it is resolved,
-    /// which is announced by `AccountChanged`.
-    AccountError { account_id: i64, error: String },
+    /// An account cannot connect or authenticate; `why` says why
+    /// (`docs/contract.md`, "Errors"), `error` in English. The state stays
+    /// available in `list_accounts` until it is resolved, which is
+    /// announced by `AccountChanged`.
+    AccountError { account_id: i64, error: String, why: Value },
     /// `config.toml` and `accounts.toml` were applied with these changed
     /// keys (dotted, sorted; those of the accounts start with `accounts.`).
     /// Empty `keys` after a `ConfigError`: the files are valid again,
@@ -891,9 +903,9 @@ pub enum Event {
     SyncProgress { account_id: i64, folder_id: Option<i64>, stage: String, done: u64, total: u64 },
     /// The server refused for good a change made in NiceMailer (`kind`:
     /// `move`, `set_flags`): it was undone locally, with the later changes
-    /// of the same message (`modele de donnees.md`, section 6). `reason` is
-    /// the server's answer.
-    ActionReverted { message_id: i64, kind: String, reason: String },
+    /// of the same message (`modele de donnees.md`, section 6). `why` says
+    /// why, the server's answer in `server_text`; `message` in English.
+    ActionReverted { message_id: i64, kind: String, message: String, why: Value },
     /// A draft was sent: the server accepted it (`reponse.md`, section 7).
     /// `message_id` is the mail in Sent; `moved_to` the folder its
     /// conversation was filed in (absent: it stayed); `undo` cancels that
@@ -914,7 +926,8 @@ pub enum Event {
     },
     /// A draft could not be sent, for good: it is editable again, and
     /// `reply_to` is the mail it answers (the next `r` on it reopens it).
-    SendFailed { draft_id: i64, reply_to: Option<i64>, reason: String },
+    /// `why` says why, `message` in English.
+    SendFailed { draft_id: i64, reply_to: Option<i64>, message: String, why: Value },
     /// A draft was sent, but the server refused some recipients (each with
     /// its answer); the others received it.
     SendPartial { draft_id: i64, refused: Vec<String> },
@@ -925,8 +938,9 @@ pub enum Event {
     /// A run ended with an answer, checked: `ai_get_run` gives its proposal.
     AiDone { run_id: i64 },
     /// A run failed or was cancelled (`code` `ai_cancelled`); nothing to
-    /// apply. `code` is the AI error code, `message` says what to do.
-    AiFailed { run_id: i64, code: String, message: String },
+    /// apply. `code` is the AI error code, `why` its reason (`ai_cancelled`
+    /// for a cancel), `message` the English sentence.
+    AiFailed { run_id: i64, code: String, message: String, why: Value },
     /// A run on several conversations went through `done` of `total`.
     /// Transient: `ai_get_run` says where a finished one ended.
     AiProgress { run_id: i64, done: u64, total: u64 },
@@ -2558,9 +2572,13 @@ pub struct AccountView {
     /// `false` when the key of an IMAP account left `accounts.toml`: it is no
     /// longer synchronized, its mail is kept (`configuration.md`, section 6).
     pub enabled: bool,
-    /// Why the account cannot connect, if known. `None` does not mean
-    /// connected, only that nothing prevents it.
+    /// Why the account cannot connect, if known, in English. `None` does
+    /// not mean connected, only that nothing prevents it.
     pub error: Option<String>,
+    /// The same as a reason and its values (`docs/contract.md`, "Errors"),
+    /// for a client to write it in the user's language.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub why: Option<Value>,
     /// Display order: `list_accounts` and `list_folders` give the accounts
     /// by increasing position (then by id). Changed by `set_account_order`.
     pub position: i64,

@@ -140,12 +140,12 @@ async fn smtp(sx: &Sender<'_>, job: &SendJob) -> Step {
         }
     }
     let Some(smtp) = cfg.smtp.as_ref() else {
-        return failed(sx, job, &Refusal::NoSmtp.message(key, cfg));
+        return failed(sx, job, Refusal::NoSmtp.why(key, cfg));
     };
     let password = match secrets::smtp_password(sx.secrets, key, cfg, nm_store::auth::organizational_domain) {
         Ok(p) => p,
         Err(r @ Refusal::Unavailable(_)) => return retry(sx, job, &r.message(key, cfg)),
-        Err(r) => return failed(sx, job, &r.message(key, cfg)),
+        Err(r) => return failed(sx, job, r.why(key, cfg)),
     };
     let result = async {
         let mut c = Client::connect(&smtp_spec(smtp), Timeouts::default()).await?;
@@ -170,7 +170,7 @@ async fn smtp(sx: &Sender<'_>, job: &SendJob) -> Step {
             }
             accepted(sx, job, &refused)
         }
-        Err(e) if e.is_permanent() => failed(sx, job, &e.to_string()),
+        Err(e) if e.is_permanent() => failed(sx, job, nm_api::reason::SMTP_REFUSED.with("server_text", e.to_string())),
         Err(e) => retry(sx, job, &e.to_string()),
     }
 }
@@ -212,9 +212,9 @@ fn retry(sx: &Sender<'_>, job: &SendJob, error: &str) -> Step {
     Step::End
 }
 
-fn failed(sx: &Sender<'_>, job: &SendJob, reason: &str) -> Step {
-    eprintln!("send {}: not sent: {reason}", sx.spec.key);
-    if let Err(e) = sx.host.write(&mut |st| st.send_failed(job.action_id, reason)) {
+fn failed(sx: &Sender<'_>, job: &SendJob, why: nm_api::Why) -> Step {
+    eprintln!("send {}: not sent: {why}", sx.spec.key);
+    if let Err(e) = sx.host.write(&mut |st| st.send_failed(job.action_id, why.clone())) {
         eprintln!("send {}: {e}", sx.spec.key);
     }
     Step::End

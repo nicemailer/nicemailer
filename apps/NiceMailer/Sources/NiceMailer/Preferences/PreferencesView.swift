@@ -192,7 +192,7 @@ private struct AccountRow: View {
                 .lineLimit(1)
             Text(AccountRow.subtitle(account))
                 .font(.caption)
-                .foregroundStyle(account.error != nil ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
+                .foregroundStyle(account.shownError != nil ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
                 .lineLimit(1)
         }
         .padding(.vertical, 2)
@@ -229,7 +229,7 @@ private struct AccountDetail: View {
                     LabeledContent(L("Name shown in “From”"), value: account.displayName ?? "—")
                     LabeledContent(L("Key in accounts.toml"), value: account.key)
                     LabeledContent(L("State"), value: AccountRow.state(account) ?? L("Active"))
-                    if let e = account.error {
+                    if let e = account.shownError {
                         Text(e).foregroundStyle(.red).textSelection(.enabled)
                     }
                 }

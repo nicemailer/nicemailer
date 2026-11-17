@@ -1238,7 +1238,8 @@ impl Store {
             self.conn.query_row("SELECT attempts + 1, payload FROM pending_action WHERE id = ?1", [action_id], |r| Ok((r.get(0)?, r.get(1)?)))?;
         let append = serde_json::from_str::<Value>(&payload).is_ok_and(|p| p["phase"] == "append");
         if attempts >= crate::spool::MAX_ATTEMPTS {
-            let reason = format!("{attempts} attempts failed, the last: {error}");
+            let why = nm_api::reason::ATTEMPTS_FAILED.with("attempts", attempts).with("server_text", error);
+            let reason = why.message();
             if append {
                 self.conn.execute(
                     "UPDATE pending_action SET state = 'done', attempts = ?2, last_error = ?3, date_modified = unixepoch() WHERE id = ?1",
@@ -1246,7 +1247,7 @@ impl Store {
                 )?;
                 return Ok(ChangeSet::default());
             }
-            return self.send_failed(action_id, &reason);
+            return self.send_failed(action_id, why);
         }
         let delay = (crate::spool::RETRY_FIRST_SECS << (attempts - 1).min(20)).min(crate::spool::RETRY_MAX_SECS);
         self.conn.execute(
@@ -1259,8 +1260,10 @@ impl Store {
     }
 
     /// The mail cannot be sent, for good: the action is `reverted`, the
-    /// draft editable again, `SendFailed` tells the user.
-    pub fn send_failed(&mut self, action_id: i64, reason: &str) -> Result<ChangeSet> {
+    /// draft editable again, `SendFailed` tells the user. `why` is kept in
+    /// English in the database (`last_error`, the history).
+    pub fn send_failed(&mut self, action_id: i64, why: nm_api::Why) -> Result<ChangeSet> {
+        let reason = why.message();
         let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let mut changes = ChangeSet::default();
         let payload: Option<String> =
@@ -1280,7 +1283,7 @@ impl Store {
                  VALUES ('core', 'message', ?1, 'send_failed', json_object('message_id_hdr', ?2, 'reason', ?3))",
                 params![reply_to.unwrap_or(0), p["message_id_hdr"].as_str(), reason],
             )?;
-            changes.send_failed.push((draft_id, reply_to, reason.to_string()));
+            changes.send_failed.push((draft_id, reply_to, why));
         }
         tx.commit()?;
         Ok(changes)

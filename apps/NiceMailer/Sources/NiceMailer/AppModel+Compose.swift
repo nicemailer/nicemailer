@@ -649,7 +649,8 @@ extension AppModel {
         case "SendFailed":
             sending[id] = nil
             undoStack.removeAll { $0.cancelSend == id }
-            flash = L("Not sent: %@ · r on the mail to reopen the reply", params["reason"]?.string ?? "")
+            let why = CoreReason.text(why: params["why"]?.object, message: params["message"]?.string) ?? ""
+            flash = L("Not sent: %@ · r on the mail to reopen the reply", why)
         case "SendPartial":
             let refused = params["refused"]?.strings ?? []
             flash = L("Sent, but the server refused: %@", refused.joined(separator: ", "))

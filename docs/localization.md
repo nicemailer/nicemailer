@@ -43,6 +43,8 @@ A key with two numbers that both change the words uses one substitution per numb
 
 The core does not know the user's language. A failed request gives a reason and its values in `data` (`nm_api::reason`, the table in `docs/contract.md`, "Errors"); its `message` is the English sentence, for the CLI, the logs and the AI agents. The app writes the sentence in `CoreReason.swift`, the one place that turns a reason into words: `RPCError.localizedDescription` is that sentence, so every `error.localizedDescription` of the app is in the user's language. Never show `RPCError.message`.
 
+Events and results that say why something failed (`AccountError`, `ActionReverted`, `SendFailed`, `AiFailed`, the accounts of `list_accounts`) carry the same reason and values as `why`: `CoreReason.text(why:message:)` writes it, falling back on the English message. The app's decoder turns snake_case keys into camelCase, those of a dictionary included; `CoreWhy` turns them back.
+
 A value whose key ends with `_text` (`server_text`, `system_text`, `provider_text`) was written by someone else: the sentence cites it as it is. The generic reasons (mistakes of a program, refusals made to AI agents) are listed in `CoreReason.generic` and said by one sentence with the English message.
 
 A new reason: add it to `reasons!` in `nm-api` (name and English sentence), give it where it applies, add its row to `docs/contract.md`, and its sentence to `CoreReason` with its French in the catalog (or add it to `generic`). The tests below fail on each of these steps left out.

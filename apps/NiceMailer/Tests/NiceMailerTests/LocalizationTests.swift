@@ -241,6 +241,24 @@ struct LocalizationTests {
         #expect(e.localizedDescription == L("%@ is too large to read (%@ MB, 50 MB at most)", "a.pdf", "72"))
     }
 
+    /// The `why` of an event or a result: its reason's sentence, else the
+    /// core's English message. A result decoded with the app's decoder
+    /// gives back the keys of the contract (`server_text`, not
+    /// `serverText`).
+    @Test func theWhyOfAnEventOrAResultIsSaidFromItsReason() throws {
+        #expect(CoreReason.text(why: ["reason": "smtp_refused", "server_text": "550 no"], message: "x")
+            == L("The mail server refused the mail: %@", "550 no"))
+        #expect(CoreReason.text(why: nil, message: "english") == "english")
+        #expect(CoreReason.text(why: ["reason": "internal"], message: "english") == "english")
+        let json = #"{"id": 1, "key": "perso", "kind": "imap", "enabled": true, "position": 0, "error": "x", "#
+            + #""why": {"reason": "password_server_changed", "account": "perso", "saved_user": "a", "saved_host": "h1", "user": "b", "host": "h2"}}"#
+        let info = try CoreClient.decoder.decode(AccountInfo.self, from: Data(json.utf8))
+        #expect(info.why?.values["saved_host"] == "h1")
+        #expect(info.shownError == L("The password of %@ was saved for another server (%@ on %@): give it again to confirm %@ on %@",
+                                     "perso", "a", "h1", "b", "h2"))
+        #expect(CoreWhy.snake("serverText") == "server_text" && CoreWhy.snake("reason") == "reason")
+    }
+
     // MARK: Plurals
 
     @Test func aNumberChoosesItsFormByTheRulesOfTheLanguage() {

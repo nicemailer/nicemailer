@@ -315,16 +315,16 @@ pub struct ChangeSet {
     /// send them (`spool.rs`).
     pub spooled: BTreeSet<i64>,
     /// Local changes undone after the server refused them for good, as
-    /// `(message_id, kind, reason)` (`ActionReverted`).
-    pub reverted: Vec<(i64, String, String)>,
+    /// `(message_id, kind, why)` (`ActionReverted`).
+    pub reverted: Vec<(i64, String, nm_api::Why)>,
     /// Accounts with a mail queued for sending, or a send cancelled: their
     /// sender looks at its queue again (`drafts.rs`).
     pub sending: BTreeSet<i64>,
     /// Drafts the server accepted (`DraftSent`).
     pub sent: Vec<drafts::SentDraft>,
     /// Drafts that could not be sent, for good, as `(draft_id, reply_to,
-    /// reason)` (`SendFailed`).
-    pub send_failed: Vec<(i64, Option<i64>, String)>,
+    /// why)` (`SendFailed`).
+    pub send_failed: Vec<(i64, Option<i64>, nm_api::Why)>,
     /// Drafts sent to some recipients only, with the others and the
     /// server's answer for each (`SendPartial`).
     pub send_partial: Vec<(i64, Vec<String>)>,

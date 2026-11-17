@@ -347,6 +347,9 @@ enum JSONValue: Sendable, Equatable {
     case string(String)
     case ints([Int])
     case strings([String])
+    /// An object, its values as text (`CoreClient.text`): the `why` of an
+    /// event, a reason and its values.
+    case object([String: String])
     case other
 
     /// Failable initializer (`init?`): may return nil. `case let i as Int`
@@ -364,6 +367,7 @@ enum JSONValue: Sendable, Equatable {
         case let s as String: self = .string(s)
         case let a as [Int]: self = .ints(a)
         case let a as [String]: self = .strings(a)
+        case let d as [String: Any]: self = .object(d.compactMapValues(CoreClient.text))
         default: self = .other
         }
     }
@@ -378,4 +382,6 @@ enum JSONValue: Sendable, Equatable {
     var string: String? { if case .string(let s) = self { return s } else { return nil } }
     /// The list of texts, or an empty list.
     var strings: [String] { if case .strings(let a) = self { return a } else { return [] } }
+    /// The object's values as text, if this value is one.
+    var object: [String: String]? { if case .object(let d) = self { return d } else { return nil } }
 }
