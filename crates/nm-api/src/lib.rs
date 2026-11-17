@@ -161,6 +161,13 @@ pub mod method {
     pub const ADD_ACCOUNT: &str = "add_account";
     /// Changes the workflow roles of the folders of an account.
     pub const SET_FOLDER_ROLES: &str = "set_folder_roles";
+    /// What `activate_account` would do to a read-only account: the
+    /// report of `test_account`, with the password of the Keychain.
+    pub const PREPARE_ACTIVATION: &str = "prepare_activation";
+    /// Makes a read-only account writable, with the steps of a creation:
+    /// folders, roles, boundary, correspondents, archiving
+    /// (`docs/accounts.md`, "Looking first").
+    pub const ACTIVATE_ACCOUNT: &str = "activate_account";
     /// Renames the key of an account, keeping its data.
     pub const RENAME_ACCOUNT: &str = "rename_account";
     /// Deletes an account, its data and its password.
@@ -2144,6 +2151,10 @@ pub struct AccountView {
     /// Display order: `list_accounts` and `list_folders` give the accounts
     /// by increasing position (then by id). Changed by `set_account_order`.
     pub position: i64,
+    /// `read_only = true` in `accounts.toml`: nothing is changed on its
+    /// server, until `activate_account`.
+    #[serde(default)]
+    pub read_only: bool,
 }
 
 /// Params of `set_password`. The password is never logged nor stored
@@ -2640,6 +2651,60 @@ pub struct TestAccountReport {
     /// What the defaults would archive.
     pub archive_read: u64,
     pub archive_unread: u64,
+    /// The folder each workflow role would get, in sidebar order, Inbox
+    /// first: what `add_account` does without `roles` (`dossiers.md`, "A
+    /// la création du compte IMAP dans niceMailer").
+    #[serde(default)]
+    pub roles: Vec<RolePlan>,
+}
+
+/// The folder of a workflow role, as planned.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RolePlan {
+    pub role: FolderRole,
+    pub path: String,
+    /// `false`: the server has no such folder; it would be created.
+    pub exists: bool,
+}
+
+/// Params of `prepare_activation`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PrepareActivationParams {
+    /// Key of a read-only account.
+    pub account: String,
+}
+
+/// Params of `activate_account`: the choices of the import screen, as for
+/// `add_account`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ActivateAccountParams {
+    /// Key of a read-only account.
+    pub account: String,
+    /// As in `add_account`: roles left out get the proposal, else a new
+    /// folder.
+    #[serde(default)]
+    pub roles: BTreeMap<FolderRole, String>,
+    /// The boundary read by `prepare_activation`; omitted: read again now.
+    /// The mails below it, those of the time the account was only looked
+    /// at included, are never screened (`import-initial.md`, section 5).
+    #[serde(default)]
+    pub uidnext: Option<u32>,
+    #[serde(default)]
+    pub archive_read_before: Option<String>,
+    #[serde(default)]
+    pub archive_unread_before: Option<String>,
+    #[serde(default = "yes")]
+    pub correspondents: bool,
+}
+
+/// What `activate_account` did.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ActivateAccountResult {
+    /// Folders created on the server.
+    pub created: Vec<String>,
+    pub roles: BTreeMap<FolderRole, String>,
+    pub correspondents: u64,
+    pub archive_queued: bool,
 }
 
 /// Params of `count_archive`.

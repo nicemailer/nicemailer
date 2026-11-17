@@ -1,6 +1,7 @@
 # The Preferences (Settings…, ⌘,): the accounts in display order, moved
 # with the buttons; a new account added from its three fields, then only
-# what the attempt asks for. The creation methods are answered by
+# what the attempt asks for, and always "On the server" before anything is
+# written; an account only looked at, organized later. The creation methods are answered by
 # `UIScriptSetupCore`: no DNS, no mail server, nothing written to
 # accounts.toml (docs/accounts.md, "In the app").
 
@@ -35,11 +36,22 @@ expect setup_imap_host = imap.hosted.test
 expect setup_imap_reason ~ mx.hosted.test
 expect prefs_focus = prefs-imap-host
 snap preferences-imap
-# The guess is right: added, with the SMTP server guessed from it.
+# The guess is right: "On the server" says what will be created, and
+# nothing is added yet.
+click prefs:add
+expect setup_sections = imap,server
+expect setup_look_only = false
+expect setup_created = Todo,Waiting,Archive,Newsletter,Paperwork,Quarantine,Deleted,Junk,Banned
+expect setup_roles ~ sent=Sent,drafts=Drafts
+expect setup_calls !~ add_account
+snap preferences-plan
+# Confirmed: added, with the SMTP server guessed from it.
 click prefs:add
 expect setup_added ~ pierre@hosted.test added
 expect setup_calls ~ add_account correspondents=true display_name=Pierre Dupont email=pierre@hosted.test imap=imap.hosted.test:993
 expect setup_calls ~ smtp=smtp.hosted.test:465
+expect setup_calls ~ roles=11
+expect setup_calls !~ read_only
 expect prefs_accounts = perso,fixture,hosted
 # The form is empty again, the name of "From" kept for the next one.
 expect setup_email =
@@ -74,8 +86,11 @@ key ret
 expect setup_smtp_password_reason ~ refused this password too
 type smtp-pw
 key ret
-# A big Inbox: the import screen, every box checked.
-expect setup_sections = smtp-password,import
+# A big Inbox: the import screen, every box checked, under "On the
+# server"; Archive, Sent, Drafts, Trash and Junk found.
+expect setup_sections = smtp-password,server,import
+expect setup_created = Todo,Waiting,Newsletter,Paperwork,Quarantine,Banned
+expect setup_roles ~ deleted=Trash
 snap preferences-import
 click prefs:archive-unread right
 click prefs:add
@@ -96,8 +111,42 @@ expect setup_sections = smtp
 expect setup_smtp_reason ~ cannot connect to smtp.nosmtp.test
 click prefs:send-later right
 click prefs:add
+expect setup_sections = smtp,server
+click prefs:add
 expect setup_added ~ pierre@nosmtp.test added
 expect prefs_accounts = perso,fixture,hosted,known,nosmtp
+
+# Only looked at: nothing created, nothing archived, read-only.
+click prefs:email
+type pierre@look.test
+click prefs:password
+type secret
+click prefs:add
+expect setup_sections = server
+click prefs:look-only right
+expect setup_look_only = true
+expect setup_created =
+snap preferences-look-only
+click prefs:add
+expect setup_added ~ changes nothing on the server
+expect setup_calls ~ read_only=true
+expect prefs_accounts = perso,fixture,hosted,known,nosmtp,look
+
+# Organized later, from its page: the same plan, read with the password
+# of the Keychain, then applied.
+click prefs:account-look
+expect prefs_selection = look
+snap preferences-looked-at
+click prefs:organize
+expect activation_plan = true
+expect activation_import = false
+expect activation_created = Todo,Waiting,Archive,Newsletter,Paperwork,Quarantine,Deleted,Junk,Banned
+expect setup_calls ~ prepare_activation account=look
+snap preferences-organize
+click prefs:activate
+expect activation_done ~ pierre@look.test is organized
+expect setup_calls ~ activate_account account=look
+expect activation_plan = false
 
 # Closed: the keys go back to the main window.
 preferences close

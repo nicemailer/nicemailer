@@ -17,6 +17,14 @@ import Foundation
 // - the import choices (`import-initial.md`, section 3), when the Inbox is
 //   above the thresholds and the core offers to archive its old mail.
 //
+// Once the servers work, one more step is always shown before anything is
+// written: "On the server", what the account will change there. The folders
+// of the workflow, those found and those to create, each one changeable
+// (`dossiers.md`, "A la création du compte IMAP dans niceMailer"); or, the
+// user's choice, nothing at all: the account is only looked at
+// (`read_only`), and organized later from its page (`AccountActivation`,
+// `docs/accounts.md`, "Looking first").
+//
 // This file holds the logic only, without any view, so that each step is
 // tested against `FakeCore` (`Tests/NiceMailerTests/AccountSetupTests.swift`).
 // The views are in `PreferencesView.swift`.
@@ -71,9 +79,34 @@ struct DiscoveryReport: Decodable, Equatable {
     var provider: ProviderMatch? { byDomain ?? byMx }
 }
 
-/// The counts of the import screen (`TestAccountReport`; the probe of the
-/// server it also holds is not read here).
+/// A folder of the server (`ProbeFolder`).
+struct ServerFolder: Decodable, Equatable {
+    let name: String
+    /// `false`: a node of the hierarchy that holds no mail.
+    let selectable: Bool
+}
+
+/// The probe of the server (`ProbeReport`): only its folders are read here.
+struct ServerProbe: Decodable, Equatable {
+    let folders: [ServerFolder]
+}
+
+/// The folder a workflow role would get (`RolePlan`).
+struct RolePlan: Decodable, Equatable {
+    /// `inbox`, `todo`, `archive`…
+    let role: String
+    let path: String
+    /// `false`: the server has no such folder, it would be created.
+    let exists: Bool
+}
+
+/// The report of `test_account` (`TestAccountReport`), also the answer of
+/// `prepare_activation`: the counts of the import screen, the folders of
+/// the server and the plan of the roles.
 struct AccountTestReport: Decodable, Equatable {
+    let probe: ServerProbe
+    /// In sidebar order, Inbox first.
+    let roles: [RolePlan]
     let inboxMessages: Int
     let inboxUnseen: Int
     let inboxUidnext: Int
@@ -120,6 +153,13 @@ struct AccountInfo: Decodable, Identifiable, Equatable {
     let enabled: Bool
     let error: String?
     let position: Int
+    /// Only looked at (`read_only = true`): nothing is changed on its
+    /// server until it is organized. Swift note: an optional property of a
+    /// `Decodable` is `nil` when the key is missing, so older answers still
+    /// decode.
+    var readOnly: Bool? = nil
+
+    var isReadOnly: Bool { readOnly == true }
 }
 
 struct AccountInfoList: Decodable {
@@ -177,6 +217,99 @@ struct ImportChoices: Equatable {
     /// (read, unread), so the sum is exact without counting again.
     func archived(_ r: AccountTestReport) -> Int {
         (archiveRead ? r.archiveRead : 0) + (archiveUnread ? r.archiveUnread : 0)
+    }
+}
+
+/// What the account will change on the server, shown before anything is
+/// done (`dossiers.md`, "A la création du compte IMAP dans niceMailer";
+/// `import-initial.md`, section 3): the folder of each workflow role, those
+/// to create, the import choices. Or nothing at all: `lookOnly`.
+///
+/// The same plan for a new account (`AccountSetup`) and for one only looked
+/// at until now (`AccountActivation`).
+struct ServerPlan: Equatable {
+    /// The folder chosen for a role.
+    struct RoleChoice: Equatable, Identifiable {
+        let role: String
+        var path: String
+        /// What the core proposed: an existing folder, or a new one.
+        let proposed: String
+        var id: String { role }
+    }
+
+    /// Change nothing on the server: `read_only` (`docs/sync.md`,
+    /// "Read-only accounts").
+    var lookOnly = false
+    /// Every role but the Inbox (always `INBOX`), in sidebar order.
+    var roles: [RoleChoice]
+    var importChoices = ImportChoices()
+    /// The folders of the server that can hold mail, the Inbox excepted.
+    let existing: [String]
+
+    init(roles: [RoleChoice] = [], existing: [String] = []) {
+        self.roles = roles
+        self.existing = existing
+    }
+
+    init(_ r: AccountTestReport) {
+        self.init(
+            roles: r.roles.filter { $0.role != "inbox" }.map { RoleChoice(role: $0.role, path: $0.path, proposed: $0.path) },
+            existing: r.probe.folders.filter { $0.selectable && $0.name.uppercased() != "INBOX" }.map(\.name))
+    }
+
+    /// The folders offered for a role: those of the server, and the new
+    /// folder the core proposes when the server has none for it.
+    func options(_ c: RoleChoice) -> [String] {
+        isNew(c.proposed) ? existing + [c.proposed] : existing
+    }
+
+    func isNew(_ path: String) -> Bool { !existing.contains(path) }
+
+    /// The folders that will be created on the server, in sidebar order:
+    /// none when only looking.
+    var created: [String] {
+        guard !lookOnly else { return [] }
+        var seen = Set<String>()
+        // Swift note: `insert` returns whether the element was new, so this
+        // keeps the first of each folder, in order.
+        return roles.map(\.path).filter { isNew($0) && seen.insert($0).inserted }
+    }
+
+    /// A folder chosen for several roles, and those roles: the core keeps
+    /// one role per folder, the last one would silently win.
+    var sharedFolder: (path: String, roles: [String])? {
+        for c in roles {
+            let same = roles.filter { $0.path == c.path }
+            if same.count > 1 { return (c.path, same.map(\.role)) }
+        }
+        return nil
+    }
+
+    /// The parameters of `add_account` or `activate_account` that come
+    /// from the plan and the import screen. Looking only: none of them,
+    /// but `read_only` (the people written to are still accepted: a
+    /// decision of the database, which the dry screening follows).
+    func params(_ t: AccountTestReport) -> [String: Any] {
+        if lookOnly { return ["read_only": true, "uidnext": t.inboxUidnext, "correspondents": true] }
+        var p: [String: Any] = [
+            "roles": Dictionary(uniqueKeysWithValues: roles.map { ($0.role, $0.path) }),
+            "uidnext": t.inboxUidnext,
+            "correspondents": importChoices.acceptCorrespondents,
+        ]
+        if t.offerArchive && importChoices.archiveRead { p["archive_read_before"] = t.readBefore }
+        if t.offerArchive && importChoices.archiveUnread { p["archive_unread_before"] = t.unreadBefore }
+        return p
+    }
+
+    /// Mails the plan archives.
+    func archived(_ t: AccountTestReport) -> Int {
+        !lookOnly && t.offerArchive ? importChoices.archived(t) : 0
+    }
+
+    /// Why the plan cannot be applied, if it cannot.
+    var problem: String? {
+        guard !lookOnly, let shared = sharedFolder else { return nil }
+        return L("“%@” is chosen for several roles (%@): choose one folder per role.", shared.path, shared.roles.map { Role.name($0) }.joined(separator: ", "))
     }
 }
 
@@ -244,18 +377,22 @@ final class AccountSetup {
 
     /// A section of the form shown only when needed.
     enum Section: Hashable {
-        case imap, smtpPassword, smtp, importScreen
+        case imap, smtpPassword, smtp, server, importScreen
     }
 
     /// The sections shown, in the order of the form.
     var sectionsShown: [Section] {
         [imapServer != nil ? .imap : nil, smtpPassword != nil ? .smtpPassword : nil,
-         smtpServer != nil ? .smtp : nil, importShown ? .importScreen : nil].compactMap { $0 }
+         smtpServer != nil ? .smtp : nil, plan != nil ? .server : nil, importShown ? .importScreen : nil].compactMap { $0 }
     }
 
-    /// The import screen, shown when the core offers to archive.
-    private(set) var importShown = false
-    var importChoices = ImportChoices()
+    /// "On the server": shown once the servers work, before anything is
+    /// written. `nil` until then.
+    var plan: ServerPlan?
+
+    /// The import screen, shown with the plan when the core offers to
+    /// archive and the account is organized now.
+    var importShown: Bool { plan.map { !$0.lookOnly } == true && test?.offerArchive == true }
 
     /// The step running, said under the button; `nil` when idle.
     private(set) var busy: String?
@@ -287,7 +424,7 @@ final class AccountSetup {
 
     /// The steps whose results are kept, in order.
     private enum Step: Int, Comparable {
-        case discovery, imapTest, smtp, importScreen
+        case discovery, imapTest, smtp
         static func < (a: Step, b: Step) -> Bool { a.rawValue < b.rawValue }
     }
 
@@ -305,10 +442,13 @@ final class AccountSetup {
                 smtpPasswordReason = nil
                 pendingSMTP = nil
                 sendLater = false
-                importShown = false
             }
         }
-        if step <= .imapTest { test = nil }
+        // The plan is made from the test: a new test, a new plan.
+        if step <= .imapTest {
+            test = nil
+            plan = nil
+        }
         if step <= .smtp {
             smtpChoice = nil
             smtpSkipped = false
@@ -403,34 +543,35 @@ final class AccountSetup {
             }
         }
 
-        // 5. The import screen, when the core offers to archive: shown
-        // once, the user adds the account from it.
-        if t.offerArchive && !importShown {
-            importShown = true
+        // 5. "On the server": what the account will change there, always
+        // shown once before anything is written; the user adds the
+        // account from it.
+        guard let plan else {
+            plan = ServerPlan(t)
             errorField = nil
             return
         }
+        if let problem = plan.problem { return stop(nil, problem) }
 
         // 6. The account.
         busy = L("Adding %@…", email)
         let name = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
-        let choices = importShown ? importChoices : ImportChoices(archiveRead: false, archiveUnread: false, acceptCorrespondents: true)
-        var p: [String: Any] = [
-            "key": d.key, "email": email, "imap": imap.json, "password": password,
-            "uidnext": t.inboxUidnext, "correspondents": choices.acceptCorrespondents,
-        ]
+        // Swift note: `merging(_:uniquingKeysWith:)` joins two
+        // dictionaries; the closure says which value wins on a shared key.
+        var p: [String: Any] = ["key": d.key, "email": email, "imap": imap.json, "password": password]
+            .merging(plan.params(t)) { _, new in new }
         if !name.isEmpty { p["display_name"] = name }
-        if t.offerArchive && choices.archiveRead { p["archive_read_before"] = t.readBefore }
-        if t.offerArchive && choices.archiveUnread { p["archive_unread_before"] = t.unreadBefore }
         if let s = smtpChoice {
             p["smtp"] = s.json
             if let pw = smtpPassword, !pw.isEmpty { p["smtp_password"] = pw }
         }
         do {
             let _: AddAccountResult = try await client.call("add_account", p)
-            let archived = t.offerArchive ? choices.archived(t) : 0
+            let archived = plan.archived(t)
             reset()
-            added = archived > 0
+            added = plan.lookOnly
+                ? L("%@ added: NiceMailer shows its mail and changes nothing on the server. Organize it from its page when you are ready.", email)
+                : archived > 0
                 ? L("%@ added: %@ old mails are being archived on the server.", email, archived.formatted())
                 : L("%@ added: its mail is being downloaded.", email)
             await onAdded?()
@@ -588,7 +729,6 @@ final class AccountSetup {
         email = ""
         password = ""
         forget(from: .discovery)
-        importChoices = ImportChoices()
         proposing = true
         displayName = name
         proposing = false
@@ -607,5 +747,89 @@ final class AccountSetup {
     /// The core's message, without the code the developer needs.
     nonisolated static func message(_ error: Error) -> String {
         (error as? CoreClient.RPCError)?.message ?? error.localizedDescription
+    }
+}
+
+// MARK: - Organizing an account only looked at
+
+/// An account added "only to look" (`read_only`), organized later: the same
+/// plan as for a new account, read with the password of the Keychain
+/// (`prepare_activation`), then applied (`activate_account`,
+/// `docs/accounts.md`, "Looking first"). Its mail is not downloaded again;
+/// the mails that came meanwhile are not screened, as those already there
+/// at a creation (`import-initial.md`, section 1).
+@Observable
+@MainActor
+final class AccountActivation {
+    let key: String
+    let email: String
+    /// The report the plan was made from; `nil` until read.
+    private(set) var report: AccountTestReport?
+    var plan: ServerPlan?
+    private(set) var busy: String?
+    private(set) var error: String?
+    /// Said once organized.
+    private(set) var done: String?
+
+    private let client: any CoreCalling
+    /// Called once organized: the list reloads.
+    var onDone: (() async -> Void)?
+
+    init(client: any CoreCalling, key: String, email: String) {
+        self.client = client
+        self.key = key
+        self.email = email
+    }
+
+    /// The import screen, when the core offers to archive.
+    var importShown: Bool { plan != nil && report?.offerArchive == true }
+
+    /// Reads what organizing would do: nothing changes yet.
+    func prepare() async {
+        guard busy == nil else { return }
+        error = nil
+        done = nil
+        busy = L("Connecting to the server of %@…", email)
+        defer { busy = nil }
+        do {
+            let r: AccountTestReport = try await client.call("prepare_activation", ["account": key])
+            report = r
+            plan = ServerPlan(r)
+        } catch {
+            self.error = AccountSetup.message(error)
+        }
+    }
+
+    /// Back to the account's page, nothing done.
+    func cancel() {
+        report = nil
+        plan = nil
+        error = nil
+    }
+
+    /// Applies the plan.
+    func activate() async {
+        guard busy == nil, let r = report, let plan else { return }
+        if let problem = plan.problem {
+            error = problem
+            return
+        }
+        error = nil
+        busy = L("Organizing %@…", email)
+        defer { busy = nil }
+        var p = plan.params(r)
+        p["account"] = key
+        do {
+            let _: IgnoredResult = try await client.call("activate_account", p)
+            let archived = plan.archived(r)
+            report = nil
+            self.plan = nil
+            done = archived > 0
+                ? L("%@ is organized: %@ old mails are being archived on the server.", email, archived.formatted())
+                : L("%@ is organized: new mail is screened from now on.", email)
+            await onDone?()
+        } catch {
+            self.error = AccountSetup.message(error)
+        }
     }
 }

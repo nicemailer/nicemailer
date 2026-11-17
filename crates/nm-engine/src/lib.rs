@@ -281,6 +281,7 @@ impl Engine {
                     enabled: !row.disabled,
                     error: self.account_errors.get(&row.id).cloned(),
                     position: row.position,
+                    read_only: account.is_some_and(|a| a.read_only),
                     key: row.config_key,
                     kind: row.kind,
                 }

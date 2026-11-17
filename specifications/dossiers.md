@@ -192,6 +192,8 @@ Lorsqu'un compte est paramétré dans l'application, après avoir fait une conne
 
 S'ils ne sont pas présents, un panneau s'affiche pour éventuellement sélectionner un dossier déjà présent sur le serveur pour chacun des dossiers du workflow, Drafts compris. Si l'utilisateur n'indique pas un dossier préexistant, les dossiers nécessaires sont créés.
 
+Dans l'app, ce panneau est toujours affiché avant la création du compte (section « Sur le serveur » des Préférences, `ui.md`) : il nomme les dossiers qui seront créés, ce qui n'arrive presque jamais à l'insu de l'utilisateur.
+
 Le panneau propose par défaut les dossiers que le serveur déclare avec un attribut d'usage spécial (RFC 6154 : `\Drafts`, `\Sent`, `\Trash`, `\Junk`, `\Archive`), pour Drafts, Sent, Deleted, Junk et Archive. Un dossier Brouillons déjà utilisé par le téléphone est ainsi repris tel quel, et NiceMailer n'en crée pas un second. À défaut d'attribut, la proposition repose sur le nom du dossier, que l'utilisateur confirme.
 
 Règles de la proposition (`nm-engine`, `folders.rs`, déjà visibles avec `nicemailer imap probe`) :
@@ -205,6 +207,12 @@ Règles de la proposition (`nm-engine`, `folders.rs`, déjà visibles avec `nice
 Provisoirement, jusqu'au panneau de la phase 7 (`plan-imap.md`), la première synchronisation d'un compte qui n'a encore aucun rôle donne à chaque dossier le rôle proposé par ces règles, sans confirmation ; les dossiers créés ensuite sur le serveur n'en reçoivent pas.
 
 Seule l'Inbox est surveillée en IDLE : c'est par elle que les nouveaux mails arrivent sur le serveur, et c'est là que le screening doit réagir sans délai. IDLE ne surveille qu'un dossier par connexion, et multiplier les connexions est coûteux et limité par les serveurs. Les autres dossiers du workflow sont interrogés de temps à autre, toutes les cinq minutes (paramètre `sync.poll_interval_secs`, 300 par défaut), pour récupérer les changements faits ailleurs, par exemple depuis le téléphone. Les actions faites dans NiceMailer sont appliquées localement tout de suite, sans attendre l'interrogation.
+
+### Regarder avant d'organiser
+
+L'utilisateur peut aussi ajouter le compte **sans rien changer sur le serveur** : aucun dossier créé, aucun mail déplacé, marqué lu ou envoyé, le screening « à blanc » (`read_only`, `configuration.md`, section 6). Il voit ses mails dans NiceMailer avant de décider ; c'est une migration en douceur.
+
+Quand il le décide, depuis la page du compte dans les Préférences, le compte est organisé comme s'il était créé à ce moment-là : même panneau des dossiers, même écran d'import (`import-initial.md`), dossiers créés, frontière du screening reprise au `UIDNEXT` du moment (les mails arrivés pendant la période d'observation sont des mails déjà présents : ils ne sont pas triés), correspondants acceptés, anciens mails archivés, puis `read_only` retiré. Les mails déjà téléchargés ne le sont pas à nouveau : l'archivage les déplace sur le serveur, et la synchronisation reconnaît ces déplacements. Le coût est un passage de plus sur les mails archivés, accepté pour la douceur de la migration.
 
 ### Import initial
 

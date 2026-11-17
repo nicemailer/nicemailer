@@ -48,8 +48,13 @@ struct AccountsPane: View {
     /// `@Observable` object gives bindings to its properties too.
     @State private var list: AccountsList
     @State private var setup: AccountSetup
+    /// The organizing of the account selected, once asked for; dropped
+    /// when another account is selected.
+    @State private var activation: AccountActivation?
+    private let client: any CoreCalling
 
     init(client: any CoreCalling) {
+        self.client = client
         _list = State(initialValue: AccountsList(client: client))
         _setup = State(initialValue: AccountSetup(client: client))
     }
@@ -85,6 +90,20 @@ struct AccountsPane: View {
                 setup.proposeDisplayName(list.items)
             }
         }
+        .onChange(of: list.selection) { _, new in
+            if case .account(let id) = new, list.items.first(where: { $0.id == id })?.key == activation?.key { return }
+            activation = nil
+        }
+    }
+
+    /// "Organize…" on an account only looked at: what it would do, read
+    /// from the server.
+    private func organize(_ a: AccountInfo) {
+        let act = AccountActivation(client: client, key: a.key, email: a.email ?? a.key)
+        act.onDone = { [weak list] in await list?.load() }
+        activation = act
+        UIScript.preferencesActivationOpened(act)
+        Task { await act.prepare() }
     }
 
     private var sidebar: some View {
@@ -144,7 +163,7 @@ struct AccountsPane: View {
         switch list.selection {
         case .account(let id):
             if let a = list.items.first(where: { $0.id == id }) {
-                AccountDetail(account: a)
+                AccountDetail(account: a, activation: activation?.key == a.key ? activation : nil, organize: { organize(a) })
             } else {
                 AddAccountForm(setup: setup)
             }
@@ -188,28 +207,105 @@ private struct AccountRow: View {
         if a.kind == "archive" { return L("Archive (mbox import)") }
         if !a.enabled { return L("Disabled: no longer in accounts.toml") }
         if a.error != nil { return L("Cannot connect") }
+        if a.isReadOnly { return L("Only looked at") }
         return nil
     }
 }
 
 /// An account of the list, selected: what the core says of it. Changing it
 /// (key, servers, removal) is still done with the CLI (`docs/accounts.md`).
+/// An account only looked at can be organized from here.
 private struct AccountDetail: View {
     let account: AccountInfo
+    /// The organizing asked for, if any.
+    let activation: AccountActivation?
+    let organize: () -> Void
 
     var body: some View {
-        Form {
-            Section {
-                LabeledContent(L("Address"), value: account.email ?? "—")
-                LabeledContent(L("Name shown in “From”"), value: account.displayName ?? "—")
-                LabeledContent(L("Key in accounts.toml"), value: account.key)
-                LabeledContent(L("State"), value: AccountRow.state(account) ?? L("Active"))
-                if let e = account.error {
-                    Text(e).foregroundStyle(.red).textSelection(.enabled)
+        VStack(spacing: 0) {
+            Form {
+                Section {
+                    LabeledContent(L("Address"), value: account.email ?? "—")
+                    LabeledContent(L("Name shown in “From”"), value: account.displayName ?? "—")
+                    LabeledContent(L("Key in accounts.toml"), value: account.key)
+                    LabeledContent(L("State"), value: AccountRow.state(account) ?? L("Active"))
+                    if let e = account.error {
+                        Text(e).foregroundStyle(.red).textSelection(.enabled)
+                    }
+                }
+                if let act = activation, act.plan != nil {
+                    ActivationSections(activation: act)
+                } else if account.isReadOnly && account.enabled {
+                    Section {
+                        Text(L("NiceMailer shows the mail of this account and changes nothing on its server: no folder is created, no mail is moved, marked read or sent. New mail is screened on paper only."))
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text(L("Organizing it creates the folders NiceMailer needs, can archive old mail, and screens new mail for real. The mail there now is not screened, and is not downloaded again."))
+                            .font(.callout).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } header: {
+                        Text(L("Only looked at"))
+                    }
                 }
             }
+            .formStyle(.grouped)
+            if account.isReadOnly || activation?.done != nil {
+                Divider()
+                footer
+            }
         }
-        .formStyle(.grouped)
+    }
+
+    private var footer: some View {
+        HStack(alignment: .center, spacing: 10) {
+            Group {
+                if let busy = activation?.busy {
+                    ProgressView().controlSize(.small)
+                    Text(busy).foregroundStyle(.secondary)
+                } else if let e = activation?.error {
+                    Text(e).foregroundStyle(.red)
+                } else if let done = activation?.done {
+                    Text(done).foregroundStyle(.green)
+                }
+            }
+            .font(.callout)
+            .lineLimit(3)
+            .textSelection(.enabled)
+            Spacer()
+            if let act = activation, act.plan != nil {
+                Button(L("Cancel")) { act.cancel() }
+                    .disabled(act.busy != nil)
+                    .uiTarget("prefs-activate-cancel")
+                Button(L("Organize")) { Task { await act.activate() } }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(act.busy != nil)
+                    .uiTarget("prefs-activate")
+            } else if account.isReadOnly && account.enabled {
+                Button(L("Organize…")) { organize() }
+                    .disabled(activation?.busy != nil)
+                    .uiTarget("prefs-organize")
+            }
+        }
+        .padding(12)
+    }
+}
+
+/// The plan of an account being organized, and its import screen.
+private struct ActivationSections: View {
+    @Bindable var activation: AccountActivation
+
+    var body: some View {
+        if let r = activation.report {
+            ServerPlanSection(plan: planBinding, lookOnlyOffered: false)
+            if activation.importShown {
+                ImportSection(choices: planBinding.importChoices, report: r)
+            }
+            FolderRolesSection(plan: planBinding)
+        }
+    }
+
+    /// Written only while the plan is shown (see `AddAccountForm.optional`).
+    private var planBinding: Binding<ServerPlan> {
+        Binding(get: { activation.plan ?? ServerPlan() }, set: { if activation.plan != nil { activation.plan = $0 } })
     }
 }
 
@@ -248,16 +344,24 @@ struct AddAccountForm: View {
                     if setup.imapServer != nil { imapSection.id(AccountSetup.Section.imap) }
                     if setup.smtpPassword != nil { smtpPasswordSection.id(AccountSetup.Section.smtpPassword) }
                     if setup.smtpServer != nil { smtpServerSection.id(AccountSetup.Section.smtp) }
-                    if setup.importShown, let t = setup.test { importSection(t).id(AccountSetup.Section.importScreen) }
+                    if setup.plan != nil {
+                        ServerPlanSection(plan: planBinding, lookOnlyOffered: true).id(AccountSetup.Section.server)
+                    }
+                    if setup.importShown, let t = setup.test {
+                        ImportSection(choices: planBinding.importChoices, report: t).id(AccountSetup.Section.importScreen)
+                    }
+                    if setup.plan?.lookOnly == false { FolderRolesSection(plan: planBinding) }
                 }
                 .formStyle(.grouped)
                 .onSubmit { Task { await setup.submit() } }
                 // A section asked for appears at the bottom of the form, maybe
-                // out of sight: brought into view. (A field that takes the
-                // focus is scrolled to by AppKit; the import screen has none.)
+                // out of sight: its top brought into view. (A field that
+                // takes the focus is scrolled to by AppKit; the plan has
+                // none.) The plan and the import screen come together: the
+                // first one's top, the import screen just under it.
                 .onChange(of: setup.sectionsShown) { old, new in
                     guard let added = new.first(where: { !old.contains($0) }) else { return }
-                    proxy.scrollTo(added, anchor: .bottom)
+                    proxy.scrollTo(added, anchor: .top)
                 }
             }
             Divider()
@@ -313,23 +417,9 @@ struct AddAccountForm: View {
             .uiTarget("prefs-send-later")
     }
 
-    private func importSection(_ t: AccountTestReport) -> some View {
-        Section {
-            Text(L("Your Inbox holds %@ mails, %@ of them unread.", t.inboxMessages.formatted(), t.inboxUnseen.formatted()))
-            Toggle(L("Archive the read mails received before %@", Self.day(t.readBefore)), isOn: $setup.importChoices.archiveRead)
-                .uiTarget("prefs-archive-read")
-            Toggle(L("Archive the unread mails received before %@", Self.day(t.unreadBefore)), isOn: $setup.importChoices.archiveUnread)
-                .uiTarget("prefs-archive-unread")
-            let archived = setup.importChoices.archived(t)
-            Text(L("Flagged mails stay in the Inbox.")).font(.caption).foregroundStyle(.secondary)
-            Text(L("→ %@ mails will be archived, %@ will stay in the Inbox.", archived.formatted(), max(0, t.inboxMessages - archived).formatted()))
-                .bold()
-            Toggle(L("The people you have written to (%@) arrive straight in the Inbox.", t.correspondents.formatted()), isOn: $setup.importChoices.acceptCorrespondents)
-                .uiTarget("prefs-correspondents")
-            Text(L("Other senders go through the Quarantine with their next mail.")).font(.caption).foregroundStyle(.secondary)
-        } header: {
-            Text(L("Mail already in the mailbox"))
-        }
+    /// The plan, written only while shown (see `optional`).
+    private var planBinding: Binding<ServerPlan> {
+        Binding(get: { setup.plan ?? ServerPlan() }, set: { if setup.plan != nil { setup.plan = $0 } })
     }
 
     // MARK: Footer
@@ -387,6 +477,94 @@ struct AddAccountForm: View {
         out.dateStyle = .long
         out.timeStyle = .none
         return out.string(from: d)
+    }
+}
+
+/// "On the server" (`dossiers.md`, "A la création du compte IMAP dans
+/// niceMailer"): what the account will change there, in a sentence; for a
+/// new account, the choice to change nothing for now. The folder of each
+/// role is below the import screen (`FolderRolesSection`): the summary and
+/// the import choices fit on the screen together.
+struct ServerPlanSection: View {
+    @Binding var plan: ServerPlan
+    /// Offered when adding an account; organizing one has made that choice.
+    let lookOnlyOffered: Bool
+
+    var body: some View {
+        Section {
+            if lookOnlyOffered {
+                Toggle(L("Only look for now: change nothing on the server"), isOn: $plan.lookOnly)
+                    .uiTarget("prefs-look-only")
+            }
+            if plan.lookOnly {
+                Text(L("NiceMailer shows your mail and changes nothing on the server: no folder is created, no mail is moved, marked read or sent. New mail is screened on paper only. Organize the account from its page when you are ready."))
+                    .font(.callout).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                let created = plan.created
+                Text(created.isEmpty
+                     ? L("NiceMailer sorts your mail into the folders below. They all exist already: none is created.")
+                     : L("NiceMailer sorts your mail into the folders below. %@ will be created on the server: %@.", created.count.formatted(), created.joined(separator: ", ")))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .uiTarget("prefs-plan-summary")
+            }
+        } header: {
+            Text(L("On the server"))
+        }
+    }
+}
+
+/// The folder of each workflow role, found on the server or to create,
+/// each one changeable.
+struct FolderRolesSection: View {
+    @Binding var plan: ServerPlan
+
+    var body: some View {
+        Section {
+            // Swift note: `$plan.roles` is a binding to the array; `ForEach`
+            // over it gives a binding to each element, so that the picker
+            // writes the folder into the plan.
+            ForEach($plan.roles) { $choice in
+                Picker(Role.name(choice.role), selection: $choice.path) {
+                    ForEach(plan.options(choice), id: \.self) { path in
+                        Text(plan.isNew(path) ? L("New folder “%@”", path) : path).tag(path)
+                    }
+                }
+                .uiTarget("prefs-role-\(choice.role)")
+            }
+        } header: {
+            Text(L("Folders"))
+        } footer: {
+            Text(L("A folder chosen here keeps its mail; a new folder is created empty."))
+                .font(.caption).foregroundStyle(.secondary)
+        }
+    }
+}
+
+/// The import screen (`import-initial.md`, section 3), with the exact
+/// counts of the core for the default dates.
+struct ImportSection: View {
+    @Binding var choices: ImportChoices
+    let report: AccountTestReport
+
+    var body: some View {
+        let t = report
+        Section {
+            Text(L("Your Inbox holds %@ mails, %@ of them unread.", t.inboxMessages.formatted(), t.inboxUnseen.formatted()))
+            Toggle(L("Archive the read mails received before %@", AddAccountForm.day(t.readBefore)), isOn: $choices.archiveRead)
+                .uiTarget("prefs-archive-read")
+            Toggle(L("Archive the unread mails received before %@", AddAccountForm.day(t.unreadBefore)), isOn: $choices.archiveUnread)
+                .uiTarget("prefs-archive-unread")
+            let archived = choices.archived(t)
+            Text(L("Flagged mails stay in the Inbox.")).font(.caption).foregroundStyle(.secondary)
+            Text(L("→ %@ mails will be archived, %@ will stay in the Inbox.", archived.formatted(), max(0, t.inboxMessages - archived).formatted()))
+                .bold()
+            Toggle(L("The people you have written to (%@) arrive straight in the Inbox.", t.correspondents.formatted()), isOn: $choices.acceptCorrespondents)
+                .uiTarget("prefs-correspondents")
+            Text(L("Other senders go through the Quarantine with their next mail.")).font(.caption).foregroundStyle(.secondary)
+        } header: {
+            Text(L("Mail already in the mailbox"))
+        }
     }
 }
 

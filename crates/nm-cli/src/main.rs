@@ -378,6 +378,26 @@ enum AccountAction {
         #[arg(long)]
         yes: bool,
     },
+    /// Start organizing an account added with --read-only: create the
+    /// folders of the workflow, archive the old mail of a large Inbox,
+    /// accept the people you wrote to, then screen new mail for real.
+    /// Mail that arrived meanwhile is not screened.
+    Activate {
+        key: String,
+        /// The folder of a role, e.g. `--role sent="Sent Items"`; repeat it.
+        /// Without: the proposal, else a new folder.
+        #[arg(long = "role", value_name = "ROLE=FOLDER")]
+        roles: Vec<String>,
+        /// Archive nothing: the Inbox stays as it is.
+        #[arg(long)]
+        no_archive: bool,
+        /// Do not accept the people you wrote to.
+        #[arg(long)]
+        no_correspondents: bool,
+        /// Do not ask for confirmation.
+        #[arg(long)]
+        yes: bool,
+    },
     /// Change the workflow role of folders, e.g. `todo=Todo archive=Archives`.
     Roles {
         key: String,
@@ -527,6 +547,23 @@ fn print_probe(r: &nm_api::ProbeReport) {
         let n = |v: Option<u32>| v.map(|v| v.to_string()).unwrap_or_else(|| "-".into());
         println!("{:<width$}  {:<24}  {:>8}  {:>7}  {}", f.name, role, n(f.messages), n(f.unseen), f.attributes.join(" "));
     }
+}
+
+/// The folder each workflow role will get, as `add_account` and
+/// `activate_account` will set it: the plan of `test_account`, with the
+/// roles given by `--role` in its place. A folder the server lacks is said
+/// to be created (`dossiers.md`, "A la création du compte IMAP dans
+/// niceMailer").
+fn plan_lines(r: &nm_api::TestAccountReport, chosen: &serde_json::Map<String, Value>) -> Vec<String> {
+    let mut lines = vec!["Folders of the workflow:".to_string()];
+    let width = r.roles.iter().map(|p| p.role.as_str().len()).max().unwrap_or(0);
+    for p in &r.roles {
+        let path = chosen.get(p.role.as_str()).and_then(Value::as_str).unwrap_or(&p.path);
+        let exists = r.probe.folders.iter().any(|f| f.name == path);
+        let state = if exists { "" } else { "  (created)" };
+        lines.push(format!("  {:<width$}  {path}{state}", p.role.as_str()));
+    }
+    lines
 }
 
 /// `nicemailer mailbox …` (`docs/migrations.md`, "Choosing a mailbox").
@@ -755,6 +792,12 @@ fn main() -> anyhow::Result<()> {
                 serde_json::from_value(client.call(method::TEST_ACCOUNT, json!({ "email": email, "imap": imap, "password": password }))?)?;
             print_probe(&r.probe);
             println!();
+            if !read_only {
+                for line in plan_lines(&r, &roles) {
+                    println!("{line}");
+                }
+                println!();
+            }
             println!("Inbox: {} mails, {} unread.", r.inbox_messages, r.inbox_unseen);
             let (read_before, unread_before) = if no_archive || read_only {
                 (None, None)
@@ -865,6 +908,51 @@ fn main() -> anyhow::Result<()> {
                 println!("Save the password of its SMTP server with: nicemailer account password {key} --smtp");
             }
             println!("Follow the import with: nicemailer sync status {key}");
+            Ok(())
+        }
+        Command::Account { action: AccountAction::Activate { key, roles, no_archive, no_correspondents, yes } } => {
+            let mut client = Client::connect(&data_dir)?;
+            let roles = parse_roles(&roles)?;
+            eprintln!("Connecting to the server of {key}…");
+            let r: nm_api::TestAccountReport = serde_json::from_value(client.call(method::PREPARE_ACTIVATION, json!({ "account": key }))?)?;
+            for line in plan_lines(&r, &roles) {
+                println!("{line}");
+            }
+            println!();
+            println!("Inbox: {} mails, {} unread.", r.inbox_messages, r.inbox_unseen);
+            // The defaults of the import screen only: their count is the
+            // exact one `prepare_activation` made.
+            let archive = r.offer_archive && !no_archive;
+            if archive {
+                println!(
+                    "To archive on the server: {} read mails before {}, {} unread mails before {} (flagged mails stay).",
+                    r.archive_read, r.read_before, r.archive_unread, r.unread_before
+                );
+                println!("{} mails will stay in the Inbox.", r.inbox_messages.saturating_sub(r.archive_read + r.archive_unread));
+            } else {
+                println!("Nothing archived: the Inbox stays as it is.");
+            }
+            if no_correspondents {
+                println!("The people you wrote to ({}) are not accepted: their next mail goes to Quarantine.", r.correspondents);
+            } else {
+                println!("The people you wrote to ({}) will go straight to the Inbox.", r.correspondents);
+            }
+            println!("The mail there now is not screened; the other senders go through the Quarantine with their next mail.");
+            if !yes && !confirm("Start organizing this account? [y/N] ")? {
+                bail!("nothing changed");
+            }
+            let res: nm_api::ActivateAccountResult = serde_json::from_value(client.call(
+                method::ACTIVATE_ACCOUNT,
+                json!({ "account": key, "roles": roles, "uidnext": r.inbox_uidnext,
+                        "archive_read_before": archive.then_some(&r.read_before),
+                        "archive_unread_before": archive.then_some(&r.unread_before),
+                        "correspondents": !no_correspondents }),
+            )?)?;
+            if !res.created.is_empty() {
+                println!("Folders created on the server: {}", res.created.join(", "));
+            }
+            println!("Account {key} is no longer read-only; {} correspondents accepted.", res.correspondents);
+            println!("Follow the archiving with: nicemailer sync status {key}");
             Ok(())
         }
         Command::Account { action: AccountAction::Roles { key, roles, create_missing } } => {

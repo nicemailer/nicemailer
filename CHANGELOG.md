@@ -13,6 +13,8 @@ How to write it:
 
 ### Added
 
+- Before an account is added, the Preferences show what it will change on the server: the folders NiceMailer will create, each role's folder changeable to one the server already has.
+- An account can be added "only to look": NiceMailer shows its mail and changes nothing on the server. "Organize…" on its page (or `nicemailer account activate`) later creates the folders, archives the old mail and starts screening, without downloading the mail again.
 - The open mail shows its tags and the groups of its sender after the subject.
 - `t` and `g` offer to remove a tag or a group, for one mail or a selection: each action has its own row, and with several mails each row says how many of them have it.
 - Tag… in the attribute selector (`f`): the list narrowed to the mails with one of the chosen tags, or without them.

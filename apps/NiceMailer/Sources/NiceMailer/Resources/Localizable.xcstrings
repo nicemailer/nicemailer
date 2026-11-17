@@ -6206,6 +6206,206 @@
           }
         }
       }
+    },
+    "%@ added: NiceMailer shows its mail and changes nothing on the server. Organize it from its page when you are ready.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ ajouté : NiceMailer affiche ses mails et ne change rien sur le serveur. Organisez-le depuis sa page quand vous le souhaitez."
+          }
+        }
+      }
+    },
+    "%@ is organized: %@ old mails are being archived on the server.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ est organisé : %@ mails anciens sont en cours d’archivage sur le serveur."
+          }
+        }
+      }
+    },
+    "%@ is organized: new mail is screened from now on.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ est organisé : les nouveaux mails sont triés dès maintenant."
+          }
+        }
+      }
+    },
+    "A folder chosen here keeps its mail; a new folder is created empty.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un dossier choisi ici garde ses mails ; un nouveau dossier est créé vide."
+          }
+        }
+      }
+    },
+    "Cancel": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Annuler"
+          }
+        }
+      }
+    },
+    "Connecting to the server of %@…": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connexion au serveur de %@…"
+          }
+        }
+      }
+    },
+    "Folders": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dossiers"
+          }
+        }
+      }
+    },
+    "New folder “%@”": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nouveau dossier « %@ »"
+          }
+        }
+      }
+    },
+    "NiceMailer shows the mail of this account and changes nothing on its server: no folder is created, no mail is moved, marked read or sent. New mail is screened on paper only.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "NiceMailer affiche les mails de ce compte et ne change rien sur son serveur : aucun dossier n’est créé, aucun mail n’est déplacé, marqué lu ou envoyé. Les nouveaux mails ne sont triés que sur le papier."
+          }
+        }
+      }
+    },
+    "NiceMailer shows your mail and changes nothing on the server: no folder is created, no mail is moved, marked read or sent. New mail is screened on paper only. Organize the account from its page when you are ready.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "NiceMailer affiche vos mails et ne change rien sur le serveur : aucun dossier n’est créé, aucun mail n’est déplacé, marqué lu ou envoyé. Les nouveaux mails ne sont triés que sur le papier. Organisez le compte depuis sa page quand vous le souhaitez."
+          }
+        }
+      }
+    },
+    "NiceMailer sorts your mail into the folders below. %@ will be created on the server: %@.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "NiceMailer range vos mails dans les dossiers ci-dessous. %@ seront créés sur le serveur : %@."
+          }
+        }
+      }
+    },
+    "NiceMailer sorts your mail into the folders below. They all exist already: none is created.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "NiceMailer range vos mails dans les dossiers ci-dessous. Ils existent tous déjà : aucun n’est créé."
+          }
+        }
+      }
+    },
+    "On the server": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sur le serveur"
+          }
+        }
+      }
+    },
+    "Only look for now: change nothing on the server": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Seulement regarder pour l’instant : ne rien changer sur le serveur"
+          }
+        }
+      }
+    },
+    "Only looked at": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Seulement regardé"
+          }
+        }
+      }
+    },
+    "Organize": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Organiser"
+          }
+        }
+      }
+    },
+    "Organize…": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Organiser…"
+          }
+        }
+      }
+    },
+    "Organizing %@…": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Organisation de %@…"
+          }
+        }
+      }
+    },
+    "Organizing it creates the folders NiceMailer needs, can archive old mail, and screens new mail for real. The mail there now is not screened, and is not downloaded again.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L’organiser crée les dossiers dont NiceMailer a besoin, peut archiver les anciens mails, et trie vraiment les nouveaux. Les mails déjà là ne sont pas triés, ni téléchargés à nouveau."
+          }
+        }
+      }
+    },
+    "“%@” is chosen for several roles (%@): choose one folder per role.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "« %@ » est choisi pour plusieurs rôles (%@) : choisissez un dossier par rôle."
+          }
+        }
+      }
     }
   },
   "version": "1.0"

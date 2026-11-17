@@ -298,6 +298,16 @@ impl Store {
         Ok(())
     }
 
+    /// Sets the boundary of the screening again, whatever it was: for an
+    /// account made writable (`activate_account`), the mails that arrived
+    /// while it was only looked at are not screened either, as those of a
+    /// creation (`import-initial.md`, section 5). [`Store::set_screening_start`]
+    /// sets it only once.
+    pub fn reset_screening_start(&mut self, folder_id: i64, uid: u32) -> Result<()> {
+        self.conn.execute("UPDATE folder SET uid_screening_start = ?2 WHERE id = ?1", params![folder_id, uid])?;
+        Ok(())
+    }
+
     /// The highest UIDs of a folder, at most `n`.
     pub fn top_uids(&self, folder_id: i64, n: u32) -> Result<Vec<u32>> {
         let mut stmt = self.conn.prepare_cached("SELECT uid FROM message WHERE folder_id = ?1 AND uid IS NOT NULL ORDER BY uid DESC LIMIT ?2")?;

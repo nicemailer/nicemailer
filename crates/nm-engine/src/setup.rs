@@ -7,9 +7,10 @@
 //! `setup.rs`). On the server, only [`create_folders`] writes; everything
 //! else opens folders read-only (`EXAMINE`).
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
-use nm_api::{ArchiveCount, ImapParams, TestAccountReport};
+use nm_api::{ArchiveCount, ImapParams, RolePlan, TestAccountReport};
+use nm_core::FolderRole;
 use nm_proto::imap::{FetchItems, ImapError, MailboxName, SearchKey, Security, ServerSpec, Session, Timeouts, UidSet, Uids};
 use nm_store::ingest::parse_headers;
 
@@ -70,7 +71,9 @@ pub async fn test_account(
     let offer = messages > import.threshold_total || unseen > import.threshold_unseen;
     let count = if offer { count_archive(&mut s, uidnext, Some(&read_before), Some(&unread_before)).await? } else { ArchiveCount { read: 0, unread: 0 } };
     s.logout().await;
+    let roles = role_plan(&report);
     Ok(TestAccountReport {
+        roles,
         probe: report,
         inbox_messages: messages,
         inbox_unseen: unseen,
@@ -82,6 +85,51 @@ pub async fn test_account(
         archive_read: count.read,
         archive_unread: count.unread,
     })
+}
+
+/// The folder of each workflow role (`dossiers.md`, "A la création du
+/// compte IMAP dans niceMailer"): the user's choice, else the folder
+/// proposed for it (special-use, then names), else a new folder under the
+/// role's English name, in the personal namespace (`prefix`, `INBOX.` on
+/// some servers). The Inbox is always `INBOX`.
+///
+/// `proposed`: each folder of the server, with the role proposed for it
+/// (`folders::propose_roles`). The same rule for `test_account`, which
+/// shows the plan, and `add_account`, which applies it: what the screen
+/// says is what is done.
+pub fn plan_roles(chosen: &BTreeMap<FolderRole, String>, proposed: &[(&str, Option<&str>)], prefix: &str) -> BTreeMap<FolderRole, String> {
+    let mut out = BTreeMap::new();
+    for role in FolderRole::ALL {
+        let path = if role == FolderRole::Inbox {
+            "INBOX".to_string()
+        } else if let Some(p) = chosen.get(&role) {
+            p.clone()
+        } else if let Some((name, _)) = proposed.iter().find(|(_, r)| *r == Some(role.as_str())) {
+            name.to_string()
+        } else {
+            format!("{prefix}{}", role.display_name())
+        };
+        out.insert(role, path);
+    }
+    out
+}
+
+/// The plan of `test_account`: [`plan_roles`] without choice, each folder
+/// marked with whether the server has it.
+fn role_plan(report: &nm_api::ProbeReport) -> Vec<RolePlan> {
+    let proposed: Vec<(&str, Option<&str>)> = report.folders.iter().map(|f| (f.name.as_str(), f.proposed_role.as_deref())).collect();
+    let prefix = report.namespace.as_ref().map(|n| n.prefix.as_str()).unwrap_or("");
+    // Listed in the order of `FolderRole::ALL` (the sidebar's), each role
+    // read back from the map by `plan[&role]`.
+    let plan = plan_roles(&BTreeMap::new(), &proposed, prefix);
+    FolderRole::ALL
+        .into_iter()
+        .map(|role| {
+            let path = plan[&role].clone();
+            let exists = report.folders.iter().any(|f| f.name == path);
+            RolePlan { role, path, exists }
+        })
+        .collect()
 }
 
 /// The recipients (To, Cc, Bcc) of every mail of Sent, lowercase, without

@@ -11,14 +11,17 @@ import Foundation
 ///
 /// | Address | What happens |
 /// | --- | --- |
-/// | `…@known.test` | servers found by the domain; the SMTP server refuses the IMAP password and takes `smtp-pw`; a big Inbox: the import screen |
-/// | `…@hosted.test` | the domain unknown, its MX `mx.hosted.test` unknown too: the IMAP server is asked; with it, SMTP guesses that take the IMAP password; a small Inbox |
+/// | `…@known.test` | servers found by the domain; the SMTP server refuses the IMAP password and takes `smtp-pw`; a big Inbox: the import screen; the server has Sent, Drafts, Trash, Junk and Archive |
+/// | `…@hosted.test` | the domain unknown, its MX `mx.hosted.test` unknown too: the IMAP server is asked; with it, SMTP guesses that take the IMAP password; a small Inbox; the server has Sent and Drafts only |
 /// | `…@other.test` | the SMTP server of another organization: its password is asked, any one works |
 /// | `…@nosmtp.test` | no SMTP server answers: the SMTP server is asked, or "without sending" |
+/// | `…@look.test` | servers found by the domain, the SMTP server takes the IMAP password; a small Inbox: nothing asked but "On the server" |
 ///
 /// The password `wrong` is refused by every IMAP server. An account
 /// "added" is listed after the real ones (ids from 9001), and left out of
-/// `set_account_order` before it reaches the core.
+/// `set_account_order` before it reaches the core. Added `read_only`, it
+/// is organized by `prepare_activation` and `activate_account`, answered
+/// here too, with the report of its domain.
 final class UIScriptSetupCore: CoreCalling, @unchecked Sendable {
     private let real: any CoreCalling
     private let lock = NSLock()
@@ -40,6 +43,8 @@ final class UIScriptSetupCore: CoreCalling, @unchecked Sendable {
         case "test_account": answer = try Self.testAccount(params)
         case "test_smtp": answer = Self.testSMTP(params)
         case "add_account": answer = add(params)
+        case "prepare_activation": answer = try prepare(params)
+        case "activate_account": answer = try activate(params)
         case "list_accounts":
             let r: AccountInfoListJSON = try await real.call(method, params)
             // Swift note: `withLock` holds the lock for the closure only,
@@ -64,6 +69,11 @@ final class UIScriptSetupCore: CoreCalling, @unchecked Sendable {
             let v = p[key]!
             if key.contains("password") {
                 parts.append("\(key)=\((v as? String)?.isEmpty == false ? "set" : "empty")")
+            } else if key == "roles", let roles = v as? [String: String] {
+                // Only the folders that are not the role's English name:
+                // what the user changed, short enough to read.
+                let changed = roles.keys.sorted().filter { roles[$0] != Role.name($0) }.map { "\($0):\(roles[$0]!)" }
+                parts.append("roles=\(roles.count)\(changed.isEmpty ? "" : "(" + changed.joined(separator: ",") + ")")")
             } else if let server = v as? [String: Any] {
                 parts.append("\(key)=\(server["host"] ?? "?"):\(server["port"] ?? "?")")
             } else if key == "candidates" {
@@ -94,7 +104,7 @@ final class UIScriptSetupCore: CoreCalling, @unchecked Sendable {
         ]
         let provider: [String: Any] = ["id": d, "name": "Provider of \(d)", "source": "local", "matched": d, "mx_host": NSNull(), "imap_unsupported": false]
         switch d {
-        case "known.test", "other.test", "nosmtp.test":
+        case "known.test", "other.test", "nosmtp.test", "look.test":
             r["by_domain"] = provider
             r["imap"] = ["server": server("imap.\(d)", 993), "origin": "provider"]
             let smtpHost = d == "other.test" ? "smtp.elsewhere.example" : "smtp.\(d)"
@@ -111,15 +121,30 @@ final class UIScriptSetupCore: CoreCalling, @unchecked Sendable {
         return r
     }
 
-    private static func testAccount(_ p: [String: Any]) throws -> [String: Any] {
+    fileprivate static func testAccount(_ p: [String: Any]) throws -> [String: Any] {
         if p["password"] as? String == "wrong" {
             let host = (p["imap"] as? [String: Any])?["host"] as? String ?? "?"
             throw CoreClient.RPCError(code: 1009, message: "the server refused the login: [AUTHENTICATIONFAILED] Invalid credentials (\(host))", data: ["reason": "auth"])
         }
         let big = domain(p) == "known.test"
+        // The folders of the server, with the role the core would propose.
+        let folders: [(String, String?)] = big
+            ? [("INBOX", "inbox"), ("Archive", "archive"), ("Drafts", "drafts"), ("Junk", "junk"), ("Sent", "sent"), ("Trash", "deleted")]
+            : [("INBOX", "inbox"), ("Drafts", "drafts"), ("Sent", "sent")]
+        let english = ["inbox": "INBOX", "todo": "Todo", "waiting": "Waiting", "archive": "Archive", "sent": "Sent", "drafts": "Drafts",
+                       "newsletter": "Newsletter", "paperwork": "Paperwork", "quarantine": "Quarantine", "deleted": "Deleted", "junk": "Junk", "banned": "Banned"]
+        let order = ["inbox", "todo", "waiting", "archive", "sent", "drafts", "newsletter", "paperwork", "quarantine", "deleted", "junk", "banned"]
+        let roles: [[String: Any]] = order.map { role in
+            let found = folders.first { $0.1 == role }?.0
+            return ["role": role, "path": found ?? english[role]!, "exists": found != nil]
+        }
         return [
             "probe": ["server": "x", "security": "tls", "capabilities_before_login": [String](), "capabilities": [String](), "enabled": [String](),
-                      "namespace": NSNull(), "folders": [Any](), "connect_ms": 1, "login_ms": 1, "list_ms": 1],
+                      "namespace": NSNull(), "connect_ms": 1, "login_ms": 1, "list_ms": 1,
+                      "folders": folders.map { ["name": $0.0, "delimiter": "/", "attributes": [String](), "selectable": true,
+                                                "proposed_role": $0.1 ?? NSNull(), "role_from": $0.1 == nil ? NSNull() : "name" as Any,
+                                                "messages": NSNull(), "unseen": NSNull()] as [String: Any] }],
+            "roles": roles,
             "inbox_messages": big ? 18052 : 40, "inbox_unseen": big ? 3921 : 2, "inbox_uidnext": 20000,
             "correspondents": big ? 284 : 3, "offer_archive": big,
             "read_before": "2026-11-17", "unread_before": "2026-10-18",
@@ -156,16 +181,58 @@ final class UIScriptSetupCore: CoreCalling, @unchecked Sendable {
         return ["attempts": attempts, "chosen": chosen, "refused": refused]
     }
 
+    fileprivate func lockedIndex(_ key: String) -> Int? {
+        lock.withLock { added.firstIndex { $0["key"] as? String == key && $0["read_only"] as? Bool == true } }
+    }
+
+    fileprivate func email(at i: Int) -> String {
+        lock.withLock { added[i]["email"] as? String ?? "" }
+    }
+
+    fileprivate func setReadOnly(at i: Int, _ on: Bool) {
+        lock.withLock { added[i]["read_only"] = on }
+    }
+
     private func add(_ p: [String: Any]) -> [String: Any] {
         let id: Int = lock.withLock {
             let id = 9001 + added.count
             added.append([
                 "id": id, "key": p["key"] ?? "?", "kind": "imap", "email": p["email"] ?? NSNull(),
                 "display_name": p["display_name"] ?? NSNull(), "enabled": true, "error": NSNull(), "position": 1000 + id,
+                "read_only": p["read_only"] as? Bool ?? false,
             ])
             return id
         }
         return ["account_id": id, "created": [String](), "roles": [String: String](), "correspondents": 3,
+                "archive_queued": p["archive_read_before"] != nil || p["archive_unread_before"] != nil]
+    }
+}
+
+extension UIScriptSetupCore {
+    /// The account added here under a key, read-only, or an error as the
+    /// core's.
+    fileprivate func lookedAt(_ p: [String: Any]) throws -> Int {
+        let key = p["account"] as? String ?? ""
+        let i: Int? = lockedIndex(key)
+        guard let i else { throw CoreClient.RPCError(code: -32602, message: "the account \(key) is not read-only: it is set up already") }
+        return i
+    }
+
+    fileprivate func prepare(_ p: [String: Any]) throws -> [String: Any] {
+        let i = try lookedAt(p)
+        return try Self.testAccount(["email": email(at: i), "password": "secret"])
+    }
+
+    fileprivate func activate(_ p: [String: Any]) throws -> [String: Any] {
+        let i = try lookedAt(p)
+        let report = try Self.testAccount(["email": email(at: i), "password": "secret"])
+        let created = (report["roles"] as? [[String: Any]] ?? []).compactMap { r -> String? in
+            let path = (p["roles"] as? [String: String])?[r["role"] as? String ?? ""] ?? r["path"] as? String
+            let existing = ((report["probe"] as? [String: Any])?["folders"] as? [[String: Any]] ?? []).compactMap { $0["name"] as? String }
+            return path.flatMap { existing.contains($0) ? nil : $0 }
+        }
+        setReadOnly(at: i, false)
+        return ["created": created, "roles": p["roles"] ?? [String: String](), "correspondents": 0,
                 "archive_queued": p["archive_read_before"] != nil || p["archive_unread_before"] != nil]
     }
 }
@@ -189,7 +256,7 @@ private struct AccountInfoListJSON: Decodable {
         init(from decoder: Decoder) throws {
             let a = try AccountInfo(from: decoder)
             json = ["id": a.id, "key": a.key, "kind": a.kind, "email": a.email ?? NSNull(), "display_name": a.displayName ?? NSNull(),
-                    "enabled": a.enabled, "error": a.error ?? NSNull(), "position": a.position]
+                    "enabled": a.enabled, "error": a.error ?? NSNull(), "position": a.position, "read_only": a.isReadOnly]
         }
     }
 }

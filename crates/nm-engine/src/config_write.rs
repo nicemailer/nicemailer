@@ -162,6 +162,22 @@ pub fn remove_account(text: &str, key: &str) -> Result<String, String> {
     finish(doc)
 }
 
+/// The file with the account `key` writable again: its `read_only` key
+/// removed (the default is `false`), the rest of its table as it was. The
+/// key is removed rather than set to `false`, so that the file reads as if
+/// the account had been created writable; a comment on that line goes with
+/// it.
+pub fn clear_read_only(text: &str, key: &str) -> Result<String, String> {
+    let mut doc = doc(text)?;
+    let accounts = accounts(&mut doc)?;
+    let account = accounts
+        .get_mut(key)
+        .and_then(Item::as_table_like_mut)
+        .ok_or_else(|| format!("{FILE} has no account {key}"))?;
+    account.remove("read_only");
+    finish(doc)
+}
+
 /// The new text, refused if the core would refuse it.
 fn finish(doc: DocumentMut) -> Result<String, String> {
     let text = doc.to_string();
@@ -346,6 +362,22 @@ port = 993\nsecurity = \"tls\"\n";
         assert!(!out.contains("accounts.pro"));
         assert!(out.contains("[accounts.perso.imap]") && out.contains("# My accounts, in Git."));
         assert_eq!(config::parse_accounts(&out).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn clearing_read_only_takes_only_that_key() {
+        let mut a = new("bob");
+        a.read_only = true;
+        let text = add_account(TEXT, &a).unwrap();
+        assert!(config::parse_accounts(&text).unwrap()["bob"].read_only);
+        let out = clear_read_only(&text, "bob").unwrap();
+        assert!(!out.contains("read_only"), "{out}");
+        assert!(!config::parse_accounts(&out).unwrap()["bob"].read_only);
+        // Exactly the file of an account created writable.
+        assert_eq!(out, add_account(TEXT, &new("bob")).unwrap());
+        // Already writable: the file unchanged.
+        assert_eq!(clear_read_only(TEXT, "perso").unwrap(), TEXT);
+        assert!(clear_read_only(TEXT, "nobody").is_err());
     }
 
     #[test]

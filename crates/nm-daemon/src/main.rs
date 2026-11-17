@@ -1644,6 +1644,14 @@ async fn call(core: &Arc<Core>, source: Source, req: Request) -> Result<Value, R
             let p: nm_api::SetFolderRolesParams = params(req.params)?;
             to_value(setup::set_folder_roles(core, p, source).await?)
         }
+        method::PREPARE_ACTIVATION => {
+            let p: nm_api::PrepareActivationParams = params(req.params)?;
+            to_value(setup::prepare_activation(core, p, source).await?)
+        }
+        method::ACTIVATE_ACCOUNT => {
+            let p: nm_api::ActivateAccountParams = params(req.params)?;
+            to_value(setup::activate_account(core, p, source).await?)
+        }
         method::RENAME_ACCOUNT => {
             let p: nm_api::RenameAccountParams = params(req.params)?;
             setup::rename_account(core, p, source).await?;

@@ -58,8 +58,21 @@ struct AccountSetupTests {
          "imap": imap, "smtp": smtp]
     }
 
+    /// The folders of the server in `testReport`: Sent, Drafts and Archive;
+    /// `Projets` has no role.
+    nonisolated static let serverFolders = ["INBOX", "Archive", "Drafts", "Projets", "Sent"]
+
+    /// The plan of `testReport`: the folders found, the others to create.
+    nonisolated static func plan() -> [[String: Any]] {
+        let found = ["inbox": "INBOX", "archive": "Archive", "drafts": "Drafts", "sent": "Sent"]
+        return ["inbox", "todo", "waiting", "archive", "sent", "drafts", "newsletter", "paperwork", "quarantine", "deleted", "junk", "banned"].map { r in
+            ["role": r, "path": found[r] ?? Role.name(r), "exists": found[r] != nil]
+        }
+    }
+
     nonisolated static func testReport(offerArchive: Bool = false) -> [String: Any] {
-        ["probe": [:] as [String: Any], "inbox_messages": offerArchive ? 18052 : 40, "inbox_unseen": offerArchive ? 3921 : 2,
+        ["probe": ["folders": serverFolders.map { ["name": $0, "selectable": true] }] as [String: Any], "roles": plan(),
+         "inbox_messages": offerArchive ? 18052 : 40, "inbox_unseen": offerArchive ? 3921 : 2,
          "inbox_uidnext": 777, "correspondents": 284, "offer_archive": offerArchive,
          "read_before": "2026-11-17", "unread_before": "2026-10-18",
          "archive_read": offerArchive ? 14100 : 0, "archive_unread": offerArchive ? 3860 : 0]
@@ -87,6 +100,14 @@ struct AccountSetupTests {
     }
 
     func methods() -> [String] { core.calls.map(\.method) }
+
+    /// The last step: "On the server" is shown, nothing added yet; then
+    /// confirmed as it is.
+    func confirmPlan() async {
+        #expect(setup.plan != nil, "the plan is shown before anything is added")
+        #expect(core.calls("add_account").isEmpty)
+        await setup.submit()
+    }
 
     // MARK: The name of "From"
 
@@ -120,6 +141,11 @@ struct AccountSetupTests {
         setup.onAdded = { addedCalled = true }
         fill()
         await setup.submit()
+        #expect(methods() == ["discover_account", "test_account", "test_smtp"])
+        // Only "On the server" is shown, without a field to fill.
+        #expect(setup.sectionsShown == [.server])
+        #expect(setup.errorField == nil)
+        await confirmPlan()
         #expect(methods() == ["discover_account", "test_account", "test_smtp", "add_account"])
         let add = core.calls("add_account")[0]
         #expect(add["key"] as? String == "toto")
@@ -132,8 +158,13 @@ struct AccountSetupTests {
         #expect(add["uidnext"] as? Int == 777)
         #expect(add["correspondents"] as? Bool == true)
         #expect(add["archive_read_before"] == nil && add["archive_unread_before"] == nil)
+        #expect(add["read_only"] == nil)
+        // The plan as proposed: every role, the folders to create under
+        // their English names.
+        let roles = add["roles"] as? [String: String]
+        #expect(roles?.count == 11 && roles?["sent"] == "Sent" && roles?["quarantine"] == "Quarantine" && roles?["inbox"] == nil)
         // Nothing else was asked; the form is empty again, the name kept.
-        #expect(setup.imapServer == nil && setup.smtpServer == nil && setup.smtpPassword == nil && !setup.importShown)
+        #expect(setup.imapServer == nil && setup.smtpServer == nil && setup.smtpPassword == nil && setup.plan == nil)
         #expect(setup.added?.contains("pierre@toto.fr") == true)
         #expect(setup.email.isEmpty && setup.password.isEmpty && setup.displayName == "Pierre Dupont")
         #expect(addedCalled)
@@ -142,6 +173,7 @@ struct AccountSetupTests {
     @Test func anEmptyNameIsNotSent() async {
         fill(name: "  ")
         await setup.submit()
+        await confirmPlan()
         #expect(core.calls("add_account").first?["display_name"] == nil)
     }
 
@@ -173,6 +205,7 @@ struct AccountSetupTests {
         // made for it are tried.
         setup.imapServer?.host = "mail.hosting.example"
         await setup.submit()
+        await confirmPlan()
         #expect(methods() == ["discover_account", "discover_account", "test_account", "test_smtp", "add_account"])
         #expect((core.calls("discover_account")[1]["imap"] as? [String: Any])?["host"] as? String == "mail.hosting.example")
         #expect((core.calls("add_account")[0]["imap"] as? [String: Any])?["host"] as? String == "mail.hosting.example")
@@ -211,6 +244,7 @@ struct AccountSetupTests {
         script.test = Self.testReport()
         setup.password = "right"
         await setup.submit()
+        await confirmPlan()
         // The servers are not looked for again.
         #expect(methods() == ["discover_account", "test_account", "test_account", "test_smtp", "add_account"])
     }
@@ -263,6 +297,7 @@ struct AccountSetupTests {
 
         setup.smtpPassword = "app-pw"
         await setup.submit()
+        await confirmPlan()
         let last = core.calls("test_smtp").last!
         #expect(last["smtp_password"] as? String == "app-pw")
         #expect((last["candidates"] as? [[String: Any]])?.count == 1)
@@ -282,6 +317,7 @@ struct AccountSetupTests {
         #expect(setup.smtpPasswordReason == AccountSetup.smtpPasswordMessage(.otherProvider, server: "smtp.toto.fr", imap: "imap.toto.fr"))
         setup.smtpPassword = "relay-pw"
         await setup.submit()
+        await confirmPlan()
         #expect(core.calls("add_account").first?["smtp_password"] as? String == "relay-pw")
     }
 
@@ -294,6 +330,7 @@ struct AccountSetupTests {
         #expect(setup.smtpPassword == "")
         setup.sendLater = true
         await setup.submit()
+        await confirmPlan()
         #expect(core.calls("test_smtp").count == 1)
         let add = core.calls("add_account")[0]
         #expect(add["smtp"] == nil && add["smtp_password"] == nil)
@@ -309,6 +346,7 @@ struct AccountSetupTests {
 
         setup.sendLater = true
         await setup.submit()
+        await confirmPlan()
         let add = core.calls("add_account")[0]
         #expect(add["smtp"] == nil && add["smtp_password"] == nil)
     }
@@ -324,6 +362,7 @@ struct AccountSetupTests {
         #expect(setup.smtpReason?.contains("cannot connect") == true)
         setup.smtpServer?.host = "smtp.other.fr"
         await setup.submit()
+        await confirmPlan()
         let tried = core.calls("test_smtp").last!["candidates"] as? [[String: Any]]
         #expect(tried?.first?["origin"] as? String == "given")
         #expect((core.calls("add_account")[0]["smtp"] as? [String: Any])?["host"] as? String == "smtp.other.fr")
@@ -348,13 +387,14 @@ struct AccountSetupTests {
         fill()
         await setup.submit()
         #expect(setup.importShown)
+        #expect(setup.sectionsShown == [.server, .importScreen])
         #expect(core.calls("add_account").isEmpty)
-        #expect(setup.importChoices.archived(setup.test!) == 17960)
+        #expect(setup.plan?.importChoices.archived(setup.test!) == 17960)
 
         // The unread kept, the correspondents not accepted.
-        setup.importChoices.archiveUnread = false
-        setup.importChoices.acceptCorrespondents = false
-        #expect(setup.importChoices.archived(setup.test!) == 14100)
+        setup.plan?.importChoices.archiveUnread = false
+        setup.plan?.importChoices.acceptCorrespondents = false
+        #expect(setup.plan?.importChoices.archived(setup.test!) == 14100)
         await setup.submit()
         let add = core.calls("add_account")[0]
         #expect(add["archive_read_before"] as? String == "2026-11-17")
@@ -363,6 +403,78 @@ struct AccountSetupTests {
         #expect(setup.added?.contains(14100.formatted()) == true)
         // Nothing tried twice.
         #expect(methods() == ["discover_account", "test_account", "test_smtp", "add_account"])
+    }
+
+    // MARK: On the server
+
+    func report(_ offerArchive: Bool = false) throws -> AccountTestReport {
+        try CoreClient.decoder.decode(AccountTestReport.self, from: JSONSerialization.data(withJSONObject: Self.testReport(offerArchive: offerArchive)))
+    }
+
+    @Test func thePlanSaysWhichFoldersAreFoundAndWhichAreCreated() throws {
+        var plan = ServerPlan(try report())
+        #expect(plan.roles.map(\.role) == ["todo", "waiting", "archive", "sent", "drafts", "newsletter", "paperwork", "quarantine", "deleted", "junk", "banned"])
+        #expect(plan.created == ["Todo", "Waiting", "Newsletter", "Paperwork", "Quarantine", "Deleted", "Junk", "Banned"])
+        // A role found offers the folders of the server, the Inbox
+        // excepted; a role to create offers its new folder too.
+        let sent = plan.roles.first { $0.role == "sent" }!
+        #expect(plan.options(sent) == ["Archive", "Drafts", "Projets", "Sent"])
+        let todo = plan.roles.first { $0.role == "todo" }!
+        #expect(plan.options(todo) == ["Archive", "Drafts", "Projets", "Sent", "Todo"])
+        // An existing folder chosen: one fewer created.
+        plan.roles[0].path = "Projets"
+        #expect(plan.created.first == "Waiting")
+        #expect((plan.params(try report())["roles"] as? [String: String])?["todo"] == "Projets")
+        #expect(plan.problem == nil)
+    }
+
+    @Test func aFolderForTwoRolesIsRefusedBeforeAnything() async throws {
+        var plan = ServerPlan(try report())
+        plan.roles[0].path = "Archive"
+        #expect(plan.sharedFolder?.path == "Archive")
+        #expect(plan.sharedFolder?.roles == ["todo", "archive"])
+        #expect(plan.problem == L("“%@” is chosen for several roles (%@): choose one folder per role.", "Archive", "Todo, Archive"))
+        // Looking only, the folders do not matter.
+        plan.lookOnly = true
+        #expect(plan.problem == nil)
+
+        fill()
+        await setup.submit()
+        setup.plan?.roles[0].path = "Archive"
+        await setup.submit()
+        #expect(setup.error?.contains("Archive") == true)
+        #expect(core.calls("add_account").isEmpty)
+    }
+
+    /// Only looking: `read_only`, no folder, no archiving, even for a big
+    /// Inbox; the import screen is not shown.
+    @Test func onlyLookingChangesNothingOnTheServer() async {
+        script.test = Self.testReport(offerArchive: true)
+        fill()
+        await setup.submit()
+        #expect(setup.importShown)
+        setup.plan?.lookOnly = true
+        #expect(!setup.importShown)
+        #expect(setup.plan?.created == [])
+        #expect(setup.sectionsShown == [.server])
+        await setup.submit()
+        let add = core.calls("add_account")[0]
+        #expect(add["read_only"] as? Bool == true)
+        #expect(add["roles"] == nil && add["archive_read_before"] == nil && add["archive_unread_before"] == nil)
+        #expect(add["uidnext"] as? Int == 777)
+        #expect(setup.added == L("%@ added: NiceMailer shows its mail and changes nothing on the server. Organize it from its page when you are ready.", "pierre@toto.fr"))
+    }
+
+    /// A new password is a new test, so a new plan: shown again.
+    @Test func changingThePasswordShowsThePlanAgain() async {
+        fill()
+        await setup.submit()
+        #expect(setup.plan != nil)
+        setup.password = "other"
+        #expect(setup.plan == nil && setup.test == nil)
+        await setup.submit()
+        #expect(setup.plan != nil && core.calls("add_account").isEmpty)
+        #expect(core.calls("test_account").count == 2)
     }
 
     // MARK: Starting again
@@ -390,7 +502,9 @@ struct AccountSetupTests {
         }
         fill()
         await setup.submit()
+        await confirmPlan()
         #expect(setup.error?.contains("already has an account") == true)
+        #expect(setup.plan != nil, "the plan kept, to try again")
         #expect(setup.email == "pierre@toto.fr" && setup.added == nil)
     }
 }
@@ -444,5 +558,75 @@ struct AccountsListTests {
         await list.move(2, by: -1)
         #expect(list.items.map(\.key) == ["perso", "work"])
         #expect(list.error == "no account 9")
+    }
+}
+
+/// Organizing an account only looked at (`AccountActivation`,
+/// `docs/accounts.md`, "Looking first").
+@MainActor
+struct AccountActivationTests {
+    @Test func thePlanIsReadFromTheCoreThenApplied() async {
+        var reloaded = false
+        let core = FakeCore { method, params in
+            switch method {
+            case "prepare_activation": return AccountSetupTests.testReport(offerArchive: true)
+            case "activate_account": return ["created": ["Todo"], "roles": [String: String](), "correspondents": 0, "archive_queued": true]
+            default: return Fixture.answer(method, params)
+            }
+        }
+        let a = AccountActivation(client: core, key: "look", email: "pierre@toto.fr")
+        a.onDone = { reloaded = true }
+        await a.prepare()
+        #expect(core.calls("prepare_activation").first?["account"] as? String == "look")
+        #expect(a.plan?.created.count == 8 && a.importShown)
+        // The plan's choices: a folder changed, the unread mail kept.
+        a.plan?.roles[0].path = "Projets"
+        a.plan?.importChoices.archiveUnread = false
+        await a.activate()
+        let p = core.calls("activate_account")[0]
+        #expect(p["account"] as? String == "look")
+        #expect((p["roles"] as? [String: String])?["todo"] == "Projets")
+        #expect(p["archive_read_before"] as? String == "2026-11-17" && p["archive_unread_before"] == nil)
+        #expect(p["read_only"] == nil && p["uidnext"] as? Int == 777)
+        #expect(a.plan == nil && a.error == nil)
+        #expect(a.done == L("%@ is organized: %@ old mails are being archived on the server.", "pierre@toto.fr", 14100.formatted()))
+        #expect(reloaded)
+    }
+
+    @Test func aRefusalKeepsThePlanAndSaysWhy() async {
+        let core = FakeCore { method, params in
+            switch method {
+            case "prepare_activation": return AccountSetupTests.testReport()
+            case "activate_account": return CoreClient.RPCError(code: 1009, message: "the server refused CREATE")
+            default: return Fixture.answer(method, params)
+            }
+        }
+        let a = AccountActivation(client: core, key: "look", email: "pierre@toto.fr")
+        await a.prepare()
+        #expect(!a.importShown)
+        await a.activate()
+        #expect(a.error == "the server refused CREATE" && a.plan != nil && a.done == nil)
+        // Cancelled: back to the page, nothing kept.
+        a.cancel()
+        #expect(a.plan == nil && a.error == nil)
+    }
+
+    @Test func aServerThatCannotBeReachedIsSaid() async {
+        let core = FakeCore { method, params in
+            method == "prepare_activation" ? CoreClient.RPCError(code: 1009, message: "cannot connect") : Fixture.answer(method, params)
+        }
+        let a = AccountActivation(client: core, key: "look", email: "pierre@toto.fr")
+        await a.prepare()
+        #expect(a.error == "cannot connect" && a.plan == nil)
+    }
+
+    @Test func anAccountOnlyLookedAtSaysSo() throws {
+        let row: [String: Any] = ["id": 1, "key": "look", "kind": "imap", "email": "x@y.fr", "display_name": NSNull(), "enabled": true,
+                                  "error": NSNull(), "position": 0, "read_only": true]
+        let a = try CoreClient.decoder.decode(AccountInfo.self, from: JSONSerialization.data(withJSONObject: row))
+        #expect(a.isReadOnly)
+        var old = row
+        old["read_only"] = nil
+        #expect(try !CoreClient.decoder.decode(AccountInfo.self, from: JSONSerialization.data(withJSONObject: old)).isReadOnly)
     }
 }

@@ -166,6 +166,15 @@ enum UIScript {
         preferencesSetup = setup
     }
 
+    /// The organizing of an account only looked at, once asked for.
+    static private(set) weak var preferencesActivation: AccountActivation?
+
+    /// Called by `AccountsPane` on "Organize…".
+    static func preferencesActivationOpened(_ a: AccountActivation) {
+        guard isActive else { return }
+        preferencesActivation = a
+    }
+
     /// Opens the Preferences as the app menu's "Settings…" would, on the
     /// script's model, with the creation methods answered by
     /// `UIScriptSetupCore`: no mail server, no DNS, nothing written.
@@ -212,6 +221,12 @@ extension View {
                 Color.clear
                     .onAppear { UIScript.record(id, geo.frame(in: .global)) }
                     .onChange(of: geo.frame(in: .global)) { _, f in UIScript.record(id, f) }
+                    // A section of the Preferences that goes away takes
+                    // its targets with it: a frame left behind would be
+                    // found under the field now at its place (`prefs_focus`).
+                    // The main window keeps its frames as before (a list's
+                    // rows leave and come back as it scrolls).
+                    .onDisappear { if id.hasPrefix("prefs-") { UIScript.frames[id] = nil } }
             })
         } else {
             self
@@ -1010,7 +1025,13 @@ private final class Runner {
     /// The Preferences' fields (`UITests/README.md`): empty while closed.
     func preferencesState() -> [String: String] {
         guard let list = UIScript.preferencesList, let s = UIScript.preferencesSetup else { return [:] }
-        let names: [AccountSetup.Section: String] = [.imap: "imap", .smtpPassword: "smtp-password", .smtp: "smtp", .importScreen: "import"]
+        let names: [AccountSetup.Section: String] = [.imap: "imap", .smtpPassword: "smtp-password", .smtp: "smtp", .server: "server", .importScreen: "import"]
+        let act = UIScript.preferencesActivation
+        // A plan as one line: `role=folder` for each role, `+` before a
+        // folder to create.
+        func roles(_ p: ServerPlan?) -> String {
+            (p?.roles ?? []).map { "\($0.role)=\(p!.isNew($0.path) ? "+" : "")\($0.path)" }.joined(separator: ",")
+        }
         let sections = s.sectionsShown.compactMap { names[$0] }
         let selection: String = {
             switch list.selection {
@@ -1042,6 +1063,15 @@ private final class Runner {
             "setup_busy": s.busy ?? "",
             "setup_added": s.added ?? "",
             "setup_calls": (UIScript.setupCore?.calls ?? []).joined(separator: " | "),
+            "setup_look_only": "\(s.plan?.lookOnly == true)",
+            "setup_created": s.plan?.created.joined(separator: ",") ?? "",
+            "setup_roles": roles(s.plan),
+            "activation_plan": "\(act?.plan != nil)",
+            "activation_import": "\(act?.importShown == true)",
+            "activation_created": act?.plan?.created.joined(separator: ",") ?? "",
+            "activation_roles": roles(act?.plan),
+            "activation_error": act?.error ?? "",
+            "activation_done": act?.done ?? "",
         ]
     }
 }
