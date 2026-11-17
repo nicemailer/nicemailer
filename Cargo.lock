@@ -1433,6 +1433,7 @@ name = "nm-ai"
 version = "0.1.0"
 dependencies = [
  "libc",
+ "nm-api",
  "nm-core",
  "serde_json",
  "sha2 0.11.1",

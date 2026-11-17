@@ -174,7 +174,7 @@ impl Store {
         let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let mark = crate::screening::audit_mark(&tx)?;
         if force_sender_kind(&tx, address_id, kind, None, source)?.is_none() {
-            return Err(crate::StoreError::NotFound(format!("adresse {address_id}")));
+            return Err(crate::StoreError::NotFound(format!("address {address_id}")));
         }
         let undo = crate::screening::undo_token(&tx, mark)?;
         tx.commit()?;

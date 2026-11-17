@@ -109,31 +109,38 @@ pub enum Refusal {
 }
 
 impl Refusal {
-    /// The message shown to the user (`AccountError`, `list_accounts`).
+    /// The English sentence (`AccountError`, `list_accounts`, the logs):
+    /// that of its reason.
     pub fn message(&self, key: &str, account: &AccountConfig) -> String {
+        self.why(key, account).message()
+    }
+
+    /// Why, as the contract says it (`nm_api::reason`): a client writes
+    /// the sentence in the user's language from the reason and its values.
+    pub fn why(&self, key: &str, account: &AccountConfig) -> nm_api::Why {
+        use nm_api::reason as r;
+        let smtp = account.smtp.as_ref();
         match self {
-            Refusal::Missing => format!("no password saved for this account: nicemailer account password {key}"),
-            Refusal::OauthUnsupported => "auth = \"oauth2\" is not supported yet".into(),
-            Refusal::ServerChanged { stored } => format!(
-                "the password was saved for {} on {}, the file now says {} on {}: \
-                 save the password again to confirm the new server (nicemailer account password {key})",
-                stored.username, stored.host, account.imap.username, account.imap.host
-            ),
-            Refusal::Unavailable(e) => e.clone(),
-            Refusal::NoSmtp => "this account has no [smtp] server in accounts.toml: it cannot send".into(),
-            Refusal::SmtpServerChanged { stored } => format!(
-                "the SMTP password was saved for {} on {}, the file now says {}: save it again to confirm the new \
-                 server (nicemailer account password {key} --smtp)",
-                stored.username,
-                stored.host,
-                account.smtp.as_ref().map(|s| format!("{} on {}", s.username, s.host)).unwrap_or_default()
-            ),
-            Refusal::SmtpPasswordNeeded => format!(
-                "the SMTP server {} is not of the same provider as the IMAP server {}: NiceMailer does not send it the \
-                 IMAP password. Save its own: nicemailer account password {key} --smtp",
-                account.smtp.as_ref().map(|s| s.host.as_str()).unwrap_or(""),
-                account.imap.host
-            ),
+            Refusal::Missing => r::PASSWORD_MISSING.with("account", key),
+            Refusal::OauthUnsupported => r::OAUTH2_UNSUPPORTED.into(),
+            Refusal::ServerChanged { stored } => r::PASSWORD_SERVER_CHANGED
+                .with("account", key)
+                .with("saved_user", stored.username.as_str())
+                .with("saved_host", stored.host.as_str())
+                .with("user", account.imap.username.as_str())
+                .with("host", account.imap.host.as_str()),
+            Refusal::Unavailable(e) => r::KEYCHAIN.with("system_text", e.as_str()),
+            Refusal::NoSmtp => r::NO_SMTP_SERVER.with("account", key),
+            Refusal::SmtpServerChanged { stored } => r::SMTP_PASSWORD_SERVER_CHANGED
+                .with("account", key)
+                .with("saved_user", stored.username.as_str())
+                .with("saved_host", stored.host.as_str())
+                .with("user", smtp.map(|s| s.username.as_str()).unwrap_or(""))
+                .with("host", smtp.map(|s| s.host.as_str()).unwrap_or("")),
+            Refusal::SmtpPasswordNeeded => r::SMTP_PASSWORD_NEEDED
+                .with("account", key)
+                .with("smtp_host", smtp.map(|s| s.host.as_str()).unwrap_or(""))
+                .with("host", account.imap.host.as_str()),
         }
     }
 }

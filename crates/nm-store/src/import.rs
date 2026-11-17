@@ -173,7 +173,7 @@ impl Store {
         }
         let address = address.trim().to_lowercase();
         if address.len() < 3 || !address.contains('@') || address.contains(char::is_whitespace) {
-            return Err(StoreError::InvalidParams(format!("adresse invalide : « {address} »")));
+            return Err(StoreError::Invalid(nm_api::reason::ADDRESS_INVALID.with("address", address)));
         }
 
         let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -229,7 +229,7 @@ impl Store {
                 |r| r.get(0),
             )
             .optional()?
-            .ok_or_else(|| StoreError::NotFound(format!("dossier {}", role.as_str())))
+            .ok_or_else(|| StoreError::NotFound(format!("folder {}", role.as_str())))
         };
         let account = ArchiveAccount {
             id: account_id,

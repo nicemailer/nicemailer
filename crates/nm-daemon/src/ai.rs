@@ -55,6 +55,7 @@ use nm_ai::message::Mail;
 use nm_ai::catalog::{self, Loaded};
 use nm_ai::prompt::{Input, On, Output, Prompt, Scope, Screen, Source as PromptSource};
 use nm_ai::{AiError, AiRequest, Provider};
+use nm_api::reason;
 use nm_api::{
     AiActionView, AiApplyParams, AiAddressView, AiApplyResult, AiContactView, AiEventView, AiFile, AiPhoneView, AiDiffPiece, AiDismissSuggestionParams, AiSuggestionView, AiSuggestionsParams, AiListPromptsParams, AiPromptView, AiProposal, AiRunIdParams, AiRunParams,
     AiRunResult, AiRunView, AiSegmentChange, AiStatusParams, AiStatusResult, AiVariantView, CommandResult, DraftView,
@@ -219,11 +220,10 @@ fn log_problems(l: &Loaded) {
     }
 }
 
-/// An AI error as a JSON-RPC error: code `AI`, the AI code in `data`.
+/// An AI error as a JSON-RPC error: code `AI`, its reason, and the AI
+/// error code in `data.code` (`ia.md`, section 10).
 fn ai_error(e: AiError) -> RpcError {
-    let mut err = RpcError::new(error_code::AI, e.to_string());
-    err.data = Some(serde_json::json!({ "code": e.code() }));
-    err
+    RpcError::new(error_code::AI, e.why()).with_data("code", e.code())
 }
 
 fn settings(core: &Core) -> AiSettings {
@@ -296,9 +296,7 @@ fn provider(core: &Core, s: &AiSettings) -> Result<Provider, AiError> {
                 timeout: Duration::from_secs(s.timeout_secs),
             }))
         }
-        AiProviderKind::AnthropicApi => Err(AiError::BadInput(
-            "the anthropic-api provider is not available yet: set ai.provider = \"claude-code\" in config.toml".into(),
-        )),
+        AiProviderKind::AnthropicApi => Err(AiError::BadInput(reason::AI_PROVIDER_UNSUPPORTED.with("provider", "anthropic-api"))),
     }
 }
 
@@ -335,7 +333,7 @@ pub(crate) async fn status(core: &Arc<Core>, p: AiStatusParams) -> Result<AiStat
 /// `ai_list_prompts`.
 pub(crate) fn list_prompts(core: &Arc<Core>, p: AiListPromptsParams) -> Result<Vec<AiPromptView>, RpcError> {
     let Some(screen) = Screen::parse(&p.screen) else {
-        return Err(RpcError::new(error_code::INVALID_PARAMS, format!("unknown screen {:?}", p.screen)));
+        return Err(RpcError::invalid(format!("unknown screen {:?}", p.screen)));
     };
     let lang = p.lang.as_deref().unwrap_or("en");
     let loaded = core.ai.catalog();
@@ -386,19 +384,16 @@ fn utf16_of_byte(s: &str, byte: usize) -> u32 {
 pub(crate) async fn run(core: &Arc<Core>, p: AiRunParams, source: Source) -> Result<AiRunResult, RpcError> {
     let s = settings(core);
     if !s.enabled {
-        return Err(RpcError::new(error_code::AI_DISABLED, "the AI assistance is off: set ai.enabled = true in config.toml"));
+        return Err(RpcError::new(error_code::AI_DISABLED, reason::AI_DISABLED));
     }
     let loaded = core.ai.catalog();
     let prompt = loaded
         .catalog
         .get(&p.prompt)
         .cloned()
-        .ok_or_else(|| RpcError::new(error_code::NOT_FOUND, format!("no prompt {}", p.prompt)))?;
+        .ok_or_else(|| RpcError::not_found(format!("prompt {}", p.prompt)))?;
     if !available(&prompt) {
-        return Err(ai_error(AiError::BadInput(format!(
-            "the prompt {} is not available in this version of NiceMailer yet",
-            prompt.id
-        ))));
+        return Err(ai_error(AiError::BadInput(reason::AI_PROMPT_UNAVAILABLE.with("prompt", prompt.id.as_str()))));
     }
     let variant = match p.variant.as_deref() {
         None => None,
@@ -406,13 +401,13 @@ pub(crate) async fn run(core: &Arc<Core>, p: AiRunParams, source: Source) -> Res
             let mut chars = v.chars();
             match (chars.next(), chars.next()) {
                 (Some(c), None) => Some(c),
-                _ => return Err(RpcError::new(error_code::INVALID_PARAMS, format!("a variant is one key, not {v:?}"))),
+                _ => return Err(RpcError::invalid(format!("a variant is one key, not {v:?}"))),
             }
         }
     };
     // The parameters first (a variant missing, unknown), before reading
     // anything: building the system prompt checks the variant.
-    let system = prompt.system(variant, &p.lang).map_err(|m| RpcError::new(error_code::INVALID_PARAMS, m))?;
+    let system = prompt.system(variant, &p.lang).map_err(RpcError::invalid)?;
     if prompt.scope == Scope::Selection {
         return run_selection(core, &s, prompt, variant, system, &p, source).await;
     }
@@ -505,7 +500,7 @@ struct Deferred {
 /// whose text cannot be read (an image, an archive).
 async fn attachment_inputs(core: &Arc<Core>, prompt: &Prompt, p: &AiRunParams) -> Result<(Target, String, Deferred), RpcError> {
     let Some(id) = p.attachment_id else {
-        return Err(RpcError::new(error_code::INVALID_PARAMS, "this prompt needs attachment_id"));
+        return Err(RpcError::invalid("this prompt needs attachment_id"));
     };
     let (raw, files) = (core.raw.clone(), core.attachments.clone());
     let declared = crate::drafts::declared_addresses(core);
@@ -521,7 +516,7 @@ async fn attachment_inputs(core: &Arc<Core>, prompt: &Prompt, p: &AiRunParams) -
     .await;
     let (file, message, thread, own) = crate::sync::repaired(core, read).await?;
     let Some(kind) = FileKind::of(&file.mime_type, Some(&file.filename)) else {
-        return Err(ai_error(AiError::BadInput(format!("{}: {}", file.filename, Unreadable::Unsupported))));
+        return Err(ai_error(AiError::BadInput(Unreadable::Unsupported.why(&file.filename))));
     };
     let sections = prompt
         .inputs
@@ -544,23 +539,21 @@ async fn draft_inputs(
     p: &AiRunParams,
 ) -> Result<(String, Target, String, Vec<Finding>), RpcError> {
     let (Some(draft_id), Some(revision)) = (p.draft_id, p.revision) else {
-        return Err(RpcError::new(error_code::INVALID_PARAMS, "this prompt needs draft_id and revision"));
+        return Err(RpcError::invalid("this prompt needs draft_id and revision"));
     };
     let draft = with_reader(core, move |st| st.get_draft(draft_id)).await?;
     if draft.revision != revision {
-        let mut err = RpcError::new(error_code::REVISION_CONFLICT, "the draft changed since: save it and run again");
-        err.data = Some(serde_json::json!({ "revision": draft.revision }));
-        return Err(err);
+        return Err(RpcError::new(error_code::REVISION_CONFLICT, reason::AI_DRAFT_UNSAVED).with_data("revision", draft.revision));
     }
     // A prompt of a passage needs one, a prompt of the whole text takes
     // none (`on`, `ia.md`, section 4): the palette offers each only when
     // it fits, so another client is told what is wrong.
     match (prompt.on, p.selection.is_some()) {
         (On::Selection, false) => {
-            return Err(ai_error(AiError::BadInput("select the text to work on first".into())));
+            return Err(ai_error(AiError::BadInput(reason::AI_SELECTION_NEEDED.into())));
         }
         (On::Text, true) => {
-            return Err(ai_error(AiError::BadInput("this prompt works on the whole text: send no selection".into())));
+            return Err(ai_error(AiError::BadInput(reason::AI_SELECTION_UNWANTED.into())));
         }
         _ => {}
     }
@@ -583,10 +576,10 @@ async fn draft_inputs(
     let ranges: Vec<Range<usize>> = match p.selection {
         Some(sel) => {
             let (Some(a), Some(b)) = (byte_of_utf16(&body, sel.start), byte_of_utf16(&body, sel.end)) else {
-                return Err(RpcError::new(error_code::INVALID_PARAMS, "the selection is outside the draft's text"));
+                return Err(RpcError::invalid("the selection is outside the draft's text"));
             };
             if a >= b {
-                return Err(ai_error(AiError::BadInput("the selection is empty".into())));
+                return Err(ai_error(AiError::BadInput(reason::AI_SELECTION_EMPTY.into())));
             }
             // One range: a selection is one segment.
             std::iter::once(a..b).collect()
@@ -667,7 +660,7 @@ async fn mail_inputs(
     p: &AiRunParams,
 ) -> Result<(String, Target, String, Vec<Finding>), RpcError> {
     let Some(thread_id) = p.thread_id else {
-        return Err(RpcError::new(error_code::INVALID_PARAMS, "this prompt needs thread_id"));
+        return Err(RpcError::invalid("this prompt needs thread_id"));
     };
     // The user's addresses: those of `accounts.toml`, and those of the
     // accounts in the database (an archive account imported from an mbox
@@ -683,16 +676,16 @@ async fn mail_inputs(
         Some(id) => messages
             .iter()
             .find(|m| m.id == id)
-            .ok_or_else(|| RpcError::new(error_code::NOT_FOUND, format!("no message {id} in thread {thread_id}")))?,
+            .ok_or_else(|| RpcError::not_found(format!("message {id} in thread {thread_id}")))?,
         None => messages
             .iter()
             .rev()
             .find(|m| !is_mine(m))
             .or(messages.last())
-            .ok_or_else(|| RpcError::new(error_code::NOT_FOUND, format!("thread {thread_id} has no message")))?,
+            .ok_or_else(|| RpcError::not_found(format!("a message of thread {thread_id}")))?,
     };
     if message.body_text.is_none() {
-        return Err(ai_error(AiError::BadInput("this mail is still downloading: try again in a moment".into())));
+        return Err(ai_error(AiError::BadInput(reason::AI_MAIL_DOWNLOADING.into())));
     }
     let mail = mail_of(message, is_mine(message));
     let findings = findings(message);
@@ -750,7 +743,7 @@ async fn run_selection(
 ) -> Result<AiRunResult, RpcError> {
     let folders = p.folder_ids.clone().unwrap_or_default();
     if folders.is_empty() {
-        return Err(RpcError::new(error_code::INVALID_PARAMS, "this prompt needs folder_ids, the folders shown"));
+        return Err(RpcError::invalid("this prompt needs folder_ids, the folders shown"));
     }
     let marked = p.thread_ids.clone().unwrap_or_default();
     let whole_folder = marked.is_empty() && prompt.unmarked == nm_ai::prompt::Unmarked::Folder;
@@ -790,18 +783,14 @@ async fn run_selection(
     })
     .await?;
     let Some(role) = role else {
-        return Err(ai_error(AiError::BadInput("this folder has no role: nothing to sort it into".into())));
+        return Err(ai_error(AiError::BadInput(reason::AI_FOLDER_WITHOUT_ROLE.into())));
     };
     if !prompt.offered_in(Some(role)) {
-        return Err(ai_error(AiError::BadInput(format!("the prompt {} is not offered in this folder", prompt.id))));
+        return Err(ai_error(AiError::BadInput(reason::AI_PROMPT_NOT_HERE.with("prompt", prompt.id.as_str()))));
     }
     let threads = if whole_folder { threads } else { marked };
     if threads.is_empty() {
-        return Err(ai_error(AiError::BadInput(if whole_folder {
-            "this folder is empty: nothing to sort".into()
-        } else {
-            "mark the conversations to sort, or put the cursor on one".into()
-        })));
+        return Err(ai_error(AiError::BadInput(if whole_folder { reason::AI_FOLDER_EMPTY } else { reason::AI_MARK_TO_SORT }.into())));
     }
     let targets = role.move_targets();
     let provider = provider(core, s).map_err(ai_error)?;
@@ -1229,7 +1218,7 @@ async fn execute(core: Arc<Core>, run_id: i64, mut request: AiRequest, provider:
                 // Nothing was sent: the input was not good, as for an empty
                 // draft, but known only now.
                 if core.ai.running.lock().unwrap().remove(&run_id).is_some() {
-                    fail(&core, run_id, AiError::BadInput(format!("{}: {e}", d.name)), None).await;
+                    fail(&core, run_id, AiError::BadInput(e.why(&d.name)), None).await;
                 }
                 return;
             }
@@ -1316,7 +1305,7 @@ async fn fail(core: &Arc<Core>, run_id: i64, e: AiError, output: Option<String>)
 /// `ai_cancel`.
 pub(crate) async fn cancel(core: &Arc<Core>, p: AiRunIdParams) -> Result<CommandResult, RpcError> {
     let Some(running) = core.ai.running.lock().unwrap().remove(&p.run_id) else {
-        return Err(RpcError::new(error_code::NOT_FOUND, format!("AI run {} is not running", p.run_id)));
+        return Err(RpcError::not_found(format!("running AI run {}", p.run_id)));
     };
     // Dropping the task's future kills the provider's process group
     // (`nm_ai::claude_code`, "Cancellation").
@@ -1471,7 +1460,7 @@ pub(crate) async fn get_run(core: &Arc<Core>, p: AiRunIdParams) -> Result<AiRunV
     let id = p.run_id;
     let row = with_reader(core, move |st| st.ai_run(id))
         .await?
-        .ok_or_else(|| RpcError::new(error_code::NOT_FOUND, format!("no AI run {id}")))?;
+        .ok_or_else(|| RpcError::not_found(format!("AI run {id}")))?;
     let proposal = core.ai.finished.lock().unwrap().get(&id).and_then(|f| proposal(id, f));
     let (error_code, error) = match row.error.as_deref().and_then(|e| e.split_once(": ")) {
         Some((code, message)) => (Some(code.to_string()), Some(message.to_string())),
@@ -1497,7 +1486,7 @@ pub(crate) async fn apply(core: &Arc<Core>, p: AiApplyParams, source: Source) ->
         .lock()
         .unwrap()
         .remove(&p.run_id)
-        .ok_or_else(|| RpcError::new(error_code::NOT_FOUND, format!("AI run {} has no proposal to apply", p.run_id)))?;
+        .ok_or_else(|| RpcError::not_found(format!("proposal of AI run {}", p.run_id)))?;
     // Any refusal below puts the proposal back: a client told "the draft
     // changed" can still dismiss it, and a retry with the right revision or
     // choice still finds it.
@@ -1517,7 +1506,7 @@ pub(crate) async fn apply(core: &Arc<Core>, p: AiApplyParams, source: Source) ->
     // panel afterwards (`ai_dismiss`) does not turn it down.
     if let Answer::Events(list) = &finished.answer {
         let Some((n, event)) = p.choice.and_then(|i| list.get(i).map(|e| (i, e))) else {
-            return put_back(finished, RpcError::new(error_code::INVALID_PARAMS, "choose one of the appointments (choice)"));
+            return put_back(finished, RpcError::invalid("choose one of the appointments (choice)"));
         };
         let stamp = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64);
         let calendar = AiFile {
@@ -1561,7 +1550,7 @@ pub(crate) async fn apply(core: &Arc<Core>, p: AiApplyParams, source: Source) ->
     let replaces = finished.context.prompt.then == Some(nm_ai::prompt::Then::Replace);
     if let (Answer::Choices(items), false) = (&finished.answer, replaces) {
         let Some(text) = p.choice.and_then(|i| items.get(i)).cloned() else {
-            return put_back(finished, RpcError::new(error_code::INVALID_PARAMS, "choose one of the texts (choice)"));
+            return put_back(finished, RpcError::invalid("choose one of the texts (choice)"));
         };
         if let Err(e) = with_store(core, move |st| st.ai_run_decide(run_id, Decision::Accepted)).await {
             return put_back(finished, e);
@@ -1569,13 +1558,12 @@ pub(crate) async fn apply(core: &Arc<Core>, p: AiApplyParams, source: Source) ->
         return Ok(AiApplyResult { draft: None, text: Some(text), calendar: None, contact: None });
     }
     let Target::Draft { draft_id, revision, body, ranges, format } = finished.context.target.clone() else {
-        return put_back(finished, RpcError::new(error_code::INVALID_PARAMS, "nothing to apply: close it with ai_dismiss"));
+        return put_back(finished, RpcError::invalid("nothing to apply: close it with ai_dismiss"));
     };
     // The text the AI saw is the text of that revision: a later one may
     // hold words typed since, which applying would erase.
     if p.revision != Some(revision) {
-        let mut err = RpcError::new(error_code::REVISION_CONFLICT, "the draft changed since the AI read it: run it again");
-        err.data = Some(serde_json::json!({ "revision": revision }));
+        let err = RpcError::new(error_code::REVISION_CONFLICT, reason::AI_DRAFT_CHANGED).with_data("revision", revision);
         return put_back(finished, err);
     }
     // A passage of a formatted draft: the new text goes back to the client,
@@ -1588,15 +1576,14 @@ pub(crate) async fn apply(core: &Arc<Core>, p: AiApplyParams, source: Source) ->
             _ => None,
         };
         let Some(text) = text else {
-            return put_back(finished, RpcError::new(error_code::INVALID_PARAMS, "choose one of the texts (choice)"));
+            return put_back(finished, RpcError::invalid("choose one of the texts (choice)"));
         };
         let current = match with_reader(core, move |st| st.get_draft(draft_id)).await {
             Ok(d) => d.revision,
             Err(e) => return put_back(finished, e),
         };
         if current != revision {
-            let mut err = RpcError::new(error_code::REVISION_CONFLICT, "the draft changed since the AI read it: run it again");
-            err.data = Some(serde_json::json!({ "revision": current }));
+            let err = RpcError::new(error_code::REVISION_CONFLICT, reason::AI_DRAFT_CHANGED).with_data("revision", current);
             return put_back(finished, err);
         }
         if let Err(e) = with_store(core, move |st| st.ai_run_decide(run_id, Decision::Accepted)).await {
@@ -1607,20 +1594,20 @@ pub(crate) async fn apply(core: &Arc<Core>, p: AiApplyParams, source: Source) ->
     let edit = match &finished.answer {
         Answer::Segments(new) => match nm_core::segments::splice(&body, &ranges, &new_segments(new, format)) {
             Ok(body) => DraftEdit { body: Some(body), ..Default::default() },
-            Err(m) => return put_back(finished, RpcError::new(error_code::INTERNAL_ERROR, m)),
+            Err(m) => return put_back(finished, RpcError::internal(m)),
         },
         Answer::Choices(items) => match p.choice.and_then(|i| items.get(i)) {
             Some(text) => match nm_core::segments::splice(&body, &ranges, std::slice::from_ref(text)) {
                 Ok(body) => DraftEdit { body: Some(body), ..Default::default() },
-                Err(m) => return put_back(finished, RpcError::new(error_code::INTERNAL_ERROR, m)),
+                Err(m) => return put_back(finished, RpcError::internal(m)),
             },
-            None => return put_back(finished, RpcError::new(error_code::INVALID_PARAMS, "choose one of the texts (choice)")),
+            None => return put_back(finished, RpcError::invalid("choose one of the texts (choice)")),
         },
         Answer::Subjects(items) => match p.choice.and_then(|i| items.get(i)) {
             Some(subject) => DraftEdit { subject: Some(subject.clone()), ..Default::default() },
-            None => return put_back(finished, RpcError::new(error_code::INVALID_PARAMS, "choose one of the subjects (choice)")),
+            None => return put_back(finished, RpcError::invalid("choose one of the subjects (choice)")),
         },
-        _ => return put_back(finished, RpcError::new(error_code::INVALID_PARAMS, "this proposal cannot be applied")),
+        _ => return put_back(finished, RpcError::invalid("this proposal cannot be applied")),
     };
     let saved = with_store(core, move |st| {
         st.edit_draft(draft_id, revision, &edit, source)?;
@@ -1641,7 +1628,7 @@ pub(crate) async fn dismiss(core: &Arc<Core>, p: AiRunIdParams) -> Result<Comman
         return cancel(core, p).await;
     }
     let Some(finished) = core.ai.finished.lock().unwrap().remove(&p.run_id) else {
-        return Err(RpcError::new(error_code::NOT_FOUND, format!("AI run {} has no proposal", p.run_id)));
+        return Err(RpcError::not_found(format!("proposal of AI run {}", p.run_id)));
     };
     if !read_only(&finished.answer) && !finished.saved {
         let id = p.run_id;

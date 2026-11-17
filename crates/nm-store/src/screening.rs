@@ -421,7 +421,7 @@ impl Store {
     pub fn set_address_screening(&mut self, addr: &str, target: Option<ScreeningTarget>, source: Source) -> Result<Outcome> {
         let addr = addr.trim().to_lowercase();
         if !addr.contains('@') {
-            return Err(StoreError::InvalidParams(format!("adresse invalide : {addr}")));
+            return Err(StoreError::Invalid(nm_api::reason::ADDRESS_INVALID.with("address", addr)));
         }
         let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let mark = audit_mark(&tx)?;
@@ -452,7 +452,7 @@ impl Store {
     pub fn set_domain_screening(&mut self, domain: &str, target: Option<ScreeningTarget>, source: Source) -> Result<Outcome> {
         let domain = domain.trim().trim_start_matches('@').to_lowercase();
         if domain.is_empty() || domain.contains('@') || !domain.contains('.') {
-            return Err(StoreError::InvalidParams(format!("domaine invalide : {domain}")));
+            return Err(StoreError::Invalid(nm_api::reason::DOMAIN_INVALID.with("domain", domain)));
         }
         let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let mark = audit_mark(&tx)?;
@@ -484,7 +484,7 @@ impl Store {
     /// left alone. Undoing twice is therefore harmless: the second time
     /// finds nothing in the state the command left.
     pub fn undo(&mut self, token: &str, source: Source) -> Result<Outcome> {
-        let bad = || StoreError::InvalidParams(format!("jeton d'annulation invalide : {token}"));
+        let bad = || StoreError::InvalidParams(format!("invalid undo token: {token}"));
         let (first, last) = token.split_once(':').ok_or_else(bad)?;
         let (first, last): (i64, i64) = (first.parse().map_err(|_| bad())?, last.parse().map_err(|_| bad())?);
         if first < 1 || last < first {
@@ -501,7 +501,7 @@ impl Store {
             .query_map(params![first, last], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)))?
             .collect::<std::result::Result<_, _>>()?;
         if rows.is_empty() {
-            return Err(StoreError::NotFound(format!("opération {token}")));
+            return Err(StoreError::NotFound(format!("operation {token}")));
         }
         let mut out = Outcome::default();
         let mut threads = BTreeSet::new();

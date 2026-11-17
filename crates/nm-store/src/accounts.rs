@@ -179,10 +179,10 @@ impl Store {
         };
         for (i, id) in ids.iter().enumerate() {
             if !current.iter().any(|(c, _)| c == id) {
-                return Err(StoreError::NotFound(format!("compte {id}")));
+                return Err(StoreError::NotFound(format!("account {id}")));
             }
             if ids[..i].contains(id) {
-                return Err(StoreError::InvalidParams(format!("compte {id} présent deux fois")));
+                return Err(StoreError::InvalidParams(format!("account {id} given twice")));
             }
         }
         let order: Vec<(i64, i64)> = ids

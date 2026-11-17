@@ -7331,6 +7331,856 @@
           }
         }
       }
+    },
+    "It no longer exists: it may have been deleted meanwhile": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cet élément n’existe plus : il a peut-être été supprimé entre-temps"
+          }
+        }
+      }
+    },
+    "No account %@ in accounts.toml": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucun compte %@ dans accounts.toml"
+          }
+        }
+      }
+    },
+    "The account %@ is not ready yet: try again in a moment": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le compte %@ n’est pas encore prêt : réessayez dans un instant"
+          }
+        }
+      }
+    },
+    "The account %@ is not synchronized": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le compte %@ n’est pas synchronisé"
+          }
+        }
+      }
+    },
+    "No account to synchronize": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucun compte à synchroniser"
+          }
+        }
+      }
+    },
+    "An account %@ exists already": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un compte %@ existe déjà"
+          }
+        }
+      }
+    },
+    "The name %@ is taken by another account: choose another": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le nom %@ est pris par un autre compte : choisissez-en un autre"
+          }
+        }
+      }
+    },
+    "The account %@ is organized already": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le compte %@ est déjà organisé"
+          }
+        }
+      }
+    },
+    "This account is only looked at: NiceMailer changes nothing in it": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce compte est seulement consulté : NiceMailer n’y change rien"
+          }
+        }
+      }
+    },
+    "This account is only looked at: it cannot send": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce compte est seulement consulté : il ne peut pas envoyer"
+          }
+        }
+      }
+    },
+    "Give the password": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saisissez le mot de passe"
+          }
+        }
+      }
+    },
+    "Give the SMTP password": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saisissez le mot de passe SMTP"
+          }
+        }
+      }
+    },
+    "An SMTP password needs an SMTP server": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un mot de passe SMTP demande un serveur SMTP"
+          }
+        }
+      }
+    },
+    "The account %@ has no SMTP server: it cannot send": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le compte %@ n’a pas de serveur SMTP : il ne peut pas envoyer"
+          }
+        }
+      }
+    },
+    "%@ is not a date (YYYY-MM-DD)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ n’est pas une date (AAAA-MM-JJ)"
+          }
+        }
+      }
+    },
+    "An account only looked at archives nothing on its server": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un compte seulement consulté n’archive rien sur son serveur"
+          }
+        }
+      }
+    },
+    "The server has no folder %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le serveur n’a pas de dossier %@"
+          }
+        }
+      }
+    },
+    "The Keychain refused: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le trousseau a refusé : %@"
+          }
+        }
+      }
+    },
+    "No password saved for the account %@: give it in the Preferences": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucun mot de passe enregistré pour le compte %@ : saisissez-le dans les Préférences"
+          }
+        }
+      }
+    },
+    "OAuth2 sign-in is not supported yet": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La connexion OAuth2 n’est pas encore prise en charge"
+          }
+        }
+      }
+    },
+    "The password of %@ was saved for another server (%@ on %@): give it again to confirm %@ on %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le mot de passe de %1$@ a été enregistré pour un autre serveur (%2$@ sur %3$@) : saisissez-le à nouveau pour confirmer %4$@ sur %5$@"
+          }
+        }
+      }
+    },
+    "The SMTP password of %@ was saved for another server (%@ on %@): give it again to confirm %@ on %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le mot de passe SMTP de %1$@ a été enregistré pour un autre serveur (%2$@ sur %3$@) : saisissez-le à nouveau pour confirmer %4$@ sur %5$@"
+          }
+        }
+      }
+    },
+    "The SMTP server %@ is not of the same provider as %@: give its own password": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le serveur SMTP %1$@ n’est pas du même fournisseur que %2$@ : saisissez son propre mot de passe"
+          }
+        }
+      }
+    },
+    "The server refused the login: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le serveur a refusé la connexion : %@"
+          }
+        }
+      }
+    },
+    "The server could not be reached: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le serveur est injoignable : %@"
+          }
+        }
+      }
+    },
+    "The server failed: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le serveur a échoué : %@"
+          }
+        }
+      }
+    },
+    "This mail is in an archive: it cannot be answered from here": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce mail est dans une archive : on ne peut pas y répondre d’ici"
+          }
+        }
+      }
+    },
+    "No account can send: add an SMTP server to one": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucun compte ne peut envoyer : ajoutez un serveur SMTP à l’un d’eux"
+          }
+        }
+      }
+    },
+    "This mail is in an archive account, which cannot send": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce mail est dans un compte d’archive, qui ne peut pas envoyer"
+          }
+        }
+      }
+    },
+    "The account has no address to send from": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le compte n’a pas d’adresse d’envoi"
+          }
+        }
+      }
+    },
+    "%@ is not an address of this account": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ n’est pas une adresse de ce compte"
+          }
+        }
+      }
+    },
+    "This mail has no recipient": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce mail n’a pas de destinataire"
+          }
+        }
+      }
+    },
+    "A draft cannot be answered": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "On ne peut pas répondre à un brouillon"
+          }
+        }
+      }
+    },
+    "A draft cannot be forwarded": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "On ne peut pas transférer un brouillon"
+          }
+        }
+      }
+    },
+    "The formatted text is too big": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le texte mis en forme est trop gros"
+          }
+        }
+      }
+    },
+    "This draft was changed elsewhere: reload it": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce brouillon a été modifié ailleurs : rechargez-le"
+          }
+        }
+      }
+    },
+    "This mail is being sent: cancel the sending first": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce mail est en cours d’envoi : annulez l’envoi d’abord"
+          }
+        }
+      }
+    },
+    "Too late to cancel: the mail is leaving, or has left": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Trop tard pour annuler : le mail part, ou est parti"
+          }
+        }
+      }
+    },
+    "This draft is being copied to the server: try again in a moment": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce brouillon est en cours de copie sur le serveur : réessayez dans un instant"
+          }
+        }
+      }
+    },
+    "The text of this mail is still downloading: try again in a moment": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le texte de ce mail est en cours de téléchargement : réessayez dans un instant"
+          }
+        }
+      }
+    },
+    "The file of this mail is damaged: it is downloaded again from the server if possible": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le fichier de ce mail est endommagé : il est retéléchargé depuis le serveur si possible"
+          }
+        }
+      }
+    },
+    "This move is not offered from this folder": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce déplacement n’est pas proposé depuis ce dossier"
+          }
+        }
+      }
+    },
+    "The mail of %@ may be forged: confirm first": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le mail de %@ est peut-être usurpé : confirmez d’abord"
+          }
+        }
+      }
+    },
+    "A tag name has 1 to 64 characters": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un nom de tag a de 1 à 64 caractères"
+          }
+        }
+      }
+    },
+    "The tag %@ exists already": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le tag %@ existe déjà"
+          }
+        }
+      }
+    },
+    "A group name has 1 to 64 characters": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un nom de groupe a de 1 à 64 caractères"
+          }
+        }
+      }
+    },
+    "The group %@ exists already": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le groupe %@ existe déjà"
+          }
+        }
+      }
+    },
+    "%@ is not an address": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ n’est pas une adresse"
+          }
+        }
+      }
+    },
+    "%@ is not a domain": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ n’est pas un domaine"
+          }
+        }
+      }
+    },
+    "An import is already running": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un import est déjà en cours"
+          }
+        }
+      }
+    },
+    "%@ is not a full path": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ n’est pas un chemin complet"
+          }
+        }
+      }
+    },
+    "%@ is not a file": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ n’est pas un fichier"
+          }
+        }
+      }
+    },
+    "The folder %@ does not exist": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le dossier %@ n’existe pas"
+          }
+        }
+      }
+    },
+    "%@ cannot be read: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ est illisible : %2$@"
+          }
+        }
+      }
+    },
+    "This mailbox already holds mail": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cette base contient déjà des mails"
+          }
+        }
+      }
+    },
+    "Claude Code is not installed: install it, or set ai.claude_path in config.toml": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude Code n’est pas installé : installez-le, ou indiquez ai.claude_path dans config.toml"
+          }
+        }
+      }
+    },
+    "Claude Code is not signed in: run claude in a terminal to sign in": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude Code n’est pas connecté : lancez claude dans un terminal pour vous connecter"
+          }
+        }
+      }
+    },
+    "Claude Code announced tools: nothing was sent to it": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude Code a annoncé des outils : rien ne lui a été envoyé"
+          }
+        }
+      }
+    },
+    "The AI provider %@ is not available yet": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le fournisseur d’IA %@ n’est pas encore disponible"
+          }
+        }
+      }
+    },
+    "The usage limit of the Claude subscription is reached": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La limite d’usage de l’abonnement Claude est atteinte"
+          }
+        }
+      }
+    },
+    "The AI did not answer in time": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L’IA n’a pas répondu à temps"
+          }
+        }
+      }
+    },
+    "The AI’s answer could not be read": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La réponse de l’IA est illisible"
+          }
+        }
+      }
+    },
+    "The AI failed: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L’IA a échoué : %@"
+          }
+        }
+      }
+    },
+    "Claude Code could not be run: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude Code n’a pas pu être lancé : %@"
+          }
+        }
+      }
+    },
+    "This prompt is not available in this version yet": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce prompt n’est pas encore disponible dans cette version"
+          }
+        }
+      }
+    },
+    "This prompt is not offered in this folder": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce prompt n’est pas proposé dans ce dossier"
+          }
+        }
+      }
+    },
+    "Select the text to work on first": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sélectionnez d’abord le texte à traiter"
+          }
+        }
+      }
+    },
+    "This prompt works on the whole text: select nothing": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce prompt traite tout le texte : ne sélectionnez rien"
+          }
+        }
+      }
+    },
+    "The selection is empty": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La sélection est vide"
+          }
+        }
+      }
+    },
+    "There is no text of yours to send: write some first": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Il n’y a pas encore de texte de vous à envoyer : écrivez-en d’abord"
+          }
+        }
+      }
+    },
+    "The text contains a <segment> tag, which the AI uses: remove it first": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le texte contient une balise <segment>, que l’IA utilise : retirez-la d’abord"
+          }
+        }
+      }
+    },
+    "This folder has no role: nothing to sort it into": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce dossier n’a pas de rôle : rien vers quoi trier"
+          }
+        }
+      }
+    },
+    "This folder is empty: nothing to sort": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce dossier est vide : rien à trier"
+          }
+        }
+      }
+    },
+    "Mark the conversations to sort, or put the cursor on one": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Marquez les conversations à trier, ou placez le curseur sur l’une d’elles"
+          }
+        }
+      }
+    },
+    "The reply changed since: run it again": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La réponse a changé depuis : relancez-la"
+          }
+        }
+      }
+    },
+    "%@: this kind of file has no text the AI can read": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ : ce type de fichier n’a pas de texte lisible par l’IA"
+          }
+        }
+      }
+    },
+    "%@ is too large to read (%@ MB, 50 MB at most)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ est trop gros pour être lu (%2$@ Mo, 50 Mo au plus)"
+          }
+        }
+      }
+    },
+    "%@ is protected by a password": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ est protégé par un mot de passe"
+          }
+        }
+      }
+    },
+    "%@ has no text: a scan or an image?": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ n’a pas de texte : un scan ou une image ?"
+          }
+        }
+      }
+    },
+    "%@ cannot be read": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ est illisible"
+          }
+        }
+      }
+    },
+    "NiceMailer is being updated: it opens again in a moment": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "NiceMailer est en cours de mise à jour : il rouvre dans un instant"
+          }
+        }
+      }
+    },
+    "The mailbox is being upgraded: NiceMailer opens again when it ends": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La base est en cours de mise à jour : NiceMailer rouvre dès que c’est fini"
+          }
+        }
+      }
+    },
+    "This mailbox was written by a newer version of NiceMailer: update NiceMailer to open it": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cette base a été écrite par une version plus récente de NiceMailer : mettez NiceMailer à jour pour l’ouvrir"
+          }
+        }
+      }
+    },
+    "The upgrade of the mailbox failed: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La mise à jour de la base a échoué : %@"
+          }
+        }
+      }
+    },
+    "NiceMailer could not do it: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "NiceMailer n’a pas pu le faire : %@"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

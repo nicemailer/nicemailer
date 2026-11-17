@@ -12,6 +12,7 @@ Tests in `crates/nm-cli/src/contract_doc.rs` (run by `make test`) fail as soon a
 - every command shown here (inline code or a code-block line starting with `nicemailer`) exists, with its subcommands and options, in the clap definition of the CLI;
 - the CLI column is right both ways: a method the CLI calls (through a `method::` constant, never a string) is not marked "—", and a method given a command is really called by the CLI;
 - every constant of `nm_api::method` has a `///` comment.
+- the table of the section "Errors" lists exactly the reasons of `nm_api::reason`, with the values of their sentences, and every reason is given by the code of some crate.
 
 The tests cannot check that a description is still true. A change to what a method or a command does updates its row here in the same change.
 
@@ -103,7 +104,7 @@ A dedicated command prints readable output, asks for confirmation when needed an
 | `list_accounts` | Every account (IMAP and archive) with its state, in display order, and whether it is only looked at (`read_only`). | `nicemailer accounts` |
 | `config_status` | The state of `config.toml` and `accounts.toml`: paths, the error that makes the core refuse them, warnings, and the settings the clients apply themselves (`ui`, `mcp`). | — (`nicemailer config check` checks the files itself, without the core.) |
 | `discover_account` | Finds the servers of an address before the account exists: provider, IMAP server, SMTP servers to try. | Step 1 of `nicemailer account add`. |
-| `test_account` | Tries the IMAP server of an account not created yet: capabilities, folders with proposed roles, the folder each role will get and whether it exists (`roles`), counts for the import. A failure says in `data.reason` whether the password (`auth`) or the server (`connect`) is at fault. | Step 2 of `account add`. |
+| `test_account` | Tries the IMAP server of an account not created yet: capabilities, folders with proposed roles, the folder each role will get and whether it exists (`roles`), counts for the import. A failure says in `data.reason` whether the password (`imap_auth_refused`) or the server (`imap_unreachable`) is at fault. | Step 2 of `account add`. |
 | `count_archive` | Exact count of the mails the initial archiving would move. | Step 3 of `account add` (`--archive-read-before`, `--archive-unread-before`, `--no-archive`). |
 | `test_smtp` | Tries SMTP servers in order, until one accepts the login; names the one that refused the password (`refused`) when none did. With `smtp_password`, tries that password instead of the IMAP one, on any server. | Step 4 of `account add` (skipped with `--no-smtp`). |
 | `add_account` | Creates an IMAP account: folders, roles, initial import, password (and the SMTP server's own, `smtp_password`), `accounts.toml`. | Last step of `nicemailer account add [key] --email <addr> [--host …] [--role ROLE=FOLDER] [--read-only] [--yes]` (`accounts.md`) |
@@ -180,3 +181,124 @@ These commands work on files directly and do not go through the core:
 ## Coverage
 
 Of the 75 methods, 32 are used by a dedicated CLI command. The reading of mail, the actions on threads and the drafts have no dedicated command yet, only `nicemailer call`. The CLI is meant to be the test bench of the contract (`specifications/architecture.md`, step 4), so these are the gaps to fill first.
+
+## Errors
+
+A failed request answers a JSON-RPC error: a `code` (the family, `nm_api::error_code`), a `message`, and `data` with a `reason` and the values of its sentence (`specifications/localisation.md`, section 3.1):
+
+```json
+{"code": -32602, "message": "the tag Urgent exists already", "data": {"reason": "tag_exists", "tag": "Urgent"}}
+```
+
+- `reason` says why, in a stable word: a client branches on it and writes the sentence in the user's language (the app: `CoreReason.swift`). The core does not know the user's language.
+- `message` is the English sentence of the reason, its `{value}` filled in. The CLI prints it, the logs keep it, and AI agents read it.
+- A value whose key ends with `_text` was written by someone else (the mail server, the system, the AI provider): it is cited as it is, never translated. `detail` is a technical precision in English, for the generic reasons (`invalid_params`, `not_found`, `internal`…), which are mistakes of a client's program rather than of the user.
+- Some codes add to `data` values outside the sentence: the AI's `code` (`ai.md`), the current `revision` of a draft. The `data` of `MAINTENANCE` (1003) is a whole `Maintenance`, whose `reason` is one of the four at the end of the table.
+
+The app, the core, the CLI and the MCP server are shipped and updated together, so no client meets a reason it does not know: the list is not versioned. Tests keep it whole: the reasons below are exactly those of `nm_api::reason`, with the values of their sentences (`crates/nm-cli/src/contract_doc.rs`); each one is used by the code; the app writes each one, or says it is generic (`LocalizationTests`).
+
+| Reason | Values | English message |
+| --- | --- | --- |
+| `parse_error` | `detail` | not JSON: {detail} |
+| `invalid_request` | `detail` | invalid request: {detail} |
+| `method_not_found` | `method` | unknown method: {method} |
+| `invalid_params` | `detail` | invalid parameters: {detail} |
+| `internal` | `detail` | internal error: {detail} |
+| `not_found` | `detail` | not found: {detail} |
+| `hello_expected` | — | the handshake hello is expected first |
+| `protocol_version` | `version`, `expected` | protocol {version} is not supported (expected {expected}) |
+| `reserved_to_people` | — | only the app, the TUI and the CLI can do this |
+| `reserved_to_app` | `method` | {method} is reserved to NiceMailer.app, which installs the updates |
+| `agent_cannot_send` | — | AI agents cannot send mail yet: the draft is in Drafts, where the user can review and send it from NiceMailer |
+| `agent_cannot_file` | — | AI agents cannot file mail yet (move, mark, flag, tag): ask the user to do it in NiceMailer |
+| `agent_cannot_unsubscribe` | — | unsubscribing sends a request to an address the sender chose, which confirms the mail was read: only the user can do it, in NiceMailer |
+| `agent_cannot_set_password` | — | passwords are given in NiceMailer only |
+| `agent_not_allowed` | `method` | {method} is not available to AI agents |
+| `draft_by_user` | `draft` | draft {draft} was written by the user: AI agents may read it, not change it; start a new draft instead |
+| `reply_started_by_user` | `draft` | the user has already started a reply to this mail (draft {draft}): AI agents may read it, not change it |
+| `account_unknown` | `account` | no account {account} in accounts.toml |
+| `account_not_in_database` | `account` | account {account} is not in the database |
+| `account_not_synchronized` | `account` | account {account} is not synchronized |
+| `no_imap_account` | — | no IMAP account to synchronize |
+| `account_exists` | `account` | an account {account} exists already |
+| `account_key_taken` | `account`, `kind` | {account} is an {kind} account: choose another key |
+| `account_set_up` | `account` | the account {account} is not read-only: it is set up already |
+| `account_read_only` | — | this account is read-only (read_only = true in accounts.toml): nothing is changed |
+| `account_read_only_send` | — | this account is read-only (read_only = true in accounts.toml): it cannot send |
+| `password_empty` | — | empty password |
+| `smtp_password_empty` | — | empty SMTP password |
+| `smtp_password_without_server` | — | an SMTP password without an SMTP server |
+| `no_smtp_server` | `account` | account {account} has no [smtp] server in accounts.toml: it cannot send |
+| `date_invalid` | `date` | date {date}: YYYY-MM-DD expected |
+| `read_only_archives_nothing` | — | a read-only account archives nothing on its server |
+| `server_folder_missing` | `folder` | the server has no folder {folder}: ask to create it |
+| `keychain` | `system_text` | the Keychain refused: {system_text} |
+| `password_missing` | `account` | no password saved for this account: nicemailer account password {account} |
+| `oauth2_unsupported` | — | auth = "oauth2" is not supported yet |
+| `password_server_changed` | `saved_user`, `saved_host`, `user`, `host`, `account` | the password was saved for {saved_user} on {saved_host}, the file now says {user} on {host}: save the password again to confirm the new server (nicemailer account password {account}) |
+| `smtp_password_server_changed` | `saved_user`, `saved_host`, `user`, `host`, `account` | the SMTP password was saved for {saved_user} on {saved_host}, the file now says {user} on {host}: save it again to confirm the new server (nicemailer account password {account} --smtp) |
+| `smtp_password_needed` | `smtp_host`, `host`, `account` | the SMTP server {smtp_host} is not of the same provider as the IMAP server {host}: NiceMailer does not send it the IMAP password. Save its own: nicemailer account password {account} --smtp |
+| `imap_auth_refused` | `server_text` | the server refused the login: {server_text} |
+| `imap_unreachable` | `server_text` | the server could not be reached: {server_text} |
+| `imap_failed` | `server_text` | the server failed: {server_text} |
+| `mail_not_in_account` | — | this mail is not in an account of accounts.toml (an archive account?): it cannot be answered from here |
+| `no_account_can_send` | — | no account of accounts.toml can send: add an [smtp] server to one |
+| `archive_cannot_send` | — | this mail is in an archive account, which cannot send |
+| `no_sender_address` | — | the account has no address to send from |
+| `not_own_address` | `address` | {address} is not an address of this account |
+| `draft_no_recipient` | — | this draft has no recipient |
+| `draft_cannot_be_answered` | — | a draft cannot be answered |
+| `draft_cannot_be_forwarded` | — | a draft cannot be forwarded |
+| `formatted_text_too_big` | — | the formatted text is too big |
+| `revision_conflict` | `revision` | this draft was changed elsewhere (revision {revision}): reload it |
+| `draft_sending` | — | this draft is being sent: cancel the sending first |
+| `send_started` | — | too late to cancel: the mail is leaving, or has left |
+| `draft_copying` | — | this draft is being copied to the server: try again in a moment |
+| `body_pending` | — | the body of this mail is not downloaded yet: it is asked for, try again in a moment |
+| `raw_damaged` | `hash` | the raw file of this mail is damaged ({hash}): it is set aside and downloaded again from the server if possible |
+| `move_refused` | `target`, `from` | {target} is not a target from {from} |
+| `confirmation_required` | `addr`, `verdict` | confirmation required: probable spoofing of {addr} (verdict {verdict}) |
+| `tag_name_invalid` | — | a tag name has 1 to 64 characters |
+| `tag_exists` | `tag` | the tag {tag} exists already |
+| `group_name_invalid` | — | a group name has 1 to 64 characters |
+| `group_exists` | `group` | the group {group} exists already |
+| `address_invalid` | `address` | not an address: {address} |
+| `domain_invalid` | `domain` | not a domain: {domain} |
+| `import_running` | — | an import is already running |
+| `path_not_absolute` | `path` | an absolute path is expected: {path} |
+| `not_a_file` | `path` | {path} is not a file |
+| `folder_missing` | `path` | no folder {path} |
+| `file_unreadable` | `path`, `system_text` | {path}: {system_text} |
+| `database_not_empty` | — | the database already holds mail |
+| `ai_disabled` | — | the AI assistance is off: set ai.enabled = true in config.toml |
+| `ai_provider_missing` | — | the claude binary was not found; install Claude Code or set ai.claude_path |
+| `ai_not_logged_in` | — | Claude Code is not signed in; run `claude` in a terminal to sign in |
+| `ai_provider_unsafe` | `tools`, `mcp_servers` | the claude binary announced tools ({tools}) and MCP servers ({mcp_servers}); nothing was sent to it |
+| `ai_provider_unsupported` | `provider` | the {provider} provider is not available yet: set ai.provider = "claude-code" in config.toml |
+| `ai_rate_limited` | — | the usage limit of the Claude subscription is reached |
+| `ai_timeout` | — | the AI did not answer in time |
+| `ai_invalid_output` | `detail` | the AI's answer could not be read: {detail} |
+| `ai_failed` | `provider_text` | the AI failed: {provider_text} |
+| `ai_io` | `system_text` | cannot run the claude binary: {system_text} |
+| `ai_prompt_unavailable` | `prompt` | the prompt {prompt} is not available in this version of NiceMailer yet |
+| `ai_prompt_not_here` | `prompt` | the prompt {prompt} is not offered in this folder |
+| `ai_selection_needed` | — | select the text to work on first |
+| `ai_selection_unwanted` | — | this prompt works on the whole text: send no selection |
+| `ai_selection_empty` | — | the selection is empty |
+| `ai_text_empty` | — | there is no text of yours to send: write some first |
+| `ai_segment_tag` | — | the text contains a <segment> tag, which the AI uses to give the text back; remove it first |
+| `ai_mail_downloading` | — | this mail is still downloading: try again in a moment |
+| `ai_folder_without_role` | — | this folder has no role: nothing to sort it into |
+| `ai_folder_empty` | — | this folder is empty: nothing to sort |
+| `ai_mark_to_sort` | — | mark the conversations to sort, or put the cursor on one |
+| `ai_draft_unsaved` | — | the draft changed since: save it and run again |
+| `ai_draft_changed` | — | the draft changed since the AI read it: run it again |
+| `file_unsupported` | `file` | {file}: this kind of file has no text the AI can read |
+| `file_too_large` | `file`, `size_mb` | {file}: the file is too large to read ({size_mb} MB, 50 MB at most) |
+| `file_encrypted` | `file` | {file}: the file is protected by a password |
+| `file_without_text` | `file` | {file}: no text in this file: a scan or an image? |
+| `file_damaged` | `file`, `detail` | {file}: the file cannot be read: {detail} |
+| `update` | — | NiceMailer is being updated |
+| `migration` | `from`, `to` | the database is being upgraded (version {from} to {to}) |
+| `newer_schema` | `from`, `to` | the database was written by a newer NiceMailer (version {from}, this core reads {to}) |
+| `migration_failed` | `message` | the upgrade of the database failed: {message} |

@@ -26,14 +26,33 @@ use crate::core::{CoreError, CoreLink, Progress};
 use crate::reduce::{self, Obj, person};
 use crate::time;
 
-/// Why a tool failed, in English, for the agent to correct its call or to
-/// tell the user (`isError: true`).
+/// Why a tool failed (`isError: true`): an English sentence for the agent
+/// to correct its call or to tell the user, and, for a refusal of the core,
+/// its reason and values (`data` of the error, `docs/contract.md`,
+/// "Errors"), so that the agent can decide on the reason without reading
+/// the sentence (`specifications/localisation.md`, section 3.1).
 #[derive(Debug, Clone, PartialEq)]
-pub struct ToolError(pub String);
+pub struct ToolError {
+    pub text: String,
+    /// `{"reason": "revision_conflict", "revision": 4}`, for an error of
+    /// the core; None for a mistake the server finds itself in the call.
+    pub reason: Option<Value>,
+}
+
+impl ToolError {
+    /// An error the server finds itself, without reason of the core.
+    pub fn new(text: impl Into<String>) -> Self {
+        ToolError { text: text.into(), reason: None }
+    }
+}
 
 impl From<CoreError> for ToolError {
     fn from(e: CoreError) -> ToolError {
-        ToolError(match e {
+        let reason = match &e {
+            CoreError::Rpc(e) => e.data.clone().filter(|d| d.get("reason").is_some()),
+            _ => None,
+        };
+        let text = match e {
             CoreError::Rpc(e) => match e.code {
                 error_code::NOT_FOUND => {
                     format!("not found: {}. The id may be stale: list or read the conversation again", e.message)
@@ -44,15 +63,17 @@ impl From<CoreError> for ToolError {
                 error_code::DRAFT_SENDING => "the draft is being sent and cannot be changed".into(),
                 error_code::BODY_PENDING => "the body of this mail is still being downloaded: try again in a few seconds".into(),
                 error_code::INVALID_PARAMS => format!("invalid request: {}", e.message),
-                error_code::FORBIDDEN | error_code::CANNOT_SEND | error_code::READ_ONLY => e.message,
-                _ => format!("NiceMailer could not do it: {} (error {})", e.message, e.code),
+                // The core's sentence is written for whoever reads English:
+                // an agent among them.
+                _ => e.message,
             },
             CoreError::Unreachable(m) => m,
             CoreError::Maintenance => "NiceMailer is being updated or is upgrading its mailbox: try again in a minute".into(),
             CoreError::Lost => {
                 "the connection to NiceMailer was lost (it restarted): check whether the change was made before retrying".into()
             }
-        })
+        };
+        ToolError { text, reason }
     }
 }
 
@@ -419,7 +440,7 @@ recipients. The drafts of the user cannot be changed.",
 fn args<T: serde::de::DeserializeOwned>(v: Value) -> R<T> {
     // A client may send no arguments at all for a tool without any.
     let v = if v.is_null() { json!({}) } else { v };
-    serde_json::from_value(v).map_err(|e| ToolError(format!("invalid arguments: {e}")))
+    serde_json::from_value(v).map_err(|e| ToolError::new(format!("invalid arguments: {e}")))
 }
 
 /// A folder given by the agent: a role, a view or an id, as a string or a
@@ -582,13 +603,13 @@ impl Tools {
     /// A read of the contract, into its view type.
     async fn get<T: serde::de::DeserializeOwned>(&self, m: &str, params: Value, progress: &Progress) -> R<T> {
         let v = self.core.read(m, params, progress).await?;
-        serde_json::from_value(v).map_err(|e| ToolError(format!("unexpected answer of NiceMailer to {m}: {e}")))
+        serde_json::from_value(v).map_err(|e| ToolError::new(format!("unexpected answer of NiceMailer to {m}: {e}")))
     }
 
     /// A change, into its view type: never sent twice.
     async fn change<T: serde::de::DeserializeOwned>(&self, m: &str, params: Value, progress: &Progress) -> R<T> {
         let v = self.core.call(m, params, progress).await?;
-        serde_json::from_value(v).map_err(|e| ToolError(format!("unexpected answer of NiceMailer to {m}: {e}")))
+        serde_json::from_value(v).map_err(|e| ToolError::new(format!("unexpected answer of NiceMailer to {m}: {e}")))
     }
 
     async fn bounds(&self, progress: &Progress) -> R<Bounds> {
@@ -608,7 +629,7 @@ impl Tools {
     fn account_id(accounts: &[AccountView], key: &str) -> R<i64> {
         accounts.iter().find(|a| a.key.eq_ignore_ascii_case(key)).map(|a| a.id).ok_or_else(|| {
             let keys: Vec<&str> = accounts.iter().map(|a| a.key.as_str()).collect();
-            ToolError(format!("no account {key:?}: the accounts are {}", keys.join(", ")))
+            ToolError::new(format!("no account {key:?}: the accounts are {}", keys.join(", ")))
         })
     }
 
@@ -723,7 +744,7 @@ impl Tools {
         let a: HistoryArgs = args(a)?;
         let mut params = json!({"sources": ["mcp"], "limit": 50});
         if let Some(s) = &a.since {
-            params["since"] = json!(time::parse(s).map_err(ToolError)?);
+            params["since"] = json!(time::parse(s).map_err(ToolError::new)?);
         }
         if let Some(c) = &a.cursor {
             params["cursor"] = json!(c);
@@ -753,7 +774,7 @@ impl Tools {
     async fn addresses(&self, field: &str, text: &str, progress: &Progress) -> R<Vec<nm_api::AddressView>> {
         let r: nm_api::ParseAddressesResult = self.get(method::PARSE_ADDRESSES, json!({"text": text}), progress).await?;
         if !r.invalid.is_empty() {
-            return Err(ToolError(format!("{field}: not an address: {}", r.invalid.join(", "))));
+            return Err(ToolError::new(format!("{field}: not an address: {}", r.invalid.join(", "))));
         }
         Ok(r.addresses)
     }
@@ -789,7 +810,7 @@ impl Tools {
     /// the user's formatting.
     async fn save(&self, d: &DraftView, fields: serde_json::Map<String, Value>, progress: &Progress) -> R<()> {
         if d.body_format == "html" && fields.contains_key("body") {
-            return Err(ToolError(format!(
+            return Err(ToolError::new(format!(
                 "draft {} is formatted (the user switched it to HTML): its text cannot be changed by an AI agent, only its subject and recipients",
                 d.id
             )));
@@ -815,7 +836,7 @@ impl Tools {
         let mut params = json!({"kind": a.kind});
         if a.kind == DraftKind::New {
             if a.reply_to_message_id.is_some() {
-                return Err(ToolError("a new mail answers no message: leave out reply_to_message_id, or use reply_all".into()));
+                return Err(ToolError::new("a new mail answers no message: leave out reply_to_message_id, or use reply_all"));
             }
             if let Some(key) = &a.account {
                 params["account"] = json!(Self::account_id(&self.accounts(progress).await?, key)?);
@@ -823,10 +844,10 @@ impl Tools {
             params["body"] = json!(a.body);
         } else {
             let Some(reply_to) = a.reply_to_message_id else {
-                return Err(ToolError("reply_to_message_id: the message answered or forwarded".into()));
+                return Err(ToolError::new("reply_to_message_id: the message answered or forwarded"));
             };
             if a.account.is_some() {
-                return Err(ToolError("account is for a new mail; a reply is sent from the account of the mail".into()));
+                return Err(ToolError::new("account is for a new mail; a reply is sent from the account of the mail"));
             }
             let header = match &a.quote_header {
                 Some(h) => h.clone(),
@@ -874,7 +895,7 @@ impl Tools {
             fields.insert("body".into(), json!(body));
         }
         if fields.is_empty() {
-            return Err(ToolError("nothing to change: give body, subject, to, cc or bcc".into()));
+            return Err(ToolError::new("nothing to change: give body, subject, to, cc or bcc"));
         }
         let d = self.draft_view(a.draft_id, progress).await?;
         self.save(&d, fields, progress).await?;
@@ -886,7 +907,7 @@ impl Tools {
         let b = self.bounds(progress).await?;
         let source = PathBuf::from(&a.path);
         if !source.is_absolute() {
-            return Err(ToolError(format!("{}: an absolute path is expected", a.path)));
+            return Err(ToolError::new(format!("{}: an absolute path is expected", a.path)));
         }
         let d = self.draft_view(a.draft_id, progress).await?;
         let dir = self.core.data_dir(progress).await?;
@@ -948,17 +969,17 @@ fn nm_api_incoming() -> &'static str {
 /// On APFS the copy is a clone (`std::fs::copy` uses `fclonefileat`):
 /// instant, no space taken.
 async fn stage(source: &Path, dir: &Path) -> R<String> {
-    let meta = tokio::fs::metadata(source).await.map_err(|e| ToolError(format!("{}: {e}", source.display())))?;
+    let meta = tokio::fs::metadata(source).await.map_err(|e| ToolError::new(format!("{}: {e}", source.display())))?;
     if !meta.is_file() {
-        return Err(ToolError(format!("{}: not a file", source.display())));
+        return Err(ToolError::new(format!("{}: not a file", source.display())));
     }
     let staged = format!("mcp-{:016x}{:016x}", rand::random::<u64>(), rand::random::<u64>());
     let dest = dir.join(nm_api_incoming()).join(&staged);
     let (from, to) = (source.to_path_buf(), dest.clone());
     tokio::task::spawn_blocking(move || std::fs::copy(&from, &to))
         .await
-        .map_err(|e| ToolError(e.to_string()))?
-        .map_err(|e| ToolError(format!("{}: cannot be copied for the draft: {e}", source.display())))?;
+        .map_err(|e| ToolError::new(e.to_string()))?
+        .map_err(|e| ToolError::new(format!("{}: cannot be copied for the draft: {e}", source.display())))?;
     Ok(staged)
 }
 
@@ -1046,14 +1067,14 @@ fn scope(folder: &FolderArg, account: Option<i64>, folders: &[FolderView]) -> R<
         return Ok(json!({"everything": everything}));
     }
     let role: nm_core::FolderRole = serde_json::from_value(json!(name)).map_err(|_| {
-        ToolError(format!(
+        ToolError::new(format!(
             "no folder {name:?}: give a role (inbox, todo, waiting, archive, sent, drafts, newsletter, paperwork, quarantine, deleted, junk, banned), a view (work, all_mail, everything) or a folder id"
         ))
     })?;
     let ids: Vec<i64> =
         folders.iter().filter(|f| f.role == Some(role) && account.is_none_or(|a| f.account_id == a)).map(|f| f.id).collect();
     if ids.is_empty() {
-        return Err(ToolError(format!("no {name} folder{}", if account.is_some() { " in this account" } else { "" })));
+        return Err(ToolError::new(format!("no {name} folder{}", if account.is_some() { " in this account" } else { "" })));
     }
     Ok(json!({"folder_ids": ids}))
 }
@@ -1062,7 +1083,7 @@ fn folder_id(id: i64, folders: &[FolderView]) -> R<Value> {
     if folders.iter().any(|f| f.id == id) {
         Ok(json!({"folder_id": id}))
     } else {
-        Err(ToolError(format!("no folder {id}: the ids are in mailbox_overview")))
+        Err(ToolError::new(format!("no folder {id}: the ids are in mailbox_overview")))
     }
 }
 
@@ -1071,7 +1092,7 @@ fn folder_id(id: i64, folders: &[FolderView]) -> R<Value> {
 fn filter(f: &FilterArg) -> R<Value> {
     let date = |s: &Option<String>| -> R<Option<i64>> {
         match s {
-            Some(s) => time::parse(s).map(Some).map_err(ToolError),
+            Some(s) => time::parse(s).map(Some).map_err(ToolError::new),
             None => Ok(None),
         }
     };
@@ -1093,7 +1114,7 @@ fn filter(f: &FilterArg) -> R<Value> {
         tag: f.tag.clone(),
         ..nm_api::ThreadFilter::default()
     };
-    serde_json::to_value(filter).map_err(|e| ToolError(e.to_string()))
+    serde_json::to_value(filter).map_err(|e| ToolError::new(e.to_string()))
 }
 
 #[cfg(test)]
@@ -1116,6 +1137,19 @@ mod tests {
         }
     }
 
+    /// A refusal of the core keeps its reason and values for the agent; a
+    /// mistake the server finds itself has none.
+    #[test]
+    fn a_refusal_of_the_core_keeps_its_reason() {
+        use nm_api::{RpcError, reason};
+        let e = ToolError::from(CoreError::Rpc(RpcError::new(error_code::REVISION_CONFLICT, reason::REVISION_CONFLICT.with("revision", 4))));
+        assert!(e.text.contains("get_draft"), "{}", e.text);
+        assert_eq!(e.reason, Some(json!({"reason": "revision_conflict", "revision": 4})));
+        let e = ToolError::from(CoreError::Rpc(RpcError::new(error_code::INVALID_PARAMS, reason::TAG_EXISTS.with("tag", "Urgent"))));
+        assert_eq!(e.text, "invalid request: the tag Urgent exists already");
+        assert_eq!(ToolError::new("x").reason, None);
+    }
+
     #[test]
     fn a_folder_is_found_by_role_view_or_id() {
         use nm_core::FolderRole::*;
@@ -1130,7 +1164,7 @@ mod tests {
         assert_eq!(scope(&FolderArg::Name("work".into()), Some(1), &folders).unwrap(), json!({"everything": {"account_id": 1, "work": true}}));
         assert_eq!(scope(&FolderArg::Name("everything".into()), None, &folders).unwrap(), json!({"everything": {}}));
         let e = scope(&FolderArg::Name("spam".into()), None, &folders).unwrap_err();
-        assert!(e.0.contains("quarantine"), "{}", e.0);
+        assert!(e.text.contains("quarantine"), "{}", e.text);
     }
 
     #[test]
@@ -1148,16 +1182,16 @@ mod tests {
         assert!(filter(&FilterArg { before: Some("yesterday".into()), ..FilterArg::default() }).is_err());
         // An unknown criterion is refused, naming it.
         let e = args::<ListArgs>(json!({"folder": "inbox", "filter": {"unseen": true}})).err().unwrap();
-        assert!(e.0.contains("unseen"), "{}", e.0);
+        assert!(e.text.contains("unseen"), "{}", e.text);
     }
 
     #[test]
     fn arguments_out_of_the_schema_are_refused_with_a_reason() {
         assert!(args::<NoArgs>(Value::Null).is_ok());
         let e = args::<ConversationArgs>(json!({"thread": 3})).err().unwrap();
-        assert!(e.0.starts_with("invalid arguments"), "{}", e.0);
+        assert!(e.text.starts_with("invalid arguments"), "{}", e.text);
         let e = args::<CreateArgs>(json!({"kind": "reply", "body": "x"})).err().unwrap();
-        assert!(e.0.contains("reply"), "{}", e.0);
+        assert!(e.text.contains("reply"), "{}", e.text);
     }
 
     #[test]

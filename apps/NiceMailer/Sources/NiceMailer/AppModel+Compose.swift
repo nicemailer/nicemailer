@@ -664,10 +664,9 @@ extension AppModel {
         guard let e = error as? CoreClient.RPCError else { return error.localizedDescription }
         switch e.code {
         case ComposeError.bodyPending: return L("This mail is still downloading: try again in a moment")
-        case ComposeError.cannotSend: return L("Cannot send: %@", e.message)
         case ComposeError.revisionConflict: return L("This reply was changed elsewhere: close it and reopen it")
         case ComposeError.draftSending: return L("This reply is being sent · z to cancel")
-        default: return e.message
+        default: return e.localizedDescription
         }
     }
 }

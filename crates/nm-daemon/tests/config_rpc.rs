@@ -169,7 +169,8 @@ fn accounts_and_changes_of_the_file_are_reported() {
     let folders = c.call("list_folders", json!({})).unwrap();
     assert_eq!(folders["items"][0]["account_id"], archive, "the folder list follows the order");
     let err = c.call("set_account_order", json!({"account_ids": [archive, archive]})).unwrap_err();
-    assert!(err["message"].as_str().unwrap().contains("deux fois"), "{err}");
+    assert!(err["message"].as_str().unwrap().contains("given twice"), "{err}");
+    assert_eq!(err["data"]["reason"], "invalid_params", "{err}");
 
     // The history has the reloads and the account's life.
     let history = c.call("list_history", json!({"limit": 50})).unwrap();

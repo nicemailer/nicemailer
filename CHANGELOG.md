@@ -37,6 +37,7 @@ How to write it:
 - Dates follow the language of the interface and the Mac's region settings: an English interface no longer shows French month names, and the 12- or 24-hour clock chosen in System Settings is respected.
 - Counts read correctly in English and French: "1 mail", "1 attachment saved", and in French "0 mail" (no more "1 mails" or "(and 1 others)").
 - The classic theme and the connection errors are translated: they were shown in French whatever the language.
+- Errors reported by NiceMailer (a tag name taken, a password refused, an AI that failed…) are written in the app's language; the words of a mail server or of the AI are quoted as they came.
 - The "answered" attribute finds the conversations you replied to from NiceMailer or from a mail client that does not mark the mail as answered: a reply of yours in Sent is enough.
 - Replying from NiceMailer marks the mail as answered, also on the server, so other mail clients show it.
 

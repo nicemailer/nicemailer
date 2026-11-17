@@ -56,7 +56,7 @@ fn text_headers(from: &str, to: &str, cc: &str, when: &str, subject: &str) -> St
 
 /// Splits a `<number>:<number>` cursor (date and id of the last row).
 fn parse_pair(cursor: &str) -> Result<(i64, i64)> {
-    let bad = || StoreError::InvalidParams(format!("curseur invalide : {cursor}"));
+    let bad = || StoreError::InvalidParams(format!("invalid cursor: {cursor}"));
     let (a, b) = cursor.split_once(':').ok_or_else(bad)?;
     Ok((a.parse().map_err(|_| bad())?, b.parse().map_err(|_| bad())?))
 }
@@ -91,14 +91,14 @@ impl Store {
             Some("text") => (Some("text"), false),
             Some("html") => (Some("html"), false),
             Some("images") => (Some("html"), true),
-            Some(f) => return Err(StoreError::InvalidParams(format!("format inconnu : {f} (text, html ou images)"))),
+            Some(f) => return Err(StoreError::InvalidParams(format!("unknown format: {f} (text, html or images)"))),
         };
         let n = self.conn.execute(
             "UPDATE address SET body_format = ?2, remote_images = ?3 WHERE addr = ?1",
             params![addr.trim().to_lowercase(), stored, images],
         )?;
         if n == 0 {
-            return Err(StoreError::NotFound(format!("adresse {addr}")));
+            return Err(StoreError::NotFound(format!("address {addr}")));
         }
         Ok(())
     }
@@ -119,7 +119,7 @@ impl Store {
         let MessageParts { subject, from, to, cc, when, body, hash } = self.message_parts(message_id)?;
         let (bytes, ext): (Vec<u8>, &str) = match format {
             ExportFormat::Eml => {
-                let hash = hash.ok_or_else(|| StoreError::NotFound(format!("brut du message {message_id}")))?;
+                let hash = hash.ok_or_else(|| StoreError::NotFound(format!("raw file of message {message_id}")))?;
                 let hash: crate::raw::Hash =
                     hash.try_into().map_err(|_| StoreError::Io("hash de brut invalide".into()))?;
                 (raw.read(&hash).map_err(|e| crate::raw_error(&hash, e))?, "eml")
@@ -228,7 +228,7 @@ impl Store {
                 |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
             )
             .optional()?
-            .ok_or_else(|| StoreError::NotFound(format!("désabonnement du message {message_id}")))?;
+            .ok_or_else(|| StoreError::NotFound(format!("unsubscribe link of message {message_id}")))?;
         if matches!(role.as_deref(), Some("junk" | "quarantine" | "banned")) {
             return Err(StoreError::InvalidParams(
                 "pas de désabonnement depuis Junk, Quarantine ou Banned : il confirmerait l'adresse au spammeur".into(),
@@ -427,7 +427,7 @@ impl Store {
     pub fn tag_thread(&mut self, thread_id: i64, name: &str, remove: bool, source: Source) -> Result<ChangeSet> {
         let name = name.trim();
         if name.is_empty() || name.chars().count() > 64 {
-            return Err(StoreError::InvalidParams("nom de tag vide ou trop long (64 caractères au plus)".into()));
+            return Err(StoreError::Invalid(nm_api::reason::TAG_NAME_INVALID.into()));
         }
         let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let changes = tag_one(&tx, thread_id, name, remove, source)?;
@@ -442,7 +442,7 @@ impl Store {
     pub fn tag_threads(&mut self, thread_ids: &[i64], name: &str, remove: bool, source: Source) -> Result<ChangeSet> {
         let name = name.trim();
         if name.is_empty() || name.chars().count() > 64 {
-            return Err(StoreError::InvalidParams("nom de tag vide ou trop long (64 caractères au plus)".into()));
+            return Err(StoreError::Invalid(nm_api::reason::TAG_NAME_INVALID.into()));
         }
         let ids = self.existing_threads(thread_ids)?;
         let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -474,7 +474,7 @@ impl Store {
     pub fn rename_tag(&mut self, name: &str, new_name: &str, source: Source) -> Result<usize> {
         let new_name = new_name.trim();
         if new_name.is_empty() || new_name.chars().count() > 64 {
-            return Err(StoreError::InvalidParams("nom de tag vide ou trop long (64 caractères au plus)".into()));
+            return Err(StoreError::Invalid(nm_api::reason::TAG_NAME_INVALID.into()));
         }
         let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let rows = all_tags(&tx)?;
@@ -485,7 +485,7 @@ impl Store {
         }
         for t in &renamed {
             if rows.iter().any(|o| o.active && o.account_id == t.account_id && o.id != t.id && o.name.to_lowercase() == new) {
-                return Err(StoreError::InvalidParams(format!("le tag {new_name} existe déjà")));
+                return Err(StoreError::Invalid(nm_api::reason::TAG_EXISTS.with("tag", new_name)));
             }
         }
         let mut count = 0;
@@ -692,7 +692,7 @@ impl Store {
             .collect::<std::result::Result<_, _>>()?;
         rows.into_iter()
             .find(|(_, n)| n.to_lowercase() == wanted)
-            .ok_or_else(|| StoreError::NotFound(format!("groupe {name}")))
+            .ok_or_else(|| StoreError::NotFound(format!("group {name}")))
     }
 
     /// Renames the group `name` to `new_name` (`groupes.md`, section 6).
@@ -706,7 +706,7 @@ impl Store {
     pub fn rename_group(&mut self, name: &str, new_name: &str, source: Source) -> Result<bool> {
         let new_name = new_name.trim();
         if new_name.is_empty() || new_name.chars().count() > 64 {
-            return Err(StoreError::InvalidParams("nom de groupe vide ou trop long (64 caractères au plus)".into()));
+            return Err(StoreError::Invalid(nm_api::reason::GROUP_NAME_INVALID.into()));
         }
         let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let (id, old) = Self::active_group(&tx, name)?;
@@ -715,7 +715,7 @@ impl Store {
         }
         if let Ok((other, _)) = Self::active_group(&tx, new_name) {
             if other != id {
-                return Err(StoreError::InvalidParams(format!("le groupe {new_name} existe déjà")));
+                return Err(StoreError::Invalid(nm_api::reason::GROUP_EXISTS.with("group", new_name)));
             }
         }
         tx.execute(
@@ -876,7 +876,7 @@ impl Store {
     ) -> Result<(i64, String, bool)> {
         let group = group.trim();
         if group.is_empty() || group.chars().count() > 64 {
-            return Err(StoreError::InvalidParams("nom de groupe vide ou trop long (64 caractères au plus)".into()));
+            return Err(StoreError::Invalid(nm_api::reason::GROUP_NAME_INVALID.into()));
         }
         // Read before the transaction: it borrows the connection mutably.
         let own = self.own_addresses(own)?;
@@ -886,13 +886,13 @@ impl Store {
             (Some(a), _) => {
                 let a = a.trim().to_lowercase();
                 if !a.contains('@') || a.contains(char::is_whitespace) {
-                    return Err(StoreError::InvalidParams(format!("adresse invalide : {a}")));
+                    return Err(StoreError::Invalid(nm_api::reason::ADDRESS_INVALID.with("address", a)));
                 }
                 a
             }
             (None, Some(t)) => crate::queries::thread_correspondent_addr(&tx, t, &own)?
-                .ok_or_else(|| StoreError::NotFound(format!("correspondant de la conversation {t}")))?,
-            (None, None) => return Err(StoreError::InvalidParams("addr ou thread_id requis".into())),
+                .ok_or_else(|| StoreError::NotFound(format!("correspondent of conversation {t}")))?,
+            (None, None) => return Err(StoreError::InvalidParams("addr or thread_id required".into())),
         };
         if !remove && own.contains(&addr) {
             return Err(StoreError::InvalidParams(format!(
@@ -1178,7 +1178,7 @@ fn md_inline(s: &str) -> String {
 /// exports at the same moment cannot overwrite each other.
 fn write_new_file(dir: &Path, base: &str, ext: &str, bytes: &[u8]) -> Result<PathBuf> {
     if !dir.is_dir() {
-        return Err(StoreError::InvalidParams(format!("dossier introuvable : {}", dir.display())));
+        return Err(StoreError::Invalid(nm_api::reason::FOLDER_MISSING.with("path", dir.display().to_string())));
     }
     for n in 1..1000 {
         let name = if n == 1 { format!("{base}.{ext}") } else { format!("{base} ({n}).{ext}") };

@@ -1,6 +1,6 @@
 # Localisation : plan de travail
 
-Statut : dates, pluriels et phrases construites par morceaux corrigés dans l'app (`docs/localization.md`) ; le reste est à faire, dans l'ordre de la section 3.
+Statut : dates, pluriels et phrases construites par morceaux corrigés dans l'app (`docs/localization.md`) ; erreurs des requêtes décrites par une raison, écrites par l'app, transmises aux agents (section 3.1, lot 1). Le reste est à faire, dans l'ordre de la section 3.
 
 Ce document est le plan pour qu'une troisième langue ne soit plus qu'une question de traduction. Les règles déjà en place sont dans `docs/localization.md` ; quand une étape est livrée, ses règles y passent et l'étape est rayée ici.
 
@@ -28,7 +28,7 @@ Reste (section 3) : le texte produit par le noyau, le texte écrit dans les mail
 
 ### 3.1 Le noyau décrit, l'app écrit
 
-C'est le premier chantier, parce qu'il change le contrat : plus tard, il coûte plus cher (clients, MCP, documentation, tests).
+C'est le premier chantier, parce qu'il change le contrat : plus tard, il coûte plus cher (clients, MCP, documentation, tests). Il se fait en deux lots : les erreurs des requêtes (fait), puis le texte des événements et des résultats.
 
 **Constat.**
 
@@ -49,17 +49,28 @@ Une partie de ces textes est du noyau (« the draft changed since: save it and r
 2. Les événements qui portent du texte le séparent de même : `ActionReverted { …, reason: "server_refused", server_text: "…" }`, `SendFailed { …, reason, server_text }`, `AiFailed { code, provider_text }`. `server_text` et `provider_text` sont les textes de tiers, cités tels quels (principe 2).
 3. Dans l'app, une seule fonction traduit une erreur du noyau : la raison choisit la clé du catalogue, les valeurs en sont les arguments.
 4. Le CLI garde ses textes anglais et peut les construire des mêmes raisons, pour qu'un message du CLI et de l'app disent la même chose.
-5. **Le serveur MCP transmet la raison.** Aujourd'hui `nicemailer-mcp` réduit une erreur du noyau à une phrase anglaise (`ToolError`, `nm-mcp/src/tools.rs`), choisie par la famille (`code`). Le résultat d'erreur d'un outil (`isError: true`) garde cette phrase, que l'agent lit, et porte en plus la raison et ses valeurs, en données structurées (`structuredContent`) : un agent peut décider sur la raison (relire un brouillon, attendre un corps en téléchargement, prévenir l'utilisateur) sans analyser un texte. Les textes de tiers lui parviennent aussi, séparés. Les phrases de `ToolError` sont choisies par raison plutôt que par famille, là où la raison en dit plus. `docs/mcp.md` décrit le format.
+5. **Le serveur MCP transmet la raison.** Aujourd'hui `nicemailer-mcp` réduit une erreur du noyau à une phrase anglaise (`ToolError`, `nm-mcp/src/tools.rs`), choisie par la famille (`code`). Le résultat d'erreur d'un outil (`isError: true`) garde cette phrase, que l'agent lit, et porte en plus la raison et ses valeurs, dans un second bloc de `content`, en JSON (`{"reason": "draft_by_user", "draft": 12}`) : un agent peut décider sur la raison (relire un brouillon, attendre un corps en téléchargement, prévenir l'utilisateur) sans analyser un texte. Les textes de tiers lui parviennent aussi, séparés. Pas en `structuredContent` : un client peut le vérifier contre le schéma de sortie de l'outil, qu'une erreur ne suit pas, et le modèle ne lit que `content`. Les phrases de `ToolError` restent choisies par famille là où elles disent à l'agent quoi faire (relire le brouillon) ; ailleurs, c'est la phrase anglaise de la raison. `docs/mcp.md` décrit le format.
 6. **Pas de décalage de versions.** L'app, le noyau, le CLI et `nicemailer-mcp` sont livrés ensemble dans `NiceMailer.app` et mis à jour ensemble (`mise-a-jour.md`) : aucun client n'est plus ancien que le noyau qu'il interroge. Une raison que l'app ne connaît pas n'est donc pas un cas de compatibilité, c'est un oubli, que les tests ci-dessous refusent. La liste des raisons n'est pas versionnée. Seul garde-fou, pour qu'un oubli passé entre les tests ne laisse ni écran vide ni plantage : une phrase générique avec le `message` anglais, journalisée comme une erreur.
+
+**Lot 1, livré : les erreurs des requêtes.**
+
+- `nm_api::reason` : 103 raisons, chacune avec sa phrase anglaise à valeurs nommées (`{tag}`), déclarées une fois (`reasons!`) ; `RpcError::new(code, raison)` construit `message` depuis la phrase et `data` depuis la raison et ses valeurs. Le store (`StoreError::Invalid`, `InvalidMove`, `CannotSend`), les refus du trousseau (`Refusal::why`), les erreurs de l'IA (`AiError::why`, `BadInput` avec sa raison) et les fichiers illisibles (`Unreadable::why`) portent leur raison jusqu'au contrat. Les messages du store qui étaient en français sont en anglais.
+- Les erreurs de programmation (`invalid_params`, `not_found`, `internal`…) ont une raison générique et un `detail` anglais ; l'app les dit d'une phrase générique.
+- L'app : `CoreReason.swift` écrit chaque raison (85 phrases, anglais et français) ; `RPCError.localizedDescription` est cette phrase. Les valeurs de `data.reason` du test de compte, `auth` et `connect`, s'appellent `imap_auth_refused` et `imap_unreachable`.
+- Le serveur MCP transmet la raison (point 5).
+- Le CLI affiche toujours `message`, désormais tiré de la raison : rien à changer de son côté.
+
+**Écart avec le plan de tests.** Le plan voulait un test qui provoque chaque raison. Il n'existe pas : à la place, `contract_doc.rs` vérifie que chaque raison est donnée par le code (une raison oubliée échoue), et les tests existants provoquent les raisons qu'ils couvraient déjà par leur texte (désormais par leur raison). Une raison donnée au mauvais endroit, ou avec une valeur manquante, n'est donc pas détectée partout ; `every_template_is_completed_by_its_values` vérifie seulement que les valeurs déclarées complètent la phrase.
+
+**Lot 2, à faire : le texte des événements et des résultats.** Les événements (`ActionReverted.reason`, `SendFailed.reason`, `SendPartial.refused`, `AiFailed.message`), le message d'une maintenance, l'erreur d'un compte dans `list_accounts` (`AccountError`, pour laquelle `Refusal::why` existe déjà), le statut d'import et de synchronisation, et la sortie d'erreur du CLI lue par « Change Mailbox… » portent encore du texte anglais, que l'app affiche tel quel.
 
 **Inventaire et ordre.** Toutes les erreurs ne sont pas vues par un utilisateur : `INVALID_PARAMS` et `METHOD_NOT_FOUND` sont des erreurs de programmation, qui restent en anglais dans les journaux et dans une phrase générique à l'écran. L'inventaire classe les 108 erreurs en trois groupes : vue par l'utilisateur (une raison, une clé), erreur de programmation (`message` seulement), texte de tiers (`server_text`). On commence par les erreurs affichées par l'app aujourd'hui (tableau ci-dessus).
 
 **Tests.**
 
-- Rust : chaque raison émise appartient à la liste publiée par `nm-api` (une constante par raison, comme `nm_api::method`), chacune a un test qui la provoque.
-- Swift : chaque raison de cette liste a sa clé dans le catalogue, avec le bon nombre d'arguments (comme `everyFormKeepsThePlaceholdersOfItsKey`).
-- MCP : pour chaque raison qu'un outil peut rencontrer, le résultat d'erreur porte la raison et ses valeurs, et sa phrase anglaise est vérifiée (tests de `nm-mcp`, comme ceux de `ToolError`).
-- `docs/contract.md` décrit `data.reason` pour chaque méthode ; `contract_doc.rs` vérifie que les raisons sont documentées.
+- Rust : chaque raison est une constante de `nm_api::reason` (`RpcError::new` n'accepte pas de texte libre) ; `contract_doc.rs` vérifie que la table de `docs/contract.md`, « Errors », est exactement le registre, valeurs comprises, et que chaque raison est donnée par le code ; `nm-api` vérifie que chaque phrase est complétée par ses valeurs.
+- Swift : `LocalizationTests` lit la même table et vérifie que chaque raison est écrite par `CoreReason` ou déclarée générique, jamais les deux, que chaque phrase ne lit que les valeurs de sa raison, et que les arguments des traductions sont ceux de leur clé.
+- MCP : un refus du noyau garde sa raison (`nm-mcp`), et un agent la reçoit dans le second bloc (`mcp_proxy.rs`).
 
 ### 3.2 Le texte écrit dans les mails
 

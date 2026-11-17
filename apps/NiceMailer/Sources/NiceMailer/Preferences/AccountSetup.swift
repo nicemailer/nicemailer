@@ -523,10 +523,11 @@ final class AccountSetup {
             busy = L("Connecting to %@…", imap.host)
             do {
                 test = try await client.call("test_account", ["email": email, "imap": imap.json, "password": password]) as AccountTestReport
-            } catch let e as CoreClient.RPCError where e.data["reason"] == "auth" {
-                return stop(.password, L("%@ refused the password: %@", imap.host, e.message))
-            } catch let e as CoreClient.RPCError where e.data["reason"] == "connect" {
-                showIMAP(imapServer ?? ServerFields(imap), L("NiceMailer could not connect to %@: %@. Check the IMAP server.", imap.host, e.message))
+            } catch let e as CoreClient.RPCError where e.reason == "imap_auth_refused" {
+                // The server's own words, cited (`CoreReason`).
+                return stop(.password, L("%@ refused the password: %@", imap.host, e.data["server_text"] ?? ""))
+            } catch let e as CoreClient.RPCError where e.reason == "imap_unreachable" {
+                showIMAP(imapServer ?? ServerFields(imap), L("NiceMailer could not connect to %@: %@. Check the IMAP server.", imap.host, e.data["server_text"] ?? ""))
                 return
             } catch {
                 return stop(.email, Self.message(error))
@@ -744,9 +745,10 @@ final class AccountSetup {
         email.split(separator: "@").last.map(String.init)?.lowercased() ?? email
     }
 
-    /// The core's message, without the code the developer needs.
+    /// What to say of an error: for the core's, the sentence of its reason
+    /// in the user's language (`CoreReason`).
     nonisolated static func message(_ error: Error) -> String {
-        (error as? CoreClient.RPCError)?.message ?? error.localizedDescription
+        error.localizedDescription
     }
 }
 

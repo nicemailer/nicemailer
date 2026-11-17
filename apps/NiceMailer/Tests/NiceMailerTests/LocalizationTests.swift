@@ -161,6 +161,86 @@ struct LocalizationTests {
         }
     }
 
+    // MARK: Errors of the core
+
+    /// The reasons of the contract and the keys of their values, read from
+    /// the table of `docs/contract.md`, section "Errors", which the Rust
+    /// tests keep equal to `nm_api::reason` (`contract_doc.rs`).
+    static func contractReasons() throws -> [(name: String, values: [String])] {
+        let page = sourcesRoot.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("docs/contract.md")
+        let text = try String(contentsOf: page, encoding: .utf8)
+        let errors = try #require(text.components(separatedBy: "\n## Errors\n").last)
+        return errors.split(separator: "\n").filter { $0.hasPrefix("| `") }.map { line in
+            let cells = line.split(separator: "|").map { $0.trimmingCharacters(in: .whitespaces) }
+            let name = cells[0].trimmingCharacters(in: CharacterSet(charactersIn: "`"))
+            let values = cells[1] == "—" ? [] : cells[1].components(separatedBy: ", ").map { $0.trimmingCharacters(in: CharacterSet(charactersIn: "`")) }
+            return (name, values)
+        }
+    }
+
+    /// Every reason of the contract is written by the app, or listed as
+    /// generic; never both, never neither.
+    @Test func everyReasonOfTheCoreIsWrittenOrSaidGeneric() throws {
+        let reasons = try Self.contractReasons()
+        #expect(reasons.count > 90)
+        for r in reasons {
+            let values = Dictionary(uniqueKeysWithValues: r.values.map { ($0, "x") })
+            let written = CoreReason.sentence(r.name, values) != nil
+            let generic = CoreReason.generic.contains(r.name)
+            #expect(written != generic, "\(r.name): \(written ? "written and generic" : "neither written nor generic")")
+        }
+        // And nothing for a reason the contract does not have.
+        let names = Set(reasons.map(\.name))
+        #expect(CoreReason.generic.subtracting(names).isEmpty, "generic reasons not in the contract: \(CoreReason.generic.subtracting(names))")
+    }
+
+    /// The values a sentence of `CoreReason` reads are values of its reason,
+    /// and it names only reasons of the contract: a key mistyped would give
+    /// an empty word.
+    @Test func theSentencesOfTheCoreReadTheValuesOfTheirReason() throws {
+        let reasons = Dictionary(uniqueKeysWithValues: try Self.contractReasons().map { ($0.name, Set($0.values)) })
+        let source = try String(contentsOf: Self.sourcesRoot.appendingPathComponent("CoreReason.swift"), encoding: .utf8)
+        let caseLine = try NSRegularExpression(pattern: #"case "([a-z0-9_]+)": L\((.*)\)$"#, options: .anchorsMatchLines)
+        let value = try NSRegularExpression(pattern: #"v\("([a-z_]+)"\)"#)
+        var cases = 0
+        for m in caseLine.matches(in: source, range: NSRange(source.startIndex..., in: source)) {
+            cases += 1
+            let name = String(source[Range(m.range(at: 1), in: source)!])
+            let call = String(source[Range(m.range(at: 2), in: source)!])
+            let allowed = try #require(reasons[name], "\(name) is not a reason of the contract")
+            for v in value.matches(in: call, range: NSRange(call.startIndex..., in: call)) {
+                let key = String(call[Range(v.range(at: 1), in: call)!])
+                #expect(allowed.contains(key), "\(name) reads \(key), which it does not have")
+            }
+        }
+        #expect(cases > 80)
+    }
+
+    /// The app's sentence, never the core's English message; a value of a
+    /// third party cited; an unknown reason, the generic sentence with the
+    /// message.
+    @Test func anErrorOfTheCoreIsSaidFromItsReason() {
+        let tag = CoreClient.RPCError(code: -32602, message: "the tag Urgent exists already", data: ["reason": "tag_exists", "tag": "Urgent"])
+        #expect(tag.localizedDescription == L("The tag %@ exists already", "Urgent"))
+        #expect(L(in: "fr", "The tag %@ exists already", "Urgent") == "Le tag Urgent existe déjà")
+        let refused = CoreClient.RPCError(code: 1009, message: "x", data: ["reason": "imap_auth_refused", "server_text": "[AUTHENTICATIONFAILED] Mot de passe incorrect"])
+        #expect(refused.localizedDescription == L("The server refused the login: %@", "[AUTHENTICATIONFAILED] Mot de passe incorrect"))
+        let failure = CoreClient.RPCError(code: -32603, message: "internal error: disk full", data: ["reason": "internal", "detail": "disk full"])
+        #expect(failure.localizedDescription == L("NiceMailer could not do it: %@", "internal error: disk full"))
+        let bare = CoreClient.RPCError(code: 1, message: "something")
+        #expect(bare.localizedDescription == L("NiceMailer could not do it: %@", "something"))
+    }
+
+    /// The values of `data` reach the sentence whatever their JSON type.
+    @Test func theValuesOfAnErrorAreReadAsText() {
+        let e = CoreClient.rpcError(["code": -32602, "message": "m",
+                                     "data": ["reason": "file_too_large", "file": "a.pdf", "size_mb": 72, "list": ["a", "b"]]])
+        #expect(e.reason == "file_too_large")
+        #expect(e.data["size_mb"] == "72" && e.data["list"] == "a, b")
+        #expect(e.localizedDescription == L("%@ is too large to read (%@ MB, 50 MB at most)", "a.pdf", "72"))
+    }
+
     // MARK: Plurals
 
     @Test func aNumberChoosesItsFormByTheRulesOfTheLanguage() {

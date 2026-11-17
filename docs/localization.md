@@ -39,6 +39,14 @@ Every form keeps every argument of the key, the number included: French "one" al
 
 A key with two numbers that both change the words uses one substitution per number (`%1$#@saved@ … %3$#@missing@`), whose forms show their number as `%arg`. Its value must number every argument (`%2$@`), or the compiled table shows "(null)".
 
+### Errors of the core
+
+The core does not know the user's language. A failed request gives a reason and its values in `data` (`nm_api::reason`, the table in `docs/contract.md`, "Errors"); its `message` is the English sentence, for the CLI, the logs and the AI agents. The app writes the sentence in `CoreReason.swift`, the one place that turns a reason into words: `RPCError.localizedDescription` is that sentence, so every `error.localizedDescription` of the app is in the user's language. Never show `RPCError.message`.
+
+A value whose key ends with `_text` (`server_text`, `system_text`, `provider_text`) was written by someone else: the sentence cites it as it is. The generic reasons (mistakes of a program, refusals made to AI agents) are listed in `CoreReason.generic` and said by one sentence with the English message.
+
+A new reason: add it to `reasons!` in `nm-api` (name and English sentence), give it where it applies, add its row to `docs/contract.md`, and its sentence to `CoreReason` with its French in the catalog (or add it to `generic`). The tests below fail on each of these steps left out.
+
 ### Adding a string
 
 1. Write `L("English text")` (or `L("%lld things", n)`).
@@ -55,7 +63,10 @@ A key with two numbers that both change the words uses one substitution per numb
 - no SwiftUI view shows a literal text outside the catalog;
 - the plural forms in English and French, 0, 1 and more, one number or two;
 - `interfaceLocale` keeps the region and the hour cycle of the Mac's settings;
-- the dates of the lists and of the reader in several locales, and the 8-character column in ten of them.
+- the dates of the lists and of the reader in several locales, and the 8-character column in ten of them;
+- every reason of the contract written by `CoreReason` or listed as generic, never both; each sentence reads only values of its reason; an error said from its reason, a third party's text cited, an unknown reason said generically.
+
+In Rust, `contract_doc.rs` keeps the table of reasons of `docs/contract.md` equal to `nm_api::reason` with their values, and checks that each reason is given by the code; `nm-api` checks that every English sentence is completed by its values.
 
 `FormatTests` checks that every `L("…")` is in the catalog and that every key has a French translation in the compiled tables.
 

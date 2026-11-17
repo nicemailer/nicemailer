@@ -124,7 +124,8 @@ final class UIScriptSetupCore: CoreCalling, @unchecked Sendable {
     fileprivate static func testAccount(_ p: [String: Any]) throws -> [String: Any] {
         if p["password"] as? String == "wrong" {
             let host = (p["imap"] as? [String: Any])?["host"] as? String ?? "?"
-            throw CoreClient.RPCError(code: 1009, message: "the server refused the login: [AUTHENTICATIONFAILED] Invalid credentials (\(host))", data: ["reason": "auth"])
+            throw CoreClient.RPCError(code: 1009, message: "the server refused the login: [AUTHENTICATIONFAILED] Invalid credentials (\(host))",
+                                      data: ["reason": "imap_auth_refused", "server_text": "[AUTHENTICATIONFAILED] Invalid credentials (\(host))"])
         }
         let big = domain(p) == "known.test"
         // The folders of the server, with the role the core would propose.
@@ -214,7 +215,10 @@ extension UIScriptSetupCore {
     fileprivate func lookedAt(_ p: [String: Any]) throws -> Int {
         let key = p["account"] as? String ?? ""
         let i: Int? = lockedIndex(key)
-        guard let i else { throw CoreClient.RPCError(code: -32602, message: "the account \(key) is not read-only: it is set up already") }
+        guard let i else {
+            throw CoreClient.RPCError(code: -32602, message: "the account \(key) is not read-only: it is set up already",
+                                      data: ["reason": "account_set_up", "account": key])
+        }
         return i
     }
 

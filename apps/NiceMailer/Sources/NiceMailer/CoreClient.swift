@@ -28,16 +28,21 @@ final class CoreClient: @unchecked Sendable {
     static let protocolVersion = 1
 
     /// Error returned by the core in a response's `error` member.
-    /// Conforming to `LocalizedError` provides the text shown in alerts.
+    /// Conforming to `LocalizedError` provides the text shown in alerts:
+    /// the sentence of its reason in the user's language (`CoreReason`).
     struct RPCError: LocalizedError {
         let code: Int
+        /// The core's English sentence, for the logs and a generic error.
         let message: String
-        /// The error's structured details (`data`), its text values only:
-        /// for `confirmationRequired`, the address and the verdict.
+        /// The error's structured details (`data`), as text: its `reason`
+        /// and the values of its sentence (a number written in digits, a
+        /// list joined by ", ").
         var data: [String: String] = [:]
         /// The whole `data`, as JSON: for `maintenance`, a `CoreMaintenance`.
         var rawData: Data?
-        var errorDescription: String? { "\(message) (code \(code))" }
+        /// Why it failed (`nm_api::reason`): `tag_exists`, `imap_auth_refused`…
+        var reason: String? { data["reason"] }
+        var errorDescription: String? { CoreReason.text(self) }
 
         /// A favorable decision on a sender suspected of spoofing waits for
         /// the user's confirmation (`nm_api::error_code`).
@@ -310,13 +315,24 @@ final class CoreClient: @unchecked Sendable {
 }
 
 extension CoreClient {
-    /// The error of a response's `error` member: its code, message, text
-    /// values of `data`, and the whole `data` as JSON.
+    /// The error of a response's `error` member: its code, message, the
+    /// values of `data` as text, and the whole `data` as JSON.
     static func rpcError(_ err: [String: Any]) -> RPCError {
         let data = err["data"]
-        return RPCError(code: err["code"] as? Int ?? 0, message: err["message"] as? String ?? "erreur",
-                        data: (data as? [String: Any])?.compactMapValues { $0 as? String } ?? [:],
+        return RPCError(code: err["code"] as? Int ?? 0, message: err["message"] as? String ?? "",
+                        data: (data as? [String: Any])?.compactMapValues(text) ?? [:],
                         rawData: data.flatMap { try? JSONSerialization.data(withJSONObject: $0) })
+    }
+
+    /// A value of `data` as text: a string as it is, a number in digits, a
+    /// list of strings joined by ", "; nil for anything else.
+    static func text(_ value: Any) -> String? {
+        switch value {
+        case let s as String: s
+        case let n as NSNumber: n.stringValue
+        case let list as [Any]: list.compactMap { $0 as? String }.joined(separator: ", ")
+        default: nil
+        }
     }
 }
 

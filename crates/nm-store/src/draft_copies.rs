@@ -126,7 +126,7 @@ pub(crate) fn release_for_deletion(tx: &Transaction, message_id: i64) -> Result<
         return Err(StoreError::DraftSending);
     }
     if !draft_actions(tx, id)?.is_empty() {
-        return Err(StoreError::InvalidMove("this draft is being copied to the server: try again in a moment".into()));
+        return Err(StoreError::InvalidMove(nm_api::reason::DRAFT_COPYING.into()));
     }
     tx.execute("DELETE FROM draft WHERE id = ?1", [id])?;
     Ok(())
@@ -199,7 +199,7 @@ impl Store {
             })
             .optional()?;
         let Some((revision, server_revision, message, state)) = row else {
-            return Err(StoreError::NotFound(format!("brouillon {id}")));
+            return Err(StoreError::NotFound(format!("draft {id}")));
         };
         // Being sent: it leaves Drafts anyway.
         if state == "sending" || (message.is_some() && server_revision == Some(revision)) {
@@ -231,7 +231,7 @@ impl Store {
             })
             .optional()?;
         let Some((account_id, revision, previous, msgid)) = row else {
-            return Err(StoreError::NotFound(format!("brouillon {id}")));
+            return Err(StoreError::NotFound(format!("draft {id}")));
         };
         let Some((folder, _)) = drafts_folder(&tx, account_id)? else {
             // No Drafts folder: the draft stays in `draft`, as in v1.

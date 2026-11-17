@@ -610,13 +610,9 @@ enum AI {
         appLocale.language.languageCode?.identifier ?? "en"
     }
 
-    /// The status bar for an error of `ai_run` or `ai_apply`.
+    /// The status bar for an error of `ai_run` or `ai_apply`: the sentence
+    /// of its reason (`CoreReason`), the AI's own text cited when it failed.
     static func errorFlash(_ error: Error) -> String {
-        guard let e = error as? CoreClient.RPCError else { return error.localizedDescription }
-        switch e.code {
-        case AIError.disabled: return L("The AI is off: set ai.enabled = true in config.toml")
-        case ComposeError.revisionConflict: return L("The reply changed since the AI read it: run it again")
-        default: return L("AI: %@", e.message)
-        }
+        error.localizedDescription
     }
 }

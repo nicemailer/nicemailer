@@ -70,7 +70,7 @@ fn a_run_ends_once_and_is_decided_once() {
     assert_eq!(s.ai_run(id).unwrap().unwrap().decision.as_deref(), Some("rejected"));
     // An unknown run is "not found", not "not running".
     let e = s.ai_run_done(999, &done()).unwrap_err().to_string();
-    assert!(e.contains("introuvable"), "{e}");
+    assert!(e.starts_with("not found"), "{e}");
 }
 
 #[test]

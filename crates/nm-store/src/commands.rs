@@ -179,7 +179,7 @@ impl Store {
                     .conn
                     .query_row("SELECT role FROM folder WHERE id = ?1", [fid], |r| r.get(0))
                     .optional()?
-                    .ok_or_else(|| StoreError::NotFound(format!("dossier {fid}")))?;
+                    .ok_or_else(|| StoreError::NotFound(format!("folder {fid}")))?;
                 // `as_deref` turns `Option<String>` into `Option<&str>`;
                 // `and_then` applies `parse`, which itself returns an Option.
                 role.as_deref().and_then(FolderRole::parse)
@@ -193,11 +193,9 @@ impl Store {
             None => !matches!(target, FolderRole::Sent | FolderRole::Drafts | FolderRole::Quarantine),
         };
         if !allowed {
-            return Err(StoreError::InvalidMove(format!(
-                "{} n'est pas une cible depuis {}",
-                target.as_str(),
-                from_role.map(|r| r.as_str()).unwrap_or("ce dossier")
-            )));
+            return Err(StoreError::InvalidMove(
+                nm_api::reason::MOVE_REFUSED.with("target", target.as_str()).with("from", from_role.map(|r| r.as_str()).unwrap_or("this folder")),
+            ));
         }
 
         // The decision. A sender whose mail is suspected of spoofing:
@@ -316,7 +314,7 @@ fn apply_move(
             |r| r.get(0),
         )
         .optional()?
-        .ok_or_else(|| StoreError::NotFound(format!("dossier {}", p.target.as_str())))?;
+        .ok_or_else(|| StoreError::NotFound(format!("folder {}", p.target.as_str())))?;
 
     // Messages to move, with their current folder (needed for the audit
     // log and to refresh the old folder's counters). The six roles of the

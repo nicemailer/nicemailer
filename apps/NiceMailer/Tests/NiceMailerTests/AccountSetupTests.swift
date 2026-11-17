@@ -234,7 +234,8 @@ struct AccountSetupTests {
     }
 
     @Test func aRefusedPasswordPointsAtThePasswordAndOnlyItIsTriedAgain() async {
-        script.test = CoreClient.RPCError(code: 1009, message: "the server refused the login: bad", data: ["reason": "auth"])
+        script.test = CoreClient.RPCError(code: 1009, message: "the server refused the login: bad",
+                                          data: ["reason": "imap_auth_refused", "server_text": "bad"])
         fill()
         await setup.submit()
         #expect(setup.errorField == .password)
@@ -250,7 +251,8 @@ struct AccountSetupTests {
     }
 
     @Test func anUnreachableServerShowsTheServerFound() async {
-        script.test = CoreClient.RPCError(code: 1009, message: "cannot connect to imap.toto.fr:993", data: ["reason": "connect"])
+        script.test = CoreClient.RPCError(code: 1009, message: "the server could not be reached: cannot connect to imap.toto.fr:993",
+                                          data: ["reason": "imap_unreachable", "server_text": "cannot connect to imap.toto.fr:993"])
         fill()
         await setup.submit()
         #expect(setup.imapServer == ServerFields(host: "imap.toto.fr", port: 993, security: "tls"))
@@ -551,13 +553,13 @@ struct AccountsListTests {
     @Test func aRefusedMoveShowsTheCoresOrderAgain() async {
         let core = FakeCore { method, _ -> Any in
             if method == "list_accounts" { return ["items": [Self.row(1, "perso", 0), Self.row(2, "work", 1)], "as_of": Fixture.position] }
-            return CoreClient.RPCError(code: 1001, message: "no account 9")
+            return CoreClient.RPCError(code: 1001, message: "not found: account 9", data: ["reason": "not_found", "detail": "account 9"])
         }
         let list = AccountsList(client: core)
         await list.load()
         await list.move(2, by: -1)
         #expect(list.items.map(\.key) == ["perso", "work"])
-        #expect(list.error == "no account 9")
+        #expect(list.error == L("It no longer exists: it may have been deleted meanwhile"))
     }
 }
 
@@ -597,7 +599,9 @@ struct AccountActivationTests {
         let core = FakeCore { method, params in
             switch method {
             case "prepare_activation": return AccountSetupTests.testReport()
-            case "activate_account": return CoreClient.RPCError(code: 1009, message: "the server refused CREATE")
+            case "activate_account":
+                return CoreClient.RPCError(code: 1009, message: "the server failed: refused CREATE",
+                                           data: ["reason": "imap_failed", "server_text": "refused CREATE"])
             default: return Fixture.answer(method, params)
             }
         }
@@ -605,7 +609,7 @@ struct AccountActivationTests {
         await a.prepare()
         #expect(!a.importShown)
         await a.activate()
-        #expect(a.error == "the server refused CREATE" && a.plan != nil && a.done == nil)
+        #expect(a.error == L("The server failed: %@", "refused CREATE") && a.plan != nil && a.done == nil)
         // Cancelled: back to the page, nothing kept.
         a.cancel()
         #expect(a.plan == nil && a.error == nil)
@@ -613,11 +617,14 @@ struct AccountActivationTests {
 
     @Test func aServerThatCannotBeReachedIsSaid() async {
         let core = FakeCore { method, params in
-            method == "prepare_activation" ? CoreClient.RPCError(code: 1009, message: "cannot connect") : Fixture.answer(method, params)
+            method == "prepare_activation"
+                ? CoreClient.RPCError(code: 1009, message: "the server could not be reached: cannot connect",
+                                      data: ["reason": "imap_unreachable", "server_text": "cannot connect"])
+                : Fixture.answer(method, params)
         }
         let a = AccountActivation(client: core, key: "look", email: "pierre@toto.fr")
         await a.prepare()
-        #expect(a.error == "cannot connect" && a.plan == nil)
+        #expect(a.error == L("The server could not be reached: %@", "cannot connect") && a.plan == nil)
     }
 
     @Test func anAccountOnlyLookedAtSaysSo() throws {

@@ -26,6 +26,7 @@
 //! own drafts (`drafts.rs`, `writer`), never saves a password
 //! (`set_password`).
 
+use nm_api::reason;
 use nm_api::{RpcError, error_code, method};
 use nm_core::Source;
 
@@ -76,7 +77,7 @@ pub(crate) fn check(source: Source, method: &str) -> Result<(), RpcError> {
         // replaces (`mise-a-jour.md`, section 3). Another client that put
         // the core in maintenance would only lock everyone out.
         Source::Cli | Source::Tui | Source::Web if UPDATE_METHODS.contains(&method) => {
-            Err(RpcError::new(error_code::FORBIDDEN, format!("{method} is reserved to NiceMailer.app, which installs the updates")))
+            Err(RpcError::new(error_code::FORBIDDEN, reason::RESERVED_TO_APP.with("method", method)))
         }
         _ => Ok(()),
     }
@@ -85,24 +86,21 @@ pub(crate) fn check(source: Source, method: &str) -> Result<(), RpcError> {
 /// The methods of the update (`update.rs`), reserved to the app.
 const UPDATE_METHODS: &[&str] = &[method::PREPARE_UPDATE, method::CANCEL_UPDATE];
 
-/// The message of a refusal, in English, written for the agent to act on
-/// or to tell the user: what it may do instead, where a right is given.
-fn refusal(m: &str) -> String {
+/// Why an agent is refused, its English sentence written for the agent to
+/// act on or to tell the user: what it may do instead, where a right is
+/// given.
+fn refusal(m: &str) -> nm_api::Why {
     match m {
-        method::SEND_DRAFT | method::CANCEL_SEND => {
-            "AI agents cannot send mail yet: the draft is in Drafts, where the user can review and send it from NiceMailer".into()
-        }
+        method::SEND_DRAFT | method::CANCEL_SEND => reason::AGENT_CANNOT_SEND.into(),
         method::MOVE_THREAD
         | method::MOVE_THREADS
         | method::SET_THREAD_SEEN
         | method::SET_THREAD_FLAGGED
         | method::TAG_THREAD
-        | method::UNDO => "AI agents cannot file mail yet (move, mark, flag, tag): ask the user to do it in NiceMailer".into(),
-        method::UNSUBSCRIBE => {
-            "unsubscribing sends a request to an address the sender chose, which confirms the mail was read: only the user can do it, in NiceMailer".into()
-        }
-        method::SET_PASSWORD => "passwords are given in NiceMailer only".into(),
-        _ => format!("{m} is not available to AI agents"),
+        | method::UNDO => reason::AGENT_CANNOT_FILE.into(),
+        method::UNSUBSCRIBE => reason::AGENT_CANNOT_UNSUBSCRIBE.into(),
+        method::SET_PASSWORD => reason::AGENT_CANNOT_SET_PASSWORD.into(),
+        _ => reason::AGENT_NOT_ALLOWED.with("method", m),
     }
 }
 
@@ -200,8 +198,8 @@ mod tests {
 
     #[test]
     fn a_refusal_says_what_to_do_instead() {
-        assert!(refusal(method::SEND_DRAFT).contains("Drafts"));
-        assert!(refusal(method::MOVE_THREADS).contains("ask the user"));
-        assert_eq!(refusal(method::ADD_ACCOUNT), "add_account is not available to AI agents");
+        assert!(refusal(method::SEND_DRAFT).message().contains("Drafts"));
+        assert!(refusal(method::MOVE_THREADS).message().contains("ask the user"));
+        assert_eq!(refusal(method::ADD_ACCOUNT).message(), "add_account is not available to AI agents");
     }
 }

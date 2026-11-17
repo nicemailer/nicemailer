@@ -100,6 +100,7 @@ Every byte returned takes room in the model's context:
 - **Dates** are ISO 8601 at local time with the offset, `2026-11-16T09:42:00+01:00`. Dates given by the agent (`after`, `before`, `since`) are read the same way, or as `2026-11-16` (local midnight).
 - **Ids** are those of the contract (`thread_id`, `message_id`, `attachment_id`, `draft_id`).
 - **A message** in `get_conversation` is: id, folder role, date, sender, recipients when the app would show them, `reply_to` when it differs from the sender, `authentication` when it is not `pass`, `unread`, `flagged`, `answered`, its attachments (id, name, type, size, readable), a verification code when the core found one, and its text: the segments the app shows (what the message brings, without the history it quotes again; `quote_hidden` when some were left out). With `include_quoted`, every segment, quoted ones prefixed by `>`. A body not downloaded yet is `text_pending`.
+- **Errors** (`isError: true`): an English sentence the agent can act on or tell the user. When the core refused, a second text block holds its reason and values as JSON, `{"reason": "draft_by_user", "draft": 12}` (`docs/contract.md`, "Errors"), so that the agent decides on the reason rather than on the wording. Not as `structuredContent`: a client may check that against the tool's output schema, which an error does not follow, and the model reads `content`.
 - **Never returned**: the HTML of a mail (the text is enough, and HTML is where invisible instructions hide), tracking links, remote images, event positions.
 
 ### Bounds

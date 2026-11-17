@@ -210,7 +210,7 @@ Each change checks the state it starts from: a run ends once and is decided once
 | `ai_dismiss {run_id}` | Turns the proposal down, or cancels a run still going |
 | `ai_cancel {run_id}` | Stops a run; its process group is killed |
 
-Events: `AiDelta {run_id, text}`, transient, the fragments of a text answer; `AiDone {run_id}`; `AiFailed {run_id, code, message}`, `code` `ai_cancelled` for a cancel. Errors: `AI_DISABLED` (1017) when `ai.enabled` is off, `AI` (1018) with the AI error code in `data.code`, `REVISION_CONFLICT` (1012) when the draft changed.
+Events: `AiDelta {run_id, text}`, transient, the fragments of a text answer; `AiDone {run_id}`; `AiFailed {run_id, code, message}`, `code` `ai_cancelled` for a cancel. Errors: `AI_DISABLED` (1017) when `ai.enabled` is off, `AI` (1018) with the AI error code in `data.code` and the reason of the failure in `data.reason` (`docs/contract.md`, "Errors"), `REVISION_CONFLICT` (1012) when the draft changed.
 
 A run is checked before anything is written or sent: the AI on, the prompt known and wired, its variant, the draft's revision, some text of the user's. Then its row is written (`running`), the run waits for one of the `ai.max_parallel` places, the text comes as `AiDelta`, the answer is checked (`answer::read`) and kept as a proposal, in memory, for `ai_apply`. `ai_cancel` and the end of a run take it out of the running ones under one lock, so only one of them decides how it ended.
 

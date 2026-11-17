@@ -468,7 +468,7 @@ fn person(name: &str, addr: &str) -> Person {
 pub fn seed(store: &mut Store, opts: &SeedOptions) -> Result<SeedReport> {
     let existing: i64 = store.conn.query_row("SELECT count(*) FROM account", [], |r| r.get(0))?;
     if existing > 0 {
-        return Err(StoreError::InvalidParams("la base contient déjà des données".into()));
+        return Err(StoreError::Invalid(nm_api::reason::DATABASE_NOT_EMPTY.into()));
     }
     let tx = store.conn.transaction()?;
     // One account, with one folder per workflow role. The Inbox is named

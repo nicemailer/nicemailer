@@ -31,6 +31,7 @@
 
 use std::sync::Arc;
 
+use nm_api::reason;
 use nm_api::{
     AddDraftAttachmentParams, AddDraftAttachmentResult, AddressView, ColorView, ComposeFormatsResult, CreateDraftParams, CreateDraftResult,
     DraftIdParams, DraftKind, DraftView, FontView, HtmlToTextParams, HtmlToTextResult, ListSendersResult, SizeView, ParseAddressesParams, ParseAddressesResult, RemoveDraftAttachmentParams, RpcError, SendDraftParams, SendDraftResult,
@@ -76,14 +77,14 @@ async fn sendable(core: &Arc<Core>, account_id: i64) -> Result<Sendable, RpcErro
     }
     let engine = core.engine.lock().unwrap();
     let found = engine.config().accounts.iter().find(|(key, _)| engine.account_id(key) == Some(account_id));
-    let Some((_, cfg)) = found else {
-        return Err(RpcError::new(error_code::CANNOT_SEND, "this mail is not in an account of accounts.toml (an archive account?): it cannot be answered from here"));
+    let Some((key, cfg)) = found else {
+        return Err(RpcError::new(error_code::CANNOT_SEND, reason::MAIL_NOT_IN_ACCOUNT));
     };
     if cfg.read_only {
-        return Err(RpcError::new(error_code::CANNOT_SEND, "this account is read-only (read_only = true in accounts.toml): it cannot send"));
+        return Err(RpcError::new(error_code::CANNOT_SEND, reason::ACCOUNT_READ_ONLY_SEND));
     }
     if cfg.smtp.is_none() {
-        return Err(RpcError::new(error_code::CANNOT_SEND, "this account has no [smtp] server in accounts.toml: it cannot send"));
+        return Err(RpcError::new(error_code::CANNOT_SEND, reason::NO_SMTP_SERVER.with("account", key.as_str())));
     }
     let main_name = cfg.display_name.as_deref();
     let list = std::iter::once(Mailbox::new(&cfg.email, main_name))
@@ -163,18 +164,17 @@ async fn own_addresses(core: &Arc<Core>, account_id: i64) -> Result<Vec<String>,
 /// section 4 ter). None: the reason the mail's account cannot, and that no
 /// other account can either.
 async fn sending_for(core: &Arc<Core>, account_id: i64) -> Result<Sending, RpcError> {
-    let refused = match sendable(core, account_id).await {
+    match sendable(core, account_id).await {
         Ok(s) => return Ok(Sending::own_account(account_id, s.identities)),
-        Err(e) if e.code == error_code::CANNOT_SEND => e,
+        Err(e) if e.code == error_code::CANNOT_SEND => {}
         Err(e) => return Err(e),
-    };
+    }
     let senders: Vec<Sender> =
         senders(core).await?.into_iter().map(|c| Sender { account_id: c.account_id, identities: c.sendable.identities }).collect();
     if senders.is_empty() {
-        return Err(RpcError::new(
-            error_code::CANNOT_SEND,
-            format!("{}, and no other account can: add an [smtp] server to one in accounts.toml", refused.message),
-        ));
+        // Why the mail's own account cannot matters less than what to
+        // do: give an account an SMTP server.
+        return Err(RpcError::new(error_code::CANNOT_SEND, reason::NO_ACCOUNT_CAN_SEND));
     }
     Ok(Sending { own: own_addresses(core, account_id).await?, senders })
 }
@@ -198,7 +198,7 @@ fn human(source: Source) -> Result<(), RpcError> {
     if matches!(source, Source::App | Source::Cli | Source::Tui) {
         Ok(())
     } else {
-        Err(RpcError::new(error_code::FORBIDDEN, "sending mail is reserved to the app, the TUI and the CLI"))
+        Err(RpcError::new(error_code::FORBIDDEN, reason::RESERVED_TO_PEOPLE))
     }
 }
 
@@ -228,7 +228,7 @@ async fn writer(core: &Arc<Core>, source: Source, id: i64) -> Result<(), RpcErro
     })
     .await?;
     match created_by.as_deref() {
-        None => Err(RpcError::new(error_code::NOT_FOUND, format!("no draft {id}"))),
+        None => Err(RpcError::not_found(format!("draft {id}"))),
         Some(by) => agent_may_change(id, by),
     }
 }
@@ -240,7 +240,7 @@ fn agent_may_change(id: i64, created_by: &str) -> Result<(), RpcError> {
     } else {
         Err(RpcError::new(
             error_code::FORBIDDEN,
-            format!("draft {id} was written by the user: AI agents may read it, not change it; start a new draft instead"),
+            reason::DRAFT_BY_USER.with("draft", id),
         ))
     }
 }
@@ -291,7 +291,7 @@ pub async fn create(core: &Arc<Core>, p: CreateDraftParams, source: Source) -> R
         writer(core, source, id).await.map_err(|_| {
             RpcError::new(
                 error_code::FORBIDDEN,
-                format!("the user has already started a reply to this mail (draft {id}): AI agents may read it, not change it"),
+                reason::REPLY_STARTED_BY_USER.with("draft", id),
             )
         })?;
     }
@@ -351,7 +351,7 @@ async fn new_mail_account(core: &Arc<Core>, account: Option<i64>) -> Result<(i64
 /// The mail answered or forwarded, and its account.
 async fn mail_account(core: &Arc<Core>, reply_to: Option<i64>) -> Result<(i64, i64), RpcError> {
     let Some(reply_to) = reply_to else {
-        return Err(RpcError::new(error_code::INVALID_PARAMS, "reply_to: the mail answered or forwarded"));
+        return Err(RpcError::invalid("reply_to: the mail answered or forwarded"));
     };
     let account: Option<i64> = with_reader(core, move |s| {
         Ok(s.conn().query_row("SELECT account_id FROM message WHERE id = ?1", [reply_to], |r| r.get(0)).ok())
@@ -359,7 +359,7 @@ async fn mail_account(core: &Arc<Core>, reply_to: Option<i64>) -> Result<(i64, i
     .await?;
     match account {
         Some(account_id) => Ok((reply_to, account_id)),
-        None => Err(RpcError::new(error_code::NOT_FOUND, format!("no message {reply_to}"))),
+        None => Err(RpcError::not_found(format!("message {reply_to}"))),
     }
 }
 
@@ -388,7 +388,7 @@ fn finish(
 async fn default_account(core: &Arc<Core>) -> Result<(i64, Sendable), RpcError> {
     match senders(core).await?.into_iter().next() {
         Some(c) => Ok((c.account_id, c.sendable)),
-        None => Err(RpcError::new(error_code::CANNOT_SEND, "no account of accounts.toml can send: add an [smtp] server to one")),
+        None => Err(RpcError::new(error_code::CANNOT_SEND, reason::NO_ACCOUNT_CAN_SEND)),
     }
 }
 
@@ -409,7 +409,7 @@ pub async fn update(core: &Arc<Core>, p: UpdateDraftParams, source: Source) -> R
         Some(f) => {
             let s = sendable(core, f.account_id).await?;
             let Some(m) = s.identities.list.into_iter().find(|m| m.addr.eq_ignore_ascii_case(f.addr.trim())) else {
-                return Err(RpcError::new(error_code::INVALID_PARAMS, format!("{} is not an address of this account", f.addr)));
+                return Err(RpcError::new(error_code::INVALID_PARAMS, reason::NOT_OWN_ADDRESS.with("address", f.addr.as_str())));
             };
             Some((f.account_id, m))
         }
@@ -462,7 +462,7 @@ pub fn compose_formats(core: &Arc<Core>) -> ComposeFormatsResult {
 /// same as its text part when sent (`nm_store::mail_html`).
 pub fn html_to_text(p: HtmlToTextParams) -> Result<HtmlToTextResult, RpcError> {
     if p.html.len() > nm_store::mail_html::MAX_HTML_BYTES {
-        return Err(RpcError::new(error_code::INVALID_PARAMS, "the formatted text is too big"));
+        return Err(RpcError::new(error_code::INVALID_PARAMS, reason::FORMATTED_TEXT_TOO_BIG));
     }
     let (text, formatted) = nm_store::mail_html::to_text(&p.html);
     Ok(HtmlToTextResult { text, formatted })

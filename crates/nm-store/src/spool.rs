@@ -498,7 +498,7 @@ pub(crate) fn refuse_read_only(conn: &Connection, thread_id: i64) -> Result<()> 
         .prepare_cached("SELECT EXISTS (SELECT 1 FROM thread t JOIN temp.read_only_account r ON r.id = t.account_id WHERE t.id = ?1)")?
         .query_row([thread_id], |r| r.get(0))?;
     if ro {
-        return Err(crate::StoreError::ReadOnly("this account is read-only (read_only = true in accounts.toml): nothing is changed".into()));
+        return Err(crate::StoreError::ReadOnly);
     }
     Ok(())
 }

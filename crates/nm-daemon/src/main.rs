@@ -60,6 +60,7 @@ use std::sync::{Arc, Mutex};
 // explanation.
 use anyhow::Context;
 use clap::Parser;
+use nm_api::reason;
 use nm_api::{
     AttachmentFileView, CommandResult, DEFAULT_LIMIT, Event, ExportMessageParams, ExportResult, FolderList, MessageRecordParams, MessageTextParams, MessageTextResult,
     GetAttachmentParams, GetThreadParams, LocateMessageParams, UnsubscribeParams, UnsubscribeResult,
@@ -860,7 +861,7 @@ async fn serve(core: Arc<Core>, stream: UnixStream) -> anyhow::Result<()> {
             // Invalid JSON: the id is unknown, so the JSON-RPC spec says to
             // answer with `id: null`.
             Err(e) => {
-                let r = Response::err(Value::Null, RpcError::new(error_code::PARSE_ERROR, e.to_string()));
+                let r = Response::err(Value::Null, RpcError::new(error_code::PARSE_ERROR, reason::PARSE_ERROR.with("detail", e.to_string())));
                 if respond(&out, Some(r)).await.is_err() {
                     break;
                 }
@@ -1014,40 +1015,37 @@ fn local_time() -> String {
 /// `let p: HelloParams = params(req.params)?;`.
 fn params<T: DeserializeOwned>(v: Value) -> Result<T, RpcError> {
     let v = if v.is_null() { Value::Object(Default::default()) } else { v };
-    serde_json::from_value(v).map_err(|e| RpcError::new(error_code::INVALID_PARAMS, e.to_string()))
+    serde_json::from_value(v).map_err(|e| RpcError::invalid(e))
 }
 
-/// Maps a store error to a JSON-RPC error with a stable code.
-fn store_error(e: StoreError) -> RpcError {
-    let code = match e {
-        StoreError::NotFound(_) => error_code::NOT_FOUND,
-        StoreError::InvalidMove(_) => error_code::INVALID_MOVE,
-        StoreError::InvalidParams(_) => error_code::INVALID_PARAMS,
-        StoreError::ReadOnly(_) => error_code::READ_ONLY,
-        StoreError::RawDamaged(_) => error_code::RAW_DAMAGED,
-        StoreError::CannotSend(_) => error_code::CANNOT_SEND,
-        StoreError::BodyPending => error_code::BODY_PENDING,
-        StoreError::DraftSending => error_code::DRAFT_SENDING,
-        StoreError::SendStarted => error_code::SEND_ALREADY_STARTED,
+/// Maps a store error to a JSON-RPC error: a stable code, and a reason
+/// (`nm_api::reason`) that a client writes in the user's language.
+pub(crate) fn store_error(e: StoreError) -> RpcError {
+    match e {
+        StoreError::NotFound(what) => RpcError::not_found(what),
+        StoreError::InvalidParams(detail) => RpcError::invalid(detail),
+        StoreError::Invalid(why) => RpcError::new(error_code::INVALID_PARAMS, why),
+        StoreError::InvalidMove(why) => RpcError::new(error_code::INVALID_MOVE, why),
+        StoreError::CannotSend(why) => RpcError::new(error_code::CANNOT_SEND, why),
+        StoreError::ReadOnly => RpcError::new(error_code::READ_ONLY, reason::ACCOUNT_READ_ONLY),
+        StoreError::RawDamaged(hash) => RpcError::new(error_code::RAW_DAMAGED, reason::RAW_DAMAGED.with("hash", hash)),
+        StoreError::BodyPending => RpcError::new(error_code::BODY_PENDING, reason::BODY_PENDING),
+        StoreError::DraftSending => RpcError::new(error_code::DRAFT_SENDING, reason::DRAFT_SENDING),
+        StoreError::SendStarted => RpcError::new(error_code::SEND_ALREADY_STARTED, reason::SEND_STARTED),
         StoreError::RevisionConflict { current } => {
-            let mut err = RpcError::new(error_code::REVISION_CONFLICT, e.to_string());
-            err.data = Some(serde_json::json!({ "revision": current }));
-            return err;
+            RpcError::new(error_code::REVISION_CONFLICT, reason::REVISION_CONFLICT.with("revision", current))
         }
         // The client needs the address and the verdict to ask the user.
-        StoreError::ConfirmationRequired { ref addr, ref verdict } => {
-            let mut err = RpcError::new(error_code::CONFIRMATION_REQUIRED, e.to_string());
-            err.data = Some(serde_json::json!({ "addr": addr, "verdict": verdict }));
-            return err;
+        StoreError::ConfirmationRequired { addr, verdict } => {
+            RpcError::new(error_code::CONFIRMATION_REQUIRED, reason::CONFIRMATION_REQUIRED.with("addr", addr).with("verdict", verdict))
         }
-        _ => error_code::INTERNAL_ERROR,
-    };
-    RpcError::new(code, e.to_string())
+        other => RpcError::internal(other),
+    }
 }
 
 /// Serializes a result into a JSON `Value`.
 fn to_value<T: serde::Serialize>(v: T) -> Result<Value, RpcError> {
-    serde_json::to_value(v).map_err(|e| RpcError::new(error_code::INTERNAL_ERROR, e.to_string()))
+    serde_json::to_value(v).map_err(|e| RpcError::internal(e))
 }
 
 /// Runs `f` on the store, on a blocking thread, and waits for the result
@@ -1076,7 +1074,7 @@ async fn with_store<T: Send + 'static>(
     .await
     // Two layers of errors: the first `map_err` handles a failure of the
     // blocking task itself (a panic), the second converts a store error.
-    .map_err(|e| RpcError::new(error_code::INTERNAL_ERROR, e.to_string()))?;
+    .map_err(|e| RpcError::internal(e))?;
     add_db_wait(waited);
     result.map_err(store_error)
 }
@@ -1096,7 +1094,7 @@ pub(crate) async fn with_reader<T: Send + 'static>(
         (result, queued + waited)
     })
     .await
-    .map_err(|e| RpcError::new(error_code::INTERNAL_ERROR, e.to_string()))?;
+    .map_err(|e| RpcError::internal(e))?;
     add_db_wait(waited);
     result.map_err(store_error)
 }
@@ -1110,24 +1108,24 @@ async fn set_password(core: &Arc<Core>, p: SetPasswordParams, source: Source) ->
     // bind a password of its choosing to a server of its choosing. The
     // source is declared by the client until its signature is checked.
     if !matches!(source, Source::App | Source::Cli | Source::Tui) {
-        return Err(RpcError::new(error_code::FORBIDDEN, "only the app and the CLI can save a password"));
+        return Err(RpcError::new(error_code::FORBIDDEN, reason::RESERVED_TO_PEOPLE));
     }
     if p.password.is_empty() {
-        return Err(RpcError::new(error_code::INVALID_PARAMS, "empty password"));
+        return Err(RpcError::new(error_code::INVALID_PARAMS, reason::PASSWORD_EMPTY));
     }
     let (secrets, binding, account_id) = {
         let engine = core.engine.lock().unwrap();
         let Some(account) = engine.config().accounts.get(&p.account) else {
-            return Err(RpcError::new(error_code::NOT_FOUND, format!("no account {} in accounts.toml", p.account)));
+            return Err(RpcError::new(error_code::NOT_FOUND, reason::ACCOUNT_UNKNOWN.with("account", p.account.as_str())));
         };
         let Some(id) = engine.account_id(&p.account) else {
-            return Err(RpcError::new(error_code::NOT_FOUND, format!("account {} is not in the database", p.account)));
+            return Err(RpcError::new(error_code::NOT_FOUND, reason::ACCOUNT_NOT_IN_DATABASE.with("account", p.account.as_str())));
         };
         // The SMTP password saved apart is bound to the SMTP server
         // (`reponse.md`, section 7).
         let binding = if p.smtp {
             nm_engine::secrets::smtp_binding(account).ok_or_else(|| {
-                RpcError::new(error_code::INVALID_PARAMS, format!("account {} has no [smtp] server in accounts.toml", p.account))
+                RpcError::new(error_code::INVALID_PARAMS, reason::NO_SMTP_SERVER.with("account", p.account.as_str()))
             })?
         } else {
             nm_engine::secrets::Binding::of(account)
@@ -1143,8 +1141,8 @@ async fn set_password(core: &Arc<Core>, p: SetPasswordParams, source: Source) ->
     let smtp = p.smtp;
     tokio::task::spawn_blocking(move || if smtp { secrets.set_smtp(&key, &credential) } else { secrets.set_imap(&key, &credential) })
         .await
-        .map_err(|e| RpcError::new(error_code::INTERNAL_ERROR, e.to_string()))?
-        .map_err(|e| RpcError::new(error_code::SECRETS, e))?;
+        .map_err(|e| RpcError::internal(e))?
+        .map_err(|e| RpcError::new(error_code::SECRETS, reason::KEYCHAIN.with("system_text", e)))?;
     let core2 = core.clone();
     with_store(core, move |s| {
         s.record_password_saved(account_id, &binding.host, &binding.username, source)?;
@@ -1173,7 +1171,7 @@ async fn probe_account(core: &Arc<Core>, p: ProbeAccountParams) -> Result<ProbeR
     let (secrets, account) = {
         let engine = core.engine.lock().unwrap();
         let Some(account) = engine.config().accounts.get(&p.account) else {
-            return Err(RpcError::new(error_code::NOT_FOUND, format!("no account {} in accounts.toml", p.account)));
+            return Err(RpcError::new(error_code::NOT_FOUND, reason::ACCOUNT_UNKNOWN.with("account", p.account.as_str())));
         };
         (engine.secrets(), account.clone())
     };
@@ -1183,18 +1181,18 @@ async fn probe_account(core: &Arc<Core>, p: ProbeAccountParams) -> Result<ProbeR
     let acc = account.clone();
     let password = tokio::task::spawn_blocking(move || nm_engine::secrets::imap_password(secrets.as_ref(), &key, &acc))
         .await
-        .map_err(|e| RpcError::new(error_code::INTERNAL_ERROR, e.to_string()))?
+        .map_err(|e| RpcError::internal(e))?
         .map_err(|refusal| {
             let code = match refusal {
                 nm_engine::secrets::Refusal::Unavailable(_) => error_code::SECRETS,
                 _ => error_code::ACCOUNT_NOT_READY,
             };
-            RpcError::new(code, refusal.message(&p.account, &account))
+            RpcError::new(code, refusal.why(&p.account, &account))
         })?;
     let spec = nm_engine::probe::imap_spec(&account);
     nm_engine::probe::probe(&spec, &account.imap.username, password.expose(), nm_proto::imap::Timeouts::default())
         .await
-        .map_err(|e| RpcError::new(error_code::SERVER, e.to_string()))
+        .map_err(|e| RpcError::new(error_code::SERVER, reason::IMAP_FAILED.with("server_text", e.to_string())))
 }
 
 /// Reads `config.toml` and `accounts.toml` again after a change seen by the
@@ -1293,7 +1291,7 @@ async fn workflow(
 /// `INVALID_PARAMS` when both or neither are given.
 fn threads_param(one: Option<i64>, several: Option<Vec<i64>>) -> Result<Vec<i64>, RpcError> {
     nm_api::thread_list(one, several)
-        .ok_or_else(|| RpcError::new(error_code::INVALID_PARAMS, "un seul de thread_id, thread_ids attendu"))
+        .ok_or_else(|| RpcError::invalid("one of thread_id, thread_ids expected"))
 }
 
 /// Page size requested by the client, or the default, clamped to the
@@ -1308,7 +1306,7 @@ fn limit(l: Option<u32>) -> u32 {
 /// for [`call`].
 fn session_call(core: &Arc<Core>, session: &mut Session, req: &Request) -> Option<Result<Value, RpcError>> {
     if req.jsonrpc != "2.0" {
-        return Some(Err(RpcError::new(error_code::INVALID_REQUEST, "jsonrpc doit valoir \"2.0\"")));
+        return Some(Err(RpcError::new(error_code::INVALID_REQUEST, reason::INVALID_REQUEST.with("detail", "jsonrpc must be \"2.0\""))));
     }
     // First match: methods available before the handshake (`ping`, `hello`),
     // and refusal of everything else until `hello` succeeds.
@@ -1319,7 +1317,7 @@ fn session_call(core: &Arc<Core>, session: &mut Session, req: &Request) -> Optio
             if p.protocol_version != PROTOCOL_VERSION {
                 return Err(RpcError::new(
                     error_code::PROTOCOL_VERSION,
-                    format!("protocole {} non pris en charge (attendu : {PROTOCOL_VERSION})", p.protocol_version),
+                    reason::PROTOCOL_VERSION.with("version", p.protocol_version).with("expected", PROTOCOL_VERSION),
                 ));
             }
             // Provisional: the identity will come from the client's code
@@ -1349,7 +1347,7 @@ fn session_call(core: &Arc<Core>, session: &mut Session, req: &Request) -> Optio
                 core_version: env!("CARGO_PKG_VERSION").into(),
             })
         })(),
-        _ if !session.hello => Err(RpcError::new(error_code::PROTOCOL_VERSION, "poignée de main `hello` attendue")),
+        _ if !session.hello => Err(RpcError::new(error_code::PROTOCOL_VERSION, reason::HELLO_EXPECTED)),
         method::SUBSCRIBE => (|| {
             // Nothing to follow during a maintenance: the app learns of it
             // here, after its `hello`.
@@ -1358,7 +1356,7 @@ fn session_call(core: &Arc<Core>, session: &mut Session, req: &Request) -> Optio
             }
             let p: SubscribeParams = params(req.params.clone())?;
             if session.subscribed {
-                return Err(RpcError::new(error_code::INVALID_REQUEST, "déjà abonné"));
+                return Err(RpcError::new(error_code::INVALID_REQUEST, reason::INVALID_REQUEST.with("detail", "already subscribed")));
             }
             // Everything is computed under the same lock: the replay, the
             // receiver and the position are consistent with one another. The
@@ -1421,16 +1419,13 @@ async fn call(core: &Arc<Core>, source: Source, req: Request) -> Result<Value, R
                 (Some(f), None, None) => Scope::Folders(vec![f]),
                 (None, Some(fs), None) if !fs.is_empty() => Scope::Folders(fs),
                 (None, None, Some(e)) if e.all_mail && e.work => {
-                    return Err(RpcError::new(error_code::INVALID_PARAMS, "all_mail ou work, pas les deux"));
+                    return Err(RpcError::invalid("all_mail or work, not both"));
                 }
                 (None, None, Some(e)) if e.all_mail => Scope::AllMail(e.account_id),
                 (None, None, Some(e)) if e.work => Scope::Work(e.account_id),
                 (None, None, Some(e)) => Scope::Everything(e.account_id),
                 _ => {
-                    return Err(RpcError::new(
-                        error_code::INVALID_PARAMS,
-                        "un seul de folder_id, folder_ids, everything attendu",
-                    ));
+                    return Err(RpcError::invalid("one of folder_id, folder_ids, everything expected"));
                 }
             };
             // The addresses of the mailbox, as for `get_thread`: a row names
@@ -1491,7 +1486,7 @@ async fn call(core: &Arc<Core>, source: Source, req: Request) -> Result<Value, R
         method::MOVE_THREADS => {
             let p: nm_api::MoveThreadsParams = params(req.params)?;
             if p.threads.is_empty() {
-                return Err(RpcError::new(error_code::INVALID_PARAMS, "threads vide"));
+                return Err(RpcError::invalid("threads is empty"));
             }
             let opts = MoveOptions { confirm_suspect: p.confirm_suspect, auth_policy: p.auth_policy };
             let threads: Vec<(i64, Option<i64>)> = p.threads.iter().map(|t| (t.thread_id, t.from_folder_id)).collect();
@@ -1585,7 +1580,7 @@ async fn call(core: &Arc<Core>, source: Source, req: Request) -> Result<Value, R
                 None => std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default().join("Downloads"),
             };
             if !dir.is_absolute() {
-                return Err(RpcError::new(error_code::INVALID_PARAMS, "dossier absolu attendu"));
+                return Err(RpcError::new(error_code::INVALID_PARAMS, reason::PATH_NOT_ABSOLUTE.with("path", dir.display().to_string())));
             }
             let raw = core.raw.clone();
             let path = sync::repaired(core, with_reader(core, move |s| s.export_message(&raw, p.message_id, p.format, &dir)).await).await?;
@@ -1632,7 +1627,7 @@ async fn call(core: &Arc<Core>, source: Source, req: Request) -> Result<Value, R
                     if fake { Ok(()) } else { nm_proto::unsubscribe::one_click(&url, true) }
                 })
                 .await
-                .map_err(|e| RpcError::new(error_code::INTERNAL_ERROR, e.to_string()))?;
+                .map_err(|e| RpcError::internal(e))?;
                 return match sent {
                     Ok(()) => {
                         let core2 = core.clone();
@@ -1730,10 +1725,7 @@ async fn call(core: &Arc<Core>, source: Source, req: Request) -> Result<Value, R
         method::THREAD_LABELS => {
             let p: ThreadLabelsParams = params(req.params)?;
             if p.thread_ids.len() > nm_api::MAX_LABEL_THREADS {
-                return Err(RpcError::new(
-                    error_code::INVALID_PARAMS,
-                    format!("thread_ids: {} at most", nm_api::MAX_LABEL_THREADS),
-                ));
+                return Err(RpcError::invalid(format!("thread_ids: {} at most", nm_api::MAX_LABEL_THREADS)));
             }
             // As for `set_group_member`: the person of each thread is never
             // one of the user's addresses.
@@ -1839,7 +1831,7 @@ async fn call(core: &Arc<Core>, source: Source, req: Request) -> Result<Value, R
             let core2 = core.clone();
             let r = tokio::task::spawn_blocking(move || sync::run_gc(&core2))
                 .await
-                .map_err(|e| RpcError::new(error_code::INTERNAL_ERROR, e.to_string()))?
+                .map_err(|e| RpcError::internal(e))?
                 .map_err(store_error)?;
             to_value(nm_api::RawGcResult { blobs: r.blobs, temporary: r.temporary, orphans: r.orphans, attachment_dirs: r.attachment_dirs, outgoing: r.outgoing })
         }
@@ -1885,7 +1877,7 @@ async fn call(core: &Arc<Core>, source: Source, req: Request) -> Result<Value, R
                 as_of,
             })
         }
-        other => Err(RpcError::new(error_code::METHOD_NOT_FOUND, format!("méthode inconnue : {other}"))),
+        other => Err(RpcError::new(error_code::METHOD_NOT_FOUND, reason::METHOD_NOT_FOUND.with("method", other))),
     }
 }
 
@@ -1945,14 +1937,15 @@ async fn forward(
 /// tasks. The import thread takes the store lock one batch at a time, so
 /// requests from the app keep being answered meanwhile.
 async fn start_import(core: &Arc<Core>, p: ImportMboxParams, source: Source) -> Result<ImportStatus, RpcError> {
-    let invalid = |m: String| RpcError::new(error_code::INVALID_PARAMS, m);
+    let invalid = |why: nm_api::Why| RpcError::new(error_code::INVALID_PARAMS, why);
     let path = PathBuf::from(&p.path);
     if !path.is_absolute() {
-        return Err(invalid(format!("chemin absolu attendu : {}", p.path)));
+        return Err(invalid(reason::PATH_NOT_ABSOLUTE.with("path", p.path.as_str())));
     }
-    let meta = fs::metadata(&path).map_err(|e| invalid(format!("{} : {e}", p.path)))?;
+    let meta = fs::metadata(&path)
+        .map_err(|e| invalid(reason::FILE_UNREADABLE.with("path", p.path.as_str()).with("system_text", e.to_string())))?;
     if !meta.is_file() {
-        return Err(invalid(format!("{} n'est pas un fichier", p.path)));
+        return Err(invalid(reason::NOT_A_FILE.with("path", p.path.as_str())));
     }
 
     // Reserve the import slot before doing anything slow, so two requests
@@ -1960,7 +1953,7 @@ async fn start_import(core: &Arc<Core>, p: ImportMboxParams, source: Source) -> 
     let job_id = {
         let mut st = core.import.lock().unwrap();
         if st.status.as_ref().is_some_and(|s| s.running) {
-            return Err(RpcError::new(error_code::BUSY, "un import est déjà en cours"));
+            return Err(RpcError::new(error_code::BUSY, reason::IMPORT_RUNNING));
         }
         st.last_job += 1;
         st.status = Some(ImportStatus {
@@ -2006,7 +1999,7 @@ async fn start_import(core: &Arc<Core>, p: ImportMboxParams, source: Source) -> 
     std::thread::Builder::new()
         .name("nicemailer-import".into())
         .spawn(move || run_import(core, job_id, opts))
-        .map_err(|e| RpcError::new(error_code::INTERNAL_ERROR, e.to_string()))?;
+        .map_err(|e| RpcError::internal(e))?;
     Ok(status)
 }
 

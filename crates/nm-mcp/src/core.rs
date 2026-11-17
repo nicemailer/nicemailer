@@ -295,7 +295,7 @@ impl Conn {
                         Some(e) => Err(e),
                         None => Ok(r.result.unwrap_or(Value::Null)),
                     },
-                    Err(e) => Err(RpcError::new(error_code::INTERNAL_ERROR, format!("bad response from the core: {e}"))),
+                    Err(e) => Err(RpcError::internal(format!("bad response from the core: {e}"))),
                 };
                 let _ = tx.send(answer);
             }
