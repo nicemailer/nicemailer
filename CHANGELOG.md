@@ -23,6 +23,9 @@ How to write it:
 
 ### Fixed
 
+- The "answered" attribute finds the conversations you replied to from NiceMailer or from a mail client that does not mark the mail as answered: a reply of yours in Sent is enough.
+- Replying from NiceMailer marks the mail as answered, also on the server, so other mail clients show it.
+
 - The attribute selector (`f`) shows all its rows at once, without scrolling.
 - The tag picker (`t`) lists the tags of every account, not only those of the mail's account, which left it empty for a mail of another account.
 - `g` adds the person the conversation is with, no longer yourself when your reply was filed with it; your own addresses can no longer be in a group, and those already there are removed.

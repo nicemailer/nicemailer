@@ -1595,8 +1595,26 @@ fn filter_clause(f: &ThreadFilter, target: &Target, tags: &TagIds, unread: Unrea
     if let Some(yes) = f.flagged {
         sql.push_str(&member(yes, "SELECT thread_id FROM message WHERE is_flagged = 1 AND thread_id IS NOT NULL"));
     }
+    // "Answered": a received mail of the thread carries `\Answered`, or
+    // the thread holds a reply of the user in Sent (a mail of Sent with
+    // `In-Reply-To`; `ui.md`, "Sélecteur d'attributs"). The flag alone
+    // missed every reply sent by a client that does not set it (869 of
+    // 25,900 replies in a real mailbox, November 2026), and those sent by
+    // NiceMailer before it set it. Sent mails stay in Sent (`dossiers.md`),
+    // except a new mail filed with nothing else to move, which answers
+    // nothing. A mail the user started alone is not "answered": no
+    // `In-Reply-To`. Both halves are read from partial indexes
+    // (`idx_message_thread_answered`, `idx_message_reply`): about 3 ms on
+    // 400,000 mails, where reading Sent through `idx_message_list` took
+    // 28 ms. `CROSS JOIN` keeps the few Sent folders first.
     if let Some(yes) = f.answered {
-        sql.push_str(&member(yes, "SELECT thread_id FROM message WHERE is_answered = 1 AND thread_id IS NOT NULL"));
+        sql.push_str(&member(
+            yes,
+            "SELECT thread_id FROM message WHERE is_answered = 1 AND thread_id IS NOT NULL
+             UNION ALL
+             SELECT sm.thread_id FROM folder sf CROSS JOIN message sm ON sm.folder_id = sf.id
+              WHERE sf.role = 'sent' AND sm.in_reply_to IS NOT NULL AND sm.thread_id IS NOT NULL",
+        ));
     }
     if let Some(yes) = f.attachments {
         let set = format!(
@@ -2018,6 +2036,9 @@ mod plan_tests {
                     "SCAN message USING INDEX idx_message_unread",
                     // Every tag, for "without tag": a few rows.
                     "SCAN tg",
+                    // The folders, to find the Sent ones of "answered": a
+                    // few dozen rows.
+                    "SCAN sf",
                     // Every active membership, for "without group", through
                     // the partial index of the active ones: a few rows per
                     // group.

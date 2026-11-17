@@ -55,7 +55,7 @@ The magnifier after the folder in the status bar (key **f**, or a click) opens t
 | read state | unread / read — non lus / lus | `un` `r` — `no` (or `nl`) `l` |
 | flag | flagged / not flagged — drapeau / sans drapeau | `f` `nf` — `dr` `sd` |
 | attachments | with attachments / without attachments — pièce jointe / sans pièce jointe | `wi` `witho` — `pj` (or `pi`) `spj` |
-| answered (you replied) | answered / not answered — répondus / sans ma réponse | `an` `na` — `r` `sm` |
+| answered (you replied: a mail of the conversation carries the "answered" mark, or it holds a reply of yours in Sent, whichever client sent it) | answered / not answered — répondus / sans ma réponse | `an` `na` — `r` `sm` |
 | conversation | conversation (several mails) / single mail — conversations / mails seuls | `co` `si` — `co` `m` |
 | origin ([senders.md](senders.md)) | human / robot — humain / robot: a mail of the conversation, in any folder, was written by a person, or none was. Listed last so the letters above stay | `h` `ro`, hidden words `person`, `machine` — `h` `ro`, `personne`, `automate` |
 | From… — De… | part of a name or address, or a domain written `@acme.fr`; contacts suggested as you type; several values OR-ed; `-value` excludes. The name is the contact's, not the display name of each mail | `fr`, `sender` — `de`, `exp` |
