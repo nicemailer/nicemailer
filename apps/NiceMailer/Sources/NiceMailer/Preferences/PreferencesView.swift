@@ -464,7 +464,7 @@ struct AddAccountForm: View {
     }
 
     /// A day of the core (`YYYY-MM-DD`) in the user's words, in the
-    /// language of the app (`appLocale`), not only the system's.
+    /// interface's locale (`uiLocale`): the app's language, the Mac's order.
     static func day(_ iso: String) -> String {
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")
@@ -472,7 +472,7 @@ struct AddAccountForm: View {
         f.dateFormat = "yyyy-MM-dd"
         guard let d = f.date(from: iso) else { return iso }
         let out = DateFormatter()
-        out.locale = appLocale
+        out.locale = uiLocale
         out.timeZone = TimeZone(identifier: "UTC")
         out.dateStyle = .long
         out.timeStyle = .none

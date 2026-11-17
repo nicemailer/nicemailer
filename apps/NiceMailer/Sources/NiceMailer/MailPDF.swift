@@ -85,9 +85,10 @@ enum MailPDF {
     }
 
     /// The PDF of `record`. `locale` and `timeZone` write the dates (the
-    /// app's language and the Mac's time zone; fixed in tests).
+    /// interface's locale, `uiLocale`, and the Mac's time zone; fixed in
+    /// tests).
     static func render(_ record: MessageRecord, kind: Kind,
-                       locale: Locale = appLocale, timeZone: TimeZone = .current) -> Data {
+                       locale: Locale = uiLocale, timeZone: TimeZone = .current) -> Data {
         let dates = Dates(locale: locale, timeZone: timeZone)
         let text = document(record, kind: kind, dates: dates)
         let footer = kind == .evidence ? footerHash(record) : nil
@@ -147,7 +148,7 @@ enum MailPDF {
             out.append(heading(L("Attachments")))
             for a in r.attachments {
                 var line = a.filename ?? L("(no name)")
-                if a.inline { line += " " + L("(image shown in the body)") }
+                if a.inline { line = L("%@ (image shown in the body)", line) }
                 out.append(paragraph(line, font: helvetica(9.5, bold: true), color: ink, after: 1, keepWithNext: true))
                 let details = "\(a.mimeType) · \(byteCount(a.size))"
                 guard kind == .evidence else {
@@ -318,9 +319,7 @@ enum MailPDF {
     /// "2 files, 1.2 MB": the summary line of the header block.
     static func attachmentSummary(_ list: [RecordAttachment]) -> String {
         let total = list.reduce(0) { $0 + $1.size }
-        return list.count == 1
-            ? L("1 file, %@", byteCount(total))
-            : L("%lld files, %@", list.count, byteCount(total))
+        return L("%lld files, %@", list.count, byteCount(total))
     }
 
     /// "245 KB (250,880 bytes)": rounded for the reader, exact for the
@@ -333,7 +332,8 @@ enum MailPDF {
     }
 
     /// Dates to the second, with the time zone: "Tuesday 23 June 2020 at
-    /// 21:20:56 GMT+02:00". A `DateFormatter` is costly to make: one per
+    /// 21:20:56 GMT+02:00", the hour on the clock of the Mac's settings
+    /// ("j": 12- or 24-hour). A `DateFormatter` is costly to make: one per
     /// document.
     struct Dates {
         let formatter: DateFormatter
@@ -342,7 +342,7 @@ enum MailPDF {
             let f = DateFormatter()
             f.locale = locale
             f.timeZone = timeZone
-            f.setLocalizedDateFormatFromTemplate("EEEEdMMMMyHHmmssZZZZ")
+            f.setLocalizedDateFormatFromTemplate("EEEEdMMMMyjmmssZZZZ")
             formatter = f
         }
 

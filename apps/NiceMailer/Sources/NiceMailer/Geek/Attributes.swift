@@ -621,19 +621,15 @@ enum DateChoice {
         return (count, unit)
     }
 
-    /// "1 day", "3 weeks": a duration as words, for the row labels. Two
-    /// keys (one, several) rather than catalog plural variations: `L()`
-    /// formats with `String(format:)`, which does not apply them.
+    /// "1 day", "3 weeks": a duration as words, for the row labels. One
+    /// key per unit, whose plural variations in the catalog give "1 day"
+    /// and "3 days" (`docs/localization.md`, "Plurals").
     static func amount(_ count: Int, _ unit: Calendar.Component) -> String {
-        switch (unit, count == 1) {
-        case (.day, true): L("1 day")
-        case (.day, false): L("%lld days", count)
-        case (.weekOfYear, true): L("1 week")
-        case (.weekOfYear, false): L("%lld weeks", count)
-        case (.month, true): L("1 month")
-        case (.month, false): L("%lld months", count)
-        case (_, true): L("1 year")
-        case (_, false): L("%lld years", count)
+        switch unit {
+        case .day: L("%lld days", count)
+        case .weekOfYear: L("%lld weeks", count)
+        case .month: L("%lld months", count)
+        default: L("%lld years", count)
         }
     }
 

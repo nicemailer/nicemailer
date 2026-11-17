@@ -942,8 +942,7 @@ extension AppModel {
         var title: String {
             switch otherTexts.count {
             case 0: return label
-            case 1: return label + " " + L("(and 1 other)")
-            default: return label + " " + L("(and %lld others)", otherTexts.count)
+            default: return L("%@ (and %lld others)", label, otherTexts.count)
             }
         }
 

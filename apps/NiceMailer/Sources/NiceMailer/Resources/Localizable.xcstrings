@@ -263,81 +263,380 @@
     },
     "%lld attachments saved to %@": {
       "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld attachment saved to %@"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld attachments saved to %@"
+                }
+              }
+            }
+          }
+        },
         "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%1$lld pièces jointes enregistrées dans %2$@"
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%1$lld pièce jointe enregistrée dans %2$@"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%1$lld pièces jointes enregistrées dans %2$@"
+                }
+              }
+            }
           }
         }
       }
     },
     "%lld attachments saved to %@, %lld not available": {
       "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$#@saved@ to %2$@, %3$#@missing@"
+          },
+          "substitutions": {
+            "saved": {
+              "argNum": 1,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg attachment saved"
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg attachments saved"
+                    }
+                  }
+                }
+              }
+            },
+            "missing": {
+              "argNum": 3,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg not available"
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg not available"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "%1$lld pièces jointes enregistrées dans %2$@, %3$lld non disponibles"
+            "value": "%1$#@saved@ dans %2$@, %3$#@missing@"
+          },
+          "substitutions": {
+            "saved": {
+              "argNum": 1,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg pièce jointe enregistrée"
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg pièces jointes enregistrées"
+                    }
+                  }
+                }
+              }
+            },
+            "missing": {
+              "argNum": 3,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg non disponible"
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg non disponibles"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
     },
     "%lld days": {
-      "comment": "A typed duration, inserted in “newer than %@” / “older than %@”.",
       "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld day"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld days"
+                }
+              }
+            }
+          }
+        },
         "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld jours"
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld jour"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld jours"
+                }
+              }
+            }
           }
         }
       }
     },
     "%lld mails": {
       "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld mail"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld mails"
+                }
+              }
+            }
+          }
+        },
         "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld mails"
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld mail"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld mails"
+                }
+              }
+            }
           }
         }
       }
     },
     "%lld mails copied to the clipboard": {
       "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld mail copied to the clipboard"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld mails copied to the clipboard"
+                }
+              }
+            }
+          }
+        },
         "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld mails copiés dans le presse-papiers"
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld mail copié dans le presse-papiers"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld mails copiés dans le presse-papiers"
+                }
+              }
+            }
           }
         }
       }
     },
     "%lld mails filed": {
       "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld mail filed"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld mails filed"
+                }
+              }
+            }
+          }
+        },
         "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld mails rangés"
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld mail rangé"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld mails rangés"
+                }
+              }
+            }
           }
         }
       }
     },
     "%lld mails saved to %@": {
       "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld mail saved to %@"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld mails saved to %@"
+                }
+              }
+            }
+          }
+        },
         "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%1$lld mails enregistrés dans %2$@"
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%1$lld mail enregistré dans %2$@"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%1$lld mails enregistrés dans %2$@"
+                }
+              }
+            }
           }
         }
       }
     },
     "%lld mails saved to %@ and opened": {
       "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld mail saved to %@ and opened"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld mails saved to %@ and opened"
+                }
+              }
+            }
+          }
+        },
         "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%1$lld mails enregistrés dans %2$@ et ouverts"
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%1$lld mail enregistré dans %2$@ et ouvert"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%1$lld mails enregistrés dans %2$@ et ouverts"
+                }
+              }
+            }
           }
         }
       }
@@ -354,20 +653,80 @@
     },
     "%lld marked": {
       "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld marked"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld marked"
+                }
+              }
+            }
+          }
+        },
         "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld marqués"
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld marqué"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld marqués"
+                }
+              }
+            }
           }
         }
       }
     },
     "%lld members": {
       "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld member"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld members"
+                }
+              }
+            }
+          }
+        },
         "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld membres"
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld membre"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld membres"
+                }
+              }
+            }
           }
         }
       }
@@ -384,22 +743,81 @@
       }
     },
     "%lld months": {
-      "comment": "A typed duration, inserted in “newer than %@” / “older than %@”.",
       "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld month"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld months"
+                }
+              }
+            }
+          }
+        },
         "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld mois"
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld mois"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld mois"
+                }
+              }
+            }
           }
         }
       }
     },
     "%lld other mails filed": {
       "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld other mail filed"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld other mails filed"
+                }
+              }
+            }
+          }
+        },
         "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld autres mails rangés"
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld autre mail rangé"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld autres mails rangés"
+                }
+              }
+            }
           }
         }
       }
@@ -417,52 +835,120 @@
     },
     "%lld threads moved to %@": {
       "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld thread moved to %@"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld threads moved to %@"
+                }
+              }
+            }
+          }
+        },
         "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%1$lld conversations déplacées dans %2$@"
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%1$lld conversation déplacée dans %2$@"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%1$lld conversations déplacées dans %2$@"
+                }
+              }
+            }
           }
         }
       }
     },
     "%lld weeks": {
-      "comment": "A typed duration, inserted in “newer than %@” / “older than %@”.",
       "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld week"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld weeks"
+                }
+              }
+            }
+          }
+        },
         "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld semaines"
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld semaine"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld semaines"
+                }
+              }
+            }
           }
         }
       }
     },
     "%lld years": {
-      "comment": "A typed duration, inserted in “newer than %@” / “older than %@”.",
       "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld ans"
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld year"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld years"
+                }
+              }
+            }
           }
-        }
-      }
-    },
-    "(and %lld others)": {
-      "localizations": {
+        },
         "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "(et %lld autres)"
-          }
-        }
-      }
-    },
-    "(and 1 other)": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "(et 1 autre)"
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld an"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld ans"
+                }
+              }
+            }
           }
         }
       }
@@ -487,16 +973,6 @@
         }
       }
     },
-    "+%lld": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "+%lld"
-          }
-        }
-      }
-    },
     "---------- Forwarded message ---------": {
       "localizations": {
         "fr": {
@@ -513,50 +989,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "/ filtrer · m : décision · M : décision sur le domaine · o : humain ou robot · entrée : ses mails · échap : retour"
-          }
-        }
-      }
-    },
-    "1 day": {
-      "comment": "A typed duration, inserted in “newer than %@” / “older than %@”.",
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "1 jour"
-          }
-        }
-      }
-    },
-    "1 month": {
-      "comment": "A typed duration, inserted in “newer than %@” / “older than %@”.",
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "1 mois"
-          }
-        }
-      }
-    },
-    "1 week": {
-      "comment": "A typed duration, inserted in “newer than %@” / “older than %@”.",
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "1 semaine"
-          }
-        }
-      }
-    },
-    "1 year": {
-      "comment": "A typed duration, inserted in “newer than %@” / “older than %@”.",
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "1 an"
           }
         }
       }
@@ -992,16 +1424,6 @@
         }
       }
     },
-    "Folder": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Dossier"
-          }
-        }
-      }
-    },
     "Forward kept in Drafts · f to resume": {
       "localizations": {
         "fr": {
@@ -1399,16 +1821,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Plus de décision sur %@"
-          }
-        }
-      }
-    },
-    "No folder": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Aucun dossier"
           }
         }
       }
@@ -2275,10 +2687,40 @@
     },
     "Undone: %@ (%lld mails put back)": {
       "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Undone: %@ (%lld mail put back)"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Undone: %@ (%lld mails put back)"
+                }
+              }
+            }
+          }
+        },
         "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Annulé : %1$@ (%2$lld mails remis en place)"
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Annulé : %1$@ (%2$lld mail remis en place)"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Annulé : %1$@ (%2$lld mails remis en place)"
+                }
+              }
+            }
           }
         }
       }
@@ -2771,16 +3213,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "plein écran"
-          }
-        }
-      }
-    },
-    "go to a folder": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "aller à un dossier"
           }
         }
       }
@@ -3404,16 +3836,6 @@
         }
       }
     },
-    "tag": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "tag"
-          }
-        }
-      }
-    },
     "tag: %@": {
       "localizations": {
         "fr": {
@@ -3751,20 +4173,80 @@
     },
     "··· %lld quoted lines": {
       "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "··· %lld quoted line"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "··· %lld quoted lines"
+                }
+              }
+            }
+          }
+        },
         "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "··· %lld lignes citées"
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "··· %lld ligne citée"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "··· %lld lignes citées"
+                }
+              }
+            }
           }
         }
       }
     },
     "··· %lld quoted lines, not in this conversation": {
       "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "··· %lld quoted line, not in this conversation"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "··· %lld quoted lines, not in this conversation"
+                }
+              }
+            }
+          }
+        },
         "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "··· %lld lignes citées, absentes de cette conversation"
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "··· %lld ligne citée, absente de cette conversation"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "··· %lld lignes citées, absentes de cette conversation"
+                }
+              }
+            }
           }
         }
       }
@@ -3989,26 +4471,6 @@
         }
       }
     },
-    "The text changed since the AI's change: nothing undone": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Le texte a changé depuis la modification de l'IA : rien n'est annulé"
-          }
-        }
-      }
-    },
-    "AI change undone": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Modification de l'IA annulée"
-          }
-        }
-      }
-    },
     "AI": {
       "localizations": {
         "fr": {
@@ -4151,10 +4613,38 @@
     },
     "%@: %lld of %lld sorted · esc stop": {
       "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@: %lld of %lld sorted · esc stop"
+          }
+        },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@ : %lld sur %lld triés · esc arrêter"
+            "value": "%1$@ : %2$lld sur %3$#@sorted@ · esc arrêter"
+          },
+          "substitutions": {
+            "sorted": {
+              "argNum": 3,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg trié"
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg triés"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -4181,20 +4671,140 @@
     },
     "AI: %lld suggestions · ↩ on a row moves it there": {
       "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "AI: %lld suggestion · ↩ on a row moves it there"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "AI: %lld suggestions · ↩ on a row moves it there"
+                }
+              }
+            }
+          }
+        },
         "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "IA : %lld suggestions · ↩ sur une ligne l'y déplace"
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "IA : %lld suggestion · ↩ sur une ligne l'y déplace"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "IA : %lld suggestions · ↩ sur une ligne l'y déplace"
+                }
+              }
+            }
           }
         }
       }
     },
     "AI: %lld suggestions, %lld batches without an answer · ↩ on a row moves it there": {
       "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI: %1$#@suggestions@, %2$#@batches@ · ↩ on a row moves it there"
+          },
+          "substitutions": {
+            "suggestions": {
+              "argNum": 1,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg suggestion"
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg suggestions"
+                    }
+                  }
+                }
+              }
+            },
+            "batches": {
+              "argNum": 2,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg batch without an answer"
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg batches without an answer"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "IA : %lld suggestions, %lld lots sans réponse · ↩ sur une ligne l'y déplace"
+            "value": "IA : %1$#@suggestions@, %2$#@batches@ · ↩ sur une ligne l'y déplace"
+          },
+          "substitutions": {
+            "suggestions": {
+              "argNum": 1,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg suggestion"
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg suggestions"
+                    }
+                  }
+                }
+              }
+            },
+            "batches": {
+              "argNum": 2,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg lot sans réponse"
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg lots sans réponse"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -4291,10 +4901,40 @@
     },
     "%lld files, %@": {
       "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld file, %@"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld files, %@"
+                }
+              }
+            }
+          }
+        },
         "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld fichiers, %@"
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%1$lld fichier, %2$@"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%1$lld fichiers, %2$@"
+                }
+              }
+            }
           }
         }
       }
@@ -4305,16 +4945,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "(corps vide)"
-          }
-        }
-      }
-    },
-    "(image shown in the body)": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "(image affichée dans le corps)"
           }
         }
       }
@@ -4345,16 +4975,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "(aucun expéditeur)"
-          }
-        }
-      }
-    },
-    "1 file, %@": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "1 fichier, %@"
           }
         }
       }
@@ -5293,32 +5913,41 @@
       }
     },
     "%lld more…": {
-      "comment": "Last row of the groups of the folder column: the groups left out, which a click shows in the Group… panel.",
       "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld autres…"
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld more…"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld more…"
+                }
+              }
+            }
           }
-        }
-      }
-    },
-    "1 member": {
-      "localizations": {
+        },
         "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "1 membre"
-          }
-        }
-      }
-    },
-    "1 more…": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "1 autre…"
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld autre…"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld autres…"
+                }
+              }
+            }
           }
         }
       }
@@ -5443,16 +6072,6 @@
         }
       }
     },
-    "1 mail": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "1 mail"
-          }
-        }
-      }
-    },
     "without group": {
       "localizations": {
         "fr": {
@@ -5553,42 +6172,82 @@
         }
       }
     },
-    "Delete the tag %@ (taken off its mail)?": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Supprimer le tag %@ (retiré de son mail) ?"
-          }
-        }
-      }
-    },
     "Delete the tag %@ (taken off its %lld mails)?": {
       "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Supprimer le tag %@ (retiré de ses %lld mails) ?"
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Delete the tag %@ (taken off %lld mail)?"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Delete the tag %@ (taken off its %lld mails)?"
+                }
+              }
+            }
           }
-        }
-      }
-    },
-    "Delete the group %@ and its member? Their mails stay": {
-      "localizations": {
+        },
         "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Supprimer le groupe %@ et son membre ? Ses mails restent"
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Supprimer le tag %1$@ (retiré de %2$lld mail) ?"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Supprimer le tag %1$@ (retiré de ses %2$lld mails) ?"
+                }
+              }
+            }
           }
         }
       }
     },
     "Delete the group %@ and its %lld members? Their mails stay": {
       "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Delete the group %@ and its %lld member? Their mails stay"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Delete the group %@ and its %lld members? Their mails stay"
+                }
+              }
+            }
+          }
+        },
         "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Supprimer le groupe %@ et ses %lld membres ? Leurs mails restent"
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Supprimer le groupe %1$@ et son membre (%2$lld) ? Ses mails restent"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Supprimer le groupe %1$@ et ses %2$lld membres ? Leurs mails restent"
+                }
+              }
+            }
           }
         }
       }
@@ -6469,6 +7128,206 @@
           "stringUnit": {
             "state": "translated",
             "value": "« %@ » est choisi pour plusieurs rôles (%@) : choisissez un dossier par rôle."
+          }
+        }
+      }
+    },
+    "%@ (and %lld others)": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%@ (and %lld other)"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%@ (and %lld others)"
+                }
+              }
+            }
+          }
+        },
+        "fr": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%1$@ (et %2$lld autre)"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%1$@ (et %2$lld autres)"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%@ +%lld": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ +%2$lld"
+          }
+        }
+      }
+    },
+    "%@ (image shown in the body)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ (image affichée dans le corps)"
+          }
+        }
+      }
+    },
+    "Search": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rechercher"
+          }
+        }
+      }
+    },
+    "Error": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Erreur"
+          }
+        }
+      }
+    },
+    "OK": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OK"
+          }
+        }
+      }
+    },
+    "No conversation": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucune conversation"
+          }
+        }
+      }
+    },
+    "No results": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucun résultat"
+          }
+        }
+      }
+    },
+    "No conversation selected": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucune conversation sélectionnée"
+          }
+        }
+      }
+    },
+    "Mark as Read": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Marquer comme lu"
+          }
+        }
+      }
+    },
+    "Mark as Unread": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Marquer comme non lu"
+          }
+        }
+      }
+    },
+    "Flag": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Drapeau"
+          }
+        }
+      }
+    },
+    "Authentication failed": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Authentification échouée"
+          }
+        }
+      }
+    },
+    "The connection to the core was closed.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La connexion au noyau a été fermée."
+          }
+        }
+      }
+    },
+    "The socket to the core could not be created.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le socket vers le noyau n’a pas pu être créé."
+          }
+        }
+      }
+    },
+    "The socket path is too long: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chemin du socket trop long : %@"
+          }
+        }
+      }
+    },
+    "The core cannot be reached at %@. Start nicemailer-core.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Noyau injoignable sur %@. Lancez nicemailer-core."
           }
         }
       }

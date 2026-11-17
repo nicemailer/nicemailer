@@ -708,6 +708,9 @@ private final class Runner {
             // The sender column of the selected row, as drawn: "→ Alice"
             // when the user wrote the latest mail (`ui.md`, "Liste").
             "selected_sender": sel.map(GeekSender.plain) ?? "",
+            // The date column of the selected row, as drawn, in the
+            // interface's locale (`docs/localization.md`).
+            "selected_date": sel.map { Format.geekListDate($0.dateLastReceived) } ?? "",
             // The icon before that name, Quarantine only (`ui.md`,
             // "Quarantine"): `person`, `robot`, `none` (no verdict, a blank
             // place), or empty when the list draws no icon.

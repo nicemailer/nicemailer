@@ -59,6 +59,7 @@ b LIST "" "*"
 - `SelectionTests`: the selection rules of the mail list (click, ⌘-click, ⇧-click, `J` / `K`), pure functions of `Selection`;
 - `GeekControllerTests`: every key and menu of the geek theme, against `FakeCore`, a core that answers from Swift dictionaries and records the requests (`CoreCalling` is the protocol the app talks to; the real implementation is the socket client);
 - `FormatTests`: list dates, fixed column widths, the bundled font, and translations (every `L("…")` of the sources is in the catalog, and every catalog string has a French translation).
+- `LocalizationTests`: the rules of [localization.md](localization.md): placeholders and plural forms of the catalog, no dead key, no literal text in a view, dates in several locales.
 
 Tests use their own `UserDefaults` domain and export directory: they never touch the user's settings or `~/Downloads`.
 

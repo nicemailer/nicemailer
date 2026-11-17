@@ -44,7 +44,7 @@ struct ContentView: View {
                 } detail: {
                     ThreadDetail()
                 }
-                .searchable(text: $model.searchText, placement: .sidebar, prompt: "Rechercher")
+                .searchable(text: $model.searchText, placement: .sidebar, prompt: L("Search"))
             }
         }
         // Single-letter shortcuts, without ⌘. Keys with ⌘ or ⌥ are left to
@@ -73,11 +73,11 @@ struct ContentView: View {
         } message: {
             Text(L("Older versions of NiceMailer will no longer open it: copy the folder first to keep them able to."))
         }
-        .alert("Erreur", isPresented: Binding(
+        .alert(L("Error"), isPresented: Binding(
             get: { model.lastError != nil },
             set: { if !$0 { model.lastError = nil } }
         )) {
-            Button("OK") { model.lastError = nil }
+            Button(L("OK")) { model.lastError = nil }
         } message: {
             Text(model.lastError ?? "")
         }
@@ -250,7 +250,7 @@ struct ThreadColumn: View {
                 .navigationTitle(model.selectedFolder?.name ?? "")
         } else {
             SearchResults()
-                .navigationTitle("Recherche")
+                .navigationTitle(L("Search"))
         }
     }
 }
@@ -274,7 +274,7 @@ struct ThreadList: View {
         .listStyle(.inset)
         .overlay {
             if model.threads.isEmpty {
-                Text("Aucune conversation").foregroundStyle(.secondary)
+                Text(L("No conversation")).foregroundStyle(.secondary)
             }
         }
     }
@@ -352,7 +352,7 @@ struct SearchResults: View {
             .buttonStyle(.plain)
         }
         .overlay {
-            if model.searchResults.isEmpty { Text("Aucun résultat").foregroundStyle(.secondary) }
+            if model.searchResults.isEmpty { Text(L("No results")).foregroundStyle(.secondary) }
         }
     }
 
@@ -404,7 +404,7 @@ struct ThreadDetail: View {
             }
             .toolbar { ThreadToolbar() }
         } else {
-            Text("Aucune conversation sélectionnée")
+            Text(L("No conversation selected"))
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -420,12 +420,12 @@ struct ThreadToolbar: ToolbarContent {
         ToolbarItemGroup {
             if let thread = model.selectedThread {
                 Button { model.toggleSeen() } label: {
-                    Label(thread.unreadCount > 0 ? "Marquer comme lu" : "Marquer comme non lu",
+                    Label(thread.unreadCount > 0 ? L("Mark as Read") : L("Mark as Unread"),
                           systemImage: thread.unreadCount > 0 ? "envelope.open" : "envelope.badge")
                 }
                 .help("U")
                 Button { model.toggleFlag() } label: {
-                    Label("Drapeau", systemImage: thread.isFlagged ? "flag.slash" : "flag")
+                    Label(L("Flag"), systemImage: thread.isFlagged ? "flag.slash" : "flag")
                 }
                 .help("F")
                 Menu {
@@ -433,7 +433,7 @@ struct ThreadToolbar: ToolbarContent {
                         Button("\(Role.letter(target))   \(Role.name(target))") { model.move(to: target) }
                     }
                 } label: {
-                    Label("Déplacer", systemImage: "folder")
+                    Label(L("Move"), systemImage: "folder")
                 }
                 .disabled(model.selectedFolder?.moveTargets.isEmpty ?? true)
             }
@@ -457,16 +457,16 @@ struct MessageCard: View {
                             Text(addr).foregroundStyle(.secondary)
                         }
                         if message.authResult == "fail" {
-                            Label("Authentification échouée", systemImage: "exclamationmark.shield")
+                            Label(L("Authentication failed"), systemImage: "exclamationmark.shield")
                                 .font(.caption).foregroundStyle(.red)
                         }
                     }
                     if !message.to.isEmpty {
-                        Text("À : " + message.to.map(\.display).joined(separator: ", "))
+                        Text(L("To: %@", message.to.map(\.display).joined(separator: ", ")))
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     if !message.cc.isEmpty {
-                        Text("Cc : " + message.cc.map(\.display).joined(separator: ", "))
+                        Text(L("Cc: %@", message.cc.map(\.display).joined(separator: ", ")))
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 }
@@ -485,7 +485,7 @@ struct MessageCard: View {
                 }
             }
             Divider()
-            Text(message.bodyText ?? "(corps non téléchargé)")
+            Text(message.bodyText ?? L("(body not downloaded)"))
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }

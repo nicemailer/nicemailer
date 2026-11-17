@@ -573,7 +573,7 @@ enum Compose {
         for (i, a) in list.enumerated() {
             let name = a.name.map { "\($0) <\(a.addr)>" } ?? a.addr
             if !shown.isEmpty, length + 2 + name.count > limit {
-                return shown.joined(separator: ", ") + " " + L("+%lld", list.count - i)
+                return L("%@ +%lld", shown.joined(separator: ", "), list.count - i)
             }
             shown.append(name)
             length += (shown.count > 1 ? 2 : 0) + name.count

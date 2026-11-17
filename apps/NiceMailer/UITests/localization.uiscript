@@ -1,0 +1,27 @@
+# An English interface on a Mac set to France (docs/localization.md): the
+# words in English, the order of the dates and the clock of the Mac
+# (fixtures/localization.locale: fr_FR). The mail of 2021 comes from
+# fixtures/localization.mbox, imported for this scenario only.
+key /
+type Rentrée de septembre
+key ret
+expect thread_count = 1
+expect selected_subject = Rentrée de septembre
+# Day first, as in France; no French word in an English interface.
+expect selected_date = 28/09/21
+expect reader_text ~ 28 Sep 2021
+expect reader_text !~ sept.
+snap date
+# A number chooses the form of the words: a tag on one mail.
+key t
+type Urgent
+key ret
+expect header_tags = Urgent
+key ;
+key T
+expect screen = tags
+key d
+expect choice = Delete the tag Urgent (taken off 1 mail)?
+snap plural
+key esc
+expect choice =

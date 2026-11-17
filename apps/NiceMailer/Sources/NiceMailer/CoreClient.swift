@@ -49,14 +49,15 @@ final class CoreClient: @unchecked Sendable {
         static let maintenance = 1003
     }
 
-    /// Socket-level failures. User-facing texts stay in French.
+    /// Socket-level failures, in the app's language: the app shows them
+    /// as they are (`ConnectionErrorView`).
     enum ConnectionError: LocalizedError {
         case socket(String)
         case closed
         var errorDescription: String? {
             switch self {
             case .socket(let m): return m
-            case .closed: return "Connexion au noyau fermée."
+            case .closed: return L("The connection to the core was closed.")
             }
         }
     }
@@ -107,7 +108,7 @@ final class CoreClient: @unchecked Sendable {
     /// initializer fails if the core is not reachable.
     init(socketPath: String = CoreClient.defaultSocketPath) throws {
         let sock = socket(AF_UNIX, SOCK_STREAM, 0)
-        guard sock >= 0 else { throw ConnectionError.socket("socket() a échoué") }
+        guard sock >= 0 else { throw ConnectionError.socket(L("The socket to the core could not be created.")) }
         // `sockaddr_un` is the C struct holding a Unix socket address. Its
         // `sun_path` field is a fixed-size C char array (104 bytes on macOS),
         // which is why socket paths must stay short.
@@ -118,7 +119,7 @@ final class CoreClient: @unchecked Sendable {
         // after it can rely on the condition.
         guard socketPath.utf8.count < capacity else {
             close(sock)
-            throw ConnectionError.socket("Chemin du socket trop long : \(socketPath)")
+            throw ConnectionError.socket(L("The socket path is too long: %@", socketPath))
         }
         // Swift imports the C array as a tuple, so it is reinterpreted as a
         // pointer to `CChar` to copy the path into it. These `withUnsafe...`
@@ -134,7 +135,7 @@ final class CoreClient: @unchecked Sendable {
         }
         guard result == 0 else {
             close(sock)
-            throw ConnectionError.socket("Noyau injoignable sur \(socketPath). Lancez nicemailer-core.")
+            throw ConnectionError.socket(L("The core cannot be reached at %@. Start nicemailer-core.", socketPath))
         }
         // Stored properties are assigned only now: Swift forbids using `self`
         // (even in a closure) before every stored property is initialized,

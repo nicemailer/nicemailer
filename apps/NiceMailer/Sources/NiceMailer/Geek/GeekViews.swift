@@ -106,11 +106,11 @@ private struct GeekWindow: View {
         case .tags:
             NamesScreen(
                 controller: controller, title: L("Tags"),
-                rows: controller.screenTags.map { ($0.name, $0.messageCount == 1 ? L("1 mail") : L("%lld mails", $0.messageCount)) })
+                rows: controller.screenTags.map { ($0.name, L("%lld mails", $0.messageCount)) })
         case .groups:
             NamesScreen(
                 controller: controller, title: L("Groups"),
-                rows: controller.groups.map { ($0.name, $0.memberCount == 1 ? L("1 member") : L("%lld members", $0.memberCount)) })
+                rows: controller.groups.map { ($0.name, L("%lld members", $0.memberCount)) })
         }
     }
 
@@ -612,9 +612,7 @@ private struct GeekColumnGroups: View {
                 .accessibilityAddTraits(.isButton)
             }
             if hidden > 0 {
-                // Two keys rather than plural variations: `L()` formats with
-                // `String(format:)`, which does not apply them.
-                Text(hidden == 1 ? L("1 more…") : L("%lld more…", hidden))
+                Text(L("%lld more…", hidden))
                     .foregroundStyle(Palette.muted)
                     .padding(.horizontal, 8)
                     .frame(maxWidth: .infinity, minHeight: scaled(20), alignment: .leading)

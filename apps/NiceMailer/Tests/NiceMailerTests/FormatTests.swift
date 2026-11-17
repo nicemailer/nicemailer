@@ -5,14 +5,11 @@ import Testing
 /// Formatting, column layout and translations of the geek theme.
 @MainActor
 struct FormatTests {
+    /// The interface's own formatters, in the Mac's locale (the other
+    /// locales: `LocalizationTests`).
     @Test func listDatesFitTheirEightCharacterColumn() {
         let now = Int(Date().timeIntervalSince1970)
-        let today = Format.geekListDate(now)
-        #expect(today.count == 5 && today.contains(":"))
-        // Ten days ago is this year unless we are in early January.
-        let old = Format.geekListDate(now - 3 * 365 * 86_400)
-        #expect(old.count == 8 && old.filter { $0 == "/" }.count == 2)
-        for days in [10, 40, 200] {
+        for days in [0, 10, 40, 200, 3 * 365] {
             #expect(Format.geekListDate(now - days * 86_400).count <= 8)
         }
     }
@@ -65,11 +62,18 @@ struct FormatTests {
     }
 
     /// Every string of the source catalog has a French translation in the
-    /// table shipped with the app. (The catalog itself is compiled into
-    /// per-language tables, so it is read from the repository.)
+    /// tables shipped with the app: `Localizable.strings`, and
+    /// `Localizable.stringsdict` for the keys with plural forms. (The
+    /// catalog itself is compiled into per-language tables, so it is read
+    /// from the repository.)
     @Test func everyStringIsTranslatedIntoFrench() throws {
         let path = try #require(Bundle.module.path(forResource: "fr", ofType: "lproj"))
-        let table = try #require(NSDictionary(contentsOfFile: path + "/Localizable.strings") as? [String: String])
+        var table = try #require(NSDictionary(contentsOfFile: path + "/Localizable.strings") as? [String: String])
+        let plurals = NSDictionary(contentsOfFile: path + "/Localizable.stringsdict") as? [String: Any] ?? [:]
+        #expect(plurals.count >= 20)
+        for (key, entry) in plurals where (entry as? [String: Any])?["NSStringLocalizedFormatKey"] != nil {
+            table[key] = key
+        }
         let catalog = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("Sources/NiceMailer/Resources/Localizable.xcstrings")

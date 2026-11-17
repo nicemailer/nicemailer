@@ -14,6 +14,7 @@ User and developer documentation, in English. It is written together with the co
 | [ingestion.md](ingestion.md) | How a message enters the database, from an mbox or IMAP: headers then body, threads, streaming writes of large messages, failures |
 | [geek-ui.md](geek-ui.md) | The geek theme of the app: layout, keys, menus and pickers |
 | [thread-display.md](thread-display.md) | Simplified display of a thread: hidden quotes, signatures and copies, folded messages, light headers, `T` and `S` |
+| [localization.md](localization.md) | The app in the user's language: the two locales (the app's language, the Mac's region and clock), dates by template, one key per sentence, plural forms, how to add a string, the tests |
 | [testing.md](testing.md) | How the core and the app are tested: Rust tests, Swift unit tests, scripted UI tests |
 | [folder-workflow.md](folder-workflow.md) | Moving mail: the decision on the sender, filing its other mails, authentication, domain decisions, undo |
 | [backup.md](backup.md) | The two database files (`nicemailer.db`, and `nicemailer_body.db` for the bodies and the search index), what to back up, `nicemailer mailbox backup`, rebuilding the body file |

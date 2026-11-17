@@ -350,8 +350,8 @@ struct AttributesTests {
         // 7 days and 1 week agree; a month is the same day last month.
         #expect(DateChoice.typed("7d", now: now, calendar: cal)[0].after == DateChoice.typed("1s", now: now, calendar: cal)[0].after)
         #expect(DateChoice.typed("1m", now: now, calendar: cal)[0].detail == "2026-10-04")
-        #expect(DateChoice.typed("1a", now: now, calendar: cal)[0].label == L("newer than %@", L("1 year")))
-        #expect(DateChoice.amount(1, .weekOfYear) == L("1 week") && DateChoice.amount(3, .month) == L("%lld months", 3))
+        #expect(DateChoice.typed("1a", now: now, calendar: cal)[0].label == L("newer than %@", L("%lld years", 1)))
+        #expect(DateChoice.amount(1, .weekOfYear) == L("%lld weeks", 1) && DateChoice.amount(3, .month) == L("%lld months", 3))
     }
 
     @Test func presetsAreRelativeToNow() {

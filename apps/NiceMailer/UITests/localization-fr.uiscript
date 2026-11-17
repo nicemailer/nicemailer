@@ -1,0 +1,26 @@
+# A French interface on a Mac set to the United States
+# (fixtures/localization-fr.language and .locale, docs/localization.md):
+# the words in French, whatever the region. The mail of 2021 comes from
+# fixtures/localization-fr.mbox, imported for this scenario only.
+key /
+type Rentrée de septembre
+key ret
+expect thread_count = 1
+expect selected_subject = Rentrée de septembre
+# French writes the day first, in any region.
+expect selected_date = 28/09/21
+expect reader_text ~ 28 sept. 2021
+snap date
+# In French, 1 (and 0) take the singular.
+key t
+type Urgent
+key ret
+expect header_tags = Urgent
+key ;
+key T
+expect screen = tags
+key d
+expect choice = Supprimer le tag Urgent (retiré de 1 mail) ?
+snap plural
+key esc
+expect choice =
