@@ -575,6 +575,9 @@ private final class Runner {
         }()
         return [
             "screen": "\(c.screen)",
+            // The rows of the Tags or Groups screen, by name: `Urgent, Calme`.
+            "screen_rows": c.screen == .tags ? c.screenTags.map(\.name).joined(separator: ", ")
+                : c.screen == .groups ? c.groups.map(\.name).joined(separator: ", ") : "",
             "overlay": "\(c.overlay)",
             // `Move,Read | Select,Act on mails | …`: the help's columns.
             "help_columns": c.overlay == .help

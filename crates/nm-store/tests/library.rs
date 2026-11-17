@@ -750,3 +750,167 @@ fn without_tag_and_without_group_leave_out_every_tag_and_every_member() {
     store.conn().execute("UPDATE contact_group SET date_deleted = unixepoch()", []).unwrap();
     assert_eq!(ids(&store, ThreadFilter { no_group: true, ..Default::default() }).len(), all);
 }
+
+/// Two threads of two different accounts: the seeded store has one, so
+/// the second thread (its messages with it) is moved to a new account. A
+/// tag is per account (an IMAP keyword of its mailbox), shown by name.
+fn threads_of_two_accounts(store: &Store) -> (i64, i64) {
+    let c = store.conn();
+    let (a, b): (i64, i64) =
+        c.query_row("SELECT min(id), max(id) FROM thread", [], |r| Ok((r.get(0)?, r.get(1)?))).unwrap();
+    c.execute("INSERT INTO account (config_key, kind, created_by, modified_by) VALUES ('second', 'imap', 'core', 'core')", [])
+        .unwrap();
+    let acc = c.last_insert_rowid();
+    c.execute("UPDATE thread SET account_id = ?1 WHERE id = ?2", [acc, b]).unwrap();
+    c.execute("UPDATE message SET account_id = ?1 WHERE thread_id = ?2", [acc, b]).unwrap();
+    (a, b)
+}
+
+/// Names of the active tags, every account, sorted (one per account).
+fn tag_names(store: &Store) -> Vec<String> {
+    let mut v: Vec<String> = store.list_tags(None).unwrap().into_iter().map(|t| t.name).collect();
+    v.sort();
+    v
+}
+
+#[test]
+fn renaming_a_tag_renames_it_in_every_account_and_keeps_its_keyword() {
+    // `r` on the Tags screen (`ui.md`, "Écrans Tags et Groupes").
+    let mut store = seeded();
+    let (a, b) = threads_of_two_accounts(&store);
+    store.tag_thread(a, "Urgent", false, Source::App).unwrap();
+    store.tag_thread(b, "urgent", false, Source::App).unwrap();
+    let keywords = |s: &Store| -> Vec<String> {
+        s.conn()
+            .prepare("SELECT keyword FROM tag ORDER BY id")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap()
+    };
+    let before = keywords(&store);
+
+    // Without case, Unicode aware; every account; the keyword stays.
+    assert_eq!(store.rename_tag("URGENT", "Très urgent", Source::App).unwrap(), 2);
+    assert_eq!(tag_names(&store), ["Très urgent", "Très urgent"]);
+    assert_eq!(keywords(&store), before);
+    // The mails follow: the filter by the new name finds both.
+    let found = everything(&store, &ThreadFilter { tags: vec!["très URGENT".into()], ..Default::default() });
+    assert_eq!(found.len(), 2);
+    assert!(everything(&store, &ThreadFilter { tags: vec!["Urgent".into()], ..Default::default() }).is_empty());
+    // A change of case is a rename; the same name changes nothing.
+    assert_eq!(store.rename_tag("très urgent", "TRÈS URGENT", Source::App).unwrap(), 2);
+    assert_eq!(store.rename_tag("très urgent", "TRÈS URGENT", Source::App).unwrap(), 0);
+    // Recorded in the history.
+    let (items, _) = store.list_history(None, 50).unwrap();
+    assert!(items.iter().any(|h| h.entity == "tag" && h.action == "update"));
+}
+
+#[test]
+fn a_tag_cannot_take_the_name_of_another_one() {
+    let mut store = seeded();
+    let (a, _) = threads_of_two_accounts(&store);
+    store.tag_thread(a, "Urgent", false, Source::App).unwrap();
+    store.tag_thread(a, "Équipe", false, Source::App).unwrap();
+    assert!(matches!(store.rename_tag("Urgent", "équipe", Source::App), Err(StoreError::InvalidParams(_))));
+    assert!(matches!(store.rename_tag("Inconnu", "Autre", Source::App), Err(StoreError::NotFound(_))));
+    assert!(matches!(store.rename_tag("Urgent", "  ", Source::App), Err(StoreError::InvalidParams(_))));
+    assert_eq!(tag_names(&store), ["Urgent", "Équipe"]);
+
+    // The name of a deleted tag is free: the renamed tag takes it, and
+    // tagging by that name later finds the renamed tag, not the old one.
+    store.delete_tag("Équipe", Source::App).unwrap();
+    assert_eq!(store.rename_tag("Urgent", "Équipe", Source::App).unwrap(), 1);
+    assert_eq!(tag_names(&store), ["Équipe"]);
+    let urgent_keyword: String =
+        store.conn().query_row("SELECT keyword FROM tag WHERE date_deleted IS NULL", [], |r| r.get(0)).unwrap();
+    let (items, _) = store.list_threads(folder_id(&store, FolderRole::Inbox), None, 5, ThreadSort::Received).unwrap();
+    store.tag_thread(items[4].id, "équipe", false, Source::App).unwrap();
+    let used: Vec<String> = store
+        .conn()
+        .prepare("SELECT DISTINCT mk.keyword FROM message_keyword mk JOIN tag t ON t.keyword = mk.keyword")
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(used, [urgent_keyword]);
+}
+
+#[test]
+fn deleting_a_tag_takes_it_off_every_mail_for_good() {
+    let mut store = seeded();
+    let (a, b) = threads_of_two_accounts(&store);
+    store.tag_thread(a, "Urgent", false, Source::App).unwrap();
+    store.tag_thread(b, "Urgent", false, Source::App).unwrap();
+    store.tag_thread(a, "Autre", false, Source::App).unwrap();
+    let tagged = |s: &Store, name: &str| everything(s, &ThreadFilter { tags: vec![name.into()], ..Default::default() }).len();
+    assert_eq!(tagged(&store, "Urgent"), 2);
+
+    let changes = store.delete_tag("urgent", Source::App).unwrap();
+    // Every message of both threads lost it: announced, and the threads
+    // refreshed (their rows no longer name it).
+    assert!(changes.changed_messages() >= 2);
+    assert_eq!(changes.threads.len(), 2);
+    assert_eq!(tag_names(&store), ["Autre"]);
+    assert_eq!(tagged(&store, "Urgent"), 0);
+    assert!(everything(&store, &ThreadFilter::default()).iter().all(|t| !t.tags.contains(&"Urgent".to_string())));
+    // A tombstone: the row stays, deleted, and recorded.
+    let deleted: i64 =
+        store.conn().query_row("SELECT count(*) FROM tag WHERE date_deleted IS NOT NULL", [], |r| r.get(0)).unwrap();
+    assert_eq!(deleted, 2);
+    let (items, _) = store.list_history(None, 50).unwrap();
+    assert!(items.iter().any(|h| h.entity == "tag" && h.action == "delete"));
+    // The other tag stays on its mail.
+    assert_eq!(tagged(&store, "Autre"), 1);
+    // Recreated, the tag starts with the mail it is put on only.
+    store.tag_thread(a, "Urgent", false, Source::App).unwrap();
+    assert_eq!(tagged(&store, "Urgent"), 1);
+    assert!(matches!(store.delete_tag("Inconnu", Source::App), Err(StoreError::NotFound(_))));
+}
+
+#[test]
+fn deleting_a_tag_leaves_a_read_only_account_alone() {
+    let mut store = seeded();
+    let (a, b) = threads_of_two_accounts(&store);
+    store.tag_thread(a, "Urgent", false, Source::App).unwrap();
+    store.tag_thread(b, "Urgent", false, Source::App).unwrap();
+    let ro: i64 = store.conn().query_row("SELECT account_id FROM thread WHERE id = ?1", [b], |r| r.get(0)).unwrap();
+    store.set_read_only_accounts([ro].into_iter().collect()).unwrap();
+    store.delete_tag("Urgent", Source::App).unwrap();
+    let left = store.list_tags(None).unwrap();
+    assert_eq!(left.len(), 1);
+    assert_eq!((left[0].account_id, left[0].message_count > 0), (ro, true));
+}
+
+#[test]
+fn renaming_and_deleting_a_group() {
+    // `r` and `d` on the Groups screen (`groupes.md`, section 6).
+    let mut store = seeded();
+    store.set_group_member("VIP", Some("a@x.org"), None, false, &[], Source::App).unwrap();
+    store.set_group_member("VIP", Some("b@x.org"), None, false, &[], Source::App).unwrap();
+    store.set_group_member("Famille", Some("c@x.org"), None, false, &[], Source::App).unwrap();
+    let groups = |s: &Store| s.list_groups().unwrap().into_iter().map(|g| (g.name, g.member_count)).collect::<Vec<_>>();
+    let vip = store.list_groups().unwrap()[0].id;
+
+    assert!(store.rename_group("vip", "Proches", Source::App).unwrap());
+    assert!(!store.rename_group("proches", "Proches", Source::App).unwrap());
+    // Same id, same members, same place.
+    assert_eq!(store.list_groups().unwrap()[0].id, vip);
+    assert_eq!(groups(&store), [("Proches".to_string(), 2), ("Famille".to_string(), 1)]);
+    assert!(matches!(store.rename_group("Proches", "FAMILLE", Source::App), Err(StoreError::InvalidParams(_))));
+    assert!(matches!(store.rename_group("VIP", "Autre", Source::App), Err(StoreError::NotFound(_))));
+
+    assert_eq!(store.delete_group("proches", Source::App).unwrap(), (vip, 2));
+    assert_eq!(groups(&store), [("Famille".to_string(), 1)]);
+    // Its name is free again; recreated, the group starts empty.
+    assert!(store.rename_group("Famille", "Proches", Source::App).unwrap());
+    store.set_group_member("Nouveau", Some("d@x.org"), None, false, &[], Source::App).unwrap();
+    assert!(store.delete_group("Nouveau", Source::App).is_ok());
+    store.set_group_member("Nouveau", Some("e@x.org"), None, false, &[], Source::App).unwrap();
+    assert_eq!(groups(&store), [("Proches".to_string(), 1), ("Nouveau".to_string(), 1)]);
+    let (items, _) = store.list_history(None, 50).unwrap();
+    assert!(items.iter().any(|h| h.entity == "contact_group" && h.action == "delete"));
+    assert!(items.iter().any(|h| h.entity == "contact_group" && h.action == "update"));
+}

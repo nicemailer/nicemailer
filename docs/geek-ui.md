@@ -287,11 +287,13 @@ The menu lists the folders in blocks separated by a blank line, the folder colum
 | `;m` | All Mail: every folder of the view but Deleted, Junk and Banned |
 | `;e` | Everything: every folder of the view |
 | `;c` | Contacts: every known address, with its decision (or its domain's, after "@"), its origin ("human" or "robot", "*" when chosen by the user), groups and number of mails; `/` filters (Return closes the line and keeps the filter, also when the screen is left and opened again; while it is on, the status bar shows it as a chip, `/gazette ×`, which a click removes: `GeekController.contactsFilterChip`); `m` chooses the decision on the address, `M` on its domain (`i` Inbox, `n` Newsletter, `p` Paperwork, `b` Banned, `-` none); `o` chooses its origin (`h` human, `r` robot, `-` automatic, [senders.md](senders.md)); Return lists the contact's mails |
-| `;T` | Tags; Return lists the mails of the tag, in every account (uppercase: `;t` is Todo) |
-| `;g` | Groups; Return lists the mails of the group's members |
+| `;T` | Tags, one row per name (the tags of that name in every account, their mails summed); Return lists the mails of the tag, in every account; `r` renames it, `d` deletes it (uppercase: `;t` is Todo) |
+| `;g` | Groups; Return lists the mails of the group's members; `r` renames the group, `d` deletes it |
 | `;h` | History: the audit log, newest first |
 
 On a screen, `j` `k` move and Escape goes back to the mails.
+
+On the Tags and Groups screens (`specifications/ui.md`, "Écrans Tags et Groupes"), `r` opens a panel on the current name, selected (typing replaces it); Return renames. The name of another tag or group, without case, is refused on the panel's row, as the core refuses it; a change of case is a rename. `d` asks first (`y` deletes, Escape keeps), with the tag's mails or the group's members. A tag is renamed or deleted in every account that has one of that name. Renaming changes the displayed name only, the IMAP keyword stays; deleting takes the tag off every mail, on the server too. A deleted group leaves its mails as they are. The attribute chips and the list of the tag or group follow the new name, or go; the open mail's header is read again (`AppModel.renameLabel`, `deleteLabel`, `labelChanged`).
 
 ### Pickers
 

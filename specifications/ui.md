@@ -290,10 +290,23 @@ ainsi ;i va à l’inbox, ;p va à Paperwork, ;t va à Todo, etc
 Le prefix ";" permet également d'aller aux autres écrans : 
 c Contact (liste des adresses, avec leur provenance « humain » ou « robot », suivie de « * » quand l'utilisateur l'a choisie ; / filtre : entrée ferme la saisie et garde le filtre, qui reste aussi quand on quitte l'écran et qu'on y revient ; tant qu'il est actif, il est affiché en permanence dans la barre de statut, comme les pastilles des attributs (`/gazette ×`), et un clic dessus le retire ; m choisit la décision sur l'adresse, M sur son domaine : i Inbox, n Newsletter, p Paperwork, b Banned, - aucune ; o choisit la provenance : h humain, r robot, - automatique, voir `expediteurs.md` ; entrée liste les mails du contact, tous dossiers)
 h History (affichage de l'historique issu de l audit log, plus récent d'abord)
-T tag (majuscule : `;t` est Todo ; entrée liste les mails du tag, et des tags de même nom des autres comptes)
+T tag (majuscule : `;t` est Todo ; une ligne par nom, les tags de même nom des autres comptes compris, avec leur nombre de mails cumulé ; entrée liste les mails du tag, dans tous les comptes)
 g group (entrée liste les mails des membres du groupe)
 
 Sur ces écrans, j/k se déplacent et échap revient aux mails.
+
+#### Écrans Tags et Groupes
+
+Ajouté en novembre 2026. Sur les écrans `;T` et `;g`, deux touches agissent sur le tag ou le groupe sous le curseur ; la ligne d'aide de l'écran les rappelle.
+
+- `r` renomme. Un panneau s'ouvre sur le nom actuel, sélectionné : la frappe le remplace, une flèche le garde pour le corriger. Entrée renomme ; échap annule. Le nom d'un autre tag ou groupe (sans tenir compte de la casse) est refusé, la ligne le dit : fusionner deux tags ou deux groupes n'est pas un renommage. Changer seulement la casse (« vip » en « VIP ») est permis.
+- `d` supprime, après une question (`y` supprime, échap garde), qui donne le nombre de mails du tag ou de membres du groupe. La suppression ne s'annule pas avec `z`.
+
+Un tag est renommé ou supprimé dans **tous les comptes** qui en ont un de ce nom, comme l'écran le présente en une ligne. Le renommage ne change que le nom affiché : le mot-clé IMAP enregistré sur chaque mail reste (`modele de donnees.md`, `tag`). Le changer réécrirait chaque mail tagué sur le serveur, pour un nom que seul NiceMailer affiche ; en contrepartie, un autre logiciel de mail (Thunderbird) continue d'afficher l'ancien mot-clé. La suppression, elle, est complète : le tag est retiré de tous ses mails, sur le serveur aussi, puis gardé comme pierre tombale ; recréé plus tard sous le même nom, il ne reprend aucun ancien mail. Un compte en lecture seule (`read_only`) n'est pas touché : son tag reste.
+
+Un groupe renommé garde ses membres et sa place ; supprimé, il devient une pierre tombale (`groupes.md`, section 3), et aucun mail ne change.
+
+Ce qui nomme le tag ou le groupe suit : les attributs (pastilles « tag : … », « groupe : … ») prennent le nouveau nom ou disparaissent, la liste des mails du tag ou du groupe (`;T` puis entrée) prend le nouveau nom ou revient au dossier, et l'en-tête du mail ouvert est relu.
 
 
 Il y a deux autres préfixes : s et v. (`d` était prévu pour display, mais `d` seul archive : une touche ne peut pas être à la fois une action et un préfixe.)

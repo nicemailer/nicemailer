@@ -525,6 +525,17 @@ struct AttachmentFileView: Decodable {
     let size: Int
 }
 
+/// Result of `rename_tag` and `rename_group`.
+struct RenameResult: Decodable {
+    let changed: Bool
+}
+
+/// Result of `delete_group`.
+struct DeleteGroupResult: Decodable {
+    let groupId: Int
+    let members: Int
+}
+
 struct GroupMemberResult: Decodable {
     let groupId: Int
     let addr: String

@@ -62,7 +62,7 @@ use clap::Parser;
 use nm_api::{
     AttachmentFileView, CommandResult, DEFAULT_LIMIT, Event, ExportMessageParams, ExportResult, FolderList, MessageRecordParams, MessageTextParams, MessageTextResult,
     GetAttachmentParams, GetThreadParams, LocateMessageParams, UnsubscribeParams, UnsubscribeResult,
-    GroupMemberResult, HelloParams, HelloResult, ImportMboxParams, ImportStatus, Items, ListContactsParams,
+    DeleteGroupResult, DeleteNameParams, GroupMemberResult, HelloParams, HelloResult, ImportMboxParams, ImportStatus, Items, ListContactsParams, RenameParams, RenameResult,
     ListHistoryParams, ListTagsParams, ListThreadsParams, MAX_LIMIT, MoveThreadParams,
     PROTOCOL_VERSION, Page, ProbeAccountParams, ProbeReport, Request, Response, RpcError, SearchParams, SearchResult, SetBodyFormatParams,
     SetGroupMemberParams, SetThreadFlaggedParams, ThreadLabelsParams, SetThreadSeenParams, SubscribeParams, SubscribeResult,
@@ -1559,6 +1559,27 @@ async fn call(core: &Arc<Core>, source: Source, req: Request) -> Result<Value, R
             })
             .await?;
             to_value(GroupMemberResult { group_id, addr, changed })
+        }
+        method::RENAME_TAG => {
+            let p: RenameParams = params(req.params)?;
+            let n = with_store(core, move |s| s.rename_tag(&p.name, &p.new_name, source)).await?;
+            to_value(RenameResult { changed: n > 0 })
+        }
+        // A command: the removals reach the server through the spool, and
+        // the threads changed are announced, as for `tag_thread`.
+        method::DELETE_TAG => {
+            let p: DeleteNameParams = params(req.params)?;
+            command(core, move |s| s.delete_tag(&p.name, source)).await
+        }
+        method::RENAME_GROUP => {
+            let p: RenameParams = params(req.params)?;
+            let changed = with_store(core, move |s| s.rename_group(&p.name, &p.new_name, source)).await?;
+            to_value(RenameResult { changed })
+        }
+        method::DELETE_GROUP => {
+            let p: DeleteNameParams = params(req.params)?;
+            let (group_id, members) = with_store(core, move |s| s.delete_group(&p.name, source)).await?;
+            to_value(DeleteGroupResult { group_id, members })
         }
         method::THREAD_LABELS => {
             let p: ThreadLabelsParams = params(req.params)?;

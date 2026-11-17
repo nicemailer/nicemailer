@@ -17,6 +17,8 @@ How to write it:
 - `t` and `g` offer to remove a tag or a group, for one mail or a selection: each action has its own row, and with several mails each row says how many of them have it.
 - Tag… in the attribute selector (`f`): the list narrowed to the mails with one of the chosen tags, or without them.
 - "without tag" in Tag… and "without group" in Group…: the mails with no tag, or of nobody in a group.
+- Rename (`r`) or delete (`d`) a tag or a group from the Tags (`;T`) and Groups (`;g`) screens. Deleting a tag takes it off all its mails, on the server too.
+- The Tags screen shows one row per tag name, its mails counted in every account.
 - Contact groups as a filter: Group… in the attribute selector (`f`), and the groups listed under the folders in three columns; a click filters the list, and the active groups are highlighted like the current folder.
 
 ### Fixed

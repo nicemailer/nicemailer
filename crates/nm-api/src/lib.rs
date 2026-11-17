@@ -97,6 +97,16 @@ pub mod method {
     /// Tags of some threads, the person each is with and that person's
     /// groups: what `t` and `g` can remove from a selection (`ui.md`).
     pub const THREAD_LABELS: &str = "thread_labels";
+    /// Renames a tag, in every account that has it; the IMAP keyword
+    /// stays (`ui.md`, "Écrans Tags et Groupes").
+    pub const RENAME_TAG: &str = "rename_tag";
+    /// Deletes a tag: removed from every message, server included, then
+    /// kept as a tombstone.
+    pub const DELETE_TAG: &str = "delete_tag";
+    /// Renames a contact group (`groupes.md`, section 6).
+    pub const RENAME_GROUP: &str = "rename_group";
+    /// Deletes a contact group; its mails do not change.
+    pub const DELETE_GROUP: &str = "delete_group";
     /// Known addresses, with their decision and groups.
     pub const LIST_CONTACTS: &str = "list_contacts";
     /// Takes, changes or removes the screening decision on an address, and
@@ -2027,6 +2037,38 @@ pub struct SetGroupMemberParams {
     /// Remove the address from the group instead of adding it.
     #[serde(default)]
     pub remove: bool,
+}
+
+/// Parameters of `rename_tag` and `rename_group`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RenameParams {
+    /// The current name, compared without case.
+    pub name: String,
+    /// The new name: 64 characters at most, not the name of another tag
+    /// (of the same account) or group.
+    pub new_name: String,
+}
+
+/// Result of `rename_tag` and `rename_group`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RenameResult {
+    /// Whether a name changed (`false` when the new name is the old one).
+    pub changed: bool,
+}
+
+/// Parameters of `delete_tag` and `delete_group`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeleteNameParams {
+    /// The name, compared without case.
+    pub name: String,
+}
+
+/// Result of `delete_group`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeleteGroupResult {
+    pub group_id: i64,
+    /// Members the group had when it was deleted.
+    pub members: i64,
 }
 
 /// Result of `set_group_member`.

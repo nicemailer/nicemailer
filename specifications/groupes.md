@@ -1,6 +1,6 @@
 # NiceMailer : groupes de contacts
 
-Statut : modèle de données validé. Implémenté dans le noyau : `list_groups`, `set_group_member` (ajout et retrait, création du groupe), `thread_labels` et les groupes de la personne d'une conversation (`get_thread`), groupes d'un contact (`list_contacts`) et conversations des membres (critères `group_id`, `group_ids` et `not_group_ids` de `list_threads`) ; dans l'app, attribut Groupe… et groupes de la colonne des dossiers (`ui.md`). Pas encore : renommage, couleur, ordre, suppression d'un groupe, synchronisation. Complète `modele de donnees.md` et `schema.sql`.
+Statut : modèle de données validé. Implémenté dans le noyau : `list_groups`, `set_group_member` (ajout et retrait, création du groupe), `thread_labels` et les groupes de la personne d'une conversation (`get_thread`), groupes d'un contact (`list_contacts`) et conversations des membres (critères `group_id`, `group_ids` et `not_group_ids` de `list_threads`) ; dans l'app, attribut Groupe… et groupes de la colonne des dossiers (`ui.md`). Renommage et suppression (`rename_group`, `delete_group`, novembre 2026), depuis l'écran `;g` (`ui.md`, « Écrans Tags et Groupes »). Pas encore : couleur, ordre, synchronisation. Complète `modele de donnees.md` et `schema.sql`.
 
 ## 1. Objet
 
@@ -97,7 +97,10 @@ Implémenté :
 - `filter: {no_group: true}` (ajouté en novembre 2026) : aucune conversation d'un membre d'un groupe actif, la règle de `not_group_ids` pour tous les groupes (« sans groupe » de Groupe…) ; `no_tag`, son pendant pour les tags. Le coût suit le nombre de membres (ou de mails tagués), lus par leurs index.
 - `filter: {group_ids: [...], not_group_ids: [...]}` de `list_threads`, dans toute liste (un dossier compris) : les conversations des membres d'un des groupes (« ou »), et aucune d'un membre des groupes exclus (règle de `not_from`, `ui.md`, « Négation »). `group_id` et `group_ids` se combinent par « et ».
 
-Envisagé : `create_group` (nom, couleur ; refuse un nom pris), `update_group` (nom, couleur, position), `delete_group`, `list_group_members`, plusieurs adresses par `set_group_member` en une transaction, et un événement `GroupChanged {group_id}`. Le serveur MCP en a besoin, sauf `delete_group`, qu'il n'ouvre pas à l'agent (`mcp.md`, section 5, « Groupes »).
+- `rename_group {name, new_name}` (ajouté en novembre 2026) : renomme le groupe, ses membres et sa place restent ; refusé si un autre groupe actif porte le nouveau nom, sans casse. Journalisé (`update`, avant et après).
+- `delete_group {name}` (ajouté en novembre 2026) : pierre tombale (section 3, « Règles »), aucun mail ne change ; rend le nombre de membres. Journalisé (`delete`). Le serveur MCP ne l'ouvre pas.
+
+Envisagé : `create_group` (nom, couleur ; refuse un nom pris), `update_group` (couleur, position), `list_group_members`, plusieurs adresses par `set_group_member` en une transaction, et un événement `GroupChanged {group_id}`. Le serveur MCP en a besoin, sauf `delete_group`, qu'il n'ouvre pas à l'agent (`mcp.md`, section 5, « Groupes »).
 
 **Droits de l'agent MCP** : il crée, renomme et modifie les groupes et leurs membres sans réglage protégé, mais ne supprime pas de groupe (`mcp.md`, section 4). Un usage qui donnerait aux groupes un effet sur le tri (section 8, question 2) doit revoir ce droit.
 

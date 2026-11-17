@@ -223,6 +223,62 @@ extension AppModel {
         }
     }
 
+    /// `r` on the Tags or Groups screen (`ui.md`, "Écrans Tags et
+    /// Groupes"): renames the tag (in every account that has it) or the
+    /// group `old` to `new`. The core refuses a name another tag or group
+    /// already has; the error is shown and nothing changes. Returns
+    /// whether the name changed. `id`: the group's, which the attributes
+    /// hold.
+    @discardableResult
+    func renameLabel(_ kind: LabelKind, _ old: String, id: Int? = nil, to new: String) async -> Bool {
+        guard let client = core else { return false }
+        let new = new.trimmingCharacters(in: .whitespaces)
+        guard !new.isEmpty, new != old else { return false }
+        do {
+            let r: RenameResult = try await client.call(
+                kind == .tag ? "rename_tag" : "rename_group", ["name": old, "new_name": new])
+            guard r.changed else { return false }
+        } catch {
+            report(error)
+            return false
+        }
+        flash = kind == .tag ? L("Tag renamed: %@ → %@", old, new) : L("Group renamed: %@ → %@", old, new)
+        await afterLabelChange(kind, id: id, old: old, new: new)
+        return true
+    }
+
+    /// `d` on the Tags or Groups screen, once confirmed: deletes the tag
+    /// (taken off every mail, on the server too) or the group (its mails
+    /// do not change).
+    func deleteLabel(_ kind: LabelKind, _ name: String, id: Int? = nil) async {
+        guard let client = core else { return }
+        do {
+            switch kind {
+            case .tag:
+                let _: CommandResult = try await client.call("delete_tag", ["name": name])
+                flash = L("Tag deleted: %@", name)
+            case .group:
+                let _: DeleteGroupResult = try await client.call("delete_group", ["name": name])
+                flash = L("Group deleted: %@", name)
+            }
+        } catch {
+            report(error)
+            return
+        }
+        await afterLabelChange(kind, id: id, old: name, new: nil)
+    }
+
+    /// After a rename or a deletion: the groups (folder column, Group…),
+    /// the attributes and list that name the label, the rows (they show
+    /// tags) and the header of the open mail. No event says a name
+    /// changed, so they are read again here.
+    private func afterLabelChange(_ kind: LabelKind, id: Int?, old: String, new: String?) async {
+        if kind == .group { await loadGroups() }
+        labelChanged(kind, id: id, old: old, new: new)
+        await reloadThreads(keepDepth: true)
+        await reloadOpenThread()
+    }
+
     /// The tags and groups of the threads `ids` (`thread_labels`), for the
     /// rows of `t` and `g`; `[]` when the core cannot answer (the picker
     /// then only adds).

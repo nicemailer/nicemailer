@@ -60,6 +60,10 @@ final class GeekController {
         /// `a`, or ⌘I in a reply: the AI prompts of the screen, as a
         /// command palette (`ia.md`, section 11).
         case ai
+        /// `r` on the Tags or Groups screen: the new name of the tag or
+        /// group `name` (`id`: the group's), typed over the current one
+        /// (`ui.md`, "Écrans Tags et Groupes").
+        case rename(LabelKind, name: String, id: Int?)
     }
 
     /// What currently receives the keys, besides the normal mode.
@@ -98,6 +102,10 @@ final class GeekController {
         /// ⌥⌘F in the reply, or a click on "From": the address, and so the
         /// account, it is sent from (`reponse.md`, section 4 ter).
         case sendFrom
+        /// `d` on the Tags or Groups screen: deleting cannot be undone (a
+        /// tag leaves every mail, on the server too), so it is asked
+        /// first. `count`: the mails of the tag, the members of the group.
+        case deleteLabel(LabelKind, name: String, id: Int?, count: Int)
     }
 
     /// One row of a menu or a picker.
@@ -1333,7 +1341,7 @@ final class GeekController {
             // asks whether the app may read Contacts. The rows appear
             // when the cards are read (the panel follows the model).
             Task { await model.loadSenderCards(asking: true) }
-        case .accounts, .attributes, .ai:
+        case .accounts, .attributes, .ai, .rename:
             break
         case .attributeValue, .search:
             valueSuggestions = []
@@ -1467,6 +1475,7 @@ final class GeekController {
         case .attributeValue: L("a name, an address or @domain; -value to exclude")
         case .search: L("words: subject, sender, recipients or body")
         case .ai: L("type to filter, or a prompt's letters · ↩ runs the first row")
+        case .rename: L("the new name · ↩ renames · esc cancels")
         default: nil
         }
     }
@@ -1592,6 +1601,8 @@ final class GeekController {
             }
         case .ai:
             all = aiEntries()
+        case .rename(let kind, let old, let id):
+            return renameEntries(kind, old: old, id: id)
         }
         // Best matches first, so that Return takes the row the user meant
         // (`PickerMatch`); the "+ typed text" row always stays.
@@ -2430,11 +2441,34 @@ final class GeekController {
         }
     }
 
+    /// The rows of the Tags screen: one per name, its mails summed over
+    /// the accounts, in the order of `list_tags` (by name). A tag belongs
+    /// to one account (an IMAP keyword of its mailbox), but the user thinks
+    /// of it by its name, and renaming or deleting acts on every account
+    /// that has it (`rename_tag`, `delete_tag`). Before (November 2026), a
+    /// name two accounts shared was two rows.
+    var screenTags: [TagView] {
+        var out: [TagView] = []
+        var index: [String: Int] = [:]
+        for t in tags {
+            let key = t.name.lowercased()
+            if let i = index[key] {
+                let o = out[i]
+                out[i] = TagView(id: o.id, accountId: o.accountId, name: o.name, color: o.color,
+                                 messageCount: o.messageCount + t.messageCount)
+            } else {
+                index[key] = out.count
+                out.append(t)
+            }
+        }
+        return out
+    }
+
     private var screenCount: Int {
         switch screen {
         case .contacts: contacts.count
         case .history: history.count
-        case .tags: tags.count
+        case .tags: screenTags.count
         case .groups: groups.count
         case .mail: 0
         }
@@ -2471,6 +2505,66 @@ final class GeekController {
             choiceIndex = nil
             overlay = .choice(.senderKind(addressId: c.id, addr: c.addr, current: c.senderKind, forced: c.forced))
         }
+        // `r`: rename, `d`: delete the tag or group under the cursor
+        // (`ui.md`, "Écrans Tags et Groupes").
+        if key == "r" || key == "d", let label = screenLabel {
+            if key == "r" {
+                openRename(label.kind, name: label.name, id: label.id)
+            } else {
+                choiceIndex = nil
+                overlay = .choice(.deleteLabel(label.kind, name: label.name, id: label.id, count: label.count))
+            }
+        }
+    }
+
+    /// The tag or group under the cursor of the Tags or Groups screen:
+    /// its kind, name, id (a group's) and count (mails, members).
+    private var screenLabel: (kind: LabelKind, name: String, id: Int?, count: Int)? {
+        switch screen {
+        case .tags where screenTags.indices.contains(screenIndex):
+            let t = screenTags[screenIndex]
+            return (.tag, t.name, nil, t.messageCount)
+        case .groups where groups.indices.contains(screenIndex):
+            let g = groups[screenIndex]
+            return (.group, g.name, g.id, g.memberCount)
+        default:
+            return nil
+        }
+    }
+
+    /// The rename panel, on the current name, selected: typing replaces
+    /// it, an arrow key keeps it to edit (`LineEdit`).
+    private func openRename(_ kind: LabelKind, name: String, id: Int?) {
+        pickerLine = LineEdit(name, selected: true)
+        pickerIndex = 0
+        overlay = .picker(.rename(kind, name: name, id: id))
+    }
+
+    /// Rows of the rename panel: the rename of the name typed, or why it
+    /// cannot be (the name of another tag or group: the core refuses it,
+    /// merging two is not a rename). Nothing while the name is empty or
+    /// unchanged. Not filtered by the text typed: it is the new name.
+    private func renameEntries(_ kind: LabelKind, old: String, id: Int?) -> [Entry] {
+        let typed = pickerQuery.trimmingCharacters(in: .whitespaces)
+        guard !typed.isEmpty, typed != old else { return [] }
+        let names = kind == .tag ? screenTags.map(\.name) : groups.map(\.name)
+        func same(_ a: String, _ b: String) -> Bool { a.caseInsensitiveCompare(b) == .orderedSame }
+        if names.contains(where: { same($0, typed) && !same($0, old) }) {
+            return [Entry(key: " ", label: L("%@ already exists", typed), disabled: true) {}]
+        }
+        return [Entry(key: "↩", label: L("rename %@ to %@", old, typed)) { [weak self] in
+            Task {
+                await self?.model.renameLabel(kind, old, id: id, to: typed)
+                await self?.reloadLabels(kind)
+            }
+        }]
+    }
+
+    /// The Tags or Groups screen read again after a change, its cursor
+    /// kept in the list.
+    private func reloadLabels(_ kind: LabelKind) async {
+        if kind == .tag { await loadTags() } else { await loadGroups() }
+        screenIndex = max(0, min(screenIndex, screenCount - 1))
     }
 
     /// Domain part of an address (`news.shop.fr` for `a@news.shop.fr`).
@@ -2507,6 +2601,11 @@ final class GeekController {
                 ? L("Send, then file this mail in")
                 : L("Send, then file the conversation in")
         case .sendFrom: L("Send from")
+        case .deleteLabel(.tag, let name, _, let count):
+            count == 1 ? L("Delete the tag %@ (taken off its mail)?", name) : L("Delete the tag %@ (taken off its %lld mails)?", name, count)
+        case .deleteLabel(.group, let name, _, let count):
+            count == 1 ? L("Delete the group %@ and its member? Their mails stay", name)
+                : L("Delete the group %@ and its %lld members? Their mails stay", name, count)
         }
     }
 
@@ -2541,6 +2640,16 @@ final class GeekController {
                     self?.setSenderKind(id, choice.kind)
                 }
             }
+        case .deleteLabel(let kind, let name, let id, _):
+            return [
+                Entry(key: "y", label: kind == .tag ? L("delete the tag") : L("delete the group")) { [weak self] in
+                    Task {
+                        await self?.model.deleteLabel(kind, name, id: id)
+                        await self?.reloadLabels(kind)
+                    }
+                },
+                Entry(key: "esc", label: L("cancel: keep it")) {},
+            ]
         case .mailboxUpgrade:
             return [
                 Entry(key: "y", label: L("upgrade it and use it (older versions of NiceMailer will no longer open it: copy the folder first to keep them able to)")) {
@@ -2839,9 +2948,9 @@ final class GeekController {
         case .contacts where contacts.indices.contains(screenIndex):
             screen = .mail
             model.showThreads(of: .contact(contacts[screenIndex]))
-        case .tags where tags.indices.contains(screenIndex):
+        case .tags where screenTags.indices.contains(screenIndex):
             screen = .mail
-            model.showThreads(of: .tag(tags[screenIndex]))
+            model.showThreads(of: .tag(screenTags[screenIndex]))
         case .groups where groups.indices.contains(screenIndex):
             screen = .mail
             model.showThreads(of: .group(groups[screenIndex]))

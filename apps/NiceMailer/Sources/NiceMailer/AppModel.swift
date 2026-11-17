@@ -1306,6 +1306,32 @@ final class AppModel {
         Task { await reloadThreads() }
     }
 
+    /// A tag or group renamed (`new`) or deleted (`new == nil`) on its
+    /// screen (`ui.md`, "Écrans Tags et Groupes"): what names it follows.
+    /// The attributes of the list (a tag by its name, a group by its id),
+    /// and the list of its mails (`;T` then Return) shown under the new
+    /// name, or left for the selected folder when it is gone. The list is
+    /// read again by the caller: its rows name the tags.
+    func labelChanged(_ kind: LabelKind, id: Int?, old: String, new: String?) {
+        var a = attributes
+        switch kind {
+        case .tag: a.renameTag(old, to: new)
+        case .group: if let id { a.renameGroup(id, to: new) }
+        }
+        // Swift note: `didSet` of `attributes` reloads the list only when
+        // the value changes, so assigning an unchanged copy costs nothing.
+        attributes = a
+        switch listFilter {
+        case .tag(let t) where kind == .tag && t.name.caseInsensitiveCompare(old) == .orderedSame:
+            listFilter = new.map { .tag(TagView(id: t.id, accountId: t.accountId, name: $0, color: t.color, messageCount: t.messageCount)) }
+        case .group(let g) where kind == .group && g.id == id:
+            listFilter = new.map { name in .group(groups.first { $0.id == g.id } ?? GroupView(
+                id: g.id, name: name, color: g.color, memberCount: g.memberCount, dateModified: g.dateModified, mailCount: g.mailCount)) }
+        default:
+            break
+        }
+    }
+
     /// The first list is shown: the launch is over. Its timings go to the
     /// system log once (`StartupTimings`).
     private func firstListShown() {

@@ -1,5 +1,12 @@
 import Foundation
 
+/// A tag or a contact group: the two kinds of label the user names, adds
+/// with `t` and `g`, and renames or deletes on their screens (`ui.md`,
+/// "Écrans Tags et Groupes").
+enum LabelKind: Equatable {
+    case tag, group
+}
+
 /// The rows of the `t` (tag) and `g` (group) pickers: which names can be
 /// added to the mails aimed at, and which removed (`ui.md`, "Ajouter et
 /// retirer un tag ou un groupe").

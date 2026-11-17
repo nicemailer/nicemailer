@@ -1,0 +1,61 @@
+# Renaming and deleting a tag or a group from the Tags (;T) and Groups (;g)
+# screens (ui.md, "Écrans Tags et Groupes").
+# A tag and a group on the open mail first.
+key t
+type Urgent
+key ret
+expect header_tags = Urgent
+key g
+type VIP
+key ret
+expect header_groups = VIP
+# r renames the tag under the cursor: the panel opens on its name, typed
+# over; the name of another tag is refused.
+key ;
+key T
+expect screen = tags
+expect screen_rows ~ Urgent
+key r
+expect picker_query = Urgent
+type Très urgent
+expect picker_first = rename Urgent to Très urgent
+snap rename-tag
+key ret
+expect flash = Tag renamed: Urgent → Très urgent
+expect screen_rows ~ Très urgent
+expect screen_rows !~ Urgent
+# The header of the mail follows.
+expect header_tags = Très urgent
+# d asks first; esc keeps it, y deletes it from every mail.
+key d
+expect choice ~ Delete the tag Très urgent
+snap delete-tag
+key esc
+expect choice =
+expect screen_rows ~ Très urgent
+key d
+key y
+expect flash = Tag deleted: Très urgent
+expect screen_rows !~ Très urgent
+expect header_tags =
+# The same for a group: renamed, its members kept; deleted, the header no
+# longer names it.
+key ;
+key g
+expect screen = groups
+expect screen_rows ~ VIP
+key r
+type Proches
+key ret
+expect flash = Group renamed: VIP → Proches
+expect screen_rows ~ Proches
+expect header_groups = Proches
+key d
+expect choice ~ Delete the group Proches
+snap delete-group
+key y
+expect flash = Group deleted: Proches
+expect screen_rows !~ Proches
+expect header_groups =
+key esc
+expect screen = mail

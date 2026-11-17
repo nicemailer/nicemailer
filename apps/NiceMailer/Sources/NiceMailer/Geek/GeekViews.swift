@@ -105,7 +105,7 @@ private struct GeekWindow: View {
         case .tags:
             NamesScreen(
                 controller: controller, title: L("Tags"),
-                rows: controller.tags.map { ($0.name, L("%lld mails", $0.messageCount)) })
+                rows: controller.screenTags.map { ($0.name, $0.messageCount == 1 ? L("1 mail") : L("%lld mails", $0.messageCount)) })
         case .groups:
             NamesScreen(
                 controller: controller, title: L("Groups"),
@@ -2111,6 +2111,8 @@ struct PickerPopup: View {
         case .tag: L("Tag")
         case .group: L("Group")
         case .ai: L("AI")
+        case .rename(.tag, _, _): L("Rename the tag")
+        case .rename(.group, _, _): L("Rename the group")
         }
     }
 
@@ -2121,6 +2123,7 @@ struct PickerPopup: View {
         case .accounts: L("No account")
         case .attributes: L("No attribute")
         case .ai: L("No AI prompt matches")
+        case .rename: controller.pickerQuery.trimmingCharacters(in: .whitespaces).isEmpty ? L("Type a name") : ""
         // The value panels: the input line shows the hint while nothing is
         // typed; text that gives no row (a date that is none) shows it
         // here instead.
@@ -2234,7 +2237,7 @@ private struct NamesScreen: View {
 
     var body: some View {
         ScreenList(
-            title: title, hint: L("return: their mails · esc: back"), count: rows.count, index: controller.screenIndex,
+            title: title, hint: L("return: their mails · r: rename · d: delete · esc: back"), count: rows.count, index: controller.screenIndex,
             onClick: { controller.clickScreenRow($0) }
         ) { i in
             HStack(spacing: 8) {

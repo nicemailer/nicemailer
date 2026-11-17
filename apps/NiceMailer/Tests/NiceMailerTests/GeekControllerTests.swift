@@ -616,6 +616,104 @@ struct GeekControllerTests {
         #expect(core.calls("set_group_member").map { $0["thread_id"] as? Int } == [1, 2])
     }
 
+    // MARK: Tags and Groups screens: rename, delete (`ui.md`, "Écrans Tags et Groupes")
+
+    @Test func theTagsScreenHasOneRowPerName() async {
+        await labelled()
+        press(";"); press("T")
+        #expect(await eventually { controller.tags.count == 3 })
+        // Urgent of both accounts is one row, its mails summed.
+        #expect(controller.screenTags.map(\.name) == ["Urgent", "Calme"])
+        #expect(controller.screenTags.map(\.messageCount) == [6, 3])
+    }
+
+    @Test func rOnTheTagsScreenRenamesTheTag() async {
+        await labelled()
+        model.attributes.toggleTag("urgent")
+        model.showThreads(of: .tag(TagView(id: 1, accountId: 1, name: "Urgent", color: nil, messageCount: 3)))
+        press(";"); press("T")
+        _ = await eventually { controller.tags.count == 3 }
+        press("r")
+        let kind = GeekController.PickerKind.rename(.tag, name: "Urgent", id: nil)
+        #expect(controller.overlay == .picker(kind))
+        // The panel opens on the current name: nothing to do yet.
+        #expect(controller.pickerQuery == "Urgent")
+        #expect(controller.pickerEntries(kind).isEmpty)
+        // The name of another tag (without case): refused, Return does nothing.
+        type("calme")
+        #expect(controller.pickerEntries(kind).map(\.label) == [L("%@ already exists", "calme")])
+        #expect(controller.pickerEntries(kind).first?.disabled == true)
+        press("ret")
+        #expect(core.calls("rename_tag").isEmpty)
+        // A new name.
+        press("r")
+        controller.pickerQuery = "Très urgent "
+        #expect(controller.pickerEntries(kind).map(\.label) == [L("rename %@ to %@", "Urgent", "Très urgent")])
+        let reads = core.calls("list_tags").count
+        press("ret")
+        #expect(controller.overlay == .none)
+        #expect(await eventually { core.calls("rename_tag").count == 1 })
+        let call = core.calls("rename_tag")[0]
+        #expect(call["name"] as? String == "Urgent" && call["new_name"] as? String == "Très urgent")
+        #expect(await eventually { model.flash == L("Tag renamed: %@ → %@", "Urgent", "Très urgent") })
+        // The attribute and the list of the tag follow the new name; the
+        // screen is read again.
+        #expect(await eventually { model.attributes.tags == ["Très urgent"] })
+        if case .tag(let t) = model.listFilter { #expect(t.name == "Très urgent") } else { Issue.record("no tag list") }
+        #expect(await eventually { core.calls("list_tags").count > reads })
+    }
+
+    @Test func dOnTheTagsScreenDeletesTheTagOnceConfirmed() async {
+        await labelled()
+        model.attributes.toggleTag("Urgent", excluded: true)
+        press(";"); press("T")
+        _ = await eventually { controller.tags.count == 3 }
+        press("d")
+        let choice = GeekController.Choice.deleteLabel(.tag, name: "Urgent", id: nil, count: 6)
+        #expect(controller.activeChoice == choice)
+        #expect(controller.choiceTitle(choice) == L("Delete the tag %@ (taken off its %lld mails)?", "Urgent", 6))
+        // Escape keeps it.
+        press("esc")
+        #expect(controller.activeChoice == nil)
+        #expect(core.calls("delete_tag").isEmpty)
+        press("d"); press("y")
+        #expect(await eventually { core.calls("delete_tag").count == 1 })
+        #expect(core.calls("delete_tag")[0]["name"] as? String == "Urgent")
+        #expect(await eventually { model.flash == L("Tag deleted: %@", "Urgent") })
+        #expect(await eventually { model.attributes.notTags.isEmpty })
+        // Still on the screen.
+        #expect(controller.screen == .tags)
+    }
+
+    @Test func theGroupsScreenRenamesAndDeletesAGroup() async {
+        press(";"); press("g")
+        #expect(await eventually { controller.groups.count == 2 })
+        model.attributes.toggleGroup(ThreadFilter.GroupRef(id: 1, name: "VIP"))
+        press("r")
+        let kind = GeekController.PickerKind.rename(.group, name: "VIP", id: 1)
+        #expect(controller.overlay == .picker(kind))
+        type("FAMILLE")
+        #expect(controller.pickerEntries(kind).map(\.label) == [L("%@ already exists", "FAMILLE")])
+        // A change of case is a rename.
+        controller.pickerQuery = "vip"
+        #expect(controller.pickerEntries(kind).map(\.label) == [L("rename %@ to %@", "VIP", "vip")])
+        controller.pickerQuery = "Proches"
+        press("ret")
+        #expect(await eventually { core.calls("rename_group").count == 1 })
+        #expect(core.calls("rename_group")[0]["new_name"] as? String == "Proches")
+        #expect(await eventually { model.attributes.groups == [ThreadFilter.GroupRef(id: 1, name: "Proches")] })
+        #expect(await eventually { model.flash == L("Group renamed: %@ → %@", "VIP", "Proches") })
+
+        press("d")
+        let choice = GeekController.Choice.deleteLabel(.group, name: "VIP", id: 1, count: 2)
+        #expect(controller.activeChoice == choice)
+        #expect(controller.choiceTitle(choice) == L("Delete the group %@ and its %lld members? Their mails stay", "VIP", 2))
+        press("y")
+        #expect(await eventually { core.calls("delete_group").count == 1 })
+        #expect(await eventually { model.attributes.groups.isEmpty })
+        #expect(await eventually { model.flash == L("Group deleted: %@", "VIP") })
+    }
+
     @Test func nothingToRemoveFromAGroupIsSaid() async {
         core.handler = { method, params in
             guard method == "set_group_member" else { return Fixture.answer(method, params) }

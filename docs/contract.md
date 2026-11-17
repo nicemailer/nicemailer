@@ -69,6 +69,8 @@ A dedicated command prints readable output, asks for confirmation when needed an
 | `set_thread_flagged` | Flags or unflags one or several threads. | — |
 | `tag_thread` | Adds or removes a tag on every message of one or several threads. Creates the tag if needed. | — |
 | `list_tags` | The tags of an account, or of every account, with their message counts. | — |
+| `rename_tag` | Renames a tag in every account that has it. Only the displayed name changes, the IMAP keyword stays. Refuses a name another tag of the account has. | — |
+| `delete_tag` | Deletes a tag in every account that has it, except read-only ones: removes it from every message (server included, through the spool), then keeps the tag as a tombstone. | — |
 | `unsubscribe` | Unsubscribes from a mailing list: in one click when the core can, otherwise returns the page or `mailto:` to open. | — |
 | `list_history` | The audit log, newest first, paginated (`specifications/tracabilite.md`); `since` (Unix time) and `sources` (`["mcp"]`: what AI agents did) filter it. | — |
 | `undo` | Undoes a move or a decision, from the token it returned. | `nicemailer undo <token>` |
@@ -81,6 +83,8 @@ A dedicated command prints readable output, asks for confirmation when needed an
 | `set_domain_screening` | The same for a domain and its subdomains, for the addresses that have no decision of their own. | `nicemailer domain <domain> <target>` |
 | `set_sender_kind` | Forces an address to be a person or a robot, or hands it back to the computed verdict (`senders.md`). | — |
 | `list_groups` | The contact groups, with their member count, latest change and mails received from their members. | — |
+| `rename_group` | Renames a contact group; its members stay. Refuses the name of another group. | — |
+| `delete_group` | Deletes a contact group (a tombstone); no mail changes. Returns how many members it had. | — |
 | `set_group_member` | Adds or removes an address, or the person a thread is with, in a group. Creates the group if needed. Refuses the user's own addresses. | — |
 | `thread_labels` | For up to 1,000 threads: their tags, the person each is with and that person's groups, so that a client can offer to remove them from a selection. | — |
 | `list_contacts` | The known addresses, with their decision and groups. | — |

@@ -120,6 +120,29 @@ struct ThreadFilter: Equatable {
         if excluded { flip(&notTags, &tags) } else { flip(&tags, &notTags); noTag = false }
     }
 
+    /// A tag renamed on the Tags screen (`ui.md`, "Écrans Tags et
+    /// Groupes"): the attributes naming it follow, since the core finds a
+    /// tag by its name. `new == nil`: the tag was deleted, its attributes go.
+    mutating func renameTag(_ old: String, to new: String?) {
+        func follow(_ list: inout [String]) {
+            guard let i = list.firstIndex(where: { $0.caseInsensitiveCompare(old) == .orderedSame }) else { return }
+            if let new { list[i] = new } else { list.remove(at: i) }
+        }
+        follow(&tags)
+        follow(&notTags)
+    }
+
+    /// The same for a group, found by its id (the core's key): renamed, its
+    /// chip shows the new name; deleted (`new == nil`), it leaves.
+    mutating func renameGroup(_ id: Int, to new: String?) {
+        func follow(_ list: inout [GroupRef]) {
+            guard let i = list.firstIndex(where: { $0.id == id }) else { return }
+            if let new { list[i] = GroupRef(id: id, name: new) } else { list.remove(at: i) }
+        }
+        follow(&groups)
+        follow(&notGroups)
+    }
+
     /// Whether the tag `name` is wanted (`true`), excluded (`false`) or not
     /// an attribute (`nil`).
     func tagChoice(_ name: String) -> Bool? {

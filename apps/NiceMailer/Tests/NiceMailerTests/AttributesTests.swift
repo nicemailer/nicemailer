@@ -365,4 +365,27 @@ struct AttributesTests {
         #expect(p[1].after == today - 6 * 86_400)
         #expect(p[4].before == 1_793_000_000 - 365 * 86_400 && p[4].after == nil)
     }
+
+    @Test func attributesFollowARenamedOrDeletedLabel() {
+        // `r` and `d` on the Tags and Groups screens (`ui.md`, "Écrans
+        // Tags et Groupes"): a tag goes by its name, a group by its id.
+        var f = ThreadFilter()
+        f.toggleTag("urgent")
+        f.toggleTag("Calme", excluded: true)
+        f.toggleGroup(.init(id: 1, name: "VIP"))
+        f.toggleGroup(.init(id: 2, name: "Famille"), excluded: true)
+        f.renameTag("URGENT", to: "Très urgent")
+        f.renameGroup(2, to: "Proches")
+        #expect(f.tags == ["Très urgent"] && f.notTags == ["Calme"])
+        #expect(f.notGroups == [.init(id: 2, name: "Proches")])
+        #expect(f.chips.map(\.label).contains(L("not group: %@", "Proches")))
+        f.renameTag("calme", to: nil)
+        f.renameGroup(1, to: nil)
+        #expect(f.notTags.isEmpty && f.groups.isEmpty)
+        // A name or id the attributes do not hold: nothing changes.
+        let before = f
+        f.renameTag("Autre", to: "X")
+        f.renameGroup(9, to: nil)
+        #expect(f == before)
+    }
 }

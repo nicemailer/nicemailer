@@ -289,6 +289,13 @@ enum Fixture {
             return ["changed": 0, "moved": 0, "filed": 0, "decision": NSNull(), "undo": "11:11"]
         case "set_group_member":
             return ["group_id": 1, "addr": "sender1@example.org", "changed": true]
+        case "rename_tag", "rename_group":
+            return ["changed": true]
+        case "delete_tag":
+            // Every message of the tag's threads lost it.
+            return ["changed": 6]
+        case "delete_group":
+            return ["group_id": 1, "members": 2]
         case "thread_labels":
             // Nobody in a group, as in `threadView`.
             let ids = params["thread_ids"] as? [Int] ?? []

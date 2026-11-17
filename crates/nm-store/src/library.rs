@@ -453,6 +453,142 @@ impl Store {
         tx.commit()?;
         Ok(all)
     }
+
+    /// Renames the tag `name` to `new_name`, in every account that has it:
+    /// the user thinks of a tag by its name (`ui.md`, "Écrans Tags et
+    /// Groupes"), and `;T` lists the tags of every account as one row per
+    /// name. Returns how many tags (one per account) were renamed; 0 when
+    /// the name does not change.
+    ///
+    /// Only the displayed name changes, never the IMAP keyword
+    /// (`modele de donnees.md`, `tag`): the keyword is what the server
+    /// stores on each message, and changing it would rewrite every tagged
+    /// message on the server (a STORE per message, thousands for a big
+    /// tag), for a name the user reads in NiceMailer only. The price:
+    /// another mail client (Thunderbird) keeps showing the old keyword.
+    ///
+    /// Refused when another tag of one of these accounts already has the
+    /// new name: merging two tags would mean moving one keyword to the
+    /// other on the server. A change of case only ("vip" to "VIP") is a
+    /// rename of the same tag.
+    pub fn rename_tag(&mut self, name: &str, new_name: &str, source: Source) -> Result<usize> {
+        let new_name = new_name.trim();
+        if new_name.is_empty() || new_name.chars().count() > 64 {
+            return Err(StoreError::InvalidParams("nom de tag vide ou trop long (64 caractères au plus)".into()));
+        }
+        let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let rows = all_tags(&tx)?;
+        let (old, new) = (name.trim().to_lowercase(), new_name.to_lowercase());
+        let renamed: Vec<&TagRow> = rows.iter().filter(|t| t.active && t.name.to_lowercase() == old).collect();
+        if renamed.is_empty() {
+            return Err(StoreError::NotFound(format!("tag {name}")));
+        }
+        for t in &renamed {
+            if rows.iter().any(|o| o.active && o.account_id == t.account_id && o.id != t.id && o.name.to_lowercase() == new) {
+                return Err(StoreError::InvalidParams(format!("le tag {new_name} existe déjà")));
+            }
+        }
+        let mut count = 0;
+        for t in renamed {
+            if t.name == new_name {
+                continue;
+            }
+            // A deleted tag of the account may hold the new name: the name
+            // is unique per account (`UNIQUE (account_id, name)`, deleted
+            // rows included), and reviving it by that name later must find
+            // the renamed tag, not the old one. Its tombstone keeps its
+            // keyword under a name no one types.
+            tx.execute(
+                "UPDATE tag SET name = name || ' #' || id WHERE account_id = ?1 AND date_deleted IS NOT NULL AND name = ?2",
+                params![t.account_id, new_name],
+            )?;
+            tx.execute(
+                "UPDATE tag SET name = ?2, date_modified = unixepoch(), modified_by = ?3 WHERE id = ?1",
+                params![t.id, new_name, source.as_str()],
+            )?;
+            audit(
+                &tx,
+                source,
+                "tag",
+                t.id,
+                "update",
+                serde_json::json!({"before": {"name": t.name}, "after": {"name": new_name}}),
+            )?;
+            count += 1;
+        }
+        tx.commit()?;
+        Ok(count)
+    }
+
+    /// Deletes the tag `name` in every account that has it: the tag leaves
+    /// every message (on the server too, through the spool, as `t` does
+    /// when it removes a tag), then its row becomes a tombstone
+    /// (`date_deleted`, `modele de donnees.md`). Removing the keyword first
+    /// is what makes the deletion complete: a tombstone alone would leave
+    /// the keyword on the messages, and creating a tag of the same name
+    /// later would bring them all back under it.
+    ///
+    /// A read-only account (`read_only = true`) is left as it is, its tag
+    /// included: nothing is changed in it.
+    ///
+    /// One transaction for every thread of the tag, found through
+    /// `idx_message_keyword_kw`: a tag of 2,000 mails is one request.
+    pub fn delete_tag(&mut self, name: &str, source: Source) -> Result<ChangeSet> {
+        let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let wanted = name.trim().to_lowercase();
+        let found: Vec<TagRow> = all_tags(&tx)?.into_iter().filter(|t| t.active && t.name.to_lowercase() == wanted).collect();
+        if found.is_empty() {
+            return Err(StoreError::NotFound(format!("tag {name}")));
+        }
+        let mut all = ChangeSet::default();
+        for t in found {
+            let read_only: bool = tx
+                .prepare_cached("SELECT EXISTS (SELECT 1 FROM temp.read_only_account WHERE id = ?1)")?
+                .query_row([t.account_id], |r| r.get(0))?;
+            if read_only {
+                continue;
+            }
+            let threads: Vec<i64> = tx
+                .prepare_cached(
+                    "SELECT DISTINCT m.thread_id FROM message_keyword mk JOIN message m ON m.id = mk.message_id
+                      WHERE mk.keyword = ?1 AND m.account_id = ?2 AND m.thread_id IS NOT NULL",
+                )?
+                .query_map(params![t.keyword, t.account_id], |r| r.get(0))?
+                .collect::<std::result::Result<_, _>>()?;
+            for thread_id in threads {
+                // The removal of `t`, with its spool entries and history.
+                all.merge(tag_one(&tx, thread_id, &t.name, true, source)?);
+            }
+            tx.execute(
+                "UPDATE tag SET date_deleted = unixepoch(), date_modified = unixepoch(), modified_by = ?2 WHERE id = ?1",
+                params![t.id, source.as_str()],
+            )?;
+            audit(&tx, source, "tag", t.id, "delete", serde_json::json!({"before": {"name": t.name}}))?;
+        }
+        tx.commit()?;
+        Ok(all)
+    }
+}
+
+/// One row of `tag`, as `rename_tag` and `delete_tag` compare them.
+struct TagRow {
+    id: i64,
+    account_id: i64,
+    name: String,
+    keyword: String,
+    active: bool,
+}
+
+/// Every tag, deleted ones included. Names are compared in Rust, Unicode
+/// aware (see `tag_one`); the table holds a few rows per account.
+fn all_tags(tx: &rusqlite::Transaction) -> Result<Vec<TagRow>> {
+    let rows = tx
+        .prepare_cached("SELECT id, account_id, name, keyword, date_deleted IS NULL FROM tag ORDER BY id")?
+        .query_map([], |r| {
+            Ok(TagRow { id: r.get(0)?, account_id: r.get(1)?, name: r.get(2)?, keyword: r.get(3)?, active: r.get(4)? })
+        })?
+        .collect::<std::result::Result<_, _>>()?;
+    Ok(rows)
 }
 
 /// The body of `tag_thread`, in the caller's transaction.
@@ -545,6 +681,73 @@ impl Store {
     // ----------------------------------------------------------------
     // Contact groups (groupes.md)
     // ----------------------------------------------------------------
+
+    /// The active group named `name` (compared without case, Unicode
+    /// aware, as in `set_group_member`), with its name as stored.
+    fn active_group(tx: &rusqlite::Transaction, name: &str) -> Result<(i64, String)> {
+        let wanted = name.trim().to_lowercase();
+        let rows: Vec<(i64, String)> = tx
+            .prepare_cached("SELECT id, name FROM contact_group WHERE date_deleted IS NULL ORDER BY id")?
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<std::result::Result<_, _>>()?;
+        rows.into_iter()
+            .find(|(_, n)| n.to_lowercase() == wanted)
+            .ok_or_else(|| StoreError::NotFound(format!("groupe {name}")))
+    }
+
+    /// Renames the group `name` to `new_name` (`groupes.md`, section 6).
+    /// Its members, position and colour stay; the filters that name it
+    /// follow, since they hold its id. Returns whether the name changed.
+    ///
+    /// Refused when another active group has the new name, without case
+    /// (`idx_contact_group_name`): merging two groups is not a rename. A
+    /// deleted group of that name stays a tombstone: the unique index only
+    /// covers active groups, and `set_group_member` prefers an active one.
+    pub fn rename_group(&mut self, name: &str, new_name: &str, source: Source) -> Result<bool> {
+        let new_name = new_name.trim();
+        if new_name.is_empty() || new_name.chars().count() > 64 {
+            return Err(StoreError::InvalidParams("nom de groupe vide ou trop long (64 caractères au plus)".into()));
+        }
+        let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let (id, old) = Self::active_group(&tx, name)?;
+        if old == new_name {
+            return Ok(false);
+        }
+        if let Ok((other, _)) = Self::active_group(&tx, new_name) {
+            if other != id {
+                return Err(StoreError::InvalidParams(format!("le groupe {new_name} existe déjà")));
+            }
+        }
+        tx.execute(
+            "UPDATE contact_group SET name = ?2, date_modified = unixepoch(), modified_by = ?3 WHERE id = ?1",
+            params![id, new_name, source.as_str()],
+        )?;
+        audit(&tx, source, "contact_group", id, "update", serde_json::json!({"before": {"name": old}, "after": {"name": new_name}}))?;
+        tx.commit()?;
+        Ok(true)
+    }
+
+    /// Deletes the group `name`: a tombstone (`date_deleted`), its member
+    /// rows kept and no longer read (`groupes.md`, section 3, "Règles"). No
+    /// mail changes: a group is a list of addresses kept by NiceMailer,
+    /// nothing on the server. Returns the group's id and how many members
+    /// it had.
+    pub fn delete_group(&mut self, name: &str, source: Source) -> Result<(i64, i64)> {
+        let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let (id, old) = Self::active_group(&tx, name)?;
+        let members: i64 = tx.query_row(
+            "SELECT count(*) FROM contact_group_member WHERE group_id = ?1 AND date_removed IS NULL",
+            [id],
+            |r| r.get(0),
+        )?;
+        tx.execute(
+            "UPDATE contact_group SET date_deleted = unixepoch(), date_modified = unixepoch(), modified_by = ?2 WHERE id = ?1",
+            params![id, source.as_str()],
+        )?;
+        audit(&tx, source, "contact_group", id, "delete", serde_json::json!({"before": {"name": old, "members": members}}))?;
+        tx.commit()?;
+        Ok((id, members))
+    }
 
     /// Groups not deleted, in display order, with their member count, their
     /// latest change and the mails received from their members.

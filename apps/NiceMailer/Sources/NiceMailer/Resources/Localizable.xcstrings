@@ -3304,16 +3304,6 @@
         }
       }
     },
-    "return: their mails · esc: back": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "entrée : leurs mails · échap : retour"
-          }
-        }
-      }
-    },
     "save": {
       "localizations": {
         "fr": {
@@ -5443,6 +5433,176 @@
           "stringUnit": {
             "state": "translated",
             "value": "aucun sans"
+          }
+        }
+      }
+    },
+    "Tag renamed: %@ → %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tag renommé : %@ → %@"
+          }
+        }
+      }
+    },
+    "Group renamed: %@ → %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Groupe renommé : %@ → %@"
+          }
+        }
+      }
+    },
+    "Tag deleted: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tag supprimé : %@"
+          }
+        }
+      }
+    },
+    "Group deleted: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Groupe supprimé : %@"
+          }
+        }
+      }
+    },
+    "%@ already exists": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ existe déjà"
+          }
+        }
+      }
+    },
+    "rename %@ to %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "renommer %@ en %@"
+          }
+        }
+      }
+    },
+    "the new name · ↩ renames · esc cancels": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "le nouveau nom · ↩ renomme · échap annule"
+          }
+        }
+      }
+    },
+    "Delete the tag %@ (taken off its mail)?": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Supprimer le tag %@ (retiré de son mail) ?"
+          }
+        }
+      }
+    },
+    "Delete the tag %@ (taken off its %lld mails)?": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Supprimer le tag %@ (retiré de ses %lld mails) ?"
+          }
+        }
+      }
+    },
+    "Delete the group %@ and its member? Their mails stay": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Supprimer le groupe %@ et son membre ? Ses mails restent"
+          }
+        }
+      }
+    },
+    "Delete the group %@ and its %lld members? Their mails stay": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Supprimer le groupe %@ et ses %lld membres ? Leurs mails restent"
+          }
+        }
+      }
+    },
+    "delete the tag": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "supprimer le tag"
+          }
+        }
+      }
+    },
+    "delete the group": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "supprimer le groupe"
+          }
+        }
+      }
+    },
+    "cancel: keep it": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "annuler : le garder"
+          }
+        }
+      }
+    },
+    "return: their mails · r: rename · d: delete · esc: back": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "entrée : leurs mails · r : renommer · d : supprimer · échap : retour"
+          }
+        }
+      }
+    },
+    "Rename the tag": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Renommer le tag"
+          }
+        }
+      }
+    },
+    "Rename the group": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Renommer le groupe"
           }
         }
       }
