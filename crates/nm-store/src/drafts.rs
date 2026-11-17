@@ -1202,6 +1202,14 @@ impl Store {
                 [action_id],
             )?;
         }
+        // The mail answered gets `\Answered`, here and on the server, as
+        // Mail and Thunderbird set it: other mail clients show it, and the
+        // "answered" attribute finds the thread through the flag too
+        // (`ui.md`, "Sélecteur d'attributs"). Before (November 2026),
+        // nothing marked it.
+        if let Some(r) = reply_to {
+            mark_answered(&tx, r, source, &mut changes, &mut threads)?;
+        }
         // Its row of Drafts goes, and its copy on the server.
         crate::draft_copies::forget_copies(&tx, draft_id, source, &mut changes)?;
         tx.execute("DELETE FROM draft WHERE id = ?1", [draft_id])?;
@@ -1825,4 +1833,36 @@ fn parent_ids(conn: &Connection, parent: i64) -> Result<(Option<String>, Vec<Str
     let msgid = msgid.filter(|m| compose::valid_msgid(m));
     let references = if msgid.is_some() { compose::references(&refs, irt.as_deref(), msgid.as_deref()) } else { Vec::new() };
     Ok((msgid, references))
+}
+
+/// Marks the mail `message_id` answered (`\Answered`) after a reply to it
+/// left: locally, and on the server through the spool (a mail of an
+/// account without a server, an archive, is marked locally only). Nothing
+/// for a mail already marked, gone, or of a read-only account (nothing is
+/// changed in one). Not in the history: the `send` row says the mail was
+/// answered, and a row here would fall in the undo range of the filing,
+/// which undoing must not touch.
+fn mark_answered(
+    tx: &rusqlite::Transaction,
+    message_id: i64,
+    source: Source,
+    changes: &mut ChangeSet,
+    threads: &mut BTreeSet<i64>,
+) -> Result<()> {
+    let row: Option<(Option<i64>, i64)> = tx
+        .query_row(
+            "SELECT thread_id, folder_id FROM message m
+              WHERE id = ?1 AND is_answered = 0
+                AND NOT EXISTS (SELECT 1 FROM temp.read_only_account r WHERE r.id = m.account_id)",
+            [message_id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()?;
+    let Some((thread, folder)) = row else { return Ok(()) };
+    tx.execute("UPDATE message SET is_answered = 1 WHERE id = ?1", [message_id])?;
+    crate::spool::enqueue_flag(tx, message_id, "\\Answered", true, source.as_str(), changes)?;
+    changes.messages.insert((message_id, thread));
+    changes.folders.insert(folder);
+    threads.extend(thread);
+    Ok(())
 }

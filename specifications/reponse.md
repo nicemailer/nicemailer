@@ -193,6 +193,7 @@ Dans cet ordre, chaque étape pouvant être rejouée après un plantage :
 2. **Ligne `message`** du mail envoyé, dans le dossier Sent, rattachée à la conversation du mail auquel on répond ; le MIME envoyé est écrit dans le stockage brut (`brouillons.md`, section 9).
 3. **Rangement** de la conversation (section 8).
 4. **Décision Inbox** pour les destinataires (section 10).
+4 bis. **Mail répondu** (ajouté en novembre 2026) : le mail auquel on répond reçoit le drapeau `\Answered`, en base et sur le serveur par le spool, comme le font Mail et Thunderbird : les autres logiciels de mail le montrent, et le critère « répondus » le voit (`ui.md`). Rien pour un transfert ou un nouveau mail, ni pour un mail d'un compte en lecture seule. Avant, rien ne le marquait.
 5. **Suppression** de la ligne `draft`.
 6. Ligne `send` dans `audit_log`, événement `DraftSent {draft_id, message_id}`.
 

@@ -30,20 +30,38 @@ Layout choices (columns, status bar position, list width) are remembered.
 
 As in Zed, **⌘+** (or **⌘=**, which needs no Shift on AZERTY keyboards) makes the whole interface bigger, **⌘−** smaller, and **⌘0** brings it back to the default size, one point at a time between 9 and 24 points (default 12). The same commands are in the View menu. Everything follows a single base size: fonts, row heights, column widths, menus, pickers and the HTML view. The size is remembered.
 
+## Tags and groups in the header
+
+After the subject, the title line of the open mail shows the conversation's tags (`#Urgent`, as in the list) and the groups of the person it is with (`@VIP`, as in the folder column), in the accent colour (`ReaderTitleBar`). The person is the one the sender column names and `g` adds, so the header names exactly the groups `g` can remove them from. When the subject does not fit beside them, the labels start the second line, before the controls; they are never cut. The tooltip says what they are and that `t` and `g` change them. The core sends them with the thread (`tags`, `correspondent`, `correspondent_groups` of `get_thread`). The open thread is read again after a tag changes (the core's `ThreadChanged`) and after `g` (no event says a membership changed).
+
+## Adding and removing tags and groups
+
+`t` and `g` give each action its own row, for the current mail or the marked ones (`LabelChoices`). Removal rows come first, marked `−`: "remove Urgent" for a tag at least one of the mails has, or a group the person of at least one of them is in; removing only touches the mails that have it. Then the rows that add: the existing names not every mail has yet. A name some of the marked mails have therefore gets both rows, and with several mails each row says how many have it ("1 of 2"). A name typed that does not exist gives the `+` row, which creates it. Names compare without case, as in the core. For one mail, this is simply its tags (or its person's groups) to remove, then the others to add.
+
+The groups of the marked mails' people come from the core when `g` opens (`thread_labels`, 1,000 threads at most); until it answers, the header's groups stand for the open mail, so its removal rows show at once. Before (November 2026), `t` on a tag every mail had silently removed it, and `g` only added.
+
+## Groups in the folder column
+
+In the three-column layout (`v3`), the contact groups are listed under the folders, after a "Groups" title (`GeekColumnGroups`). A click on a group narrows the **current list** (the folder, the unified folder, Everything, a tag's list…) to the mails of its members: it adds the group to the Group… attribute, with its chip in the status bar; a second click removes it. Several groups are OR-ed. ⌘-click excludes the group instead ("not group: …"). A group that filters the list is marked `•` (excluded: `−`, struck through) in the accent colour; the others show `@`. Its row also has the grey background of the current folder (`GeekController.isHighlighted`), whether it was chosen by a click or in the Group… panel of `f`, wanted or excluded: the folder and the active groups together say what the list shows. Like every attribute, the groups stay when the folder changes, and Escape removes them. No group, no block.
+
+The column shows eight groups at most (`GroupRanking.columnLimit`). With more, it keeps the most relevant ones and ends with "N more…", which opens the Group… panel listing them all (the "Groups" title opens it too). Relevance takes two signals from `list_groups`: the latest change of the group or of its members (`date_modified`), and the mails received from its members (`mail_count`). The two rankings are interleaved: the most recent group, then the biggest one not taken yet, then the next most recent, and so on, ties kept in display order. A score mixing a date and a count would need weights with no natural value; the interleaving needs none, and a new group shows at once while a big old one stays. The groups filtering the list are always shown, even past the limit. The rows keep the display order (the order the groups were made in), so a group never jumps to another row, only in or out. The groups are read again with the folders (at each change the core announces) and after `g`; the core has no group event yet.
+
 ## Attributes (filters)
 
-The magnifier after the folder in the status bar (key **F**, or a click) opens the attribute selector. Attributes narrow the current list (folder of an account, or of "all", or the mails of a tag, a group or a contact, whose status bar then shows the magnifier and the chips after "tag: …"), combined with AND; a thread qualifies when its mails in the listed folders match (in Everything, every folder: a thread shown in Sent because your reply is its latest mail is still seen with the mail it answers).
+The magnifier after the folder in the status bar (key **f**, or a click) opens the attribute selector. Its rows go in pairs, a thin, discreet line between two pairs, each row starting with a capital (November 2026; `ThreadFilter.selectorLayout`): Unread / Read, Flagged / Not flagged, From… / To…, Subject… / Text…, Conversation date… / Mail date…, Group… / Tag…, Human / Robot, With attachments / Without attachments, With my reply / Without my reply, Conversation / Single mail, then "Clear all attributes" when one is on. A pair is an attribute and its opposite, or two of a kind. Once something is typed, the rows are ranked and the lines go. The chips keep the lower case ("unread"). The selector is as tall as all its rows, "clear" included, at any text size (`PickerPopup.height`): its rows are few and fixed, and one that had to be scrolled to went unnoticed (Mail date… and "clear" were below the edge until November 2026). Only a window too short makes it smaller; its rows then scroll. Attributes narrow the current list (folder of an account, or of "all", or the mails of a tag, a group or a contact, whose status bar then shows the magnifier and the chips after "tag: …"), combined with AND; a thread qualifies when its mails in the listed folders match (in Everything, every folder: a thread shown in Sent because your reply is its latest mail is still seen with the mail it answers).
 
 | Attribute | Values (English / French rows) | Typed to reach it (English / French) |
 | --- | --- | --- |
 | read state | unread / read — non lus / lus | `un` `r` — `no` (or `nl`) `l` |
 | flag | flagged / not flagged — drapeau / sans drapeau | `f` `nf` — `dr` `sd` |
 | attachments | with attachments / without attachments — pièce jointe / sans pièce jointe | `wi` `witho` — `pj` (or `pi`) `spj` |
-| answered (you replied) | answered / not answered — répondus / sans ma réponse | `an` `na` — `r` `sm` |
-| conversation | conversation (several mails) / single mail — conversations / mails seuls | `co` `si` — `co` `m` |
-| origin ([senders.md](senders.md)) | human / robot — humain / robot: a mail of the conversation, in any folder, was written by a person, or none was. Listed last so the letters above stay | `h` `ro`, hidden words `person`, `machine` — `h` `ro`, `personne`, `automate` |
+| your reply (a mail of the conversation carries the "answered" mark, or it holds a reply of yours in Sent, whichever client sent it) | with my reply / without my reply — avec ma réponse / sans ma réponse | `wm` `without m`, hidden word `answered` — `av` `sm`, `répondus` |
+| conversation | conversation (several mails) / single mail — conversations / mails seuls | `th` (hidden word `thread`: `co` reaches Conversation date…) `si` — `co` `m` |
+| origin ([senders.md](senders.md)) | human / robot — humain / robot: a mail of the conversation, in any folder, was written by a person, or none was | `h` `ro`, hidden words `person`, `machine` — `h` `ro`, `personne`, `automate` |
 | From… — De… | part of a name or address, or a domain written `@acme.fr`; contacts suggested as you type; several values OR-ed; `-value` excludes. The name is the contact's, not the display name of each mail | `fr`, `sender` — `de`, `exp` |
 | To… — À… | same, on To and Cc | `to`, `cc` — `a`, `cc`, `dest` |
+| Group… — Groupe… | the contact groups (see "Groups in the folder column" below): a mail of the conversation in the listed folders is from a member of the group or to one (To, Cc). The panel lists every group, those chosen first (`•` wanted, `−` excluded), then the most relevant ones (`GroupRanking`), each with its number of members; typing narrows them by name. Return chooses a group, or removes it, and the panel **stays open** for another one: several groups are OR-ed. `-name` turns the rows into exclusions ("not VIP"); a group is wanted or excluded, never both. Escape closes the panel. Chips: "group: VIP", "not group: VIP". Without any group, the panel says that `g` makes one. The last row, "without group" (added in November 2026), keeps the conversations none of whose mails in the listed folders is from or to a member of a group; once chosen it moves to the top, marked `•`, with the chip "without group". It and a wanted group replace each other (together the list would be empty); excluded groups stay. It is last so that Return on the first row still takes the most relevant group; typing "none" finds it | `g`, `members`, `team` — `g`, `membres`, `équipe` |
+| Tag… — Tag… | the tags, one row per name (the tags of that name in every account are one, as for `;T`): those chosen first (`•` wanted, `−` excluded), then the most used, each with its number of mails; typing narrows them. A conversation qualifies when one of its mails carries one of the chosen tags (OR-ed); an excluded tag leaves it out as soon as one of its mails carries it. Return chooses or removes a tag and the panel **stays open**, as for Group…; `-name` excludes. Chips: "tag: Urgent", "not tag: Urgent". Without any tag, the panel says that `t` makes one. The last row, "without tag", keeps the conversations none of whose mails carries a tag, as "without group" does. The core gets names (`tags`, `not_tags`) | `tag`, `label` — `tag`, `étiquette` |
 | Text… — Texte… | words of the subject and body, never the addresses; each word a prefix, accents ignored; `-word` excludes | `te` — `te` |
 | Subject… — Sujet… | words of the subject only; `-word` excludes | `su`, `title` — `su`, `objet` |
 | Conversation date… — Date conversation… | the date of the conversation, that of its latest mail (as shown in the list): today, last 7 days, last 30 days, this year, older than a year, or "after" / "before" a typed date, or newer / older than a typed duration (see "Typed dates" below); the two bounds add up to an interval. The frequent one: it costs nothing | `cd` — `da`, `dc`, `quand` |
@@ -185,8 +203,8 @@ Actions apply to the **marked** mails if any (`J` / `K`), otherwise to the mail 
 | `d` | done: move to Archive |
 | `m` + letter | move to a folder (`mt` Todo, `md` Deleted…); only allowed targets are offered. In Quarantine, the letter alone (`i n p x b d`), see "Quarantine" |
 | Delete | move to Deleted |
-| `t` | tag picker: choose a tag, or type a new name; the same tag again removes it |
-| `g` | group picker: adds the sender to a group (new name: the group is created) |
+| `t` | tag picker: "remove X" rows (marked `−`) for the tags the mails have, then the tags to add, from every account (one row per name; the tag is created in the mail's own account); a new name typed creates it (see "Adding and removing tags and groups") |
+| `g` | group picker: the person the conversation is with (the one the sender column names, never you): "remove X" rows for the groups they are in, then the groups to add them to (new name: the group is created) |
 | `T` | show everything in the thread (folded mails, quotes, signatures) or go back to the simplified view |
 | `S` | skip to the text after the next quoted block |
 | `ctrl-k` / `ctrl-j` | previous / next message of the conversation: the current one folds, the other unfolds and is scrolled to (`thread-display.md`) |
@@ -248,6 +266,7 @@ The keyboard comes first, but every list can also be used with the mouse:
 | --- | --- | --- |
 | Mail list | select the mail, unmark the others | ⌘-click marks or unmarks a mail (the current one joins the selection); ⇧-click marks every mail from the current one to the clicked one; with one column (`v1`), a double-click reads the mail in the whole window |
 | Folders (3 columns) | go to the folder | |
+| Groups (3 columns, under the folders) | narrow the current list to the group's members, or no longer | ⌘-click excludes the group; "Groups" and "N more…" open the Group… panel |
 | Account or folder in the status bar | open the account or folder picker | |
 | Pickers and menus | choose the row | a click outside closes them |
 | Contacts, tags, groups | select the row | double-click lists its mails |
@@ -268,11 +287,13 @@ The menu lists the folders in blocks separated by a blank line, the folder colum
 | `;m` | All Mail: every folder of the view but Deleted, Junk and Banned |
 | `;e` | Everything: every folder of the view |
 | `;c` | Contacts: every known address, with its decision (or its domain's, after "@"), its origin ("human" or "robot", "*" when chosen by the user), groups and number of mails; `/` filters (Return closes the line and keeps the filter, also when the screen is left and opened again; while it is on, the status bar shows it as a chip, `/gazette ×`, which a click removes: `GeekController.contactsFilterChip`); `m` chooses the decision on the address, `M` on its domain (`i` Inbox, `n` Newsletter, `p` Paperwork, `b` Banned, `-` none); `o` chooses its origin (`h` human, `r` robot, `-` automatic, [senders.md](senders.md)); Return lists the contact's mails |
-| `;T` | Tags; Return lists the mails of the tag, in every account (uppercase: `;t` is Todo) |
-| `;g` | Groups; Return lists the mails of the group's members |
+| `;T` | Tags, one row per name (the tags of that name in every account, their mails summed); Return lists the mails of the tag, in every account; `r` renames it, `d` deletes it (uppercase: `;t` is Todo) |
+| `;g` | Groups; Return lists the mails of the group's members; `r` renames the group, `d` deletes it |
 | `;h` | History: the audit log, newest first |
 
 On a screen, `j` `k` move and Escape goes back to the mails.
+
+On the Tags and Groups screens (`specifications/ui.md`, "Écrans Tags et Groupes"), `r` opens a panel on the current name, selected (typing replaces it); Return renames. The name of another tag or group, without case, is refused on the panel's row, as the core refuses it; a change of case is a rename. `d` asks first (`y` deletes, Escape keeps), with the tag's mails or the group's members. A tag is renamed or deleted in every account that has one of that name. Renaming changes the displayed name only, the IMAP keyword stays; deleting takes the tag off every mail, on the server too. A deleted group leaves its mails as they are. The attribute chips and the list of the tag or group follow the new name, or go; the open mail's header is read again (`AppModel.renameLabel`, `deleteLabel`, `labelChanged`).
 
 ### Pickers
 

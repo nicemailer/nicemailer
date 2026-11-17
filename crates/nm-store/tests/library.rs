@@ -229,33 +229,111 @@ fn tags_are_created_listed_shown_and_removed() {
     assert_eq!(kws, vec!["Cafe", "Cafe_2"]);
 }
 
+/// Thread ids of a list, as a set.
+fn ids(list: &[ThreadSummary]) -> std::collections::BTreeSet<i64> {
+    list.iter().map(|t| t.id).collect()
+}
+
+#[test]
+fn several_groups_are_or_ed_excluded_ones_left_out() {
+    let mut store = seeded();
+    // Two Inbox threads from two different senders, each in a group.
+    let inbox = folder_id(&store, FolderRole::Inbox);
+    let (threads, _) = store.list_threads(inbox, None, 40, ThreadSort::Received).unwrap();
+    let (alpha, a, _) = store.set_group_member("Alpha", None, Some(threads[0].id), false, &[], Source::App).unwrap();
+    let mut beta = None;
+    for t in &threads[1..] {
+        let (g, b, _) = store.set_group_member("Beta", None, Some(t.id), false, &[], Source::App).unwrap();
+        if b != a {
+            beta = Some(g);
+            break;
+        }
+        store.set_group_member("Beta", Some(&b), None, true, &[], Source::App).unwrap();
+    }
+    let beta = beta.expect("two senders among 40 threads");
+    let of = |store: &Store, f: ThreadFilter| everything(store, &f);
+    let only_a = of(&store, ThreadFilter { group_ids: vec![alpha], ..Default::default() });
+    let only_b = of(&store, ThreadFilter { group_ids: vec![beta], ..Default::default() });
+    assert!(!only_a.is_empty() && !only_b.is_empty());
+    // The same as the group's own criterion.
+    assert_eq!(ids(&only_a), ids(&of(&store, ThreadFilter { group_id: Some(alpha), ..Default::default() })));
+    // Several groups: the threads of either, once each, newest first.
+    let both = of(&store, ThreadFilter { group_ids: vec![alpha, beta], ..Default::default() });
+    assert_eq!(ids(&both), ids(&only_a).union(&ids(&only_b)).copied().collect());
+    assert_eq!(both.len(), ids(&both).len());
+    assert!(newest_first(&both));
+    // Excluded: none of the group's threads, every other one (Everything
+    // lists every folder, so the exclusion sees every mail).
+    let all = of(&store, ThreadFilter::default());
+    let not_a = of(&store, ThreadFilter { not_group_ids: vec![alpha], ..Default::default() });
+    assert!(ids(&not_a).is_disjoint(&ids(&only_a)));
+    assert_eq!(not_a.len() + only_a.len(), all.len());
+    // A group's list narrowed by another group: "and".
+    let a_and_b = of(&store, ThreadFilter { group_id: Some(alpha), group_ids: vec![beta], ..Default::default() });
+    assert_eq!(ids(&a_and_b), ids(&only_a).intersection(&ids(&only_b)).copied().collect());
+    // Combined with an attribute: unread mails of either group.
+    let unread = of(&store, ThreadFilter { group_ids: vec![alpha, beta], seen: Some(false), ..Default::default() });
+    assert!(unread.iter().all(|t| t.unread_count > 0 && ids(&both).contains(&t.id)));
+}
+
+#[test]
+fn list_groups_gives_what_ranks_a_group() {
+    let mut store = seeded();
+    let (thread, _) = inbox_thread(&store);
+    let (gid, addr, _) = store.set_group_member("VIP", None, Some(thread), false, &[], Source::App).unwrap();
+    // An empty group (its only member removed) and an untouched one.
+    store.set_group_member("Old", Some("gone@x.example"), None, false, &[], Source::App).unwrap();
+    store.set_group_member("Old", Some("gone@x.example"), None, true, &[], Source::App).unwrap();
+    let sender_count: i64 = store
+        .conn()
+        .query_row("SELECT sender_count FROM address WHERE addr = ?1", [&addr], |r| r.get(0))
+        .unwrap();
+    assert!(sender_count > 0);
+    let groups = store.list_groups().unwrap();
+    let vip = groups.iter().find(|g| g.id == gid).unwrap();
+    assert_eq!((vip.member_count, vip.mail_count), (1, sender_count));
+    let old = groups.iter().find(|g| g.name == "Old").unwrap();
+    assert_eq!((old.member_count, old.mail_count), (0, 0));
+    // The date follows the memberships, the removal included: a member
+    // changed later makes the group more recent than its row.
+    store.conn().execute("UPDATE contact_group SET date_modified = 100", []).unwrap();
+    store.conn().execute("UPDATE contact_group_member SET date_modified = 200 WHERE group_id = ?1", [gid]).unwrap();
+    store.conn().execute("UPDATE contact_group_member SET date_modified = 300 WHERE group_id = ?1", [old.id]).unwrap();
+    let groups = store.list_groups().unwrap();
+    let date = |id: i64| groups.iter().find(|g| g.id == id).unwrap().date_modified;
+    assert_eq!((date(gid), date(old.id)), (200, 300));
+    // Without any membership, the group's own row.
+    store.conn().execute("DELETE FROM contact_group_member WHERE group_id = ?1", [old.id]).unwrap();
+    assert_eq!(store.list_groups().unwrap().iter().find(|g| g.id == old.id).unwrap().date_modified, 100);
+}
+
 #[test]
 fn group_membership_follows_the_rules_of_groupes_md() {
     let mut store = seeded();
     let (thread, _) = inbox_thread(&store);
     // The sender of the thread (not the user, whose mails are in Sent).
-    let (gid, addr, changed) = store.set_group_member("VIP", None, Some(thread), false, Source::App).unwrap();
+    let (gid, addr, changed) = store.set_group_member("VIP", None, Some(thread), false, &[], Source::App).unwrap();
     assert!(changed && addr.contains('@'));
     let (_, msgs) = store.get_thread(thread, &[]).unwrap();
     assert!(msgs.iter().any(|m| m.from_addr.as_deref() == Some(addr.as_str()) && m.folder_role != Some(FolderRole::Sent)));
     // Adding twice changes nothing; "vip" is the same group.
-    assert!(!store.set_group_member("vip", Some(&addr), None, false, Source::App).unwrap().2);
+    assert!(!store.set_group_member("vip", Some(&addr), None, false, &[], Source::App).unwrap().2);
     assert_eq!(store.list_groups().unwrap()[0].member_count, 1);
     // Several groups for one address.
-    store.set_group_member("Équipe", Some(&addr), None, false, Source::App).unwrap();
+    store.set_group_member("Équipe", Some(&addr), None, false, &[], Source::App).unwrap();
     let (contacts, _) = store.list_contacts(Some(&addr), None, 10).unwrap();
     assert_eq!(contacts[0].groups, vec!["VIP", "Équipe"]);
     // Threads of the group include this thread, newest first.
     let of_group = everything(&store, &ThreadFilter { group_id: Some(gid), ..Default::default() });
     assert!(of_group.iter().any(|t| t.id == thread) && newest_first(&of_group));
     // Removal is a tombstone; adding back clears it.
-    assert!(store.set_group_member("VIP", Some(&addr), None, true, Source::App).unwrap().2);
+    assert!(store.set_group_member("VIP", Some(&addr), None, true, &[], Source::App).unwrap().2);
     let removed: Option<i64> = store
         .conn()
         .query_row("SELECT date_removed FROM contact_group_member WHERE group_id = ?1", [gid], |r| r.get(0))
         .unwrap();
     assert!(removed.is_some());
-    store.set_group_member("VIP", Some(&addr), None, false, Source::App).unwrap();
+    store.set_group_member("VIP", Some(&addr), None, false, &[], Source::App).unwrap();
     let rows: i64 = store
         .conn()
         .query_row("SELECT count(*) FROM contact_group_member WHERE group_id = ?1 AND date_removed IS NULL", [gid], |r| r.get(0))
@@ -263,7 +341,7 @@ fn group_membership_follows_the_rules_of_groupes_md() {
     assert_eq!(rows, 1);
     // A deleted group recreated under its name reuses the row and starts empty.
     store.conn().execute("UPDATE contact_group SET date_deleted = 1 WHERE id = ?1", [gid]).unwrap();
-    let (gid2, _, _) = store.set_group_member("VIP", Some("new@x.example"), None, false, Source::App).unwrap();
+    let (gid2, _, _) = store.set_group_member("VIP", Some("new@x.example"), None, false, &[], Source::App).unwrap();
     assert_eq!(gid2, gid);
     let vip = store.list_groups().unwrap().into_iter().find(|g| g.id == gid).unwrap();
     assert_eq!(vip.member_count, 1);
@@ -592,4 +670,247 @@ fn a_tag_name_lists_the_tags_of_that_name_in_every_account() {
     store.conn().execute("UPDATE tag SET date_deleted = 1 WHERE name = 'clients'", []).unwrap();
     let one = everything(&store, &ThreadFilter { tag: Some("Clients".into()), ..Default::default() });
     assert_eq!(one.iter().map(|t| t.id).collect::<Vec<_>>(), vec![seeded_thread]);
+}
+
+#[test]
+fn the_tag_attribute_wants_one_of_its_tags_and_excludes_others() {
+    // Tag… of the selector (`ui.md`, "Sélecteur d'attributs"): several
+    // tags OR-ed, exclusions, combined with the other criteria.
+    let mut store = seeded();
+    let inbox = folder_id(&store, FolderRole::Inbox);
+    let (items, _) = store.list_threads(inbox, None, 3, ThreadSort::Received).unwrap();
+    let (a, b, c) = (items[0].id, items[1].id, items[2].id);
+    store.tag_thread(a, "Urgent", false, Source::App).unwrap();
+    store.tag_thread(b, "Équipe", false, Source::App).unwrap();
+    store.tag_thread(c, "Urgent", false, Source::App).unwrap();
+    store.tag_thread(c, "Équipe", false, Source::App).unwrap();
+    let ids = |f: ThreadFilter| {
+        let mut v: Vec<i64> = everything(&store, &f).iter().map(|t| t.id).collect();
+        v.sort();
+        v
+    };
+    let sorted = |mut v: Vec<i64>| {
+        v.sort();
+        v
+    };
+    let names = |n: &[&str]| n.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+    // OR-ed, names without case (Unicode included).
+    assert_eq!(ids(ThreadFilter { tags: names(&["urgent"]), ..Default::default() }), sorted(vec![a, c]));
+    assert_eq!(ids(ThreadFilter { tags: names(&["URGENT", "équipe"]), ..Default::default() }), sorted(vec![a, b, c]));
+    // Excluded: a thread with the tag leaves, whatever its other tags.
+    let not_urgent = ids(ThreadFilter { not_tags: names(&["Urgent"]), ..Default::default() });
+    assert!(not_urgent.contains(&b) && !not_urgent.contains(&a) && !not_urgent.contains(&c));
+    assert_eq!(not_urgent.len(), everything(&store, &ThreadFilter::default()).len() - 2);
+    // Wanted and excluded together; with `tag` (a tag's own list) by "and".
+    assert_eq!(
+        ids(ThreadFilter { tags: names(&["Équipe"]), not_tags: names(&["Urgent"]), ..Default::default() }),
+        vec![b]
+    );
+    assert_eq!(ids(ThreadFilter { tag: Some("Urgent".into()), tags: names(&["Équipe"]), ..Default::default() }), vec![c]);
+    // A name no tag has: wanted, nothing; excluded, nothing left out.
+    assert!(ids(ThreadFilter { tags: names(&["Inconnu"]), ..Default::default() }).is_empty());
+    assert_eq!(
+        ids(ThreadFilter { not_tags: names(&["Inconnu"]), ..Default::default() }).len(),
+        everything(&store, &ThreadFilter::default()).len()
+    );
+}
+
+#[test]
+fn without_tag_and_without_group_leave_out_every_tag_and_every_member() {
+    // "without tag" of Tag… and "without group" of Group… (`ui.md`,
+    // "Sélecteur d'attributs").
+    let mut store = seeded();
+    let inbox = folder_id(&store, FolderRole::Inbox);
+    let (items, _) = store.list_threads(inbox, None, 3, ThreadSort::Received).unwrap();
+    let (a, b) = (items[0].id, items[1].id);
+    let all = everything(&store, &ThreadFilter::default()).len();
+    let ids = |s: &Store, f: ThreadFilter| everything(s, &f).iter().map(|t| t.id).collect::<Vec<_>>();
+
+    // Without tag: every thread while there is none; then not a tagged one.
+    assert_eq!(ids(&store, ThreadFilter { no_tag: true, ..Default::default() }).len(), all);
+    store.tag_thread(a, "Urgent", false, Source::App).unwrap();
+    store.tag_thread(b, "Calme", false, Source::App).unwrap();
+    let untagged = ids(&store, ThreadFilter { no_tag: true, ..Default::default() });
+    assert_eq!(untagged.len(), all - 2);
+    assert!(!untagged.contains(&a) && !untagged.contains(&b));
+    // A deleted tag no longer counts.
+    store.conn().execute("UPDATE tag SET date_deleted = unixepoch() WHERE name = 'Calme'", []).unwrap();
+    assert!(ids(&store, ThreadFilter { no_tag: true, ..Default::default() }).contains(&b));
+
+    // Without group: every thread while nobody is in one; then none of
+    // the members' threads, those of a deleted group back.
+    assert_eq!(ids(&store, ThreadFilter { no_group: true, ..Default::default() }).len(), all);
+    store.set_group_member("VIP", None, Some(a), false, &[], Source::App).unwrap();
+    let in_vip = ids(&store, ThreadFilter { group_ids: vec![store.list_groups().unwrap()[0].id], ..Default::default() });
+    let outside = ids(&store, ThreadFilter { no_group: true, ..Default::default() });
+    assert!(in_vip.contains(&a) && !outside.contains(&a));
+    // The two lists split the mailbox, with no overlap and no gap.
+    assert_eq!(in_vip.len() + outside.len(), all);
+    assert!(in_vip.iter().all(|t| !outside.contains(t)));
+    store.conn().execute("UPDATE contact_group SET date_deleted = unixepoch()", []).unwrap();
+    assert_eq!(ids(&store, ThreadFilter { no_group: true, ..Default::default() }).len(), all);
+}
+
+/// Two threads of two different accounts: the seeded store has one, so
+/// the second thread (its messages with it) is moved to a new account. A
+/// tag is per account (an IMAP keyword of its mailbox), shown by name.
+fn threads_of_two_accounts(store: &Store) -> (i64, i64) {
+    let c = store.conn();
+    let (a, b): (i64, i64) =
+        c.query_row("SELECT min(id), max(id) FROM thread", [], |r| Ok((r.get(0)?, r.get(1)?))).unwrap();
+    c.execute("INSERT INTO account (config_key, kind, created_by, modified_by) VALUES ('second', 'imap', 'core', 'core')", [])
+        .unwrap();
+    let acc = c.last_insert_rowid();
+    c.execute("UPDATE thread SET account_id = ?1 WHERE id = ?2", [acc, b]).unwrap();
+    c.execute("UPDATE message SET account_id = ?1 WHERE thread_id = ?2", [acc, b]).unwrap();
+    (a, b)
+}
+
+/// Names of the active tags, every account, sorted (one per account).
+fn tag_names(store: &Store) -> Vec<String> {
+    let mut v: Vec<String> = store.list_tags(None).unwrap().into_iter().map(|t| t.name).collect();
+    v.sort();
+    v
+}
+
+#[test]
+fn renaming_a_tag_renames_it_in_every_account_and_keeps_its_keyword() {
+    // `r` on the Tags screen (`ui.md`, "Écrans Tags et Groupes").
+    let mut store = seeded();
+    let (a, b) = threads_of_two_accounts(&store);
+    store.tag_thread(a, "Urgent", false, Source::App).unwrap();
+    store.tag_thread(b, "urgent", false, Source::App).unwrap();
+    let keywords = |s: &Store| -> Vec<String> {
+        s.conn()
+            .prepare("SELECT keyword FROM tag ORDER BY id")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap()
+    };
+    let before = keywords(&store);
+
+    // Without case, Unicode aware; every account; the keyword stays.
+    assert_eq!(store.rename_tag("URGENT", "Très urgent", Source::App).unwrap(), 2);
+    assert_eq!(tag_names(&store), ["Très urgent", "Très urgent"]);
+    assert_eq!(keywords(&store), before);
+    // The mails follow: the filter by the new name finds both.
+    let found = everything(&store, &ThreadFilter { tags: vec!["très URGENT".into()], ..Default::default() });
+    assert_eq!(found.len(), 2);
+    assert!(everything(&store, &ThreadFilter { tags: vec!["Urgent".into()], ..Default::default() }).is_empty());
+    // A change of case is a rename; the same name changes nothing.
+    assert_eq!(store.rename_tag("très urgent", "TRÈS URGENT", Source::App).unwrap(), 2);
+    assert_eq!(store.rename_tag("très urgent", "TRÈS URGENT", Source::App).unwrap(), 0);
+    // Recorded in the history.
+    let (items, _) = store.list_history(None, 50).unwrap();
+    assert!(items.iter().any(|h| h.entity == "tag" && h.action == "update"));
+}
+
+#[test]
+fn a_tag_cannot_take_the_name_of_another_one() {
+    let mut store = seeded();
+    let (a, _) = threads_of_two_accounts(&store);
+    store.tag_thread(a, "Urgent", false, Source::App).unwrap();
+    store.tag_thread(a, "Équipe", false, Source::App).unwrap();
+    assert!(matches!(store.rename_tag("Urgent", "équipe", Source::App), Err(StoreError::InvalidParams(_))));
+    assert!(matches!(store.rename_tag("Inconnu", "Autre", Source::App), Err(StoreError::NotFound(_))));
+    assert!(matches!(store.rename_tag("Urgent", "  ", Source::App), Err(StoreError::InvalidParams(_))));
+    assert_eq!(tag_names(&store), ["Urgent", "Équipe"]);
+
+    // The name of a deleted tag is free: the renamed tag takes it, and
+    // tagging by that name later finds the renamed tag, not the old one.
+    store.delete_tag("Équipe", Source::App).unwrap();
+    assert_eq!(store.rename_tag("Urgent", "Équipe", Source::App).unwrap(), 1);
+    assert_eq!(tag_names(&store), ["Équipe"]);
+    let urgent_keyword: String =
+        store.conn().query_row("SELECT keyword FROM tag WHERE date_deleted IS NULL", [], |r| r.get(0)).unwrap();
+    let (items, _) = store.list_threads(folder_id(&store, FolderRole::Inbox), None, 5, ThreadSort::Received).unwrap();
+    store.tag_thread(items[4].id, "équipe", false, Source::App).unwrap();
+    let used: Vec<String> = store
+        .conn()
+        .prepare("SELECT DISTINCT mk.keyword FROM message_keyword mk JOIN tag t ON t.keyword = mk.keyword")
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(used, [urgent_keyword]);
+}
+
+#[test]
+fn deleting_a_tag_takes_it_off_every_mail_for_good() {
+    let mut store = seeded();
+    let (a, b) = threads_of_two_accounts(&store);
+    store.tag_thread(a, "Urgent", false, Source::App).unwrap();
+    store.tag_thread(b, "Urgent", false, Source::App).unwrap();
+    store.tag_thread(a, "Autre", false, Source::App).unwrap();
+    let tagged = |s: &Store, name: &str| everything(s, &ThreadFilter { tags: vec![name.into()], ..Default::default() }).len();
+    assert_eq!(tagged(&store, "Urgent"), 2);
+
+    let changes = store.delete_tag("urgent", Source::App).unwrap();
+    // Every message of both threads lost it: announced, and the threads
+    // refreshed (their rows no longer name it).
+    assert!(changes.changed_messages() >= 2);
+    assert_eq!(changes.threads.len(), 2);
+    assert_eq!(tag_names(&store), ["Autre"]);
+    assert_eq!(tagged(&store, "Urgent"), 0);
+    assert!(everything(&store, &ThreadFilter::default()).iter().all(|t| !t.tags.contains(&"Urgent".to_string())));
+    // A tombstone: the row stays, deleted, and recorded.
+    let deleted: i64 =
+        store.conn().query_row("SELECT count(*) FROM tag WHERE date_deleted IS NOT NULL", [], |r| r.get(0)).unwrap();
+    assert_eq!(deleted, 2);
+    let (items, _) = store.list_history(None, 50).unwrap();
+    assert!(items.iter().any(|h| h.entity == "tag" && h.action == "delete"));
+    // The other tag stays on its mail.
+    assert_eq!(tagged(&store, "Autre"), 1);
+    // Recreated, the tag starts with the mail it is put on only.
+    store.tag_thread(a, "Urgent", false, Source::App).unwrap();
+    assert_eq!(tagged(&store, "Urgent"), 1);
+    assert!(matches!(store.delete_tag("Inconnu", Source::App), Err(StoreError::NotFound(_))));
+}
+
+#[test]
+fn deleting_a_tag_leaves_a_read_only_account_alone() {
+    let mut store = seeded();
+    let (a, b) = threads_of_two_accounts(&store);
+    store.tag_thread(a, "Urgent", false, Source::App).unwrap();
+    store.tag_thread(b, "Urgent", false, Source::App).unwrap();
+    let ro: i64 = store.conn().query_row("SELECT account_id FROM thread WHERE id = ?1", [b], |r| r.get(0)).unwrap();
+    store.set_read_only_accounts([ro].into_iter().collect()).unwrap();
+    store.delete_tag("Urgent", Source::App).unwrap();
+    let left = store.list_tags(None).unwrap();
+    assert_eq!(left.len(), 1);
+    assert_eq!((left[0].account_id, left[0].message_count > 0), (ro, true));
+}
+
+#[test]
+fn renaming_and_deleting_a_group() {
+    // `r` and `d` on the Groups screen (`groupes.md`, section 6).
+    let mut store = seeded();
+    store.set_group_member("VIP", Some("a@x.org"), None, false, &[], Source::App).unwrap();
+    store.set_group_member("VIP", Some("b@x.org"), None, false, &[], Source::App).unwrap();
+    store.set_group_member("Famille", Some("c@x.org"), None, false, &[], Source::App).unwrap();
+    let groups = |s: &Store| s.list_groups().unwrap().into_iter().map(|g| (g.name, g.member_count)).collect::<Vec<_>>();
+    let vip = store.list_groups().unwrap()[0].id;
+
+    assert!(store.rename_group("vip", "Proches", Source::App).unwrap());
+    assert!(!store.rename_group("proches", "Proches", Source::App).unwrap());
+    // Same id, same members, same place.
+    assert_eq!(store.list_groups().unwrap()[0].id, vip);
+    assert_eq!(groups(&store), [("Proches".to_string(), 2), ("Famille".to_string(), 1)]);
+    assert!(matches!(store.rename_group("Proches", "FAMILLE", Source::App), Err(StoreError::InvalidParams(_))));
+    assert!(matches!(store.rename_group("VIP", "Autre", Source::App), Err(StoreError::NotFound(_))));
+
+    assert_eq!(store.delete_group("proches", Source::App).unwrap(), (vip, 2));
+    assert_eq!(groups(&store), [("Famille".to_string(), 1)]);
+    // Its name is free again; recreated, the group starts empty.
+    assert!(store.rename_group("Famille", "Proches", Source::App).unwrap());
+    store.set_group_member("Nouveau", Some("d@x.org"), None, false, &[], Source::App).unwrap();
+    assert!(store.delete_group("Nouveau", Source::App).is_ok());
+    store.set_group_member("Nouveau", Some("e@x.org"), None, false, &[], Source::App).unwrap();
+    assert_eq!(groups(&store), [("Proches".to_string(), 1), ("Nouveau".to_string(), 1)]);
+    let (items, _) = store.list_history(None, 50).unwrap();
+    assert!(items.iter().any(|h| h.entity == "contact_group" && h.action == "delete"));
+    assert!(items.iter().any(|h| h.entity == "contact_group" && h.action == "update"));
 }

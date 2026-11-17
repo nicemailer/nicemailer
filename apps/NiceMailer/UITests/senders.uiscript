@@ -8,7 +8,7 @@ expect thread_count > 10
 # The two values split the list.
 key f
 type human
-expect picker_first = human
+expect picker_first = Human
 key ret
 expect filters = human
 expect thread_count > 0
@@ -16,7 +16,7 @@ snap human
 # The opposite replaces it.
 key f
 type robot
-expect picker_first = robot
+expect picker_first = Robot
 key ret
 expect filters = robot
 expect thread_count > 0
@@ -26,7 +26,7 @@ expect filters =
 # A hidden word reaches it: "person".
 key f
 type person
-expect picker_first = human
+expect picker_first = Human
 key esc
 # Contacts: the origin column; `o` forces it, `-` gives it back.
 key ;

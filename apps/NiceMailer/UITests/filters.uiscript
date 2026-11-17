@@ -30,12 +30,12 @@ expect selected_unread > 0
 # "unread"); initials reach a negative value; a hidden word finds To….
 key f
 type read
-expect picker_first = read
+expect picker_first = Read
 key ret
 expect filters = read
 key f
 type nf
-expect picker_first = not flagged
+expect picker_first = Not flagged
 key ret
 expect filters = read, not flagged
 key f

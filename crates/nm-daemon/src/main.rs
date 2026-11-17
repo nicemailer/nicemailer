@@ -63,10 +63,10 @@ use clap::Parser;
 use nm_api::{
     AttachmentFileView, CommandResult, DEFAULT_LIMIT, Event, ExportMessageParams, ExportResult, FolderList, MessageRecordParams, MessageTextParams, MessageTextResult,
     GetAttachmentParams, GetThreadParams, LocateMessageParams, UnsubscribeParams, UnsubscribeResult,
-    GroupMemberResult, HelloParams, HelloResult, ImportMboxParams, ImportStatus, Items, ListContactsParams,
+    DeleteGroupResult, DeleteNameParams, GroupMemberResult, HelloParams, HelloResult, ImportMboxParams, ImportStatus, Items, ListContactsParams, RenameParams, RenameResult,
     ListHistoryParams, ListTagsParams, ListThreadsParams, MAX_LIMIT, MoveThreadParams,
     PROTOCOL_VERSION, Page, ProbeAccountParams, ProbeReport, Request, Response, RpcError, SearchParams, SearchResult, SetBodyFormatParams,
-    SetGroupMemberParams, SetThreadFlaggedParams, SetThreadSeenParams, SubscribeParams, SubscribeResult,
+    SetGroupMemberParams, SetThreadFlaggedParams, ThreadLabelsParams, SetThreadSeenParams, SubscribeParams, SubscribeResult,
     SetAddressScreeningParams, SetDomainScreeningParams, SetSenderKindParams, TagThreadParams, ThreadView, UndoParams, error_code,
     method, ConfigStatus, SetAccountOrderParams, SetPasswordParams,
 };
@@ -761,6 +761,7 @@ fn runs_in_parallel(method: &str) -> bool {
             | method::LIST_HISTORY
             | method::LIST_TAGS
             | method::LIST_GROUPS
+            | method::THREAD_LABELS
             | method::LIST_CONTACTS
             | method::LIST_ACCOUNTS
             | method::PREPARE_DRAFT
@@ -1461,11 +1462,21 @@ async fn call(core: &Arc<Core>, source: Source, req: Request) -> Result<Value, R
             // holds: the store shows the recipients of the mails they
             // sent (`present_thread`, `docs/thread-display.md`).
             let own = drafts::declared_addresses(core);
-            let ((subject, messages), missing) =
-                with_reader(core, move |s| Ok((s.get_thread(thread_id, &own)?, s.thread_bodies_missing(thread_id)?))).await?;
+            let ((subject, messages), labels, missing) = with_reader(core, move |s| {
+                Ok((s.get_thread(thread_id, &own)?, s.thread_labels(thread_id, &own)?, s.thread_bodies_missing(thread_id)?))
+            })
+            .await?;
             // Bodies not downloaded yet: the user is waiting for them.
             sync::prioritize(core, missing);
-            to_value(ThreadView { id: p.thread_id, subject, messages, as_of })
+            to_value(ThreadView {
+                id: p.thread_id,
+                subject,
+                messages,
+                tags: labels.tags,
+                correspondent: labels.correspondent,
+                correspondent_groups: labels.groups,
+                as_of,
+            })
         }
         method::LOCATE_MESSAGE => {
             let p: LocateMessageParams = params(req.params)?;
@@ -1686,10 +1697,53 @@ async fn call(core: &Arc<Core>, source: Source, req: Request) -> Result<Value, R
         }
         method::SET_GROUP_MEMBER => {
             let p: SetGroupMemberParams = params(req.params)?;
-            let (group_id, addr, changed) =
-                with_store(core, move |s| s.set_group_member(&p.group, p.addr.as_deref(), p.thread_id, p.remove, source))
-                    .await?;
+            // The addresses of `accounts.toml`: none can join a group
+            // (`groupes.md`, "Adresses de l'utilisateur").
+            let own = drafts::declared_addresses(core);
+            let (group_id, addr, changed) = with_store(core, move |s| {
+                s.set_group_member(&p.group, p.addr.as_deref(), p.thread_id, p.remove, &own, source)
+            })
+            .await?;
             to_value(GroupMemberResult { group_id, addr, changed })
+        }
+        method::RENAME_TAG => {
+            let p: RenameParams = params(req.params)?;
+            let n = with_store(core, move |s| s.rename_tag(&p.name, &p.new_name, source)).await?;
+            to_value(RenameResult { changed: n > 0 })
+        }
+        // A command: the removals reach the server through the spool, and
+        // the threads changed are announced, as for `tag_thread`.
+        method::DELETE_TAG => {
+            let p: DeleteNameParams = params(req.params)?;
+            command(core, move |s| s.delete_tag(&p.name, source)).await
+        }
+        method::RENAME_GROUP => {
+            let p: RenameParams = params(req.params)?;
+            let changed = with_store(core, move |s| s.rename_group(&p.name, &p.new_name, source)).await?;
+            to_value(RenameResult { changed })
+        }
+        method::DELETE_GROUP => {
+            let p: DeleteNameParams = params(req.params)?;
+            let (group_id, members) = with_store(core, move |s| s.delete_group(&p.name, source)).await?;
+            to_value(DeleteGroupResult { group_id, members })
+        }
+        method::THREAD_LABELS => {
+            let p: ThreadLabelsParams = params(req.params)?;
+            if p.thread_ids.len() > nm_api::MAX_LABEL_THREADS {
+                return Err(RpcError::new(
+                    error_code::INVALID_PARAMS,
+                    format!("thread_ids: {} at most", nm_api::MAX_LABEL_THREADS),
+                ));
+            }
+            // As for `set_group_member`: the person of each thread is never
+            // one of the user's addresses.
+            let own = drafts::declared_addresses(core);
+            let as_of = as_of();
+            let items = with_reader(core, move |s| {
+                p.thread_ids.iter().map(|&t| s.thread_labels(t, &own)).collect::<Result<Vec<_>, _>>()
+            })
+            .await?;
+            to_value(Items { items, as_of })
         }
         method::LIST_CONTACTS => {
             let p: ListContactsParams = params(req.params)?;
@@ -1735,6 +1789,14 @@ async fn call(core: &Arc<Core>, source: Source, req: Request) -> Result<Value, R
         method::SET_FOLDER_ROLES => {
             let p: nm_api::SetFolderRolesParams = params(req.params)?;
             to_value(setup::set_folder_roles(core, p, source).await?)
+        }
+        method::PREPARE_ACTIVATION => {
+            let p: nm_api::PrepareActivationParams = params(req.params)?;
+            to_value(setup::prepare_activation(core, p, source).await?)
+        }
+        method::ACTIVATE_ACCOUNT => {
+            let p: nm_api::ActivateAccountParams = params(req.params)?;
+            to_value(setup::activate_account(core, p, source).await?)
         }
         method::RENAME_ACCOUNT => {
             let p: nm_api::RenameAccountParams = params(req.params)?;

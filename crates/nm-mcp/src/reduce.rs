@@ -426,7 +426,7 @@ mod tests {
     }
 
     fn thread(messages: Vec<MessageView>) -> ThreadView {
-        ThreadView { id: 7, subject: "Devis".into(), messages, as_of: Position { epoch: "e".into(), seq: 0 } }
+        ThreadView { id: 7, subject: "Devis".into(), messages, tags: vec![], correspondent: None, correspondent_groups: vec![], as_of: Position { epoch: "e".into(), seq: 0 } }
     }
 
     #[test]

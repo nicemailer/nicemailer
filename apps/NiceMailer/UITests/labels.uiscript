@@ -1,0 +1,122 @@
+# Tags and groups in the header of the open mail, and removing them with t
+# and g, for one mail or a selection (ui.md, "Tags et groupes dans
+# l'en-tête", "Ajouter et retirer un tag ou un groupe").
+expect reader_is_selected = true
+expect header_tags =
+expect header_groups =
+# A tag and a group: both shown after the subject at once.
+key t
+type Urgent
+key ret
+expect header_tags = Urgent
+expect selected_tags = Urgent
+key g
+type VIP
+key ret
+expect flash ~ Added to VIP
+expect header_groups = VIP
+snap header-labels
+# t offers to remove the mail's tag first, then to add the others.
+key t
+expect picker_first = remove Urgent
+snap tag-remove
+key ret
+expect flash = Tag removed: Urgent
+expect header_tags =
+expect selected_tags =
+# g the same for the groups of the person the mail is with.
+key g
+expect picker_first = remove VIP
+key ret
+expect flash ~ Removed from VIP
+expect header_groups =
+# A selection mixing a mail with the tag and one without: both actions are
+# offered, each saying how many of the mails have the tag.
+key t
+type Calme
+key ret
+expect selected_tags = Calme
+key g
+expect picker_first = VIP
+key ret
+expect header_groups = VIP
+key J
+expect marked_count = 2
+key t
+expect picker_rows ~ remove Calme
+expect picker_rows ~ | Calme
+snap tag-mixed
+# Adding it to both, then removing it from both.
+key down
+key ret
+expect flash = Tagged: Calme
+key t
+expect picker_first = remove Calme
+expect picker_rows !~ | Calme
+key ret
+expect flash = Tag removed: Calme
+# The groups of every marked mail: VIP to remove, or to add to the other.
+key g
+expect picker_first = remove VIP
+snap group-mixed
+key esc
+key esc
+expect marked_count = 0
+# J left the cursor on the second mail, whose person is in no group; the
+# first one's header still names VIP.
+expect header_groups =
+key k
+expect header_groups = VIP
+# Tag… of the attribute selector (f): every row of the selector visible at
+# once, then the list narrowed to the mails with a tag, or without it.
+key t
+type Urgent
+key ret
+expect header_tags = Urgent
+key f
+expect picker_hidden_rows = 0
+snap attributes
+type Tag
+key ret
+expect overlay = picker(NiceMailer.GeekController.PickerKind.attributeValue(NiceMailer.AttributeField.tag))
+expect picker_rows ~ Urgent
+snap tag-panel
+type urg
+key ret
+expect filters = tag: Urgent
+expect thread_count = 1
+type -urg
+key ret
+expect filters = not tag: Urgent
+expect thread_count > 1
+key esc
+key esc
+expect filters =
+# "without tag", last row of Tag…, and "without group", of Group….
+key f
+type Tag
+key ret
+key up
+expect picker_index = 2
+key ret
+expect filters = without tag
+expect picker_first = without tag
+key esc
+expect thread_count > 1
+key f
+type Group
+key ret
+type none
+expect picker_first = without group
+key ret
+expect filters = without group, without tag
+snap without-group
+key esc
+key esc
+expect filters =
+# Even with the larger text (⌘+ twice), the selector shows every row.
+key cmd-=
+key cmd-=
+key f
+expect picker_hidden_rows = 0
+key esc

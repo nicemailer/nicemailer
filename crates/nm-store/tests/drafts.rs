@@ -1689,3 +1689,63 @@ fn a_new_formatted_mail_left_empty_is_dropped() {
     e.s.edit_draft(d.id, d.revision, &edit, Source::App).unwrap();
     assert!(!e.s.drop_if_blank(d.id).unwrap());
 }
+
+/// The threads the "answered" attribute keeps, in every folder.
+fn answered(e: &Env, yes: bool) -> BTreeSet<i64> {
+    let f = nm_api::ThreadFilter { answered: Some(yes), ..Default::default() };
+    let (items, _) = e.s.list_everything(None, None, 100, nm_api::ThreadSort::Received, &f, &[]).unwrap();
+    items.into_iter().map(|t| t.id).collect()
+}
+
+#[test]
+fn a_reply_marks_the_mail_answered_here_and_on_the_server() {
+    // `\Answered`, as Mail and Thunderbird set it (`ui.md`, "Sélecteur
+    // d'attributs"); before November 2026, NiceMailer set nothing.
+    let mut e = env();
+    let m = e.deliver("inbox", &alice("m1@a.example"));
+    let other = e.deliver("inbox", &alice("m2@a.example"));
+    let d = e.reply(m);
+    let changes = e.send_now(&d, Some(AfterSend::Stay));
+    assert_eq!(e.int(&format!("SELECT is_answered FROM message WHERE id = {m}")), 1);
+    assert_eq!(e.int(&format!("SELECT is_answered FROM message WHERE id = {other}")), 0);
+    let queued = e.int(&format!(
+        "SELECT count(*) FROM pending_action WHERE message_id = {m} AND kind = 'set_flags' AND state = 'queued'
+            AND json_extract(payload, '$.flag') = '\\Answered' AND json_extract(payload, '$.set') = 1"
+    ));
+    assert_eq!(queued, 1);
+    // Announced: the list row and the open thread follow.
+    assert!(changes.messages.iter().any(|(id, _)| *id == m));
+    let thread = e.int(&format!("SELECT thread_id FROM message WHERE id = {m}"));
+    assert!(answered(&e, true).contains(&thread));
+}
+
+#[test]
+fn a_reply_in_sent_answers_its_thread_without_the_flag() {
+    // A reply sent by a client that does not set `\Answered` (or by
+    // NiceMailer before it did): its copy in Sent is enough.
+    let mut e = env();
+    let m = e.deliver("inbox", &alice("m1@a.example"));
+    let alone = e.deliver("inbox", &alice("m2@a.example"));
+    let d = e.reply(m);
+    e.send_now(&d, Some(AfterSend::Stay));
+    e.s.conn().execute("UPDATE message SET is_answered = 0", []).unwrap();
+    let thread = e.int(&format!("SELECT thread_id FROM message WHERE id = {m}"));
+    let unanswered = e.int(&format!("SELECT thread_id FROM message WHERE id = {alone}"));
+    assert!(answered(&e, true).contains(&thread));
+    assert!(!answered(&e, true).contains(&unanswered));
+    assert!(answered(&e, false).contains(&unanswered) && !answered(&e, false).contains(&thread));
+
+    // A new mail the user wrote alone answers nothing: no `In-Reply-To`.
+    use nm_store::drafts::DraftEdit;
+    let n = e.s.create_new_draft(e.acc, &e.ids, None, Source::App).unwrap();
+    let rev = e
+        .s
+        .edit_draft(n.id, n.revision, &DraftEdit { to: Some(vec![mb("dan@d.example", None)]), ..Default::default() }, Source::App)
+        .unwrap();
+    e.s.send_draft(n.id, rev, "Bonjour.", None, None, 0, "NiceMailer/test", Source::App).unwrap();
+    let jobs = e.s.send_claim(e.acc).unwrap();
+    let written = e.raw.write(&jobs[0].copy).unwrap();
+    let c = e.s.send_accepted(jobs[0].action_id, &written, &[], &e.ids.own()).unwrap();
+    let started = c.sent[0].thread_id.unwrap();
+    assert!(!answered(&e, true).contains(&started));
+}

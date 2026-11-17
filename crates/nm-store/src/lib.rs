@@ -118,7 +118,8 @@ pub use rusqlite;
 ///     each message, the verdict and the counts of each address.
 /// 13: the AI assistance (`ia.md`, section 9): `ai_run`, the history of
 ///     the runs of prompts, and `ai_suggestion`, the targets suggested.
-pub const SCHEMA_VERSION: i64 = 13;
+/// 14: `idx_message_reply`, for the "answered" attribute.
+pub const SCHEMA_VERSION: i64 = 14;
 
 /// Full text of the schema, at the latest version. `include_str!` reads the
 /// file at compile time and embeds it in the binary as a `&'static str`; the

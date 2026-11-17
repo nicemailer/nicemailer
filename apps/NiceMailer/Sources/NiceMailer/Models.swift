@@ -230,6 +230,30 @@ struct ThreadView: Decodable {
     let subject: String
     let messages: [MessageView]
     let asOf: Position
+    /// Names of the thread's tags, and the groups of the person it is with
+    /// (`correspondent`, the one `g` adds): shown in the header (`ui.md`,
+    /// "Tags et groupes dans l'en-tête").
+    ///
+    /// Swift note: optionals with a default, so that a core that does not
+    /// send them still decodes, and that the tests build a `ThreadView`
+    /// without them; `labels` reads them as plain arrays.
+    var tags: [String]? = nil
+    var correspondent: String? = nil
+    var correspondentGroups: [String]? = nil
+}
+
+extension ThreadView {
+    /// The tags and groups the header shows, `[]` when the core sent none.
+    var labels: (tags: [String], groups: [String]) { (tags ?? [], correspondentGroups ?? []) }
+}
+
+/// The tags of a thread, the person it is with and that person's groups
+/// (`thread_labels`): what `t` and `g` can remove from a selection.
+struct ThreadLabels: Decodable, Hashable {
+    let threadId: Int
+    let tags: [String]
+    let correspondent: String?
+    let groups: [String]
 }
 
 /// A search result (a message, not a thread).
@@ -346,6 +370,15 @@ struct GroupView: Decodable, Identifiable, Hashable {
     let name: String
     let color: String?
     let memberCount: Int
+    /// Latest change of the group or of one of its memberships (Unix time),
+    /// and the mails received from its members: what ranks the groups when
+    /// the folder column has no room for all of them (`GroupRanking`).
+    ///
+    /// Swift note: a `var` with a default value is still decoded (the core
+    /// always sends both keys); the default only lets a test build a
+    /// `GroupView` without them through the memberwise initializer.
+    var dateModified: Int = 0
+    var mailCount: Int = 0
 }
 
 struct ContactView: Decodable, Identifiable, Hashable {
@@ -490,6 +523,17 @@ struct AttachmentFileView: Decodable {
     let filename: String
     let mimeType: String
     let size: Int
+}
+
+/// Result of `rename_tag` and `rename_group`.
+struct RenameResult: Decodable {
+    let changed: Bool
+}
+
+/// Result of `delete_group`.
+struct DeleteGroupResult: Decodable {
+    let groupId: Int
+    let members: Int
 }
 
 struct GroupMemberResult: Decodable {

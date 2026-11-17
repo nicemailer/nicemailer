@@ -73,6 +73,13 @@ enum Fixture {
         ]
     }
 
+    /// Two contact groups, in the core's display order: VIP, changed last,
+    /// and Famille, which receives the most mail (`GroupRanking`).
+    static let groups: [[String: Any]] = [
+        ["id": 1, "name": "VIP", "color": NSNull(), "member_count": 2, "date_modified": 200, "mail_count": 5],
+        ["id": 2, "name": "Famille", "color": NSNull(), "member_count": 3, "date_modified": 100, "mail_count": 50],
+    ]
+
     static let folders: [[String: Any]] = [
         folder(1, "inbox", "Inbox", "I", targets: ["todo", "waiting", "archive", "deleted", "junk"]),
         folder(2, "todo", "Todo", "T", targets: ["inbox", "archive", "deleted"]),
@@ -132,7 +139,9 @@ enum Fixture {
             // What the core finds in the text above (`links.rs`).
             "links": [["url": "https://example.org/\(id)", "text": NSNull()]],
         ]
-        return ["id": id, "subject": "Subject \(id)", "messages": [message], "as_of": position]
+        // No tag, no group: a test that needs some answers its own.
+        return ["id": id, "subject": "Subject \(id)", "messages": [message], "tags": [String](),
+                "correspondent": "sender\(id)@example.org", "correspondent_groups": [String](), "as_of": position]
     }
 
     /// The draft of a reply to the message `replyTo` (thread × 10 in the
@@ -243,8 +252,10 @@ enum Fixture {
             return ["items": items, "next_cursor": NSNull(), "as_of": position]
         case "list_history":
             return ["items": [], "next_cursor": NSNull(), "as_of": position]
-        case "list_tags", "list_groups":
+        case "list_tags":
             return ["items": [], "as_of": position]
+        case "list_groups":
+            return ["items": groups, "as_of": position]
         case "move_thread":
             // A move from the Inbox decides nothing; one to Newsletter
             // decides on the sender and files two other mails.
@@ -278,6 +289,20 @@ enum Fixture {
             return ["changed": 0, "moved": 0, "filed": 0, "decision": NSNull(), "undo": "11:11"]
         case "set_group_member":
             return ["group_id": 1, "addr": "sender1@example.org", "changed": true]
+        case "rename_tag", "rename_group":
+            return ["changed": true]
+        case "delete_tag":
+            // Every message of the tag's threads lost it.
+            return ["changed": 6]
+        case "delete_group":
+            return ["group_id": 1, "members": 2]
+        case "thread_labels":
+            // Nobody in a group, as in `threadView`.
+            let ids = params["thread_ids"] as? [Int] ?? []
+            let items: [[String: Any]] = ids.map {
+                ["thread_id": $0, "tags": [String](), "correspondent": "sender\($0)@example.org", "groups": [String]()]
+            }
+            return ["items": items, "as_of": position]
         case "export_message":
             return ["path": "/tmp/x.eml"]
         case "message_record":

@@ -138,7 +138,7 @@ send_draft ─▶ action `send` (phase smtp), due after the undo delay ─▶ SM
 Each account with `[smtp]` has a **sender**, a thread of its worker with its own connections (`nm-engine`, `sync/send.rs`). It sleeps until the next mail is due, or until a mail is queued or cancelled, then:
 
 1. connects to the SMTP server (TLS or STARTTLS, certificates checked by macOS, `ca_file` honoured), logs in (`AUTH PLAIN`, else `LOGIN`, only over TLS), `MAIL FROM`, `RCPT TO` for every recipient, `DATA`;
-2. once accepted, in one transaction (`Store::send_accepted`): the mail becomes a row of Sent (its raw file is what was sent), its conversation is filed as preselected, its recipients without decision get `inbox` (and their mails leave Quarantine), the draft is deleted, a `send` line goes to the history, and `DraftSent` carries the undo token of the filing (a new mail's own filing is only announced here, in `filing`, and carried by the action as `file_after_copy`);
+2. once accepted, in one transaction (`Store::send_accepted`): the mail becomes a row of Sent (its raw file is what was sent), its conversation is filed as preselected, its recipients without decision get `inbox` (and their mails leave Quarantine), the mail answered gets `\Answered` (locally and, through the spool, on the server: other clients show it, and the "answered" attribute sees it; nothing for a forward, a new mail, or a mail of a read-only account), the draft is deleted, a `send` line goes to the history, and `DraftSent` carries the undo token of the filing (a new mail's own filing is only announced here, in `filing`, and carried by the action as `file_after_copy`);
 3. copies the mail to the Sent folder of the server (`APPEND`, `\Seen`) and records its UID (`APPENDUID`), then applies a new mail's filing (`Store::send_copied`): the copy, now on the server with its UID, moves to the folder chosen and the spool tells the server. Gmail (capability `X-GM-EXT-1` or `smtp.gmail.com`) and Fastmail copy sent mail themselves: there the sender only looks for the copy's UID. `save_sent = "always" | "never"` overrides the detection. Without a UID the next pass of Sent attaches the row by its `Message-ID` (a row NiceMailer sent less than an hour ago is never taken for an orphan).
 
 | What happened | What follows |
@@ -154,7 +154,7 @@ At start, the core queues the interrupted actions again and makes editable any d
 
 ## Password
 
-The sender uses the SMTP password of the account if one was saved (`nicemailer account password <key> --smtp`, item `smtp:<key>` of the Keychain, bound to the SMTP server), else the IMAP password, **only** when the SMTP server is the IMAP server or of the same organizational domain (`smtp.gmail.com` and `imap.gmail.com`). Otherwise the sending is refused with a message saying to save the SMTP password: an `accounts.toml` changed to point `[smtp]` elsewhere must not receive the IMAP password.
+The sender uses the SMTP password of the account if one was saved (`nicemailer account password <key> --smtp`, or asked by the app's Preferences when the account is added: [accounts.md](accounts.md), "In the app"; item `smtp:<key>` of the Keychain, bound to the SMTP server), else the IMAP password, **only** when the SMTP server is the IMAP server or of the same organizational domain (`smtp.gmail.com` and `imap.gmail.com`). Otherwise the sending is refused with a message saying to save the SMTP password: an `accounts.toml` changed to point `[smtp]` elsewhere must not receive the IMAP password.
 
 ## Who may send
 

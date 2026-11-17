@@ -268,8 +268,10 @@ fn a_migration_failing_halfway_puts_the_database_back() {
         "{error}"
     );
     assert!(error.to_string().contains("remise dans son état"), "{error}");
-    // Each step committed was announced, up to the one before the failure.
-    assert_eq!(*reached.borrow(), (2..SCHEMA_VERSION).collect::<Vec<_>>());
+    // Each step committed was announced, up to the one before the failure:
+    // versions 2 to 12. The bound is the failing version 13, not
+    // `SCHEMA_VERSION`, which grows with each new migration after it.
+    assert_eq!(*reached.borrow(), (2..13).collect::<Vec<_>>());
     let conn = Connection::open(&db).unwrap();
     let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0)).unwrap();
     assert_eq!(version, 1);

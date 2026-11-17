@@ -454,6 +454,108 @@ fn a_read_only_account_changes_nothing_on_its_server() {
     assert_eq!(after, before, "nothing changed on the server");
 }
 
+#[test]
+#[ignore = "needs the test servers: make imap-up, then make imap-test"]
+fn a_read_only_account_is_organized_later_as_if_created_then() {
+    let dir = tempfile::tempdir().unwrap();
+    let user = new_user();
+    let me = email(&user);
+    let mut phone = Phone::open(&user);
+    big_inbox(&mut phone, &me);
+    phone.deliver("Sent", "s", &me, "bob@b.example", &["\\Seen"], 1);
+    let (_core, mut c) = core(dir.path(), SMALL_THRESHOLDS);
+
+    // The plan of the folders: Archive and Sent found, the folders of
+    // NiceMailer to create.
+    let r = c.call("test_account", json!({"email": me, "imap": imap(&user), "password": "nicemailer"})).unwrap();
+    let plan = |r: &Value, role: &str| {
+        let p = r["roles"].as_array().unwrap().iter().find(|p| p["role"] == role).unwrap().clone();
+        (p["path"].as_str().unwrap().to_string(), p["exists"].as_bool().unwrap())
+    };
+    assert_eq!(r["roles"][0]["role"], "inbox", "sidebar order, Inbox first");
+    assert_eq!(r["roles"].as_array().unwrap().len(), 12);
+    assert_eq!(plan(&r, "archive"), ("Archive".into(), true));
+    assert_eq!(plan(&r, "sent"), ("Sent".into(), true));
+    assert_eq!(plan(&r, "quarantine"), ("Quarantine".into(), false));
+
+    // Only looked at first.
+    let res = c
+        .call("add_account", json!({"key": "look", "email": me, "imap": imap(&user), "password": "nicemailer",
+                                     "uidnext": r["inbox_uidnext"], "read_only": true}))
+        .unwrap();
+    assert_eq!(res["created"], json!([]));
+    // The people written to are accepted already: a decision of the
+    // database, nothing on the server, and the dry screening says so.
+    assert_eq!(res["correspondents"], 1);
+    settled(&mut c, "look");
+    let listed = c.call("list_accounts", Value::Null).unwrap();
+    assert_eq!(listed["items"][0]["read_only"], true, "{listed}");
+    // A mail comes while the account is only looked at: screened dry.
+    phone.deliver("INBOX", "during", "someone@new.example", &me, &[], 0);
+    c.call("sync_now", json!({"account": "look"})).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while int(dir.path(), "SELECT count(*) FROM audit_log WHERE action = 'screen'") == 0 {
+        assert!(Instant::now() < deadline, "not screened dry");
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    settled(&mut c, "look");
+    let before = phone.snapshot();
+
+    // What organizing would do, with the password of the Keychain; nothing
+    // changes on the server.
+    let p = c.call("prepare_activation", json!({"account": "look"})).unwrap();
+    assert_eq!(p["offer_archive"], true);
+    assert_eq!((p["archive_read"].as_u64(), p["archive_unread"].as_u64()), (Some(2), Some(1)), "{p:#}");
+    assert_eq!(p["correspondents"], 1);
+    assert_eq!(plan(&p, "quarantine"), ("Quarantine".into(), false));
+    assert_eq!(phone.snapshot(), before, "prepare_activation changes nothing");
+
+    let res = c
+        .call("activate_account", json!({"account": "look", "uidnext": p["inbox_uidnext"],
+                                          "archive_read_before": p["read_before"], "archive_unread_before": p["unread_before"]}))
+        .unwrap();
+    let created: Vec<&str> = res["created"].as_array().unwrap().iter().map(|v| v.as_str().unwrap()).collect();
+    assert!(created.contains(&"Quarantine") && created.contains(&"Todo") && !created.contains(&"Archive"), "{created:?}");
+    assert_eq!(res["correspondents"], 0, "Bob has his decision already");
+    assert_eq!(res["archive_queued"], true);
+    settled(&mut c, "look");
+    assert_eq!(status(&mut c, "look")["read_only"], false);
+    assert_eq!(status(&mut c, "look")["initial_archive"], "done");
+    let file = std::fs::read_to_string(dir.path().join("accounts.toml")).unwrap();
+    assert!(!file.contains("read_only = true"), "{file}");
+
+    // The old mail archived as counted; the mail that came while looking
+    // stays in the Inbox, not screened.
+    for id in ["read_old", "read_new", "unread_old"] {
+        assert!(phone.has("Archive", id), "{id} archived");
+    }
+    for id in ["unread_new", "flagged_old", "during"] {
+        assert!(phone.has("INBOX", id), "{id} stays");
+    }
+    assert_eq!(int(dir.path(), "SELECT count(*) FROM audit_log WHERE action = 'screen'"), 1, "only the dry one");
+    // The mails moved on the server kept their rows: none twice.
+    assert_eq!(int(dir.path(), "SELECT count(*) FROM message"), 7);
+    assert_eq!(int(dir.path(), "SELECT count(*) FROM address WHERE addr = 'bob@b.example' AND screening_target = 'inbox'"), 1);
+    verify_ok(&mut c, "look");
+
+    // From now on, new mail is screened for real.
+    phone.deliver("INBOX", "after", "stranger@far.example", &me, &[], 0);
+    c.call("sync_now", json!({"account": "look"})).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while !phone.has("Quarantine", "after") {
+        assert!(Instant::now() < deadline, "not screened");
+        std::thread::sleep(Duration::from_millis(200));
+    }
+    // Done once: a writable account is refused.
+    let err = c.call("activate_account", json!({"account": "look"})).unwrap_err();
+    assert_eq!(err["code"], -32602, "{err}");
+    let err = c.call("prepare_activation", json!({"account": "look"})).unwrap_err();
+    assert_eq!(err["code"], -32602, "{err}");
+    // An agent may not.
+    let mut agent = Client::connect_as(dir.path(), "mcp");
+    assert_eq!(agent.call("activate_account", json!({"account": "look"})).unwrap_err()["code"], 1007);
+}
+
 /// Mailpit with TLS from the first byte and a real password
 /// (`dev/dovecot/compose.yaml`, `smtps`).
 const SMTPS: u16 = 31465;
@@ -487,13 +589,26 @@ fn smtp_servers_are_tried_in_order_and_the_one_that_works_is_written() {
     assert_eq!(outcomes, ["failed", "logged_in"], "{r:#}");
     assert_eq!(r["chosen"], 1);
 
-    // A wrong password: refused, nothing chosen.
+    // A wrong password: refused, nothing chosen, the server named as the
+    // one that refused it.
     let r = c
         .call("test_smtp", json!({"email": me, "imap": imap(&user), "password": "wrong", "candidates": [{"server": smtps("nicemailer"), "origin": "given"}]}))
         .unwrap();
-    assert_eq!(r["attempts"][0]["outcome"], "failed");
+    assert_eq!(r["attempts"][0]["outcome"], "auth_refused");
     assert!(r["attempts"][0]["detail"].as_str().unwrap().contains("refused the login"), "{r:#}");
-    assert_eq!(r["chosen"], Value::Null);
+    assert_eq!((&r["chosen"], &r["refused"]), (&Value::Null, &json!(0)), "{r:#}");
+    // The SMTP password given apart is the one tried.
+    let r = c
+        .call(
+            "test_smtp",
+            json!({"email": me, "imap": imap(&user), "password": "wrong", "smtp_password": "smtp-secret",
+                   "candidates": [{"server": smtps("nicemailer"), "origin": "given"}]}),
+        )
+        .unwrap();
+    assert_eq!((r["attempts"][0]["outcome"].as_str(), r["chosen"].as_u64()), (Some("logged_in"), Some(0)), "{r:#}");
+    // A wrong IMAP password says so in `data.reason`.
+    let e = c.call("test_account", json!({"email": me, "imap": imap(&user), "password": "wrong"})).unwrap_err();
+    assert_eq!((e["code"].as_i64(), e["data"]["reason"].as_str()), (Some(1009), Some("auth")), "{e:#}");
 
     // An IMAP server of another organization: the password is not tried,
     // the server is kept as reachable.
@@ -531,4 +646,32 @@ fn smtp_servers_are_tried_in_order_and_the_one_that_works_is_written() {
     ] {
         assert_eq!(agent.call(method, params).unwrap_err()["code"], 1007, "{method}");
     }
+}
+
+/// The creation methods' refusals that need no server: an unreachable
+/// IMAP server said as such (`data.reason`: `connect`), so that the app
+/// points at the server rather than at the password; an SMTP password
+/// without an SMTP server, or empty, refused before anything is done.
+#[test]
+fn a_server_that_does_not_answer_and_a_stray_smtp_password_are_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_core, mut c) = core(dir.path(), "");
+    let nothing = json!({ "host": "127.0.0.1", "port": 1, "security": "tls" });
+    let e = c.call("test_account", json!({"email": "me@example.com", "imap": nothing, "password": "pw"})).unwrap_err();
+    assert_eq!((e["code"].as_i64(), e["data"]["reason"].as_str()), (Some(1009), Some("connect")), "{e:#}");
+
+    let e = c
+        .call("add_account", json!({"key": "k", "email": "me@example.com", "imap": nothing, "password": "pw", "smtp_password": "s"}))
+        .unwrap_err();
+    assert_eq!(e["code"], -32602, "{e:#}");
+    assert!(e["message"].as_str().unwrap().contains("without an SMTP server"), "{e:#}");
+    let e = c
+        .call(
+            "test_smtp",
+            json!({"email": "me@example.com", "imap": nothing, "password": "pw", "smtp_password": "", "candidates": []}),
+        )
+        .unwrap_err();
+    assert_eq!(e["code"], -32602, "{e:#}");
+    // Nothing written.
+    assert!(!std::fs::read_to_string(dir.path().join("accounts.toml")).unwrap_or_default().contains("[accounts.k]"));
 }

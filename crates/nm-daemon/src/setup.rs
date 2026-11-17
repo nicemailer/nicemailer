@@ -14,13 +14,16 @@
 //! 4. the password in the Keychain, bound to this server;
 //! 5. `accounts.toml`, read again and written atomically; then applied at
 //!    once (the worker starts, sends the archiving, then synchronizes).
+//!
+//! An account created read-only (only looked at) gets the steps it skipped
+//! later, from `activate_account`.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use std::time::Duration;
 
 use nm_api::{
-    AddAccountParams, AddAccountResult, ArchiveCount, CountArchiveParams, DiscoverAccountParams, DiscoveryReport,
+    ActivateAccountParams, ActivateAccountResult, PrepareActivationParams, AddAccountParams, AddAccountResult, ArchiveCount, CountArchiveParams, DiscoverAccountParams, DiscoveryReport,
     RemoveAccountParams, RenameAccountParams, RpcError, SetFolderRolesParams, SmtpTestReport, TestAccountParams,
     TestAccountReport, TestSmtpParams, error_code,
 };
@@ -46,6 +49,19 @@ fn server(e: impl std::fmt::Display) -> RpcError {
     RpcError::new(error_code::SERVER, e.to_string())
 }
 
+/// An IMAP failure of the creation methods, with `data.reason` telling a
+/// client which field to correct (`error_code::SERVER`): the password
+/// (`auth`), the server (`connect`), or neither (`server`).
+fn imap_failure(e: nm_proto::imap::ImapError) -> RpcError {
+    use nm_proto::imap::ImapError as E;
+    let reason = match &e {
+        E::AuthFailed(_) => "auth",
+        E::Connect(_) | E::Tls(_) | E::Timeout(_) | E::Closed | E::Bye(_) | E::Io(_) => "connect",
+        _ => "server",
+    };
+    RpcError { code: error_code::SERVER, message: e.to_string(), data: Some(serde_json::json!({ "reason": reason })) }
+}
+
 fn invalid(e: impl std::fmt::Display) -> RpcError {
     RpcError::new(error_code::INVALID_PARAMS, e.to_string())
 }
@@ -65,7 +81,7 @@ pub async fn test_account(core: &Arc<Core>, p: TestAccountParams, source: Source
     let spec = setup::spec_of(&p.imap).map_err(invalid)?;
     let user = setup::username_of(&p.imap, &p.email);
     let import = core.engine.lock().unwrap().config().import.clone();
-    setup::test_account(&spec, &user, &p.password, &own(&p.email, &p.identities), &import, now()).await.map_err(server)
+    setup::test_account(&spec, &user, &p.password, &own(&p.email, &p.identities), &import, now()).await.map_err(imap_failure)
 }
 
 /// `discover_account`: the servers of an address, from the database of
@@ -102,7 +118,10 @@ pub async fn test_smtp(p: TestSmtpParams, source: Source) -> Result<SmtpTestRepo
     for c in &p.candidates {
         setup::spec_of(&c.server).map_err(invalid)?;
     }
-    Ok(nm_engine::discover::test_smtp(&p.email, &p.imap, &p.password, &p.candidates).await)
+    if p.smtp_password.as_deref() == Some("") {
+        return Err(invalid("empty SMTP password"));
+    }
+    Ok(nm_engine::discover::test_smtp(&p.email, &p.imap, &p.password, p.smtp_password.as_deref(), &p.candidates).await)
 }
 
 /// The `security` of `accounts.toml` from the client's word, checked.
@@ -122,38 +141,24 @@ pub async fn count_archive(p: CountArchiveParams, source: Source) -> Result<Arch
     for d in [&p.read_before, &p.unread_before].into_iter().flatten() {
         setup::parse_day(d).ok_or_else(|| invalid(format!("date {d:?}: YYYY-MM-DD expected")))?;
     }
-    let mut s = setup::open(&spec, &user, &p.password).await.map_err(server)?;
+    let mut s = setup::open(&spec, &user, &p.password).await.map_err(imap_failure)?;
     s.forbid_writes();
-    let n = setup::count_archive(&mut s, p.uidnext, p.read_before.as_deref(), p.unread_before.as_deref()).await.map_err(server)?;
+    let n = setup::count_archive(&mut s, p.uidnext, p.read_before.as_deref(), p.unread_before.as_deref()).await.map_err(imap_failure)?;
     s.logout().await;
     Ok(n)
 }
 
-/// The folder of each workflow role: the user's choice, else the proposal
-/// (special-use, then names), else a new folder under the role's English
-/// name, in the personal namespace.
+/// The folder of each workflow role (`setup::plan_roles`), from the
+/// server's folders.
 fn roles_for(
     chosen: &BTreeMap<FolderRole, String>,
     entries: &[nm_proto::imap::ListEntry],
     namespace: Option<&nm_proto::imap::Namespace>,
 ) -> BTreeMap<FolderRole, String> {
     let proposed = nm_engine::folders::propose_roles(entries, namespace);
-    let mut out = BTreeMap::new();
-    for role in FolderRole::ALL {
-        let path = if role == FolderRole::Inbox {
-            "INBOX".to_string()
-        } else if let Some(p) = chosen.get(&role) {
-            p.clone()
-        } else if let Some((e, _)) =
-            entries.iter().zip(&proposed).find(|(_, r)| r.as_ref().is_some_and(|(r, _)| *r == role.as_str()))
-        {
-            e.name.name.clone()
-        } else {
-            format!("{}{}", namespace.map(|n| n.prefix.as_str()).unwrap_or(""), role.display_name())
-        };
-        out.insert(role, path);
-    }
-    out
+    let pairs: Vec<(&str, Option<&str>)> =
+        entries.iter().zip(&proposed).map(|(e, r)| (e.name.name.as_str(), r.as_ref().map(|(r, _)| *r))).collect();
+    setup::plan_roles(chosen, &pairs, namespace.map(|n| n.prefix.as_str()).unwrap_or(""))
 }
 
 /// `add_account`.
@@ -191,9 +196,18 @@ pub async fn add_account(core: &Arc<Core>, p: AddAccountParams, source: Source) 
         }),
         None => None,
     };
+    let smtp_password = match (&p.smtp_password, &smtp) {
+        (None, _) => None,
+        (Some(pw), _) if pw.is_empty() => return Err(invalid("empty SMTP password")),
+        (Some(_), None) => return Err(invalid("an SMTP password without an SMTP server")),
+        (Some(pw), Some(s)) => Some(Credential {
+            binding: Binding { host: s.host.clone(), username: s.username.clone() },
+            secret: nm_engine::config::SecretString::new(pw.clone()),
+        }),
+    };
 
     // 1 and 2: the server.
-    let mut s = setup::open(&spec, &user, &p.password).await.map_err(server)?;
+    let mut s = setup::open(&spec, &user, &p.password).await.map_err(imap_failure)?;
     if p.read_only {
         s.forbid_writes();
     }
@@ -262,10 +276,20 @@ pub async fn add_account(core: &Arc<Core>, p: AddAccountParams, source: Source) 
     };
     let key = p.key.clone();
     let secrets2 = secrets.clone();
-    tokio::task::spawn_blocking(move || secrets2.set_imap(&key, &credential))
-        .await
-        .map_err(|e| RpcError::new(error_code::INTERNAL_ERROR, e.to_string()))?
-        .map_err(|e| RpcError::new(error_code::SECRETS, e))?;
+    // The SMTP password saved apart, bound to the SMTP server, as
+    // `set_password` with `smtp` does: the sender takes it before the IMAP
+    // one (`docs/sending.md`, "Password"). Saved before the file, so that
+    // the worker the file starts finds it.
+    tokio::task::spawn_blocking(move || {
+        secrets2.set_imap(&key, &credential)?;
+        match &smtp_password {
+            Some(c) => secrets2.set_smtp(&key, c),
+            None => Ok(()),
+        }
+    })
+    .await
+    .map_err(|e| RpcError::new(error_code::INTERNAL_ERROR, e.to_string()))?
+    .map_err(|e| RpcError::new(error_code::SECRETS, e))?;
 
     // 5: the file, then applied.
     let new = NewAccount {
@@ -353,6 +377,136 @@ pub async fn set_folder_roles(core: &Arc<Core>, p: SetFolderRolesParams, source:
         syncer.sync_now(Some(&p.account));
     }
     Ok(created)
+}
+
+/// A read-only account of the file, its id and its password from the
+/// Keychain: what `prepare_activation` and `activate_account` start from.
+async fn read_only_account(
+    core: &Arc<Core>,
+    key: &str,
+) -> Result<(nm_engine::config::AccountConfig, i64, nm_engine::config::SecretString), RpcError> {
+    let (secrets, account, id) = {
+        let engine = core.engine.lock().unwrap();
+        let missing = || RpcError::new(error_code::NOT_FOUND, format!("no account {key} in accounts.toml"));
+        let account = engine.config().accounts.get(key).cloned().ok_or_else(missing)?;
+        let id = engine.account_id(key).ok_or_else(missing)?;
+        (engine.secrets(), account, id)
+    };
+    if !account.read_only {
+        return Err(invalid(format!("the account {key} is not read-only: it is set up already")));
+    }
+    let (k, acc) = (key.to_string(), account.clone());
+    let password = tokio::task::spawn_blocking(move || nm_engine::secrets::imap_password(secrets.as_ref(), &k, &acc))
+        .await
+        .map_err(|e| RpcError::new(error_code::INTERNAL_ERROR, e.to_string()))?
+        .map_err(|r| RpcError::new(error_code::ACCOUNT_NOT_READY, r.message(key, &account)))?;
+    Ok((account, id, password))
+}
+
+/// The account's own addresses: its address and its identities.
+fn own_of(account: &nm_engine::config::AccountConfig) -> Vec<String> {
+    let identities: Vec<String> = account.identities.iter().map(|i| i.email.clone()).collect();
+    own(&account.email, &identities)
+}
+
+/// `prepare_activation`: the report of `test_account` for a read-only
+/// account, its password taken from the Keychain. Nothing is written: the
+/// connection is read-only too.
+pub async fn prepare_activation(core: &Arc<Core>, p: PrepareActivationParams, source: Source) -> Result<TestAccountReport, RpcError> {
+    human(source)?;
+    let (account, _, password) = read_only_account(core, &p.account).await?;
+    let spec = nm_engine::probe::imap_spec(&account);
+    setup::test_account(&spec, &account.imap.username, password.expose(), &own_of(&account), &account.import, now())
+        .await
+        .map_err(imap_failure)
+}
+
+/// `activate_account`: a read-only account made writable, with the steps
+/// of `add_account` that read-only skipped (`docs/accounts.md`, "Looking
+/// first"). In this order, for the same reason: the worker that the file
+/// restarts writable finds everything ready.
+/// 1. log in; create the folders the roles need; read the boundary again
+///    and the recipients of Sent;
+/// 2. database: the roles, the boundary set again (the mails that came
+///    while the account was looked at are not screened: they are already
+///    there, `import-initial.md`, section 1), the correspondents, the
+///    archiving queued;
+/// 3. `read_only` removed from `accounts.toml`, applied at once: the
+///    read-only worker stops, a writable one starts, sends the archiving,
+///    then synchronizes.
+///
+/// A failure before step 3 leaves the account read-only: the folders
+/// created stay (asked again, they are found), and the call can be made
+/// again.
+pub async fn activate_account(core: &Arc<Core>, p: ActivateAccountParams, source: Source) -> Result<ActivateAccountResult, RpcError> {
+    human(source)?;
+    for d in [&p.archive_read_before, &p.archive_unread_before].into_iter().flatten() {
+        setup::parse_day(d).ok_or_else(|| invalid(format!("date {d:?}: YYYY-MM-DD expected")))?;
+    }
+    let (account, id, password) = read_only_account(core, &p.account).await?;
+    let config_path = core.engine.lock().unwrap().accounts_path();
+    let own = own_of(&account);
+
+    // 1: the server.
+    let spec = nm_engine::probe::imap_spec(&account);
+    let mut s = setup::open(&spec, &account.imap.username, password.expose()).await.map_err(imap_failure)?;
+    let namespace = s.namespace().await.ok().and_then(|n| n.personal.into_iter().next());
+    let entries = s.list().await.map_err(server)?;
+    let roles = roles_for(&p.roles, &entries, namespace.as_ref());
+    let paths: Vec<String> = roles.values().cloned().collect();
+    let created = setup::create_folders(&mut s, &paths).await.map_err(server)?;
+    let boundary = match p.uidnext {
+        Some(u) => u,
+        None => s.status(&nm_proto::imap::MailboxName::inbox()).await.map_err(server)?.uid_next.unwrap_or(1),
+    };
+    let recipients = match (p.correspondents, roles.get(&FolderRole::Sent)) {
+        (true, Some(sent)) => setup::sent_recipients(&mut s, sent, &own).await.map_err(server)?,
+        _ => Vec::new(),
+    };
+    s.logout().await;
+
+    // 2: the database.
+    let delimiter: BTreeMap<String, Option<String>> = entries.iter().map(|e| (e.name.name.clone(), e.delimiter.map(String::from))).collect();
+    let default_delim = entries.iter().find_map(|e| e.delimiter).map(String::from);
+    let assignments: Vec<RoleAssignment> = roles
+        .iter()
+        .map(|(role, path)| RoleAssignment {
+            path: path.clone(),
+            delimiter: delimiter.get(path).cloned().unwrap_or_else(|| default_delim.clone()),
+            role: Some(*role),
+        })
+        .collect();
+    let archive = (p.archive_read_before.is_some() || p.archive_unread_before.is_some()).then(|| ArchiveCriteria {
+        from_path: "INBOX".into(),
+        to_path: roles.get(&FolderRole::Archive).cloned().unwrap_or_default(),
+        boundary,
+        read_before: p.archive_read_before.clone(),
+        unread_before: p.archive_unread_before.clone(),
+        batch_size: account.import.batch_size as u32,
+    });
+    let core2 = core.clone();
+    let correspondents = with_store(core, move |st| {
+        let changes = st.set_folder_roles(id, &assignments, source)?;
+        core2.events.lock().unwrap().emit(&changes);
+        let inbox: i64 = st.conn().query_row("SELECT id FROM folder WHERE account_id = ?1 AND role = 'inbox'", [id], |r| r.get(0))?;
+        st.reset_screening_start(inbox, boundary)?;
+        let n = st.add_correspondents(&recipients, &own)?;
+        if let Some(c) = &archive {
+            st.queue_initial_archive(id, c, source)?;
+        }
+        Ok(n)
+    })
+    .await?;
+
+    // 3: the file, then applied.
+    let key = p.account.clone();
+    write_file(core, move |t| config_write::clear_read_only(t, &key), &config_path).await?;
+    Ok(ActivateAccountResult {
+        created,
+        roles: roles.into_iter().collect(),
+        correspondents,
+        archive_queued: p.archive_read_before.is_some() || p.archive_unread_before.is_some(),
+    })
 }
 
 /// `rename_account`: the database, the Keychain, then the file: the file

@@ -106,11 +106,11 @@ private struct GeekWindow: View {
         case .tags:
             NamesScreen(
                 controller: controller, title: L("Tags"),
-                rows: controller.tags.map { ($0.name, L("%lld mails", $0.messageCount)) })
+                rows: controller.screenTags.map { ($0.name, $0.messageCount == 1 ? L("1 mail") : L("%lld mails", $0.messageCount)) })
         case .groups:
             NamesScreen(
                 controller: controller, title: L("Groups"),
-                rows: controller.groups.map { ($0.name, L("%lld members", $0.memberCount)) })
+                rows: controller.groups.map { ($0.name, $0.memberCount == 1 ? L("1 member") : L("%lld members", $0.memberCount)) })
         }
     }
 
@@ -205,7 +205,8 @@ private struct GeekWindow: View {
             // as much of its width as is useful.
             GeometryReader { geometry in
                 PickerPopup(controller: controller, kind: kind,
-                            width: PickerPopup.width(kind, available: geometry.size.width, scale: TextSize.shared.scale))
+                            width: PickerPopup.width(kind, available: geometry.size.width, scale: TextSize.shared.scale),
+                            available: geometry.size.height)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         case .none, .contactFilter, .choice:
@@ -554,9 +555,74 @@ private struct GeekFolderColumn: View {
                     // The same blocks as the ; menu.
                     .padding(.top, i > 0 && folders[i - 1].group != f.group ? scaled(10) : 0)
                 }
+                GeekColumnGroups(controller: controller)
             }
         }
         .scrollIndicators(.never)
+    }
+}
+
+/// The contact groups, under the folders (`ui.md`, "Groupes dans la colonne
+/// des dossiers"). A click on a group narrows the current list to the mails
+/// of its members (the Group… attribute, chip in the status bar), a second
+/// click removes it; ⌘-click excludes it. Several groups combine by "or".
+/// With more groups than room, the most relevant ones are shown
+/// (`GroupRanking`) and a last row "N more…" opens the Group… panel, which
+/// lists them all. No groups: no block at all, not even its title.
+private struct GeekColumnGroups: View {
+    @Environment(AppModel.self) private var model
+    let controller: GeekController
+
+    var body: some View {
+        let (rows, hidden) = controller.columnGroups
+        if !rows.isEmpty {
+            Text(L("Groups"))
+                .foregroundStyle(Palette.muted)
+                .padding(.top, scaled(14)).padding(.bottom, scaled(2)).padding(.horizontal, 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+                .onTapGesture { controller.openGroupPanel() }
+                .uiTarget("groups-title")
+            ForEach(rows) { g in
+                let choice = model.attributes.groupChoice(g.id)
+                HStack(spacing: 6) {
+                    // Where a folder has its letter: "•" when the group
+                    // filters the list, "−" when it is excluded, as in the
+                    // Group… panel.
+                    Text(choice == true ? "•" : choice == false ? "−" : "@")
+                        .foregroundStyle(choice == nil ? Palette.muted : Palette.accentText)
+                    Text(g.name)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .foregroundStyle(choice == nil ? Palette.text : Palette.accentText)
+                        .strikethrough(choice == false)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 8)
+                .frame(height: scaled(20))
+                // The same grey row as the current folder above.
+                .background(controller.isHighlighted(g) ? Palette.cursor : Color.clear)
+                .contentShape(Rectangle())
+                .onClick { controller.clickGroup(g, $0) }
+                .uiTarget("group-\(g.name)")
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(choice == true ? L("group %@, filtering the list", g.name)
+                                    : choice == false ? L("group %@, excluded from the list", g.name)
+                                    : L("group %@", g.name))
+                .accessibilityAddTraits(.isButton)
+            }
+            if hidden > 0 {
+                // Two keys rather than plural variations: `L()` formats with
+                // `String(format:)`, which does not apply them.
+                Text(hidden == 1 ? L("1 more…") : L("%lld more…", hidden))
+                    .foregroundStyle(Palette.muted)
+                    .padding(.horizontal, 8)
+                    .frame(maxWidth: .infinity, minHeight: scaled(20), alignment: .leading)
+                    .contentShape(Rectangle())
+                    .onTapGesture { controller.openGroupPanel() }
+                    .uiTarget("groups-more")
+            }
+        }
     }
 }
 
@@ -874,12 +940,18 @@ private struct GeekThreadRow: View {
 /// when the subject is not cut.
 struct ReaderTitleBar<Controls: View>: View {
     let subject: String
+    /// The thread's tags and the groups of the person it is with, after
+    /// the subject (`ui.md`, "Tags et groupes dans l'en-tête"); none while
+    /// a reply is written.
+    var tags: [String] = []
+    var groups: [String] = []
     @ViewBuilder let controls: () -> Controls
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
             HStack(spacing: scaled(8)) {
                 subjectText
+                labels
                 Spacer(minLength: scaled(16))
                 controls()
             }
@@ -889,7 +961,10 @@ struct ReaderTitleBar<Controls: View>: View {
                 subjectText
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .frame(height: scaled(24))
+                // On two lines, the labels open the line of the controls:
+                // the subject keeps the whole width.
                 HStack(spacing: scaled(8)) {
+                    labels
                     Spacer(minLength: 0)
                     controls()
                 }
@@ -911,6 +986,28 @@ struct ReaderTitleBar<Controls: View>: View {
         Text(subject).font(.geek(13, weight: .bold)).lineLimit(1)
             .textSelection(.enabled)
             .help(subject)
+    }
+
+    /// `#tag` as in the list rows, `@group` as in the folder column: the
+    /// same marks say the same things everywhere. Never cut: a label is
+    /// short, and the layout goes to two lines rather than hide one.
+    ///
+    /// Swift note: `@ViewBuilder` lets a property return different views
+    /// from an `if`; an empty `HStack` would still take a spacing slot.
+    @ViewBuilder
+    private var labels: some View {
+        if !tags.isEmpty || !groups.isEmpty {
+            HStack(spacing: scaled(6)) {
+                ForEach(tags, id: \.self) { Text("#\($0)") }
+                ForEach(groups, id: \.self) { Text("@\($0)") }
+            }
+            .font(.geek(12))
+            .foregroundStyle(Palette.accentText)
+            .lineLimit(1)
+            .fixedSize()
+            .accessibilityElement(children: .combine)
+            .help(LabelChoices.headerHelp(tags: tags, groups: groups))
+        }
     }
 
     /// In UI script mode, which layout is shown (`title_lines`).
@@ -939,7 +1036,9 @@ private struct GeekReaderColumn: View {
                 // The subject, then the controls of the mail; on two lines
                 // when the subject would not fit whole beside them
                 // (`ReaderTitleBar`).
-                ReaderTitleBar(subject: thread.subject) { titleControls(state) }
+                ReaderTitleBar(subject: thread.subject, tags: thread.labels.tags, groups: thread.labels.groups) {
+                    titleControls(state)
+                }
                 Palette.separator.frame(height: 1)
                 if model.bodyFormat != "text" {
                     let page = threadHTML(thread, state)
@@ -1860,6 +1959,8 @@ struct PickerPopup: View {
     let kind: GeekController.PickerKind
     /// Width of the panel (`width(_:available:scale:)`).
     let width: CGFloat
+    /// The height of the window's content: a panel never goes past it.
+    var available: CGFloat = .infinity
 
     /// Width of a picker panel, in points, for a window content `available`
     /// points wide at the text size `scale`:
@@ -1886,11 +1987,31 @@ struct PickerPopup: View {
     /// The panel's height, fixed so that it does not jump while typing
     /// filters the rows: taller for the panels that show details. Shared
     /// with the AI result, which takes the palette's place.
+    ///
+    /// The attribute selector (`f`) is as tall as all its rows: its rows
+    /// are few and fixed, and one that had to be scrolled to was missed
+    /// (Mail date… and "clear" were below the edge until November 2026).
     static func height(_ kind: GeekController.PickerKind, scale: CGFloat) -> CGFloat {
         switch kind {
+        case .attributes:
+            (headerHeight + 1 + CGFloat(GeekController.attributeRowCount) * rowHeight
+                + CGFloat(GeekController.attributeGapCount) * gapHeight + 4) * scale
         case .attributeValue, .search, .links: 440 * scale
         default: 320 * scale
         }
+    }
+
+    /// Height of the input line and of a row, at the default text size.
+    static let headerHeight: CGFloat = 24
+    static let rowHeight: CGFloat = 20
+    /// The line between two groups of rows (`Entry.gapBefore`: the pairs
+    /// of the attribute selector), with its space above and below.
+    static let gapHeight: CGFloat = 7
+
+    /// `height`, kept inside a window `available` points tall, with a
+    /// margin above and below: in a short window, the rows scroll.
+    static func height(_ kind: GeekController.PickerKind, scale: CGFloat, available: CGFloat) -> CGFloat {
+        min(height(kind, scale: scale), max(available - 2 * 16 * scale, 120 * scale))
     }
 
     var body: some View {
@@ -1911,13 +2032,20 @@ struct PickerPopup: View {
                 Text("\(entries.count)").foregroundStyle(Palette.muted)
             }
             .padding(.horizontal, 8)
-            .frame(height: scaled(24))
+            .frame(height: scaled(Self.headerHeight))
             .uiTarget("picker-header")
             Palette.separator.frame(height: 1)
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(Array(entries.enumerated()), id: \.offset) { i, e in
+                            // A thin line, discreet, between two groups of
+                            // rows: the pairs of the attribute selector.
+                            if e.gapBefore {
+                                Palette.separator.opacity(0.6).frame(height: 1)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, scaled((Self.gapHeight - 1) / 2))
+                            }
                             HStack(spacing: 8) {
                                 Text(e.key).foregroundStyle(Palette.muted).frame(width: scaled(22), alignment: .leading)
                                 if let icon = e.icon {
@@ -1946,7 +2074,7 @@ struct PickerPopup: View {
                                 }
                             }
                             .padding(.horizontal, 8)
-                            .frame(height: scaled(20))
+                            .frame(height: scaled(Self.rowHeight))
                             .background(i == current ? Palette.cursor : Color.clear)
                             .contentShape(Rectangle())
                             .onTapGesture { controller.clickPicker(kind, i) }
@@ -1964,11 +2092,25 @@ struct PickerPopup: View {
         }
         // An attribute with a value gets a bigger panel at once (`ui.md`),
         // and so do the links of a mail.
-        .frame(width: width, height: Self.height(kind, scale: TextSize.shared.scale))
-        .onAppear { if UIScript.isActive { UIScript.pickerWidth = width } }
+        .frame(width: width, height: panelHeight)
+        .onAppear {
+            if UIScript.isActive {
+                UIScript.pickerWidth = width
+                UIScript.pickerVisibleRows = visibleRows
+            }
+        }
+        .onChange(of: panelHeight) { _, _ in if UIScript.isActive { UIScript.pickerVisibleRows = visibleRows } }
         .onChange(of: width) { _, w in if UIScript.isActive { UIScript.pickerWidth = w } }
         .background(Palette.popup)
         .overlay(Rectangle().stroke(Palette.separator, lineWidth: 1))
+    }
+
+    private var panelHeight: CGFloat { Self.height(kind, scale: TextSize.shared.scale, available: available) }
+
+    /// Rows that fit below the input line without scrolling (UI scripts).
+    private var visibleRows: Int {
+        let gaps = CGFloat(controller.pickerEntries(kind).filter(\.gapBefore).count) * scaled(Self.gapHeight)
+        return Int((panelHeight - scaled(Self.headerHeight) - 1 - gaps) / scaled(Self.rowHeight))
     }
 
     /// Rows in two halves, text and address (the links of `l`).
@@ -1985,6 +2127,8 @@ struct PickerPopup: View {
         case .tag: L("Tag")
         case .group: L("Group")
         case .ai: L("AI")
+        case .rename(.tag, _, _): L("Rename the tag")
+        case .rename(.group, _, _): L("Rename the group")
         }
     }
 
@@ -1995,6 +2139,7 @@ struct PickerPopup: View {
         case .accounts: L("No account")
         case .attributes: L("No attribute")
         case .ai: L("No AI prompt matches")
+        case .rename: controller.pickerQuery.trimmingCharacters(in: .whitespaces).isEmpty ? L("Type a name") : ""
         // The value panels: the input line shows the hint while nothing is
         // typed; text that gives no row (a date that is none) shows it
         // here instead.
@@ -2108,7 +2253,7 @@ private struct NamesScreen: View {
 
     var body: some View {
         ScreenList(
-            title: title, hint: L("return: their mails · esc: back"), count: rows.count, index: controller.screenIndex,
+            title: title, hint: L("return: their mails · r: rename · d: delete · esc: back"), count: rows.count, index: controller.screenIndex,
             onClick: { controller.clickScreenRow($0) }
         ) { i in
             HStack(spacing: 8) {

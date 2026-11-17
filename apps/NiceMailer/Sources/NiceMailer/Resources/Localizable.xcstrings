@@ -2413,16 +2413,6 @@
         }
       }
     },
-    "add the sender to a group": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ajouter l'expéditeur à un groupe"
-          }
-        }
-      }
-    },
     "after %@": {
       "localizations": {
         "fr": {
@@ -2439,16 +2429,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "toutes les pièces jointes"
-          }
-        }
-      }
-    },
-    "answered": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "répondus"
           }
         }
       }
@@ -3069,22 +3049,12 @@
       }
     },
     "not %@": {
-      "comment": "A value to exclude in the From…, To…, Text… and Subject… panels.",
+      "comment": "A value to exclude in the From…, To…, Group…, Text… and Subject… panels.",
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "pas %@"
-          }
-        }
-      }
-    },
-    "not answered": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "sans ma réponse"
           }
         }
       }
@@ -3289,16 +3259,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "répondre à l'expéditeur seul"
-          }
-        }
-      }
-    },
-    "return: their mails · esc: back": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "entrée : leurs mails · échap : retour"
           }
         }
       }
@@ -5232,6 +5192,1283 @@
           "stringUnit": {
             "state": "translated",
             "value": "Rechercher les mises à jour…"
+          }
+        }
+      }
+    },
+    "Nobody to add to %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Personne à ajouter à %@"
+          }
+        }
+      }
+    },
+    "Group…": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Groupe…"
+          }
+        }
+      }
+    },
+    "members contacts vip team family": {
+      "comment": "Hidden search words of the Group… attribute in the f selector, separated by spaces.",
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "membres contacts vip équipe famille"
+          }
+        }
+      }
+    },
+    "not group: %@": {
+      "comment": "Chip of a group excluded from the list (Group… attribute).",
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "hors groupe : %@"
+          }
+        }
+      }
+    },
+    "No group yet: g adds the sender of a mail to one": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucun groupe : g ajoute l'expéditeur d'un mail à un groupe"
+          }
+        }
+      }
+    },
+    "↩ chooses or removes a group, several allowed; -name to exclude; esc closes": {
+      "comment": "Input line of the Group… panel while nothing is typed.",
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "↩ choisit ou retire un groupe, plusieurs possibles ; -nom pour exclure ; échap ferme"
+          }
+        }
+      }
+    },
+    "group %@, filtering the list": {
+      "comment": "VoiceOver label of a group of the folder column that filters the list.",
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "groupe %@, filtre la liste"
+          }
+        }
+      }
+    },
+    "group %@, excluded from the list": {
+      "comment": "VoiceOver label of a group of the folder column excluded from the list.",
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "groupe %@, exclu de la liste"
+          }
+        }
+      }
+    },
+    "group %@": {
+      "comment": "VoiceOver label of a group of the folder column.",
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "groupe %@"
+          }
+        }
+      }
+    },
+    "%lld more…": {
+      "comment": "Last row of the groups of the folder column: the groups left out, which a click shows in the Group… panel.",
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld autres…"
+          }
+        }
+      }
+    },
+    "1 member": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 membre"
+          }
+        }
+      }
+    },
+    "1 more…": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 autre…"
+          }
+        }
+      }
+    },
+    "%lld of %lld": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld sur %2$lld"
+          }
+        }
+      }
+    },
+    "Not in %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pas dans %@"
+          }
+        }
+      }
+    },
+    "Removed from %@: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retiré de %1$@ : %2$@"
+          }
+        }
+      }
+    },
+    "Tags: %@ (t to change)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tags : %@ (t pour les changer)"
+          }
+        }
+      }
+    },
+    "Groups of the sender: %@ (g to change)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Groupes de l'expéditeur : %@ (g pour les changer)"
+          }
+        }
+      }
+    },
+    "add / remove a tag": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ajouter / retirer un tag"
+          }
+        }
+      }
+    },
+    "add / remove a group": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ajouter / retirer un groupe"
+          }
+        }
+      }
+    },
+    "Tag…": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tag…"
+          }
+        }
+      }
+    },
+    "label keyword": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "étiquette libellé mot-clé"
+          }
+        }
+      }
+    },
+    "not tag: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "hors tag : %@"
+          }
+        }
+      }
+    },
+    "No tag yet: t tags the mail under the cursor": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucun tag : t tague le mail sous le curseur"
+          }
+        }
+      }
+    },
+    "↩ chooses or removes a tag, several allowed; -name to exclude; esc closes": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "↩ choisit ou retire un tag, plusieurs possibles ; -nom pour exclure ; échap ferme"
+          }
+        }
+      }
+    },
+    "1 mail": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 mail"
+          }
+        }
+      }
+    },
+    "without group": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "sans groupe"
+          }
+        }
+      }
+    },
+    "without tag": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "sans tag"
+          }
+        }
+      }
+    },
+    "none no": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "aucun sans"
+          }
+        }
+      }
+    },
+    "Tag renamed: %@ → %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tag renommé : %@ → %@"
+          }
+        }
+      }
+    },
+    "Group renamed: %@ → %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Groupe renommé : %@ → %@"
+          }
+        }
+      }
+    },
+    "Tag deleted: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tag supprimé : %@"
+          }
+        }
+      }
+    },
+    "Group deleted: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Groupe supprimé : %@"
+          }
+        }
+      }
+    },
+    "%@ already exists": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ existe déjà"
+          }
+        }
+      }
+    },
+    "rename %@ to %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "renommer %@ en %@"
+          }
+        }
+      }
+    },
+    "the new name · ↩ renames · esc cancels": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "le nouveau nom · ↩ renomme · échap annule"
+          }
+        }
+      }
+    },
+    "Delete the tag %@ (taken off its mail)?": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Supprimer le tag %@ (retiré de son mail) ?"
+          }
+        }
+      }
+    },
+    "Delete the tag %@ (taken off its %lld mails)?": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Supprimer le tag %@ (retiré de ses %lld mails) ?"
+          }
+        }
+      }
+    },
+    "Delete the group %@ and its member? Their mails stay": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Supprimer le groupe %@ et son membre ? Ses mails restent"
+          }
+        }
+      }
+    },
+    "Delete the group %@ and its %lld members? Their mails stay": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Supprimer le groupe %@ et ses %lld membres ? Leurs mails restent"
+          }
+        }
+      }
+    },
+    "delete the tag": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "supprimer le tag"
+          }
+        }
+      }
+    },
+    "delete the group": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "supprimer le groupe"
+          }
+        }
+      }
+    },
+    "cancel: keep it": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "annuler : le garder"
+          }
+        }
+      }
+    },
+    "return: their mails · r: rename · d: delete · esc: back": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "entrée : leurs mails · r : renommer · d : supprimer · échap : retour"
+          }
+        }
+      }
+    },
+    "Rename the tag": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Renommer le tag"
+          }
+        }
+      }
+    },
+    "Rename the group": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Renommer le groupe"
+          }
+        }
+      }
+    },
+    "with my reply": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "avec ma réponse"
+          }
+        }
+      }
+    },
+    "without my reply": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "sans ma réponse"
+          }
+        }
+      }
+    },
+    "answered replied": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "répondus répondu"
+          }
+        }
+      }
+    },
+    "unanswered": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "non répondus"
+          }
+        }
+      }
+    },
+    "thread several": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "fil plusieurs"
+          }
+        }
+      }
+    },
+    "%@ added: %@ old mails are being archived on the server.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ ajouté : %@ anciens mails sont en cours d’archivage sur le serveur."
+          }
+        }
+      }
+    },
+    "%@ added: its mail is being downloaded.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ ajouté : ses mails sont en cours de téléchargement."
+          }
+        }
+      }
+    },
+    "%@ has no mail server (no MX record). Give the IMAP server.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ n’a pas de serveur de mail (aucun enregistrement MX). Indiquez le serveur IMAP."
+          }
+        }
+      }
+    },
+    "%@ is not run by the provider of %@: NiceMailer does not send it your mailbox password. Enter the password of this SMTP server.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ n’est pas géré par le fournisseur de %@ : NiceMailer ne lui envoie pas le mot de passe de votre boîte. Saisissez le mot de passe de ce serveur SMTP."
+          }
+        }
+      }
+    },
+    "%@ only accepts a sign-in NiceMailer does not support yet (OAuth2). Give another IMAP server if your provider has one.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ n’accepte qu’une connexion que NiceMailer ne gère pas encore (OAuth2). Indiquez un autre serveur IMAP si votre fournisseur en propose un."
+          }
+        }
+      }
+    },
+    "%@ refused the password: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ a refusé le mot de passe : %@"
+          }
+        }
+      }
+    },
+    "%@ refused this password too (%@).": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ a refusé ce mot de passe aussi (%@)."
+          }
+        }
+      }
+    },
+    "%@ refused your mailbox password (%@): it needs a password of its own, such as an app password.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ a refusé le mot de passe de votre boîte (%@) : il lui faut son propre mot de passe, par exemple un mot de passe d’application."
+          }
+        }
+      }
+    },
+    "Accounts": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Comptes"
+          }
+        }
+      }
+    },
+    "Active": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Actif"
+          }
+        }
+      }
+    },
+    "Add Account": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ajouter le compte"
+          }
+        }
+      }
+    },
+    "Add an account": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ajouter un compte"
+          }
+        }
+      }
+    },
+    "Add the account without sending for now": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ajouter le compte sans envoi pour l’instant"
+          }
+        }
+      }
+    },
+    "Adding %@…": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ajout de %@…"
+          }
+        }
+      }
+    },
+    "Address": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Adresse"
+          }
+        }
+      }
+    },
+    "Archive (mbox import)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Archive (import mbox)"
+          }
+        }
+      }
+    },
+    "Archive the read mails received before %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Archiver les mails lus reçus avant le %@"
+          }
+        }
+      }
+    },
+    "Archive the unread mails received before %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Archiver les mails non lus reçus avant le %@"
+          }
+        }
+      }
+    },
+    "Cannot connect": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connexion impossible"
+          }
+        }
+      }
+    },
+    "Connecting to %@…": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connexion à %@…"
+          }
+        }
+      }
+    },
+    "Disabled: no longer in accounts.toml": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Désactivé : n’est plus dans accounts.toml"
+          }
+        }
+      }
+    },
+    "Email address": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Adresse mail"
+          }
+        }
+      }
+    },
+    "Enter the IMAP server and its port.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Indiquez le serveur IMAP et son port."
+          }
+        }
+      }
+    },
+    "Enter the SMTP server and its port.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Indiquez le serveur SMTP et son port."
+          }
+        }
+      }
+    },
+    "Enter the password of the SMTP server.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saisissez le mot de passe du serveur SMTP."
+          }
+        }
+      }
+    },
+    "Enter the password of the mailbox.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saisissez le mot de passe de la boîte."
+          }
+        }
+      }
+    },
+    "Enter the whole address, like name@example.com.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saisissez l’adresse complète, comme nom@example.com."
+          }
+        }
+      }
+    },
+    "Flagged mails stay in the Inbox.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les mails marqués d’un drapeau restent dans la boîte de réception."
+          }
+        }
+      }
+    },
+    "Incoming mail (IMAP)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Réception (IMAP)"
+          }
+        }
+      }
+    },
+    "Key in accounts.toml": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clé dans accounts.toml"
+          }
+        }
+      }
+    },
+    "Looking for the servers of %@…": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recherche des serveurs de %@…"
+          }
+        }
+      }
+    },
+    "Mail already in the mailbox": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mails déjà présents dans la boîte"
+          }
+        }
+      }
+    },
+    "Move the account down": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Descendre le compte"
+          }
+        }
+      }
+    },
+    "Move the account up": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Monter le compte"
+          }
+        }
+      }
+    },
+    "Name shown in “From”": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nom affiché dans « De »"
+          }
+        }
+      }
+    },
+    "NiceMailer could not connect to %@: %@. Check the IMAP server.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "NiceMailer n’a pas pu se connecter à %@ : %@. Vérifiez le serveur IMAP."
+          }
+        }
+      }
+    },
+    "NiceMailer could not look up the mail servers of %@ (%@). Give the IMAP server.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "NiceMailer n’a pas pu trouver les serveurs de mail de %@ (%@). Indiquez le serveur IMAP."
+          }
+        }
+      }
+    },
+    "NiceMailer does not know the provider of %@ (its mail goes to %@). Give the IMAP server.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "NiceMailer ne connaît pas le fournisseur de %@ (ses mails arrivent sur %@). Indiquez le serveur IMAP."
+          }
+        }
+      }
+    },
+    "NiceMailer does not know the provider of %@. Give the IMAP server.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "NiceMailer ne connaît pas le fournisseur de %@. Indiquez le serveur IMAP."
+          }
+        }
+      }
+    },
+    "NiceMailer finds the servers from the address. It asks for more only if it needs to.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "NiceMailer trouve les serveurs à partir de l’adresse. Il ne demande autre chose que s’il en a besoin."
+          }
+        }
+      }
+    },
+    "NiceMailer found no server to send mail from %@. Give the SMTP server, or add the account without sending for now.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "NiceMailer n’a trouvé aucun serveur pour envoyer des mails depuis %@. Indiquez le serveur SMTP, ou ajoutez le compte sans envoi pour l’instant."
+          }
+        }
+      }
+    },
+    "No server to send mail worked (%@). Check the SMTP server, or add the account without sending for now.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucun serveur d’envoi n’a fonctionné (%@). Vérifiez le serveur SMTP, ou ajoutez le compte sans envoi pour l’instant."
+          }
+        }
+      }
+    },
+    "Other senders go through the Quarantine with their next mail.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les autres expéditeurs passeront par la Quarantine à leur prochain mail."
+          }
+        }
+      }
+    },
+    "Outgoing mail (SMTP)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Envoi (SMTP)"
+          }
+        }
+      }
+    },
+    "Password": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mot de passe"
+          }
+        }
+      }
+    },
+    "Port": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Port"
+          }
+        }
+      }
+    },
+    "SMTP password": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mot de passe SMTP"
+          }
+        }
+      }
+    },
+    "Security": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sécurité"
+          }
+        }
+      }
+    },
+    "Server": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Serveur"
+          }
+        }
+      }
+    },
+    "State": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "État"
+          }
+        }
+      }
+    },
+    "The address": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L’adresse"
+          }
+        }
+      }
+    },
+    "The people you have written to (%@) arrive straight in the Inbox.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les personnes à qui vous avez déjà écrit (%@) arriveront directement dans la boîte de réception."
+          }
+        }
+      }
+    },
+    "Trying the server to send mail…": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Essai du serveur d’envoi…"
+          }
+        }
+      }
+    },
+    "User name": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nom d’utilisateur"
+          }
+        }
+      }
+    },
+    "Your Inbox holds %@ mails, %@ of them unread.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Votre boîte de réception contient %@ mails, dont %@ non lus."
+          }
+        }
+      }
+    },
+    "Your name": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Votre nom"
+          }
+        }
+      }
+    },
+    "→ %@ mails will be archived, %@ will stay in the Inbox.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "→ %@ mails seront archivés, %@ resteront dans la boîte de réception."
+          }
+        }
+      }
+    },
+    "%@ added: NiceMailer shows its mail and changes nothing on the server. Organize it from its page when you are ready.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ ajouté : NiceMailer affiche ses mails et ne change rien sur le serveur. Organisez-le depuis sa page quand vous le souhaitez."
+          }
+        }
+      }
+    },
+    "%@ is organized: %@ old mails are being archived on the server.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ est organisé : %@ mails anciens sont en cours d’archivage sur le serveur."
+          }
+        }
+      }
+    },
+    "%@ is organized: new mail is screened from now on.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ est organisé : les nouveaux mails sont triés dès maintenant."
+          }
+        }
+      }
+    },
+    "A folder chosen here keeps its mail; a new folder is created empty.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un dossier choisi ici garde ses mails ; un nouveau dossier est créé vide."
+          }
+        }
+      }
+    },
+    "Cancel": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Annuler"
+          }
+        }
+      }
+    },
+    "Connecting to the server of %@…": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connexion au serveur de %@…"
+          }
+        }
+      }
+    },
+    "Folders": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dossiers"
+          }
+        }
+      }
+    },
+    "New folder “%@”": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nouveau dossier « %@ »"
+          }
+        }
+      }
+    },
+    "NiceMailer shows the mail of this account and changes nothing on its server: no folder is created, no mail is moved, marked read or sent. New mail is screened on paper only.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "NiceMailer affiche les mails de ce compte et ne change rien sur son serveur : aucun dossier n’est créé, aucun mail n’est déplacé, marqué lu ou envoyé. Les nouveaux mails ne sont triés que sur le papier."
+          }
+        }
+      }
+    },
+    "NiceMailer shows your mail and changes nothing on the server: no folder is created, no mail is moved, marked read or sent. New mail is screened on paper only. Organize the account from its page when you are ready.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "NiceMailer affiche vos mails et ne change rien sur le serveur : aucun dossier n’est créé, aucun mail n’est déplacé, marqué lu ou envoyé. Les nouveaux mails ne sont triés que sur le papier. Organisez le compte depuis sa page quand vous le souhaitez."
+          }
+        }
+      }
+    },
+    "NiceMailer sorts your mail into the folders below. %@ will be created on the server: %@.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "NiceMailer range vos mails dans les dossiers ci-dessous. %@ seront créés sur le serveur : %@."
+          }
+        }
+      }
+    },
+    "NiceMailer sorts your mail into the folders below. They all exist already: none is created.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "NiceMailer range vos mails dans les dossiers ci-dessous. Ils existent tous déjà : aucun n’est créé."
+          }
+        }
+      }
+    },
+    "On the server": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sur le serveur"
+          }
+        }
+      }
+    },
+    "Only look for now: change nothing on the server": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Seulement regarder pour l’instant : ne rien changer sur le serveur"
+          }
+        }
+      }
+    },
+    "Only looked at": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Seulement regardé"
+          }
+        }
+      }
+    },
+    "Organize": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Organiser"
+          }
+        }
+      }
+    },
+    "Organize…": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Organiser…"
+          }
+        }
+      }
+    },
+    "Organizing %@…": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Organisation de %@…"
+          }
+        }
+      }
+    },
+    "Organizing it creates the folders NiceMailer needs, can archive old mail, and screens new mail for real. The mail there now is not screened, and is not downloaded again.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L’organiser crée les dossiers dont NiceMailer a besoin, peut archiver les anciens mails, et trie vraiment les nouveaux. Les mails déjà là ne sont pas triés, ni téléchargés à nouveau."
+          }
+        }
+      }
+    },
+    "“%@” is chosen for several roles (%@): choose one folder per role.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "« %@ » est choisi pour plusieurs rôles (%@) : choisissez un dossier par rôle."
           }
         }
       }

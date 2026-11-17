@@ -91,8 +91,22 @@ pub mod method {
     pub const TAG_THREAD: &str = "tag_thread";
     /// Contact groups (`groupes.md`).
     pub const LIST_GROUPS: &str = "list_groups";
-    /// Adds (or removes) an address, or the sender of a thread, to a group.
+    /// Adds (or removes) an address, or the person a thread is with, to a
+    /// group. The user's own addresses are refused (`groupes.md`).
     pub const SET_GROUP_MEMBER: &str = "set_group_member";
+    /// Tags of some threads, the person each is with and that person's
+    /// groups: what `t` and `g` can remove from a selection (`ui.md`).
+    pub const THREAD_LABELS: &str = "thread_labels";
+    /// Renames a tag, in every account that has it; the IMAP keyword
+    /// stays (`ui.md`, "Écrans Tags et Groupes").
+    pub const RENAME_TAG: &str = "rename_tag";
+    /// Deletes a tag: removed from every message, server included, then
+    /// kept as a tombstone.
+    pub const DELETE_TAG: &str = "delete_tag";
+    /// Renames a contact group (`groupes.md`, section 6).
+    pub const RENAME_GROUP: &str = "rename_group";
+    /// Deletes a contact group; its mails do not change.
+    pub const DELETE_GROUP: &str = "delete_group";
     /// Known addresses, with their decision and groups.
     pub const LIST_CONTACTS: &str = "list_contacts";
     /// Takes, changes or removes the screening decision on an address, and
@@ -147,6 +161,13 @@ pub mod method {
     pub const ADD_ACCOUNT: &str = "add_account";
     /// Changes the workflow roles of the folders of an account.
     pub const SET_FOLDER_ROLES: &str = "set_folder_roles";
+    /// What `activate_account` would do to a read-only account: the
+    /// report of `test_account`, with the password of the Keychain.
+    pub const PREPARE_ACTIVATION: &str = "prepare_activation";
+    /// Makes a read-only account writable, with the steps of a creation:
+    /// folders, roles, boundary, correspondents, archiving
+    /// (`docs/accounts.md`, "Looking first").
+    pub const ACTIVATE_ACCOUNT: &str = "activate_account";
     /// Renames the key of an account, keeping its data.
     pub const RENAME_ACCOUNT: &str = "rename_account";
     /// Deletes an account, its data and its password.
@@ -271,7 +292,11 @@ pub mod error_code {
     /// since it was saved, OAuth2. The message says what to do.
     pub const ACCOUNT_NOT_READY: i64 = 1008;
     /// The mail server could not be reached, refused the login, or failed;
-    /// the message holds its answer.
+    /// the message holds its answer. From the account creation methods
+    /// (`test_account`, `count_archive`, `add_account`), `data.reason` says
+    /// which: `auth` (the user name or the password refused), `connect`
+    /// (no connection, TLS refused, no answer in time), `server` (anything
+    /// else), so that a client points at the field to correct.
     pub const SERVER: i64 = 1009;
     /// A command that changes the mail of a read-only account
     /// (`read_only = true` in `accounts.toml`).
@@ -686,10 +711,44 @@ pub struct ThreadFilter {
     /// account has its own "Clients"), compared without case.
     #[serde(default)]
     pub tag: Option<String>,
+    /// Tagged with one of these tags, OR-ed: the Tag… attribute of the
+    /// selector (`ui.md`, "Sélecteur d'attributs"). Each name is read like
+    /// `tag` (every account, without case); `tag` (a tag's own list) and
+    /// these combine by "and". A name no tag has matches nothing. Empty:
+    /// no criterion.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<String>,
+    /// Tagged with none of these: a thread is left out as soon as one of
+    /// its messages carries one of them (the rule of `not_from`, `ui.md`,
+    /// "Négation"). A name no tag has leaves nothing out.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub not_tags: Vec<String>,
+    /// Without any tag: no message of the thread carries one ("without
+    /// tag" of Tag…). `false`, the default, is no criterion.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub no_tag: bool,
     /// Of the members of this group (`groupes.md`): a message of the thread
     /// in the listed folders is from one of them or to them (To, Cc).
     #[serde(default)]
     pub group_id: Option<i64>,
+    /// Of the members of one of these groups, OR-ed: the Group… attribute
+    /// of the selector (`ui.md`, "Sélecteur d'attributs"), and the groups
+    /// clicked in the folder column. Each group is read like `group_id`;
+    /// `group_id` (a group's own list) and these combine by "and": the
+    /// list of VIP narrowed to the members of Family. Empty: no criterion.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub group_ids: Vec<i64>,
+    /// Of the members of none of these groups: a thread is left out as soon
+    /// as one of its messages in the listed folders is from a member or to
+    /// one (To, Cc), the rule of `not_from` (`ui.md`, "Négation").
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub not_group_ids: Vec<i64>,
+    /// Of nobody in a group: no message of the thread in the listed folders
+    /// is from a member of any group or to one ("without group" of
+    /// Group…), the rule of `not_group_ids` for every group. `false`, the
+    /// default, is no criterion.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub no_group: bool,
     /// Of this contact (an `address` id): a message of the thread in the
     /// listed folders is from it or to it (To, Cc).
     #[serde(default)]
@@ -735,6 +794,33 @@ pub enum ThreadSort {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GetThreadParams {
     pub thread_id: i64,
+}
+
+/// Params of `thread_labels`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ThreadLabelsParams {
+    /// The threads, at most `MAX_LABEL_THREADS`.
+    pub thread_ids: Vec<i64>,
+}
+
+/// Most threads one `thread_labels` reads: a selection made with ⌘A on a
+/// long list stays answered in a few milliseconds (three indexed reads per
+/// thread), and a client never waits on an unbounded request.
+pub const MAX_LABEL_THREADS: usize = 1000;
+
+/// The tags of a thread, the person it is with and that person's groups
+/// (`thread_labels`, and the same fields in `ThreadView`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ThreadLabels {
+    pub thread_id: i64,
+    /// Names of the thread's tags, sorted.
+    pub tags: Vec<String>,
+    /// Address of the person the thread is with (the one `set_group_member`
+    /// takes for `thread_id`), lowercase; `None` when it names nobody but
+    /// the user.
+    pub correspondent: Option<String>,
+    /// Groups that person is in, in display order.
+    pub groups: Vec<String>,
 }
 
 /// Params of `locate_message`.
@@ -1211,6 +1297,16 @@ pub struct ThreadView {
     pub subject: String,
     /// Every message of the thread, across all folders, sorted by date.
     pub messages: Vec<MessageView>,
+    /// Names of the thread's tags, sorted: shown in the header (`ui.md`,
+    /// "Tags et groupes dans l'en-tête").
+    #[serde(default)]
+    pub tags: Vec<String>,
+    /// The person the thread is with (`ThreadLabels::correspondent`).
+    #[serde(default)]
+    pub correspondent: Option<String>,
+    /// Groups of that person, in display order, shown in the header.
+    #[serde(default)]
+    pub correspondent_groups: Vec<String>,
     pub as_of: Position,
 }
 
@@ -1937,6 +2033,16 @@ pub struct GroupView {
     pub name: String,
     pub color: Option<String>,
     pub member_count: i64,
+    /// Latest change of the group (Unix time): its own row (name, color,
+    /// position) or one of its memberships (added, removed). With
+    /// `mail_count`, how a client picks the groups worth showing when it
+    /// has room for a few only (`groupes.md`, section 6).
+    pub date_modified: i64,
+    /// Mails received from the members, all accounts (the sum of their
+    /// `address.sender_count`, automatic replies left out). A counter kept
+    /// by ingestion: reading it costs one row per member, never a count of
+    /// the mails.
+    pub mail_count: i64,
 }
 
 /// Parameters of `set_group_member`. Give either `addr` or `thread_id`
@@ -1948,11 +2054,45 @@ pub struct SetGroupMemberParams {
     pub group: String,
     #[serde(default)]
     pub addr: Option<String>,
+    /// The thread whose correspondent is added: its latest author who is
+    /// not the user, else the first recipient of the user's latest mail.
     #[serde(default)]
     pub thread_id: Option<i64>,
     /// Remove the address from the group instead of adding it.
     #[serde(default)]
     pub remove: bool,
+}
+
+/// Parameters of `rename_tag` and `rename_group`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RenameParams {
+    /// The current name, compared without case.
+    pub name: String,
+    /// The new name: 64 characters at most, not the name of another tag
+    /// (of the same account) or group.
+    pub new_name: String,
+}
+
+/// Result of `rename_tag` and `rename_group`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RenameResult {
+    /// Whether a name changed (`false` when the new name is the old one).
+    pub changed: bool,
+}
+
+/// Parameters of `delete_tag` and `delete_group`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeleteNameParams {
+    /// The name, compared without case.
+    pub name: String,
+}
+
+/// Result of `delete_group`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeleteGroupResult {
+    pub group_id: i64,
+    /// Members the group had when it was deleted.
+    pub members: i64,
 }
 
 /// Result of `set_group_member`.
@@ -2024,6 +2164,10 @@ pub struct AccountView {
     /// Display order: `list_accounts` and `list_folders` give the accounts
     /// by increasing position (then by id). Changed by `set_account_order`.
     pub position: i64,
+    /// `read_only = true` in `accounts.toml`: nothing is changed on its
+    /// server, until `activate_account`.
+    #[serde(default)]
+    pub read_only: bool,
 }
 
 /// Params of `set_password`. The password is never logged nor stored
@@ -2595,6 +2739,60 @@ pub struct TestAccountReport {
     /// What the defaults would archive.
     pub archive_read: u64,
     pub archive_unread: u64,
+    /// The folder each workflow role would get, in sidebar order, Inbox
+    /// first: what `add_account` does without `roles` (`dossiers.md`, "A
+    /// la création du compte IMAP dans niceMailer").
+    #[serde(default)]
+    pub roles: Vec<RolePlan>,
+}
+
+/// The folder of a workflow role, as planned.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RolePlan {
+    pub role: FolderRole,
+    pub path: String,
+    /// `false`: the server has no such folder; it would be created.
+    pub exists: bool,
+}
+
+/// Params of `prepare_activation`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PrepareActivationParams {
+    /// Key of a read-only account.
+    pub account: String,
+}
+
+/// Params of `activate_account`: the choices of the import screen, as for
+/// `add_account`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ActivateAccountParams {
+    /// Key of a read-only account.
+    pub account: String,
+    /// As in `add_account`: roles left out get the proposal, else a new
+    /// folder.
+    #[serde(default)]
+    pub roles: BTreeMap<FolderRole, String>,
+    /// The boundary read by `prepare_activation`; omitted: read again now.
+    /// The mails below it, those of the time the account was only looked
+    /// at included, are never screened (`import-initial.md`, section 5).
+    #[serde(default)]
+    pub uidnext: Option<u32>,
+    #[serde(default)]
+    pub archive_read_before: Option<String>,
+    #[serde(default)]
+    pub archive_unread_before: Option<String>,
+    #[serde(default = "yes")]
+    pub correspondents: bool,
+}
+
+/// What `activate_account` did.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ActivateAccountResult {
+    /// Folders created on the server.
+    pub created: Vec<String>,
+    pub roles: BTreeMap<FolderRole, String>,
+    pub correspondents: u64,
+    pub archive_queued: bool,
 }
 
 /// Params of `count_archive`.
@@ -2652,6 +2850,11 @@ pub struct AddAccountParams {
     /// account cannot send until one is added.
     #[serde(default)]
     pub smtp: Option<ImapParams>,
+    /// The password of that SMTP server, when it is not the IMAP one:
+    /// saved in the Keychain (`smtp:<key>`, bound to the SMTP server), as
+    /// `set_password` with `smtp` would. Refused without `smtp`.
+    #[serde(default)]
+    pub smtp_password: Option<String>,
 }
 
 fn yes() -> bool {
@@ -2756,6 +2959,11 @@ pub struct TestSmtpParams {
     /// SMTP server of the same host or organization.
     pub imap: ImapParams,
     pub password: String,
+    /// The password of the SMTP server itself, when the user gave one (the
+    /// server refused the IMAP password, or belongs to another
+    /// organization): tried on every candidate, whatever its organization.
+    #[serde(default)]
+    pub smtp_password: Option<String>,
     /// Tried in this order; the first that works is chosen.
     pub candidates: Vec<ServerCandidate>,
 }
@@ -2766,13 +2974,19 @@ pub struct SmtpTestReport {
     pub attempts: Vec<SmtpAttempt>,
     /// Index in `attempts` of the server chosen, if one worked.
     pub chosen: Option<usize>,
+    /// When none worked: index of the first server that refused the
+    /// password (`auth_refused`). It is the right server, short of its own
+    /// password: a client asks for it and tries again with `smtp_password`.
+    #[serde(default)]
+    pub refused: Option<usize>,
 }
 
 /// One SMTP server tried.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SmtpAttempt {
     pub candidate: ServerCandidate,
-    /// `logged_in`: the password was accepted; `reachable`: the server
+    /// `logged_in`: the password was accepted; `auth_refused`: the server
+    /// refused it (it needs a password of its own); `reachable`: the server
     /// answered, the password was not tried (another organization than the
     /// IMAP server: it will need its own password); `no_login`: the server
     /// offers no login (a relay, not a submission server); `failed`.

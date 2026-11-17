@@ -71,6 +71,10 @@ final class AppModel {
     /// The app had to start the core (`openSocket`), for `startupTimings`.
     @ObservationIgnored private var startedCore = false
     private(set) var folders: [FolderView] = []
+    /// The contact groups (`list_groups`), in display order: the folder
+    /// column lists them under the folders, the Group… attribute offers
+    /// them (`ui.md`, "Groupes dans la colonne des dossiers").
+    private(set) var groups: [GroupView] = []
     /// Threads of the selected folder, as far as loaded (pages are appended
     /// as the user scrolls).
     // Settable from `AppModel+Actions.swift` (optimistic updates); a
@@ -182,6 +186,16 @@ final class AppModel {
     /// core) in the unit tests and the UI scenarios, which must never
     /// change the user's mailbox; it receives the folder chosen.
     @ObservationIgnored var switchMailboxOverride: ((URL) async -> Void)?
+    /// Where the Preferences send the account creation methods: the core,
+    /// unless UI script mode puts its stand-in in between
+    /// (`UIScriptSetupCore`), which answers them without any mail server.
+    @ObservationIgnored var accountsCoreOverride: (any CoreCalling)?
+    /// The core the Preferences talk to.
+    var accountsCore: (any CoreCalling)? { accountsCoreOverride ?? core }
+    /// Goes up each time the core announces that an account changed
+    /// (`AccountChanged`, `AccountError`, `ConfigChanged`): the account list
+    /// of the Preferences reads it again.
+    private(set) var accountsRevision = 0
 
     /// The reply being written (`AppModel+Compose.swift`); nil when the
     /// reader shows the mail.
@@ -1098,8 +1112,16 @@ final class AppModel {
             if let t = e.params["thread_id"]?.int { dirtyThreads.insert(t) }
             for f in e.params["folder_ids"]?.ints ?? [] { dirtyFolders.insert(f) }
         case "ConfigChanged":
-            // `config.toml` applied: its `[ui]` may have changed.
+            // `config.toml` applied: its `[ui]` may have changed, and
+            // `accounts.toml` its accounts.
+            accountsRevision += 1
             Task { await loadUISettings() }
+            return
+        case "AccountChanged", "AccountError":
+            // An account added, moved, enabled, refused by its server: the
+            // Preferences list it again. Its folders come with their own
+            // `FolderChanged`.
+            accountsRevision += 1
             return
         case "DraftSent", "SendFailed", "SendPartial":
             draftEvent(e.method, e.params)
@@ -1268,9 +1290,25 @@ final class AppModel {
 
     func reloadFolders() async {
         guard let client else { return }
+        // The groups with the folders, so that the folder column shows both,
+        // and a group made elsewhere (the CLI, the MCP agent) appears at
+        // the next change. Not awaited: the first list never waits for them
+        // (a few hundred microseconds in the core, but one more round trip).
+        Task { await loadGroups() }
         do {
             let list: FolderList = try await client.call("list_folders")
             folders = list.items
+        } catch { report(error) }
+    }
+
+    /// Reads the contact groups again (`list_groups`). The core gives no
+    /// event for them yet (`groupes.md`, section 6): the app reloads them
+    /// after its own changes and with the folders.
+    func loadGroups() async {
+        guard let client else { return }
+        do {
+            let list: Items<GroupView> = try await client.call("list_groups", [:])
+            if list.items != groups { groups = list.items }
         } catch { report(error) }
     }
 
@@ -1414,6 +1452,32 @@ final class AppModel {
         selectedThreadId = nil
         marked = []
         Task { await reloadThreads() }
+    }
+
+    /// A tag or group renamed (`new`) or deleted (`new == nil`) on its
+    /// screen (`ui.md`, "Écrans Tags et Groupes"): what names it follows.
+    /// The attributes of the list (a tag by its name, a group by its id),
+    /// and the list of its mails (`;T` then Return) shown under the new
+    /// name, or left for the selected folder when it is gone. The list is
+    /// read again by the caller: its rows name the tags.
+    func labelChanged(_ kind: LabelKind, id: Int?, old: String, new: String?) {
+        var a = attributes
+        switch kind {
+        case .tag: a.renameTag(old, to: new)
+        case .group: if let id { a.renameGroup(id, to: new) }
+        }
+        // Swift note: `didSet` of `attributes` reloads the list only when
+        // the value changes, so assigning an unchanged copy costs nothing.
+        attributes = a
+        switch listFilter {
+        case .tag(let t) where kind == .tag && t.name.caseInsensitiveCompare(old) == .orderedSame:
+            listFilter = new.map { .tag(TagView(id: t.id, accountId: t.accountId, name: $0, color: t.color, messageCount: t.messageCount)) }
+        case .group(let g) where kind == .group && g.id == id:
+            listFilter = new.map { name in .group(groups.first { $0.id == g.id } ?? GroupView(
+                id: g.id, name: name, color: g.color, memberCount: g.memberCount, dateModified: g.dateModified, mailCount: g.mailCount)) }
+        default:
+            break
+        }
     }
 
     /// The first list is shown: the launch is over. Its timings go to the

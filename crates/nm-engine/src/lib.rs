@@ -40,6 +40,7 @@ use std::sync::Arc;
 
 use nm_api::{AccountView, ConfigProblem, Event};
 use nm_store::accounts::AccountRow;
+use nm_core::Source;
 use nm_store::{Store, StoreError};
 
 use config::{Config, Problem};
@@ -166,6 +167,16 @@ impl Engine {
             }
         }
         events.extend(self.sync_accounts(store, &keys)?);
+        // The user's addresses cannot be members of a group (`groupes.md`,
+        // "Adresses de l'utilisateur"): one declared now, or put in a group
+        // before the rule, leaves it. Usually nothing to do.
+        let own: Vec<String> = self
+            .config
+            .accounts
+            .values()
+            .flat_map(|a| std::iter::once(a.email.to_lowercase()).chain(a.identities.iter().map(|i| i.email.to_lowercase())))
+            .collect();
+        store.remove_own_from_groups(&own, Source::ConfigSync)?;
         Ok(events)
     }
 
@@ -270,6 +281,7 @@ impl Engine {
                     enabled: !row.disabled,
                     error: self.account_errors.get(&row.id).cloned(),
                     position: row.position,
+                    read_only: account.is_some_and(|a| a.read_only),
                     key: row.config_key,
                     kind: row.kind,
                 }

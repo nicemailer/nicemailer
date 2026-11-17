@@ -477,6 +477,250 @@ struct GeekControllerTests {
         #expect(await eventually { core.calls("set_group_member").count == 1 })
         #expect(core.calls("set_group_member")[0]["group"] as? String == "Amis")
         #expect(core.calls("set_group_member")[0]["thread_id"] as? Int == 1)
+        // The groups are read again: the folder column and the Group…
+        // panel show the new group or member.
+        let before = core.calls("list_groups").count
+        #expect(await eventually { core.calls("list_groups").count > before })
+        #expect(model.flash == L("Added to %@: %@", "Amis", "sender1@example.org"))
+    }
+
+    @Test func aRefusedThreadIsNotReportedAsAlreadyInTheGroup() async {
+        // The core refuses a thread with nobody but the user (`groupes.md`,
+        // "Adresses de l'utilisateur"): no one was added, nor was anyone
+        // already there.
+        core.handler = { method, params in
+            guard method == "set_group_member" else { return Fixture.answer(method, params) }
+            return CoreClient.RPCError(code: -32004, message: "correspondant de la conversation 1")
+        }
+        press("g"); type("Amis"); press("ret")
+        #expect(await eventually { model.flash == L("Nobody to add to %@", "Amis") })
+        #expect(model.lastError != nil)
+    }
+
+    // MARK: Adding and removing tags and groups
+
+    /// A core where thread 1 has the tag Urgent and its person is in VIP,
+    /// thread 2 has neither, and Urgent and Calme exist (Calme in another
+    /// account only).
+    func labelled() async {
+        core.handler = { method, params in
+            switch method {
+            case "list_tags":
+                let tag = { (id: Int, account: Int, name: String) -> [String: Any] in
+                    ["id": id, "account_id": account, "name": name, "color": NSNull(), "message_count": 3]
+                }
+                // Calme only exists in another account than the mails'
+                // (the fixture's folders are all in account 1), and Urgent
+                // in both: one row each.
+                return ["items": [tag(1, 1, "Urgent"), tag(2, 2, "Calme"), tag(3, 2, "urgent")], "as_of": Fixture.position]
+            case "list_threads" where (params["folder_ids"] as? [Int])?.first ?? params["folder_id"] as? Int ?? 1 == 1:
+                let items = (1...8).map { Fixture.thread($0, tags: $0 == 1 ? ["Urgent"] : []) }
+                return ["items": items, "next_cursor": NSNull(), "as_of": Fixture.position]
+            case "get_thread" where params["thread_id"] as? Int == 1:
+                var t = Fixture.threadView(1)
+                t["tags"] = ["Urgent"]
+                t["correspondent_groups"] = ["VIP"]
+                return t
+            case "thread_labels":
+                let ids = params["thread_ids"] as? [Int] ?? []
+                let items: [[String: Any]] = ids.map {
+                    ["thread_id": $0, "tags": $0 == 1 ? ["Urgent"] : [], "correspondent": "sender\($0)@example.org",
+                     "groups": $0 == 1 ? ["VIP"] : []]
+                }
+                return ["items": items, "as_of": Fixture.position]
+            default:
+                return Fixture.answer(method, params)
+            }
+        }
+        await model.reloadThreads()
+        await model.reloadOpenThread()
+        _ = await eventually { model.threads.first?.tags == ["Urgent"] && model.openThread?.labels.groups == ["VIP"] }
+    }
+
+    @Test func theHeaderNamesTheTagsAndTheGroupsOfTheThread() async {
+        await labelled()
+        #expect(model.openThread?.labels.tags == ["Urgent"])
+        #expect(model.openThread?.labels.groups == ["VIP"])
+        #expect(LabelChoices.headerHelp(tags: ["Urgent"], groups: ["VIP"])
+            == L("Tags: %@ (t to change)", "Urgent") + "\n" + L("Groups of the sender: %@ (g to change)", "VIP"))
+    }
+
+    @Test func theTagPickerOffersToRemoveTheTagsOfTheMail() async {
+        await labelled()
+        press("t")
+        _ = await eventually { controller.tags.count == 3 }
+        #expect(controller.pickerEntries(.tag).map(\.label) == [L("remove %@", "Urgent"), "Calme"])
+        #expect(controller.pickerEntries(.tag).map(\.key) == ["−", " "])
+        // A single mail: no count.
+        #expect(controller.pickerEntries(.tag).allSatisfy { $0.detail == nil })
+        press("ret")
+        #expect(await eventually { core.calls("tag_thread").count == 1 })
+        #expect(core.calls("tag_thread")[0]["remove"] as? Bool == true)
+        #expect(core.calls("tag_thread")[0]["thread_ids"] as? [Int] == [1])
+        #expect(model.flash == L("Tag removed: %@", "Urgent"))
+    }
+
+    @Test func aMixedSelectionCanAddOrRemoveTheSameTag() async {
+        await labelled()
+        press("J")
+        #expect(model.marked == [1, 2])
+        press("t")
+        _ = await eventually { controller.tags.count == 3 }
+        let rows = controller.pickerEntries(.tag)
+        #expect(rows.map(\.label) == [L("remove %@", "Urgent"), "Urgent", "Calme"])
+        #expect(rows.map(\.detail) == [L("%lld of %lld", 1, 2), L("%lld of %lld", 1, 2), nil])
+        // Adding Urgent: both threads are sent (the core leaves alone the
+        // one that has it).
+        press("down"); press("ret")
+        #expect(await eventually { core.calls("tag_thread").count == 1 })
+        #expect(core.calls("tag_thread")[0]["remove"] as? Bool == false)
+        #expect(core.calls("tag_thread")[0]["thread_ids"] as? [Int] == [1, 2])
+        // Removing it: only the thread that has it.
+        press("t"); press("ret")
+        #expect(await eventually { core.calls("tag_thread").count == 2 })
+        #expect(core.calls("tag_thread")[1]["remove"] as? Bool == true)
+        #expect(core.calls("tag_thread")[1]["thread_ids"] as? [Int] == [1])
+    }
+
+    @Test func theGroupPickerOffersToRemoveTheSenderFromItsGroups() async {
+        await labelled()
+        // The open thread's header gives its groups at once, before the
+        // core answers `thread_labels`.
+        press("g")
+        #expect(controller.pickerEntries(.group).map(\.label) == [L("remove %@", "VIP"), "Famille"])
+        #expect(await eventually { core.calls("thread_labels").count == 1 })
+        #expect(core.calls("thread_labels")[0]["thread_ids"] as? [Int] == [1])
+        let reads = core.calls("get_thread").count
+        press("ret")
+        #expect(await eventually { core.calls("set_group_member").count == 1 })
+        let call = core.calls("set_group_member")[0]
+        #expect(call["group"] as? String == "VIP" && call["thread_id"] as? Int == 1 && call["remove"] as? Bool == true)
+        #expect(await eventually { model.flash == L("Removed from %@: %@", "VIP", "sender1@example.org") })
+        // No event says a membership changed: the header is read again.
+        #expect(await eventually { core.calls("get_thread").count > reads })
+    }
+
+    @Test func aMixedSelectionCanAddOrRemoveTheSendersOfAGroup() async {
+        await labelled()
+        press("J")
+        press("g")
+        // The groups of every marked thread come from the core.
+        #expect(await eventually { controller.pickerGroupLabels?.count == 2 })
+        #expect(core.calls("thread_labels").last?["thread_ids"] as? [Int] == [1, 2])
+        let rows = controller.pickerEntries(.group)
+        #expect(rows.map(\.label) == [L("remove %@", "VIP"), "VIP", "Famille"])
+        #expect(rows.map(\.detail) == [L("%lld of %lld", 1, 2), L("%lld of %lld", 1, 2), nil])
+        press("down"); press("ret")
+        #expect(await eventually { core.calls("set_group_member").count == 2 })
+        #expect(core.calls("set_group_member").map { $0["remove"] as? Bool } == [false, false])
+        #expect(core.calls("set_group_member").map { $0["thread_id"] as? Int } == [1, 2])
+    }
+
+    // MARK: Tags and Groups screens: rename, delete (`ui.md`, "Écrans Tags et Groupes")
+
+    @Test func theTagsScreenHasOneRowPerName() async {
+        await labelled()
+        press(";"); press("T")
+        #expect(await eventually { controller.tags.count == 3 })
+        // Urgent of both accounts is one row, its mails summed.
+        #expect(controller.screenTags.map(\.name) == ["Urgent", "Calme"])
+        #expect(controller.screenTags.map(\.messageCount) == [6, 3])
+    }
+
+    @Test func rOnTheTagsScreenRenamesTheTag() async {
+        await labelled()
+        model.attributes.toggleTag("urgent")
+        model.showThreads(of: .tag(TagView(id: 1, accountId: 1, name: "Urgent", color: nil, messageCount: 3)))
+        press(";"); press("T")
+        _ = await eventually { controller.tags.count == 3 }
+        press("r")
+        let kind = GeekController.PickerKind.rename(.tag, name: "Urgent", id: nil)
+        #expect(controller.overlay == .picker(kind))
+        // The panel opens on the current name: nothing to do yet.
+        #expect(controller.pickerQuery == "Urgent")
+        #expect(controller.pickerEntries(kind).isEmpty)
+        // The name of another tag (without case): refused, Return does nothing.
+        type("calme")
+        #expect(controller.pickerEntries(kind).map(\.label) == [L("%@ already exists", "calme")])
+        #expect(controller.pickerEntries(kind).first?.disabled == true)
+        press("ret")
+        #expect(core.calls("rename_tag").isEmpty)
+        // A new name.
+        press("r")
+        controller.pickerQuery = "Très urgent "
+        #expect(controller.pickerEntries(kind).map(\.label) == [L("rename %@ to %@", "Urgent", "Très urgent")])
+        let reads = core.calls("list_tags").count
+        press("ret")
+        #expect(controller.overlay == .none)
+        #expect(await eventually { core.calls("rename_tag").count == 1 })
+        let call = core.calls("rename_tag")[0]
+        #expect(call["name"] as? String == "Urgent" && call["new_name"] as? String == "Très urgent")
+        #expect(await eventually { model.flash == L("Tag renamed: %@ → %@", "Urgent", "Très urgent") })
+        // The attribute and the list of the tag follow the new name; the
+        // screen is read again.
+        #expect(await eventually { model.attributes.tags == ["Très urgent"] })
+        if case .tag(let t) = model.listFilter { #expect(t.name == "Très urgent") } else { Issue.record("no tag list") }
+        #expect(await eventually { core.calls("list_tags").count > reads })
+    }
+
+    @Test func dOnTheTagsScreenDeletesTheTagOnceConfirmed() async {
+        await labelled()
+        model.attributes.toggleTag("Urgent", excluded: true)
+        press(";"); press("T")
+        _ = await eventually { controller.tags.count == 3 }
+        press("d")
+        let choice = GeekController.Choice.deleteLabel(.tag, name: "Urgent", id: nil, count: 6)
+        #expect(controller.activeChoice == choice)
+        #expect(controller.choiceTitle(choice) == L("Delete the tag %@ (taken off its %lld mails)?", "Urgent", 6))
+        // Escape keeps it.
+        press("esc")
+        #expect(controller.activeChoice == nil)
+        #expect(core.calls("delete_tag").isEmpty)
+        press("d"); press("y")
+        #expect(await eventually { core.calls("delete_tag").count == 1 })
+        #expect(core.calls("delete_tag")[0]["name"] as? String == "Urgent")
+        #expect(await eventually { model.flash == L("Tag deleted: %@", "Urgent") })
+        #expect(await eventually { model.attributes.notTags.isEmpty })
+        // Still on the screen.
+        #expect(controller.screen == .tags)
+    }
+
+    @Test func theGroupsScreenRenamesAndDeletesAGroup() async {
+        press(";"); press("g")
+        #expect(await eventually { controller.groups.count == 2 })
+        model.attributes.toggleGroup(ThreadFilter.GroupRef(id: 1, name: "VIP"))
+        press("r")
+        let kind = GeekController.PickerKind.rename(.group, name: "VIP", id: 1)
+        #expect(controller.overlay == .picker(kind))
+        type("FAMILLE")
+        #expect(controller.pickerEntries(kind).map(\.label) == [L("%@ already exists", "FAMILLE")])
+        // A change of case is a rename.
+        controller.pickerQuery = "vip"
+        #expect(controller.pickerEntries(kind).map(\.label) == [L("rename %@ to %@", "VIP", "vip")])
+        controller.pickerQuery = "Proches"
+        press("ret")
+        #expect(await eventually { core.calls("rename_group").count == 1 })
+        #expect(core.calls("rename_group")[0]["new_name"] as? String == "Proches")
+        #expect(await eventually { model.attributes.groups == [ThreadFilter.GroupRef(id: 1, name: "Proches")] })
+        #expect(await eventually { model.flash == L("Group renamed: %@ → %@", "VIP", "Proches") })
+
+        press("d")
+        let choice = GeekController.Choice.deleteLabel(.group, name: "VIP", id: 1, count: 2)
+        #expect(controller.activeChoice == choice)
+        #expect(controller.choiceTitle(choice) == L("Delete the group %@ and its %lld members? Their mails stay", "VIP", 2))
+        press("y")
+        #expect(await eventually { core.calls("delete_group").count == 1 })
+        #expect(await eventually { model.attributes.groups.isEmpty })
+        #expect(await eventually { model.flash == L("Group deleted: %@", "VIP") })
+    }
+
+    @Test func nothingToRemoveFromAGroupIsSaid() async {
+        core.handler = { method, params in
+            guard method == "set_group_member" else { return Fixture.answer(method, params) }
+            return ["group_id": 1, "addr": "sender1@example.org", "changed": false]
+        }
+        model.setSendersGroup("VIP", remove: true)
+        #expect(await eventually { model.flash == L("Not in %@", "VIP") })
     }
 
     @Test func theLinkPickerListsTheLinksOfTheMail() {
@@ -1635,7 +1879,7 @@ struct GeekControllerTests {
         #expect(controller.overlay == .picker(.attributes))
         let labels = controller.pickerEntries(.attributes).map(\.label)
         // Compared with the translations: tests run in the machine's language.
-        #expect(Array(labels.prefix(2)) == [L("unread"), L("read")])
+        #expect(Array(labels.prefix(2)) == [ThreadFilter.capitalizedFirst(L("unread")), ThreadFilter.capitalizedFirst(L("read"))])
         #expect(labels.contains(L("From…")) && labels.contains(L("Conversation date…")))
         type(L("unread")); press("ret")
         #expect(model.attributes.seen == false)
@@ -1649,13 +1893,13 @@ struct GeekControllerTests {
         // The opposite value contains the typed word ("unread" / "non lus")
         // and is listed first: ranking puts the exact one under Return.
         press("f"); type(L("read"))
-        #expect(controller.pickerEntries(.attributes).first?.label == L("read"))
+        #expect(controller.pickerEntries(.attributes).first?.label == ThreadFilter.capitalizedFirst(L("read")))
         press("ret")
         #expect(model.attributes.seen == true)
         // Initials reach a negative value.
         let initials = String(PickerMatch.words(PickerMatch.normalize(L("not flagged"))).compactMap(\.first))
         press("f"); type(initials)
-        #expect(controller.pickerEntries(.attributes).first?.label == L("not flagged"))
+        #expect(controller.pickerEntries(.attributes).first?.label == ThreadFilter.capitalizedFirst(L("not flagged")))
         press("ret")
         #expect(model.attributes.flagged == false)
         // A hidden search word reaches To….
@@ -1663,21 +1907,256 @@ struct GeekControllerTests {
         #expect(controller.pickerEntries(.attributes).first?.label == L("To…"))
     }
 
+    @Test func theSelectorListsItsRowsInPairsWithALineBetween() {
+        // `ui.md`, "Sélecteur d'attributs": the order asked for, every row
+        // with a capital, a thin line before each pair but the first.
+        model.attributes.toggle(.seen, false)
+        press("f")
+        let entries = controller.pickerEntries(.attributes)
+        let C = ThreadFilter.capitalizedFirst
+        #expect(entries.map(\.label) == [
+            C(L("unread")), C(L("read")),
+            C(L("flagged")), C(L("not flagged")),
+            L("From…"), L("To…"),
+            L("Subject…"), L("Text…"),
+            L("Conversation date…"), L("Mail date…"),
+            L("Group…"), L("Tag…"),
+            C(L("human")), C(L("robot")),
+            C(L("with attachments")), C(L("without attachments")),
+            C(L("with my reply")), C(L("without my reply")),
+            C(L("conversation")), C(L("single mail")),
+            C(L("clear all attributes")),
+        ])
+        #expect(entries.allSatisfy { $0.label.first.map { String($0) == String($0).uppercased() } ?? false })
+        // A line before rows 2, 4, 6…, and before "clear".
+        #expect(entries.indices.filter { entries[$0].gapBefore } == [2, 4, 6, 8, 10, 12, 14, 16, 18, 20])
+        // Typed: ranked rows, no line.
+        type("a")
+        #expect(controller.pickerEntries(.attributes).allSatisfy { !$0.gapBefore })
+        // Every attribute is in the layout once.
+        let rows = ThreadFilter.selectorLayout.joined()
+        #expect(rows.count == ThreadFilter.Flag.allCases.count * 2 + AttributeField.allCases.count)
+        #expect(Set(rows.map { "\($0)" }).count == rows.count)
+        // The panel is tall enough for the rows and the lines.
+        #expect(PickerPopup.height(.attributes, scale: 1)
+            == PickerPopup.headerHeight + 1 + CGFloat(entries.count) * PickerPopup.rowHeight + 10 * PickerPopup.gapHeight + 4)
+    }
+
+    @Test func withMyReplyIsStillFoundByItsFormerName() {
+        press("f"); type(L("answered replied").split(separator: " ").first.map(String.init) ?? "")
+        #expect(controller.pickerEntries(.attributes).first?.label == ThreadFilter.capitalizedFirst(L("with my reply")))
+        press("ret")
+        #expect(model.attributes.answered == true)
+        // The chip keeps the label as it is.
+        #expect(model.attributes.chips.map(\.label) == [L("with my reply")])
+    }
+
     @Test func humanAndRobotAreReachedInTheSelectorAndSentToTheCore() async {
         press("f")
         let labels = controller.pickerEntries(.attributes).map(\.label)
-        #expect(labels.contains(L("human")) && labels.contains(L("robot")))
+        #expect(labels.contains(ThreadFilter.capitalizedFirst(L("human"))) && labels.contains(ThreadFilter.capitalizedFirst(L("robot"))))
         type(L("human")); press("ret")
         #expect(model.attributes.human == true)
         #expect(await eventually { (core.calls("list_threads").last?["filter"] as? [String: Any])?["human"] as? Bool == true })
         // A hidden word reaches it too: "person" (French "personne").
         press("f"); type(L("person people").split(separator: " ").first.map(String.init) ?? "")
-        #expect(controller.pickerEntries(.attributes).first?.label == L("human"))
+        #expect(controller.pickerEntries(.attributes).first?.label == ThreadFilter.capitalizedFirst(L("human")))
         press("esc")
         // The opposite replaces it.
         press("f"); type(L("robot")); press("ret")
         #expect(model.attributes.human == false)
         #expect(await eventually { (core.calls("list_threads").last?["filter"] as? [String: Any])?["human"] as? Bool == false })
+    }
+
+    // MARK: Tag… attribute
+
+    /// Tag… (`ui.md`, "Sélecteur d'attributs"): one row per tag name, every
+    /// account, most used first; Return chooses one and the panel stays
+    /// open; `-` excludes; the core gets their names.
+    @Test func theTagPanelOffersTheTagsAndTakesSeveral() async {
+        await labelled()
+        press("f"); type(L("Tag…"))
+        #expect(controller.pickerEntries(.attributes).first?.label == L("Tag…"))
+        press("ret")
+        #expect(controller.overlay == .picker(.attributeValue(.tag)))
+        #expect(controller.pickerHint(.attributeValue(.tag)) != nil)
+        // Urgent in two accounts (3 + 3 mails) is one row, before Calme.
+        #expect(await eventually {
+            controller.pickerEntries(.attributeValue(.tag)).map(\.label) == ["Urgent", "Calme", L("without tag")]
+        })
+        #expect(controller.pickerEntries(.attributeValue(.tag)).map(\.detail) == [L("%lld mails", 6), L("%lld mails", 3), nil])
+        press("ret")
+        #expect(model.attributes.tags == ["Urgent"])
+        #expect(controller.overlay == .picker(.attributeValue(.tag)))
+        #expect(controller.pickerEntries(.attributeValue(.tag)).map(\.key) == ["•", " ", " "])
+        type("-cal")
+        #expect(controller.pickerEntries(.attributeValue(.tag)).map(\.label) == [L("not %@", "Calme")])
+        press("ret")
+        #expect(model.attributes.notTags == ["Calme"])
+        #expect(await eventually {
+            let f = core.calls("list_threads").last?["filter"] as? [String: Any]
+            return f?["tags"] as? [String] == ["Urgent"] && f?["not_tags"] as? [String] == ["Calme"]
+        })
+        #expect(model.attributes.chips.map(\.label) == [L("tag: %@", "Urgent"), L("not tag: %@", "Calme")])
+        press("esc")
+        press("f")
+        #expect(controller.pickerEntries(.attributes).first { $0.label == L("Tag…") }?.key == "•")
+    }
+
+    /// "without tag" and "without group" (`ui.md`, "Sélecteur
+    /// d'attributs"): last row of their panel, first once chosen; a
+    /// wanted tag or group and they replace each other.
+    @Test func withoutTagAndWithoutGroupAreRowsOfTheirPanels() async {
+        await labelled()
+        press("f"); type(L("Tag…")); press("ret")
+        _ = await eventually { controller.pickerEntries(.attributeValue(.tag)).count == 3 }
+        press("up"); press("ret")
+        #expect(model.attributes.noTag)
+        #expect(controller.overlay == .picker(.attributeValue(.tag)))
+        #expect(controller.pickerEntries(.attributeValue(.tag)).first.map { [$0.key, $0.label] } == ["•", L("without tag")])
+        #expect(controller.pickerEntries(.attributeValue(.tag))[controller.pickerIndex].label == L("without tag"))
+        #expect(await eventually {
+            (core.calls("list_threads").last?["filter"] as? [String: Any])?["no_tag"] as? Bool == true
+        })
+        #expect(model.attributes.chips.map(\.label) == [L("without tag")])
+        // A wanted tag replaces it; "-" hides it (an exclusion already).
+        type("urg"); press("ret")
+        #expect(!model.attributes.noTag && model.attributes.tags == ["Urgent"])
+        type("-")
+        #expect(!controller.pickerEntries(.attributeValue(.tag)).contains { $0.label == L("without tag") })
+        press("esc")
+        // Typed, in either language: "none" finds it.
+        press("f"); type(L("Group…")); press("ret")
+        _ = await eventually { controller.pickerEntries(.attributeValue(.group)).count == 3 }
+        type(L("none no").components(separatedBy: " ")[0])
+        #expect(controller.pickerEntries(.attributeValue(.group)).first?.label == L("without group"))
+        press("ret")
+        #expect(model.attributes.noGroup)
+        #expect(await eventually {
+            (core.calls("list_threads").last?["filter"] as? [String: Any])?["no_group"] as? Bool == true
+        })
+        // Escape twice: the panel, then every attribute.
+        press("esc"); press("esc")
+        #expect(model.attributes.isEmpty)
+    }
+
+    @Test func withoutTagTheTagPanelSaysHowToMakeOne() async {
+        press("f"); type(L("Tag…")); press("ret")
+        #expect(controller.pickerEntries(.attributeValue(.tag)).map(\.disabled) == [true])
+    }
+
+    /// The selector is as tall as all its rows (`PickerPopup.height`),
+    /// "clear" included, unless the window is shorter.
+    @Test func theAttributeSelectorShowsEveryRow() {
+        model.attributes.toggleTag("Urgent")
+        press("f")
+        let rows = controller.pickerEntries(.attributes).count
+        #expect(rows == GeekController.attributeRowCount)
+        let height = PickerPopup.height(.attributes, scale: 1)
+        #expect(height >= PickerPopup.headerHeight + 1 + CGFloat(rows) * PickerPopup.rowHeight)
+        // Larger text, taller panel; a short window caps it.
+        #expect(PickerPopup.height(.attributes, scale: 1.5) == height * 1.5)
+        #expect(PickerPopup.height(.attributes, scale: 1, available: 300) == 268)
+    }
+
+    // MARK: Groups
+
+    /// Group… (`ui.md`, "Sélecteur d'attributs"): the existing groups, most
+    /// relevant first; Return chooses one and the panel stays open for
+    /// another; `-` excludes; the core gets their ids.
+    @Test func theGroupPanelOffersTheGroupsAndTakesSeveral() async {
+        press("f"); type(L("Group…"))
+        #expect(controller.pickerEntries(.attributes).first?.label == L("Group…"))
+        press("ret")
+        #expect(controller.overlay == .picker(.attributeValue(.group)))
+        #expect(controller.pickerHint(.attributeValue(.group)) != nil)
+        #expect(await eventually { controller.pickerEntries(.attributeValue(.group)).count == 3 })
+        // VIP changed last, Famille receives the most mail: one each; then
+        // "without group".
+        #expect(controller.pickerEntries(.attributeValue(.group)).map(\.label) == ["VIP", "Famille", L("without group")])
+        #expect(controller.pickerEntries(.attributeValue(.group))[1].detail == L("%lld members", 3))
+        press("ret")
+        #expect(model.attributes.groups.map(\.name) == ["VIP"])
+        // Still open, the chosen group marked and under the cursor.
+        #expect(controller.overlay == .picker(.attributeValue(.group)))
+        #expect(controller.pickerEntries(.attributeValue(.group)).map(\.key) == ["•", " ", " "])
+        #expect(controller.pickerIndex == 0)
+        // Typing narrows the rows; a second group is OR-ed.
+        type("fam")
+        #expect(controller.pickerEntries(.attributeValue(.group)).map(\.label) == ["Famille"])
+        press("ret")
+        #expect(model.attributes.groups.map(\.id) == [1, 2])
+        #expect(controller.pickerQuery.isEmpty)
+        #expect(await eventually {
+            (core.calls("list_threads").last?["filter"] as? [String: Any])?["group_ids"] as? [Int] == [1, 2]
+        })
+        // The current folder stays: the list is narrowed, not replaced.
+        #expect((core.calls("list_threads").last?["folder_ids"] as? [Int]) == [1])
+        // "-" turns the rows into exclusions; excluding VIP removes it from
+        // the wanted groups.
+        type("-vip")
+        #expect(controller.pickerEntries(.attributeValue(.group)).map(\.label) == [L("not %@", "VIP")])
+        press("ret")
+        #expect(model.attributes.groups.map(\.id) == [2] && model.attributes.notGroups.map(\.id) == [1])
+        #expect(model.attributes.chips.map(\.label) == [L("group: %@", "Famille"), L("not group: %@", "VIP")])
+        #expect(await eventually {
+            (core.calls("list_threads").last?["filter"] as? [String: Any])?["not_group_ids"] as? [Int] == [1]
+        })
+        // Return on a chosen group removes it.
+        let famille = controller.pickerEntries(.attributeValue(.group)).firstIndex { $0.keywords == ["Famille"] } ?? -1
+        controller.pickerIndex = famille
+        press("ret")
+        #expect(model.attributes.groups.isEmpty)
+        press("esc")
+        #expect(controller.overlay == .none)
+        // Chosen again in the selector, Group… is marked active.
+        press("f")
+        #expect(controller.pickerEntries(.attributes).first { $0.label == L("Group…") }?.key == "•")
+    }
+
+    @Test func theGroupPanelSaysWhenThereIsNoGroup() async {
+        core.handler = { method, params in
+            method == "list_groups" ? ["items": [], "as_of": Fixture.position] : Fixture.answer(method, params)
+        }
+        await model.loadGroups()
+        controller.openGroupPanel()
+        let rows = controller.pickerEntries(.attributeValue(.group))
+        #expect(rows.count == 1 && rows[0].disabled)
+        press("ret")
+        #expect(model.attributes.isEmpty)
+        #expect(controller.columnGroups.rows.isEmpty)
+    }
+
+    /// The folder column (`ui.md`, "Groupes dans la colonne des dossiers"):
+    /// a click narrows the current list, a second one removes the group,
+    /// ⌘-click excludes it, Escape clears it as any attribute.
+    @Test func aClickOnAGroupOfTheColumnNarrowsTheCurrentList() async {
+        #expect(await eventually { model.groups.count == 2 })
+        #expect(controller.columnGroups.rows.map(\.name) == ["VIP", "Famille"] && controller.columnGroups.hidden == 0)
+        let vip = model.groups[0], famille = model.groups[1]
+        #expect(!controller.isHighlighted(vip) && !controller.isHighlighted(famille))
+        controller.clickGroup(vip, .none)
+        // Highlighted like the current folder, which stays highlighted.
+        #expect(controller.isHighlighted(vip) && !controller.isHighlighted(famille))
+        controller.clickGroup(famille, .none)
+        #expect(model.attributes.groups.map(\.id) == [1, 2])
+        #expect(model.selectedFolderId == 1)
+        #expect(await eventually {
+            (core.calls("list_threads").last?["filter"] as? [String: Any])?["group_ids"] as? [Int] == [1, 2]
+        })
+        controller.clickGroup(vip, .none)
+        #expect(model.attributes.groups.map(\.id) == [2])
+        #expect(!controller.isHighlighted(vip))
+        controller.clickGroup(vip, .command)
+        #expect(model.attributes.notGroups.map(\.id) == [1])
+        // An excluded group filters the list too: highlighted as well.
+        #expect(controller.isHighlighted(vip))
+        // Another folder keeps them, as every attribute.
+        controller.goToFolder(3)
+        #expect(model.attributes.groupChoice(2) == true && model.attributes.groupChoice(1) == false)
+        press("esc")
+        #expect(model.attributes.isEmpty)
+        #expect(!controller.isHighlighted(vip) && !controller.isHighlighted(famille))
     }
 
     @Test func attributesWithAValueExpandThePanel() async {

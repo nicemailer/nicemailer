@@ -49,7 +49,7 @@ A dedicated command prints readable output, asks for confirmation when needed an
 | --- | --- | --- |
 | `list_folders` | Every folder of every account, with its role and counts. | `nicemailer folders` prints account, folder, total and unread. |
 | `list_threads` | A page of threads (`ThreadSummary`) of a folder, of several folders (unified view) or of "Everything", with filters, sort and an opaque cursor. | — |
-| `get_thread` | A whole thread, ready to display (`ThreadView`, `MessageView`). | — |
+| `get_thread` | A whole thread, ready to display (`ThreadView`, `MessageView`), with its tags, the person it is with and that person's groups. | — |
 | `search` | Full-text search from plain text typed by the user. | — |
 | `locate_message` | The thread and folder of a message, from its id: what opens a `nicemailer://m/<id>` link (`deep-links.md`). | — |
 | `message_text` | The text of one message, one line per paragraph, for the clipboard. | — |
@@ -69,6 +69,8 @@ A dedicated command prints readable output, asks for confirmation when needed an
 | `set_thread_flagged` | Flags or unflags one or several threads. | — |
 | `tag_thread` | Adds or removes a tag on every message of one or several threads. Creates the tag if needed. | — |
 | `list_tags` | The tags of an account, or of every account, with their message counts. | — |
+| `rename_tag` | Renames a tag in every account that has it. Only the displayed name changes, the IMAP keyword stays. Refuses a name another tag of the account has. | — |
+| `delete_tag` | Deletes a tag in every account that has it, except read-only ones: removes it from every message (server included, through the spool), then keeps the tag as a tombstone. | — |
 | `unsubscribe` | Unsubscribes from a mailing list: in one click when the core can, otherwise returns the page or `mailto:` to open. | — |
 | `list_history` | The audit log, newest first, paginated (`specifications/tracabilite.md`); `since` (Unix time) and `sources` (`["mcp"]`: what AI agents did) filter it. | — |
 | `undo` | Undoes a move or a decision, from the token it returned. | `nicemailer undo <token>` |
@@ -80,8 +82,11 @@ A dedicated command prints readable output, asks for confirmation when needed an
 | `set_address_screening` | Takes, changes or removes the screening decision on an address, and files the mails already received from it. | `nicemailer address <addr> <inbox\|newsletter\|paperwork\|banned\|none>`. Prints the undo token. |
 | `set_domain_screening` | The same for a domain and its subdomains, for the addresses that have no decision of their own. | `nicemailer domain <domain> <target>` |
 | `set_sender_kind` | Forces an address to be a person or a robot, or hands it back to the computed verdict (`senders.md`). | — |
-| `list_groups` | The contact groups. | — |
-| `set_group_member` | Adds or removes an address, or the sender of a thread, in a group. Creates the group if needed. | — |
+| `list_groups` | The contact groups, with their member count, latest change and mails received from their members. | — |
+| `rename_group` | Renames a contact group; its members stay. Refuses the name of another group. | — |
+| `delete_group` | Deletes a contact group (a tombstone); no mail changes. Returns how many members it had. | — |
+| `set_group_member` | Adds or removes an address, or the person a thread is with, in a group. Creates the group if needed. Refuses the user's own addresses. | — |
+| `thread_labels` | For up to 1,000 threads: their tags, the person each is with and that person's groups, so that a client can offer to remove them from a selection. | — |
 | `list_contacts` | The known addresses, with their decision and groups. | — |
 
 ## Import
@@ -95,14 +100,16 @@ A dedicated command prints readable output, asks for confirmation when needed an
 
 | Method | What it does | CLI |
 | --- | --- | --- |
-| `list_accounts` | Every account (IMAP and archive) with its state, in display order. | `nicemailer accounts` |
+| `list_accounts` | Every account (IMAP and archive) with its state, in display order, and whether it is only looked at (`read_only`). | `nicemailer accounts` |
 | `config_status` | The state of `config.toml` and `accounts.toml`: paths, the error that makes the core refuse them, warnings, and the settings the clients apply themselves (`ui`, `mcp`). | — (`nicemailer config check` checks the files itself, without the core.) |
 | `discover_account` | Finds the servers of an address before the account exists: provider, IMAP server, SMTP servers to try. | Step 1 of `nicemailer account add`. |
-| `test_account` | Tries the IMAP server of an account not created yet: capabilities, folders with proposed roles, counts for the import. | Step 2 of `account add`. |
+| `test_account` | Tries the IMAP server of an account not created yet: capabilities, folders with proposed roles, the folder each role will get and whether it exists (`roles`), counts for the import. A failure says in `data.reason` whether the password (`auth`) or the server (`connect`) is at fault. | Step 2 of `account add`. |
 | `count_archive` | Exact count of the mails the initial archiving would move. | Step 3 of `account add` (`--archive-read-before`, `--archive-unread-before`, `--no-archive`). |
-| `test_smtp` | Tries SMTP servers in order, until one accepts the login. | Step 4 of `account add` (skipped with `--no-smtp`). |
-| `add_account` | Creates an IMAP account: folders, roles, initial import, password, `accounts.toml`. | Last step of `nicemailer account add [key] --email <addr> [--host …] [--role ROLE=FOLDER] [--read-only] [--yes]` (`accounts.md`) |
+| `test_smtp` | Tries SMTP servers in order, until one accepts the login; names the one that refused the password (`refused`) when none did. With `smtp_password`, tries that password instead of the IMAP one, on any server. | Step 4 of `account add` (skipped with `--no-smtp`). |
+| `add_account` | Creates an IMAP account: folders, roles, initial import, password (and the SMTP server's own, `smtp_password`), `accounts.toml`. | Last step of `nicemailer account add [key] --email <addr> [--host …] [--role ROLE=FOLDER] [--read-only] [--yes]` (`accounts.md`) |
 | `set_folder_roles` | Changes the workflow role of folders of an account. | `nicemailer account roles <key> todo=Todo archive=Archives [--create-missing]` |
+| `prepare_activation` | What organizing an account only looked at (`read_only`) would do: the report of `test_account`, with the password of the Keychain; nothing written. | First step of `nicemailer account activate <key>` (`accounts.md`, "Looking first") |
+| `activate_account` | Organizes an account only looked at, as if created then: folders, roles, the screening boundary set again, correspondents, archiving, then `read_only` removed from `accounts.toml`. | Last step of `nicemailer account activate <key> [--role ROLE=FOLDER] [--no-archive] [--no-correspondents] [--yes]` |
 | `rename_account` | Renames the key of an account, keeping its data. | `nicemailer account rename <from> <to>` |
 | `remove_account` | Deletes an account, its data in NiceMailer and its password. The mail on the server is not touched. | `nicemailer account remove <key> [--yes]` |
 | `set_account_order` | Changes the display order of the accounts. | `nicemailer account order <key>…`: the keys named come first. |

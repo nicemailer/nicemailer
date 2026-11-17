@@ -19,6 +19,7 @@ The synchronization itself cannot change anything on the server, even by mistake
 - **Commands refused.** Moving a thread, marking it read or flagged, tagging it: error `1010` (`READ_ONLY`), since the next synchronization would undo a local change. A decision on a sender is recorded, but files none of this account's mail.
 - **Screening dry.** A new mail of the Inbox is screened as usual, and its `screen` row in `audit_log` says where it would go, with `"dry_run": true`; it stays in the Inbox, unmarked. A mail found in Sent has no effect. `audit_log` thus shows what NiceMailer would have done.
 - **Creation.** `add_account` with `read_only` creates no folder (the roles without a folder stay unassigned) and refuses any archiving.
+- **Made writable.** `activate_account` (or `nicemailer account activate`) runs the creation's steps then, and removes `read_only` from the file: the worker restarts writable ([accounts.md](accounts.md), "Looking first"). Editing the file by hand instead skips those steps: no folder is created, no old mail archived.
 
 Tested against Dovecot by taking a snapshot of the server (folders, UIDs, flags) before NiceMailer works on the account, and comparing after (`crates/nm-daemon/tests/setup_rpc.rs`, `a_read_only_account_changes_nothing_on_its_server`), and by a scripted server that would fail on any writing command (`crates/nm-proto/tests/imap_script.rs`).
 
