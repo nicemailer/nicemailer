@@ -3,6 +3,7 @@ name = "nm-engine"
 description = "Mail engine of the core: configuration, accounts, secrets, IMAP probe, and (later) the synchronization"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 publish.workspace = true
 
 [dependencies]

@@ -134,6 +134,8 @@ PLIST
 plutil -lint "$APP/Contents/Library/LaunchAgents/eu.nicemailer.core.plist" >/dev/null
 # Fonts and translations (AppResources.bundle looks here first).
 cp -R "$BIN_DIR/NiceMailer_NiceMailer.bundle" "$APP/Contents/Resources/"
+# The AGPL asks that whoever receives the program also receives its licence.
+cp "$ROOT/LICENSE" "$APP/Contents/Resources/LICENSE"
 # The icon (design/icon/README.md; scripts/make-icon.sh makes it).
 cp "$ROOT/design/icon/app/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 

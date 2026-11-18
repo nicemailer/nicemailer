@@ -16,6 +16,7 @@ First public and open source release. 18 languages. Auto update. Configurable ke
 
 ### Added
 
+- **License:** NiceMailer is free software, under the GNU Affero General Public License, version 3.
 - **Languages:** 16 new languages, following the language of macOS or the one chosen for the app: German, Spanish, Italian, Portuguese (Brazil), Dutch, Swedish, Danish, Norwegian, Finnish, Polish, Russian, Ukrainian, Japanese, Simplified and Traditional Chinese, and Korean. These translations have not yet been reviewed by native speakers.
 - **Updates:** NiceMailer updates itself and its background core. It checks once a day, or on demand with NiceMailer > Check for Updates….
 - **Updates:** During an update or a mailbox upgrade, the app, the `nicemailer` command and AI agents say so and wait, instead of reporting that NiceMailer is not running. `nicemailer --wait` waits for the end; without it, the command exits with status 75.

@@ -3,6 +3,7 @@ name = "nm-ai"
 description = "AI assistance: providers, prompts, inputs and outputs (specifications/ia.md)"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 publish.workspace = true
 
 [dependencies]

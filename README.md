@@ -75,3 +75,11 @@ The protocol is JSON-RPC 2.0, one JSON object per line. A client starts with `he
 
 - **iA Writer Mono V**, the font of the geek theme (SIL Open Font License), in `apps/NiceMailer/Sources/NiceMailer/Resources/Fonts`.
 - **Dark Reader** 4.9.134 (MIT License), which adapts mails made for a white page to the dark theme, in `apps/NiceMailer/Sources/NiceMailer/Resources/DarkReader` with its licence (`docs/thread-display.md`, "HTML of the sender").
+
+## License
+
+Copyright (C) 2026 the NiceMailer autor.
+
+NiceMailer is free software: you can redistribute it and/or modify it under the terms of the GNU Affero General Public License, version 3, as published by the Free Software Foundation. It is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See [LICENSE](LICENSE) for the full text.
+
+The third-party code listed above keeps its own licence.

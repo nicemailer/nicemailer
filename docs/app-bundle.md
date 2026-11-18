@@ -5,6 +5,7 @@
 ```
 NiceMailer.app/Contents/
 ├── Resources/AppIcon.icns                        the icon (design/icon/README.md)
+├── Resources/LICENSE                             the licence, AGPL-3.0
 ├── MacOS/NiceMailer                              the app
 ├── Helpers/nicemailer-core                       the core
 ├── Helpers/nicemailer                            the CLI

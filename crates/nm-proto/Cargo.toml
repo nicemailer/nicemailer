@@ -3,6 +3,7 @@ name = "nm-proto"
 description = "Network adapters: IMAP and SMTP clients, one-click unsubscribe (RFC 8058)"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 publish.workspace = true
 
 [dependencies]

@@ -2,7 +2,7 @@
   "name": "nicemailer-editor",
   "private": true,
   "description": "The editor of a mail's text (specifications/edition.md): Tiptap, bundled into one script for the app and any other host.",
-  "license": "UNLICENSED",
+  "license": "AGPL-3.0-only",
   "type": "module",
   "engines": {
     "node": ">=22"
