@@ -34,6 +34,7 @@ How to write it:
 
 ### Fixed
 
+- The quoted history at the end of a reply is folded in many more languages: German as Gmail and Apple Mail write it, Portuguese, Dutch, Swedish, Danish, Norwegian, Polish, Russian, Chinese and Japanese, and the Outlook headers and forwards of those languages.
 - Dates follow the language of the interface and the Mac's region settings, in the app and in the line introducing a quotation of a reply: an English interface no longer shows French month names, and the 12- or 24-hour clock chosen in System Settings is respected.
 - Counts read correctly in English and French: "1 mail", "1 attachment saved", and in French "0 mail" (no more "1 mails" or "(and 1 others)").
 - The classic theme and the connection errors are translated: they were shown in French whatever the language.

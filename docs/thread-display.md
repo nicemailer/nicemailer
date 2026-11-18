@@ -21,7 +21,7 @@ Shared rules, kept here: only the **final** quote is trimmed (interleaved quotes
 | --- | --- | --- |
 | `text` | What the sender wrote | shown |
 | `quote` | Quoted lines interleaved with answers | shown dimmed, one bar per quote level |
-| `quote_tail` | The quoted history at the end, with its attribution ("On … wrote:", "Le … a écrit :", German, Spanish, Italian forms, possibly over two lines) or its Outlook header block ("From: … Sent: … To: …", "De : … Envoyé : … À : …", after `________` or `-----Original Message-----`) | hidden: "··· N quoted lines", or "··· N quoted lines, not in this conversation" when its content is in no earlier message |
+| `quote_tail` | The quoted history at the end, with its attribution ("On … wrote:", "Le … a écrit :", and the forms of Apple Mail, Gmail, Outlook and Thunderbird in German, Spanish, Italian, Portuguese, Dutch, Swedish, Danish, Norwegian, Polish, Russian and Chinese, possibly over two lines; without any word, as Gmail writes it in Japanese or Russian, a line ending with a colon that holds an address and a figure) or its Outlook header block ("From: … Sent: … To: …", "De : … Envoyé : … À : …", "Von: … Gesendet: … An: …", the Italian, Spanish, Portuguese, Dutch and Swedish ones, after `________` or `-----Original Message-----` in those languages) | hidden: "··· N quoted lines", or "··· N quoted lines, not in this conversation" when its content is in no earlier message |
 | `signature` | After the `-- ` delimiter, or closing lines a sender repeats in several messages (at least two lines) | hidden: "··· signature" |
 | `boilerplate` | "Sent from my iPhone", "Envoyé de mon iPhone", "Get Outlook for…", confidentiality notices | hidden |
 | `forward` | A forwarded message ("Forwarded message", "Message transféré", "Début du message réexpédié") | shown, never treated as history |
@@ -85,7 +85,7 @@ Bodies stored by an older parser are rewritten by the background reindex: the HT
 ## Limits
 
 - Messages are not deleted, unlike Outlook's cleanup: redundant content is only hidden.
-- An attribution written in another language, or a client with an unusual header block, leaves the history visible (as text or quote).
+- An attribution in a language or a form not in `WORDINGS` (`crates/nm-store/src/clean.rs`), without an address, or a client with an unusual header block, leaves the history visible (as text or quote). A sentence of the user's ending with a colon above a quote is not taken for an attribution unless it holds an address.
 - The HTML view hides quotes only for the markers above, and has no per-part "···" lines: `T` shows everything.
 
 ## Tests

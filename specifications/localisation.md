@@ -80,9 +80,11 @@ Restent en anglais, cités comme des détails techniques dans une phrase de l'ap
 
 ### 3.3 Les citations dans toutes les langues
 
-`nm-core/src/segments.rs` reconnaît une ligne de citation en anglais et en français (« wrote: », « a écrit : »). Un mail allemand (« schrieb »), espagnol (« escribió »), italien (« ha scritto »), néerlandais (« schreef ») ou japonais n'a pas ses citations repliées, sans que rien ne le signale.
+**Livré.** Le constat de ce plan se trompait d'endroit : `nm-core/src/segments.rs` (le texte de l'utilisateur dans un brouillon) reconnaît la ligne qui introduit une citation à sa forme, en toute langue. La détection qui dépendait de la langue est celle des mails reçus, `nm-store/src/clean.rs` (l'historique replié de l'affichage simplifié, `docs/thread-display.md`). Elle connaissait l'anglais, le français, l'espagnol, l'italien, et l'allemand de Thunderbird seulement (« schrieb: » en fin de ligne, quand Gmail et Apple Mail écrivent « schrieb Alice <a@x>: »).
 
-Plan : une table de formes par langue, alimentée par les formats réels des clients courants (Apple Mail, Gmail, Outlook, Thunderbird), un test par forme, et une mesure sur un échantillon de mails pour voir ce qui n'est pas reconnu. Ce chantier ne dépend pas de la langue de l'interface : il sert tous les utilisateurs qui reçoivent des mails d'autres langues.
+Elle a maintenant une table de formulations (`WORDINGS`) : anglais, français, allemand, espagnol, italien, portugais, néerlandais (deux formes), suédois, danois, norvégien, polonais (deux formes), russe, chinois ; et, pour les clients qui n'écrivent aucun mot (Gmail en japonais ou en russe : « 2026年11月3日(火) 10:52 Alice <a@x>: »), une règle de forme : une ligne finie par deux-points, qui contient une adresse et un chiffre. Cette règle ne s'applique qu'à la ligne juste au-dessus de l'historique cité final, et une phrase de l'utilisateur finie par deux-points n'est prise que si elle contient une adresse. Les en-têtes à la Outlook, les séparateurs « message d'origine », les marques de transfert et les mentions (« Von meinem iPhone gesendet ») suivent les mêmes langues. Un test par forme ; le découpage se fait à la lecture, les mails déjà reçus en profitent sans réanalyse.
+
+Pas fait : la mesure sur un échantillon de vrais mails, faute d'échantillon. Les formes de la table viennent des formats connus des clients courants ; une forme oubliée laisse l'historique visible, sans rien casser.
 
 ### 3.4 Ce que l'utilisateur tape
 
