@@ -8,8 +8,10 @@ The Swift app follows the user's languages (System Settings, or the per-app lang
 
 | Name | What it is | Used for |
 | --- | --- | --- |
-| `appLanguage`, `appLocale` | The language the app shows (`fr`), the best match between the user's languages and the bundled translations | The texts NiceMailer writes **into a mail** (the line introducing a quotation, the header of a forwarded mail), the language asked of the AI |
-| `uiLocale` | The app's language for the words, the Mac's settings for the rest: region (order of day and month), 12- or 24-hour clock | Every date, time and number the **interface** shows, and the choice of plural forms |
+| `appLanguage`, `appLocale` | The language the app shows (`fr`), the best match between the user's languages and the bundled translations | The bundle of translations, and the language asked of the AI for its answers |
+| `uiLocale` | The app's language for the words, the Mac's settings for the rest: region (order of day and month), 12- or 24-hour clock | Every date, time and number the app writes: in the **interface**, and **in a mail** (the line introducing a quotation, the header of a forwarded mail); the choice of plural forms |
+
+The words NiceMailer writes into a mail follow the app's language, not the language of the mail answered (`specifications/localisation.md`, section 3.2): simple and predictable, at the cost of a French line above an English reply written from a French interface.
 
 So an English interface on a Mac set to France writes "28/09/21", "23:13" and "28 Sep 2021"; a French interface on a Mac set to the United States writes "28 sept. 2021" and "11:13 PM". The order of day and month comes from the language's data for that region (`en` in France: day first; `fr` anywhere: day first), as in Apple's own apps.
 

@@ -102,13 +102,13 @@ let appLanguage: String = {
     return Bundle.preferredLocalizations(from: available, forPreferences: Locale.preferredLanguages).first ?? "en"
 }()
 
-/// The locale of the language the app shows, alone, for the texts it
-/// writes into a mail in that language: the line introducing a quotation
-/// ("Le 7 nov. 2026 à 10:12, Alice a écrit :") must have its date in the
-/// same language as its words.
+/// The locale of the language the app shows, alone, without the Mac's
+/// region: the language asked of the AI for its answers (`AI.language`).
+/// Everything the app writes, interface and mail, uses `uiLocale`.
 let appLocale = Locale(identifier: appLanguage)
 
-/// The locale of the dates and numbers the interface shows (`docs/localization.md`).
+/// The locale of the dates and numbers the app writes, in its interface
+/// and in the mails (the line introducing a quotation; `docs/localization.md`).
 /// The words come from the app's language (month and day names), the rest
 /// from the Mac's settings: the order of day and month, the 12- or 24-hour
 /// clock. An English interface on a Mac set to France writes "14/11/2023"

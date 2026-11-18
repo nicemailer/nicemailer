@@ -34,7 +34,7 @@ How to write it:
 
 ### Fixed
 
-- Dates follow the language of the interface and the Mac's region settings: an English interface no longer shows French month names, and the 12- or 24-hour clock chosen in System Settings is respected.
+- Dates follow the language of the interface and the Mac's region settings, in the app and in the line introducing a quotation of a reply: an English interface no longer shows French month names, and the 12- or 24-hour clock chosen in System Settings is respected.
 - Counts read correctly in English and French: "1 mail", "1 attachment saved", and in French "0 mail" (no more "1 mails" or "(and 1 others)").
 - The classic theme and the connection errors are translated: they were shown in French whatever the language.
 - Errors reported by NiceMailer (a tag name taken, a password refused, a mail not sent, a change the server refused, an AI that failed, an account that cannot connect…) are written in the app's language; the words of a mail server or of the AI are quoted as they came.

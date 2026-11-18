@@ -76,9 +76,7 @@ Restent en anglais, cités comme des détails techniques dans une phrase de l'ap
 
 ### 3.2 Le texte écrit dans les mails
 
-Aujourd'hui la ligne qui introduit une citation (« Le 7 nov. 2026 à 10:12, Alice a écrit : ») et l'en-tête d'un transfert suivent la langue de l'app (`appLocale`). Une réponse en anglais écrite depuis une interface française reçoit donc une ligne en français.
-
-À trancher (`reponse.md`) : langue de l'interface, langue du mail auquel on répond (détectée, ou celle de la conversation), ou réglage par compte. Même question pour le PDF de preuve (`MailPDF`), aujourd'hui dans la langue de l'interface. Les préfixes de sujet `Re:` et `Fwd:` restent anglais : c'est l'usage de la RFC 5322, et les clients les reconnaissent dans toutes les langues.
+**Décidé et livré.** La ligne qui introduit une citation (« Le 7 nov. 2026 à 10:12, Alice a écrit : ») et l'en-tête d'un transfert gardent la langue de l'app : simple et prévisible, au prix d'une ligne française au-dessus d'une réponse anglaise écrite depuis une interface française. Leur date suit `uiLocale`, comme l'interface : la région et l'horloge du Mac (une interface anglaise sur un Mac réglé en France écrit « 7 Nov 2026 at 21:13 », plus « Nov 7, 2026 at 9:13 PM »). Le PDF de preuve (`MailPDF`) suivait déjà `uiLocale`. Écartés : la langue détectée du mail répondu (une détection se trompe sur un mail court) et un réglage par compte (un réglage de plus). Les préfixes de sujet `Re:` et `Fwd:` restent anglais : c'est l'usage de la RFC 5322, et les clients les reconnaissent dans toutes les langues.
 
 ### 3.3 Les citations dans toutes les langues
 

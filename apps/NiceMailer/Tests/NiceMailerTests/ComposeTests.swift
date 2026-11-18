@@ -45,6 +45,14 @@ struct ComposeRulesTests {
         let bare = Compose.quoteHeader(try message(1, name: nil), locale: Locale(identifier: "en_US"), timeZone: utc)
         #expect(bare.contains(" alice@x.fr "), "\(bare)")
         #expect(!bare.contains("<"))
+        // English words, the order and the clock of a Mac set to France
+        // (`localisation.md`, section 3.2).
+        let enFR = interfaceLocale(language: "en", settings: Locale(identifier: "fr_FR"))
+        let evening = try message(1, date: 1_794_085_980)
+        let h = Compose.quoteHeader(evening, locale: enFR, timeZone: utc)
+        #expect(h.contains("7 Nov 2026") && h.contains("21:13") && !h.contains("PM"), "\(h)")
+        let f = Compose.forwardHeader(evening, locale: enFR, timeZone: utc)
+        #expect(f.contains("7 Nov 2026") && f.contains("21:13"), "\(f)")
     }
 
     @Test func recipientsFitOnOneLine() {
