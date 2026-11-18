@@ -130,15 +130,6 @@ enum CoreAgent {
         }
     }
 
-    /// Stops the core: SIGTERM, which it handles by finishing its work and
-    /// leaving with code 0, so that launchd does not start it again
-    /// (`KeepAlive` restarts only a failure). It starts again at the next
-    /// launch of the app, or at the next session.
-    static func stop() {
-        let status = launchctl(["kill", "SIGTERM", target])
-        log.notice("stop: \(status)")
-    }
-
     /// Opens System Settings at the Login Items, where the agent is allowed.
     static func openLoginItemsSettings() {
         SMAppService.openSystemSettingsLoginItems()

@@ -17,8 +17,8 @@ NiceMailer.app/Contents/
 | --- | --- |
 | `make bundle` | builds and installs `/Applications/NiceMailer.app`; restarts its core if it runs |
 | `make open` | the same, then quits the running app and opens the new one |
-| `make core-stop` | stops the core of the agent (also: menu NiceMailer > Stop the Core) |
-| `make core-start` | starts it again (also: opening the app) |
+| `nicemailer core stop` | stops the core of the agent, and waits until it has left (also: `make core-stop`, without the wait) |
+| `nicemailer core start` | starts it again, and waits until it answers (also: `make core-start`, without the wait; opening the app) |
 
 `NICEMAILER_DATA_DIR=<dir> make bundle` chooses that mailbox (as "Change Mailbox…" does); `NICEMAILER_FAKE_NETWORK=1 make bundle` makes its core pretend to send ([sending.md](sending.md), "Pretending to send").
 
@@ -30,18 +30,20 @@ At each launch the app registers the agent `eu.nicemailer.core` if it is not (`S
 - starts it again after a crash;
 - keeps it running when the app quits: mail is received and sorted, and pending sends leave.
 
-If the app does not find the core, it asks launchd to start it (`launchctl kickstart`, again every 2 s, and if launchd no longer knows the agent, after registering it again; if launchd refuses to start the core, "spawn failed" in `launchctl print`, the agent is registered again once, see "Signature") and waits up to 8 seconds, trying the socket at least every 0.1 s (a longer wait between two tries was time lost once the core was ready). Coming back to the app without a core (reopened before it had quite quit, for one) connects again at once, unless the core was stopped from the menu in this session. What the app does with the agent is in the system log: `/usr/bin/log show --last 1h --predicate 'subsystem == "eu.nicemailer.app"'` (in zsh, `log` alone is a builtin of the shell). If NiceMailer is turned off in System Settings > General > Login Items, the app says so, with a button that opens that panel.
+If the app does not find the core, it asks launchd to start it (`launchctl kickstart`, again every 2 s, and if launchd no longer knows the agent, after registering it again; if launchd refuses to start the core, "spawn failed" in `launchctl print`, the agent is registered again once, see "Signature") and waits up to 8 seconds, trying the socket at least every 0.1 s (a longer wait between two tries was time lost once the core was ready). Coming back to the app without a core (reopened before it had quite quit, for one) connects again at once, and so starts a core stopped by `nicemailer core stop`. What the app does with the agent is in the system log: `/usr/bin/log show --last 1h --predicate 'subsystem == "eu.nicemailer.app"'` (in zsh, `log` alone is a builtin of the shell). If NiceMailer is turned off in System Settings > General > Login Items, the app says so, with a button that opens that panel.
 
 The core of the agent writes its messages in `core.log` of its mailbox (renamed `core.log.1` beyond 10 MB): `tail -f "<mailbox>/core.log"`.
 
 ### Stopping it
 
-- Menu **NiceMailer > Stop the Core**, or `make core-stop` (`launchctl kill SIGTERM gui/$UID/eu.nicemailer.core`): the core finishes its work and leaves with code 0, which launchd does not restart (`KeepAlive` restarts only a failure). It starts again at the next launch of the app, at the next session, or with `make core-start`.
+- `nicemailer core stop` (`launchctl kill SIGTERM gui/$UID/eu.nicemailer.core`): the core finishes its work and leaves with code 0, which launchd does not restart (`KeepAlive` restarts only a failure). The command returns once the core has left, at most 30 s later. The core starts again with `nicemailer core start`, when the app is launched or comes back to the front, and at the next session.
+- `nicemailer core start` asks launchd for the core and returns once it answers on its socket, at most 15 s later.
+- Both succeed when there is nothing to do. Both act only on the core of the agent, which serves the mailbox chosen in the app: with `--data-dir` or `NICEMAILER_DATA_DIR` naming another mailbox they refuse, and `core stop` also refuses a core started by hand, to be stopped where it runs (Ctrl-C). `core start` needs the agent, which only the app can register: open NiceMailer once.
 - To keep it from starting at all: turn NiceMailer off in System Settings > General > Login Items.
 
 ### With `make core`
 
-A core already serving a mailbox keeps it: a second core on the same directory leaves at once, with code 0 ("un autre noyau utilise déjà…"). To run the core of the source tree in a terminal, stop the one of the agent first (`make core-stop`), then `make core`; `make core-start` gives the agent its core back.
+A core already serving a mailbox keeps it: a second core on the same directory leaves at once, with code 0 ("un autre noyau utilise déjà…"). To run the core of the source tree in a terminal, stop the one of the agent first (`nicemailer core stop`), then `make core`; `nicemailer core start` gives the agent its core back.
 
 ## Choosing the mailbox
 
@@ -179,4 +181,4 @@ Known limit: arm64 only (`specifications/plan-release.md`, section 2).
 
 ## Tests
 
-`crates/nm-api` (`paths::resolve`), `crates/nm-daemon/tests/agent_rpc.rs` (a second core leaves with code 0; `core.log` written), `crates/nm-daemon/tests/startup_rpc.rs` (`core-error.json` written for an early development database, removed at the next start), `crates/nm-daemon/tests/update_rpc.rs` (the maintenance during an upgrade, a SIGTERM then leaving with code 0, the database left at its version; a newer database; [updates.md](updates.md)), `MaintenanceTests` (the wait), `DataDirectoryTests` (the same rule in the app; no agent outside a bundle), `MailboxCheckTests` (what each answer of the CLI makes the app do, the question and its keys, a failed upgrade, the reason shown without a core), and the scenario `mailbox.uiscript` (the screens of an update and an upgrade; refusals, a new folder, the question answered by Escape then by a click, the upgraded mailbox used without a question). The registration with launchd and the stop were checked by hand on this Mac: `launchctl print gui/$UID/eu.nicemailer.core` shows the core running, then `not running`, `last exit code = 0` after `make core-stop`.
+`crates/nm-api` (`paths::resolve`), `crates/nm-daemon/tests/agent_rpc.rs` (a second core leaves with code 0; `core.log` written), `crates/nm-daemon/tests/startup_rpc.rs` (`core-error.json` written for an early development database, removed at the next start), `crates/nm-daemon/tests/update_rpc.rs` (the maintenance during an upgrade, a SIGTERM then leaving with code 0, the database left at its version; a newer database; [updates.md](updates.md)), `MaintenanceTests` (the wait), `DataDirectoryTests` (the same rule in the app; no agent outside a bundle), `MailboxCheckTests` (what each answer of the CLI makes the app do, the question and its keys, a failed upgrade, the reason shown without a core), and the scenario `mailbox.uiscript` (the screens of an update and an upgrade; refusals, a new folder, the question answered by Escape then by a click, the upgraded mailbox used without a question). The registration with launchd and the stop were checked by hand on this Mac: `launchctl print gui/$UID/eu.nicemailer.core` shows the core running, then `not running`, `last exit code = 0` after `make core-stop`. `crates/nm-cli/src/core_agent.rs` tests `nicemailer core` against a launchd played by the test, on the output of a real `launchctl print`; `crates/nm-cli/tests/core_command.rs` tests the refusal of another mailbox.

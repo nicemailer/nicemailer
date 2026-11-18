@@ -19,6 +19,7 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 mod ai;
 #[cfg(test)]
 mod contract_doc;
+mod core_agent;
 
 use anyhow::{Context, bail};
 use clap::{Parser, Subcommand};
@@ -113,6 +114,11 @@ enum Command {
     },
     /// Undo a move or a decision, from the token it printed.
     Undo { token: String },
+    /// Stop or start the core of the app.
+    Core {
+        #[command(subcommand)]
+        action: core_agent::CoreAction,
+    },
     /// The settings files, config.toml and accounts.toml.
     Config {
         #[command(subcommand)]
@@ -830,6 +836,7 @@ fn run() -> anyhow::Result<()> {
             print_workflow(&result);
             Ok(())
         }
+        Command::Core { action } => core_agent::run(&data_dir, action),
         Command::Config { action } => run_config(action),
         Command::Keymap { action } => run_keymap(action),
         Command::Ai { action } => ai::run(&data_dir, action),
@@ -1526,7 +1533,7 @@ fn run_seed(data_dir: &Path, threads: usize, s: u64, reset: bool) -> anyhow::Res
     // deleting the file under it would break it).
     let lock = File::create(data_dir.join("lock"))?;
     if lock.try_lock().is_err() {
-        bail!("the core is running and holds the database. Stop it (Ctrl-C in its terminal, or `pkill nicemailer-core`), then run seed again");
+        bail!("the core is running and holds the database. Stop it (`nicemailer core stop`, or Ctrl-C in its terminal), then run seed again");
     }
     let db = data_dir.join(paths::DATABASE);
     if reset {

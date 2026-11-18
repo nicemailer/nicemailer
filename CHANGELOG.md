@@ -13,6 +13,7 @@ How to write it:
 
 ### Added
 
+- `nicemailer core stop` and `nicemailer core start` stop and start the background core, and return once it is done.
 - Every key of the app can be changed in `~/.config/nicemailer/keymap.toml`, created with all the default keys commented out: keys moved or removed, keys of your own for any folder or action, menus of your own. The help, the status bar and the menus show the keys in effect; `nicemailer keymap check` validates the file (docs/keymap.md).
 - NiceMailer is available in German, Spanish, Italian, Portuguese (Brazil), Dutch, Swedish, Danish, Norwegian, Finnish, Polish, Russian, Ukrainian, Japanese, Simplified and Traditional Chinese and Korean, following the language of macOS or the one chosen for the app. These translations have not yet been reviewed by native speakers.
 - NiceMailer updates itself: it checks for a new version once a day, or at once with NiceMailer > Check for Updates…, and installs it with its background core.
@@ -54,6 +55,7 @@ How to write it:
 
 ### Removed
 
+- NiceMailer > Stop the Core: the background core is now stopped with `nicemailer core stop`.
 - File > New Window and window tabs: a second window only mirrored the first one and reconnected to the core. Windows with their own folder and selection will come back later.
 
 ## 0.1.0 — 2026-11-16

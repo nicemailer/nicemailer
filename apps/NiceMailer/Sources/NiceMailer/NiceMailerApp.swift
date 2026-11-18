@@ -51,10 +51,10 @@ struct NiceMailerApp: App {
             // each URL it receives; this sends every URL to the window
             // already open instead.
             .handlesExternalEvents(preferring: ["*"], allowing: ["*"])
-            // Back to the app without a core (stopped by the menu, the app
+            // Back to the app without a core (`nicemailer core stop`, the app
             // reopened before it had quit): it is started again at once.
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-                guard !UIScript.isActive, !model.coreStoppedByUser, case .failed = model.status,
+                guard !UIScript.isActive, case .failed = model.status,
                       model.agentState != .notBundled else { return }
                 Task { await model.connect() }
             }
@@ -83,8 +83,9 @@ struct NiceMailerApp: App {
             // "Fenêtres"). Swift note: `replacing:` with an empty body
             // removes the standard items of that group.
             CommandGroup(replacing: .newItem) {}
-            // The mailbox and the core (`docs/app-bundle.md`), in the app's
-            // menu, after "About".
+            // The updates, the mailbox and the AI agents, in the app's menu,
+            // after "About". The core is stopped and started from the CLI
+            // (`nicemailer core`, `docs/app-bundle.md`).
             CommandGroup(after: .appInfo) {
                 // Sparkle's check, at once (`Updater`); disabled in a build
                 // without updates (`swift run`, no key).
@@ -94,7 +95,6 @@ struct NiceMailerApp: App {
                 Button(L("Change Mailbox…")) {
                     if let url = MailboxChooser.choose() { Task { await model.changeMailbox(to: url) } }
                 }
-                Button(L("Stop the Core")) { model.stopCore() }
                 // AI agents reading the mailbox through `nicemailer-mcp`
                 // (`AgentSetup`, `docs/mcp.md`); disabled without the
                 // helper (`swift run`).

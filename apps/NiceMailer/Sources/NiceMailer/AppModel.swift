@@ -175,9 +175,6 @@ final class AppModel {
 
     /// The agent of the core, when the app carries it (`CoreAgent`).
     var agentState: CoreAgent.State = .notBundled
-    /// The core was stopped from the menu in this session: coming back to
-    /// the app does not start it again; a new launch, or "Try Again", does.
-    var coreStoppedByUser = false
     /// The mailbox in use (`DataDirectory`), for the window's title.
     var mailboxName: String { DataDirectory.displayName(DataDirectory.current) }
     /// Checks and upgrades a mailbox before the app switches to it
@@ -782,7 +779,6 @@ final class AppModel {
     /// tries the migration again. Only on this button: the app never tries
     /// a migration again by itself (`mise-a-jour.md`, section 4).
     func retry() async {
-        coreStoppedByUser = false
         if lastMaintenance?.reason == .migrationFailed, agentState == .enabled {
             CoreAgent.kickstart(restart: true)
         }
@@ -1079,17 +1075,6 @@ final class AppModel {
         } else {
             status = .failed(L("Mailbox changed to %@: restart the core on it (make core)", url.path))
         }
-    }
-
-    /// The menu "Stop the Core": the core finishes its work and leaves; it
-    /// starts again at the next launch of the app.
-    func stopCore() {
-        guard CoreAgent.register() == .enabled else {
-            flash = L("The core was started by hand: stop it where it runs (Ctrl-C)")
-            return
-        }
-        coreStoppedByUser = true
-        CoreAgent.stop()
     }
 
     /// Consumes the event stream until the connection closes.

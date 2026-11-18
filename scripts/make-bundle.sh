@@ -107,7 +107,7 @@ cp "$ROOT/target/release/nicemailer-core" "$ROOT/target/release/nicemailer" "$RO
 
 # The agent of the core (architecture.md, section 6): started at once when
 # the app registers it, at each session, and again after a crash; a stop
-# with code 0 (Stop the Core, `make core-stop`) is not restarted.
+# with code 0 (`nicemailer core stop`, `make core-stop`) is not restarted.
 AGENT_ENV="<key>NICEMAILER_LOG_IN_DATA_DIR</key><string>1</string>"
 # (In a release, NICEMAILER_FAKE_NETWORK was refused above.)
 if [ -n "${NICEMAILER_FAKE_NETWORK:-}" ]; then
@@ -284,7 +284,7 @@ launchctl kickstart -k "gui/$(id -u)/eu.nicemailer.core" 2>/dev/null || true
 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$DEST/NiceMailer.app"
 echo "Installed $DEST/NiceMailer.app (nicemailer:// links open it)."
 echo "Mailbox: $(cat "$HOME/Library/Application Support/NiceMailer/data-dir" 2>/dev/null || echo "$HOME/Library/Application Support/NiceMailer")"
-echo "Core log: <mailbox>/core.log; stop the core: make core-stop (or the menu Stop the Core)." 
+echo "Core log: <mailbox>/core.log; stop the core: make core-stop (or nicemailer core stop)." 
 if [ "$OPEN" = 1 ]; then
   open "$DEST/NiceMailer.app"
 fi

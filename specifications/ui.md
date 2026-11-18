@@ -68,7 +68,7 @@ Sont communs à toute l'app :
 
 **Ouvrir une fenêtre.** Fichier > Nouvelle fenêtre (⌘N ; la touche `c` du thème geek reste celle du nouveau mail). La nouvelle fenêtre s'ouvre sur la vue et le dossier de la fenêtre au premier plan, avec la sélection d'une ouverture : le premier mail. Elle ne recopie ni la recherche, ni les marques, ni la réponse en cours. Les onglets de macOS sont acceptés : un onglet est une fenêtre.
 
-**Clavier et menus.** Les touches vont à la fenêtre clé seulement. Les commandes de menu qui portent sur ce qu'on voit (Recharger, Présentation) visent la fenêtre au premier plan. Celles qui portent sur toute l'app (Changer de boîte…, Arrêter le noyau, Agents IA, Thème, taille du texte) valent pour toutes les fenêtres : changer de boîte recharge chacune.
+**Clavier et menus.** Les touches vont à la fenêtre clé seulement. Les commandes de menu qui portent sur ce qu'on voit (Recharger, Présentation) visent la fenêtre au premier plan. Celles qui portent sur toute l'app (Changer de boîte…, Agents IA, Thème, taille du texte) valent pour toutes les fenêtres : changer de boîte recharge chacune.
 
 **Liens vers un mail** (`nicemailer://m/<id>`, `docs/deep-links.md`) : ouverts dans la fenêtre au premier plan ; sans fenêtre, dans une nouvelle.
 
