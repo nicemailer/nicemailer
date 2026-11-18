@@ -32,7 +32,7 @@ use nm_store::ChangeSet;
 use nm_store::spool::{Action, ActionKind};
 
 use super::pass::PassError;
-use super::{SyncHost, write};
+use super::{SyncHost, read, write};
 
 /// Actions claimed per round.
 const ROUND: u32 = 500;
@@ -63,7 +63,13 @@ pub(crate) async fn run(
     keywords: &mut HashMap<String, bool>,
 ) -> Result<SpoolReport, PassError> {
     let mut report = SpoolReport::default();
-    write(host, |st| Ok((st.spool_purge()?, ChangeSet::default())))?;
+    // Searched on a reading connection, then deleted in short batches: the
+    // store's write lock is never held during the search, which reads the
+    // whole table (`Store::spool_purgeable`).
+    let ended = read(host, |st| st.spool_purgeable())?;
+    for batch in ended.chunks(nm_store::spool::PURGE_BATCH) {
+        write(host, |st| Ok((st.spool_purge_ids(batch)?, ChangeSet::default())))?;
+    }
     initial_archive(s, host, account_id, &mut report).await?;
     // The copies of the drafts in Drafts (`drafts.rs`).
     super::drafts::run(s, host, account_id, &mut report).await?;

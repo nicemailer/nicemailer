@@ -79,7 +79,8 @@ pub struct SyncFolder {
     pub uidvalidity: Option<u32>,
     pub uidnext: Option<u32>,
     pub highestmodseq: Option<u64>,
-    /// Messages of the folder in the database.
+    /// Messages of the folder in the database. 0 until
+    /// [`Store::fill_message_counts`] has counted them.
     pub messages: u32,
     /// `uid_screening_start` (Inbox): the mails at or above it are screened.
     pub screening_start: Option<u32>,
@@ -287,6 +288,22 @@ impl Store {
         let folders = role_folders(&tx, account_id, &listed_paths, &change)?;
         tx.commit()?;
         Ok((folders, change, changes))
+    }
+
+    /// Counts the messages of these folders in the database.
+    ///
+    /// Why apart from [`Store::sync_folder_list`]: counting reads the index
+    /// of every message of the folder, thousands of pages from the disk on
+    /// a large mailbox when they are not in memory. The listing runs at each
+    /// pass with the store's write lock held; this runs afterwards, on a
+    /// reading connection, where that wait holds up no one. A count made a
+    /// moment after the listing can only open one folder more than needed.
+    pub fn fill_message_counts(&self, folders: &mut [SyncFolder]) -> Result<()> {
+        let mut stmt = self.conn.prepare_cached("SELECT count(*) FROM message WHERE folder_id = ?1")?;
+        for f in folders {
+            f.messages = stmt.query_row([f.id], |r| r.get(0))?;
+        }
+        Ok(())
     }
 
     /// The Inbox's screening boundary, set once (provisional until the
@@ -775,7 +792,7 @@ pub struct MissingBody {
 fn role_folders(tx: &Transaction, account_id: i64, listed: &BTreeSet<&str>, change: &FolderListChange) -> Result<Vec<SyncFolder>> {
     let mut stmt = tx.prepare(
         "SELECT f.id, f.path, f.role, f.uidvalidity, f.uidnext, f.highestmodseq,
-                (SELECT count(*) FROM message m WHERE m.folder_id = f.id), f.date_last_sync IS NOT NULL, f.uid_screening_start
+                f.date_last_sync IS NOT NULL, f.uid_screening_start
            FROM folder f WHERE f.account_id = ?1 AND f.role IS NOT NULL AND f.role <> 'config'",
     )?;
     let mut out: Vec<SyncFolder> = stmt
@@ -787,9 +804,10 @@ fn role_folders(tx: &Transaction, account_id: i64, listed: &BTreeSet<&str>, chan
                 uidvalidity: r.get(3)?,
                 uidnext: r.get(4)?,
                 highestmodseq: r.get::<_, Option<i64>>(5)?.map(|m| m as u64),
-                messages: r.get(6)?,
-                synced: r.get(7)?,
-                screening_start: r.get(8)?,
+                // Counted without the lock (`Store::fill_message_counts`).
+                messages: 0,
+                synced: r.get(6)?,
+                screening_start: r.get(7)?,
             })
         })?
         .collect::<std::result::Result<_, _>>()?;

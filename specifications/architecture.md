@@ -398,7 +398,7 @@ Un cask Homebrew (`brew install --cask nicemailer`) pointant vers la même relea
 | Démarrage à la demande  | `launchctl kickstart` sur un agent enregistré par `SMAppService` non vérifié | À valider dans le squelette ; repli : `MachServices` et démarrage par recherche du service |
 | App mise à la corbeille | macOS nettoie-t-il l'enregistrement de l'agent ? | À vérifier dans le squelette ; sinon, inoffensif et documenté |
 | Keychain du noyau       | Accès au trousseau par un exécutable sans bundle ; invite d'autorisation après une mise à jour si l'exigence de signature n'est pas reconnue | À valider dans le squelette : création par le noyau, lecture après mise à jour sans invite |
-| Priorité du noyau       | `ProcessType` `Background` limite CPU et entrées-sorties, au risque de ralentir l'app | À mesurer dans le squelette |
+| Priorité du noyau       | `ProcessType` `Background` limite CPU et entrées-sorties, au risque de ralentir l'app | Décidé : `Standard`, car l'app attend le noyau à chaque action, surtout quand le Mac est chargé (après un redémarrage, pendant une sauvegarde) |
 | Accès web local         | Exposition du serveur HTTP                    | Écoute sur `127.0.0.1`, désactivé par défaut ; le reste est à décider quand on codera `nm-web`, module non prioritaire (section 9) |
 | Accès au socket         | Un processus quelconque pilote le noyau       | Vérification de la signature du client, droits par client (section 9) |
 | Envoi par un agent      | Exfiltration par injection de prompt          | Confirmation obligatoire dans l'app (section 9)                |

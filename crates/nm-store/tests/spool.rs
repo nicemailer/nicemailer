@@ -228,9 +228,33 @@ fn running_actions_are_queued_again_at_start_and_ended_ones_purged() {
     assert_eq!(actions(&e.s)[0].1, "queued");
     let id = e.s.spool_claim(e.acc, 10).unwrap()[0].id;
     e.s.spool_done(id, Some(2)).unwrap();
-    assert_eq!(e.s.spool_purge().unwrap(), 0, "kept a week");
+    assert!(e.s.spool_purgeable().unwrap().is_empty(), "kept a week");
     e.s.conn().execute("UPDATE pending_action SET date_modified = unixepoch() - 8 * 86400", []).unwrap();
-    assert_eq!(e.s.spool_purge().unwrap(), 1);
+    let ended = e.s.spool_purgeable().unwrap();
+    assert_eq!(ended, [id]);
+    assert_eq!(e.s.spool_purge_ids(&ended).unwrap(), 1);
+    assert!(actions(&e.s).is_empty());
+}
+
+/// The list of the purge is read before the deletion, without the lock: an
+/// action that changed in between is not deleted.
+#[test]
+fn the_purge_spares_an_action_that_changed_since_it_was_listed() {
+    let mut e = env();
+    mv(&mut e, FolderRole::Archive);
+    let id = e.s.spool_claim(e.acc, 10).unwrap()[0].id;
+    e.s.spool_done(id, Some(2)).unwrap();
+    e.s.conn().execute("UPDATE pending_action SET date_modified = unixepoch() - 8 * 86400", []).unwrap();
+    let ended = e.s.spool_purgeable().unwrap();
+    assert_eq!(ended, [id]);
+
+    // Active again: not deleted.
+    e.s.conn().execute("UPDATE pending_action SET state = 'queued'", []).unwrap();
+    assert_eq!(e.s.spool_purge_ids(&ended).unwrap(), 0);
+    // Ended again, but just now: kept for its week.
+    e.s.conn().execute("UPDATE pending_action SET state = 'done', date_modified = unixepoch()", []).unwrap();
+    assert_eq!(e.s.spool_purge_ids(&ended).unwrap(), 0);
+    assert_eq!(actions(&e.s).len(), 1);
 }
 
 #[test]

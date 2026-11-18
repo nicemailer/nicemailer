@@ -195,10 +195,13 @@ pub(crate) async fn run(s: &mut Session, ctx: &mut Ctx<'_>, full: bool) -> Resul
         });
     }
     let account_id = ctx.account_id;
-    let (folders, change) = write(ctx.host, |st| {
+    let (mut folders, change) = write(ctx.host, |st| {
         let (f, c, changes) = st.sync_folder_list(account_id, &folders_listed)?;
         Ok(((f, c), changes))
     })?;
+    // Counted once the store's write lock is released: step 2 compares
+    // these counts with the server's (`Store::fill_message_counts`).
+    read(ctx.host, |st| st.fill_message_counts(&mut folders))?;
     report.missing = change.missing;
     // Without LIST-STATUS: one STATUS per folder to synchronize.
     for f in &folders {

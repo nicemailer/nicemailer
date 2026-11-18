@@ -53,6 +53,10 @@ pub const RETRY_FIRST_SECS: i64 = 30;
 pub const RETRY_MAX_SECS: i64 = 3600;
 /// Actions ended (`done`, `reverted`, `cancelled`) are deleted after this.
 pub const PURGE_AFTER_SECS: i64 = 7 * 24 * 3600;
+/// Actions deleted per transaction by the purge: the store's write lock is
+/// released between two batches, so that a command never waits for a long
+/// purge ([`Store::spool_purge_ids`]).
+pub const PURGE_BATCH: usize = 100;
 
 /// An action to send, as the engine sees it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -431,12 +435,43 @@ impl Store {
         Ok(changes)
     }
 
-    /// Deletes the actions ended more than [`PURGE_AFTER_SECS`] ago.
-    pub fn spool_purge(&mut self) -> Result<usize> {
-        Ok(self.conn.execute(
-            "DELETE FROM pending_action WHERE state IN ('done', 'reverted', 'cancelled') AND date_modified < unixepoch() - ?1",
-            [PURGE_AFTER_SECS],
-        )?)
+    /// The actions ended more than [`PURGE_AFTER_SECS`] ago, to give to
+    /// [`Store::spool_purge_ids`].
+    ///
+    /// Why apart from the deletion: no index covers this search, so it reads
+    /// the whole table, hundreds of pages from the disk when they are not in
+    /// memory. On a reading connection, that wait holds up no one; inside
+    /// the deletion, it kept the store's write lock, and every command
+    /// waited behind it.
+    pub fn spool_purgeable(&self) -> Result<Vec<i64>> {
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT id FROM pending_action WHERE state IN ('done', 'reverted', 'cancelled') AND date_modified < unixepoch() - ?1",
+        )?;
+        // Rust note: `collect` turns an iterator of `Result<i64, _>` into a
+        // single `Result<Vec<i64>, _>`, which stops at the first error.
+        let ids = stmt.query_map([PURGE_AFTER_SECS], |r| r.get(0))?.collect::<std::result::Result<_, _>>()?;
+        Ok(ids)
+    }
+
+    /// Deletes these actions, found by [`Store::spool_purgeable`], at most
+    /// [`PURGE_BATCH`] at a time. Each one is found by its primary key, so
+    /// the lock is held briefly. The conditions are checked again: the list
+    /// was read earlier, and an action may have changed since.
+    pub fn spool_purge_ids(&mut self, ids: &[i64]) -> Result<usize> {
+        let tx = self.transaction()?;
+        let mut deleted = 0;
+        {
+            // In a block: the statement borrows `tx`, which `commit` consumes.
+            let mut stmt = tx.prepare_cached(
+                "DELETE FROM pending_action
+                  WHERE id = ?1 AND state IN ('done', 'reverted', 'cancelled') AND date_modified < unixepoch() - ?2",
+            )?;
+            for id in ids {
+                deleted += stmt.execute(params![id, PURGE_AFTER_SECS])?;
+            }
+        }
+        tx.commit()?;
+        Ok(deleted)
     }
 
     /// The actions of an account not sent yet (`sync status`).

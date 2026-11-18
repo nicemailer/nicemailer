@@ -30,6 +30,8 @@ At each launch the app registers the agent `eu.nicemailer.core` if it is not (`S
 - starts it again after a crash;
 - keeps it running when the app quits: mail is received and sorted, and pending sends leave.
 
+The agent has the `ProcessType` `Standard`. With `Background`, macOS limits the CPU and the disk of the core, and the app, which waits for the core at each action, becomes slow when the Mac is busy.
+
 If the app does not find the core, it asks launchd to start it (`launchctl kickstart`, again every 2 s, and if launchd no longer knows the agent, after registering it again; if launchd refuses to start the core, "spawn failed" in `launchctl print`, the agent is registered again once, see "Signature") and waits up to 8 seconds, trying the socket at least every 0.1 s (a longer wait between two tries was time lost once the core was ready). Coming back to the app without a core (reopened before it had quite quit, for one) connects again at once, and so starts a core stopped by `nicemailer core stop`. What the app does with the agent is in the system log: `/usr/bin/log show --last 1h --predicate 'subsystem == "eu.nicemailer.app"'` (in zsh, `log` alone is a builtin of the shell). If NiceMailer is turned off in System Settings > General > Login Items, the app says so, with a button that opens that panel.
 
 The core of the agent writes its messages in `core.log` of its mailbox (renamed `core.log.1` beyond 10 MB): `tail -f "<mailbox>/core.log"`.

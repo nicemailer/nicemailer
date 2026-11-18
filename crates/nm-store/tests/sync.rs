@@ -75,6 +75,25 @@ fn the_first_listing_gives_the_proposed_roles_and_later_ones_do_not() {
     assert!(change.roles_given.is_empty());
 }
 
+/// The listing runs with the store's write lock held: it leaves the counts,
+/// which read every message of the folder, to a reading connection.
+#[test]
+fn the_messages_of_the_folders_are_counted_apart_from_the_listing() {
+    let (mut s, acc) = store();
+    s.sync_folder_list(acc, &standard()).unwrap();
+    let inbox = folder_id(&s, "INBOX");
+    let mut ins = Inserter::new(Source::Imap, None);
+    let mails = [arrival(1, "a@x", 1, &[]), arrival(5, "b@x", 1, &[])];
+    s.insert_arrivals(&mut ins, acc, inbox, &mails, &mut BTreeMap::new(), &Reception::plain(false)).unwrap();
+
+    let (mut folders, _, _) = s.sync_folder_list(acc, &standard()).unwrap();
+    assert!(folders.iter().all(|f| f.messages == 0), "not counted by the listing");
+
+    s.fill_message_counts(&mut folders).unwrap();
+    let counts: BTreeMap<&str, u32> = folders.iter().map(|f| (f.path.as_str(), f.messages)).collect();
+    assert_eq!(counts, BTreeMap::from([("INBOX", 2), ("Sent", 0), ("Archive", 0)]));
+}
+
 #[test]
 fn a_folder_renamed_on_the_server_keeps_its_row_and_its_mail() {
     let (mut s, acc) = store();

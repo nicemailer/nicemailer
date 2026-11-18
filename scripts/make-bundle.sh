@@ -108,6 +108,9 @@ cp "$ROOT/target/release/nicemailer-core" "$ROOT/target/release/nicemailer" "$RO
 # The agent of the core (architecture.md, section 6): started at once when
 # the app registers it, at each session, and again after a crash; a stop
 # with code 0 (`nicemailer core stop`, `make core-stop`) is not restarted.
+# ProcessType is Standard, not Background: the app waits for the core at
+# each action, and macOS limits the CPU and the disk of a Background job
+# most when the Mac is busy (after a restart, during a backup).
 AGENT_ENV="<key>NICEMAILER_LOG_IN_DATA_DIR</key><string>1</string>"
 # (In a release, NICEMAILER_FAKE_NETWORK was refused above.)
 if [ -n "${NICEMAILER_FAKE_NETWORK:-}" ]; then
@@ -124,7 +127,7 @@ cat > "$APP/Contents/Library/LaunchAgents/eu.nicemailer.core.plist" <<PLIST
   <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
   <key>AssociatedBundleIdentifiers</key><array><string>eu.nicemailer.NiceMailer</string></array>
   <key>EnvironmentVariables</key><dict>${AGENT_ENV}</dict>
-  <key>ProcessType</key><string>Background</string>
+  <key>ProcessType</key><string>Standard</string>
 </dict>
 </plist>
 PLIST

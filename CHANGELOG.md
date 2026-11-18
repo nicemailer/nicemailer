@@ -52,6 +52,7 @@ How to write it:
 - `g` adds the person the conversation is with, no longer yourself when your reply was filed with it; your own addresses can no longer be in a group, and those already there are removed.
 
 - The app no longer stays without its core after a new version, signed differently, replaces the installed one.
+- NiceMailer stays faster when the Mac is busy, after a restart or during a backup, and the synchronization holds up your actions less.
 
 ### Removed
 
