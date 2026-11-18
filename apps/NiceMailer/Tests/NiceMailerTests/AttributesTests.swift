@@ -245,13 +245,13 @@ struct AttributesTests {
     @Test func typedDatesAreDayFirstOrISO() {
         var cal = Calendar(identifier: .gregorian)
         cal.timeZone = TimeZone(identifier: "UTC")!
-        let iso = DateChoice.parse("2026-10-01", calendar: cal)
-        let fr = DateChoice.parse("1/10/2026", calendar: cal)
+        let iso = DateChoice.parse("2026-10-01", calendar: cal, order: .dayFirst)
+        let fr = DateChoice.parse("1/10/2026", calendar: cal, order: .dayFirst)
         #expect(iso != nil && iso == fr)
-        #expect(DateChoice.parse("01/10/26", calendar: cal) == iso)
-        #expect(DateChoice.parse("hier", calendar: cal) == nil)
-        #expect(DateChoice.parse("31/02/2026", calendar: cal) == nil)
-        let choices = DateChoice.typed("2026-10-01", calendar: cal)
+        #expect(DateChoice.parse("01/10/26", calendar: cal, order: .dayFirst) == iso)
+        #expect(DateChoice.parse("hier", calendar: cal, order: .dayFirst) == nil)
+        #expect(DateChoice.parse("31/02/2026", calendar: cal, order: .dayFirst) == nil)
+        let choices = DateChoice.typed("2026-10-01", calendar: cal, order: .dayFirst)
         #expect(choices.count == 2)
         #expect(choices[0].after == Int(iso!.timeIntervalSince1970) && choices[0].before == nil)
         #expect(choices[1].before == Int(iso!.timeIntervalSince1970))
@@ -262,37 +262,73 @@ struct AttributesTests {
         cal.timeZone = TimeZone(identifier: "UTC")!
         let iso = { (d: Date) in ISO8601DateFormatter.string(from: d, timeZone: cal.timeZone, formatOptions: [.withFullDate]) }
         // Two real days: 1 January 2020 (dd mm yy), 20 January 2001 (yy mm dd).
-        #expect(DateChoice.sixDigits("010120", calendar: cal).map { iso($0.date) } == ["2020-01-01", "2001-01-20"])
-        #expect(DateChoice.sixDigits("200601", calendar: cal).map { iso($0.date) } == ["2001-06-20", "2020-06-01"])
+        #expect(DateChoice.sixDigits("010120", calendar: cal, order: .dayFirst).map { iso($0.date) } == ["2020-01-01", "2001-01-20"])
+        #expect(DateChoice.sixDigits("200601", calendar: cal, order: .dayFirst).map { iso($0.date) } == ["2001-06-20", "2020-06-01"])
         // One reading only: no 99th day, no 13th month, no 31 February.
-        #expect(DateChoice.sixDigits("311299", calendar: cal).map { iso($0.date) } == ["1999-12-31"])
-        #expect(DateChoice.sixDigits("251301", calendar: cal).isEmpty)
-        #expect(DateChoice.sixDigits("310299", calendar: cal).isEmpty)
-        #expect(DateChoice.sixDigits("290223", calendar: cal).map { iso($0.date) } == ["2029-02-23"])
+        #expect(DateChoice.sixDigits("311299", calendar: cal, order: .dayFirst).map { iso($0.date) } == ["1999-12-31"])
+        #expect(DateChoice.sixDigits("251301", calendar: cal, order: .dayFirst).isEmpty)
+        #expect(DateChoice.sixDigits("310299", calendar: cal, order: .dayFirst).isEmpty)
+        #expect(DateChoice.sixDigits("290223", calendar: cal, order: .dayFirst).map { iso($0.date) } == ["2029-02-23"])
         // Both readings the same day: once.
-        #expect(DateChoice.sixDigits("111111", calendar: cal).map { iso($0.date) } == ["2011-11-11"])
+        #expect(DateChoice.sixDigits("111111", calendar: cal, order: .dayFirst).map { iso($0.date) } == ["2011-11-11"])
         // Years: 20yy below 70, 19yy from 70.
-        #expect(DateChoice.sixDigits("010170", calendar: cal).first.map { iso($0.date) } == "1970-01-01")
+        #expect(DateChoice.sixDigits("010170", calendar: cal, order: .dayFirst).first.map { iso($0.date) } == "1970-01-01")
         // Not six ASCII digits.
-        #expect(DateChoice.sixDigits("01012", calendar: cal).isEmpty)
-        #expect(DateChoice.sixDigits("0101200", calendar: cal).isEmpty)
-        #expect(DateChoice.sixDigits("01-120", calendar: cal).isEmpty)
-        #expect(DateChoice.sixDigits("０１０１２０", calendar: cal).isEmpty)
+        #expect(DateChoice.sixDigits("01012", calendar: cal, order: .dayFirst).isEmpty)
+        #expect(DateChoice.sixDigits("0101200", calendar: cal, order: .dayFirst).isEmpty)
+        #expect(DateChoice.sixDigits("01-120", calendar: cal, order: .dayFirst).isEmpty)
+        #expect(DateChoice.sixDigits("０１０１２０", calendar: cal, order: .dayFirst).isEmpty)
+    }
+
+    /// The order of a typed date follows the Mac's region
+    /// (`localisation.md`, section 3.4): month first in the United States,
+    /// year first in Japan; `yyyy-MM-dd` everywhere.
+    @Test func aTypedDateIsReadInTheOrderOfTheRegion() {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "UTC")!
+        let iso = { (d: Date?) in d.map { ISO8601DateFormatter.string(from: $0, timeZone: cal.timeZone, formatOptions: [.withFullDate]) } }
+        #expect(DateChoice.Order.of(Locale(identifier: "fr_FR")) == .dayFirst)
+        #expect(DateChoice.Order.of(Locale(identifier: "en_GB")) == .dayFirst)
+        #expect(DateChoice.Order.of(Locale(identifier: "en_US")) == .monthFirst)
+        #expect(DateChoice.Order.of(Locale(identifier: "ja_JP")) == .yearFirst)
+        // The region decides, whatever the language: a French interface on
+        // an American Mac reads month first, as its lists show.
+        #expect(DateChoice.Order.of(interfaceLocale(language: "fr", settings: Locale(identifier: "en_US"))) == .monthFirst)
+        // 1/10/2026: 1 October in France, 10 January in the United States.
+        #expect(iso(DateChoice.parse("1/10/2026", calendar: cal, order: .dayFirst)) == "2026-10-01")
+        #expect(iso(DateChoice.parse("1/10/2026", calendar: cal, order: .monthFirst)) == "2026-01-10")
+        #expect(iso(DateChoice.parse("10/1/26", calendar: cal, order: .monthFirst)) == "2026-10-01")
+        #expect(iso(DateChoice.parse("2026/10/1", calendar: cal, order: .yearFirst)) == "2026-10-01")
+        #expect(iso(DateChoice.parse("2026-10-01", calendar: cal, order: .monthFirst)) == "2026-10-01")
+        #expect(DateChoice.parse("13/1/2026", calendar: cal, order: .monthFirst) == nil)
+        // Six digits: the region's order first, then year first.
+        let us = DateChoice.sixDigits("100126", calendar: cal, order: .monthFirst)
+        #expect(us.map { iso($0.date) } == ["2026-10-01", "2010-01-26"])
+        #expect(us.map(\.reading) == [L("mm dd yy"), L("yy mm dd")])
+        let jp = DateChoice.sixDigits("261001", calendar: cal, order: .yearFirst)
+        #expect(jp.map { iso($0.date) } == ["2026-10-01", "2001-10-26"])
+        // The hint gives examples in that order.
+        #expect(DateChoice.Order.monthFirst.examples == "10/1/2026, 100126")
+        for order in [DateChoice.Order.dayFirst, .monthFirst, .yearFirst] {
+            let examples = order.examples.components(separatedBy: ", ")
+            #expect(iso(DateChoice.parse(examples[0], calendar: cal, order: order)) == "2026-10-01", "\(order)")
+            #expect(iso(DateChoice.sixDigits(examples[1], calendar: cal, order: order).first?.date) == "2026-10-01", "\(order)")
+        }
     }
 
     @Test func sixDigitsGiveTwoRowsPerDateAndSayHowTheyWereRead() {
         var cal = Calendar(identifier: .gregorian)
         cal.timeZone = TimeZone(identifier: "UTC")!
-        let two = DateChoice.typed("010120", calendar: cal)
+        let two = DateChoice.typed("010120", calendar: cal, order: .dayFirst)
         #expect(two.map(\.label) == [L("after %@", "2020-01-01"), L("before %@", "2020-01-01"),
                                       L("after %@", "2001-01-20"), L("before %@", "2001-01-20")])
         #expect(two.map(\.detail) == [L("dd mm yy"), L("dd mm yy"), L("yy mm dd"), L("yy mm dd")])
         #expect(two[0].after != nil && two[0].before == nil && two[1].before == two[0].after)
         // A single date: two rows, no reading to explain.
-        let one = DateChoice.typed("311299", calendar: cal)
+        let one = DateChoice.typed("311299", calendar: cal, order: .dayFirst)
         #expect(one.map(\.label) == [L("after %@", "1999-12-31"), L("before %@", "1999-12-31")])
         #expect(one.allSatisfy { $0.detail == nil })
-        #expect(DateChoice.typed("2026-10-01", calendar: cal).allSatisfy { $0.detail == nil })
+        #expect(DateChoice.typed("2026-10-01", calendar: cal, order: .dayFirst).allSatisfy { $0.detail == nil })
     }
 
     @Test func dateBoundsMakeAnInterval() {
@@ -342,15 +378,15 @@ struct AttributesTests {
         cal.timeZone = TimeZone(identifier: "UTC")!
         // 2026-11-04 12:00 UTC.
         let now = Date(timeIntervalSince1970: 1_793_793_600)
-        let rows = DateChoice.typed("10j", now: now, calendar: cal)
+        let rows = DateChoice.typed("10j", now: now, calendar: cal, order: .dayFirst)
         #expect(rows.map(\.label) == [L("newer than %@", L("%lld days", 10)), L("older than %@", L("%lld days", 10))])
         #expect(rows[0].after == 1_793_793_600 - 10 * 86_400 && rows[0].before == nil)
         #expect(rows[1].before == rows[0].after && rows[1].after == nil)
         #expect(rows.allSatisfy { $0.detail == "2026-10-25" })
         // 7 days and 1 week agree; a month is the same day last month.
-        #expect(DateChoice.typed("7d", now: now, calendar: cal)[0].after == DateChoice.typed("1s", now: now, calendar: cal)[0].after)
-        #expect(DateChoice.typed("1m", now: now, calendar: cal)[0].detail == "2026-10-04")
-        #expect(DateChoice.typed("1a", now: now, calendar: cal)[0].label == L("newer than %@", L("%lld years", 1)))
+        #expect(DateChoice.typed("7d", now: now, calendar: cal, order: .dayFirst)[0].after == DateChoice.typed("1s", now: now, calendar: cal, order: .dayFirst)[0].after)
+        #expect(DateChoice.typed("1m", now: now, calendar: cal, order: .dayFirst)[0].detail == "2026-10-04")
+        #expect(DateChoice.typed("1a", now: now, calendar: cal, order: .dayFirst)[0].label == L("newer than %@", L("%lld years", 1)))
         #expect(DateChoice.amount(1, .weekOfYear) == L("%lld weeks", 1) && DateChoice.amount(3, .month) == L("%lld months", 3))
     }
 

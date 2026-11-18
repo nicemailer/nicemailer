@@ -3573,17 +3573,6 @@
         }
       }
     },
-    "or type a date (2026-10-01, 1/10/2026, 011026, 261001) or a duration (10d, 3w, 6m, 1y)": {
-      "comment": "Hint of the Date… panel input line, shown while nothing is typed. The duration letters are those of the language (both are understood).",
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ou tapez une date (2026-10-01, 1/10/2026, 011026, 261001) ou une durée (10j, 3s, 6m, 1a)"
-          }
-        }
-      }
-    },
     "pixels blocked: %lld": {
       "localizations": {
         "fr": {
@@ -8208,6 +8197,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Annulé"
+          }
+        }
+      }
+    },
+    "or type a date (2026-10-01, %@) or a duration (10d, 3w, 6m, 1y)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ou tapez une date (2026-10-01, %@) ou une durée (10j, 3s, 6m, 1a)"
+          }
+        }
+      }
+    },
+    "mm dd yy": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "mm jj aa"
           }
         }
       }

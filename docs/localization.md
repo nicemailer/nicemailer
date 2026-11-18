@@ -21,7 +21,9 @@ No date format is spelled out. Every formatter uses a template (`setLocalizedDat
 
 The formatters of the interface are built once in `Format.dates` (`Format.Dates`, `Models.swift`). The tests build their own for any locale and time zone, and pass a fixed `now`.
 
-The date column of the geek lists is 8 characters wide. `Format.fitting` keeps the first template whose dates all fit, tried on the 28th of every month: a locale with longer names gets the numbers ("28.09." in German, whose "28. Sept." is 9 characters), and `yy-MM-dd` is the last resort.
+A date the user types (the attribute selector, `DateChoice.Order`) is read in the order of the region's short date, whatever the language; the date column of the geek lists shows the same short date with two digits per field (`Format.twoDigits`), so that what is typed is read as what is shown. ICU's templates with padded fields (`ddMMyy`) would follow the language instead: a French interface on an American Mac would show day first.
+
+The date column of the geek lists is 8 characters wide. `Format.fitting` keeps the first pattern whose dates all fit, tried on the 28th of every month: a locale with longer names gets the numbers ("28.09." in German, whose "28. Sept." is 9 characters), and `yy-MM-dd` is the last resort (Korean, whose short date "yy. MM. dd." is 11 characters).
 
 ## Strings
 

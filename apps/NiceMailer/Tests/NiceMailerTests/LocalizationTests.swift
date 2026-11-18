@@ -371,6 +371,10 @@ struct LocalizationTests {
         // German writes "28. Sept.", one character too many: the column
         // gets the numbers instead.
         s = list(Self.dates("de", "de_DE"), Self.at(2023, 9, 28)); #expect(s == "28.09.")
+        // The order of the region, whatever the language: a French
+        // interface on an American Mac, as a typed date is read.
+        s = list(Self.dates("fr", "en_US"), Self.at(2020, 11, 5)); #expect(s == "11/05/20")
+        #expect(Format.twoDigits("M/d/yy") == "MM/dd/yy" && Format.twoDigits("dd.MM.y") == "dd.MM.yy" && Format.twoDigits("y/MM/dd") == "yy/MM/dd")
     }
 
     @Test func geekMessageDatesLetTheLocaleJoinTheDayAndTheTime() {

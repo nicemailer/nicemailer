@@ -88,9 +88,11 @@ Pas fait : la mesure sur un échantillon de vrais mails, faute d'échantillon. L
 
 ### 3.4 Ce que l'utilisateur tape
 
-Le sélecteur d'attributs (`ui.md`, « Sélecteur d'attributs ») lit une date tapée jour d'abord (`1/10/2026`, six chiffres `ddmmyy` puis `yymmdd`) et des unités de durée en anglais et en français (`d`/`j`, `w`/`s`…). Un Américain qui tape `10/1/2026` obtient le 10 janvier.
+**Décidé et livré : l'ordre de la région.** Une date tapée dans le sélecteur d'attributs (`ui.md`, « Sélecteur d'attributs ») se lit dans l'ordre de la date courte de la région du Mac, quelle que soit la langue : `1/10/2026` est le 1er octobre en France, le 10 janvier aux États-Unis ; `2026/10/1` au Japon ; `2026-10-01` partout. Six chiffres se lisent d'abord dans cet ordre, puis année d'abord, et chaque ligne dit sa lecture (« mm jj aa »). L'aide du panneau donne ses exemples dans l'ordre de la région.
 
-À trancher : l'ordre suit `uiLocale` (mois d'abord aux États-Unis), avec la lecture affichée à droite de la ligne comme aujourd'hui pour six chiffres ; les unités de chaque langue ajoutée entrent dans la table, en vérifiant qu'aucune lettre ne désigne deux unités (le `s` français et un `s` anglais pour *seconds*, par exemple).
+La colonne de date des listes geek affiche la même date courte, deux chiffres par champ, pour qu'on lise ce qu'on tape : le gabarit `ddMMyy` qu'elle utilisait suit la langue dans ICU, pas la région, et une interface française sur un Mac américain aurait affiché le jour d'abord tout en lisant le mois d'abord.
+
+Reste : les unités de durée (`10j`, `3w`) ne connaissent que l'anglais et le français ; chaque langue ajoutée y entre (section 3.9), en vérifiant qu'aucune lettre ne désigne deux unités.
 
 ### 3.5 Les raccourcis et les dispositions de clavier
 

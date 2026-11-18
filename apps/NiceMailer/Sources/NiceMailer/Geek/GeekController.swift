@@ -1467,7 +1467,8 @@ final class GeekController {
     /// pickers whose rows say it all.
     func pickerHint(_ kind: PickerKind) -> String? {
         switch kind {
-        case .attributeValue(.date), .attributeValue(.mailDate): L("or type a date (2026-10-01, 1/10/2026, 011026, 261001) or a duration (10d, 3w, 6m, 1y)")
+        case .attributeValue(.date), .attributeValue(.mailDate):
+            L("or type a date (2026-10-01, %@) or a duration (10d, 3w, 6m, 1y)", DateChoice.Order.ui.examples)
         case .attributeValue(.text): L("words of the subject or body; -word to exclude")
         case .attributeValue(.subject): L("words of the subject; -word to exclude")
         case .attributeValue(.group): L("↩ chooses or removes a group, several allowed; -name to exclude; esc closes")

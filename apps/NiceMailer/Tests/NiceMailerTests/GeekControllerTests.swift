@@ -2256,7 +2256,7 @@ struct GeekControllerTests {
         press("f"); type(L("Conversation date…")); press("ret")
         // The Date… panel opens on its presets: the hint is on the input
         // line, not only in an empty panel.
-        #expect(controller.pickerHint(.attributeValue(.date))?.contains("011026") == true)
+        #expect(controller.pickerHint(.attributeValue(.date))?.contains(DateChoice.Order.ui.examples) == true)
         #expect(controller.pickerHint(.attributes) == nil)
         for field in AttributeField.allCases { #expect(controller.pickerHint(.attributeValue(field)) != nil) }
         // Six digits read two ways: four rows, each saying its reading.
@@ -2313,7 +2313,7 @@ struct GeekControllerTests {
         #expect(conversation != nil && mail != nil && conversation! < mail!)
         type(L("Mail date…")); press("ret")
         #expect(controller.overlay == .picker(.attributeValue(.mailDate)))
-        #expect(controller.pickerHint(.attributeValue(.mailDate))?.contains("011026") == true)
+        #expect(controller.pickerHint(.attributeValue(.mailDate))?.contains(DateChoice.Order.ui.examples) == true)
         type("2020-01-01"); press("down"); press("ret")
         #expect(model.attributes.mailBefore != nil && model.attributes.before == nil)
         #expect(model.attributes.chips.map(\.label) == [L("mail: %@", L("before %@", "2020-01-01"))])

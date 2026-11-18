@@ -638,7 +638,13 @@ enum Format {
             // in German, "3 de fev." in Portuguese) gets the numbers.
             geekTime = Format.fitting([.template("jmm"), .template("Hmm")], width: 8, make: make)
             geekDayMonth = Format.fitting([.template("dMMM"), .template("ddMM")], width: 8, make: make)
-            geekShort = Format.fitting([.template("ddMMyy"), .fixed("yy-MM-dd")], width: 8, make: make)
+            // The region's short date with two digits per field: its order
+            // and its separators, as the classic list and a typed date
+            // (`DateChoice.Order`) have them. Not the template "ddMMyy",
+            // which follows the language: a French interface on an
+            // American Mac would show day first while a typed date is
+            // read month first.
+            geekShort = Format.fitting([.localized(Format.twoDigits(Format.shortPattern(locale))), .fixed("yy-MM-dd")], width: 8, make: make)
         }
     }
 
@@ -646,7 +652,35 @@ enum Format {
     /// or, as a last resort, a fixed pattern.
     enum Pattern {
         case template(String)
+        /// A pattern written in the locale's digits and names.
+        case localized(String)
         case fixed(String)
+    }
+
+    /// The short date of `locale`'s region ("M/d/yy", "dd/MM/y", "y/MM/dd").
+    static func shortPattern(_ locale: Locale) -> String {
+        let f = DateFormatter()
+        f.locale = locale
+        f.dateStyle = .short
+        f.timeStyle = .none
+        return f.dateFormat ?? "dd/MM/yy"
+    }
+
+    /// `pattern` with two digits for the day, the month and the year:
+    /// "M/d/yy" becomes "MM/dd/yy", "dd.MM.y" "dd.MM.yy". A fixed width for
+    /// the date column of the geek lists.
+    static func twoDigits(_ pattern: String) -> String {
+        var out = ""
+        var last: Character? = nil
+        for c in pattern {
+            if "dMy".contains(c) {
+                if c != last { out += String(repeating: c, count: 2) }
+            } else {
+                out.append(c)
+            }
+            last = c
+        }
+        return out
     }
 
     /// The first of `patterns` whose dates all fit in `width` characters,
@@ -660,6 +694,7 @@ enum Format {
             formatter = make { f in
                 switch pattern {
                 case .template(let t): f.setLocalizedDateFormatFromTemplate(t)
+                case .localized(let p): f.dateFormat = p
                 case .fixed(let p):
                     // A fixed pattern is written with ASCII digits and the
                     // Gregorian calendar: it is the one fallback every
