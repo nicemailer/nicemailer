@@ -1,0 +1,31 @@
+# A European Portuguese interface on a Mac set to Portugal
+# (fixtures/localization-pt.language and .locale, docs/localization.md): its
+# own words, not Brazil's, and dates with the day first. The mail of 2021
+# comes from fixtures/localization-pt.mbox, imported for this scenario only.
+key /
+type Rentrée de septembre
+key ret
+expect thread_count = 1
+expect selected_subject = Rentrée de septembre
+expect selected_date = 28/09/21
+snap date
+# In Portuguese, 1 takes the singular.
+key t
+type Urgent
+key ret
+expect header_tags = Urgent
+key ;
+key T
+expect screen = tags
+key d
+expect choice = Apagar a etiqueta Urgent (removida de 1 e-mail)?
+snap plural
+key esc
+expect choice =
+# The History screen: words of Portugal.
+key esc
+key ;
+key h
+expect screen = history
+expect history_who = Eu
+snap history

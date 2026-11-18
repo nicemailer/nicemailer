@@ -209,6 +209,7 @@ fn forward_marker(line: &str) -> bool {
         "mensaje reenviado",
         "messaggio inoltrato",
         "mensagem encaminhada",
+        "mensagem reencaminhada",
         "doorgestuurd bericht",
         "vidarebefordrat meddelande",
         "videresendt meddelelse",

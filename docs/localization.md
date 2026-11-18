@@ -1,6 +1,6 @@
 # Localization
 
-The Swift app follows the user's languages (System Settings, or the per-app language of NiceMailer). The app speaks English (the fallback), French, German, Spanish, Italian, Portuguese (Brazil), Dutch, Swedish, Danish, Norwegian (Bokmål), Finnish, Polish, Russian, Ukrainian, Japanese, Chinese (Simplified and Traditional) and Korean. English and French are written by the project; the other languages are machine translations awaiting a review by native speakers. The CLI and the core speak English only (`CLAUDE.md`, "Languages"). The work still to do for more languages is planned in `specifications/localisation.md`.
+The Swift app follows the user's languages (System Settings, or the per-app language of NiceMailer). The app speaks English (the fallback), French, German, Spanish, Italian, Portuguese (Brazil and Portugal), Dutch, Swedish, Danish, Norwegian (Bokmål), Finnish, Polish, Russian, Ukrainian, Japanese, Chinese (Simplified and Traditional) and Korean. English and French are written by the project; the other languages are machine translations awaiting a review by native speakers. The CLI and the core speak English only (`CLAUDE.md`, "Languages"). The work still to do for more languages is planned in `specifications/localisation.md`.
 
 ## Two locales
 

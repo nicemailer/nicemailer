@@ -624,6 +624,8 @@ pub fn language_name(code: &str) -> &str {
         "es" => "Spanish",
         "it" => "Italian",
         "pt" => "Portuguese",
+        "pt-PT" => "European Portuguese",
+        "pt-BR" => "Brazilian Portuguese",
         "nl" => "Dutch",
         "ja" => "Japanese",
         "zh" => "Chinese",

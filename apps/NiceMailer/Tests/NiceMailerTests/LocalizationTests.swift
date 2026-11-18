@@ -363,9 +363,17 @@ struct LocalizationTests {
         s = Format.longDate(today, in: enFR); #expect(s == "Tuesday 14 November 2023 at 23:13")
     }
 
+    /// Portugal and Brazil each get their own Portuguese, whichever the other
+    /// offers.
+    @Test func portugalAndBrazilEachGetTheirOwnPortuguese() {
+        let available = ["en", "fr", "pt-BR", "pt-PT"]
+        #expect(Bundle.preferredLocalizations(from: available, forPreferences: ["pt-PT"]).first == "pt-PT")
+        #expect(Bundle.preferredLocalizations(from: available, forPreferences: ["pt-BR"]).first == "pt-BR")
+    }
+
     @Test func geekListDatesFitTheirEightCharacterColumnInEveryLocale() {
         func list(_ d: Format.Dates, _ t: Int) -> String { Format.geekListDate(t, in: d, now: Self.now, calendar: Self.calendar) }
-        for (language, settings) in [("fr", "fr_FR"), ("en", "en_US"), ("en", "en_GB"), ("de", "de_DE"), ("pt", "pt_BR"),
+        for (language, settings) in [("fr", "fr_FR"), ("en", "en_US"), ("en", "en_GB"), ("de", "de_DE"), ("pt", "pt_BR"), ("pt-PT", "pt_PT"),
                                      ("ru", "ru_RU"), ("ja", "ja_JP"), ("ko", "ko_KR"), ("es", "es_ES"), ("pl", "pl_PL"),
                                      ("uk", "uk_UA"), ("fi", "fi_FI"), ("nb", "nb_NO"), ("da", "da_DK"), ("sv", "sv_SE"),
                                      ("nl", "nl_NL"), ("it", "it_IT"), ("zh-Hans", "zh_CN"), ("zh-Hant", "zh_TW"),

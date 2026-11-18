@@ -12,12 +12,12 @@ How to write it:
 
 ## 0.2.0 - 2026-11-18
 
-First public and open source release. 18 languages. Auto update. Configurable keyboard shortcuts. UI to add an account and option to try it in « look only » mode.
+First public and open source release. 19 languages. Auto update. Configurable keyboard shortcuts. UI to add an account and option to try it in « look only » mode.
 
 ### Added
 
 - **License:** NiceMailer is free software, under the GNU Affero General Public License, version 3.
-- **Languages:** 16 new languages, following the language of macOS or the one chosen for the app: German, Spanish, Italian, Portuguese (Brazil), Dutch, Swedish, Danish, Norwegian, Finnish, Polish, Russian, Ukrainian, Japanese, Simplified and Traditional Chinese, and Korean. These translations have not yet been reviewed by native speakers.
+- **Languages:** 17 new languages, following the language of macOS or the one chosen for the app: German, Spanish, Italian, Portuguese (Brazil and Portugal), Dutch, Swedish, Danish, Norwegian, Finnish, Polish, Russian, Ukrainian, Japanese, Simplified and Traditional Chinese, and Korean. These translations have not yet been reviewed by native speakers.
 - **Updates:** NiceMailer updates itself and its background core. It checks once a day, or on demand with NiceMailer > Check for Updates….
 - **Updates:** During an update or a mailbox upgrade, the app, the `nicemailer` command and AI agents say so and wait, instead of reporting that NiceMailer is not running. `nicemailer --wait` waits for the end; without it, the command exits with status 75.
 - **Updates:** The mailbox is copied before each upgrade of its data format and put back if the upgrade fails: nothing is lost, and the previous version can still open it.
