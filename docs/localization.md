@@ -63,6 +63,12 @@ A new reason: add it to `reasons!` in `nm-api` (name and English sentence), give
 2. Add the key to `Localizable.xcstrings` with its French. For a plural, give `en` and `fr` a `plural` variation with `one` and `other`.
 3. `make swift-test`: the tests below fail on what is missing.
 
+## The app bundle
+
+`make bundle` lists in `CFBundleLocalizations` the languages of the String Catalog (`scripts/bundle-languages.py`): macOS offers the app in a language only when the bundle declares it. The texts of `Info.plist` that macOS shows itself (`NSContactsUsageDescription`, why the app asks for Contacts) are in English in `Info.plist` and, for each other language, in `apps/NiceMailer/Bundle/<language>.lproj/InfoPlist.strings`; `scripts/tests/test_bundle_languages.py` fails when a language lacks one.
+
+The lists of addresses or of names are joined with ", ", right for the languages written in Latin or Cyrillic letters; Chinese and Japanese (`、`) and Arabic (`، `) would need their own, with right-to-left writing (`specifications/localisation.md`, section 3.8).
+
 ## Tests
 
 `LocalizationTests` (Swift Testing):

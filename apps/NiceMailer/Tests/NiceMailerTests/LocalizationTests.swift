@@ -142,13 +142,13 @@ struct LocalizationTests {
     }
 
     /// No text of the interface is written in a SwiftUI view without
-    /// `L()`: `Text("Aucun résultat")` looks its key up in the main
+    /// `L()`, the labels VoiceOver reads included: `Text("Aucun résultat")` looks its key up in the main
     /// bundle, which has no translation, and shows it as written. Only
     /// key names, symbols and words that are not translated (`text`,
     /// `html`) are allowed.
     @Test func noViewShowsATextOutsideTheCatalog() throws {
         let pattern = try NSRegularExpression(
-            pattern: #"\b(?:Text|Label|Button|Toggle|TextField|Section|Menu)\("((?:[^"\\]|\\.)*)"|\.(?:alert|navigationTitle|help|confirmationDialog)\("((?:[^"\\]|\\.)*)"|prompt: "((?:[^"\\]|\\.)*)""#)
+            pattern: #"\b(?:Text|Label|Button|Toggle|TextField|Section|Menu)\("((?:[^"\\]|\\.)*)"|\.(?:alert|navigationTitle|help|confirmationDialog|accessibilityLabel|accessibilityHint|accessibilityValue)\("((?:[^"\\]|\\.)*)"|prompt: "((?:[^"\\]|\\.)*)""#)
         let allowed: Set<String> = [" text ", " html ", "T", "U", "F", "/", "–"]
         for (name, text) in try Self.sources() {
             for m in pattern.matches(in: text, range: NSRange(text.startIndex..., in: text)) {

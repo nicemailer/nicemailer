@@ -108,10 +108,12 @@ Le thème geek se pilote par des touches simples (`;`, `/`, `@`, `#`, `[`…) et
 
 ### 3.7 Les textes hors du catalogue
 
-- `InfoPlist.strings` (nom de l'app, textes des autorisations) n'existe qu'en français, écrit par `scripts/make-bundle.sh` : à générer pour chaque langue, depuis le catalogue.
-- Les menus de macOS fournis par AppKit sont traduits par le système, à condition que `CFBundleLocalizations` liste la langue (`make-bundle.sh`).
-- Les libellés d'accessibilité (VoiceOver) et les bulles d'aide (`.help`) passent par `L()` ; le test des textes en dur dans les vues les couvre déjà, il faut l'étendre à `accessibilityLabel`.
-- Le séparateur de liste « , » des destinataires (`Compose.recipients`) et des tags : `ListFormatter`, ou une clé du catalogue.
+**Livré.**
+
+- `InfoPlist.strings` (le texte que macOS montre quand l'app demande les Contacts) n'est plus écrit en dur en français par `scripts/make-bundle.sh` : chaque langue a son fichier, `apps/NiceMailer/Bundle/<langue>.lproj/InfoPlist.strings`, que le script copie. `CFBundleLocalizations` liste les langues du catalogue (`scripts/bundle-languages.py`), de sorte qu'une langue ajoutée au catalogue est proposée par macOS sans toucher au script ; un test Python refuse une langue sans son texte d'autorisation.
+- Les menus fournis par AppKit sont traduits par le système, pour les langues que déclare `CFBundleLocalizations`.
+- Le test des textes en dur dans les vues couvre aussi `accessibilityLabel`, `accessibilityHint` et `accessibilityValue` (VoiceOver) ; il n'en a trouvé aucun.
+- Décidé : le séparateur « , » des listes d'adresses et de noms reste, juste pour les langues à alphabet latin ou cyrillique ; le chinois, le japonais (`、`) et l'arabe (`، `) le reprendront avec la section 3.8.
 
 ### 3.8 La longueur et l'écriture de droite à gauche
 
