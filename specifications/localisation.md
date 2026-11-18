@@ -1,6 +1,6 @@
 # Localisation : plan de travail
 
-Statut : dates, pluriels et phrases construites par morceaux corrigés dans l'app (`docs/localization.md`) ; erreurs des requêtes, des événements et des résultats décrites par une raison, écrites par l'app, transmises aux agents (section 3.1). Le reste est à faire, dans l'ordre de la section 3.
+Statut : livrés les chantiers 3.1 (le noyau décrit, l'app écrit), 3.2, 3.3, 3.4, 3.6, 3.7 et la procédure 3.9 (`docs/localization.md`). Restent 3.5 (les raccourcis clavier, qui demandent des décisions raccourci par raccourci) et 3.8 (la longueur des traductions, l'écriture de droite à gauche).
 
 Ce document est le plan pour qu'une troisième langue ne soit plus qu'une question de traduction. Les règles déjà en place sont dans `docs/localization.md` ; quand une étape est livrée, ses règles y passent et l'étape est rayée ici.
 
@@ -122,13 +122,7 @@ Le thème geek se pilote par des touches simples (`;`, `/`, `@`, `#`, `[`…) et
 
 ### 3.9 Ajouter une langue
 
-La procédure, à écrire dans `docs/localization.md` quand les chantiers 3.1 à 3.7 sont livrés :
-
-1. La langue entre dans `CFBundleLocalizations` (`make-bundle.sh`) et dans la liste des langues vérifiées par les tests.
-2. Chaque clé du catalogue reçoit sa traduction, ses variations de pluriel selon les catégories de la langue (le russe et le polonais en ont 3 ou 4, l'arabe 6).
-3. Un scénario UI dans cette langue (`fixtures/<scenario>.language`).
-4. Une relecture par une personne dont c'est la langue : une traduction automatique non relue se voit.
-5. Une ligne au `CHANGELOG.md`.
+**Écrit** : `docs/localization.md`, « Adding a language » (traductions et formes plurielles du catalogue, textes d'`Info.plist`, unités de durée, scénario UI dans la langue, relecture, CHANGELOG). Le code n'a plus à changer ; restent les raccourcis clavier (3.5) et l'écriture de droite à gauche (3.8).
 
 ## 4. Critère de fin
 

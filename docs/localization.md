@@ -69,6 +69,17 @@ A new reason: add it to `reasons!` in `nm-api` (name and English sentence), give
 
 The lists of addresses or of names are joined with ", ", right for the languages written in Latin or Cyrillic letters; Chinese and Japanese (`、`) and Arabic (`، `) would need their own, with right-to-left writing (`specifications/localisation.md`, section 3.8).
 
+## Adding a language
+
+1. In `Localizable.xcstrings`, every key gets its translation (the tests fail on a key left out), and every key with a plural variation gets the forms of the language: `one` and `other` in English and French, `few` and `many` too in Russian or Polish, six forms in Arabic (CLDR plural rules). Each form keeps the arguments of its key.
+2. `apps/NiceMailer/Bundle/<language>.lproj/InfoPlist.strings`, with the texts of `Info.plist` macOS shows.
+3. The units of a typed duration (`DateChoice.units`, `10j`, `3w`) take the words of the language, without a letter that already names another unit.
+4. A UI scenario played in that language (`fixtures/<scenario>.language`), and a look at its snapshots: a longer language may cut a label.
+5. A review by someone whose language it is.
+6. A line in `CHANGELOG.md`.
+
+The code does not change: `make bundle` declares the language from the catalog. Two things are not ready: the keyboard shortcuts on the keyboards of other countries (`specifications/localisation.md`, section 3.5), and the languages written right to left (section 3.8).
+
 ## Tests
 
 `LocalizationTests` (Swift Testing):
