@@ -810,6 +810,47 @@ struct ComposeControllerTests {
         #expect((update?["bcc"] as? [[String: Any]])?.first?["addr"] as? String == "boss@example.org")
     }
 
+    /// The button of the Cc line opens the Bcc line and gives it the keys;
+    /// a second click hides it, the keys going back to Cc.
+    @Test func theBccButtonShowsAndHidesTheLine() async {
+        await reply()
+        #expect(model.composer?.showsBcc == false)
+        controller.toggleBcc()
+        #expect(model.composer?.showsBcc == true)
+        #expect(model.composer?.focus == .bcc)
+        controller.toggleBcc()
+        #expect(model.composer?.showsBcc == false)
+        #expect(model.composer?.focus == .cc)
+    }
+
+    /// Hiding the line leaves the keys where they are when it did not have
+    /// them: the text being written keeps its cursor.
+    @Test func hidingTheBccLineLeavesTheKeysElsewhere() async {
+        await reply()
+        controller.toggleBcc()
+        controller.focusCompose(.subject)
+        controller.toggleBcc()
+        #expect(model.composer?.showsBcc == false)
+        #expect(model.composer?.focus == .subject)
+    }
+
+    /// A Bcc line that holds an address, or one being typed, stays on
+    /// screen: the mail must not go to someone the window no longer shows.
+    @Test func aBccLineWithAnAddressCannotBeHidden() async {
+        await reply()
+        controller.toggleBcc()
+        type("boss@example.org")
+        controller.toggleBcc()
+        #expect(model.composer?.showsBcc == true)
+        #expect(model.composer?.focus == .bcc)
+        #expect(model.composer?.line.text == "boss@example.org")
+        press("ret")
+        #expect(await eventually { model.composer?.headers.bcc.count == 1 })
+        controller.toggleBcc()
+        #expect(model.composer?.showsBcc == true)
+        #expect(model.composer?.headers.bcc.map(\.addr) == ["boss@example.org"])
+    }
+
     /// A text that is not an address stops the sending.
     @Test func aWrongAddressStopsTheSending() async {
         await reply()

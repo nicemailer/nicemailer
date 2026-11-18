@@ -223,7 +223,8 @@ struct Composer: Equatable {
     var line = LineEdit()
     /// The subject as edited, with its cursor.
     var subjectLine: LineEdit
-    /// The Bcc line is shown: it has addresses, or ⌥⌘B opened it.
+    /// The Bcc line is shown: it has addresses, or ⌥⌘B or the button at the
+    /// end of the Cc line opened it.
     var showsBcc: Bool
     /// The files attached, as the core last listed them, and the one
     /// selected while the line of files has the keys (← → and ⌫).
@@ -289,6 +290,14 @@ struct Composer: Equatable {
     /// line of files only when there are some.
     var fields: [ComposeField] {
         ComposeField.allCases.filter { ($0 != .bcc || showsBcc) && ($0 != .attachments || !attachments.isEmpty) }
+    }
+
+    /// Whether the Bcc line may be hidden: only with nothing in it. Hidden
+    /// with an address, or with one being typed, which leaving the line
+    /// makes an address, the mail would go to someone the screen no longer
+    /// shows.
+    var canHideBcc: Bool {
+        headers.bcc.isEmpty && !(focus == .bcc && !line.text.trimmingCharacters(in: .whitespaces).isEmpty)
     }
 
     /// The next field (Tab) or the previous one (⇧Tab), turning around.

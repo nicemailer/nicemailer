@@ -2297,6 +2297,20 @@ final class GeekController {
         if let pending { Task { await model.commitRecipients(pending.text, to: pending.field) } }
     }
 
+    /// The button at the end of the Cc line: shows the Bcc line and gives
+    /// it the keys, or hides it again when it is empty (`Composer.canHideBcc`).
+    /// The keys leaving a line that disappears go to Cc, where the button is.
+    func toggleBcc() {
+        guard let c = model.composer else { return }
+        guard c.showsBcc else {
+            focusCompose(.bcc)
+            return
+        }
+        guard c.canHideBcc else { return }
+        if c.focus == .bcc { focusCompose(.cc) }
+        model.composer?.showsBcc = false
+    }
+
     /// A key in a recipient line (`reponse.md`, section 6): the text typed
     /// with the editing keys of a text field; Return, `,` or `;` make it an
     /// address; ↑ ↓ choose among the suggestions, Return or Tab takes one;

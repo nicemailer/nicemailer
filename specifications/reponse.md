@@ -112,7 +112,7 @@ La v1 applique la section 4 de `brouillons.md` sans le serveur :
 La zone de réponse **remplace le lecteur**, dans la même fenêtre. De haut en bas :
 
 1. **De** : adresse d'expédition, suivie de la clé du compte qui envoie ; modifiable par `⌥⌘F` ou un clic (section 4 ter).
-2. **À**, **Cc** et **Cci** : une étiquette par adresse, qui passent à la ligne quand la largeur est remplie. Cci n'est affichée que si elle a des adresses ou si `⌥⌘B` l'a ouverte.
+2. **À**, **Cc** et **Cci** : une étiquette par adresse, qui passent à la ligne quand la largeur est remplie. Cci n'est affichée que si elle a des adresses, ou si `⌥⌘B` ou le bouton **Cci** au bout de la ligne Cc l'a ouverte. Ce bouton la masque à nouveau tant qu'elle est vide ; une ligne Cci qui contient une adresse reste affichée, pour qu'un mail ne parte jamais vers un destinataire que l'écran ne montre plus.
 3. **Objet**, modifiable.
 4. **Après l'envoi** : la cible du rangement (« Après l'envoi : Archive »), discrète. Absente quand la conversation reste en place (section 8).
 5. **La zone de saisie** : le composant d'édition de `edition.md`, en texte seul (police à chasse fixe de l'app) ou mis en forme, retour à la ligne visuel à la largeur de la zone, sans coupure dans le texte. Le curseur est en tête.

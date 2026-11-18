@@ -1,7 +1,7 @@
 # Editing the recipients and the subject of a reply (`reponse.md`, section
 # 6): ⇧Tab and Tab from field to field, an address typed and ended by a
 # comma, suggestions (Escape closes them), what is not an address kept in
-# the line, ⌫ taking the last address back, a pasted list, ⌥⌘B for Bcc, the
+# the line, ⌫ taking the last address back, a pasted list, the Bcc button and ⌥⌘B, the
 # subject, a click on a line; kept in the draft (Escape, then `r`), sent.
 expect folder = Inbox
 key r
@@ -86,8 +86,17 @@ expect compose_focus = cc
 clipboard Anne Leroy <anne@exemple.fr>, bob@exemple.fr
 key cmd-v
 expect compose_cc ~ anne@exemple.fr,bob@exemple.fr
-# ⌥⌘B: the Bcc line.
+# The button at the end of the Cc line: the Bcc line shown, with the keys,
+# then hidden again, the keys back in Cc.
 expect compose_bcc_shown = false
+click compose:bcc-toggle
+expect compose_bcc_shown = true
+expect compose_focus = bcc
+snap recipients-bcc-shown
+click compose:bcc-toggle
+expect compose_bcc_shown = false
+expect compose_focus = cc
+# ⌥⌘B: the Bcc line.
 key alt-cmd-b
 expect compose_bcc_shown = true
 expect compose_focus = bcc
@@ -95,6 +104,12 @@ type chef@exemple.fr
 key tab
 expect compose_focus = subject
 expect compose_bcc = chef@exemple.fr
+# With an address, the button no longer hides the line.
+click compose:bcc-toggle
+expect compose_bcc_shown = true
+expect compose_bcc = chef@exemple.fr
+expect compose_focus = subject
+snap recipients-bcc-kept
 type  (suite)
 expect compose_subject ~ (suite)
 key ret

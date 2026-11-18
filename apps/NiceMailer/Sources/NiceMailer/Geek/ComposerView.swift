@@ -133,25 +133,30 @@ struct ComposerView: View {
     /// (`reponse.md`, section 6, "Corriger").
     @ViewBuilder private func recipientLine(_ field: ComposeField, _ label: String, _ c: Composer) -> some View {
         let focused = c.focus == field
-        headerLine(label, focused: focused) {
-            FlowLayout(spacing: scaled(4)) {
-                ForEach(Array(c.headers[field].enumerated()), id: \.offset) { i, a in
-                    Text(Compose.label(a))
-                        .lineLimit(1)
-                        .padding(.horizontal, scaled(4))
-                        .background(RoundedRectangle(cornerRadius: 3).fill(Palette.cursor))
-                        .contentShape(Rectangle())
-                        .onTapGesture { controller.clickRecipient(field, i) }
-                        .uiTarget("compose-\(field.rawValue)-\(i)")
-                }
-                if focused {
-                    CaretText(line: c.line).lineLimit(1)
+        HStack(alignment: .firstTextBaseline, spacing: scaled(6)) {
+            headerLine(label, focused: focused) {
+                FlowLayout(spacing: scaled(4)) {
+                    ForEach(Array(c.headers[field].enumerated()), id: \.offset) { i, a in
+                        Text(Compose.label(a))
+                            .lineLimit(1)
+                            .padding(.horizontal, scaled(4))
+                            .background(RoundedRectangle(cornerRadius: 3).fill(Palette.cursor))
+                            .contentShape(Rectangle())
+                            .onTapGesture { controller.clickRecipient(field, i) }
+                            .uiTarget("compose-\(field.rawValue)-\(i)")
+                    }
+                    if focused {
+                        CaretText(line: c.line).lineLimit(1)
+                    }
                 }
             }
+            .contentShape(Rectangle())
+            .onTapGesture { controller.focusCompose(field) }
+            .uiTarget("compose-\(field.rawValue)")
+            // Beside the line rather than in it: a click on the button does
+            // not also give the keys to Cc.
+            if field == .cc { bccToggle(c) }
         }
-        .contentShape(Rectangle())
-        .onTapGesture { controller.focusCompose(field) }
-        .uiTarget("compose-\(field.rawValue)")
         if focused, !c.suggestions.isEmpty {
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(Array(c.suggestions.enumerated()), id: \.offset) { i, a in
@@ -171,6 +176,24 @@ struct ComposerView: View {
             .padding(.leading, scaled(58))
             .frame(maxWidth: scaled(520), alignment: .leading)
         }
+    }
+
+    /// The button that shows or hides the Bcc line (`GeekController.toggleBcc`):
+    /// highlighted while the line is shown, dimmed while it holds addresses
+    /// and so cannot be hidden.
+    private func bccToggle(_ c: Composer) -> some View {
+        Text(L("Bcc"))
+            .lineLimit(1)
+            .fixedSize()
+            .foregroundStyle(c.showsBcc ? Palette.accentText : Palette.muted)
+            .padding(.horizontal, scaled(4))
+            .background(RoundedRectangle(cornerRadius: 3).fill(c.showsBcc ? Palette.cursor : Color.clear))
+            .overlay(RoundedRectangle(cornerRadius: 3).stroke(Palette.separator))
+            .opacity(c.showsBcc && !c.canHideBcc ? 0.5 : 1)
+            .contentShape(Rectangle())
+            .onTapGesture { controller.toggleBcc() }
+            .accessibilityAddTraits(c.showsBcc ? [.isButton, .isSelected] : .isButton)
+            .uiTarget("compose-bcc-toggle")
     }
 }
 

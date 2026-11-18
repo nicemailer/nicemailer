@@ -21,6 +21,7 @@ First public and open source release. 18 languages. Auto update. Configurable ke
 - **Updates:** NiceMailer updates itself and its background core. It checks once a day, or on demand with NiceMailer > Check for Updates….
 - **Updates:** During an update or a mailbox upgrade, the app, the `nicemailer` command and AI agents say so and wait, instead of reporting that NiceMailer is not running. `nicemailer --wait` waits for the end; without it, the command exits with status 75.
 - **Updates:** The mailbox is copied before each upgrade of its data format and put back if the upgrade fails: nothing is lost, and the previous version can still open it.
+- **Writing:** A Bcc button at the end of the Cc line shows or hides the Bcc line.
 - **Keyboard:** Every key can be changed in `~/.config/nicemailer/keymap.toml`: move or remove keys, add your own for any folder or action, create your own menus. The help, the status bar and the menus show the keys in effect, and `nicemailer keymap check` validates the file.
 - **Accounts:** Preferences (Settings…, ⌘,) with an Accounts tab: add an account from its address, password and name, list the accounts and change their order. NiceMailer finds the servers and asks for more only when needed.
 - **Accounts:** Before an account is added, the Preferences show what will change on the server: the folders to create, and for each role a choice among the folders that already exist.
