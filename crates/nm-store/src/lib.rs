@@ -203,50 +203,60 @@ fn create_body_schema(conn: &Connection) -> Result<()> {
 /// - `#[from]` generates a conversion from `rusqlite::Error`, so `?` can
 ///   turn a SQLite error into a `StoreError::Sqlite` automatically.
 ///
-/// The messages stay in French because they reach the user.
+/// The messages are in English, for the logs and the CLI. An error a user
+/// may read carries a reason (`nm_api::Why`, `localisation.md`, section
+/// 3.1), which each client writes in the user's language; `NotFound` and
+/// `InvalidParams` are mistakes of a client's program, whose text is a
+/// detail for the logs.
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {
-    #[error("base de données : {0}")]
+    #[error("database: {0}")]
     Sqlite(#[from] rusqlite::Error),
-    #[error("introuvable : {0}")]
+    #[error("not found: {0}")]
     NotFound(String),
     /// A command that changes the mail of a read-only account.
-    #[error("{0}")]
-    ReadOnly(String),
+    #[error("{}", nm_api::reason::ACCOUNT_READ_ONLY.english)]
+    ReadOnly,
     /// The raw file of a message is corrupt or missing (`gc.rs`): the
     /// caller sets it aside (`Store::raw_damaged`), and the message is
     /// downloaded again if its server still has it. The hash, in hex.
     #[error("the raw file of this mail is damaged ({0}): it is set aside and downloaded again from the server if possible")]
     RawDamaged(String),
-    #[error("déplacement refusé : {0}")]
-    InvalidMove(String),
-    #[error("paramètre invalide : {0}")]
+    /// A move the workflow rules refuse.
+    #[error("{0}")]
+    InvalidMove(nm_api::Why),
+    /// A mistake of the client's program: the text says which.
+    #[error("invalid parameters: {0}")]
     InvalidParams(String),
+    /// A value the user gave that cannot be used (a tag name too long, a
+    /// name taken): its reason.
+    #[error("{0}")]
+    Invalid(nm_api::Why),
     /// A favorable decision on a sender whose mail is suspected of spoofing
     /// needs the user's explicit confirmation
     /// (`authentification-expediteur.md`, section 5).
-    #[error("confirmation requise : usurpation probable de {addr} (verdict {verdict})")]
+    #[error("confirmation required: probable spoofing of {addr} (verdict {verdict})")]
     ConfirmationRequired { addr: String, verdict: String },
     /// The database was created by a newer version of NiceMailer. Opening
     /// it anyway could corrupt it, so the store refuses.
-    #[error("version du schéma {found} plus récente que celle du code ({expected})")]
+    #[error("schema version {found} newer than the code's ({expected})")]
     SchemaTooNew { found: i64, expected: i64 },
     /// A read-only connection found another schema version than the code's:
     /// the writing store must open (and migrate) the database first.
-    #[error("connexion de lecture : schéma en version {found}, attendu {expected}")]
+    #[error("read connection: schema version {found}, expected {expected}")]
     ReaderVersion { found: i64, expected: i64 },
     /// The database was created by an earlier development build whose
     /// version-1 schema lacked tables added since (version 1 is not released
     /// yet, so it is still edited in place). It has to be recreated.
-    #[error("base créée par une version de développement antérieure ({0} absent) : recréez-la (make seed)")]
+    #[error("database created by an earlier development build ({0} missing): create it again (make seed)")]
     OutdatedSchema(&'static str),
     /// A file operation failed (raw message storage, mbox file).
-    #[error("fichier : {0}")]
+    #[error("file: {0}")]
     Io(String),
     /// This mail cannot be answered or this draft sent: an archive
     /// account, a draft answered, no recipient (`reponse.md`, section 3).
     #[error("{0}")]
-    CannotSend(String),
+    CannotSend(nm_api::Why),
     /// The body of the mail answered is not downloaded yet.
     #[error("the body of this mail is not downloaded yet: it is asked for, try again in a moment")]
     BodyPending,
@@ -305,16 +315,16 @@ pub struct ChangeSet {
     /// send them (`spool.rs`).
     pub spooled: BTreeSet<i64>,
     /// Local changes undone after the server refused them for good, as
-    /// `(message_id, kind, reason)` (`ActionReverted`).
-    pub reverted: Vec<(i64, String, String)>,
+    /// `(message_id, kind, why)` (`ActionReverted`).
+    pub reverted: Vec<(i64, String, nm_api::Why)>,
     /// Accounts with a mail queued for sending, or a send cancelled: their
     /// sender looks at its queue again (`drafts.rs`).
     pub sending: BTreeSet<i64>,
     /// Drafts the server accepted (`DraftSent`).
     pub sent: Vec<drafts::SentDraft>,
     /// Drafts that could not be sent, for good, as `(draft_id, reply_to,
-    /// reason)` (`SendFailed`).
-    pub send_failed: Vec<(i64, Option<i64>, String)>,
+    /// why)` (`SendFailed`).
+    pub send_failed: Vec<(i64, Option<i64>, nm_api::Why)>,
     /// Drafts sent to some recipients only, with the others and the
     /// server's answer for each (`SendPartial`).
     pub send_partial: Vec<(i64, Vec<String>)>,

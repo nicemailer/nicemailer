@@ -35,8 +35,14 @@ struct EventOrderTests {
     /// answer.
     @Test func aRefusedChangeIsSaidInTheStatusBar() {
         // Compared through `L`: the tests run in the language of the Mac.
-        let move = AppModel.revertedFlash(kind: "move", reason: "Mailbox doesn't exist: Archive")
+        let refused = ["reason": "server_refused_change", "server_text": "Mailbox doesn't exist: Archive"]
+        let move = AppModel.revertedFlash(kind: "move", why: refused, message: "x")
         #expect(move == L("The server refused the move") + " · " + L("undone: %@", "Mailbox doesn't exist: Archive"))
-        #expect(AppModel.revertedFlash(kind: "set_flags", reason: "quota").hasPrefix(L("The server refused the change")))
+        // After its attempts: the reason's sentence, in the app's language.
+        let tried = ["reason": "attempts_failed", "attempts": "5", "server_text": "timeout"]
+        #expect(AppModel.revertedFlash(kind: "set_flags", why: tried, message: "x")
+            == L("The server refused the change") + " · " + L("undone: %@", L("The server could not be reached after %@ attempts: %@", "5", "timeout")))
+        // A reason the app does not know: the core's English message.
+        #expect(AppModel.revertedFlash(kind: "set_flags", why: [:], message: "quota").hasSuffix(L("undone: %@", "quota")))
     }
 }

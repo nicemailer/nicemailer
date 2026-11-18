@@ -499,13 +499,13 @@ enum AI {
         }
     }
 
-    /// When an appointment is, in the user's language: "Thursday 25 June
+    /// When an appointment is, in the interface's locale (`uiLocale`): "Thursday 25 June
     /// 2020 · 14:00–15:00", "Saturday 28 November 2026 – Monday 30
     /// November 2026". The dates are floating (`AIEvent`): read and written
     /// in one fixed zone (UTC), so that no zone shift, nor a change to
     /// summer time, moves them. A date the app cannot read is shown as the
     /// core gave it.
-    static func eventWhen(_ e: AIEvent, locale: Locale = .current) -> String {
+    static func eventWhen(_ e: AIEvent, locale: Locale = uiLocale) -> String {
         var calendar = Calendar(identifier: .gregorian)
         let utc = TimeZone(identifier: "UTC")!
         calendar.timeZone = utc
@@ -617,13 +617,9 @@ enum AI {
         appLocale.language.languageCode?.identifier ?? "en"
     }
 
-    /// The status bar for an error of `ai_run` or `ai_apply`.
+    /// The status bar for an error of `ai_run` or `ai_apply`: the sentence
+    /// of its reason (`CoreReason`), the AI's own text cited when it failed.
     static func errorFlash(_ error: Error) -> String {
-        guard let e = error as? CoreClient.RPCError else { return error.localizedDescription }
-        switch e.code {
-        case AIError.disabled: return L("The AI is off: set ai.enabled = true in config.toml")
-        case ComposeError.revisionConflict: return L("The reply changed since the AI read it: run it again")
-        default: return L("AI: %@", e.message)
-        }
+        error.localizedDescription
     }
 }

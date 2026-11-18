@@ -87,11 +87,19 @@ for script in "${scripts[@]}"; do
             --account fixture --address me@example.com >/dev/null 2>&1
     fi
     mkdir -p "$dir/exports"
-    # perl's alarm gives the app 120 s at most (macOS has no `timeout`).
     # `-AppleLanguages (en)`: English UI whatever the machine's language, so
-    # that expected messages do not depend on it.
+    # that expected messages do not depend on it. A scenario may ask for
+    # another language (fixtures/<scenario>.language: `fr`) and for the
+    # region settings of a Mac (fixtures/<scenario>.locale: `en_US`), which
+    # give the order of dates and the clock (docs/localization.md); without
+    # it, fr_FR, so that the dates expected do not depend on the machine.
+    language=en
+    if [ -f "$APP/UITests/fixtures/$name.language" ]; then language=$(cat "$APP/UITests/fixtures/$name.language"); fi
+    locale=fr_FR
+    if [ -f "$APP/UITests/fixtures/$name.locale" ]; then locale=$(cat "$APP/UITests/fixtures/$name.locale"); fi
+    # perl's alarm gives the app 120 s at most (macOS has no `timeout`).
     if NICEMAILER_DATA_DIR="$dir" NICEMAILER_CLI="$CLI" NICEMAILER_MCP="$MCP" NICEMAILER_UI_SCRIPT="$script" NICEMAILER_UI_OUT="$OUT/$name" \
-        NICEMAILER_EXPORT_DIR="$dir/exports" perl -e 'alarm shift; exec @ARGV' 120 "$BIN" -AppleLanguages "(en)" 2>"$OUT/$name.log"; then
+        NICEMAILER_EXPORT_DIR="$dir/exports" perl -e 'alarm shift; exec @ARGV' 120 "$BIN" -AppleLanguages "($language)" -AppleLocale "$locale" 2>"$OUT/$name.log"; then
         echo "PASS $name"
     else
         echo "FAIL $name"

@@ -202,7 +202,11 @@ import Testing
     }
 
     @Test func sizesAreRoundedAndExact() {
-        #expect(MailPDF.byteCount(512) == L("%@ bytes", NumberFormatter.localizedString(from: 512, number: .decimal)))
-        #expect(MailPDF.byteCount(250_880).contains(NumberFormatter.localizedString(from: 250_880, number: .decimal)))
+        #expect(MailPDF.byteCount(512) == L("%lld bytes", 512))
+        #expect(MailPDF.byteCount(250_880) == L("%@ (%lld bytes)", Format.bytes(250_880), 250_880))
+        // In French: the units and the grouping of the language.
+        #expect(L(in: "fr", "%lld bytes", 1) == "1 octet")
+        #expect(Format.bytes(250_880, locale: Locale(identifier: "fr_FR")).hasSuffix("ko"))
+        #expect(L(in: "fr", "%@ (%lld bytes)", "251 ko", 250_880) == "251 ko (250\u{202F}880 octets)")
     }
 }

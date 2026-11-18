@@ -87,26 +87,92 @@ fn lower(s: &str) -> String {
     s.trim().to_lowercase()
 }
 
-/// Attribution line(s) introducing a quote: "On Tue, 3 Nov 2026, Alice
-/// wrote:", "Le 3 nov. 2026 à 10:52, Alice a écrit :", and the German,
-/// Spanish and Italian forms. Some clients wrap it over two lines. Returns
-/// the number of lines it takes (0 if `line` is not one).
+/// How a mail client words the line that introduces a quote, in one
+/// language: the line starts with `start` (empty: anywhere), holds `word`,
+/// and ends with `:` after it. Gathered from Apple Mail, Gmail, Outlook and
+/// Thunderbird (`specifications/localisation.md`, section 3.3), lower case.
+struct Wording {
+    start: &'static str,
+    word: &'static str,
+}
+
+/// The wordings known, by language.
+const WORDINGS: &[Wording] = &[
+    // English: "On Tue, 3 Nov 2026 at 10:52, Alice <a@x.org> wrote:".
+    Wording { start: "on ", word: "wrote" },
+    // French: "Le 3 nov. 2026 à 10:52, Alice <a@x.org> a écrit :".
+    Wording { start: "le ", word: "a écrit" },
+    // German: "Am 03.11.2026 um 10:52 schrieb Alice <a@x.org>:" (Apple
+    // Mail, Gmail), "Am 03.11.26 um 10:52 schrieb Alice:" (Thunderbird).
+    Wording { start: "am ", word: "schrieb" },
+    // Spanish: "El mar, 3 nov 2026 a las 10:52, Alice (<a@x.org>) escribió:".
+    Wording { start: "el ", word: "escribió" },
+    // Italian: "Il giorno mar 3 nov 2026 alle ore 10:52 Alice <a@x.org> ha scritto:".
+    Wording { start: "il ", word: "ha scritto" },
+    // Portuguese: "Em ter., 3 de nov. de 2026 às 10:52, Alice <a@x.org> escreveu:".
+    Wording { start: "em ", word: "escreveu" },
+    // Dutch: "Op di 3 nov 2026 om 10:52 schreef Alice <a@x.org>:" (Gmail),
+    // "Op 3 nov. 2026 om 10:52 heeft Alice <a@x.org> het volgende geschreven:" (Apple Mail).
+    Wording { start: "op ", word: "schreef" },
+    Wording { start: "op ", word: "het volgende geschreven" },
+    // Swedish and Danish: "Den tis 3 nov. 2026 kl 10:52 skrev Alice <a@x.org>:".
+    Wording { start: "den ", word: "skrev" },
+    // Norwegian: "tir. 3. nov. 2026 kl. 10:52 skrev Alice <a@x.org>:".
+    Wording { start: "", word: " skrev " },
+    // Polish: "wt., 3 lis 2026 o 10:52 Alice <a@x.org> napisał(a):" (Gmail),
+    // "W dniu 3.11.2026 o 10:52, Alice pisze:" (Thunderbird).
+    Wording { start: "", word: "napisał(a)" },
+    Wording { start: "w dniu ", word: "pisze" },
+    // Russian (Thunderbird): "03.11.2026 10:52, Alice пишет:". Ukrainian:
+    // "3 лист. 2026 р. о 10:52 Alice <a@x.org> пише:" ("пишет" holds it too).
+    Wording { start: "", word: "пише" },
+    // Finnish: "ti 3.11.2026 klo 10.52 Alice <a@x.org> kirjoitti:".
+    Wording { start: "", word: "kirjoitti" },
+    // Japanese (Apple Mail): "2026/11/03 10:52、Alice <a@x.org>のメール:".
+    Wording { start: "", word: "のメール" },
+    // Korean (Gmail): "2026년 11월 3일 (화) 오전 10:52, Alice <a@x.org>님이 작성:".
+    Wording { start: "", word: "님이 작성" },
+    // Chinese, simplified and traditional: "Alice <a@x.org> 于2026年11月3日周二 10:52写道：".
+    Wording { start: "", word: "写道" },
+    Wording { start: "", word: "寫道" },
+];
+
+/// Whether `l` (lower case, trimmed) ends with a colon, full-width
+/// included (Chinese and Japanese clients write `：`).
+fn ends_with_colon(l: &str) -> bool {
+    l.ends_with(':') || l.ends_with('：')
+}
+
+/// One line that introduces a quote: a known wording, or, for the clients
+/// that put no word at all (Gmail in Japanese, "2026年11月3日(火) 10:52 Alice
+/// <a@x.org>:", or in Russian), a line ending with a colon that holds an
+/// address and a figure. Only ever asked of the line right above the
+/// quoted history (`split`), so a sentence of the user's ending with a
+/// colon, which rarely holds an address, is not mistaken for one.
+fn attribution_line(line: &str) -> bool {
+    let l = lower(line);
+    if !ends_with_colon(&l) {
+        return false;
+    }
+    let body = l.trim_end_matches([':', '：', ' ']);
+    let worded = WORDINGS.iter().any(|w| l.starts_with(w.start) && (body.ends_with(w.word.trim()) || body.contains(w.word)));
+    let bare = l.contains('@') && l.chars().any(|c| c.is_ascii_digit()) && (l.contains('>') || l.contains(')'));
+    worded || bare
+}
+
+/// Attribution line(s) introducing a quote (`WORDINGS`). Some clients wrap
+/// it over two lines. Returns the number of lines it takes (0 if `line` is
+/// not one).
 fn attribution(line: &str, next: Option<&str>) -> usize {
-    let one = |l: &str| {
-        let l = lower(l);
-        (l.starts_with("on ") && l.ends_with("wrote:"))
-            || (l.starts_with("le ") && (l.ends_with("a écrit :") || l.ends_with("a écrit:")))
-            || (l.starts_with("am ") && l.ends_with("schrieb:"))
-            || (l.starts_with("el ") && l.ends_with("escribió:"))
-            || (l.starts_with("il ") && l.ends_with("ha scritto:"))
-    };
-    if one(line) {
+    if attribution_line(line) {
         return 1;
     }
     if let Some(n) = next {
+        if n.trim().is_empty() || ends_with_colon(&lower(line)) {
+            return 0;
+        }
         let joined = format!("{} {}", line.trim(), n.trim());
-        let starts = ["on ", "le ", "am ", "el ", "il "].iter().any(|p| lower(line).starts_with(p));
-        if starts && one(&joined) && !n.trim().is_empty() {
+        if attribution_line(&joined) {
             return 2;
         }
     }
@@ -124,18 +190,53 @@ fn history_separator(line: &str) -> bool {
             || core == "message d'origine"
             || core == "message original"
             || core == "ursprüngliche nachricht"
-            || core == "mensaje original")
+            || core == "originalnachricht"
+            || core == "mensaje original"
+            || core == "messaggio originale"
+            || core == "mensagem original"
+            || core == "oorspronkelijk bericht"
+            || core == "ursprungligt meddelande")
 }
 
 /// Lines that start a forwarded message.
 fn forward_marker(line: &str) -> bool {
     let l = lower(line);
     let core = l.trim_matches(|c: char| c == '-' || c == ' ');
-    core == "forwarded message"
-        || core == "message transféré"
-        || l.starts_with("begin forwarded message")
-        || l.starts_with("début du message réexpédié")
-        || l.starts_with("début du message transféré")
+    [
+        "forwarded message",
+        "message transféré",
+        "weitergeleitete nachricht",
+        "mensaje reenviado",
+        "messaggio inoltrato",
+        "mensagem encaminhada",
+        "doorgestuurd bericht",
+        "vidarebefordrat meddelande",
+        "videresendt meddelelse",
+        "videresendt melding",
+        "välitetty viesti",
+        "przekazana wiadomość",
+        "wiadomość przekazana dalej",
+        "пересылаемое сообщение",
+        "переслане повідомлення",
+        "転送メッセージ",
+        "전달된 메시지",
+        "转发的邮件",
+        "轉寄的郵件",
+    ]
+    .contains(&core)
+        || [
+            "begin forwarded message",
+            "début du message réexpédié",
+            "début du message transféré",
+            "anfang der weitergeleiteten nachricht",
+            "comienzo del mensaje reenviado",
+            "inizio messaggio inoltrato",
+            "início da mensagem encaminhada",
+            "início da mensagem reencaminhada",
+            "begin doorgestuurd bericht",
+        ]
+        .iter()
+        .any(|p| l.starts_with(p))
 }
 
 /// Whether an Outlook-style header block ("From: … Sent: … To: …
@@ -145,12 +246,24 @@ fn header_block(lines: &[&str], i: usize) -> bool {
         let l = lower(l).trim_start_matches('*').to_string();
         keys.iter().any(|k| l.starts_with(k))
     };
-    if !starts(lines[i], &["from:", "de :", "de:", "von:", "expéditeur :"]) {
+    // English, French, German, Spanish and Portuguese (`de:`), Italian
+    // (`da:`), Dutch, Swedish.
+    if !starts(lines[i], &["from:", "de :", "de:", "von:", "expéditeur :", "da:", "van:", "från:"]) {
         return false;
     }
     let window = &lines[i + 1..lines.len().min(i + 6)];
-    let date = window.iter().any(|l| starts(l, &["sent:", "envoyé :", "envoyé:", "date:", "date :", "gesendet:"]));
-    let to = window.iter().any(|l| starts(l, &["to:", "à :", "à:", "a :", "subject:", "objet :", "objet:", "an:", "betreff:"]));
+    let date = window.iter().any(|l| {
+        starts(l, &[
+            "sent:", "envoyé :", "envoyé:", "date:", "date :", "gesendet:", "datum:", "enviado:", "enviada:", "fecha:",
+            "data:", "inviato:", "verzonden:", "skickat:",
+        ])
+    });
+    let to = window.iter().any(|l| {
+        starts(l, &[
+            "to:", "à :", "à:", "a :", "a:", "subject:", "objet :", "objet:", "an:", "betreff:", "para:", "asunto:",
+            "assunto:", "oggetto:", "aan:", "onderwerp:", "till:", "ämne:",
+        ])
+    });
     date && to
 }
 
@@ -170,6 +283,15 @@ fn mention(line: &str) -> bool {
         "téléchargez outlook pour",
         "envoyé à partir de outlook",
         "envoyé à partir de mon",
+        "von meinem iphone gesendet",
+        "gesendet von meinem ",
+        "enviado desde mi ",
+        "enviado do meu ",
+        "inviato da ",
+        "verzonden vanaf mijn ",
+        "skickat från min ",
+        "sendt fra min ",
+        "wysłane z mojego ",
     ]
     .iter()
     .any(|p| l.starts_with(p))
@@ -495,6 +617,119 @@ mod tests {
         assert!(s[1].text.starts_with("Le 3 nov."));
         assert!(s[1].text.contains("Tu es dispo jeudi ?"));
         assert!(s[1].text.lines().all(|l| !l.starts_with('>')));
+    }
+
+    /// The line that introduces a quote, as the common clients write it in
+    /// each language (`WORDINGS`): the quote under it is the history.
+    #[test]
+    fn attributions_in_many_languages_start_the_history() {
+        for line in [
+            "On Tue, 3 Nov 2026 at 10:52, Alice <a@x.org> wrote:",
+            "Le 3 nov. 2026 à 10:52, Alice <a@x.org> a écrit :",
+            "Am 03.11.2026 um 10:52 schrieb Alice <a@x.org>:",
+            "Am Di., 3. Nov. 2026 um 10:52 Uhr schrieb Alice Martin <a@x.org>:",
+            "Am 03.11.26 um 10:52 schrieb Alice:",
+            "El mar, 3 nov 2026 a las 10:52, Alice (<a@x.org>) escribió:",
+            "Il giorno mar 3 nov 2026 alle ore 10:52 Alice <a@x.org> ha scritto:",
+            "Em ter., 3 de nov. de 2026 às 10:52, Alice <a@x.org> escreveu:",
+            "Op di 3 nov 2026 om 10:52 schreef Alice <a@x.org>:",
+            "Op 3 nov. 2026 om 10:52 heeft Alice <a@x.org> het volgende geschreven:",
+            "Den tis 3 nov. 2026 kl 10:52 skrev Alice <a@x.org>:",
+            "tir. 3. nov. 2026 kl. 10:52 skrev Alice <a@x.org>:",
+            "wt., 3 lis 2026 o 10:52 Alice <a@x.org> napisał(a):",
+            "W dniu 3.11.2026 o 10:52, Alice pisze:",
+            "03.11.2026 10:52, Alice пишет:",
+            "3 лист. 2026 р. о 10:52 Alice <a@x.org> пише:",
+            "ti 3.11.2026 klo 10.52 Alice <a@x.org> kirjoitti:",
+            "2026/11/03 10:52、Alice <a@x.org>のメール:",
+            "2026년 11월 3일 (화) 오전 10:52, Alice <a@x.org>님이 작성:",
+            "Alice <a@x.org> 於 2026年11月3日 週二 10:52 寫道：",
+            "вт, 3 нояб. 2026 г. в 10:52, Alice <a@x.org>:",
+            "2026年11月3日(火) 10:52 Alice <a@x.org>:",
+            "Alice <a@x.org> 于2026年11月3日周二 10:52写道：",
+        ] {
+            let s = split(&format!("Merci.\n\n{line}\n> Bonjour\n> Alice\n"));
+            assert_eq!(s.iter().map(|s| s.kind).collect::<Vec<_>>(), vec![SegmentKind::Text, SegmentKind::QuoteTail], "{line}");
+            assert_eq!(s[0].text, "Merci.", "{line}");
+        }
+    }
+
+    /// A sentence of the user's that ends with a colon, above a quote,
+    /// stays the user's text: in doubt, a line is shown.
+    #[test]
+    fn a_sentence_ending_with_a_colon_is_not_an_attribution() {
+        for line in ["Voici ce que tu disais :", "On the plan, two points:", "Am Ende bleibt:", "Le devis de 2026 :"] {
+            let s = split(&format!("{line}\n> Bonjour\n> Alice\n"));
+            assert_eq!(s[0].kind, SegmentKind::Text, "{line}");
+            assert_eq!(s[0].text, line, "{line}");
+        }
+    }
+
+    /// Outlook's header block and the forwarded messages, beyond English
+    /// and French.
+    #[test]
+    fn header_blocks_and_forwards_in_other_languages() {
+        let de = "Danke.\n\nVon: Alice <a@x.org>\nGesendet: Dienstag, 3. November 2026 10:52\nAn: Bob\nBetreff: Angebot\n\nalt";
+        assert_eq!(kinds(de), vec![SegmentKind::Text, SegmentKind::QuoteTail]);
+        let it = "Grazie.\n\nDa: Alice <a@x.org>\nInviato: martedì 3 novembre 2026 10:52\nA: Bob\nOggetto: Offerta\n\nvecchio";
+        assert_eq!(kinds(it), vec![SegmentKind::Text, SegmentKind::QuoteTail]);
+        let nl = "Bedankt.\n\nVan: Alice <a@x.org>\nVerzonden: dinsdag 3 november 2026 10:52\nAan: Bob\nOnderwerp: Offerte\n\noud";
+        assert_eq!(kinds(nl), vec![SegmentKind::Text, SegmentKind::QuoteTail]);
+        let es = "Gracias.\n\n-----Mensaje original-----\nDe: Alice\nEnviado: martes\nPara: Bob\nAsunto: Oferta\n\nviejo";
+        assert_eq!(kinds(es), vec![SegmentKind::Text, SegmentKind::QuoteTail]);
+        for marker in [
+            "---------- Weitergeleitete Nachricht ---------",
+            "---------- Mensaje reenviado ---------",
+            "---------- Messaggio inoltrato ---------",
+            "Anfang der weitergeleiteten Nachricht:",
+            "Inizio messaggio inoltrato:",
+            "Begin doorgestuurd bericht:",
+        ] {
+            assert!(forward_marker(marker), "{marker}");
+        }
+        for m in ["Von meinem iPhone gesendet", "Enviado desde mi iPhone", "Inviato da iPhone", "Verzonden vanaf mijn iPhone"] {
+            assert!(mention(m), "{m}");
+        }
+    }
+
+    /// The app writes the line above a quote and the forward separator in
+    /// the user's language, from its String Catalog. Every language the
+    /// catalog holds must write them in a form `split` recognizes, or the
+    /// app's own replies would show the whole history (`localisation.md`,
+    /// section 3.3). Reading the catalog makes a new language checked as
+    /// soon as it is added.
+    #[test]
+    fn the_apps_own_quote_lines_are_recognized_in_every_language() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../apps/NiceMailer/Sources/NiceMailer/Resources/Localizable.xcstrings");
+        let catalog: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        let translations = |key: &str| -> Vec<(String, String)> {
+            let entry = &catalog["strings"][key];
+            let mut all = vec![("en".to_string(), key.to_string())];
+            for (lang, l) in entry["localizations"].as_object().unwrap() {
+                all.push((lang.clone(), l["stringUnit"]["value"].as_str().unwrap().to_string()));
+            }
+            all
+        };
+        let header = translations("On %@, at %@, %@ wrote:");
+        assert!(header.len() > 2, "the catalog has languages");
+        for (lang, format) in &header {
+            // `quoteHeader` passes the date, the time and the author: name
+            // and address, the address alone, or the name alone.
+            for who in ["Alice Martin <a@x.org>", "a@x.org", "Alice Martin"] {
+                let line = format
+                    .replacen("%@", "3 Nov 2026", 1)
+                    .replacen("%@", "10:52", 1)
+                    .replacen("%@", who, 1)
+                    .replace("%1$@", "3 Nov 2026")
+                    .replace("%2$@", "10:52")
+                    .replace("%3$@", who);
+                let s = split(&format!("Merci.\n\n{line}\n> Bonjour\n> Alice\n"));
+                assert_eq!(s.iter().map(|s| s.kind).collect::<Vec<_>>(), vec![SegmentKind::Text, SegmentKind::QuoteTail], "{lang}: {line}");
+            }
+        }
+        for (lang, marker) in translations("---------- Forwarded message ---------") {
+            assert!(forward_marker(&marker), "{lang}: {marker}");
+        }
     }
 
     #[test]

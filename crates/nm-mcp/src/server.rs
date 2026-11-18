@@ -240,8 +240,16 @@ fn call(shared: &Arc<Shared>, id: Value, params: Value) {
                 r
             }
             Err(e) => {
-                eprintln!("nicemailer-mcp: {name}: {}", e.0);
-                json!({"content": [{"type": "text", "text": e.0}], "isError": true})
+                eprintln!("nicemailer-mcp: {name}: {}", e.text);
+                // The reason of the core, as JSON in a second text block:
+                // the model reads `content`, and `structuredContent` would
+                // be checked against the tool's output schema, which an
+                // error does not follow.
+                let mut content = vec![json!({"type": "text", "text": e.text})];
+                if let Some(reason) = e.reason {
+                    content.push(json!({"type": "text", "text": reason.to_string()}));
+                }
+                json!({"content": content, "isError": true})
             }
         };
         // Answered only if not cancelled meanwhile.

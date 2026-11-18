@@ -402,8 +402,11 @@ enum Compose {
 
     /// The line introducing the quotation, in the app's language:
     /// "On Nov 7, 2026, at 10:12, Alice Martin <alice@x.fr> wrote:". The
-    /// date is the mail's, in the Mac's time zone.
-    static func quoteHeader(_ m: MessageView, locale: Locale = appLocale, timeZone: TimeZone = .current) -> String {
+    /// date is the mail's, in the Mac's time zone, written as the Mac's
+    /// region writes dates (`uiLocale`, `localisation.md`, section 3.2):
+    /// an English interface on a Mac set to France writes "7 Nov 2026" and
+    /// "23:13", not "Nov 7" and "11:13 PM".
+    static func quoteHeader(_ m: MessageView, locale: Locale = uiLocale, timeZone: TimeZone = .current) -> String {
         let when = Date(timeIntervalSince1970: TimeInterval(m.dateSent ?? m.dateReceived))
         let day = DateFormatter()
         day.locale = locale
@@ -427,7 +430,7 @@ enum Compose {
 
     /// A file in the line of attachments: "devis.pdf (240 KB)".
     static func attachmentLabel(_ a: DraftAttachmentView) -> String {
-        "\(a.filename) (\(ByteCountFormatter.string(fromByteCount: Int64(a.size), countStyle: .file)))"
+        "\(a.filename) (\(Format.bytes(a.size)))"
     }
 
     /// The name under which a file is staged in `incoming.noindex`: what
@@ -524,9 +527,10 @@ enum Compose {
     }
 
     /// The block that introduces a mail forwarded, in the app's language
-    /// (`reponse.md`, `f`): the core puts it between the user's text and
-    /// the mail's.
-    static func forwardHeader(_ m: MessageView, locale: Locale = appLocale, timeZone: TimeZone = .current) -> String {
+    /// (`reponse.md`, `f`), its date as the Mac's region writes it
+    /// (`uiLocale`): the core puts it between the user's text and the
+    /// mail's.
+    static func forwardHeader(_ m: MessageView, locale: Locale = uiLocale, timeZone: TimeZone = .current) -> String {
         let when = Date(timeIntervalSince1970: TimeInterval(m.dateSent ?? m.dateReceived))
         let date = DateFormatter()
         date.locale = locale
@@ -574,7 +578,7 @@ enum Compose {
         for (i, a) in list.enumerated() {
             let name = a.name.map { "\($0) <\(a.addr)>" } ?? a.addr
             if !shown.isEmpty, length + 2 + name.count > limit {
-                return shown.joined(separator: ", ") + " " + L("+%lld", list.count - i)
+                return L("%@ +%lld", shown.joined(separator: ", "), list.count - i)
             }
             shown.append(name)
             length += (shown.count > 1 ? 2 : 0) + name.count

@@ -378,7 +378,7 @@ impl Store {
         let attempts: i64 =
             self.conn.query_row("SELECT attempts + 1 FROM pending_action WHERE id = ?1", [action_id], |r| r.get(0))?;
         if attempts >= MAX_ATTEMPTS {
-            return self.spool_revert(action_id, &format!("{attempts} attempts failed, the last: {error}"));
+            return self.spool_revert(action_id, nm_api::reason::ATTEMPTS_FAILED.with("attempts", attempts).with("server_text", error));
         }
         let delay = (RETRY_FIRST_SECS << (attempts - 1).min(20)).min(RETRY_MAX_SECS);
         self.conn.execute(
@@ -394,7 +394,10 @@ impl Store {
     /// one on the same message are undone, latest first; this action is
     /// `reverted`, the later ones `cancelled`. `ActionReverted` tells the
     /// user (`modele de donnees.md`, section 6).
-    pub fn spool_revert(&mut self, action_id: i64, reason: &str) -> Result<ChangeSet> {
+    pub fn spool_revert(&mut self, action_id: i64, why: nm_api::Why) -> Result<ChangeSet> {
+        // English in the database (`last_error`, the history); the event
+        // carries the reason.
+        let reason = why.message();
         let tx = self.transaction()?;
         let mut changes = ChangeSet::default();
         let first: Option<(i64, String)> = tx
@@ -423,7 +426,7 @@ impl Store {
             params![message_id, kind, reason, actions.len() as i64],
         )?;
         crate::screening::refresh_all(&tx, &threads, &mut changes)?;
-        changes.reverted.push((message_id, kind, reason.to_string()));
+        changes.reverted.push((message_id, kind, why));
         tx.commit()?;
         Ok(changes)
     }
@@ -498,7 +501,7 @@ pub(crate) fn refuse_read_only(conn: &Connection, thread_id: i64) -> Result<()> 
         .prepare_cached("SELECT EXISTS (SELECT 1 FROM thread t JOIN temp.read_only_account r ON r.id = t.account_id WHERE t.id = ?1)")?
         .query_row([thread_id], |r| r.get(0))?;
     if ro {
-        return Err(crate::StoreError::ReadOnly("this account is read-only (read_only = true in accounts.toml): nothing is changed".into()));
+        return Err(crate::StoreError::ReadOnly);
     }
     Ok(())
 }

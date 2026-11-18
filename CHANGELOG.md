@@ -14,7 +14,7 @@ How to write it:
 ### Added
 
 - Every key of the app can be changed in `~/.config/nicemailer/keymap.toml`, created with all the default keys commented out: keys moved or removed, keys of your own for any folder or action, menus of your own. The help, the status bar and the menus show the keys in effect; `nicemailer keymap check` validates the file (docs/keymap.md).
-
+- NiceMailer is available in German, Spanish, Italian, Portuguese (Brazil), Dutch, Swedish, Danish, Norwegian, Finnish, Polish, Russian, Ukrainian, Japanese, Simplified and Traditional Chinese and Korean, following the language of macOS or the one chosen for the app. These translations have not yet been reviewed by native speakers.
 - NiceMailer updates itself: it checks for a new version once a day, or at once with NiceMailer > Check for Updates…, and installs it with its background core.
 - While NiceMailer is updated or upgrades its mailbox, the app, the `nicemailer` command and AI agents say so and wait, instead of reporting that NiceMailer is not running. `nicemailer --wait` waits for the end; without it, the command exits with status 75.
 - The mailbox is copied before each upgrade of its data format, and put back as it was if the upgrade fails: nothing is lost, and the previous version of NiceMailer can still open it.
@@ -36,6 +36,13 @@ How to write it:
 
 ### Fixed
 
+- Sizes and large numbers are written in the app's language and region ("251 ko", "1 234"), and the counts of the Preferences take their singular ("1 mail").
+- A date typed in the attribute selector is read in the order of the Mac's region (month first in the United States), and the lists show dates in that same order.
+- The quoted history at the end of a reply is folded in many more languages: German as Gmail and Apple Mail write it, Portuguese, Dutch, Swedish, Danish, Norwegian, Polish, Russian, Chinese and Japanese, and the Outlook headers and forwards of those languages.
+- Dates follow the language of the interface and the Mac's region settings, in the app and in the line introducing a quotation of a reply: an English interface no longer shows French month names, and the 12- or 24-hour clock chosen in System Settings is respected.
+- Counts read correctly in English and French: "1 mail", "1 attachment saved", and in French "0 mail" (no more "1 mails" or "(and 1 others)").
+- The classic theme and the connection errors are translated: they were shown in French whatever the language.
+- Errors reported by NiceMailer (a tag name taken, a password refused, a mail not sent, a change the server refused, an AI that failed, an account that cannot connect…) are written in the app's language; the words of a mail server or of the AI are quoted as they came.
 - The "answered" attribute finds the conversations you replied to from NiceMailer or from a mail client that does not mark the mail as answered: a reply of yours in Sent is enough.
 - Replying from NiceMailer marks the mail as answered, also on the server, so other mail clients show it.
 

@@ -122,7 +122,7 @@ A body whose size differs from the `RFC822.SIZE` the server announced is refused
 | A folder cannot be opened | The pass goes on with the others; the problem is printed on the core's standard error |
 | Cut in the middle of a body | Nothing is stored for it ([ingestion.md](ingestion.md)); the next connection reads the queue again from the database and downloads it |
 
-`AccountError` is emitted once per error (not at every attempt), `AccountChanged` when it goes away.
+`AccountError {account_id, error, why}` is emitted once per error (not at every attempt), `AccountChanged` when it goes away; `why` is the reason (`imap_auth_refused`, `imap_failed` with the server's words, or a refusal of the password, `docs/contract.md`, "Errors"), as is `why` in `list_accounts`.
 
 ## `nicemailer sync`
 

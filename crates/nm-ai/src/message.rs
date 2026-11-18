@@ -13,16 +13,12 @@ use crate::provider::AiError;
 /// the answer could then not be read without guessing which text is whose.
 pub fn segments(texts: &[&str]) -> Result<String, AiError> {
     if texts.iter().all(|t| t.trim().is_empty()) {
-        return Err(AiError::BadInput(
-            "there is no text of yours to send: write some first".into(),
-        ));
+        return Err(AiError::BadInput(nm_api::reason::AI_TEXT_EMPTY.into()));
     }
     let mut out = String::new();
     for (i, t) in texts.iter().enumerate() {
         if t.contains("<segment") || t.contains("</segment>") {
-            return Err(AiError::BadInput(
-                "the text contains a <segment> tag, which the AI uses to give the text back; remove it first".into(),
-            ));
+            return Err(AiError::BadInput(nm_api::reason::AI_SEGMENT_TAG.into()));
         }
         if i > 0 {
             out.push('\n');
@@ -57,9 +53,7 @@ pub fn html_segments(texts: &[&str]) -> Result<String, AiError> {
 /// the segments one after the other, in a `<draft>` section.
 pub fn draft_text(texts: &[&str]) -> Result<String, AiError> {
     if texts.iter().all(|t| t.trim().is_empty()) {
-        return Err(AiError::BadInput(
-            "there is no text of yours to send: write some first".into(),
-        ));
+        return Err(AiError::BadInput(nm_api::reason::AI_TEXT_EMPTY.into()));
     }
     Ok(section("draft", &texts.join("\n\n")))
 }
@@ -68,7 +62,7 @@ pub fn draft_text(texts: &[&str]) -> Result<String, AiError> {
 /// passage the user selected, alone, in a `<passage>` section.
 pub fn passage(text: &str) -> Result<String, AiError> {
     if text.trim().is_empty() {
-        return Err(AiError::BadInput("the selection is empty".into()));
+        return Err(AiError::BadInput(nm_api::reason::AI_SELECTION_EMPTY.into()));
     }
     Ok(section("passage", text))
 }

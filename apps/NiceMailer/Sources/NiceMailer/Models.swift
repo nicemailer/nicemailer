@@ -594,24 +594,149 @@ enum Role {
 
 /// Date formatting helpers.
 ///
-/// `DateFormatter` is expensive to create, so each one is built once and
-/// stored in a `static let` (created lazily on first use, then reused). The
-/// `= { ... }()` syntax defines a closure and calls it immediately to build
-/// the value.
+/// Every date the interface shows is written in `uiLocale`
+/// (`docs/localization.md`): the words of the app's language, the order
+/// and the clock of the Mac's settings. No format is spelled out
+/// ("HH:mm", "dd/MM/yy"): each is a template ("jmm": hours and minutes,
+/// "j" meaning the hour the locale prefers, 12- or 24-hour), which the
+/// locale turns into its own pattern ("23:13", "11:13 PM").
 enum Format {
-    private static let time: DateFormatter = {
-        let f = DateFormatter(); f.dateFormat = "HH:mm"; return f
-    }()
-    private static let dayMonth: DateFormatter = {
-        let f = DateFormatter(); f.locale = Locale(identifier: "fr_FR"); f.dateFormat = "d MMM"; return f
-    }()
-    private static let full: DateFormatter = {
-        let f = DateFormatter(); f.locale = Locale(identifier: "fr_FR"); f.dateStyle = .short; return f
-    }()
-    private static let long: DateFormatter = {
-        let f = DateFormatter(); f.locale = Locale(identifier: "fr_FR")
-        f.dateStyle = .full; f.timeStyle = .short; return f
-    }()
+    /// The formatters of one locale.
+    ///
+    /// `DateFormatter` is expensive to create, so each one is built once:
+    /// the app keeps one `Dates` (`Format.dates`), the tests build their own
+    /// for a given locale and time zone.
+    struct Dates {
+        let time: DateFormatter
+        let dayMonth: DateFormatter
+        let short: DateFormatter
+        let long: DateFormatter
+        let geekTime: DateFormatter
+        let geekDayMonth: DateFormatter
+        let geekShort: DateFormatter
+        let dayMonthTime: DateFormatter
+        let dayMonthYear: DateFormatter
+
+        /// `timeZone` nil: the Mac's.
+        init(locale: Locale, timeZone: TimeZone? = nil) {
+            func make(_ setup: (DateFormatter) -> Void) -> DateFormatter {
+                let f = DateFormatter()
+                f.locale = locale
+                if let timeZone { f.timeZone = timeZone }
+                setup(f)
+                return f
+            }
+            func template(_ t: String) -> DateFormatter { make { $0.setLocalizedDateFormatFromTemplate(t) } }
+            time = template("jmm")
+            dayMonth = template("dMMM")
+            short = make { $0.dateStyle = .short }
+            long = make { $0.dateStyle = .full; $0.timeStyle = .short }
+            dayMonthTime = template("dMMMjmm")
+            dayMonthYear = template("dMMMy")
+            // The date column of the geek lists is 8 characters wide
+            // (`RowLayout`). A locale whose names are longer ("28. Sept."
+            // in German, "3 de fev." in Portuguese) gets the numbers; one
+            // whose numbers are still too long (Arabic, whose "ddMM" keeps
+            // the month's name) gets fixed digits.
+            geekTime = Format.fitting([.template("jmm"), .template("Hmm")], width: 8, make: make)
+            geekDayMonth = Format.fitting([.template("dMMM"), .template("ddMM"), .fixed("dd/MM")], width: 8, make: make)
+            // The region's short date with two digits per field: its order
+            // and its separators, as the classic list and a typed date
+            // (`DateChoice.Order`) have them. Not the template "ddMMyy",
+            // which follows the language: a French interface on an
+            // American Mac would show day first while a typed date is
+            // read month first.
+            geekShort = Format.fitting([.localized(Format.twoDigits(Format.shortPattern(locale))), .fixed("yy-MM-dd")], width: 8, make: make)
+        }
+    }
+
+    /// A way to write a date: a template the locale orders as it wants,
+    /// or, as a last resort, a fixed pattern.
+    enum Pattern {
+        case template(String)
+        /// A pattern written in the locale's digits and names.
+        case localized(String)
+        case fixed(String)
+    }
+
+    /// The short date of `locale`'s region ("M/d/yy", "dd/MM/y", "y/MM/dd").
+    static func shortPattern(_ locale: Locale) -> String {
+        let f = DateFormatter()
+        f.locale = locale
+        f.dateStyle = .short
+        f.timeStyle = .none
+        return f.dateFormat ?? "dd/MM/yy"
+    }
+
+    /// `pattern` with two digits for the day, the month and the year:
+    /// "M/d/yy" becomes "MM/dd/yy", "dd.MM.y" "dd.MM.yy". A fixed width for
+    /// the date column of the geek lists.
+    static func twoDigits(_ pattern: String) -> String {
+        var out = ""
+        var last: Character? = nil
+        for c in pattern {
+            if "dMy".contains(c) {
+                if c != last { out += String(repeating: c, count: 2) }
+            } else {
+                out.append(c)
+            }
+            last = c
+        }
+        return out
+    }
+
+    /// The first of `patterns` whose dates all fit in `width` characters,
+    /// tried on the longest dates there are (the 28th of every month, in
+    /// the morning and in the evening). The last one is kept whatever its
+    /// width: a date cut at its end still reads better than none.
+    static func fitting(_ patterns: [Pattern], width: Int,
+                        make: ((DateFormatter) -> Void) -> DateFormatter) -> DateFormatter {
+        var formatter: DateFormatter!
+        for pattern in patterns {
+            formatter = make { f in
+                switch pattern {
+                case .template(let t): f.setLocalizedDateFormatFromTemplate(t)
+                case .localized(let p): f.dateFormat = p
+                case .fixed(let p):
+                    // A fixed pattern is written with ASCII digits and the
+                    // Gregorian calendar: it is the one fallback every
+                    // reader knows.
+                    f.locale = Locale(identifier: "en_US_POSIX")
+                    f.dateFormat = p
+                }
+            }
+            if samples(calendar: formatter.calendar, timeZone: formatter.timeZone).allSatisfy({ formatter.string(from: $0).count <= width }) {
+                return formatter
+            }
+        }
+        return formatter
+    }
+
+    /// The 28th of every month of a year of the formatter's own calendar
+    /// (an Islamic month name is not met on the 28th of every Gregorian
+    /// month), at 09:05 and 23:13, in `timeZone`.
+    private static func samples(calendar base: Calendar, timeZone: TimeZone) -> [Date] {
+        var calendar = base
+        calendar.timeZone = timeZone
+        let year = calendar.component(.year, from: Date(timeIntervalSince1970: 1_700_000_000))
+        let months = calendar.range(of: .month, in: .year, for: Date(timeIntervalSince1970: 1_700_000_000)) ?? 1..<13
+        return months.flatMap { month in
+            [9, 23].compactMap { hour in
+                calendar.date(from: DateComponents(year: year, month: month, day: 28, hour: hour, minute: hour == 9 ? 5 : 13))
+            }
+        }
+    }
+
+    /// The formatters of the interface.
+    static let dates = Dates(locale: uiLocale)
+
+    /// A size in the interface's locale: "251 ko" in French, "251 kB" in
+    /// English (`localisation.md`, section 3.6). `ByteCountFormatter`
+    /// takes no locale: it writes the units of the process's language,
+    /// English for the app run as a bare executable.
+    static func bytes(_ n: Int, locale: Locale = uiLocale) -> String {
+        Int64(n).formatted(.byteCount(style: .file).locale(locale))
+    }
 
     /// Subject of a mail quoted in a status message ("“Devis toiture” moved
     /// to Archive"): "(no subject)" when empty, whitespace (line breaks of
@@ -626,51 +751,39 @@ enum Format {
 
     /// Compact date for the lists: the time if today, day and month if this
     /// year, the short date otherwise.
-    static func listDate(_ ts: Int) -> String {
+    static func listDate(_ ts: Int, in f: Dates = dates, now: Date = Date(), calendar: Calendar = .current) -> String {
         let d = Date(timeIntervalSince1970: TimeInterval(ts))
-        let cal = Calendar.current
-        if cal.isDateInToday(d) { return time.string(from: d) }
-        if cal.isDate(d, equalTo: Date(), toGranularity: .year) { return dayMonth.string(from: d) }
-        return full.string(from: d)
+        if calendar.isDate(d, inSameDayAs: now) { return f.time.string(from: d) }
+        if calendar.isDate(d, equalTo: now, toGranularity: .year) { return f.dayMonth.string(from: d) }
+        return f.short.string(from: d)
     }
 
-    private static let geekShort: DateFormatter = {
-        let f = DateFormatter(); f.dateFormat = "dd/MM/yy"; return f
-    }()
-    private static let geekDayMonth: DateFormatter = {
-        let f = DateFormatter(); f.locale = .autoupdatingCurrent; f.setLocalizedDateFormatFromTemplate("dMMM"); return f
-    }()
-
     /// Date of the geek lists, at most 8 characters so that the column has
-    /// a fixed width: "14:05" today, "16 oct." this year, "14/09/21" before.
-    /// Follows the user's language, unlike the classic theme.
-    static func geekListDate(_ ts: Int) -> String {
+    /// a fixed width: "14:05" today, "16 oct." this year, "14/09/21" before
+    /// (in French; "2:05 PM", "Oct 16", "09/14/21" in American English).
+    static func geekListDate(_ ts: Int, in f: Dates = dates, now: Date = Date(), calendar: Calendar = .current) -> String {
         let d = Date(timeIntervalSince1970: TimeInterval(ts))
-        let cal = Calendar.current
-        if cal.isDateInToday(d) { return time.string(from: d) }
-        if cal.isDate(d, equalTo: Date(), toGranularity: .year) { return geekDayMonth.string(from: d) }
-        return geekShort.string(from: d)
+        if calendar.isDate(d, inSameDayAs: now) { return f.geekTime.string(from: d) }
+        if calendar.isDate(d, equalTo: now, toGranularity: .year) { return f.geekDayMonth.string(from: d) }
+        return f.geekShort.string(from: d)
     }
 
     /// Date of a message header in the geek reader: "14:05" today,
-    /// "yesterday 14:05", "3 Nov 14:05" this year, "3 Nov 2021" before.
-    static func geekMessageDate(_ ts: Int) -> String {
+    /// "yesterday 14:05", "3 Nov at 14:05" this year, "3 Nov 2021" before.
+    /// The day and the time of this year make one template, so that the
+    /// locale chooses their order and what joins them ("à" in French).
+    static func geekMessageDate(_ ts: Int, in f: Dates = dates, now: Date = Date(), calendar: Calendar = .current) -> String {
         let d = Date(timeIntervalSince1970: TimeInterval(ts))
-        let cal = Calendar.current
-        if cal.isDateInToday(d) { return time.string(from: d) }
-        if cal.isDateInYesterday(d) { return L("yesterday %@", time.string(from: d)) }
-        if cal.isDate(d, equalTo: Date(), toGranularity: .year) {
-            return geekDayMonth.string(from: d) + " " + time.string(from: d)
+        if calendar.isDate(d, inSameDayAs: now) { return f.time.string(from: d) }
+        if let yesterday = calendar.date(byAdding: .day, value: -1, to: now), calendar.isDate(d, inSameDayAs: yesterday) {
+            return L("yesterday %@", f.time.string(from: d))
         }
-        return geekDayMonthYear.string(from: d)
+        if calendar.isDate(d, equalTo: now, toGranularity: .year) { return f.dayMonthTime.string(from: d) }
+        return f.dayMonthYear.string(from: d)
     }
 
-    private static let geekDayMonthYear: DateFormatter = {
-        let f = DateFormatter(); f.locale = .autoupdatingCurrent; f.setLocalizedDateFormatFromTemplate("dMMMyyyy"); return f
-    }()
-
     /// Full date and time, for the message header.
-    static func longDate(_ ts: Int) -> String {
-        long.string(from: Date(timeIntervalSince1970: TimeInterval(ts)))
+    static func longDate(_ ts: Int, in f: Dates = dates) -> String {
+        f.long.string(from: Date(timeIntervalSince1970: TimeInterval(ts)))
     }
 }

@@ -49,7 +49,7 @@ key a
 type contrat
 key ret
 expect ai_state = failed
-expect ai_error ~ contrat.pdf: the file cannot be read
+expect ai_error ~ contrat.pdf cannot be read
 snap aiattachment-failed
 key esc
 expect ai_state = none

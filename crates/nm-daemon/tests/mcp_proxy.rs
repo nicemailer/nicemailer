@@ -120,6 +120,15 @@ impl Agent {
         v
     }
 
+    /// A tool that the core refuses: the reason it gives the agent, in the
+    /// second text block of the result (`docs/mcp.md`, "Errors").
+    async fn refused(&mut self, name: &str, arguments: Value) -> Value {
+        let r = self.request("tools/call", json!({"name": name, "arguments": arguments})).await;
+        assert_eq!(r["result"]["isError"], true, "{name}: {r}");
+        let block = r["result"]["content"][1]["text"].as_str().unwrap_or_else(|| panic!("{name}: no reason: {r}"));
+        serde_json::from_str(block).unwrap()
+    }
+
     /// [`Agent::tool`] that must fail: its message.
     async fn fails(&mut self, name: &str, arguments: Value) -> String {
         let (v, error) = self.tool(name, arguments.clone()).await;
@@ -486,6 +495,9 @@ async fn the_agent_drafts_its_replies_and_leaves_the_users_alone() {
     assert!(e.contains("written by the user"), "{e}");
     let e = a.fails("create_draft", json!({"kind": "reply_sender", "reply_to_message_id": m1, "body": "x"})).await;
     assert!(e.contains("already started a reply"), "{e}");
+    // The reason comes with the sentence, for the agent to decide on it.
+    let why = a.refused("update_draft", json!({"draft_id": user["id"], "body": "pwned"})).await;
+    assert_eq!(why, json!({"reason": "draft_by_user", "draft": user["id"]}));
     assert_eq!(app.call("open_draft", json!({"id": user["id"]})).unwrap()["body"], user["body"]);
 
     // Its own draft, switched to the formatted mode by the user: its text

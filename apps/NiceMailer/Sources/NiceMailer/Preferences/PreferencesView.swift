@@ -192,7 +192,7 @@ private struct AccountRow: View {
                 .lineLimit(1)
             Text(AccountRow.subtitle(account))
                 .font(.caption)
-                .foregroundStyle(account.error != nil ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
+                .foregroundStyle(account.shownError != nil ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
                 .lineLimit(1)
         }
         .padding(.vertical, 2)
@@ -229,7 +229,7 @@ private struct AccountDetail: View {
                     LabeledContent(L("Name shown in “From”"), value: account.displayName ?? "—")
                     LabeledContent(L("Key in accounts.toml"), value: account.key)
                     LabeledContent(L("State"), value: AccountRow.state(account) ?? L("Active"))
-                    if let e = account.error {
+                    if let e = account.shownError {
                         Text(e).foregroundStyle(.red).textSelection(.enabled)
                     }
                 }
@@ -464,7 +464,7 @@ struct AddAccountForm: View {
     }
 
     /// A day of the core (`YYYY-MM-DD`) in the user's words, in the
-    /// language of the app (`appLocale`), not only the system's.
+    /// interface's locale (`uiLocale`): the app's language, the Mac's order.
     static func day(_ iso: String) -> String {
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")
@@ -472,7 +472,7 @@ struct AddAccountForm: View {
         f.dateFormat = "yyyy-MM-dd"
         guard let d = f.date(from: iso) else { return iso }
         let out = DateFormatter()
-        out.locale = appLocale
+        out.locale = uiLocale
         out.timeZone = TimeZone(identifier: "UTC")
         out.dateStyle = .long
         out.timeStyle = .none
@@ -550,16 +550,16 @@ struct ImportSection: View {
     var body: some View {
         let t = report
         Section {
-            Text(L("Your Inbox holds %@ mails, %@ of them unread.", t.inboxMessages.formatted(), t.inboxUnseen.formatted()))
+            Text(L("Your Inbox holds %lld mails, %lld of them unread.", t.inboxMessages, t.inboxUnseen))
             Toggle(L("Archive the read mails received before %@", AddAccountForm.day(t.readBefore)), isOn: $choices.archiveRead)
                 .uiTarget("prefs-archive-read")
             Toggle(L("Archive the unread mails received before %@", AddAccountForm.day(t.unreadBefore)), isOn: $choices.archiveUnread)
                 .uiTarget("prefs-archive-unread")
             let archived = choices.archived(t)
             Text(L("Flagged mails stay in the Inbox.")).font(.caption).foregroundStyle(.secondary)
-            Text(L("→ %@ mails will be archived, %@ will stay in the Inbox.", archived.formatted(), max(0, t.inboxMessages - archived).formatted()))
+            Text(L("→ %lld mails will be archived, %lld will stay in the Inbox.", archived, max(0, t.inboxMessages - archived)))
                 .bold()
-            Toggle(L("The people you have written to (%@) arrive straight in the Inbox.", t.correspondents.formatted()), isOn: $choices.acceptCorrespondents)
+            Toggle(L("The people you have written to (%lld) arrive straight in the Inbox.", t.correspondents), isOn: $choices.acceptCorrespondents)
                 .uiTarget("prefs-correspondents")
             Text(L("Other senders go through the Quarantine with their next mail.")).font(.caption).foregroundStyle(.secondary)
         } header: {

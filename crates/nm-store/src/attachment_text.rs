@@ -110,6 +110,21 @@ pub enum Unreadable {
     Damaged(String),
 }
 
+impl Unreadable {
+    /// Why the file `file` cannot be read, as the contract says it
+    /// (`nm_api::reason`).
+    pub fn why(&self, file: &str) -> nm_api::Why {
+        use nm_api::reason as r;
+        match self {
+            Unreadable::Unsupported => r::FILE_UNSUPPORTED.with("file", file),
+            Unreadable::TooLarge(mb) => r::FILE_TOO_LARGE.with("file", file).with("size_mb", *mb),
+            Unreadable::Encrypted => r::FILE_ENCRYPTED.with("file", file),
+            Unreadable::Empty => r::FILE_WITHOUT_TEXT.with("file", file),
+            Unreadable::Damaged(d) => r::FILE_DAMAGED.with("file", file).with("detail", d.as_str()),
+        }
+    }
+}
+
 /// The text of a file of this kind, cleaned up (see [`tidy`]) and cut at
 /// [`MAX_TEXT_CHARS`].
 pub fn extract(bytes: &[u8], kind: Kind) -> Result<String, Unreadable> {

@@ -658,7 +658,7 @@ fn a_server_that_does_not_answer_and_a_stray_smtp_password_are_refused() {
     let (_core, mut c) = core(dir.path(), "");
     let nothing = json!({ "host": "127.0.0.1", "port": 1, "security": "tls" });
     let e = c.call("test_account", json!({"email": "me@example.com", "imap": nothing, "password": "pw"})).unwrap_err();
-    assert_eq!((e["code"].as_i64(), e["data"]["reason"].as_str()), (Some(1009), Some("connect")), "{e:#}");
+    assert_eq!((e["code"].as_i64(), e["data"]["reason"].as_str()), (Some(1009), Some("imap_unreachable")), "{e:#}");
 
     let e = c
         .call("add_account", json!({"key": "k", "email": "me@example.com", "imap": nothing, "password": "pw", "smtp_password": "s"}))

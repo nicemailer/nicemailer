@@ -87,30 +87,67 @@ func L(_ key: String) -> String {
 /// of System Settings) and the bundled translations is computed here, once.
 /// A missing translation falls back to the key, which is the English text.
 private let localizedBundle: Bundle = {
-    let available = AppResources.bundle.localizations
-    let wanted = Bundle.preferredLocalizations(from: available, forPreferences: Locale.preferredLanguages)
-    if let lang = wanted.first,
-       let path = AppResources.bundle.path(forResource: lang, ofType: "lproj"),
+    if let path = AppResources.bundle.path(forResource: appLanguage, ofType: "lproj"),
        let bundle = Bundle(path: path) {
         return bundle
     }
     return AppResources.bundle
 }()
 
-/// The locale of the language the app shows (`localizedBundle`), for the
-/// texts it writes into a mail in that language: the line introducing a
-/// quotation ("Le 7 nov. 2026 à 10:12, Alice a écrit :") must have its
-/// date in the same language as its words, whatever the Mac's region.
-let appLocale: Locale = {
+/// The language the app shows (`fr`, `en`): the best match between the
+/// user's languages and the translations bundled, English when none
+/// matches.
+let appLanguage: String = {
     let available = AppResources.bundle.localizations
-    let lang = Bundle.preferredLocalizations(from: available, forPreferences: Locale.preferredLanguages).first ?? "en"
-    return Locale(identifier: lang)
+    return Bundle.preferredLocalizations(from: available, forPreferences: Locale.preferredLanguages).first ?? "en"
 }()
+
+/// The locale of the language the app shows, alone, without the Mac's
+/// region: the language asked of the AI for its answers (`AI.language`).
+/// Everything the app writes, interface and mail, uses `uiLocale`.
+let appLocale = Locale(identifier: appLanguage)
+
+/// The locale of the dates and numbers the app writes, in its interface
+/// and in the mails (the line introducing a quotation; `docs/localization.md`).
+/// The words come from the app's language (month and day names), the rest
+/// from the Mac's settings: the order of day and month, the 12- or 24-hour
+/// clock. An English interface on a Mac set to France writes "14/11/2023"
+/// and "23:13", not "11/14/23" and "11:13 PM".
+let uiLocale = interfaceLocale(language: appLanguage, settings: .current)
+
+/// `uiLocale` made of its two sources, apart so that the tests can give
+/// any pair.
+///
+/// Swift note: `Locale.Components` is the editable form of a locale. Built
+/// from a locale, it does not keep its region nor the hour cycle chosen in
+/// System Settings, so both are copied explicitly.
+func interfaceLocale(language: String, settings: Locale) -> Locale {
+    var c = Locale.Components(locale: settings)
+    c.languageComponents = Locale.Language.Components(identifier: language)
+    c.region = settings.region
+    c.hourCycle = settings.hourCycle
+    return Locale(components: c)
+}
 
 /// Same, with values inserted: `L("%lld marked", n)`. The catalog stores the
 /// format with its placeholders (`%@` for text, `%lld` for integers).
+///
+/// The locale matters: a key whose text depends on a number (`%lld mails`)
+/// has plural variations in the catalog, and `String(format:)` picks the
+/// form by the rules of the locale it is given. Without it, the English
+/// rules apply to every language: French would write "0 mails", where 0
+/// takes the singular.
 func L(_ key: String, _ args: CVarArg...) -> String {
-    String(format: L(key), arguments: args)
+    String(format: L(key), locale: uiLocale, arguments: args)
+}
+
+/// What `L` gives when the app shows `language` (`fr`), whatever the
+/// language of the Mac: for the tests, which check every translation.
+func L(in language: String, _ key: String, _ args: CVarArg...) -> String {
+    guard let path = AppResources.bundle.path(forResource: language, ofType: "lproj"),
+          let bundle = Bundle(path: path) else { return key }
+    let format = bundle.localizedString(forKey: key, value: key, table: nil)
+    return String(format: format, locale: Locale(identifier: language), arguments: args)
 }
 
 /// The fonts shipped with the app.

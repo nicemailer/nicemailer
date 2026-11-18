@@ -335,10 +335,22 @@ async fn slept() {
 struct Announced(Option<String>);
 
 impl Announced {
+    /// A failure of the connection or of the server: its text cited
+    /// (`imap_failed`, `docs/contract.md`, "Errors").
     fn error(&mut self, w: &Shared, error: &str) {
-        if self.0.as_deref() != Some(error) {
-            self.0 = Some(error.to_string());
-            w.host.event(Event::AccountError { account_id: w.spec.account_id, error: error.to_string() });
+        self.announce(w, nm_api::reason::IMAP_FAILED.with("server_text", error));
+    }
+
+    /// The server refused the login.
+    fn refused(&mut self, w: &Shared, error: &str) {
+        self.announce(w, nm_api::reason::IMAP_AUTH_REFUSED.with("server_text", error));
+    }
+
+    fn announce(&mut self, w: &Shared, why: nm_api::Why) {
+        let error = why.message();
+        if self.0.as_deref() != Some(error.as_str()) {
+            self.0 = Some(error.clone());
+            w.host.event(Event::AccountError { account_id: w.spec.account_id, error, why: why.data() });
         }
     }
 
@@ -399,7 +411,7 @@ async fn work_loop(w: &Shared) {
                 // already announced by the engine (`list_accounts`,
                 // `AccountError`): only a refused login is news.
                 if state == "auth_failed" {
-                    announced.error(w, &error);
+                    announced.refused(w, &error);
                 }
                 set(&w.status, state, Some(error));
                 blocked(&w.control).await;

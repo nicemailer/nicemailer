@@ -205,12 +205,15 @@ fn a_refusal_undoes_the_change_and_the_ones_after_it() {
     mv(&mut e, FolderRole::Archive);
     e.s.set_thread_flagged(e.thread, true, Source::Cli).unwrap();
     let id = e.s.spool_claim(e.acc, 10).unwrap()[0].id;
-    let changes = e.s.spool_revert(id, "NO [TRYCREATE] no such mailbox").unwrap();
+    let changes = e.s.spool_revert(id, nm_api::reason::SERVER_REFUSED_CHANGE.with("server_text", "NO [TRYCREATE] no such mailbox")).unwrap();
     assert_eq!(place(&e.s, e.message), (e.inbox, Some(7)), "back in the Inbox with its UID");
     assert_eq!(count(&e.s, "SELECT is_flagged FROM message"), 0, "the later flag undone too");
     let states: Vec<String> = actions(&e.s).into_iter().map(|a| a.1).collect();
     assert_eq!(states, ["reverted", "cancelled"]);
-    assert_eq!(changes.reverted, [(e.message, "move".to_string(), "NO [TRYCREATE] no such mailbox".to_string())]);
+    assert_eq!(
+        changes.reverted,
+        [(e.message, "move".to_string(), nm_api::reason::SERVER_REFUSED_CHANGE.with("server_text", "NO [TRYCREATE] no such mailbox"))]
+    );
     assert!(changes.folders.contains(&e.inbox) && changes.folders.contains(&e.archive));
     assert_eq!(count(&e.s, "SELECT total_count FROM folder WHERE path = 'INBOX'"), 1);
     assert_eq!(count(&e.s, "SELECT count(*) FROM audit_log WHERE action = 'revert'"), 1);

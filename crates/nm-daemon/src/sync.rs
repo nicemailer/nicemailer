@@ -6,6 +6,7 @@
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
+use nm_api::reason;
 use nm_api::{
     AccountSync, Event, FolderSync, RpcError, SyncAccountParams, SyncStatus, SyncVerifyParams, SyncVerifyReport, error_code,
 };
@@ -74,7 +75,7 @@ pub fn apply(core: &Core, store: &mut Store) {
 }
 
 fn syncer(core: &Core) -> Result<&Syncer, RpcError> {
-    core.syncer.get().ok_or_else(|| RpcError::new(error_code::INTERNAL_ERROR, "synchronization not started"))
+    core.syncer.get().ok_or_else(|| RpcError::internal("synchronization not started"))
 }
 
 /// `sync_status`: the state of each worker, with the counters of the
@@ -84,7 +85,7 @@ pub async fn status(core: &Arc<Core>, p: SyncAccountParams) -> Result<SyncStatus
     if let Some(key) = &p.account {
         accounts.retain(|a| &a.key == key);
         if accounts.is_empty() {
-            return Err(RpcError::new(error_code::NOT_FOUND, format!("account {key} is not synchronized")));
+            return Err(RpcError::new(error_code::NOT_FOUND, reason::ACCOUNT_NOT_SYNCHRONIZED.with("account", key.as_str())));
         }
     }
     // Read before borrowing a reading connection: no lock of the core is
@@ -126,7 +127,7 @@ pub async fn status(core: &Arc<Core>, p: SyncAccountParams) -> Result<SyncStatus
         })
     })
     .await
-    .map_err(|e| RpcError::new(error_code::INTERNAL_ERROR, e.to_string()))?
+    .map_err(|e| RpcError::internal(e))?
     .map_err(crate::store_error)
 }
 
@@ -136,8 +137,8 @@ pub fn now(core: &Core, p: SyncAccountParams) -> Result<(), RpcError> {
         Ok(())
     } else {
         Err(RpcError::new(error_code::NOT_FOUND, match p.account {
-            Some(k) => format!("account {k} is not synchronized"),
-            None => "no IMAP account to synchronize".into(),
+            Some(k) => reason::ACCOUNT_NOT_SYNCHRONIZED.with("account", k),
+            None => reason::NO_IMAP_ACCOUNT.into(),
         }))
     }
 }
@@ -145,15 +146,15 @@ pub fn now(core: &Core, p: SyncAccountParams) -> Result<(), RpcError> {
 /// `sync_verify`: on a blocking thread, with a connection of its own.
 pub async fn verify(core: &Arc<Core>, p: SyncVerifyParams) -> Result<SyncVerifyReport, RpcError> {
     let Some(spec) = syncer(core)?.spec(&p.account) else {
-        return Err(RpcError::new(error_code::NOT_FOUND, format!("account {} is not synchronized", p.account)));
+        return Err(RpcError::new(error_code::NOT_FOUND, reason::ACCOUNT_NOT_SYNCHRONIZED.with("account", p.account.as_str())));
     };
     let secrets = core.engine.lock().unwrap().secrets();
     let host: Arc<dyn SyncHost> = Arc::new(CoreHost(core.clone()));
     let account_id = spec.account_id;
     let report = tokio::task::spawn_blocking(move || nm_engine::sync::verify::verify_blocking(&spec, secrets, host, p.skip_hash, p.repair))
         .await
-        .map_err(|e| RpcError::new(error_code::INTERNAL_ERROR, e.to_string()))?
-        .map_err(|e| RpcError::new(error_code::SERVER, e))?;
+        .map_err(|e| RpcError::internal(e))?
+        .map_err(|e| RpcError::new(error_code::SERVER, reason::IMAP_FAILED.with("server_text", e)))?;
     if report.repaired > 0
         && let Some(syncer) = core.syncer.get()
     {

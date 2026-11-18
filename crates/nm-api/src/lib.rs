@@ -329,6 +329,378 @@ pub mod error_code {
     pub const AI: i64 = 1018;
 }
 
+/// Why a request failed, as a stable word and the values of its sentence
+/// (`localisation.md`, section 3.1; `docs/contract.md`, "Reasons").
+///
+/// The core does not know the user's language: it says *why* with a
+/// [`Reason`] and its values, in `data` (`{"reason": "tag_exists", "tag":
+/// "Urgent"}`), and each client writes the sentence. The CLI, the logs and
+/// the AI agents read `message`, the English sentence built here from the
+/// reason's template; the app looks the reason up in its String Catalog.
+///
+/// A value whose key ends with `_text` is written by someone else (a mail
+/// server, the system, the AI provider): a client cites it as it is, never
+/// translates it. `detail` is a technical precision in English, for the
+/// generic reasons (`invalid_params`, `not_found`, `internal`): the app
+/// shows a generic sentence and keeps the detail for the logs.
+///
+/// Rust note: `macro_rules!` writes code from a pattern. Here each line
+/// `NAME = "name": "template";` becomes a constant, and all of them a
+/// list, `ALL`, so that the tests can check that each reason is used,
+/// documented and translated, without a second list to keep in step.
+pub mod reason {
+    /// One reason: its stable name and its English sentence, whose `{key}`
+    /// are filled with the values of the same key.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct Reason {
+        pub name: &'static str,
+        pub english: &'static str,
+    }
+
+    impl Reason {
+        /// This reason with one value: `reason::TAG_EXISTS.with("tag", name)`.
+        pub fn with(self, key: &str, value: impl Into<serde_json::Value>) -> crate::Why {
+            crate::Why::from(self).with(key, value)
+        }
+
+        /// The keys of the values its sentence takes, in order of appearance.
+        pub fn keys(&self) -> Vec<&'static str> {
+            let mut out = Vec::new();
+            let mut rest = self.english;
+            while let Some(start) = rest.find('{') {
+                let Some(len) = rest[start..].find('}') else { break };
+                let key = &rest[start + 1..start + len];
+                if !out.contains(&key) {
+                    out.push(key);
+                }
+                rest = &rest[start + len + 1..];
+            }
+            out
+        }
+    }
+
+    /// The reason named `name`, if the contract has one.
+    pub fn named(name: &str) -> Option<Reason> {
+        ALL.iter().copied().find(|r| r.name == name)
+    }
+
+    macro_rules! reasons {
+        ($( $(#[$doc:meta])* $id:ident = $name:literal : $english:literal; )*) => {
+            $( $(#[$doc])* pub const $id: Reason = Reason { name: $name, english: $english }; )*
+            /// Every reason of the contract.
+            pub const ALL: &[Reason] = &[ $( $id ),* ];
+        };
+    }
+
+    reasons! {
+        // --- Generic: errors of a client's program, not of the user ---
+
+        /// The line received is not JSON.
+        PARSE_ERROR = "parse_error": "not JSON: {detail}";
+        /// Valid JSON, but not a request the protocol knows.
+        INVALID_REQUEST = "invalid_request": "invalid request: {detail}";
+        /// No method of that name.
+        METHOD_NOT_FOUND = "method_not_found": "unknown method: {method}";
+        /// The params do not match what the method expects.
+        INVALID_PARAMS = "invalid_params": "invalid parameters: {detail}";
+        /// Unexpected failure inside the core (a SQLite error, a panic).
+        INTERNAL = "internal": "internal error: {detail}";
+        /// What was asked for does not exist (any more): a stale id.
+        NOT_FOUND = "not_found": "not found: {detail}";
+        /// The client did not call `hello` first.
+        HELLO_EXPECTED = "hello_expected": "the handshake hello is expected first";
+        /// The client speaks another version of the protocol.
+        PROTOCOL_VERSION = "protocol_version": "protocol {version} is not supported (expected {expected})";
+
+        // --- Who may do what ---
+
+        /// Reserved to the app, the TUI and the CLI: saving a password,
+        /// creating an account, sending mail.
+        RESERVED_TO_PEOPLE = "reserved_to_people": "only the app, the TUI and the CLI can do this";
+        /// Reserved to NiceMailer.app, which installs the updates.
+        RESERVED_TO_APP = "reserved_to_app": "{method} is reserved to NiceMailer.app, which installs the updates";
+        /// An AI agent may not send mail yet.
+        AGENT_CANNOT_SEND = "agent_cannot_send": "AI agents cannot send mail yet: the draft is in Drafts, where the user can review and send it from NiceMailer";
+        /// An AI agent may not file mail yet.
+        AGENT_CANNOT_FILE = "agent_cannot_file": "AI agents cannot file mail yet (move, mark, flag, tag): ask the user to do it in NiceMailer";
+        /// An AI agent may not unsubscribe: it confirms the mail was read.
+        AGENT_CANNOT_UNSUBSCRIBE = "agent_cannot_unsubscribe": "unsubscribing sends a request to an address the sender chose, which confirms the mail was read: only the user can do it, in NiceMailer";
+        /// An AI agent may not give a password.
+        AGENT_CANNOT_SET_PASSWORD = "agent_cannot_set_password": "passwords are given in NiceMailer only";
+        /// Any other method an AI agent may not call.
+        AGENT_NOT_ALLOWED = "agent_not_allowed": "{method} is not available to AI agents";
+        /// An AI agent may not change a draft the user wrote.
+        DRAFT_BY_USER = "draft_by_user": "draft {draft} was written by the user: AI agents may read it, not change it; start a new draft instead";
+        /// An AI agent may not change the reply the user started.
+        REPLY_STARTED_BY_USER = "reply_started_by_user": "the user has already started a reply to this mail (draft {draft}): AI agents may read it, not change it";
+
+        // --- Accounts ---
+
+        /// No account of that key in `accounts.toml`.
+        ACCOUNT_UNKNOWN = "account_unknown": "no account {account} in accounts.toml";
+        /// In `accounts.toml`, not yet in the database.
+        ACCOUNT_NOT_IN_DATABASE = "account_not_in_database": "account {account} is not in the database";
+        /// The account is not synchronized (an archive account, a failure).
+        ACCOUNT_NOT_SYNCHRONIZED = "account_not_synchronized": "account {account} is not synchronized";
+        /// No IMAP account at all.
+        NO_IMAP_ACCOUNT = "no_imap_account": "no IMAP account to synchronize";
+        /// The key is taken by another account.
+        ACCOUNT_EXISTS = "account_exists": "an account {account} exists already";
+        /// The key is that of an account of another kind (an archive).
+        ACCOUNT_KEY_TAKEN = "account_key_taken": "{account} is an {kind} account: choose another key";
+        /// "Organize…" on an account that is not only looked at.
+        ACCOUNT_SET_UP = "account_set_up": "the account {account} is not read-only: it is set up already";
+        /// A change to the mail of a read-only account.
+        ACCOUNT_READ_ONLY = "account_read_only": "this account is read-only (read_only = true in accounts.toml): nothing is changed";
+        /// Sending from a read-only account.
+        ACCOUNT_READ_ONLY_SEND = "account_read_only_send": "this account is read-only (read_only = true in accounts.toml): it cannot send";
+        /// An empty password given.
+        PASSWORD_EMPTY = "password_empty": "empty password";
+        /// An empty SMTP password given.
+        SMTP_PASSWORD_EMPTY = "smtp_password_empty": "empty SMTP password";
+        /// An SMTP password for an account without SMTP server.
+        SMTP_PASSWORD_WITHOUT_SERVER = "smtp_password_without_server": "an SMTP password without an SMTP server";
+        /// The account has no `[smtp]`.
+        NO_SMTP_SERVER = "no_smtp_server": "account {account} has no [smtp] server in accounts.toml: it cannot send";
+        /// A day that is not `YYYY-MM-DD`.
+        DATE_INVALID = "date_invalid": "date {date}: YYYY-MM-DD expected";
+        /// Archiving asked for an account only looked at.
+        READ_ONLY_ARCHIVES_NOTHING = "read_only_archives_nothing": "a read-only account archives nothing on its server";
+        /// A folder chosen for a role that the server does not have.
+        SERVER_FOLDER_MISSING = "server_folder_missing": "the server has no folder {folder}: ask to create it";
+
+        // --- Passwords (the Keychain) ---
+
+        /// The Keychain refused to save or to give a password.
+        KEYCHAIN = "keychain": "the Keychain refused: {system_text}";
+        /// No password saved for the account.
+        PASSWORD_MISSING = "password_missing": "no password saved for this account: nicemailer account password {account}";
+        /// `auth = "oauth2"`.
+        OAUTH2_UNSUPPORTED = "oauth2_unsupported": "auth = \"oauth2\" is not supported yet";
+        /// The password was saved for another server than the file's.
+        PASSWORD_SERVER_CHANGED = "password_server_changed": "the password was saved for {saved_user} on {saved_host}, the file now says {user} on {host}: save the password again to confirm the new server (nicemailer account password {account})";
+        /// The SMTP password was saved for another server than the file's.
+        SMTP_PASSWORD_SERVER_CHANGED = "smtp_password_server_changed": "the SMTP password was saved for {saved_user} on {saved_host}, the file now says {user} on {host}: save it again to confirm the new server (nicemailer account password {account} --smtp)";
+        /// The SMTP server is of another provider: it needs its own password.
+        SMTP_PASSWORD_NEEDED = "smtp_password_needed": "the SMTP server {smtp_host} is not of the same provider as the IMAP server {host}: NiceMailer does not send it the IMAP password. Save its own: nicemailer account password {account} --smtp";
+
+        // --- Mail servers ---
+
+        /// The IMAP server refused the user name or the password.
+        IMAP_AUTH_REFUSED = "imap_auth_refused": "the server refused the login: {server_text}";
+        /// No connection to the IMAP server: refused, TLS, no answer.
+        IMAP_UNREACHABLE = "imap_unreachable": "the server could not be reached: {server_text}";
+        /// Any other failure of the IMAP server.
+        IMAP_FAILED = "imap_failed": "the server failed: {server_text}";
+
+        // --- Replying and sending ---
+
+        /// The mail answered is not in an account of `accounts.toml`.
+        MAIL_NOT_IN_ACCOUNT = "mail_not_in_account": "this mail is not in an account of accounts.toml (an archive account?): it cannot be answered from here";
+        /// The mail's account cannot send, and no other account can.
+        NO_ACCOUNT_CAN_SEND = "no_account_can_send": "no account of accounts.toml can send: add an [smtp] server to one";
+        /// The mail is in an archive account.
+        ARCHIVE_CANNOT_SEND = "archive_cannot_send": "this mail is in an archive account, which cannot send";
+        /// The account has no address to send from.
+        NO_SENDER_ADDRESS = "no_sender_address": "the account has no address to send from";
+        /// The sender chosen is not an address of the account.
+        NOT_OWN_ADDRESS = "not_own_address": "{address} is not an address of this account";
+        /// A draft without recipient.
+        DRAFT_NO_RECIPIENT = "draft_no_recipient": "this draft has no recipient";
+        /// A draft cannot be answered.
+        DRAFT_CANNOT_BE_ANSWERED = "draft_cannot_be_answered": "a draft cannot be answered";
+        /// A draft cannot be forwarded.
+        DRAFT_CANNOT_BE_FORWARDED = "draft_cannot_be_forwarded": "a draft cannot be forwarded";
+        /// The formatted text of a draft is over the limit.
+        FORMATTED_TEXT_TOO_BIG = "formatted_text_too_big": "the formatted text is too big";
+        /// Another window or client changed the draft.
+        REVISION_CONFLICT = "revision_conflict": "this draft was changed elsewhere (revision {revision}): reload it";
+        /// The draft is being sent.
+        DRAFT_SENDING = "draft_sending": "this draft is being sent: cancel the sending first";
+        /// `cancel_send` too late.
+        SEND_STARTED = "send_started": "too late to cancel: the mail is leaving, or has left";
+        /// The draft is being copied to the server.
+        DRAFT_COPYING = "draft_copying": "this draft is being copied to the server: try again in a moment";
+        /// The body of the mail is not downloaded yet.
+        BODY_PENDING = "body_pending": "the body of this mail is not downloaded yet: it is asked for, try again in a moment";
+        /// The raw file of the mail is damaged.
+        RAW_DAMAGED = "raw_damaged": "the raw file of this mail is damaged ({hash}): it is set aside and downloaded again from the server if possible";
+
+        // --- Changes sent to the server, undone (`ActionReverted`, `SendFailed`) ---
+
+        /// The server refused a change made in NiceMailer, for good.
+        SERVER_REFUSED_CHANGE = "server_refused_change": "the server refused the change: {server_text}";
+        /// A change or a mail could not reach the server after its attempts.
+        ATTEMPTS_FAILED = "attempts_failed": "{attempts} attempts failed, the last: {server_text}";
+        /// The mail server refused the mail, for good.
+        SMTP_REFUSED = "smtp_refused": "the mail server refused the mail: {server_text}";
+
+        // --- Moving mail ---
+
+        /// The target is not offered from this folder.
+        MOVE_REFUSED = "move_refused": "{target} is not a target from {from}";
+        /// A favorable decision on a sender suspected of spoofing.
+        CONFIRMATION_REQUIRED = "confirmation_required": "confirmation required: probable spoofing of {addr} (verdict {verdict})";
+
+        // --- Tags, groups, addresses ---
+
+        /// A tag name empty or over 64 characters.
+        TAG_NAME_INVALID = "tag_name_invalid": "a tag name has 1 to 64 characters";
+        /// Another tag has that name.
+        TAG_EXISTS = "tag_exists": "the tag {tag} exists already";
+        /// A group name empty or over 64 characters.
+        GROUP_NAME_INVALID = "group_name_invalid": "a group name has 1 to 64 characters";
+        /// Another group has that name.
+        GROUP_EXISTS = "group_exists": "the group {group} exists already";
+        /// Not a mail address.
+        ADDRESS_INVALID = "address_invalid": "not an address: {address}";
+        /// Not a domain.
+        DOMAIN_INVALID = "domain_invalid": "not a domain: {domain}";
+
+        // --- Files and imports ---
+
+        /// An import is running: one at a time.
+        IMPORT_RUNNING = "import_running": "an import is already running";
+        /// A path that is not absolute.
+        PATH_NOT_ABSOLUTE = "path_not_absolute": "an absolute path is expected: {path}";
+        /// A path that is not a file.
+        NOT_A_FILE = "not_a_file": "{path} is not a file";
+        /// A folder that does not exist.
+        FOLDER_MISSING = "folder_missing": "no folder {path}";
+        /// A file the core cannot read.
+        FILE_UNREADABLE = "file_unreadable": "{path}: {system_text}";
+        /// The database already holds mail.
+        DATABASE_NOT_EMPTY = "database_not_empty": "the database already holds mail";
+
+        // --- The AI (`ia.md`); `data.code` keeps the AI error code ---
+
+        /// The AI assistance is off.
+        AI_DISABLED = "ai_disabled": "the AI assistance is off: set ai.enabled = true in config.toml";
+        /// No `claude` binary.
+        AI_PROVIDER_MISSING = "ai_provider_missing": "the claude binary was not found; install Claude Code or set ai.claude_path";
+        /// Claude Code is not signed in.
+        AI_NOT_LOGGED_IN = "ai_not_logged_in": "Claude Code is not signed in; run `claude` in a terminal to sign in";
+        /// The provider announced tools: nothing was sent.
+        AI_PROVIDER_UNSAFE = "ai_provider_unsafe": "the claude binary announced tools ({tools}) and MCP servers ({mcp_servers}); nothing was sent to it";
+        /// This provider is not supported yet.
+        AI_PROVIDER_UNSUPPORTED = "ai_provider_unsupported": "the {provider} provider is not available yet: set ai.provider = \"claude-code\" in config.toml";
+        /// The usage limit of the subscription is reached.
+        AI_RATE_LIMITED = "ai_rate_limited": "the usage limit of the Claude subscription is reached";
+        /// No answer in time.
+        AI_TIMEOUT = "ai_timeout": "the AI did not answer in time";
+        /// The answer could not be read.
+        AI_INVALID_OUTPUT = "ai_invalid_output": "the AI's answer could not be read: {detail}";
+        /// The provider failed, with its own text.
+        AI_FAILED = "ai_failed": "the AI failed: {provider_text}";
+        /// The process could not be started or talked to.
+        AI_IO = "ai_io": "cannot run the claude binary: {system_text}";
+        /// The prompt is not available in this version.
+        AI_PROMPT_UNAVAILABLE = "ai_prompt_unavailable": "the prompt {prompt} is not available in this version of NiceMailer yet";
+        /// The prompt is not offered in this folder.
+        AI_PROMPT_NOT_HERE = "ai_prompt_not_here": "the prompt {prompt} is not offered in this folder";
+        /// A prompt on a selection, without a selection.
+        AI_SELECTION_NEEDED = "ai_selection_needed": "select the text to work on first";
+        /// A prompt on the whole text, with a selection.
+        AI_SELECTION_UNWANTED = "ai_selection_unwanted": "this prompt works on the whole text: send no selection";
+        /// The selection is empty.
+        AI_SELECTION_EMPTY = "ai_selection_empty": "the selection is empty";
+        /// The user's text to send is empty.
+        AI_TEXT_EMPTY = "ai_text_empty": "there is no text of yours to send: write some first";
+        /// The user's text holds the tag the AI gives the text back in.
+        AI_SEGMENT_TAG = "ai_segment_tag": "the text contains a <segment> tag, which the AI uses to give the text back; remove it first";
+        /// The mail is still downloading.
+        AI_MAIL_DOWNLOADING = "ai_mail_downloading": "this mail is still downloading: try again in a moment";
+        /// Sorting a folder that has no role.
+        AI_FOLDER_WITHOUT_ROLE = "ai_folder_without_role": "this folder has no role: nothing to sort it into";
+        /// Sorting an empty folder.
+        AI_FOLDER_EMPTY = "ai_folder_empty": "this folder is empty: nothing to sort";
+        /// Sorting a selection, without any.
+        AI_MARK_TO_SORT = "ai_mark_to_sort": "mark the conversations to sort, or put the cursor on one";
+        /// The draft sent is not the saved one.
+        AI_DRAFT_UNSAVED = "ai_draft_unsaved": "the draft changed since: save it and run again";
+        /// The run was cancelled (`AiFailed`, code `ai_cancelled`).
+        AI_CANCELLED = "ai_cancelled": "cancelled";
+        /// The draft changed since the AI read it.
+        AI_DRAFT_CHANGED = "ai_draft_changed": "the draft changed since the AI read it: run it again";
+        /// An attachment of a kind with no text to read.
+        FILE_UNSUPPORTED = "file_unsupported": "{file}: this kind of file has no text the AI can read";
+        /// An attachment over the size read.
+        FILE_TOO_LARGE = "file_too_large": "{file}: the file is too large to read ({size_mb} MB, 50 MB at most)";
+        /// An attachment protected by a password.
+        FILE_ENCRYPTED = "file_encrypted": "{file}: the file is protected by a password";
+        /// An attachment without text.
+        FILE_WITHOUT_TEXT = "file_without_text": "{file}: no text in this file: a scan or an image?";
+        /// An attachment that cannot be read.
+        FILE_DAMAGED = "file_damaged": "{file}: the file cannot be read: {detail}";
+
+        // --- Maintenance (`mise-a-jour.md`); `data` is a `Maintenance` ---
+
+        /// An update is being installed.
+        UPDATE = "update": "NiceMailer is being updated";
+        /// The database is being upgraded.
+        MIGRATION = "migration": "the database is being upgraded (version {from} to {to})";
+        /// The database was written by a newer NiceMailer.
+        NEWER_SCHEMA = "newer_schema": "the database was written by a newer NiceMailer (version {from}, this core reads {to})";
+        /// The upgrade of the database failed.
+        MIGRATION_FAILED = "migration_failed": "the upgrade of the database failed: {message}";
+    }
+}
+
+/// A reason with the values of its sentence: what an error says, before it
+/// has a code (`RpcError::new`). Other crates build one (the Keychain's
+/// refusals, the AI's), so that the reason travels with the error up to
+/// the contract.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Why {
+    pub reason: reason::Reason,
+    pub values: serde_json::Map<String, Value>,
+}
+
+impl From<reason::Reason> for Why {
+    fn from(reason: reason::Reason) -> Self {
+        Why { reason, values: serde_json::Map::new() }
+    }
+}
+
+impl Why {
+    /// The same, with one more value.
+    pub fn with(mut self, key: &str, value: impl Into<Value>) -> Self {
+        self.values.insert(key.to_string(), value.into());
+        self
+    }
+
+    /// The English sentence: the template, each `{key}` replaced by its
+    /// value (a list joined by ", "). A key without value stays as it is,
+    /// which the tests of each reason catch.
+    pub fn message(&self) -> String {
+        let mut out = self.reason.english.to_string();
+        for (key, value) in &self.values {
+            let text = match value {
+                Value::String(s) => s.clone(),
+                Value::Array(items) => {
+                    items.iter().map(|v| v.as_str().map(str::to_string).unwrap_or_else(|| v.to_string())).collect::<Vec<_>>().join(", ")
+                }
+                other => other.to_string(),
+            };
+            out = out.replace(&format!("{{{key}}}"), &text);
+        }
+        out
+    }
+
+    /// The `data` of the error: the reason and its values.
+    pub fn data(&self) -> Value {
+        let mut data = self.values.clone();
+        data.insert("reason".into(), Value::String(self.reason.name.into()));
+        Value::Object(data)
+    }
+}
+
+impl std::fmt::Display for Why {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message())
+    }
+}
+
 // ---------------------------------------------------------------------------
 // JSON-RPC envelopes
 // ---------------------------------------------------------------------------
@@ -357,22 +729,61 @@ pub struct Request {
 /// The `error` member of a failed response.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RpcError {
+    /// The family of the error (`error_code`).
     pub code: i64,
-    /// Human-readable description, for logs and debugging.
+    /// The English sentence of its reason, for the CLI, the logs and the
+    /// AI agents; a client in another language writes its own from `data`.
     pub message: String,
-    /// Optional structured details.
+    /// The reason and its values (`reason`, `Why::data`), and for some
+    /// codes more (`Maintenance`, the AI's `code`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub data: Option<Value>,
 }
 
 impl RpcError {
-    /// Builds an error without `data`.
+    /// An error of the family `code`, for the reason `why`: its English
+    /// sentence as `message`, the reason and its values as `data`.
     ///
-    /// Rust note: `impl Into<String>` accepts anything convertible into a
-    /// `String`, so callers can pass either a literal `"text"` or a
-    /// `String` built with `format!`. `Self` is shorthand for `RpcError`.
-    pub fn new(code: i64, message: impl Into<String>) -> Self {
-        RpcError { code, message: message.into(), data: None }
+    /// Rust note: `impl Into<Why>` accepts a `Why` or a bare `Reason`
+    /// (`From<Reason> for Why`), so that a reason without values needs no
+    /// conversion at the call.
+    pub fn new(code: i64, why: impl Into<Why>) -> Self {
+        let why = why.into();
+        RpcError { code, message: why.message(), data: Some(why.data()) }
+    }
+
+    /// `INVALID_PARAMS`, for a mistake of the client's program: `detail`
+    /// says which, in English.
+    pub fn invalid(detail: impl std::fmt::Display) -> Self {
+        RpcError::new(error_code::INVALID_PARAMS, reason::INVALID_PARAMS.with("detail", detail.to_string()))
+    }
+
+    /// `INTERNAL_ERROR`, for a failure inside the core.
+    pub fn internal(detail: impl std::fmt::Display) -> Self {
+        RpcError::new(error_code::INTERNAL_ERROR, reason::INTERNAL.with("detail", detail.to_string()))
+    }
+
+    /// `NOT_FOUND`, for an id that names nothing (any more).
+    pub fn not_found(detail: impl std::fmt::Display) -> Self {
+        RpcError::new(error_code::NOT_FOUND, reason::NOT_FOUND.with("detail", detail.to_string()))
+    }
+
+    /// The name of its reason (`data.reason`).
+    pub fn reason(&self) -> Option<&str> {
+        self.data.as_ref()?.get("reason")?.as_str()
+    }
+
+    /// Adds a value to `data`, outside the reason's sentence (the AI's
+    /// `code`, the revision of a draft).
+    pub fn with_data(mut self, key: &str, value: impl Into<Value>) -> Self {
+        if let Some(Value::Object(data)) = self.data.as_mut() {
+            data.insert(key.to_string(), value.into());
+        } else {
+            let mut data = serde_json::Map::new();
+            data.insert(key.to_string(), value.into());
+            self.data = Some(Value::Object(data));
+        }
+        self
     }
 }
 
@@ -464,10 +875,11 @@ pub enum Event {
     /// An account was created, enabled again, disabled, or its settings or
     /// state changed: reload it with `list_accounts`.
     AccountChanged { account_id: i64 },
-    /// An account cannot connect or authenticate; `error` says why. The
-    /// state stays available in `list_accounts` until it is resolved,
-    /// which is announced by `AccountChanged`.
-    AccountError { account_id: i64, error: String },
+    /// An account cannot connect or authenticate; `why` says why
+    /// (`docs/contract.md`, "Errors"), `error` in English. The state stays
+    /// available in `list_accounts` until it is resolved, which is
+    /// announced by `AccountChanged`.
+    AccountError { account_id: i64, error: String, why: Value },
     /// `config.toml` and `accounts.toml` were applied with these changed
     /// keys (dotted, sorted; those of the accounts start with `accounts.`).
     /// Empty `keys` after a `ConfigError`: the files are valid again,
@@ -500,9 +912,9 @@ pub enum Event {
     SyncProgress { account_id: i64, folder_id: Option<i64>, stage: String, done: u64, total: u64 },
     /// The server refused for good a change made in NiceMailer (`kind`:
     /// `move`, `set_flags`): it was undone locally, with the later changes
-    /// of the same message (`modele de donnees.md`, section 6). `reason` is
-    /// the server's answer.
-    ActionReverted { message_id: i64, kind: String, reason: String },
+    /// of the same message (`modele de donnees.md`, section 6). `why` says
+    /// why, the server's answer in `server_text`; `message` in English.
+    ActionReverted { message_id: i64, kind: String, message: String, why: Value },
     /// A draft was sent: the server accepted it (`reponse.md`, section 7).
     /// `message_id` is the mail in Sent; `moved_to` the folder its
     /// conversation was filed in (absent: it stayed); `undo` cancels that
@@ -523,7 +935,8 @@ pub enum Event {
     },
     /// A draft could not be sent, for good: it is editable again, and
     /// `reply_to` is the mail it answers (the next `r` on it reopens it).
-    SendFailed { draft_id: i64, reply_to: Option<i64>, reason: String },
+    /// `why` says why, `message` in English.
+    SendFailed { draft_id: i64, reply_to: Option<i64>, message: String, why: Value },
     /// A draft was sent, but the server refused some recipients (each with
     /// its answer); the others received it.
     SendPartial { draft_id: i64, refused: Vec<String> },
@@ -534,8 +947,9 @@ pub enum Event {
     /// A run ended with an answer, checked: `ai_get_run` gives its proposal.
     AiDone { run_id: i64 },
     /// A run failed or was cancelled (`code` `ai_cancelled`); nothing to
-    /// apply. `code` is the AI error code, `message` says what to do.
-    AiFailed { run_id: i64, code: String, message: String },
+    /// apply. `code` is the AI error code, `why` its reason (`ai_cancelled`
+    /// for a cancel), `message` the English sentence.
+    AiFailed { run_id: i64, code: String, message: String, why: Value },
     /// A run on several conversations went through `done` of `total`.
     /// Transient: `ai_get_run` says where a finished one ended.
     AiProgress { run_id: i64, done: u64, total: u64 },
@@ -2167,9 +2581,13 @@ pub struct AccountView {
     /// `false` when the key of an IMAP account left `accounts.toml`: it is no
     /// longer synchronized, its mail is kept (`configuration.md`, section 6).
     pub enabled: bool,
-    /// Why the account cannot connect, if known. `None` does not mean
-    /// connected, only that nothing prevents it.
+    /// Why the account cannot connect, if known, in English. `None` does
+    /// not mean connected, only that nothing prevents it.
     pub error: Option<String>,
+    /// The same as a reason and its values (`docs/contract.md`, "Errors"),
+    /// for a client to write it in the user's language.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub why: Option<Value>,
     /// Display order: `list_accounts` and `list_folders` give the accounts
     /// by increasing position (then by id). Changed by `set_account_order`.
     pub position: i64,
@@ -2438,25 +2856,21 @@ impl Maintenance {
     /// The error answered to a client: code `MAINTENANCE`, this value as
     /// its `data`, and a message for logs.
     pub fn error(&self) -> RpcError {
-        let message = match self.reason {
-            MaintenanceReason::Update => "NiceMailer is being updated".to_string(),
-            MaintenanceReason::Migration => format!(
-                "the database is being upgraded (version {} to {})",
-                self.from.unwrap_or(0),
-                self.to.unwrap_or(0)
-            ),
-            MaintenanceReason::NewerSchema => format!(
-                "the database was written by a newer NiceMailer (version {}, this core reads {})",
-                self.from.unwrap_or(0),
-                self.to.unwrap_or(0)
-            ),
-            MaintenanceReason::MigrationFailed => {
-                format!("the upgrade of the database failed: {}", self.message.as_deref().unwrap_or("unknown error"))
-            }
-        };
+        // The message comes from the reason's template, as for any error;
+        // `data` stays this whole value, whose `reason` field is the
+        // reason's name.
+        let why = Why::from(match self.reason {
+            MaintenanceReason::Update => reason::UPDATE,
+            MaintenanceReason::Migration => reason::MIGRATION,
+            MaintenanceReason::NewerSchema => reason::NEWER_SCHEMA,
+            MaintenanceReason::MigrationFailed => reason::MIGRATION_FAILED,
+        })
+        .with("from", self.from.unwrap_or(0))
+        .with("to", self.to.unwrap_or(0))
+        .with("message", self.message.clone().unwrap_or_else(|| "unknown error".into()));
         RpcError {
             code: error_code::MAINTENANCE,
-            message,
+            message: why.message(),
             data: Some(serde_json::to_value(self).expect("plain struct")),
         }
     }
@@ -3425,4 +3839,75 @@ pub struct AiApplyResult {
     /// The vCard file of the sender's card, for the client to save.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub contact: Option<AiFile>,
+}
+
+#[cfg(test)]
+mod reason_tests {
+    use super::*;
+    use serde_json::json;
+
+    /// The message is the template with its values; `data` the reason
+    /// and the same values, so that a client writes its own sentence.
+    #[test]
+    fn an_error_carries_its_reason_its_values_and_the_english_sentence() {
+        let e = RpcError::new(error_code::INVALID_PARAMS, reason::TAG_EXISTS.with("tag", "Urgent"));
+        assert_eq!(e.message, "the tag Urgent exists already");
+        assert_eq!(e.data, Some(json!({"reason": "tag_exists", "tag": "Urgent"})));
+        assert_eq!(e.reason(), Some("tag_exists"));
+        // Numbers in digits, lists joined.
+        let w = reason::AI_PROVIDER_UNSAFE.with("tools", vec!["Bash", "Read"]).with("mcp_servers", Vec::<String>::new());
+        assert_eq!(w.message(), "the claude binary announced tools (Bash, Read) and MCP servers (); nothing was sent to it");
+        assert_eq!(reason::REVISION_CONFLICT.with("revision", 4).message(), "this draft was changed elsewhere (revision 4): reload it");
+        // A bare reason needs no conversion.
+        assert_eq!(RpcError::new(error_code::BUSY, reason::IMPORT_RUNNING).message, "an import is already running");
+    }
+
+    /// Values outside the sentence join `data` without changing it.
+    #[test]
+    fn data_outside_the_sentence_is_added_beside_the_reason() {
+        let e = RpcError::new(error_code::AI, reason::AI_TIMEOUT).with_data("code", "ai_timeout");
+        assert_eq!(e.data, Some(json!({"reason": "ai_timeout", "code": "ai_timeout"})));
+        assert_eq!(e.message, "the AI did not answer in time");
+    }
+
+    /// The keys of a template, in order, each once.
+    #[test]
+    fn the_keys_of_a_sentence_are_read_from_its_template() {
+        assert_eq!(reason::PASSWORD_SERVER_CHANGED.keys(), vec!["saved_user", "saved_host", "user", "host", "account"]);
+        assert!(reason::IMPORT_RUNNING.keys().is_empty());
+        assert_eq!(reason::named("tag_exists"), Some(reason::TAG_EXISTS));
+        assert_eq!(reason::named("nope"), None);
+    }
+
+    /// Every template filled with all its keys leaves no brace: a reason
+    /// cannot be given a sentence its values do not complete.
+    #[test]
+    fn every_template_is_completed_by_its_values() {
+        for r in reason::ALL {
+            let mut why = Why::from(*r);
+            for k in r.keys() {
+                why = why.with(k, "x");
+            }
+            let m = why.message();
+            assert!(!m.contains('{') && !m.contains('}'), "{}: {m}", r.name);
+        }
+    }
+
+    /// A maintenance keeps its whole value as `data`, its message from its
+    /// reason.
+    #[test]
+    fn a_maintenance_says_its_reason() {
+        let m = Maintenance {
+            reason: MaintenanceReason::Migration,
+            from: Some(9),
+            to: Some(13),
+            at: None,
+            since: 0,
+            message: None,
+        };
+        let e = m.error();
+        assert_eq!(e.message, "the database is being upgraded (version 9 to 13)");
+        assert_eq!(e.reason(), Some("migration"));
+        assert_eq!(e.code, error_code::MAINTENANCE);
+    }
 }

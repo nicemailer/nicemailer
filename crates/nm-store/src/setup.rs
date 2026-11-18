@@ -55,7 +55,7 @@ impl Store {
             tx.query_row("SELECT id, kind FROM account WHERE config_key = ?1", [key], |r| Ok((r.get(0)?, r.get(1)?))).optional()?;
         let id = match row {
             Some((_, kind)) if kind != "imap" => {
-                return Err(StoreError::InvalidParams(format!("{key} is an {kind} account: choose another key")));
+                return Err(StoreError::Invalid(nm_api::reason::ACCOUNT_KEY_TAKEN.with("account", key).with("kind", kind)));
             }
             Some((id, _)) => {
                 tx.execute("UPDATE account SET disabled_at = NULL WHERE id = ?1", [id])?;
@@ -270,7 +270,7 @@ impl Store {
             .ok_or_else(|| StoreError::NotFound(format!("account {from}")))?;
         let taken: bool = tx.query_row("SELECT EXISTS (SELECT 1 FROM account WHERE config_key = ?1)", [to], |r| r.get(0))?;
         if taken {
-            return Err(StoreError::InvalidParams(format!("an account {to} exists already")));
+            return Err(StoreError::Invalid(nm_api::reason::ACCOUNT_EXISTS.with("account", to)));
         }
         tx.execute(
             "UPDATE account SET config_key = ?2, date_modified = unixepoch(), modified_by = ?3 WHERE id = ?1",

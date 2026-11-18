@@ -296,7 +296,7 @@ pub(crate) fn draft_view(conn: &Connection, id: i64) -> Result<DraftView> {
         body_format,
     )) = row
     else {
-        return Err(StoreError::NotFound(format!("brouillon {id}")));
+        return Err(StoreError::NotFound(format!("draft {id}")));
     };
     let (to, cc, bcc) = recipients_of(&recipients);
     let after_send_target = match thread_id {
@@ -438,7 +438,7 @@ impl Store {
         let rev = editable(&tx, id, revision)?;
         let n = tx.execute("DELETE FROM draft_attachment WHERE id = ?1 AND draft_id = ?2", params![attachment_id, id])?;
         if n == 0 {
-            return Err(StoreError::NotFound(format!("pièce jointe {attachment_id}")));
+            return Err(StoreError::NotFound(format!("attachment {attachment_id}")));
         }
         tx.execute(
             "UPDATE draft SET revision = revision + 1, date_modified = unixepoch(), modified_by = ?2 WHERE id = ?1",
@@ -910,7 +910,7 @@ impl Store {
         let after_send: Option<String> = tx.query_row("SELECT after_send FROM draft WHERE id = ?1", [id], |r| r.get(0))?;
         let Built { account_id, from_addr, rcpt, mime, copy, msgid, date: t, attached } = build_draft(&tx, id, user_agent, None, self.outgoing.as_ref())?;
         if rcpt.is_empty() {
-            return Err(StoreError::CannotSend("this draft has no recipient".into()));
+            return Err(StoreError::CannotSend(nm_api::reason::DRAFT_NO_RECIPIENT.into()));
         }
         let send_at = t + delay_secs as i64;
         let mut payload = json!({
@@ -1238,7 +1238,8 @@ impl Store {
             self.conn.query_row("SELECT attempts + 1, payload FROM pending_action WHERE id = ?1", [action_id], |r| Ok((r.get(0)?, r.get(1)?)))?;
         let append = serde_json::from_str::<Value>(&payload).is_ok_and(|p| p["phase"] == "append");
         if attempts >= crate::spool::MAX_ATTEMPTS {
-            let reason = format!("{attempts} attempts failed, the last: {error}");
+            let why = nm_api::reason::ATTEMPTS_FAILED.with("attempts", attempts).with("server_text", error);
+            let reason = why.message();
             if append {
                 self.conn.execute(
                     "UPDATE pending_action SET state = 'done', attempts = ?2, last_error = ?3, date_modified = unixepoch() WHERE id = ?1",
@@ -1246,7 +1247,7 @@ impl Store {
                 )?;
                 return Ok(ChangeSet::default());
             }
-            return self.send_failed(action_id, &reason);
+            return self.send_failed(action_id, why);
         }
         let delay = (crate::spool::RETRY_FIRST_SECS << (attempts - 1).min(20)).min(crate::spool::RETRY_MAX_SECS);
         self.conn.execute(
@@ -1259,8 +1260,10 @@ impl Store {
     }
 
     /// The mail cannot be sent, for good: the action is `reverted`, the
-    /// draft editable again, `SendFailed` tells the user.
-    pub fn send_failed(&mut self, action_id: i64, reason: &str) -> Result<ChangeSet> {
+    /// draft editable again, `SendFailed` tells the user. `why` is kept in
+    /// English in the database (`last_error`, the history).
+    pub fn send_failed(&mut self, action_id: i64, why: nm_api::Why) -> Result<ChangeSet> {
+        let reason = why.message();
         let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let mut changes = ChangeSet::default();
         let payload: Option<String> =
@@ -1280,7 +1283,7 @@ impl Store {
                  VALUES ('core', 'message', ?1, 'send_failed', json_object('message_id_hdr', ?2, 'reason', ?3))",
                 params![reply_to.unwrap_or(0), p["message_id_hdr"].as_str(), reason],
             )?;
-            changes.send_failed.push((draft_id, reply_to, reason.to_string()));
+            changes.send_failed.push((draft_id, reply_to, why));
         }
         tx.commit()?;
         Ok(changes)
@@ -1401,7 +1404,7 @@ fn build_draft(conn: &Connection, id: i64, user_agent: &str, draft_revision: Opt
             |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?, r.get(7)?, r.get(8)?)),
         )
         .optional()?
-        .ok_or_else(|| StoreError::NotFound(format!("brouillon {id}")))?;
+        .ok_or_else(|| StoreError::NotFound(format!("draft {id}")))?;
     let (to, cc, bcc) = recipients_of(&recipients);
     let rcpt: Vec<String> = to.iter().chain(&cc).chain(&bcc).map(|m| m.addr.clone()).collect();
     // The conversation headers, from the mail answered as it is now.
@@ -1596,7 +1599,7 @@ fn existing_forward(conn: &Connection, message: i64) -> Result<Option<i64>> {
 
 /// The mail a reply or a forward starts from, refused when it cannot be:
 /// `(account_id, subject, from, raw file)`.
-fn source_message(conn: &Connection, id: i64, body: Option<&str>, what: &str) -> Result<(i64, String, Option<Mailbox>, Option<crate::raw::Hash>)> {
+fn source_message(conn: &Connection, id: i64, body: Option<&str>, refusal: nm_api::reason::Reason) -> Result<(i64, String, Option<Mailbox>, Option<crate::raw::Hash>)> {
     type Row = (i64, bool, i64, String, Option<String>, Option<String>, Option<Vec<u8>>);
     let row: Option<Row> = conn
         .query_row(
@@ -1609,7 +1612,7 @@ fn source_message(conn: &Connection, id: i64, body: Option<&str>, what: &str) ->
         return Err(StoreError::NotFound(format!("message {id}")));
     };
     if is_draft {
-        return Err(StoreError::CannotSend(format!("a draft cannot be {what}")));
+        return Err(StoreError::CannotSend(refusal.into()));
     }
     // The text quoted is the mail's: without its body, nothing to quote.
     // A restored body needs none.
@@ -1634,7 +1637,7 @@ fn reply_plan(
     body: Option<&str>,
     fake: bool,
 ) -> Result<Plan> {
-    let (account_id, subject, from, _) = source_message(conn, reply_to, body, "answered")?;
+    let (account_id, subject, from, _) = source_message(conn, reply_to, body, nm_api::reason::DRAFT_CANNOT_BE_ANSWERED)?;
     let (to, cc, rt) = message_addresses(conn, reply_to)?;
     let original = Original { from: from.as_ref(), reply_to: &rt, to: &to, cc: &cc };
     let (send_account, sender, own) = pick_sender(conn, sending, &original, fake)?;
@@ -1670,7 +1673,7 @@ fn forward_plan(
     body: Option<&str>,
     fake: bool,
 ) -> Result<(Plan, Option<crate::raw::Hash>)> {
-    let (account_id, subject, from, raw_hash) = source_message(conn, message, body, "forwarded")?;
+    let (account_id, subject, from, raw_hash) = source_message(conn, message, body, nm_api::reason::DRAFT_CANNOT_BE_FORWARDED)?;
     let (to, cc, rt) = message_addresses(conn, message)?;
     let original = Original { from: from.as_ref(), reply_to: &rt, to: &to, cc: &cc };
     let (send_account, sender, _) = pick_sender(conn, sending, &original, fake)?;
@@ -1695,7 +1698,7 @@ fn forward_plan(
 /// A new mail from the account's main address.
 fn new_plan(account_id: i64, identities: &Identities, body: Option<&str>) -> Result<Plan> {
     let Some(sender) = identities.list.first().filter(|m| !m.addr.is_empty()) else {
-        return Err(StoreError::CannotSend("the account has no address to send from".into()));
+        return Err(StoreError::CannotSend(nm_api::reason::NO_SENDER_ADDRESS.into()));
     };
     Ok(Plan {
         account_id,
@@ -1745,12 +1748,12 @@ fn forward_files(conn: &Connection, message: i64) -> Result<Vec<ForwardFile>> {
 fn pick_sender(tx: &Connection, sending: &Sending, original: &Original, fake: bool) -> Result<(i64, Mailbox, Vec<String>)> {
     let lists: Vec<&[Mailbox]> = sending.senders.iter().map(|s| s.identities.list.as_slice()).collect();
     let Some((i, from)) = compose::choose_sender(&lists, original) else {
-        return Err(StoreError::CannotSend("no account can send this mail: add an [smtp] server to one in accounts.toml".into()));
+        return Err(StoreError::CannotSend(nm_api::reason::NO_ACCOUNT_CAN_SEND.into()));
     };
     let sender = &sending.senders[i];
     let kind: Option<String> = tx.query_row("SELECT kind FROM account WHERE id = ?1", [sender.account_id], |r| r.get(0)).optional()?;
     if kind.as_deref() == Some("archive") && !fake {
-        return Err(StoreError::CannotSend("this mail is in an archive account, which cannot send".into()));
+        return Err(StoreError::CannotSend(nm_api::reason::ARCHIVE_CANNOT_SEND.into()));
     }
     let mut own = sending.own.clone();
     own.extend(sender.identities.own());
@@ -1761,7 +1764,7 @@ fn pick_sender(tx: &Connection, sending: &Sending, original: &Original, fake: bo
 fn editable(tx: &Transaction, id: i64, revision: i64) -> Result<i64> {
     let row: Option<(i64, String)> =
         tx.query_row("SELECT revision, state FROM draft WHERE id = ?1", [id], |r| Ok((r.get(0)?, r.get(1)?))).optional()?;
-    let Some((current, state)) = row else { return Err(StoreError::NotFound(format!("brouillon {id}"))) };
+    let Some((current, state)) = row else { return Err(StoreError::NotFound(format!("draft {id}"))) };
     if state == "sending" {
         return Err(StoreError::DraftSending);
     }

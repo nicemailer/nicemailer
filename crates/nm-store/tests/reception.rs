@@ -343,7 +343,7 @@ fn a_read_only_account_is_screened_dry_and_its_mail_cannot_be_changed() {
     assert_eq!(count(&e.s, "SELECT count(*) FROM pending_action"), 0);
     // No command changes its mail, and a decision files none of it.
     let thread = e.int("SELECT thread_id FROM message WHERE id = ?1", id);
-    let refused = |r: Result<(), nm_store::StoreError>| assert!(matches!(r, Err(nm_store::StoreError::ReadOnly(_))), "{r:?}");
+    let refused = |r: Result<(), nm_store::StoreError>| assert!(matches!(r, Err(nm_store::StoreError::ReadOnly)), "{r:?}");
     refused(e.s.set_thread_seen(thread, true, Source::Cli).map(|_| ()));
     refused(e.s.move_thread(thread, FolderRole::Archive, None, MoveOptions::default(), Source::Cli).map(|_| ()));
     refused(e.s.tag_thread(thread, "Projet", false, Source::Cli).map(|_| ()));

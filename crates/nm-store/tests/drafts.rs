@@ -473,8 +473,8 @@ fn a_definitive_failure_gives_the_draft_back() {
     assert_eq!(e.s.get_draft(d.id).unwrap().state, "sending");
     // Definitive: editable again, `SendFailed`, nothing filed.
     e.s.conn().execute("UPDATE pending_action SET state = 'running'", []).unwrap();
-    let c = e.s.send_failed(j.action_id, "550 no such user").unwrap();
-    assert_eq!(c.send_failed, vec![(d.id, Some(m), "550 no such user".to_string())]);
+    let c = e.s.send_failed(j.action_id, nm_api::reason::SMTP_REFUSED.with("server_text", "550 no such user")).unwrap();
+    assert_eq!(c.send_failed, vec![(d.id, Some(m), nm_api::reason::SMTP_REFUSED.with("server_text", "550 no such user"))]);
     let v = e.s.get_draft(d.id).unwrap();
     assert_eq!((v.state.as_str(), v.body.as_str()), ("editing", "Merci"));
     assert_eq!(e.role_of(m), "inbox");

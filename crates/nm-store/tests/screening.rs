@@ -372,7 +372,7 @@ fn setting_an_address_decision_creates_records_and_removes() {
     b.store.set_address_screening("synced@pme.fr", Some(ScreeningTarget::Inbox), Source::ConfigSync).unwrap();
     assert_eq!(b.role_of(q), FolderRole::Quarantine);
 
-    assert!(matches!(b.store.set_address_screening("nobody", None, Source::Cli), Err(StoreError::InvalidParams(_))));
+    assert!(matches!(b.store.set_address_screening("nobody", None, Source::Cli), Err(StoreError::Invalid(w)) if w.reason == nm_api::reason::ADDRESS_INVALID));
 }
 
 #[test]

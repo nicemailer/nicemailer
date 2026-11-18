@@ -97,7 +97,7 @@ pub(crate) async fn run(
                 let c = match o {
                     Outcome::Done(uid) => st.spool_done(*id, *uid)?,
                     Outcome::Retry(e) => st.spool_retry(*id, e)?,
-                    Outcome::Revert(e) => st.spool_revert(*id, e)?,
+                    Outcome::Revert(e) => st.spool_revert(*id, nm_api::reason::SERVER_REFUSED_CHANGE.with("server_text", e.as_str()))?,
                 };
                 merge(&mut all, c);
             }

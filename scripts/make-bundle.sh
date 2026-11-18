@@ -147,6 +147,11 @@ SHORT_VERSION="$(sed -n 's/^version = "\(.*\)"$/\1/p' "$ROOT/Cargo.toml" | head 
 BUILD_NUMBER="$(git -C "$ROOT" rev-list --count HEAD 2>/dev/null || echo 0)"
 GIT_DESCRIBE="$(git -C "$ROOT" describe --tags --always --dirty 2>/dev/null || echo unknown)"
 
+# The languages of the app: those of the String Catalog
+# (scripts/bundle-languages.py), so that a language added there is offered
+# by macOS without editing this script.
+LANGUAGES=$(python3 "$ROOT/scripts/bundle-languages.py")
+LOCALIZATIONS=$(for lang in $LANGUAGES; do printf '<string>%s</string>' "$lang"; done)
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -162,7 +167,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleVersion</key><string>${BUILD_NUMBER}</string>
   <key>NMGitDescribe</key><string>${GIT_DESCRIBE}</string>
   <key>CFBundleDevelopmentRegion</key><string>en</string>
-  <key>CFBundleLocalizations</key><array><string>en</string><string>fr</string></array>
+  <key>CFBundleLocalizations</key><array>${LOCALIZATIONS}</array>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.productivity</string>
   <key>NSHighResolutionCapable</key><true/>
@@ -181,13 +186,15 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 plutil -lint "$APP/Contents/Info.plist" >/dev/null
-# The reason macOS shows when it asks for Contacts, in French (the English
-# one is in Info.plist above).
-mkdir -p "$APP/Contents/Resources/fr.lproj"
-cat > "$APP/Contents/Resources/fr.lproj/InfoPlist.strings" <<'STRINGS'
-"NSContactsUsageDescription" = "NiceMailer affiche les numéros de téléphone et la fiche des expéditeurs d'une conversation parmi les liens du mail (l). Rien n'est copié ni envoyé.";
-STRINGS
-plutil -lint "$APP/Contents/Resources/fr.lproj/InfoPlist.strings" >/dev/null
+# The texts of Info.plist in the other languages (the reason macOS shows
+# when it asks for Contacts): apps/NiceMailer/Bundle/<language>.lproj, one
+# per language of the String Catalog (the English is in Info.plist above).
+for lang in $LANGUAGES; do
+  [ "$lang" = en ] && continue
+  mkdir -p "$APP/Contents/Resources/$lang.lproj"
+  cp "$ROOT/apps/NiceMailer/Bundle/$lang.lproj/InfoPlist.strings" "$APP/Contents/Resources/$lang.lproj/"
+  plutil -lint "$APP/Contents/Resources/$lang.lproj/InfoPlist.strings" >/dev/null
+done
 
 # Signed from the inside out, as Apple requires: the helpers first, then
 # the app, whose seal records every file it contains and, for each helper,

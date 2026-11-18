@@ -179,7 +179,7 @@ The app, the TUI and the CLI. An agent (MCP) or the web server get `FORBIDDEN`: 
 | `send_draft` | `id`, `revision`, `body`, `body_format?`, `after_send?` (`archive`, `waiting`, `todo`, `stay`; saved in the draft; absent: the one saved, else the preselection) | `{send_at}`; `CANNOT_SEND` (1015), also when the account that sends no longer can (`accounts.toml` changed) |
 | `cancel_send` | `id` | `DraftView`, editable; `SEND_ALREADY_STARTED` (1014) |
 
-`prepare_draft` and `create_draft` return `BODY_PENDING` (1016) when the mail's body is not downloaded yet; the core asks for it first. Events: `DraftSent {draft_id, message_id, thread_id, moved_to, filing, undo}` (`filing`: a new mail's own filing, applied once the copy in Sent is made, and not covered by `undo`), `SendFailed {draft_id, reply_to, reason}`, `SendPartial {draft_id, refused}`.
+`prepare_draft` and `create_draft` return `BODY_PENDING` (1016) when the mail's body is not downloaded yet; the core asks for it first. Events: `DraftSent {draft_id, message_id, thread_id, moved_to, filing, undo}` (`filing`: a new mail's own filing, applied once the copy in Sent is made, and not covered by `undo`), `SendFailed {draft_id, reply_to, message, why}` (`why`: `smtp_refused` with the server's answer, `attempts_failed`, or a password refusal; `docs/contract.md`, "Errors"), `SendPartial {draft_id, refused}` (each refused address with the server's answer, cited as it is).
 
 ## Settings
 

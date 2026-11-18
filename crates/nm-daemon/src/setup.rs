@@ -22,6 +22,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use std::time::Duration;
 
+use nm_api::reason;
 use nm_api::{
     ActivateAccountParams, ActivateAccountResult, PrepareActivationParams, AddAccountParams, AddAccountResult, ArchiveCount, CountArchiveParams, DiscoverAccountParams, DiscoveryReport,
     RemoveAccountParams, RenameAccountParams, RpcError, SetFolderRolesParams, SmtpTestReport, TestAccountParams,
@@ -41,29 +42,37 @@ fn human(source: Source) -> Result<(), RpcError> {
     if matches!(source, Source::App | Source::Cli | Source::Tui) {
         Ok(())
     } else {
-        Err(RpcError::new(error_code::FORBIDDEN, "only the app, the TUI and the CLI can do this"))
+        Err(RpcError::new(error_code::FORBIDDEN, reason::RESERVED_TO_PEOPLE))
     }
 }
 
+/// A failure of the IMAP server, its answer cited as it is.
 fn server(e: impl std::fmt::Display) -> RpcError {
-    RpcError::new(error_code::SERVER, e.to_string())
+    RpcError::new(error_code::SERVER, reason::IMAP_FAILED.with("server_text", e.to_string()))
 }
 
-/// An IMAP failure of the creation methods, with `data.reason` telling a
-/// client which field to correct (`error_code::SERVER`): the password
-/// (`auth`), the server (`connect`), or neither (`server`).
+/// An IMAP failure of the creation methods, whose reason tells a client
+/// which field to correct (`error_code::SERVER`): the password
+/// (`imap_auth_refused`), the server (`imap_unreachable`), or neither
+/// (`imap_failed`).
 fn imap_failure(e: nm_proto::imap::ImapError) -> RpcError {
     use nm_proto::imap::ImapError as E;
-    let reason = match &e {
-        E::AuthFailed(_) => "auth",
-        E::Connect(_) | E::Tls(_) | E::Timeout(_) | E::Closed | E::Bye(_) | E::Io(_) => "connect",
-        _ => "server",
+    let why = match &e {
+        E::AuthFailed(_) => reason::IMAP_AUTH_REFUSED,
+        E::Connect(_) | E::Tls(_) | E::Timeout(_) | E::Closed | E::Bye(_) | E::Io(_) => reason::IMAP_UNREACHABLE,
+        _ => reason::IMAP_FAILED,
     };
-    RpcError { code: error_code::SERVER, message: e.to_string(), data: Some(serde_json::json!({ "reason": reason })) }
+    RpcError::new(error_code::SERVER, why.with("server_text", e.to_string()))
 }
 
+/// A mistake of the client's program (`invalid_params`), `e` its detail.
 fn invalid(e: impl std::fmt::Display) -> RpcError {
-    RpcError::new(error_code::INVALID_PARAMS, e.to_string())
+    RpcError::invalid(e)
+}
+
+/// A value the user gave that cannot be used: its reason.
+fn refused(why: impl Into<nm_api::Why>) -> RpcError {
+    RpcError::new(error_code::INVALID_PARAMS, why)
 }
 
 fn now() -> i64 {
@@ -107,6 +116,9 @@ pub async fn discover_account(core: &Arc<Core>, p: DiscoverAccountParams, source
         }
         v
     };
+    if nm_engine::providers::split_address(&p.email).is_err() {
+        return Err(refused(reason::ADDRESS_INVALID.with("address", p.email.as_str())));
+    }
     nm_engine::discover::discover(&p.email, &existing, p.imap.as_ref()).await.map_err(invalid)
 }
 
@@ -119,7 +131,7 @@ pub async fn test_smtp(p: TestSmtpParams, source: Source) -> Result<SmtpTestRepo
         setup::spec_of(&c.server).map_err(invalid)?;
     }
     if p.smtp_password.as_deref() == Some("") {
-        return Err(invalid("empty SMTP password"));
+        return Err(refused(reason::SMTP_PASSWORD_EMPTY));
     }
     Ok(nm_engine::discover::test_smtp(&p.email, &p.imap, &p.password, p.smtp_password.as_deref(), &p.candidates).await)
 }
@@ -139,7 +151,7 @@ pub async fn count_archive(p: CountArchiveParams, source: Source) -> Result<Arch
     let spec = setup::spec_of(&p.imap).map_err(invalid)?;
     let user = setup::username_of(&p.imap, &p.email);
     for d in [&p.read_before, &p.unread_before].into_iter().flatten() {
-        setup::parse_day(d).ok_or_else(|| invalid(format!("date {d:?}: YYYY-MM-DD expected")))?;
+        setup::parse_day(d).ok_or_else(|| refused(reason::DATE_INVALID.with("date", d.as_str())))?;
     }
     let mut s = setup::open(&spec, &user, &p.password).await.map_err(imap_failure)?;
     s.forbid_writes();
@@ -166,20 +178,20 @@ pub async fn add_account(core: &Arc<Core>, p: AddAccountParams, source: Source) 
     human(source)?;
     config_write::check_key(&p.key).map_err(invalid)?;
     if p.password.is_empty() {
-        return Err(invalid("empty password"));
+        return Err(refused(reason::PASSWORD_EMPTY));
     }
     let (config_path, secrets, import) = {
         let engine = core.engine.lock().unwrap();
         if engine.config().accounts.contains_key(&p.key) {
-            return Err(invalid(format!("accounts.toml already has an account {}", p.key)));
+            return Err(refused(reason::ACCOUNT_EXISTS.with("account", p.key.as_str())));
         }
         (engine.accounts_path(), engine.secrets(), engine.config().import.clone())
     };
     for d in [&p.archive_read_before, &p.archive_unread_before].into_iter().flatten() {
-        setup::parse_day(d).ok_or_else(|| invalid(format!("date {d:?}: YYYY-MM-DD expected")))?;
+        setup::parse_day(d).ok_or_else(|| refused(reason::DATE_INVALID.with("date", d.as_str())))?;
     }
     if p.read_only && (p.archive_read_before.is_some() || p.archive_unread_before.is_some()) {
-        return Err(invalid("a read-only account archives nothing on its server"));
+        return Err(refused(reason::READ_ONLY_ARCHIVES_NOTHING));
     }
     let spec = setup::spec_of(&p.imap).map_err(invalid)?;
     let user = setup::username_of(&p.imap, &p.email);
@@ -198,8 +210,8 @@ pub async fn add_account(core: &Arc<Core>, p: AddAccountParams, source: Source) 
     };
     let smtp_password = match (&p.smtp_password, &smtp) {
         (None, _) => None,
-        (Some(pw), _) if pw.is_empty() => return Err(invalid("empty SMTP password")),
-        (Some(_), None) => return Err(invalid("an SMTP password without an SMTP server")),
+        (Some(pw), _) if pw.is_empty() => return Err(refused(reason::SMTP_PASSWORD_EMPTY)),
+        (Some(_), None) => return Err(refused(reason::SMTP_PASSWORD_WITHOUT_SERVER)),
         (Some(pw), Some(s)) => Some(Credential {
             binding: Binding { host: s.host.clone(), username: s.username.clone() },
             secret: nm_engine::config::SecretString::new(pw.clone()),
@@ -288,8 +300,8 @@ pub async fn add_account(core: &Arc<Core>, p: AddAccountParams, source: Source) 
         }
     })
     .await
-    .map_err(|e| RpcError::new(error_code::INTERNAL_ERROR, e.to_string()))?
-    .map_err(|e| RpcError::new(error_code::SECRETS, e))?;
+    .map_err(|e| RpcError::internal(e))?
+    .map_err(|e| RpcError::new(error_code::SECRETS, reason::KEYCHAIN.with("system_text", e)))?;
 
     // 5: the file, then applied.
     let new = NewAccount {
@@ -329,8 +341,8 @@ async fn write_file(
         Ok(())
     })
     .await
-    .map_err(|e| RpcError::new(error_code::INTERNAL_ERROR, e.to_string()))?
-    .map_err(|e| RpcError::new(error_code::INTERNAL_ERROR, e))
+    .map_err(|e| RpcError::internal(e))?
+    .map_err(|e| RpcError::internal(e))
 }
 
 /// `set_folder_roles`: the roles of an existing account changed; the
@@ -339,16 +351,16 @@ pub async fn set_folder_roles(core: &Arc<Core>, p: SetFolderRolesParams, source:
     human(source)?;
     let (secrets, account, id) = {
         let engine = core.engine.lock().unwrap();
-        let account = engine.config().accounts.get(&p.account).cloned().ok_or_else(|| RpcError::new(error_code::NOT_FOUND, format!("no account {}", p.account)))?;
-        let id = engine.account_id(&p.account).ok_or_else(|| RpcError::new(error_code::NOT_FOUND, format!("no account {}", p.account)))?;
+        let account = engine.config().accounts.get(&p.account).cloned().ok_or_else(|| RpcError::new(error_code::NOT_FOUND, reason::ACCOUNT_UNKNOWN.with("account", p.account.as_str())))?;
+        let id = engine.account_id(&p.account).ok_or_else(|| RpcError::new(error_code::NOT_FOUND, reason::ACCOUNT_UNKNOWN.with("account", p.account.as_str())))?;
         (engine.secrets(), account, id)
     };
     let key = p.account.clone();
     let acc = account.clone();
     let password = tokio::task::spawn_blocking(move || nm_engine::secrets::imap_password(secrets.as_ref(), &key, &acc))
         .await
-        .map_err(|e| RpcError::new(error_code::INTERNAL_ERROR, e.to_string()))?
-        .map_err(|r| RpcError::new(error_code::ACCOUNT_NOT_READY, r.message(&p.account, &account)))?;
+        .map_err(|e| RpcError::internal(e))?
+        .map_err(|r| RpcError::new(error_code::ACCOUNT_NOT_READY, r.why(&p.account, &account)))?;
     let spec = nm_engine::probe::imap_spec(&account);
     let mut s = setup::open(&spec, &account.imap.username, password.expose()).await.map_err(server)?;
     let entries = s.list().await.map_err(server)?;
@@ -358,7 +370,7 @@ pub async fn set_folder_roles(core: &Arc<Core>, p: SetFolderRolesParams, source:
     let created = if p.create_missing {
         setup::create_folders(&mut s, &paths).await.map_err(server)?
     } else if let Some(m) = missing.first() {
-        return Err(invalid(format!("the server has no folder {m:?}: ask to create it")));
+        return Err(refused(reason::SERVER_FOLDER_MISSING.with("folder", m.as_str())));
     } else {
         Vec::new()
     };
@@ -387,19 +399,19 @@ async fn read_only_account(
 ) -> Result<(nm_engine::config::AccountConfig, i64, nm_engine::config::SecretString), RpcError> {
     let (secrets, account, id) = {
         let engine = core.engine.lock().unwrap();
-        let missing = || RpcError::new(error_code::NOT_FOUND, format!("no account {key} in accounts.toml"));
+        let missing = || RpcError::new(error_code::NOT_FOUND, reason::ACCOUNT_UNKNOWN.with("account", key));
         let account = engine.config().accounts.get(key).cloned().ok_or_else(missing)?;
         let id = engine.account_id(key).ok_or_else(missing)?;
         (engine.secrets(), account, id)
     };
     if !account.read_only {
-        return Err(invalid(format!("the account {key} is not read-only: it is set up already")));
+        return Err(refused(reason::ACCOUNT_SET_UP.with("account", key)));
     }
     let (k, acc) = (key.to_string(), account.clone());
     let password = tokio::task::spawn_blocking(move || nm_engine::secrets::imap_password(secrets.as_ref(), &k, &acc))
         .await
-        .map_err(|e| RpcError::new(error_code::INTERNAL_ERROR, e.to_string()))?
-        .map_err(|r| RpcError::new(error_code::ACCOUNT_NOT_READY, r.message(key, &account)))?;
+        .map_err(|e| RpcError::internal(e))?
+        .map_err(|r| RpcError::new(error_code::ACCOUNT_NOT_READY, r.why(key, &account)))?;
     Ok((account, id, password))
 }
 
@@ -441,7 +453,7 @@ pub async fn prepare_activation(core: &Arc<Core>, p: PrepareActivationParams, so
 pub async fn activate_account(core: &Arc<Core>, p: ActivateAccountParams, source: Source) -> Result<ActivateAccountResult, RpcError> {
     human(source)?;
     for d in [&p.archive_read_before, &p.archive_unread_before].into_iter().flatten() {
-        setup::parse_day(d).ok_or_else(|| invalid(format!("date {d:?}: YYYY-MM-DD expected")))?;
+        setup::parse_day(d).ok_or_else(|| refused(reason::DATE_INVALID.with("date", d.as_str())))?;
     }
     let (account, id, password) = read_only_account(core, &p.account).await?;
     let config_path = core.engine.lock().unwrap().accounts_path();
@@ -518,10 +530,10 @@ pub async fn rename_account(core: &Arc<Core>, p: RenameAccountParams, source: So
     let (path, secrets) = {
         let engine = core.engine.lock().unwrap();
         if !engine.config().accounts.contains_key(&p.from) {
-            return Err(RpcError::new(error_code::NOT_FOUND, format!("no account {} in accounts.toml", p.from)));
+            return Err(RpcError::new(error_code::NOT_FOUND, reason::ACCOUNT_UNKNOWN.with("account", p.from.as_str())));
         }
         if engine.config().accounts.contains_key(&p.to) {
-            return Err(invalid(format!("accounts.toml already has an account {}", p.to)));
+            return Err(refused(reason::ACCOUNT_EXISTS.with("account", p.to.as_str())));
         }
         (engine.accounts_path(), engine.secrets())
     };
@@ -544,8 +556,8 @@ pub async fn rename_account(core: &Arc<Core>, p: RenameAccountParams, source: So
         Ok(())
     })
     .await
-    .map_err(|e| RpcError::new(error_code::INTERNAL_ERROR, e.to_string()))?
-    .map_err(|e| RpcError::new(error_code::SECRETS, e))?;
+    .map_err(|e| RpcError::internal(e))?
+    .map_err(|e| RpcError::new(error_code::SECRETS, reason::KEYCHAIN.with("system_text", e)))?;
     let (from, to) = (p.from.clone(), p.to.clone());
     write_file(core, move |t| config_write::rename_account(t, &from, &to), &path).await
 }
@@ -557,7 +569,7 @@ pub async fn remove_account(core: &Arc<Core>, p: RemoveAccountParams, source: So
     let (path, secrets) = {
         let engine = core.engine.lock().unwrap();
         if !engine.config().accounts.contains_key(&p.account) {
-            return Err(RpcError::new(error_code::NOT_FOUND, format!("no account {} in accounts.toml", p.account)));
+            return Err(RpcError::new(error_code::NOT_FOUND, reason::ACCOUNT_UNKNOWN.with("account", p.account.as_str())));
         }
         (engine.accounts_path(), engine.secrets())
     };
@@ -577,6 +589,6 @@ pub async fn remove_account(core: &Arc<Core>, p: RemoveAccountParams, source: So
     let key = p.account.clone();
     tokio::task::spawn_blocking(move || secrets.remove_imap(&key).and_then(|()| secrets.remove_smtp(&key)))
         .await
-        .map_err(|e| RpcError::new(error_code::INTERNAL_ERROR, e.to_string()))?
-        .map_err(|e| RpcError::new(error_code::SECRETS, e))
+        .map_err(|e| RpcError::internal(e))?
+        .map_err(|e| RpcError::new(error_code::SECRETS, reason::KEYCHAIN.with("system_text", e)))
 }

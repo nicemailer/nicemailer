@@ -66,12 +66,12 @@ fn parse_cursor(cursor: &str) -> Result<(i64, i64)> {
     // `split_once` returns `Some((before, after))` or `None` if there is no ':'.
     let (d, id) = cursor
         .split_once(':')
-        .ok_or_else(|| StoreError::InvalidParams(format!("curseur invalide : {cursor}")))?;
+        .ok_or_else(|| StoreError::InvalidParams(format!("invalid cursor: {cursor}")))?;
     // A closure stored in a variable, used twice below. It captures `cursor`
     // from the surrounding scope to build the error message.
     let parse = |s: &str| {
         s.parse::<i64>()
-            .map_err(|_| StoreError::InvalidParams(format!("curseur invalide : {cursor}")))
+            .map_err(|_| StoreError::InvalidParams(format!("invalid cursor: {cursor}")))
     };
     Ok((parse(d)?, parse(id)?))
 }
@@ -334,7 +334,7 @@ impl Store {
             .query_row("SELECT role, account_id FROM folder WHERE id = ?1", [folder_id], |r| Ok((r.get(0)?, r.get(1)?)))
             .optional()?;
         match row {
-            None => Err(StoreError::NotFound(format!("dossier {folder_id}"))),
+            None => Err(StoreError::NotFound(format!("folder {folder_id}"))),
             Some((r, account)) => Ok((role_of(r), account)),
         }
     }

@@ -1,0 +1,25 @@
+# A German interface on a Mac set to Germany (fixtures/localization-de.language
+# and .locale, docs/localization.md): German words, German dates, and the
+# longer German texts still fit their place. The mail of 2021 comes from
+# fixtures/localization-de.mbox, imported for this scenario only.
+key /
+type Rentrée de septembre
+key ret
+expect thread_count = 1
+expect selected_subject = Rentrée de septembre
+# Day first and dots, as a German Mac writes a short date.
+expect selected_date = 28.09.21
+snap date
+# In German, 1 takes the singular, 0 and 2 the plural.
+key t
+type Urgent
+key ret
+expect header_tags = Urgent
+key ;
+key T
+expect screen = tags
+key d
+expect choice = Das Tag Urgent löschen (von 1 Mail entfernt)?
+snap plural
+key esc
+expect choice =

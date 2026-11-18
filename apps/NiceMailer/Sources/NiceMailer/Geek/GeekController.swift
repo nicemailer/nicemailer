@@ -1608,7 +1608,8 @@ final class GeekController {
     func pickerHint(_ kind: PickerKind) -> String? {
         let ok = keymap.mention(.pickerChoose, in: Keymap.pickerChain)
         return switch kind {
-        case .attributeValue(.date), .attributeValue(.mailDate): L("or type a date (2026-10-01, 1/10/2026, 011026, 261001) or a duration (10d, 3w, 6m, 1y)")
+        case .attributeValue(.date), .attributeValue(.mailDate):
+            L("or type a date (2026-10-01, %@) or a duration (10d, 3w, 6m, 1y)", DateChoice.Order.ui.examples)
         case .attributeValue(.text): L("words of the subject or body; -word to exclude")
         case .attributeValue(.subject): L("words of the subject; -word to exclude")
         case .attributeValue(.group): L("%@ chooses or removes a group, several allowed; -name to exclude; esc closes", ok)
@@ -1902,7 +1903,7 @@ final class GeekController {
             case nil: " "
             }
             return Entry(key: key, label: excluded ? L("not %@", g.name) : g.name,
-                         detail: g.memberCount == 1 ? L("1 member") : L("%lld members", g.memberCount), detailStyle: .info,
+                         detail: L("%lld members", g.memberCount), detailStyle: .info,
                          keywords: [g.name]) { [weak self] in self?.chooseGroup(ref, excluded: excluded) }
         }
         // "without group": last, so that Return on the first row still
@@ -1973,7 +1974,7 @@ final class GeekController {
             }
             let n = counts[name.lowercased()] ?? 0
             return Entry(key: key, label: excluded ? L("not %@", name) : name,
-                         detail: n == 1 ? L("1 mail") : L("%lld mails", n), detailStyle: .info,
+                         detail: L("%lld mails", n), detailStyle: .info,
                          keywords: [name]) { [weak self] in self?.chooseTag(name, excluded: excluded) }
         }
         let none = Entry(key: a.noTag ? "•" : " ", label: L("without tag"), keywords: L("none no").split(separator: " ").map(String.init)) {
@@ -2698,10 +2699,9 @@ final class GeekController {
                 : L("Send, then file the conversation in")
         case .sendFrom: L("Send from")
         case .deleteLabel(.tag, let name, _, let count):
-            count == 1 ? L("Delete the tag %@ (taken off its mail)?", name) : L("Delete the tag %@ (taken off its %lld mails)?", name, count)
+            L("Delete the tag %@ (taken off its %lld mails)?", name, count)
         case .deleteLabel(.group, let name, _, let count):
-            count == 1 ? L("Delete the group %@ and its member? Their mails stay", name)
-                : L("Delete the group %@ and its %lld members? Their mails stay", name, count)
+            L("Delete the group %@ and its %lld members? Their mails stay", name, count)
         }
     }
 

@@ -66,7 +66,7 @@ struct LinkTests {
         #expect(merged.count == 1)
         let link = merged[0]
         #expect(link.otherTexts == ["une forme de perma-crise", "il y a un moment de fatigue"])
-        #expect(link.title == #"ressent "les angoisses" du pays "# + L("(and %lld others)", 2))
+        #expect(link.title == L("%@ (and %lld others)", #"ressent "les angoisses" du pays"#, 2))
         // Where it goes: the page, not the tracker; it opens as written.
         #expect(link.destination == youtube)
         #expect(link.url.absoluteString == "https://r.t.fr/lnk/13/aHR0")
@@ -74,7 +74,7 @@ struct LinkTests {
 
     @Test func oneOtherTextIsSingularAndNoneAddsNothing() {
         let one = AppModel.Link(url: URL(string: "https://x.org/a")!, text: "Lire", otherTexts: ["ici"])
-        #expect(one.title == "Lire " + L("(and 1 other)"))
+        #expect(one.title == L("%@ (and %lld others)", "Lire", 1))
         let none = AppModel.Link(url: URL(string: "https://x.org/a")!, text: "Lire")
         #expect(none.title == "Lire")
         // A bare tracking link shows the site it leads to.

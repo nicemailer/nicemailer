@@ -45,6 +45,14 @@ struct ComposeRulesTests {
         let bare = Compose.quoteHeader(try message(1, name: nil), locale: Locale(identifier: "en_US"), timeZone: utc)
         #expect(bare.contains(" alice@x.fr "), "\(bare)")
         #expect(!bare.contains("<"))
+        // English words, the order and the clock of a Mac set to France
+        // (`localisation.md`, section 3.2).
+        let enFR = interfaceLocale(language: "en", settings: Locale(identifier: "fr_FR"))
+        let evening = try message(1, date: 1_794_085_980)
+        let h = Compose.quoteHeader(evening, locale: enFR, timeZone: utc)
+        #expect(h.contains("7 Nov 2026") && h.contains("21:13") && !h.contains("PM"), "\(h)")
+        let f = Compose.forwardHeader(evening, locale: enFR, timeZone: utc)
+        #expect(f.contains("7 Nov 2026") && f.contains("21:13"), "\(f)")
     }
 
     @Test func recipientsFitOnOneLine() {
@@ -351,8 +359,8 @@ struct ComposeRulesTests {
     @Test func errorsOfTheCoreAreSaidInTheAppsLanguage() {
         let pending = CoreClient.RPCError(code: ComposeError.bodyPending, message: "x")
         #expect(AppModel.composeErrorFlash(pending) == L("This mail is still downloading: try again in a moment"))
-        let cannot = CoreClient.RPCError(code: ComposeError.cannotSend, message: "no [smtp]")
-        #expect(AppModel.composeErrorFlash(cannot) == L("Cannot send: %@", "no [smtp]"))
+        let cannot = CoreClient.RPCError(code: ComposeError.cannotSend, message: "x", data: ["reason": "no_smtp_server", "account": "perso"])
+        #expect(AppModel.composeErrorFlash(cannot) == L("The account %@ has no SMTP server: it cannot send", "perso"))
     }
 }
 
@@ -1041,11 +1049,11 @@ struct ComposeControllerTests {
     /// open with its text, the status bar says why, nothing else is called.
     @Test func aDraftThatCannotBeWrittenStaysOpen() async {
         core.handler = { method, params in
-            method == "create_draft" ? CoreClient.RPCError(code: ComposeError.cannotSend, message: "no [smtp]") : Fixture.answer(method, params)
+            method == "create_draft" ? Self.noSMTP : Fixture.answer(method, params)
         }
         await reply()
         type("Merci")
-        #expect(await eventually { model.flash == L("Cannot send: %@", "no [smtp]") })
+        #expect(await eventually { model.flash == L("No account can send: add an SMTP server to one") })
         #expect(model.composer?.isWritten == false)
         #expect(model.composer?.body.hasPrefix("Merci") == true)
         #expect(core.calls("update_draft").isEmpty)
@@ -1065,8 +1073,9 @@ struct ComposeControllerTests {
         press("z")
         #expect(await eventually { core.calls("undo").first?["token"] as? String == "5:9" })
         // Refused for good, or in part.
-        model.draftEvent("SendFailed", ["draft_id": .int(902), "reason": .string("550 no such user")])
-        #expect(model.flash == L("Not sent: %@ · r on the mail to reopen the reply", "550 no such user"))
+        model.draftEvent("SendFailed", ["draft_id": .int(902), "message": .string("the mail server refused the mail: 550 no such user"),
+                                        "why": .object(["reason": "smtp_refused", "server_text": "550 no such user"])])
+        #expect(model.flash == L("Not sent: %@ · r on the mail to reopen the reply", L("The mail server refused the mail: %@", "550 no such user")))
         model.draftEvent("SendPartial", ["draft_id": .int(903), "refused": .strings(["bad@x.fr (550 unknown)"])])
         #expect(model.flash == L("Sent, but the server refused: %@", "bad@x.fr (550 unknown)"))
         // A new mail filed with ⇧⌘↩: the core applies it once the copy in
@@ -1133,12 +1142,16 @@ struct ComposeControllerTests {
         #expect(await eventually { model.flash == L("This account cannot send: from %@ · %@ to change", "Me at work <me@work.example> · work", "⌥⌘F") })
     }
 
+    /// The core's refusal when no account can send.
+    static let noSMTP = CoreClient.RPCError(code: ComposeError.cannotSend, message: "no account of accounts.toml can send",
+                                            data: ["reason": "no_account_can_send"])
+
     @Test func aMailThatCannotBeAnsweredSaysWhy() async {
         core.handler = { method, params in
-            method == "prepare_draft" ? CoreClient.RPCError(code: ComposeError.cannotSend, message: "no [smtp]") : Fixture.answer(method, params)
+            method == "prepare_draft" ? Self.noSMTP : Fixture.answer(method, params)
         }
         press("r")
-        #expect(await eventually { model.flash == L("Cannot send: %@", "no [smtp]") })
+        #expect(await eventually { model.flash == L("No account can send: add an SMTP server to one") })
         #expect(model.composer == nil)
     }
 

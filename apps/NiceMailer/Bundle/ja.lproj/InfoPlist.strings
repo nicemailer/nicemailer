@@ -1,0 +1,5 @@
+/* The texts of Info.plist in Japanese: the reason macOS shows when it
+   asks for Contacts. Copied into NiceMailer.app by scripts/make-bundle.sh;
+   every key ending with UsageDescription in Info.plist needs its
+   translation here (scripts/tests/test_bundle_languages.py). */
+"NSContactsUsageDescription" = "NiceMailerは、会話の差出人の電話番号とカードをメールのリンク一覧（l）に表示します。何もコピーも送信もされません。";

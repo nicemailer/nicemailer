@@ -50,7 +50,7 @@ fn workflow_commands_report_decisions_filing_and_undo() {
         .call("move_thread", json!({"thread_id": forged, "target": "inbox", "from_folder_id": quarantine}))
         .unwrap_err();
     assert_eq!(err["code"], 1005);
-    assert_eq!(err["data"], json!({"addr": "jean@pme.fr", "verdict": "fail"}));
+    assert_eq!(err["data"], json!({"reason": "confirmation_required", "addr": "jean@pme.fr", "verdict": "fail"}));
 
     // Accepting the sender from the genuine mail: the forged one stays.
     let r = c.call("move_thread", json!({"thread_id": first, "target": "inbox", "from_folder_id": quarantine})).unwrap();

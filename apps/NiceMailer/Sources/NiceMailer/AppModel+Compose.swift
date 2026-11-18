@@ -649,7 +649,8 @@ extension AppModel {
         case "SendFailed":
             sending[id] = nil
             undoStack.removeAll { $0.cancelSend == id }
-            flash = L("Not sent: %@ · r on the mail to reopen the reply", params["reason"]?.string ?? "")
+            let why = CoreReason.text(why: params["why"]?.object, message: params["message"]?.string) ?? ""
+            flash = L("Not sent: %@ · r on the mail to reopen the reply", why)
         case "SendPartial":
             let refused = params["refused"]?.strings ?? []
             flash = L("Sent, but the server refused: %@", refused.joined(separator: ", "))
@@ -664,10 +665,9 @@ extension AppModel {
         guard let e = error as? CoreClient.RPCError else { return error.localizedDescription }
         switch e.code {
         case ComposeError.bodyPending: return L("This mail is still downloading: try again in a moment")
-        case ComposeError.cannotSend: return L("Cannot send: %@", e.message)
         case ComposeError.revisionConflict: return L("This reply was changed elsewhere: close it and reopen it")
         case ComposeError.draftSending: return L("This reply is being sent · z to cancel")
-        default: return e.message
+        default: return e.localizedDescription
         }
     }
 }

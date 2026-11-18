@@ -9,7 +9,10 @@
 //! 3. the CLI column is right both ways: a method the CLI calls is not
 //!    marked "—", and a method given a command is really called by the CLI;
 //! 4. every method has a `///` comment in `nm-api`, so that a new method
-//!    is described where it is declared.
+//!    is described where it is declared;
+//! 5. the reasons of errors of the section "Errors" are exactly those of
+//!    `nm_api::reason`, with the values of their sentences, and each one
+//!    is used by the code of some crate.
 //!
 //! What they cannot check is the meaning of the descriptions: a method
 //! that changes behaviour under the same name needs a human to update the
@@ -88,11 +91,18 @@ fn split_row(line: &str) -> Vec<String> {
     cells.into_iter().map(|c| c.trim().to_string()).filter(|c| !c.is_empty()).collect()
 }
 
+/// The page before the section "Errors", whose table lists reasons, not
+/// methods.
+fn methods_part() -> &'static str {
+    DOC.split("\n## Errors\n").next().unwrap_or(DOC)
+}
+
 /// The rows of the method tables: method name and CLI cell, in page order.
 /// A method row is a row whose first cell is a name in backquotes; the
 /// header rows ("| Method |") are not.
 fn doc_rows() -> Vec<(String, String)> {
-    DOC.lines()
+    methods_part()
+        .lines()
         .filter(|line| line.starts_with("| `"))
         .map(|line| {
             let cells = split_row(line);
@@ -300,4 +310,88 @@ fn the_command_checker_refuses_what_does_not_exist() {
 #[test]
 fn split_row_keeps_escaped_pipes_in_their_cell() {
     assert_eq!(split_row("| `a` | b | `x <c\\|d>` |"), vec!["`a`", "b", "`x <c|d>`"]);
+}
+
+/// The rows of the table of reasons: the reason and the keys of its
+/// values, in page order.
+fn doc_reasons() -> Vec<(String, Vec<String>)> {
+    let errors = DOC.split("\n## Errors\n").nth(1).expect("docs/contract.md has no section \"Errors\"");
+    errors
+        .lines()
+        .filter(|line| line.starts_with("| `"))
+        .map(|line| {
+            let cells = split_row(line);
+            assert_eq!(cells.len(), 3, "a reason row must have three cells (reason, values, message): {line}");
+            let values = if cells[1] == "—" {
+                Vec::new()
+            } else {
+                cells[1].split(", ").map(|v| v.trim_matches('`').to_string()).collect()
+            };
+            (cells[0].trim_matches('`').to_string(), values)
+        })
+        .collect()
+}
+
+/// The page lists every reason of `nm_api::reason`, in its order, with the
+/// values its sentence takes; and nothing else.
+#[test]
+fn the_page_lists_every_reason_with_its_values() {
+    let page = doc_reasons();
+    let code: Vec<(String, Vec<String>)> = nm_api::reason::ALL
+        .iter()
+        .map(|r| (r.name.to_string(), r.keys().iter().map(|k| k.to_string()).collect()))
+        .collect();
+    assert_eq!(page, code, "the table of docs/contract.md, section \"Errors\", differs from nm_api::reason");
+}
+
+/// Two reasons never share a name: a client could not tell them apart.
+#[test]
+fn every_reason_has_a_name_of_its_own() {
+    let mut seen = BTreeSet::new();
+    for r in nm_api::reason::ALL {
+        assert!(seen.insert(r.name), "two reasons are named {}", r.name);
+        assert!(r.name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_'), "{}", r.name);
+    }
+}
+
+/// Every reason is given by the code somewhere (`reason::NAME` or, in a
+/// module that names the module `r`, `r::NAME`): a reason left behind by
+/// a change is removed with it. The constants are read from the source of
+/// `nm-api`, as the methods are.
+#[test]
+fn every_reason_is_used_by_the_code() {
+    let start = API.find("reasons! {\n").expect("nm-api has no `reasons!` list");
+    let constants: Vec<&str> = API[start..]
+        .lines()
+        .filter_map(|l| {
+            let l = l.trim();
+            let (ident, rest) = l.split_once(" = \"")?;
+            (ident.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_') && rest.contains("\": \""))
+                .then_some(ident)
+        })
+        .collect();
+    assert_eq!(constants.len(), nm_api::reason::ALL.len(), "the constants of `reasons!` were not all read");
+    // Every Rust source of the crates, tests aside.
+    let crates = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    let mut sources = String::new();
+    let mut dirs = vec![crates.to_path_buf()];
+    while let Some(dir) = dirs.pop() {
+        for entry in std::fs::read_dir(&dir).unwrap().flatten() {
+            let path = entry.path();
+            let name = path.file_name().unwrap().to_string_lossy().to_string();
+            if path.is_dir() {
+                if name != "tests" && name != "target" {
+                    dirs.push(path);
+                }
+            } else if name.ends_with(".rs") {
+                sources.push_str(&std::fs::read_to_string(&path).unwrap());
+            }
+        }
+    }
+    for ident in constants {
+        let used = sources.match_indices(&format!("::{ident}")).any(|(i, m)| {
+            !sources[i + m.len()..].starts_with(|c: char| c.is_ascii_alphanumeric() || c == '_')
+        });
+        assert!(used, "the reason {ident} is never given: remove it, or give it where it applies");
+    }
 }

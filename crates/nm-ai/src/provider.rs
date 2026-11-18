@@ -94,9 +94,9 @@ pub enum AiError {
     #[error("cannot run the claude binary: {0}")]
     Io(String),
     /// Nothing was sent: the input is empty, or cannot be sent as it is.
-    /// The text says what to do.
+    /// Its reason says what to do.
     #[error("{0}")]
-    BadInput(String),
+    BadInput(nm_api::Why),
 }
 
 impl AiError {
@@ -112,6 +112,28 @@ impl AiError {
             AiError::Failed(_) => "ai_failed",
             AiError::Io(_) => "ai_io",
             AiError::BadInput(_) => "ai_bad_input",
+        }
+    }
+
+    /// Why, as the contract says it (`nm_api::reason`): the reason of the
+    /// code, or for a bad input its own.
+    pub fn why(&self) -> nm_api::Why {
+        use nm_api::reason as r;
+        match self {
+            AiError::ProviderMissing => r::AI_PROVIDER_MISSING.into(),
+            AiError::NotLoggedIn => r::AI_NOT_LOGGED_IN.into(),
+            AiError::ProviderUnsafe { tools, mcp_servers } => {
+                r::AI_PROVIDER_UNSAFE.with("tools", tools.clone()).with("mcp_servers", mcp_servers.clone())
+            }
+            AiError::RateLimited { resets_at } => match resets_at {
+                Some(t) => r::AI_RATE_LIMITED.with("resets_at", *t),
+                None => r::AI_RATE_LIMITED.into(),
+            },
+            AiError::Timeout => r::AI_TIMEOUT.into(),
+            AiError::InvalidOutput(d) => r::AI_INVALID_OUTPUT.with("detail", d.as_str()),
+            AiError::Failed(t) => r::AI_FAILED.with("provider_text", t.as_str()),
+            AiError::Io(t) => r::AI_IO.with("system_text", t.as_str()),
+            AiError::BadInput(why) => why.clone(),
         }
     }
 }

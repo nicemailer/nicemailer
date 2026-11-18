@@ -73,7 +73,7 @@ pub struct Engine {
     /// Id of the account of each key of the file.
     ids: BTreeMap<String, i64>,
     /// Why an account cannot connect, by account id.
-    account_errors: BTreeMap<i64, String>,
+    account_errors: BTreeMap<i64, nm_api::Why>,
 }
 
 impl Engine {
@@ -250,13 +250,13 @@ impl Engine {
         for (key, id) in ids {
             let account = &self.config.accounts[key];
             if let Err(refusal) = secrets::check(self.secrets.as_ref(), key, account) {
-                errors.insert(*id, refusal.message(key, account));
+                errors.insert(*id, refusal.why(key, account));
             }
         }
         let errored = errors
             .iter()
             .filter(|(id, m)| self.account_errors.get(*id) != Some(*m))
-            .map(|(id, m)| Event::AccountError { account_id: *id, error: m.clone() })
+            .map(|(id, w)| Event::AccountError { account_id: *id, error: w.message(), why: w.data() })
             .collect();
         let cleared = self
             .account_errors
@@ -281,7 +281,8 @@ impl Engine {
                     email: account.map(|a| a.email.clone()).or(row.address),
                     display_name: account.and_then(|a| a.display_name.clone()),
                     enabled: !row.disabled,
-                    error: self.account_errors.get(&row.id).cloned(),
+                    error: self.account_errors.get(&row.id).map(|w| w.message()),
+                    why: self.account_errors.get(&row.id).map(|w| w.data()),
                     position: row.position,
                     read_only: account.is_some_and(|a| a.read_only),
                     key: row.config_key,

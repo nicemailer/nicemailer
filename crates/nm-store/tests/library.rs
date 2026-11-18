@@ -444,7 +444,7 @@ fn exports_a_message_as_eml_txt_and_md_without_overwriting() {
     assert!(md.starts_with("# Devis: v2\n\n- **From:** Alice <alice@a.example>"));
 
     assert!(matches!(store.export_message(&raw, 999, ExportFormat::Txt, &out), Err(StoreError::NotFound(_))));
-    assert!(matches!(store.export_message(&raw, id, ExportFormat::Txt, &out.join("absent")), Err(StoreError::InvalidParams(_))));
+    assert!(matches!(store.export_message(&raw, id, ExportFormat::Txt, &out.join("absent")), Err(StoreError::Invalid(w)) if w.reason == nm_api::reason::FOLDER_MISSING));
 }
 
 #[test]
@@ -813,9 +813,9 @@ fn a_tag_cannot_take_the_name_of_another_one() {
     let (a, _) = threads_of_two_accounts(&store);
     store.tag_thread(a, "Urgent", false, Source::App).unwrap();
     store.tag_thread(a, "Équipe", false, Source::App).unwrap();
-    assert!(matches!(store.rename_tag("Urgent", "équipe", Source::App), Err(StoreError::InvalidParams(_))));
+    assert!(matches!(store.rename_tag("Urgent", "équipe", Source::App), Err(StoreError::Invalid(w)) if w.reason == nm_api::reason::TAG_EXISTS));
     assert!(matches!(store.rename_tag("Inconnu", "Autre", Source::App), Err(StoreError::NotFound(_))));
-    assert!(matches!(store.rename_tag("Urgent", "  ", Source::App), Err(StoreError::InvalidParams(_))));
+    assert!(matches!(store.rename_tag("Urgent", "  ", Source::App), Err(StoreError::Invalid(w)) if w.reason == nm_api::reason::TAG_NAME_INVALID));
     assert_eq!(tag_names(&store), ["Urgent", "Équipe"]);
 
     // The name of a deleted tag is free: the renamed tag takes it, and
@@ -899,7 +899,7 @@ fn renaming_and_deleting_a_group() {
     // Same id, same members, same place.
     assert_eq!(store.list_groups().unwrap()[0].id, vip);
     assert_eq!(groups(&store), [("Proches".to_string(), 2), ("Famille".to_string(), 1)]);
-    assert!(matches!(store.rename_group("Proches", "FAMILLE", Source::App), Err(StoreError::InvalidParams(_))));
+    assert!(matches!(store.rename_group("Proches", "FAMILLE", Source::App), Err(StoreError::Invalid(w)) if w.reason == nm_api::reason::GROUP_EXISTS));
     assert!(matches!(store.rename_group("VIP", "Autre", Source::App), Err(StoreError::NotFound(_))));
 
     assert_eq!(store.delete_group("proches", Source::App).unwrap(), (vip, 2));

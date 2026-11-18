@@ -538,11 +538,56 @@ enum DateChoice {
         ]
     }
 
-    /// A typed date: `2026-10-01`, `1/10/2026`, `01/10/26` (day first, as
-    /// in French). `nil` if it is not one.
-    static func parse(_ text: String, calendar: Calendar = .current) -> Date? {
+    /// The order in which the Mac's region writes a date
+    /// (`localisation.md`, section 3.4): France and most of Europe day
+    /// first, the United States month first, Japan, China and Korea year
+    /// first. A date typed with slashes or dots, and six digits, are read
+    /// in that order.
+    enum Order: Equatable {
+        case dayFirst, monthFirst, yearFirst
+
+        /// The order of `locale`: where the short date of its region
+        /// ("dd/MM/y", "M/d/yy", "y/MM/dd") puts the day, the month and the
+        /// year; the date column of the geek lists uses the same
+        /// (`Format.shortPattern`), so that what is typed is read as what is
+        /// shown.
+        static func of(_ locale: Locale) -> Order {
+            let p = Format.shortPattern(locale)
+            guard let d = p.firstIndex(of: "d"), let m = p.firstIndex(of: "M") else { return .dayFirst }
+            if let y = p.firstIndex(of: "y"), y < d, y < m { return .yearFirst }
+            return m < d ? .monthFirst : .dayFirst
+        }
+
+        /// The order of the interface (`uiLocale`).
+        static let ui = of(uiLocale)
+
+        /// The patterns of a date typed with separators, in this order;
+        /// `yyyy-MM-dd` is always understood.
+        var patterns: [String] {
+            switch self {
+            case .dayFirst: ["d/M/yyyy", "d/M/yy", "d.M.yyyy", "d.M.yy"]
+            case .monthFirst: ["M/d/yyyy", "M/d/yy", "M.d.yyyy"]
+            case .yearFirst: ["yyyy/M/d", "yyyy.M.d", "yy/M/d"]
+            }
+        }
+
+        /// Examples for the hint of the panel: a date with separators and
+        /// six digits, both 1 October 2026.
+        var examples: String {
+            switch self {
+            case .dayFirst: "1/10/2026, 011026"
+            case .monthFirst: "10/1/2026, 100126"
+            case .yearFirst: "2026/10/1, 261001"
+            }
+        }
+    }
+
+    /// A typed date: `2026-10-01`, or with slashes or dots in the region's
+    /// order (`1/10/2026` in France, `10/1/2026` in the United States).
+    /// `nil` if it is not one.
+    static func parse(_ text: String, calendar: Calendar = .current, order: Order = .ui) -> Date? {
         let t = text.trimmingCharacters(in: .whitespaces)
-        for format in ["yyyy-MM-dd", "d/M/yyyy", "d/M/yy", "d.M.yyyy"] {
+        for format in ["yyyy-MM-dd"] + order.patterns {
             let f = DateFormatter()
             f.calendar = calendar
             f.timeZone = calendar.timeZone
@@ -556,12 +601,14 @@ enum DateChoice {
         return nil
     }
 
-    /// The dates six digits can be (`ui.md`, "Sélecteur d'attributs"):
-    /// `ddmmyy` (as in French) or `yymmdd`, in that order, each kept when
-    /// it is a real day (`310299` is no `ddmmyy` date: no 31 February).
-    /// The two readings giving the same day (`111111`) count once. The
-    /// year `yy` is 20yy below 70, 19yy from 70 (no mail before 1970).
-    static func sixDigits(_ text: String, calendar: Calendar = .current) -> [(date: Date, reading: String)] {
+    /// The dates six digits can be (`ui.md`, "Sélecteur d'attributs"): in
+    /// the region's order first (`ddmmyy` in France, `mmddyy` in the United
+    /// States, `yymmdd` in Japan), then `yymmdd` (`ddmmyy` for a region that
+    /// puts the year first), each kept when it is a real day (`310299` is
+    /// no `ddmmyy` date: no 31 February). The two readings giving the same
+    /// day (`111111`) count once. The year `yy` is 20yy below 70, 19yy from
+    /// 70 (no mail before 1970).
+    static func sixDigits(_ text: String, calendar: Calendar = .current, order: Order = .ui) -> [(date: Date, reading: String)] {
         let t = text.trimmingCharacters(in: .whitespaces)
         guard t.count == 6, t.allSatisfy(\.isASCII), t.allSatisfy(\.isNumber) else { return [] }
         let n = t.map { Int(String($0))! }
@@ -576,19 +623,28 @@ enum DateChoice {
             let back = calendar.dateComponents([.year, .month, .day], from: date)
             return back.year == y && back.month == m && back.day == d ? calendar.startOfDay(for: date) : nil
         }
+        // Each reading: the day, the month and the year it takes, and how
+        // the row says it.
+        let ddmmyy = { day(pair(0), pair(2), year(pair(4))).map { ($0, L("dd mm yy")) } }
+        let mmddyy = { day(pair(2), pair(0), year(pair(4))).map { ($0, L("mm dd yy")) } }
+        let yymmdd = { day(pair(4), pair(2), year(pair(0))).map { ($0, L("yy mm dd")) } }
+        let readings = switch order {
+        case .dayFirst: [ddmmyy, yymmdd]
+        case .monthFirst: [mmddyy, yymmdd]
+        case .yearFirst: [yymmdd, ddmmyy]
+        }
         var out: [(date: Date, reading: String)] = []
-        if let d = day(pair(0), pair(2), year(pair(4))) { out.append((d, L("dd mm yy"))) }
-        if let d = day(pair(4), pair(2), year(pair(0))), !out.contains(where: { $0.date == d }) {
-            out.append((d, L("yy mm dd")))
+        for read in readings {
+            if let (d, label) = read(), !out.contains(where: { $0.date == d }) { out.append((d, label)) }
         }
         return out
     }
 
     /// Every date the text can be: one for `2026-10-01` or `1/10/2026`,
     /// one or two for six digits.
-    static func candidates(_ text: String, calendar: Calendar = .current) -> [(date: Date, reading: String?)] {
-        if let d = parse(text, calendar: calendar) { return [(d, nil)] }
-        return sixDigits(text, calendar: calendar).map { ($0.date, $0.reading) }
+    static func candidates(_ text: String, calendar: Calendar = .current, order: Order = .ui) -> [(date: Date, reading: String?)] {
+        if let d = parse(text, calendar: calendar, order: order) { return [(d, nil)] }
+        return sixDigits(text, calendar: calendar, order: order).map { ($0.date, $0.reading) }
     }
 
     /// The unit of a typed duration, by its first letter in English or in
@@ -621,19 +677,15 @@ enum DateChoice {
         return (count, unit)
     }
 
-    /// "1 day", "3 weeks": a duration as words, for the row labels. Two
-    /// keys (one, several) rather than catalog plural variations: `L()`
-    /// formats with `String(format:)`, which does not apply them.
+    /// "1 day", "3 weeks": a duration as words, for the row labels. One
+    /// key per unit, whose plural variations in the catalog give "1 day"
+    /// and "3 days" (`docs/localization.md`, "Plurals").
     static func amount(_ count: Int, _ unit: Calendar.Component) -> String {
-        switch (unit, count == 1) {
-        case (.day, true): L("1 day")
-        case (.day, false): L("%lld days", count)
-        case (.weekOfYear, true): L("1 week")
-        case (.weekOfYear, false): L("%lld weeks", count)
-        case (.month, true): L("1 month")
-        case (.month, false): L("%lld months", count)
-        case (_, true): L("1 year")
-        case (_, false): L("%lld years", count)
+        switch unit {
+        case .day: L("%lld days", count)
+        case .weekOfYear: L("%lld weeks", count)
+        case .month: L("%lld months", count)
+        default: L("%lld years", count)
         }
     }
 
@@ -658,10 +710,10 @@ enum DateChoice {
     /// can be, so four when six digits make two dates; each row then says
     /// how the digits were read.
     /// A typed duration gives its two rows instead.
-    static func typed(_ text: String, now: Date = Date(), calendar: Calendar = .current) -> [Preset] {
+    static func typed(_ text: String, now: Date = Date(), calendar: Calendar = .current, order: Order = .ui) -> [Preset] {
         let durations = durationRows(text, now: now, calendar: calendar)
         if !durations.isEmpty { return durations }
-        let all = candidates(text, calendar: calendar)
+        let all = candidates(text, calendar: calendar, order: order)
         return all.flatMap { c -> [Preset] in
             let day = Int(c.date.timeIntervalSince1970)
             let shown = ISO8601DateFormatter.string(from: c.date, timeZone: calendar.timeZone, formatOptions: [.withFullDate])

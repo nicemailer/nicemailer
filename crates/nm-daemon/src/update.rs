@@ -146,7 +146,7 @@ pub async fn prepare(core: &Arc<Core>) -> Result<PrepareUpdateResult, RpcError> 
         drop(c.lock_store("update"));
     })
     .await
-    .map_err(|e| RpcError::new(nm_api::error_code::INTERNAL_ERROR, e.to_string()))?;
+    .map_err(|e| RpcError::internal(e))?;
     // An update that never comes: the maintenance ends by itself.
     let c = core.clone();
     tokio::spawn(async move {

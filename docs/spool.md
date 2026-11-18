@@ -45,7 +45,7 @@ With 8 attempts and a first delay of 30 s, the longest wait is 32 minutes and th
 
 ### Reverted
 
-A definitive failure undoes the change of the action and of every later action on the same message, latest first: the message goes back to its folder with its old UID, its flags as they were. The action is `reverted`, the later ones `cancelled`, an `audit_log` row `revert` gives the reason, and the event `ActionReverted {message_id, kind, reason}` tells the clients. The app says it in its status bar ("The server refused the move · undone: Mailbox doesn't exist: Archive").
+A definitive failure undoes the change of the action and of every later action on the same message, latest first: the message goes back to its folder with its old UID, its flags as they were. The action is `reverted`, the later ones `cancelled`, an `audit_log` row `revert` gives the reason, and the event `ActionReverted {message_id, kind, message, why}` tells the clients (`why`: `server_refused_change` with the server's answer in `server_text`, or `attempts_failed`; `docs/contract.md`, "Errors"). The app says it in its status bar ("The server refused the move · undone: Mailbox doesn't exist: Archive").
 
 ### After a crash
 

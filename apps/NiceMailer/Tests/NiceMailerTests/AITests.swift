@@ -329,12 +329,17 @@ struct AIRulesTests {
         #expect(AI.cursorAfter(old: "ab", new: "abc", cursor: 9) == 3)
     }
 
+    /// The sentence comes from the reason, never from the core's English
+    /// message; the provider's own text is cited.
     @Test func errorsAreSaidInTheAppsLanguage() {
-        #expect(AI.errorFlash(CoreClient.RPCError(code: AIError.disabled, message: "x"))
+        #expect(AI.errorFlash(CoreClient.RPCError(code: AIError.disabled, message: "x", data: ["reason": "ai_disabled"]))
             == L("The AI is off: set ai.enabled = true in config.toml"))
-        #expect(AI.errorFlash(CoreClient.RPCError(code: ComposeError.revisionConflict, message: "x"))
+        #expect(AI.errorFlash(CoreClient.RPCError(code: ComposeError.revisionConflict, message: "x", data: ["reason": "ai_draft_changed"]))
             == L("The reply changed since the AI read it: run it again"))
-        #expect(AI.errorFlash(CoreClient.RPCError(code: AIError.ai, message: "not signed in")) == L("AI: %@", "not signed in"))
+        #expect(AI.errorFlash(CoreClient.RPCError(code: AIError.ai, message: "x", data: ["reason": "ai_not_logged_in", "code": "ai_not_logged_in"]))
+            == L("Claude Code is not signed in: run claude in a terminal to sign in"))
+        #expect(AI.errorFlash(CoreClient.RPCError(code: AIError.ai, message: "x", data: ["reason": "ai_failed", "provider_text": "overloaded"]))
+            == L("The AI failed: %@", "overloaded"))
     }
 }
 
@@ -820,8 +825,10 @@ final class AIControllerTests {
         _ = await eventually { self.paletteOpen }
         choose("c")
         _ = await eventually { self.model.aiRun?.runId == 7 }
-        event("AiFailed", ["run_id": .int(7), "code": .string("ai_not_logged_in"), "message": .string("run claude to sign in")])
-        #expect(model.aiRun?.phase == .failed("run claude to sign in"))
+        // Said from its reason, in the app's language.
+        event("AiFailed", ["run_id": .int(7), "code": .string("ai_not_logged_in"), "message": .string("run claude to sign in"),
+                           "why": .object(["reason": "ai_not_logged_in"])])
+        #expect(model.aiRun?.phase == .failed(L("Claude Code is not signed in: run claude in a terminal to sign in")))
         press("esc")
         _ = await eventually { self.model.aiRun == nil }
         #expect(core.calls("ai_dismiss").isEmpty, "nothing to dismiss after a failure")

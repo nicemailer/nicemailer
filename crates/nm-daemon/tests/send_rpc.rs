@@ -351,7 +351,9 @@ fn a_refused_login_gives_the_draft_back_until_the_smtp_password_is_saved() {
     let failed = c.event("SendFailed", 60);
     assert_eq!(failed["draft_id"], d["id"]);
     assert_eq!(failed["reply_to"], m);
-    assert!(failed["reason"].as_str().unwrap().contains("refused the login"), "{failed}");
+    assert!(failed["message"].as_str().unwrap().contains("refused the login"), "{failed}");
+    assert_eq!(failed["why"]["reason"], "smtp_refused", "{failed}");
+    assert!(failed["why"]["server_text"].as_str().unwrap().contains("refused the login"), "{failed}");
     // Editable again, with its text.
     let again = c.call("create_draft", json!({"reply_to": m, "quote_header": "x"})).unwrap()["draft"].clone();
     assert_eq!((again["state"].as_str(), again["body"].as_str()), (Some("editing"), Some("Bonjour")));

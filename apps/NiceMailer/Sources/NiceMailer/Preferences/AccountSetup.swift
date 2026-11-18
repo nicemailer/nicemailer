@@ -151,7 +151,10 @@ struct AccountInfo: Decodable, Identifiable, Equatable {
     let email: String?
     let displayName: String?
     let enabled: Bool
+    /// Why it cannot connect, in English (`message`), and as a reason
+    /// (`why`): `shownError` is what the app says.
     let error: String?
+    var why: CoreWhy? = nil
     let position: Int
     /// Only looked at (`read_only = true`): nothing is changed on its
     /// server until it is organized. Swift note: an optional property of a
@@ -160,6 +163,9 @@ struct AccountInfo: Decodable, Identifiable, Equatable {
     var readOnly: Bool? = nil
 
     var isReadOnly: Bool { readOnly == true }
+
+    /// The account's error in the user's language (`CoreReason`).
+    var shownError: String? { CoreReason.text(why: why?.values, message: error) }
 }
 
 struct AccountInfoList: Decodable {
@@ -523,10 +529,11 @@ final class AccountSetup {
             busy = L("Connecting to %@…", imap.host)
             do {
                 test = try await client.call("test_account", ["email": email, "imap": imap.json, "password": password]) as AccountTestReport
-            } catch let e as CoreClient.RPCError where e.data["reason"] == "auth" {
-                return stop(.password, L("%@ refused the password: %@", imap.host, e.message))
-            } catch let e as CoreClient.RPCError where e.data["reason"] == "connect" {
-                showIMAP(imapServer ?? ServerFields(imap), L("NiceMailer could not connect to %@: %@. Check the IMAP server.", imap.host, e.message))
+            } catch let e as CoreClient.RPCError where e.reason == "imap_auth_refused" {
+                // The server's own words, cited (`CoreReason`).
+                return stop(.password, L("%@ refused the password: %@", imap.host, e.data["server_text"] ?? ""))
+            } catch let e as CoreClient.RPCError where e.reason == "imap_unreachable" {
+                showIMAP(imapServer ?? ServerFields(imap), L("NiceMailer could not connect to %@: %@. Check the IMAP server.", imap.host, e.data["server_text"] ?? ""))
                 return
             } catch {
                 return stop(.email, Self.message(error))
@@ -572,7 +579,7 @@ final class AccountSetup {
             added = plan.lookOnly
                 ? L("%@ added: NiceMailer shows its mail and changes nothing on the server. Organize it from its page when you are ready.", email)
                 : archived > 0
-                ? L("%@ added: %@ old mails are being archived on the server.", email, archived.formatted())
+                ? L("%@ added: %lld old mails are being archived on the server.", email, archived)
                 : L("%@ added: its mail is being downloaded.", email)
             await onAdded?()
         } catch {
@@ -744,9 +751,10 @@ final class AccountSetup {
         email.split(separator: "@").last.map(String.init)?.lowercased() ?? email
     }
 
-    /// The core's message, without the code the developer needs.
+    /// What to say of an error: for the core's, the sentence of its reason
+    /// in the user's language (`CoreReason`).
     nonisolated static func message(_ error: Error) -> String {
-        (error as? CoreClient.RPCError)?.message ?? error.localizedDescription
+        error.localizedDescription
     }
 }
 
@@ -825,7 +833,7 @@ final class AccountActivation {
             report = nil
             self.plan = nil
             done = archived > 0
-                ? L("%@ is organized: %@ old mails are being archived on the server.", email, archived.formatted())
+                ? L("%@ is organized: %lld old mails are being archived on the server.", email, archived)
                 : L("%@ is organized: new mail is screened from now on.", email)
             await onDone?()
         } catch {
