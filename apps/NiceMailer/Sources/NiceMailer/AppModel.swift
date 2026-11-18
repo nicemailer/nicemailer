@@ -646,6 +646,15 @@ final class AppModel {
     private var lastRefreshStart: ContinuousClock.Instant?
     /// How many reloads started: for the tests of the pacing.
     @ObservationIgnored private(set) var refreshCount = 0
+
+    /// Waits until the reload under way, if any, has ended: for the tests
+    /// that must start from a quiet list (`ListPatchTests`).
+    func refreshSettled() async {
+        while let task = refreshTask {
+            await task.value
+            if refreshTask == task, !refreshDue { return }
+        }
+    }
     /// How many refreshes reloaded the conversations that changed alone
     /// (`patchThreads`), and how many the whole list: for the UI scripts.
     @ObservationIgnored private(set) var patchCount = 0

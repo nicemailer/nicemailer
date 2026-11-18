@@ -128,7 +128,10 @@ struct ListPatchTests {
         let refreshes = model.refreshCount
         model.handle(CoreClient.Event(method: "AccountChanged", epoch: "e_test", seq: 1, params: [:]))
         _ = await eventually { model.refreshCount > refreshes }
-        try? await Task.sleep(for: .milliseconds(100))
+        // The tests start once its reload has ended, not after a fixed
+        // delay, which a slow run overran (a whole reload then counted in
+        // a test's own calls).
+        await model.refreshSettled()
     }
 
     var seq = 1
