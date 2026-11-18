@@ -190,6 +190,8 @@ A one-click attempt the server refuses opens the page instead, and says why. The
 
 ## Keys
 
+The keys below are the defaults: each can be changed in `keymap.toml` ([keymap.md](keymap.md)), and the help, the status bar and the menus then show the keys in effect.
+
 Actions apply to the **marked** mails if any (`J` / `K`), otherwise to the mail under the cursor.
 
 | Key | Action |

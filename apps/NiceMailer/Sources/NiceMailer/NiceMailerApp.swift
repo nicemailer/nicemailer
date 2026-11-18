@@ -107,18 +107,20 @@ struct NiceMailerApp: App {
             }
             // Adds a "Reload" item (⌘R) to the View menu.
             CommandGroup(after: .toolbar) {
+                // The keys of the items are the keymap's (`[everywhere]`),
+                // so that the menu shows what the key really does.
                 Button(L("Reload")) { Task { await model.reloadAll() } }
-                    .keyboardShortcut("r", modifiers: .command)
+                    .keyboardShortcut(model.keymap.shortcut(.appReload))
                 Divider()
                 // Text size of the geek theme, like Zed (`TextSize`). In the
                 // geek theme the keys are handled by its key monitor first,
                 // which also accepts ⌘= for keyboards where `+` needs Shift.
                 Button(L("Bigger Text")) { TextSize.shared.bigger() }
-                    .keyboardShortcut("+", modifiers: .command)
+                    .keyboardShortcut(model.keymap.shortcut(.textBigger))
                 Button(L("Smaller Text")) { TextSize.shared.smaller() }
-                    .keyboardShortcut("-", modifiers: .command)
+                    .keyboardShortcut(model.keymap.shortcut(.textSmaller))
                 Button(L("Actual Size")) { TextSize.shared.reset() }
-                    .keyboardShortcut("0", modifiers: .command)
+                    .keyboardShortcut(model.keymap.shortcut(.textReset))
             }
             // Theme menu, during development; it will become a setting.
             CommandMenu(L("Theme")) {

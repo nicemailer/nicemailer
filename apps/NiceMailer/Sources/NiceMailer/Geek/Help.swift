@@ -1,7 +1,8 @@
 import Foundation
 
 // The help of the geek theme (`?`, `ui.md`): the keys, grouped by what they
-// are for, and how the groups are laid out in columns.
+// are for, and how the groups are laid out in columns. The keys are those
+// of the keymap in effect (`Keymap`, `keymap.toml`).
 //
 // Everything here is pure (no view, no controller state), so the content
 // and the layout are unit-tested without a window (`HelpTests`). The view
@@ -38,68 +39,127 @@ enum Help {
     /// (or one pair of opposite keys) per line, so the eye never has to
     /// match "u  *" with "read / unread, flag".
     ///
-    /// A computed property, not a constant: `L` reads the language the app
-    /// runs in, which the UI scripts and the tests may change.
-    static var groups: [HelpGroup] {
-        [
-            HelpGroup(title: L("Navigate"), entries: [
-                HelpEntry(key: "j k", label: L("next / previous mail")),
-                HelpEntry(key: "^d ^u", label: L("half a page down / up in the list")),
-                HelpEntry(key: "^k ^j", label: L("previous / next message of the conversation")),
+    /// The keys come from `keymap` (`keymap.toml`, `docs/keymap.md`): a line
+    /// names its actions, and shows the keys they have in `chain`, the mail
+    /// screen. A line whose actions have no key is left out, so the help
+    /// never shows a key that does nothing.
+    ///
+    /// A function, not a constant: `L` reads the language the app runs in,
+    /// which the UI scripts and the tests may change, and the keymap may
+    /// change while the app runs.
+    static func groups(_ keymap: Keymap = .defaults,
+                       chain: [KeyContext] = [.mail, .normal, .everywhere]) -> [HelpGroup] {
+        let compose: [KeyContext] = [.compose, .everywhere]
+        // Swift note: a nested function, used as a shorthand below.
+        func line(_ actions: [KeyAction], _ label: String, arrows: Arrows = .yes, suffix: String = "",
+                  in c: [KeyContext]? = nil) -> HelpEntry? {
+            let key = keys(keymap, actions, in: c ?? chain, arrows: arrows)
+            return key.isEmpty ? nil : HelpEntry(key: key + suffix, label: label)
+        }
+        // The direct moves of Quarantine: its own keys, in file order.
+        let quarantine = (keymap.contexts[.quarantine] ?? [])
+            .filter { KeyAction(rawValue: $0.action)?.moveRole != nil }
+            .map { KeyChord.display($0.key) }
+            .joined(separator: " ")
+        let move = keymap.label(.menuMove, in: chain)
+        let groups: [(String, [HelpEntry?])] = [
+            (L("Navigate"), [
+                line([.listDown, .listUp], L("next / previous mail"), arrows: .no),
+                line([.listHalfPageDown, .listHalfPageUp], L("half a page down / up in the list")),
+                line([.messagePrevious, .messageNext], L("previous / next message of the conversation")),
+                // Escape is not in the keymap: it always goes back.
                 HelpEntry(key: "esc", label: L("cancel, unmark, back")),
             ]),
-            HelpGroup(title: L("Read"), entries: [
-                HelpEntry(key: "ret", label: L("read the mail in the whole window (one column)")),
-                HelpEntry(key: "space ^f", label: L("scroll the mail a page down")),
-                HelpEntry(key: "⇧space ^b", label: L("scroll the mail a page up")),
-                HelpEntry(key: "T", label: L("show / hide quotes, signatures, folded mails")),
-                HelpEntry(key: "S", label: L("skip to the text after the next quote")),
-                HelpEntry(key: "l", label: L("links of the mail")),
-                HelpEntry(key: "^c", label: L("sender's card in Contacts, or copy address")),
+            (L("Read"), [
+                line([.mailOpen], L("read the mail in the whole window (one column)")),
+                line([.readerOpenOrPageDown, .readerPageDown], L("scroll the mail a page down")),
+                line([.readerPageUp], L("scroll the mail a page up")),
+                line([.readerToggleAll], L("show / hide quotes, signatures, folded mails")),
+                line([.readerSkipQuoted], L("skip to the text after the next quote")),
+                line([.pickerLinks], L("links of the mail")),
+                line([.senderCardOrCopy], L("sender's card in Contacts, or copy address")),
             ]),
-            HelpGroup(title: L("Select"), entries: [
-                HelpEntry(key: "J K", label: L("mark and move (multiple selection)")),
-                HelpEntry(key: "⇧↓ ⇧↑", label: L("the same, with the arrows")),
-                HelpEntry(key: "⌘A", label: L("mark every mail of the list")),
+            (L("Select"), [
+                line([.listMarkDown, .listMarkUp], L("mark and move (multiple selection)"), arrows: .no),
+                line([.listMarkDown, .listMarkUp], L("the same, with the arrows"), arrows: .only),
+                line([.listMarkAll], L("mark every mail of the list")),
             ]),
-            HelpGroup(title: L("Act on mails"), entries: [
-                HelpEntry(key: "d", label: L("done (archive)")),
-                HelpEntry(key: "m…", label: L("move to a folder")),
-                // Quarantine drops the prefix (`GeekController.directTargets`).
-                HelpEntry(key: "i n p x b d", label: L("in Quarantine: move without m")),
-                HelpEntry(key: "del", label: L("delete")),
-                HelpEntry(key: "u", label: L("read / unread")),
-                HelpEntry(key: "U", label: L("mark as read")),
-                HelpEntry(key: "*", label: L("flag")),
-                HelpEntry(key: "t", label: L("add / remove a tag")),
-                HelpEntry(key: "g", label: L("add / remove a group")),
-                HelpEntry(key: "s…", label: L("save")),
-                HelpEntry(key: "z", label: L("undo the last move or decision")),
-                HelpEntry(key: "⌘U", label: L("unsubscribe from the list")),
+            (L("Act on mails"), [
+                line([.mailArchive], L("done (archive)")),
+                line([.menuMove], L("move to a folder"), suffix: "…"),
+                quarantine.isEmpty ? nil
+                    : HelpEntry(key: quarantine, label: move.isEmpty ? L("in Quarantine: move")
+                        : L("in Quarantine: move without %@", move)),
+                line([.mailDelete], L("delete")),
+                line([.mailToggleSeen], L("read / unread")),
+                line([.mailMarkSeen], L("mark as read")),
+                line([.mailToggleFlag], L("flag")),
+                line([.pickerTag], L("add / remove a tag")),
+                line([.pickerGroup], L("add / remove a group")),
+                line([.menuSave], L("save"), suffix: "…"),
+                line([.undoLast], L("undo the last move or decision")),
+                line([.mailUnsubscribe], L("unsubscribe from the list")),
             ]),
-            HelpGroup(title: L("Write"), entries: [
-                HelpEntry(key: "r", label: L("reply to all")),
-                HelpEntry(key: "R", label: L("reply to the sender only")),
-                HelpEntry(key: "F", label: L("forward")),
-                HelpEntry(key: "c", label: L("write a new mail")),
-                HelpEntry(key: "⌃I", label: L("in a reply: AI menu (proofread, rewrite, translate, subjects)")),
-                HelpEntry(key: "⇧⌘T", label: L("in a reply: text only or formatted text")),
-                HelpEntry(key: "a", label: L("AI menu of the mail: summary, translation, quick replies, security")),
+            (L("Write"), [
+                line([.composeReplyAll], L("reply to all")),
+                line([.composeReplySender], L("reply to the sender only")),
+                line([.composeForward], L("forward")),
+                line([.composeNew], L("write a new mail")),
+                line([.aiComposeMenu], L("in a reply: AI menu (proofread, rewrite, translate, subjects)"), in: compose),
+                line([.composeTogglePlain], L("in a reply: text only or formatted text"), in: compose),
+                line([.aiMenu], L("AI menu of the mail: summary, translation, quick replies, security")),
             ]),
-            HelpGroup(title: L("Find and go"), entries: [
-                HelpEntry(key: "/", label: L("search everywhere, in All Mail")),
-                HelpEntry(key: "f", label: L("filter by attributes")),
-                HelpEntry(key: "^C", label: L("mails of the sender")),
-                HelpEntry(key: "@", label: L("go to an account")),
-                HelpEntry(key: ";…", label: L("go to a folder or a screen")),
+            (L("Find and go"), [
+                line([.pickerSearch], L("search everywhere, in All Mail")),
+                line([.pickerAttributes], L("filter by attributes")),
+                line([.senderMails], L("mails of the sender")),
+                line([.pickerAccounts], L("go to an account")),
+                line([.menuGoto], L("go to a folder or a screen"), suffix: "…"),
             ]),
-            HelpGroup(title: L("Window"), entries: [
-                HelpEntry(key: "v…", label: L("display")),
-                HelpEntry(key: "⌘+ ⌘− ⌘0", label: L("text size: bigger, smaller, default")),
-                HelpEntry(key: "⌃⌘F", label: L("full screen")),
-                HelpEntry(key: "?", label: L("this list of keys")),
+            (L("Window"), [
+                line([.menuView], L("display"), suffix: "…"),
+                line([.textBigger, .textSmaller, .textReset], L("text size: bigger, smaller, default")),
+                line([.windowFullScreen], L("full screen")),
+                line([.helpShow], L("this list of keys")),
             ]),
         ]
+        // The menus of the user: their key, and their name.
+        let menus: [HelpEntry] = keymap.menus.filter { !$0.builtin }.compactMap { m in
+            let key = keymap.label(raw: "menu." + m.name, in: chain)
+            return key.isEmpty ? nil : HelpEntry(key: key + "…", label: m.name)
+        }
+        var out = groups.map { HelpGroup(title: $0.0, entries: $0.1.compactMap { $0 }) }
+        if !menus.isEmpty { out.append(HelpGroup(title: L("Your menus"), entries: menus)) }
+        return out.filter { !$0.entries.isEmpty }
+    }
+
+    /// Whether a line of the help shows the arrow keys of its actions.
+    enum Arrows {
+        /// Yes, with the other keys.
+        case yes
+        /// Not when the action has another key: `j k`, not `j ↓ k ↑` (the
+        /// arrows go without saying, or have a line of their own).
+        case no
+        /// Only them: "⇧↓ ⇧↑, the same, with the arrows".
+        case only
+    }
+
+    /// The keys a line shows, as text: for one action, all its keys
+    /// (`⇧space ⌃B`); for several (a pair of opposite moves), the first key
+    /// of each (`j k`). Empty when none has a key.
+    static func keys(_ keymap: Keymap, _ actions: [KeyAction], in chain: [KeyContext], arrows: Arrows = .yes) -> String {
+        let perAction: [[String]] = actions.map { a in
+            let all = keymap.keys(a, in: chain)
+            switch arrows {
+            case .yes: return all
+            case .only: return all.filter(KeyChord.isArrow)
+            case .no:
+                let other = all.filter { !KeyChord.isArrow($0) }
+                return other.isEmpty ? all : other
+            }
+        }
+        let shown = actions.count == 1 ? perAction[0] : perAction.compactMap(\.first)
+        return shown.map(KeyChord.display).joined(separator: " ")
     }
 
     /// Height of a column, in lines: its groups and a blank line between

@@ -37,6 +37,9 @@ let package = Package(
                 .copy("Resources/Editor"),
                 // The app's icon for the status bar (`scripts/make-icon.sh`).
                 .copy("Resources/Icon"),
+                // The default keys, written by the core (`nicemailer keymap
+                // show --defaults --json`; `Keymap.defaults`).
+                .copy("Resources/keymap-defaults.json"),
                 .process("Resources/Localizable.xcstrings"),
             ],
             // Swift 5 language mode: Swift 6's strict concurrency checking

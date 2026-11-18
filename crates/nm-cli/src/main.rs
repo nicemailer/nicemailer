@@ -118,6 +118,11 @@ enum Command {
         #[command(subcommand)]
         action: ConfigAction,
     },
+    /// The keys of the app, keymap.toml (docs/keymap.md).
+    Keymap {
+        #[command(subcommand)]
+        action: KeymapAction,
+    },
     /// A mailbox folder (a data directory): what its database is, and
     /// upgrading it to this version. Works on the folder directly, without
     /// the core.
@@ -625,8 +630,37 @@ enum ConfigAction {
         accounts: bool,
     },
     /// Print the paths of the files: config.toml ($NICEMAILER_CONFIG, or
-    /// ~/.config/nicemailer/config.toml), then accounts.toml, next to it.
+    /// ~/.config/nicemailer/config.toml), then accounts.toml and
+    /// keymap.toml, next to it.
     Path,
+}
+
+/// `nicemailer keymap …`: works on the file directly, without the core.
+#[derive(Subcommand)]
+enum KeymapAction {
+    /// Check keymap.toml without applying it: the error that refuses it
+    /// (with its line) and the warnings. Exits with status 1 if the core
+    /// would refuse it.
+    Check {
+        /// keymap.toml to check; by default the one next to config.toml.
+        file: Option<PathBuf>,
+    },
+    /// Print a complete keymap.toml: every default key, with what it does
+    /// in a comment.
+    Defaults,
+    /// Print the keys in effect: the defaults with keymap.toml applied, by
+    /// context and by menu.
+    Show {
+        /// keymap.toml to read; by default the one next to config.toml.
+        file: Option<PathBuf>,
+        /// The defaults alone, without any file.
+        #[arg(long, conflicts_with = "file")]
+        defaults: bool,
+        /// As JSON: what the app embeds with --defaults
+        /// (Resources/keymap-defaults.json).
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 /// `none` removes the decision; anything else must be a screening target.
@@ -797,6 +831,7 @@ fn run() -> anyhow::Result<()> {
             Ok(())
         }
         Command::Config { action } => run_config(action),
+        Command::Keymap { action } => run_keymap(action),
         Command::Ai { action } => ai::run(&data_dir, action),
         Command::Mailbox { action } => run_mailbox(action),
         Command::Account { action: AccountAction::Password { key, smtp } } => {
@@ -1257,6 +1292,7 @@ fn run_config(action: ConfigAction) -> anyhow::Result<()> {
             let path = config::default_path();
             println!("{}", path.display());
             println!("{}", config::accounts_path(&path).display());
+            println!("{}", nm_engine::keymap::path(&path).display());
         }
         ConfigAction::Defaults { accounts: false } => print!("{}", config::defaults_file()),
         ConfigAction::Defaults { accounts: true } => print!("{}", config::accounts_template()),
@@ -1287,6 +1323,76 @@ fn run_config(action: ConfigAction) -> anyhow::Result<()> {
                 Err(p) => {
                     println!("{}: refused: {p}", dir.display());
                     std::process::exit(1);
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// `nicemailer keymap check | defaults | show`.
+fn run_keymap(action: KeymapAction) -> anyhow::Result<()> {
+    use nm_engine::{config, keymap};
+    // The file to read: given, or next to the config.toml the core reads.
+    let file = |f: Option<PathBuf>| f.unwrap_or_else(|| keymap::path(&config::default_path()));
+    // Reads and parses it; a refused file ends the command with status 1.
+    let parsed = |path: &Path| -> anyhow::Result<keymap::Parsed> {
+        let text = match config::read(path, keymap::KEYMAP_FILE) {
+            Ok(t) => t,
+            Err(p) => bail!("{}: {p}", path.display()),
+        };
+        if text.is_none() {
+            println!("{}: no file (the core creates it at its start); the defaults", path.display());
+        }
+        match keymap::parse(text.as_deref().unwrap_or("")) {
+            Ok(p) => Ok(p),
+            Err(p) => {
+                println!("{}: refused: {p}", path.display());
+                std::process::exit(1);
+            }
+        }
+    };
+    match action {
+        KeymapAction::Defaults => print!("{}", keymap::defaults_file()),
+        KeymapAction::Check { file: f } => {
+            let path = file(f);
+            let p = parsed(&path)?;
+            for w in &p.warnings {
+                println!("{}: warning: {w}", path.display());
+            }
+            println!("{}: valid", path.display());
+        }
+        KeymapAction::Show { defaults: true, json: true, .. } => print!("{}", keymap::defaults_json()),
+        KeymapAction::Show { file: f, defaults, json } => {
+            let k = if defaults {
+                keymap::defaults().clone()
+            } else {
+                let path = file(f);
+                let p = parsed(&path)?;
+                for w in &p.warnings {
+                    eprintln!("{}: warning: {w}", path.display());
+                }
+                p.keymap
+            };
+            let (contexts, menus) = keymap::view(&k);
+            if json {
+                println!("{}", serde_json::to_string_pretty(&json!({ "contexts": contexts, "menus": menus }))?);
+            } else {
+                // One block per table, as the file is written; the width
+                // of the keys aligned within a block.
+                let print = |title: String, rows: &[nm_api::KeyBinding]| {
+                    let width = rows.iter().map(|b| b.key.chars().count()).max().unwrap_or(0);
+                    println!("[{title}]");
+                    for b in rows {
+                        println!("  {:width$}  {}", b.key, b.action);
+                    }
+                    println!();
+                };
+                for (name, rows) in &contexts {
+                    print(name.clone(), rows);
+                }
+                for m in &menus {
+                    print(format!("menu.{}", m.name), &m.entries);
                 }
             }
         }

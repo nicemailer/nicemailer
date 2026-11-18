@@ -13,16 +13,16 @@ struct HelpTests {
     // MARK: Content
 
     @Test func oneLinePerKeyAndNoKeyTwice() {
-        let keys = Help.groups.flatMap(\.entries).map(\.key)
+        let keys = Help.groups().flatMap(\.entries).map(\.key)
         #expect(Set(keys).count == keys.count)
         // u and U are two lines: the toggle, and marking read.
         #expect(keys.contains("u") && keys.contains("U"))
         #expect(!keys.contains { $0.contains("*") && $0 != "*" })
-        #expect(Help.groups.allSatisfy { !$0.entries.isEmpty })
+        #expect(Help.groups().allSatisfy { !$0.entries.isEmpty })
     }
 
     @Test func whatIsNotThereYetIsMarkedSo() {
-        let entries = Help.groups.flatMap(\.entries)
+        let entries = Help.groups().flatMap(\.entries)
         #expect(entries.first { $0.key == "r" }?.notYet == false)
         for key in ["R", "f", "c"] {
             #expect(entries.first { $0.key == key }?.notYet == false, "\(key)")
@@ -32,7 +32,7 @@ struct HelpTests {
     // MARK: Columns
 
     @Test func columnsKeepTheOrderAndNeverCutAGroup() {
-        let groups = Help.groups
+        let groups = Help.groups()
         for count in 1...4 {
             let columns = Help.columns(groups, count: count)
             #expect(columns.count == min(count, groups.count))
@@ -71,7 +71,7 @@ struct HelpTests {
     }
 
     @Test func theWindowWidthDecidesTheNumberOfColumns() {
-        let groups = Help.groups
+        let groups = Help.groups()
         let char: CGFloat = 7, padding: CGFloat = 14
         func needed(_ count: Int) -> CGFloat {
             CGFloat(Help.width(Help.columns(groups, count: count))) * char + 2 * padding
@@ -87,8 +87,8 @@ struct HelpTests {
     /// The real help, in three columns, is far shorter than in one: the
     /// point of the layout.
     @Test func threeColumnsAreAboutAThirdOfOne() {
-        let one = Help.height(Help.groups)
-        let three = Help.columns(Help.groups, count: 3).map(Help.height).max() ?? 0
+        let one = Help.height(Help.groups())
+        let three = Help.columns(Help.groups(), count: 3).map(Help.height).max() ?? 0
         #expect(three * 2 < one)
     }
 }

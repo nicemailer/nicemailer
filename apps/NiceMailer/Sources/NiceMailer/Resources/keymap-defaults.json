@@ -1,0 +1,886 @@
+{
+  "actions": [
+    "window.full_screen",
+    "text.bigger",
+    "text.smaller",
+    "text.reset",
+    "app.reload",
+    "menu.goto",
+    "help.show",
+    "undo.last",
+    "goto.inbox",
+    "goto.todo",
+    "goto.waiting",
+    "goto.work",
+    "goto.archive",
+    "goto.newsletter",
+    "goto.paperwork",
+    "goto.sent",
+    "goto.drafts",
+    "goto.all_mail",
+    "goto.quarantine",
+    "goto.deleted",
+    "goto.junk",
+    "goto.banned",
+    "goto.everything",
+    "goto.contacts",
+    "goto.tags",
+    "goto.groups",
+    "goto.history",
+    "list.down",
+    "list.up",
+    "list.mark_down",
+    "list.mark_up",
+    "list.mark_all",
+    "list.half_page_down",
+    "list.half_page_up",
+    "message.next",
+    "message.previous",
+    "mail.open",
+    "reader.open_or_page_down",
+    "reader.page_down",
+    "reader.page_up",
+    "reader.toggle_all",
+    "reader.skip_quoted",
+    "picker.links",
+    "sender.card_or_copy",
+    "sender.mails",
+    "mail.archive",
+    "menu.move",
+    "mail.delete",
+    "mail.toggle_seen",
+    "mail.mark_seen",
+    "mail.toggle_flag",
+    "picker.tag",
+    "picker.group",
+    "menu.save",
+    "mail.unsubscribe",
+    "compose.reply_all",
+    "compose.reply_sender",
+    "compose.forward",
+    "compose.new",
+    "ai.menu",
+    "picker.search",
+    "picker.attributes",
+    "picker.accounts",
+    "menu.view",
+    "move.inbox",
+    "move.todo",
+    "move.waiting",
+    "move.archive",
+    "move.newsletter",
+    "move.paperwork",
+    "move.quarantine",
+    "move.deleted",
+    "move.junk",
+    "move.banned",
+    "save.clipboard",
+    "save.eml",
+    "save.text",
+    "save.text_open",
+    "save.markdown",
+    "save.markdown_open",
+    "save.attachments",
+    "save.attachments_no_graphics",
+    "save.pdf",
+    "save.pdf_open",
+    "save.pdf_evidence",
+    "save.pdf_evidence_open",
+    "view.one_column",
+    "view.two_columns",
+    "view.three_columns",
+    "view.sort_received",
+    "view.sort_modified",
+    "view.toggle_html",
+    "view.toggle_remote_images",
+    "view.cycle_status_bar",
+    "screen.down",
+    "screen.up",
+    "screen.open",
+    "contacts.filter",
+    "contacts.decide_address",
+    "contacts.decide_domain",
+    "contacts.sender_kind",
+    "label.rename",
+    "label.delete",
+    "menu.next",
+    "menu.previous",
+    "menu.choose",
+    "menu.choose_alt",
+    "picker.next",
+    "picker.previous",
+    "picker.choose",
+    "picker.choose_alt",
+    "contact_filter.close",
+    "line.start",
+    "line.end",
+    "line.word_left",
+    "line.word_right",
+    "line.delete_word",
+    "line.delete_to_start",
+    "line.select_all",
+    "line.copy",
+    "line.cut",
+    "line.paste",
+    "choice.next",
+    "choice.previous",
+    "choice.choose",
+    "ai.accept",
+    "ai.refuse",
+    "ai.copy",
+    "ai.confirm",
+    "ai.open",
+    "ai.next",
+    "ai.previous",
+    "compose.send",
+    "compose.file_and_send",
+    "compose.abandon",
+    "ai.compose_menu",
+    "compose.toggle_plain",
+    "compose.attach",
+    "compose.from",
+    "compose.bcc",
+    "compose.next_field",
+    "compose.previous_field",
+    "compose.paste",
+    "compose.paste_plain"
+  ],
+  "contexts": {
+    "ai_panel": [
+      {
+        "action": "ai.accept",
+        "key": "y"
+      },
+      {
+        "action": "ai.refuse",
+        "key": "n"
+      },
+      {
+        "action": "ai.copy",
+        "key": "c"
+      },
+      {
+        "action": "ai.confirm",
+        "key": "enter"
+      },
+      {
+        "action": "ai.open",
+        "key": "cmd-enter"
+      },
+      {
+        "action": "ai.next",
+        "key": "down"
+      },
+      {
+        "action": "ai.previous",
+        "key": "up"
+      }
+    ],
+    "choice": [
+      {
+        "action": "choice.next",
+        "key": "down"
+      },
+      {
+        "action": "choice.previous",
+        "key": "up"
+      },
+      {
+        "action": "choice.choose",
+        "key": "enter"
+      }
+    ],
+    "compose": [
+      {
+        "action": "compose.send",
+        "key": "cmd-enter"
+      },
+      {
+        "action": "compose.file_and_send",
+        "key": "cmd-shift-enter"
+      },
+      {
+        "action": "compose.abandon",
+        "key": "cmd-esc"
+      },
+      {
+        "action": "ai.compose_menu",
+        "key": "ctrl-i"
+      },
+      {
+        "action": "compose.toggle_plain",
+        "key": "cmd-shift-t"
+      },
+      {
+        "action": "compose.attach",
+        "key": "cmd-shift-a"
+      },
+      {
+        "action": "compose.from",
+        "key": "cmd-alt-f"
+      },
+      {
+        "action": "compose.bcc",
+        "key": "cmd-alt-b"
+      },
+      {
+        "action": "compose.next_field",
+        "key": "tab"
+      },
+      {
+        "action": "compose.previous_field",
+        "key": "shift-tab"
+      },
+      {
+        "action": "compose.paste",
+        "key": "cmd-v"
+      },
+      {
+        "action": "compose.paste_plain",
+        "key": "cmd-alt-shift-v"
+      }
+    ],
+    "contact_filter": [
+      {
+        "action": "contact_filter.close",
+        "key": "enter"
+      }
+    ],
+    "contacts": [
+      {
+        "action": "contacts.filter",
+        "key": "/"
+      },
+      {
+        "action": "contacts.decide_address",
+        "key": "m"
+      },
+      {
+        "action": "contacts.decide_domain",
+        "key": "M"
+      },
+      {
+        "action": "contacts.sender_kind",
+        "key": "o"
+      }
+    ],
+    "everywhere": [
+      {
+        "action": "window.full_screen",
+        "key": "ctrl-cmd-f"
+      },
+      {
+        "action": "text.bigger",
+        "key": "cmd-+"
+      },
+      {
+        "action": "text.bigger",
+        "key": "cmd-="
+      },
+      {
+        "action": "text.smaller",
+        "key": "cmd--"
+      },
+      {
+        "action": "text.reset",
+        "key": "cmd-0"
+      },
+      {
+        "action": "app.reload",
+        "key": "cmd-r"
+      }
+    ],
+    "groups": [
+      {
+        "action": "label.rename",
+        "key": "r"
+      },
+      {
+        "action": "label.delete",
+        "key": "d"
+      }
+    ],
+    "line_edit": [
+      {
+        "action": "line.start",
+        "key": "ctrl-a"
+      },
+      {
+        "action": "line.start",
+        "key": "cmd-left"
+      },
+      {
+        "action": "line.start",
+        "key": "home"
+      },
+      {
+        "action": "line.end",
+        "key": "ctrl-e"
+      },
+      {
+        "action": "line.end",
+        "key": "cmd-right"
+      },
+      {
+        "action": "line.end",
+        "key": "end"
+      },
+      {
+        "action": "line.word_left",
+        "key": "alt-left"
+      },
+      {
+        "action": "line.word_right",
+        "key": "alt-right"
+      },
+      {
+        "action": "line.delete_word",
+        "key": "alt-backspace"
+      },
+      {
+        "action": "line.delete_to_start",
+        "key": "cmd-backspace"
+      },
+      {
+        "action": "line.select_all",
+        "key": "cmd-a"
+      },
+      {
+        "action": "line.copy",
+        "key": "cmd-c"
+      },
+      {
+        "action": "line.cut",
+        "key": "cmd-x"
+      },
+      {
+        "action": "line.paste",
+        "key": "cmd-v"
+      }
+    ],
+    "mail": [
+      {
+        "action": "list.down",
+        "key": "j"
+      },
+      {
+        "action": "list.down",
+        "key": "down"
+      },
+      {
+        "action": "list.up",
+        "key": "k"
+      },
+      {
+        "action": "list.up",
+        "key": "up"
+      },
+      {
+        "action": "list.mark_down",
+        "key": "J"
+      },
+      {
+        "action": "list.mark_down",
+        "key": "shift-down"
+      },
+      {
+        "action": "list.mark_up",
+        "key": "K"
+      },
+      {
+        "action": "list.mark_up",
+        "key": "shift-up"
+      },
+      {
+        "action": "list.mark_all",
+        "key": "cmd-a"
+      },
+      {
+        "action": "list.half_page_down",
+        "key": "ctrl-d"
+      },
+      {
+        "action": "list.half_page_up",
+        "key": "ctrl-u"
+      },
+      {
+        "action": "message.next",
+        "key": "ctrl-j"
+      },
+      {
+        "action": "message.previous",
+        "key": "ctrl-k"
+      },
+      {
+        "action": "mail.open",
+        "key": "enter"
+      },
+      {
+        "action": "reader.open_or_page_down",
+        "key": "space"
+      },
+      {
+        "action": "reader.page_down",
+        "key": "ctrl-f"
+      },
+      {
+        "action": "reader.page_up",
+        "key": "shift-space"
+      },
+      {
+        "action": "reader.page_up",
+        "key": "ctrl-b"
+      },
+      {
+        "action": "reader.toggle_all",
+        "key": "T"
+      },
+      {
+        "action": "reader.skip_quoted",
+        "key": "S"
+      },
+      {
+        "action": "picker.links",
+        "key": "l"
+      },
+      {
+        "action": "sender.card_or_copy",
+        "key": "ctrl-c"
+      },
+      {
+        "action": "sender.mails",
+        "key": "ctrl-shift-c"
+      },
+      {
+        "action": "mail.archive",
+        "key": "d"
+      },
+      {
+        "action": "menu.move",
+        "key": "m"
+      },
+      {
+        "action": "mail.delete",
+        "key": "backspace"
+      },
+      {
+        "action": "mail.delete",
+        "key": "del"
+      },
+      {
+        "action": "mail.toggle_seen",
+        "key": "u"
+      },
+      {
+        "action": "mail.mark_seen",
+        "key": "U"
+      },
+      {
+        "action": "mail.toggle_flag",
+        "key": "*"
+      },
+      {
+        "action": "picker.tag",
+        "key": "t"
+      },
+      {
+        "action": "picker.group",
+        "key": "g"
+      },
+      {
+        "action": "menu.save",
+        "key": "s"
+      },
+      {
+        "action": "mail.unsubscribe",
+        "key": "cmd-u"
+      },
+      {
+        "action": "compose.reply_all",
+        "key": "r"
+      },
+      {
+        "action": "compose.reply_sender",
+        "key": "R"
+      },
+      {
+        "action": "compose.forward",
+        "key": "F"
+      },
+      {
+        "action": "compose.new",
+        "key": "c"
+      },
+      {
+        "action": "ai.menu",
+        "key": "a"
+      },
+      {
+        "action": "picker.search",
+        "key": "/"
+      },
+      {
+        "action": "picker.attributes",
+        "key": "f"
+      },
+      {
+        "action": "picker.accounts",
+        "key": "@"
+      },
+      {
+        "action": "menu.view",
+        "key": "v"
+      }
+    ],
+    "menu_navigation": [
+      {
+        "action": "menu.next",
+        "key": "down"
+      },
+      {
+        "action": "menu.previous",
+        "key": "up"
+      },
+      {
+        "action": "menu.choose",
+        "key": "enter"
+      },
+      {
+        "action": "menu.choose_alt",
+        "key": "cmd-enter"
+      }
+    ],
+    "normal": [
+      {
+        "action": "menu.goto",
+        "key": ";"
+      },
+      {
+        "action": "help.show",
+        "key": "?"
+      },
+      {
+        "action": "undo.last",
+        "key": "z"
+      }
+    ],
+    "picker": [
+      {
+        "action": "picker.next",
+        "key": "down"
+      },
+      {
+        "action": "picker.next",
+        "key": "ctrl-n"
+      },
+      {
+        "action": "picker.next",
+        "key": "ctrl-j"
+      },
+      {
+        "action": "picker.previous",
+        "key": "up"
+      },
+      {
+        "action": "picker.previous",
+        "key": "ctrl-p"
+      },
+      {
+        "action": "picker.previous",
+        "key": "ctrl-k"
+      },
+      {
+        "action": "picker.choose",
+        "key": "enter"
+      },
+      {
+        "action": "picker.choose_alt",
+        "key": "cmd-enter"
+      }
+    ],
+    "quarantine": [
+      {
+        "action": "move.inbox",
+        "key": "i"
+      },
+      {
+        "action": "move.newsletter",
+        "key": "n"
+      },
+      {
+        "action": "move.paperwork",
+        "key": "p"
+      },
+      {
+        "action": "move.junk",
+        "key": "x"
+      },
+      {
+        "action": "move.banned",
+        "key": "b"
+      },
+      {
+        "action": "move.deleted",
+        "key": "d"
+      }
+    ],
+    "screen": [
+      {
+        "action": "screen.down",
+        "key": "j"
+      },
+      {
+        "action": "screen.down",
+        "key": "down"
+      },
+      {
+        "action": "screen.up",
+        "key": "k"
+      },
+      {
+        "action": "screen.up",
+        "key": "up"
+      },
+      {
+        "action": "screen.open",
+        "key": "enter"
+      },
+      {
+        "action": "screen.open",
+        "key": "l"
+      }
+    ],
+    "tags": [
+      {
+        "action": "label.rename",
+        "key": "r"
+      },
+      {
+        "action": "label.delete",
+        "key": "d"
+      }
+    ]
+  },
+  "menus": [
+    {
+      "builtin": true,
+      "entries": [
+        {
+          "action": "move.inbox",
+          "key": "i"
+        },
+        {
+          "action": "move.todo",
+          "key": "t"
+        },
+        {
+          "action": "move.waiting",
+          "key": "w"
+        },
+        {
+          "action": "move.archive",
+          "key": "a"
+        },
+        {
+          "action": "move.newsletter",
+          "key": "n"
+        },
+        {
+          "action": "move.paperwork",
+          "key": "p"
+        },
+        {
+          "action": "move.quarantine",
+          "key": "q"
+        },
+        {
+          "action": "move.deleted",
+          "key": "d"
+        },
+        {
+          "action": "move.junk",
+          "key": "x"
+        },
+        {
+          "action": "move.banned",
+          "key": "b"
+        }
+      ],
+      "name": "move"
+    },
+    {
+      "builtin": true,
+      "entries": [
+        {
+          "action": "goto.inbox",
+          "key": "i"
+        },
+        {
+          "action": "goto.todo",
+          "key": "t"
+        },
+        {
+          "action": "goto.waiting",
+          "key": "w"
+        },
+        {
+          "action": "goto.work",
+          "key": "o"
+        },
+        {
+          "action": "goto.archive",
+          "key": "a"
+        },
+        {
+          "action": "goto.newsletter",
+          "key": "n"
+        },
+        {
+          "action": "goto.paperwork",
+          "key": "p"
+        },
+        {
+          "action": "goto.sent",
+          "key": "s"
+        },
+        {
+          "action": "goto.drafts",
+          "key": "r"
+        },
+        {
+          "action": "goto.all_mail",
+          "key": "m"
+        },
+        {
+          "action": "goto.quarantine",
+          "key": "q"
+        },
+        {
+          "action": "goto.deleted",
+          "key": "d"
+        },
+        {
+          "action": "goto.junk",
+          "key": "x"
+        },
+        {
+          "action": "goto.banned",
+          "key": "b"
+        },
+        {
+          "action": "goto.everything",
+          "key": "e"
+        },
+        {
+          "action": "goto.contacts",
+          "key": "c"
+        },
+        {
+          "action": "goto.tags",
+          "key": "T"
+        },
+        {
+          "action": "goto.groups",
+          "key": "g"
+        },
+        {
+          "action": "goto.history",
+          "key": "h"
+        }
+      ],
+      "name": "goto"
+    },
+    {
+      "builtin": true,
+      "entries": [
+        {
+          "action": "save.clipboard",
+          "key": "c"
+        },
+        {
+          "action": "save.eml",
+          "key": "e"
+        },
+        {
+          "action": "save.text",
+          "key": "t"
+        },
+        {
+          "action": "save.text_open",
+          "key": "T"
+        },
+        {
+          "action": "save.markdown",
+          "key": "m"
+        },
+        {
+          "action": "save.markdown_open",
+          "key": "M"
+        },
+        {
+          "action": "save.attachments",
+          "key": "a"
+        },
+        {
+          "action": "save.attachments_no_graphics",
+          "key": "g"
+        },
+        {
+          "action": "save.pdf",
+          "key": "p"
+        },
+        {
+          "action": "save.pdf_open",
+          "key": "P"
+        },
+        {
+          "action": "save.pdf_evidence",
+          "key": "i"
+        },
+        {
+          "action": "save.pdf_evidence_open",
+          "key": "I"
+        }
+      ],
+      "name": "save"
+    },
+    {
+      "builtin": true,
+      "entries": [
+        {
+          "action": "view.one_column",
+          "key": "1"
+        },
+        {
+          "action": "view.two_columns",
+          "key": "2"
+        },
+        {
+          "action": "view.three_columns",
+          "key": "3"
+        },
+        {
+          "action": "view.sort_received",
+          "key": "c"
+        },
+        {
+          "action": "view.sort_modified",
+          "key": "m"
+        },
+        {
+          "action": "view.toggle_html",
+          "key": "h"
+        },
+        {
+          "action": "view.toggle_remote_images",
+          "key": "i"
+        },
+        {
+          "action": "view.cycle_status_bar",
+          "key": "s"
+        }
+      ],
+      "name": "view"
+    }
+  ]
+}

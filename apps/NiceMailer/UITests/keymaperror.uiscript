@@ -1,0 +1,11 @@
+# A refused keymap.toml (fixtures/keymaperror.keymap.toml): the default keys
+# stay, and the status bar says which line is wrong until it is fixed.
+expect folder = Inbox
+expect keymap_problem ~ line 7
+expect keymap_problem ~ mail.esc
+snap keymap-error
+# The defaults: d archives, e (only in the refused file) does nothing.
+key e
+expect flash = No command e
+key d
+expect flash ~ moved to Archive

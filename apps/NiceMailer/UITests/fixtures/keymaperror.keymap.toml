@@ -1,0 +1,7 @@
+# An invalid keymap.toml (Escape cannot be changed): refused whole, the
+# app keeps the default keys and says why.
+version = 1
+
+[mail]
+e = "mail.archive"
+esc = "mail.archive"

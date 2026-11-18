@@ -227,9 +227,9 @@ fn temp_path(dir: &Path, path: &Path) -> PathBuf {
     dir.join(format!(".{name}.{:016x}", rand::random::<u64>()))
 }
 
-/// Creates `config.toml` at `config_path` and `accounts.toml` next to it,
-/// from their templates (`config::config_template`,
-/// `config::accounts_template`), when they are missing. Returns the files
+/// Creates `config.toml` at `config_path`, and `accounts.toml` and
+/// `keymap.toml` next to it, from their templates (`config::config_template`,
+/// `config::accounts_template`, `keymap::template`), when they are missing. Returns the files
 /// created. Called once, at the start of the core
 /// (`configuration.md`, section 3): even a user who changes nothing finds
 /// every setting listed, with its default and its role.
@@ -247,7 +247,12 @@ fn temp_path(dir: &Path, path: &Path) -> PathBuf {
 pub fn create_missing(config_path: &Path) -> Result<Vec<PathBuf>, String> {
     let accounts_path = config::accounts_path(config_path);
     let mut created = Vec::new();
-    for (path, template) in [(config_path.to_path_buf(), config::config_template()), (accounts_path, config::accounts_template())] {
+    let keymap_path = crate::keymap::path(config_path);
+    for (path, template) in [
+        (config_path.to_path_buf(), config::config_template()),
+        (accounts_path, config::accounts_template()),
+        (keymap_path, crate::keymap::template()),
+    ] {
         if create_if_missing(&path, &template)? {
             created.push(path);
         }
@@ -405,11 +410,15 @@ port = 993\nsecurity = \"tls\"\n";
         // on a new Mac.
         let path = dir.path().join("nicemailer/config.toml");
         let created = create_missing(&path).unwrap();
-        assert_eq!(created, vec![path.clone(), dir.path().join("nicemailer/accounts.toml")]);
+        assert_eq!(
+            created,
+            vec![path.clone(), dir.path().join("nicemailer/accounts.toml"), dir.path().join("nicemailer/keymap.toml")]
+        );
         assert_eq!(std::fs::read_to_string(&path).unwrap(), config::config_template());
         assert_eq!(std::fs::read_to_string(&created[1]).unwrap(), config::accounts_template());
+        assert_eq!(std::fs::read_to_string(&created[2]).unwrap(), crate::keymap::template());
         // No temporary file is left.
-        assert_eq!(std::fs::read_dir(path.parent().unwrap()).unwrap().count(), 2);
+        assert_eq!(std::fs::read_dir(path.parent().unwrap()).unwrap().count(), 3);
         // The created files give the defaults and no account.
         let parsed = config::parse(&config::config_template(), &config::accounts_template()).unwrap();
         assert_eq!(parsed.config, config::Config::default());
@@ -436,6 +445,7 @@ port = 993\nsecurity = \"tls\"\n";
         // Empty, or invalid: still the user's.
         std::fs::write(&path, "").unwrap();
         std::fs::write(dir.path().join("accounts.toml"), "not toml [").unwrap();
+        std::fs::write(dir.path().join("keymap.toml"), "").unwrap();
         assert!(create_missing(&path).unwrap().is_empty());
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "");
         assert_eq!(std::fs::read_to_string(dir.path().join("accounts.toml")).unwrap(), "not toml [");
@@ -451,7 +461,7 @@ port = 993\nsecurity = \"tls\"\n";
         let path = dir.path().join("config.toml");
         // A dotfiles repository not cloned yet: the link points nowhere.
         std::os::unix::fs::symlink(dir.path().join("dotfiles/config.toml"), &path).unwrap();
-        assert_eq!(create_missing(&path).unwrap(), vec![dir.path().join("accounts.toml")]);
+        assert_eq!(create_missing(&path).unwrap(), vec![dir.path().join("accounts.toml"), dir.path().join("keymap.toml")]);
         assert!(std::fs::symlink_metadata(&path).unwrap().file_type().is_symlink());
         assert!(!dir.path().join("dotfiles").exists());
     }

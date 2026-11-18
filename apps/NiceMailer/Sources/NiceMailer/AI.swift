@@ -348,10 +348,13 @@ enum AI {
 
     /// The keys the panel answers to, under its title: those of its kind,
     /// then `c` when there is a text to copy.
-    static func hint(_ phase: AIRun.Phase) -> String {
-        let base = baseHint(phase)
+    ///
+    /// The keys are those of `[ai_panel]` in `keymap` (Escape and the
+    /// digits are not in the keymap).
+    static func hint(_ phase: AIRun.Phase, keymap: Keymap = .defaults) -> String {
+        let base = baseHint(phase, keymap)
         guard case .proposal(let p) = phase, copyText(p) != nil else { return base }
-        return base + " · " + L("c copy")
+        return base + " · " + L("%@ copy", keymap.mention(.aiCopy, in: Keymap.aiChain))
     }
 
     /// The text `c` copies: the result as it reads in the panel, without
@@ -370,19 +373,22 @@ enum AI {
         }
     }
 
-    private static func baseHint(_ phase: AIRun.Phase) -> String {
-        switch phase {
+    private static func baseHint(_ phase: AIRun.Phase, _ keymap: Keymap) -> String {
+        let k = { (a: KeyAction) in keymap.mention(a, in: Keymap.aiChain) }
+        let ok = k(.aiConfirm), yes = k(.aiAccept), no = k(.aiRefuse), open = k(.aiOpen)
+        let arrows = k(.aiPrevious) + k(.aiNext)
+        return switch phase {
         case .running: L("esc stop")
         case .failed: L("esc close")
         case .proposal(.replace(_, true)): L("No change to make · esc close")
-        case .proposal(.replace): L("↩ or y accept · esc or n refuse · ⌘Z after accepting undoes")
-        case .proposal(.subjects(let items)): L("↩ or 1–%lld choose · ↑↓ move · esc or n refuse", items.count)
+        case .proposal(.replace): L("%@ or %@ accept · esc or %@ refuse · ⌘Z after accepting undoes", ok, yes, no)
+        case .proposal(.subjects(let items)): L("%@ or 1–%lld choose · %@ move · esc or %@ refuse", ok, items.count, arrows, no)
         case .proposal(.choices(let items, "replace")):
-            L("↩ or 1–%lld replace the selection · ↑↓ move · esc or n refuse · ⌘Z after choosing undoes", items.count)
-        case .proposal(.choices(let items, _)): L("↩ or 1–%lld reply with it · ↑↓ move · esc or n refuse", items.count)
+            L("%@ or 1–%lld replace the selection · %@ move · esc or %@ refuse · ⌘Z after choosing undoes", ok, items.count, arrows, no)
+        case .proposal(.choices(let items, _)): L("%@ or 1–%lld reply with it · %@ move · esc or %@ refuse", ok, items.count, arrows, no)
         case .proposal(.events(let items)) where items.isEmpty: L("esc close")
-        case .proposal(.events(let items)): L("↩ or 1–%lld save (.ics) · ⌘↩ add to the calendar · ↑↓ move · esc close", items.count)
-        case .proposal(.contact): L("↩ save (.vcf) · ⌘↩ add to Contacts · esc close")
+        case .proposal(.events(let items)): L("%@ or 1–%lld save (.ics) · %@ add to the calendar · %@ move · esc close", ok, items.count, open, arrows)
+        case .proposal(.contact): L("%@ save (.vcf) · %@ add to Contacts · esc close", ok, open)
         case .proposal(.text), .proposal(.summary), .proposal(.verdict), .proposal(.targets): L("esc close")
         }
     }
@@ -555,15 +561,16 @@ enum AI {
 
     /// The status bar for the conversation under the cursor, when the AI
     /// suggested a target for it: the target, then why.
-    static func suggestionLine(_ s: AISuggestion) -> String {
-        L("AI: %@ (↩) · %@", Role.name(s.target), s.reason)
+    static func suggestionLine(_ s: AISuggestion, keymap: Keymap = .defaults) -> String {
+        L("AI: %@ (%@) · %@", Role.name(s.target), keymap.mention(.mailOpen, in: Keymap.mailChain), s.reason)
     }
 
     /// The end of a sorting, in the status bar.
-    static func sortedFlash(found: Int, failedBatches: Int) -> String {
-        failedBatches == 0
-            ? L("AI: %lld suggestions · ↩ on a row moves it there", found)
-            : L("AI: %lld suggestions, %lld batches without an answer · ↩ on a row moves it there", found, failedBatches)
+    static func sortedFlash(found: Int, failedBatches: Int, keymap: Keymap = .defaults) -> String {
+        let key = keymap.mention(.mailOpen, in: Keymap.mailChain)
+        return failedBatches == 0
+            ? L("AI: %lld suggestions · %@ on a row moves it there", found, key)
+            : L("AI: %lld suggestions, %lld batches without an answer · %@ on a row moves it there", found, failedBatches, key)
     }
 
     /// The risk of a verdict, in the app's language.

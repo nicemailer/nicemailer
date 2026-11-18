@@ -507,12 +507,12 @@
         }
       }
     },
-    "/ filter · m: decision · M: domain decision · o: human or robot · return: their mails · esc: back": {
+    "%@ filter · %@: decision · %@: domain decision · %@: human or robot · %@: their mails · esc: back": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "/ filtrer · m : décision · M : décision sur le domaine · o : humain ou robot · entrée : ses mails · échap : retour"
+            "value": "%@ filtrer · %@ : décision · %@ : décision sur le domaine · %@ : humain ou robot · %@ : ses mails · échap : retour"
           }
         }
       }
@@ -591,12 +591,12 @@
         }
       }
     },
-    "A forward files nothing: ⌘↩ to send": {
+    "A forward files nothing: %@ to send": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Un transfert ne range rien : ⌘↩ pour envoyer"
+            "value": "Un transfert ne range rien : %@ pour envoyer"
           }
         }
       }
@@ -1603,32 +1603,32 @@
         }
       }
     },
-    "Opens the unsubscribe link found in the text of the mail, in the browser (⌘U)": {
+    "Opens the unsubscribe link found in the text of the mail, in the browser (%@)": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ouvre dans le navigateur le lien de désabonnement trouvé dans le texte du mail (⌘U)"
+            "value": "Ouvre dans le navigateur le lien de désabonnement trouvé dans le texte du mail (%@)"
           }
         }
       }
     },
-    "Opens the unsubscribe mail of the list in Mail (⌘U)": {
+    "Opens the unsubscribe mail of the list in Mail (%@)": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ouvre dans Mail le mail de désabonnement de la liste (⌘U)"
+            "value": "Ouvre dans Mail le mail de désabonnement de la liste (%@)"
           }
         }
       }
     },
-    "Opens the unsubscribe page of the list in the browser (⌘U)": {
+    "Opens the unsubscribe page of the list in the browser (%@)": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ouvre dans le navigateur la page de désabonnement de la liste (⌘U)"
+            "value": "Ouvre dans le navigateur la page de désabonnement de la liste (%@)"
           }
         }
       }
@@ -1853,12 +1853,12 @@
         }
       }
     },
-    "Simplified conversation (T)": {
+    "Simplified conversation (%@)": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Conversation simplifiée (T)"
+            "value": "Conversation simplifiée (%@)"
           }
         }
       }
@@ -2083,22 +2083,22 @@
         }
       }
     },
-    "This account cannot send: from %@ · ⌥⌘F to change": {
+    "This account cannot send: from %@ · %@ to change": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ce compte ne peut pas envoyer : depuis %@ · ⌥⌘F pour changer"
+            "value": "Ce compte ne peut pas envoyer : depuis %@ · %@ pour changer"
           }
         }
       }
     },
-    "This conversation stays where it is: nothing to choose · ⌘↩ to send": {
+    "This conversation stays where it is: nothing to choose · %@ to send": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Cette conversation reste en place : rien à choisir · ⌘↩ pour envoyer"
+            "value": "Cette conversation reste en place : rien à choisir · %@ pour envoyer"
           }
         }
       }
@@ -2323,12 +2323,12 @@
         }
       }
     },
-    "Unsubscribes at once, without opening anything (⌘U)": {
+    "Unsubscribes at once, without opening anything (%@)": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Désabonne aussitôt, sans rien ouvrir (⌘U)"
+            "value": "Désabonne aussitôt, sans rien ouvrir (%@)"
           }
         }
       }
@@ -2373,12 +2373,12 @@
         }
       }
     },
-    "Whole conversation shown (T)": {
+    "Whole conversation shown (%@)": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Conversation complète (T)"
+            "value": "Conversation complète (%@)"
           }
         }
       }
@@ -2835,12 +2835,12 @@
         }
       }
     },
-    "in Quarantine: move without m": {
+    "in Quarantine: move without %@": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "en Quarantine : déplacer sans m"
+            "value": "en Quarantine : déplacer sans %@"
           }
         }
       }
@@ -3869,12 +3869,12 @@
         }
       }
     },
-    "↩ or 1–%lld save (.ics) · ⌘↩ add to the calendar · ↑↓ move · esc close": {
+    "%@ or 1–%lld save (.ics) · %@ add to the calendar · %@ move · esc close": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "↩ ou 1–%lld enregistrer (.ics) · ⌘↩ ajouter à l'agenda · ↑↓ déplacer · esc fermer"
+            "value": "%@ ou 1–%lld enregistrer (.ics) · %@ ajouter à l'agenda · %@ déplacer · esc fermer"
           }
         }
       }
@@ -3889,22 +3889,22 @@
         }
       }
     },
-    "↩ or y accept · esc or n refuse · ⌘Z after accepting undoes": {
+    "%@ or %@ accept · esc or %@ refuse · ⌘Z after accepting undoes": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "↩ ou y accepter · esc ou n refuser · ⌘Z après avoir accepté annule"
+            "value": "%@ ou %@ accepter · esc ou %@ refuser · ⌘Z après avoir accepté annule"
           }
         }
       }
     },
-    "↩ or 1–%lld choose · ↑↓ move · esc or n refuse": {
+    "%@ or 1–%lld choose · %@ move · esc or %@ refuse": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "↩ ou 1–%lld choisir · ↑↓ déplacer · esc ou n refuser"
+            "value": "%@ ou 1–%lld choisir · %@ déplacer · esc ou %@ refuser"
           }
         }
       }
@@ -4069,12 +4069,12 @@
         }
       }
     },
-    "↩ or 1–%lld reply with it · ↑↓ move · esc or n refuse": {
+    "%@ or 1–%lld reply with it · %@ move · esc or %@ refuse": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "↩ ou 1–%lld y répondre · ↑↓ déplacer · esc ou n refuser"
+            "value": "%@ ou 1–%lld y répondre · %@ déplacer · esc ou %@ refuser"
           }
         }
       }
@@ -4169,32 +4169,32 @@
         }
       }
     },
-    "AI: %@ (↩) · %@": {
+    "AI: %@ (%@) · %@": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "IA : %@ (↩) · %@"
+            "value": "IA : %@ (%@) · %@"
           }
         }
       }
     },
-    "AI: %lld suggestions · ↩ on a row moves it there": {
+    "AI: %lld suggestions · %@ on a row moves it there": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "IA : %lld suggestions · ↩ sur une ligne l'y déplace"
+            "value": "IA : %lld suggestions · %@ sur une ligne l'y déplace"
           }
         }
       }
     },
-    "AI: %lld suggestions, %lld batches without an answer · ↩ on a row moves it there": {
+    "AI: %lld suggestions, %lld batches without an answer · %@ on a row moves it there": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "IA : %lld suggestions, %lld lots sans réponse · ↩ sur une ligne l'y déplace"
+            "value": "IA : %lld suggestions, %lld lots sans réponse · %@ sur une ligne l'y déplace"
           }
         }
       }
@@ -4209,12 +4209,12 @@
         }
       }
     },
-    "type to filter, or a prompt's letters · ↩ runs the first row": {
+    "type to filter, or a prompt's letters · %@ runs the first row": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "tapez pour filtrer, ou les lettres d'un prompt · ↩ lance la première ligne"
+            "value": "tapez pour filtrer, ou les lettres d'un prompt · %@ lance la première ligne"
           }
         }
       }
@@ -4229,22 +4229,22 @@
         }
       }
     },
-    "↩ or 1–%lld replace the selection · ↑↓ move · esc or n refuse · ⌘Z after choosing undoes": {
+    "%@ or 1–%lld replace the selection · %@ move · esc or %@ refuse · ⌘Z after choosing undoes": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "↩ ou 1–%lld remplace la sélection · ↑↓ déplace · esc ou n refuse · ⌘Z après le choix annule"
+            "value": "%@ ou 1–%lld remplace la sélection · %@ déplace · esc ou %@ refuse · ⌘Z après le choix annule"
           }
         }
       }
     },
-    "c copy": {
+    "%@ copy": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "c copier"
+            "value": "%@ copier"
           }
         }
       }
@@ -4569,12 +4569,12 @@
         }
       }
     },
-    "↩ save (.vcf) · ⌘↩ add to Contacts · esc close": {
+    "%@ save (.vcf) · %@ add to Contacts · esc close": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "↩ enregistrer (.vcf) · ⌘↩ ajouter aux Contacts · esc fermer"
+            "value": "%@ enregistrer (.vcf) · %@ ajouter aux Contacts · esc fermer"
           }
         }
       }
@@ -4929,22 +4929,22 @@
         }
       }
     },
-    "Formatted text · ⇧⌘T for text only": {
+    "Formatted text · %@ for text only": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Texte mis en forme · ⇧⌘T pour le texte seul"
+            "value": "Texte mis en forme · %@ pour le texte seul"
           }
         }
       }
     },
-    "Text only · ⇧⌘T for formatted text": {
+    "Text only · %@ for formatted text": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Texte seul · ⇧⌘T pour le texte mis en forme"
+            "value": "Texte seul · %@ pour le texte mis en forme"
           }
         }
       }
@@ -5079,12 +5079,12 @@
         }
       }
     },
-    "The formatting will be lost · ⇧⌘T again to convert": {
+    "The formatting will be lost · %@ again to convert": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "La mise en forme sera perdue · ⇧⌘T de nouveau pour convertir"
+            "value": "La mise en forme sera perdue · %@ de nouveau pour convertir"
           }
         }
       }
@@ -5099,12 +5099,12 @@
         }
       }
     },
-    "⌘↩ send · ⇧⌘↩ send then… · ⌥⌘F from · ⇧⌘T format · Esc keep · ⌘⎋ abandon": {
+    "%@ send · %@ send then… · %@ from · %@ format · Esc keep · %@ abandon": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "⌘↩ envoyer · ⇧⌘↩ envoyer puis… · ⌥⌘F expéditeur · ⇧⌘T format · Échap garder · ⌘⎋ abandonner"
+            "value": "%@ envoyer · %@ envoyer puis… · %@ expéditeur · %@ format · Échap garder · %@ abandonner"
           }
         }
       }
@@ -5248,13 +5248,12 @@
         }
       }
     },
-    "↩ chooses or removes a group, several allowed; -name to exclude; esc closes": {
-      "comment": "Input line of the Group… panel while nothing is typed.",
+    "%@ chooses or removes a group, several allowed; -name to exclude; esc closes": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "↩ choisit ou retire un groupe, plusieurs possibles ; -nom pour exclure ; échap ferme"
+            "value": "%@ choisit ou retire un groupe, plusieurs possibles ; -nom pour exclure ; échap ferme"
           }
         }
       }
@@ -5433,12 +5432,12 @@
         }
       }
     },
-    "↩ chooses or removes a tag, several allowed; -name to exclude; esc closes": {
+    "%@ chooses or removes a tag, several allowed; -name to exclude; esc closes": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "↩ choisit ou retire un tag, plusieurs possibles ; -nom pour exclure ; échap ferme"
+            "value": "%@ choisit ou retire un tag, plusieurs possibles ; -nom pour exclure ; échap ferme"
           }
         }
       }
@@ -5543,12 +5542,12 @@
         }
       }
     },
-    "the new name · ↩ renames · esc cancels": {
+    "the new name · %@ renames · esc cancels": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "le nouveau nom · ↩ renomme · échap annule"
+            "value": "le nouveau nom · %@ renomme · échap annule"
           }
         }
       }
@@ -5623,12 +5622,12 @@
         }
       }
     },
-    "return: their mails · r: rename · d: delete · esc: back": {
+    "%@: their mails · %@: rename · %@: delete · esc: back": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "entrée : leurs mails · r : renommer · d : supprimer · échap : retour"
+            "value": "%@ : leurs mails · %@ : renommer · %@ : supprimer · échap : retour"
           }
         }
       }
@@ -6469,6 +6468,226 @@
           "stringUnit": {
             "state": "translated",
             "value": "« %@ » est choisi pour plusieurs rôles (%@) : choisissez un dossier par rôle."
+          }
+        }
+      }
+    },
+    "in Quarantine: move": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "en Quarantine : déplacer"
+          }
+        }
+      }
+    },
+    "Cannot move to %@ from this folder": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossible de déplacer vers %@ depuis ce dossier"
+          }
+        }
+      }
+    },
+    "No such folder in this view: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pas de tel dossier dans cette vue : %@"
+          }
+        }
+      }
+    },
+    "Your menus": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vos menus"
+          }
+        }
+      }
+    },
+    "line %lld": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ligne %lld"
+          }
+        }
+      }
+    },
+    "bigger text": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "texte plus grand"
+          }
+        }
+      }
+    },
+    "smaller text": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "texte plus petit"
+          }
+        }
+      }
+    },
+    "default text size": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "taille du texte par défaut"
+          }
+        }
+      }
+    },
+    "reload": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "recharger"
+          }
+        }
+      }
+    },
+    "next mail": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "mail suivant"
+          }
+        }
+      }
+    },
+    "previous mail": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "mail précédent"
+          }
+        }
+      }
+    },
+    "mark and move down": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "marquer et descendre"
+          }
+        }
+      }
+    },
+    "mark and move up": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "marquer et monter"
+          }
+        }
+      }
+    },
+    "half a page down in the list": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "demi-page vers le bas dans la liste"
+          }
+        }
+      }
+    },
+    "half a page up in the list": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "demi-page vers le haut dans la liste"
+          }
+        }
+      }
+    },
+    "next message of the conversation": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "message suivant de la conversation"
+          }
+        }
+      }
+    },
+    "previous message of the conversation": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "message précédent de la conversation"
+          }
+        }
+      }
+    },
+    "as text file, then open it": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "en fichier texte, puis l'ouvrir"
+          }
+        }
+      }
+    },
+    "as Markdown file, then open it": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "en fichier Markdown, puis l'ouvrir"
+          }
+        }
+      }
+    },
+    "as PDF, then open it": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "en PDF, puis l'ouvrir"
+          }
+        }
+      }
+    },
+    "as PDF with technical information, then open it": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "en PDF avec les informations techniques, puis l'ouvrir"
+          }
+        }
+      }
+    },
+    "keymap.toml refused, previous keys kept: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "keymap.toml refusé, touches précédentes conservées : %@"
           }
         }
       }

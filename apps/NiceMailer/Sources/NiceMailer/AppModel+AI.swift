@@ -174,7 +174,7 @@ extension AppModel {
                 guard let client = core else { return }
                 let v: AIRunView? = try? await client.call("ai_get_run", ["run_id": sort.runId])
                 if case .targets(let items, let failed)? = v?.proposal {
-                    flash = AI.sortedFlash(found: items.count, failedBatches: failed)
+                    flash = AI.sortedFlash(found: items.count, failedBatches: failed, keymap: keymap)
                 }
                 scheduleSuggestions()
             }
@@ -302,7 +302,7 @@ extension AppModel {
         guard let run = aiRun, let client = core else { return }
         switch action {
         case .hint:
-            flash = AI.hint(run.phase)
+            flash = AI.hint(run.phase, keymap: keymap)
         case .move(let i):
             // `GeekController.handleAIKey` applies it itself, at once.
             aiRun?.choice = i

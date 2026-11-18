@@ -49,7 +49,7 @@ extension AppModel {
             } else {
                 // The mail's account cannot send (an archive, no SMTP): the
                 // core chose another; the user is told, and how to change it.
-                sayOpening(Compose.otherSenderFlash(r.draft, senders: senders), for: opened, since: mark)
+                sayOpening(Compose.otherSenderFlash(r.draft, senders: senders, keymap: keymap), for: opened, since: mark)
             }
         } catch {
             flash = Self.composeErrorFlash(error)
@@ -174,20 +174,20 @@ extension AppModel {
         case .text:
             formatLossArmed = nil
             editor.setMode(.html, content: c.body)
-            flash = L("Formatted text · ⇧⌘T for text only")
+            flash = L("Formatted text · %@ for text only", keymap.mention(.composeTogglePlain, in: Keymap.composeChain))
         case .html:
             guard let client = core else { return }
             do {
                 let r: HtmlToTextResult = try await client.call("html_to_text", ["html": c.body])
                 if r.formatted, (formatLossArmed.map { Date().timeIntervalSince($0) > 5 } ?? true) {
                     formatLossArmed = Date()
-                    flash = L("The formatting will be lost · ⇧⌘T again to convert")
+                    flash = L("The formatting will be lost · %@ again to convert", keymap.mention(.composeTogglePlain, in: Keymap.composeChain))
                     return
                 }
                 formatLossArmed = nil
                 guard composer?.opened == c.opened else { return }
                 editor.setMode(.text, content: r.text)
-                flash = L("Text only · ⇧⌘T for formatted text")
+                flash = L("Text only · %@ for formatted text", keymap.mention(.composeTogglePlain, in: Keymap.composeChain))
             } catch {
                 flash = Self.composeErrorFlash(error)
             }

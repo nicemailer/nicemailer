@@ -7,6 +7,7 @@
 //!
 //! - `config.rs`: reading and validating `config.toml` and `accounts.toml`,
 //! - `config_write.rs`: creating them when missing, and changing accounts,
+//! - `keymap/`: `keymap.toml`, the keys of the app redefined by the user,
 //! - `watch.rs`: watching the files to apply them without a restart,
 //! - `secrets.rs`: the secrets of the accounts, bound to their server,
 //! - `keychain.rs`: the macOS Keychain, where they are kept,
@@ -27,6 +28,7 @@ pub mod config_write;
 pub mod discover;
 pub mod folders;
 pub mod keychain;
+pub mod keymap;
 pub mod probe;
 pub mod providers;
 pub mod secrets;

@@ -24,6 +24,8 @@ Les fichiers sont `~/.config/nicemailer/config.toml` et `~/.config/nicemailer/ac
 
 Les réglages généraux sont les mêmes d'un Mac à l'autre et peuvent être publiés dans un dépôt de dotfiles ; les comptes (adresses, serveurs, identifiants) sont personnels et diffèrent d'un Mac à l'autre. Les séparer permet de partager les uns sans les autres.
 
+Un troisième fichier, `keymap.toml`, dans le même dossier, redéfinit les touches de l'app (`raccourcis.md`). Il suit les mêmes règles de création et de surveillance, mais il est validé seul : une keymap invalide ne fait refuser ni `config.toml` ni `accounts.toml`, et inversement.
+
 Une table `[accounts…]` dans `config.toml` est une **erreur** et non un avertissement : le fichier est refusé, et le message indique de déplacer la table dans `accounts.toml`. L'ignorer ferait démarrer le noyau sans les comptes de l'utilisateur, sans rien dire.
 
 ### Création au démarrage
