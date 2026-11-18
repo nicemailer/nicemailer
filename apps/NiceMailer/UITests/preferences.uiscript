@@ -21,6 +21,20 @@ expect prefs_accounts = perso,fixture
 # A domain whose MX is not known: the IMAP server is asked, with why.
 click prefs:plus
 expect prefs_selection = add
+# The letters that are commands in the main window are text here: `f` opens
+# no search, `d` archives nothing, `;` and `?` open nothing.
+click prefs:email
+type fdjk;?
+expect setup_email = fdjk;?
+expect overlay = none
+expect selected = 0
+key del
+key del
+key del
+key del
+key del
+key del
+expect setup_email =
 click prefs:email
 type pierre@hosted.test
 expect setup_email = pierre@hosted.test

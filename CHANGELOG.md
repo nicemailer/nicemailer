@@ -43,6 +43,7 @@ First public and open source release. 18 languages. Auto update. Configurable ke
 - **Language and region:** Dates, sizes and numbers follow the app's language and the Mac's region: month names, date order (also when typing a date in the attribute selector), 12- or 24-hour clock, "251 ko", "1 234".
 - **Language and region:** Counts read correctly in English and French: "1 mail", "1 attachment saved", and in French "0 mail".
 - **Language and region:** Errors, including connection errors, are written in the app's language; the words of a mail server or of the AI are quoted as they came.
+- **Keyboard:** Keys typed in the Preferences and in the open and save panels reach their fields, instead of running commands in the main window.
 - **Replies:** The quoted history at the end of a reply is folded in many more languages: German, Portuguese, Dutch, Swedish, Danish, Norwegian, Polish, Russian, Chinese and Japanese, including Outlook headers and forwards.
 - **Replies:** Replying from NiceMailer marks the mail as answered, also on the server, so other mail clients show it.
 - **Replies:** "With my reply" also finds the conversations answered from a mail client that does not mark the mail: a reply of yours in Sent is enough.

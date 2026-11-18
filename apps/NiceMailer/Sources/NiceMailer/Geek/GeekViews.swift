@@ -13,6 +13,8 @@ struct GeekRootView: View {
     @State private var controller: GeekController?
     /// The AppKit event monitor, removed when the view goes away.
     @State private var monitor: Any?
+    /// The window of this view: the monitor takes only its keys.
+    @State private var mainWindow = MainWindowReference()
 
     var body: some View {
         Group {
@@ -22,6 +24,7 @@ struct GeekRootView: View {
                 Palette.background
             }
         }
+        .background(MainWindowReader(reference: mainWindow))
         .onAppear {
             let c = GeekController(model: model)
             controller = c
@@ -39,10 +42,12 @@ struct GeekRootView: View {
             }
             if model.startupPhase == .ready { model.ensureEditor() }
             // Swift note: the closure receives every key-down event of the
-            // app before the views do. Returning nil swallows the event;
-            // returning it lets AppKit go on (menus, ⌘ shortcuts).
+            // app, in all its windows, before the views do. Returning nil
+            // swallows the event; returning it lets AppKit go on (menus,
+            // ⌘ shortcuts, the fields of the other windows: `KeyRouting`).
+            let window = mainWindow
             monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-                c.handle(event) ? nil : event
+                c.route(event, mainWindow: window.window)
             }
             // Automated UI test, when `NICEMAILER_UI_SCRIPT` is set.
             UIScript.start(model: model, controller: c)

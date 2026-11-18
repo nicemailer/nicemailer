@@ -15,6 +15,8 @@ The title bar of the window (its title and the red, orange and green buttons) is
 
 `ui.title_bar = "shown"` in `config.toml` brings the title bar back; the app applies a change of the file at once (`config_status` gives it, `ConfigChanged` says to read it again). With the status bar hidden (`vs`) or at the bottom and the title bar hidden, the window is moved by the bottom bar, or not at all when no bar is shown: show the title bar, or the status bar, to move it.
 
+The keys of the app are commands in this window only. In the Preferences, the open and save panels and any other window, they go to that window: a letter typed in a field is text (`Geek/KeyRouting.swift`).
+
 ## Accounts and the unified view "all"
 
 With several accounts, the app opens on **all**, the unified view: each folder (Inbox, Archive, Todo…) gathers the folders of the same role in every account, with their unread counts added up, and lists their mails together, newest first. Choose another view with `@` (or a click on the account in the status bar or on the title of the folder column): **all** comes first, then each account. Each row shows its unread count at the right end, as in the `;` menu. Changing view keeps the folder role (Archive to Archive), or falls back to the Inbox.

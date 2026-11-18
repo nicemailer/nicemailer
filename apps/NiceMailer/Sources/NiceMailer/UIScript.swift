@@ -519,6 +519,9 @@ private final class Runner {
         // The Preferences: the window gives the key to its first responder,
         // the field being edited; Return, to the default button.
         if w === UIScript.preferencesWindow {
+            // The monitor of the app sees every key first, as with a real
+            // keyboard: it must leave this one to the Preferences.
+            guard controller.route(e, mainWindow: UIScript.testWindow) != nil else { return }
             if !(w.firstResponder?.performKeyEquivalent(with: e) ?? false), !w.performKeyEquivalent(with: e) {
                 w.sendEvent(e)
             }
