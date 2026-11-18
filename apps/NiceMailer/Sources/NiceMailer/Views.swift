@@ -15,8 +15,9 @@ import SwiftUI
 // - Modifiers (`.padding()`, `.font(...)`) each return a new view wrapping
 //   the previous one, which is why their order matters.
 
-/// Root view: a progress indicator, an error screen, or the three-column
-/// mail interface, depending on the connection state.
+/// Root view of the classic interface: a progress indicator, an error
+/// screen, or the three columns, depending on the connection state. No longer
+/// shown since the Theme menu was removed (`ui.md`).
 struct ContentView: View {
     @Environment(AppModel.self) private var model
 

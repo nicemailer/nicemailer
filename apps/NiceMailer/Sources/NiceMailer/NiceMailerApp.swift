@@ -13,9 +13,6 @@ import SwiftUI
 struct NiceMailerApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @State private var model = AppModel()
-    /// Current theme (`ui.md`). Swift note: `@AppStorage` is a property
-    /// stored in UserDefaults; changing it redraws the views that read it.
-    @AppStorage(UITheme.defaultsKey, store: AppDefaults.store) private var theme: UITheme = .geek
 
     /// A `Scene` describes the app's windows and menus.
     var body: some Scene {
@@ -25,11 +22,10 @@ struct NiceMailerApp: App {
                     // UI script mode builds its own window (see AppDelegate).
                     EmptyView()
                 } else {
-                    switch theme {
-                    case .geek: GeekRootView()
-                    // Design does not exist yet: it shows the classic interface.
-                    case .classic, .design: ContentView()
-                    }
+                    // Always the geek theme (`ui.md`): a theme saved by the
+                    // former Theme menu is ignored, otherwise someone left on
+                    // Classic would have no way back.
+                    GeekRootView()
                 }
             }
             .environment(model)
@@ -64,7 +60,7 @@ struct NiceMailerApp: App {
                 // Sparkle, in the background (`Updater`, `docs/updates.md`).
                 Updater.shared.start(model: model)
                 // The geek theme opens on the unified view "all".
-                model.startUnified = theme == .geek
+                model.startUnified = true
                 // ⌥ held at launch: choose the mailbox first, like Photos.
                 if AppDelegate.optionAtLaunch, let url = MailboxChooser.choose() {
                     await model.changeMailbox(to: url)
@@ -121,13 +117,6 @@ struct NiceMailerApp: App {
                     .keyboardShortcut(model.keymap.shortcut(.textSmaller))
                 Button(L("Actual Size")) { TextSize.shared.reset() }
                     .keyboardShortcut(model.keymap.shortcut(.textReset))
-            }
-            // Theme menu, during development; it will become a setting.
-            CommandMenu(L("Theme")) {
-                Picker(L("Theme"), selection: $theme) {
-                    ForEach(UITheme.allCases, id: \.self) { Text($0.title).tag($0) }
-                }
-                .pickerStyle(.inline)
             }
         }
         // The Preferences (`PreferencesView`): SwiftUI adds "Settings…"

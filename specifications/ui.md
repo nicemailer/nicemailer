@@ -14,9 +14,9 @@ Quelques exemples de différences :
 - La version classique à une barre d’outils en haut de l’interface avec des icônes de boutons alors que dans la version geek, c'est une barre de statut plus compacte, qui peut être en bas, en haut ou masquée. Dans cette version geek, chaque élément présent dans la barre de statut peut être ouvert avec un raccourci clavier d'une seule touche et affiche alors un menu contextuel dans le même style que Helix-editor.
 - Dans la version classique, l'animation pour révéler la barre de gauche avec les différents dossiers est clairement visible. Elle est très rapide et subtile sur la version design et absolument inexistante sur la version geek où aucune milliseconde n'est perdue. 
 
-Pendant le développement, il y a un menu thème qui permet de basculer d'un thème à l'autre. Ce sera plus tard une option de configuration. 
+Le choix du thème sera plus tard une option de configuration. 
 
-État (3 novembre 2026) : le thème geek est implémenté ; classic correspond à la première interface ; design n'existe pas encore et affiche classic.
+État (18 novembre 2026) : le thème geek est implémenté et l'application s'ouvre toujours sur lui, le menu thème ayant été retiré ; classic correspond à la première interface, qui n'est plus accessible ; design n'existe pas encore.
 
 Les touches citées dans ce document sont celles par défaut ; l'utilisateur peut les redéfinir dans `keymap.toml` (`raccourcis.md`).
 

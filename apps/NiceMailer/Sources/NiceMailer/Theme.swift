@@ -2,34 +2,10 @@ import AppKit
 import CoreText
 import SwiftUI
 
-// Shared pieces of the three themes (`ui.md`): the theme choice, the
+// Shared pieces of the interface (`ui.md`): the preferences, the
 // localization helper, the bundled font and the geek palette.
 
-/// The three interface themes of `ui.md`. Only `classic` (the first
-/// version of the interface) and `geek` exist so far; `design` falls back to
-/// `classic`.
-///
-/// Swift note: `String` raw values let the enum be stored in UserDefaults
-/// (`rawValue`) and read back (`init(rawValue:)`); `CaseIterable` provides
-/// `allCases`, used to build the Theme menu.
-enum UITheme: String, CaseIterable {
-    case classic, design, geek
-
-    /// Name shown in the Theme menu.
-    var title: String {
-        switch self {
-        case .classic: L("Classic")
-        case .design: L("Design (not yet: same as Classic)")
-        case .geek: L("Geek")
-        }
-    }
-
-    /// UserDefaults key. During development the theme is a menu choice; it
-    /// will become a configuration option (`ui.md`).
-    static let defaultsKey = "theme"
-}
-
-/// Where the app keeps its preferences (theme, columns, status bar…).
+/// Where the app keeps its preferences (columns, status bar…).
 ///
 /// In UI script mode (`UIScript`), a separate, emptied domain is used, so
 /// automated tests always start from the defaults and never change the

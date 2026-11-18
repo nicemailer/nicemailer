@@ -2,7 +2,7 @@
 
 The geek theme is a keyboard-first interface designed like a code editor: no rounded zones, no scroll bars, no animations, a compact status bar, and menus in the style of [Helix](https://helix-editor.com). The specification (in French) is `specifications/ui.md`.
 
-Switch themes with the **Theme** menu (Classic, Design, Geek). Design does not exist yet and shows the classic interface. The choice is remembered.
+The app always opens in this theme.
 
 ## Layout
 

@@ -57,6 +57,7 @@ How to write it:
 ### Removed
 
 - NiceMailer > Stop the Core: the background core is now stopped with `nicemailer core stop`.
+- The Theme menu: NiceMailer always opens in its keyboard-driven interface, and the Classic interface is no longer available.
 - File > New Window and window tabs: a second window only mirrored the first one and reconnected to the core. Windows with their own folder and selection will come back later.
 
 ## 0.1.0 — 2026-11-16

@@ -43,19 +43,9 @@ With the core running, an mbox export (HEY, Gmail, Thunderbird…) can be import
 nicemailer import-mbox ~/Downloads/mailbox.mbox --account hey --address me@hey.com
 ```
 
-## App themes and shortcuts
+## App shortcuts
 
-The app has a **Theme** menu. The default **geek** theme is driven by the keyboard, like an editor: `j`/`k` to move, `d` to archive, `m` + a folder letter to move, `;` + a letter to go to a folder or a screen, `?` for the list of keys. See `docs/geek-ui.md`.
-
-In the **classic** theme (the first interface):
-
-| Key | Action |
-| --- | --- |
-| `j` / `k` | next / previous conversation |
-| a folder's letter (`I T W A N P D X B`…) | move the conversation, then go to the next one |
-| `u` | read / unread |
-| `f` | flag |
-| `⌘R` | reload |
+The app is driven by the keyboard, like an editor: `j`/`k` to move, `d` to archive, `m` + a folder letter to move, `;` + a letter to go to a folder or a screen, `?` for the list of keys. See `docs/geek-ui.md`.
 
 A conversation displayed for one second is marked as read.
 
