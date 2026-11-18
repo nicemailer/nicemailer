@@ -78,7 +78,7 @@ The lists of addresses or of names are joined with ", ", right for the languages
 5. A review by someone whose language it is.
 6. A line in `CHANGELOG.md`.
 
-The code does not change: `make bundle` declares the language from the catalog. Two things are not ready: the keyboard shortcuts on the keyboards of other countries (`specifications/localisation.md`, section 3.5), and the languages written right to left (section 3.8).
+The code does not change: `make bundle` declares the language from the catalog. Not ready: the languages written right to left (`specifications/localisation.md`, section 3.8). The keyboard shortcuts are not adapted to the keyboards of other countries: they are meant to be set by the user (section 3.5).
 
 ## Tests
 

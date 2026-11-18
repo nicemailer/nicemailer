@@ -1,6 +1,6 @@
 # Localisation : plan de travail
 
-Statut : livrés les chantiers 3.1 (le noyau décrit, l'app écrit), 3.2, 3.3, 3.4, 3.6, 3.7 et la procédure 3.9 (`docs/localization.md`). Restent 3.5 (les raccourcis clavier, qui demandent des décisions raccourci par raccourci) et 3.8 (la longueur des traductions, l'écriture de droite à gauche).
+Statut : livrés les chantiers 3.1 (le noyau décrit, l'app écrit), 3.2, 3.3, 3.4, 3.6, 3.7 et la procédure 3.9 (`docs/localization.md`) ; 3.5 décidé sans changement (raccourcis paramétrables sur une autre branche). Reste 3.8 (la longueur des traductions, l'écriture de droite à gauche).
 
 Ce document est le plan pour qu'une troisième langue ne soit plus qu'une question de traduction. Les règles déjà en place sont dans `docs/localization.md` ; quand une étape est livrée, ses règles y passent et l'étape est rayée ici.
 
@@ -96,7 +96,7 @@ Reste : les unités de durée (`10j`, `3w`) ne connaissent que l'anglais et le f
 
 ### 3.5 Les raccourcis et les dispositions de clavier
 
-Le thème geek se pilote par des touches simples (`;`, `/`, `@`, `#`, `[`…) et l'app a `⌘+`, `⌘-`. Sur un clavier allemand, nordique ou suisse, certaines demandent ⌥ ou ⇧, d'autres n'existent pas. À faire : relever chaque raccourci, le jouer sur les dispositions courantes (US, français, allemand, espagnol, italien, suisse, nordiques, japonais), et choisir, par raccourci, de le garder par caractère, de lui donner une seconde touche, ou de le lire par position de touche. Le scénario UI peut fixer une disposition comme il fixe la langue.
+**Décidé : rien à changer ici.** Les raccourcis ne sont pas adaptés aux dispositions de clavier par ce chantier : une autre branche rend tous les raccourcis de l'app paramétrables dans un fichier TOML, ce qui laisse à l'utilisateur d'un clavier allemand, nordique ou suisse le soin de choisir les siens.
 
 ### 3.6 Les nombres et les calendriers
 
