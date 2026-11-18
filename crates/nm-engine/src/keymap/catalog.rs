@@ -22,6 +22,7 @@ pub enum Context {
     Contacts,
     Tags,
     Groups,
+    History,
     MenuNavigation,
     Picker,
     ContactFilter,
@@ -33,7 +34,7 @@ pub enum Context {
 
 impl Context {
     /// Every context, in the order of the file of defaults.
-    pub const ALL: [Context; 15] = [
+    pub const ALL: [Context; 16] = [
         Context::Everywhere,
         Context::Normal,
         Context::Mail,
@@ -42,6 +43,7 @@ impl Context {
         Context::Contacts,
         Context::Tags,
         Context::Groups,
+        Context::History,
         Context::MenuNavigation,
         Context::Picker,
         Context::ContactFilter,
@@ -62,6 +64,7 @@ impl Context {
             Context::Contacts => "contacts",
             Context::Tags => "tags",
             Context::Groups => "groups",
+            Context::History => "history",
             Context::MenuNavigation => "menu_navigation",
             Context::Picker => "picker",
             Context::ContactFilter => "contact_filter",
@@ -84,7 +87,7 @@ impl Context {
             Normal | MenuNavigation | LineEdit | Choice | AiPanel | Compose => Some(Everywhere),
             Mail | Screen => Some(Normal),
             Quarantine => Some(Mail),
-            Contacts | Tags | Groups => Some(Screen),
+            Contacts | Tags | Groups | History => Some(Screen),
             Picker | ContactFilter => Some(LineEdit),
         }
     }
@@ -157,7 +160,7 @@ const fn a(id: &'static str, scope: Context) -> Action {
     Action { id, scope }
 }
 
-use Context::{AiPanel, Choice, Compose, ContactFilter, Contacts, Everywhere, LineEdit, Mail, MenuNavigation, Normal, Picker, Screen};
+use Context::{AiPanel, Choice, Compose, ContactFilter, Contacts, Everywhere, History, LineEdit, Mail, MenuNavigation, Normal, Picker, Screen};
 
 /// Every action, grouped as in the file of defaults. Each has at least one
 /// key by default (a test checks it): an action without a key would not
@@ -264,6 +267,9 @@ pub const ACTIONS: &[Action] = &[
     a("screen.down", Screen),
     a("screen.up", Screen),
     a("screen.open", Screen),
+    a("screen.half_page_down", Screen),
+    a("screen.half_page_up", Screen),
+    a("history.toggle_read", History),
     a("contacts.filter", Contacts),
     a("contacts.decide_address", Contacts),
     a("contacts.decide_domain", Contacts),

@@ -252,6 +252,8 @@ enum Fixture {
             return ["items": items, "next_cursor": NSNull(), "as_of": position]
         case "list_history":
             return ["items": [], "next_cursor": NSNull(), "as_of": position]
+        case "list_history_groups":
+            return ["items": [], "next_cursor": NSNull(), "as_of": position]
         case "list_tags":
             return ["items": [], "as_of": position]
         case "list_groups":

@@ -204,3 +204,25 @@ fn the_history_is_filtered_by_source_and_date() {
     assert_eq!(later["items"], json!([]));
     assert_eq!(code(&app.call("list_history", json!({"sources": ["robot"]})).unwrap_err()), -32602);
 }
+
+/// The History screen reads the log in groups, with the words it needs; an
+/// AI agent keeps its own method, and is refused this one.
+#[test]
+fn the_history_screen_reads_the_log_in_groups() {
+    let dir = tempfile::tempdir().unwrap();
+    let _core = prepared(dir.path());
+    let (_, thread) = message(dir.path(), "hey", "m1@a.example");
+    let mut app = Client::connect_as(dir.path(), "app");
+    app.call("move_thread", json!({"thread_id": thread, "target": "todo"})).unwrap();
+    let page = app.call("list_history_groups", json!({"limit": 10})).unwrap();
+    let group = page["items"].as_array().unwrap().iter().find(|g| g["kind"] == "move").cloned().expect("the move");
+    // The conversation holds two mails: one action, one group.
+    assert_eq!((group["source"].as_str(), group["value"].as_str(), group["count"].as_i64()), (Some("app"), Some("todo"), Some(2)));
+    // Its detail: each mail on its own.
+    let detail = app
+        .call("list_history_groups", json!({"first_id": group["first_id"], "last_id": group["last_id"]}))
+        .unwrap();
+    assert_eq!(detail["items"].as_array().unwrap().len(), 2);
+    let mut agent = Client::connect_as(dir.path(), "mcp");
+    assert_eq!(code(&agent.call("list_history_groups", json!({})).unwrap_err()), 1007);
+}

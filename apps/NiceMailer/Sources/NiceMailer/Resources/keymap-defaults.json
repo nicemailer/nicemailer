@@ -97,6 +97,9 @@
     "screen.down",
     "screen.up",
     "screen.open",
+    "screen.half_page_down",
+    "screen.half_page_up",
+    "history.toggle_read",
     "contacts.filter",
     "contacts.decide_address",
     "contacts.decide_domain",
@@ -298,6 +301,12 @@
       {
         "action": "label.delete",
         "key": "d"
+      }
+    ],
+    "history": [
+      {
+        "action": "history.toggle_read",
+        "key": "u"
       }
     ],
     "line_edit": [
@@ -640,6 +649,14 @@
       {
         "action": "screen.up",
         "key": "up"
+      },
+      {
+        "action": "screen.half_page_down",
+        "key": "ctrl-d"
+      },
+      {
+        "action": "screen.half_page_up",
+        "key": "ctrl-u"
       },
       {
         "action": "screen.open",

@@ -796,7 +796,16 @@ private final class Runner {
             // The origin column of the contact under the cursor ("human",
             // "robot *" when forced; `expediteurs.md`, section 9).
             "contact_origin": c.contacts.indices.contains(c.screenIndex) ? c.contacts[c.screenIndex].originLabel : "",
-            "history_count": "\(c.history.count)",
+            "history_count": "\(c.historyRows.count)",
+            // The row under the cursor of the History screen.
+            "history_who": c.historyRows.indices.contains(c.screenIndex) ? HistoryDisplay.who(c.historyRows[c.screenIndex].group.source) : "",
+            "history_title": c.historyRows.indices.contains(c.screenIndex) ? HistoryDisplay.title(c.historyRows[c.screenIndex].group) : "",
+            "history_verb": c.historyRows.indices.contains(c.screenIndex) ? HistoryDisplay.action(c.historyRows[c.screenIndex].group).verb : "",
+            "history_detail": c.historyRows.indices.contains(c.screenIndex) ? HistoryDisplay.action(c.historyRows[c.screenIndex].group).detail : "",
+            "history_group": c.historyRows.indices.contains(c.screenIndex) ? "\(c.historyRows[c.screenIndex].group.count)" : "",
+            "history_unfolded": "\(c.historyUnfolded.count)",
+            "history_read_shown": "\(c.historyIncludesRead)",
+            "history_actions": c.historyRows.map { let a = HistoryDisplay.action($0.group); return a.verb + " " + a.detail }.joined(separator: " | "),
             "tags_count": "\(c.tags.count)",
             "groups_count": "\(c.groups.count)",
             // The groups of the folder column, in order, and how many had

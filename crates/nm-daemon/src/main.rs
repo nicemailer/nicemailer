@@ -65,7 +65,7 @@ use nm_api::{
     AttachmentFileView, CommandResult, DEFAULT_LIMIT, Event, ExportMessageParams, ExportResult, FolderList, MessageRecordParams, MessageTextParams, MessageTextResult,
     GetAttachmentParams, GetThreadParams, LocateMessageParams, UnsubscribeParams, UnsubscribeResult,
     DeleteGroupResult, DeleteNameParams, GroupMemberResult, HelloParams, HelloResult, ImportMboxParams, ImportStatus, Items, ListContactsParams, RenameParams, RenameResult,
-    ListHistoryParams, ListTagsParams, ListThreadsParams, MAX_LIMIT, MoveThreadParams,
+    ListHistoryGroupsParams, ListHistoryParams, ListTagsParams, ListThreadsParams, MAX_LIMIT, MoveThreadParams,
     PROTOCOL_VERSION, Page, ProbeAccountParams, ProbeReport, Request, Response, RpcError, SearchParams, SearchResult, SetBodyFormatParams,
     SetGroupMemberParams, SetThreadFlaggedParams, ThreadLabelsParams, SetThreadSeenParams, SubscribeParams, SubscribeResult,
     SetAddressScreeningParams, SetDomainScreeningParams, SetSenderKindParams, TagThreadParams, ThreadView, UndoParams, error_code,
@@ -775,6 +775,7 @@ fn runs_in_parallel(method: &str) -> bool {
             | method::SEARCH
             | method::IMPORT_STATUS
             | method::LIST_HISTORY
+            | method::LIST_HISTORY_GROUPS
             | method::LIST_TAGS
             | method::LIST_GROUPS
             | method::THREAD_LABELS
@@ -1708,6 +1709,17 @@ async fn call(core: &Arc<Core>, source: Source, req: Request) -> Result<Value, R
             let filter = nm_store::library::HistoryFilter { since: p.since, sources: p.sources };
             let (items, next_cursor) =
                 with_reader(core, move |s| s.list_history_filtered(p.cursor.as_deref(), limit(p.limit), &filter)).await?;
+            to_value(Page { items, next_cursor, as_of })
+        }
+        method::LIST_HISTORY_GROUPS => {
+            let p: ListHistoryGroupsParams = params(req.params)?;
+            let as_of = as_of();
+            let query = nm_store::library::HistoryGroupQuery {
+                include_read: p.include_read,
+                range: p.first_id.zip(p.last_id),
+            };
+            let (items, next_cursor) =
+                with_reader(core, move |s| s.list_history_groups(p.cursor.as_deref(), limit(p.limit), &query)).await?;
             to_value(Page { items, next_cursor, as_of })
         }
         method::ATTACHMENT_TEXT => to_value(extract::attachment_text(core, params(req.params)?).await?),

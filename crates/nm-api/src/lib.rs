@@ -85,6 +85,9 @@ pub mod method {
     pub const UNSUBSCRIBE: &str = "unsubscribe";
     /// Audit log, newest first (`tracabilite.md`).
     pub const LIST_HISTORY: &str = "list_history";
+    /// The audit log as the History screen shows it: the lines of one
+    /// action on several items make one group (`tracabilite.md`, section 6).
+    pub const LIST_HISTORY_GROUPS: &str = "list_history_groups";
     /// Tags of an account, or of every account.
     pub const LIST_TAGS: &str = "list_tags";
     /// Adds (or removes) a tag on every message of a thread.
@@ -2417,6 +2420,56 @@ pub struct HistoryEntry {
     pub summary: String,
     /// The raw JSON `detail` of the line.
     pub detail: Value,
+}
+
+/// Parameters of `list_history_groups`: cursor pagination, newest first.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ListHistoryGroupsParams {
+    #[serde(default)]
+    pub cursor: Option<String>,
+    #[serde(default)]
+    pub limit: Option<u32>,
+    /// Also give the mails marked as read, most of the log and rarely what
+    /// is looked for.
+    #[serde(default)]
+    pub include_read: bool,
+    /// With `last_id`: the lines of one group, each on its own (the
+    /// `first_id` and `last_id` of that group). `include_read` then has no
+    /// effect.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub first_id: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_id: Option<i64>,
+}
+
+/// Consecutive `audit_log` lines of one action: one source doing the same
+/// thing to several items at once, or a single line (`count` 1).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HistoryGroup {
+    /// The oldest and the newest line of the group.
+    pub first_id: i64,
+    pub last_id: i64,
+    /// How many lines it holds.
+    pub count: i64,
+    /// Unix timestamp of the newest line.
+    pub date: i64,
+    /// Who did it: `app`, `cli`, `core`…
+    pub source: String,
+    /// `message`, `address`, `account`… and the id of the newest line's.
+    pub entity: String,
+    pub entity_id: i64,
+    /// What was done, as a stable code for the client to word: the `action`
+    /// of the log, or for the actions that mean several things `read`,
+    /// `unread`, `flagged`, `unflagged`, `tag_added`, `tag_removed`,
+    /// `decision`, `decision_removed`.
+    pub kind: String,
+    /// What it was done with: a folder (its role, else its path), a tag, an
+    /// address, a screening target, a number of mails imported.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value: Option<String>,
+    /// The subject of the mail, the address, the name of the newest line's
+    /// item. `None`: the item no longer exists.
+    pub title: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

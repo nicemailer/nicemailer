@@ -87,7 +87,8 @@ Each action can be bound in its context and in the contexts under it (`move.inbo
 | `everywhere` | `window.full_screen`, `text.bigger`, `text.smaller`, `text.reset`, `app.reload` |
 | `normal` | `menu.goto`, `help.show`, `undo.last`, `goto.<folder>` (`inbox`, `todo`, `waiting`, `work`, `archive`, `newsletter`, `paperwork`, `sent`, `drafts`, `all_mail`, `quarantine`, `deleted`, `junk`, `banned`, `everything`), `goto.contacts`, `goto.tags`, `goto.groups`, `goto.history` |
 | `mail` | `list.down`, `list.up`, `list.mark_down`, `list.mark_up`, `list.mark_all`, `list.half_page_down`, `list.half_page_up`, `message.next`, `message.previous`, `mail.open`, `reader.open_or_page_down`, `reader.page_down`, `reader.page_up`, `reader.toggle_all`, `reader.skip_quoted`, `sender.card_or_copy`, `sender.mails`, `mail.archive`, `mail.delete`, `mail.toggle_seen`, `mail.mark_seen`, `mail.toggle_flag`, `mail.unsubscribe`, `picker.links`, `picker.tag`, `picker.group`, `picker.search`, `picker.attributes`, `picker.accounts`, `compose.reply_all`, `compose.reply_sender`, `compose.forward`, `compose.new`, `ai.menu`, `menu.move`, `menu.save`, `menu.view`, `move.<folder>`, `save.*`, `view.*` |
-| `screen` | `screen.down`, `screen.up`, `screen.open`, `label.rename`, `label.delete` (Tags and Groups) |
+| `screen` | `screen.down`, `screen.up`, `screen.half_page_down`, `screen.half_page_up`, `screen.open`, `label.rename`, `label.delete` (Tags and Groups) |
+| `history` | `history.toggle_read` |
 | `contacts` | `contacts.filter`, `contacts.decide_address`, `contacts.decide_domain`, `contacts.sender_kind` |
 | `menu_navigation` | `menu.next`, `menu.previous`, `menu.choose`, `menu.choose_alt` |
 | `picker` | `picker.next`, `picker.previous`, `picker.choose`, `picker.choose_alt` |

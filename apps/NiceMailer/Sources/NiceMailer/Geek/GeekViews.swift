@@ -2171,6 +2171,12 @@ private struct ScreenList<Row: View>: View {
     let index: Int
     /// Called with the row's position when it is clicked.
     let onClick: (Int) -> Void
+    /// Called with the row's position when it comes into view: the wheel
+    /// reaches the end of what is loaded without moving the cursor.
+    var onRowAppear: (Int) -> Void = { _ in }
+    /// Called with the height of the list: `ctrl-d` moves by half of what
+    /// fits in it.
+    var onHeight: (CGFloat) -> Void = { _ in }
     @ViewBuilder let row: (Int) -> Row
 
     var body: some View {
@@ -2196,11 +2202,13 @@ private struct ScreenList<Row: View>: View {
                                 .onTapGesture { onClick(i) }
                                 .uiTarget("screen-\(i)")
                                 .id(i)
+                                .onAppear { onRowAppear(i) }
                         }
                     }
                 }
                 .scrollIndicators(.never)
                 .onChange(of: index) { _, i in proxy.scrollTo(i) }
+                .onGeometryChange(for: CGFloat.self, of: { $0.size.height }, action: onHeight)
             }
         }
     }
@@ -2217,7 +2225,9 @@ private struct ContactsScreen: View {
                     controller.screenKey(.contactsDecideDomain), controller.screenKey(.contactsSenderKind),
                     controller.screenKey(.screenOpen)),
             count: controller.contacts.count, index: controller.screenIndex,
-            onClick: { controller.clickScreenRow($0) }
+            onClick: { controller.clickScreenRow($0) },
+            onRowAppear: { controller.screenRowAppeared($0) },
+            onHeight: { controller.screenHeightChanged($0) }
         ) { i in
             let c = controller.contacts[i]
             HStack(spacing: 8) {
@@ -2246,19 +2256,50 @@ private struct HistoryScreen: View {
     let controller: GeekController
 
     var body: some View {
+        // Read once: the rows are worked out from the groups and their lines.
+        let rows = controller.historyRows
+        let open = controller.screenKey(.screenOpen), read = controller.screenKey(.historyToggleRead)
         ScreenList(
-            title: L("History"), hint: L("newest first · esc: back"),
-            count: controller.history.count, index: controller.screenIndex,
-            onClick: { controller.clickScreenRow($0) }
+            title: L("History"),
+            hint: controller.historyIncludesRead
+                ? L("%@: open or unfold · %@: hide read mails · esc: back", open, read)
+                : L("%@: open or unfold · %@: show read mails · esc: back", open, read),
+            count: rows.count, index: controller.screenIndex,
+            onClick: { controller.clickScreenRow($0) },
+            onRowAppear: { controller.screenRowAppeared($0) },
+            onHeight: { controller.screenHeightChanged($0) }
         ) { i in
-            let e = controller.history[i]
-            HStack(spacing: 8) {
-                Text(Format.longDate(e.date)).foregroundStyle(Palette.muted).frame(width: scaled(230), alignment: .leading)
-                Text(e.source).foregroundStyle(Palette.accentText).frame(width: scaled(50), alignment: .leading)
-                Text(e.action).frame(width: scaled(110), alignment: .leading)
-                Text(e.summary).lineLimit(1)
-            }
+            HistoryRow(row: rows[i])
         }
+    }
+}
+
+/// When, who, about what, the verb and what qualifies it. The subject takes
+/// the room left: it is what tells two rows apart.
+private struct HistoryRow: View {
+    let row: HistoryDisplay.Row
+
+    var body: some View {
+        let g = row.group
+        let action = HistoryDisplay.action(g)
+        HStack(spacing: 8) {
+            Text(Format.historyDate(g.date)).foregroundStyle(Palette.muted).frame(width: scaled(112), alignment: .leading)
+            Text(HistoryDisplay.who(g.source)).foregroundStyle(Palette.accentText).frame(width: scaled(84), alignment: .leading)
+            HStack(spacing: scaled(5)) {
+                if g.count > 1 {
+                    Text(verbatim: row.isUnfolded ? "▾" : "▸").foregroundStyle(Palette.muted)
+                }
+                Text(HistoryDisplay.title(g)).truncationMode(.tail)
+                if g.count > 1 {
+                    Text(verbatim: "+\(g.count - 1)").foregroundStyle(Palette.muted).fixedSize()
+                }
+            }
+            .padding(.leading, row.isDetail ? scaled(16) : 0)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Text(action.verb).frame(width: scaled(104), alignment: .leading)
+            Text(action.detail).foregroundStyle(Palette.muted).frame(width: scaled(190), alignment: .leading)
+        }
+        .lineLimit(1)
     }
 }
 
@@ -2273,7 +2314,8 @@ private struct NamesScreen: View {
             title: title,
             hint: L("%@: their mails · %@: rename · %@: delete · esc: back", controller.screenKey(.screenOpen),
                     controller.screenKey(.labelRename), controller.screenKey(.labelDelete)), count: rows.count, index: controller.screenIndex,
-            onClick: { controller.clickScreenRow($0) }
+            onClick: { controller.clickScreenRow($0) },
+            onHeight: { controller.screenHeightChanged($0) }
         ) { i in
             HStack(spacing: 8) {
                 Text(rows[i].0).frame(width: scaled(260), alignment: .leading)

@@ -163,6 +163,15 @@ Le filtre de la première vue est modifiable : ajouter `core` pour voir aussi le
 - La fiche d'une adresse ou d'un domaine affiche son historique : qui l'a classée, quand, depuis quel message.
 - Un message affiche son historique : comment il a été trié, qui l'a déplacé ou tagué.
 
+### Écran Historique
+
+L'écran `;h` lit le journal par `list_history_groups`, du plus récent au plus ancien. Colonnes : date courte, auteur, objet du mail (ou adresse, nom), verbe de l'action, puis ce qui le qualifie (« Déplacé », « vers Archive » ; « Marqué », « comme lu »).
+
+- **Lots.** Des lignes consécutives de même source, même entité, même action et même cible, écrites à moins de 2 s d'écart, forment un seul groupe : une action sur 300 mails tient sur une ligne. Retour chariot la déplie pour voir chaque mail. Le regroupement est fait par le noyau pendant la lecture du journal, pour ne jamais transférer les lignes d'un lot au client.
+- **Mails marqués comme lus.** Masqués par défaut, car ils forment l'essentiel du journal ; `u` les affiche.
+- **Aller au mail.** Retour chariot sur une ligne de mail l'ouvre dans son dossier actuel, et Échap ramène à la même ligne, pour corriger une action. Sur un expéditeur, il liste ses mails.
+- **Mots.** Le noyau donne un code stable (`kind`) et sa valeur (`value`) ; l'app les traduit.
+
 ### Contrat
 
 | Nom | Type | Rôle |
@@ -171,6 +180,7 @@ Le filtre de la première vue est modifiable : ajouter `core` pour voir aussi le
 | `mark_viewed(message_id)` | commande | Met à jour `date_last_viewed` ; app, TUI et web seulement |
 | `get_history(entity, entity_id, cursor, limit)` | requête | Historique d'une entité tiré de `audit_log` |
 | `list_history(since?, sources?, cursor, limit)` | requête | Journal global, par exemple « tout ce qu'a fait l'agent aujourd'hui » |
+| `list_history_groups(include_read?, first_id?, last_id?, cursor, limit)` | requête | Journal de l'écran Historique, par lots ; `first_id` et `last_id` donnent les lignes d'un lot |
 
 ## 7. Limites
 

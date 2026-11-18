@@ -288,8 +288,22 @@ final class GeekController {
         get { contactsLine.text }
         set { contactsLine = LineEdit(newValue) }
     }
-    var history: [HistoryEntry] = []
+    /// The rows of the History screen read so far, and where the next page
+    /// starts.
+    var history: [HistoryGroup] = []
     var historyCursor: String?
+    /// The lines of the groups unfolded, by the group's `lastId`.
+    var historyUnfolded: [Int: [HistoryGroup]] = [:]
+    /// The mails marked as read are shown too (`history.toggle_read`).
+    var historyIncludesRead = false
+    /// A mail was opened from the History screen: Escape goes back to it.
+    var returnsToHistory = false
+    /// A page of the screen is being read: scrolling asks for the next one
+    /// at each row that appears, and it must be read only once.
+    private var loadingMoreRows = false
+    /// The latest read of the history from its top: the answer of an earlier
+    /// one, overtaken by `u`, is dropped.
+    private var historyRequest = 0
     var tags: [TagView] = []
     /// The contact groups, kept by the model: the folder column, the Group…
     /// panel, the `g` picker and the groups screen show the same list.
@@ -299,6 +313,9 @@ final class GeekController {
     var pickerGroupLabels: [ThreadLabels]?
     /// Row under the cursor on the current screen.
     var screenIndex = 0
+    /// The rows that fit in the list of the screen: `ctrl-d` and `ctrl-u`
+    /// move by half of them, as in the list of mails.
+    var screenVisibleRows = 20
 
     /// The reading pane's scroll view, to scroll it from the keyboard.
     weak var readerScroll: NSScrollView?
@@ -654,7 +671,7 @@ final class GeekController {
         case .contacts: return [.contacts, .screen, .normal, .everywhere]
         case .tags: return [.tags, .screen, .normal, .everywhere]
         case .groups: return [.groups, .screen, .normal, .everywhere]
-        case .history: return [.screen, .normal, .everywhere]
+        case .history: return [.history, .screen, .normal, .everywhere]
         }
     }
 
@@ -736,7 +753,16 @@ final class GeekController {
             return true
         }
         if event.keyCode == KeyCode.escape {
-            if screen != .mail { screen = .mail } else { mailEscape() }
+            if screen == .mail, returnsToHistory {
+                // Back to the row left, to go on correcting (`ui.md`).
+                returnsToHistory = false
+                reading = false
+                screen = .history
+            } else if screen != .mail {
+                screen = .mail
+            } else {
+                mailEscape()
+            }
             return true
         }
         // A ⌃ key without an action: AppKit's (a beep), as before.
@@ -930,8 +956,17 @@ final class GeekController {
             loadMoreIfNeeded()
         case .screenUp:
             screenIndex = max(0, screenIndex - 1)
+        case .screenHalfPageDown:
+            screenIndex = max(0, min(screenCount - 1, screenIndex + Self.halfPage(screenVisibleRows)))
+            loadMoreIfNeeded()
+        case .screenHalfPageUp:
+            screenIndex = max(0, screenIndex - Self.halfPage(screenVisibleRows))
         case .screenOpen:
             activateScreenRow()
+        case .historyToggleRead:
+            historyIncludesRead.toggle()
+            screenIndex = 0
+            Task { await loadHistory(reset: true) }
         case .contactsFilter:
             overlay = .contactFilter
         case .contactsDecideAddress, .contactsDecideDomain:
@@ -1502,6 +1537,7 @@ final class GeekController {
         case .contacts: [.contacts, .screen, .normal, .everywhere]
         case .tags: [.tags, .screen, .normal, .everywhere]
         case .groups: [.groups, .screen, .normal, .everywhere]
+        case .history: [.history, .screen, .normal, .everywhere]
         default: [.screen, .normal, .everywhere]
         }
         return keymap.mention(action, in: chain)
@@ -2586,6 +2622,7 @@ final class GeekController {
     func open(_ s: Screen) {
         screen = s
         screenIndex = 0
+        returnsToHistory = false
         switch s {
         case .contacts: Task { await loadContacts(reset: true) }
         case .history: Task { await loadHistory(reset: true) }
@@ -2621,7 +2658,7 @@ final class GeekController {
     private var screenCount: Int {
         switch screen {
         case .contacts: contacts.count
-        case .history: history.count
+        case .history: historyRows.count
         case .tags: screenTags.count
         case .groups: groups.count
         case .mail: 0
@@ -3086,9 +3123,78 @@ final class GeekController {
         case .groups where groups.indices.contains(screenIndex):
             screen = .mail
             model.showThreads(of: .group(groups[screenIndex]))
+        case .history:
+            Task { await openHistoryRow() }
         default:
             break
         }
+    }
+
+    /// The rows of the History screen, the lines of the unfolded groups
+    /// under their group.
+    var historyRows: [HistoryDisplay.Row] {
+        HistoryDisplay.rows(history, unfolded: historyUnfolded)
+    }
+
+    /// Return on a row of the History screen: a group folds or unfolds; a
+    /// mail opens where it is now, to correct what was done to it; a sender
+    /// lists their mails. The other rows have nothing to open.
+    func openHistoryRow() async {
+        let rows = historyRows
+        guard rows.indices.contains(screenIndex) else { return }
+        let group = rows[screenIndex].group
+        if group.count > 1 {
+            await toggleHistoryGroup(group)
+            return
+        }
+        switch group.entity {
+        case "message":
+            guard await model.reveal(messageId: group.entityId) else { return }
+            returnsToHistory = true
+            showDeepLinkedMail()
+        case "address":
+            guard let addr = group.title, let client = model.core else { return }
+            do {
+                let found: Page<ContactView> = try await client.call("list_contacts", ["query": addr, "limit": 20])
+                guard let contact = found.items.first(where: { $0.addr.caseInsensitiveCompare(addr) == .orderedSame }) else { return }
+                returnsToHistory = true
+                screen = .mail
+                model.showThreads(of: .contact(contact))
+            } catch { model.report(error) }
+        default:
+            break
+        }
+    }
+
+    /// Folds a group, or reads its lines and shows them under it. All of
+    /// them at once: there are as many as the action touched, and a page cut
+    /// in the middle of a group would need a row of its own to go on.
+    private func toggleHistoryGroup(_ group: HistoryGroup) async {
+        if historyUnfolded.removeValue(forKey: group.lastId) != nil { return }
+        guard let client = model.core else { return }
+        var lines: [HistoryGroup] = []
+        var cursor: String?
+        do {
+            repeat {
+                var params: [String: Any] = ["first_id": group.firstId, "last_id": group.lastId, "limit": 200]
+                if let cursor { params["cursor"] = cursor }
+                let page: Page<HistoryGroup> = try await client.call("list_history_groups", params)
+                lines += page.items
+                cursor = page.nextCursor
+            } while cursor != nil
+            historyUnfolded[group.lastId] = lines
+        } catch { model.report(error) }
+    }
+
+    /// The list of the screen has this height.
+    func screenHeightChanged(_ height: CGFloat) {
+        screenVisibleRows = Self.visibleRows(height: height, rowHeight: scaled(20))
+    }
+
+    /// A row of a long screen came into view: the wheel and the scroll bar
+    /// reach the end of what is loaded without moving the cursor.
+    func screenRowAppeared(_ index: Int) {
+        loadMoreIfNeeded(near: index)
     }
 
     private func handleContactFilterInput(event: NSEvent, key: String, action: KeyAction?, mods: NSEvent.ModifierFlags) {
@@ -3140,10 +3246,16 @@ final class GeekController {
         Task { await loadContacts(reset: true) }
     }
 
-    private func loadMoreIfNeeded() {
-        guard screenIndex >= screenCount - 10 else { return }
-        if screen == .contacts, contactsCursor != nil { Task { await loadContacts(reset: false) } }
-        if screen == .history, historyCursor != nil { Task { await loadHistory(reset: false) } }
+    private func loadMoreIfNeeded(near index: Int? = nil) {
+        guard (index ?? screenIndex) >= screenCount - 10, !loadingMoreRows else { return }
+        let more = screen == .contacts ? contactsCursor != nil : screen == .history && historyCursor != nil
+        guard more else { return }
+        loadingMoreRows = true
+        let current = screen
+        Task {
+            if current == .contacts { await loadContacts(reset: false) } else { await loadHistory(reset: false) }
+            loadingMoreRows = false
+        }
     }
 
     /// Loads the contacts: the first page (`reset`), the next one, or with
@@ -3165,10 +3277,14 @@ final class GeekController {
 
     func loadHistory(reset: Bool) async {
         guard let client = model.core else { return }
-        var params: [String: Any] = ["limit": 100]
+        var params: [String: Any] = ["limit": 100, "include_read": historyIncludesRead]
         if !reset, let c = historyCursor { params["cursor"] = c }
+        if reset { historyRequest += 1 }
+        let request = historyRequest
         do {
-            let page: Page<HistoryEntry> = try await client.call("list_history", params)
+            let page: Page<HistoryGroup> = try await client.call("list_history_groups", params)
+            guard request == historyRequest else { return }
+            if reset { historyUnfolded = [:] }
             history = reset ? page.items : history + page.items
             historyCursor = page.nextCursor
         } catch { model.report(error) }

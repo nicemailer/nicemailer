@@ -71,8 +71,10 @@ j = "screen.down"                             # next row
 down = "screen.down"                          # next row
 k = "screen.up"                               # previous row
 up = "screen.up"                              # previous row
-enter = "screen.open"                         # mails of the contact, tag or group
-l = "screen.open"                             # mails of the contact, tag or group
+"ctrl-d" = "screen.half_page_down"            # half a page down in the list
+"ctrl-u" = "screen.half_page_up"              # half a page up in the list
+enter = "screen.open"                         # open the row: its mails, or the mail of a history line
+l = "screen.open"                             # open the row: its mails, or the mail of a history line
 
 [contacts]
 "/" = "contacts.filter"                       # filter the contacts
@@ -87,6 +89,9 @@ d = "label.delete"                            # delete the tag
 [groups]
 r = "label.rename"                            # rename the group
 d = "label.delete"                            # delete the group
+
+[history]
+u = "history.toggle_read"                     # show or hide the mails marked as read
 
 [menu_navigation]
 down = "menu.next"                            # highlight the next row

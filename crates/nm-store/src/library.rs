@@ -4,11 +4,12 @@
 //! threads of a tag, a group or a contact are criteria of the thread lists
 //! (`ThreadFilter`, `queries.rs`).
 
+use std::collections::HashMap;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use nm_api::{ContactView, ExportFormat, GroupView, HistoryEntry, TagView, ThreadLabels};
+use nm_api::{ContactView, ExportFormat, GroupView, HistoryEntry, HistoryGroup, TagView, ThreadLabels};
 use nm_core::Source;
 use rusqlite::{OptionalExtension, Transaction, TransactionBehavior, params};
 use serde_json::Value;
@@ -59,6 +60,82 @@ fn parse_pair(cursor: &str) -> Result<(i64, i64)> {
     let bad = || StoreError::InvalidParams(format!("invalid cursor: {cursor}"));
     let (a, b) = cursor.split_once(':').ok_or_else(bad)?;
     Ok((a.parse().map_err(|_| bad())?, b.parse().map_err(|_| bad())?))
+}
+
+/// What `list_history_groups` gives.
+#[derive(Debug, Clone, Default)]
+pub struct HistoryGroupQuery {
+    /// Also the mails marked as read.
+    pub include_read: bool,
+    /// The lines between these two ids, each on its own: the detail of a
+    /// group.
+    pub range: Option<(i64, i64)>,
+}
+
+/// Two lines further apart than this are two actions, even if they do the
+/// same thing: a command writes its lines at once, in one transaction.
+const HISTORY_GROUP_GAP_SECS: i64 = 2;
+
+/// What a line of the log did: a code for the client to word, and what it
+/// was done with (`HistoryGroup::kind`, `HistoryGroup::value`). Pure, so that
+/// the words of the screen can be tested from the log's own lines.
+///
+/// `folder` names a folder id; it is a parameter so that the scan of the log
+/// reads each folder once.
+fn history_change(
+    action: &str,
+    detail: &Value,
+    folder: &mut impl FnMut(i64) -> Result<String>,
+) -> Result<(String, Option<String>)> {
+    let text = |v: &Value| v.as_str().map(str::to_string);
+    Ok(match action {
+        "move" => ("move".into(), Some(folder(detail["after"]["folder_id"].as_i64().unwrap_or(-1))?)),
+        "set_flags" => {
+            let flag = detail["after"].as_object().and_then(|o| o.iter().next());
+            let on = flag.is_some_and(|(_, v)| v.as_i64() == Some(1) || v.as_bool() == Some(true));
+            let kind = match flag.map(|(k, _)| k.as_str()) {
+                Some("is_seen") if on => "read",
+                Some("is_seen") => "unread",
+                Some("is_flagged") if on => "flagged",
+                Some("is_flagged") => "unflagged",
+                _ => action,
+            };
+            (kind.into(), None)
+        }
+        "set_tags" => {
+            let kind = if detail.get("remove").is_some() { "tag_removed" } else { "tag_added" };
+            (kind.into(), text(&detail["tag"]))
+        }
+        "screening" => match text(&detail["after"]) {
+            Some(target) => ("decision".into(), Some(target)),
+            None => ("decision_removed".into(), None),
+        },
+        "screen" => ("screen".into(), text(&detail["folder"])),
+        "add_member" | "remove_member" => (action.into(), text(&detail["addr"])),
+        "import_mbox" => (action.into(), detail["imported"].as_i64().map(|n| n.to_string())),
+        _ => (action.into(), None),
+    })
+}
+
+/// A group of the log being read, newest line first.
+struct GroupBuilder {
+    group: HistoryGroup,
+    detail: Value,
+    /// The date of its oldest line so far.
+    oldest: i64,
+}
+
+impl GroupBuilder {
+    /// Whether the line `id`, written at `date`, continues this action.
+    fn continues(&self, id: i64, date: i64, source: &str, entity: &str, kind: &str, value: &Option<String>) -> bool {
+        let g = &self.group;
+        g.first_id == id + 1
+            && self.oldest - date <= HISTORY_GROUP_GAP_SECS
+            && g.source == source
+            && g.entity == entity
+            && g.kind == kind
+            && g.value == *value
+    }
 }
 
 /// What `list_history_filtered` keeps; everything by default.
@@ -353,14 +430,143 @@ impl Store {
         Ok((items, next))
     }
 
-    /// One readable line for an audit entry: what the entity is (subject,
-    /// address, name) and, for the common actions, what changed.
-    fn history_summary(&self, entity: &str, id: i64, action: &str, detail: &Value) -> Result<String> {
-        let one = |sql: &str| -> Result<Option<String>> {
-            Ok(self.conn.prepare_cached(sql)?.query_row([id], |r| r.get(0)).optional()?)
+    /// The audit log as the History screen shows it, newest first: the
+    /// consecutive lines of one action make one group (`tracabilite.md`,
+    /// section 6). With `query.range`, the lines of one group, each on its
+    /// own.
+    ///
+    /// The groups are made here, while reading the log in date order, and
+    /// not by the client: one action on 300 mails is 300 lines, and a client
+    /// would have to fetch them all to show one row. The scan stops as soon
+    /// as the page is full. Hiding the mails marked as read may read many
+    /// lines to fill a page, so consecutive lines with the same `detail`,
+    /// the usual case in such a run, are decoded only once.
+    pub fn list_history_groups(
+        &self,
+        cursor: Option<&str>,
+        limit: u32,
+        query: &HistoryGroupQuery,
+    ) -> Result<(Vec<HistoryGroup>, Option<String>)> {
+        let mut clauses: Vec<&str> = Vec::new();
+        let mut values: Vec<i64> = Vec::new();
+        if let Some(c) = cursor {
+            let (d, id) = parse_pair(c)?;
+            clauses.push("(date_created, id) < (?, ?)");
+            values.extend([d, id]);
+        }
+        if let Some((first, last)) = query.range {
+            clauses.push("id BETWEEN ? AND ?");
+            values.extend([first, last]);
+        }
+        let where_clause = if clauses.is_empty() { String::new() } else { format!("WHERE {}", clauses.join(" AND ")) };
+        let sql = format!(
+            "SELECT id, date_created, created_by, entity, entity_id, action, detail
+               FROM audit_log {where_clause} ORDER BY date_created DESC, id DESC"
+        );
+        let mut folders: HashMap<i64, String> = HashMap::new();
+        let mut folder = |id: i64| -> Result<String> {
+            if let Some(name) = folders.get(&id) {
+                return Ok(name.clone());
+            }
+            let name = self.folder_name(id)?;
+            folders.insert(id, name.clone());
+            Ok(name)
         };
-        let what = match entity {
-            "message" => one("SELECT subject FROM message WHERE id = ?1")?,
+        let keeps = |g: &GroupBuilder| query.range.is_some() || query.include_read || g.group.kind != "read";
+
+        let mut stmt = self.conn.prepare_cached(&sql)?;
+        let mut rows = stmt.query(rusqlite::params_from_iter(values.iter()))?;
+        let mut done: Vec<GroupBuilder> = Vec::new();
+        let mut current: Option<GroupBuilder> = None;
+        // The last line decoded, to reuse its result on the next identical one.
+        let mut decoded: Option<(String, Option<String>, Value, String, Option<String>)> = None;
+        let mut has_more = false;
+        while let Some(r) = rows.next()? {
+            let (id, date): (i64, i64) = (r.get(0)?, r.get(1)?);
+            let (source, entity): (String, String) = (r.get(2)?, r.get(3)?);
+            let entity_id: i64 = r.get(4)?;
+            let action: String = r.get(5)?;
+            let raw: Option<String> = r.get(6)?;
+            let same = decoded.as_ref().is_some_and(|(a, d, ..)| *a == action && *d == raw);
+            if !same {
+                let detail: Value = raw.as_deref().and_then(|d| serde_json::from_str(d).ok()).unwrap_or(Value::Null);
+                let (kind, value) = history_change(&action, &detail, &mut folder)?;
+                decoded = Some((action.clone(), raw, detail, kind, value));
+            }
+            let Some((_, _, detail, kind, value)) = decoded.as_ref() else { continue };
+            if query.range.is_none()
+                && let Some(g) = current.as_mut().filter(|g| g.continues(id, date, &source, &entity, kind, value))
+            {
+                g.group.first_id = id;
+                g.group.count += 1;
+                g.oldest = date;
+                continue;
+            }
+            if let Some(g) = current.take().filter(&keeps) {
+                done.push(g);
+                if done.len() == limit as usize {
+                    has_more = true;
+                    break;
+                }
+            }
+            current = Some(GroupBuilder {
+                group: HistoryGroup {
+                    first_id: id,
+                    last_id: id,
+                    count: 1,
+                    date,
+                    source,
+                    entity,
+                    entity_id,
+                    kind: kind.clone(),
+                    value: value.clone(),
+                    title: None,
+                },
+                detail: detail.clone(),
+                oldest: date,
+            });
+        }
+        drop(rows);
+        if !has_more && let Some(g) = current.take().filter(&keeps) {
+            done.push(g);
+        }
+        // Read last: only the rows of the page need their titles.
+        let next = if has_more { done.last().map(|g| format!("{}:{}", g.oldest, g.group.first_id)) } else { None };
+        let mut items = Vec::with_capacity(done.len());
+        for mut g in done {
+            g.group.title = self.history_title(&g.group.entity, g.group.entity_id, &g.detail)?;
+            items.push(g.group);
+        }
+        Ok((items, next))
+    }
+
+    /// The role of a folder, else its path; `?` for a folder gone.
+    fn folder_name(&self, id: i64) -> Result<String> {
+        Ok(self
+            .conn
+            .prepare_cached("SELECT coalesce(role, path) FROM folder WHERE id = ?1")?
+            .query_row([id], |r| r.get::<_, String>(0))
+            .optional()?
+            .unwrap_or_else(|| "?".into()))
+    }
+
+    /// What an entry of the log is about: the subject of the mail, the
+    /// address, the name. An item deleted since keeps the name its line
+    /// recorded, if any (`tracabilite.md`: the log survives its entities).
+    fn history_title(&self, entity: &str, id: i64, detail: &Value) -> Result<Option<String>> {
+        let one = |sql: &str| -> Result<Option<String>> {
+            Ok(self.conn.prepare_cached(sql)?.query_row([id], |r| r.get::<_, Option<String>>(0)).optional()?.flatten())
+        };
+        let found = match entity {
+            // A mail without a subject exists: its title is empty, not gone.
+            "message" => {
+                let row: Option<Option<String>> = self
+                    .conn
+                    .prepare_cached("SELECT subject FROM message WHERE id = ?1")?
+                    .query_row([id], |r| r.get(0))
+                    .optional()?;
+                row.map(Option::unwrap_or_default)
+            }
             "address" => one("SELECT addr FROM address WHERE id = ?1")?,
             "domain" => one("SELECT domain FROM domain WHERE id = ?1")?,
             "account" => one("SELECT config_key FROM account WHERE id = ?1")?,
@@ -368,17 +574,18 @@ impl Store {
             "folder" => one("SELECT coalesce(role, path) FROM folder WHERE id = ?1")?,
             "tag" => one("SELECT name FROM tag WHERE id = ?1")?,
             _ => None,
-        }
-        .unwrap_or_else(|| format!("{entity} {id}"));
-        let folder_role = |v: &Value| -> Result<String> {
-            let fid = v.as_i64().unwrap_or(-1);
-            Ok(self
-                .conn
-                .prepare_cached("SELECT coalesce(role, path) FROM folder WHERE id = ?1")?
-                .query_row([fid], |r| r.get::<_, String>(0))
-                .optional()?
-                .unwrap_or_else(|| "?".into()))
         };
+        let recorded = || {
+            [&detail["before"]["name"], &detail["after"]["name"]].into_iter().find_map(|v| v.as_str().map(str::to_string))
+        };
+        Ok(found.or_else(recorded))
+    }
+
+    /// One readable line for an audit entry: what the entity is (subject,
+    /// address, name) and, for the common actions, what changed.
+    fn history_summary(&self, entity: &str, id: i64, action: &str, detail: &Value) -> Result<String> {
+        let what = self.history_title(entity, id, detail)?.unwrap_or_else(|| format!("{entity} {id}"));
+        let folder_role = |v: &Value| self.folder_name(v.as_i64().unwrap_or(-1));
         let change = match action {
             "move" => format!(" → {}", folder_role(&detail["after"]["folder_id"])?),
             "screening" | "auth_policy" => format!(" → {}", detail["after"].as_str().unwrap_or("—")),

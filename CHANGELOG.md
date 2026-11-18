@@ -22,6 +22,7 @@ First public and open source release. 18 languages. Auto update. Configurable ke
 - **Updates:** During an update or a mailbox upgrade, the app, the `nicemailer` command and AI agents say so and wait, instead of reporting that NiceMailer is not running. `nicemailer --wait` waits for the end; without it, the command exits with status 75.
 - **Updates:** The mailbox is copied before each upgrade of its data format and put back if the upgrade fails: nothing is lost, and the previous version can still open it.
 - **Writing:** A Bcc button at the end of the Cc line shows or hides the Bcc line.
+- **Keyboard:** `Ctrl-D` and `Ctrl-U` move by half a page on the History, Contacts, Tags and Groups screens.
 - **Keyboard:** Every key can be changed in `~/.config/nicemailer/keymap.toml`: move or remove keys, add your own for any folder or action, create your own menus. The help, the status bar and the menus show the keys in effect, and `nicemailer keymap check` validates the file.
 - **Accounts:** Preferences (Settings…, ⌘,) with an Accounts tab: add an account from its address, password and name, list the accounts and change their order. NiceMailer finds the servers and asks for more only when needed.
 - **Accounts:** Before an account is added, the Preferences show what will change on the server: the folders to create, and for each role a choice among the folders that already exist.
@@ -36,6 +37,7 @@ First public and open source release. 18 languages. Auto update. Configurable ke
 
 ### Changed
 
+- **History:** The History screen is readable: short dates, who did what in plain words, one row per batch that unfolds, and Return opens the mail in its current folder so an action can be corrected. Mails marked as read are hidden until you press `u`.
 - **Attribute selector:** All rows of `f` are visible at once, without scrolling, and grouped in pairs: Unread / Read, Flagged / Not flagged, From… / To…, Subject… / Text…, the two dates, Group… / Tag…, Human / Robot, attachments, your reply, conversations. "Answered" is now "With my reply".
 - **Speed:** NiceMailer stays faster when the Mac is busy, after a restart or during a backup, and the synchronization holds up your actions less.
 
@@ -51,6 +53,7 @@ First public and open source release. 18 languages. Auto update. Configurable ke
 - **Tags and groups:** The tag picker (`t`) lists the tags of every account; it could be empty for a mail of another account.
 - **Tags and groups:** `g` adds the person the conversation is with, no longer yourself. Your own addresses can no longer be in a group, and those already there are removed.
 - **Accounts:** When the SMTP server refuses the mailbox password, `nicemailer account add` keeps the account's server and says to save its own password, instead of creating the account without a server to send from.
+- **History:** The list scrolls to the end of the log, with the keys and with the mouse wheel; the Contacts screen too.
 - **Updates:** The app no longer stays without its core after a new version, signed differently, replaces the installed one.
 
 ### Removed

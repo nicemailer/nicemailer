@@ -1933,20 +1933,29 @@ final class AppModel {
             return
         }
         Task {
-            do {
-                let place: MessageLocation = try await client.call("locate_message", ["message_id": id])
-                guard let threadId = place.threadId else {
-                    lastError = L("This mail is not in a conversation yet")
-                    return
-                }
-                lastError = nil
-                show(threadId: threadId, folderId: place.folderId)
-                onDeepLinkOpened?()
-            } catch let e as CoreClient.RPCError where e.code == CoreClient.RPCError.notFound {
-                // Deleted since, or the database was rebuilt (ids changed).
-                lastError = L("This mail is no longer in NiceMailer")
-            } catch { report(error) }
+            if await reveal(messageId: id) { onDeepLinkOpened?() }
         }
+    }
+
+    /// Shows a mail where it is now, in its folder: a deep link, or a line
+    /// of the History screen. False, with the reason in the status bar, when
+    /// it cannot be shown.
+    func reveal(messageId id: Int) async -> Bool {
+        guard let core else { return false }
+        do {
+            let place: MessageLocation = try await core.call("locate_message", ["message_id": id])
+            guard let threadId = place.threadId else {
+                lastError = L("This mail is not in a conversation yet")
+                return false
+            }
+            lastError = nil
+            show(threadId: threadId, folderId: place.folderId)
+            return true
+        } catch let e as CoreClient.RPCError where e.code == CoreClient.RPCError.notFound {
+            // Deleted since, or the database was rebuilt (ids changed).
+            lastError = L("This mail is no longer in NiceMailer")
+        } catch { report(error) }
+        return false
     }
 
     private func openPendingDeepLink() {

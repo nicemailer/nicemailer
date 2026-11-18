@@ -25,7 +25,7 @@ import SwiftUI
 /// Where a key is looked for (`raccourcis.md`, section 5). The raw value is
 /// the name of the table in `keymap.toml`.
 enum KeyContext: String, CaseIterable {
-    case everywhere, normal, mail, quarantine, screen, contacts, tags, groups
+    case everywhere, normal, mail, quarantine, screen, contacts, tags, groups, history
     case menuNavigation = "menu_navigation"
     case picker
     case contactFilter = "contact_filter"
@@ -150,6 +150,9 @@ enum KeyAction: String, CaseIterable {
     case screenDown = "screen.down"
     case screenUp = "screen.up"
     case screenOpen = "screen.open"
+    case screenHalfPageDown = "screen.half_page_down"
+    case screenHalfPageUp = "screen.half_page_up"
+    case historyToggleRead = "history.toggle_read"
     case contactsFilter = "contacts.filter"
     case contactsDecideAddress = "contacts.decide_address"
     case contactsDecideDomain = "contacts.decide_domain"

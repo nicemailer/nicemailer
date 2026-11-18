@@ -1,0 +1,53 @@
+# The History screen (`tracabilite.md`, section 6): what was done in words,
+# a batch on one row, Return on a mail and Escape back to the row, the mails
+# marked as read shown with `u`.
+expect folder = Inbox
+expect selected_subject ~ La facture de mars
+# Two conversations archived together: one action, so one row.
+key shift-down
+key d
+expect flash ~ Archive
+key ;
+key h
+expect screen = history
+expect history_who = Me
+expect history_verb = Moved
+expect history_detail = to Archive
+expect history_read_shown = false
+expect history_actions !~ Marked as read
+snap history-screen
+# The batch unfolds under its row, each mail on its own.
+expect history_group > 1
+key ret
+expect history_unfolded = 1
+snap history-unfolded
+key j
+expect history_group = 1
+expect history_verb = Moved
+expect history_detail = to Archive
+# Return goes to the mail, in the folder it is in now.
+key ret
+expect screen = mail
+expect folder = Archive
+snap history-mail
+# Escape comes back to the same row, the batch still unfolded.
+key esc
+expect screen = history
+expect history_unfolded = 1
+expect history_group = 1
+# The first row folds the batch again.
+key k
+key ret
+expect history_unfolded = 0
+# Half a page down stops on the last row; half a page up on the first.
+key ctrl-d
+expect screen_index > 0
+key ctrl-u
+expect screen_index = 0
+# `u` shows the mails marked as read, and hides them again.
+key u
+expect history_read_shown = true
+key u
+expect history_read_shown = false
+key esc
+expect screen = mail

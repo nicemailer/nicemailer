@@ -344,17 +344,26 @@ struct Items<T: Decodable>: Decodable {
 }
 
 /// One line of the history (audit log).
-struct HistoryEntry: Decodable, Identifiable, Hashable {
-    let id: Int
+/// A row of the History screen (`list_history_groups`): one action, on one
+/// item or on several at once.
+struct HistoryGroup: Decodable, Identifiable, Hashable {
+    /// The oldest and the newest line of the log it holds.
+    let firstId: Int
+    let lastId: Int
+    let count: Int
     let date: Int
     /// Who did it: "app", "cli", "core"...
     let source: String
     let entity: String
     let entityId: Int
-    let action: String
-    /// Readable description built by the core. (The raw `detail` JSON is
-    /// not decoded: the app does not need it.)
-    let summary: String
+    /// What was done, as a code the app words (`HistoryDisplay.action`).
+    let kind: String
+    /// What it was done with: a folder, a tag, an address…
+    var value: String? = nil
+    /// The subject of the mail, the address, the name; nil: deleted since.
+    var title: String? = nil
+
+    var id: Int { lastId }
 }
 
 struct TagView: Decodable, Identifiable, Hashable {
@@ -780,6 +789,16 @@ enum Format {
         }
         if calendar.isDate(d, equalTo: now, toGranularity: .year) { return f.dayMonthTime.string(from: d) }
         return f.dayMonthYear.string(from: d)
+    }
+
+    /// Date of the History screen: "14:05" today, else the day of the lists
+    /// and the time ("16 oct. 14:05"): when something was done matters here,
+    /// and the full date took a third of the row.
+    static func historyDate(_ ts: Int, in f: Dates = dates, now: Date = Date(), calendar: Calendar = .current) -> String {
+        let d = Date(timeIntervalSince1970: TimeInterval(ts))
+        let time = f.geekTime.string(from: d).trimmingCharacters(in: .whitespaces)
+        if calendar.isDate(d, inSameDayAs: now) { return time }
+        return geekListDate(ts, in: f, now: now, calendar: calendar).trimmingCharacters(in: .whitespaces) + " " + time
     }
 
     /// Full date and time, for the message header.

@@ -74,6 +74,7 @@ A dedicated command prints readable output, asks for confirmation when needed an
 | `delete_tag` | Deletes a tag in every account that has it, except read-only ones: removes it from every message (server included, through the spool), then keeps the tag as a tombstone. | — |
 | `unsubscribe` | Unsubscribes from a mailing list: in one click when the core can, otherwise returns the page or `mailto:` to open. | — |
 | `list_history` | The audit log, newest first, paginated (`specifications/tracabilite.md`); `since` (Unix time) and `sources` (`["mcp"]`: what AI agents did) filter it. | — |
+| `list_history_groups` | The audit log as the History screen shows it, newest first and paginated: the consecutive lines of one action make one group, with a stable code for what was done (`kind`) and what it was done with (`value`). Mails marked as read only with `include_read`; `first_id` and `last_id` give the lines of one group. | — |
 | `undo` | Undoes a move or a decision, from the token it returned. | `nicemailer undo <token>` |
 
 ## Screening, senders, groups, contacts
