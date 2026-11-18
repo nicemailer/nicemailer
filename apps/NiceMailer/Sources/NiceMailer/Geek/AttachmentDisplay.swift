@@ -66,9 +66,9 @@ enum AttachmentDisplay {
         return n.isEmpty ? L("Unnamed attachment") : n
     }
 
-    /// Size in the system's format ("245 KB", "1,2 Mo").
+    /// Size in the interface's locale ("245 kB", "1,2 Mo").
     static func size(_ bytes: Int) -> String {
-        ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)
+        Format.bytes(bytes)
     }
 
     /// `name` cut to `max` characters in the middle, keeping the end and its

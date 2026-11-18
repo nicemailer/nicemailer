@@ -579,7 +579,7 @@ final class AccountSetup {
             added = plan.lookOnly
                 ? L("%@ added: NiceMailer shows its mail and changes nothing on the server. Organize it from its page when you are ready.", email)
                 : archived > 0
-                ? L("%@ added: %@ old mails are being archived on the server.", email, archived.formatted())
+                ? L("%@ added: %lld old mails are being archived on the server.", email, archived)
                 : L("%@ added: its mail is being downloaded.", email)
             await onAdded?()
         } catch {
@@ -833,7 +833,7 @@ final class AccountActivation {
             report = nil
             self.plan = nil
             done = archived > 0
-                ? L("%@ is organized: %@ old mails are being archived on the server.", email, archived.formatted())
+                ? L("%@ is organized: %lld old mails are being archived on the server.", email, archived)
                 : L("%@ is organized: new mail is screened from now on.", email)
             await onDone?()
         } catch {

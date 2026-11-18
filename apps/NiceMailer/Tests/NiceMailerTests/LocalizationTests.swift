@@ -354,7 +354,9 @@ struct LocalizationTests {
     @Test func geekListDatesFitTheirEightCharacterColumnInEveryLocale() {
         func list(_ d: Format.Dates, _ t: Int) -> String { Format.geekListDate(t, in: d, now: Self.now, calendar: Self.calendar) }
         for (language, settings) in [("fr", "fr_FR"), ("en", "en_US"), ("en", "en_GB"), ("de", "de_DE"), ("pt", "pt_BR"),
-                                     ("ru", "ru_RU"), ("ja", "ja_JP"), ("ko", "ko_KR"), ("es", "es_ES"), ("pl", "pl_PL")] {
+                                     ("ru", "ru_RU"), ("ja", "ja_JP"), ("ko", "ko_KR"), ("es", "es_ES"), ("pl", "pl_PL"),
+                                     // The Islamic calendar and Arabic digits.
+                                     ("ar", "ar_SA")] {
             let d = Self.dates(language, settings)
             // The 28th of every month, this year and an earlier one.
             for month in 1...11 {

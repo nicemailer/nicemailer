@@ -550,16 +550,16 @@ struct ImportSection: View {
     var body: some View {
         let t = report
         Section {
-            Text(L("Your Inbox holds %@ mails, %@ of them unread.", t.inboxMessages.formatted(), t.inboxUnseen.formatted()))
+            Text(L("Your Inbox holds %lld mails, %lld of them unread.", t.inboxMessages, t.inboxUnseen))
             Toggle(L("Archive the read mails received before %@", AddAccountForm.day(t.readBefore)), isOn: $choices.archiveRead)
                 .uiTarget("prefs-archive-read")
             Toggle(L("Archive the unread mails received before %@", AddAccountForm.day(t.unreadBefore)), isOn: $choices.archiveUnread)
                 .uiTarget("prefs-archive-unread")
             let archived = choices.archived(t)
             Text(L("Flagged mails stay in the Inbox.")).font(.caption).foregroundStyle(.secondary)
-            Text(L("→ %@ mails will be archived, %@ will stay in the Inbox.", archived.formatted(), max(0, t.inboxMessages - archived).formatted()))
+            Text(L("→ %lld mails will be archived, %lld will stay in the Inbox.", archived, max(0, t.inboxMessages - archived)))
                 .bold()
-            Toggle(L("The people you have written to (%@) arrive straight in the Inbox.", t.correspondents.formatted()), isOn: $choices.acceptCorrespondents)
+            Toggle(L("The people you have written to (%lld) arrive straight in the Inbox.", t.correspondents), isOn: $choices.acceptCorrespondents)
                 .uiTarget("prefs-correspondents")
             Text(L("Other senders go through the Quarantine with their next mail.")).font(.caption).foregroundStyle(.secondary)
         } header: {

@@ -430,7 +430,7 @@ enum Compose {
 
     /// A file in the line of attachments: "devis.pdf (240 KB)".
     static func attachmentLabel(_ a: DraftAttachmentView) -> String {
-        "\(a.filename) (\(ByteCountFormatter.string(fromByteCount: Int64(a.size), countStyle: .file)))"
+        "\(a.filename) (\(Format.bytes(a.size)))"
     }
 
     /// The name under which a file is staged in `incoming.noindex`: what

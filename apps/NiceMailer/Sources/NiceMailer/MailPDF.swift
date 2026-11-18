@@ -322,13 +322,11 @@ enum MailPDF {
         return L("%lld files, %@", list.count, byteCount(total))
     }
 
-    /// "245 KB (250,880 bytes)": rounded for the reader, exact for the
-    /// record.
+    /// "251 kB (250,880 bytes)": rounded for the reader, exact for the
+    /// record, both in the interface's locale (`%lld` is written with the
+    /// locale's grouping by `L`).
     static func byteCount(_ n: Int) -> String {
-        let f = ByteCountFormatter()
-        f.countStyle = .file
-        let exact = NumberFormatter.localizedString(from: NSNumber(value: n), number: .decimal)
-        return n < 1000 ? L("%@ bytes", exact) : L("%@ (%@ bytes)", f.string(fromByteCount: Int64(n)), exact)
+        n < 1000 ? L("%lld bytes", n) : L("%@ (%lld bytes)", Format.bytes(n), n)
     }
 
     /// Dates to the second, with the time zone: "Tuesday 23 June 2020 at

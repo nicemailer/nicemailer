@@ -34,6 +34,7 @@ How to write it:
 
 ### Fixed
 
+- Sizes and large numbers are written in the app's language and region ("251 ko", "1 234"), and the counts of the Preferences take their singular ("1 mail").
 - A date typed in the attribute selector is read in the order of the Mac's region (month first in the United States), and the lists show dates in that same order.
 - The quoted history at the end of a reply is folded in many more languages: German as Gmail and Apple Mail write it, Portuguese, Dutch, Swedish, Danish, Norwegian, Polish, Russian, Chinese and Japanese, and the Outlook headers and forwards of those languages.
 - Dates follow the language of the interface and the Mac's region settings, in the app and in the line introducing a quotation of a reply: an English interface no longer shows French month names, and the 12- or 24-hour clock chosen in System Settings is respected.

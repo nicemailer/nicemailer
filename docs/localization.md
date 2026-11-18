@@ -25,6 +25,10 @@ A date the user types (the attribute selector, `DateChoice.Order`) is read in th
 
 The date column of the geek lists is 8 characters wide. `Format.fitting` keeps the first pattern whose dates all fit, tried on the 28th of every month: a locale with longer names gets the numbers ("28.09." in German, whose "28. Sept." is 9 characters), and `yy-MM-dd` is the last resort (Korean, whose short date "yy. MM. dd." is 11 characters).
 
+## Numbers
+
+`L()` formats with `uiLocale`, so a `%lld` is written with the region's grouping ("12 345", "12,345"): pass a count as `%lld`, never as a string formatted beforehand, which would lose its plural forms. A size goes through `Format.bytes` ("251 ko", "251 kB"): `ByteCountFormatter` takes no locale.
+
 ## Strings
 
 Every user-facing string goes through `L("…")`, whose key is the English text, looked up in `Resources/Localizable.xcstrings` (the String Catalog, compiled by SwiftPM into `Localizable.strings` and `Localizable.stringsdict` per language). A SwiftUI literal such as `Text("No results")` is **not** translated: SwiftUI looks it up in the main bundle, which has no translations. Pass `L("No results")`.

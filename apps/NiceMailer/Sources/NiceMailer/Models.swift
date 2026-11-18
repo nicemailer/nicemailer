@@ -635,9 +635,11 @@ enum Format {
             dayMonthYear = template("dMMMy")
             // The date column of the geek lists is 8 characters wide
             // (`RowLayout`). A locale whose names are longer ("28. Sept."
-            // in German, "3 de fev." in Portuguese) gets the numbers.
+            // in German, "3 de fev." in Portuguese) gets the numbers; one
+            // whose numbers are still too long (Arabic, whose "ddMM" keeps
+            // the month's name) gets fixed digits.
             geekTime = Format.fitting([.template("jmm"), .template("Hmm")], width: 8, make: make)
-            geekDayMonth = Format.fitting([.template("dMMM"), .template("ddMM")], width: 8, make: make)
+            geekDayMonth = Format.fitting([.template("dMMM"), .template("ddMM"), .fixed("dd/MM")], width: 8, make: make)
             // The region's short date with two digits per field: its order
             // and its separators, as the classic list and a typed date
             // (`DateChoice.Order`) have them. Not the template "ddMMyy",
@@ -703,26 +705,38 @@ enum Format {
                     f.dateFormat = p
                 }
             }
-            if samples(timeZone: formatter.timeZone).allSatisfy({ formatter.string(from: $0).count <= width }) {
+            if samples(calendar: formatter.calendar, timeZone: formatter.timeZone).allSatisfy({ formatter.string(from: $0).count <= width }) {
                 return formatter
             }
         }
         return formatter
     }
 
-    /// The 28th of every month of 2023, at 09:05 and 23:13, in `timeZone`.
-    private static func samples(timeZone: TimeZone) -> [Date] {
-        var calendar = Calendar(identifier: .gregorian)
+    /// The 28th of every month of a year of the formatter's own calendar
+    /// (an Islamic month name is not met on the 28th of every Gregorian
+    /// month), at 09:05 and 23:13, in `timeZone`.
+    private static func samples(calendar base: Calendar, timeZone: TimeZone) -> [Date] {
+        var calendar = base
         calendar.timeZone = timeZone
-        return (1...12).flatMap { month in
+        let year = calendar.component(.year, from: Date(timeIntervalSince1970: 1_700_000_000))
+        let months = calendar.range(of: .month, in: .year, for: Date(timeIntervalSince1970: 1_700_000_000)) ?? 1..<13
+        return months.flatMap { month in
             [9, 23].compactMap { hour in
-                calendar.date(from: DateComponents(year: 2023, month: month, day: 28, hour: hour, minute: hour == 9 ? 5 : 13))
+                calendar.date(from: DateComponents(year: year, month: month, day: 28, hour: hour, minute: hour == 9 ? 5 : 13))
             }
         }
     }
 
     /// The formatters of the interface.
     static let dates = Dates(locale: uiLocale)
+
+    /// A size in the interface's locale: "251 ko" in French, "251 kB" in
+    /// English (`localisation.md`, section 3.6). `ByteCountFormatter`
+    /// takes no locale: it writes the units of the process's language,
+    /// English for the app run as a bare executable.
+    static func bytes(_ n: Int, locale: Locale = uiLocale) -> String {
+        Int64(n).formatted(.byteCount(style: .file).locale(locale))
+    }
 
     /// Subject of a mail quoted in a status message ("“Devis toiture” moved
     /// to Archive"): "(no subject)" when empty, whitespace (line breaks of

@@ -100,8 +100,11 @@ Le thème geek se pilote par des touches simples (`;`, `/`, `@`, `#`, `[`…) et
 
 ### 3.6 Les nombres et les calendriers
 
-- Les nombres insérés par `%lld` ne sont pas groupés (« 12345 mails »). Les comptes qui peuvent dépasser 999 passent par un `NumberFormatter` de `uiLocale`, insérés en `%@`, en gardant la variation de pluriel sur le nombre.
-- `uiLocale` prend le calendrier du Mac : un utilisateur réglé sur un calendrier non grégorien (hégirien, bouddhiste, japonais) voit ses dates dans ce calendrier. À vérifier écran par écran, en particulier le calcul « aujourd'hui / cette année » et les dates tapées (3.4).
+**Livré.**
+
+- Les nombres : `L()` formate avec `uiLocale`, et `String(format:locale:)` groupe alors les milliers de `%lld` (« 1 234 » en français, « 1,234 » en anglais) ; les comptes passés jusqu'ici déjà formatés en `%@` (les Préférences : « Your Inbox holds %@ mails ») passent en `%lld`, ce qui leur donne aussi leurs pluriels. Aucun `%lld` de l'app n'est un port, une année ou un identifiant, qu'il ne faudrait pas grouper.
+- Les tailles : `Format.bytes` (`ByteCountFormatStyle` avec `uiLocale`) écrit « 251 ko » en français ; `ByteCountFormatter`, qui ne prend pas de locale, écrivait les unités de la langue du processus, l'anglais pour l'app lancée en exécutable nu.
+- Les calendriers : `uiLocale` garde le calendrier du Mac, comme `Calendar.current` qui décide « aujourd'hui » et « cette année » : un utilisateur réglé sur le calendrier hégirien ou japonais voit ses dates dans ce calendrier, de façon cohérente. La colonne de 8 caractères se replie sur des chiffres fixes (`dd/MM`, `yy-MM-dd`, grégoriens) quand la date du calendrier est trop longue (arabe saoudien, coréen), testé : les essais de largeur se font sur les mois du calendrier du formateur, pas seulement sur ceux du calendrier grégorien, qui laissaient passer les longs noms de mois hégiriens.
 
 ### 3.7 Les textes hors du catalogue
 

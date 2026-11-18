@@ -402,7 +402,7 @@ struct AccountSetupTests {
         #expect(add["archive_read_before"] as? String == "2026-11-17")
         #expect(add["archive_unread_before"] == nil)
         #expect(add["correspondents"] as? Bool == false)
-        #expect(setup.added?.contains(14100.formatted()) == true)
+        #expect(setup.added?.contains(String(format: "%lld", locale: uiLocale, 14100)) == true)
         // Nothing tried twice.
         #expect(methods() == ["discover_account", "test_account", "test_smtp", "add_account"])
     }
@@ -591,7 +591,7 @@ struct AccountActivationTests {
         #expect(p["archive_read_before"] as? String == "2026-11-17" && p["archive_unread_before"] == nil)
         #expect(p["read_only"] == nil && p["uidnext"] as? Int == 777)
         #expect(a.plan == nil && a.error == nil)
-        #expect(a.done == L("%@ is organized: %@ old mails are being archived on the server.", "pierre@toto.fr", 14100.formatted()))
+        #expect(a.done == L("%@ is organized: %lld old mails are being archived on the server.", "pierre@toto.fr", 14100))
         #expect(reloaded)
     }
 

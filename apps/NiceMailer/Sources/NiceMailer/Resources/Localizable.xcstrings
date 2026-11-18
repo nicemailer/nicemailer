@@ -4858,26 +4858,6 @@
         }
       }
     },
-    "%@ (%@ bytes)": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ (%@ octets)"
-          }
-        }
-      }
-    },
-    "%@ bytes": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ octets"
-          }
-        }
-      }
-    },
     "%lld files, %@": {
       "localizations": {
         "en": {
@@ -6341,16 +6321,6 @@
         }
       }
     },
-    "%@ added: %@ old mails are being archived on the server.": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ ajouté : %@ anciens mails sont en cours d’archivage sur le serveur."
-          }
-        }
-      }
-    },
     "%@ added: its mail is being downloaded.": {
       "localizations": {
         "fr": {
@@ -6851,16 +6821,6 @@
         }
       }
     },
-    "The people you have written to (%@) arrive straight in the Inbox.": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Les personnes à qui vous avez déjà écrit (%@) arriveront directement dans la boîte de réception."
-          }
-        }
-      }
-    },
     "Trying the server to send mail…": {
       "localizations": {
         "fr": {
@@ -6881,16 +6841,6 @@
         }
       }
     },
-    "Your Inbox holds %@ mails, %@ of them unread.": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Votre boîte de réception contient %@ mails, dont %@ non lus."
-          }
-        }
-      }
-    },
     "Your name": {
       "localizations": {
         "fr": {
@@ -6901,32 +6851,12 @@
         }
       }
     },
-    "→ %@ mails will be archived, %@ will stay in the Inbox.": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "→ %@ mails seront archivés, %@ resteront dans la boîte de réception."
-          }
-        }
-      }
-    },
     "%@ added: NiceMailer shows its mail and changes nothing on the server. Organize it from its page when you are ready.": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "%@ ajouté : NiceMailer affiche ses mails et ne change rien sur le serveur. Organisez-le depuis sa page quand vous le souhaitez."
-          }
-        }
-      }
-    },
-    "%@ is organized: %@ old mails are being archived on the server.": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ est organisé : %@ mails anciens sont en cours d’archivage sur le serveur."
           }
         }
       }
@@ -8217,6 +8147,306 @@
           "stringUnit": {
             "state": "translated",
             "value": "mm jj aa"
+          }
+        }
+      }
+    },
+    "%lld bytes": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld byte"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld bytes"
+                }
+              }
+            }
+          }
+        },
+        "fr": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld octet"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld octets"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%@ (%lld bytes)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ (%2$lld octets)"
+          }
+        }
+      }
+    },
+    "The people you have written to (%lld) arrive straight in the Inbox.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les personnes à qui vous avez déjà écrit (%lld) arriveront directement dans la boîte de réception."
+          }
+        }
+      }
+    },
+    "%@ added: %lld old mails are being archived on the server.": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%@ added: %lld old mail is being archived on the server."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%@ added: %lld old mails are being archived on the server."
+                }
+              }
+            }
+          }
+        },
+        "fr": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%1$@ ajouté : %2$lld ancien mail est en cours d’archivage sur le serveur."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%1$@ ajouté : %2$lld anciens mails sont en cours d’archivage sur le serveur."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%@ is organized: %lld old mails are being archived on the server.": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%@ is organized: %lld old mail is being archived on the server."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%@ is organized: %lld old mails are being archived on the server."
+                }
+              }
+            }
+          }
+        },
+        "fr": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%1$@ est organisé : %2$lld ancien mail est en cours d’archivage sur le serveur."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%1$@ est organisé : %2$lld anciens mails sont en cours d’archivage sur le serveur."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Your Inbox holds %lld mails, %lld of them unread.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your Inbox holds %1$#@mails@, %2$lld of them unread."
+          },
+          "substitutions": {
+            "mails": {
+              "argNum": 1,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg mail"
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg mails"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Votre boîte de réception contient %1$#@mails@, dont %2$#@unread@."
+          },
+          "substitutions": {
+            "mails": {
+              "argNum": 1,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg mail"
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg mails"
+                    }
+                  }
+                }
+              }
+            },
+            "unread": {
+              "argNum": 2,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg non lu"
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg non lus"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "→ %lld mails will be archived, %lld will stay in the Inbox.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "→ %1$#@archived@, %2$lld will stay in the Inbox."
+          },
+          "substitutions": {
+            "archived": {
+              "argNum": 1,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg mail will be archived"
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg mails will be archived"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "→ %1$#@archived@, %2$#@stay@ dans la boîte de réception."
+          },
+          "substitutions": {
+            "archived": {
+              "argNum": 1,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg mail sera archivé"
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg mails seront archivés"
+                    }
+                  }
+                }
+              }
+            },
+            "stay": {
+              "argNum": 2,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg restera"
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg resteront"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
