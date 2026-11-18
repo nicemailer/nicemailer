@@ -1,0 +1,5 @@
+/* The texts of Info.plist in Brazilian Portuguese: the reason macOS shows when it
+   asks for Contacts. Copied into NiceMailer.app by scripts/make-bundle.sh;
+   every key ending with UsageDescription in Info.plist needs its
+   translation here (scripts/tests/test_bundle_languages.py). */
+"NSContactsUsageDescription" = "O NiceMailer mostra os números de telefone e o cartão dos remetentes de uma conversa entre os links do e-mail (l). Nada é copiado nem enviado.";

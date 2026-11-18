@@ -116,9 +116,11 @@ struct LocalizationTests {
             }
         }
         #expect(plural.count >= 20)
+        let languages = Set(catalog.values.flatMap { ($0["localizations"] as? [String: Any] ?? [:]).keys })
+        #expect(languages.count > 2)
         for (key, entry) in plural {
             let localizations = entry["localizations"] as? [String: [String: Any]] ?? [:]
-            for language in ["en", "fr"] {
+            for language in languages {
                 #expect(localizations[language] != nil, "\(key) has no \(language)")
             }
         }
@@ -279,6 +281,16 @@ struct LocalizationTests {
         #expect(L(in: "en", "%@ (and %lld others)", "Lire", 1) == "Lire (and 1 other)")
         #expect(L(in: "fr", "%@ (and %lld others)", "Lire", 2) == "Lire (et 2 autres)")
         #expect(L(in: "en", "%lld days", 1) == "1 day" && L(in: "fr", "%lld years", 1) == "1 an")
+        // Russian, Ukrainian and Polish have four forms: 1, 2–4, 5–20 and
+        // 21 again like 1; Japanese, Chinese and Korean have one.
+        #expect(L(in: "ru", "%lld mails", 1) == "1 письмо")
+        #expect(L(in: "ru", "%lld mails", 3) == "3 письма")
+        #expect(L(in: "ru", "%lld mails", 5) == "5 писем")
+        #expect(L(in: "ru", "%lld mails", 21) == "21 письмо")
+        #expect(L(in: "uk", "%lld days", 2) == "2 дні" && L(in: "uk", "%lld days", 11) == "11 днів")
+        #expect(L(in: "pl", "%lld years", 1) == "1 rok" && L(in: "pl", "%lld years", 3) == "3 lata" && L(in: "pl", "%lld years", 12) == "12 lat")
+        #expect(L(in: "ja", "%lld mails", 1) == "1件のメール" && L(in: "ja", "%lld mails", 7) == "7件のメール")
+        #expect(L(in: "zh-Hans", "%lld mails", 2) == "2 封邮件")
     }
 
     @Test func twoNumbersVaryEachOnItsOwn() {
@@ -355,6 +367,8 @@ struct LocalizationTests {
         func list(_ d: Format.Dates, _ t: Int) -> String { Format.geekListDate(t, in: d, now: Self.now, calendar: Self.calendar) }
         for (language, settings) in [("fr", "fr_FR"), ("en", "en_US"), ("en", "en_GB"), ("de", "de_DE"), ("pt", "pt_BR"),
                                      ("ru", "ru_RU"), ("ja", "ja_JP"), ("ko", "ko_KR"), ("es", "es_ES"), ("pl", "pl_PL"),
+                                     ("uk", "uk_UA"), ("fi", "fi_FI"), ("nb", "nb_NO"), ("da", "da_DK"), ("sv", "sv_SE"),
+                                     ("nl", "nl_NL"), ("it", "it_IT"), ("zh-Hans", "zh_CN"), ("zh-Hant", "zh_TW"),
                                      // The Islamic calendar and Arabic digits.
                                      ("ar", "ar_SA")] {
             let d = Self.dates(language, settings)

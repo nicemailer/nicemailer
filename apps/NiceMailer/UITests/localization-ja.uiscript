@@ -1,0 +1,26 @@
+# A Japanese interface on a Mac set to Japan (fixtures/localization-ja.language
+# and .locale, docs/localization.md): Japanese words and dates, wide glyphs
+# in the geek columns. The mail of 2021 comes from
+# fixtures/localization-ja.mbox, imported for this scenario only.
+key /
+type Rentrée de septembre
+key ret
+expect thread_count = 1
+expect selected_subject = Rentrée de septembre
+# Year first, as a Japanese Mac writes a short date.
+expect selected_date = 21/09/28
+expect reader_text ~ 2021年9月28日
+snap date
+# Japanese has a single plural form: the same text for 1 and for 4.
+key t
+type Urgent
+key ret
+expect header_tags = Urgent
+key ;
+key T
+expect screen = tags
+key d
+expect choice = タグUrgentを削除しますか？（1件のメールから外れます）
+snap plural
+key esc
+expect choice =

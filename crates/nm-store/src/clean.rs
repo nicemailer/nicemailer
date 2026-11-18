@@ -123,10 +123,18 @@ const WORDINGS: &[Wording] = &[
     // "W dniu 3.11.2026 o 10:52, Alice pisze:" (Thunderbird).
     Wording { start: "", word: "napisał(a)" },
     Wording { start: "w dniu ", word: "pisze" },
-    // Russian (Thunderbird): "03.11.2026 10:52, Alice пишет:".
-    Wording { start: "", word: "пишет" },
-    // Chinese: "Alice <a@x.org> 于2026年11月3日周二 10:52写道：".
+    // Russian (Thunderbird): "03.11.2026 10:52, Alice пишет:". Ukrainian:
+    // "3 лист. 2026 р. о 10:52 Alice <a@x.org> пише:" ("пишет" holds it too).
+    Wording { start: "", word: "пише" },
+    // Finnish: "ti 3.11.2026 klo 10.52 Alice <a@x.org> kirjoitti:".
+    Wording { start: "", word: "kirjoitti" },
+    // Japanese (Apple Mail): "2026/11/03 10:52、Alice <a@x.org>のメール:".
+    Wording { start: "", word: "のメール" },
+    // Korean (Gmail): "2026년 11월 3일 (화) 오전 10:52, Alice <a@x.org>님이 작성:".
+    Wording { start: "", word: "님이 작성" },
+    // Chinese, simplified and traditional: "Alice <a@x.org> 于2026年11月3日周二 10:52写道：".
     Wording { start: "", word: "写道" },
+    Wording { start: "", word: "寫道" },
 ];
 
 /// Whether `l` (lower case, trimmed) ends with a colon, full-width
@@ -203,6 +211,17 @@ fn forward_marker(line: &str) -> bool {
         "mensagem encaminhada",
         "doorgestuurd bericht",
         "vidarebefordrat meddelande",
+        "videresendt meddelelse",
+        "videresendt melding",
+        "välitetty viesti",
+        "przekazana wiadomość",
+        "wiadomość przekazana dalej",
+        "пересылаемое сообщение",
+        "переслане повідомлення",
+        "転送メッセージ",
+        "전달된 메시지",
+        "转发的邮件",
+        "轉寄的郵件",
     ]
     .contains(&core)
         || [
@@ -620,6 +639,11 @@ mod tests {
             "wt., 3 lis 2026 o 10:52 Alice <a@x.org> napisał(a):",
             "W dniu 3.11.2026 o 10:52, Alice pisze:",
             "03.11.2026 10:52, Alice пишет:",
+            "3 лист. 2026 р. о 10:52 Alice <a@x.org> пише:",
+            "ti 3.11.2026 klo 10.52 Alice <a@x.org> kirjoitti:",
+            "2026/11/03 10:52、Alice <a@x.org>のメール:",
+            "2026년 11월 3일 (화) 오전 10:52, Alice <a@x.org>님이 작성:",
+            "Alice <a@x.org> 於 2026年11月3日 週二 10:52 寫道：",
             "вт, 3 нояб. 2026 г. в 10:52, Alice <a@x.org>:",
             "2026年11月3日(火) 10:52 Alice <a@x.org>:",
             "Alice <a@x.org> 于2026年11月3日周二 10:52写道：",
@@ -665,6 +689,46 @@ mod tests {
         }
         for m in ["Von meinem iPhone gesendet", "Enviado desde mi iPhone", "Inviato da iPhone", "Verzonden vanaf mijn iPhone"] {
             assert!(mention(m), "{m}");
+        }
+    }
+
+    /// The app writes the line above a quote and the forward separator in
+    /// the user's language, from its String Catalog. Every language the
+    /// catalog holds must write them in a form `split` recognizes, or the
+    /// app's own replies would show the whole history (`localisation.md`,
+    /// section 3.3). Reading the catalog makes a new language checked as
+    /// soon as it is added.
+    #[test]
+    fn the_apps_own_quote_lines_are_recognized_in_every_language() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../apps/NiceMailer/Sources/NiceMailer/Resources/Localizable.xcstrings");
+        let catalog: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        let translations = |key: &str| -> Vec<(String, String)> {
+            let entry = &catalog["strings"][key];
+            let mut all = vec![("en".to_string(), key.to_string())];
+            for (lang, l) in entry["localizations"].as_object().unwrap() {
+                all.push((lang.clone(), l["stringUnit"]["value"].as_str().unwrap().to_string()));
+            }
+            all
+        };
+        let header = translations("On %@, at %@, %@ wrote:");
+        assert!(header.len() > 2, "the catalog has languages");
+        for (lang, format) in &header {
+            // `quoteHeader` passes the date, the time and the author: name
+            // and address, the address alone, or the name alone.
+            for who in ["Alice Martin <a@x.org>", "a@x.org", "Alice Martin"] {
+                let line = format
+                    .replacen("%@", "3 Nov 2026", 1)
+                    .replacen("%@", "10:52", 1)
+                    .replacen("%@", who, 1)
+                    .replace("%1$@", "3 Nov 2026")
+                    .replace("%2$@", "10:52")
+                    .replace("%3$@", who);
+                let s = split(&format!("Merci.\n\n{line}\n> Bonjour\n> Alice\n"));
+                assert_eq!(s.iter().map(|s| s.kind).collect::<Vec<_>>(), vec![SegmentKind::Text, SegmentKind::QuoteTail], "{lang}: {line}");
+            }
+        }
+        for (lang, marker) in translations("---------- Forwarded message ---------") {
+            assert!(forward_marker(&marker), "{lang}: {marker}");
         }
     }
 

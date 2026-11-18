@@ -21,7 +21,9 @@ spec.loader.exec_module(bundle_languages)
 
 class BundleLanguagesTest(unittest.TestCase):
     def test_the_languages_are_those_of_the_catalog(self):
-        self.assertEqual(bundle_languages.languages(), ["en", "fr"])
+        self.assertEqual(bundle_languages.languages(), sorted([
+            "da", "de", "en", "es", "fi", "fr", "it", "ja", "ko", "nb", "nl", "pl", "pt-BR", "ru", "sv", "uk", "zh-Hans", "zh-Hant",
+        ]))
         with tempfile.TemporaryDirectory() as d:
             catalog = Path(d) / "Localizable.xcstrings"
             catalog.write_text(json.dumps({

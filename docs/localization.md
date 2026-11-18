@@ -1,6 +1,6 @@
 # Localization
 
-The Swift app follows the user's languages (System Settings, or the per-app language of NiceMailer). English and French are bundled; English is the fallback. The CLI and the core speak English only (`CLAUDE.md`, "Languages"). The work still to do for more languages is planned in `specifications/localisation.md`.
+The Swift app follows the user's languages (System Settings, or the per-app language of NiceMailer). The app speaks English (the fallback), French, German, Spanish, Italian, Portuguese (Brazil), Dutch, Swedish, Danish, Norwegian (Bokmål), Finnish, Polish, Russian, Ukrainian, Japanese, Chinese (Simplified and Traditional) and Korean. English and French are written by the project; the other languages are machine translations awaiting a review by native speakers. The CLI and the core speak English only (`CLAUDE.md`, "Languages"). The work still to do for more languages is planned in `specifications/localisation.md`.
 
 ## Two locales
 
@@ -73,10 +73,11 @@ The lists of addresses or of names are joined with ", ", right for the languages
 
 1. In `Localizable.xcstrings`, every key gets its translation (the tests fail on a key left out), and every key with a plural variation gets the forms of the language: `one` and `other` in English and French, `few` and `many` too in Russian or Polish, six forms in Arabic (CLDR plural rules). Each form keeps the arguments of its key.
 2. `apps/NiceMailer/Bundle/<language>.lproj/InfoPlist.strings`, with the texts of `Info.plist` macOS shows.
-3. The units of a typed duration (`DateChoice.units`, `10j`, `3w`) take the words of the language, without a letter that already names another unit.
-4. A UI scenario played in that language (`fixtures/<scenario>.language`), and a look at its snapshots: a longer language may cut a label.
-5. A review by someone whose language it is.
-6. A line in `CHANGELOG.md`.
+3. The units of a typed duration (`DateChoice.units`): the English letters (`10d`, `3w`, `6m`, `1y`) are read in every language, and the hint of the date selector gives them to the languages that have no units of their own. A language may add its own words, without a letter that already names another unit (French adds `j`, `s`, `a`).
+4. The line above a quote and the forward separator that the app writes (`On %@, at %@, %@ wrote:`, `---------- Forwarded message ---------`) must be recognized by the core (`WORDINGS` and `forward_marker` in `crates/nm-store/src/clean.rs`): a Rust test reads them from the catalog, in every language, and fails on one the core does not know. Prefer the wording of a common mail client of that language.
+5. A UI scenario played in that language (`fixtures/<scenario>.language`), and a look at its snapshots: a longer language may cut a label.
+6. A review by someone whose language it is.
+7. A line in `CHANGELOG.md`.
 
 The code does not change: `make bundle` declares the language from the catalog. Not ready: the languages written right to left (`specifications/localisation.md`, section 3.8). The keyboard shortcuts are not adapted to the keyboards of other countries: they are meant to be set by the user (section 3.5).
 
@@ -85,16 +86,18 @@ The code does not change: `make bundle` declares the language from the catalog. 
 `LocalizationTests` (Swift Testing):
 
 - every form of every translation has the placeholders of its key, each argument with its type (a `%@` given for a `%lld` would crash `String(format:)`), substitutions numbered;
-- every plural key varies in English and French;
+- every plural key varies in every language of the catalog;
 - every key of the catalog is used by the sources, so wordings that change do not leave dead keys;
 - no SwiftUI view shows a literal text outside the catalog;
-- the plural forms in English and French, 0, 1 and more, one number or two;
+- the plural forms in English and French, 0, 1 and more, one number or two; the four forms of Russian, Ukrainian and Polish (1, 3, 5, 21); the single form of Japanese and Chinese;
 - `interfaceLocale` keeps the region and the hour cycle of the Mac's settings;
-- the dates of the lists and of the reader in several locales, and the 8-character column in ten of them;
+- the dates of the lists and of the reader in several locales, and the 8-character column in the locales of every language of the app, plus Arabic with the Islamic calendar;
 - every reason of the contract written by `CoreReason` or listed as generic, never both; each sentence reads only values of its reason; an error said from its reason, a third party's text cited, an unknown reason said generically.
 
 In Rust, `contract_doc.rs` keeps the table of reasons of `docs/contract.md` equal to `nm_api::reason` with their values, and checks that each reason is given by the code; `nm-api` checks that every English sentence is completed by its values.
 
-`FormatTests` checks that every `L("…")` is in the catalog and that every key has a French translation in the compiled tables.
+`FormatTests` checks that every `L("…")` is in the catalog and that every key has a translation, in every language of the catalog, in the compiled tables.
 
-The UI scenarios run in English, with the region settings of a Mac set to France (`-AppleLocale fr_FR`), whatever the machine's. A scenario may set its language with `fixtures/<scenario>.language` and its region with `fixtures/<scenario>.locale` (`apps/NiceMailer/UITests/README.md`): `localization.uiscript` plays an English interface on a Mac set to France, `localization-fr.uiscript` a French interface on a Mac set to the United States.
+In Rust, `clean.rs` checks that the quote line and the forward separator of every language of the catalog are recognized. `scripts/tests/test_bundle_languages.py` checks that every language has its `InfoPlist.strings`.
+
+The UI scenarios run in English, with the region settings of a Mac set to France (`-AppleLocale fr_FR`), whatever the machine's. A scenario may set its language with `fixtures/<scenario>.language` and its region with `fixtures/<scenario>.locale` (`apps/NiceMailer/UITests/README.md`): `localization.uiscript` plays an English interface on a Mac set to France, `localization-fr.uiscript` a French interface on a Mac set to the United States, `localization-de.uiscript` and `localization-ja.uiscript` a German and a Japanese interface on a Mac of their country (long texts, wide glyphs, year-first dates).

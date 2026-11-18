@@ -61,27 +61,36 @@ struct FormatTests {
         #expect(!Fonts.cssFontFaces.isEmpty)
     }
 
-    /// Every string of the source catalog has a French translation in the
-    /// tables shipped with the app: `Localizable.strings`, and
-    /// `Localizable.stringsdict` for the keys with plural forms. (The
-    /// catalog itself is compiled into per-language tables, so it is read
-    /// from the repository.)
-    @Test func everyStringIsTranslatedIntoFrench() throws {
-        let path = try #require(Bundle.module.path(forResource: "fr", ofType: "lproj"))
-        var table = try #require(NSDictionary(contentsOfFile: path + "/Localizable.strings") as? [String: String])
-        let plurals = NSDictionary(contentsOfFile: path + "/Localizable.stringsdict") as? [String: Any] ?? [:]
-        #expect(plurals.count >= 20)
-        for (key, entry) in plurals where (entry as? [String: Any])?["NSStringLocalizedFormatKey"] != nil {
-            table[key] = key
-        }
+    /// Every string of the source catalog has a translation, in every
+    /// language of the catalog, in the tables shipped with the app:
+    /// `Localizable.strings`, and `Localizable.stringsdict` for the keys
+    /// with plural forms. (The catalog itself is compiled into
+    /// per-language tables, so it is read from the repository.)
+    @Test func everyStringIsTranslatedIntoEveryLanguage() throws {
         let catalog = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("Sources/NiceMailer/Resources/Localizable.xcstrings")
         let json = try JSONSerialization.jsonObject(with: Data(contentsOf: catalog)) as? [String: Any]
-        let keys = Array((json?["strings"] as? [String: Any] ?? [:]).keys)
-        #expect(keys.count > 50)
-        for key in keys {
-            #expect(table[key]?.isEmpty == false, "missing French for \(key)")
+        let strings = json?["strings"] as? [String: [String: Any]] ?? [:]
+        #expect(strings.count > 50)
+        // The languages are those the catalog translates into, French and
+        // the ones added after it alike. English is the source: its key is
+        // its text, and its table holds only the plural forms.
+        let languages = Set(strings.values.flatMap { ($0["localizations"] as? [String: Any] ?? [:]).keys }).subtracting(["en"])
+        #expect(languages.isSuperset(of: ["fr", "de", "ja", "ru", "zh-Hans", "zh-Hant"]))
+        for language in languages.sorted() {
+            // SwiftPM writes the lproj folder name in lower case.
+            let path = try #require(Bundle.module.path(forResource: language, ofType: "lproj")
+                                    ?? Bundle.module.path(forResource: language.lowercased(), ofType: "lproj"), "\(language)")
+            var table = try #require(NSDictionary(contentsOfFile: path + "/Localizable.strings") as? [String: String], "\(language)")
+            let plurals = NSDictionary(contentsOfFile: path + "/Localizable.stringsdict") as? [String: Any] ?? [:]
+            #expect(plurals.count >= 20, "\(language)")
+            for (key, entry) in plurals where (entry as? [String: Any])?["NSStringLocalizedFormatKey"] != nil {
+                table[key] = key
+            }
+            for key in strings.keys {
+                #expect(table[key]?.isEmpty == false, "missing \(language) for \(key)")
+            }
         }
     }
 

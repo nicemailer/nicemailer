@@ -13,6 +13,7 @@ How to write it:
 
 ### Added
 
+- NiceMailer is available in German, Spanish, Italian, Portuguese (Brazil), Dutch, Swedish, Danish, Norwegian, Finnish, Polish, Russian, Ukrainian, Japanese, Simplified and Traditional Chinese and Korean, following the language of macOS or the one chosen for the app. These translations have not yet been reviewed by native speakers.
 - NiceMailer updates itself: it checks for a new version once a day, or at once with NiceMailer > Check for Updates…, and installs it with its background core.
 - While NiceMailer is updated or upgrades its mailbox, the app, the `nicemailer` command and AI agents say so and wait, instead of reporting that NiceMailer is not running. `nicemailer --wait` waits for the end; without it, the command exits with status 75.
 - The mailbox is copied before each upgrade of its data format, and put back as it was if the upgrade fails: nothing is lost, and the previous version of NiceMailer can still open it.

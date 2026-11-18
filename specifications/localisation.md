@@ -1,6 +1,6 @@
 # Localisation : plan de travail
 
-Statut : livrés les chantiers 3.1 (le noyau décrit, l'app écrit), 3.2, 3.3, 3.4, 3.6, 3.7 et la procédure 3.9 (`docs/localization.md`) ; 3.5 décidé sans changement (raccourcis paramétrables sur une autre branche). Reste 3.8 (la longueur des traductions, l'écriture de droite à gauche).
+Statut : livrés les chantiers 3.1 (le noyau décrit, l'app écrit), 3.2, 3.3, 3.4, 3.6, 3.7 et la procédure 3.9 (`docs/localization.md`) ; 3.5 décidé sans changement (raccourcis paramétrables sur une autre branche). Reste 3.8 (la longueur des traductions, l'écriture de droite à gauche). Seize langues ajoutées par traduction automatique (allemand, espagnol, italien, portugais du Brésil, néerlandais, suédois, danois, norvégien, finnois, polonais, russe, ukrainien, japonais, chinois simplifié et traditionnel, coréen), en attente d'une relecture par des locuteurs natifs.
 
 Ce document est le plan pour qu'une troisième langue ne soit plus qu'une question de traduction. Les règles déjà en place sont dans `docs/localization.md` ; quand une étape est livrée, ses règles y passent et l'étape est rayée ici.
 
@@ -92,7 +92,7 @@ Pas fait : la mesure sur un échantillon de vrais mails, faute d'échantillon. L
 
 La colonne de date des listes geek affiche la même date courte, deux chiffres par champ, pour qu'on lise ce qu'on tape : le gabarit `ddMMyy` qu'elle utilisait suit la langue dans ICU, pas la région, et une interface française sur un Mac américain aurait affiché le jour d'abord tout en lisant le mois d'abord.
 
-Reste : les unités de durée (`10j`, `3w`) ne connaissent que l'anglais et le français ; chaque langue ajoutée y entre (section 3.9), en vérifiant qu'aucune lettre ne désigne deux unités.
+Les unités de durée anglaises (`10d`, `3w`, `6m`, `1y`) sont lues dans toutes les langues ; le français ajoute les siennes (`10j`). Une langue peut ajouter ses mots (section 3.9), en vérifiant qu'aucune lettre ne désigne deux unités ; les seize langues ajoutées se contentent des lettres anglaises, que l'indication du sélecteur leur donne.
 
 ### 3.5 Les raccourcis et les dispositions de clavier
 
