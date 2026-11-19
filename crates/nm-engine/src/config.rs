@@ -207,7 +207,8 @@ impl Default for RawSettings {
 pub struct UiSettings {
     pub view_threshold_ms: u64,
     /// The title bar of the window (its title and the red, orange and
-    /// green buttons): hidden by default, the content up to the top edge.
+    /// green buttons): shown by default, as most users expect; hidden, the
+    /// content goes up to the top edge.
     pub title_bar: TitleBar,
     /// The app presses the green button of the confirmation macOS shows
     /// before it calls a number (`docs/geek-ui.md`, "Calling a number").
@@ -218,7 +219,7 @@ pub struct UiSettings {
 
 impl Default for UiSettings {
     fn default() -> Self {
-        UiSettings { view_threshold_ms: 2_000, title_bar: TitleBar::Hidden, auto_confirm_calls: false }
+        UiSettings { view_threshold_ms: 2_000, title_bar: TitleBar::Shown, auto_confirm_calls: false }
     }
 }
 
@@ -867,8 +868,8 @@ impl<'t> Reader<'t> {
                 let u = UiSettings {
                     view_threshold_ms: self.int(&mut t, "view_threshold_ms", d.ui.view_threshold_ms, 0..=60_000)?,
                     title_bar: match self.choice(&mut t, "title_bar", &["hidden", "shown"])? {
-                        Some("shown") => TitleBar::Shown,
-                        _ => TitleBar::Hidden,
+                        Some("hidden") => TitleBar::Hidden,
+                        _ => TitleBar::Shown,
                     },
                     auto_confirm_calls: self.bool(&mut t, "auto_confirm_calls", d.ui.auto_confirm_calls)?,
                 };
@@ -1233,6 +1234,18 @@ pub fn defaults_file() -> String {
     )
 }
 
+/// Settings whose only reason to be touched is to choose the other value,
+/// the unusual one (`configuration.md`, section 3): the created
+/// `config.toml` shows that value, `# key = value`, rather than the default,
+/// so that removing the `# ` is all it takes. Each: the dotted key, and the
+/// value written, as TOML. The comment of the setting says its default.
+pub const OPT_IN_SWITCHES: &[(&str, &str)] = &[
+    ("ui.title_bar", "\"hidden\""),
+    ("ui.auto_confirm_calls", "true"),
+    ("ai.enabled", "true"),
+    ("unsubscribe.in_banned", "true"),
+];
+
 /// The `config.toml` the core creates when there is none
 /// (`configuration.md`, section 3): [`defaults_file`] with every setting
 /// commented out.
@@ -1243,14 +1256,30 @@ pub fn defaults_file() -> String {
 /// nothing. The table headers (`[sync]`) stay, so removing the `# ` of a
 /// line is all it takes to change a setting. A test checks that the file
 /// parses to the defaults, and still parses once any line is uncommented.
+///
+/// One exception: the keys of [`OPT_IN_SWITCHES`] are written with their
+/// unusual value, `# key = value`, so that removing the `# ` chooses it,
+/// which is the only reason to touch them. The file still gives the
+/// defaults, since the line is a comment; its own text says the default.
 pub fn config_template() -> String {
+    // Rust note: `mut` on a variable captured by the closure below lets it
+    // remember the table of the lines read so far.
+    let mut table = String::new();
     let body: String = settings_body()
         .lines()
         .map(|line| {
+            if let Some(name) = line.strip_prefix('[').and_then(|l| l.strip_suffix(']')) {
+                table = name.to_string();
+            }
             // A `key = value` line: neither a comment, a header, blank, nor
             // `version`, which says the format and is not a setting.
             if line.is_empty() || line.starts_with('#') || line.starts_with('[') || line.starts_with("version ") {
-                line.to_string()
+                return line.to_string();
+            }
+            let key = line.split(" = ").next().unwrap_or_default();
+            let dotted = format!("{table}.{key}");
+            if let Some((_, value)) = OPT_IN_SWITCHES.iter().find(|(k, _)| *k == dotted) {
+                format!("# {key} = {value}")
             } else {
                 format!("# {line}")
             }
@@ -1413,13 +1442,14 @@ verify_on_read = {verify_on_read}
 # Milliseconds a mail must stay on screen to count as viewed.
 view_threshold_ms = {view_threshold_ms}
 # The title bar of the window (title, red, orange and green buttons):
-# "hidden", the content up to the top edge (move the window by the status
-# bar, quit with Cmd-Q), or "shown". Applied at once.
+# "shown" (the default), or "hidden", the content up to the top edge (move
+# the window by the status bar, quit with Cmd-Q). Applied at once.
 title_bar = "{title_bar}"
 # Confirm the calls of the app for you: when it calls a number (Return on a
 # number of the links, a tel: link), the app presses the green button of
 # the notification macOS shows first. Needs the Accessibility permission
-# (System Settings, Privacy & Security). Applied at once.
+# (System Settings, Privacy & Security). Off by default (false). Applied
+# at once.
 auto_confirm_calls = {auto_confirm_calls}
 
 [audit]
@@ -1437,7 +1467,7 @@ format = "{compose_format}"
 [ai]
 # Allow mail to be sent to an AI provider, to proofread a draft, summarize
 # a conversation or sort the Quarantine. Nothing is ever sent without a
-# key pressed. One switch for every account.
+# key pressed. One switch for every account. Off by default (false).
 enabled = {ai_enabled}
 # "claude-code": the claude binary of Claude Code, signed in with your
 # Claude subscription (NiceMailer keeps no credential). "anthropic-api":

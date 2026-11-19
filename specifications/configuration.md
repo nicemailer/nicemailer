@@ -32,7 +32,7 @@ Une table `[accounts…]` dans `config.toml` est une **erreur** et non un averti
 
 Au démarrage, le noyau vérifie la présence des deux fichiers et **crée celui qui manque**. Même si l'utilisateur laisse tous les réglages à leur valeur par défaut, il voit ainsi ce qu'il peut modifier :
 
-- `config.toml` est créé avec **toutes les clés, commentées, avec leur valeur par défaut et leur rôle** : le texte de `nicemailer config defaults`, chaque ligne `clé = valeur` précédée de `# `. Les en-têtes de tables (`[sync]`) ne sont pas commentés : pour changer un réglage, il suffit d'enlever le `# ` de sa ligne.
+- `config.toml` est créé avec **toutes les clés, commentées, avec leur valeur par défaut et leur rôle** : le texte de `nicemailer config defaults`, chaque ligne `clé = valeur` précédée de `# `. Les en-têtes de tables (`[sync]`) ne sont pas commentés : pour changer un réglage, il suffit d'enlever le `# ` de sa ligne. Exception : un réglage qu'on ne touche que pour choisir sa valeur inhabituelle (`ui.title_bar`, `ui.auto_confirm_calls`, `ai.enabled`, `unsubscribe.in_banned`) est écrit avec cette valeur (`# title_bar = "hidden"`, `# enabled = true`), si bien que décommenter la ligne la choisit ; son commentaire donne la valeur par défaut.
 - `accounts.toml` est créé sans compte, avec un exemple de compte commenté.
 
 Commentées plutôt qu'écrites : une valeur écrite dans le fichier est un choix de l'utilisateur et resterait figée si une version ultérieure de NiceMailer changeait la valeur par défaut. Une ligne commentée montre la clé sans rien imposer. Les fichiers créés donnent donc exactement les valeurs par défaut.

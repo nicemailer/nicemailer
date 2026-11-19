@@ -2858,7 +2858,7 @@ impl Default for McpConfig {
 /// `ConfigChanged`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UiConfig {
-    /// `hidden` (the default) or `shown`.
+    /// `shown` (the default) or `hidden`.
     pub title_bar: String,
     /// `ui.auto_confirm_calls`: the app confirms its calls itself
     /// (`docs/geek-ui.md`, "Calling a number"). `false` when absent, for a

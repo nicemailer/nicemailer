@@ -11,9 +11,9 @@ The app always opens in this theme.
 
 ## Window
 
-The title bar of the window (its title and the red, orange and green buttons) is hidden by default: the content goes up to the top edge, and the status bar, at the top by default, takes its place. The empty parts of the status bar move the window when dragged and zoom it when double-clicked. Everything else of a window stays: resize by the edges, ⌘W, ⌘M, ⌘Q, full screen with ⌃⌘F. The app has a **single window**: there is no File > New Window (⌘N) and no window tabs. Its windows would all show the same folder, selection and reply, since they share one model; a second window becomes possible once each has a context of its own (`specifications/ui.md`, "Fenêtres"; `SingleWindow`).
+The title bar of the window (its title and the red, orange and green buttons) is shown by default. `ui.title_bar = "hidden"` in `config.toml` hides it: the content goes up to the top edge, and the status bar, at the top by default, takes its place; its empty parts move the window when dragged and zoom it when double-clicked. Everything else of a window stays: resize by the edges, ⌘W, ⌘M, ⌘Q, full screen with ⌃⌘F. The app has a **single window**: there is no File > New Window (⌘N) and no window tabs. Its windows would all show the same folder, selection and reply, since they share one model; a second window becomes possible once each has a context of its own (`specifications/ui.md`, "Fenêtres"; `SingleWindow`).
 
-`ui.title_bar = "shown"` in `config.toml` brings the title bar back; the app applies a change of the file at once (`config_status` gives it, `ConfigChanged` says to read it again). With the status bar hidden (`vs`) or at the bottom and the title bar hidden, the window is moved by the bottom bar, or not at all when no bar is shown: show the title bar, or the status bar, to move it.
+The app applies a change of the file at once (`config_status` gives it, `ConfigChanged` says to read it again). With the status bar hidden (`vs`) or at the bottom and the title bar hidden, the window is moved by the bottom bar, or not at all when no bar is shown: show the title bar, or the status bar, to move it.
 
 The keys of the app are commands in this window only. In the Preferences, the open and save panels and any other window, they go to that window: a letter typed in a field is text (`Geek/KeyRouting.swift`).
 

@@ -2,7 +2,7 @@
 //! (`configuration.md`, sections 3, 4 and 12).
 
 use nm_engine::config::{
-    self, AuthMethod, Config, Parsed, Problem, Security, accounts_template, changed_keys, config_template, defaults_file,
+    self, AuthMethod, OPT_IN_SWITCHES, Config, Parsed, Problem, Security, accounts_template, changed_keys, config_template, defaults_file,
     flatten, parse,
 };
 
@@ -376,10 +376,20 @@ fn the_created_config_lists_every_setting_commented_out() {
     assert_eq!(parsed.config, Config::default());
     assert!(parsed.warnings.is_empty(), "{:?}", parsed.warnings);
     // Every key of `defaults_file` is there, commented out, with its
-    // default value: the same lines, behind "# ".
+    // default value: the same lines, behind "# ". An opt-in switch is
+    // there with its unusual value, never its default.
+    let mut table = "";
     for line in defaults_file().lines() {
+        if let Some(name) = line.strip_prefix('[').and_then(|l| l.strip_suffix(']')) {
+            table = name;
+        }
         let is_setting = !line.is_empty() && !line.starts_with('#') && !line.starts_with('[') && !line.starts_with("version ");
-        if is_setting {
+        let key = line.split(" = ").next().unwrap();
+        let dotted = format!("{table}.{key}");
+        if let Some((_, value)) = OPT_IN_SWITCHES.iter().find(|(k, _)| *k == dotted).filter(|_| is_setting) {
+            assert_ne!(line, format!("{key} = {value}"), "{dotted}: the value shown is not the default");
+            assert!(text.lines().any(|l| l == format!("# {key} = {value}")), "{line}: uncommenting chooses {value}");
+        } else if is_setting {
             assert!(text.lines().any(|l| l == format!("# {line}")), "{line} missing, or not commented out");
         } else if line.starts_with('[') {
             assert!(text.lines().any(|l| l == line), "the header {line} stays, to uncomment under it");
@@ -399,7 +409,40 @@ fn the_created_config_lists_every_setting_commented_out() {
     }
     let all: String = text.lines().map(|l| uncomment(l) + "\n").collect();
     let parsed = settings(&all).unwrap();
-    assert_eq!(Config { raw: Config::default().raw, ..parsed.config }, Config::default());
+    // Uncommented, the opt-in switches take their unusual value; everything
+    // else is its default.
+    let c = &parsed.config;
+    assert!(c.unsubscribe.in_banned && c.ui.auto_confirm_calls && c.ai.enabled);
+    assert_eq!(c.ui.title_bar, config::TitleBar::Hidden);
+    let defaults = Config::default();
+    let ui = config::UiSettings { title_bar: defaults.ui.title_bar, auto_confirm_calls: false, ..c.ui.clone() };
+    let ai = config::AiSettings { enabled: false, ..c.ai.clone() };
+    assert_eq!(Config { raw: defaults.raw.clone(), unsubscribe: defaults.unsubscribe.clone(), ui, ai, ..parsed.config }, defaults);
+}
+
+/// Removing the `# ` of an opt-in switch chooses its unusual value: what a
+/// user means by touching that line.
+#[test]
+fn uncommenting_an_opt_in_switch_chooses_its_unusual_value() {
+    let text = config_template();
+    assert!(text.contains("\n# in_banned = true\n"), "{text}");
+    assert!(text.contains("\n# title_bar = \"hidden\"\n"), "{text}");
+    assert!(text.contains("\n# auto_confirm_calls = true\n"), "{text}");
+    assert!(text.contains("\n# enabled = true\n"), "{text}");
+    let commented = settings(&text).unwrap().config;
+    assert!(!commented.unsubscribe.in_banned, "commented: the default");
+    assert_eq!(commented.ui.title_bar, config::TitleBar::Shown);
+    assert!(!commented.ui.auto_confirm_calls && !commented.ai.enabled);
+    let on = text.replace("\n# in_banned = true\n", "\nin_banned = true\n");
+    assert!(settings(&on).unwrap().config.unsubscribe.in_banned);
+    let hidden = text.replace("\n# title_bar = \"hidden\"\n", "\ntitle_bar = \"hidden\"\n");
+    assert_eq!(settings(&hidden).unwrap().config.ui.title_bar, config::TitleBar::Hidden);
+    // Every switch names a real key of the defaults.
+    let defaults = defaults_file();
+    for (switch, _) in OPT_IN_SWITCHES {
+        let key = switch.rsplit('.').next().unwrap();
+        assert!(defaults.contains(&format!("\n{key} = ")), "{switch}");
+    }
 }
 
 #[test]
@@ -482,9 +525,9 @@ fn compose_and_save_sent() {
 }
 
 #[test]
-fn the_title_bar_is_hidden_unless_asked() {
-    assert_eq!(settings("").unwrap().config.ui.title_bar, config::TitleBar::Hidden);
-    assert_eq!(settings("[ui]\ntitle_bar = \"shown\"\n").unwrap().config.ui.title_bar, config::TitleBar::Shown);
+fn the_title_bar_is_shown_unless_asked() {
+    assert_eq!(settings("").unwrap().config.ui.title_bar, config::TitleBar::Shown);
+    assert_eq!(settings("[ui]\ntitle_bar = \"hidden\"\n").unwrap().config.ui.title_bar, config::TitleBar::Hidden);
     let p = refused("[ui]\ntitle_bar = \"maybe\"\n");
     assert_eq!(p.key.as_deref(), Some("ui.title_bar"));
 }

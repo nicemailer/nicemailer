@@ -159,8 +159,8 @@ final class AppModel {
     var suspectMove: SuspectMove?
 
     /// `ui.title_bar` of `config.toml`: the title bar of the window is
-    /// hidden (the default), or shown (`WindowChrome`).
-    var titleBarHidden = true
+    /// shown (the default), or hidden (`WindowChrome`).
+    var titleBarHidden = false
     /// The keys of the geek theme: the defaults until the core answers, then
     /// those of `keymap.toml` (`keymap_get`, `docs/keymap.md`).
     var keymap: Keymap = .defaults
@@ -897,7 +897,8 @@ final class AppModel {
         guard let client else { return }
         if let status: ConfigStatusView = try? await client.call("config_status", [:]) {
             if let ui = status.ui {
-                titleBarHidden = ui.titleBar != "shown"
+                // Only an explicit "hidden" hides it: shown is the default.
+                titleBarHidden = ui.titleBar == "hidden"
                 autoConfirmCalls = ui.autoConfirmCalls ?? false
             }
             // An older core without `[unsubscribe]` keeps it closed, as

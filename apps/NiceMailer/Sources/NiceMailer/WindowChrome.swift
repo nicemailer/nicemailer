@@ -31,7 +31,7 @@ struct WindowChrome: NSViewRepresentable {
     }
 
     final class ChromeView: NSView {
-        var titleBarHidden = true
+        var titleBarHidden = false
         var title = "NiceMailer"
         private var observers: [NSObjectProtocol] = []
 

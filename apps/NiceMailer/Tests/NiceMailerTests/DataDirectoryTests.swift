@@ -70,13 +70,13 @@ struct WindowChromeTests {
 
     @Test func theSettingComesFromTheCore() async {
         let core = FakeCore { method, params in
-            method == "config_status" ? ["ui": ["title_bar": "shown"]] : Fixture.answer(method, params)
+            method == "config_status" ? ["ui": ["title_bar": "hidden"]] : Fixture.answer(method, params)
         }
         let model = AppModel()
-        // Hidden by default, until the core says otherwise.
-        #expect(model.titleBarHidden)
+        // Shown by default, until the core says otherwise.
+        #expect(!model.titleBarHidden)
         // The session reads the settings with the first list.
         await model.attach(core)
-        #expect(!model.titleBarHidden)
+        #expect(model.titleBarHidden)
     }
 }

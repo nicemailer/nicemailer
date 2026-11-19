@@ -42,8 +42,8 @@ fn missing_files_are_created_at_start_and_change_nothing() {
     assert!(status["path"].as_str().unwrap().ends_with("/config.toml"));
     assert!(status["accounts_path"].as_str().unwrap().ends_with("/accounts.toml"));
     // Every setting listed, commented out: the defaults apply. The
-    // window's title bar: hidden by default.
-    assert_eq!(status["ui"]["title_bar"], "hidden");
+    // window's title bar: shown by default.
+    assert_eq!(status["ui"]["title_bar"], "shown");
     // The app does not confirm calls for the user unless asked.
     assert_eq!(status["ui"]["auto_confirm_calls"], false);
     let config = std::fs::read_to_string(dir.path().join("config.toml")).unwrap();
@@ -69,16 +69,16 @@ fn existing_files_are_kept_as_they_are() {
 #[test]
 fn the_title_bar_setting_reaches_the_app_and_follows_the_file() {
     let dir = tempfile::tempdir().unwrap();
-    std::fs::write(dir.path().join("config.toml"), "[ui]\ntitle_bar = \"shown\"\n").unwrap();
+    std::fs::write(dir.path().join("config.toml"), "[ui]\ntitle_bar = \"hidden\"\n").unwrap();
     let _core = start(dir.path());
     let mut c = Client::connect(dir.path());
-    assert_eq!(c.call("config_status", json!({})).unwrap()["ui"]["title_bar"], "shown");
+    assert_eq!(c.call("config_status", json!({})).unwrap()["ui"]["title_bar"], "hidden");
     c.call("subscribe", json!({})).unwrap();
     std::thread::sleep(Duration::from_millis(500));
-    save(&mut c, dir.path(), "config.toml", "[ui]\ntitle_bar = \"hidden\"\n");
+    save(&mut c, dir.path(), "config.toml", "[ui]\ntitle_bar = \"shown\"\n");
     let e = c.event("ConfigChanged", 15);
     assert!(e["keys"].as_array().unwrap().contains(&json!("ui.title_bar")), "{e}");
-    assert_eq!(c.call("config_status", json!({})).unwrap()["ui"]["title_bar"], "hidden");
+    assert_eq!(c.call("config_status", json!({})).unwrap()["ui"]["title_bar"], "shown");
 }
 
 #[test]

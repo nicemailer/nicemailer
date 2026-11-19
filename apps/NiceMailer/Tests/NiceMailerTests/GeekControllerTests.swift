@@ -1216,7 +1216,7 @@ struct GeekControllerTests {
     @Test func theDisplayMenuChangesAndRemembersTheLayout() {
         press("v"); press("3")
         #expect(controller.columns == 3)
-        // At the top by default (the title bar is hidden); `vs` hides it.
+        // At the top by default; `vs` hides it.
         #expect(controller.statusPosition == .top)
         press("v"); press("s")
         #expect(controller.statusPosition == .hidden)

@@ -27,7 +27,7 @@ nicemailer config check other/config.toml   # ... and other/accounts.toml
 
 When a file is missing at the start of the core, the core creates it:
 
-- `config.toml` lists **every setting, commented out, with its default value and its role** (the same text as `nicemailer config defaults`, each `key = value` behind a `# `). A user who changes nothing still sees what can be changed. To change a setting, remove the `# ` in front of it: the table headers (`[sync]`, `[ui]`…) are not commented, so the line is already in the right table.
+- `config.toml` lists **every setting, commented out, with its default value and its role** (the same text as `nicemailer config defaults`, each `key = value` behind a `# `). A user who changes nothing still sees what can be changed. To change a setting, remove the `# ` in front of it: the table headers (`[sync]`, `[ui]`…) are not commented, so the line is already in the right table. One exception, the settings a user only ever touches to choose their unusual value (`OPT_IN_SWITCHES` in `config.rs`: `ui.title_bar`, `ui.auto_confirm_calls`, `ai.enabled`, `unsubscribe.in_banned`): they are written with that value (`# title_bar = "hidden"`, `# enabled = true`), so that removing the `# ` chooses it; their comment gives the default.
 - `accounts.toml` holds no account, only a commented example of one.
 
 Commented out rather than written: a value written in the file is the user's choice and stays when a later NiceMailer changes its default, whereas a commented line changes nothing. The created files therefore give exactly the defaults.
@@ -229,7 +229,7 @@ At start, the files are created if missing, then read before the core accepts cl
  "accounts_path": "/Users/me/.config/nicemailer/accounts.toml", "accounts_exists": true,
  "error": {"file": "config.toml", "line": 12, "key": "sync.poll_interval_secs", "message": "must be between 30 and 86400"},
  "warnings": [{"file": "config.toml", "line": 4, "key": "core.turbo", "message": "unknown key, ignored"}],
- "ui": {"title_bar": "hidden", "auto_confirm_calls": false},
+ "ui": {"title_bar": "shown", "auto_confirm_calls": false},
  "mcp": {"message_chars": 8000, "response_chars": 40000},
  "unsubscribe": {"in_banned": false},
  "as_of": {"epoch": "e_…", "seq": 7}}
@@ -265,7 +265,7 @@ They are all in `config.toml`; `nicemailer config defaults` prints them all. Ran
 | `raw.gc_grace_secs` | 86400 | 0 to 30 days | no (phase 8) |
 | `raw.verify_on_read` | true | | no (phase 3) |
 | `ui.view_threshold_ms` | 2000 | 0 to 60000 | no |
-| `ui.title_bar` | `hidden` | `hidden`, `shown` | yes: the app applies it at once (`geek-ui.md`, "Window") |
+| `ui.title_bar` | `shown` | `shown`, `hidden` | yes: the app applies it at once (`geek-ui.md`, "Window") |
 | `ui.auto_confirm_calls` | false | | yes: the app applies it at once; it presses the confirmation macOS shows before a call (`geek-ui.md`, "Calling a number") |
 | `audit.retention_days` | 365 | 1 to 36500 | no |
 | `compose.undo_send_seconds` | 5 | 0 to 30 | yes: the delay before a mail leaves ([sending.md](sending.md)) |
