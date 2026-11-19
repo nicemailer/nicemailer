@@ -1717,6 +1717,7 @@ async fn call(core: &Arc<Core>, source: Source, req: Request) -> Result<Value, R
             let query = nm_store::library::HistoryGroupQuery {
                 include_read: p.include_read,
                 range: p.first_id.zip(p.last_id),
+                sources: p.sources,
             };
             let (items, next_cursor) =
                 with_reader(core, move |s| s.list_history_groups(p.cursor.as_deref(), limit(p.limit), &query)).await?;

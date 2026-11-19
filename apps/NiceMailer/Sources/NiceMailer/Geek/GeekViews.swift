@@ -359,6 +359,20 @@ struct GeekStatusBar: View {
                     .accessibilityLabel(L("Contacts filtered on “%@”: click to show them all", query))
                     .uiTarget("chip-contacts")
             }
+            if let who = controller.historySourceChip {
+                // Whose actions the History screen shows: a chip like the
+                // contacts filter, removed by a click.
+                Text(verbatim: who + " ×")
+                    .lineLimit(1)
+                    .foregroundStyle(Palette.accentText)
+                    .padding(.horizontal, scaled(4))
+                    .overlay(Rectangle().stroke(Palette.accent.opacity(0.5), lineWidth: 1))
+                    .contentShape(Rectangle())
+                    .onTapGesture { controller.filterHistory(.everyone) }
+                    .help(L("History filtered on %@: click to show every action", who))
+                    .accessibilityLabel(L("History filtered on %@: click to show every action", who))
+                    .uiTarget("chip-history")
+            }
             if case .contactFilter = controller.overlay {
                 HStack(spacing: 0) {
                     Text("/")
@@ -2259,11 +2273,12 @@ private struct HistoryScreen: View {
         // Read once: the rows are worked out from the groups and their lines.
         let rows = controller.historyRows
         let open = controller.screenKey(.screenOpen), read = controller.screenKey(.historyToggleRead)
+        let who = controller.screenKey(.historyFilterSource)
         ScreenList(
             title: L("History"),
             hint: controller.historyIncludesRead
-                ? L("%@: open or unfold · %@: hide read mails · esc: back", open, read)
-                : L("%@: open or unfold · %@: show read mails · esc: back", open, read),
+                ? L("%@: open or unfold · %@: hide read mails · %@: who did it · esc: back", open, read, who)
+                : L("%@: open or unfold · %@: show read mails · %@: who did it · esc: back", open, read, who),
             count: rows.count, index: controller.screenIndex,
             onClick: { controller.clickScreenRow($0) },
             onRowAppear: { controller.screenRowAppeared($0) },

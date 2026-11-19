@@ -153,6 +153,7 @@ enum KeyAction: String, CaseIterable {
     case screenHalfPageDown = "screen.half_page_down"
     case screenHalfPageUp = "screen.half_page_up"
     case historyToggleRead = "history.toggle_read"
+    case historyFilterSource = "history.filter_source"
     case contactsFilter = "contacts.filter"
     case contactsDecideAddress = "contacts.decide_address"
     case contactsDecideDomain = "contacts.decide_domain"

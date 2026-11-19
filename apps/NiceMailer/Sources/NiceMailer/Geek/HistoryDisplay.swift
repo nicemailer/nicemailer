@@ -44,6 +44,50 @@ enum HistoryDisplay {
         }
     }
 
+    /// Who the screen shows the actions of (`history.filter_source`): one
+    /// of the authors of the column "who", or everyone. The terminal is the
+    /// CLI and the TUI together, as the column says them both "Terminal".
+    /// The other sources (the mail server, another Mac, the web) are rare in
+    /// the log and shown only with everyone.
+    ///
+    /// Swift note: `CaseIterable` gives `allCases`, the cases in the order
+    /// written, which is the order of the answers of the choice.
+    enum SourceFilter: String, CaseIterable {
+        case me, nicemailer, terminal, agent, everyone
+
+        /// The sources sent to the core (`list_history_groups`, `sources`);
+        /// empty: every source.
+        var sources: [String] {
+            switch self {
+            case .me: ["app"]
+            case .nicemailer: ["core"]
+            case .terminal: ["cli", "tui"]
+            case .agent: ["mcp"]
+            case .everyone: []
+            }
+        }
+
+        /// The key of its answer in the choice: the first letter of the
+        /// English word, `-` for "no filter", as on the other choices.
+        var key: String {
+            switch self {
+            case .me: "m"
+            case .nicemailer: "n"
+            case .terminal: "t"
+            case .agent: "a"
+            case .everyone: "-"
+            }
+        }
+
+        /// Its name, the same words as the column "who" (`who`).
+        var label: String {
+            switch self {
+            case .everyone: L("everyone")
+            default: HistoryDisplay.who(sources[0])
+            }
+        }
+    }
+
     /// What the row is about: the subject of the mail, the address, the name.
     static func title(_ g: HistoryGroup) -> String {
         if g.entity == "config" { return L("Settings") }

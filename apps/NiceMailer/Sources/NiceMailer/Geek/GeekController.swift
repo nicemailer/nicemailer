@@ -150,6 +150,8 @@ final class GeekController {
         /// tag leaves every mail, on the server too), so it is asked
         /// first. `count`: the mails of the tag, the members of the group.
         case deleteLabel(LabelKind, name: String, id: Int?, count: Int)
+        /// `f` on the History screen: whose actions it shows.
+        case historySource
     }
 
     /// One row of a menu or a picker.
@@ -296,6 +298,10 @@ final class GeekController {
     var historyUnfolded: [Int: [HistoryGroup]] = [:]
     /// The mails marked as read are shown too (`history.toggle_read`).
     var historyIncludesRead = false
+    /// Whose actions are shown (`history.filter_source`). Kept when the
+    /// screen is left, like `historyIncludesRead`: the chip of the status
+    /// bar says it is on (`historySourceChip`).
+    var historySource: HistoryDisplay.SourceFilter = .everyone
     /// A mail was opened from the History screen: Escape goes back to it.
     var returnsToHistory = false
     /// A page of the screen is being read: scrolling asks for the next one
@@ -967,6 +973,9 @@ final class GeekController {
             historyIncludesRead.toggle()
             screenIndex = 0
             Task { await loadHistory(reset: true) }
+        case .historyFilterSource:
+            choiceIndex = nil
+            overlay = .choice(.historySource)
         case .contactsFilter:
             overlay = .contactFilter
         case .contactsDecideAddress, .contactsDecideDomain:
@@ -2749,6 +2758,7 @@ final class GeekController {
                 ? L("Send, then file this mail in")
                 : L("Send, then file the conversation in")
         case .sendFrom: L("Send from")
+        case .historySource: L("Show the actions of")
         case .deleteLabel(.tag, let name, _, let count):
             L("Delete the tag %@ (taken off its %lld mails)?", name, count)
         case .deleteLabel(.group, let name, _, let count):
@@ -2785,6 +2795,13 @@ final class GeekController {
                 let marked = choice.kind == nil ? !forced : forced && current == choice.kind
                 return Entry(key: choice.key, label: choice.label, detail: marked ? "•" : nil) { [weak self] in
                     self?.setSenderKind(id, choice.kind)
+                }
+            }
+        case .historySource:
+            // The current filter is marked, as the current decision is.
+            return HistoryDisplay.SourceFilter.allCases.map { filter in
+                Entry(key: filter.key, label: filter.label, detail: filter == historySource ? "•" : nil) { [weak self] in
+                    self?.filterHistory(filter)
                 }
             }
         case .deleteLabel(let kind, let name, let id, _):
@@ -3275,9 +3292,26 @@ final class GeekController {
         } catch { model.report(error) }
     }
 
+    /// Shows the actions of `filter` only, from the top of the log: the
+    /// rows read so far were of another filter.
+    func filterHistory(_ filter: HistoryDisplay.SourceFilter) {
+        historySource = filter
+        screenIndex = 0
+        Task { await loadHistory(reset: true) }
+    }
+
+    /// The filter on who did it, as a chip of the status bar (`Me ×`), or
+    /// `nil` when every action is shown. Without it, a list of a few rows
+    /// would not say that the others are hidden.
+    var historySourceChip: String? {
+        guard screen == .history, historySource != .everyone else { return nil }
+        return historySource.label
+    }
+
     func loadHistory(reset: Bool) async {
         guard let client = model.core else { return }
         var params: [String: Any] = ["limit": 100, "include_read": historyIncludesRead]
+        if !historySource.sources.isEmpty { params["sources"] = historySource.sources }
         if !reset, let c = historyCursor { params["cursor"] = c }
         if reset { historyRequest += 1 }
         let request = historyRequest

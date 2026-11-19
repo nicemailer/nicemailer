@@ -30,7 +30,7 @@ fn groups(s: &Store, query: &HistoryGroupQuery) -> Vec<HistoryGroup> {
 }
 
 fn everything() -> HistoryGroupQuery {
-    HistoryGroupQuery { include_read: true, range: None }
+    HistoryGroupQuery { include_read: true, ..Default::default() }
 }
 
 /// (kind, count), newest first.
@@ -103,7 +103,7 @@ fn the_detail_of_a_group_gives_each_of_its_lines() {
     }
     mail(&s, 1_100, 8, "set_flags", FLAG);
     let group = groups(&s, &everything()).into_iter().find(|g| g.count == 3).unwrap();
-    let query = HistoryGroupQuery { include_read: false, range: Some((group.first_id, group.last_id)) };
+    let query = HistoryGroupQuery { range: Some((group.first_id, group.last_id)), ..Default::default() };
     let lines = groups(&s, &query);
     assert_eq!(lines.iter().map(|g| g.entity_id).collect::<Vec<_>>(), [3, 2, 1]);
     assert!(lines.iter().all(|g| g.count == 1 && g.kind == "read"));
@@ -193,4 +193,57 @@ fn a_long_run_of_hidden_lines_is_read_through() {
     let list = groups(&s, &HistoryGroupQuery::default());
     eprintln!("50,000 hidden lines read in {:?}", start.elapsed());
     assert_eq!(shape(&list), [("flagged".to_string(), 1)]);
+}
+
+fn of(sources: &[&str]) -> HistoryGroupQuery {
+    HistoryGroupQuery { include_read: true, sources: sources.iter().map(|s| s.to_string()).collect(), ..Default::default() }
+}
+
+#[test]
+fn a_filter_on_who_keeps_only_their_actions() {
+    let s = Store::open_in_memory().unwrap();
+    mail(&s, 1_000, 1, "set_flags", FLAG);
+    line(&s, 1_010, "core", "message", 2, "screen", r#"{"folder":"inbox"}"#);
+    line(&s, 1_020, "cli", "message", 3, "set_flags", FLAG);
+    line(&s, 1_030, "tui", "message", 4, "set_flags", UNREAD);
+    line(&s, 1_040, "mcp", "message", 5, "set_flags", FLAG);
+    let who = |q: &HistoryGroupQuery| groups(&s, q).into_iter().map(|g| g.source).collect::<Vec<_>>();
+    assert_eq!(who(&of(&["app"])), ["app"]);
+    assert_eq!(who(&of(&["core"])), ["core"]);
+    assert_eq!(who(&of(&["cli", "tui"])), ["tui", "cli"], "several sources at once");
+    assert_eq!(who(&of(&["mcp"])), ["mcp"]);
+    assert_eq!(who(&of(&[])).len(), 5, "no filter: everyone");
+}
+
+#[test]
+fn a_filter_on_who_does_not_join_two_runs_around_another_source() {
+    let s = Store::open_in_memory().unwrap();
+    mail(&s, 1_000, 1, "set_flags", FLAG);
+    line(&s, 1_000, "mcp", "message", 2, "set_flags", FLAG);
+    mail(&s, 1_000, 3, "set_flags", FLAG);
+    // Unfiltered, three rows; the agent's line kept the two of the app apart,
+    // and hiding it must not make them one action.
+    assert_eq!(shape(&groups(&s, &of(&["app"]))), [("flagged".to_string(), 1), ("flagged".to_string(), 1)]);
+}
+
+#[test]
+fn a_filter_on_who_still_hides_read_mails_and_pages() {
+    let s = Store::open_in_memory().unwrap();
+    for n in 0..10_i64 {
+        line(&s, 1_000 + n * 10, "mcp", "message", n, "set_flags", FLAG);
+        mail(&s, 1_000 + n * 10 + 5, 100 + n, "set_flags", FLAG);
+    }
+    line(&s, 2_000, "mcp", "message", 50, "set_flags", READ);
+    let query = HistoryGroupQuery { sources: vec!["mcp".into()], ..Default::default() };
+    let (first, next) = s.list_history_groups(None, 4, &query).unwrap();
+    assert_eq!(first.len(), 4);
+    assert!(first.iter().all(|g| g.source == "mcp" && g.kind == "flagged"), "the agent's read mail stays hidden");
+    let (rest, _) = s.list_history_groups(next.as_deref(), 100, &query).unwrap();
+    assert_eq!(first.len() + rest.len(), 10);
+}
+
+#[test]
+fn an_unknown_source_is_refused() {
+    let s = Store::open_in_memory().unwrap();
+    assert!(s.list_history_groups(None, 10, &of(&["someone"])).is_err());
 }

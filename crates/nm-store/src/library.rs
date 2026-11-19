@@ -70,6 +70,9 @@ pub struct HistoryGroupQuery {
     /// The lines between these two ids, each on its own: the detail of a
     /// group.
     pub range: Option<(i64, i64)>,
+    /// Only the lines of these sources (`Source::as_str`): who did it, as
+    /// the screen's filter chooses; every source when empty.
+    pub sources: Vec<String>,
 }
 
 /// Two lines further apart than this are two actions, even if they do the
@@ -448,15 +451,34 @@ impl Store {
         query: &HistoryGroupQuery,
     ) -> Result<(Vec<HistoryGroup>, Option<String>)> {
         let mut clauses: Vec<&str> = Vec::new();
-        let mut values: Vec<i64> = Vec::new();
+        let mut values: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
         if let Some(c) = cursor {
             let (d, id) = parse_pair(c)?;
             clauses.push("(date_created, id) < (?, ?)");
-            values.extend([d, id]);
+            values.push(Box::new(d));
+            values.push(Box::new(id));
         }
         if let Some((first, last)) = query.range {
             clauses.push("id BETWEEN ? AND ?");
-            values.extend([first, last]);
+            values.push(Box::new(first));
+            values.push(Box::new(last));
+        }
+        // Filtered in SQL, before the groups are made: the lines of the
+        // other sources never reach the scan. Grouping is not changed by it:
+        // a group needs consecutive ids, and a line of another source
+        // between two runs of one keeps them apart, filtered or not. As in
+        // `list_history_filtered`, the date index is read and the other
+        // sources' lines skipped (no index on `created_by`): a rare source
+        // may read much of the log to fill a page, once, as the list loads
+        // as it scrolls.
+        if !query.sources.is_empty() {
+            for s in &query.sources {
+                if Source::parse(s).is_none() {
+                    return Err(StoreError::InvalidParams(format!("unknown source: {s}")));
+                }
+            }
+            clauses.push("created_by IN (SELECT value FROM json_each(?))");
+            values.push(Box::new(serde_json::to_string(&query.sources).unwrap_or_default()));
         }
         let where_clause = if clauses.is_empty() { String::new() } else { format!("WHERE {}", clauses.join(" AND ")) };
         let sql = format!(

@@ -223,6 +223,13 @@ fn the_history_screen_reads_the_log_in_groups() {
         .call("list_history_groups", json!({"first_id": group["first_id"], "last_id": group["last_id"]}))
         .unwrap();
     assert_eq!(detail["items"].as_array().unwrap().len(), 2);
+    // Who did it: the app's move, and nothing from the terminal.
+    let mine = app.call("list_history_groups", json!({"sources": ["app"]})).unwrap();
+    assert!(mine["items"].as_array().unwrap().iter().all(|g| g["source"] == "app"));
+    assert!(mine["items"].as_array().unwrap().iter().any(|g| g["kind"] == "move"));
+    let terminal = app.call("list_history_groups", json!({"sources": ["cli", "tui"]})).unwrap();
+    assert_eq!(terminal["items"].as_array().unwrap().len(), 0);
+    assert_eq!(code(&app.call("list_history_groups", json!({"sources": ["robot"]})).unwrap_err()), -32602);
     let mut agent = Client::connect_as(dir.path(), "mcp");
     assert_eq!(code(&agent.call("list_history_groups", json!({})).unwrap_err()), 1007);
 }

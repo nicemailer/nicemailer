@@ -169,6 +169,7 @@ L'écran `;h` lit le journal par `list_history_groups`, du plus récent au plus 
 
 - **Lots.** Des lignes consécutives de même source, même entité, même action et même cible, écrites à moins de 2 s d'écart, forment un seul groupe : une action sur 300 mails tient sur une ligne. Retour chariot la déplie pour voir chaque mail. Le regroupement est fait par le noyau pendant la lecture du journal, pour ne jamais transférer les lignes d'un lot au client.
 - **Mails marqués comme lus.** Masqués par défaut, car ils forment l'essentiel du journal ; `u` les affiche.
+- **Qui l'a fait.** `f` ne garde que les actions d'un auteur : moi (`app`), NiceMailer (`core`), le terminal (`cli` et `tui`) ou un agent IA (`mcp`) ; `-` les montre toutes. Le noyau filtre avant de faire les lots (`sources`), si bien qu'une ligne d'un autre auteur entre deux séries les garde séparées, comme sans filtre. Le filtre reste quand on quitte l'écran ; une pastille de la barre d'état le rappelle et le retire d'un clic.
 - **Aller au mail.** Retour chariot sur une ligne de mail l'ouvre dans son dossier actuel, et Échap ramène à la même ligne, pour corriger une action. Sur un expéditeur, il liste ses mails.
 - **Mots.** Le noyau donne un code stable (`kind`) et sa valeur (`value`) ; l'app les traduit.
 
@@ -180,7 +181,7 @@ L'écran `;h` lit le journal par `list_history_groups`, du plus récent au plus 
 | `mark_viewed(message_id)` | commande | Met à jour `date_last_viewed` ; app, TUI et web seulement |
 | `get_history(entity, entity_id, cursor, limit)` | requête | Historique d'une entité tiré de `audit_log` |
 | `list_history(since?, sources?, cursor, limit)` | requête | Journal global, par exemple « tout ce qu'a fait l'agent aujourd'hui » |
-| `list_history_groups(include_read?, first_id?, last_id?, cursor, limit)` | requête | Journal de l'écran Historique, par lots ; `first_id` et `last_id` donnent les lignes d'un lot |
+| `list_history_groups(include_read?, sources?, first_id?, last_id?, cursor, limit)` | requête | Journal de l'écran Historique, par lots ; `first_id` et `last_id` donnent les lignes d'un lot |
 
 ## 7. Limites
 

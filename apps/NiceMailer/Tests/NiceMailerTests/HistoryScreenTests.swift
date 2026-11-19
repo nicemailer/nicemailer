@@ -165,6 +165,78 @@ struct HistoryScreenTests {
         #expect(controller.screenIndex == 0)
     }
 
+    // MARK: Who did it
+
+    @Test func eachFilterOnWhoAsksForItsSources() {
+        let sources = HistoryDisplay.SourceFilter.allCases.map(\.sources)
+        #expect(sources == [["app"], ["core"], ["cli", "tui"], ["mcp"], []])
+        // The answers of the choice are said as the column "who" says them.
+        #expect(HistoryDisplay.SourceFilter.me.label == L("Me"))
+        #expect(HistoryDisplay.SourceFilter.nicemailer.label == "NiceMailer")
+        #expect(HistoryDisplay.SourceFilter.terminal.label == L("Terminal"))
+        #expect(HistoryDisplay.SourceFilter.agent.label == L("AI agent"))
+        #expect(HistoryDisplay.SourceFilter.everyone.label == L("everyone"))
+        let keys = HistoryDisplay.SourceFilter.allCases.map(\.key)
+        #expect(Set(keys).count == keys.count, "one key per answer")
+    }
+
+    @Test func fChoosesWhoseActionsAreShown() async {
+        let (controller, _, core) = await screen()
+        #expect(core.calls("list_history_groups").last?["sources"] == nil, "everyone at first")
+        #expect(controller.historySourceChip == nil)
+        press(controller, "j")
+        press(controller, "f")
+        #expect(controller.activeChoice == .historySource)
+        // The current filter is marked.
+        #expect(controller.choiceEntries(.historySource).first { $0.detail == "•" }?.key == "-")
+        press(controller, "a")
+        #expect(controller.activeChoice == nil)
+        #expect(await eventually { core.calls("list_history_groups").last?["sources"] as? [String] == ["mcp"] })
+        #expect(controller.historySource == .agent)
+        #expect(controller.screenIndex == 0, "a new list starts at its top")
+        #expect(controller.historySourceChip == L("AI agent"))
+    }
+
+    @Test func theTerminalIsTheCLIAndTheTUI() async {
+        let (controller, _, core) = await screen()
+        press(controller, "f")
+        press(controller, "t")
+        #expect(await eventually { core.calls("list_history_groups").last?["sources"] as? [String] == ["cli", "tui"] })
+    }
+
+    @Test func theFilterStaysWithTheOtherKeysAndGoesWithEveryone() async {
+        let (controller, _, core) = await screen()
+        press(controller, "f")
+        press(controller, "m")
+        #expect(await eventually { core.calls("list_history_groups").last?["sources"] as? [String] == ["app"] })
+        // `u` reads the log again, still filtered.
+        press(controller, "u")
+        #expect(await eventually { core.calls("list_history_groups").last?["include_read"] as? Bool == true })
+        #expect(core.calls("list_history_groups").last?["sources"] as? [String] == ["app"])
+        // Leaving the screen keeps it; the chip shows only on the screen.
+        controller.open(.mail)
+        #expect(controller.historySourceChip == nil)
+        let reads = core.calls("list_history_groups").count
+        controller.open(.history)
+        #expect(controller.historySourceChip == L("Me"))
+        #expect(await eventually { core.calls("list_history_groups").count == reads + 1 })
+        #expect(core.calls("list_history_groups").last?["sources"] as? [String] == ["app"])
+        // A click on the chip, or `-`, shows everyone again.
+        controller.filterHistory(.everyone)
+        #expect(await eventually { core.calls("list_history_groups").count == reads + 2 })
+        #expect(core.calls("list_history_groups").last?["sources"] == nil)
+        #expect(controller.historySourceChip == nil)
+    }
+
+    @Test func escapeLeavesTheFilterAsItWas() async {
+        let (controller, _, _) = await screen()
+        press(controller, "f")
+        press(controller, "\u{1b}", code: KeyCode.escape)
+        #expect(controller.activeChoice == nil)
+        #expect(controller.historySource == .everyone)
+        #expect(controller.screen == .history, "Escape closes the question, not the screen")
+    }
+
     /// `ctrl-d` and `ctrl-u` move by half of the rows that fit, and stop on
     /// the first and the last row.
     @Test func controlDAndUMoveByHalfAPage() async {

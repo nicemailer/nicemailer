@@ -270,6 +270,7 @@ pub const ACTIONS: &[Action] = &[
     a("screen.half_page_down", Screen),
     a("screen.half_page_up", Screen),
     a("history.toggle_read", History),
+    a("history.filter_source", History),
     a("contacts.filter", Contacts),
     a("contacts.decide_address", Contacts),
     a("contacts.decide_domain", Contacts),

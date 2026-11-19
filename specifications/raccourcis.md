@@ -191,7 +191,7 @@ Les actions refusées en Quarantine sont une propriété du catalogue, **pas des
 | `ctrl-u` | `screen.half_page_up` (demi-page vers le haut) |
 | `enter` `l` | `screen.open` (mails du contact, du tag ou du groupe ; dans l'historique, le mail de la ligne, ou le détail d'un lot) |
 
-**`history`** : `u` `history.toggle_read` (affiche ou masque les mails marqués comme lus).
+**`history`** : `u` `history.toggle_read` (affiche ou masque les mails marqués comme lus), `f` `history.filter_source` (ne garde que les actions de moi, de NiceMailer, du terminal ou d'un agent IA).
 
 **`contacts`** : `/` `contacts.filter`, `m` `contacts.decide_address`, `M` `contacts.decide_domain`, `o` `contacts.sender_kind`.
 

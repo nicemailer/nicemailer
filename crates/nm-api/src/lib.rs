@@ -2440,6 +2440,10 @@ pub struct ListHistoryGroupsParams {
     pub first_id: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_id: Option<i64>,
+    /// Only the lines of these sources (`app`, `core`, `cli`, `mcp`…): who
+    /// did it, the filter of the History screen. Every source when empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sources: Vec<String>,
 }
 
 /// Consecutive `audit_log` lines of one action: one source doing the same

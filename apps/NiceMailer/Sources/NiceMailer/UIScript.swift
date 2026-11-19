@@ -805,6 +805,10 @@ private final class Runner {
             "history_group": c.historyRows.indices.contains(c.screenIndex) ? "\(c.historyRows[c.screenIndex].group.count)" : "",
             "history_unfolded": "\(c.historyUnfolded.count)",
             "history_read_shown": "\(c.historyIncludesRead)",
+            // Whose actions are shown (`HistoryDisplay.SourceFilter`), and
+            // the chip of the status bar that says it ("" when none).
+            "history_source": c.historySource.rawValue,
+            "history_source_chip": c.historySourceChip ?? "",
             "history_actions": c.historyRows.map { let a = HistoryDisplay.action($0.group); return a.verb + " " + a.detail }.joined(separator: " | "),
             "tags_count": "\(c.tags.count)",
             "groups_count": "\(c.groups.count)",

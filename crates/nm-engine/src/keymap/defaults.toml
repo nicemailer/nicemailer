@@ -92,6 +92,7 @@ d = "label.delete"                            # delete the group
 
 [history]
 u = "history.toggle_read"                     # show or hide the mails marked as read
+f = "history.filter_source"                   # only the actions of me, NiceMailer, the terminal or an AI agent
 
 [menu_navigation]
 down = "menu.next"                            # highlight the next row

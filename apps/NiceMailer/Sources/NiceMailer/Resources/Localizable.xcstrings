@@ -91784,230 +91784,6 @@
         }
       }
     },
-    "%@: open or unfold · %@: show read mails · esc: back": {
-      "localizations": {
-        "da": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@: åbn eller fold ud · %@: vis læste mails · esc: tilbage"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@: öffnen oder aufklappen · %@: gelesene E-Mails zeigen · Esc: zurück"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@: abrir o desplegar · %@: mostrar correos leídos · esc: volver"
-          }
-        },
-        "fi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@: avaa tai laajenna · %@: näytä luetut viestit · esc: takaisin"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ : ouvrir ou déplier · %@ : afficher les mails lus · esc : retour"
-          }
-        },
-        "it": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@: apri o espandi · %@: mostra le email lette · esc: indietro"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@: 開く/展開 · %@: 既読メールを表示 · esc: 戻る"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@: 열기/펼치기 · %@: 읽은 메일 표시 · esc: 뒤로"
-          }
-        },
-        "nb": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@: åpne eller utvid · %@: vis leste e-poster · esc: tilbake"
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@: openen of uitvouwen · %@: gelezen e-mails tonen · esc: terug"
-          }
-        },
-        "pl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@: otwórz lub rozwiń · %@: pokaż przeczytane · esc: wstecz"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@: abrir ou expandir · %@: mostrar e-mails lidos · esc: voltar"
-          }
-        },
-        "pt-PT": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@: abrir ou expandir · %@: mostrar e-mails lidos · esc: voltar"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@: открыть или развернуть · %@: показать прочитанные · esc: назад"
-          }
-        },
-        "sv": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@: öppna eller fäll ut · %@: visa lästa mejl · esc: tillbaka"
-          }
-        },
-        "uk": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@: відкрити або розгорнути · %@: показати прочитані · esc: назад"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@:打开或展开 · %@:显示已读邮件 · esc:返回"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@:打開或展開 · %@:顯示已讀郵件 · esc:返回"
-          }
-        }
-      }
-    },
-    "%@: open or unfold · %@: hide read mails · esc: back": {
-      "localizations": {
-        "da": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@: åbn eller fold ud · %@: skjul læste mails · esc: tilbage"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@: öffnen oder aufklappen · %@: gelesene E-Mails ausblenden · Esc: zurück"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@: abrir o desplegar · %@: ocultar correos leídos · esc: volver"
-          }
-        },
-        "fi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@: avaa tai laajenna · %@: piilota luetut viestit · esc: takaisin"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ : ouvrir ou déplier · %@ : masquer les mails lus · esc : retour"
-          }
-        },
-        "it": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@: apri o espandi · %@: nascondi le email lette · esc: indietro"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@: 開く/展開 · %@: 既読メールを隠す · esc: 戻る"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@: 열기/펼치기 · %@: 읽은 메일 숨기기 · esc: 뒤로"
-          }
-        },
-        "nb": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@: åpne eller utvid · %@: skjul leste e-poster · esc: tilbake"
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@: openen of uitvouwen · %@: gelezen e-mails verbergen · esc: terug"
-          }
-        },
-        "pl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@: otwórz lub rozwiń · %@: ukryj przeczytane · esc: wstecz"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@: abrir ou expandir · %@: ocultar e-mails lidos · esc: voltar"
-          }
-        },
-        "pt-PT": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@: abrir ou expandir · %@: ocultar e-mails lidos · esc: voltar"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@: открыть или развернуть · %@: скрыть прочитанные · esc: назад"
-          }
-        },
-        "sv": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@: öppna eller fäll ut · %@: dölj lästa mejl · esc: tillbaka"
-          }
-        },
-        "uk": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@: відкрити або розгорнути · %@: сховати прочитані · esc: назад"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@:打开或展开 · %@:隐藏已读邮件 · esc:返回"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@:打開或展開 · %@:隱藏已讀郵件 · esc:返回"
-          }
-        }
-      }
-    },
     "Marked": {
       "localizations": {
         "da": {
@@ -95252,6 +95028,566 @@
           "stringUnit": {
             "state": "translated",
             "value": "驗證規則"
+          }
+        }
+      }
+    },
+    "%@: open or unfold · %@: show read mails · %@: who did it · esc: back": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ : ouvrir ou déplier · %@ : afficher les mails lus · %@ : qui l'a fait · esc : retour"
+          }
+        },
+        "da": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@: åbn eller fold ud · %@: vis læste mails · %@: hvem gjorde det · esc: tilbage"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@: öffnen oder aufklappen · %@: gelesene E-Mails zeigen · %@: wer es war · Esc: zurück"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@: abrir o desplegar · %@: mostrar correos leídos · %@: quién lo hizo · esc: volver"
+          }
+        },
+        "fi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@: avaa tai laajenna · %@: näytä luetut viestit · %@: kuka teki · esc: takaisin"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@: apri o espandi · %@: mostra le email lette · %@: chi l'ha fatto · esc: indietro"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@: 開く/展開 · %@: 既読メールを表示 · %@: 実行者 · esc: 戻る"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@: 열기/펼치기 · %@: 읽은 메일 표시 · %@: 실행한 사람 · esc: 뒤로"
+          }
+        },
+        "nb": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@: åpne eller utvid · %@: vis leste e-poster · %@: hvem gjorde det · esc: tilbake"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@: openen of uitvouwen · %@: gelezen e-mails tonen · %@: wie het deed · esc: terug"
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@: otwórz lub rozwiń · %@: pokaż przeczytane · %@: kto to zrobił · esc: wstecz"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@: abrir ou expandir · %@: mostrar e-mails lidos · %@: quem fez · esc: voltar"
+          }
+        },
+        "pt-PT": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@: abrir ou expandir · %@: mostrar e-mails lidos · %@: quem fez · esc: voltar"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@: открыть или развернуть · %@: показать прочитанные · %@: кто сделал · esc: назад"
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@: öppna eller fäll ut · %@: visa lästa mejl · %@: vem gjorde det · esc: tillbaka"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@: відкрити або розгорнути · %@: показати прочитані · %@: хто зробив · esc: назад"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@:打开或展开 · %@:显示已读邮件 · %@:执行者 · esc:返回"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@:打開或展開 · %@:顯示已讀郵件 · %@:執行者 · esc:返回"
+          }
+        }
+      }
+    },
+    "%@: open or unfold · %@: hide read mails · %@: who did it · esc: back": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ : ouvrir ou déplier · %@ : masquer les mails lus · %@ : qui l'a fait · esc : retour"
+          }
+        },
+        "da": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@: åbn eller fold ud · %@: skjul læste mails · %@: hvem gjorde det · esc: tilbage"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@: öffnen oder aufklappen · %@: gelesene E-Mails ausblenden · %@: wer es war · Esc: zurück"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@: abrir o desplegar · %@: ocultar correos leídos · %@: quién lo hizo · esc: volver"
+          }
+        },
+        "fi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@: avaa tai laajenna · %@: piilota luetut viestit · %@: kuka teki · esc: takaisin"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@: apri o espandi · %@: nascondi le email lette · %@: chi l'ha fatto · esc: indietro"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@: 開く/展開 · %@: 既読メールを隠す · %@: 実行者 · esc: 戻る"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@: 열기/펼치기 · %@: 읽은 메일 숨기기 · %@: 실행한 사람 · esc: 뒤로"
+          }
+        },
+        "nb": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@: åpne eller utvid · %@: skjul leste e-poster · %@: hvem gjorde det · esc: tilbake"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@: openen of uitvouwen · %@: gelezen e-mails verbergen · %@: wie het deed · esc: terug"
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@: otwórz lub rozwiń · %@: ukryj przeczytane · %@: kto to zrobił · esc: wstecz"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@: abrir ou expandir · %@: ocultar e-mails lidos · %@: quem fez · esc: voltar"
+          }
+        },
+        "pt-PT": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@: abrir ou expandir · %@: ocultar e-mails lidos · %@: quem fez · esc: voltar"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@: открыть или развернуть · %@: скрыть прочитанные · %@: кто сделал · esc: назад"
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@: öppna eller fäll ut · %@: dölj lästa mejl · %@: vem gjorde det · esc: tillbaka"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@: відкрити або розгорнути · %@: сховати прочитані · %@: хто зробив · esc: назад"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@:打开或展开 · %@:隐藏已读邮件 · %@:执行者 · esc:返回"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@:打開或展開 · %@:隱藏已讀郵件 · %@:執行者 · esc:返回"
+          }
+        }
+      }
+    },
+    "everyone": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "tout le monde"
+          }
+        },
+        "da": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "alle"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "alle"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "todos"
+          }
+        },
+        "fi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "kaikki"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "tutti"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全員"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "모두"
+          }
+        },
+        "nb": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "alle"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iedereen"
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "wszyscy"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "todos"
+          }
+        },
+        "pt-PT": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "todos"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "все"
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "alla"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "усі"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "所有人"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "所有人"
+          }
+        }
+      }
+    },
+    "Show the actions of": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Afficher les actions de"
+          }
+        },
+        "da": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vis handlingerne fra"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aktionen anzeigen von"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mostrar las acciones de"
+          }
+        },
+        "fi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Näytä toiminnot, tekijä"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mostra le azioni di"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "表示する操作の実行者"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "작업을 표시할 대상"
+          }
+        },
+        "nb": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vis handlingene til"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Toon de acties van"
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pokaż działania:"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mostrar as ações de"
+          }
+        },
+        "pt-PT": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mostrar as ações de"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Показать действия:"
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Visa åtgärderna av"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Показати дії:"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示谁的操作"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "顯示誰的操作"
+          }
+        }
+      }
+    },
+    "History filtered on %@: click to show every action": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Historique filtré sur %@ : cliquer pour afficher toutes les actions"
+          }
+        },
+        "da": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Historik filtreret på %@: klik for at vise alle handlinger"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verlauf gefiltert nach %@: Klicke, um alle Aktionen zu zeigen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Historial filtrado por %@: haz clic para mostrar todas las acciones"
+          }
+        },
+        "fi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Historia suodatettu: %@. Napsauta näyttääksesi kaikki toiminnot"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cronologia filtrata su %@: fai clic per mostrare tutte le azioni"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@で絞り込んだ履歴：クリックするとすべての操作を表示"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@(으)로 필터링된 기록: 모든 작업을 보려면 클릭하십시오"
+          }
+        },
+        "nb": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Historikk filtrert på %@: klikk for å vise alle handlinger"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Geschiedenis gefilterd op %@: klik om alle acties te tonen"
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Historia przefiltrowana wg %@: kliknij, aby pokazać wszystkie działania"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Histórico filtrado por %@: clique para mostrar todas as ações"
+          }
+        },
+        "pt-PT": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Histórico filtrado por %@: clique para mostrar todas as ações"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "История отфильтрована: %@. Нажмите, чтобы показать все действия"
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Historik filtrerad på %@: klicka för att visa alla åtgärder"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Історію відфільтровано: %@. Натисніть, щоб показати всі дії"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已按“%@”过滤历史记录：点按以显示所有操作"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已依「%@」篩選歷史記錄：按一下以顯示所有操作"
           }
         }
       }

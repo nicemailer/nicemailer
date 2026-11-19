@@ -100,6 +100,7 @@
     "screen.half_page_down",
     "screen.half_page_up",
     "history.toggle_read",
+    "history.filter_source",
     "contacts.filter",
     "contacts.decide_address",
     "contacts.decide_domain",
@@ -307,6 +308,10 @@
       {
         "action": "history.toggle_read",
         "key": "u"
+      },
+      {
+        "action": "history.filter_source",
+        "key": "f"
       }
     ],
     "line_edit": [

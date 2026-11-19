@@ -49,5 +49,41 @@ key u
 expect history_read_shown = true
 key u
 expect history_read_shown = false
+# `f` chooses whose actions are shown: the question lists everyone, the
+# current filter marked.
+expect history_source_chip =
+key f
+expect choice = Show the actions of
+expect choice_rows ~ m Me
+expect choice_rows ~ a AI agent
+snap history-who
+key m
+expect history_source = me
+expect history_source_chip = Me
+expect history_who = Me
+expect history_verb = Moved
+snap history-who-me
+# NiceMailer: what the core did by itself, the mails sorted on arrival.
+key f
+key n
+expect history_source = nicemailer
+expect history_who = NiceMailer
+expect history_actions !~ Moved
+# The terminal: the CLI imported the fixture.
+key f
+key t
+expect history_who = Terminal
+expect history_verb = Imported
+# No AI agent acted: an empty list, the chip says why.
+key f
+key a
+expect history_count = 0
+expect history_source_chip = AI agent
+snap history-who-empty
+# A click on the chip shows everyone again.
+click chip:history
+expect history_source = everyone
+expect history_source_chip =
+expect history_who = Me
 key esc
 expect screen = mail
