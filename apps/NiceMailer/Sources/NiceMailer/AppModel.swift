@@ -172,6 +172,10 @@ final class AppModel {
     /// app is confirmed by the app itself (`CallConfirmation`). Off by
     /// default: it needs the Accessibility permission.
     var autoConfirmCalls = false
+    /// `unsubscribe.in_banned` of `config.toml`: the unsubscribe button
+    /// shows on the mails of Banned too (`UnsubscribeDisplay.offer`). Off
+    /// by default.
+    var unsubscribeInBanned = false
 
     /// The agent of the core, when the app carries it (`CoreAgent`).
     var agentState: CoreAgent.State = .notBundled
@@ -891,9 +895,14 @@ final class AppModel {
 
     func loadUISettings() async {
         guard let client else { return }
-        if let status: ConfigStatusView = try? await client.call("config_status", [:]), let ui = status.ui {
-            titleBarHidden = ui.titleBar != "shown"
-            autoConfirmCalls = ui.autoConfirmCalls ?? false
+        if let status: ConfigStatusView = try? await client.call("config_status", [:]) {
+            if let ui = status.ui {
+                titleBarHidden = ui.titleBar != "shown"
+                autoConfirmCalls = ui.autoConfirmCalls ?? false
+            }
+            // An older core without `[unsubscribe]` keeps it closed, as
+            // that core refuses it.
+            unsubscribeInBanned = status.unsubscribe?.inBanned ?? false
         }
         // The lists of the formatted mode and the mode a draft starts in
         // (`edition.md`, section 5): an older core without them leaves the

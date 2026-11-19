@@ -97,6 +97,20 @@ fn the_call_confirmation_setting_reaches_the_app_and_follows_the_file() {
 }
 
 #[test]
+fn the_unsubscribe_in_banned_setting_reaches_the_app_and_follows_the_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let _core = start(dir.path());
+    let mut c = Client::connect(dir.path());
+    assert_eq!(c.call("config_status", json!({})).unwrap()["unsubscribe"]["in_banned"], false, "off by default");
+    c.call("subscribe", json!({})).unwrap();
+    std::thread::sleep(Duration::from_millis(500));
+    save(&mut c, dir.path(), "config.toml", "[unsubscribe]\nin_banned = true\n");
+    let e = c.event("ConfigChanged", 15);
+    assert!(e["keys"].as_array().unwrap().contains(&json!("unsubscribe.in_banned")), "{e}");
+    assert_eq!(c.call("config_status", json!({})).unwrap()["unsubscribe"]["in_banned"], true);
+}
+
+#[test]
 fn accounts_and_changes_of_the_file_are_reported() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("accounts.toml"), ACCOUNT).unwrap();

@@ -172,7 +172,7 @@ What this does not hide: the IP address and the time of the first opening, for e
 
 ### Unsubscribing
 
-When the latest received mail of the conversation says how to unsubscribe from its list, a button appears on the title line, left of `text | html | images` (never in Junk, Quarantine or Banned: unsubscribing from a spam confirms the address to the spammer). Its look says where the link comes from and what a click does:
+When the latest received mail of the conversation says how to unsubscribe from its list, a button appears on the title line, left of `text | html | images` (never in Junk, Quarantine or Banned: unsubscribing from a spam confirms the address to the spammer; `unsubscribe.in_banned = true` in `config.toml` shows it in Banned, to clean that folder of the lists once signed up to, and the core then accepts it, [configuration.md](configuration.md)). Its look says where the link comes from and what a click does:
 
 | Button | Link | A click (or ⌘U) |
 | --- | --- | --- |

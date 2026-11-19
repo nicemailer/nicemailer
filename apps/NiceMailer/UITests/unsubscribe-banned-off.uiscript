@@ -1,0 +1,25 @@
+# By default the mails of Banned offer no unsubscribe: unsubscribing from
+# a spammer tells them the address is read. unsubscribe-banned.uiscript
+# plays unsubscribe.in_banned = true.
+expect unsubscribe_in_banned = false
+key ;
+key a
+expect folder = Archive
+key @
+type fixture
+key ret
+expect account = fixture
+expect selected_subject = La lettre de novembre
+expect unsubscribe = header:one_click
+key m
+key b
+expect flash ~ Banned
+key ;
+key b
+expect folder = Banned
+expect selected_subject = La lettre de novembre
+expect unsubscribe =
+snap banned-no-unsubscribe
+# ⌘U does nothing either.
+key cmd-u
+expect unsubscribe =

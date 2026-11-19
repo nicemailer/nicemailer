@@ -559,7 +559,7 @@ extension AppModel {
 
     /// The unsubscribe offered for the open thread: that of its latest
     /// received message, outside the spam folders (`UnsubscribeDisplay`).
-    var unsubscribeOffer: UnsubscribeView? { UnsubscribeDisplay.offer(latestReceived) }
+    var unsubscribeOffer: UnsubscribeView? { UnsubscribeDisplay.offer(latestReceived, inBanned: unsubscribeInBanned) }
 
     /// Unsubscribes from the list of the latest received message (`ui.md`,
     /// "Désabonnement"): the core does it with one click, or gives the page

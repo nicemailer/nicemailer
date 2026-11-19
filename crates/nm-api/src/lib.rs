@@ -2828,6 +2828,10 @@ pub struct ConfigStatus {
     /// The settings of `[mcp]` the MCP server applies itself.
     #[serde(default)]
     pub mcp: McpConfig,
+    /// `[unsubscribe]`: the unsubscribe of the mails of Banned. Off when
+    /// absent, for a client reading an older core.
+    #[serde(default)]
+    pub unsubscribe: UnsubscribeConfig,
     pub as_of: Position,
 }
 
@@ -2861,6 +2865,14 @@ pub struct UiConfig {
     /// client reading an older core.
     #[serde(default)]
     pub auto_confirm_calls: bool,
+}
+
+/// `[unsubscribe]` of `config.toml`, sent with `config_status`: the app
+/// shows the unsubscribe button of the mails of Banned only when
+/// `in_banned` is on (`ui.md`, "Désabonnement"), as the core accepts it.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UnsubscribeConfig {
+    pub in_banned: bool,
 }
 
 /// Why the core is in maintenance (`mise-a-jour.md`, section 2).

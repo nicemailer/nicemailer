@@ -1651,7 +1651,10 @@ async fn call(core: &Arc<Core>, source: Source, req: Request) -> Result<Value, R
             // falls back to opening the page.
             let p: UnsubscribeParams = params(req.params)?;
             let id = p.message_id;
-            let target = with_reader(core, move |s| s.unsubscribe_target(id)).await?;
+            // Read before the query: the lock of the engine is not held
+            // while the database is read.
+            let in_banned = core.engine.lock().unwrap().config().unsubscribe.in_banned;
+            let target = with_reader(core, move |s| s.unsubscribe_target(id, in_banned)).await?;
             let browser = |error: Option<String>| UnsubscribeResult {
                 method: "browser".into(),
                 done: false,
@@ -1941,6 +1944,7 @@ async fn call(core: &Arc<Core>, source: Source, req: Request) -> Result<Value, R
                     message_chars: engine.config().mcp.message_chars,
                     response_chars: engine.config().mcp.response_chars,
                 },
+                unsubscribe: nm_api::UnsubscribeConfig { in_banned: engine.config().unsubscribe.in_banned },
                 as_of,
             })
         }

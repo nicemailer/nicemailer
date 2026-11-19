@@ -499,6 +499,16 @@ fn calls_are_confirmed_by_the_app_only_when_asked() {
     assert_eq!(p.key.as_deref(), Some("ui.auto_confirm_calls"));
 }
 
+/// The unsubscribe of the mails of Banned: closed unless asked
+/// (`ui.md`, "Désabonnement").
+#[test]
+fn unsubscribing_in_banned_is_off_unless_asked() {
+    assert!(!settings("").unwrap().config.unsubscribe.in_banned);
+    assert!(settings("[unsubscribe]\nin_banned = true\n").unwrap().config.unsubscribe.in_banned);
+    let p = refused("[unsubscribe]\nin_banned = \"yes\"\n");
+    assert_eq!(p.key.as_deref(), Some("unsubscribe.in_banned"));
+}
+
 /// `[ai]` (`ia.md`, section 13): off by default, every value checked.
 #[test]
 fn the_ai_is_off_unless_asked_and_its_settings_are_checked() {

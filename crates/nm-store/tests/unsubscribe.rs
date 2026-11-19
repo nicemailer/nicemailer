@@ -99,7 +99,7 @@ fn reception_finds_the_header_then_the_body() {
 fn a_one_click_unsubscribe_is_recorded_on_the_sender_and_in_the_log() {
     let mut store = imported();
     let (id, _) = shown(&store, "Un clic");
-    let target = store.unsubscribe_target(id).unwrap();
+    let target = store.unsubscribe_target(id, false).unwrap();
     assert!(target.one_click && target.source == "header");
     let changes = store.mark_unsubscribed(id, Source::App).unwrap();
     assert_eq!(changes.threads.len(), 1);
@@ -135,7 +135,7 @@ fn no_unsubscribe_from_a_spam_folder_or_without_a_link() {
         .conn()
         .execute("INSERT INTO message_unsubscribe (message_id, url, source) VALUES (?1, 'https://spam.example/u', 'body')", [junk])
         .unwrap();
-    assert!(matches!(store.unsubscribe_target(junk), Err(StoreError::InvalidParams(_))));
+    assert!(matches!(store.unsubscribe_target(junk, false), Err(StoreError::InvalidParams(_))));
     // A message without any unsubscribe link.
     let other: i64 = store
         .conn()
@@ -143,5 +143,38 @@ fn no_unsubscribe_from_a_spam_folder_or_without_a_link() {
             r.get(0)
         })
         .unwrap();
-    assert!(matches!(store.unsubscribe_target(other), Err(StoreError::NotFound(_))));
+    assert!(matches!(store.unsubscribe_target(other, false), Err(StoreError::NotFound(_))));
+}
+
+/// A message of the folder of `role`, given an unsubscribe link.
+fn listed_in(store: &Store, role: FolderRole) -> i64 {
+    let id: i64 = store
+        .conn()
+        .query_row(
+            "SELECT m.id FROM message m JOIN folder f ON f.id = m.folder_id WHERE f.role = ?1
+              AND m.id NOT IN (SELECT message_id FROM message_unsubscribe) LIMIT 1",
+            [role.as_str()],
+            |r| r.get(0),
+        )
+        .unwrap();
+    store
+        .conn()
+        .execute("INSERT INTO message_unsubscribe (message_id, url, source) VALUES (?1, 'https://list.example/u', 'header')", [id])
+        .unwrap();
+    id
+}
+
+#[test]
+fn banned_opens_to_unsubscribing_only_when_asked_and_alone() {
+    let mut store = Store::open_in_memory().unwrap();
+    seed(&mut store, &SeedOptions { threads: 400, seed: 5, now: 1_790_000_000 }).unwrap();
+    let banned = listed_in(&store, FolderRole::Banned);
+    assert!(matches!(store.unsubscribe_target(banned, false), Err(StoreError::InvalidParams(_))), "closed by default");
+    let target = store.unsubscribe_target(banned, true).unwrap();
+    assert_eq!(target.url.as_deref(), Some("https://list.example/u"));
+    // Junk and Quarantine stay closed, whatever the setting.
+    for role in [FolderRole::Junk, FolderRole::Quarantine] {
+        let id = listed_in(&store, role);
+        assert!(matches!(store.unsubscribe_target(id, true), Err(StoreError::InvalidParams(_))), "{role:?}");
+    }
 }

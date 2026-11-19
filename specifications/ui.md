@@ -160,7 +160,7 @@ Limites assumées : l'adresse IP et l'heure de la première ouverture restent vi
 
 ### Désabonnement
 
-À gauche du sélecteur `text | html | images` de la ligne de titre, un bouton de désabonnement apparaît quand le dernier mail reçu de la conversation donne un moyen de se désabonner. Il est masqué dans Junk, Quarantine et Banned : se désabonner d'un spam confirme au spammeur que l'adresse est lue (le noyau refuse aussi).
+À gauche du sélecteur `text | html | images` de la ligne de titre, un bouton de désabonnement apparaît quand le dernier mail reçu de la conversation donne un moyen de se désabonner. Il est masqué dans Junk, Quarantine et Banned : se désabonner d'un spam confirme au spammeur que l'adresse est lue (le noyau refuse aussi). Exception voulue : `unsubscribe.in_banned = true` dans `config.toml` (faux par défaut) l'affiche dans Banned, et le noyau l'accepte alors, pour qui veut nettoyer ce dossier des listes auxquelles il s'était inscrit. Junk et Quarantine restent fermés : leurs expéditeurs n'ont jamais été choisis.
 
 - **Identification, par le noyau à la réception** : d'abord l'en-tête `List-Unsubscribe` (RFC 2369), fiable ; à défaut, un lien du corps dont le texte annonce un désabonnement (plusieurs langues). Le bouton distingue les deux : lien de l'en-tête, « propre », ou lien du corps, qui ouvre une page de l'expéditeur dans le navigateur.
 - **Action** : avec `List-Unsubscribe-Post: List-Unsubscribe=One-Click` (RFC 8058), le noyau envoie lui-même la requête et la barre de statut confirme. Sinon la page s'ouvre dans le navigateur ; une adresse `mailto:` seule s'ouvre dans Mail en attendant l'envoi SMTP. Un échec du désabonnement en un clic ouvre la page.

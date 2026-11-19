@@ -33,6 +33,7 @@ First public and open source release. 19 languages. Auto update. Configurable ke
 - **Tags and groups:** `t` and `g` also remove a tag or a group, for one mail or a selection; with several mails, each row says how many have it.
 - **Tags and groups:** Rename (`r`) or delete (`d`) a tag or a group from the Tags (`;T`) and Groups (`;g`) screens. Deleting a tag removes it from all its mails, on the server too.
 - **Tags and groups:** The Tags screen shows one row per tag name, with its mails counted across all accounts.
+- **Unsubscribing:** `unsubscribe.in_banned = true` in `config.toml` shows the unsubscribe button on the mails of Banned, to clean that folder of lists you once signed up to (off by default).
 - **Command line:** `nicemailer core stop` and `nicemailer core start` stop and start the background core, and return once it is done.
 
 ### Changed

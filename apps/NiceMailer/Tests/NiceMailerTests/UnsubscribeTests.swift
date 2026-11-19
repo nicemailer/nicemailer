@@ -115,6 +115,38 @@ struct UnsubscribeTests {
         #expect(UnsubscribeDisplay.offer(nil) == nil)
     }
 
+    /// `unsubscribe.in_banned` opens Banned, and Banned alone.
+    @Test func theSettingOpensBannedOnly() {
+        let u = view("one_click", "header")
+        #expect(UnsubscribeDisplay.offer(message(role: "banned", unsubscribe: u), inBanned: true) == u)
+        for role in ["junk", "quarantine"] {
+            #expect(UnsubscribeDisplay.offer(message(role: role, unsubscribe: u), inBanned: true) == nil, "\(role)")
+        }
+        #expect(UnsubscribeDisplay.offer(message(role: "inbox", unsubscribe: u), inBanned: true) == u)
+    }
+
+    /// The app reads the setting from `config_status`; a core that does not
+    /// give it keeps Banned closed.
+    @Test func theSettingIsReadFromTheCore() async {
+        for (answer, expected) in [(true, true), (false, false)] {
+            let core = FakeCore { method, params in
+                method == "config_status"
+                    ? ["ui": ["title_bar": "hidden"], "unsubscribe": ["in_banned": answer]] as [String: Any]
+                    : Fixture.answer(method, params)
+            }
+            let model = AppModel()
+            await model.attach(core)
+            #expect(await eventually { model.unsubscribeInBanned == expected }, "\(answer)")
+        }
+        let older = FakeCore { method, params in
+            method == "config_status" ? ["ui": ["title_bar": "hidden"]] as [String: Any] : Fixture.answer(method, params)
+        }
+        let model = AppModel()
+        await model.attach(older)
+        await model.loadUISettings()
+        #expect(!model.unsubscribeInBanned)
+    }
+
     @Test func theButtonSaysWhereTheLinkComesFromAndWhatAClickDoes() {
         // Header, one click: nothing opens, no symbol.
         #expect(UnsubscribeDisplay.label(view("one_click", "header")).symbol == nil)

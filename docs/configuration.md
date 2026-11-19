@@ -231,6 +231,7 @@ At start, the files are created if missing, then read before the core accepts cl
  "warnings": [{"file": "config.toml", "line": 4, "key": "core.turbo", "message": "unknown key, ignored"}],
  "ui": {"title_bar": "hidden", "auto_confirm_calls": false},
  "mcp": {"message_chars": 8000, "response_chars": 40000},
+ "unsubscribe": {"in_banned": false},
  "as_of": {"epoch": "e_…", "seq": 7}}
 ```
 
@@ -279,6 +280,7 @@ They are all in `config.toml`; `nicemailer config defaults` prints them all. Ran
 | `ai.history_days` | 30 | 1 to 3650 | not yet: days before the texts of the run history are purged |
 | `mcp.message_chars` | 8000 | 1000 to 100000 | yes: characters of one message when an AI agent reads a conversation ([mcp.md](mcp.md)); read by `nicemailer-mcp` at each call |
 | `mcp.response_chars` | 40000 | 4000 to 200000 | yes: characters of the text of one answer to an AI agent ([mcp.md](mcp.md)) |
+| `unsubscribe.in_banned` | false | | yes, at once: the mails of Banned offer their unsubscribe button, and the core accepts it (`geek-ui.md`, "Unsubscribing"); Junk and Quarantine never do. Unsubscribing from a spammer confirms the address: for those who know the sender is a real list |
 
 The `[mcp]` keys only bound the length of the answers to an AI agent: what an agent may do is never a key of this file, which an agent able to write files could change ([mcp.md](mcp.md), "Rights").
 

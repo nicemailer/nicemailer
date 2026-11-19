@@ -873,6 +873,7 @@ private final class Runner {
             "opened_file": UIScript.openedFile,
             "confirmed_calls": UIScript.confirmedCalls.joined(separator: ","),
             "auto_confirm_calls": "\(m.autoConfirmCalls)",
+            "unsubscribe_in_banned": "\(m.unsubscribeInBanned)",
             "mailbox_switched": UIScript.mailboxesSwitched.joined(separator: ","),
             "mailbox_question": m.pendingUpgrade.map { "\($0.url.lastPathComponent) \($0.from)->\($0.to)" } ?? "",
             "mailbox_upgrading": m.upgradingMailbox?.lastPathComponent ?? "",

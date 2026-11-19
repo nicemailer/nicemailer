@@ -1,0 +1,26 @@
+# Unsubscribing from a mail of Banned with unsubscribe.in_banned = true
+# (fixtures/unsubscribe-banned.config.toml): the button shows there, and
+# the core accepts it. unsubscribe-banned-off.uiscript plays the default.
+expect unsubscribe_in_banned = true
+key ;
+key a
+expect folder = Archive
+key @
+type fixture
+key ret
+expect account = fixture
+expect selected_subject = La lettre de novembre
+expect unsubscribe = header:one_click
+# Banned: the newsletter keeps its button.
+key m
+key b
+expect flash ~ Banned
+key ;
+key b
+expect folder = Banned
+expect selected_subject = La lettre de novembre
+expect unsubscribe = header:one_click
+snap banned-unsubscribe
+click reader:unsubscribe
+expect flash ~ Unsubscribed from Lettre
+expect unsubscribe = done

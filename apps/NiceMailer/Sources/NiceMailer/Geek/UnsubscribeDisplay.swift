@@ -17,10 +17,13 @@ enum UnsubscribeDisplay {
     static let hiddenIn: Set<String> = ["junk", "quarantine", "banned"]
 
     /// The unsubscribe offered for a message, or `nil`: none found, or a
-    /// spam folder.
-    static func offer(_ m: MessageView?) -> UnsubscribeView? {
+    /// spam folder. `inBanned` (`unsubscribe.in_banned` of `config.toml`,
+    /// off by default) offers it in Banned, to clean that folder of the
+    /// lists the user once signed up to; the core then accepts it too.
+    /// Junk and Quarantine never offer it.
+    static func offer(_ m: MessageView?, inBanned: Bool = false) -> UnsubscribeView? {
         guard let m, let u = m.unsubscribe else { return nil }
-        if let role = m.folderRole, hiddenIn.contains(role) { return nil }
+        if let role = m.folderRole, hiddenIn.contains(role), !(inBanned && role == "banned") { return nil }
         return u
     }
 

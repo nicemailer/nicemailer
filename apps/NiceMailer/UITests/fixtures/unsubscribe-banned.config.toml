@@ -1,0 +1,4 @@
+# Settings of unsubscribe-banned.uiscript: the mails of Banned offer their
+# unsubscribe.
+[unsubscribe]
+in_banned = true

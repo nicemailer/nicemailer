@@ -284,9 +284,17 @@ struct CommandResult: Decodable {
 }
 
 /// What the app reads of `config_status`: the settings of `[ui]` it
-/// applies itself (`WindowChrome`).
+/// applies itself (`WindowChrome`), and `[unsubscribe]`.
 struct ConfigStatusView: Decodable {
     let ui: UIConfig?
+    /// Absent from an older core (nil: closed).
+    var unsubscribe: UnsubscribeConfig? = nil
+}
+
+/// `[unsubscribe]` of `config.toml` (`ui.md`, "Désabonnement").
+struct UnsubscribeConfig: Decodable {
+    /// `unsubscribe.in_banned`: the button shows on the mails of Banned.
+    let inBanned: Bool
 }
 
 struct UIConfig: Decodable {

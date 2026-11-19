@@ -83,6 +83,7 @@ pub struct Config {
     pub compose: ComposeSettings,
     pub ai: AiSettings,
     pub mcp: McpSettings,
+    pub unsubscribe: UnsubscribeSettings,
     /// IMAP accounts, by key (`[accounts.<key>]` of `accounts.toml`).
     ///
     /// Rust note: a `BTreeMap` is a map sorted by key, so accounts are
@@ -105,6 +106,7 @@ impl Default for Config {
             compose: ComposeSettings::default(),
             ai: AiSettings::default(),
             mcp: McpSettings::default(),
+            unsubscribe: UnsubscribeSettings::default(),
             accounts: BTreeMap::new(),
         }
     }
@@ -284,6 +286,22 @@ impl Default for McpSettings {
         let d = nm_api::McpConfig::default();
         McpSettings { message_chars: d.message_chars, response_chars: d.response_chars }
     }
+}
+
+/// `[unsubscribe]` (`ui.md`, "Désabonnement"). By default no unsubscribe
+/// is offered in Junk, Quarantine or Banned: unsubscribing from a spam
+/// tells the spammer that the address is read. Banned holds the senders the
+/// user refused, often lists they signed up to once and now want gone:
+/// `in_banned` lets those who know the risk unsubscribe from them, to clean
+/// the folder. Junk and Quarantine stay closed, whatever the file says:
+/// their senders were never chosen by the user.
+///
+/// Not a right of an AI agent: agents cannot unsubscribe at all
+/// (`rights.rs`), so an agent writing this file gains nothing.
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct UnsubscribeSettings {
+    /// Offer and accept the unsubscribe of the mails in Banned.
+    pub in_banned: bool,
 }
 
 /// `[ai]` (`ia.md`, section 13): the AI assistance, off by default.
@@ -931,6 +949,15 @@ impl<'t> Reader<'t> {
             }
         };
 
+        let unsubscribe = match self.table(&mut s, "unsubscribe")? {
+            None => d.unsubscribe,
+            Some(mut t) => {
+                let u = UnsubscribeSettings { in_banned: self.bool(&mut t, "in_banned", d.unsubscribe.in_banned)? };
+                self.finish(t);
+                u
+            }
+        };
+
         // The accounts are in `accounts.toml`. Found here, they are an error
         // rather than a warning: ignoring them would start the core without
         // the user's accounts, and silently.
@@ -944,7 +971,7 @@ impl<'t> Reader<'t> {
             });
         }
         self.finish(s);
-        Ok(Config { version, core, sync, config_sync, events, import, raw, ui, audit, compose, ai, mcp, accounts: BTreeMap::new() })
+        Ok(Config { version, core, sync, config_sync, events, import, raw, ui, audit, compose, ai, mcp, unsubscribe, accounts: BTreeMap::new() })
     }
 
     /// `accounts.toml`: its `version` and its `[accounts.<key>]` tables,
@@ -1443,6 +1470,13 @@ history_days = {ai_history_days}
 message_chars = {mcp_message_chars}
 # Characters of the text of one answer. 4000 to 200000.
 response_chars = {mcp_response_chars}
+
+[unsubscribe]
+# Show the unsubscribe button on the mails of Banned, and let it work.
+# Off by default (false): unsubscribing from a spammer tells them that
+# your address is read. true cleans Banned of the lists you once signed
+# up to. Junk and Quarantine never offer it. Applied at once.
+in_banned = {unsubscribe_in_banned}
 "#,
         version = d.version,
         background_sorting = d.core.background_sorting,
@@ -1477,5 +1511,6 @@ response_chars = {mcp_response_chars}
         ai_history_days = d.ai.history_days,
         mcp_message_chars = d.mcp.message_chars,
         mcp_response_chars = d.mcp.response_chars,
+        unsubscribe_in_banned = d.unsubscribe.in_banned,
     )
 }

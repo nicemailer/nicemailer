@@ -294,8 +294,10 @@ impl Store {
     /// How to unsubscribe from the list of `message_id`, as found at
     /// reception (`unsubscribe.rs`). Refused for a message in Junk,
     /// Quarantine or Banned: unsubscribing from a spam only tells the
-    /// spammer that the address is read.
-    pub fn unsubscribe_target(&self, message_id: i64) -> Result<UnsubscribeTarget> {
+    /// spammer that the address is read. `in_banned`
+    /// (`unsubscribe.in_banned` of `config.toml`) opens Banned, never the
+    /// other two.
+    pub fn unsubscribe_target(&self, message_id: i64, in_banned: bool) -> Result<UnsubscribeTarget> {
         type Row = (Option<String>, Option<String>, bool, String, Option<String>);
         let (url, mailto, one_click, source, role): Row = self
             .conn
@@ -309,9 +311,16 @@ impl Store {
             )
             .optional()?
             .ok_or_else(|| StoreError::NotFound(format!("unsubscribe link of message {message_id}")))?;
-        if matches!(role.as_deref(), Some("junk" | "quarantine" | "banned")) {
+        let closed = match role.as_deref() {
+            Some("junk" | "quarantine") => true,
+            Some("banned") => !in_banned,
+            _ => false,
+        };
+        if closed {
             return Err(StoreError::InvalidParams(
-                "pas de désabonnement depuis Junk, Quarantine ou Banned : il confirmerait l'adresse au spammeur".into(),
+                "no unsubscribe from Junk, Quarantine or Banned: it would confirm the address to the spammer \
+                 (unsubscribe.in_banned in config.toml allows it in Banned)"
+                    .into(),
             ));
         }
         Ok(UnsubscribeTarget { url, mailto, one_click, source })
