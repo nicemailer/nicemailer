@@ -25,7 +25,12 @@
 //! # Pace (`pace.rs`)
 //!
 //! - At most `pace::LOGINS_PER_HOUR` logins per account over any hour,
-//!   both connections together: past it, the next connection waits.
+//!   both connections together: past it, the next connection waits. A
+//!   body connection that waits (or failed, or has not logged in yet)
+//!   leaves the bodies to the work connection, in slices of
+//!   `BODY_SLICE` after each pass: new mail never waits for its body as
+//!   long as the work connection is up. The two never fetch at the same
+//!   time (`Shared::body_turn`), so no body is downloaded twice.
 //! - A server that cuts a connection left in IDLE: IDLE is renewed at half
 //!   the time it allowed, and the account keeps one connection only (the
 //!   bodies are fetched on it). If the server cuts it even so, the account
@@ -47,7 +52,7 @@
 //! - No password, or a password saved for another server: the same, without
 //!   trying to connect.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant, SystemTime};
@@ -97,9 +102,17 @@ struct Shared {
     ready: Arc<(std::sync::Mutex<bool>, std::sync::Condvar)>,
     /// The logins of the last hour, both connections together.
     logins: Mutex<LoginBudget>,
-    /// The server cuts connections left idle: the body connection closes
-    /// and the work connection fetches the bodies (`pace.rs`).
-    one_connection: AtomicBool,
+    /// Held while bodies are fetched, by either connection: the work
+    /// connection takes over while the body connection has no session
+    /// (`Control::work_fetches_bodies`), and that one may log in again in
+    /// the middle of a slice. Each reads its queue again from the database
+    /// once it holds the turn, so neither downloads a body the other has
+    /// just completed.
+    ///
+    /// Rust note: `tokio::sync::Mutex`, not `std::sync::Mutex`, since it
+    /// is held across `.await` (a whole download); the two connections run
+    /// on runtimes of their own, which this mutex does not mind.
+    body_turn: tokio::sync::Mutex<()>,
 }
 
 /// Starts the worker of `spec`, once the threads of `wait` (the previous
@@ -121,7 +134,7 @@ pub(super) fn start(spec: AccountSpec, host: Arc<dyn SyncHost>, secrets: Arc<dyn
         status: status.clone(),
         ready: Arc::new((std::sync::Mutex::new(false), std::sync::Condvar::new())),
         logins: Mutex::new(LoginBudget::default()),
-        one_connection: AtomicBool::new(false),
+        body_turn: tokio::sync::Mutex::new(()),
     });
     let mut threads = Vec::new();
     let work = shared.clone();
@@ -218,34 +231,55 @@ enum NoSession {
     Stopped,
 }
 
+/// Which connection of the worker asks for a session.
+#[derive(Clone, Copy, PartialEq)]
+enum Conn {
+    Work,
+    Bodies,
+}
+
 /// Opens a session: reads the password (checked against the server the
 /// file names), connects, logs in, turns CONDSTORE and QRESYNC on.
-async fn connect(w: &Shared) -> Result<(Session, Option<Namespace>), NoSession> {
+async fn connect(w: &Shared, conn: Conn) -> Result<(Session, Option<Namespace>), NoSession> {
     if w.control.stopped() {
         return Err(NoSession::Stopped);
     }
     let cfg = &w.spec.config;
     // The budget of logins (`pace.rs`): checked before anything reaches
     // the server, and not shortened by `sync_now`.
+    //
+    // Each connection waits on its own signal. The body connection once
+    // waited on the work connection's: `notify_one` wakes a single waiter,
+    // so it could take a stop or a `sync_now` meant for the work
+    // connection. It does not touch the account's state either: the work
+    // connection may be up and syncing meanwhile, and the bodies go on
+    // through it.
+    let wake = if conn == Conn::Work { &w.control.work } else { &w.control.bodies };
+    let mut told = false;
     loop {
         let d = w.logins.lock().unwrap().wait(Instant::now());
         if d.is_zero() {
             break;
         }
-        eprintln!(
-            "sync {}: {} logins in the last hour, the most allowed: next one in {} s",
-            w.spec.key,
-            pace::LOGINS_PER_HOUR,
-            d.as_secs()
-        );
-        {
+        // Once per wait: a body connection is woken by every new mail.
+        if !told {
+            told = true;
+            let who = if conn == Conn::Work { "" } else { " (bodies)" };
+            eprintln!(
+                "sync {}{who}: {} logins in the last hour, the most allowed: next one in {} s",
+                w.spec.key,
+                pace::LOGINS_PER_HOUR,
+                d.as_secs()
+            );
+        }
+        if conn == Conn::Work {
             let mut st = w.status.lock().unwrap();
             st.state = "waiting".into();
             st.next_retry = Some(unix_now() + d.as_secs() as i64);
         }
         tokio::select! {
             _ = tokio::time::sleep(d) => {}
-            _ = w.control.work.notified() => {}
+            _ = wake.notified() => {}
         }
         if w.control.stopped() {
             return Err(NoSession::Stopped);
@@ -403,7 +437,7 @@ async fn work_loop(w: &Shared) {
         // wait for itself forever. Hence the `let` first.
         let error = w.status.lock().unwrap().error.clone();
         set(&w.status, "connecting", error);
-        let (mut s, namespace) = match connect(w).await {
+        let (mut s, namespace) = match connect(w, Conn::Work).await {
             Ok(s) => s,
             Err(NoSession::Stopped) => return,
             Err(NoSession::Blocked { state, error }) => {
@@ -536,11 +570,28 @@ async fn work_loop(w: &Shared) {
                     continue 'connect;
                 }
             }
-            let single = configured_single || w.one_connection.load(Ordering::SeqCst);
-            if single {
+            // One connection only (configured, or learnt from the server),
+            // or a body connection without session: the bodies are this
+            // connection's, a slice after each pass.
+            if w.control.work_fetches_bodies() {
                 set(&w.status, "syncing", None);
                 let deadline = Some(Instant::now() + BODY_SLICE);
-                match bodies.run(&mut s, w.host.as_ref(), w.spec.account_id, &w.control, &mut refused, deadline).await {
+                let result = {
+                    // Rust note: the guard of the lock lives until the end
+                    // of this block, so the turn is given back before the
+                    // pass or the wait that follows.
+                    let _turn = w.body_turn.lock().await;
+                    // Shared with a body connection, the queue may be out
+                    // of date: read it again (one indexed query).
+                    if !configured_single {
+                        bodies.reread();
+                    }
+                    let r = bodies.run(&mut s, w.host.as_ref(), w.spec.account_id, &w.control, &mut refused, deadline).await;
+                    // And the body connection reads its own again.
+                    w.control.reload.store(true, Ordering::SeqCst);
+                    r
+                };
+                match result {
                     Ok(more) => {
                         w.status.lock().unwrap().bodies_refused = refused;
                         if more {
@@ -585,7 +636,7 @@ async fn work_loop(w: &Shared) {
                     // still grows if it happens again.
                     if let Some(idled) = idled.filter(|_| error.is_fatal() && !matches!(error, ImapError::Timeout(_))) {
                         hold = hold.after_cut(idled);
-                        w.one_connection.store(true, Ordering::SeqCst);
+                        w.control.one_connection.store(true, Ordering::SeqCst);
                         w.status.lock().unwrap().hold = Some(match hold {
                             IdleHold::Renew(d) => format!("renew {}", d.as_secs()),
                             _ => format!("poll {}", poll.max(pace::POLL_FLOOR).as_secs()),
@@ -728,15 +779,28 @@ async fn idle_until(s: &mut Session, control: &Control, deadline: Instant, renew
     }
 }
 
+/// The body connection has no session any more: the work connection
+/// fetches the bodies until it has one again. Woken if it waits in IDLE,
+/// so that the bodies left, and those of the mail that comes meanwhile,
+/// do not wait for the next change on the Inbox. Not woken in any other
+/// state: it does a pass first anyway, which hands the bodies over; and a
+/// signal there would cut short its delay before a new login.
+fn body_session_lost(w: &Shared) {
+    if w.control.body_session.swap(false, Ordering::SeqCst) && w.status.lock().unwrap().state == "idle" {
+        w.control.work.notify_one();
+    }
+}
+
 /// The body connection (`sync.max_connections = 2`).
 async fn body_loop(w: &Shared) {
     let mut bodies = Bodies::new();
     let mut backoff = Backoff(BACKOFF_MIN);
     let mut refused = 0u64;
     'connect: loop {
+        body_session_lost(w);
         // The server cuts idle connections: the work connection fetches
         // the bodies from now on, this one stays closed (`pace.rs`).
-        if w.one_connection.load(Ordering::SeqCst) {
+        if w.control.one_connection.load(Ordering::SeqCst) {
             parked_bodies(w).await;
             return;
         }
@@ -750,7 +814,7 @@ async fn body_loop(w: &Shared) {
                 return;
             }
         }
-        let mut s = match connect(w).await {
+        let mut s = match connect(w, Conn::Bodies).await {
             Ok((s, _)) => s,
             Err(NoSession::Stopped) => return,
             // The work connection reports the account's errors; this one
@@ -765,8 +829,18 @@ async fn body_loop(w: &Shared) {
             }
         };
         bodies.new_session();
+        // From now on the bodies are this connection's: the work
+        // connection goes back to IDLE after its current slice.
+        w.control.body_session.store(true, Ordering::SeqCst);
         loop {
-            match bodies.run(&mut s, w.host.as_ref(), w.spec.account_id, &w.control, &mut refused, None).await {
+            let result = {
+                // The turn, while the work connection may still be in a
+                // slice it began before this session. The queue is read
+                // again after it (`control.reload`, set by that slice).
+                let _turn = w.body_turn.lock().await;
+                bodies.run(&mut s, w.host.as_ref(), w.spec.account_id, &w.control, &mut refused, None).await
+            };
+            match result {
                 Ok(_) => {
                     backoff.reset();
                     w.status.lock().unwrap().bodies_refused = refused;
@@ -781,7 +855,7 @@ async fn body_loop(w: &Shared) {
                         s.logout().await;
                         return;
                     }
-                    if w.one_connection.load(Ordering::SeqCst) {
+                    if w.control.one_connection.load(Ordering::SeqCst) {
                         s.logout().await;
                         continue 'connect;
                     }
@@ -792,6 +866,9 @@ async fn body_loop(w: &Shared) {
                 Err(PassError::Stopped) => return,
                 Err(e) => {
                     eprintln!("sync {} (bodies): {e}", w.spec.key);
+                    // Before the delay, not after it: the work connection
+                    // fetches the bodies meanwhile.
+                    body_session_lost(w);
                     pause_bodies(&w.control, backoff.next()).await;
                     continue 'connect;
                 }
@@ -801,7 +878,7 @@ async fn body_loop(w: &Shared) {
 }
 
 /// The body thread with nothing to do until the worker stops: the work
-/// connection fetches the bodies (`Shared::one_connection`).
+/// connection fetches the bodies (`Control::one_connection`).
 async fn parked_bodies(w: &Shared) {
     while !w.control.stopped() {
         tokio::select! {

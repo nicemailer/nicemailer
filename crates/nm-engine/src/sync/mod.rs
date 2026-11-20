@@ -20,6 +20,11 @@
 //!     connections of its own (`reponse.md`).
 //!
 //!   With `sync.max_connections = 1`, both jobs share the work connection.
+//!   So they do whenever the body connection has no session: before it
+//!   logs in, while it waits for the budget of logins (after a few sleeps
+//!   of the Mac), after a failure. Otherwise new mail would come in with
+//!   its headers alone and stay "(body not downloaded)" for as long as the
+//!   wait (up to an hour), even when opened ([`Control::work_fetches_bodies`]).
 //!   The plan had a third connection for IDLE alone: the work connection
 //!   leaves IDLE in a few milliseconds when it has something to do, so a
 //!   third would only cost one of the few connections servers allow.
@@ -61,7 +66,7 @@ use nm_store::raw::RawStore;
 use nm_store::{ChangeSet, Store, StoreError};
 use tokio::sync::Notify;
 
-use crate::config::{AccountConfig, SyncSettings};
+use crate::config::AccountConfig;
 use crate::secrets::Secrets;
 
 /// What the workers need from the daemon: the store, and the events.
@@ -124,12 +129,6 @@ pub struct AccountSpec {
     pub config: AccountConfig,
 }
 
-impl AccountSpec {
-    fn settings(&self) -> &SyncSettings {
-        &self.config.sync
-    }
-}
-
 /// Signals between the daemon and the threads of one worker.
 #[derive(Default)]
 pub(crate) struct Control {
@@ -155,6 +154,12 @@ pub(crate) struct Control {
     /// Bodies refused this run (size other than announced): not tried
     /// again until the core restarts.
     refused: Mutex<HashSet<i64>>,
+    /// The server cuts connections left idle: the body connection is closed
+    /// and the work connection fetches the bodies (`pace.rs`).
+    pub(crate) one_connection: AtomicBool,
+    /// The body connection holds a logged-in session. Never set with
+    /// `sync.max_connections = 1`, which has no body connection.
+    pub(crate) body_session: AtomicBool,
 }
 
 impl Control {
@@ -169,6 +174,14 @@ impl Control {
         self.work.notify_one();
         self.bodies.notify_one();
         self.send.notify_one();
+    }
+
+    /// Whether the work connection fetches the bodies now: one connection
+    /// only (configured or learnt), or a body connection without session.
+    /// A body wanted then must wake the work connection, not only the
+    /// body one, which may be waiting for a login for many minutes.
+    pub(crate) fn work_fetches_bodies(&self) -> bool {
+        self.one_connection.load(Ordering::SeqCst) || !self.body_session.load(Ordering::SeqCst)
     }
 
     /// Takes the "now" request, if any.
@@ -289,7 +302,7 @@ impl Syncer {
             if account_ids.contains(&w.spec.account_id) {
                 w.control.reload.store(true, Ordering::SeqCst);
                 w.control.bodies.notify_one();
-                if w.spec.settings().max_connections < 2 {
+                if w.control.work_fetches_bodies() {
                     w.control.work.notify_one();
                 }
             }
@@ -312,9 +325,10 @@ impl Syncer {
                 }
                 drop(q);
                 w.control.bodies.notify_one();
-                // With a single connection, the work connection fetches
-                // bodies: wake it from IDLE.
-                if w.spec.settings().max_connections < 2 {
+                // When the work connection fetches the bodies (one
+                // connection, or the body connection without session):
+                // wake it from IDLE, or from the wait of a polled account.
+                if w.control.work_fetches_bodies() {
                     w.control.work.notify_one();
                 }
             }

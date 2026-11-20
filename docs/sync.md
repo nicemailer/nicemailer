@@ -34,6 +34,8 @@ Each account has two connections, each on a thread of its own:
 
 `sync.max_connections = 1` (in `[sync]`, or `[accounts.<key>.sync]`) puts both jobs on the work connection: bodies are then downloaded 30 s at a time between two passes. Use it for a server that allows few connections per user.
 
+The work connection also takes the bodies over, the same way, whenever the body connection has no session: before its first login, while it waits for the budget of logins (after a few sleeps of the Mac, up to an hour), or after a failure until its next attempt succeeds. As long as the work connection is up, a new mail gets its body within seconds of its headers, and a mail opened gets its body first. The two connections never download at the same time (one holds the turn, and the other reads its queue again after it), so no body is downloaded twice. Until 20 November 2026 the body connection kept the bodies to itself while it waited: new mail came in with its headers alone and showed "(body not downloaded)" for as long as the wait, even when opened.
+
 The plan had a third connection for IDLE alone. The work connection leaves IDLE within milliseconds when it has something to do, so a third one would only use one more of the few connections servers allow (Dovecot: 10 per user and address by default).
 
 ## A pass
@@ -107,7 +109,7 @@ What is learnt lasts as long as the worker: a restart of the core, or a change o
 
 ## Bodies
 
-On the body connection: first the bodies the user is waiting for (a thread opened by `get_thread` whose mails have no body yet), then the Inbox, the most recent first, then the other folders. Each body is streamed into the raw store and completed in the database in batches ([ingestion.md](ingestion.md)).
+On the body connection (or the work connection, "Connections" above): first the bodies the user is waiting for (a thread opened by `get_thread` whose mails have no body yet), then the Inbox, the most recent first, then the other folders. Each body is streamed into the raw store and completed in the database in batches ([ingestion.md](ingestion.md)).
 
 A body whose size differs from the `RFC822.SIZE` the server announced is refused (`stockage-brut.md`, section 5, step 2), and not tried again until the core restarts: retrying would download it again and again. `sync status` counts them (`bodies_refused`). A server that counts sizes differently from what it sends would leave such messages without body: none was seen on Dovecot; to be watched on other servers.
 
@@ -151,7 +153,7 @@ Same on both sides (0.1 s)
 | `crates/nm-store/tests/sync.rs` | folder listing (roles of the first listing only, a rename found by `UIDVALIDITY`, a role folder gone kept), flags and keywords, a move made elsewhere kept, a copy or an uncertain move inserted, flags and deletions in one transaction applied twice harmlessly, `uidnext` per batch, a UID already known not inserted twice, purge, nothing of it journaled (`tracabilite.md`), the order of bodies |
 | `crates/nm-daemon/tests/sync_rpc.rs` (`make imap-test`) | the real core against Dovecot, a second connection playing the phone. On both servers: first synchronization, new mail seen by IDLE and announced, flags, a move (with `MOVE`, and copy-delete-expunge on the minimal server) keeping the message's id, a deletion, changes made in NiceMailer reaching the server ([spool.md](spool.md)); `sync_verify` clean after each step. Also: one connection doing everything; a folder replaced (new `UIDVALIDITY`); a refused login waiting for a new password; network cuts at several moments (login, listing, bodies) without loss, duplicate or partial file |
 | `crates/nm-engine/src/sync/pace.rs` (unit tests) | the budget of logins (ten an hour, then the wait; a login a minute for an hour impossible); what a cut in IDLE teaches (renewal at half, then polling; polling at once for a cut within 10 s) |
-| `crates/nm-daemon/tests/pace_rpc.rs` (`make imap-test`) | the real core against Dovecot through a proxy that cuts connections as Orange did, without a TLS goodbye, counting them: cut after 12 s of silence, IDLE renewed every 6 s, no new connection for 30 s, a new mail still seen by IDLE and its body fetched on the same connection, no error shown; cut after 20 s whatever happens, polling chosen after the second cut, no connection before the next poll |
+| `crates/nm-daemon/tests/pace_rpc.rs` (`make imap-test`) | the real core against Dovecot through a proxy that cuts connections as Orange did, without a TLS goodbye, counting them: cut after 12 s of silence, IDLE renewed every 6 s, no new connection for 30 s, a new mail still seen by IDLE and its body fetched on the same connection, no error shown; cut after 20 s whatever happens, polling chosen after the second cut, no connection before the next poll; every connection after the first cut at once (the body connection never gets a session), the bodies still fetched, a new mail's within seconds |
 | `apps/NiceMailer/Tests/NiceMailerTests/EventOrderTests.swift` | a transient event neither reloads the app nor moves its position in the sequence |
 
 ## Volume

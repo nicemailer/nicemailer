@@ -35,6 +35,11 @@ enum Cut {
     ClientSilence(Duration),
     /// After this long, whatever happens: renewing does not help.
     Lifetime(Duration),
+    /// The first connection lives; every other one is cut at once. The
+    /// body connection then never gets a session, as when it waits for
+    /// the budget of logins after a few sleeps of the Mac (20 November
+    /// 2026: new mail stayed "(body not downloaded)" for 40 minutes).
+    AllButFirst,
 }
 
 /// A TCP proxy to Dovecot that cuts connections as `cut` says.
@@ -52,7 +57,13 @@ impl CuttingProxy {
         std::thread::spawn(move || {
             for client in listener.incoming() {
                 let Ok(client) = client else { return };
-                count.fetch_add(1, Ordering::SeqCst);
+                let index = count.fetch_add(1, Ordering::SeqCst);
+                // At once, not at the next check of the cutting thread:
+                // within its 100 ms a local login succeeds and fetches.
+                if matches!(cut, Cut::AllButFirst) && index > 0 {
+                    let _ = client.shutdown(Shutdown::Both);
+                    continue;
+                }
                 let Ok(server) = TcpStream::connect(("127.0.0.1", DOVECOT_TLS)) else { continue };
                 let last_from_client = Arc::new(Mutex::new(Instant::now()));
                 let born = Instant::now();
@@ -73,6 +84,7 @@ impl CuttingProxy {
                         let due = match cut {
                             Cut::ClientSilence(d) => last_from_client.lock().unwrap().elapsed() >= d,
                             Cut::Lifetime(d) => born.elapsed() >= d,
+                            Cut::AllButFirst => false,
                         };
                         // A socket already closed by either side: nothing
                         // to cut.
@@ -225,4 +237,31 @@ fn a_server_that_cuts_even_renewed_idle_gets_polled() {
     std::thread::sleep(Duration::from_secs(30));
     assert_eq!(proxy.connections(), before, "no connection before the next poll");
     assert_eq!(account(&mut c)["state"], "idle");
+}
+
+#[test]
+#[ignore = "needs the test servers: make imap-up, then make imap-test"]
+fn bodies_arrive_while_the_body_connection_has_no_session() {
+    let dir = tempfile::tempdir().unwrap();
+    let user = new_user();
+    deliver(&user, "first");
+    let proxy = CuttingProxy::start(Cut::AllButFirst);
+    let (_core, mut c) = core(dir.path(), proxy.port, &user);
+
+    // The body connection is cut at every attempt: the work connection
+    // fetches the bodies after its pass, the one already there included.
+    let a = until(&mut c, 60, "first body fetched", |a| a["passes"].as_u64() >= Some(1) && a["bodies_missing"] == 0);
+    assert!(a["error"].is_null(), "{a:#}");
+    assert!(proxy.connections() >= 2, "the body connection tried: {}", proxy.connections());
+
+    // A new mail, seen by IDLE on the work connection: its body follows
+    // within seconds, not when the body connection gets a session.
+    until(&mut c, 30, "back in IDLE", |a| a["state"] == "idle");
+    deliver(&user, "second");
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while !has_mail(dir.path(), "second") {
+        assert!(Instant::now() < deadline, "the new mail did not arrive");
+        std::thread::sleep(Duration::from_millis(200));
+    }
+    until(&mut c, 30, "second body fetched", |a| a["bodies_missing"] == 0);
 }

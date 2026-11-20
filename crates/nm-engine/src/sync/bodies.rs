@@ -81,6 +81,13 @@ impl Bodies {
         self.stale = true;
     }
 
+    /// The queue is read again from the database before the next body:
+    /// the other connection of the account may have fetched some of it
+    /// (`account.rs`, `Shared::body_turn`).
+    pub(crate) fn reread(&mut self) {
+        self.stale = true;
+    }
+
     /// Downloads bodies until none is left (`Ok(false)`), `deadline`
     /// passes (`Ok(true)`: some are left), or the worker must stop.
     pub(crate) async fn run(

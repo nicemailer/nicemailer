@@ -16,6 +16,10 @@ How to write it:
 
 - **Command line:** `nicemailer mailbox check`, `upgrade` and `backup` work on the mailbox in use, without a folder to type; `--data-dir` names another mailbox folder. `backup` takes only the file to write.
 
+### Fixed
+
+- **Mail:** New mail no longer stays "(body not downloaded)" for up to an hour after the Mac woke from sleep a few times: its body comes within seconds, and at once when you open it.
+
 ## 0.2.0 - 2026-11-18
 
 First public and open source release. 19 languages. Auto update. Configurable keyboard shortcuts. UI to add an account and option to try it in « look only » mode.
