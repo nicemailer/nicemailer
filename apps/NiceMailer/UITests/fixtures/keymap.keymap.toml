@@ -17,3 +17,7 @@ v = "view.one_column"
 [menu.goto]
 k = "goto.inbox"          # Inbox on k in the menu `;`
 i = "none"
+f = "goto.todo"           # replaces t, without "none" on t
+
+[menu.move]
+f = "move.todo"           # replaces t, without "none" on t

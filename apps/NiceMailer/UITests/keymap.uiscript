@@ -16,6 +16,9 @@ expect flash = No command m
 key M
 expect overlay = menu(NiceMailer.GeekController.Prefix.move)
 expect mode = M
+# f, given to move.todo, replaces its default t in the menu.
+expect menu_rows ~ f Todo
+expect menu_rows !~ t Todo
 key esc
 expect overlay = none
 # A menu of the user, on x: its rows, a row's key runs it.
@@ -31,8 +34,11 @@ expect columns = 1
 key ;
 expect menu_rows ~ k Inbox
 expect menu_rows !~ i Inbox
+expect menu_rows ~ f Todo
+expect menu_rows !~ t Todo
 key esc
 expect folder_keys ~ k Inbox
+expect folder_keys ~ f Todo
 # A direct key of goto: Archive, then I back to the Inbox.
 key ;
 key a
@@ -48,3 +54,10 @@ expect help_rows !~ d done
 snap keymap-help
 key esc
 expect overlay = none
+# f in the move menu moves to Todo; t no longer does.
+key M
+key t
+expect folder = Inbox
+key M
+key f
+expect flash ~ moved to Todo

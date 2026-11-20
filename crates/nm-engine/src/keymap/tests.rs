@@ -163,8 +163,81 @@ fn menus_change_add_and_remove_rows() {
     let save = k.menu("save").unwrap();
     let rows: Vec<(String, &str)> = save.entries.iter().map(|(c, a)| (c.canonical(), a.as_str())).collect();
     assert!(!rows.iter().any(|(c, _)| c == "c"));
-    assert_eq!(rows.last().unwrap(), &("x".into(), "save.pdf"));
     assert!(rows.contains(&("t".into(), "save.eml")));
+    // `x` replaces `p`, the default key of save.pdf, and `e` is no longer
+    // save.eml's: each action keeps a single row.
+    assert!(rows.contains(&("x".into(), "save.pdf")));
+    assert!(!rows.iter().any(|(c, _)| c == "p" || c == "e"));
+    assert_eq!(rows.iter().filter(|(_, a)| *a == "save.eml").count(), 1);
+}
+
+/// The rows of `menu` in `k`: (key, action), in their order.
+fn rows<'a>(k: &'a Keymap, menu: &str) -> Vec<(String, &'a str)> {
+    k.menu(menu).unwrap().entries.iter().map(|(c, a)| (c.canonical(), a.as_str())).collect()
+}
+
+/// A key given to an action in a menu replaces its default key there, at
+/// its place: the menu shows one row per action, with the file's key.
+#[test]
+fn a_new_key_in_a_menu_replaces_the_default_key_of_its_action() {
+    let k = ok("[menu.move]\nf = \"move.todo\"\n").keymap;
+    let move_rows = rows(&k, "move");
+    let defaults_rows = rows(defaults(), "move");
+    assert_eq!(move_rows.len(), defaults_rows.len());
+    let at = defaults_rows.iter().position(|(c, _)| c == "t").unwrap();
+    assert_eq!(move_rows[at], ("f".into(), "move.todo"));
+    assert!(!move_rows.iter().any(|(c, _)| c == "t"));
+
+    // Two keys written for one action in the file: both kept, together.
+    let k = ok("[menu.move]\nf = \"move.todo\"\nF = \"move.todo\"\n").keymap;
+    let move_rows = rows(&k, "move");
+    assert_eq!(&move_rows[at..at + 2], &[("f".into(), "move.todo"), ("F".into(), "move.todo")]);
+}
+
+/// The menu `;` of a real file: keys swapped between folders, one taken
+/// from a screen. Every action keeps at most one row, and the keys the file
+/// does not mention stay.
+#[test]
+fn keys_swapped_in_a_menu() {
+    let text = "[menu.goto]\nf = \"goto.todo\"\nr = \"goto.waiting\"\nl = \"goto.newsletter\"\n\
+                e = \"goto.sent\"\nb = \"goto.drafts\"\nc = \"goto.deleted\"\ns = \"goto.junk\"\n";
+    let k = ok(text).keymap;
+    let goto = rows(&k, "goto");
+    let key = |action: &str| goto.iter().filter(|(_, a)| *a == action).map(|(c, _)| c.as_str()).collect::<Vec<_>>();
+    assert_eq!(key("goto.todo"), ["f"]);
+    assert_eq!(key("goto.waiting"), ["r"]);
+    assert_eq!(key("goto.newsletter"), ["l"]);
+    assert_eq!(key("goto.sent"), ["e"]);
+    assert_eq!(key("goto.drafts"), ["b"]);
+    assert_eq!(key("goto.deleted"), ["c"]);
+    assert_eq!(key("goto.junk"), ["s"]);
+    // Their keys taken: Banned (`b`), Everything (`e`), Contacts (`c`).
+    assert!(key("goto.banned").is_empty() && key("goto.everything").is_empty() && key("goto.contacts").is_empty());
+    // Untouched.
+    assert_eq!(key("goto.inbox"), ["i"]);
+    assert_eq!(key("goto.history"), ["h"]);
+    // One key, one row; and the order of the defaults kept.
+    let keys: BTreeSet<&str> = goto.iter().map(|(c, _)| c.as_str()).collect();
+    assert_eq!(keys.len(), goto.len());
+    assert_eq!(goto[0].1, "goto.inbox");
+    assert_eq!(goto[1], ("f".into(), "goto.todo"));
+}
+
+/// In a context, an action may have several keys: the default key stays,
+/// but the file's comes first, as the app shows the first one.
+#[test]
+fn a_new_key_in_a_context_comes_before_the_default_key_of_its_action() {
+    let k = ok("[quarantine]\nl = \"move.newsletter\"\n").keymap;
+    let keys: Vec<String> = k.contexts[&Context::Quarantine]
+        .iter()
+        .filter(|b| b.action.as_deref() == Some("move.newsletter"))
+        .map(|b| b.chord.canonical())
+        .collect();
+    assert_eq!(keys, ["l", "n"]);
+    assert_eq!(k.resolve(Context::Quarantine, &chord("n")), Some("move.newsletter"));
+    // A key that is new for an action the context did not have: at the end.
+    let k = ok("[quarantine]\nX = \"move.todo\"\n").keymap;
+    assert_eq!(k.contexts[&Context::Quarantine].last().unwrap().chord.canonical(), "X");
 }
 
 #[test]

@@ -6,7 +6,7 @@ The keys named in the other pages of this documentation, and in `ui.md`, are the
 
 ## The file
 
-The core creates the file at its first start, with every default key **commented out**, and never touches it again. To change a key, remove the `# ` in front of its line and change the action; to remove a default key, write `"none"`. A line needs to be there only when it differs from the defaults: a key that is not in the file keeps its default.
+The core creates the file at its first start, with every default key **commented out**, and never touches it again. To change a key, remove the `# ` in front of its line and change the action; to remove a default key, write `"none"`. A line needs to be there only when it differs from the defaults: a key that is not in the file keeps its default. In a context, a new key for an action is added to its default key, which still works (write `"none"` on it to remove it); the help, the status bar and the targets of Quarantine show your key. In a menu, it replaces it (see [Menus](#menus)).
 
 ```toml
 version = 1
@@ -111,7 +111,7 @@ A table `[menu.<name>]` is a menu: its keys are the second keys, after the key t
 - `menu.save` (`s`): `save.text` and `save.text_open` (and the other `save.*` with their `_open` variant) make one row: the variant's key on its right ("T: and open"), and ⌘-Return on the row runs it;
 - `menu.view` (`v`).
 
-A row is changed or added like a key of a context; `"none"` removes it. A menu left without a row is refused.
+A menu shows each action once, with one key: a key given to an action in a menu **replaces** the default key of that action there, at its row. With `f = "move.todo"` in `[menu.move]`, the menu shows `f` for Todo where it showed `t`, and `t` no longer moves to Todo. A key already in the menu gets the new action (`b = "goto.drafts"` takes the `b` of Banned, which is left without a key), `"none"` removes a row, and an action the menu did not have is added at the end. A menu left without a row is refused.
 
 **Menus of your own**: a table `[menu.<name>]` with another name (`a-z`, `0-9`, `_`) creates a menu, which a key opens with `menu.<name>` from any screen. It shows its rows with the label of each action, has no block in the status bar, and the help lists it under "Your menus". A menu of your own that no key opens is refused. A menu cannot hold another menu.
 

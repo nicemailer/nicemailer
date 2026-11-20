@@ -14,7 +14,8 @@
 //!
 //! [`parse`] reads a file, checks it, and merges it into the defaults: a key
 //! of the file replaces the same key of the defaults, `"none"` removes it,
-//! a new key is added. The result, a [`Keymap`], is what the app receives
+//! a new key is added; in a menu, a new key for an action replaces the
+//! default key of that action ([`merge`]). The result, a [`Keymap`], is what the app receives
 //! (`keymap_get`), already resolved: the app never sees the file.
 //!
 //! Like `config.toml` (`config.rs`), the file is read with `toml_edit`
@@ -337,16 +338,39 @@ fn read_table(
 // Merging and the checks of the result
 // ---------------------------------------------------------------------------
 
-/// Applies `layer` to `keymap`: a key already there gets the new action,
-/// in place (the order of the menus stays that of the defaults); a new key
-/// is added at the end. In a menu, `"none"` removes the row. `defaults`:
-/// the layer is the file of defaults (its menus are the built-in ones).
+/// Applies `layer` to `keymap` (`raccourcis.md`, sections 5 and 7).
+///
+/// In a context, a key already there gets the new action, in place; a new
+/// key is added. A context may give one action several keys (`j` and
+/// `down`), so the default key of an action stays when the file gives it
+/// another: the file's key is put before it, as the app shows the first
+/// key of an action (the help, the status bar, the targets of Quarantine).
+///
+/// In a menu, a row is an action, shown once with its key: a key the file
+/// gives an action **replaces** the default key of that action in that
+/// menu, at its place (`f = "move.todo"` in `[menu.move]` takes the row of
+/// `t`, and `t` no longer moves to Todo). A key already in the menu gets the
+/// new action in place, `"none"` removes the row, and a row for an action
+/// the menu did not have is added at the end. `defaults`: the layer is the
+/// file of defaults (its menus are the built-in ones).
 fn merge(keymap: &mut Keymap, layer: Layer, defaults: bool) {
     for (context, bindings) in layer.contexts {
         let list = keymap.contexts.entry(context).or_default();
         for b in bindings {
-            match list.iter_mut().find(|x| x.chord == b.chord) {
-                Some(x) => x.action = b.action,
+            if let Some(x) = list.iter_mut().find(|x| x.chord == b.chord) {
+                x.action = b.action;
+                continue;
+            }
+            // The user's key before the first key of the same action, if
+            // it has one; the defaults keep their own order (`j`, then
+            // `down`).
+            let at = if defaults {
+                None
+            } else {
+                b.action.as_ref().and_then(|a| list.iter().position(|x| x.action.as_ref() == Some(a)))
+            };
+            match at {
+                Some(i) => list.insert(i, b),
                 None => list.push(b),
             }
         }
@@ -359,19 +383,55 @@ fn merge(keymap: &mut Keymap, layer: Layer, defaults: bool) {
                 keymap.menus.len() - 1
             }
         };
-        let entries = &mut keymap.menus[index].entries;
-        for b in bindings {
-            let at = entries.iter().position(|(c, _)| *c == b.chord);
-            match (at, b.action) {
-                (Some(i), Some(a)) => entries[i].1 = a,
-                (Some(i), None) => {
-                    entries.remove(i);
+        let menu = &mut keymap.menus[index];
+        menu.entries = merge_menu(std::mem::take(&mut menu.entries), &bindings);
+    }
+}
+
+/// The rows of a menu once the file's `bindings` are applied to `rows`
+/// (see [`merge`]). The menu is rebuilt in one pass over its rows rather
+/// than changed in place: a row of the file can both take the key of one
+/// row and replace the key of another (`b = "goto.drafts"` takes the key of
+/// Banned and replaces `r` of Drafts), and the rebuild keeps the order of
+/// the rows simple to follow. A menu has a few dozen rows at most.
+fn merge_menu(rows: Vec<(Chord, String)>, bindings: &[Binding]) -> Vec<(Chord, String)> {
+    // The file's rows, by key and by action.
+    let by_chord: BTreeMap<Chord, Option<&String>> = bindings.iter().map(|b| (b.chord, b.action.as_ref())).collect();
+    let actions: BTreeSet<&String> = bindings.iter().filter_map(|b| b.action.as_ref()).collect();
+    // The file's rows already placed. Rust note: `bindings` is borrowed
+    // (`&[Binding]`), so the rows are cloned into the new menu.
+    let mut placed: BTreeSet<Chord> = BTreeSet::new();
+    let mut out: Vec<(Chord, String)> = Vec::new();
+    let place = |b: &Binding, out: &mut Vec<(Chord, String)>, placed: &mut BTreeSet<Chord>| {
+        if let Some(a) = &b.action
+            && placed.insert(b.chord)
+        {
+            out.push((b.chord, a.clone()));
+        }
+    };
+    for (chord, action) in rows {
+        if let Some(new) = by_chord.get(&chord) {
+            // The key is the file's: its action (all the file's keys for
+            // it, together), or nothing for a `"none"`.
+            if let Some(a) = new {
+                for b in bindings.iter().filter(|b| b.action.as_ref() == Some(*a)) {
+                    place(b, &mut out, &mut placed);
                 }
-                (None, Some(a)) => entries.push((b.chord, a)),
-                (None, None) => {}
             }
+        } else if actions.contains(&action) {
+            // The file gave this action other keys: they take this row.
+            for b in bindings.iter().filter(|b| b.action.as_ref() == Some(&action)) {
+                place(b, &mut out, &mut placed);
+            }
+        } else {
+            out.push((chord, action));
         }
     }
+    // The actions the menu did not have, in the order of the file.
+    for b in bindings {
+        place(b, &mut out, &mut placed);
+    }
+    out
 }
 
 /// The checks that need the whole keymap (`raccourcis.md`, section 7): a

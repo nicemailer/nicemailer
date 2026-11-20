@@ -232,6 +232,8 @@ Les lignes des tableaux de cette section et le fichier des valeurs par défaut d
 
 Un menu est une table `[menu.<nom>]` : ses clés sont les secondes touches, ses valeurs des actions. Une action `menu.<nom>` l'ouvre, depuis n'importe quelle touche. Le menu affiche ses lignes avec le libellé de chaque action, dans l'ordre du fichier des valeurs par défaut, puis dans celui du fichier de l'utilisateur.
 
+**Une ligne par action** : dans un menu, une touche donnée à une action **remplace** la touche par défaut de cette action, à sa place. `f = "move.todo"` dans `[menu.move]` met `f` sur la ligne de Todo, et `t` ne déplace plus vers Todo. Une touche déjà présente dans le menu prend la nouvelle action (`b = "goto.drafts"` prend le `b` de Banned, qui reste sans touche) ; `"none"` retire une ligne ; une action absente du menu s'ajoute à la fin. Dans un contexte au contraire, une action peut avoir plusieurs touches (`j` et `down`) : la nouvelle touche s'ajoute à celle par défaut, qui continue de marcher (`"none"` la retire), mais c'est elle que l'aide, la barre de statut et les cibles de la Quarantaine affichent.
+
 Menus fournis :
 
 - **`menu.move`** : `i` `move.inbox`, `t` `move.todo`, `w` `move.waiting`, `a` `move.archive`, `n` `move.newsletter`, `p` `move.paperwork`, `q` `move.quarantine`, `d` `move.deleted`, `x` `move.junk`, `b` `move.banned`. Le menu ne montre que les cibles permises depuis le dossier du mail (`move_targets`, `dossiers.md`). Une cible permise sans touche n'apparaît pas.
