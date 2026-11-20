@@ -65,7 +65,7 @@ So `nicemailer` and `make core` without the variable follow the mailbox chosen i
 
 ### The folder is checked before the switch
 
-Choosing a folder the core cannot open used to restart the core on it, and leave the app without any core. The app now asks first, through the CLI it carries (`Contents/Helpers/nicemailer mailbox check --json <folder>`, [migrations.md](migrations.md), "Choosing a mailbox"), which reads the database without changing it:
+Choosing a folder the core cannot open used to restart the core on it, and leave the app without any core. The app now asks first, through the CLI it carries (`Contents/Helpers/nicemailer --data-dir <folder> mailbox check --json`, [migrations.md](migrations.md), "Choosing a mailbox"), which reads the database without changing it:
 
 | The database | The app |
 | --- | --- |
@@ -73,7 +73,7 @@ Choosing a folder the core cannot open used to restart the core on it, and leave
 | An earlier data format, which the migrations upgrade | Asks: **upgrade it and use it**, or keep the current mailbox. In the geek theme the question is in the status bar (`ASK`; `y` upgrades, Escape cancels, or a click on the answer); in the classic one, a dialog |
 | An early development database (it lacks what the migrations assume), one written by a newer NiceMailer, or a file that is not a database | Refuses it, says why, and keeps the current mailbox |
 
-The upgrade is made by the CLI (`nicemailer mailbox upgrade <folder>`) **before** the switch, while the current mailbox stays in use: the app waits only a few seconds for a core to answer, and a large mailbox takes longer to migrate. It cannot be undone: an older NiceMailer refuses the result, which the question says (copy the folder first to keep the old version able to open it). If it fails (a core already holds that folder, say), the current mailbox stays and the error is shown.
+The upgrade is made by the CLI (`nicemailer --data-dir <folder> mailbox upgrade`) **before** the switch, while the current mailbox stays in use: the app waits only a few seconds for a core to answer, and a large mailbox takes longer to migrate. It cannot be undone: an older NiceMailer refuses the result, which the question says (copy the folder first to keep the old version able to open it). If it fails (a core already holds that folder, say), the current mailbox stays and the error is shown.
 
 An app without its CLI (`swift run`) uses the folder unchecked, as before; `NICEMAILER_CLI=<path>` names one (the UI scenarios do).
 

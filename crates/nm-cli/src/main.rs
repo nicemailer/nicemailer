@@ -587,30 +587,31 @@ fn plan_lines(r: &nm_api::TestAccountReport, chosen: &serde_json::Map<String, Va
 }
 
 /// `nicemailer mailbox …` (`docs/migrations.md`, "Choosing a mailbox").
+/// Every action works on the data directory: the mailbox in use by
+/// default, another folder only when `--data-dir` names it. The folder is
+/// never a positional argument, so the common case needs no path at all.
 #[derive(Subcommand)]
 enum MailboxAction {
-    /// Say what the database of a mailbox folder is: new, current, of an
-    /// earlier version (upgradable), or one this version cannot open.
-    /// Changes nothing.
+    /// Say what the database of the data directory (the mailbox in use, or
+    /// the folder given by --data-dir) is: new, current, of an earlier
+    /// version (upgradable), or one this version cannot open. Changes
+    /// nothing.
     Check {
-        /// The mailbox folder (the one holding nicemailer.db).
-        dir: PathBuf,
         /// Print JSON (what the app reads).
         #[arg(long)]
         json: bool,
     },
-    /// Upgrade the database of a mailbox folder to this version. Cannot be
-    /// undone: older versions of NiceMailer will refuse it. No core may be
-    /// using the folder.
-    Upgrade {
-        dir: PathBuf,
-    },
-    /// Copy the database of a mailbox folder to DEST, consistent even while
-    /// the core runs (`docs/backup.md`). Only nicemailer.db is copied: the
-    /// bodies and the search index (nicemailer_body.db) are rebuilt from
-    /// the raw files, which a file-level copy (rsync) of raw.noindex keeps.
+    /// Upgrade the database of the data directory (the mailbox in use, or
+    /// the folder given by --data-dir) to this version. Cannot be undone:
+    /// older versions of NiceMailer will refuse it. No core may be using
+    /// the folder.
+    Upgrade,
+    /// Copy the database of the data directory (the mailbox in use, or the
+    /// folder given by --data-dir) to DEST, consistent even while the core
+    /// runs (`docs/backup.md`). Only nicemailer.db is copied: the bodies
+    /// and the search index (nicemailer_body.db) are rebuilt from the raw
+    /// files, which a file-level copy (rsync) of raw.noindex keeps.
     Backup {
-        dir: PathBuf,
         /// The file to write; must not exist.
         dest: PathBuf,
     },
@@ -840,7 +841,7 @@ fn run() -> anyhow::Result<()> {
         Command::Config { action } => run_config(action),
         Command::Keymap { action } => run_keymap(action),
         Command::Ai { action } => ai::run(&data_dir, action),
-        Command::Mailbox { action } => run_mailbox(action),
+        Command::Mailbox { action } => run_mailbox(&data_dir, action),
         Command::Account { action: AccountAction::Password { key, smtp } } => {
             // Connect first: no point asking for a password the core
             // cannot receive.
@@ -1428,12 +1429,15 @@ fn in_use(dir: &Path) -> bool {
     }
 }
 
-/// `nicemailer mailbox check | upgrade`.
-fn run_mailbox(action: MailboxAction) -> anyhow::Result<()> {
+/// `nicemailer mailbox check | upgrade | backup`, on `data_dir`: the
+/// mailbox in use, or the folder `--data-dir` names (the app passes it
+/// for a folder chosen with "Change Mailbox…").
+fn run_mailbox(data_dir: &Path, action: MailboxAction) -> anyhow::Result<()> {
     use nm_store::inspect::DatabaseState as S;
+    let dir = data_dir;
     match action {
-        MailboxAction::Check { dir, json } => {
-            let report = mailbox_report(&dir);
+        MailboxAction::Check { json } => {
+            let report = mailbox_report(dir);
             if json {
                 println!("{report}");
                 return Ok(());
@@ -1443,7 +1447,7 @@ fn run_mailbox(action: MailboxAction) -> anyhow::Result<()> {
                 S::New => "no database yet: a new mailbox".to_string(),
                 S::Current => format!("current (schema version {})", nm_store::SCHEMA_VERSION),
                 S::Upgradable { from, to } => {
-                    format!("schema version {from}, upgradable to {to}: nicemailer mailbox upgrade {}", dir.display())
+                    format!("schema version {from}, upgradable to {to}: nicemailer mailbox upgrade --data-dir {}", dir.display())
                 }
                 S::Outdated { missing } => format!("an early development database ({missing} missing): it cannot be upgraded"),
                 S::TooNew { found, expected } => {
@@ -1455,7 +1459,7 @@ fn run_mailbox(action: MailboxAction) -> anyhow::Result<()> {
             println!("{}: {what}{busy}", dir.display());
             Ok(())
         }
-        MailboxAction::Upgrade { dir } => {
+        MailboxAction::Upgrade => {
             let db = dir.join(paths::DATABASE);
             let from = match nm_store::inspect::inspect(&db) {
                 S::Upgradable { from, .. } => from,
@@ -1494,7 +1498,7 @@ fn run_mailbox(action: MailboxAction) -> anyhow::Result<()> {
             );
             Ok(())
         }
-        MailboxAction::Backup { dir, dest } => {
+        MailboxAction::Backup { dest } => {
             let db = dir.join(paths::DATABASE);
             if !db.exists() {
                 bail!("{}: no database in this folder", dir.display());

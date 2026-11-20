@@ -16,7 +16,13 @@ Everything in `nicemailer_body.db` is an interpretation of the raw files: it can
 - **`nicemailer.db`**: with `nicemailer mailbox backup`, which writes a consistent, compact copy even while the core runs:
 
   ```sh
-  nicemailer mailbox backup ~/Library/Application\ Support/NiceMailer /Volumes/Backup/nicemailer-2026-11-12.db
+  nicemailer mailbox backup /Volumes/Backup/nicemailer-2026-11-12.db
+  ```
+
+  It copies the database of the mailbox in use: the standard data directory, or the folder chosen in the app ("Change Mailbox…"), or `$NICEMAILER_DATA_DIR` when set. For a mailbox elsewhere, name its folder with `--data-dir`:
+
+  ```sh
+  nicemailer mailbox backup --data-dir /Volumes/Mail/NiceMailer /Volumes/Backup/nicemailer-2026-11-12.db
   ```
 
   It uses SQLite's `VACUUM INTO`, a copy made from one read transaction: the core goes on writing meanwhile, and the copy includes the writes still in `nicemailer.db-wal`, which copying the file itself would miss. 2 s for 516 MB. The destination must not exist.
@@ -49,4 +55,4 @@ A new `nicemailer.db` (deleted, or `nicemailer seed --reset`, which deletes both
 
 ## Tests
 
-`crates/nm-store/tests/bodies.rs`: the tables in the second file and found by the queries and the readers, a message deleted taking its body along, a body file deleted then rebuilt from the raw files, rows left by a crash cleaned at opening, a body file left by a deleted database emptied. `crates/nm-store/tests/migrations.rs`: a database migrated to version 10 searches through its copied index, which passes FTS5's `integrity-check`.
+`crates/nm-cli/tests/mailbox.rs`: `nicemailer mailbox backup` (like `check` and `upgrade`) works on the standard folder by default and on the `--data-dir` folder when given, refuses a destination that exists and a folder without database, and no longer takes the folder as an argument. `crates/nm-store/tests/bodies.rs`: the tables in the second file and found by the queries and the readers, a message deleted taking its body along, a body file deleted then rebuilt from the raw files, rows left by a crash cleaned at opening, a body file left by a deleted database emptied. `crates/nm-store/tests/migrations.rs`: a database migrated to version 10 searches through its copied index, which passes FTS5's `integrity-check`.

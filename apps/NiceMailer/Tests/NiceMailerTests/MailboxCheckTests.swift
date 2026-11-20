@@ -64,6 +64,14 @@ struct MailboxDecisionTests {
         #expect(refusals[1].1.contains("9") && refusals[1].1.contains("4"))
     }
 
+    /// The folder being chosen goes through `--data-dir`: without it, the
+    /// CLI would check or upgrade the mailbox in use instead.
+    @Test func theFolderIsPassedWithDataDir() {
+        let dir = URL(fileURLWithPath: "/Volumes/Mail/Old NiceMailer")
+        #expect(CLIMailboxTool.checkArguments(dir) == ["--data-dir", "/Volumes/Mail/Old NiceMailer", "mailbox", "check", "--json"])
+        #expect(CLIMailboxTool.upgradeArguments(dir) == ["--data-dir", "/Volumes/Mail/Old NiceMailer", "mailbox", "upgrade"])
+    }
+
     @Test func theCLIErrorLosesAnyhowsPrefix() {
         #expect(CLIMailboxTool.errorMessage(Data("Error: a core is using /m\n".utf8)) == "a core is using /m")
         #expect(CLIMailboxTool.errorMessage(Data("plain\n".utf8)) == "plain")

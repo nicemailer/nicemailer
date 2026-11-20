@@ -73,12 +73,13 @@ Before the first release, version 1 was edited in place: development databases c
 
 ### Choosing a mailbox: `nicemailer mailbox check` and `upgrade`
 
-The core migrates its own database at its start, without asking: after an update of NiceMailer, the mailbox in use simply goes on. Another folder chosen in the app ("Change Mailbox…") is different: the user may not want an old mailbox upgraded, since an older NiceMailer will then refuse it. So the app asks first ([app-bundle.md](app-bundle.md), "The folder is checked before the switch"), through two commands of the CLI that work on a folder without the core:
+The core migrates its own database at its start, without asking: after an update of NiceMailer, the mailbox in use simply goes on. Another folder chosen in the app ("Change Mailbox…") is different: the user may not want an old mailbox upgraded, since an older NiceMailer will then refuse it. So the app asks first ([app-bundle.md](app-bundle.md), "The folder is checked before the switch"), through two commands of the CLI that work on a folder without the core. Like every `nicemailer mailbox` command, they work on the mailbox in use unless `--data-dir` names another folder, which the app always does:
 
 ```sh
-nicemailer mailbox check <folder>          # what its database is; changes nothing
-nicemailer mailbox check <folder> --json   # what the app reads
-nicemailer mailbox upgrade <folder>        # migrates it to this version
+nicemailer mailbox check                                # the mailbox in use; changes nothing
+nicemailer mailbox check --data-dir <folder>            # another folder
+nicemailer mailbox check --data-dir <folder> --json     # what the app reads
+nicemailer mailbox upgrade --data-dir <folder>          # migrates it to this version
 ```
 
 `check` (`nm_store::inspect`) applies the rules of `Store::open` without writing: the file is opened without the right to create it, the connection is `query_only`, and the answer is one of `new` (no file, an empty one, or version 0 without tables), `current`, `upgradable {from, to}`, `outdated {missing}` (what `check_schema` finds missing: an incomplete version 1, below), `too_new {found, expected}`, or `unreadable {message}`. The JSON adds `path` and `in_use` (a core holds the folder's lock).

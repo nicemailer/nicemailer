@@ -176,7 +176,7 @@ Reserved to the app, which Sparkle updates ([updates.md](updates.md)); the CLI, 
 These commands work on files directly and do not go through the core:
 
 - `nicemailer seed`: fills the database with fake mail. The core must be stopped.
-- `nicemailer mailbox check | upgrade | backup`: the database of a mailbox folder (`migrations.md`, `backup.md`).
+- `nicemailer mailbox check | upgrade | backup`: the database of the mailbox in use, or of the folder `--data-dir` names (`migrations.md`, `backup.md`).
 - `nicemailer config check | defaults | path`: the settings files (`configuration.md`).
 - `nicemailer keymap check | defaults | show`: the keys of the app, `keymap.toml` (`keymap.md`).
 - `nicemailer ai prompts export | check`: the prompt files (`ai.md`).

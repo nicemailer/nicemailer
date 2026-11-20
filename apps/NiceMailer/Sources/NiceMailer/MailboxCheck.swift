@@ -5,9 +5,11 @@ import Foundation
 // "When the core cannot start").
 //
 // The app never opens a database itself (`docs/migrations.md`): it asks the
-// CLI it carries, `nicemailer mailbox check --json <folder>`, which reads it
-// without changing it, and `nicemailer mailbox upgrade <folder>`, which
-// migrates it. A core that stops on an error writes why to
+// CLI it carries, `nicemailer --data-dir <folder> mailbox check --json`,
+// which reads it without changing it, and `nicemailer --data-dir <folder>
+// mailbox upgrade`, which migrates it. The folder must be passed with
+// `--data-dir`: without it the CLI works on the mailbox in use, not on the
+// one being chosen. A core that stops on an error writes why to
 // `core-error.json` of its folder, which the app shows instead of a plain
 // "unreachable".
 
@@ -99,12 +101,22 @@ struct CLIMailboxTool: MailboxTool {
     }
 
     func check(_ dir: URL) async throws -> MailboxReport {
-        let out = try await run(["mailbox", "check", "--json", dir.path])
+        let out = try await run(Self.checkArguments(dir))
         return try CoreClient.decoder.decode(MailboxReport.self, from: out)
     }
 
     func upgrade(_ dir: URL) async throws {
-        _ = try await run(["mailbox", "upgrade", dir.path])
+        _ = try await run(Self.upgradeArguments(dir))
+    }
+
+    /// The arguments of `check` and `upgrade` on `dir`, as pure functions
+    /// so a test can see that the folder goes through `--data-dir`.
+    static func checkArguments(_ dir: URL) -> [String] {
+        ["--data-dir", dir.path, "mailbox", "check", "--json"]
+    }
+
+    static func upgradeArguments(_ dir: URL) -> [String] {
+        ["--data-dir", dir.path, "mailbox", "upgrade"]
     }
 
     /// Runs the CLI with `arguments`; its standard output, or its error.

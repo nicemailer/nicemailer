@@ -10,6 +10,12 @@ How to write it:
 - Groups, in this order, only those that have entries: `### Added`, `### Changed`, `### Fixed`, `### Removed`.
 - At a release, the commit that sets the new `version` in `Cargo.toml` renames `## Unreleased` to `## <version> — <YYYY-MM-DD>` and starts a new, empty `## Unreleased` above it.
 
+## Unreleased
+
+### Changed
+
+- **Command line:** `nicemailer mailbox check`, `upgrade` and `backup` work on the mailbox in use, without a folder to type; `--data-dir` names another mailbox folder. `backup` takes only the file to write.
+
 ## 0.2.0 - 2026-11-18
 
 First public and open source release. 19 languages. Auto update. Configurable keyboard shortcuts. UI to add an account and option to try it in « look only » mode.
