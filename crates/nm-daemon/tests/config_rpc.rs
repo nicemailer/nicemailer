@@ -46,6 +46,9 @@ fn missing_files_are_created_at_start_and_change_nothing() {
     assert_eq!(status["ui"]["title_bar"], "shown");
     // The app does not confirm calls for the user unless asked.
     assert_eq!(status["ui"]["auto_confirm_calls"], false);
+    // The text sizes of the app and of its status bar: 16 and 18 pt.
+    assert_eq!(status["ui"]["text_size"], 16);
+    assert_eq!(status["ui"]["status_bar_text_size"], 18);
     let config = std::fs::read_to_string(dir.path().join("config.toml")).unwrap();
     assert_eq!(config, nm_engine::config::config_template());
     assert!(config.contains("# poll_interval_secs = 300"), "{config}");
@@ -94,6 +97,24 @@ fn the_call_confirmation_setting_reaches_the_app_and_follows_the_file() {
     let e = c.event("ConfigChanged", 15);
     assert!(e["keys"].as_array().unwrap().contains(&json!("ui.auto_confirm_calls")), "{e}");
     assert_eq!(c.call("config_status", json!({})).unwrap()["ui"]["auto_confirm_calls"], false);
+}
+
+/// The app applies the text sizes at once (`docs/geek-ui.md`, "Text
+/// size"): `config_status` gives them, and follows an edit of the file.
+#[test]
+fn the_text_sizes_reach_the_app_and_follow_the_file() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("config.toml"), "[ui]\ntext_size = 18\nstatus_bar_text_size = 12\n").unwrap();
+    let _core = start(dir.path());
+    let mut c = Client::connect(dir.path());
+    let ui = &c.call("config_status", json!({})).unwrap()["ui"];
+    assert_eq!((ui["text_size"].clone(), ui["status_bar_text_size"].clone()), (json!(18), json!(12)));
+    c.call("subscribe", json!({})).unwrap();
+    std::thread::sleep(Duration::from_millis(500));
+    save(&mut c, dir.path(), "config.toml", "[ui]\ntext_size = 16\nstatus_bar_text_size = 12\n");
+    let e = c.event("ConfigChanged", 15);
+    assert_eq!(e["keys"], json!(["ui.text_size"]), "{e}");
+    assert_eq!(c.call("config_status", json!({})).unwrap()["ui"]["text_size"], 16);
 }
 
 #[test]

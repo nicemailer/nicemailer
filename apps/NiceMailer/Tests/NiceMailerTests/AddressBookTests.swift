@@ -25,7 +25,7 @@ struct AddressBookTests {
         model.openFile = { _ in }
         model.addressBook = book
         let defaults = TestDefaults.make()
-        controller = GeekController(model: model, defaults: defaults, textSize: TextSize(defaults: defaults))
+        controller = GeekController(model: model, defaults: defaults, textSize: TextSize())
         controller.pasteboard = NSPasteboard(name: NSPasteboard.Name("NiceMailerTests-\(UUID().uuidString)"))
         await model.attach(core)
         _ = await eventually { model.openThread != nil }

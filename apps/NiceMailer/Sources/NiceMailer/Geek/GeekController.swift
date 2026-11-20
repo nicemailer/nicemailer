@@ -580,13 +580,14 @@ final class GeekController {
     /// Last row clicked and when, to detect double-clicks (see `clickSearch`).
     @ObservationIgnored var lastClick: (tag: String, time: TimeInterval) = ("", 0)
 
-    /// The text size it changes on ⌘+ / ⌘− / ⌘0 (a separate one in tests).
-    @ObservationIgnored let textSize: TextSize
+    /// The text sizes ⌘+ / ⌘− / ⌘0 change: the model's (a separate one in
+    /// tests).
+    var textSize: TextSize { model.textSize }
 
     init(model: AppModel, defaults: UserDefaults = AppDefaults.store, textSize: TextSize? = nil) {
         self.model = model
         self.defaults = defaults
-        self.textSize = textSize ?? .shared
+        if let textSize { model.textSize = textSize }
         columns = defaults.object(forKey: "geek.columns") as? Int ?? 2
         // At the top by default, under the title bar; with the title bar
         // hidden (`ui.title_bar`), it takes its place, and moves the window.
@@ -833,13 +834,12 @@ final class GeekController {
         // everywhere
         case .windowFullScreen:
             toggleFullScreen()
-        case .textBigger, .textSmaller, .textReset:
-            switch action {
-            case .textBigger: textSize.bigger()
-            case .textSmaller: textSize.smaller()
-            default: textSize.reset()
-            }
-            model.flash = L("Text size: %lld pt", Int(textSize.size))
+        case .textBigger:
+            model.changeTextSize(.bigger)
+        case .textSmaller:
+            model.changeTextSize(.smaller)
+        case .textReset:
+            model.changeTextSize(.reset)
         case .appReload:
             Task { await model.reloadAll() }
         // normal

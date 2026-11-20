@@ -258,47 +258,110 @@ extension NSColor {
     }
 }
 
-/// The text size of the geek theme, like Zed's ⌘+ / ⌘− (`ui.md`).
+/// The text sizes of the geek theme (`docs/geek-ui.md`, "Text size").
 ///
-/// One base size (12 pt by default) from which every size of the theme
-/// derives: fonts, row heights, column widths, menus, the HTML view. It is
-/// remembered in the preferences.
+/// Two base sizes, from which every size of the theme derives: `size` for
+/// the whole window (fonts, row heights, column widths, menus, the HTML
+/// view) and `statusBarSize` for the status bar alone. Their values come
+/// from `config.toml` (`ui.text_size`, 16 pt by default, and
+/// `ui.status_bar_text_size`, 18 pt); ⌘+ and ⌘− move both by one point for the session,
+/// ⌘0 comes back to the file's values.
+///
+/// Why the step is not remembered across launches: the file is the one
+/// place that says the size. A size remembered by the app as well would
+/// silently win over an edit of the file.
 @MainActor
 @Observable
 final class TextSize {
-    static let shared = TextSize(defaults: AppDefaults.store)
-    static let defaultSize: Double = 12
-    static let range: ClosedRange<Double> = 9...24
-    static let key = "geek.fontSize"
+    static let shared = TextSize()
+    /// What `ui.text_size` and `ui.status_bar_text_size` are when the file
+    /// does not say (the same defaults as the core's, `config.rs`).
+    static let defaultSize: Double = 16
+    static let defaultStatusBarSize: Double = 18
+    /// The bounds of both sizes, as the core checks them in the file
+    /// (`TEXT_SIZE_RANGE`): ⌘+ and ⌘− stop there too.
+    static let range: ClosedRange<Double> = 9...32
+    /// The size the lengths of the layout are written for (`scaled`,
+    /// `Font.geek`): they were all measured at 12 pt, so this stays 12
+    /// whatever the default size is.
+    static let referenceSize: Double = 12
 
-    @ObservationIgnored private let defaults: UserDefaults
+    /// The values of `config.toml`, before the step of ⌘+ / ⌘−.
+    private(set) var configured: Double = TextSize.defaultSize
+    private(set) var configuredStatusBar: Double = TextSize.defaultStatusBarSize
+    /// Points added by ⌘+ (and removed by ⌘−) since the launch or the last
+    /// ⌘0, to both sizes.
+    private(set) var step: Double = 0
 
-    /// Base size in points.
-    private(set) var size: Double {
-        didSet { defaults.set(size, forKey: Self.key) }
+    /// Base size of the window, in points.
+    var size: Double { Self.clamped(configured + step) }
+    /// Base size of the status bar, in points.
+    var statusBarSize: Double { Self.clamped(configuredStatusBar + step) }
+
+    /// Factor applied to the sizes written for `referenceSize`.
+    var scale: CGFloat { CGFloat(size / Self.referenceSize) }
+    /// The same, for the status bar (`barScaled`, `Font.geekBar`).
+    var statusBarScale: CGFloat { CGFloat(statusBarSize / Self.referenceSize) }
+
+    private static func clamped(_ v: Double) -> Double {
+        min(range.upperBound, max(range.lowerBound, v))
     }
 
-    /// Factor applied to the sizes written for the default base size.
-    var scale: CGFloat { CGFloat(size / Self.defaultSize) }
-
-    init(defaults: UserDefaults) {
-        self.defaults = defaults
-        let stored = defaults.object(forKey: Self.key) as? Double ?? Self.defaultSize
-        size = min(Self.range.upperBound, max(Self.range.lowerBound, stored))
+    /// Applies the sizes of `config.toml`, read from `config_status` at
+    /// launch and after each `ConfigChanged`. `nil` (an older core) leaves
+    /// the default. A changed value also clears the step: the user who
+    /// edits the file wants the size written there, not that size plus an
+    /// old ⌘+. An unchanged file keeps the step (the core announces every
+    /// change of `config.toml`, not only those of these two keys).
+    func configure(size: Double?, statusBar: Double?) {
+        let new = Self.clamped(size ?? Self.defaultSize)
+        let newBar = Self.clamped(statusBar ?? Self.defaultStatusBarSize)
+        guard new != configured || newBar != configuredStatusBar else { return }
+        configured = new
+        configuredStatusBar = newBar
+        step = 0
     }
 
-    /// One point bigger (⌘+), within `range`.
-    func bigger() { size = min(Self.range.upperBound, size + 1) }
-    /// One point smaller (⌘−), within `range`.
-    func smaller() { size = max(Self.range.lowerBound, size - 1) }
-    /// Back to the default size (⌘0).
-    func reset() { size = Self.defaultSize }
+    /// One point bigger (⌘+), as long as one of the two sizes can grow:
+    /// once both are at the top, the step stops, so that ⌘− answers at
+    /// the first press.
+    func bigger() {
+        guard size < Self.range.upperBound || statusBarSize < Self.range.upperBound else { return }
+        step += 1
+    }
+    /// One point smaller (⌘−), as long as one of the two sizes can shrink.
+    func smaller() {
+        guard size > Self.range.lowerBound || statusBarSize > Self.range.lowerBound else { return }
+        step -= 1
+    }
+    /// Back to the sizes of the file (⌘0).
+    func reset() { step = 0 }
+
+    /// What the status bar says after a change: the size of the window,
+    /// and that of the status bar when it differs. Swift note: `Int(...)`
+    /// is needed because `%lld` reads a 64-bit integer; a `Double` passed
+    /// there would print garbage.
+    var flash: String {
+        size == statusBarSize
+            ? L("Text size: %lld pt", Int(size))
+            : L("Text size: %lld pt, status bar %lld pt", Int(size), Int(statusBarSize))
+    }
 }
 
-/// A length of the geek layout, written for the default text size, scaled
-/// to the current one (row heights, column widths, popup sizes).
+/// A change of the text size, by key or by the View menu.
+enum TextSizeChange {
+    case bigger, smaller, reset
+}
+
+/// A length of the geek layout, written for the reference text size (12
+/// pt), scaled to the current one (row heights, column widths, popup sizes).
 @MainActor
 func scaled(_ value: CGFloat) -> CGFloat { value * TextSize.shared.scale }
+
+/// The same for the status bar, which has a text size of its own
+/// (`ui.status_bar_text_size`).
+@MainActor
+func barScaled(_ value: CGFloat) -> CGFloat { value * TextSize.shared.statusBarScale }
 
 extension Fonts {
     /// The geek font at a size written for the default text size, scaled
@@ -314,12 +377,21 @@ extension Font {
     /// written for the default text size and scaled to the current one.
     @MainActor
     static func geek(_ size: CGFloat = 12, weight: Font.Weight = .regular) -> Font {
-        let nsWeight: NSFont.Weight
+        Font(Fonts.scaled(size, weight: nsWeight(weight)))
+    }
+
+    /// The geek font of the status bar, scaled to its own text size.
+    @MainActor
+    static func geekBar(_ size: CGFloat = 12, weight: Font.Weight = .regular) -> Font {
+        Font(Fonts.reading(size * TextSize.shared.statusBarScale, weight: nsWeight(weight)))
+    }
+
+    /// The AppKit weight of a SwiftUI one, among those the font has.
+    private static func nsWeight(_ weight: Font.Weight) -> NSFont.Weight {
         switch weight {
-        case .bold, .heavy, .black: nsWeight = .bold
-        case .semibold: nsWeight = .semibold
-        default: nsWeight = .regular
+        case .bold, .heavy, .black: .bold
+        case .semibold: .semibold
+        default: .regular
         }
-        return Font(Fonts.scaled(size, weight: nsWeight))
     }
 }

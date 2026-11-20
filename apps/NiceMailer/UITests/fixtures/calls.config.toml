@@ -1,3 +1,5 @@
 # Settings of calls.uiscript: the app confirms its calls itself.
 [ui]
 auto_confirm_calls = true
+text_size = 12
+status_bar_text_size = 12

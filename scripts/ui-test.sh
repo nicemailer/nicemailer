@@ -51,8 +51,14 @@ for script in "${scripts[@]}"; do
     NICEMAILER_DATA_DIR="$dir" "$CLI" seed --threads "$threads" --seed 1 >/dev/null
     # A scenario may have settings of its own (fixtures/<scenario>.config.toml),
     # read by the core when it starts.
+    # Without one, the text sizes are 12 pt: the size the layout is
+    # written for, so that the widths, heights and line breaks the
+    # scenarios check do not move with the default sizes (16 and 18 pt),
+    # which textsize.uiscript checks on its own.
     if [ -f "$APP/UITests/fixtures/$name.config.toml" ]; then
         cp "$APP/UITests/fixtures/$name.config.toml" "$dir/config.toml"
+    else
+        printf '[ui]\ntext_size = 12\nstatus_bar_text_size = 12\n' >"$dir/config.toml"
     fi
     # ... and keys of its own (fixtures/<scenario>.keymap.toml, docs/keymap.md),
     # next to config.toml, where the core reads them.

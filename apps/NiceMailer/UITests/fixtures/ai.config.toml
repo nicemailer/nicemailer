@@ -1,3 +1,8 @@
 # The AI on (ai.uiscript), its prompts answered from ai.ai.json.
 [ai]
 enabled = true
+
+# The text sizes the layout is written for (README.md).
+[ui]
+text_size = 12
+status_bar_text_size = 12

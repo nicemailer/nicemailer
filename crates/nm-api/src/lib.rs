@@ -2865,6 +2865,14 @@ pub struct UiConfig {
     /// client reading an older core.
     #[serde(default)]
     pub auto_confirm_calls: bool,
+    /// `ui.text_size`: the text size of the app, in points, except the
+    /// status bar (`docs/geek-ui.md`, "Text size"). `None` when absent, for
+    /// a client reading an older core: it keeps its own default.
+    #[serde(default)]
+    pub text_size: Option<u64>,
+    /// `ui.status_bar_text_size`: the text size of the status bar.
+    #[serde(default)]
+    pub status_bar_text_size: Option<u64>,
 }
 
 /// `[unsubscribe]` of `config.toml`, sent with `config_status`: the app

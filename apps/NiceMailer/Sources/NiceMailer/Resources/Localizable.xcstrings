@@ -23363,6 +23363,118 @@
         }
       }
     },
+    "Text size: %lld pt, status bar %lld pt": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Taille du texte : %lld pt, barre de statut %lld pt"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Textgröße: %lld pt, Statusleiste %lld pt"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tamaño del texto: %lld pt, barra de estado %lld pt"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dimensione del testo: %lld pt, barra di stato %lld pt"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tamanho do texto: %lld pt, barra de status %lld pt"
+          }
+        },
+        "pt-PT": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tamanho do texto: %lld pt, barra de estado %lld pt"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tekstgrootte: %lld pt, statusbalk %lld pt"
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Textstorlek: %lld pt, statusfält %lld pt"
+          }
+        },
+        "da": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tekststørrelse: %lld pt, statuslinje %lld pt"
+          }
+        },
+        "nb": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tekststørrelse: %lld pt, statuslinje %lld pt"
+          }
+        },
+        "fi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tekstin koko: %lld pt, tilapalkki %lld pt"
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rozmiar tekstu: %lld pt, pasek stanu %lld pt"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Размер текста: %lld пт, строка состояния %lld pt"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Розмір тексту: %lld пт, рядок стану %lld pt"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文字サイズ：%lldポイント、ステータスバー %lld pt"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文字大小：%lld 磅，状态栏 %lld pt"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文字大小：%lld 點，狀態列 %lld pt"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "텍스트 크기: %lldpt, 상태 막대 %lld pt"
+          }
+        }
+      }
+    },
     "Text…": {
       "localizations": {
         "fr": {

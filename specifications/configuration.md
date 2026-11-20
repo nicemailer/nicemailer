@@ -222,6 +222,8 @@ Les paramètres sont définis dans les spécifications qui les utilisent. Ce tab
 | `raw.gc_grace_secs` | Délai de grâce des orphelins | 86 400 | `stockage-brut.md` |
 | `raw.verify_on_read` | Vérifier le hash à la lecture | vrai | `stockage-brut.md` |
 | `ui.view_threshold_ms` | Durée d'affichage avant `mark_viewed` | 2 000 | `tracabilite.md` |
+| `ui.text_size` | Taille du texte de la fenêtre, sauf la barre de statut, en points (9 à 32) | 16 | `ui.md` |
+| `ui.status_bar_text_size` | Taille du texte de la barre de statut, en points (9 à 32) | 18 | `ui.md` |
 | `audit.retention_days` | Durée de conservation du journal | 365 | `tracabilite.md` |
 | `ai.enabled` | Autoriser l'envoi de mails au fournisseur d'IA, pour tous les comptes | faux | `ia.md` |
 | `ai.provider` | Fournisseur : `claude-code` (abonnement, binaire local) ou `anthropic-api` (clé dans le Keychain) | `claude-code` | `ia.md` |

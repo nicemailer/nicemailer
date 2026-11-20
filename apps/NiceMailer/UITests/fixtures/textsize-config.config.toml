@@ -1,0 +1,4 @@
+# Settings of textsize-config.uiscript: a big text, a small status bar.
+[ui]
+text_size = 18
+status_bar_text_size = 11

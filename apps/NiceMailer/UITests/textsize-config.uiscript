@@ -1,0 +1,17 @@
+# The two text sizes of config.toml (fixtures/textsize-config.config.toml):
+# 18 pt for the window, 11 pt for the status bar, applied at launch.
+expect font_size = 18
+expect status_bar_font_size = 11
+expect row_height = 30
+expect status_help_height < 18
+snap sizes
+# cmd + moves both, and says both, as they differ.
+key cmd-=
+expect font_size = 19
+expect status_bar_font_size = 12
+expect flash = Text size: 19 pt, status bar 12 pt
+# cmd 0 comes back to the file's sizes, not to the defaults.
+key cmd-0
+expect font_size = 18
+expect status_bar_font_size = 11
+expect flash = Text size: 18 pt, status bar 11 pt

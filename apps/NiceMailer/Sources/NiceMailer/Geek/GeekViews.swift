@@ -65,10 +65,10 @@ private struct GeekWindow: View {
     let controller: GeekController
 
     var body: some View {
-        // Rebuilt from scratch when the text size changes (`.id`): every
-        // size and width of the theme derives from it, and rebuilding is
+        // Rebuilt from scratch when a text size changes (`.id`): every
+        // size and width of the theme derives from them, and rebuilding is
         // more reliable than counting on lazy rows to notice the change.
-        let textSize = TextSize.shared.size
+        let textSize = "\(TextSize.shared.size)-\(TextSize.shared.statusBarSize)"
         VStack(spacing: 0) {
             if controller.statusPosition == .top { GeekStatusBar(controller: controller) }
             ZStack(alignment: .bottomTrailing) {
@@ -271,11 +271,11 @@ struct GeekStatusBar: View {
                 Image(nsImage: icon)
                     .resizable()
                     .interpolation(.high)
-                    .frame(width: scaled(15), height: scaled(15))
+                    .frame(width: barScaled(15), height: barScaled(15))
                     .accessibilityLabel(L("NiceMailer, normal mode"))
             } else {
                 Text(" \(controller.modeLabel) ")
-                    .font(.geek(11, weight: .bold))
+                    .font(.geekBar(11, weight: .bold))
                     .foregroundStyle(Palette.background)
                     .background(Palette.accentText)
             }
@@ -312,7 +312,7 @@ struct GeekStatusBar: View {
                     Text(chip.label + " ×")
                         .lineLimit(1)
                         .foregroundStyle(Palette.accentText)
-                        .padding(.horizontal, scaled(4))
+                        .padding(.horizontal, barScaled(4))
                         .overlay(Rectangle().stroke(Palette.accent.opacity(0.5), lineWidth: 1))
                         .contentShape(Rectangle())
                         .onTapGesture { model.attributes.remove(chip.id) }
@@ -333,7 +333,7 @@ struct GeekStatusBar: View {
                         .menuAnchor(p, controller)
                         .onTapGesture { controller.openMenuFromStatusBar(p) }
                         .uiTarget("status-\(p.uiID)")
-                        .padding(.leading, p == .save ? 0 : scaled(28))
+                        .padding(.leading, p == .save ? 0 : barScaled(28))
                 }
                 // The AI, with the actions on the current mail: its palette
                 // works on the mail (or the reply) as `m` and `s` do. In
@@ -345,7 +345,7 @@ struct GeekStatusBar: View {
                     .help(L("AI assistance"))
                     .accessibilityLabel(L("AI assistance"))
                     .uiTarget("status-ai")
-                    .padding(.leading, controller.directTargets.isEmpty ? 0 : scaled(28))
+                    .padding(.leading, controller.directTargets.isEmpty ? 0 : barScaled(28))
             }
             if let query = controller.contactsFilterChip {
                 // The contacts filter, kept after Return: a chip like the
@@ -354,7 +354,7 @@ struct GeekStatusBar: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .foregroundStyle(Palette.accentText)
-                    .padding(.horizontal, scaled(4))
+                    .padding(.horizontal, barScaled(4))
                     .overlay(Rectangle().stroke(Palette.accent.opacity(0.5), lineWidth: 1))
                     .contentShape(Rectangle())
                     .onTapGesture { controller.clearContactsFilter() }
@@ -368,7 +368,7 @@ struct GeekStatusBar: View {
                 Text(verbatim: who + " ×")
                     .lineLimit(1)
                     .foregroundStyle(Palette.accentText)
-                    .padding(.horizontal, scaled(4))
+                    .padding(.horizontal, barScaled(4))
                     .overlay(Rectangle().stroke(Palette.accent.opacity(0.5), lineWidth: 1))
                     .contentShape(Rectangle())
                     .onTapGesture { controller.filterHistory(.everyone) }
@@ -418,9 +418,9 @@ struct GeekStatusBar: View {
                 .help(L("Keys"))
                 .uiTarget("status-help")
         }
-        .font(.geek(11))
+        .font(.geekBar(11))
         .padding(.horizontal, 6)
-        .frame(height: scaled(20))
+        .frame(height: barScaled(20))
         // Its empty parts move the window, as a title bar does: the title
         // bar is hidden by default (`WindowChrome`).
         .background(ZStack { Palette.statusBar; WindowDragArea() })
@@ -439,9 +439,9 @@ extension GeekStatusBar {
     fileprivate var quarantineTargets: some View {
         let targets = controller.directTargets
         if !targets.isEmpty {
-            HStack(spacing: scaled(8)) {
+            HStack(spacing: barScaled(8)) {
                 Image(systemName: GeekController.Prefix.move.icon)
-                    .font(.system(size: scaled(10), weight: .semibold))
+                    .font(.system(size: barScaled(10), weight: .semibold))
                     .foregroundStyle(Palette.muted)
                     .accessibilityLabel(L("Move"))
                 ForEach(targets, id: \.self) { role in
@@ -453,7 +453,7 @@ extension GeekStatusBar {
             }
             // A wide gap on each side: the targets are a group of their
             // own, apart from the messages and from `?`.
-            .padding(.horizontal, scaled(18))
+            .padding(.horizontal, barScaled(18))
             // Never squeezed: a long message on their left is cut instead.
             .fixedSize(horizontal: true, vertical: false)
         }
@@ -481,17 +481,17 @@ private struct StatusBlock: View {
     let key: String
 
     var body: some View {
-        HStack(spacing: scaled(4)) {
+        HStack(spacing: barScaled(4)) {
             if let icon {
                 Image(systemName: icon)
-                    .font(.system(size: scaled(10), weight: .semibold))
+                    .font(.system(size: barScaled(10), weight: .semibold))
                     .foregroundStyle(Palette.muted)
             }
             if !text.isEmpty { Text(text).lineLimit(1) }
             Text(key)
-                .font(.geek(9))
+                .font(.geekBar(9))
                 .foregroundStyle(Palette.muted)
-                .padding(.horizontal, scaled(3))
+                .padding(.horizontal, barScaled(3))
                 // Square corners: the geek theme has no rounded shapes (`ui.md`).
                 .overlay(Rectangle().stroke(Palette.separator, lineWidth: 1))
         }

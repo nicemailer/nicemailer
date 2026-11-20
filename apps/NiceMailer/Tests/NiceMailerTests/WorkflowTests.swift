@@ -38,7 +38,7 @@ struct WorkflowTests {
             }
         }
         let defaults = TestDefaults.make()
-        controller = GeekController(model: model, defaults: defaults, textSize: TextSize(defaults: defaults))
+        controller = GeekController(model: model, defaults: defaults, textSize: TextSize())
         model.openFile = { _ in }
         await model.attach(core)
         _ = await eventually { model.threads.count == 8 && model.openThread != nil }

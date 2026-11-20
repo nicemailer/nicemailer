@@ -107,7 +107,7 @@ struct HistoryScreenTests {
         }
         let model = AppModel()
         let defaults = TestDefaults.make()
-        let controller = GeekController(model: model, defaults: defaults, textSize: TextSize(defaults: defaults))
+        let controller = GeekController(model: model, defaults: defaults, textSize: TextSize())
         model.addressBook = FixtureAddressBook(cards: [:])
         await model.attach(core)
         controller.open(.history)

@@ -1939,6 +1939,8 @@ async fn call(core: &Arc<Core>, source: Source, req: Request) -> Result<Value, R
                 ui: nm_api::UiConfig {
                     title_bar: engine.config().ui.title_bar.as_str().into(),
                     auto_confirm_calls: engine.config().ui.auto_confirm_calls,
+                    text_size: Some(engine.config().ui.text_size),
+                    status_bar_text_size: Some(engine.config().ui.status_bar_text_size),
                 },
                 mcp: nm_api::McpConfig {
                     message_chars: engine.config().mcp.message_chars,

@@ -272,7 +272,7 @@ struct AIRulesTests {
     @MainActor
     @Test func theAIBlockOfTheStatusBarRemindsOfItsKey() {
         let defaults = TestDefaults.make()
-        let controller = GeekController(model: AppModel(), defaults: defaults, textSize: TextSize(defaults: defaults))
+        let controller = GeekController(model: AppModel(), defaults: defaults, textSize: TextSize())
         #expect(controller.aiKeyLabel(composing: false) == "a")
         #expect(controller.aiKeyLabel(composing: true) == "⌃I")
     }
@@ -509,7 +509,7 @@ final class AIControllerTests {
         core = FakeCore { method, params in state.answer(method, params) }
         let defaults = TestDefaults.make()
         editor = FakeEditor(model: model)
-        controller = GeekController(model: model, defaults: defaults, textSize: TextSize(defaults: defaults))
+        controller = GeekController(model: model, defaults: defaults, textSize: TextSize())
         controller.pasteboard = NSPasteboard(name: NSPasteboard.Name("NiceMailerTests-\(UUID().uuidString)"))
         model.openFile = { _ in }
         model.addressBook = FixtureAddressBook(cards: [:])

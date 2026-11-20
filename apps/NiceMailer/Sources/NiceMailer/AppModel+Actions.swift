@@ -1010,3 +1010,20 @@ enum Selection {
         return Result(cursor: next, marked: marked.union([cursor, next]))
     }
 }
+
+// MARK: - Text size
+
+extension AppModel {
+    /// ⌘+, ⌘− or ⌘0, from the keys (`GeekController.perform`) or from the
+    /// View menu: one place for both, so that the status bar always says
+    /// the size reached. The menu items used to change the size without a
+    /// word, and the message of an earlier key stayed on screen, wrong.
+    func changeTextSize(_ change: TextSizeChange) {
+        switch change {
+        case .bigger: textSize.bigger()
+        case .smaller: textSize.smaller()
+        case .reset: textSize.reset()
+        }
+        flash = textSize.flash
+    }
+}

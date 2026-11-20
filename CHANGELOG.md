@@ -12,9 +12,18 @@ How to write it:
 
 ## Unreleased
 
+### Added
+
+- **Display:** Set the text size in `config.toml`: `ui.text_size` for the window and `ui.status_bar_text_size` for the status bar, applied as soon as the file is saved.
+
 ### Changed
 
 - **Accounts:** with a single account, the account switcher (`@`) no longer shows in the status bar, the key does nothing and the help leaves it out.
+- **Display:** The default text size is 16 pt instead of 12, and 18 pt in the status bar. ⌘+ and ⌘− now last for the session only, and ⌘0 goes back to the size of `config.toml`.
+
+### Fixed
+
+- **Display:** The status bar always says the text size reached by ⌘+, ⌘− or ⌘0, also when the change comes from the View menu.
 
 
 ## 0.2.0 - 2026-11-20

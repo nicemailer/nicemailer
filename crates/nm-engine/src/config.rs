@@ -215,11 +215,30 @@ pub struct UiSettings {
     /// Off by default: it needs the Accessibility permission, which lets
     /// the app drive the interface of other apps.
     pub auto_confirm_calls: bool,
+    /// Text size of the app, in points, except the status bar: every size
+    /// of the interface derives from it (`docs/geek-ui.md`, "Text size").
+    /// ⌘+ and ⌘− change it for the session; ⌘0 comes back to this value.
+    pub text_size: u64,
+    /// Text size of the status bar, the line of blocks and commands at the
+    /// top (or bottom) of the window, set apart from the rest so that a
+    /// big reading text keeps a compact bar, or the reverse.
+    pub status_bar_text_size: u64,
 }
+
+/// The range of `ui.text_size` and `ui.status_bar_text_size`, in points:
+/// below 9 the monospaced letters are hard to read, above 32 a list shows
+/// too few rows to be useful. ⌘+ and ⌘− stay within it too.
+pub const TEXT_SIZE_RANGE: RangeInclusive<u64> = 9..=32;
 
 impl Default for UiSettings {
     fn default() -> Self {
-        UiSettings { view_threshold_ms: 2_000, title_bar: TitleBar::Shown, auto_confirm_calls: false }
+        UiSettings {
+            view_threshold_ms: 2_000,
+            title_bar: TitleBar::Shown,
+            auto_confirm_calls: false,
+            text_size: 16,
+            status_bar_text_size: 18,
+        }
     }
 }
 
@@ -872,6 +891,8 @@ impl<'t> Reader<'t> {
                         _ => TitleBar::Shown,
                     },
                     auto_confirm_calls: self.bool(&mut t, "auto_confirm_calls", d.ui.auto_confirm_calls)?,
+                    text_size: self.int(&mut t, "text_size", d.ui.text_size, TEXT_SIZE_RANGE)?,
+                    status_bar_text_size: self.int(&mut t, "status_bar_text_size", d.ui.status_bar_text_size, TEXT_SIZE_RANGE)?,
                 };
                 self.finish(t);
                 u
@@ -1451,6 +1472,13 @@ title_bar = "{title_bar}"
 # (System Settings, Privacy & Security). Off by default (false). Applied
 # at once.
 auto_confirm_calls = {auto_confirm_calls}
+# Text size of the app, in points (9 to 32), except the status bar. Cmd-+
+# and Cmd-- change it for the session, Cmd-0 comes back to this value.
+# Applied at once.
+text_size = {text_size}
+# Text size of the status bar, in points (9 to 32). Cmd-+ and Cmd-- change
+# it with the rest. Applied at once.
+status_bar_text_size = {status_bar_text_size}
 
 [audit]
 # Days the history of changes is kept.
@@ -1528,6 +1556,8 @@ in_banned = {unsubscribe_in_banned}
         view_threshold_ms = d.ui.view_threshold_ms,
         title_bar = d.ui.title_bar.as_str(),
         auto_confirm_calls = d.ui.auto_confirm_calls,
+        text_size = d.ui.text_size,
+        status_bar_text_size = d.ui.status_bar_text_size,
         retention_days = d.audit.retention_days,
         undo_send_seconds = d.compose.undo_send_seconds,
         compose_format = d.compose.format,

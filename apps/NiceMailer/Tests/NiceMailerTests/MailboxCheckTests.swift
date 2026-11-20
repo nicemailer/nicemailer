@@ -121,7 +121,7 @@ struct MailboxChangeTests {
 
     init() async throws {
         let defaults = TestDefaults.make()
-        controller = GeekController(model: model, defaults: defaults, textSize: TextSize(defaults: defaults))
+        controller = GeekController(model: model, defaults: defaults, textSize: TextSize())
         model.openFile = { _ in }
         model.addressBook = FixtureAddressBook(cards: [:])
         tool.reports = [

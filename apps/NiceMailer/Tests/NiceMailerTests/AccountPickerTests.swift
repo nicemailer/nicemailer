@@ -29,7 +29,7 @@ struct AccountPickerTests {
             method == "list_folders" ? ["items": folders, "as_of": Fixture.position] : Fixture.answer(method, params)
         }
         let defaults = TestDefaults.make()
-        controller = GeekController(model: model, defaults: defaults, textSize: TextSize(defaults: defaults))
+        controller = GeekController(model: model, defaults: defaults, textSize: TextSize())
         model.startUnified = unified
         await model.attach(core)
         _ = await eventually { model.threads.count == 8 }
@@ -264,7 +264,7 @@ struct SingleAccountTests {
 
     init() async {
         let defaults = TestDefaults.make()
-        controller = GeekController(model: model, defaults: defaults, textSize: TextSize(defaults: defaults))
+        controller = GeekController(model: model, defaults: defaults, textSize: TextSize())
         await model.attach(core)
         _ = await eventually { model.threads.count == 8 }
     }
@@ -296,7 +296,7 @@ struct SingleAccountTests {
     /// Before the folders are read, no account is known: nothing to offer.
     @Test func noFolderYetMeansNoChoice() {
         let empty = GeekController(model: AppModel(), defaults: TestDefaults.make(),
-                                   textSize: TextSize(defaults: TestDefaults.make()))
+                                   textSize: TextSize())
         #expect(!empty.hasSeveralAccounts)
     }
 }

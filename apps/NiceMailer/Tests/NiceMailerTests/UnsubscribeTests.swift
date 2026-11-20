@@ -17,7 +17,7 @@ struct UnsubscribeTests {
 
     init() async {
         let defaults = TestDefaults.make()
-        controller = GeekController(model: model, defaults: defaults, textSize: TextSize(defaults: defaults))
+        controller = GeekController(model: model, defaults: defaults, textSize: TextSize())
         let opened = opened
         model.openFile = { opened.urls.append($0) }
         await model.attach(core)

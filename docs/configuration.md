@@ -229,7 +229,7 @@ At start, the files are created if missing, then read before the core accepts cl
  "accounts_path": "/Users/me/.config/nicemailer/accounts.toml", "accounts_exists": true,
  "error": {"file": "config.toml", "line": 12, "key": "sync.poll_interval_secs", "message": "must be between 30 and 86400"},
  "warnings": [{"file": "config.toml", "line": 4, "key": "core.turbo", "message": "unknown key, ignored"}],
- "ui": {"title_bar": "shown", "auto_confirm_calls": false},
+ "ui": {"title_bar": "shown", "auto_confirm_calls": false, "text_size": 16, "status_bar_text_size": 18},
  "mcp": {"message_chars": 8000, "response_chars": 40000},
  "unsubscribe": {"in_banned": false},
  "as_of": {"epoch": "e_…", "seq": 7}}
@@ -267,6 +267,8 @@ They are all in `config.toml`; `nicemailer config defaults` prints them all. Ran
 | `ui.view_threshold_ms` | 2000 | 0 to 60000 | no |
 | `ui.title_bar` | `shown` | `shown`, `hidden` | yes: the app applies it at once (`geek-ui.md`, "Window") |
 | `ui.auto_confirm_calls` | false | | yes: the app applies it at once; it presses the confirmation macOS shows before a call (`geek-ui.md`, "Calling a number") |
+| `ui.text_size` | 16 | 9 to 32 | yes: the app applies it at once; text size of the window except the status bar, in points (`geek-ui.md`, "Text size") |
+| `ui.status_bar_text_size` | 18 | 9 to 32 | yes: the app applies it at once; text size of the status bar, in points |
 | `audit.retention_days` | 365 | 1 to 36500 | no |
 | `compose.undo_send_seconds` | 5 | 0 to 30 | yes: the delay before a mail leaves ([sending.md](sending.md)) |
 | `ai.enabled` | false | | not yet: allows mail to be sent to an AI provider, for every account ([ai.md](ai.md)) |

@@ -920,6 +920,11 @@ private final class Runner {
             "list_filter": m.listFilter.map { "\($0)" } ?? "",
             "export_files": exports,
             "font_size": "\(Int(TextSize.shared.size))",
+            // The status bar's own text size (`ui.status_bar_text_size`),
+            // and the height of its `?` block as laid out: it grows with
+            // that size, not with the window's.
+            "status_bar_font_size": "\(Int(TextSize.shared.statusBarSize))",
+            "status_help_height": "\(Int((UIScript.frames["status-help"]?.height ?? 0).rounded()))",
             "reader_text": UIScript.readerText,
             "reader_links": "\(UIScript.readerLinks)",
             "reader_folded": "\(m.openThread.map { ThreadDisplay.foldedCount(ThreadDisplay.blocks($0, c.readerState)) } ?? 0)",

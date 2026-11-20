@@ -71,7 +71,7 @@ struct ReadingTests {
             }
         }
         let defaults = TestDefaults.make()
-        controller = GeekController(model: model, defaults: defaults, textSize: TextSize(defaults: defaults))
+        controller = GeekController(model: model, defaults: defaults, textSize: TextSize())
         model.seenDelay = 0.05
         await model.attach(core)
         _ = await eventually { model.threads.count == 6 && model.openThread != nil }

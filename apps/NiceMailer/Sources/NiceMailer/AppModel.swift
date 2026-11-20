@@ -168,6 +168,11 @@ final class AppModel {
     /// and the status bar says so until the file is fixed.
     var keymapProblem: KeymapProblem?
 
+    /// The text sizes of the window and of its status bar (`TextSize`):
+    /// those of `config.toml`, moved by ⌘+ / ⌘−. The shared one in the app,
+    /// one of its own in each unit test.
+    @ObservationIgnored var textSize: TextSize = .shared
+
     /// `ui.auto_confirm_calls` of `config.toml`: a number called from the
     /// app is confirmed by the app itself (`CallConfirmation`). Off by
     /// default: it needs the Accessibility permission.
@@ -900,6 +905,9 @@ final class AppModel {
                 // Only an explicit "hidden" hides it: shown is the default.
                 titleBarHidden = ui.titleBar == "hidden"
                 autoConfirmCalls = ui.autoConfirmCalls ?? false
+                // Applied at once: the window is rebuilt at the new sizes
+                // (`GeekWindow`, `.id`).
+                textSize.configure(size: ui.textSize, statusBar: ui.statusBarTextSize)
             }
             // An older core without `[unsubscribe]` keeps it closed, as
             // that core refuses it.

@@ -302,6 +302,10 @@ struct UIConfig: Decodable {
     let titleBar: String
     /// `ui.auto_confirm_calls`; absent from an older core (nil: off).
     let autoConfirmCalls: Bool?
+    /// `ui.text_size` and `ui.status_bar_text_size`, in points; absent
+    /// from an older core (nil: the defaults of `TextSize`).
+    var textSize: Double? = nil
+    var statusBarTextSize: Double? = nil
 }
 
 /// A screening decision taken, changed or removed by a command: on an

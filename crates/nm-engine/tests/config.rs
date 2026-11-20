@@ -542,6 +542,38 @@ fn calls_are_confirmed_by_the_app_only_when_asked() {
     assert_eq!(p.key.as_deref(), Some("ui.auto_confirm_calls"));
 }
 
+/// The two text sizes of the app (`docs/geek-ui.md`, "Text size"): 16 pt
+/// and 18 pt for the status bar by default, each set on its own, and refused outside 9 to 32 on their
+/// line, so that a typo never gives an unreadable window.
+#[test]
+fn the_text_sizes_default_to_16_and_18_and_are_set_apart() {
+    let d = settings("").unwrap().config.ui;
+    assert_eq!((d.text_size, d.status_bar_text_size), (16, 18));
+    let ui = settings("[ui]\ntext_size = 18\nstatus_bar_text_size = 12\n").unwrap().config.ui;
+    assert_eq!((ui.text_size, ui.status_bar_text_size), (18, 12));
+    // One of them alone leaves the other at its default.
+    let ui = settings("[ui]\nstatus_bar_text_size = 20\n").unwrap().config.ui;
+    assert_eq!((ui.text_size, ui.status_bar_text_size), (16, 20));
+    // The bounds are accepted, beyond them refused on the key's line.
+    assert_eq!(settings("[ui]\ntext_size = 9\n").unwrap().config.ui.text_size, 9);
+    assert_eq!(settings("[ui]\ntext_size = 32\n").unwrap().config.ui.text_size, 32);
+    for (text, key) in [
+        ("[ui]\ntext_size = 8\n", "ui.text_size"),
+        ("[ui]\n\ntext_size = 33\n", "ui.text_size"),
+        ("[ui]\nstatus_bar_text_size = 40\n", "ui.status_bar_text_size"),
+        ("[ui]\ntext_size = \"big\"\n", "ui.text_size"),
+        ("[ui]\ntext_size = 14.5\n", "ui.text_size"),
+    ] {
+        let p = refused(text);
+        assert_eq!(p.key.as_deref(), Some(key), "{text}");
+        assert_eq!(p.line, Some(text.lines().count() as u32), "{text}");
+    }
+    // A change of either is announced by its own key.
+    let a = settings("").unwrap().config;
+    let b = settings("[ui]\nstatus_bar_text_size = 11\n").unwrap().config;
+    assert_eq!(config::changed_keys(&a, &b), vec!["ui.status_bar_text_size".to_string()]);
+}
+
 /// The unsubscribe of the mails of Banned: closed unless asked
 /// (`ui.md`, "Désabonnement").
 #[test]

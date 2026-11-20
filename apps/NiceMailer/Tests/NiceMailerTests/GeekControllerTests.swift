@@ -17,7 +17,7 @@ struct GeekControllerTests {
 
     init() async {
         defaults = TestDefaults.make()
-        textSize = TextSize(defaults: defaults)
+        textSize = TextSize()
         controller = GeekController(model: model, defaults: defaults, textSize: textSize)
         // A pasteboard of its own: a test that copies (a link to a mail)
         // never overwrites what the user copied.
@@ -1834,15 +1834,68 @@ struct GeekControllerTests {
     // MARK: Text size
 
     @Test func commandPlusMinusAndZeroChangeTheTextSize() {
-        #expect(textSize.size == 12)
+        // 16 pt, 18 pt in the status bar: the message says both.
+        #expect(textSize.size == 16 && textSize.statusBarSize == 18)
         press("cmd-=")
+        #expect(model.flash == said(17))
         press("cmd-+")
-        #expect(textSize.size == 14)
-        #expect(model.flash?.contains("14") == true)
+        #expect(textSize.size == 18 && textSize.statusBarSize == 20)
+        // Each press says the size reached, not the first one's.
+        #expect(model.flash == said(18))
         press("cmd--")
-        #expect(textSize.size == 13)
+        #expect(textSize.size == 17)
+        #expect(model.flash == said(17))
         press("cmd-0")
-        #expect(textSize.size == 12)
+        #expect(textSize.size == 16 && textSize.statusBarSize == 18)
+        #expect(model.flash == said(16))
+    }
+
+    /// The message of the text size at the default sizes moved by the same
+    /// step: `size` for the window, two more for the status bar.
+    func said(_ size: Int) -> String {
+        L("Text size: %lld pt, status bar %lld pt", size, size + 2)
+    }
+
+    /// The View menu's items (Bigger Text…) reach the size through the
+    /// model, as the keys do: a ⌘+ the key monitor does not recognize
+    /// (another keyboard layout) lands there, and the status bar must
+    /// still say the new size instead of keeping an older message.
+    @Test func theMenuItemsSayTheNewSizeToo() {
+        press("cmd-=")
+        #expect(model.flash == said(17))
+        model.changeTextSize(.bigger)
+        #expect(textSize.size == 18 && model.flash == said(18))
+        model.changeTextSize(.smaller)
+        model.changeTextSize(.smaller)
+        #expect(textSize.size == 16 && model.flash == said(16))
+        model.changeTextSize(.bigger)
+        model.changeTextSize(.reset)
+        #expect(textSize.size == 16 && model.flash == said(16))
+    }
+
+    /// The sizes of `config.toml` come with `config_status`, at launch and
+    /// after each `ConfigChanged`; ⌘0 comes back to them.
+    @Test func theSizesOfTheFileApplyAndCommandZeroComesBackToThem() async {
+        let sized = FakeCore { method, params in
+            method == "config_status"
+                ? ["ui": ["title_bar": "shown", "text_size": 18, "status_bar_text_size": 12]] as [String: Any]
+                : Fixture.answer(method, params)
+        }
+        let model = AppModel()
+        let sizes = TextSize()
+        let controller = GeekController(model: model, defaults: defaults, textSize: sizes)
+        await model.attach(sized)
+        #expect(await eventually { sizes.size == 18 && sizes.statusBarSize == 12 })
+        controller.perform(.textBigger)
+        #expect(sizes.size == 19 && sizes.statusBarSize == 13)
+        #expect(model.flash == L("Text size: %lld pt, status bar %lld pt", 19, 13))
+        controller.perform(.textReset)
+        #expect(sizes.size == 18 && sizes.statusBarSize == 12)
+        // The file read again with the same sizes (another key changed):
+        // a step of ⌘+ stays; with a new size, that size.
+        controller.perform(.textBigger)
+        await model.loadUISettings()
+        #expect(sizes.size == 19)
     }
 
     @Test func otherCommandShortcutsAreLeftToTheMenus() {

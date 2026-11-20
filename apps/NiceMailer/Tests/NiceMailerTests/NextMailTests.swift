@@ -103,7 +103,7 @@ struct NextMailTests {
             }
         }
         let defaults = TestDefaults.make()
-        controller = GeekController(model: model, defaults: defaults, textSize: TextSize(defaults: defaults))
+        controller = GeekController(model: model, defaults: defaults, textSize: TextSize())
         // Long enough that nothing is marked read behind the tests' back.
         model.seenDelay = 60
         await model.attach(core)

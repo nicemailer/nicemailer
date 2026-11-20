@@ -111,11 +111,14 @@ struct NiceMailerApp: App {
                 // Text size of the geek theme, like Zed (`TextSize`). In the
                 // geek theme the keys are handled by its key monitor first,
                 // which also accepts ⌘= for keyboards where `+` needs Shift.
-                Button(L("Bigger Text")) { TextSize.shared.bigger() }
+                // A key the monitor does not recognize (some layouts give
+                // ⌘+ other characters) reaches these items instead: they
+                // go through the model too, which says the new size.
+                Button(L("Bigger Text")) { model.changeTextSize(.bigger) }
                     .keyboardShortcut(model.keymap.shortcut(.textBigger))
-                Button(L("Smaller Text")) { TextSize.shared.smaller() }
+                Button(L("Smaller Text")) { model.changeTextSize(.smaller) }
                     .keyboardShortcut(model.keymap.shortcut(.textSmaller))
-                Button(L("Actual Size")) { TextSize.shared.reset() }
+                Button(L("Actual Size")) { model.changeTextSize(.reset) }
                     .keyboardShortcut(model.keymap.shortcut(.textReset))
             }
         }

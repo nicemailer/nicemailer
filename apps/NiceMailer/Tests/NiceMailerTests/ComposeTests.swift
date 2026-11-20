@@ -376,7 +376,7 @@ struct ComposeControllerTests {
     init() async {
         let defaults = TestDefaults.make()
         editor = FakeEditor(model: model)
-        controller = GeekController(model: model, defaults: defaults, textSize: TextSize(defaults: defaults))
+        controller = GeekController(model: model, defaults: defaults, textSize: TextSize())
         let c = controller
         editor.onLeave = { c.leaveText() }
         controller.pasteboard = NSPasteboard(name: NSPasteboard.Name("NiceMailerTests-\(UUID().uuidString)"))
@@ -1306,7 +1306,7 @@ struct EditorFlowTests {
     init() async {
         let defaults = TestDefaults.make()
         editor = FakeEditor(model: model)
-        controller = GeekController(model: model, defaults: defaults, textSize: TextSize(defaults: defaults))
+        controller = GeekController(model: model, defaults: defaults, textSize: TextSize())
         let c = controller
         editor.onLeave = { c.leaveText() }
         controller.pasteboard = NSPasteboard(name: NSPasteboard.Name("NiceMailerTests-\(UUID().uuidString)"))

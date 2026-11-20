@@ -1,13 +1,20 @@
-# Text size: cmd + / cmd = / cmd - / cmd 0, like Zed.
-expect font_size = 12
-expect row_height = 20
+# Text size: cmd + / cmd = / cmd - / cmd 0, like Zed. 16 pt, and 18 pt in
+# the status bar, by default (ui.text_size and ui.status_bar_text_size,
+# not set here).
+expect font_size = 16
+expect status_bar_font_size = 18
+expect row_height = 27
 key cmd-=
-expect font_size = 13
-expect flash ~ 13
-expect row_height > 20
+expect font_size = 17
+expect status_bar_font_size = 19
+expect flash = Text size: 17 pt, status bar 19 pt
+expect row_height > 27
 key cmd-+
+# Each press says the size reached, not the one of the first press.
+expect flash = Text size: 18 pt, status bar 20 pt
 key cmd-+
-expect font_size = 15
+expect font_size = 19
+expect flash = Text size: 19 pt, status bar 21 pt
 snap bigger
 # The list still works after the rebuild: keys and clicks.
 key j
@@ -15,17 +22,32 @@ expect selected = 1
 click thread:3
 expect selected = 3
 key cmd--
-expect font_size = 14
+expect font_size = 18
+expect flash = Text size: 18 pt, status bar 20 pt
 key cmd-0
-expect font_size = 12
-expect row_height = 20
-# Bounds.
+expect font_size = 16
+expect status_bar_font_size = 18
+expect flash = Text size: 16 pt, status bar 18 pt
+expect row_height = 27
+# Bounds: 9 to 32 pt. The window reaches 9 first, the status bar follows.
+key cmd--
+key cmd--
+key cmd--
 key cmd--
 key cmd--
 key cmd--
 key cmd--
 expect font_size = 9
+expect status_bar_font_size = 11
+key cmd--
+key cmd--
+expect status_bar_font_size = 9
 snap smallest
 key cmd--
 expect font_size = 9
+expect status_bar_font_size = 9
+# At the bound, the first cmd + grows again.
+key cmd-=
+expect status_bar_font_size = 10
 key cmd-0
+expect font_size = 16

@@ -30,7 +30,14 @@ Layout choices (columns, status bar position, list width) are remembered.
 
 ## Text size
 
-As in Zed, **⌘+** (or **⌘=**, which needs no Shift on AZERTY keyboards) makes the whole interface bigger, **⌘−** smaller, and **⌘0** brings it back to the default size, one point at a time between 9 and 24 points (default 12). The same commands are in the View menu. Everything follows a single base size: fonts, row heights, column widths, menus, pickers and the HTML view. The size is remembered.
+Two sizes, set in `config.toml` and applied at once when the file changes:
+
+- `ui.text_size` (default 16 pt): the whole window but the status bar. Everything follows it: fonts, row heights, column widths, menus, pickers and the HTML view.
+- `ui.status_bar_text_size` (default 18 pt): the status bar alone, its blocks, chips, messages and the line typed there; its height follows it too.
+
+Both go from 9 to 32 points; a value outside is refused on its line ([configuration.md](configuration.md)). The lengths of the layout are written for 12 pt and scaled from there (`TextSize.referenceSize`).
+
+As in Zed, **⌘+** (or **⌘=**, which needs no Shift on AZERTY keyboards) makes both sizes one point bigger, **⌘−** one point smaller, and **⌘0** brings them back to the values of the file. The same commands are in the View menu, and both ways say the size reached in the status bar ("Text size: 16 pt", and "…, status bar 12 pt" when the two differ). This step lasts for the session only: the file is the one place that says the size, so a size remembered by the app can never silently win over an edit of the file. An edit of either size in the file also clears the step; an edit of another key keeps it.
 
 ## Tags and groups in the header
 
