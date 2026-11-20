@@ -12,17 +12,10 @@ How to write it:
 
 ## Unreleased
 
-### Changed
 
-- **Command line:** `nicemailer mailbox check`, `upgrade` and `backup` work on the mailbox in use, without a folder to type; `--data-dir` names another mailbox folder. `backup` takes only the file to write.
+## 0.2.0 - 2026-11-20
 
-### Fixed
-
-- **Mail:** New mail no longer stays "(body not downloaded)" for up to an hour after the Mac woke from sleep a few times: its body comes within seconds, and at once when you open it.
-
-## 0.2.0 - 2026-11-18
-
-First public and open source release. 19 languages. Auto update. Configurable keyboard shortcuts. UI to add an account and option to try it in « look only » mode.
+First public and open-source release, with 19 languages, configurable keyboard shortcuts, and auto-update. New UI to add an account and an option to try it in "look-only" mode to test the app.
 
 ### Added
 
@@ -52,9 +45,11 @@ First public and open source release. 19 languages. Auto update. Configurable ke
 - **History:** The History screen is readable: short dates, who did what in plain words, one row per batch that unfolds, and Return opens the mail in its current folder so an action can be corrected. Mails marked as read are hidden until you press `u`. `f` shows only the actions of one author: you, NiceMailer, the terminal or an AI agent.
 - **Attribute selector:** All rows of `f` are visible at once, without scrolling, and grouped in pairs: Unread / Read, Flagged / Not flagged, From… / To…, Subject… / Text…, the two dates, Group… / Tag…, Human / Robot, attachments, your reply, conversations. "Answered" is now "With my reply".
 - **Speed:** NiceMailer stays faster when the Mac is busy, after a restart or during a backup, and the synchronization holds up your actions less.
+- **Command line:** `nicemailer mailbox check`, `upgrade` and `backup` work on the mailbox in use, without a folder to type; `--data-dir` names another mailbox folder. `backup` takes only the file to write.
 
 ### Fixed
 
+- **Mail:** New mail no longer stays "(body not downloaded)" for up to an hour after the Mac woke from sleep a few times: its body comes within seconds, and at once when you open it.
 - **Unsubscribe:** "unsubscribed" gives the day it was done, also when it was today; it gave only the time ("unsubscribed 09:57").
 - **AI:** A prompt run right after typing in a reply reads the last words typed, and its answer applies; before, it could work on an older text and refuse to apply with "The reply changed since the AI read it".
 - **Language and region:** Dates, sizes and numbers follow the app's language and the Mac's region: month names, date order (also when typing a date in the attribute selector), 12- or 24-hour clock, "251 ko", "1 234".
