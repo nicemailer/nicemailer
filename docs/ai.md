@@ -246,7 +246,7 @@ In **Quarantine**, the palette starts with **Sort the Quarantine**, so `a` then 
 
 The result of a prompt **takes the place of the palette** it was chosen in, for a reply as for a mail: the same width, its top at the palette's top, growing downward as the answer streams in, so that the eyes stay where they already are (`GeekController.aiPlacement` says where the AI shows: `palette`, `panel`, `none`). The panel of a mail: a translation, a summary with its action items, a verdict (its risk in a colour, "Raised by NiceMailer" when the core raised it), or the quick replies, numbered, the first highlighted: Return (or a number) starts the reply to the mail with that text above the quotation, apart from what a reply already started holds by an empty line.
 
-A prompt chosen, the text is saved first (the core reads the draft as saved, at its revision), and the **AI panel** opens in the palette's place, over the reply, its text still visible around it:
+A prompt chosen, the text is saved first (the core reads the draft as saved, at its revision), the last keys typed included: the editor reports what is typed only after a pause, so the app asks it for its text first (`flush`, as sending does); an editor that does not answer runs nothing ("The text could not be read"). Meanwhile the **AI panel** opens in the palette's place, over the reply, its text still visible around it:
 
 | While | Shows | Keys |
 | --- | --- | --- |

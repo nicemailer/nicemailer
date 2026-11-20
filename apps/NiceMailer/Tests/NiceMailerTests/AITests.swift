@@ -596,6 +596,41 @@ final class AIControllerTests {
         #expect(core.calls("ai_run").isEmpty)
     }
 
+    /// The editor had not reported the last keys yet (its pause) when ⌃I
+    /// was pressed: they are asked for first, saved, and the AI reads them.
+    /// Applying then sends the revision the run read: no later save of the
+    /// same text comes between.
+    @Test func theAIReadsTheLastKeysTypedAndItsAnswerApplies() async throws {
+        await reply()
+        _ = await eventually { self.core.calls("update_draft").count + self.core.calls("create_draft").count > 0 }
+        editor.reportsChanges = false
+        type(" jeudi")
+        #expect(model.composer?.body.hasPrefix("merci jeudi") == false, "still in the editor")
+        press("ctrl-i")
+        _ = await eventually { self.paletteOpen }
+        press("ret")
+        _ = await eventually { self.model.aiRun?.runId == 7 }
+        #expect(editor.flushCount >= 1)
+        // Written by the reply first ("merci"), then saved with the last keys.
+        let saved = core.calls("update_draft").compactMap { $0["body"] as? String }
+        #expect(saved.last?.hasPrefix("merci jeudi") == true, "\(saved)")
+        let run = try #require(core.calls("ai_run").last)
+        let revision = run["revision"] as? Int
+        #expect(model.composer?.revision == revision, "nothing saved after the run started")
+    }
+
+    /// An editor that does not answer: no run on an older text.
+    @Test func noAnswerOfTheEditorNoRun() async throws {
+        await reply()
+        editor.answersFlush = false
+        press("ctrl-i")
+        _ = await eventually { self.paletteOpen }
+        press("ret")
+        #expect(await eventually { self.model.flash == L("The text could not be read: try again") })
+        #expect(core.calls("ai_run").isEmpty)
+        #expect(model.aiRun == nil)
+    }
+
     @Test func theFirstRowIsHighlightedSoReturnRunsIt() async throws {
         // ⌘I then Return: the first prompt of the reply, proofreading.
         await reply()

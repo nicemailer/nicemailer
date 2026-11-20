@@ -45,6 +45,16 @@ extension AppModel {
         aiRun = AIRun(runId: 0, title: AI.title(prompt, variant: variant), target: .reply(opened))
         // The pending save now, rather than after its pause.
         composeSaveTask?.cancel()
+        // The editor reports what is typed only after its own pause: the
+        // last keys are asked for first (`flush`), as sending does. Without
+        // it, ⌃I pressed right after typing ran the AI on a text missing
+        // them, and the editor's late report saved the draft again under
+        // the run, so that applying its answer was refused as "changed".
+        guard await takeEditorContent() else {
+            if aiRun?.runId == 0 { aiRun = nil }
+            flash = L("The text could not be read: try again")
+            return
+        }
         await saveComposer()
         guard await ensureWritten(), let c = composer, c.opened == opened, aiRun?.runId == 0 else {
             if aiRun?.runId == 0 { aiRun = nil }
