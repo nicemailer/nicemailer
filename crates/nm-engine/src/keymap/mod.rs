@@ -389,48 +389,46 @@ fn merge(keymap: &mut Keymap, layer: Layer, defaults: bool) {
 }
 
 /// The rows of a menu once the file's `bindings` are applied to `rows`
-/// (see [`merge`]). The menu is rebuilt in one pass over its rows rather
-/// than changed in place: a row of the file can both take the key of one
-/// row and replace the key of another (`b = "goto.drafts"` takes the key of
-/// Banned and replaces `r` of Drafts), and the rebuild keeps the order of
-/// the rows simple to follow. A menu has a few dozen rows at most.
+/// (see [`merge`]).
+///
+/// A row keeps the place of its **action**, not of its key: the menu `;`
+/// stays in the order of the defaults whatever keys the user swaps. With
+/// `c = "goto.deleted"` and `C = "goto.contacts"`, Deleted takes `c` at
+/// its own place, and Contacts keeps its place among the screens with `C`
+/// (it went to the end of the menu when the row followed the key).
+///
+/// One pass over the default rows, each the slot of its action:
+/// - the file gives the action keys: they fill the slot (all of them,
+///   together, the first time the action is met);
+/// - else the row keeps its key, unless the file took that key for
+///   another action or removed it (`"none"`): the action then has no row.
+///
+/// Then the actions the menu did not have, in the order of the file. A
+/// menu has a few dozen rows at most.
 fn merge_menu(rows: Vec<(Chord, String)>, bindings: &[Binding]) -> Vec<(Chord, String)> {
-    // The file's rows, by key and by action.
-    let by_chord: BTreeMap<Chord, Option<&String>> = bindings.iter().map(|b| (b.chord, b.action.as_ref())).collect();
-    let actions: BTreeSet<&String> = bindings.iter().filter_map(|b| b.action.as_ref()).collect();
-    // The file's rows already placed. Rust note: `bindings` is borrowed
+    // The keys the file writes, whatever it does with them.
+    let written: BTreeSet<Chord> = bindings.iter().map(|b| b.chord).collect();
+    // The file's rows not placed yet. Rust note: `bindings` is borrowed
     // (`&[Binding]`), so the rows are cloned into the new menu.
-    let mut placed: BTreeSet<Chord> = BTreeSet::new();
+    let mut left: Vec<(Chord, String)> = bindings.iter().filter_map(|b| b.action.clone().map(|a| (b.chord, a))).collect();
     let mut out: Vec<(Chord, String)> = Vec::new();
-    let place = |b: &Binding, out: &mut Vec<(Chord, String)>, placed: &mut BTreeSet<Chord>| {
-        if let Some(a) = &b.action
-            && placed.insert(b.chord)
-        {
-            out.push((b.chord, a.clone()));
-        }
-    };
     for (chord, action) in rows {
-        if let Some(new) = by_chord.get(&chord) {
-            // The key is the file's: its action (all the file's keys for
-            // it, together), or nothing for a `"none"`.
-            if let Some(a) = new {
-                for b in bindings.iter().filter(|b| b.action.as_ref() == Some(*a)) {
-                    place(b, &mut out, &mut placed);
+        if left.iter().any(|(_, a)| *a == action) {
+            // Rust note: `extract_if` would do this in one call; `retain`
+            // with a side effect keeps to stable Rust.
+            left.retain(|row| {
+                if row.1 == action {
+                    out.push(row.clone());
+                    false
+                } else {
+                    true
                 }
-            }
-        } else if actions.contains(&action) {
-            // The file gave this action other keys: they take this row.
-            for b in bindings.iter().filter(|b| b.action.as_ref() == Some(&action)) {
-                place(b, &mut out, &mut placed);
-            }
-        } else {
+            });
+        } else if !written.contains(&chord) && !out.iter().any(|(_, a)| *a == action) {
             out.push((chord, action));
         }
     }
-    // The actions the menu did not have, in the order of the file.
-    for b in bindings {
-        place(b, &mut out, &mut placed);
-    }
+    out.extend(left);
     out
 }
 

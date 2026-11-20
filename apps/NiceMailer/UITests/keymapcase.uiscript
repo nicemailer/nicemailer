@@ -1,0 +1,22 @@
+# Keys swapped in the menu ; (fixtures/keymapcase.keymap.toml, a real
+# user's file, docs/keymap.md "Menus"): each row keeps the place of its
+# action, whatever key it takes, and a capital is another key than its
+# lower case (c Deleted, C Contacts).
+key ;
+expect menu_rows ~ c Deleted
+expect menu_rows ~ C Contacts
+# Contacts among the screens, before Tags and Groups, not after History.
+expect menu_rows ~ C Contacts | T Tags | G Groups
+snap menu
+key C
+expect screen = contacts
+key esc
+key ;
+key c
+expect folder = Deleted
+key ;
+key E
+expect folder = Everything
+key ;
+key G
+expect screen = groups

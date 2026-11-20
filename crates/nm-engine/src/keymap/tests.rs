@@ -223,6 +223,25 @@ fn keys_swapped_in_a_menu() {
     assert_eq!(goto[1], ("f".into(), "goto.todo"));
 }
 
+/// A row keeps the place of its action, not of its key: an action whose
+/// default key the file gave to another keeps its place with its new key.
+/// The menu `;` of a real file, where Contacts went after History.
+#[test]
+fn a_row_keeps_the_place_of_its_action() {
+    let text = "[menu.goto]\nf = \"goto.todo\"\nr = \"goto.waiting\"\nt = \"goto.work\"\nl = \"goto.newsletter\"\n\
+                e = \"goto.sent\"\nb = \"goto.drafts\"\nc = \"goto.deleted\"\ns = \"goto.junk\"\nv = \"goto.banned\"\n\
+                E = \"goto.everything\"\nC = \"goto.contacts\"\nG = \"goto.groups\"\n";
+    let k = ok(text).keymap;
+    let actions: Vec<&str> = rows(&k, "goto").iter().map(|(_, a)| *a).collect();
+    let defaults: Vec<&str> = rows(defaults(), "goto").iter().map(|(_, a)| *a).collect();
+    assert_eq!(actions, defaults, "the order of the defaults, every action kept");
+    let goto = rows(&k, "goto");
+    let at = |action: &str| goto.iter().find(|(_, a)| *a == action).map(|(c, _)| c.as_str()).unwrap();
+    assert_eq!((at("goto.todo"), at("goto.work"), at("goto.contacts"), at("goto.tags")), ("f", "t", "C", "T"));
+    // The screens together, History last.
+    assert_eq!(&actions[actions.len() - 4..], ["goto.contacts", "goto.tags", "goto.groups", "goto.history"]);
+}
+
 /// In a context, an action may have several keys: the default key stays,
 /// but the file's comes first, as the app shows the first one.
 #[test]

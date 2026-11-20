@@ -1,0 +1,23 @@
+# The menu ; of a real keymap.toml (keymapcase.uiscript): keys swapped,
+# capitals for the screens.
+[menu.goto]
+# i = "goto.inbox"                              # Inbox
+f = "goto.todo"                                 # Faire
+r = "goto.waiting"                            # Waiting
+t = "goto.work"                               # Work (Inbox, Todo and Waiting)
+# a = "goto.archive"                            # Archive
+l = "goto.newsletter"                         # Newsletter
+# p = "goto.paperwork"                          # Paperwork
+e = "goto.sent"                               # Sent
+b = "goto.drafts"                             # Drafts
+# m = "goto.all_mail"                           # All Mail
+# q = "goto.quarantine"                         # Quarantine
+c = "goto.deleted"                            # Deleted
+s = "goto.junk"                               # Junk
+v = "goto.banned"                             # Banned
+E = "goto.everything"                         # Everything
+C = "goto.contacts"                           # the Contacts screen
+# T = "goto.tags"                               # the Tags screen
+G = "goto.groups"                             # the Groups screen
+# h = "goto.history"                            # the History screen
+
