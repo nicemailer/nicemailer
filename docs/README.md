@@ -31,4 +31,4 @@ User and developer documentation, in English. It is written together with the co
 | [mcp.md](mcp.md) | AI agents (Claude Desktop, Claude Code, any MCP client) reading the mailbox and preparing drafts through `nicemailer-mcp`: connecting them from the app, the tools, what an agent may and may not do (enforced by the core), the answers, the tests |
 | [ai.md](ai.md) | AI assistance: the providers (the user's `claude` binary, a fake for tests), the safety check that proves at every call that the binary has no tool, the built-in prompts and how to write your own, the tests |
 
-Features of the first working version that predate this folder (fake-mail seed, folders and moves, search, events) are described in the main `README.md` and still need their own pages.
+Features of the first working version that predate this folder (fake-mail seed, folders and moves, search, events) still need their own pages; the main `README.md` only gives the commands that run them.

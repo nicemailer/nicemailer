@@ -1,85 +1,121 @@
+<div align="center">
+
 # NiceMailer
 
-Mail client for macOS: a Rust core owns the database and the logic, and a SwiftUI app is only one of its clients. The specifications are in `specifications/` (in French).
+**Fast to use. Calm to live with. Yours to keep.**
 
-## Status: first working version
+An email client for the Mac that stays instant with hundreds of thousands of emails,<br>
+lets into your inbox only the people you chose, and keeps your mail on your Mac.
 
-This version is for testing user-experience hypotheses on a database of fake mails, or on a real mailbox imported from an mbox file. It has no IMAP, no SMTP, no LaunchAgent and no code signing.
+[![Latest release](https://img.shields.io/github/v/release/nicemailer/nicemailer?label=download)](https://github.com/nicemailer/nicemailer/releases/latest)
+![macOS 14+, Apple Silicon](https://img.shields.io/badge/macOS-14%2B%20·%20Apple%20Silicon-lightgrey)
+[![License: AGPL v3](https://img.shields.io/badge/license-AGPLv3-blue)](LICENSE)
 
-Documentation of the features is in `docs/`.
+[Website](https://nicemailer.org) · [Download](https://github.com/nicemailer/nicemailer/releases/latest) · [Changelog](CHANGELOG.md) · [Documentation](docs/README.md)
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/inbox-dark.webp">
+  <img src="docs/images/inbox-light.webp" alt="The NiceMailer inbox: a list of conversations on the left, the selected conversation on the right with its earlier messages folded into one line each">
+</picture>
+
+</div>
+
+## Why NiceMailer
+
+- **Instant.** 2 ms to show a folder, even while new mail is downloading; 2 ms to show only the emails from real people among 400,000.
+- **Driven by the keyboard.** Read, reply, file, tag and search with Vim-like keys, all of them configurable. The mouse works too.
+- **Calm.** Unknown senders wait in Quarantine. You decide once per sender, and that decision files everything they sent and will send.
+- **Yours.** Your mail lives in a local database on your Mac, every email has a permanent link to paste into Obsidian or Notion, and AI agents get only the access you grant.
+
+<table>
+  <tr>
+    <td width="33%">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="docs/images/quarantine-dark.webp">
+        <img src="docs/images/quarantine-light.webp" alt="Unknown senders waiting in Quarantine">
+      </picture>
+      <p align="center"><sub>Quarantine: one key decides where a sender belongs</sub></p>
+    </td>
+    <td width="33%">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="docs/images/filters-dark.webp">
+        <img src="docs/images/filters-light.webp" alt="The filter picker, opened with f">
+      </picture>
+      <p align="center"><sub>Filters that respond instantly, across every account</sub></p>
+    </td>
+    <td width="33%">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="docs/images/thread-dark.webp">
+        <img src="docs/images/thread-light.webp" alt="A conversation with its quotes and signature folded">
+      </picture>
+      <p align="center"><sub>Conversations without quoted history or repeated signatures</sub></p>
+    </td>
+  </tr>
+</table>
+
+The full tour is on **[nicemailer.org](https://nicemailer.org)**.
+
+## Install
+
+[Download the latest release](https://github.com/nicemailer/nicemailer/releases/latest) (a signed and notarized disk image), and move NiceMailer to Applications. It needs macOS 14 or later on Apple Silicon, and updates itself.
+
+Coming from another client? See [Moving to NiceMailer](https://nicemailer.org/docs/moving-to-nicemailer/): an mbox export (HEY, Gmail, Thunderbird…) can be imported as an archive account ([docs/import-mbox.md](docs/import-mbox.md)).
+
+## Under the hood
+
+NiceMailer is a **Rust core** that owns the database and all the logic, and **clients** that talk to it over a Unix socket in JSON-RPC 2.0. The SwiftUI app is only one of them: the `nicemailer` command line and the MCP server for AI agents use the same contract ([docs/contract.md](docs/contract.md)).
 
 ```
 crates/
-  nm-core/     pure domain: folder roles, move targets, preselection after a reply
-  nm-store/    SQLite: schema (loaded from specifications/schema.sql), paginated queries, commands,
-               raw message files, mbox import, seed
-  nm-api/      JSON-RPC contract: methods, views, events, error codes
-  nm-daemon/   nicemailer-core binary: JSON-RPC server on a Unix socket
-  nm-cli/      nicemailer binary: socket client, seed and import-mbox commands
-  nm-mcp/      nicemailer-mcp binary: MCP server for AI agents (docs/mcp.md)
+  nm-core/     pure domain: folder roles and workflow rules, no I/O
+  nm-store/    SQLite storage: schema, paginated queries, mutations, raw message files
+  nm-engine/   configuration, accounts, secrets, synchronization
+  nm-proto/    network: IMAP and SMTP clients, one-click unsubscribe
+  nm-ai/       AI assistance: providers and prompts
+  nm-api/      the contract: methods, views, events, error codes
+  nm-daemon/   nicemailer-core, the JSON-RPC server
+  nm-cli/      nicemailer, the command line
+  nm-mcp/      nicemailer-mcp, the MCP server for AI agents
 apps/
-  NiceMailer/  SwiftUI app (Swift Package)
+  NiceMailer/  the SwiftUI app
+  editor/      the editor of a mail's text (TypeScript, in a web view)
 ```
 
-## Running
-
-You need Rust and Xcode: the Command Line Tools alone do not ship the SwiftUI macros. You also need Node (version in `apps/editor/.nvmrc`): the editor of a mail's text is a TypeScript component, bundled into the app by `make editor`, on which every target that builds the app depends ([docs/editor.md](docs/editor.md)).
-
-```sh
-make seed     # creates ~/Library/Application Support/NiceMailer/nicemailer.db (≈ 4,500 mails)
-make core     # starts the core (leave it running)
-make app      # in another terminal
-```
-
-`make bundle` installs `NiceMailer.app` in `~/Applications` (`make open` also quits the old one and launches it), needed for the links to a mail (`nicemailer://m/<id>`, to paste in Obsidian): see `docs/deep-links.md`.
-
-`NICEMAILER_DATA_DIR=/other/directory` changes the data directory for the core, the CLI and the app; without it, they use the mailbox chosen in the app (`docs/app-bundle.md`). The socket path must stay under 104 characters.
-
-## Importing a real mailbox
-
-With the core running, an mbox export (HEY, Gmail, Thunderbird…) can be imported into an archive account: sent mails go to Sent, the rest to Archive. See `docs/import-mbox.md`.
-
-```sh
-nicemailer import-mbox ~/Downloads/mailbox.mbox --account hey --address me@hey.com
-```
-
-## App shortcuts
-
-The app is driven by the keyboard, like an editor: `j`/`k` to move, `d` to archive, `m` + a folder letter to move, `;` + a letter to go to a folder or a screen, `?` for the list of keys. See `docs/geek-ui.md`.
-
-A conversation displayed for one second is marked as read.
-
-## Querying the core
+### Scriptable
 
 ```sh
 nicemailer folders
-nicemailer call list_threads '{"folder_id": 1, "limit": 5}'
-nicemailer call get_thread '{"thread_id": 42}'
-nicemailer call search '{"query": "facture"}'
-nicemailer call move_thread '{"thread_id": 42, "target": "todo", "from_folder_id": 1}'
-nicemailer import-status  # running or last mbox import
-nicemailer accounts       # accounts of config.toml and archive accounts
-nicemailer config check   # validate config.toml (docs/configuration.md)
-nicemailer account password perso   # save an IMAP password in the Keychain
-nicemailer imap probe perso     # what the server offers: capabilities, folders, roles (docs/imap.md)
-nicemailer account add perso --email me@example.fr --host imap.example.fr   # create an account (docs/accounts.md)
-nicemailer sync status          # the synchronization of each IMAP account (docs/sync.md)
-nicemailer sync verify perso    # server and database compared, folder by folder; --repair downloads damaged raw files again
-nicemailer raw gc         # delete raw files no mail references (the core does it hourly; docs/ingestion.md)
-nicemailer watch          # live event stream
+nicemailer call search '{"query": "invoice"}'
+nicemailer watch            # live event stream
 ```
 
-The protocol is JSON-RPC 2.0, one JSON object per line. A client starts with `hello {"protocol_version": 1}`, then calls `subscribe` if it wants events.
+AI agents (Claude Desktop, Claude Code, any MCP client) can read the mailbox and prepare drafts through `nicemailer-mcp`; the core enforces what they may and may not do ([docs/mcp.md](docs/mcp.md)).
 
-## Third-party code bundled with the app
+## Build from source
 
-- **iA Writer Mono V**, the font of the geek theme (SIL Open Font License), in `apps/NiceMailer/Sources/NiceMailer/Resources/Fonts`.
-- **Dark Reader** 4.9.134 (MIT License), which adapts mails made for a white page to the dark theme, in `apps/NiceMailer/Sources/NiceMailer/Resources/DarkReader` with its licence (`docs/thread-display.md`, "HTML of the sender").
+You need Rust, Xcode (the Command Line Tools alone do not ship the SwiftUI macros), and Node at the version in `apps/editor/.nvmrc` ([docs/editor.md](docs/editor.md)).
+
+```sh
+make seed     # a test mailbox of ≈ 4,500 fake mails
+make core     # starts the core (leave it running)
+make app      # in another terminal
+make test     # Rust, Swift and editor tests
+```
+
+`make bundle` builds `NiceMailer.app` and installs it in `/Applications`, with its core run by a launch agent ([docs/app-bundle.md](docs/app-bundle.md)). `make bench` times every list on 100,000 generated conversations ([docs/testing.md](docs/testing.md)). `NICEMAILER_DATA_DIR=/other/directory` gives the core, the CLI and the app another data directory.
+
+## Documentation
+
+- [docs/](docs/README.md): every feature, for users and developers, in English.
+- [specifications/](specifications/): the design specifications, in French.
+
+Bugs and ideas go to the [issues](https://github.com/nicemailer/nicemailer/issues).
 
 ## License
 
-Copyright (C) 2026 the NiceMailer autor.
+NiceMailer is free software under the [GNU Affero General Public License, version 3](LICENSE). Copyright (C) 2026 the NiceMailer author.
 
-NiceMailer is free software: you can redistribute it and/or modify it under the terms of the GNU Affero General Public License, version 3, as published by the Free Software Foundation. It is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See [LICENSE](LICENSE) for the full text.
+Bundled third-party code keeps its own licence:
 
-The third-party code listed above keeps its own licence.
+- **iA Writer Mono V**, the font of the geek theme (SIL Open Font License), in `apps/NiceMailer/Sources/NiceMailer/Resources/Fonts`.
+- **Dark Reader** 4.9.134 (MIT License), which adapts mails made for a white page to the dark theme, in `apps/NiceMailer/Sources/NiceMailer/Resources/DarkReader` ([docs/thread-display.md](docs/thread-display.md), "HTML of the sender").
