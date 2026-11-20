@@ -1477,6 +1477,9 @@ final class GeekController {
     // MARK: - Pickers
 
     private func openPicker(_ kind: PickerKind) {
+        // With a single account there is nothing to choose: `@` and a click
+        // on the title of the folder column do nothing (`hasSeveralAccounts`).
+        if kind == .accounts, !hasSeveralAccounts { return }
         pickerQuery = ""
         pickerIndex = 0
         overlay = .picker(kind)
@@ -1604,6 +1607,16 @@ final class GeekController {
         model.flash = nil
         if screen != .mail { screen = .mail }
         openPicker(kind)
+    }
+
+    /// More than one account in the mailbox. Only then do the account
+    /// picker (`@`), the account block of the status bar and its line in
+    /// the help appear: with a single account, choosing one is noise.
+    /// Stops at the second account found, so it costs nothing for a mailbox
+    /// of many folders (the status bar reads it on every redraw).
+    var hasSeveralAccounts: Bool {
+        guard let first = model.folders.first?.accountId else { return false }
+        return model.folders.contains { $0.accountId != first }
     }
 
     /// Accounts, in the order of the folder list: (id, name, unread mails

@@ -252,3 +252,51 @@ struct UnifiedStartTests {
         #expect(await eventually { t.core.calls("list_threads").last?["folder_ids"] as? [Int] == [1, 11] })
     }
 }
+
+/// With a single account (the default fixture), there is no account to go
+/// to: no account picker, no account block in the status bar, no `@` line
+/// in the help.
+@MainActor
+struct SingleAccountTests {
+    let core = FakeCore(handler: Fixture.answer)
+    let model = AppModel()
+    let controller: GeekController
+
+    init() async {
+        let defaults = TestDefaults.make()
+        controller = GeekController(model: model, defaults: defaults, textSize: TextSize(defaults: defaults))
+        await model.attach(core)
+        _ = await eventually { model.threads.count == 8 }
+    }
+
+    @Test func onlyOneAccountMeansNoChoice() {
+        #expect(!controller.hasSeveralAccounts)
+    }
+
+    @Test func atOpensNothing() {
+        let e = NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
+            characters: "@", charactersIgnoringModifiers: "@", isARepeat: false, keyCode: 0)!
+        _ = controller.handle(e)
+        #expect(controller.overlay == .none)
+        #expect(controller.modeLabel == "NOR")
+    }
+
+    @Test func aClickOnTheFolderColumnTitleOpensNothing() {
+        controller.openPickerFromStatusBar(.accounts)
+        #expect(controller.overlay == .none)
+    }
+
+    @Test func theHelpLeavesTheAccountPickerOut() {
+        let labels = Help.groups(controller.keymap, severalAccounts: controller.hasSeveralAccounts)
+            .flatMap(\.entries).map(\.label)
+        #expect(!labels.contains(L("go to an account")))
+    }
+
+    /// Before the folders are read, no account is known: nothing to offer.
+    @Test func noFolderYetMeansNoChoice() {
+        let empty = GeekController(model: AppModel(), defaults: TestDefaults.make(),
+                                   textSize: TextSize(defaults: TestDefaults.make()))
+        #expect(!empty.hasSeveralAccounts)
+    }
+}

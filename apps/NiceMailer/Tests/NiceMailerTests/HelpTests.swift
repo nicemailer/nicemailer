@@ -21,6 +21,16 @@ struct HelpTests {
         #expect(Help.groups().allSatisfy { !$0.entries.isEmpty })
     }
 
+    /// The account picker has its line with several accounts only.
+    @Test func theAccountPickerLineNeedsSeveralAccounts() {
+        let several = Help.groups().flatMap(\.entries)
+        #expect(several.contains { $0.key == "@" && $0.label == L("go to an account") })
+        let single = Help.groups(severalAccounts: false).flatMap(\.entries)
+        #expect(!single.contains { $0.key == "@" })
+        // Nothing else changes.
+        #expect(single.count == several.count - 1)
+    }
+
     @Test func whatIsNotThereYetIsMarkedSo() {
         let entries = Help.groups().flatMap(\.entries)
         #expect(entries.first { $0.key == "r" }?.notYet == false)

@@ -203,7 +203,7 @@ private struct GeekWindow: View {
                 menu.padding(12)
             }
         case .help:
-            HelpPanel(groups: Help.groups(controller.keymap))
+            HelpPanel(groups: Help.groups(controller.keymap, severalAccounts: controller.hasSeveralAccounts))
         case .picker(let kind):
             // Swift note: a `GeometryReader` gives its content the size it
             // is offered, here the window's content: the links panel takes
@@ -283,10 +283,13 @@ struct GeekStatusBar: View {
             if listsMail, model.listFilter == nil {
                 // Account ("all" for the unified view) and folder, each with
                 // its icon and the key that opens its picker; a click opens
-                // it too.
-                StatusBlock(icon: "at", text: model.scopeName, key: controller.keyLabel(.pickerAccounts))
-                    .onTapGesture { controller.openPickerFromStatusBar(.accounts) }
-                    .uiTarget("status-account")
+                // it too. No account block with a single account: there is
+                // no other to go to.
+                if controller.hasSeveralAccounts {
+                    StatusBlock(icon: "at", text: model.scopeName, key: controller.keyLabel(.pickerAccounts))
+                        .onTapGesture { controller.openPickerFromStatusBar(.accounts) }
+                        .uiTarget("status-account")
+                }
                 StatusBlock(icon: GeekController.Prefix.goto.icon, text: model.currentFolderName,
                             key: controller.menuKeyLabel(.goto))
                     .menuAnchor(.goto, controller)

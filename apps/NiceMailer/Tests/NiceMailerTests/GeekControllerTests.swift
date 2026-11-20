@@ -868,10 +868,9 @@ struct GeekControllerTests {
     }
 
     @Test func unreadCountsStandOutAndInformationStaysMuted() {
-        // The account picker's unread counts stand out.
-        press("@")
+        // The account picker's unread counts stand out (its rows, read
+        // without opening it: `@` does nothing with this single account).
         #expect(controller.pickerEntries(.accounts).filter { $0.detail != nil }.allSatisfy { $0.detailStyle == .count })
-        press("esc")
         // How six digits were read is information.
         press("f"); type(L("Conversation date…")); press("ret")
         type("010120")
@@ -1245,7 +1244,7 @@ struct GeekControllerTests {
         #expect(controller.modeLabel == "v" && !controller.showsAppIcon)
         press("esc")
         #expect(controller.showsAppIcon)
-        press("@")
+        press("/")
         #expect(controller.modeLabel == "PCK" && !controller.showsAppIcon)
     }
 

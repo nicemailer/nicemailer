@@ -712,7 +712,7 @@ private final class Runner {
             // The lines of the help, `key label`, ` | ` between (while it
             // is open).
             "help_rows": c.overlay == .help
-                ? Help.groups(c.keymap).flatMap(\.entries).map { "\($0.key) \($0.label)" }.joined(separator: " | ") : "",
+                ? Help.groups(c.keymap, severalAccounts: c.hasSeveralAccounts).flatMap(\.entries).map { "\($0.key) \($0.label)" }.joined(separator: " | ") : "",
             // Why keymap.toml is refused, empty when it is applied.
             "keymap_problem": m.keymapProblem?.text ?? "",
             // The keys of the folders in the folder column (`;` menu), as
@@ -749,6 +749,9 @@ private final class Runner {
             "marked_flagged": "\(m.threads.filter { m.marked.contains($0.id) && $0.isFlagged }.count)",
             "folder": m.currentFolderName,
             "account": m.scopeName,
+            // The account block of the status bar and the picker `@` are
+            // offered: false with a single account.
+            "account_picker": "\(c.hasSeveralAccounts)",
             "search_origin": c.searchOrigin.map { o in
                 o.folderId.map { "folder:\($0)" } ?? o.unifiedRole.map { "all:\($0)" } ?? "everything"
             } ?? "",

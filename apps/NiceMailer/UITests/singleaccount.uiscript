@@ -1,0 +1,19 @@
+# A mailbox with a single account (fixtures/singleaccount.single-account:
+# the seeded account "perso" alone). There is no other account to go to,
+# so the account picker is never offered.
+expect account = perso
+expect account_picker = false
+expect folder = Inbox
+# The status bar starts with the folder block: no account block.
+snap status-bar
+# `@` opens nothing and leaves the normal mode.
+key @
+expect overlay = none
+expect mode = NOR
+# The help leaves the account picker out, and keeps the folder menu.
+key ?
+expect overlay = help
+expect help_rows !~ go to an account
+expect help_rows ~ go to a folder or a screen
+key esc
+expect overlay = none

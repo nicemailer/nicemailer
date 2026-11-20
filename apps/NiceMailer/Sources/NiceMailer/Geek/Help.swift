@@ -47,8 +47,12 @@ enum Help {
     /// A function, not a constant: `L` reads the language the app runs in,
     /// which the UI scripts and the tests may change, and the keymap may
     /// change while the app runs.
+    ///
+    /// `severalAccounts` false (a single account) leaves out the account
+    /// picker, which then does nothing.
     static func groups(_ keymap: Keymap = .defaults,
-                       chain: [KeyContext] = [.mail, .normal, .everywhere]) -> [HelpGroup] {
+                       chain: [KeyContext] = [.mail, .normal, .everywhere],
+                       severalAccounts: Bool = true) -> [HelpGroup] {
         let compose: [KeyContext] = [.compose, .everywhere]
         // Swift note: a nested function, used as a shorthand below.
         func line(_ actions: [KeyAction], _ label: String, arrows: Arrows = .yes, suffix: String = "",
@@ -113,7 +117,7 @@ enum Help {
                 line([.pickerSearch], L("search everywhere, in All Mail")),
                 line([.pickerAttributes], L("filter by attributes")),
                 line([.senderMails], L("mails of the sender")),
-                line([.pickerAccounts], L("go to an account")),
+                severalAccounts ? line([.pickerAccounts], L("go to an account")) : nil,
                 line([.menuGoto], L("go to a folder or a screen"), suffix: "…"),
             ]),
             (L("Window"), [

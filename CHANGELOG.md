@@ -12,6 +12,10 @@ How to write it:
 
 ## Unreleased
 
+### Changed
+
+- **Accounts:** with a single account, the account switcher (`@`) no longer shows in the status bar, the key does nothing and the help leaves it out.
+
 
 ## 0.2.0 - 2026-11-20
 
