@@ -264,6 +264,51 @@ fn follows_the_phone_on_the_minimal_server() {
     follows_the_phone(MINIMAL);
 }
 
+/// The progress of a first synchronization (`docs/sync.md`, "Progress"),
+/// which the app shows in its status bar: the headers of a folder are said
+/// from 0, before the first batch, and up to their total; the end of the
+/// bodies is said too, so that the app stops showing the download at once.
+#[test]
+#[ignore = "needs the test servers: make imap-up, then make imap-test"]
+fn the_first_synchronization_says_its_start_and_its_end() {
+    let dir = tempfile::tempdir().unwrap();
+    let user = new_user();
+    let mut phone = Phone::open(FULL, &user);
+    for i in 0..30 {
+        phone.deliver("INBOX", &format!("p{i}"), &[]);
+    }
+    // Subscribed before the password is given: the pass starts with it.
+    std::fs::write(dir.path().join("accounts.toml"), config(FULL, &user, "")).unwrap();
+    let _core = start(dir.path());
+    let mut events = Client::connect(dir.path());
+    events.call("subscribe", json!({})).unwrap();
+    let mut c = Client::connect(dir.path());
+    c.call("set_password", json!({"account": "dovecot", "password": "nicemailer"})).unwrap();
+    settled(&mut c, 0);
+    let inbox = folder(&account(&mut c), "INBOX")["folder_id"].as_i64().unwrap();
+
+    let mut headers: Vec<(u64, u64)> = Vec::new();
+    let mut bodies_end = false;
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while !(bodies_end && headers.last().is_some_and(|(d, t)| d == t)) {
+        assert!(Instant::now() < deadline, "headers {headers:?}, end of the bodies said: {bodies_end}");
+        let e = events.next_event();
+        if e["method"] != "SyncProgress" {
+            continue;
+        }
+        assert!(e.get("seq").is_none() && e["params"].get("seq").is_none(), "transient: {e}");
+        let p = &e["params"];
+        let (done, total) = (p["done"].as_u64().unwrap(), p["total"].as_u64().unwrap());
+        match p["stage"].as_str().unwrap() {
+            "headers" if p["folder_id"] == inbox => headers.push((done, total)),
+            "bodies" => bodies_end |= done > 0 && done == total,
+            _ => {}
+        }
+    }
+    assert_eq!(headers.first(), Some(&(0, 30)), "{headers:?}");
+    assert_eq!(headers.last(), Some(&(30, 30)), "{headers:?}");
+}
+
 #[test]
 #[ignore = "needs the test servers: make imap-up, then make imap-test"]
 fn one_connection_does_everything() {

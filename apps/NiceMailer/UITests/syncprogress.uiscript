@@ -1,0 +1,32 @@
+# The progress of a synchronization in the status bar (AppModel+Sync.swift,
+# docs/sync.md "Progress"): the core of a scenario has no IMAP server, so
+# the events are played as the core sends them. Two accounts: the line
+# names the account first. Numbers below 1,000: their separator follows
+# the region of the Mac (unit tests check it).
+expect sync_line = 
+# The headers of the Inbox, from 0: said before the first batch.
+event SyncProgress {"account_id": 1, "folder_id": 1, "stage": "headers", "done": 0, "total": 829}
+expect sync_line ~ Importing Inbox: 0 of 829
+event SyncProgress {"account_id": 1, "folder_id": 1, "stage": "headers", "done": 300, "total": 829}
+expect sync_line ~ Importing Inbox: 300 of 829
+expect sync_line ~  · Importing
+snap sync-headers
+# A message of the bar does not hide it.
+key Z
+expect flash ~ Z
+expect sync_line ~ Importing Inbox: 300 of 829
+key esc
+# The bodies start meanwhile: the headers stay first.
+event SyncProgress {"account_id": 1, "folder_id": null, "stage": "bodies", "done": 100, "total": 829}
+expect sync_line ~ Importing Inbox
+# The headers done: what is left of the bodies.
+event SyncProgress {"account_id": 1, "folder_id": 1, "stage": "headers", "done": 829, "total": 829}
+expect sync_line ~ Downloading mails: 729 left
+snap sync-bodies
+# A folder the app does not list yet (a new account): no name.
+event SyncProgress {"account_id": 1, "folder_id": 999, "stage": "headers", "done": 5, "total": 10}
+expect sync_line ~ Importing mails: 5 of 10
+event SyncProgress {"account_id": 1, "folder_id": 999, "stage": "headers", "done": 10, "total": 10}
+# The end of the bodies: nothing more to say.
+event SyncProgress {"account_id": 1, "folder_id": null, "stage": "bodies", "done": 829, "total": 829}
+expect sync_line = 

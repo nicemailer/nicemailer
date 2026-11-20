@@ -317,6 +317,12 @@ pub(crate) async fn run(s: &mut Session, ctx: &mut Ctx<'_>, full: bool) -> Resul
         let total = w.new_uids.len() as u64;
         let mut done = 0u64;
         let mut last_progress = Instant::now();
+        // Said at once, before the first batch: the app shows the import
+        // from its start (`docs/sync.md`, "Progress"), and the first batch
+        // of a slow server may take seconds.
+        if total > 0 {
+            ctx.host.transient(Event::SyncProgress { account_id, folder_id: Some(w.folder.id), stage: "headers".into(), done, total });
+        }
         for chunk in w.new_uids.chunks(HEADER_BATCH) {
             if ctx.control.stopped() {
                 return Err(PassError::Stopped);

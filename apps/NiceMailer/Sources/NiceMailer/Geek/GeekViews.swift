@@ -405,6 +405,21 @@ struct GeekStatusBar: View {
                 // Why the AI suggests a target for the mail under the cursor.
                 Text(AI.suggestionLine(s, keymap: model.keymap, names: model.folderNames)).foregroundStyle(Palette.accentText).lineLimit(1).truncationMode(.tail)
             }
+            if let sync = model.syncLine {
+                // A large account being imported (`AppModel+Sync.swift`):
+                // where it is, so that the app does not look frozen. Apart
+                // from the messages, which come and go with the keys: it
+                // stays while the import lasts, and is never cut.
+                HStack(spacing: barScaled(4)) {
+                    Image(systemName: "arrow.down.circle")
+                        .accessibilityHidden(true)
+                    Text(sync)
+                }
+                .foregroundStyle(Palette.muted)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+                .uiTarget("status-sync")
+            }
             if !model.marked.isEmpty {
                 Text(L("%lld marked", model.marked.count)).foregroundStyle(Palette.markedBar)
             }

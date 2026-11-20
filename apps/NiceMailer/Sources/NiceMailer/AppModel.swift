@@ -169,6 +169,15 @@ final class AppModel {
     /// in `config.toml`, English by default. Observed: a new name in the
     /// file redraws the sidebar, the status bar and the menus at once.
     var folderNames: FolderNames = .english
+
+    /// The synchronizations in progress, by account and stage, from the
+    /// core's `SyncProgress` (`AppModel+Sync.swift`): what the status bar
+    /// says while a large account is imported.
+    var syncActivity: [String: SyncActivity] = [:]
+    /// The task that ends the activities the core stopped speaking of.
+    /// Swift note: `@ObservationIgnored` keeps a property out of what
+    /// SwiftUI observes; a task is no state the interface shows.
+    @ObservationIgnored var syncPrune: Task<Void, Never>?
     /// Why `keymap.toml` is refused, while it is: the previous keys stay,
     /// and the status bar says so until the file is fixed.
     var keymapProblem: KeymapProblem?
@@ -1136,10 +1145,11 @@ final class AppModel {
         let order = AppModel.order(of: e, after: lastEvent)
         switch order {
         case .transient:
-            // Progress of a synchronization, a fragment of an AI answer:
-            // nothing to reload, and the position stays that of the last
-            // numbered event.
+            // Progress of a synchronization (said in the status bar), a
+            // fragment of an AI answer: nothing to reload, and the position
+            // stays that of the last numbered event.
             if e.method == "AiDelta" || e.method == "AiProgress" { aiEvent(e) }
+            if e.method == "SyncProgress" { syncEvent(e) }
             return
         case .inOrder(let p), .gap(let p):
             lastEvent = p

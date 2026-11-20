@@ -117,6 +117,11 @@ impl Bodies {
             }
             let Some(next) = self.next(host, account_id, control)? else {
                 self.flush(host)?;
+                // The end said, whatever the time since the last progress:
+                // the app then stops showing the download at once.
+                if self.done > 0 {
+                    host.transient(Event::SyncProgress { account_id, folder_id: None, stage: "bodies".into(), done: self.done, total: self.done });
+                }
                 return Ok(false);
             };
             if control.refused.lock().unwrap().contains(&next.id) || self.pending.iter().any(|d| d.id == next.id) {

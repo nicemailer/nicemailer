@@ -354,6 +354,19 @@ private final class Runner {
                 }
                 try? await Task.sleep(for: .milliseconds(300))
             }
+        case "event":
+            // `event SyncProgress {"account_id": 1, …}`: a transient event
+            // as the core sends it, handled as the stream would. The core
+            // of a scenario has no IMAP server, so it never sends the
+            // progress of a synchronization itself.
+            let words = arg.split(separator: " ", maxSplits: 1).map(String.init)
+            guard let method = words.first,
+                  let object = try? JSONSerialization.jsonObject(with: Data((words.dropFirst().first ?? "{}").utf8)) as? [String: Any]
+            else {
+                fail(lineNumber, line, "event: a method, then its params as a JSON object")
+                return
+            }
+            model.handle(CoreClient.Event(method: method, epoch: "", seq: nil, params: object.compactMapValues(JSONValue.init)))
         case "mailbox":
             // "Change Mailbox…" with this folder, as the panel would give
             // it: a path relative to the scenario's data directory
@@ -715,6 +728,9 @@ private final class Runner {
                 ? Help.groups(c.keymap, severalAccounts: c.hasSeveralAccounts).flatMap(\.entries).map { "\($0.key) \($0.label)" }.joined(separator: " | ") : "",
             // Why keymap.toml is refused, empty when it is applied.
             "keymap_problem": m.keymapProblem?.text ?? "",
+            // What the status bar says of the synchronization in progress,
+            // empty when there is none (`AppModel+Sync.swift`).
+            "sync_line": m.syncLine ?? "",
             // The keys of the folders in the folder column (`;` menu), as
             // `i Inbox, t Todo…`.
             "folder_keys": c.scopeFolders.map { "\(c.gotoKeyLabel($0)) \($0.name)" }.joined(separator: ", "),

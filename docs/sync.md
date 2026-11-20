@@ -144,7 +144,14 @@ Same on both sides (0.1 s)
 
 `sync_status` gives, per account: `state` (`connecting`, `syncing`, `idle`, `waiting`, `auth_failed`, `stopped`), `error`, `mode` (`qresync`, `condstore`, `none`), `last_pass`, `passes` (count since the core started), `next_retry`, `bodies_missing`, `bodies_refused`, and per folder its counters, its last synchronization and whether the server still lists it.
 
-`SyncProgress` (`account_id`, `folder_id`, `stage` `headers` or `bodies`, `done`, `total`) is a **transient** event: it has no `seq`, takes no place in the sequence and is never replayed (`evenements.md`). The app ignores it for now; it must not take it for a gap in the sequence (`AppModel.order`).
+### Progress
+
+`SyncProgress` (`account_id`, `folder_id`, `stage` `headers` or `bodies`, `done`, `total`) is a **transient** event: it has no `seq`, takes no place in the sequence and is never replayed (`evenements.md`); a client must not take it for a gap in the sequence (`AppModel.order`). At most four a second:
+
+- **Headers**, per folder: said at `done` 0 as soon as the folder's new mails are counted, before the first batch of 100 (a slow server may take seconds over it), then every 250 ms at most, and at `done` = `total` when the folder is done.
+- **Bodies**, per account (`folder_id` null): every 500 ms at most while bodies come in, and once more with `done` = `total` when none is left. `total` is `done` plus the bodies still queued, and `done` starts again from 0 each time the queue is read again: what is left (`total − done`) is the number that means something.
+
+The app shows it at the right of its status bar, so that the first synchronization of a large account (tens of thousands of mails, minutes) does not look like a frozen app: "Importing Inbox: 12,300 of 44,829", then "Downloading mails: 41,429 left", the account first when there are several ("perso · …"). The headers come first, as a mail is listed only once its headers are in. A stage ends with its last event, or after 30 s without one (a pass cut by the network sends no end). The line stays beside the messages of the bar, and is never cut (`AppModel+Sync.swift`, `GeekStatusBar`).
 
 ## Tests
 
