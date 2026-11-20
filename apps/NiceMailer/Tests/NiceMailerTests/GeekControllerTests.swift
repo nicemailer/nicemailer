@@ -434,7 +434,7 @@ struct GeekControllerTests {
         // Blocks: 0 to deal with, 2 filed, 3 the user's, 4 sent, 6 thrown away.
         #expect(sorted.map(\.group) == [0, 0, 0, 2, 2, 2, 2, 3, 4, 4, 6, 6, 6])
         // With the virtual folders, each ends its block, whatever the order.
-        let all = GeekController.ordered(AppModel.Virtual.allCases.reversed().map(GeekController.virtualFolder) + folders)
+        let all = GeekController.ordered(AppModel.Virtual.allCases.reversed().map { GeekController.virtualFolder($0) } + folders)
         #expect(all.map(\.name) == [
             "inbox", "todo", "waiting", "Work",
             "archive", "newsletter", "paperwork", "quarantine",

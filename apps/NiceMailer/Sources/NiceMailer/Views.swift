@@ -221,6 +221,7 @@ struct FolderSidebar: View {
 
 /// One folder: shortcut letter, name, unread count.
 struct FolderRow: View {
+    @Environment(AppModel.self) private var model
     let folder: FolderView
 
     var body: some View {
@@ -229,7 +230,7 @@ struct FolderRow: View {
                 .font(.system(.caption, design: .monospaced).bold())
                 .foregroundStyle(.secondary)
                 .frame(width: 14)
-            Text(folder.name)
+            Text(model.folderNames.name(of: folder))
             Spacer()
             if folder.unreadCount > 0 {
                 Text("\(folder.unreadCount)").font(.caption).foregroundStyle(.secondary).monospacedDigit()
@@ -248,7 +249,7 @@ struct ThreadColumn: View {
     var body: some View {
         if model.searchText.isEmpty {
             ThreadList()
-                .navigationTitle(model.selectedFolder?.name ?? "")
+                .navigationTitle(model.selectedFolder.map { model.folderNames.name(of: $0) } ?? "")
         } else {
             SearchResults()
                 .navigationTitle(L("Search"))
@@ -285,6 +286,7 @@ struct ThreadList: View {
 /// and date on the first line; return badge and subject on the second;
 /// snippet below.
 struct ThreadRow: View {
+    @Environment(AppModel.self) private var model
     let thread: ThreadSummary
     let folderRole: String?
 
@@ -309,7 +311,7 @@ struct ThreadRow: View {
             HStack(spacing: 6) {
                 // "↩ Todo" badge: the thread came back from Todo or Waiting.
                 if let from = thread.returnedFrom {
-                    Text("↩ \(Role.name(from))")
+                    Text("↩ \(model.folderNames.name(from))")
                         .font(.caption.bold())
                         .padding(.horizontal, 5).padding(.vertical, 1)
                         .background(.yellow.opacity(0.3), in: RoundedRectangle(cornerRadius: 4))
@@ -343,7 +345,7 @@ struct SearchResults: View {
                     HStack {
                         Text(hit.fromName ?? hit.fromAddr ?? "").bold().lineLimit(1)
                         Spacer()
-                        Text(Role.name(hit.folderRole)).font(.caption).foregroundStyle(.secondary)
+                        Text(model.folderNames.name(hit.folderRole)).font(.caption).foregroundStyle(.secondary)
                         Text(Format.listDate(hit.dateReceived)).font(.caption).foregroundStyle(.secondary)
                     }
                     Text(hit.subject).lineLimit(1)
@@ -431,7 +433,7 @@ struct ThreadToolbar: ToolbarContent {
                 .help("F")
                 Menu {
                     ForEach(model.selectedFolder?.moveTargets ?? [], id: \.self) { target in
-                        Button("\(Role.letter(target))   \(Role.name(target))") { model.move(to: target) }
+                        Button("\(Role.letter(target))   \(model.folderNames.name(target))") { model.move(to: target) }
                     }
                 } label: {
                     Label(L("Move"), systemImage: "folder")
@@ -446,6 +448,7 @@ struct ThreadToolbar: ToolbarContent {
 /// plain text body. The user's own messages (in Sent) are slightly faded so
 /// the two sides of the conversation can be told apart.
 struct MessageCard: View {
+    @Environment(AppModel.self) private var model
     let message: MessageView
 
     var body: some View {
@@ -477,7 +480,7 @@ struct MessageCard: View {
                     HStack(spacing: 4) {
                         if message.hasAttachments { Image(systemName: "paperclip") }
                         if message.isFlagged { Image(systemName: "flag.fill").foregroundStyle(.orange) }
-                        Text(Role.name(message.folderRole))
+                        Text(model.folderNames.name(message.folderRole))
                             .font(.caption)
                             .padding(.horizontal, 5).padding(.vertical, 1)
                             .background(.quaternary, in: RoundedRectangle(cornerRadius: 4))

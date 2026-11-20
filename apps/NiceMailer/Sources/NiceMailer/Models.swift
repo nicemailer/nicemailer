@@ -289,6 +289,10 @@ struct ConfigStatusView: Decodable {
     let ui: UIConfig?
     /// Absent from an older core (nil: closed).
     var unsubscribe: UnsubscribeConfig? = nil
+    /// `[folder_names]`: the name of each folder by role id, the 12 roles,
+    /// English unless the file names them. Absent from an older core (nil:
+    /// the English names of `Role.names`).
+    var folderNames: [String: String]? = nil
 }
 
 /// `[unsubscribe]` of `config.toml` (`ui.md`, "Désabonnement").
@@ -584,8 +588,11 @@ struct SubscribeResult: Decodable {
     let replayed: Bool
 }
 
-/// Display names and letters of the workflow roles, for move targets (which
-/// the core sends as bare role strings).
+/// English names and letters of the workflow roles, for move targets (which
+/// the core sends as bare role strings). What the interface shows is
+/// `FolderNames`, which starts from these names; `Role.name` stays for what
+/// must be English whatever the file says (the folders the server is told
+/// to create, the targets of the UI scripts).
 ///
 /// Swift note: an `enum` without cases cannot be instantiated; it is used
 /// here as a namespace for static members.
@@ -607,10 +614,56 @@ enum Role {
     static func letter(_ role: String) -> String { letters[role] ?? "?" }
 
     /// Sidebar sections, in display order: (category sent by the core,
-    /// French title shown to the user).
-    static let categoryTitles: [(String, String)] = [
-        ("work", "Travail"), ("filing", "Rangement"), ("rejection", "Rejet"), ("technical", "Technique"),
-    ]
+    /// title shown to the user, in the app's language).
+    ///
+    /// A computed property rather than a constant: `L` looks the title up
+    /// in the language in effect when the sidebar is drawn.
+    static var categoryTitles: [(String, String)] {
+        [("work", L("Working")), ("filing", L("Filing")), ("rejection", L("Rejected")), ("technical", L("Technical"))]
+    }
+}
+
+/// The names the interface shows for the folders of the workflow
+/// (`configuration.md`, "Noms des dossiers"): those of `[folder_names]` in
+/// `config.toml`, sent by the core with `config_status`, English for a role
+/// the file does not name.
+///
+/// For display only. The role (`waiting`) stays the identifier everywhere:
+/// what the app sends to the core, the keymap's actions (`move.waiting`),
+/// and the targets of the UI scripts (`folder-Waiting`, in English, so that
+/// a scenario does not depend on the names of a file).
+///
+/// A value held by the model (`AppModel.folderNames`) and passed to the
+/// pure functions that word a folder, rather than a global: each unit test
+/// then has its own names, and tests running in parallel never see each
+/// other's. Those functions take `.english` by default.
+struct FolderNames: Equatable, Sendable {
+    /// The names by role id, as the core sends them, and by id of a
+    /// virtual folder (`work`, `all_mail`, `everything`).
+    var byRole: [String: String] = [:]
+
+    /// The English names: the default of the file, and the names of an
+    /// older core that does not send them.
+    static let english = FolderNames()
+
+    /// The name shown for `role`: the file's, else the English one, "?"
+    /// for no role or an unknown one.
+    func name(_ role: String?) -> String {
+        guard let role else { return "?" }
+        return byRole[role] ?? Role.names[role] ?? "?"
+    }
+
+    /// The name shown for a folder: its role's, or its IMAP path when it
+    /// has no role (the core sends the path as its name).
+    func name(of folder: FolderView) -> String {
+        folder.role.map { name($0) } ?? folder.name
+    }
+
+    /// The name shown for a virtual folder (Work, All Mail, Everything):
+    /// the file's, else the English one.
+    func name(of virtual: AppModel.Virtual) -> String {
+        byRole[virtual.id] ?? virtual.name
+    }
 }
 
 /// Date formatting helpers.

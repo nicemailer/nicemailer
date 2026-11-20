@@ -14,6 +14,7 @@ How to write it:
 
 ### Added
 
+- **Folders:** Give the folders your own names in `config.toml` (`[folder_names]`, e.g. `waiting = "En attente"`), and the views Work, All Mail and Everything too. English stays the default; the created file proposes the French names, commented out. Only the app shows them: the folders on the server keep their names.
 - **Display:** Set the text size in `config.toml`: `ui.text_size` for the window and `ui.status_bar_text_size` for the status bar, applied as soon as the file is saved.
 
 ### Changed
@@ -23,6 +24,7 @@ How to write it:
 
 ### Fixed
 
+- **Display:** In the classic theme, the sections of the sidebar (Working, Filing, Rejected, Technical) follow the app's language; they were always in French.
 - **Keys:** In `keymap.toml`, a key given to an action of a menu (`f = "move.todo"` in `[menu.move]`) now replaces its default key: the menu and the folder column show it, and the default key no longer does that action. Before, both keys worked and the menus kept showing the default one. In the other tables, the default key still works, but the help and the status bar show yours.
 - **Display:** The status bar always says the text size reached by ⌘+, ⌘− or ⌘0, also when the change comes from the View menu.
 

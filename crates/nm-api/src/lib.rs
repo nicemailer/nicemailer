@@ -2832,6 +2832,15 @@ pub struct ConfigStatus {
     /// absent, for a client reading an older core.
     #[serde(default)]
     pub unsubscribe: UnsubscribeConfig,
+    /// `[folder_names]`: the name the app shows for each folder of the
+    /// workflow, by role id (`inbox`, `waiting`…), and for the virtual
+    /// folders of the app (`work`, `all_mail`, `everything`): always these
+    /// 15, English unless the file names it (`configuration.md`, "Noms des
+    /// dossiers"). For display only: `FolderView.name`, the CLI and the MCP
+    /// agent keep the English names. Empty from an older core: the client
+    /// then shows its own English names.
+    #[serde(default)]
+    pub folder_names: BTreeMap<String, String>,
     pub as_of: Position,
 }
 

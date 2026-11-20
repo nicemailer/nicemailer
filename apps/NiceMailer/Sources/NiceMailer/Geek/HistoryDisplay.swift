@@ -97,9 +97,9 @@ enum HistoryDisplay {
 
     /// A folder or a screening target: its name when it has a role, else
     /// the path the core gave.
-    private static func place(_ value: String?) -> String {
+    private static func place(_ value: String?, _ names: FolderNames) -> String {
         guard let value else { return "?" }
-        return Role.names[value] == nil ? value : Role.name(value)
+        return Role.names[value] == nil ? value : names.name(value)
     }
 
     /// What was done, in two columns: the verb, and what qualifies it
@@ -110,18 +110,19 @@ enum HistoryDisplay {
         var detail = ""
     }
 
-    /// What was done, in words. A code this version does not know, from a
-    /// newer core, is shown rather than left blank.
-    static func action(_ g: HistoryGroup) -> Action {
+    /// What was done, in words, the folders named by `names`. A code this
+    /// version does not know, from a newer core, is shown rather than left
+    /// blank.
+    static func action(_ g: HistoryGroup, names: FolderNames = .english) -> Action {
         let value = g.value ?? "?"
         switch g.kind {
         case "read": return Action(verb: L("Marked"), detail: L("as read"))
         case "unread": return Action(verb: L("Marked"), detail: L("as unread"))
         case "flagged": return Action(verb: L("Marked"), detail: L("with a flag"))
         case "unflagged": return Action(verb: L("Removed"), detail: L("the flag"))
-        case "move": return Action(verb: L("Moved"), detail: L("to %@", place(g.value)))
-        case "screen": return Action(verb: L("Sorted"), detail: L("into %@", place(g.value)))
-        case "decision": return Action(verb: L("Filed"), detail: L("in %@", place(g.value)))
+        case "move": return Action(verb: L("Moved"), detail: L("to %@", place(g.value, names)))
+        case "screen": return Action(verb: L("Sorted"), detail: L("into %@", place(g.value, names)))
+        case "decision": return Action(verb: L("Filed"), detail: L("in %@", place(g.value, names)))
         case "decision_removed": return Action(verb: L("Removed"), detail: L("the decision"))
         case "tag_added": return Action(verb: L("Added"), detail: L("tag %@", value))
         case "tag_removed": return Action(verb: L("Removed"), detail: L("tag %@", value))

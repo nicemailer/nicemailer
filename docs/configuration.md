@@ -27,7 +27,7 @@ nicemailer config check other/config.toml   # ... and other/accounts.toml
 
 When a file is missing at the start of the core, the core creates it:
 
-- `config.toml` lists **every setting, commented out, with its default value and its role** (the same text as `nicemailer config defaults`, each `key = value` behind a `# `). A user who changes nothing still sees what can be changed. To change a setting, remove the `# ` in front of it: the table headers (`[sync]`, `[ui]`…) are not commented, so the line is already in the right table. One exception, the settings a user only ever touches to choose their unusual value (`OPT_IN_SWITCHES` in `config.rs`: `ui.title_bar`, `ui.auto_confirm_calls`, `ai.enabled`, `unsubscribe.in_banned`): they are written with that value (`# title_bar = "hidden"`, `# enabled = true`), so that removing the `# ` chooses it; their comment gives the default.
+- `config.toml` lists **every setting, commented out, with its default value and its role** (the same text as `nicemailer config defaults`, each `key = value` behind a `# `). A user who changes nothing still sees what can be changed. To change a setting, remove the `# ` in front of it: the table headers (`[sync]`, `[ui]`…) are not commented, so the line is already in the right table. One exception, the settings a user only ever touches to choose their unusual value (`template_value` in `config.rs`): the switches of `OPT_IN_SWITCHES` (`ui.title_bar`, `ui.auto_confirm_calls`, `ai.enabled`, `unsubscribe.in_banned`) and the folder names of `[folder_names]`. They are written with that value (`# title_bar = "hidden"`, `# enabled = true`, `# waiting = "En attente"`), so that removing the `# ` chooses it; their comment gives the default.
 - `accounts.toml` holds no account, only a commented example of one.
 
 Commented out rather than written: a value written in the file is the user's choice and stays when a later NiceMailer changes its default, whereas a commented line changes nothing. The created files therefore give exactly the defaults.
@@ -232,6 +232,7 @@ At start, the files are created if missing, then read before the core accepts cl
  "ui": {"title_bar": "shown", "auto_confirm_calls": false, "text_size": 16, "status_bar_text_size": 18},
  "mcp": {"message_chars": 8000, "response_chars": 40000},
  "unsubscribe": {"in_banned": false},
+ "folder_names": {"inbox": "Inbox", "todo": "Todo", "waiting": "En attente", "…": "…"},
  "as_of": {"epoch": "e_…", "seq": 7}}
 ```
 
@@ -283,6 +284,25 @@ They are all in `config.toml`; `nicemailer config defaults` prints them all. Ran
 | `mcp.message_chars` | 8000 | 1000 to 100000 | yes: characters of one message when an AI agent reads a conversation ([mcp.md](mcp.md)); read by `nicemailer-mcp` at each call |
 | `mcp.response_chars` | 40000 | 4000 to 200000 | yes: characters of the text of one answer to an AI agent ([mcp.md](mcp.md)) |
 | `unsubscribe.in_banned` | false | | yes, at once: the mails of Banned offer their unsubscribe button, and the core accepts it (`geek-ui.md`, "Unsubscribing"); Junk and Quarantine never do. Unsubscribing from a spammer confirms the address: for those who know the sender is a real list |
+| `folder_names.<role>` | the English name | 1 to 24 characters, unique | yes: the app applies it at once; the name shown for the folder of that role, or for a virtual folder (`work`, `all_mail`, `everything`; see "Folder names") |
+
+### Folder names
+
+`[folder_names]` gives the name the app shows for each folder of the workflow, by role, and for the three virtual folders that gather others (`ui.md`, "Dossiers virtuels"): `work` (Work: Inbox, Todo and Waiting), `all_mail` (All Mail) and `everything` (Everything), whose keys are those of their `goto.` actions. Without it, the folders keep their English names (Inbox, Todo, Waiting…). Each key is a role or a virtual folder, each value a name:
+
+```toml
+[folder_names]
+inbox = "Réception"
+waiting = "En attente"
+all_mail = "Tous les mails"
+```
+
+- **Display only.** The name replaces the English one wherever the app names a folder: the folder column and the menu `;`, the status bar, the move menu, the messages ("moved to En attente"), "After sending: …", the AI's suggestions, the contacts and History screens, and the sidebar of the classic theme. Everything else keeps the role and the English name: the folders on the server (named when the account was created, `nicemailer account roles`), `list_folders`, the CLI (English only), the keymap (`move.waiting`, whose letter is changed in `keymap.toml`, [keymap.md](keymap.md)), the MCP agent and the AI prompts. The "On the server" panel of the Preferences names the roles in English too, as the folders it creates.
+- **Each name on its own.** A role the file does not name keeps its English name; a partial table is valid.
+- **Refused, with the whole file:** an empty name, more than 24 characters, a control character (`"\n"`), or a name another folder already has, compared without case (`waiting = "Todo"` clashes with Todo, `archive = "Everything"` with Everything). Two folders with the same name could not be told apart.
+- **A key that is neither a role nor a virtual folder** (`wating`) is an unknown key: a warning, ignored.
+- **The created file** proposes the French names, commented out (`FOLDER_NAMES_PROPOSED` in `config.rs`): removing the `# ` of a line gives that folder its French name. Its comment lists the English defaults.
+- **Applied at once:** `ConfigChanged` announces `folder_names.<role>`, and the app reads the names again with `config_status`, which always gives the 12 roles and the 3 virtual folders (an older core gives none, and the app keeps the English names).
 
 The `[mcp]` keys only bound the length of the answers to an AI agent: what an agent may do is never a key of this file, which an agent able to write files could change ([mcp.md](mcp.md), "Rights").
 
@@ -317,7 +337,7 @@ For a closer look, `NICEMAILER_SQL_LOG` in the core's environment logs every SQL
 
 ## Tests
 
-- `crates/nm-engine/tests/config.rs`: the example of the specification, a password in the file refused, accounts in `config.toml` refused, every problem naming its file, a valid `config.toml` refused with an invalid `accounts.toml`, each file's `version`, `accounts.toml` next to `config.toml`, the created `config.toml` giving the defaults with every key commented out (and valid with any line uncommented), the created `accounts.toml` with no account and a valid example, defaults per security, lines of syntax, type and range errors, duplicate keys, unknown keys (general, account, server), required keys, account keys, `security = "none"`, newer format, overrides, identities in both forms, `~/` paths, passwords hidden, `changed_keys`, and the defaults file parsing back to the defaults with every key present.
+- `crates/nm-engine/tests/config.rs`: the folder names (English by default, a name alone, an unknown role warned about, empty, too long, control characters and clashes refused on their line, the proposed French names valid together); the example of the specification, a password in the file refused, accounts in `config.toml` refused, every problem naming its file, a valid `config.toml` refused with an invalid `accounts.toml`, each file's `version`, `accounts.toml` next to `config.toml`, the created `config.toml` giving the defaults with every key commented out (and valid with any line uncommented), the created `accounts.toml` with no account and a valid example, defaults per security, lines of syntax, type and range errors, duplicate keys, unknown keys (general, account, server), required keys, account keys, `security = "none"`, newer format, overrides, identities in both forms, `~/` paths, passwords hidden, `changed_keys`, and the defaults file parsing back to the defaults with every key present.
 - `crates/nm-engine/src/config_write.rs` (unit tests): missing files created from the templates in a missing directory, nothing created twice, an existing file (empty, invalid) never touched, only the missing one of the two created, a dangling symbolic link left alone, an account added after the comments of the created `accounts.toml`.
 - `crates/nm-engine/tests/engine.rs`: no file; invalid file at start then later (previous settings kept, one `ConfigError`, cleared when fixed, even back to the same text); unreadable file; same text twice; unknown key; reload recorded in `audit_log`; account removed then restored with its data and id; archive account clash; a missing password, then saved; a new IMAP host or user refused until the password is saved again; the login checks the binding again; OAuth2; an edit of either file applied with the right keys; accounts left in `config.toml` refused.
 - `crates/nm-daemon/tests/config_rpc.rs`: end to end, the files created at start (equal to the templates, `config_status` reporting both), an existing file kept as it is, problems with their file, reloads of either file.

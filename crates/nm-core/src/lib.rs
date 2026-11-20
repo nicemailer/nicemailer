@@ -188,8 +188,10 @@ impl FolderRole {
         FolderRole::TECHNICAL.contains(&self)
     }
 
-    /// Default display name. The user will later be able to rename folders,
-    /// which is why the role and the name are kept separate.
+    /// Default display name, in English. The user can give the folders
+    /// other names in `[folder_names]` of `config.toml`, which only the app
+    /// shows (`nm_engine::config::FolderNames`): the role and the name are
+    /// kept separate for that reason. The CLI and the MCP agent use this one.
     pub fn display_name(self) -> &'static str {
         match self {
             FolderRole::Inbox => "Inbox",

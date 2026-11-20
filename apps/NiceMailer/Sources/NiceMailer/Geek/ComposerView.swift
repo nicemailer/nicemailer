@@ -83,7 +83,7 @@ struct ComposerView: View {
                     if controller.activeChoice == .sendThen {
                         ChoicePanel(controller: controller, choice: .sendThen)
                             .padding(.top, scaled(2))
-                    } else if let after = Compose.afterSendLine(c.draft) {
+                    } else if let after = Compose.afterSendLine(c.draft, names: model.folderNames) {
                         Text(after).foregroundStyle(Palette.accentText).lineLimit(1)
                     }
                 }

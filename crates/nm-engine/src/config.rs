@@ -45,6 +45,7 @@ use std::fmt;
 use std::ops::{Range, RangeInclusive};
 use std::path::{Path, PathBuf};
 
+use nm_core::FolderRole;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use toml_edit::{Item, TableLike};
@@ -84,6 +85,7 @@ pub struct Config {
     pub ai: AiSettings,
     pub mcp: McpSettings,
     pub unsubscribe: UnsubscribeSettings,
+    pub folder_names: FolderNames,
     /// IMAP accounts, by key (`[accounts.<key>]` of `accounts.toml`).
     ///
     /// Rust note: a `BTreeMap` is a map sorted by key, so accounts are
@@ -107,6 +109,7 @@ impl Default for Config {
             ai: AiSettings::default(),
             mcp: McpSettings::default(),
             unsubscribe: UnsubscribeSettings::default(),
+            folder_names: FolderNames::default(),
             accounts: BTreeMap::new(),
         }
     }
@@ -323,6 +326,101 @@ pub struct UnsubscribeSettings {
     /// Offer and accept the unsubscribe of the mails in Banned.
     pub in_banned: bool,
 }
+
+/// `[folder_names]` (`configuration.md`, "Noms des dossiers"): the name
+/// the app shows for each folder of the workflow, by role, and for each of
+/// its virtual folders ([`VIRTUAL_FOLDERS`]). English by default
+/// ([`FolderRole::display_name`]); a name written here replaces it
+/// in the app only. The role stays the identifier everywhere else: the
+/// contract, the CLI (English only), the keymap, the MCP agent and the AI
+/// prompts keep `waiting` and "Waiting", and the folders on the server keep
+/// the names chosen for their roles (`account roles`). A display name never
+/// renames an IMAP folder: the phone sees the server's name.
+///
+/// Always holds the 12 roles and the 3 virtual folders (15 names), so that
+/// a client reads one complete map.
+///
+/// Rust note: `#[serde(transparent)]` serializes the struct as its only
+/// field, a plain map: [`flatten`] then gives `folder_names.waiting`, the
+/// key `ConfigChanged` announces.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(transparent)]
+pub struct FolderNames(BTreeMap<&'static str, String>);
+
+impl Default for FolderNames {
+    fn default() -> Self {
+        FolderNames(named_folders().map(|(id, english)| (id, english.to_string())).collect())
+    }
+}
+
+impl FolderNames {
+    /// The name shown for `role`.
+    pub fn get(&self, role: FolderRole) -> &str {
+        // Every role is in the map (`Default`, and the reader starts from it).
+        self.0.get(role.as_str()).map(String::as_str).unwrap_or(role.display_name())
+    }
+
+    /// The name shown for the folder `id` (a role, or a virtual folder:
+    /// `all_mail`); `None` for an id [`named_folders`] does not have.
+    pub fn name(&self, id: &str) -> Option<&str> {
+        self.0.get(id).map(String::as_str)
+    }
+
+    /// The names by role id (`inbox`…), as `config_status` sends them.
+    pub fn to_map(&self) -> BTreeMap<String, String> {
+        self.0.iter().map(|(k, v)| (k.to_string(), v.clone())).collect()
+    }
+}
+
+/// The virtual folders of the app (`ui.md`, "Dossiers virtuels"): not
+/// folders of the server but views gathering several, which the app lists
+/// among the folders. Their id is that of their key (`goto.all_mail`,
+/// `keymap.md`), and their English name the app's. The core does not list
+/// them (`list_folders` has no row for them): it only names them, so that
+/// a user who renames the folders can rename these too.
+pub const VIRTUAL_FOLDERS: [(&str, &str); 3] = [("work", "Work"), ("all_mail", "All Mail"), ("everything", "Everything")];
+
+/// Every folder `[folder_names]` names, as (id, English name): the 12
+/// roles in their order, then the 3 virtual folders.
+///
+/// Rust note: `impl Iterator<Item = …>` returns "some iterator" without
+/// naming its type (here a `Chain` of a `Map`), which the caller only
+/// walks; `'static` says the strings are constants of the program.
+pub fn named_folders() -> impl Iterator<Item = (&'static str, &'static str)> {
+    FolderRole::ALL.into_iter().map(|r| (r.as_str(), r.display_name())).chain(VIRTUAL_FOLDERS)
+}
+
+/// The longest folder name, in characters: the longest English one has 10,
+/// the longest proposed French one 13. Beyond 24, the name no longer fits
+/// the status bar block or the folder column of "Everything" at the usual
+/// text sizes, and it is more likely a mistake than a name.
+pub const FOLDER_NAME_MAX_CHARS: usize = 24;
+
+/// The French names the created `config.toml` proposes, commented out
+/// (`configuration.md`, "Noms des dossiers"): removing the `# ` of a line
+/// gives that folder its French name. French only: it is the reference
+/// language of the project and was reviewed; the other languages of the app
+/// are machine-translated and awaiting review (`localisation.md`).
+///
+/// By id, in the order of [`named_folders`].
+pub const FOLDER_NAMES_PROPOSED: [(&str, &str); 15] = [
+    ("inbox", "Réception"),
+    ("todo", "À faire"),
+    ("waiting", "En attente"),
+    ("archive", "Archives"),
+    ("sent", "Envoyés"),
+    ("drafts", "Brouillons"),
+    ("newsletter", "Newsletters"),
+    ("paperwork", "Administratif"),
+    ("quarantine", "Quarantaine"),
+    ("deleted", "Corbeille"),
+    ("junk", "Indésirables"),
+    ("banned", "Bannis"),
+    // Work gathers Inbox, Todo and Waiting: what is in progress.
+    ("work", "En cours"),
+    ("all_mail", "Tous les mails"),
+    ("everything", "Tout"),
+];
 
 /// `[ai]` (`ia.md`, section 13): the AI assistance, off by default.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -980,6 +1078,15 @@ impl<'t> Reader<'t> {
             }
         };
 
+        let folder_names = match self.table(&mut s, "folder_names")? {
+            None => d.folder_names,
+            Some(mut t) => {
+                let names = self.folder_names(&mut t, d.folder_names)?;
+                self.finish(t);
+                names
+            }
+        };
+
         // The accounts are in `accounts.toml`. Found here, they are an error
         // rather than a warning: ignoring them would start the core without
         // the user's accounts, and silently.
@@ -993,7 +1100,63 @@ impl<'t> Reader<'t> {
             });
         }
         self.finish(s);
-        Ok(Config { version, core, sync, config_sync, events, import, raw, ui, audit, compose, ai, mcp, unsubscribe, accounts: BTreeMap::new() })
+        Ok(Config { version, core, sync, config_sync, events, import, raw, ui, audit, compose, ai, mcp, unsubscribe, folder_names, accounts: BTreeMap::new() })
+    }
+
+    /// `[folder_names]`: one optional name per role, starting from the
+    /// English ones. A key that is not a role (a typo, `wating`) is left
+    /// for [`Reader::finish`], which warns about it, like any unknown key.
+    ///
+    /// Refused, on the line of the name: an empty name (by `string`), one
+    /// longer than [`FOLDER_NAME_MAX_CHARS`], one with a control character
+    /// (a `\n` written in the string would break the lines of the
+    /// interface), and a name another folder already has, compared without
+    /// case: two folders called "Archive" could not be told apart in the
+    /// menu of folders, nor found by typing their name. The other folder may
+    /// keep its English name: `waiting = "Todo"` clashes with Todo.
+    fn folder_names(&self, t: &mut Section, mut names: FolderNames) -> R<FolderNames> {
+        // The names written in the file, with their item for the line.
+        let mut written: Vec<(&'static str, &Item)> = Vec::new();
+        for (id, _) in named_folders() {
+            let item = t.table.get(id);
+            let Some(name) = self.string(t, id)? else { continue };
+            let key = t.key(id);
+            if name.chars().count() > FOLDER_NAME_MAX_CHARS {
+                return Err(self.problem(item, key, format!("must be at most {FOLDER_NAME_MAX_CHARS} characters")));
+            }
+            if name.chars().any(char::is_control) {
+                return Err(self.problem(item, key, "must be on one line, without control characters"));
+            }
+            names.0.insert(id, name);
+            // `string` returned a name, so the item exists.
+            if let Some(item) = item {
+                written.push((id, item));
+            }
+        }
+        // A clash is reported on a name the user wrote: of the two, the
+        // later in the file when both were written, so the walk goes from
+        // the last line up.
+        //
+        // Rust note: `std::cmp::Reverse` wraps a value to invert its order,
+        // so `sort_by_key` sorts from the largest offset to the smallest.
+        written.sort_by_key(|(_, item)| std::cmp::Reverse(item.span().map(|s| s.start).unwrap_or(0)));
+        // The virtual folders count: "Tout" for Everything and for Archive
+        // could not be told apart in the menu `;` either.
+        let name = |id: &str| names.name(id).unwrap_or_default().to_lowercase();
+        for (id, item) in written {
+            let mine = name(id);
+            if let Some((other, _)) = named_folders().find(|(o, _)| *o != id && name(o) == mine) {
+                return Err(self.problem(
+                    Some(item),
+                    t.key(id),
+                    format!(
+                        "\"{}\" is already the name of the {other} folder: two folders cannot have the same name",
+                        names.name(id).unwrap_or_default()
+                    ),
+                ));
+            }
+        }
+        Ok(names)
     }
 
     /// `accounts.toml`: its `version` and its `[accounts.<key>]` tables,
@@ -1267,6 +1430,27 @@ pub const OPT_IN_SWITCHES: &[(&str, &str)] = &[
     ("unsubscribe.in_banned", "true"),
 ];
 
+/// The value the created `config.toml` shows for `dotted`, commented out,
+/// when it is not the default: an opt-in switch's unusual value
+/// ([`OPT_IN_SWITCHES`]), or a folder's proposed French name
+/// ([`FOLDER_NAMES_PROPOSED`]), as TOML. `None` for every other key, shown
+/// with its default.
+///
+/// The folder names follow the rule of the switches: their default, the
+/// English name, is what the app shows without the file, so the only
+/// reason to touch the line is another name. A second, English block
+/// would not do: uncommenting both would write each key twice.
+pub fn template_value(dotted: &str) -> Option<String> {
+    if let Some((_, value)) = OPT_IN_SWITCHES.iter().find(|(k, _)| *k == dotted) {
+        return Some(value.to_string());
+    }
+    let id = dotted.strip_prefix("folder_names.")?;
+    FOLDER_NAMES_PROPOSED
+        .iter()
+        .find(|(r, _)| *r == id)
+        .map(|(_, name)| toml_edit::Value::from(*name).to_string())
+}
+
 /// The `config.toml` the core creates when there is none
 /// (`configuration.md`, section 3): [`defaults_file`] with every setting
 /// commented out.
@@ -1278,9 +1462,10 @@ pub const OPT_IN_SWITCHES: &[(&str, &str)] = &[
 /// line is all it takes to change a setting. A test checks that the file
 /// parses to the defaults, and still parses once any line is uncommented.
 ///
-/// One exception: the keys of [`OPT_IN_SWITCHES`] are written with their
-/// unusual value, `# key = value`, so that removing the `# ` chooses it,
-/// which is the only reason to touch them. The file still gives the
+/// One exception: the keys of [`template_value`] (the opt-in switches and
+/// the folder names) are written with another value than the default,
+/// `# key = value`, so that removing the `# ` chooses it, which is the only
+/// reason to touch them. The file still gives the
 /// defaults, since the line is a comment; its own text says the default.
 pub fn config_template() -> String {
     // Rust note: `mut` on a variable captured by the closure below lets it
@@ -1299,10 +1484,9 @@ pub fn config_template() -> String {
             }
             let key = line.split(" = ").next().unwrap_or_default();
             let dotted = format!("{table}.{key}");
-            if let Some((_, value)) = OPT_IN_SWITCHES.iter().find(|(k, _)| *k == dotted) {
-                format!("# {key} = {value}")
-            } else {
-                format!("# {line}")
+            match template_value(&dotted) {
+                Some(value) => format!("# {key} = {value}"),
+                None => format!("# {line}"),
             }
         })
         .map(|l| l + "\n")
@@ -1480,6 +1664,16 @@ text_size = {text_size}
 # it with the rest. Applied at once.
 status_bar_text_size = {status_bar_text_size}
 
+[folder_names]
+# The names the app shows for the folders, by role. English by default:
+# {english_names_1},
+# {english_names_2},
+# and the views that gather folders: {english_names_3}.
+# A name here replaces the English one in the app only: the folders on
+# the server keep their names, and the command line, the keys, the MCP
+# agent and the AI keep the English ones. 1 to 24 characters, and two
+# folders cannot have the same name. Applied at once.
+{folder_name_lines}
 [audit]
 # Days the history of changes is kept.
 retention_days = {retention_days}
@@ -1572,5 +1766,14 @@ in_banned = {unsubscribe_in_banned}
         mcp_message_chars = d.mcp.message_chars,
         mcp_response_chars = d.mcp.response_chars,
         unsubscribe_in_banned = d.unsubscribe.in_banned,
+        // On two lines, to keep the comments of the file narrow.
+        english_names_1 = FolderRole::ALL[..6].iter().map(|r| r.display_name()).collect::<Vec<_>>().join(", "),
+        english_names_2 = FolderRole::ALL[6..].iter().map(|r| r.display_name()).collect::<Vec<_>>().join(", "),
+        english_names_3 = VIRTUAL_FOLDERS.iter().map(|(_, n)| *n).collect::<Vec<_>>().join(", "),
+        // One `role = "Name"` line per role; TOML escapes from `toml_edit`,
+        // so that a name with a quote would still give a valid line.
+        folder_name_lines = named_folders()
+            .map(|(id, _)| format!("{id} = {}\n", toml_edit::Value::from(d.folder_names.name(id).unwrap_or_default())))
+            .collect::<String>(),
     )
 }

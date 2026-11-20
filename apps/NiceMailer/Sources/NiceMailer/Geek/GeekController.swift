@@ -1016,7 +1016,7 @@ final class GeekController {
         let folderId = model.selectedThread?.folderId ?? model.selectedFolderId
         let targets = model.folders.first { $0.id == folderId }?.moveTargets ?? []
         guard targets.contains(role) else {
-            model.flash = L("Cannot move to %@ from this folder", Role.name(role))
+            model.flash = L("Cannot move to %@ from this folder", model.folderNames.name(role))
             return
         }
         model.moveTargets(to: role)
@@ -1030,7 +1030,7 @@ final class GeekController {
             return f.virtual == nil && f.role == action.gotoRole
         }
         guard let target else {
-            model.flash = L("No such folder in this view: %@", action.label)
+            model.flash = L("No such folder in this view: %@", label(of: action))
             return
         }
         open(target)
@@ -1312,9 +1312,18 @@ final class GeekController {
 
     /// The row of a menu for a binding of the keymap.
     private func entry(_ row: Keymap.Binding, _ action: KeyAction) -> Entry {
-        Entry(key: KeyChord.display(row.key), label: action.label, chord: row.key) { [weak self] in
+        Entry(key: KeyChord.display(row.key), label: label(of: action), chord: row.key) { [weak self] in
             self?.perform(action)
         }
+    }
+
+    /// What a menu row says for `action`: the folder's name for a move or
+    /// a "go to" (`FolderNames`, those of `config.toml`), else the action's
+    /// own label (`KeyAction.label`, which knows only the English names).
+    func label(of action: KeyAction) -> String {
+        if let role = action.moveRole ?? action.gotoRole { return model.folderNames.name(role) }
+        if let v = action.gotoVirtual { return model.folderNames.name(of: v) }
+        return action.label
     }
 
     /// `se`, `st`, `sm`: the file of the message the reader is on in the
@@ -1366,7 +1375,10 @@ final class GeekController {
     /// one entry per role, with the unread counts of every account added up;
     /// folders without a role (user folders) stay per account and are not
     /// listed there.
-    var scopeFolders: [ScopeFolder] { Self.ordered(realScopeFolders + AppModel.Virtual.allCases.map(Self.virtualFolder)) }
+    var scopeFolders: [ScopeFolder] {
+        let names = model.folderNames
+        return Self.ordered(realScopeFolders + AppModel.Virtual.allCases.map { Self.virtualFolder($0, names: names) })
+    }
 
     /// Blocks of the folder lists (`ui.md`, "Thème geek"), in order: what
     /// is to deal with, what is filed, what was written, what was thrown
@@ -1413,19 +1425,20 @@ final class GeekController {
     /// Waiting) after Waiting, All Mail (`m`, all but Deleted, Junk and
     /// Banned, where `/` searches) after Drafts, Everything (`e`) after
     /// Banned. Their letters are free in the menu `;`.
-    nonisolated static func virtualFolder(_ v: AppModel.Virtual) -> ScopeFolder {
+    nonisolated static func virtualFolder(_ v: AppModel.Virtual, names: FolderNames = .english) -> ScopeFolder {
         let letter = switch v {
         case .work: "o"
         case .allMail: "m"
         case .everything: "e"
         }
-        return ScopeFolder(folderId: nil, role: nil, name: v.name, letter: letter, unread: 0, virtual: v)
+        return ScopeFolder(folderId: nil, role: nil, name: names.name(of: v), letter: letter, unread: 0, virtual: v)
     }
 
     private var realScopeFolders: [ScopeFolder] {
+        let names = model.folderNames
         if let account = model.scopeAccountId {
             return model.folders.filter { $0.accountId == account }.map {
-                ScopeFolder(folderId: $0.id, role: $0.role, name: $0.name, letter: $0.letter ?? "", unread: $0.unreadCount)
+                ScopeFolder(folderId: $0.id, role: $0.role, name: names.name(of: $0), letter: $0.letter ?? "", unread: $0.unreadCount)
             }
         }
         var out: [ScopeFolder] = []
@@ -1435,7 +1448,7 @@ final class GeekController {
                 let o = out[i]
                 out[i] = ScopeFolder(folderId: nil, role: role, name: o.name, letter: o.letter, unread: o.unread + f.unreadCount)
             } else {
-                out.append(ScopeFolder(folderId: nil, role: role, name: f.name, letter: f.letter ?? "", unread: f.unreadCount))
+                out.append(ScopeFolder(folderId: nil, role: role, name: names.name(role), letter: f.letter ?? "", unread: f.unreadCount))
             }
         }
         return out
@@ -2794,7 +2807,7 @@ final class GeekController {
             ]
         case .decision(let name, let domain, let current):
             var entries = ["inbox", "newsletter", "paperwork", "banned"].map { role in
-                Entry(key: Role.letter(role).lowercased(), label: Role.name(role), detail: current == role ? "•" : nil) {
+                Entry(key: Role.letter(role).lowercased(), label: model.folderNames.name(role), detail: current == role ? "•" : nil) {
                     [weak self] in self?.decide(name, domain: domain, target: role)
                 }
             }
@@ -2836,7 +2849,7 @@ final class GeekController {
             ]
         case .sendThen:
             guard let d = model.composer?.draft else { return [] }
-            var entries = Compose.sendChoices(d).map { choice in
+            var entries = Compose.sendChoices(d, names: model.folderNames).map { choice in
                 Entry(key: choice.key, label: choice.label, detail: choice.current ? "•" : nil) { [model] in
                     Task { await model.sendComposer(afterSend: choice.afterSend) }
                 }

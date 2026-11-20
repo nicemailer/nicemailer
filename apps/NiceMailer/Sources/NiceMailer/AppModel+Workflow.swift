@@ -83,18 +83,18 @@ enum Workflow {
     }
 
     /// Message after a decision taken on the contacts screen.
-    static func decisionFlash(_ d: DecisionView?, filed: Int) -> String {
+    static func decisionFlash(_ d: DecisionView?, filed: Int, names: FolderNames = .english) -> String {
         guard let d else { return L("No change") }
         guard let after = d.after else { return L("No decision on %@ any more", d.name) }
-        var text = L("%@ → %@", d.name, Role.name(after))
+        var text = L("%@ → %@", d.name, names.name(after))
         if filed > 0 { text += " · " + L("%lld mails filed", filed) }
         return text + " · " + L("z: undo")
     }
 
     /// Name of a decision for the contacts screen and the menus: the
     /// folder's name, or nothing.
-    static func targetName(_ target: String?) -> String {
-        target.map { Role.name($0) } ?? ""
+    static func targetName(_ target: String?, names: FolderNames = .english) -> String {
+        target.map { names.name($0) } ?? ""
     }
 }
 
@@ -157,8 +157,8 @@ extension AppModel {
         Task {
             do {
                 let r: WorkflowResult = try await client.call("move_thread", params)
-                if let u = r.undo { pushUndo(UndoStep(tokens: [u], label: L("move to %@", Role.name(s.target)), threads: [s.threadId])) }
-                flash = Workflow.moveFlash(subjects: [s.subject], folder: Role.name(s.target), decision: r.decision, filed: r.filed)
+                if let u = r.undo { pushUndo(UndoStep(tokens: [u], label: L("move to %@", folderNames.name(s.target)), threads: [s.threadId])) }
+                flash = Workflow.moveFlash(subjects: [s.subject], folder: folderNames.name(s.target), decision: r.decision, filed: r.filed)
             } catch {
                 report(error)
             }
@@ -213,7 +213,7 @@ extension AppModel {
         do {
             let r: WorkflowResult = try await client.call(method, params)
             if let u = r.undo { pushUndo(UndoStep(tokens: [u], label: L("decision on %@", r.decision?.name ?? name))) }
-            flash = Workflow.decisionFlash(r.decision, filed: r.filed)
+            flash = Workflow.decisionFlash(r.decision, filed: r.filed, names: folderNames)
         } catch {
             report(error)
         }

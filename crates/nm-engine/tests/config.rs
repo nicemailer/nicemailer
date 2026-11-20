@@ -1,6 +1,7 @@
 //! Reading and validating `config.toml` and `accounts.toml`
 //! (`configuration.md`, sections 3, 4 and 12).
 
+use nm_core::FolderRole;
 use nm_engine::config::{
     self, AuthMethod, OPT_IN_SWITCHES, Config, Parsed, Problem, Security, accounts_template, changed_keys, config_template, defaults_file,
     flatten, parse,
@@ -386,7 +387,7 @@ fn the_created_config_lists_every_setting_commented_out() {
         let is_setting = !line.is_empty() && !line.starts_with('#') && !line.starts_with('[') && !line.starts_with("version ");
         let key = line.split(" = ").next().unwrap();
         let dotted = format!("{table}.{key}");
-        if let Some((_, value)) = OPT_IN_SWITCHES.iter().find(|(k, _)| *k == dotted).filter(|_| is_setting) {
+        if let Some(value) = config::template_value(&dotted).filter(|_| is_setting) {
             assert_ne!(line, format!("{key} = {value}"), "{dotted}: the value shown is not the default");
             assert!(text.lines().any(|l| l == format!("# {key} = {value}")), "{line}: uncommenting chooses {value}");
         } else if is_setting {
@@ -417,7 +418,21 @@ fn the_created_config_lists_every_setting_commented_out() {
     let defaults = Config::default();
     let ui = config::UiSettings { title_bar: defaults.ui.title_bar, auto_confirm_calls: false, ..c.ui.clone() };
     let ai = config::AiSettings { enabled: false, ..c.ai.clone() };
-    assert_eq!(Config { raw: defaults.raw.clone(), unsubscribe: defaults.unsubscribe.clone(), ui, ai, ..parsed.config }, defaults);
+    // ... and the folders their proposed French names.
+    for (id, name) in config::FOLDER_NAMES_PROPOSED {
+        assert_eq!(c.folder_names.name(id), Some(name));
+    }
+    assert_eq!(
+        Config {
+            raw: defaults.raw.clone(),
+            unsubscribe: defaults.unsubscribe.clone(),
+            folder_names: defaults.folder_names.clone(),
+            ui,
+            ai,
+            ..parsed.config
+        },
+        defaults
+    );
 }
 
 /// Removing the `# ` of an opt-in switch chooses its unusual value: what a
@@ -572,6 +587,129 @@ fn the_text_sizes_default_to_16_and_18_and_are_set_apart() {
     let a = settings("").unwrap().config;
     let b = settings("[ui]\nstatus_bar_text_size = 11\n").unwrap().config;
     assert_eq!(config::changed_keys(&a, &b), vec!["ui.status_bar_text_size".to_string()]);
+}
+
+/// The names of the folders (`configuration.md`, "Noms des dossiers"):
+/// English by default, each one replaced on its own, the others kept.
+#[test]
+fn folder_names_are_english_unless_the_file_names_them() {
+    let d = settings("").unwrap().config.folder_names;
+    for role in FolderRole::ALL {
+        assert_eq!(d.get(role), role.display_name());
+    }
+    assert_eq!(d.to_map().len(), 15, "every role and virtual folder, for the app");
+    assert_eq!((d.name("all_mail"), d.name("work"), d.name("everything")), (Some("All Mail"), Some("Work"), Some("Everything")));
+    let text = "[folder_names]\nwaiting = \"En attente\"\ntodo = \"  À faire \"\n";
+    let parsed = settings(text).unwrap();
+    assert!(parsed.warnings.is_empty(), "{:?}", parsed.warnings);
+    let n = parsed.config.folder_names;
+    assert_eq!((n.get(FolderRole::Waiting), n.get(FolderRole::Todo)), ("En attente", "À faire"), "trimmed");
+    assert_eq!(n.get(FolderRole::Inbox), "Inbox");
+    // A change is announced by the key of the folder.
+    let a = settings("").unwrap().config;
+    let b = settings("[folder_names]\ninbox = \"Réception\"\n").unwrap().config;
+    assert_eq!(config::changed_keys(&a, &b), vec!["folder_names.inbox".to_string()]);
+    // Changing the case of one's own name is not a clash.
+    assert_eq!(settings("[folder_names]\ninbox = \"INBOX\"\n").unwrap().config.folder_names.get(FolderRole::Inbox), "INBOX");
+    // The longest name accepted.
+    let long = "é".repeat(config::FOLDER_NAME_MAX_CHARS);
+    assert_eq!(settings(&format!("[folder_names]\njunk = \"{long}\"\n")).unwrap().config.folder_names.get(FolderRole::Junk), long);
+}
+
+/// A key of `[folder_names]` that is not a role is a typo: warned about and
+/// ignored, like any unknown key, so the other names still apply.
+#[test]
+fn an_unknown_folder_is_warned_about_and_ignored() {
+    let parsed = settings("[folder_names]\nwating = \"En attente\"\ninbox = \"Réception\"\n").unwrap();
+    assert_eq!(parsed.warnings.len(), 1, "{:?}", parsed.warnings);
+    assert_eq!(parsed.warnings[0].key.as_deref(), Some("folder_names.wating"));
+    assert_eq!(parsed.warnings[0].line, Some(2));
+    assert_eq!(parsed.config.folder_names.get(FolderRole::Waiting), "Waiting");
+    assert_eq!(parsed.config.folder_names.get(FolderRole::Inbox), "Réception");
+}
+
+/// What makes a name unusable is refused on its line, and the whole file
+/// with it (`configuration.md`, section 4).
+#[test]
+fn unusable_folder_names_are_refused_on_their_line() {
+    let long = "x".repeat(config::FOLDER_NAME_MAX_CHARS + 1);
+    for (text, key, message) in [
+        ("[folder_names]\nwaiting = \"\"\n", "folder_names.waiting", "must not be empty"),
+        ("[folder_names]\nwaiting = \"   \"\n", "folder_names.waiting", "must not be empty"),
+        ("[folder_names]\nwaiting = 3\n", "folder_names.waiting", "expected a string"),
+        (&format!("[folder_names]\njunk = \"{long}\"\n"), "folder_names.junk", "at most 24 characters"),
+        ("[folder_names]\ntodo = \"À\\nfaire\"\n", "folder_names.todo", "on one line"),
+        ("[folder_names]\ntodo = \"À\\tfaire\"\n", "folder_names.todo", "on one line"),
+        ("folder_names = 3\n", "folder_names", "expected a table"),
+    ] {
+        let p = refused(text);
+        assert_eq!(p.key.as_deref(), Some(key), "{text}");
+        assert_eq!(p.line, Some(text.lines().count() as u32), "{text}");
+        assert!(p.message.contains(message), "{text}: {}", p.message);
+    }
+}
+
+/// Two folders with the same name, without regard to case, could not be
+/// told apart in the menu of folders: refused, on the name the user wrote,
+/// the later of the two when both are written.
+#[test]
+fn two_folders_cannot_have_the_same_name() {
+    // A written name against an English one, in any case.
+    for text in ["[folder_names]\nwaiting = \"Todo\"\n", "[folder_names]\nwaiting = \"ARCHIVE\"\n"] {
+        let p = refused(text);
+        assert_eq!((p.key.as_deref(), p.line), (Some("folder_names.waiting"), Some(2)), "{text}");
+        assert!(p.message.contains("two folders cannot have the same name"), "{}", p.message);
+    }
+    // Two written names: the later line is blamed, whatever the order of
+    // the roles.
+    let p = refused("[folder_names]\njunk = \"Rebut\"\n\ninbox = \"rebut\"\n");
+    assert_eq!((p.key.as_deref(), p.line), (Some("folder_names.inbox"), Some(4)));
+    assert!(p.message.contains("of the junk folder"), "{}", p.message);
+    // Swapping two names is fine: each is then unique.
+    let n = settings("[folder_names]\ntodo = \"Waiting\"\nwaiting = \"Todo\"\n").unwrap().config.folder_names;
+    assert_eq!((n.get(FolderRole::Todo), n.get(FolderRole::Waiting)), ("Waiting", "Todo"));
+}
+
+/// The virtual folders (Work, All Mail, Everything) are named like the
+/// others, and count among them for a clash.
+#[test]
+fn the_virtual_folders_are_named_too() {
+    let n = settings("[folder_names]\nall_mail =\"Tous les mails\"\neverything = \"Tout\"\n").unwrap().config.folder_names;
+    assert_eq!((n.name("all_mail"), n.name("everything"), n.name("work")), (Some("Tous les mails"), Some("Tout"), Some("Work")));
+    assert_eq!(n.to_map()["everything"], "Tout");
+    // Against an English name, and between a role and a virtual folder.
+    let p = refused("[folder_names]\narchive = \"Everything\"\n");
+    assert_eq!(p.key.as_deref(), Some("folder_names.archive"));
+    assert!(p.message.contains("of the everything folder"), "{}", p.message);
+    let p = refused("[folder_names]\nwork = \"Boulot\"\ninbox = \"boulot\"\n");
+    assert_eq!((p.key.as_deref(), p.line), (Some("folder_names.inbox"), Some(3)));
+    // The same limits as a folder's name.
+    let long = "x".repeat(config::FOLDER_NAME_MAX_CHARS + 1);
+    assert_eq!(refused(&format!("[folder_names]\nwork = \"{long}\"\n")).key.as_deref(), Some("folder_names.work"));
+}
+
+/// The French names the created file proposes are valid together, unique,
+/// and each within the limit: uncommenting them all names every folder.
+#[test]
+fn the_proposed_french_names_are_valid() {
+    let ids: Vec<_> = config::FOLDER_NAMES_PROPOSED.iter().map(|(r, _)| *r).collect();
+    let expected: Vec<_> = config::named_folders().map(|(id, _)| id).collect();
+    assert_eq!(ids, expected, "one per role and virtual folder, in order");
+    let text = config_template();
+    assert!(text.contains("\n[folder_names]\n"), "{text}");
+    assert!(text.contains("\n# waiting = \"En attente\"\n"), "{text}");
+    assert!(
+        text.contains("# Inbox, Todo, Waiting, Archive, Sent, Drafts,\n# Newsletter, Paperwork, Quarantine, Deleted, Junk, Banned,\n# and the views that gather folders: Work, All Mail, Everything.\n"),
+        "{text}"
+    );
+    assert!(text.contains("\n# all_mail = \"Tous les mails\"\n"), "{text}");
+    // Uncommenting one line names that folder alone.
+    let one = text.replace("\n# waiting = \"En attente\"\n", "\nwaiting = \"En attente\"\n");
+    let n = settings(&one).unwrap().config.folder_names;
+    assert_eq!((n.get(FolderRole::Waiting), n.get(FolderRole::Inbox)), ("En attente", "Inbox"));
+    for (_, name) in config::FOLDER_NAMES_PROPOSED {
+        assert!(name.chars().count() <= config::FOLDER_NAME_MAX_CHARS, "{name}");
+    }
 }
 
 /// The unsubscribe of the mails of Banned: closed unless asked

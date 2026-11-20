@@ -1,0 +1,38 @@
+# The names of [folder_names] in config.toml (fixtures/foldernames.config.toml):
+# Inbox, Todo, Archive and All Mail (a virtual folder) renamed, the other
+# folders left English.
+expect folder = Réception
+expect folder_keys ~ Réception
+expect folder_keys ~ À faire
+expect folder_keys ~ Waiting
+expect folder_keys !~ Inbox
+expect folder_keys ~ Tous les mails
+expect folder_keys ~ Everything
+# The menu ; names them as the file does.
+key ;
+expect menu_rows ~ Réception
+expect menu_rows ~ Archives
+expect menu_rows ~ Tous les mails
+expect menu_rows !~ All Mail
+snap goto-menu
+key esc
+# The move menu too; the move goes to the role, and the message says
+# the name.
+key m
+expect menu_rows ~ À faire
+expect menu_rows ~ Waiting
+snap move-menu
+key t
+expect flash ~ moved to À faire
+# The folder column draws the names; its targets keep the English name,
+# so that a scenario does not depend on the file.
+key v
+key 3
+snap folder-column
+click folder:Todo
+expect folder = À faire
+click folder:Archive
+expect folder = Archives
+# A virtual folder: its target keeps the English name too.
+click folder:all_mail
+expect folder = Tous les mails

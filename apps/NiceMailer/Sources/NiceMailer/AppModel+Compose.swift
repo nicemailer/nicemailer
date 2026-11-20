@@ -645,7 +645,7 @@ extension AppModel {
                                   label: filing == nil ? L("filing of the reply") : L("decisions of the sending"),
                                   threads: params["thread_id"]?.int.map { [$0] } ?? []))
             }
-            flash = Compose.sentFlash(movedTo: params["moved_to"]?.string, filing: filing, undo: undo != nil)
+            flash = Compose.sentFlash(movedTo: params["moved_to"]?.string, filing: filing, undo: undo != nil, names: folderNames)
         case "SendFailed":
             sending[id] = nil
             undoStack.removeAll { $0.cancelSend == id }

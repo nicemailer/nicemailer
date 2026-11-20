@@ -164,6 +164,11 @@ final class AppModel {
     /// The keys of the geek theme: the defaults until the core answers, then
     /// those of `keymap.toml` (`keymap_get`, `docs/keymap.md`).
     var keymap: Keymap = .defaults
+
+    /// The names of the folders (`FolderNames`): those of `[folder_names]`
+    /// in `config.toml`, English by default. Observed: a new name in the
+    /// file redraws the sidebar, the status bar and the menus at once.
+    var folderNames: FolderNames = .english
     /// Why `keymap.toml` is refused, while it is: the previous keys stay,
     /// and the status bar says so until the file is fixed.
     var keymapProblem: KeymapProblem?
@@ -316,7 +321,19 @@ final class AppModel {
     enum Virtual: String, CaseIterable {
         case work, allMail, everything
 
-        /// Its name (names, like the folder names, are not translated).
+        /// Its id in `[folder_names]` of `config.toml`, that of its key
+        /// (`goto.all_mail`).
+        var id: String {
+            switch self {
+            case .work: "work"
+            case .allMail: "all_mail"
+            case .everything: "everything"
+            }
+        }
+
+        /// Its English name. The app shows `FolderNames.name(of:)`, the
+        /// name of `config.toml`; this one names it where the English
+        /// stays (the targets of the UI scenarios, `KeyAction.label`).
         var name: String {
             switch self {
             case .work: AppModel.workName
@@ -473,14 +490,14 @@ final class AppModel {
     /// dictionary) rather than looked up row by row.
     var everythingFolderLabels: [Int: FolderLabel]? {
         guard let e = everything else { return nil }
-        return Self.folderLabels(folders, withAccount: e == .all)
+        return Self.folderLabels(folders, withAccount: e == .all, names: folderNames)
     }
 
     /// Folder of the selected thread, in "Everything" only (the reader
     /// shows it next to the subject).
     var selectedThreadFolderLabel: String? {
         guard let e = everything, let t = selectedThread else { return nil }
-        return folders.first { $0.id == t.folderId }.map { Self.folderLabel($0, withAccount: e == .all).text }
+        return folders.first { $0.id == t.folderId }.map { Self.folderLabel($0, withAccount: e == .all, names: folderNames).text }
     }
 
     /// Folder of a mail in "Everything": its name, and its account in the
@@ -493,24 +510,25 @@ final class AppModel {
         var text: String { account.map { "\(folder) · \($0)" } ?? folder }
     }
 
-    /// Label of `f`, with its account when `withAccount` ("all").
-    static func folderLabel(_ f: FolderView, withAccount: Bool) -> FolderLabel {
-        FolderLabel(folder: f.name, account: withAccount ? f.accountName : nil)
+    /// Label of `f`, with its account when `withAccount` ("all"), its name
+    /// taken from `names`.
+    static func folderLabel(_ f: FolderView, withAccount: Bool, names: FolderNames = .english) -> FolderLabel {
+        FolderLabel(folder: names.name(of: f), account: withAccount ? f.accountName : nil)
     }
 
     /// `folderLabel` of every folder, by folder id.
-    static func folderLabels(_ folders: [FolderView], withAccount: Bool) -> [Int: FolderLabel] {
+    static func folderLabels(_ folders: [FolderView], withAccount: Bool, names: FolderNames = .english) -> [Int: FolderLabel] {
         // Swift note: `uniquingKeysWith` keeps the first value if two
         // folders had the same id (they cannot, but the initializer without
         // it would crash on a duplicate key).
-        Dictionary(folders.map { ($0.id, folderLabel($0, withAccount: withAccount)) },
+        Dictionary(folders.map { ($0.id, folderLabel($0, withAccount: withAccount, names: names)) },
                    uniquingKeysWith: { first, _ in first })
     }
 
     /// Name of the folder shown.
     var currentFolderName: String {
-        if everything != nil { return virtual.name }
-        return unifiedRole.map { Role.name($0) } ?? selectedFolder?.name ?? ""
+        if everything != nil { return folderNames.name(of: virtual) }
+        return unifiedRole.map { folderNames.name($0) } ?? selectedFolder.map { folderNames.name(of: $0) } ?? ""
     }
     /// Whether there are several accounts (the unified view is offered).
     var hasSeveralAccounts: Bool { Set(folders.map(\.accountId)).count > 1 }
@@ -887,8 +905,6 @@ final class AppModel {
         report?.userMessage ?? connectionError
     }
 
-    /// Reads the settings of `[ui]` the app applies itself. A core that
-    /// does not give them leaves the defaults.
     /// Reads the keys in effect from the core (`keymap_get`). An older core
     /// without the method leaves the defaults.
     func loadKeymap() async {
@@ -898,6 +914,9 @@ final class AppModel {
         keymapProblem = view.error
     }
 
+    /// Reads the settings of `config.toml` the app applies itself (`[ui]`,
+    /// `[unsubscribe]`, `[folder_names]`). A core that does not give them
+    /// leaves the defaults.
     func loadUISettings() async {
         guard let client else { return }
         if let status: ConfigStatusView = try? await client.call("config_status", [:]) {
@@ -912,6 +931,10 @@ final class AppModel {
             // An older core without `[unsubscribe]` keeps it closed, as
             // that core refuses it.
             unsubscribeInBanned = status.unsubscribe?.inBanned ?? false
+            // Assigned only when they changed: an assignment redraws every
+            // view that shows a folder, even with the same names.
+            let names = FolderNames(byRole: status.folderNames ?? [:])
+            if names != folderNames { folderNames = names }
         }
         // The lists of the formatted mode and the mode a draft starts in
         // (`edition.md`, section 5): an older core without them leaves the

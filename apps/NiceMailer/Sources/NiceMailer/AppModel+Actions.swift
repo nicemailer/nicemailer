@@ -18,11 +18,11 @@ extension AppModel {
 
     /// Why a move is refused, and what to do instead (`dossiers.md`,
     /// "Sent et Drafts"): a draft only goes to Deleted (Delete). A pure
-    /// function, tested alone.
-    nonisolated static func refusedMoveFlash(from: String?, to role: String) -> String {
+    /// function, tested alone; the folders are named by `names`.
+    nonisolated static func refusedMoveFlash(from: String?, to role: String, names: FolderNames = .english) -> String {
         switch from {
-        case "drafts": return L("A draft is not moved: Delete puts it in %@", Role.name("deleted"))
-        default: return L("Not a target from this folder: %@", Role.name(role))
+        case "drafts": return L("A draft is not moved: Delete puts it in %@", names.name("deleted"))
+        default: return L("Not a target from this folder: %@", names.name(role))
         }
     }
 
@@ -50,7 +50,7 @@ extension AppModel {
         }
         guard !allowed.isEmpty else {
             let from = folders.first { $0.id == targets[0].folderId }?.role
-            flash = AppModel.refusedMoveFlash(from: from, to: role)
+            flash = AppModel.refusedMoveFlash(from: from, to: role, names: folderNames)
             return
         }
         // Optimistic update: the threads leave a folder list at once, and
@@ -72,7 +72,7 @@ extension AppModel {
         // already on another mail, so "Moved to Archive" alone does not say
         // which one left. The core's answer may complete the message with
         // the decision on the sender (`Workflow.moveFlash`).
-        flash = Workflow.moveFlash(subjects: allowed.map(\.subject), folder: Role.name(role), decision: nil, filed: 0)
+        flash = Workflow.moveFlash(subjects: allowed.map(\.subject), folder: folderNames.name(role), decision: nil, filed: 0)
         // One request for every thread (`ui.md`, "Actions groupées"): one
         // transaction, one batch of events, one undo token. A thread whose
         // sender is suspected of spoofing is left by the core and asked
@@ -96,12 +96,12 @@ extension AppModel {
             let decision = r.decisions.last
             let filed = r.filed
             if let u = r.undo {
-                pushUndo(UndoStep(tokens: [u], label: L("move to %@", Role.name(role)), threads: moved.map(\.id)))
+                pushUndo(UndoStep(tokens: [u], label: L("move to %@", folderNames.name(role)), threads: moved.map(\.id)))
             }
             if let s = suspectMove {
                 flash = L("Probable spoofing of %@: confirm or cancel", s.addr)
             } else if decision != nil || filed > 0 {
-                flash = Workflow.moveFlash(subjects: moved.map(\.subject), folder: Role.name(role), decision: decision, filed: filed)
+                flash = Workflow.moveFlash(subjects: moved.map(\.subject), folder: folderNames.name(role), decision: decision, filed: filed)
             }
             if listFilter != nil || refused || mayStay { await reloadThreads(keepDepth: true) }
             // The question is about that mail: the cursor goes back to it.

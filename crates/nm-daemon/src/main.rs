@@ -1947,6 +1947,7 @@ async fn call(core: &Arc<Core>, source: Source, req: Request) -> Result<Value, R
                     response_chars: engine.config().mcp.response_chars,
                 },
                 unsubscribe: nm_api::UnsubscribeConfig { in_banned: engine.config().unsubscribe.in_banned },
+                folder_names: engine.config().folder_names.to_map(),
                 as_of,
             })
         }

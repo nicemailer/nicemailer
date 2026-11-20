@@ -803,8 +803,8 @@ private final class Runner {
             // The row under the cursor of the History screen.
             "history_who": c.historyRows.indices.contains(c.screenIndex) ? HistoryDisplay.who(c.historyRows[c.screenIndex].group.source) : "",
             "history_title": c.historyRows.indices.contains(c.screenIndex) ? HistoryDisplay.title(c.historyRows[c.screenIndex].group) : "",
-            "history_verb": c.historyRows.indices.contains(c.screenIndex) ? HistoryDisplay.action(c.historyRows[c.screenIndex].group).verb : "",
-            "history_detail": c.historyRows.indices.contains(c.screenIndex) ? HistoryDisplay.action(c.historyRows[c.screenIndex].group).detail : "",
+            "history_verb": c.historyRows.indices.contains(c.screenIndex) ? HistoryDisplay.action(c.historyRows[c.screenIndex].group, names: m.folderNames).verb : "",
+            "history_detail": c.historyRows.indices.contains(c.screenIndex) ? HistoryDisplay.action(c.historyRows[c.screenIndex].group, names: m.folderNames).detail : "",
             "history_group": c.historyRows.indices.contains(c.screenIndex) ? "\(c.historyRows[c.screenIndex].group.count)" : "",
             "history_unfolded": "\(c.historyUnfolded.count)",
             "history_read_shown": "\(c.historyIncludesRead)",
@@ -812,7 +812,7 @@ private final class Runner {
             // the chip of the status bar that says it ("" when none).
             "history_source": c.historySource.rawValue,
             "history_source_chip": c.historySourceChip ?? "",
-            "history_actions": c.historyRows.map { let a = HistoryDisplay.action($0.group); return a.verb + " " + a.detail }.joined(separator: " | "),
+            "history_actions": c.historyRows.map { let a = HistoryDisplay.action($0.group, names: m.folderNames); return a.verb + " " + a.detail }.joined(separator: " | "),
             "tags_count": "\(c.tags.count)",
             "groups_count": "\(c.groups.count)",
             // The groups of the folder column, in order, and how many had
@@ -1061,7 +1061,7 @@ private final class Runner {
             "compose_attachment_index": m.composer.map { String($0.attachmentIndex) } ?? "",
             "compose_suggestion_index": m.composer?.suggestionIndex.map(String.init) ?? "",
             "compose_after": m.composer.flatMap { Compose.afterSend($0.draft) } ?? "",
-            "compose_after_line": m.composer.flatMap { Compose.afterSendLine($0.draft) } ?? "",
+            "compose_after_line": m.composer.flatMap { Compose.afterSendLine($0.draft, names: m.folderNames) } ?? "",
             // The text as the editor last reported it, `|` at the cursor in
             // text only (its offsets are UTF-16 units, as `NSString`'s).
             "compose_text": m.composer.map { c in

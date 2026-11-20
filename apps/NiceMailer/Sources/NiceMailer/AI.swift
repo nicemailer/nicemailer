@@ -561,8 +561,8 @@ enum AI {
 
     /// The status bar for the conversation under the cursor, when the AI
     /// suggested a target for it: the target, then why.
-    static func suggestionLine(_ s: AISuggestion, keymap: Keymap = .defaults) -> String {
-        L("AI: %@ (%@) · %@", Role.name(s.target), keymap.mention(.mailOpen, in: Keymap.mailChain), s.reason)
+    static func suggestionLine(_ s: AISuggestion, keymap: Keymap = .defaults, names: FolderNames = .english) -> String {
+        L("AI: %@ (%@) · %@", names.name(s.target), keymap.mention(.mailOpen, in: Keymap.mailChain), s.reason)
     }
 
     /// The end of a sorting, in the status bar.

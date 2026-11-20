@@ -627,10 +627,10 @@ enum Compose {
     /// is" when the user chose to leave a conversation where it is, or nil
     /// when nothing moves (a new mail left to Sent says nothing: that is
     /// what happens anyway).
-    static func afterSendLine(_ d: DraftView) -> String? {
+    static func afterSendLine(_ d: DraftView, names: FolderNames = .english) -> String? {
         guard offersFiling(d) else { return nil }
         if d.afterSend == "stay" { return filesItself(d) ? nil : L("After sending: stays where it is") }
-        return afterSend(d).map { L("After sending: %@", Role.name($0)) }
+        return afterSend(d).map { L("After sending: %@", names.name($0)) }
     }
 
     /// The answers of ⇧⌘↩ "Send, then…" (`reponse.md`, section 8): the
@@ -644,7 +644,7 @@ enum Compose {
         let current: Bool
     }
 
-    static func sendChoices(_ d: DraftView) -> [SendChoice] {
+    static func sendChoices(_ d: DraftView, names: FolderNames = .english) -> [SendChoice] {
         // A new mail is in Sent and stays there unless the user says
         // otherwise: `stay` is its preselection.
         let own = filesItself(d)
@@ -652,7 +652,7 @@ enum Compose {
         return [("a", "archive"), ("w", "waiting"), ("t", "todo"), ("s", "stay")].map { key, value in
             let label = value == "stay"
                 ? (own ? L("leave it in Sent") : L("leave it where it is (trial)"))
-                : Role.name(value)
+                : names.name(value)
             return SendChoice(key: key, afterSend: value, label: label, current: value == current)
         }
     }
@@ -670,9 +670,9 @@ enum Compose {
     /// mail"): said in the same words, but `z` does not undo it (it is
     /// outside the undo token of the sending), so only the decisions are
     /// offered back.
-    static func sentFlash(movedTo: String?, filing: String? = nil, undo: Bool) -> String {
+    static func sentFlash(movedTo: String?, filing: String? = nil, undo: Bool, names: FolderNames = .english) -> String {
         var text = L("Sent")
-        if let target = movedTo ?? filing { text += " · " + L("filed in %@", Role.name(target)) }
+        if let target = movedTo ?? filing { text += " · " + L("filed in %@", names.name(target)) }
         if undo { text += " · " + (movedTo != nil ? L("z: undo the filing") : L("z: undo")) }
         return text
     }

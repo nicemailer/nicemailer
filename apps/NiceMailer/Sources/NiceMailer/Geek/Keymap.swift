@@ -280,7 +280,8 @@ enum KeyAction: String, CaseIterable {
     }
 
     /// What the row of a menu says for the action, also used by the help.
-    /// Only the actions that may be a row of a menu (those of the mail
+    /// A folder is named in English here; the menus name it as the file
+    /// does (`GeekController.label(of:)`). Only the actions that may be a row of a menu (those of the mail
     /// screen and of every screen) need a label; the others, which move in
     /// a panel, return their name.
     var label: String {

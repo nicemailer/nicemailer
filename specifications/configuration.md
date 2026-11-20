@@ -236,6 +236,17 @@ Les paramètres sont définis dans les spécifications qui les utilisent. Ce tab
 | `ai.history_days` | Durée avant la purge du contenu de l'historique | 30 | `ia.md` |
 | `mcp.message_chars` | Texte d'un message dans `get_conversation` (serveur MCP) | 8 000 | `mcp.md` |
 | `mcp.response_chars` | Texte total d'une réponse du serveur MCP | 40 000 | `mcp.md` |
+| `folder_names.<rôle>` | Nom affiché du dossier de ce rôle, ou d'un dossier virtuel (`work`, `all_mail`, `everything`) (1 à 24 caractères, unique) | le nom anglais | ci-dessous, « Noms des dossiers » |
+
+### Noms des dossiers
+
+Les dossiers portent par défaut leur nom anglais (Inbox, Todo, Waiting…). La table `[folder_names]` de `config.toml` permet à l'utilisateur de leur donner le nom de son choix, rôle par rôle (`waiting = "En attente"`), ainsi qu'aux trois dossiers virtuels qui en regroupent d'autres (`ui.md`, « Dossiers virtuels ») : `work` (Work), `all_mail` (All Mail) et `everything` (Everything), dont les clés sont celles de leurs actions `goto.`. Un rôle ou un dossier virtuel absent garde son nom anglais.
+
+- **Affichage seul.** Le nom remplace le nom anglais partout où l'app nomme un dossier. Le rôle reste l'identifiant partout ailleurs : le contrat (`list_folders` garde le nom anglais), le CLI (en anglais seulement), la keymap (`move.waiting` ; la lettre se change dans `keymap.toml`), l'agent MCP et les prompts de l'IA. Un nom affiché ne renomme jamais un dossier IMAP : le téléphone voit le nom du serveur, choisi à la création du compte.
+- **Refusés** (le fichier entier, comme toute erreur, section 4) : un nom vide, plus de 24 caractères, un caractère de contrôle, un nom déjà porté par un autre dossier sans tenir compte de la casse. Deux dossiers de même nom seraient indiscernables.
+- **Une clé qui n'est ni un rôle ni un dossier virtuel** est une clé inconnue : un avertissement.
+- **Proposition.** Le fichier créé au démarrage propose les noms français en commentaire ; retirer le `# ` d'une ligne donne son nom français au dossier. Seul le français est proposé : c'est la langue de référence du projet, les autres traductions de l'app attendent une relecture (`localisation.md`).
+- **Appliqué tout de suite** : le noyau envoie les noms avec `config_status`, l'app les relit à chaque `ConfigChanged`.
 
 Un nouveau paramètre est ajouté à la fois dans la spécification qui l'utilise et dans ce tableau.
 

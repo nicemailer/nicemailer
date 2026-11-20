@@ -49,6 +49,9 @@ fn missing_files_are_created_at_start_and_change_nothing() {
     // The text sizes of the app and of its status bar: 16 and 18 pt.
     assert_eq!(status["ui"]["text_size"], 16);
     assert_eq!(status["ui"]["status_bar_text_size"], 18);
+    // The folders keep their English names.
+    assert_eq!(status["folder_names"]["waiting"], "Waiting");
+    assert_eq!(status["folder_names"]["all_mail"], "All Mail");
     let config = std::fs::read_to_string(dir.path().join("config.toml")).unwrap();
     assert_eq!(config, nm_engine::config::config_template());
     assert!(config.contains("# poll_interval_secs = 300"), "{config}");
@@ -115,6 +118,33 @@ fn the_text_sizes_reach_the_app_and_follow_the_file() {
     let e = c.event("ConfigChanged", 15);
     assert_eq!(e["keys"], json!(["ui.text_size"]), "{e}");
     assert_eq!(c.call("config_status", json!({})).unwrap()["ui"]["text_size"], 16);
+}
+
+/// The app shows the names of `[folder_names]` (`configuration.md`, "Noms
+/// des dossiers"): `config_status` gives every role, English unless named,
+/// and follows an edit of the file; `list_folders` keeps the English names,
+/// which the CLI and the MCP agent show.
+#[test]
+fn the_folder_names_reach_the_app_and_follow_the_file() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("config.toml"), "[folder_names]\nwaiting = \"En attente\"\n").unwrap();
+    let _core = start(dir.path());
+    let mut c = Client::connect(dir.path());
+    let names = c.call("config_status", json!({})).unwrap()["folder_names"].clone();
+    assert_eq!(names.as_object().unwrap().len(), 15, "the 12 roles and the 3 virtual folders: {names}");
+    assert_eq!((names["waiting"].clone(), names["inbox"].clone()), (json!("En attente"), json!("Inbox")));
+    c.call("subscribe", json!({})).unwrap();
+    std::thread::sleep(Duration::from_millis(500));
+    save(&mut c, dir.path(), "config.toml", "[folder_names]\nwaiting = \"En attente\"\ninbox = \"Réception\"\n");
+    let e = c.event("ConfigChanged", 15);
+    assert_eq!(e["keys"], json!(["folder_names.inbox"]), "{e}");
+    assert_eq!(c.call("config_status", json!({})).unwrap()["folder_names"]["inbox"], "Réception");
+    // A clash refuses the file and keeps the names in effect.
+    save(&mut c, dir.path(), "config.toml", "[folder_names]\nwaiting = \"Inbox\"\n");
+    let e = c.event("ConfigError", 15);
+    assert_eq!(e["key"], "folder_names.waiting", "{e}");
+    let status = c.call("config_status", json!({})).unwrap();
+    assert_eq!((status["folder_names"]["inbox"].clone(), status["folder_names"]["waiting"].clone()), (json!("Réception"), json!("En attente")));
 }
 
 #[test]

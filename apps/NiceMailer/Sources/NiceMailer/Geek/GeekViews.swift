@@ -403,7 +403,7 @@ struct GeekStatusBar: View {
                 Text(AI.sortLine(sort)).foregroundStyle(Palette.accentText).lineLimit(1)
             } else if controller.screen == .mail, model.composer == nil, let s = model.selectedSuggestion {
                 // Why the AI suggests a target for the mail under the cursor.
-                Text(AI.suggestionLine(s, keymap: model.keymap)).foregroundStyle(Palette.accentText).lineLimit(1).truncationMode(.tail)
+                Text(AI.suggestionLine(s, keymap: model.keymap, names: model.folderNames)).foregroundStyle(Palette.accentText).lineLimit(1).truncationMode(.tail)
             }
             if !model.marked.isEmpty {
                 Text(L("%lld marked", model.marked.count)).foregroundStyle(Palette.markedBar)
@@ -445,7 +445,7 @@ extension GeekStatusBar {
                     .foregroundStyle(Palette.muted)
                     .accessibilityLabel(L("Move"))
                 ForEach(targets, id: \.self) { role in
-                    StatusBlock(icon: nil, text: Role.name(role),
+                    StatusBlock(icon: nil, text: model.folderNames.name(role),
                                 key: KeyAction(rawValue: "move." + role).map(controller.keyLabel) ?? "")
                         .onTapGesture { controller.moveFromStatusBar(role) }
                         .uiTarget("status-target-\(role)")
@@ -583,7 +583,11 @@ private struct GeekFolderColumn: View {
                     // The whole row is clickable, not only its text.
                     .contentShape(Rectangle())
                     .onTapGesture { controller.open(f) }
-                    .uiTarget("folder-\(f.name)")
+                    // In English whatever `[folder_names]` says, so that a
+                    // scenario does not depend on the names of a file; a
+                    // virtual folder by its id (`folder-all_mail`), as a
+                    // target of a scenario has no space.
+                    .uiTarget("folder-\(f.role.map { Role.name($0) } ?? f.virtual?.id ?? f.name)")
                     // The same blocks as the ; menu.
                     .padding(.top, i > 0 && folders[i - 1].group != f.group ? scaled(10) : 0)
                 }
@@ -688,7 +692,7 @@ private struct GeekThreadRows: View {
                             GeekThreadRow(
                                 thread: t, cursor: t.id == cursor, marked: marked.contains(t.id), layout: layout,
                                 folder: folderLabels.map { $0[t.folderId] ?? .init(folder: "", account: nil) },
-                                showsKind: showsKind, suggestion: model.aiSuggestions[t.id])
+                                showsKind: showsKind, suggestion: model.aiSuggestions[t.id], names: model.folderNames)
                                 .contentShape(Rectangle())
                                 // Click, ⌘-click, ⇧-click (`clickThread`).
                                 .onClick { controller.clickThread(t.id, $0) }
@@ -852,6 +856,8 @@ private struct GeekThreadRow: View {
     var showsKind = false
     /// The target the AI suggests for the conversation (`a` `s`).
     var suggestion: AISuggestion? = nil
+    /// The names of the folders, for the suggestion (`FolderNames`).
+    var names: FolderNames = .english
 
     var body: some View {
         HStack(spacing: layout.char) {
@@ -924,10 +930,10 @@ private struct GeekThreadRow: View {
             // The AI's suggestion, before the count: the target's name in
             // the accent colour, after an arrow, as the move it proposes.
             if let s = suggestion {
-                Text(AI.suggestionTag(Role.name(s.target), narrow: layout.narrowSuggestion))
+                Text(AI.suggestionTag(names.name(s.target), narrow: layout.narrowSuggestion))
                     .foregroundStyle(Palette.accentText)
                     .fixedSize()
-                    .accessibilityLabel(L("AI suggests %@", Role.name(s.target)))
+                    .accessibilityLabel(L("AI suggests %@", names.name(s.target)))
             }
             Text(thread.messageCount > 1 ? "\(thread.messageCount)" : "").foregroundStyle(Palette.muted)
                 .frame(width: layout.count, alignment: .trailing)
@@ -2253,9 +2259,9 @@ private struct ContactsScreen: View {
                 // The address's decision, or the domain's (marked "@"),
                 // which applies when the address has none.
                 if let own = c.screeningTarget {
-                    Text(Role.name(own)).frame(width: scaled(110), alignment: .leading)
+                    Text(controller.model.folderNames.name(own)).frame(width: scaled(110), alignment: .leading)
                 } else {
-                    Text(c.domainTarget.map { "@" + Role.name($0) } ?? "").foregroundStyle(Palette.muted)
+                    Text(c.domainTarget.map { "@" + controller.model.folderNames.name($0) } ?? "").foregroundStyle(Palette.muted)
                         .frame(width: scaled(110), alignment: .leading)
                 }
                 // Human or robot; a choice of the user is marked "*".
@@ -2287,7 +2293,7 @@ private struct HistoryScreen: View {
             onRowAppear: { controller.screenRowAppeared($0) },
             onHeight: { controller.screenHeightChanged($0) }
         ) { i in
-            HistoryRow(row: rows[i])
+            HistoryRow(row: rows[i], names: controller.model.folderNames)
         }
     }
 }
@@ -2296,10 +2302,12 @@ private struct HistoryScreen: View {
 /// the room left: it is what tells two rows apart.
 private struct HistoryRow: View {
     let row: HistoryDisplay.Row
+    /// The names of the folders a move went to (`FolderNames`).
+    let names: FolderNames
 
     var body: some View {
         let g = row.group
-        let action = HistoryDisplay.action(g)
+        let action = HistoryDisplay.action(g, names: names)
         HStack(spacing: 8) {
             Text(Format.historyDate(g.date)).foregroundStyle(Palette.muted).frame(width: scaled(112), alignment: .leading)
             Text(HistoryDisplay.who(g.source)).foregroundStyle(Palette.accentText).frame(width: scaled(84), alignment: .leading)
