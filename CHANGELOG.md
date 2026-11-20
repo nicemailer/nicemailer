@@ -45,6 +45,7 @@ First public and open source release. 19 languages. Auto update. Configurable ke
 
 ### Fixed
 
+- **Unsubscribe:** "unsubscribed" gives the day it was done, also when it was today; it gave only the time ("unsubscribed 09:57").
 - **AI:** A prompt run right after typing in a reply reads the last words typed, and its answer applies; before, it could work on an older text and refuse to apply with "The reply changed since the AI read it".
 - **Language and region:** Dates, sizes and numbers follow the app's language and the Mac's region: month names, date order (also when typing a date in the attribute selector), 12- or 24-hour clock, "251 ko", "1 234".
 - **Language and region:** Counts read correctly in English and French: "1 mail", "1 attachment saved", and in French "0 mail".

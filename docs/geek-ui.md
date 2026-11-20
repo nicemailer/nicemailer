@@ -176,12 +176,12 @@ When the latest received mail of the conversation says how to unsubscribe from i
 
 | Button | Link | A click (or ⌘U) |
 | --- | --- | --- |
-| `unsubscribe`, accent colour | `List-Unsubscribe` header, one click (RFC 8058) | the core unsubscribes at once; the status bar confirms, and the button gives way to "unsubscribed <date>" |
+| `unsubscribe`, accent colour | `List-Unsubscribe` header, one click (RFC 8058) | the core unsubscribes at once; the status bar confirms, and the button gives way to "unsubscribed <day>" |
 | `unsubscribe` with ↗, accent colour | header, a page of the list | opens the page in the browser |
 | `unsubscribe` with an envelope, accent colour | header, an address only | opens the unsubscribe mail in Mail (until NiceMailer sends mail) |
 | `unsubscribe` with a link symbol, muted | a link found in the text of the mail | opens it in the browser |
 
-A one-click attempt the server refuses opens the page instead, and says why. The tooltip of the button tells the same. Only a one-click unsubscribe is recorded ("unsubscribed <date>"): after a page or a mail, the app cannot know whether you finished. The sender's decision and its mails are not changed. The links are found by the core when the mail arrives (`docs/core-library.md`, "Unsubscribing from a list").
+A one-click attempt the server refuses opens the page instead, and says why. The tooltip of the button tells the same. Only a one-click unsubscribe is recorded ("unsubscribed <day>"): after a page or a mail, the app cannot know whether you finished. The sender's decision and its mails are not changed. The links are found by the core when the mail arrives (`docs/core-library.md`, "Unsubscribing from a list").
 
 ### When a mail becomes read
 

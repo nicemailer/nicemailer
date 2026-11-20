@@ -52,8 +52,10 @@ enum UnsubscribeDisplay {
         }
     }
 
-    /// "unsubscribed on 3 Nov", shown instead of the button.
-    static func done(_ at: Int) -> String {
-        L("unsubscribed %@", Format.geekListDate(at))
+    /// "unsubscribed on 3 Nov", shown instead of the button. Always the
+    /// day (`Format.day`): the date of the lists gives only the time for
+    /// today, and "unsubscribed 09:57" read as a time.
+    static func done(_ at: Int, in f: Format.Dates = Format.dates, now: Date = Date(), calendar: Calendar = .current) -> String {
+        L("unsubscribed %@", Format.day(at, in: f, now: now, calendar: calendar))
     }
 }

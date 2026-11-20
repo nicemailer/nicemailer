@@ -138,6 +138,9 @@ snap unsubscribe
 click reader:unsubscribe
 expect flash ~ Unsubscribed from Lettre
 expect unsubscribe = done
+# The day it was done, not the time ("unsubscribed 09:57" read as a time).
+expect unsubscribe_text ~ unsubscribed
+expect unsubscribe_text !~ :
 key v
 key h
 expect body_format = html

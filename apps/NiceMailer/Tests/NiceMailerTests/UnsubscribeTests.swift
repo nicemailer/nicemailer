@@ -159,4 +159,21 @@ struct UnsubscribeTests {
         #expect(body.help != UnsubscribeDisplay.label(view("browser", "header")).help)
         #expect(!UnsubscribeDisplay.done(1_790_000_000).isEmpty)
     }
+
+    /// "unsubscribed 09:57" read as a time: the line gives the day, even
+    /// for today, and the year only before this one.
+    @Test func theUnsubscribeDateIsADayNeverATime() {
+        let utc = TimeZone(identifier: "UTC")!
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = utc
+        let f = Format.Dates(locale: Locale(identifier: "en_GB"), timeZone: utc)
+        let at = 1_795_600_620            // 2026-11-25 09:57 UTC
+        let sameDay = Date(timeIntervalSince1970: TimeInterval(at + 3600))
+        let today = UnsubscribeDisplay.done(at, in: f, now: sameDay, calendar: calendar)
+        #expect(today.contains("25"))
+        #expect(today.contains("Nov"))
+        #expect(!today.contains("09:57") && !today.contains("9:57"))
+        let nextYear = Date(timeIntervalSince1970: TimeInterval(at + 400 * 86_400))
+        #expect(UnsubscribeDisplay.done(at, in: f, now: nextYear, calendar: calendar).contains("2026"))
+    }
 }

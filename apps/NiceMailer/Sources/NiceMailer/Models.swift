@@ -785,6 +785,16 @@ enum Format {
         return f.geekShort.string(from: d)
     }
 
+    /// The day something happened, never its time: "3 Nov" this year,
+    /// "3 Nov 2021" before. For a state that lasts ("unsubscribed on…"),
+    /// where the time of the lists ("09:57" today) reads as a time, not a
+    /// day.
+    static func day(_ ts: Int, in f: Dates = dates, now: Date = Date(), calendar: Calendar = .current) -> String {
+        let d = Date(timeIntervalSince1970: TimeInterval(ts))
+        if calendar.isDate(d, equalTo: now, toGranularity: .year) { return f.dayMonth.string(from: d) }
+        return f.dayMonthYear.string(from: d)
+    }
+
     /// Date of a message header in the geek reader: "14:05" today,
     /// "yesterday 14:05", "3 Nov at 14:05" this year, "3 Nov 2021" before.
     /// The day and the time of this year make one template, so that the

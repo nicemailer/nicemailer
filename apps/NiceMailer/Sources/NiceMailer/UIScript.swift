@@ -869,6 +869,8 @@ private final class Runner {
             "unsubscribe": m.unsubscribeOffer.map {
                 $0.senderUnsubscribedAt != nil ? "done" : "\($0.source):\($0.method)"
             } ?? "",
+            // The line shown once unsubscribed ("unsubscribed 25 Nov").
+            "unsubscribe_text": m.unsubscribeOffer?.senderUnsubscribedAt.map { UnsubscribeDisplay.done($0) } ?? "",
             "reader_attachments": "\(UIScript.readerAttachments)",
             "opened_file": UIScript.openedFile,
             "confirmed_calls": UIScript.confirmedCalls.joined(separator: ","),
