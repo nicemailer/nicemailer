@@ -12,18 +12,20 @@ How to write it:
 
 ## Unreleased
 
+## 0.2.1 — 2026-11-21
+
 ### Added
 
-- **AI agents:** Each mail an agent reads comes with its link (`nicemailer://m/…`), to put in a note or an answer; paste a link to a mail in the conversation and the agent reads that mail.
-- **Sync:** While an account is synchronized for the first time, the status bar says how far it is: "Importing Inbox: 12,300 of 44,829", then the mails left to download. A large account no longer makes the app look frozen.
 - **Folders:** Give the folders your own names in `config.toml` (`[folder_names]`, e.g. `waiting = "En attente"`), and the views Work, All Mail and Everything too. English stays the default; the created file proposes the French names, commented out. Only the app shows them: the folders on the server keep their names.
 - **Display:** Set the text size in `config.toml`: `ui.text_size` for the window and `ui.status_bar_text_size` for the status bar, applied as soon as the file is saved.
+- **Sync:** While an account is synchronized for the first time, the status bar says how far it is: "Importing Inbox: 12,300 of 44,829", then the mails left to download. A large account no longer makes the app look frozen.
+- **AI agents:** Each mail an agent reads comes with its link (`nicemailer://m/…`), to put in a note or an answer; paste a link to a mail in the conversation and the agent reads that mail.
 
 ### Changed
 
-- **Sync:** NiceMailer no longer limits each account to 10 connections an hour. It slows down only for a server that shows a block (refuses a login "for now", refuses the password it accepted, turns the connection away): it then waits from 15 minutes to 4 hours, and connects at most half as often from then on. `nicemailer sync status` shows the limit learnt; it survives a restart, and a new password ends the wait.
 - **Links:** The link to a mail (`l`, then Return) names the mail itself, `nicemailer://m/3f9a0c2b7e41`, rather than its number in the database: pasted in a note, it opens the mail on every Mac that has it, and after a mailbox is imported again. Links copied before keep working on the Mac that made them.
 - **Links:** In a conversation, the link to a mail (`l`) is the one of the message you are reading (`ctrl-k` / `ctrl-j`), and opening it shows that very message, unfolded, in the folder where the conversation is filed. The History screen opens its mails the same way.
+- **Sync:** NiceMailer no longer limits each account to 10 connections an hour. It slows down only for a server that shows a block (refuses a login "for now", refuses the password it accepted, turns the connection away): it then waits from 15 minutes to 4 hours, and connects at most half as often from then on. `nicemailer sync status` shows the limit learnt; it survives a restart, and a new password ends the wait.
 - **Accounts:** with a single account, the account switcher (`@`) no longer shows in the status bar, the key does nothing and the help leaves it out.
 - **Display:** The default text size is 16 pt instead of 12, and 18 pt in the status bar. ⌘+ and ⌘− now last for the session only, and ⌘0 goes back to the size of `config.toml`.
 
@@ -35,7 +37,7 @@ How to write it:
 - **Display:** The status bar always says the text size reached by ⌘+, ⌘− or ⌘0, also when the change comes from the View menu.
 
 
-## 0.2.0 - 2026-11-20
+## 0.2.0 — 2026-11-20
 
 First public and open-source release, with 19 languages, configurable keyboard shortcuts, and auto-update. New UI to add an account and an option to try it in "look-only" mode to test the app.
 
