@@ -88,7 +88,7 @@ After a pass, the work connection waits with IDLE on the Inbox, which ends:
 - when the server reports something: a pass (the folders whose counters changed);
 - at `sync.poll_interval_secs` (300 s) since the last full pass: a full pass;
 - on `nicemailer sync now` (`sync_now`): a full pass;
-- when the Mac wakes from sleep: the connection is surely dead, it is dropped without waiting for its time limit (90 s), and a new one opened at once. A sleep shows as a jump of the wall clock, which goes on during sleep, against the monotonic clock, which macOS stops;
+- when the Mac wakes from sleep: the connection is tested, and kept if it answers ("Sleep of the Mac" below);
 - every 25 minutes at most, to renew IDLE (RFC 2177).
 
 A server without IDLE is polled every minute. The first pass of each connection is full.
@@ -99,13 +99,32 @@ A server sees every login, and one that sees too many locks the account. Orange 
 
 | Rule | What it does |
 | --- | --- |
-| A budget of logins | At most 10 per account over any hour, both connections together, attempts that fail included. Past it, the next connection waits until the oldest login of the hour leaves it, whatever happens (`sync_now` does not shorten it). The core logs `N logins in the last hour, the most allowed: next one in … s` |
+| A budget of logins | At most 10 per account over any hour, both connections together, attempts that fail included. Past it, the next connection waits until the oldest login of the hour leaves it, whatever happens (`sync_now` does not shorten it). The core logs `N logins in the last hour, the most allowed: next one in … s`. The hour is real time, the sleeps of the Mac included ("Sleep of the Mac") |
 | A delay a short connection does not reset | After a failure, the delay doubles from 5 s up to 30 min, and goes back to 5 s only after a connection that lived 10 minutes. A pass that succeeds is not enough |
 | IDLE adapted to the server | A connection cut while in IDLE teaches how long the server keeps one: IDLE is then ended and started again (`DONE`, `IDLE`) at half that time, and the account keeps one connection only (the body connection closes; bodies are fetched on the work connection, 30 s at a time). If the server cuts it even so, or cut within 10 s, the account is **polled**: a connection per pass, at most every 10 minutes (`sync.poll_interval_secs` if longer), closed after its pass |
 
 Such a cut is not an error: the mail goes on arriving, so it is not announced (`AccountError`) and the state is `waiting`, without error, until the next connection. The core logs it: `the server closed the connection after 47 s in IDLE (…); IDLE renewed every 23 s from now on`, or `the account is polled from now on, one connection per 10 min at most`. `nicemailer sync status` shows the mode next to the account (`IDLE renewed every 23 s`, `polled every 10 min`; `hold` in `sync_status`: `renew N`, `poll N`).
 
 What is learnt lasts as long as the worker: a restart of the core, or a change of the account in `accounts.toml`, learns it again, at the cost of one or two cuts. Whether Orange counts a renewed IDLE as activity is not known yet: if it does not, the account ends up polled.
+
+## Sleep of the Mac
+
+A Mac left alone sleeps and wakes every few minutes, often for a few seconds only (idle sleep, then a "dark wake" for the network, then sleep again: `pmset -g log`). On 21 November 2026 this left three accounts without connection for over an hour while the phone showed the new mail:
+
+- each wake dropped both connections and opened two new ones: five wakes spent the budget of 10 logins an hour;
+- the budget and the waits were counted on the clock of `Instant` and of tokio's timers, which macOS stops during sleep: "an hour" lasted an hour of awake time, several real hours, and the next attempt that `sync status` announced (on the wall clock) passed without any attempt.
+
+Now (`crates/nm-engine/src/sync/clock.rs`, `account.rs`):
+
+| Rule | What it does |
+| --- | --- |
+| Real time | The budget of logins, the delays before a new attempt and the time since the last full pass are counted on the *continuous* clock (`CLOCK_MONOTONIC` on macOS), which goes on during sleep and cannot be set. A wait sleeps 15 s at most at a time on tokio's timer, then reads that clock again: it ends at the time announced, or at the wake if that time passed during the sleep |
+| Seeing a sleep | Every 15 s, the gap between the continuous clock and the awake clock (`CLOCK_UPTIME_RAW`, which stops during sleep): a gap of more than 5 s is a sleep. Neither clock moves when the wall clock is set or corrected |
+| Testing before dropping | At a wake, IDLE is ended (`DONE`) or a `NOOP` sent; a connection that answers within 10 s is kept, and a full pass follows on it, without a login. One that does not is dropped. Neither is announced as an error, nor taken for a server that cuts IDLE ("Pace of the connections") |
+| Once awake | No login before the Mac has been awake 15 s (`kern.waketime`), so that a dark wake of a few seconds spends none. Logged as `the Mac has just woken, login in … s`; `sync status` shows `waiting` meanwhile |
+| One login, not two | Only the work connection logs in again. A body connection that died with the sleep waits until the work connection leaves bodies after one of its slices of 30 s; until then the work connection fetches them, so a few new mails need no second login |
+
+The core logs each wake: `the Mac slept, the connection is still alive`, or `… did not survive: new connection` (and `(bodies) … the work connection fetches the bodies`). A wake therefore costs no login when the connections survive it, one otherwise, and none during a dark wake.
 
 ## Bodies
 
@@ -159,8 +178,9 @@ The app shows it at the right of its status bar, so that the first synchronizati
 | --- | --- |
 | `crates/nm-store/tests/sync.rs` | folder listing (roles of the first listing only, a rename found by `UIDVALIDITY`, a role folder gone kept), flags and keywords, a move made elsewhere kept, a copy or an uncertain move inserted, flags and deletions in one transaction applied twice harmlessly, `uidnext` per batch, a UID already known not inserted twice, purge, nothing of it journaled (`tracabilite.md`), the order of bodies |
 | `crates/nm-daemon/tests/sync_rpc.rs` (`make imap-test`) | the real core against Dovecot, a second connection playing the phone. On both servers: first synchronization, new mail seen by IDLE and announced, flags, a move (with `MOVE`, and copy-delete-expunge on the minimal server) keeping the message's id, a deletion, changes made in NiceMailer reaching the server ([spool.md](spool.md)); `sync_verify` clean after each step. Also: one connection doing everything; a folder replaced (new `UIDVALIDITY`); a refused login waiting for a new password; network cuts at several moments (login, listing, bodies) without loss, duplicate or partial file |
-| `crates/nm-engine/src/sync/pace.rs` (unit tests) | the budget of logins (ten an hour, then the wait; a login a minute for an hour impossible); what a cut in IDLE teaches (renewal at half, then polling; polling at once for a cut within 10 s) |
-| `crates/nm-daemon/tests/pace_rpc.rs` (`make imap-test`) | the real core against Dovecot through a proxy that cuts connections as Orange did, without a TLS goodbye, counting them: cut after 12 s of silence, IDLE renewed every 6 s, no new connection for 30 s, a new mail still seen by IDLE and its body fetched on the same connection, no error shown; cut after 20 s whatever happens, polling chosen after the second cut, no connection before the next poll; every connection after the first cut at once (the body connection never gets a session), the bodies still fetched, a new mail's within seconds |
+| `crates/nm-engine/src/sync/pace.rs` (unit tests) | the budget of logins (ten an hour, then the wait; a login a minute for an hour impossible; an hour asleep counts); no login within 15 s of a wake; what a cut in IDLE teaches (renewal at half, then polling; polling at once for a cut within 10 s) |
+| `crates/nm-engine/src/sync/clock.rs` (unit tests) | the continuous clock never behind the awake clock; a gap of a few seconds is a sleep, a drift is not; a wait lasts its time on the continuous clock |
+| `crates/nm-daemon/tests/pace_rpc.rs` (`make imap-test`) | the real core against Dovecot through a proxy that cuts connections as Orange did, without a TLS goodbye, counting them: cut after 12 s of silence, IDLE renewed every 6 s, no new connection for 30 s, a new mail still seen by IDLE and its body fetched on the same connection, no error shown; cut after 20 s whatever happens, polling chosen after the second cut, no connection before the next poll; every connection after the first cut at once (the body connection never gets a session), the bodies still fetched, a new mail's within seconds. And the sleeps of the Mac, simulated (`NICEMAILER_TEST_SLEEP_FILE`, `clock.rs`): connections that survive a sleep kept, without a login, IDLE working on them; connections frozen by the proxy during the sleep replaced by a single login, made only once the Mac has been awake 15 s, without error, the new mail and its body through the work connection |
 | `apps/NiceMailer/Tests/NiceMailerTests/EventOrderTests.swift` | a transient event neither reloads the app nor moves its position in the sequence |
 
 ## Volume

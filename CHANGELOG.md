@@ -28,6 +28,7 @@ How to write it:
 
 ### Fixed
 
+- **Sync:** New mail no longer stops arriving for a while after the Mac has slept and woken a few times. A wake keeps the connections that survived the sleep, and replaces the others with a single login once the Mac has stayed awake 15 s; the limit of logins per hour now counts the time the Mac slept, so a wait for it ends when `nicemailer sync status` says.
 - **Display:** In the classic theme, the sections of the sidebar (Working, Filing, Rejected, Technical) follow the app's language; they were always in French.
 - **Keys:** In `keymap.toml`, a key given to an action of a menu (`f = "move.todo"` in `[menu.move]`) now replaces its default key: the menu and the folder column show it, and the default key no longer does that action. Before, both keys worked and the menus kept showing the default one. In the other tables, the default key still works, but the help and the status bar show yours.
 - **Display:** The status bar always says the text size reached by ⌘+, ⌘− or ⌘0, also when the change comes from the View menu.

@@ -15,12 +15,28 @@
 //!   CONDSTORE);
 //! - on `sync_now`, on a stop, or (one connection only) on a body the user
 //!   is waiting for;
-//! - when the Mac wakes from sleep: the connection is surely dead, it is
-//!   dropped without waiting for its time limit, and a new one is opened at
-//!   once. A sleep shows as a jump of the wall clock, which goes on during
-//!   sleep, against the monotonic clock, which macOS stops.
+//! - when the Mac wakes from sleep (`clock.rs`).
 //!
 //! A server without IDLE is polled every minute instead.
+//!
+//! # Sleep of the Mac
+//!
+//! A Mac left alone sleeps and wakes every few minutes, often for a few
+//! seconds only. Each wake once cost two logins (both connections dropped
+//! and opened again), and five wakes spent the budget of the hour
+//! (21 November 2026). Now, at a wake:
+//!
+//! 1. the connection is **tested** before anything else: IDLE is ended
+//!    (`DONE`), or a `NOOP` sent, with [`PROBE`] for the server to answer.
+//!    A connection that answers is kept, and a full pass follows on it:
+//!    no login at all;
+//! 2. a connection that does not answer is dropped, and the new login
+//!    waits for the Mac to have been awake `pace::WAKE_SETTLE` (15 s), so
+//!    that a dark wake of a few seconds spends none;
+//! 3. only the work connection logs in again. The body connection, if it
+//!    died too, waits until the work connection leaves bodies after one of
+//!    its slices ([`Control::backlog`](super::Control)): a few new mails
+//!    need no second login.
 //!
 //! # Pace (`pace.rs`)
 //!
@@ -55,7 +71,7 @@
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, Instant};
 
 use nm_api::{AccountSync, Event};
 use nm_core::Source;
@@ -63,6 +79,7 @@ use nm_proto::imap::{IDLE_MAX, IdleEnd, ImapError, MailboxName, Namespace, Sessi
 use nm_store::insert::Inserter;
 
 use super::bodies::Bodies;
+use super::clock;
 use super::pace::{self, IdleHold, LoginBudget};
 use super::pass::{self, Ctx, Mode, PassError};
 use super::spool;
@@ -89,6 +106,11 @@ const BODY_SLICE: Duration = Duration::from_secs(30);
 /// The body connection, when idle, checks it is still alive this often
 /// (servers log out after 30 minutes of silence, RFC 3501, 5.4).
 const BODY_KEEPALIVE: Duration = Duration::from_secs(20 * 60);
+/// After a wake, how long a connection has to answer (`DONE` of IDLE, or
+/// `NOOP`) to be kept. A connection the server closed during the sleep
+/// usually fails at once (the server's TCP reset); one lost with the
+/// network (another Wi-Fi) never answers, and costs this wait.
+const PROBE: Duration = Duration::from_secs(10);
 
 /// What the state of the workers is shared through.
 struct Shared {
@@ -255,22 +277,32 @@ async fn connect(w: &Shared, conn: Conn) -> Result<(Session, Option<Namespace>),
     // connection may be up and syncing meanwhile, and the bodies go on
     // through it.
     let wake = if conn == Conn::Work { &w.control.work } else { &w.control.bodies };
-    let mut told = false;
+    let who = if conn == Conn::Work { "" } else { " (bodies)" };
+    let (mut told_budget, mut told_wake) = (false, false);
+    // Both rules are checked again after each wait: a wait for the budget
+    // may end at a wake (its clock counts the sleep), and a wait after a
+    // wake may be cut by another sleep.
     loop {
-        let d = w.logins.lock().unwrap().wait(Instant::now());
+        // A Mac that has just woken may sleep again within seconds (a dark
+        // wake): no login before it has been awake `WAKE_SETTLE`.
+        let settle = pace::after_wake(clock::since_wake());
+        let budget = w.logins.lock().unwrap().wait(clock::now());
+        let d = settle.max(budget);
         if d.is_zero() {
             break;
         }
         // Once per wait: a body connection is woken by every new mail.
-        if !told {
-            told = true;
-            let who = if conn == Conn::Work { "" } else { " (bodies)" };
+        if !budget.is_zero() && !told_budget {
+            told_budget = true;
             eprintln!(
                 "sync {}{who}: {} logins in the last hour, the most allowed: next one in {} s",
                 w.spec.key,
                 pace::LOGINS_PER_HOUR,
-                d.as_secs()
+                budget.as_secs()
             );
+        } else if budget.is_zero() && !told_wake {
+            told_wake = true;
+            eprintln!("sync {}{who}: the Mac has just woken, login in {} s", w.spec.key, settle.as_secs().max(1));
         }
         if conn == Conn::Work {
             let mut st = w.status.lock().unwrap();
@@ -278,7 +310,7 @@ async fn connect(w: &Shared, conn: Conn) -> Result<(Session, Option<Namespace>),
             st.next_retry = Some(unix_now() + d.as_secs() as i64);
         }
         tokio::select! {
-            _ = tokio::time::sleep(d) => {}
+            _ = clock::sleep(d) => {}
             _ = wake.notified() => {}
         }
         if w.control.stopped() {
@@ -292,7 +324,7 @@ async fn connect(w: &Shared, conn: Conn) -> Result<(Session, Option<Namespace>),
     };
     // Counted before connecting: an attempt that fails is seen by the
     // server all the same.
-    w.logins.lock().unwrap().record(Instant::now());
+    w.logins.lock().unwrap().record(clock::now());
     let mut s = Session::connect(&imap_spec(cfg), Timeouts::default()).await.map_err(|e| NoSession::Retry(e.to_string()))?;
     // A read-only account: the session itself refuses any writing command,
     // whatever the rest of NiceMailer asks.
@@ -336,10 +368,11 @@ impl Backoff {
     }
 }
 
-/// Waits `d`, or less if the worker is woken (stop, now, kick).
+/// Waits `d` (a sleep of the Mac counts, `clock.rs`), or less if the
+/// worker is woken (stop, now, kick).
 async fn pause(control: &Control, d: Duration) {
     tokio::select! {
-        _ = tokio::time::sleep(d) => {}
+        _ = clock::sleep(d) => {}
         _ = control.work.notified() => {}
     }
 }
@@ -348,19 +381,6 @@ async fn pause(control: &Control, d: Duration) {
 async fn blocked(control: &Control) {
     while !control.stopped() && !control.take_kick() {
         control.work.notified().await;
-    }
-}
-
-/// Returns when the Mac seems to have slept: the wall clock jumped ahead of
-/// the monotonic clock by more than 30 s.
-async fn slept() {
-    loop {
-        let (wall, mono) = (SystemTime::now(), Instant::now());
-        tokio::time::sleep(Duration::from_secs(15)).await;
-        let walked = wall.elapsed().unwrap_or_default();
-        if walked > mono.elapsed() + Duration::from_secs(30) {
-            return;
-        }
     }
 }
 
@@ -403,8 +423,9 @@ enum Woken {
     Timeout,
     /// `sync_now`, a kick, a stop, or a body asked for.
     Signal,
-    /// The Mac slept: the connection is dropped.
-    Slept,
+    /// The Mac slept; `alive`: the connection answered within [`PROBE`]
+    /// and is kept, else it is dropped.
+    Slept { alive: bool },
 }
 
 async fn work_loop(w: &Shared) {
@@ -418,7 +439,9 @@ async fn work_loop(w: &Shared) {
     let mut bodies = Bodies::new();
     let mut backoff = Backoff(BACKOFF_MIN);
     let mut announced = Announced(None);
-    let mut last_full: Option<Instant> = None;
+    // On the continuous clock (`clock::now`): after a sleep of an hour, a
+    // full pass is due.
+    let mut last_full: Option<Duration> = None;
     let mut refused = 0u64;
     // Whether each folder keeps keywords, learnt by the spool's SELECTs.
     let mut keywords: std::collections::HashMap<String, bool> = std::collections::HashMap::new();
@@ -461,7 +484,7 @@ async fn work_loop(w: &Shared) {
         w.status.lock().unwrap().mode = Some(mode.as_str().into());
         // Since when this connection works: a failure after `STABLE` starts
         // the delays again from their minimum, one sooner doubles them.
-        let connected_at = Instant::now();
+        let connected_at = clock::now();
         bodies.new_session();
         // The first pass of a connection is full: what happened while
         // disconnected may be anywhere.
@@ -482,7 +505,7 @@ async fn work_loop(w: &Shared) {
                 Err(e) => {
                     let error = e.to_string();
                     announced.error(w, &error);
-                    if connected_at.elapsed() >= pace::STABLE {
+                    if clock::now().saturating_sub(connected_at) >= pace::STABLE {
                         backoff.reset();
                     }
                     retry_later(w, &mut backoff, error).await;
@@ -508,7 +531,7 @@ async fn work_loop(w: &Shared) {
                     // bring the next login back to 5 s (`pace.rs`).
                     announced.clear(w);
                     if full {
-                        last_full = Some(Instant::now());
+                        last_full = Some(clock::now());
                     }
                     {
                         let mut st = w.status.lock().unwrap();
@@ -551,7 +574,7 @@ async fn work_loop(w: &Shared) {
                         Err(e) => {
                             let error = e.to_string();
                             announced.error(w, &error);
-                            if connected_at.elapsed() >= pace::STABLE {
+                            if clock::now().saturating_sub(connected_at) >= pace::STABLE {
                                 backoff.reset();
                             }
                             retry_later(w, &mut backoff, error).await;
@@ -563,7 +586,7 @@ async fn work_loop(w: &Shared) {
                 Err(e) => {
                     let error = e.to_string();
                     announced.error(w, &error);
-                    if connected_at.elapsed() >= pace::STABLE {
+                    if clock::now().saturating_sub(connected_at) >= pace::STABLE {
                         backoff.reset();
                     }
                     retry_later(w, &mut backoff, error).await;
@@ -594,7 +617,11 @@ async fn work_loop(w: &Shared) {
                 match result {
                     Ok(more) => {
                         w.status.lock().unwrap().bodies_refused = refused;
+                        // Bodies left after a whole slice: worth a login of
+                        // the body connection, if it waits for that.
+                        w.control.backlog.store(more, Ordering::SeqCst);
                         if more {
+                            w.control.bodies.notify_one();
                             // Bodies left: a quick pass first, for new mail.
                             full = due(last_full, poll) || w.control.take_now();
                             continue;
@@ -604,7 +631,7 @@ async fn work_loop(w: &Shared) {
                     Err(e) => {
                         let error = e.to_string();
                         announced.error(w, &error);
-                        if connected_at.elapsed() >= pace::STABLE {
+                        if clock::now().saturating_sub(connected_at) >= pace::STABLE {
                             backoff.reset();
                         }
                         retry_later(w, &mut backoff, error).await;
@@ -617,7 +644,7 @@ async fn work_loop(w: &Shared) {
                 // for the next pass, within the budget of logins.
                 s.logout().await;
                 set(&w.status, "idle", None);
-                let d = poll.max(pace::POLL_FLOOR).saturating_sub(last_full.map_or(Duration::ZERO, |t| t.elapsed()));
+                let d = poll.max(pace::POLL_FLOOR).saturating_sub(since(last_full));
                 pause(&w.control, d).await;
                 if w.control.stopped() {
                     return;
@@ -625,7 +652,7 @@ async fn work_loop(w: &Shared) {
                 continue 'connect;
             }
             set(&w.status, "idle", None);
-            let until_full = last_full.map_or(Duration::ZERO, |t| poll.saturating_sub(t.elapsed()));
+            let until_full = last_full.map_or(Duration::ZERO, |_| poll.saturating_sub(since(last_full)));
             let woken = match wait(&mut s, &w.control, until_full, hold.renew_every()).await {
                 Ok(woken) => woken,
                 Err(WaitError { error, idled }) => {
@@ -655,7 +682,7 @@ async fn work_loop(w: &Shared) {
                     }
                     let error = error.to_string();
                     announced.error(w, &error);
-                    if connected_at.elapsed() >= pace::STABLE {
+                    if clock::now().saturating_sub(connected_at) >= pace::STABLE {
                         backoff.reset();
                     }
                     retry_later(w, &mut backoff, error).await;
@@ -667,8 +694,16 @@ async fn work_loop(w: &Shared) {
                 return;
             }
             full = match woken {
-                Woken::Slept => {
-                    eprintln!("sync {}: the Mac slept, new connection", w.spec.key);
+                Woken::Slept { alive: true } => {
+                    // Kept: what came during the sleep may be in any
+                    // folder, and IDLE only watched the Inbox.
+                    eprintln!("sync {}: the Mac slept, the connection is still alive", w.spec.key);
+                    true
+                }
+                Woken::Slept { alive: false } => {
+                    // Not announced: the network is back in a moment. The
+                    // login waits for the Mac to be awake (`connect`).
+                    eprintln!("sync {}: the Mac slept, the connection did not survive: new connection", w.spec.key);
                     continue 'connect;
                 }
                 Woken::Changes => {
@@ -687,8 +722,13 @@ async fn work_loop(w: &Shared) {
 }
 
 /// Whether a full pass is due.
-fn due(last_full: Option<Instant>, poll: Duration) -> bool {
-    last_full.is_none_or(|t| t.elapsed() >= poll)
+fn due(last_full: Option<Duration>, poll: Duration) -> bool {
+    last_full.is_none_or(|_| since(last_full) >= poll)
+}
+
+/// Time since a moment of the continuous clock (zero for none).
+fn since(t: Option<Duration>) -> Duration {
+    t.map_or(Duration::ZERO, |t| clock::now().saturating_sub(t))
 }
 
 /// Records the error and waits before the next attempt.
@@ -740,40 +780,104 @@ impl From<ImapError> for WaitError {
 async fn wait(s: &mut Session, control: &Control, until_full: Duration, renew: Option<Duration>) -> Result<Woken, WaitError> {
     if !s.capabilities().has("IDLE") {
         let d = until_full.min(NO_IDLE_POLL).max(Duration::from_secs(1));
+        // Rust note: the branch's handler runs once its future is done,
+        // and the futures no longer borrow anything then: `s` is free for
+        // the `NOOP`.
         return Ok(tokio::select! {
             _ = tokio::time::sleep(d) => Woken::Timeout,
             _ = control.work.notified() => Woken::Signal,
-            _ = slept() => Woken::Slept,
+            _ = clock::slept() => Woken::Slept { alive: answers(s).await },
         });
     }
     // IDLE watches the selected mailbox: the Inbox, read-only.
     s.examine(&MailboxName::inbox(), None).await?;
     let max = until_full.clamp(Duration::from_secs(1), IDLE_MAX);
     let deadline = Instant::now() + max;
-    let end = tokio::select! {
-        r = idle_until(s, control, deadline, renew) => Some(r?),
-        _ = slept() => None,
+    // The watch for a sleep lives across the renewals of IDLE: started
+    // again at each, it would miss a sleep that ends just before one.
+    //
+    // Rust note: `pin!` fixes the future in place, so that it can be
+    // polled again and again by reference (`as_mut`) without moving.
+    let mut watch = std::pin::pin!(clock::slept());
+    let woke = Woke::default();
+    let ended = tokio::select! {
+        r = idle_until(s, control, deadline, renew, watch.as_mut(), &woke) => r?,
+        // A sleep noticed: IDLE ends with `DONE`, and the server's answer
+        // shows the connection alive. One that does not answer within
+        // `PROBE` is dead (its own time limit would be 90 s).
+        _ = async { woke.notify.notified().await; tokio::time::sleep(PROBE).await } => Ended::Slept { alive: false },
     };
     s.take_unsolicited();
-    Ok(match end {
-        None => Woken::Slept,
-        Some(IdleEnd::Changes) => Woken::Changes,
-        Some(IdleEnd::Timeout) => Woken::Timeout,
-        Some(IdleEnd::Stopped) => Woken::Signal,
+    Ok(match ended {
+        Ended::Slept { alive } => Woken::Slept { alive },
+        Ended::Idle(IdleEnd::Changes) => Woken::Changes,
+        Ended::Idle(IdleEnd::Timeout) => Woken::Timeout,
+        Ended::Idle(IdleEnd::Stopped) => Woken::Signal,
     })
+}
+
+/// Whether the connection answers a `NOOP` within [`PROBE`].
+///
+/// Rust note: `timeout` gives `Err` when the time ran out, and `Ok` with
+/// the result of the command otherwise: two `Result`s, one in the other.
+async fn answers(s: &mut Session) -> bool {
+    matches!(tokio::time::timeout(PROBE, s.noop()).await, Ok(Ok(())))
+}
+
+/// A sleep noticed while in IDLE, by the watch of [`idle_until`].
+///
+/// Rust note: `Cell` lets a shared reference (`&Woke`) change a plain
+/// value; it is not thread-safe, which a single-threaded runtime does not
+/// need.
+#[derive(Default)]
+struct Woke {
+    seen: std::cell::Cell<bool>,
+    /// Starts the time limit of the answer, in [`wait`].
+    notify: tokio::sync::Notify,
+}
+
+/// How [`idle_until`] ended.
+enum Ended {
+    Idle(IdleEnd),
+    /// The Mac slept; `alive`: the server answered the `DONE`.
+    Slept { alive: bool },
 }
 
 /// IDLE until `deadline`, each command at most `renew` long: one ended by
 /// its time limit before the deadline is started again at once (`DONE`,
-/// then `IDLE`), which the server sees as activity.
-async fn idle_until(s: &mut Session, control: &Control, deadline: Instant, renew: Option<Duration>) -> Result<IdleEnd, WaitError> {
+/// then `IDLE`), which the server sees as activity. A sleep of the Mac,
+/// seen by `watch`, ends IDLE like a signal: `DONE` is sent, and its
+/// answer tells whether the connection survived.
+async fn idle_until(
+    s: &mut Session,
+    control: &Control,
+    deadline: Instant,
+    renew: Option<Duration>,
+    mut watch: std::pin::Pin<&mut impl Future<Output = ()>>,
+    woke: &Woke,
+) -> Result<Ended, WaitError> {
     loop {
         let left = deadline.saturating_duration_since(Instant::now()).max(Duration::from_secs(1));
         let slice = renew.map_or(left, |r| r.min(left));
         let started = Instant::now();
-        match s.idle(slice, control.work.notified()).await {
+        let stop = async {
+            tokio::select! {
+                _ = control.work.notified() => {}
+                _ = watch.as_mut() => {
+                    woke.seen.set(true);
+                    woke.notify.notify_one();
+                }
+            }
+        };
+        let r = s.idle(slice, stop).await;
+        if woke.seen.get() {
+            // Not a cut of the server in IDLE, to learn from (`pace.rs`):
+            // the connection died with the sleep, or answered.
+            return Ok(Ended::Slept { alive: r.is_ok() });
+        }
+        match r {
             Ok(IdleEnd::Timeout) if Instant::now() + Duration::from_secs(1) < deadline => continue,
-            Ok(end) => return Ok(end),
+            Ok(end) => return Ok(Ended::Idle(end)),
             Err(error) => return Err(WaitError { error, idled: Some(started.elapsed()) }),
         }
     }
@@ -796,6 +900,9 @@ async fn body_loop(w: &Shared) {
     let mut bodies = Bodies::new();
     let mut backoff = Backoff(BACKOFF_MIN);
     let mut refused = 0u64;
+    // The connection died with a sleep of the Mac: no new login until the
+    // work connection leaves bodies (`Control::backlog`).
+    let mut lazy = false;
     'connect: loop {
         body_session_lost(w);
         // The server cuts idle connections: the work connection fetches
@@ -813,6 +920,16 @@ async fn body_loop(w: &Shared) {
             if w.control.stopped() {
                 return;
             }
+        }
+        if lazy {
+            until_backlog(w).await;
+            if w.control.stopped() {
+                return;
+            }
+            if w.control.one_connection.load(Ordering::SeqCst) {
+                continue;
+            }
+            lazy = false;
         }
         let mut s = match connect(w, Conn::Bodies).await {
             Ok((s, _)) => s,
@@ -843,14 +960,19 @@ async fn body_loop(w: &Shared) {
             match result {
                 Ok(_) => {
                     backoff.reset();
+                    w.control.backlog.store(false, Ordering::SeqCst);
                     w.status.lock().unwrap().bodies_refused = refused;
                     // None left: wait for new messages, a body asked for,
-                    // or the time to check the connection is alive.
-                    let alive = tokio::select! {
-                        _ = w.control.bodies.notified() => true,
-                        _ = tokio::time::sleep(BODY_KEEPALIVE) => s.noop().await.is_ok(),
-                        _ = slept() => false,
+                    // the time to check the connection is alive, or a
+                    // sleep of the Mac, after which it is checked too.
+                    let (alive, slept) = tokio::select! {
+                        _ = w.control.bodies.notified() => (true, false),
+                        _ = tokio::time::sleep(BODY_KEEPALIVE) => (s.noop().await.is_ok(), false),
+                        _ = clock::slept() => (answers(&mut s).await, true),
                     };
+                    if slept && alive {
+                        eprintln!("sync {} (bodies): the Mac slept, the connection is still alive", w.spec.key);
+                    }
                     if w.control.stopped() {
                         s.logout().await;
                         return;
@@ -860,6 +982,10 @@ async fn body_loop(w: &Shared) {
                         continue 'connect;
                     }
                     if !alive {
+                        if slept {
+                            eprintln!("sync {} (bodies): the Mac slept, the connection did not survive: the work connection fetches the bodies", w.spec.key);
+                        }
+                        lazy = slept;
                         continue 'connect;
                     }
                 }
@@ -888,9 +1014,23 @@ async fn parked_bodies(w: &Shared) {
     }
 }
 
+/// The body connection, dead with a sleep of the Mac, waits for the work
+/// connection to leave bodies after one of its slices (or for the worker
+/// to stop). Until then the work connection fetches them: a few new mails
+/// are not worth a second login, which a Mac that sleeps every few
+/// minutes would make at each wake.
+async fn until_backlog(w: &Shared) {
+    while !w.control.stopped() && !w.control.backlog.load(Ordering::SeqCst) && !w.control.one_connection.load(Ordering::SeqCst) {
+        tokio::select! {
+            _ = w.control.bodies.notified() => {}
+            _ = tokio::time::sleep(Duration::from_secs(5)) => {}
+        }
+    }
+}
+
 async fn pause_bodies(control: &Control, d: Duration) {
     tokio::select! {
-        _ = tokio::time::sleep(d) => {}
+        _ = clock::sleep(d) => {}
         _ = control.bodies.notified() => {}
     }
 }

@@ -23,15 +23,23 @@
 //!   polled instead: one connection per [`POLL_FLOOR`] at most, closed
 //!   after its pass.
 //!
+//! The sleeps of the Mac (21 November 2026) added a fourth: **no login
+//! within [`WAKE_SETTLE`] of a wake** ([`after_wake`]). A Mac left alone
+//! sleeps and wakes every few minutes, often for a few seconds only (a
+//! "dark wake", for the network): a login then is spent for a connection
+//! that dies with the next sleep.
+//!
 //! Everything here is pure (no network, no clock of its own: the callers
-//! give `now`), so the rules are tested on their own.
+//! give `now`, read on the continuous clock of `clock.rs`, which counts
+//! the sleeps of the Mac), so the rules are tested on their own.
 
 use std::collections::VecDeque;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 /// Logins allowed per account over any hour, both connections together.
-/// A working account needs two per start, and two per wake of the Mac;
-/// an account polled ([`IdleHold::Poll`]) six per hour.
+/// A working account needs two per start, and none per wake of the Mac
+/// as long as its connections survive the sleep (`account.rs`), one
+/// otherwise; an account polled ([`IdleHold::Poll`]) six per hour.
 pub(crate) const LOGINS_PER_HOUR: usize = 10;
 const HOUR: Duration = Duration::from_secs(3600);
 /// A connection that lived this long was a good one: the delay between
@@ -43,33 +51,47 @@ pub(crate) const RENEW_FLOOR: Duration = Duration::from_secs(5);
 /// A polled account connects at most this often, whatever
 /// `sync.poll_interval_secs` says.
 pub(crate) const POLL_FLOOR: Duration = Duration::from_secs(10 * 60);
+/// No login before the Mac has been awake this long. The dark wakes seen
+/// on 21 November 2026 lasted 5 to 6 s: 15 s lets them pass, and delays
+/// the mail of a real wake by 15 s at most, only when its connection did
+/// not survive the sleep.
+pub(crate) const WAKE_SETTLE: Duration = Duration::from_secs(15);
 
-/// The logins of the last hour.
+/// The logins of the last hour, as moments of the continuous clock
+/// (`clock::now`): an hour while the Mac sleeps is an hour too, for the
+/// server.
 #[derive(Debug, Default)]
 pub(crate) struct LoginBudget {
-    logins: VecDeque<Instant>,
+    logins: VecDeque<Duration>,
 }
 
 impl LoginBudget {
     /// How long to wait before the next login: zero while the budget
     /// allows one, else until the oldest login of the hour leaves it.
-    pub(crate) fn wait(&self, now: Instant) -> Duration {
-        let recent = self.logins.iter().filter(|t| now.saturating_duration_since(**t) < HOUR).count();
+    pub(crate) fn wait(&self, now: Duration) -> Duration {
+        let recent = self.logins.iter().filter(|t| now.saturating_sub(**t) < HOUR).count();
         if recent < LOGINS_PER_HOUR {
             return Duration::ZERO;
         }
         // The oldest of the hour: once it is an hour old, one is allowed.
-        let oldest = self.logins.iter().copied().filter(|t| now.saturating_duration_since(*t) < HOUR).min().unwrap_or(now);
-        (oldest + HOUR).saturating_duration_since(now)
+        let oldest = self.logins.iter().copied().filter(|t| now.saturating_sub(*t) < HOUR).min().unwrap_or(now);
+        (oldest + HOUR).saturating_sub(now)
     }
 
     /// Records a login (an attempt counts: the server sees it).
-    pub(crate) fn record(&mut self, now: Instant) {
+    pub(crate) fn record(&mut self, now: Duration) {
         self.logins.push_back(now);
-        while self.logins.front().is_some_and(|t| now.saturating_duration_since(*t) >= HOUR) {
+        while self.logins.front().is_some_and(|t| now.saturating_sub(*t) >= HOUR) {
             self.logins.pop_front();
         }
     }
+}
+
+/// How long a login waits for the Mac to have been awake
+/// [`WAKE_SETTLE`], given the time since its last wake (`None`: it never
+/// slept since boot).
+pub(crate) fn after_wake(since_wake: Option<Duration>) -> Duration {
+    since_wake.map_or(Duration::ZERO, |d| WAKE_SETTLE.saturating_sub(d))
 }
 
 /// How the account waits between two passes.
@@ -115,7 +137,7 @@ mod tests {
 
     #[test]
     fn the_budget_allows_ten_logins_an_hour_then_waits() {
-        let t0 = Instant::now();
+        let t0 = Duration::from_secs(1000);
         let mut b = LoginBudget::default();
         for i in 0..LOGINS_PER_HOUR {
             let now = t0 + Duration::from_secs(i as u64 * 60);
@@ -136,7 +158,7 @@ mod tests {
     fn a_login_per_minute_is_impossible() {
         // What locked the Orange account: a login every minute for an
         // hour. With the budget, ten at most.
-        let t0 = Instant::now();
+        let t0 = Duration::from_secs(1000);
         let mut b = LoginBudget::default();
         let mut now = t0;
         let mut logins = 0;
@@ -148,6 +170,34 @@ mod tests {
             }
         }
         assert!(logins <= LOGINS_PER_HOUR, "{logins}");
+    }
+
+    #[test]
+    fn an_hour_asleep_counts_in_the_budget() {
+        // 21 November 2026: ten logins in twenty minutes of wakes, then
+        // the Mac sleeps an hour and ten minutes. The moments are read on
+        // the continuous clock, which went on: the budget is free again
+        // at the wake. (On the awake clock, which stopped, the logins were
+        // still "twenty minutes old", and the wait went on for forty more
+        // minutes of awake time.)
+        let t0 = Duration::from_secs(1000);
+        let mut b = LoginBudget::default();
+        for i in 0..LOGINS_PER_HOUR {
+            b.record(t0 + Duration::from_secs(i as u64 * 120));
+        }
+        assert!(b.wait(t0 + Duration::from_secs(20 * 60)) > Duration::ZERO, "spent");
+        let woke = t0 + Duration::from_secs(20 * 60 + 70 * 60);
+        assert_eq!(b.wait(woke), Duration::ZERO);
+    }
+
+    #[test]
+    fn no_login_within_fifteen_seconds_of_a_wake() {
+        assert_eq!(after_wake(None), Duration::ZERO, "never slept");
+        assert_eq!(after_wake(Some(Duration::ZERO)), WAKE_SETTLE);
+        // A dark wake of 6 s ends before the login is made.
+        assert_eq!(after_wake(Some(Duration::from_secs(6))), Duration::from_secs(9));
+        assert_eq!(after_wake(Some(WAKE_SETTLE)), Duration::ZERO);
+        assert_eq!(after_wake(Some(Duration::from_secs(3600))), Duration::ZERO);
     }
 
     #[test]

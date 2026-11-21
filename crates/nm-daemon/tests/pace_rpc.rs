@@ -5,6 +5,13 @@
 //! silence of the client or after a fixed time. The proxy counts the
 //! connections: what the server would see as logins.
 //!
+//! The sleeps of the Mac too (`docs/sync.md`, "Sleep of the Mac"): the core
+//! is told it slept through `NICEMAILER_TEST_SLEEP_FILE`
+//! (`nm-engine/src/sync/clock.rs`), and the proxy can freeze the
+//! connections open at that moment, as a sleep does to a connection the
+//! server or the network dropped meanwhile: no byte goes through, and
+//! nothing closes it.
+//!
 //! Needs the test servers: `make imap-up`, then `make imap-test`.
 
 mod common;
@@ -16,7 +23,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use common::{Client, start};
+use common::{Client, start_with};
 use nm_proto::imap::{MailboxName, Security, ServerSpec, Session, Timeouts};
 use serde_json::{Value, json};
 
@@ -40,12 +47,17 @@ enum Cut {
     /// the budget of logins after a few sleeps of the Mac (20 November
     /// 2026: new mail stayed "(body not downloaded)" for 40 minutes).
     AllButFirst,
+    /// Never cut ([`CuttingProxy::freeze`] only).
+    Never,
 }
 
 /// A TCP proxy to Dovecot that cuts connections as `cut` says.
 struct CuttingProxy {
     port: u16,
     connections: Arc<AtomicUsize>,
+    /// Incremented by [`CuttingProxy::freeze`]: the connections opened
+    /// before pass no byte any more.
+    epoch: Arc<AtomicUsize>,
 }
 
 impl CuttingProxy {
@@ -54,6 +66,8 @@ impl CuttingProxy {
         let port = listener.local_addr().unwrap().port();
         let connections = Arc::new(AtomicUsize::new(0));
         let count = connections.clone();
+        let epoch = Arc::new(AtomicUsize::new(0));
+        let frozen = epoch.clone();
         std::thread::spawn(move || {
             for client in listener.incoming() {
                 let Ok(client) = client else { return };
@@ -67,15 +81,17 @@ impl CuttingProxy {
                 let Ok(server) = TcpStream::connect(("127.0.0.1", DOVECOT_TLS)) else { continue };
                 let last_from_client = Arc::new(Mutex::new(Instant::now()));
                 let born = Instant::now();
+                let alive = Alive { epoch: frozen.clone(), born: frozen.load(Ordering::SeqCst) };
                 // Client to server, noting each byte's time.
                 {
                     let (mut from, mut to) = (client.try_clone().unwrap(), server.try_clone().unwrap());
                     let last = last_from_client.clone();
-                    std::thread::spawn(move || pump(&mut from, &mut to, Some(&last)));
+                    let alive = alive.clone();
+                    std::thread::spawn(move || pump(&mut from, &mut to, Some(&last), &alive));
                 }
                 {
                     let (mut from, mut to) = (server.try_clone().unwrap(), client.try_clone().unwrap());
-                    std::thread::spawn(move || pump(&mut from, &mut to, None));
+                    std::thread::spawn(move || pump(&mut from, &mut to, None, &alive));
                 }
                 // The cut: both sockets shut down, no TLS goodbye.
                 std::thread::spawn(move || {
@@ -84,7 +100,7 @@ impl CuttingProxy {
                         let due = match cut {
                             Cut::ClientSilence(d) => last_from_client.lock().unwrap().elapsed() >= d,
                             Cut::Lifetime(d) => born.elapsed() >= d,
-                            Cut::AllButFirst => false,
+                            Cut::AllButFirst | Cut::Never => false,
                         };
                         // A socket already closed by either side: nothing
                         // to cut.
@@ -97,19 +113,42 @@ impl CuttingProxy {
                 });
             }
         });
-        CuttingProxy { port, connections }
+        CuttingProxy { port, connections, epoch }
     }
 
     fn connections(&self) -> usize {
         self.connections.load(Ordering::SeqCst)
     }
+
+    /// The connections open now pass nothing any more, in either
+    /// direction, and stay open: dead, as far as the core can tell, only
+    /// by a time limit. The next connections work.
+    fn freeze(&self) {
+        self.epoch.fetch_add(1, Ordering::SeqCst);
+    }
 }
 
-fn pump(from: &mut TcpStream, to: &mut TcpStream, last: Option<&Mutex<Instant>>) {
+/// Whether a connection still passes bytes: it was opened in the current
+/// epoch of the proxy.
+#[derive(Clone)]
+struct Alive {
+    epoch: Arc<AtomicUsize>,
+    born: usize,
+}
+
+impl Alive {
+    fn frozen(&self) -> bool {
+        self.epoch.load(Ordering::SeqCst) != self.born
+    }
+}
+
+fn pump(from: &mut TcpStream, to: &mut TcpStream, last: Option<&Mutex<Instant>>, alive: &Alive) {
     let mut buf = [0u8; 16 * 1024];
     loop {
         match from.read(&mut buf) {
             Ok(0) | Err(_) => break,
+            // Frozen: what is read is lost, and nothing is closed.
+            Ok(_) if alive.frozen() => {}
             Ok(n) => {
                 if let Some(last) = last {
                     *last.lock().unwrap() = Instant::now();
@@ -130,13 +169,17 @@ fn new_user() -> String {
 
 /// The core with one account behind the proxy, its password saved.
 fn core(dir: &Path, port: u16, user: &str) -> (common::Core, Client) {
+    core_with(dir, port, user, &[])
+}
+
+fn core_with(dir: &Path, port: u16, user: &str, env: &[(&str, &str)]) -> (common::Core, Client) {
     let accounts = format!(
         "[accounts.cut]\nemail = \"{user}@example.com\"\n[accounts.cut.imap]\nhost = \"127.0.0.1\"\nport = {port}\n\
          security = \"tls\"\nusername = \"{user}\"\nca_file = \"{}\"\n",
         ca().display()
     );
     std::fs::write(dir.join("accounts.toml"), accounts).unwrap();
-    let core = start(dir);
+    let core = start_with(dir, env);
     let mut c = Client::connect(dir);
     c.call("set_password", json!({"account": "cut", "password": "nicemailer"})).unwrap();
     (core, c)
@@ -264,4 +307,100 @@ fn bodies_arrive_while_the_body_connection_has_no_session() {
         std::thread::sleep(Duration::from_millis(200));
     }
     until(&mut c, 30, "second body fetched", |a| a["bodies_missing"] == 0);
+}
+
+/// The core told it slept (`NICEMAILER_TEST_SLEEP_FILE`), settled: in IDLE
+/// after its first pass, the body connection logged in, every body there.
+fn settled_core(dir: &Path, proxy: &CuttingProxy, user: &str) -> (common::Core, Client, PathBuf) {
+    let sleep = dir.join("sleep");
+    let (core, mut c) = core_with(dir, proxy.port, user, &[("NICEMAILER_TEST_SLEEP_FILE", sleep.to_str().unwrap())]);
+    until(&mut c, 60, "first pass", |a| a["passes"].as_u64() >= Some(1) && a["bodies_missing"] == 0 && a["state"] == "idle");
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while proxy.connections() < 2 {
+        assert!(Instant::now() < deadline, "the body connection did not log in");
+        std::thread::sleep(Duration::from_millis(200));
+    }
+    // Its first `NOOP` or IDLE settled.
+    std::thread::sleep(Duration::from_secs(2));
+    (core, c, sleep)
+}
+
+/// The Mac "slept" `secs` and "woke" at the file's time.
+fn sleep_for(file: &Path, secs: u64) {
+    std::fs::write(file, secs.to_string()).unwrap();
+}
+
+#[test]
+#[ignore = "needs the test servers: make imap-up, then make imap-test"]
+fn a_connection_that_survives_a_sleep_is_kept() {
+    let dir = tempfile::tempdir().unwrap();
+    let user = new_user();
+    deliver(&user, "first");
+    let proxy = CuttingProxy::start(Cut::Never);
+    let (_core, mut c, sleep) = settled_core(dir.path(), &proxy, &user);
+    let before = proxy.connections();
+    let passes = account(&mut c)["passes"].as_u64().unwrap();
+
+    // Ten minutes asleep: the connections are tested (IDLE ended, `NOOP`),
+    // answer, and are kept. A full pass follows on the work connection.
+    // Until 21 November 2026 both were dropped, two logins per wake.
+    sleep_for(&sleep, 600);
+    let a = until(&mut c, 45, "a pass after the wake", |a| a["passes"].as_u64() > Some(passes) && a["state"] == "idle");
+    assert!(a["error"].is_null(), "{a:#}");
+    assert_eq!(proxy.connections(), before, "no new login");
+
+    // IDLE still works on it.
+    deliver(&user, "second");
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while !has_mail(dir.path(), "second") {
+        assert!(Instant::now() < deadline, "the new mail did not arrive");
+        std::thread::sleep(Duration::from_millis(200));
+    }
+    until(&mut c, 30, "body fetched", |a| a["bodies_missing"] == 0);
+    assert_eq!(proxy.connections(), before, "still no new login");
+}
+
+#[test]
+#[ignore = "needs the test servers: make imap-up, then make imap-test"]
+fn after_a_sleep_that_kills_the_connections_one_login_once_awake() {
+    let dir = tempfile::tempdir().unwrap();
+    let user = new_user();
+    deliver(&user, "first");
+    let proxy = CuttingProxy::start(Cut::Never);
+    let (_core, mut c, sleep) = settled_core(dir.path(), &proxy, &user);
+    let before = proxy.connections();
+    let passes = account(&mut c)["passes"].as_u64().unwrap();
+
+    // Both connections die with the sleep, without a word: they do not
+    // answer the test (`PROBE`, 10 s). The Mac "woke" 20 s in the future:
+    // the core sees a wake of 0 s ago until then, so that the wait for
+    // `WAKE_SETTLE` (15 s) shows apart from the time the test takes.
+    proxy.freeze();
+    sleep_for(&sleep, 600);
+    let file = std::fs::OpenOptions::new().write(true).open(&sleep).unwrap();
+    let woke = std::time::SystemTime::now() + Duration::from_secs(20);
+    file.set_modified(woke).unwrap();
+    let written = Instant::now();
+
+    let deadline = Instant::now() + Duration::from_secs(90);
+    while proxy.connections() == before {
+        assert!(Instant::now() < deadline, "no new connection after the wake");
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    let after = written.elapsed();
+    assert!(after >= Duration::from_secs(20 + 15), "logged in {after:?} after the wake was written, before the Mac was awake 15 s");
+    let a = until(&mut c, 45, "a pass on the new connection", |a| a["passes"].as_u64() > Some(passes) && a["state"] == "idle");
+    assert!(a["error"].is_null(), "a sleep is not an error: {a:#}");
+
+    // The work connection alone logged in again: a new mail and its body
+    // come through it, and the body connection waits for a backlog.
+    deliver(&user, "second");
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while !has_mail(dir.path(), "second") {
+        assert!(Instant::now() < deadline, "the new mail did not arrive");
+        std::thread::sleep(Duration::from_millis(200));
+    }
+    until(&mut c, 30, "body fetched", |a| a["bodies_missing"] == 0);
+    std::thread::sleep(Duration::from_secs(5));
+    assert_eq!(proxy.connections(), before + 1, "one login for the wake, not one per connection");
 }

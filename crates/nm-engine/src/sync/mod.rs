@@ -49,6 +49,7 @@
 
 mod account;
 mod bodies;
+mod clock;
 mod drafts;
 mod pace;
 mod pass;
@@ -160,6 +161,11 @@ pub(crate) struct Control {
     /// The body connection holds a logged-in session. Never set with
     /// `sync.max_connections = 1`, which has no body connection.
     pub(crate) body_session: AtomicBool,
+    /// The work connection left bodies after a whole slice of them: a body
+    /// connection that died with a sleep of the Mac logs in again
+    /// (`account.rs`, "Sleep of the Mac"). Fewer bodies are not worth a
+    /// login.
+    pub(crate) backlog: AtomicBool,
 }
 
 impl Control {
