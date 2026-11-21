@@ -375,8 +375,19 @@ fn an_agent_cannot_send() {
     let (_core, _c) = core(dir.path(), FULL, &user, &starttls(), 0);
     let mut agent = Client::connect_as(dir.path(), "mcp");
     let m = message(dir.path(), "g1");
-    let e = agent.call("create_draft", json!({"reply_to": m, "quote_header": "x"})).unwrap_err();
-    assert_eq!(e["code"], 1007, "{e}");
+    // An agent writes drafts (`docs/mcp.md`, phase 2 of `mcp.md`): the user
+    // reviews them and sends them from NiceMailer. Until 16 November 2026
+    // it could not even create one, which this test checked.
+    let d = agent.call("create_draft", json!({"reply_to": m, "quote_header": "x"})).unwrap()["draft"].clone();
+    // But it cannot send: refused with its reason, the draft left as it is.
+    let e = agent.call("send_draft", json!({"id": d["id"], "revision": d["revision"], "body": "Bonjour"})).unwrap_err();
+    assert_eq!((e["code"].as_i64(), e["data"]["reason"].as_str()), (Some(1007), Some("agent_cannot_send")), "{e}");
+    let state: String = db(dir.path()).query_row("SELECT state FROM draft WHERE id = ?1", [d["id"].as_i64().unwrap()], |r| r.get(0)).unwrap();
+    assert_eq!(state, "editing", "not queued for sending");
+    // And nothing reached the SMTP server.
+    let hdr: String = db(dir.path()).query_row("SELECT message_id_hdr FROM draft WHERE id = ?1", [d["id"].as_i64().unwrap()], |r| r.get(0)).unwrap();
+    std::thread::sleep(std::time::Duration::from_secs(2));
+    assert!(received(SMTP_API, &hdr).is_empty());
 }
 
 /// Escape files the draft in Drafts, on the server too; a second version

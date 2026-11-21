@@ -608,7 +608,7 @@ fn smtp_servers_are_tried_in_order_and_the_one_that_works_is_written() {
     assert_eq!((r["attempts"][0]["outcome"].as_str(), r["chosen"].as_u64()), (Some("logged_in"), Some(0)), "{r:#}");
     // A wrong IMAP password says so in `data.reason`.
     let e = c.call("test_account", json!({"email": me, "imap": imap(&user), "password": "wrong"})).unwrap_err();
-    assert_eq!((e["code"].as_i64(), e["data"]["reason"].as_str()), (Some(1009), Some("auth")), "{e:#}");
+    assert_eq!((e["code"].as_i64(), e["data"]["reason"].as_str()), (Some(1009), Some("imap_auth_refused")), "{e:#}");
 
     // An IMAP server of another organization: the password is not tried,
     // the server is kept as reachable.
