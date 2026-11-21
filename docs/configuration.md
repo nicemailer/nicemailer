@@ -166,6 +166,14 @@ The certificate must carry an Apple **Team ID**. Besides its access list, an ite
 | Apple Development (Team ID `ABCDE12345`) | `teamid:ABCDE12345` | reads them |
 | self-signed (`NiceMailer Dev`), ad hoc, unsigned | `cdhash:<hash of this very binary>` | refused |
 
+The partition is not enough: the access list of each item also names the program that created it, by its *designated requirement*, the rule of its signature that says "this is the core". By default `codesign` writes one tied to the kind of certificate: an Apple Development signature requires that very person's certificate (`certificate leaf[subject.CN] = "Apple Development: …"`), a Developer ID one requires the Developer ID authority. With those, a password saved by a `make` build is refused to the notarized core of the same team, and the reverse, with the error "the Keychain refused the password of this account" (the dialog that would allow it is off, see "No dialog, ever"). `sign-core.sh` therefore writes its own requirement, the same for every certificate of the team:
+
+```
+identifier "eu.nicemailer.core" and anchor apple generic and certificate leaf[subject.OU] = "<team>"
+```
+
+The OU of a certificate is its Team ID, written by Apple: Apple Development and Developer ID certificates of one team both carry it, and no one else can issue one that does. `scripts/check-signature.sh` refuses a bundle whose core has another requirement. To see the one of a core: `codesign -d -r- <path to nicemailer-core>`.
+
 An Apple Development certificate is free with an Apple ID, once:
 
 1. Xcode → Settings → Accounts → **+** → Apple ID; a "Personal Team" appears.
@@ -180,7 +188,9 @@ A keychain made by `security create-keychain`, as the tests use, gets no partiti
 
 A core run without signing (`cargo run`) works, but cannot read the passwords saved by `make core`; its accounts say so. A password saved by a build with another signature cannot be read or replaced by the signed core: delete the item `NiceMailer: <key> (IMAP)` in Keychain Access, then save the password again.
 
-The released core is signed by the Developer ID Application identity (`make release`, [app-bundle.md](app-bundle.md), "Signature"), whose partition `teamid:<team>` plays the same role. When the Apple Development and Developer ID certificates belong to the same team, the passwords saved by development builds stay readable by the released core; otherwise they must be saved again once.
+The released core is signed by the Developer ID Application identity (`make release`, [app-bundle.md](app-bundle.md), "Signature"), with the same requirement and the partition `teamid:<team>`. When the Apple Development and Developer ID certificates belong to the same team, the passwords saved by development builds are readable by the released core, and the reverse; otherwise they must be saved again once.
+
+Passwords saved by a core of 0.2.1 or earlier have the default requirement of the build that saved them in their access list: only builds with the same kind of certificate read them. Saving the password again once, with the build that saved it, writes the new access list: saving deletes the item and creates it again, and that build may delete it.
 
 Limit, the one the specification accepts (`configuration.md`, section 7): a program running as the user can use the development certificate to sign itself as the core. The protection is aimed at agents and edits of the file, not at malware on the Mac.
 

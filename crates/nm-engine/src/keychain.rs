@@ -36,6 +36,13 @@
 //! (`docs/configuration.md`, "Passwords"). The shipped core is signed by
 //! the developer ID of the same team, which plays the same role.
 //!
+//! The access list names the creator by its *designated requirement*, a
+//! rule of its signature. `sign-core.sh` writes one that names only the
+//! identifier `eu.nicemailer.core` and the team: the default one names the
+//! kind of certificate (Apple Development or Developer ID), which made a
+//! release refuse the passwords saved by a development build, and the
+//! reverse.
+//!
 //! # Never a dialog
 //!
 //! The core runs in the background: a Keychain dialog would appear out of

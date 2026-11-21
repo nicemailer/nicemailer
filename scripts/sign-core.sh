@@ -47,7 +47,35 @@ if [ -z "$IDENTITY" ]; then
   echo "the passwords saved by this build will not be readable by the next one." >&2
   IDENTITY="NiceMailer Dev"
 fi
-codesign --force --sign "$IDENTITY" --keychain "$KEYCHAIN" --identifier eu.nicemailer.core \
-  --options runtime "${CODESIGN_TIMESTAMP:---timestamp=none}" "$BIN"
+sign() {
+  codesign --force --sign "$IDENTITY" --keychain "$KEYCHAIN" --identifier eu.nicemailer.core \
+    --options runtime "$@" "$BIN" 2>&1 | { grep -v ': replacing existing signature$' || true; } >&2
+  # The filter only hides codesign's notice; `pipefail` (set above) keeps
+  # its failure as the exit status of the pipeline.
+}
+# First a signature without timestamp, only to learn the team of the
+# identity: codesign tells it, and it works the same for a name or a hash.
+sign --timestamp=none
+TEAM=$(codesign -dvv "$BIN" 2>&1 | sed -n 's/^TeamIdentifier=//p')
+if [ -n "$TEAM" ] && [ "$TEAM" != "not set" ]; then
+  # The designated requirement: the rule "this is the core" that the
+  # access list of each Keychain item records when the core creates it
+  # (docs/configuration.md, "Development: an Apple Development
+  # certificate, once"). By default
+  # codesign writes one tied to the kind of certificate: an Apple
+  # Development one names the person's certificate
+  # (`leaf[subject.CN] = "Apple Development: …"`), a Developer ID one
+  # requires the Developer ID authority. So a password saved by a `make`
+  # build was refused to the notarized core, and the reverse. This one keeps
+  # what both have in common, the identifier and the team (the OU of the
+  # certificate, which Apple writes and no one else can), so every build of
+  # the team reads the passwords of the others.
+  sign "${CODESIGN_TIMESTAMP:---timestamp=none}" \
+    -r="designated => identifier \"eu.nicemailer.core\" and anchor apple generic and certificate leaf[subject.OU] = \"$TEAM\""
+elif [ -n "${CODESIGN_TIMESTAMP:-}" ]; then
+  # No team (self-signed "NiceMailer Dev"): the default requirement, since
+  # its partition is that very binary anyway (see above).
+  sign "$CODESIGN_TIMESTAMP"
+fi
 # The Team ID is what the Keychain partition is made of: say which.
 codesign -dvv "$BIN" 2>&1 | grep -E '^(Authority|TeamIdentifier)=' | head -2 | sed 's/^/sign-core: /' >&2

@@ -15,6 +15,9 @@
 #   passwords is "teamid:<team>" (docs/configuration.md, "Passwords"), and
 #   Sparkle's programs (docs/updates.md) are re-signed by it, as
 #   notarization requires;
+# - the core's designated requirement names its identifier and its team
+#   only, so that every build of the team reads the passwords of the others
+#   (scripts/sign-core.sh);
 # - the app declares the address book entitlement (NiceMailer.entitlements),
 #   without which the hardened runtime refuses the Contacts.
 # With --release, also:
@@ -89,6 +92,17 @@ LIST
 # One team for all: `sort -u` leaves one line when they agree.
 if [ "$(printf '%s\n' $TEAMS | sort -u | wc -l | tr -d ' ')" != 1 ]; then
   fail "signed by several teams:$TEAMS"
+fi
+
+# The core's designated requirement names its team, not its kind of
+# certificate (scripts/sign-core.sh): otherwise the passwords saved by a
+# development build would be refused to a release, or the reverse.
+CORE_TEAM=$(printf '%s\n' $TEAMS | head -1)
+CORE_REQ=$(codesign -d -r- "$APP/Contents/Helpers/nicemailer-core" 2>&1 | sed -n 's/^designated => //p')
+WANT_REQ="identifier \"eu.nicemailer.core\" and anchor apple generic and certificate leaf[subject.OU] = \"$CORE_TEAM\""
+# codesign prints the team without quotes when it needs none: compare both.
+if [ "$CORE_REQ" != "$WANT_REQ" ] && [ "$CORE_REQ" != "${WANT_REQ//\"$CORE_TEAM\"/$CORE_TEAM}" ]; then
+  fail "Contents/Helpers/nicemailer-core: designated requirement \"$CORE_REQ\", expected \"$WANT_REQ\" (scripts/sign-core.sh)"
 fi
 
 if ! codesign -d --entitlements - --xml "$APP" 2>/dev/null | grep -q 'com.apple.security.personal-information.addressbook'; then
