@@ -119,7 +119,7 @@ Les noms sont en anglais, comme le CLI. Chaque outil porte les annotations MCP q
 | `list_conversations` | `folder` (rôle ou identifiant), `account?`, `filter?`, `sort?`, `cursor?`, `limit?` | `list_threads` | Une page de conversations (section 7) |
 | `search_messages` | `query`, `limit?` | `search` | Messages trouvés, avec l'extrait qui correspond |
 | `get_conversation` | `thread_id`, `include_quoted?` | `get_thread` | Les messages de la conversation, texte réduit (section 7) |
-| `get_message` | `message_id`, `offset?` | `message_text`, `get_thread` | Un message entier : en-têtes, texte complet, pièces jointes |
+| `get_message` | `message_id` ou `link`, `offset?` | `locate_message`, `message_text`, `get_thread` | Un message entier : en-têtes, texte complet, pièces jointes |
 | `read_attachment` | `attachment_id`, `offset?` | `attachment_text` (nouveau), `get_attachment` | Texte extrait de la pièce jointe, et son chemin local |
 | `find_contacts` | `query` | `suggest_recipients` | Adresses connues qui correspondent |
 | `agent_history` | `since?`, `cursor?` | `list_history` (source `mcp`, filtre à ajouter) | Ce que l'agent a fait : action, conversation, date |
@@ -130,7 +130,7 @@ Précisions :
 - **`filter`** reprend un sous-ensemble de `ThreadFilter` : `unread`, `flagged`, `attachments`, `answered`, `human`, `from`, `not_from`, `to`, `text`, `subject`, `contains`, `after`, `before`, `tag`, `group`. Un critère inconnu est refusé, comme dans le contrat.
 - **`search_messages`** et le critère `contains` se recouvrent. Les deux sont gardés : `search_messages` cherche dans toute la boîte et renvoie l'extrait qui correspond ; `list_conversations` filtre un dossier et renvoie des conversations.
 - **Conversations d'un groupe** : `list_conversations` accepte le critère `group` (nom ou identifiant, traduit en `group_id` de `ThreadFilter`), avec le dossier virtuel `everything` (« qu'ont écrit les membres de Famille cette semaine ? »).
-- **`get_message`** sert quand `get_conversation` a tronqué un texte ou caché une citation, et pour les en-têtes complets.
+- **`get_message`** sert quand `get_conversation` a tronqué un texte ou caché une citation, et pour les en-têtes complets. Il accepte aussi, à la place de `message_id`, un **lien vers un mail** (`link`, `nicemailer://m/<clé>`, ou l'ancien `nicemailer://m/<id>`) que l'utilisateur colle dans la conversation depuis une note : l'agent lit ce mail sans le chercher. Un lien mal formé, ou les deux arguments à la fois, ou aucun, est refusé avec la raison.
 - **`read_attachment`** lit les formats que le noyau sait lire pour l'assistance IA (`ia.md`, section 5, `attachment.text` : texte, HTML, PDF, DOCX, mail joint). Pour un autre format, ou un PDF scanné sans texte, la réponse le dit et donne seulement le chemin (`architecture.md`, section 5, « Pièces jointes : transfert par chemin »), utilisable par un agent qui a accès aux fichiers. Les images ne sont pas renvoyées en v1 (question ouverte).
 
 ### Brouillons (phase 2)
@@ -229,6 +229,7 @@ Le journal `audit_log` inscrit la demande (`send_request`, source `mcp`), la dé
 | `text` | Les segments non cachés (`segments`, `hidden = false`) mis bout à bout : ce que le message apporte, sans l'historique cité qu'il répète. Avec `include_quoted`, tous les segments |
 | `attachments` | `id`, `filename`, `mime_type`, `size`, `readable` |
 | `verification_code` | Quand le noyau en a trouvé un |
+| `link` | Toujours : le lien vers le mail, `nicemailer://m/<clé>` (`modele de donnees.md`, `link_key`), que l'agent peut reprendre dans une note ou une réponse |
 
 Ne sont jamais renvoyés : `body_html` (le texte suffit, et le HTML est l'endroit où se cachent les instructions invisibles), les liens de suivi, les images distantes, les positions d'événements (`as_of`). Un corps pas encore téléchargé est signalé (`text_pending`), et l'agent peut réessayer plus tard.
 

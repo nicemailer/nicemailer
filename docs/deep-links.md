@@ -27,6 +27,10 @@ A conversation holds several mails; the link points to its **latest received** m
 
 Obsidian opens links of other apps through macOS, which needs NiceMailer to be installed as an app (below).
 
+## For AI agents
+
+The MCP server (`docs/mcp.md`) gives each message its `link`, so that an agent can point back at a mail in what it writes. `get_message` also takes a `link` instead of `message_id`: paste a link from a note into the conversation, and the agent reads that mail.
+
 ## In calendar events
 
 The calendar files of the AI's "Dates and appointments" (`docs/ai.md`) carry the link of their mail, as the event's URL and the last line of its notes: from Calendar, a click goes back to the mail that set the appointment.

@@ -305,6 +305,7 @@ async fn every_tool_answers_within_its_schema_without_empty_fields() {
         ("get_conversation", json!({"thread_id": thread})),
         ("get_conversation", json!({"thread_id": thread, "include_quoted": true})),
         ("get_message", json!({"message_id": m2})),
+        ("get_message", json!({"link": link_of(dir.path(), m2)})),
         ("read_attachment", json!({"attachment_id": attachment})),
         ("find_contacts", json!({"query": "ali"})),
         ("agent_history", json!({})),
@@ -358,6 +359,45 @@ async fn a_conversation_has_no_html_its_quotes_hidden_and_bounded_texts() {
     assert!(m["text"].as_str().unwrap().contains(&fixtures::report_text()), "{m}");
     assert!(m.get("next_offset").is_none());
     assert_eq!(m["thread_id"], report_thread);
+}
+
+/// The link of a message, as the core writes it (`docs/deep-links.md`).
+fn link_of(dir: &Path, message: i64) -> String {
+    let db = nm_store::rusqlite::Connection::open_with_flags(dir.join("nicemailer.db"), nm_store::rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+    let key: i64 = db.query_row("SELECT link_key FROM message WHERE id = ?1", [message], |r| r.get(0)).unwrap();
+    nm_api::deep_link::url(message, Some(key))
+}
+
+/// Each message carries its link to the mail, and `get_message` reads a
+/// link the user pasted (from a note) as well as an id.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_message_carries_its_link_and_is_read_from_a_link() {
+    let dir = tempfile::tempdir().unwrap();
+    let _core = prepared(dir.path(), "");
+    let (m2, thread) = message(dir.path(), "hey", "m2@a.example");
+    let mut a = Agent::start(dir.path(), "2025-11-25").await;
+    let link = link_of(dir.path(), m2);
+    assert_eq!(link.len(), "nicemailer://m/".len() + 12, "a key, not the id: {link}");
+    let c = a.ok("get_conversation", json!({"thread_id": thread})).await;
+    let reply = c["messages"].as_array().unwrap().iter().find(|m| m["id"] == m2).unwrap().clone();
+    assert_eq!(reply["link"], link);
+
+    let by_id = a.ok("get_message", json!({"message_id": m2})).await;
+    assert_eq!(by_id["link"], link);
+    // As pasted, in another case and with a final slash: the same answer.
+    let by_link = a.ok("get_message", json!({"link": format!(" {}/ ", link.to_uppercase())})).await;
+    assert_eq!(by_link, by_id);
+    // An old link, by id, still works.
+    assert_eq!(a.ok("get_message", json!({"link": format!("nicemailer://m/{m2}")})).await, by_id);
+
+    let e = a.fails("get_message", json!({"link": "https://example.org/m/1"})).await;
+    assert!(e.contains("not a link to a NiceMailer mail"), "{e}");
+    let e = a.fails("get_message", json!({"link": "nicemailer://m/000000000000"})).await;
+    assert!(e.contains("not found") || e.contains("000000000000"), "{e}");
+    for both_or_none in [json!({"message_id": m2, "link": link}), json!({})] {
+        let e = a.fails("get_message", both_or_none).await;
+        assert!(e.contains("one of the two"), "{e}");
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]

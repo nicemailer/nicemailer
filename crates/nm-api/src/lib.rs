@@ -1289,6 +1289,49 @@ pub mod deep_link {
         i64::from_str_radix(text, 16).ok()
     }
 
+    /// What a link names: the key of a mail, or a message id of one
+    /// database (an old link).
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum Target {
+        Key(i64),
+        Id(i64),
+    }
+
+    impl Target {
+        /// The params of `locate_message` that find it.
+        pub fn locate_params(self) -> super::LocateMessageParams {
+            match self {
+                Target::Key(k) => super::LocateMessageParams { link_key: Some(key_text(k)), message_id: None },
+                Target::Id(id) => super::LocateMessageParams { message_id: Some(id), link_key: None },
+            }
+        }
+    }
+
+    /// What the link `text` names, as the app reads it (`DeepLink.target`
+    /// in Swift): `nicemailer://m/` with the scheme and `m` in any case, a
+    /// final slash allowed, then exactly 12 hexadecimal characters for a
+    /// key, or 1 to 11 digits for an old id. Spaces around are ignored (a
+    /// link pasted by hand); anything else is `None`.
+    pub fn parse_url(text: &str) -> Option<Target> {
+        let text = text.trim();
+        let prefix = "nicemailer://m/";
+        // `get` rather than slicing: a text shorter than the prefix, or cut
+        // inside a multi-byte character, gives `None` instead of a panic.
+        let head = text.get(..prefix.len())?;
+        if !head.eq_ignore_ascii_case(prefix) {
+            return None;
+        }
+        let rest = &text[prefix.len()..];
+        let rest = rest.strip_suffix('/').unwrap_or(rest);
+        if let Some(k) = parse_key(rest) {
+            return Some(Target::Key(k));
+        }
+        if rest.is_empty() || rest.len() > MAX_ID_LEN || !rest.bytes().all(|b| b.is_ascii_digit()) {
+            return None;
+        }
+        rest.parse().ok().filter(|id| *id > 0).map(Target::Id)
+    }
+
     /// The link of a message: by its key when it has one, else by its id,
     /// which only this database knows (a mail without `Message-ID` whose
     /// body is not downloaded yet).
@@ -1312,6 +1355,23 @@ pub mod deep_link {
             for bad in ["", "07bcf99aef4", "07bcf99aef4d0", "07bcf99aef4g", "+7bcf99aef4d", "07bcf99aef4é"] {
                 assert_eq!(parse_key(bad), None, "{bad}");
             }
+        }
+
+        #[test]
+        fn a_link_is_read_back_as_the_app_reads_it() {
+            assert_eq!(parse_url("nicemailer://m/3f9a0c2b7e41"), Some(Target::Key(0x3f9a0c2b7e41)));
+            assert_eq!(parse_url(" NiceMailer://M/3F9A0C2B7E41/ "), Some(Target::Key(0x3f9a0c2b7e41)));
+            assert_eq!(parse_url("nicemailer://m/123456789012"), Some(Target::Key(0x123456789012)));
+            assert_eq!(parse_url("nicemailer://m/48213"), Some(Target::Id(48213)));
+            for bad in [
+                "", "nicemailer://m/", "nicemailer://x/48213", "https://m/48213", "nicemailer://m/0", "nicemailer://m/-3",
+                "nicemailer://m/3f9a0c2b7e4", "nicemailer://m/3f9a0c2b7e4g", "nicemailer://m/1/2", "3f9a0c2b7e41",
+                "nicemailer://m/é", "nicemailé",
+            ] {
+                assert_eq!(parse_url(bad), None, "{bad}");
+            }
+            assert_eq!(Target::Key(0x3f9a0c2b7e41).locate_params().link_key.as_deref(), Some("3f9a0c2b7e41"));
+            assert_eq!(Target::Id(7).locate_params().message_id, Some(7));
         }
 
         #[test]

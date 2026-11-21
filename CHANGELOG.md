@@ -14,6 +14,7 @@ How to write it:
 
 ### Added
 
+- **AI agents:** Each mail an agent reads comes with its link (`nicemailer://m/…`), to put in a note or an answer; paste a link to a mail in the conversation and the agent reads that mail.
 - **Sync:** While an account is synchronized for the first time, the status bar says how far it is: "Importing Inbox: 12,300 of 44,829", then the mails left to download. A large account no longer makes the app look frozen.
 - **Folders:** Give the folders your own names in `config.toml` (`[folder_names]`, e.g. `waiting = "En attente"`), and the views Work, All Mail and Everything too. English stays the default; the created file proposes the French names, commented out. Only the app shows them: the folders on the server keep their names.
 - **Display:** Set the text size in `config.toml`: `ui.text_size` for the window and `ui.status_bar_text_size` for the status bar, applied as soon as the file is saved.

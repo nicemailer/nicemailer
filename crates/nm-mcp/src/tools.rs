@@ -198,7 +198,8 @@ pub fn definitions() -> Vec<Definition> {
         "unread": {"type": "boolean"}, "flagged": {"type": "boolean"}, "answered": {"type": "boolean"},
         "text": {"type": "string"}, "truncated": {"type": "boolean"}, "quote_hidden": {"type": "boolean"},
         "text_omitted": {"type": "boolean"}, "text_pending": {"type": "boolean"},
-        "attachments": attachment_list, "verification_code": {"type": "string"}
+        "attachments": attachment_list, "verification_code": {"type": "string"},
+        "link": {"type": "string", "description": "the link to the mail, nicemailer://m/<key>: put it in a note or an answer, a click opens the mail in NiceMailer"}
     });
     let draft_props = json!({
         "draft_id": {"type": ID}, "kind": {"type": "string"}, "from": {"type": "string"}, "to": person_list,
@@ -316,8 +317,15 @@ only their header (text_omitted): read those with get_message.",
             "get_message",
             "Read a message",
             "One message whole: its header, its complete text (with what it quotes) and its attachments. A long text comes in pages: pass \
-next_offset back as offset.",
-            object(json!({"message_id": {"type": ID}, "offset": {"type": "integer", "minimum": 0}}), &["message_id"]),
+next_offset back as offset. Give message_id, or link: a NiceMailer link the user pasted (nicemailer://m/..., e.g. from a note).",
+            object(
+                json!({
+                    "message_id": {"type": ID},
+                    "link": {"type": "string", "description": "a link to a mail, nicemailer://m/<key>, instead of message_id"},
+                    "offset": {"type": "integer", "minimum": 0}
+                }),
+                &[],
+            ),
             output({
                 let mut p = message_props.clone();
                 p["thread_id"] = json!({"type": ID});
@@ -505,7 +513,11 @@ struct ConversationArgs {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct MessageArgs {
-    message_id: i64,
+    #[serde(default)]
+    message_id: Option<i64>,
+    /// A deep link (`nm_api::deep_link`), instead of `message_id`.
+    #[serde(default)]
+    link: Option<String>,
     #[serde(default)]
     offset: u64,
 }
@@ -683,19 +695,30 @@ impl Tools {
     async fn message(&self, a: Value, progress: &Progress) -> R<Value> {
         let a: MessageArgs = args(a)?;
         let b = self.bounds(progress).await?;
-        let place: nm_api::MessageLocation = self.get(method::LOCATE_MESSAGE, json!({"message_id": a.message_id}), progress).await?;
-        let text: nm_api::MessageTextResult = self.get(method::MESSAGE_TEXT, json!({"message_id": a.message_id}), progress).await?;
+        // Exactly one of the two. A link names the mail by its key, the
+        // same on every Mac, or by an id for an old link; the core says
+        // which row it is here (`locate_message`, `docs/deep-links.md`).
+        let target = match (a.message_id, a.link.as_deref()) {
+            (Some(id), None) => nm_api::deep_link::Target::Id(id),
+            (None, Some(link)) => nm_api::deep_link::parse_url(link).ok_or_else(|| {
+                ToolError::new(format!("link: not a link to a NiceMailer mail (nicemailer://m/ then 12 hexadecimal characters): {link}"))
+            })?,
+            _ => return Err(ToolError::new("give message_id or link, one of the two")),
+        };
+        let place: nm_api::MessageLocation = self.get(method::LOCATE_MESSAGE, json!(target.locate_params()), progress).await?;
+        let message_id = place.message_id;
+        let text: nm_api::MessageTextResult = self.get(method::MESSAGE_TEXT, json!({"message_id": message_id}), progress).await?;
         let (piece, next, total) = reduce::page(&text.text, a.offset, b.response_chars as u64);
         // The header and the attachments, from the conversation's view.
         let mut o = match place.thread_id {
             Some(thread_id) => {
                 let t: ThreadView = self.get(method::GET_THREAD, json!({"thread_id": thread_id}), progress).await?;
-                match t.messages.iter().find(|m| m.id == a.message_id) {
+                match t.messages.iter().find(|m| m.id == message_id) {
                     Some(m) => reduce::message_header(m, "").num("thread_id", thread_id),
-                    None => Obj::new().num("id", a.message_id).num("thread_id", thread_id),
+                    None => Obj::new().num("id", message_id).num("thread_id", thread_id),
                 }
             }
-            None => Obj::new().num("id", a.message_id),
+            None => Obj::new().num("id", message_id),
         };
         o = o.str("text", piece).num("offset", a.offset as i64).num("total_chars", total as i64);
         if let Some(n) = next {

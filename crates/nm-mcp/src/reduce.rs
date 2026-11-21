@@ -269,6 +269,10 @@ pub fn message_header(m: &MessageView, thread_subject: &str) -> Obj {
         .flag("answered", m.is_answered)
         .val("attachments", Value::Array(attachments))
         .opt("verification_code", m.verification_code.clone())
+        // The deep link of the message (`docs/deep-links.md`): what an
+        // agent puts in a note, a task or an answer to point back at the
+        // mail; a click opens it in NiceMailer, on any Mac that has it.
+        .opt("link", (!m.link.is_empty()).then(|| m.link.clone()))
 }
 
 /// `get_conversation`: each message reduced (module documentation), its
@@ -495,6 +499,7 @@ mod tests {
         m.show_recipients = true;
         m.subject = "Re: Devis (2)".into();
         m.verification_code = Some("123456".into());
+        m.link = "nicemailer://m/3f9a0c2b7e41".into();
         m.reply_to = vec![AddressView { addr: "other@b.example".into(), name: Some("Bob".into()) }];
         m.attachments = vec![AttachmentView { id: 9, filename: Some("devis.pdf".into()), mime_type: "application/pdf".into(), size: 1200, readable: true }];
         let msg = conversation(&thread(vec![m]), false, 8_000, 40_000)["messages"][0].clone();
@@ -505,6 +510,7 @@ mod tests {
         assert_eq!(msg["subject"], "Re: Devis (2)");
         assert_eq!(msg["reply_to"], json!(["Bob <other@b.example>"]));
         assert_eq!(msg["verification_code"], "123456");
+        assert_eq!(msg["link"], "nicemailer://m/3f9a0c2b7e41");
         assert_eq!(msg["attachments"], json!([{"id": 9, "filename": "devis.pdf", "mime_type": "application/pdf", "size": 1200, "readable": true}]));
     }
 
