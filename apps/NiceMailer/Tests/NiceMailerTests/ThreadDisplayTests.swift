@@ -194,4 +194,48 @@ struct ThreadDisplayTests {
         #expect(ThreadDisplay.skipTarget(from: 180, quotes: quotes, texts: texts) == 340)
         #expect(ThreadDisplay.skipTarget(from: 400, quotes: quotes, texts: texts) == nil)
     }
+
+    /// `l` links the message the reader is on, so that each message of a
+    /// conversation can be linked from a note; else the latest received.
+    @Test func theLinkNamesTheMessageTheReaderIsOn() {
+        #expect(ThreadDisplay.linkMessage(thread, .init())?.id == 3)
+        var s = ThreadDisplay.State()
+        s.current = 1
+        #expect(ThreadDisplay.linkMessage(thread, s)?.id == 1)
+        // A current message of another thread (a state kept by id): the
+        // latest.
+        s.current = 99
+        #expect(ThreadDisplay.linkMessage(thread, s)?.id == 3)
+        // The user's own latest mail is not the default: the latest
+        // received is, so that the link opens the conversation in its
+        // folder rather than in Sent; chosen with ctrl-k / ctrl-j, it is.
+        var mine = thread.messages
+        mine[2] = MessageView(
+            id: 3, folderId: 2, folderRole: "sent", subject: "S", fromName: "Me", fromAddr: "me@x.org", to: [], cc: [],
+            dateSent: nil, dateReceived: 1_700_000_000, bodyText: "", isSeen: true, isFlagged: false, isAnswered: false,
+            hasAttachments: false, authResult: "unknown", bodyHtml: nil, hasRemoteContent: false, fromBodyFormat: nil,
+            segments: [], onlyQuotes: false, expanded: true, showRecipients: false, attachments: [])
+        let withSent = ThreadView(id: 9, subject: "S", messages: mine, asOf: Position(epoch: "e", seq: 0))
+        #expect(ThreadDisplay.linkMessage(withSent, .init())?.id == 2)
+        s.current = 3
+        #expect(ThreadDisplay.linkMessage(withSent, s)?.id == 3)
+    }
+
+    /// A deep link opened on an older message: it is the current one and
+    /// unfolded, the other choices kept; `T` needs no unfolding.
+    @Test func aLinkOpenedOnAMessageUnfoldsItAndMakesItCurrent() {
+        var s = ThreadDisplay.State()
+        s.revealed = ["2:2"]
+        let focused = ThreadDisplay.focus(s, on: 1)
+        #expect(focused.current == 1)
+        #expect(focused.folding[1] == true)
+        #expect(focused.revealed == ["2:2"])
+        let blocks = ThreadDisplay.blocks(thread, focused)
+        #expect(blocks.contains { if case .header(1, false, _, _, _, _, _, _, _) = $0 { true } else { false } })
+        // ctrl-j goes on from it.
+        #expect(ThreadDisplay.step(thread, focused, by: 1)?.message == 2)
+        var all = ThreadDisplay.State()
+        all.showAll = true
+        #expect(ThreadDisplay.focus(all, on: 1).folding.isEmpty)
+    }
 }

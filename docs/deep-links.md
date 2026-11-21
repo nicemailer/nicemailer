@@ -17,7 +17,9 @@ The first row of the links panel (`l`) is **Link to this mail**, with its URL on
 
 The status bar says what was copied. Typing `obsidian`, `markdown` or `deeplink` in the panel also finds the row.
 
-A conversation holds several mails; the link points to its **latest received** message, so that it opens the conversation in its folder (Inbox, Archive…) rather than in Sent.
+A conversation holds several mails; the link names the **message the reader is on**: move up and down the conversation with ctrl-k / ctrl-j (or click a header), then `l`, and the link is that message's, as `r` and the exports take it. Without a choice, it is the latest received message, so that it opens the conversation in its folder (Inbox, Archive…) rather than in Sent.
+
+Opening the link shows that very message: its conversation is selected, the message becomes the current one (ctrl-k / ctrl-j go on from it), unfolded even if the reader folds it by default, and the reader scrolls to it. A link to one of your own messages (in Sent or Drafts) shows its conversation where it is filed, the folder of its latest received message, not Sent; Sent only when the conversation has nothing else. Return on a mail of the History screen shows its message the same way, in the message's own folder.
 
 ## Use with Obsidian
 
@@ -84,6 +86,7 @@ Limits:
 - The app reads the link (`DeepLink.target`, `apps/NiceMailer/Sources/NiceMailer/DeepLink.swift`): scheme, `m` and key in any case, a final slash allowed; exactly 12 hexadecimal characters for a key, 1 to 11 digits for an old id.
 - It asks the core where the message is: `locate_message {link_key}` (or `{message_id}` for an old link) answers `{message_id, thread_id, folder_id, account_id}`, or the error `1001` (not found). `thread_id` is `null` for a message not linked to a conversation yet. The column `message.link_key` is indexed (`idx_message_link`): the lookup is an equality.
 - It shows the thread as a search result does (`AppModel.show`): in the unified view, the folder's role for all accounts; otherwise the folder; the thread stays selected even if it is not in the pages of the list loaded so far.
+- Then the message: the reader state of that thread makes it current and unfolded (`ThreadDisplay.focus`), and the reader scrolls to it once laid out (`GeekController.showDeepLinkedMail`, `pendingMessageScroll`, as for ctrl-k / ctrl-j). The link copied is the one of `ThreadDisplay.linkMessage`: the current message, else the latest received.
 
 ```sh
 nicemailer call locate_message '{"link_key": "3f9a0c2b7e41"}'
@@ -93,12 +96,13 @@ nicemailer call locate_message '{"message_id": 48213}'
 ## Tests
 
 - `crates/nm-store/src/link_key.rs`: the key of a Message-ID against a reference value (`shasum -a 256`), the raw file's key without one.
-- `crates/nm-store/tests/link_key.rs`: two databases that number a mail differently (IMAP headers first on one, an mbox export with other bytes on the other) give it the same link; a mail without Message-ID gets its key once downloaded and keeps it; the copy a link opens among several.
+- `crates/nm-store/tests/link_key.rs`: the link of a reply in Sent shows its conversation where it is filed; two databases that number a mail differently (IMAP headers first on one, an mbox export with other bytes on the other) give it the same link; a mail without Message-ID gets its key once downloaded and keeps it; the copy a link opens among several.
 - `crates/nm-store/tests/migrations.rs`: version 15 computes the keys of the mail already stored.
 - `crates/nm-daemon/tests/deeplink_rpc.rs`: `locate_message` through the socket by id and by key (any case), the link of `get_thread`, a missing message or key, malformed requests.
+- `ThreadDisplayTests`: the message linked (the current one, else the latest received, not one of Sent), and a link opened on a message unfolding it.
 - `DeepLinkTests`: the link the core wrote and the fallback on the id, keys and old ids read back, URLs refused, the Markdown link with brackets, line breaks and an empty subject.
-- `GeekControllerTests`: the first row of `l` copies the Markdown link (Return) and the URL (⌘-Return) to a private pasteboard; a link opens the mail in its folder, closes the panels and, in one column, shows the mail; the link copied is the key the core gives; a link by key asks the core by key; a missing mail, a key this Mac does not have and a foreign URL are reported.
-- `deeplinks.uiscript`: in the app, copy the link of the newsletter, go to another folder with the help open, open the link (`openurl clipboard`): the newsletter is back, in Archive; the same in one column; a missing mail (old link), an unknown key and a foreign URL.
+- `GeekControllerTests`: the first row of `l` copies the Markdown link (Return) and the URL (⌘-Return) to a private pasteboard; a link opens the mail in its folder, closes the panels and, in one column, shows the mail; the link copied is the key the core gives; a link by key asks the core by key; up the conversation with ctrl-k, the link is that message's; opening the link of an older message makes it current and unfolded; a missing mail, a key this Mac does not have and a foreign URL are reported.
+- `deeplinks.uiscript`: in the app, copy the link of the newsletter, go to another folder with the help open, open the link (`openurl clipboard`): the newsletter is back, in Archive; the same in one column; up "Chantier" to my reply, its link copied, the reader moved away and another folder shown: the link brings back that reply, current and unfolded, in Archive where the conversation is filed; a missing mail (old link), an unknown key and a foreign URL.
 - The app of `NiceMailer.app` can play the scenarios: `NICEMAILER_UI_BIN=/Applications/NiceMailer.app/Contents/MacOS/NiceMailer scripts/ui-test.sh deeplinks.uiscript` (it finds its fonts and translations in `Contents/Resources`, `resources_bundle`).
 
 Launch Services itself (a click in Obsidian reaching the app) is not covered by the automated tests: it would open the app on the user's screen.

@@ -845,10 +845,25 @@ impl Store {
     /// (`docs/deep-links.md`); the latest received. The index
     /// `idx_message_link` gives the few rows of the key, which are sorted
     /// here. `NotFound` when no mail of this database has the key.
+    ///
+    /// `folder_id` is where to show the conversation, not always the
+    /// message's own folder: a link to one of the user's own messages (in
+    /// Sent or Drafts, the link of a reply chosen with ctrl-k / ctrl-j)
+    /// shows its conversation where it is filed, the folder of its latest
+    /// received message (Archive, Inbox…), as the conversation's own link
+    /// does; Sent only when the conversation has nothing else. The
+    /// subquery reads the thread's few rows through `idx_message_thread`.
     pub fn locate_link(&self, key: i64) -> Result<nm_api::MessageLocation> {
         self.conn
             .prepare_cached(
-                "SELECT m.id, m.thread_id, m.folder_id, m.account_id FROM message m
+                "SELECT m.id, m.thread_id,
+                        coalesce(CASE WHEN f.role IN ('sent', 'drafts') THEN
+                                   (SELECT o.folder_id FROM message o JOIN folder g ON g.id = o.folder_id
+                                     WHERE o.thread_id = m.thread_id AND coalesce(g.role, '') NOT IN ('sent', 'drafts')
+                                     ORDER BY o.date_received DESC, o.id DESC LIMIT 1)
+                                 END, m.folder_id),
+                        m.account_id
+                   FROM message m
                    JOIN folder f ON f.id = m.folder_id
                   WHERE m.link_key = ?1
                   ORDER BY m.thread_id IS NULL,

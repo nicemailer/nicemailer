@@ -301,11 +301,6 @@ extension AppModel {
 
     /// The latest received message (not in Sent or Drafts): its sender
     /// decides the display of the thread (text or HTML).
-    /// The deep link to the open mail (`DeepLink`): the link of its latest
-    /// received message, so that it opens in its folder (Inbox, Archive…)
-    /// rather than in Sent.
-    var deepLinkURL: URL? { latestReceived.map(DeepLink.url(of:)) }
-
     var latestReceived: MessageView? {
         openThread?.messages.last { $0.folderRole != "sent" && $0.folderRole != "drafts" } ?? latestMessage
     }

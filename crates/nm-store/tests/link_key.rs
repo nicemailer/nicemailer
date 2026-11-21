@@ -190,3 +190,25 @@ fn a_key_no_mail_has_is_not_found() {
     assert!(matches!(e.store.locate_link(0x123456789abc), Err(StoreError::NotFound(_))));
     assert!(matches!(e.store.message_link(999), Err(StoreError::NotFound(_))));
 }
+
+/// The link of one of the user's own messages (a reply in Sent, chosen with
+/// ctrl-k / ctrl-j) opens its conversation where it is filed, not in Sent;
+/// a conversation made of Sent alone opens in Sent.
+#[test]
+fn the_link_of_a_reply_shows_its_conversation_where_it_is_filed() {
+    const ASKED: &str = "Message-ID: <q@a.example>\r\nFrom: alice@a.example\r\nSubject: Jeudi\r\n\r\nTu viens ?\r\n";
+    const ANSWERED: &str = "Message-ID: <r@me.example>\r\nFrom: me@me.example\r\nSubject: Re: Jeudi\r\n\
+In-Reply-To: <q@a.example>\r\nReferences: <q@a.example>\r\n\r\nOui.\r\n";
+    let mut e = Env::new();
+    let asked = e.insert("archive", 1, 1_700_000_000, ASKED, false);
+    let reply = e.insert("sent", 1, 1_700_000_100, ANSWERED, false);
+    let place = e.store.locate_link(e.key(reply).unwrap()).unwrap();
+    assert_eq!((place.message_id, place.folder_id), (reply, e.folder("archive")), "the message linked, shown in Archive");
+    assert_eq!(e.store.locate_link(e.key(asked).unwrap()).unwrap().folder_id, e.folder("archive"));
+    // Its own folder by id (the History screen corrects what was done to
+    // the message where it is).
+    assert_eq!(e.store.locate_message(reply).unwrap().folder_id, e.folder("sent"));
+    // Nothing else in the conversation: Sent.
+    e.store.conn().execute("DELETE FROM message WHERE id = ?1", [asked]).unwrap();
+    assert_eq!(e.store.locate_link(e.key(reply).unwrap()).unwrap().folder_id, e.folder("sent"));
+}

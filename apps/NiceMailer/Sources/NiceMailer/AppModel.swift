@@ -1504,9 +1504,10 @@ final class AppModel {
     /// A deep link received before the core answered (the app launched by
     /// the link itself): opened once connected (`openDeepLink`).
     var pendingDeepLink: URL?
-    /// Called once a deep link selected its mail, so that the interface
-    /// follows (the geek theme closes its panels and shows the mail).
-    @ObservationIgnored var onDeepLinkOpened: (() -> Void)?
+    /// Called once a deep link selected its mail, with where the message
+    /// is, so that the interface follows: the geek theme closes its panels
+    /// and shows that very message of the conversation, unfolded.
+    @ObservationIgnored var onDeepLinkOpened: ((MessageLocation) -> Void)?
 
     /// Leaves a tag, group or contact list for the folder (or unified view)
     /// shown before.
@@ -1985,30 +1986,24 @@ final class AppModel {
             return
         }
         Task {
-            if await reveal(target) { onDeepLinkOpened?() }
+            if let place = await reveal(target) { onDeepLinkOpened?(place) }
         }
     }
 
-    /// Shows a mail where it is now, in its folder, from its id: a line of
-    /// the History screen.
-    func reveal(messageId id: Int) async -> Bool {
-        await reveal(.id(id))
-    }
-
     /// Shows a mail where it is now, in its folder: a deep link (by key or
-    /// id), or a line of the History screen. False, with the reason in the
-    /// status bar, when it cannot be shown.
-    func reveal(_ target: DeepLink.Target) async -> Bool {
-        guard let core else { return false }
+    /// id), or a line of the History screen. Returns where the message is,
+    /// or nil, with the reason in the status bar, when it cannot be shown.
+    func reveal(_ target: DeepLink.Target) async -> MessageLocation? {
+        guard let core else { return nil }
         do {
             let place: MessageLocation = try await core.call("locate_message", target.params)
             guard let threadId = place.threadId else {
                 lastError = L("This mail is not in a conversation yet")
-                return false
+                return nil
             }
             lastError = nil
             show(threadId: threadId, folderId: place.folderId)
-            return true
+            return place
         } catch let e as CoreClient.RPCError where e.code == CoreClient.RPCError.notFound {
             // An old link by id: deleted since, or the database was rebuilt
             // (ids changed). A key: deleted, or this Mac never had the mail
@@ -2019,7 +2014,7 @@ final class AppModel {
             case .key: lastError = L("This mail is not in NiceMailer on this Mac")
             }
         } catch { report(error) }
-        return false
+        return nil
     }
 
     private func openPendingDeepLink() {

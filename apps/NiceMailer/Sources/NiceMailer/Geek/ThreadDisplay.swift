@@ -49,6 +49,29 @@ enum ThreadDisplay {
         return (s, ids[target])
     }
 
+    /// The message `l` gives the link of (`DeepLink`, `docs/deep-links.md`):
+    /// the one the reader is on (`current`: `ctrl-k` / `ctrl-j`, a click on
+    /// a header), so that each message of a conversation can be linked from
+    /// a note; else the latest received, not one of the user's own (Sent,
+    /// Drafts), so that the link opens the conversation in its folder
+    /// rather than in Sent; else the latest. Nil for an empty thread.
+    static func linkMessage(_ thread: ThreadView, _ state: State) -> MessageView? {
+        if let current = state.current, let m = thread.messages.first(where: { $0.id == current }) { return m }
+        return thread.messages.last { $0.folderRole != "sent" && $0.folderRole != "drafts" } ?? thread.messages.last
+    }
+
+    /// A deep link opened on `message` (`docs/deep-links.md`): it becomes
+    /// the current message, where `ctrl-k` / `ctrl-j`, `r` and the exports
+    /// start from, and it is unfolded, even when the core folds it by
+    /// default (an older message). The other choices of the thread stay.
+    /// Needs no thread: the link is opened before the thread is loaded.
+    static func focus(_ state: State, on message: Int) -> State {
+        var s = state
+        s.current = message
+        if !s.showAll { s.folding[message] = true }
+        return s
+    }
+
     /// The message whose sender `ctrl-c` and `ctrl-C` act on (`ui.md`,
     /// "Expéditeur"): the current message (`ctrl-k` / `ctrl-j`, a click on
     /// a header), else the last unfolded one, as `step` starts from. A

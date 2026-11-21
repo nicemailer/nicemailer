@@ -598,7 +598,7 @@ final class GeekController {
         model.readerVisible = readerVisible
         // Swift note: `[weak self]` keeps the model from holding the
         // controller alive (the controller already holds the model).
-        model.onDeepLinkOpened = { [weak self] in self?.showDeepLinkedMail() }
+        model.onDeepLinkOpened = { [weak self] place in self?.showDeepLinkedMail(place) }
     }
 
     // MARK: - Labels
@@ -1134,11 +1134,12 @@ final class GeekController {
         model.moveTargets(to: role)
     }
 
-    /// Copies the link of the open mail (`DeepLink`): as a Markdown link
+    /// Copies the link of the open mail (`DeepLink`), the message the
+    /// reader is on (`mailLinkURL`): as a Markdown link
     /// `[subject](nicemailer://m/<key>)`, ready to paste in a note, or as
     /// the bare URL. The status bar says what was copied.
     func copyMailLink(markdown: Bool) {
-        guard let url = model.deepLinkURL else { return }
+        guard let url = mailLinkURL else { return }
         let text = markdown
             ? DeepLink.markdown(subject: model.openThread?.subject ?? "", url: url)
             : url.absoluteString
@@ -1155,15 +1156,32 @@ final class GeekController {
         model.flash = L("Code %@ copied", code)
     }
 
-    /// A deep link was opened (`AppModel.openDeepLink`): the mail is
-    /// selected in its folder; the panels close and, in one column, the
-    /// mail fills the window, as after Return.
-    func showDeepLinkedMail() {
+    /// A deep link was opened (`AppModel.openDeepLink`), or a line of the
+    /// History screen: the mail is selected in its folder; the panels close
+    /// and, in one column, the mail fills the window, as after Return; the
+    /// reader shows the message of the link, unfolded.
+    func showDeepLinkedMail(_ place: MessageLocation) {
         // A question waiting (a suspect move) is dropped as by Escape: the
         // mail it was about stays where it is.
         overlay = .none
         screen = .mail
         if columns == 1 { reading = true }
+        // The very message of the link, not only its conversation: it
+        // becomes the current one, unfolded (`ThreadDisplay.focus`), and the
+        // reader scrolls to it once laid out, as after ctrl-k / ctrl-j. The
+        // state is set by thread id, since the thread may not be loaded yet.
+        guard let thread = place.threadId else { return }
+        readerStates[thread] = ThreadDisplay.focus(readerStates[thread] ?? ThreadDisplay.State(), on: place.messageId)
+        pendingMessageScroll = place.messageId
+        // Already open and laid out (the link of a message of the thread on
+        // screen): nothing lays out anew if the state did not change.
+        if model.openThread?.id == thread { scrollToMessage(place.messageId) }
+    }
+
+    /// The link `l` copies (`DeepLink`): the one of the message the reader
+    /// is on, else of the latest received (`ThreadDisplay.linkMessage`).
+    var mailLinkURL: URL? {
+        model.openThread.flatMap { ThreadDisplay.linkMessage($0, readerState) }.map(DeepLink.url(of:))
     }
 
     /// One column: shows the mail under the cursor in the whole window and
@@ -1751,7 +1769,7 @@ final class GeekController {
             // Then the link to this mail itself, for a note app
             // (`DeepLink`): Return copies it as a Markdown link, ⌘-Return as
             // a bare URL.
-            let selfRow = model.deepLinkURL.map { url in
+            let selfRow = mailLinkURL.map { url in
                 Entry(key: "", label: L("Link to this mail"), detail: url.absoluteString,
                       detailStyle: .info, icon: "doc.on.doc",
                       commandAction: { [weak self] in self?.copyMailLink(markdown: false) },
@@ -3192,9 +3210,10 @@ final class GeekController {
         }
         switch group.entity {
         case "message":
-            guard await model.reveal(messageId: group.entityId) else { return }
+            // That very message, unfolded, as a deep link shows it.
+            guard let place = await model.reveal(.id(group.entityId)) else { return }
             returnsToHistory = true
-            showDeepLinkedMail()
+            showDeepLinkedMail(place)
         case "address":
             guard let addr = group.title, let client = model.core else { return }
             do {

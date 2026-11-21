@@ -945,6 +945,12 @@ private final class Runner {
             "reader_links": "\(UIScript.readerLinks)",
             "reader_folded": "\(m.openThread.map { ThreadDisplay.foldedCount(ThreadDisplay.blocks($0, c.readerState)) } ?? 0)",
             "show_all": "\(c.readerState.showAll)",
+            // The message the reader is on (ctrl-k / ctrl-j, a deep link),
+            // by its place in the conversation from 1; empty when none was
+            // chosen.
+            "reader_current": m.openThread.flatMap { t in
+                c.readerState.current.flatMap { id in t.messages.firstIndex { $0.id == id } }.map { "\($0 + 1)" }
+            } ?? "",
             // The address book's icons drawn in the reader, in order: the
             // sender of each unfolded message and whether they are in the
             // book ("bob@example.org known | news@example.net unknown").

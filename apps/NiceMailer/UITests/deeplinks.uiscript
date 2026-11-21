@@ -51,6 +51,41 @@ key esc
 key v
 key 2
 
+# In a conversation, the link names the message the reader is on: up
+# "Chantier" with ctrl-k, to my reply (the 2nd of 4), the link is that
+# message's. Opened from elsewhere, the reader shows that very message,
+# unfolded, and ctrl-j goes on from it.
+key ;
+key a
+key j
+key j
+key j
+expect selected_subject = Chantier
+key ctrl-k
+key ctrl-k
+expect reader_current = 2
+expect reader_text ~ ▾ me@example.com
+key l
+key cmd-ret
+expect pasteboard ~ nicemailer://m/
+# Down to the latest before leaving: the reader keeps its place in each
+# conversation, so the link must bring the 2nd back by itself.
+key ctrl-j
+key ctrl-j
+expect reader_current = 4
+key ;
+key i
+expect selected_subject != Chantier
+openurl clipboard
+expect selected_subject = Chantier
+# My reply is in Sent, but the conversation is filed in Archive: shown there.
+expect folder = Archive
+expect reader_current = 2
+expect reader_text ~ ▾ me@example.com
+snap deeplink-message
+key ctrl-j
+expect reader_current = 3
+
 # A link to a mail no longer there (an old link, by id), a key this Mac
 # has no mail for, and a URL that is no mail link.
 openurl nicemailer://m/999999999

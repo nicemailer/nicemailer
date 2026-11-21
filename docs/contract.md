@@ -52,7 +52,7 @@ A dedicated command prints readable output, asks for confirmation when needed an
 | `list_threads` | A page of threads (`ThreadSummary`) of a folder, of several folders (unified view) or of "Everything", with filters, sort and an opaque cursor. | — |
 | `get_thread` | A whole thread, ready to display (`ThreadView`, `MessageView`), with its tags, the person it is with and that person's groups. | — |
 | `search` | Full-text search from plain text typed by the user. | — |
-| `locate_message` | The thread and folder of a message, from its id or its link key (`link_key`, the same on every Mac; the latest received copy out of the bins when several rows share it): what opens a `nicemailer://m/<key>` link, or an old `nicemailer://m/<id>` (`deep-links.md`). | — |
+| `locate_message` | The thread and folder of a message, from its id or its link key (`link_key`, the same on every Mac; the latest received copy out of the bins when several rows share it; by key, a message of Sent or Drafts gives the folder its conversation is filed in): what opens a `nicemailer://m/<key>` link, or an old `nicemailer://m/<id>` (`deep-links.md`). | — |
 | `message_text` | The text of one message, one line per paragraph, for the clipboard. | — |
 | `message_record` | Everything about one message, read from its raw file, for printing it as evidence. | — |
 | `export_message` | Writes one message to a file (`.eml`, `.txt`, `.md`). | — |

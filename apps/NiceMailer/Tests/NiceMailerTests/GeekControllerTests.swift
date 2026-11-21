@@ -812,6 +812,63 @@ struct GeekControllerTests {
         #expect(controller.pasteboard.string(forType: .string) == "nicemailer://m/3f9a0c2b7e41")
     }
 
+    /// A conversation of three messages, each with its link, for the link
+    /// of the message the reader is on.
+    private static func threeMessages() -> [String: Any] {
+        var thread = Fixture.threadView(2)
+        let m = (thread["messages"] as! [[String: Any]])[0]
+        thread["messages"] = (1...3).map { n -> [String: Any] in
+            var x = m
+            x["id"] = 20 + n
+            x["link"] = "nicemailer://m/00000000002\(n)"
+            x["expanded"] = n == 3
+            return x
+        }
+        return thread
+    }
+
+    /// `l` links the message the reader is on: up the conversation with
+    /// ctrl-k, the link names that older message, not the latest.
+    @Test func theLinkCopiedIsTheOneOfTheMessageTheReaderIsOn() async {
+        core.handler = { method, params in
+            guard method == "get_thread", params["thread_id"] as? Int == 2 else { return Fixture.answer(method, params) }
+            return Self.threeMessages()
+        }
+        model.selectedThreadId = 2
+        _ = await eventually { model.openThread?.messages.count == 3 }
+        press("l")
+        #expect(controller.pickerEntries(.links).first?.detail == "nicemailer://m/000000000023")
+        press("esc")
+        press("ctrl-k")
+        press("l")
+        #expect(controller.pickerEntries(.links).first?.detail == "nicemailer://m/000000000022")
+        press("cmd-ret")
+        #expect(controller.pasteboard.string(forType: .string) == "nicemailer://m/000000000022")
+        press("ctrl-k"); press("l"); press("ret")
+        #expect(controller.pasteboard.string(forType: .string)?.hasSuffix("(nicemailer://m/000000000021)") == true)
+    }
+
+    /// Opening the link of an older message shows that message: current,
+    /// unfolded, and the reader scrolls to it.
+    @Test func aDeepLinkShowsTheMessageOfTheLinkInItsConversation() async {
+        core.handler = { method, params in
+            switch method {
+            case "locate_message": return ["message_id": 21, "thread_id": 2, "folder_id": 1, "account_id": 1]
+            case "get_thread" where params["thread_id"] as? Int == 2: return Self.threeMessages()
+            default: return Fixture.answer(method, params)
+            }
+        }
+        model.openDeepLink(URL(string: "nicemailer://m/000000000021")!)
+        #expect(await eventually { model.openThread?.id == 2 })
+        #expect(controller.readerState.current == 21)
+        #expect(controller.readerState.folding[21] == true)
+        // The link of the open mail is now that message's.
+        #expect(controller.mailLinkURL?.absoluteString == "nicemailer://m/000000000021")
+        // ctrl-j goes on from it.
+        press("ctrl-j")
+        #expect(controller.readerState.current == 22)
+    }
+
     /// A link by key asks the core by key (`link_key`), in lowercase; a key
     /// this Mac does not have is said as such, not as a mail deleted.
     @Test func aDeepLinkByKeyAsksTheCoreByKey() async {

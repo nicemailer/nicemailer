@@ -1383,7 +1383,9 @@ pub mod deep_link {
 }
 
 /// Result of `locate_message`: where to show a message. A message is in
-/// one folder; its thread may span several.
+/// one folder; its thread may span several. By `link_key`, `folder_id` is
+/// the folder to show the conversation in: for one of the user's own
+/// messages (Sent, Drafts), the folder of its latest received message.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MessageLocation {
     pub message_id: i64,
