@@ -3278,6 +3278,11 @@ pub struct AccountSync {
     /// usual.
     #[serde(default)]
     pub hold: Option<String>,
+    /// Logins per hour at most, learnt from a block of the server
+    /// (`docs/sync.md`, "Pace of the connections"); `None`: no limit, the
+    /// server never blocked a login (or not for 30 days).
+    #[serde(default)]
+    pub login_limit: Option<u32>,
     /// End of the last complete pass, Unix seconds.
     pub last_pass: Option<i64>,
     /// Passes completed since the core started: a client (or a test) that

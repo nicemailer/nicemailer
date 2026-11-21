@@ -623,6 +623,13 @@ impl Session {
         let reply = self.run(cmd).await?;
         if self.malformed.is_none() && reply.done.kind != Kind::Ok {
             self.absorb(reply.untagged);
+            // RFC 5530: these codes say the login is refused for another
+            // reason than the password, for now.
+            if let Some(RespCode::Other(code)) = &reply.done.code
+                && matches!(code.as_str(), "UNAVAILABLE" | "LIMIT" | "INUSE")
+            {
+                return Err(ImapError::Unavailable { code: code.clone(), text: reply.done.text });
+            }
             return Err(ImapError::AuthFailed(reply.done.text));
         }
         let code = reply.done.code.clone();

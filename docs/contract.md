@@ -123,7 +123,7 @@ A dedicated command prints readable output, asks for confirmation when needed an
 
 | Method | What it does | CLI |
 | --- | --- | --- |
-| `sync_status` | The synchronization state of each IMAP account: connection, last pass, folders, bodies left to download. | `nicemailer sync status [key] [--json]` (`sync.md`) |
+| `sync_status` | The synchronization state of each IMAP account: connection, last pass, folders, bodies left to download, the limit of logins learnt from a block of the server (`login_limit`). | `nicemailer sync status [key] [--json]` (`sync.md`) |
 | `sync_now` | Synchronizes an account, or every account, now. | `nicemailer sync now [key]` |
 | `sync_verify` | Compares server and database folder by folder (UIDs, flags, raw files), and can repair the raw files. | `nicemailer sync verify <key> [--skip-hash] [--repair] [--json]`: exit status 1 if they differ. |
 | `raw_gc` | Runs the garbage collector of the raw store now (the core runs it every hour anyway). | `nicemailer raw gc` |

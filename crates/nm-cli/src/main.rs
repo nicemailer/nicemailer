@@ -237,7 +237,10 @@ fn print_sync_status(st: &nm_api::SyncStatus) {
             Some(("poll", n)) => format!(", polled every {} min", n.parse::<u64>().unwrap_or(0) / 60),
             _ => String::new(),
         };
-        print!("{} ({}{}{hold}): {}", a.key, a.mode.as_deref().unwrap_or("not connected yet"), if a.read_only { ", read-only" } else { "" }, a.state);
+        // Learnt from a block of the server (`docs/sync.md`, "Pace of the
+        // connections").
+        let limit = a.login_limit.map_or(String::new(), |l| format!(", at most {l} logins an hour"));
+        print!("{} ({}{}{hold}{limit}): {}", a.key, a.mode.as_deref().unwrap_or("not connected yet"), if a.read_only { ", read-only" } else { "" }, a.state);
         if let Some(t) = a.next_retry {
             print!(", next attempt {}", when(Some(t)));
         }

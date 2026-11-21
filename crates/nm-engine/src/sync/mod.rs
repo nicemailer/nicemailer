@@ -21,8 +21,9 @@
 //!
 //!   With `sync.max_connections = 1`, both jobs share the work connection.
 //!   So they do whenever the body connection has no session: before it
-//!   logs in, while it waits for the budget of logins (after a few sleeps
-//!   of the Mac), after a failure. Otherwise new mail would come in with
+//!   logs in, while it waits for the pace of the logins (after a block
+//!   of the server), after a failure, after a sleep of the Mac that it did
+//!   not survive. Otherwise new mail would come in with
 //!   its headers alone and stay "(body not downloaded)" for as long as the
 //!   wait (up to an hour), even when opened ([`Control::work_fetches_bodies`]).
 //!   The plan had a third connection for IDLE alone: the work connection
@@ -166,6 +167,8 @@ pub(crate) struct Control {
     /// (`account.rs`, "Sleep of the Mac"). Fewer bodies are not worth a
     /// login.
     pub(crate) backlog: AtomicBool,
+    /// A new password was saved: the pause after a refusal ends.
+    pub(crate) password_saved: AtomicBool,
 }
 
 impl Control {
@@ -255,6 +258,19 @@ impl Syncer {
             w.control.kick.store(true, Ordering::SeqCst);
             w.control.work.notify_one();
             w.control.bodies.notify_one();
+        }
+    }
+
+    /// A new IMAP password was saved for `account_id`: the pause its
+    /// worker took after a refusal ends (`pace.rs`). The database is
+    /// updated by the caller (`login_password_changed`).
+    pub fn password_saved(&self, account_id: i64) {
+        for w in self.workers.lock().unwrap().values() {
+            if w.spec.account_id == account_id {
+                w.control.password_saved.store(true, Ordering::SeqCst);
+                w.control.work.notify_one();
+                w.control.bodies.notify_one();
+            }
         }
     }
 

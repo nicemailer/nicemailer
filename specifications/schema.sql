@@ -33,7 +33,7 @@ PRAGMA temp_store = MEMORY;
 -- Une base existante est mise à jour par les migrations du noyau
 -- (crates/nm-store/src/migrations.rs) ; ce fichier crée directement la
 -- dernière version.
-PRAGMA user_version = 15;   -- migrations : comparer à la version attendue au démarrage
+PRAGMA user_version = 16;   -- migrations : comparer à la version attendue au démarrage
 
 -- ------------------------------------------------------------
 -- Comptes : état seulement. Les paramètres (adresse, serveurs, identifiants,
@@ -69,7 +69,21 @@ CREATE TABLE account (
     -- latérale, vue unifiée. Croissant ; à égalité, le plus ancien (id) d'abord.
     -- Un nouveau compte se place après les autres (max + 1). État de l'interface
     -- modifié par set_account_order, donc en base et pas dans accounts.toml.
-    position      INTEGER NOT NULL DEFAULT 0
+    position      INTEGER NOT NULL DEFAULT 0,
+    -- (version 16) Rythme des connexions appris du serveur (docs/sync.md,
+    -- « Pace of the connections ») : aucune limite tant que le serveur n'a
+    -- montré aucun blocage. Après un blocage (refus [UNAVAILABLE], [LIMIT],
+    -- [INUSE] ou des mots qui le disent, mot de passe accepté puis refusé,
+    -- connexions coupées avant le login trois fois de suite), le compte se
+    -- connecte au plus login_limit fois par heure, et pas avant
+    -- login_pause_until. Écrit par le moteur, jamais par l'utilisateur ;
+    -- oublié 30 jours après login_blocked_at. Dates en secondes Unix.
+    login_limit       INTEGER,   -- connexions par heure au plus ; NULL = aucune limite
+    login_blocked_at  INTEGER,   -- date du dernier blocage vu
+    login_pause_until INTEGER,   -- aucune connexion avant cette date
+    -- (version 16) Dernier login réussi : un mot de passe refusé après un
+    -- login réussi est plus sûrement un blocage qu'un mot de passe faux.
+    login_ok_at       INTEGER
 ) STRICT;
 
 -- ------------------------------------------------------------

@@ -45,6 +45,7 @@ pub(crate) fn migrate(conn: &mut Connection, mut version: i64, on_version: &dyn 
             12 => to_13(&tx)?,
             13 => to_14(&tx)?,
             14 => to_15(&tx)?,
+            15 => to_16(&tx)?,
             _ => unreachable!("aucune migration depuis la version {version}"),
         }
         version += 1;
@@ -421,6 +422,20 @@ fn to_15(conn: &Connection) -> Result<()> {
     conn.execute_batch("ALTER TABLE message ADD COLUMN link_key INTEGER;")?;
     crate::link_key::fill_missing(conn)?;
     conn.execute_batch("CREATE INDEX idx_message_link ON message (link_key) WHERE link_key IS NOT NULL;")?;
+    Ok(())
+}
+
+/// Version 16: what each server taught of the pace of its logins
+/// (`docs/sync.md`, "Pace of the connections"): the limit per hour, the
+/// last block, the pause after it, the last login that worked. Four
+/// columns added at the end of a small table, empty: instant.
+fn to_16(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "ALTER TABLE account ADD COLUMN login_limit INTEGER;
+         ALTER TABLE account ADD COLUMN login_blocked_at INTEGER;
+         ALTER TABLE account ADD COLUMN login_pause_until INTEGER;
+         ALTER TABLE account ADD COLUMN login_ok_at INTEGER;",
+    )?;
     Ok(())
 }
 

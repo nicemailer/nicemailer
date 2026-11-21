@@ -34,6 +34,15 @@ pub enum ImapError {
     /// The server refused the user name or the password.
     #[error("the server refused the login: {0}")]
     AuthFailed(String),
+    /// The server refused the login *for now*, with a code of RFC 5530
+    /// that says the password is not the reason: `UNAVAILABLE` (a part of
+    /// the server is down, or the client logs in too often), `LIMIT` (a
+    /// limit of the server reached), `INUSE` (the mailbox is busy). Telling
+    /// it apart from [`ImapError::AuthFailed`] matters: a wrong password
+    /// is never tried again, while this is tried later, more slowly
+    /// (`nm-engine`, `pace.rs`).
+    #[error("the server refuses the login for now: [{code}] {text}")]
+    Unavailable { code: String, text: String },
     /// `NO`: the command failed (no such mailbox, quota…).
     #[error("{command} failed: {text}")]
     No { command: &'static str, text: String, code: Option<String> },

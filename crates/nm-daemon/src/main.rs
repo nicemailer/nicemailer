@@ -1163,6 +1163,12 @@ async fn set_password(core: &Arc<Core>, p: SetPasswordParams, source: Source) ->
     let core2 = core.clone();
     with_store(core, move |s| {
         s.record_password_saved(account_id, &binding.host, &binding.username, source)?;
+        // A refusal of the new password is a wrong password, not a lock,
+        // and a pause after a refusal of the old one ends (`docs/sync.md`,
+        // "Pace of the connections").
+        if !smtp {
+            s.login_password_changed(account_id)?;
+        }
         // Lock order: store, engine, events.
         let events = core2.engine.lock().unwrap().recheck_accounts();
         let mut log = core2.events.lock().unwrap();
@@ -1173,6 +1179,9 @@ async fn set_password(core: &Arc<Core>, p: SetPasswordParams, source: Source) ->
         // A worker stopped by a refused login or a missing password tries
         // again with the new password.
         if let Some(syncer) = core2.syncer.get() {
+            if !smtp {
+                syncer.password_saved(account_id);
+            }
             syncer.kick();
         }
         Ok(())

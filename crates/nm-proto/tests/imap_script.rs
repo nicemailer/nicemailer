@@ -685,3 +685,52 @@ async fn a_folder_dovecot_is_still_creating_does_not_fail_the_list() {
     drop(s);
     task.await.unwrap();
 }
+
+#[tokio::test]
+async fn a_login_refused_for_now_is_told_apart_from_a_wrong_password() {
+    // RFC 5530: UNAVAILABLE, LIMIT and INUSE say the password is not the
+    // reason (`nm-engine`, `pace.rs`, tries again later, more slowly).
+    for code in ["UNAVAILABLE", "LIMIT", "INUSE", "unavailable"] {
+        let (c, task) = server(&format!(
+            "{GREETING}
+             C: N1 AUTHENTICATE PLAIN AGFsaWNlAHNlY3JldA==
+             S: N1 NO [{code}] Too many logins, try again later"
+        ));
+        let mut s = Session::over(c, timeouts()).await.unwrap();
+        let err = s.login("alice", "secret").await.unwrap_err();
+        match &err {
+            ImapError::Unavailable { code: c, text } => {
+                assert_eq!(c, &code.to_ascii_uppercase());
+                assert_eq!(text, "Too many logins, try again later");
+            }
+            other => panic!("{code}: {other:?}"),
+        }
+        assert!(!err.is_fatal());
+        drop(s);
+        let _ = task.await;
+    }
+    // Without a code, or with AUTHENTICATIONFAILED: the password.
+    for code in ["", "[AUTHENTICATIONFAILED] "] {
+        let (c, task) = server(&format!(
+            "{GREETING}
+             C: N1 AUTHENTICATE PLAIN AGFsaWNlAHNlY3JldA==
+             S: N1 NO {code}Authentication failed."
+        ));
+        let mut s = Session::over(c, timeouts()).await.unwrap();
+        let err = s.login("alice", "secret").await.unwrap_err();
+        assert!(matches!(err, ImapError::AuthFailed(_)), "{code}: {err:?}");
+        drop(s);
+        let _ = task.await;
+    }
+}
+
+#[tokio::test]
+async fn an_unknown_response_code_is_named_as_the_server_wrote_it() {
+    let (mut s, task) = logged_in("C: N2 NOOP\n S: N2 NO [OVERQUOTA 12] Over quota").await;
+    match s.noop().await.unwrap_err() {
+        ImapError::No { code, .. } => assert_eq!(code.as_deref(), Some("OVERQUOTA")),
+        other => panic!("{other:?}"),
+    }
+    drop(s);
+    task.await.unwrap();
+}

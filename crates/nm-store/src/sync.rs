@@ -342,6 +342,47 @@ impl Store {
         Ok(())
     }
 
+    /// What the account's server taught of the pace of its logins
+    /// (`docs/sync.md`, "Pace of the connections"); all `None` for a
+    /// server that never blocked a login.
+    pub fn account_login_pace(&self, account_id: i64) -> Result<LoginPaceRow> {
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT login_limit, login_blocked_at, login_pause_until, login_ok_at FROM account WHERE id = ?1",
+                [account_id],
+                |r| Ok(LoginPaceRow { limit: r.get(0)?, blocked_at: r.get(1)?, pause_until: r.get(2)?, ok_at: r.get(3)? }),
+            )
+            .optional()?
+            .unwrap_or_default())
+    }
+
+    /// A block seen: the limit learnt, when, and the pause after it.
+    /// `limit` `None` forgets what was learnt.
+    pub fn set_account_login_block(&mut self, account_id: i64, limit: Option<i64>, blocked_at: Option<i64>, pause_until: Option<i64>) -> Result<()> {
+        self.conn.execute(
+            "UPDATE account SET login_limit = ?2, login_blocked_at = ?3, login_pause_until = ?4 WHERE id = ?1",
+            params![account_id, limit, blocked_at, pause_until],
+        )?;
+        Ok(())
+    }
+
+    /// A new IMAP password was saved: it has not worked yet, so a refusal
+    /// of it is a wrong password, not a lock; and a pause taken after a
+    /// refusal of the old one ends (`docs/sync.md`, "Pace of the
+    /// connections"). The limit learnt stays: it is the server's.
+    pub fn login_password_changed(&mut self, account_id: i64) -> Result<()> {
+        self.conn.execute("UPDATE account SET login_ok_at = NULL, login_pause_until = NULL WHERE id = ?1", [account_id])?;
+        Ok(())
+    }
+
+    /// A login worked (`at`, Unix seconds); `None`: the password changed,
+    /// and has not worked yet.
+    pub fn set_account_login_ok(&mut self, account_id: i64, at: Option<i64>) -> Result<()> {
+        self.conn.execute("UPDATE account SET login_ok_at = ?2 WHERE id = ?1", params![account_id, at])?;
+        Ok(())
+    }
+
     /// The synchronization of a folder starts: records its `UIDVALIDITY` if
     /// the database has none yet (first synchronization). From then on its
     /// mail counts as server mail (`refuse_imap_thread`).
@@ -776,6 +817,19 @@ impl Store {
             .query_row("SELECT id FROM account WHERE config_key = ?1 AND kind = 'imap'", [key], |r| r.get(0))
             .optional()?)
     }
+}
+
+/// The pace of the logins learnt from an account's server (`account`,
+/// version 16), Unix seconds.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct LoginPaceRow {
+    /// Logins per hour at most; `None`: no limit.
+    pub limit: Option<i64>,
+    pub blocked_at: Option<i64>,
+    /// No login before.
+    pub pause_until: Option<i64>,
+    /// The last login that worked.
+    pub ok_at: Option<i64>,
 }
 
 /// A message without body, to download.

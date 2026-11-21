@@ -122,7 +122,9 @@ pub use rusqlite;
 /// 14: `idx_message_reply`, for the "answered" attribute.
 /// 15: `message.link_key`, the key of the link to a mail, the same on
 ///     every Mac (`link_key.rs`).
-pub const SCHEMA_VERSION: i64 = 15;
+/// 16: the pace of the logins learnt from each server (`account.login_*`,
+///     `docs/sync.md`, "Pace of the connections").
+pub const SCHEMA_VERSION: i64 = 16;
 
 /// Full text of the schema, at the latest version. `include_str!` reads the
 /// file at compile time and embeds it in the binary as a `&'static str`; the
@@ -823,6 +825,9 @@ fn check_schema(conn: &Connection, version: i64) -> Result<()> {
     }
     if version >= 7 {
         checks.push(("SELECT send_account_id FROM draft", "draft.send_account_id"));
+    }
+    if version >= 16 {
+        checks.push(("SELECT login_limit, login_blocked_at, login_pause_until, login_ok_at FROM account", "account.login_limit"));
     }
     if version >= 13 {
         checks.push(("SELECT prompt_hash, billed FROM ai_run", "ai_run"));

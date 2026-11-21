@@ -1492,10 +1492,12 @@ dependencies = [
  "nm-proto",
  "nm-store",
  "rand 0.9.5",
+ "rustls-pki-types",
  "serde",
  "serde_json",
  "tempfile",
  "tokio",
+ "tokio-rustls",
  "ureq",
  "zip",
 ]

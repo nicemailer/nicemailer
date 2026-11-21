@@ -40,10 +40,13 @@
 //!
 //! # Pace (`pace.rs`)
 //!
-//! - At most `pace::LOGINS_PER_HOUR` logins per account over any hour,
-//!   both connections together: past it, the next connection waits. A
-//!   body connection that waits (or failed, or has not logged in yet)
-//!   leaves the bodies to the work connection, in slices of
+//! - No limit of logins until the server shows a block (refused "for
+//!   now", a password it accepted refused, turned away before the login
+//!   three times in a row): the account then pauses, and logs in at most
+//!   half as often as it did in the last hour, both connections together.
+//!   What is learnt is saved in `account.login_*`, and read back when the
+//!   worker starts. A body connection that waits (or failed, or has not
+//!   logged in yet) leaves the bodies to the work connection, in slices of
 //!   `BODY_SLICE` after each pass: new mail never waits for its body as
 //!   long as the work connection is up. The two never fetch at the same
 //!   time (`Shared::body_turn`), so no body is downloaded twice.
@@ -80,10 +83,10 @@ use nm_store::insert::Inserter;
 
 use super::bodies::Bodies;
 use super::clock;
-use super::pace::{self, IdleHold, LoginBudget};
+use super::pace::{self, IdleHold, Learnt, LoginPace, Signal};
 use super::pass::{self, Ctx, Mode, PassError};
 use super::spool;
-use super::{AccountSpec, Control, SyncHost, Worker, unix_now};
+use super::{AccountSpec, Control, SyncHost, Worker, read, unix_now, write};
 use crate::probe::imap_spec;
 use crate::secrets::{self, Refusal, Secrets};
 
@@ -122,8 +125,9 @@ struct Shared {
     /// The work thread has waited for the previous worker of the account:
     /// the body thread may start.
     ready: Arc<(std::sync::Mutex<bool>, std::sync::Condvar)>,
-    /// The logins of the last hour, both connections together.
-    logins: Mutex<LoginBudget>,
+    /// The logins of the last hour, both connections together, and what
+    /// the server's blocks taught (`pace.rs`).
+    pace: Mutex<LoginPace>,
     /// Held while bodies are fetched, by either connection: the work
     /// connection takes over while the body connection has no session
     /// (`Control::work_fetches_bodies`), and that one may log in again in
@@ -141,11 +145,17 @@ struct Shared {
 /// worker of the same account) have ended.
 pub(super) fn start(spec: AccountSpec, host: Arc<dyn SyncHost>, secrets: Arc<dyn Secrets>, wait: Vec<JoinHandle<()>>) -> Worker {
     let control = Arc::new(Control::default());
+    // What the server taught before: a pause it imposed still runs after a
+    // restart of the core, and its limit is not learnt again at the cost
+    // of another block.
+    let row = read(host.as_ref(), |st| st.account_login_pace(spec.account_id)).unwrap_or_default();
+    let pace = LoginPace::restore(row.limit, row.blocked_at, row.pause_until, unix_now(), clock::now());
     let status = Arc::new(Mutex::new(AccountSync {
         account_id: spec.account_id,
         key: spec.key.clone(),
         read_only: spec.config.read_only,
         state: "connecting".into(),
+        login_limit: pace.limit().map(|l| l as u32),
         ..AccountSync::default()
     }));
     let shared = Arc::new(Shared {
@@ -155,7 +165,7 @@ pub(super) fn start(spec: AccountSpec, host: Arc<dyn SyncHost>, secrets: Arc<dyn
         control: control.clone(),
         status: status.clone(),
         ready: Arc::new((std::sync::Mutex::new(false), std::sync::Condvar::new())),
-        logins: Mutex::new(LoginBudget::default()),
+        pace: Mutex::new(pace),
         body_turn: tokio::sync::Mutex::new(()),
     });
     let mut threads = Vec::new();
@@ -267,7 +277,7 @@ async fn connect(w: &Shared, conn: Conn) -> Result<(Session, Option<Namespace>),
         return Err(NoSession::Stopped);
     }
     let cfg = &w.spec.config;
-    // The budget of logins (`pace.rs`): checked before anything reaches
+    // The pace of the logins (`pace.rs`): checked before anything reaches
     // the server, and not shortened by `sync_now`.
     //
     // Each connection waits on its own signal. The body connection once
@@ -278,29 +288,29 @@ async fn connect(w: &Shared, conn: Conn) -> Result<(Session, Option<Namespace>),
     // through it.
     let wake = if conn == Conn::Work { &w.control.work } else { &w.control.bodies };
     let who = if conn == Conn::Work { "" } else { " (bodies)" };
-    let (mut told_budget, mut told_wake) = (false, false);
-    // Both rules are checked again after each wait: a wait for the budget
+    let (mut told_pace, mut told_wake) = (false, false);
+    // Both rules are checked again after each wait: a wait for the pace
     // may end at a wake (its clock counts the sleep), and a wait after a
     // wake may be cut by another sleep.
     loop {
+        // A new password: the pause after a refusal of the old one ends.
+        if w.control.password_saved.swap(false, Ordering::SeqCst) {
+            w.pace.lock().unwrap().clear_pause();
+        }
         // A Mac that has just woken may sleep again within seconds (a dark
         // wake): no login before it has been awake `WAKE_SETTLE`.
         let settle = pace::after_wake(clock::since_wake());
-        let budget = w.logins.lock().unwrap().wait(clock::now());
-        let d = settle.max(budget);
+        let paced = w.pace.lock().unwrap().wait(clock::now());
+        let d = settle.max(paced);
         if d.is_zero() {
             break;
         }
         // Once per wait: a body connection is woken by every new mail.
-        if !budget.is_zero() && !told_budget {
-            told_budget = true;
-            eprintln!(
-                "sync {}{who}: {} logins in the last hour, the most allowed: next one in {} s",
-                w.spec.key,
-                pace::LOGINS_PER_HOUR,
-                budget.as_secs()
-            );
-        } else if budget.is_zero() && !told_wake {
+        if !paced.is_zero() && !told_pace {
+            told_pace = true;
+            let limit = w.pace.lock().unwrap().limit().map_or(String::new(), |l| format!(", at most {l} an hour"));
+            eprintln!("sync {}{who}: logins held back by the server's limit{limit}: next one in {} s", w.spec.key, paced.as_secs());
+        } else if paced.is_zero() && !told_wake {
             told_wake = true;
             eprintln!("sync {}{who}: the Mac has just woken, login in {} s", w.spec.key, settle.as_secs().max(1));
         }
@@ -324,18 +334,23 @@ async fn connect(w: &Shared, conn: Conn) -> Result<(Session, Option<Namespace>),
     };
     // Counted before connecting: an attempt that fails is seen by the
     // server all the same.
-    w.logins.lock().unwrap().record(clock::now());
-    let mut s = Session::connect(&imap_spec(cfg), Timeouts::default()).await.map_err(|e| NoSession::Retry(e.to_string()))?;
+    w.pace.lock().unwrap().record(clock::now());
+    let mut s = Session::connect(&imap_spec(cfg), Timeouts::default()).await.map_err(|e| refused(w, conn, e))?;
     // A read-only account: the session itself refuses any writing command,
     // whatever the rest of NiceMailer asks.
     if cfg.read_only {
         s.forbid_writes();
     }
-    match s.login(&cfg.imap.username, password.expose()).await {
-        Ok(()) => {}
-        Err(e @ ImapError::AuthFailed(_)) => return Err(NoSession::Blocked { state: "auth_failed", error: e.to_string() }),
-        Err(e) => return Err(NoSession::Retry(e.to_string())),
+    if let Err(e) = s.login(&cfg.imap.username, password.expose()).await {
+        return Err(refused(w, conn, e));
     }
+    w.pace.lock().unwrap().logged_in();
+    // This password works: refused later, it is more likely a lock than a
+    // wrong password (`pace::classify`). Not an error if it cannot be
+    // written: the refusal would then be taken for a wrong password, as
+    // before.
+    let id = w.spec.account_id;
+    let _ = write(w.host.as_ref(), |st| st.set_account_login_ok(id, Some(unix_now())).map(|()| ((), Default::default())));
     // Optional: a server without them is followed by full comparisons.
     let _ = s.id().await;
     if let Err(e) = s.enable_sync().await
@@ -349,6 +364,40 @@ async fn connect(w: &Shared, conn: Conn) -> Result<(Session, Option<Namespace>),
         Err(_) => None,
     };
     Ok((s, namespace))
+}
+
+/// A connection or a login that failed: what the worker does next, and
+/// what the server taught, if it showed a block (`pace.rs`).
+fn refused(w: &Shared, conn: Conn, e: ImapError) -> NoSession {
+    let id = w.spec.account_id;
+    // Read at the refusal, not at the start: a password saved meanwhile
+    // has not worked yet (`login_password_changed`).
+    let worked = matches!(e, ImapError::AuthFailed(_))
+        && read(w.host.as_ref(), |st| st.account_login_pace(id)).is_ok_and(|row| row.ok_at.is_some());
+    let signal = pace::classify(&e, worked);
+    let learnt = signal.and_then(|signal| w.pace.lock().unwrap().blocked(clock::now(), signal).map(|l| (signal, l)));
+    let Some((signal, Learnt { limit, pause })) = learnt else {
+        return match e {
+            // A wrong password: never tried again until a new one is saved,
+            // or the server could lock the account.
+            ImapError::AuthFailed(_) if signal != Some(Signal::Locked) => NoSession::Blocked { state: "auth_failed", error: e.to_string() },
+            _ => NoSession::Retry(e.to_string()),
+        };
+    };
+    let now = unix_now();
+    let _ = write(w.host.as_ref(), |st| {
+        st.set_account_login_block(id, Some(limit as i64), Some(now), Some(now + pause.as_secs() as i64)).map(|()| ((), Default::default()))
+    });
+    w.status.lock().unwrap().login_limit = Some(limit as u32);
+    let why = match signal {
+        Signal::Locked => "it accepted this password before: most likely a lock for too many logins",
+        Signal::Said => "the server limits logins",
+        Signal::TurnedAway => "the server turned the connection away three times in a row",
+    };
+    let error = format!("{e} ({why}; at most {limit} logins an hour from now on, next attempt in {} min)", pause.as_secs().div_ceil(60));
+    let who = if conn == Conn::Work { "" } else { " (bodies)" };
+    eprintln!("sync {}{who}: {error}", w.spec.key);
+    NoSession::Retry(error)
 }
 
 /// The delay before the next attempt.
@@ -507,6 +556,7 @@ async fn work_loop(w: &Shared) {
                     announced.error(w, &error);
                     if clock::now().saturating_sub(connected_at) >= pace::STABLE {
                         backoff.reset();
+                        w.pace.lock().unwrap().stable();
                     }
                     retry_later(w, &mut backoff, error).await;
                     continue 'connect;
@@ -576,6 +626,7 @@ async fn work_loop(w: &Shared) {
                             announced.error(w, &error);
                             if clock::now().saturating_sub(connected_at) >= pace::STABLE {
                                 backoff.reset();
+                                w.pace.lock().unwrap().stable();
                             }
                             retry_later(w, &mut backoff, error).await;
                             continue 'connect;
@@ -588,6 +639,7 @@ async fn work_loop(w: &Shared) {
                     announced.error(w, &error);
                     if clock::now().saturating_sub(connected_at) >= pace::STABLE {
                         backoff.reset();
+                        w.pace.lock().unwrap().stable();
                     }
                     retry_later(w, &mut backoff, error).await;
                     continue 'connect;
@@ -633,6 +685,7 @@ async fn work_loop(w: &Shared) {
                         announced.error(w, &error);
                         if clock::now().saturating_sub(connected_at) >= pace::STABLE {
                             backoff.reset();
+                            w.pace.lock().unwrap().stable();
                         }
                         retry_later(w, &mut backoff, error).await;
                         continue 'connect;
@@ -641,7 +694,7 @@ async fn work_loop(w: &Shared) {
             }
             if hold == IdleHold::Poll {
                 // No connection kept with this server: closed now, a new one
-                // for the next pass, within the budget of logins.
+                // for the next pass, within the pace of the logins.
                 s.logout().await;
                 set(&w.status, "idle", None);
                 let d = poll.max(pace::POLL_FLOOR).saturating_sub(since(last_full));
@@ -684,6 +737,7 @@ async fn work_loop(w: &Shared) {
                     announced.error(w, &error);
                     if clock::now().saturating_sub(connected_at) >= pace::STABLE {
                         backoff.reset();
+                        w.pace.lock().unwrap().stable();
                     }
                     retry_later(w, &mut backoff, error).await;
                     continue 'connect;
@@ -733,7 +787,9 @@ fn since(t: Option<Duration>) -> Duration {
 
 /// Records the error and waits before the next attempt.
 async fn retry_later(w: &Shared, backoff: &mut Backoff, error: String) {
-    let d = backoff.next();
+    // Not before the pause a block imposed: the attempt would only wait
+    // for it in `connect`, after a log saying otherwise.
+    let d = backoff.next().max(w.pace.lock().unwrap().wait(clock::now()));
     eprintln!("sync {}: {error}; new attempt in {} s", w.spec.key, d.as_secs());
     {
         let mut st = w.status.lock().unwrap();

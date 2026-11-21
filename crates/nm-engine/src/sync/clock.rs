@@ -6,8 +6,8 @@
 //!
 //! - [`now`], the *continuous* clock (`CLOCK_MONOTONIC` on macOS): it goes
 //!   on while the Mac sleeps, like the wall clock, but no one can set it.
-//!   The rules that speak of real time use it: the budget of logins
-//!   ("10 an hour" is an hour of the server's, which does not sleep), the
+//!   The rules that speak of real time use it: the pace of the logins
+//!   ("N an hour" is an hour of the server's, which does not sleep), the
 //!   delays before a new attempt, the time since the last full pass;
 //! - [`awake`], the *awake* clock (`CLOCK_UPTIME_RAW`): it stops while the
 //!   Mac sleeps. It is the clock of `std::time::Instant` and of tokio's

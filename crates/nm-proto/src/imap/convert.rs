@@ -144,8 +144,20 @@ pub(crate) fn code(c: Code<'_>) -> RespCode {
         }
         Code::Modified(set) => RespCode::Modified(uid_set(&set)),
         Code::Closed => RespCode::Closed,
+        // A code imap-codec does not know (`AUTHENTICATIONFAILED`,
+        // `UNAVAILABLE`…): its name, as the server wrote it, upper case.
+        // Its Debug form (`Other(CodeOther(b"UNAVAILABLE"))`) was kept
+        // until 21 November 2026, which nothing could match.
+        Code::Other(o) => RespCode::Other(code_atom(o.inner())),
         other => RespCode::Other(format!("{other:?}")),
     }
+}
+
+/// The name of a response code: its first word, upper case (a code may
+/// carry arguments after a space).
+fn code_atom(raw: &[u8]) -> String {
+    let text = String::from_utf8_lossy(raw);
+    text.split_whitespace().next().unwrap_or("").to_ascii_uppercase()
 }
 
 /// A `UidElement` as a range.

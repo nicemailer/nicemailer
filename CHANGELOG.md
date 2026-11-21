@@ -21,6 +21,7 @@ How to write it:
 
 ### Changed
 
+- **Sync:** NiceMailer no longer limits each account to 10 connections an hour. It slows down only for a server that shows a block (refuses a login "for now", refuses the password it accepted, turns the connection away): it then waits from 15 minutes to 4 hours, and connects at most half as often from then on. `nicemailer sync status` shows the limit learnt; it survives a restart, and a new password ends the wait.
 - **Links:** The link to a mail (`l`, then Return) names the mail itself, `nicemailer://m/3f9a0c2b7e41`, rather than its number in the database: pasted in a note, it opens the mail on every Mac that has it, and after a mailbox is imported again. Links copied before keep working on the Mac that made them.
 - **Links:** In a conversation, the link to a mail (`l`) is the one of the message you are reading (`ctrl-k` / `ctrl-j`), and opening it shows that very message, unfolded, in the folder where the conversation is filed. The History screen opens its mails the same way.
 - **Accounts:** with a single account, the account switcher (`@`) no longer shows in the status bar, the key does nothing and the help leaves it out.

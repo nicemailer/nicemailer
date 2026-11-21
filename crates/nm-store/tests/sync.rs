@@ -259,3 +259,24 @@ fn bodies_are_fetched_inbox_first_then_newest_first() {
     assert_eq!(order, [(inbox, 7), (archive, 2), (archive, 1)]);
 }
 
+
+#[test]
+fn the_pace_learnt_from_a_server_is_kept_and_can_be_forgotten() {
+    // `docs/sync.md`, "Pace of the connections": nothing known at first.
+    let (mut s, account) = store();
+    assert_eq!(s.account_login_pace(account).unwrap(), nm_store::sync::LoginPaceRow::default());
+    s.set_account_login_ok(account, Some(1_000)).unwrap();
+    s.set_account_login_block(account, Some(3), Some(2_000), Some(2_900)).unwrap();
+    let row = s.account_login_pace(account).unwrap();
+    assert_eq!((row.limit, row.blocked_at, row.pause_until, row.ok_at), (Some(3), Some(2_000), Some(2_900), Some(1_000)));
+    // A new password: not known to work, no pause; the limit stays.
+    s.login_password_changed(account).unwrap();
+    let row = s.account_login_pace(account).unwrap();
+    assert_eq!((row.limit, row.blocked_at, row.pause_until, row.ok_at), (Some(3), Some(2_000), None, None));
+    // Forgotten (30 days without a block), and the password changed.
+    s.set_account_login_block(account, None, None, None).unwrap();
+    s.set_account_login_ok(account, None).unwrap();
+    assert_eq!(s.account_login_pace(account).unwrap(), nm_store::sync::LoginPaceRow::default());
+    // An unknown account: nothing, not an error.
+    assert_eq!(s.account_login_pace(9_999).unwrap(), nm_store::sync::LoginPaceRow::default());
+}

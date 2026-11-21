@@ -12,6 +12,11 @@
 //! server or the network dropped meanwhile: no byte goes through, and
 //! nothing closes it.
 //!
+//! And the blocks of a server that limits logins (`pace.rs`, `LoginPace`):
+//! a proxy in front of the Dovecot without TLS answers the login of a
+//! chosen connection itself, as a server that limits logins would, or
+//! spoils its password, as a server that locked the account would.
+//!
 //! Needs the test servers: `make imap-up`, then `make imap-test`.
 
 mod common;
@@ -44,7 +49,7 @@ enum Cut {
     Lifetime(Duration),
     /// The first connection lives; every other one is cut at once. The
     /// body connection then never gets a session, as when it waits for
-    /// the budget of logins after a few sleeps of the Mac (20 November
+    /// the pace of the logins after a block of the server (20 November
     /// 2026: new mail stayed "(body not downloaded)" for 40 minutes).
     AllButFirst,
     /// Never cut ([`CuttingProxy::freeze`] only).
@@ -403,4 +408,278 @@ fn after_a_sleep_that_kills_the_connections_one_login_once_awake() {
     until(&mut c, 30, "body fetched", |a| a["bodies_missing"] == 0);
     std::thread::sleep(Duration::from_secs(5));
     assert_eq!(proxy.connections(), before + 1, "one login for the wake, not one per connection");
+}
+
+/// What [`LoginProxy`] does to the login of the connections it picks.
+#[derive(Clone, Copy)]
+enum Answer {
+    /// Answers itself, as Gmail or Infomaniak would: refused for now.
+    Unavailable,
+    /// Spoils the password: Dovecot refuses it, as a server that locked
+    /// the account refuses a password it accepted before.
+    WrongPassword,
+}
+
+/// A proxy that speaks clear text to the core and TLS to the test Dovecot,
+/// so that it can read the login: it answers the login of the connections
+/// whose index (from 0, in the order they come) is in `picked`, as
+/// `answer` says; the others pass through. (Dovecot's own clear-text port
+/// refuses logins, `LOGINDISABLED`: the connections come from outside its
+/// container.)
+struct LoginProxy {
+    port: u16,
+    connections: Arc<AtomicUsize>,
+}
+
+impl LoginProxy {
+    fn start(answer: Answer, picked: std::ops::Range<usize>) -> LoginProxy {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let connections = Arc::new(AtomicUsize::new(0));
+        let count = connections.clone();
+        std::thread::spawn(move || {
+            for client in listener.incoming() {
+                let Ok(client) = client else { return };
+                let index = count.fetch_add(1, Ordering::SeqCst);
+                let answer = picked.contains(&index).then_some(answer);
+                std::thread::spawn(move || {
+                    let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+                    rt.block_on(relay(client, answer));
+                });
+            }
+        });
+        LoginProxy { port, connections }
+    }
+
+    fn connections(&self) -> usize {
+        self.connections.load(Ordering::SeqCst)
+    }
+}
+
+/// One connection of [`LoginProxy`]: Dovecot's bytes to the core as they
+/// come; the core's line by line until the login, which `answer` (if any)
+/// replaces, then as they come.
+async fn relay(client: TcpStream, answer: Option<Answer>) {
+    use rustls_pki_types::pem::PemObject;
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
+    let mut roots = tokio_rustls::rustls::RootCertStore::empty();
+    for cert in rustls_pki_types::CertificateDer::pem_file_iter(ca()).unwrap() {
+        roots.add(cert.unwrap()).unwrap();
+    }
+    let provider = Arc::new(tokio_rustls::rustls::crypto::ring::default_provider());
+    let config = tokio_rustls::rustls::ClientConfig::builder_with_provider(provider)
+        .with_safe_default_protocol_versions()
+        .unwrap()
+        .with_root_certificates(roots)
+        .with_no_client_auth();
+    let tcp = tokio::net::TcpStream::connect(("127.0.0.1", DOVECOT_TLS)).await.unwrap();
+    let name = rustls_pki_types::ServerName::try_from("127.0.0.1").unwrap();
+    let tls = tokio_rustls::TlsConnector::from(Arc::new(config)).connect(name, tcp).await.unwrap();
+    let (mut from_server, mut to_server) = tokio::io::split(tls);
+    client.set_nonblocking(true).unwrap();
+    let client = tokio::net::TcpStream::from_std(client).unwrap();
+    let (from_client, to_client) = client.into_split();
+    // Written by both directions: Dovecot's bytes, and the proxy's own
+    // answer to a login.
+    let to_client = tokio::sync::Mutex::new(to_client);
+    let mut reader = tokio::io::BufReader::new(from_client);
+    let down = async {
+        let mut buf = vec![0u8; 16 * 1024];
+        loop {
+            match tokio::io::AsyncReadExt::read(&mut from_server, &mut buf).await {
+                Ok(0) | Err(_) => break,
+                Ok(n) => {
+                    if to_client.lock().await.write_all(&buf[..n]).await.is_err() {
+                        break;
+                    }
+                }
+            }
+        }
+        let _ = to_client.lock().await.shutdown().await;
+    };
+    let up = async {
+        loop {
+            let mut line = String::new();
+            if reader.read_line(&mut line).await.unwrap_or(0) == 0 {
+                let _ = to_server.shutdown().await;
+                return;
+            }
+            let mut words = line.split_whitespace();
+            let (tag, command) = (words.next().unwrap_or("").to_string(), words.next().unwrap_or("").to_ascii_uppercase());
+            let login = command == "AUTHENTICATE" || command == "LOGIN";
+            match (login, answer) {
+                (true, Some(Answer::Unavailable)) => {
+                    // Not sent to Dovecot: the proxy is the server here.
+                    let reply = format!("{tag} NO [UNAVAILABLE] Too many logins, try again later\r\n");
+                    let _ = to_client.lock().await.write_all(reply.as_bytes()).await;
+                }
+                (true, Some(Answer::WrongPassword)) => {
+                    // AUTHENTICATE PLAIN with SASL-IR: "\0user\0password"
+                    // in base64, the last word. Replaced by a wrong one.
+                    let plain = base64_decode(line.split_whitespace().last().unwrap());
+                    let user = String::from_utf8(plain).unwrap().split('\0').nth(1).unwrap().to_string();
+                    let spoilt = base64_encode(format!("\0{user}\0wrong").as_bytes());
+                    to_server.write_all(format!("{tag} AUTHENTICATE PLAIN {spoilt}\r\n").as_bytes()).await.unwrap();
+                }
+                _ => to_server.write_all(line.as_bytes()).await.unwrap(),
+            }
+            if login {
+                break;
+            }
+        }
+        let _ = tokio::io::copy(&mut reader, &mut to_server).await;
+    };
+    tokio::join!(down, up);
+}
+
+const B64: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+fn base64_encode(bytes: &[u8]) -> String {
+    let mut out = String::new();
+    for chunk in bytes.chunks(3) {
+        let b = [chunk[0], *chunk.get(1).unwrap_or(&0), *chunk.get(2).unwrap_or(&0)];
+        let n = (b[0] as u32) << 16 | (b[1] as u32) << 8 | b[2] as u32;
+        for i in 0..4 {
+            if i <= chunk.len() {
+                out.push(B64[(n >> (18 - 6 * i) & 63) as usize] as char);
+            } else {
+                out.push('=');
+            }
+        }
+    }
+    out
+}
+
+fn base64_decode(text: &str) -> Vec<u8> {
+    let (mut bits, mut n, mut out) = (0u32, 0, Vec::new());
+    for c in text.bytes().filter(|c| *c != b'=') {
+        bits = bits << 6 | B64.iter().position(|b| *b == c).unwrap() as u32;
+        n += 6;
+        if n >= 8 {
+            n -= 8;
+            out.push((bits >> n) as u8);
+        }
+    }
+    out
+}
+
+#[test]
+fn base64_both_ways() {
+    for s in ["", "a", "ab", "abc", "\0user\0nicemailer"] {
+        assert_eq!(base64_decode(&base64_encode(s.as_bytes())), s.as_bytes());
+    }
+    assert_eq!(base64_encode(b"\0alice\0secret"), "AGFsaWNlAHNlY3JldA==");
+}
+
+/// The core with one account behind the login proxy, without TLS.
+fn plain_core(dir: &Path, port: u16, user: &str) -> (common::Core, Client) {
+    let accounts = format!(
+        "[accounts.cut]\nemail = \"{user}@example.com\"\n[accounts.cut.imap]\nhost = \"127.0.0.1\"\nport = {port}\n\
+         security = \"none\"\nusername = \"{user}\"\n"
+    );
+    std::fs::write(dir.join("accounts.toml"), accounts).unwrap();
+    let core = start_with(dir, &[]);
+    let mut c = Client::connect(dir);
+    c.call("set_password", json!({"account": "cut", "password": "nicemailer"})).unwrap();
+    (core, c)
+}
+
+/// `account.login_limit`, `login_pause_until` and `login_ok_at`, from the
+/// database.
+fn saved_pace(dir: &Path) -> (Option<i64>, Option<i64>, Option<i64>) {
+    let db = nm_store::rusqlite::Connection::open_with_flags(dir.join("nicemailer.db"), nm_store::rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .unwrap();
+    db.query_row("SELECT login_limit, login_pause_until, login_ok_at FROM account WHERE config_key = 'cut'", [], |r| {
+        Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+    })
+    .unwrap()
+}
+
+fn unix_now() -> i64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64
+}
+
+#[test]
+#[ignore = "needs the test servers: make imap-up, then make imap-test"]
+fn a_server_that_says_it_limits_logins_pauses_the_account_and_teaches_its_limit() {
+    let dir = tempfile::tempdir().unwrap();
+    let user = new_user();
+    deliver(&user, "first");
+    // The work connection logs in; the body connection, the second, is
+    // refused "for now".
+    let proxy = LoginProxy::start(Answer::Unavailable, 1..2);
+    let (core, mut c) = plain_core(dir.path(), proxy.port, &user);
+
+    // Learnt: two logins in the hour, so the floor of three an hour, and a
+    // pause of 15 min. Not an error of the account: the work connection
+    // works, and fetches the bodies.
+    let a = until(&mut c, 60, "the limit learnt", |a| a["login_limit"] == 3 && a["bodies_missing"] == 0 && a["state"] == "idle");
+    assert!(a["error"].is_null(), "{a:#}");
+    let (limit, pause_until, ok_at) = saved_pace(dir.path());
+    assert_eq!(limit, Some(3));
+    assert!(ok_at.is_some(), "the work connection's login was recorded");
+    let pause = pause_until.unwrap() - unix_now();
+    assert!((800..=900).contains(&pause), "a pause of 15 min: {pause} s left");
+    // The body connection does not try again during the pause.
+    std::thread::sleep(Duration::from_secs(15));
+    assert_eq!(proxy.connections(), 2, "no new login during the pause");
+
+    // A restart of the core does not undo it: the limit is shown at once,
+    // and the work connection waits for the end of the pause.
+    drop(c);
+    drop(core);
+    let core = start_with(dir.path(), &[]);
+    let mut c = Client::connect(dir.path());
+    let a = until(&mut c, 20, "the pause kept", |a| a["state"] == "waiting");
+    assert_eq!(a["login_limit"], 3, "{a:#}");
+    assert!(a["next_retry"].as_i64().unwrap() > unix_now() + 600, "{a:#}");
+    std::thread::sleep(Duration::from_secs(5));
+    assert_eq!(proxy.connections(), 2, "no login after the restart");
+
+    // A new password ends the pause (it may have been the reason); the
+    // limit stays, it is the server's.
+    c.call("set_password", json!({"account": "cut", "password": "nicemailer"})).unwrap();
+    let a = until(&mut c, 30, "connected again", |a| a["state"] == "idle" && a["passes"].as_u64() >= Some(1));
+    assert_eq!(a["login_limit"], 3, "{a:#}");
+    assert!(proxy.connections() >= 3);
+    drop(core);
+}
+
+#[test]
+#[ignore = "needs the test servers: make imap-up, then make imap-test"]
+fn a_password_refused_after_it_worked_is_a_lock_not_a_wrong_password() {
+    let dir = tempfile::tempdir().unwrap();
+    let user = new_user();
+    deliver(&user, "first");
+    // The work connection logs in with the password; the body connection's
+    // is refused by Dovecot, as by a server that locked the account.
+    let proxy = LoginProxy::start(Answer::WrongPassword, 1..2);
+    let (_core, mut c) = plain_core(dir.path(), proxy.port, &user);
+
+    // Taken for a lock: a pause of 30 min and the floor of three an hour,
+    // not `auth_failed` with no attempt until a new password.
+    let a = until(&mut c, 60, "the lock learnt", |a| a["login_limit"] == 3 && a["bodies_missing"] == 0);
+    assert_eq!(a["state"], "idle", "{a:#}");
+    let (_, pause_until, _) = saved_pace(dir.path());
+    let pause = pause_until.unwrap() - unix_now();
+    assert!((1700..=1800).contains(&pause), "a pause of 30 min: {pause} s left");
+    std::thread::sleep(Duration::from_secs(10));
+    assert_eq!(proxy.connections(), 2, "no new login during the pause");
+}
+
+#[test]
+#[ignore = "needs the test servers: make imap-up, then make imap-test"]
+fn a_password_wrong_from_the_start_is_not_tried_again_and_teaches_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let user = new_user();
+    let proxy = LoginProxy::start(Answer::WrongPassword, 0..usize::MAX);
+    let (_core, mut c) = plain_core(dir.path(), proxy.port, &user);
+
+    // Never worked: a wrong password, as before. No limit, no pause, and
+    // no attempt until a new password is saved.
+    let a = until(&mut c, 30, "auth_failed", |a| a["state"] == "auth_failed");
+    assert!(a["login_limit"].is_null(), "{a:#}");
+    assert_eq!(saved_pace(dir.path()), (None, None, None));
+    std::thread::sleep(Duration::from_secs(10));
+    assert_eq!(proxy.connections(), 1, "tried once");
 }
