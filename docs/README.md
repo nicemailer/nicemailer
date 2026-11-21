@@ -23,7 +23,7 @@ User and developer documentation, in English. It is written together with the co
 | [keymap.md](keymap.md) | The keys of the app redefined in `keymap.toml`: writing a key, contexts, actions, menus of your own, errors, `nicemailer keymap check | defaults | show` |
 | [configuration.md](configuration.md) | Settings in `config.toml` and accounts in `accounts.toml`: where they are, how they are created at the first start, what is checked, how changes apply while the core runs, passwords in development, the read pool |
 | [imap.md](imap.md) | The IMAP client of the core: connection, certificates, login, commands and their fallbacks, large messages, failures, IDLE, `nicemailer imap probe` |
-| [deep-links.md](deep-links.md) | The URL of each mail, `nicemailer://m/<id>`: copying it from `l` (Markdown for Obsidian), opening it, `make bundle` |
+| [deep-links.md](deep-links.md) | The URL of each mail, `nicemailer://m/<key>`, the same on every Mac: copying it from `l` (Markdown for Obsidian), opening it, `make bundle` |
 | [app-bundle.md](app-bundle.md) | `NiceMailer.app` in `/Applications`: its core run by a launch agent, stopping it, choosing the mailbox (⌥ at launch, Change Mailbox…), `make bundle` |
 | [editor.md](editor.md) | The editor of a mail's text: a standard Mac text field (Tiptap in a web view), text only or formatted, its keys, pasting, what the core sends, the protocol, building it |
 | [sending.md](sending.md) | Replying to a mail: the reply screen, what the core prepares, sending through SMTP with an undo delay, the copy in Sent, the filing, failures, the SMTP password |

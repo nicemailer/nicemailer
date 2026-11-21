@@ -820,9 +820,9 @@ impl Store {
     }
 
     /// Where the message `message_id` is: its thread, folder and account
-    /// (`locate_message`, deep links `nicemailer://m/<id>`). `NotFound`
-    /// when it is not in the database any more (deleted, or the database
-    /// was rebuilt and ids changed).
+    /// (`locate_message`, old deep links `nicemailer://m/<id>`, the History
+    /// screen). `NotFound` when it is not in the database any more
+    /// (deleted, or the database was rebuilt and ids changed).
     pub fn locate_message(&self, message_id: i64) -> Result<nm_api::MessageLocation> {
         self.conn
             .query_row(
@@ -832,6 +832,48 @@ impl Store {
             )
             .optional()?
             .ok_or_else(|| StoreError::NotFound(format!("message {message_id}")))
+    }
+
+    /// Where the mail of a link key is (`locate_message`, deep links
+    /// `nicemailer://m/<key>`; `modele de donnees.md`, `link_key`).
+    ///
+    /// Several rows share a key as a rule: the same mail received on two
+    /// accounts, its copy in Sent, its copies in several folders. The link
+    /// opens, in this order, a row that has a conversation; one out of the
+    /// bins (Deleted, Junk, Banned, Quarantine); one out of Sent and
+    /// Drafts, as the link of a thread names its latest received message
+    /// (`docs/deep-links.md`); the latest received. The index
+    /// `idx_message_link` gives the few rows of the key, which are sorted
+    /// here. `NotFound` when no mail of this database has the key.
+    pub fn locate_link(&self, key: i64) -> Result<nm_api::MessageLocation> {
+        self.conn
+            .prepare_cached(
+                "SELECT m.id, m.thread_id, m.folder_id, m.account_id FROM message m
+                   JOIN folder f ON f.id = m.folder_id
+                  WHERE m.link_key = ?1
+                  ORDER BY m.thread_id IS NULL,
+                           coalesce(f.role IN ('deleted', 'junk', 'banned', 'quarantine'), 0),
+                           coalesce(f.role IN ('sent', 'drafts'), 0),
+                           m.date_received DESC, m.id DESC
+                  LIMIT 1",
+            )?
+            .query_row([key], |r| {
+                Ok(nm_api::MessageLocation { message_id: r.get(0)?, thread_id: r.get(1)?, folder_id: r.get(2)?, account_id: r.get(3)? })
+            })
+            .optional()?
+            .ok_or_else(|| StoreError::NotFound(format!("link {}", nm_api::deep_link::key_text(key))))
+    }
+
+    /// The deep link of a message (`nicemailer://m/<key>`, or its id when
+    /// it has no key yet), for the files the core writes: the AI's calendar
+    /// events and contact cards. `NotFound` for a message deleted since.
+    pub fn message_link(&self, message_id: i64) -> Result<String> {
+        let key: Option<i64> = self
+            .conn
+            .query_row("SELECT link_key FROM message WHERE id = ?1", [message_id], |r| r.get(0))
+            .optional()?
+            .ok_or_else(|| StoreError::NotFound(format!("message {message_id}")))?;
+        Ok(nm_api::deep_link::url(message_id, key))
     }
 
     /// The addresses of the mailbox, lowercase: those the caller gives
@@ -873,7 +915,7 @@ impl Store {
                     -- (schema.sql, table address).
                     CASE WHEN a.body_format = 'html' AND a.remote_images = 1 THEN 'images' ELSE a.body_format END,
                     u.url, u.mailto, u.one_click, u.source, a.unsubscribed_at,
-                    coalesce(b.tracking_pixels, 0)
+                    coalesce(b.tracking_pixels, 0), m.link_key
                FROM message m
                JOIN folder f ON f.id = m.folder_id
                LEFT JOIN message_body b ON b.message_id = m.id
@@ -917,6 +959,7 @@ impl Store {
                     // Filled below, from the bodies just read.
                     links: vec![],
                     verification_code: None,
+                    link: nm_api::deep_link::url(r.get(0)?, r.get(23)?),
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;

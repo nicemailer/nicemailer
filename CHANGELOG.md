@@ -20,6 +20,7 @@ How to write it:
 
 ### Changed
 
+- **Links:** The link to a mail (`l`, then Return) names the mail itself, `nicemailer://m/3f9a0c2b7e41`, rather than its number in the database: pasted in a note, it opens the mail on every Mac that has it, and after a mailbox is imported again. Links copied before keep working on the Mac that made them.
 - **Accounts:** with a single account, the account switcher (`@`) no longer shows in the status bar, the key does nothing and the help leaves it out.
 - **Display:** The default text size is 16 pt instead of 12, and 18 pt in the status bar. ⌘+ and ⌘− now last for the session only, and ⌘0 goes back to the size of `config.toml`.
 

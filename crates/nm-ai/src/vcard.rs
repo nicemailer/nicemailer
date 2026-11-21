@@ -131,7 +131,7 @@ impl Contact {
 ///   it already has (`nicemailer-ai-<run>@nicemailer`).
 /// - `stamp` is when the file is made, in Unix seconds (`REV`, UTC).
 /// - `mail` is the link of the mail the card comes from
-///   (`nicemailer://m/<id>`), put in the note: from the card, one click
+///   (`nicemailer://m/<key>`), put in the note: from the card, one click
 ///   goes back to the mail. Not in `URL`, which the address book would show
 ///   as the contact's website.
 pub fn card(c: &Contact, uid: &str, stamp: i64, mail: Option<&str>) -> String {

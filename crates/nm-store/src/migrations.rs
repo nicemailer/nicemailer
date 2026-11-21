@@ -44,6 +44,7 @@ pub(crate) fn migrate(conn: &mut Connection, mut version: i64, on_version: &dyn 
             11 => to_12(&tx)?,
             12 => to_13(&tx)?,
             13 => to_14(&tx)?,
+            14 => to_15(&tx)?,
             _ => unreachable!("aucune migration depuis la version {version}"),
         }
         version += 1;
@@ -405,6 +406,21 @@ fn to_13(conn: &Connection) -> Result<()> {
 /// replies; built in 0.1 s.
 fn to_14(conn: &Connection) -> Result<()> {
     conn.execute_batch("CREATE INDEX idx_message_reply ON message (folder_id, thread_id) WHERE in_reply_to IS NOT NULL;")?;
+    Ok(())
+}
+
+/// Version 15: `message.link_key`, the key of the link to a mail
+/// (`modele de donnees.md`, `link_key`; `link_key.rs`), the same on every
+/// Mac that has the mail, where `message.id` belongs to one database. The
+/// column is added at the end of the table (instant), then computed for
+/// the mail already stored: SQLite has no SHA-256, so the rows are read
+/// and updated from Rust. Every row is rewritten: about 10 s for 275,000
+/// mails, once, under the progress of the migration. The index is built
+/// last, on the filled column.
+fn to_15(conn: &Connection) -> Result<()> {
+    conn.execute_batch("ALTER TABLE message ADD COLUMN link_key INTEGER;")?;
+    crate::link_key::fill_missing(conn)?;
+    conn.execute_batch("CREATE INDEX idx_message_link ON message (link_key) WHERE link_key IS NOT NULL;")?;
     Ok(())
 }
 

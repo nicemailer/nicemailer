@@ -790,6 +790,47 @@ struct GeekControllerTests {
         #expect(controller.pickerEntries(.links).first?.label == L("Link to this mail"))
     }
 
+    /// The core writes the link by the mail's key (`MessageView.link`): the
+    /// row shows it and Return copies it, so the note opens the mail on
+    /// another Mac too.
+    @Test func theLinkCopiedIsTheKeyTheCoreGives() async {
+        core.handler = { method, params in
+            guard method == "get_thread", params["thread_id"] as? Int == 2 else { return Fixture.answer(method, params) }
+            var thread = Fixture.threadView(2)
+            var m = (thread["messages"] as! [[String: Any]])[0]
+            m["link"] = "nicemailer://m/3f9a0c2b7e41"
+            thread["messages"] = [m]
+            return thread
+        }
+        model.selectedThreadId = 2
+        _ = await eventually { model.openThread?.id == 2 }
+        press("l")
+        #expect(controller.pickerEntries(.links).first?.detail == "nicemailer://m/3f9a0c2b7e41")
+        press("ret")
+        #expect(controller.pasteboard.string(forType: .string)?.hasSuffix("(nicemailer://m/3f9a0c2b7e41)") == true)
+        press("l"); press("cmd-ret")
+        #expect(controller.pasteboard.string(forType: .string) == "nicemailer://m/3f9a0c2b7e41")
+    }
+
+    /// A link by key asks the core by key (`link_key`), in lowercase; a key
+    /// this Mac does not have is said as such, not as a mail deleted.
+    @Test func aDeepLinkByKeyAsksTheCoreByKey() async {
+        core.handler = { method, params in
+            guard method == "locate_message" else { return Fixture.answer(method, params) }
+            if params["link_key"] as? String == "3f9a0c2b7e41" {
+                return ["message_id": 50, "thread_id": 5, "folder_id": 3, "account_id": 1]
+            }
+            return CoreClient.RPCError(code: CoreClient.RPCError.notFound, message: "link not found")
+        }
+        model.openDeepLink(URL(string: "nicemailer://m/3F9A0C2B7E41")!)
+        #expect(await eventually { model.selectedThreadId == 5 })
+        #expect(model.selectedFolderId == 3)
+        #expect(core.calls("locate_message").first?["message_id"] == nil)
+        model.openDeepLink(URL(string: "nicemailer://m/000000000000")!)
+        #expect(await eventually { model.lastError == L("This mail is not in NiceMailer on this Mac") })
+        #expect(model.selectedThreadId == 5)
+    }
+
     // MARK: Verification codes
 
     /// A code mail: its code is the first row of `l`, with a lock, and

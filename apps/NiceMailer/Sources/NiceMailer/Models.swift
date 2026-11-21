@@ -188,6 +188,11 @@ struct MessageView: Decodable, Identifiable, Hashable {
     /// (`codes.rs` in the core): offered first by `l`, where Return copies
     /// it.
     var verificationCode: String? = nil
+    /// The deep link of the message, `nicemailer://m/<key>`, written by the
+    /// core: the same on every Mac that has the mail (`DeepLink`). A `var`
+    /// with a default so that the tests can build messages without it; the
+    /// app then falls back on the id (`DeepLink.url(of:)`).
+    var link: String? = nil
 }
 
 /// Where a message is (`locate_message`), to open a deep link.

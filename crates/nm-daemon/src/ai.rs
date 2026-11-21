@@ -107,7 +107,7 @@ enum Target {
     Draft { draft_id: i64, revision: i64, body: String, ranges: Vec<Range<usize>>, format: DraftText },
     /// A mail and its conversation; `message` is the mail read, which a
     /// calendar file or a contact card links back to
-    /// (`nicemailer://m/<id>`); `sender` its From address, which a contact
+    /// (`nicemailer://m/<key>`); `sender` its From address, which a contact
     /// card holds whatever the model answered (`answer::Sent::sender`).
     Mail { message: i64, sender: Option<String> },
     /// Several conversations, sorted in batches.
@@ -1327,12 +1327,16 @@ pub(crate) async fn cancel(core: &Arc<Core>, p: AiRunIdParams) -> Result<Command
 
 /// The deep link of the mail a run read (`docs/deep-links.md`), put in its
 /// calendar files and contact cards: from the calendar or the address
-/// book, one click goes back to the mail.
-fn mail_link(t: &Target) -> Option<String> {
-    match t {
-        Target::Mail { message, .. } | Target::Attachment { message } => Some(format!("nicemailer://m/{message}")),
-        _ => None,
-    }
+/// book, one click goes back to the mail, on this Mac or another one that
+/// has it (the link names the mail by its key, `nm_store::link_key`).
+/// `None` for a run on something else than a mail, or a mail deleted since:
+/// the file is still worth saving without the link.
+async fn mail_link(core: &Arc<Core>, t: &Target) -> Option<String> {
+    let id = match t {
+        Target::Mail { message, .. } | Target::Attachment { message } => *message,
+        _ => return None,
+    };
+    with_reader(core, move |st| st.message_link(id)).await.ok()
 }
 
 /// The segments the AI gave back, as they go into the body: for a
@@ -1512,6 +1516,7 @@ pub(crate) async fn apply(core: &Arc<Core>, p: AiApplyParams, source: Source) ->
             return put_back(finished, RpcError::invalid("choose one of the appointments (choice)"));
         };
         let stamp = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64);
+        let link = mail_link(core, &finished.context.target).await;
         let calendar = AiFile {
             filename: nm_ai::ics::file_name(event),
             // The same run and appointment give the same uid: saved twice,
@@ -1520,7 +1525,7 @@ pub(crate) async fn apply(core: &Arc<Core>, p: AiApplyParams, source: Source) ->
                 event,
                 &format!("nicemailer-ai-{run_id}-{}@nicemailer", n + 1),
                 stamp,
-                mail_link(&finished.context.target).as_deref(),
+                link.as_deref(),
             ),
         };
         if !finished.saved {
@@ -1536,13 +1541,14 @@ pub(crate) async fn apply(core: &Arc<Core>, p: AiApplyParams, source: Source) ->
     // here, the proposal is not put back.
     if let Answer::Contact(contact) = &finished.answer {
         let stamp = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64);
+        let link = mail_link(core, &finished.context.target).await;
         let file = AiFile {
             filename: nm_ai::vcard::file_name(contact),
             content: nm_ai::vcard::card(
                 contact,
                 &format!("nicemailer-ai-{run_id}@nicemailer"),
                 stamp,
-                mail_link(&finished.context.target).as_deref(),
+                link.as_deref(),
             ),
         };
         if let Err(e) = with_store(core, move |st| st.ai_run_decide(run_id, Decision::Accepted)).await {

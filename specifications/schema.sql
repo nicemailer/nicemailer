@@ -33,7 +33,7 @@ PRAGMA temp_store = MEMORY;
 -- Une base existante est mise à jour par les migrations du noyau
 -- (crates/nm-store/src/migrations.rs) ; ce fichier crée directement la
 -- dernière version.
-PRAGMA user_version = 14;   -- migrations : comparer à la version attendue au démarrage
+PRAGMA user_version = 15;   -- migrations : comparer à la version attendue au démarrage
 
 -- ------------------------------------------------------------
 -- Comptes : état seulement. Les paramètres (adresse, serveurs, identifiants,
@@ -446,6 +446,12 @@ CREATE TABLE message (
     sender_signals   INTEGER,
     sender_kind      TEXT CHECK (sender_kind IN ('person','robot')),
 
+    -- Version 15. Clé du lien vers le mail, nicemailer://m/<clé>
+    -- (modele de donnees.md, link_key) : les 48 premiers bits du SHA-256 du
+    -- Message-ID, ou de raw_hash sans Message-ID ; NULL sans l'un ni l'autre.
+    -- Ne dépend que du mail : la même sur un autre Mac.
+    link_key         INTEGER,
+
     UNIQUE (folder_id, uid)               -- synchro ; plusieurs NULL autorisés
 ) STRICT;
 
@@ -516,6 +522,10 @@ CREATE INDEX idx_message_msgid
 -- Messages qui partagent un brut (ramasse-miettes, déduplication de l'import).
 CREATE INDEX idx_message_raw_hash
     ON message (raw_hash, account_id) WHERE raw_hash IS NOT NULL;
+
+-- Liens vers un mail (version 15) : une égalité sur la clé.
+CREATE INDEX idx_message_link
+    ON message (link_key) WHERE link_key IS NOT NULL;
 
 -- ------------------------------------------------------------
 -- Références (en-tête References) pour le threading JWZ

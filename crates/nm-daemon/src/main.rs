@@ -1517,8 +1517,20 @@ async fn call(core: &Arc<Core>, source: Source, req: Request) -> Result<Value, R
             })
         }
         method::LOCATE_MESSAGE => {
+            // Exactly one of the two: an id of this database, or the key of
+            // a link (`nm_api::deep_link`), which a malformed text cannot
+            // reach (12 hexadecimal characters, checked here).
             let p: LocateMessageParams = params(req.params)?;
-            to_value(with_reader(core, move |s| s.locate_message(p.message_id)).await?)
+            let place = match (p.message_id, p.link_key.as_deref()) {
+                (Some(id), None) => with_reader(core, move |s| s.locate_message(id)).await?,
+                (None, Some(text)) => {
+                    let key = nm_api::deep_link::parse_key(text)
+                        .ok_or_else(|| RpcError::invalid("link_key: 12 hexadecimal characters expected"))?;
+                    with_reader(core, move |s| s.locate_link(key)).await?
+                }
+                _ => return Err(RpcError::invalid("one of message_id, link_key expected")),
+            };
+            to_value(place)
         }
         method::SEARCH => {
             let p: SearchParams = params(req.params)?;

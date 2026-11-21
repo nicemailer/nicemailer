@@ -1135,13 +1135,13 @@ final class GeekController {
     }
 
     /// Copies the link of the open mail (`DeepLink`): as a Markdown link
-    /// `[subject](nicemailer://m/<id>)`, ready to paste in a note, or as the
-    /// bare URL. The status bar says what was copied.
+    /// `[subject](nicemailer://m/<key>)`, ready to paste in a note, or as
+    /// the bare URL. The status bar says what was copied.
     func copyMailLink(markdown: Bool) {
-        guard let id = model.deepLinkMessageId else { return }
+        guard let url = model.deepLinkURL else { return }
         let text = markdown
-            ? DeepLink.markdown(subject: model.openThread?.subject ?? "", messageId: id)
-            : DeepLink.url(messageId: id).absoluteString
+            ? DeepLink.markdown(subject: model.openThread?.subject ?? "", url: url)
+            : url.absoluteString
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
         model.flash = markdown ? L("Markdown link copied: %@", text) : L("Link copied: %@", text)
@@ -1751,8 +1751,8 @@ final class GeekController {
             // Then the link to this mail itself, for a note app
             // (`DeepLink`): Return copies it as a Markdown link, ⌘-Return as
             // a bare URL.
-            let selfRow = model.deepLinkMessageId.map { id in
-                Entry(key: "", label: L("Link to this mail"), detail: DeepLink.url(messageId: id).absoluteString,
+            let selfRow = model.deepLinkURL.map { url in
+                Entry(key: "", label: L("Link to this mail"), detail: url.absoluteString,
                       detailStyle: .info, icon: "doc.on.doc",
                       commandAction: { [weak self] in self?.copyMailLink(markdown: false) },
                       keywords: ["nicemailer", "obsidian", "deeplink", "markdown"]) { [weak self] in

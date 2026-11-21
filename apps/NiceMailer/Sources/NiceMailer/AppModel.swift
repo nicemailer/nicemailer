@@ -1970,12 +1970,13 @@ final class AppModel {
 
     // MARK: - Deep links
 
-    /// Opens the mail of a deep link `nicemailer://m/<id>` (`DeepLink`,
-    /// `docs/deep-links.md`): asks the core where the message is, then shows
-    /// its thread in its folder. Before the core answered (the link launched
-    /// the app), the link waits for the connection.
+    /// Opens the mail of a deep link `nicemailer://m/<key>` (`DeepLink`,
+    /// `docs/deep-links.md`): asks the core where the message is, by its
+    /// key (or its id, for an old link), then shows its thread in its
+    /// folder. Before the core answered (the link launched the app), the
+    /// link waits for the connection.
     func openDeepLink(_ url: URL) {
-        guard let id = DeepLink.messageId(from: url) else {
+        guard let target = DeepLink.target(from: url) else {
             lastError = L("Not a link to a NiceMailer mail: %@", url.absoluteString)
             return
         }
@@ -1984,17 +1985,23 @@ final class AppModel {
             return
         }
         Task {
-            if await reveal(messageId: id) { onDeepLinkOpened?() }
+            if await reveal(target) { onDeepLinkOpened?() }
         }
     }
 
-    /// Shows a mail where it is now, in its folder: a deep link, or a line
-    /// of the History screen. False, with the reason in the status bar, when
-    /// it cannot be shown.
+    /// Shows a mail where it is now, in its folder, from its id: a line of
+    /// the History screen.
     func reveal(messageId id: Int) async -> Bool {
+        await reveal(.id(id))
+    }
+
+    /// Shows a mail where it is now, in its folder: a deep link (by key or
+    /// id), or a line of the History screen. False, with the reason in the
+    /// status bar, when it cannot be shown.
+    func reveal(_ target: DeepLink.Target) async -> Bool {
         guard let core else { return false }
         do {
-            let place: MessageLocation = try await core.call("locate_message", ["message_id": id])
+            let place: MessageLocation = try await core.call("locate_message", target.params)
             guard let threadId = place.threadId else {
                 lastError = L("This mail is not in a conversation yet")
                 return false
@@ -2003,8 +2010,14 @@ final class AppModel {
             show(threadId: threadId, folderId: place.folderId)
             return true
         } catch let e as CoreClient.RPCError where e.code == CoreClient.RPCError.notFound {
-            // Deleted since, or the database was rebuilt (ids changed).
-            lastError = L("This mail is no longer in NiceMailer")
+            // An old link by id: deleted since, or the database was rebuilt
+            // (ids changed). A key: deleted, or this Mac never had the mail
+            // (another account, not synchronized yet), which "no longer"
+            // would misstate.
+            switch target {
+            case .id: lastError = L("This mail is no longer in NiceMailer")
+            case .key: lastError = L("This mail is not in NiceMailer on this Mac")
+            }
         } catch { report(error) }
         return false
     }

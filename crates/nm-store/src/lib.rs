@@ -56,6 +56,7 @@ pub mod inspect;
 pub mod insert;
 pub mod ingest;
 pub mod library;
+pub mod link_key;
 pub mod links;
 pub mod mail_html;
 pub mod phones;
@@ -119,7 +120,9 @@ pub use rusqlite;
 /// 13: the AI assistance (`ia.md`, section 9): `ai_run`, the history of
 ///     the runs of prompts, and `ai_suggestion`, the targets suggested.
 /// 14: `idx_message_reply`, for the "answered" attribute.
-pub const SCHEMA_VERSION: i64 = 14;
+/// 15: `message.link_key`, the key of the link to a mail, the same on
+///     every Mac (`link_key.rs`).
+pub const SCHEMA_VERSION: i64 = 15;
 
 /// Full text of the schema, at the latest version. `include_str!` reads the
 /// file at compile time and embeds it in the binary as a `&'static str`; the

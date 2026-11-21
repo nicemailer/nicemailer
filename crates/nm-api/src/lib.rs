@@ -136,8 +136,8 @@ pub mod method {
     /// Saves the IMAP password of an account in the Keychain, for the
     /// server the file names now (`configuration.md`, section 6).
     pub const SET_PASSWORD: &str = "set_password";
-    /// Where a message is (its thread and folder), from its id: opens a
-    /// deep link `nicemailer://m/<id>` (`docs/deep-links.md`).
+    /// Where a message is (its thread and folder), from its id or its link
+    /// key: opens a deep link `nicemailer://m/<key>` (`docs/deep-links.md`).
     pub const LOCATE_MESSAGE: &str = "locate_message";
     /// Connects to the IMAP server of an account and reports what it
     /// offers, without changing anything (`ProbeAccountParams`,
@@ -1249,10 +1249,77 @@ pub struct ThreadLabels {
     pub groups: Vec<String>,
 }
 
-/// Params of `locate_message`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Params of `locate_message`: exactly one of the two. `message_id` names
+/// a row of this database (an old link `nicemailer://m/48213`, the History
+/// screen, the MCP tools); `link_key` names a mail wherever it is stored
+/// (`nicemailer://m/3f9a0c2b7e41`, [`deep_link`]).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct LocateMessageParams {
-    pub message_id: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message_id: Option<i64>,
+    /// The 12 hexadecimal characters of the link, in any case.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub link_key: Option<String>,
+}
+
+/// Deep links to a mail, `nicemailer://m/<key>` (`docs/deep-links.md`;
+/// `modele de donnees.md`, `link_key`). The core writes them (the AI's
+/// calendar files and contact cards, [`MessageView::link`]); the app reads
+/// them back. The key itself is computed by the store (`nm_store::link_key`).
+pub mod deep_link {
+    /// Number of hexadecimal characters of a key: 48 bits.
+    pub const KEY_LEN: usize = 12;
+    /// Longest message id an old link may carry. Ids stay far below 10¹¹,
+    /// so a link of 12 characters is always a key, even one made of digits
+    /// only.
+    pub const MAX_ID_LEN: usize = 11;
+
+    /// A key as the link writes it: 12 lowercase hexadecimal characters,
+    /// zeros in front kept (a fixed length is what makes it a key).
+    pub fn key_text(key: i64) -> String {
+        format!("{key:012x}")
+    }
+
+    /// The key of 12 hexadecimal characters, in any case, or `None` for
+    /// anything else (another length, a sign, another letter).
+    pub fn parse_key(text: &str) -> Option<i64> {
+        if text.len() != KEY_LEN || !text.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return None;
+        }
+        i64::from_str_radix(text, 16).ok()
+    }
+
+    /// The link of a message: by its key when it has one, else by its id,
+    /// which only this database knows (a mail without `Message-ID` whose
+    /// body is not downloaded yet).
+    pub fn url(message_id: i64, key: Option<i64>) -> String {
+        match key {
+            Some(k) => format!("nicemailer://m/{}", key_text(k)),
+            None => format!("nicemailer://m/{message_id}"),
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn a_key_is_written_on_12_characters_and_read_back() {
+            assert_eq!(key_text(0x07bcf99aef4d), "07bcf99aef4d");
+            assert_eq!(key_text(1), "000000000001");
+            assert_eq!(parse_key("07BCF99AEF4D"), Some(0x07bcf99aef4d));
+            assert_eq!(parse_key("123456789012"), Some(0x123456789012));
+            for bad in ["", "07bcf99aef4", "07bcf99aef4d0", "07bcf99aef4g", "+7bcf99aef4d", "07bcf99aef4é"] {
+                assert_eq!(parse_key(bad), None, "{bad}");
+            }
+        }
+
+        #[test]
+        fn the_url_takes_the_key_or_else_the_id() {
+            assert_eq!(url(48213, Some(0x3f9a0c2b7e41)), "nicemailer://m/3f9a0c2b7e41");
+            assert_eq!(url(48213, None), "nicemailer://m/48213");
+        }
+    }
 }
 
 /// Result of `locate_message`: where to show a message. A message is in
@@ -1641,6 +1708,11 @@ pub struct MessageView {
     /// `l` panel, where Return copies it.
     #[serde(default)]
     pub verification_code: Option<String>,
+    /// The deep link of the message, to paste in a note:
+    /// `nicemailer://m/<key>`, the same on every Mac that has the mail
+    /// ([`deep_link::url`], `docs/deep-links.md`).
+    #[serde(default)]
+    pub link: String,
 }
 
 /// A link of a message (`MessageView.links`).

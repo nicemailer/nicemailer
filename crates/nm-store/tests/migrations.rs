@@ -15,10 +15,11 @@ const SCHEMA_V1: &str = include_str!("fixtures/schema_v1.sql");
 
 /// A version 1 database at `path`, with one account, two folders (Inbox
 /// and Sent), and one thread of two mails across them:
-/// - mail 1, received, from "Achille Ber=?ISO-8859-1?B?6A==?=s" (an
+/// - mail 1, received, Message-ID `abc@x.org`, from "Achille Ber=?ISO-8859-1?B?6A==?=s" (an
 ///   encoded word glued inside a word), subject "2=?ISO-8859-1?B?6A==?=me
 ///   rappel", modified at 500;
-/// - mail 2, sent later, to an address without a name, modified at 900.
+/// - mail 2, sent later, without Message-ID nor raw file, to an address
+///   without a name, modified at 900.
 ///
 /// The address of mail 1's sender has no name either.
 fn version_1(path: &Path) {
@@ -35,11 +36,11 @@ fn version_1(path: &Path) {
               (3, 'carol@x.org', 'Ang=?ISO-8859-1?B?6Q==?=lique', 'core', 'core');
          INSERT INTO thread (id, account_id, subject, date_last_received, message_count, unread_count)
               VALUES (1, 1, '2=?ISO-8859-1?B?6A==?=me rappel', 200, 2, 1);
-         INSERT INTO message (id, account_id, folder_id, thread_id, subject, from_address_id, from_name, from_addr,
+         INSERT INTO message (id, account_id, folder_id, thread_id, message_id_hdr, subject, from_address_id, from_name, from_addr,
                               date_received, is_seen, date_modified, created_by, modified_by) VALUES
-              (1, 1, 1, 1, '2=?ISO-8859-1?B?6A==?=me rappel', 1, 'Achille Ber=?ISO-8859-1?B?6A==?=s', 'achille@x.org',
+              (1, 1, 1, 1, 'abc@x.org', '2=?ISO-8859-1?B?6A==?=me rappel', 1, 'Achille Ber=?ISO-8859-1?B?6A==?=s', 'achille@x.org',
                100, 0, 500, 'core', 'core'),
-              (2, 1, 2, 1, 'Re: 2ème rappel', NULL, 'Me', 'me@x.org', 200, 1, 900, 'core', 'core');
+              (2, 1, 2, 1, NULL, 'Re: 2ème rappel', NULL, 'Me', 'me@x.org', 200, 1, 900, 'core', 'core');
          INSERT INTO message_address (message_id, role, position, address_id) VALUES (2, 'to', 0, 2);
          INSERT INTO thread_folder (thread_id, folder_id, date_last_received, date_last_modified, message_count, unread_count)
               VALUES (1, 1, 100, 500, 1, 1), (1, 2, 200, 900, 1, 0);
@@ -188,6 +189,12 @@ fn a_migrated_database_lists_everything() {
     let from = nm_api::ThreadFilter { from: vec!["berès".into()], ..Default::default() };
     let (items, _) = store.list_everything(None, None, 10, nm_api::ThreadSort::Received, &from, &[]).unwrap();
     assert_eq!(items.len(), 1);
+    // Version 15: the link key of mail 1, from its Message-ID (the start of
+    // `printf %s abc@x.org | shasum -a 256`); mail 2 has neither a
+    // Message-ID nor a raw file, so no key, and its link is its id.
+    assert_eq!(store.message_link(1).unwrap(), "nicemailer://m/07bcf99aef4d");
+    assert_eq!(store.message_link(2).unwrap(), "nicemailer://m/2");
+    assert_eq!(store.locate_link(0x07bcf99aef4d).unwrap().message_id, 1);
 }
 
 #[test]

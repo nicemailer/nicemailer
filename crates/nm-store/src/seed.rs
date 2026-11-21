@@ -375,14 +375,16 @@ impl Generator<'_> {
                 "INSERT INTO message (account_id, folder_id, uid, thread_id, message_id_hdr, in_reply_to,
                     subject, from_address_id, from_name, from_addr, date_sent, date_received, size, snippet,
                     is_seen, is_flagged, is_answered, is_draft, has_attachments, auth_result, auth_source,
-                    auth_suspect, body_state, date_created, date_modified, created_by, modified_by)
+                    auth_suspect, body_state, date_created, date_modified, created_by, modified_by, link_key)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14,
-                         ?15, ?16, ?17, ?18, ?19, ?20, 'server', ?21, 1, ?12, ?12, 'imap', 'imap')",
+                         ?15, ?16, ?17, ?18, ?19, ?20, 'server', ?21, 1, ?12, ?12, 'imap', 'imap', ?22)",
                 params![
                     self.account_id, folder_id, uid, thread_id, msgid, previous.last(),
                     m.subject, from_id, m.from.name, m.from.addr, m.date - 40, m.date, size,
                     snippet(&m.body), m.seen, m.flagged, m.answered, m.draft,
                     m.attachment.is_some(), m.auth, m.suspect,
+                    // The link key, as for any mail (`link_key.rs`).
+                    crate::link_key::key(Some(&msgid), None),
                 ],
             )?;
             let message_id = self.tx.last_insert_rowid();

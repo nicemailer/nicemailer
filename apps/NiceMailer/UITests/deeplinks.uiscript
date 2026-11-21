@@ -1,5 +1,7 @@
 # Deep links (docs/deep-links.md): each mail has its URL,
-# nicemailer://m/<id>. The first row of `l` copies it as a Markdown link
+# nicemailer://m/<key>, 12 hexadecimal characters that depend only on the
+# mail (its Message-ID), not on the database. The first row of `l` copies
+# it as a Markdown link
 # (Return) or a bare URL (⌘-Return), to the private pasteboard; `openurl`
 # gives a URL to the app as macOS would.
 
@@ -49,8 +51,11 @@ key esc
 key v
 key 2
 
-# A link to a mail no longer there, and a URL that is no mail link.
+# A link to a mail no longer there (an old link, by id), a key this Mac
+# has no mail for, and a URL that is no mail link.
 openurl nicemailer://m/999999999
 expect error ~ no longer in NiceMailer
+openurl nicemailer://m/000000000000
+expect error ~ not in NiceMailer on this Mac
 openurl nicemailer://x/1
 expect error ~ Not a link to a NiceMailer mail

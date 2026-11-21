@@ -418,6 +418,7 @@ mod tests {
             tracking_pixels: 2,
             links: vec![],
             verification_code: None,
+            link: String::new(),
         }
     }
 

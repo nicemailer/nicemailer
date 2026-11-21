@@ -1,18 +1,18 @@
 # Deep links to a mail
 
-Each mail has its own URL, as short as possible:
+Each mail has its own URL, the same on every Mac that has the mail:
 
 ```
-nicemailer://m/48213
+nicemailer://m/3f9a0c2b7e41
 ```
 
-`m` stands for "message", and `48213` is the message's id in the database. Clicked anywhere on the Mac (a note, a task, a calendar event), the link opens NiceMailer on that mail: in its folder, selected and shown, with any open panel closed; in one column, the mail fills the window, as after Return.
+`m` stands for "message", and `3f9a0c2b7e41` is the mail's **link key**: 12 hexadecimal characters taken from its `Message-ID`, so they depend only on the mail, not on the database that stores it (below, "How long a link lives"). Clicked anywhere on the Mac (a note, a task, a calendar event), the link opens NiceMailer on that mail: in its folder, selected and shown, with any open panel closed; in one column, the mail fills the window, as after Return.
 
 ## Copying the link of a mail
 
 The first row of the links panel (`l`) is **Link to this mail**, with its URL on the right:
 
-- Return copies a Markdown link, `[subject](nicemailer://m/48213)`, ready to paste in Obsidian or any Markdown note: the note shows the subject, a click opens the mail. Brackets in the subject are escaped (`[\[Spam\] Offre](…)`).
+- Return copies a Markdown link, `[subject](nicemailer://m/3f9a0c2b7e41)`, ready to paste in Obsidian or any Markdown note: the note shows the subject, a click opens the mail. Brackets in the subject are escaped (`[\[Spam\] Offre](…)`).
 - ⌘-Return copies the bare URL.
 
 The status bar says what was copied. Typing `obsidian`, `markdown` or `deeplink` in the panel also finds the row.
@@ -22,7 +22,7 @@ A conversation holds several mails; the link points to its **latest received** m
 ## Use with Obsidian
 
 1. Read the mail in NiceMailer, press `l`, then Return.
-2. Paste in the note (⌘V): `[Devis toiture](nicemailer://m/48213)`.
+2. Paste in the note (⌘V): `[Devis toiture](nicemailer://m/3f9a0c2b7e41)`.
 3. Later, a click on the link in the note (⌘-click in edit mode) opens the mail in NiceMailer.
 
 Obsidian opens links of other apps through macOS, which needs NiceMailer to be installed as an app (below).
@@ -58,24 +58,43 @@ If the app is not running, the link launches it, and the mail opens once the app
 
 ## How long a link lives
 
-The id is the core's `message.id`: short and exact, but tied to the database. A link keeps working while the mail is in the database, whatever folder it is moved to. It breaks if the mail is deleted, or if the database is rebuilt (a re-import gives new ids): the app then says "This mail is no longer in NiceMailer" and stays where it was. A URL that is not a mail link (`nicemailer://x/1`, letters in the id) is refused without asking the core.
+The link names the mail, not a row of the database. Its key is the first 48 bits of the SHA-256 of the mail's `Message-ID` (`nm_store::link_key`; `specifications/modele de donnees.md`, `link_key`), written as 12 lowercase hexadecimal characters. So the link:
+
+- opens the mail on **another Mac** that has it, whatever number its database gives the mail, whether it came there by IMAP or from an mbox export (whose bytes differ);
+- survives moving the mail to another folder, and a **rebuilt or re-imported** database;
+- keeps the same value from the headers on: a mail whose body is not downloaded yet already has it, and evicting its raw file later does not change it.
+
+The same mail often has several rows: received on two accounts, its copy in Sent, copies in several folders. The link opens, in this order, a row in a conversation, out of Deleted, Junk, Banned and Quarantine, out of Sent and Drafts, and the latest received.
+
+Limits:
+
+- A mail **without `Message-ID`** (about 1 % of a real mailbox, mostly old or automated mail) takes the first 48 bits of the hash of its raw file instead. That key is the same on two Macs only if both got the mail from the same source (both by IMAP from the same server, say). Until its body is downloaded it has no key at all, and its link is its id: `nicemailer://m/48213`, valid on this database only.
+- A sender that reuses a `Message-ID` for different mails (rare, a misconfigured server) makes them share a link, which opens one of them.
+- 48 bits make an accidental clash between two different mails negligible: about one chance in a billion per link for 300,000 mails. The length is fixed on purpose: a prefix shortened until it is unique in one database (as Git does with commit hashes) may not be unique in another one.
+
+**Old links** carry the message's id, `nicemailer://m/48213` (1 to 11 digits): they still open the mail on the database that made them, and break if the mail is deleted or the database rebuilt. The app then says "This mail is no longer in NiceMailer". A key no mail of this database has says "This mail is not in NiceMailer on this Mac". In both cases the app stays where it was. A URL that is not a mail link (`nicemailer://x/1`, a key of 11 characters, letters in an id) is refused without asking the core.
 
 ## Behind the link
 
-- The app reads the id (`DeepLink.messageId`, `apps/NiceMailer/Sources/NiceMailer/DeepLink.swift`): scheme and `m` in any case, a final slash allowed, digits only.
-- It asks the core where the message is: `locate_message {message_id}` answers `{message_id, thread_id, folder_id, account_id}`, or the error `1001` (not found). `thread_id` is `null` for a message not linked to a conversation yet.
+- The core writes the link of each message of a thread (`MessageView.link`, `nm_api::deep_link::url`); the app copies it as it is (`DeepLink.url(of:)`), and falls back on the id only if the core gave none.
+- The app reads the link (`DeepLink.target`, `apps/NiceMailer/Sources/NiceMailer/DeepLink.swift`): scheme, `m` and key in any case, a final slash allowed; exactly 12 hexadecimal characters for a key, 1 to 11 digits for an old id.
+- It asks the core where the message is: `locate_message {link_key}` (or `{message_id}` for an old link) answers `{message_id, thread_id, folder_id, account_id}`, or the error `1001` (not found). `thread_id` is `null` for a message not linked to a conversation yet. The column `message.link_key` is indexed (`idx_message_link`): the lookup is an equality.
 - It shows the thread as a search result does (`AppModel.show`): in the unified view, the folder's role for all accounts; otherwise the folder; the thread stays selected even if it is not in the pages of the list loaded so far.
 
 ```sh
+nicemailer call locate_message '{"link_key": "3f9a0c2b7e41"}'
 nicemailer call locate_message '{"message_id": 48213}'
 ```
 
 ## Tests
 
-- `crates/nm-daemon/tests/deeplink_rpc.rs`: `locate_message` through the socket, a missing message, a malformed request.
-- `DeepLinkTests`: the URL of a message, reading it back, URLs refused, the Markdown link with brackets, line breaks and an empty subject.
-- `GeekControllerTests`: the first row of `l` copies the Markdown link (Return) and the URL (⌘-Return) to a private pasteboard; a link opens the mail in its folder, closes the panels and, in one column, shows the mail; a missing mail and a foreign URL are reported.
-- `deeplinks.uiscript`: in the app, copy the link of the newsletter, go to another folder with the help open, open the link (`openurl clipboard`): the newsletter is back, in Archive; the same in one column; a missing mail and a foreign URL.
+- `crates/nm-store/src/link_key.rs`: the key of a Message-ID against a reference value (`shasum -a 256`), the raw file's key without one.
+- `crates/nm-store/tests/link_key.rs`: two databases that number a mail differently (IMAP headers first on one, an mbox export with other bytes on the other) give it the same link; a mail without Message-ID gets its key once downloaded and keeps it; the copy a link opens among several.
+- `crates/nm-store/tests/migrations.rs`: version 15 computes the keys of the mail already stored.
+- `crates/nm-daemon/tests/deeplink_rpc.rs`: `locate_message` through the socket by id and by key (any case), the link of `get_thread`, a missing message or key, malformed requests.
+- `DeepLinkTests`: the link the core wrote and the fallback on the id, keys and old ids read back, URLs refused, the Markdown link with brackets, line breaks and an empty subject.
+- `GeekControllerTests`: the first row of `l` copies the Markdown link (Return) and the URL (⌘-Return) to a private pasteboard; a link opens the mail in its folder, closes the panels and, in one column, shows the mail; the link copied is the key the core gives; a link by key asks the core by key; a missing mail, a key this Mac does not have and a foreign URL are reported.
+- `deeplinks.uiscript`: in the app, copy the link of the newsletter, go to another folder with the help open, open the link (`openurl clipboard`): the newsletter is back, in Archive; the same in one column; a missing mail (old link), an unknown key and a foreign URL.
 - The app of `NiceMailer.app` can play the scenarios: `NICEMAILER_UI_BIN=/Applications/NiceMailer.app/Contents/MacOS/NiceMailer scripts/ui-test.sh deeplinks.uiscript` (it finds its fonts and translations in `Contents/Resources`, `resources_bundle`).
 
 Launch Services itself (a click in Obsidian reaching the app) is not covered by the automated tests: it would open the app on the user's screen.

@@ -193,9 +193,9 @@ impl Inserter {
             "INSERT INTO message (account_id, folder_id, uid, thread_id, message_id_hdr, in_reply_to, subject,
                 from_address_id, from_name, from_addr, date_sent, date_received, size, snippet,
                 is_seen, is_flagged, is_answered, is_draft, is_deleted, has_attachments, auth_result, modseq,
-                body_state, raw_hash, created_by, modified_by, auth_source)
+                body_state, raw_hash, created_by, modified_by, auth_source, link_key)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14,
-                     ?15, ?16, ?17, ?18, ?19, ?20, ?25, ?21, ?22, ?23, ?24, ?24, ?26)",
+                     ?15, ?16, ?17, ?18, ?19, ?20, ?25, ?21, ?22, ?23, ?24, ?24, ?26, ?27)",
         )?
         .execute(params![
             m.account_id,
@@ -227,6 +227,9 @@ impl Inserter {
             self.source.as_str(),
             m.auth.0.as_str(),
             m.auth.1,
+            // The link key (`link_key.rs`): from the Message-ID, known now,
+            // or from the raw file when the mail has none.
+            crate::link_key::key(h.message_id.as_deref(), raw_hash),
         ])?;
         let message_id = tx.last_insert_rowid();
 
@@ -295,10 +298,21 @@ impl Inserter {
         }
         let m = body.parsed;
         insert_raw_blob(tx, body.written)?;
+        // A mail without Message-ID gets its link key now, from its raw
+        // file (`link_key.rs`); a key already there is never changed, so a
+        // link already pasted keeps working.
         tx.prepare_cached(
-            "UPDATE message SET raw_hash = ?2, body_state = 1, size = ?3, snippet = ?4, has_attachments = ?5 WHERE id = ?1",
+            "UPDATE message SET raw_hash = ?2, body_state = 1, size = ?3, snippet = ?4, has_attachments = ?5,
+                    link_key = coalesce(link_key, ?6) WHERE id = ?1",
         )?
-        .execute(params![message_id, &body.written.hash[..], body.written.size as i64, m.snippet, m.has_attachments()])?;
+        .execute(params![
+            message_id,
+            &body.written.hash[..],
+            body.written.size as i64,
+            m.snippet,
+            m.has_attachments(),
+            crate::link_key::key(None, Some(&body.written.hash[..])),
+        ])?;
         if let Some(text) = m.text.as_deref().filter(|t| !t.is_empty()) {
             tx.prepare_cached("UPDATE message_fts SET body = ?2 WHERE rowid = ?1")?.execute(params![message_id, text])?;
         }

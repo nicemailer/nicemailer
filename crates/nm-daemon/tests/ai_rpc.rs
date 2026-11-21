@@ -78,6 +78,18 @@ fn row_target(dir: &Path, run_id: i64) -> i64 {
     serde_json::from_str::<Value>(&target).unwrap()["message"].as_i64().unwrap()
 }
 
+/// The deep link of the mail a run read, as it must appear in its files:
+/// by the link key of its Message-ID (`nm_store::link_key`), not by its id,
+/// so that the link opens the mail on another Mac too.
+fn link_of_target(dir: &Path, run_id: i64) -> String {
+    let mail = row_target(dir, run_id);
+    let db = nm_store::rusqlite::Connection::open_with_flags(dir.join("nicemailer.db"), nm_store::rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+    let msgid: String = db.query_row("SELECT message_id_hdr FROM message WHERE id = ?1", [mail], |r| r.get(0)).unwrap();
+    let link = nm_api::deep_link::url(mail, nm_store::link_key::key(Some(&msgid), None));
+    assert!(!link.ends_with(&format!("/{mail}")), "a key, not the id: {link}");
+    link
+}
+
 fn runs(dir: &Path) -> i64 {
     let db = nm_store::rusqlite::Connection::open_with_flags(dir.join("nicemailer.db"), nm_store::rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
     db.query_row("SELECT count(*) FROM ai_run", [], |r| r.get(0)).unwrap()
@@ -591,9 +603,9 @@ fn the_appointments_of_a_mail_are_saved_one_by_one_as_calendar_files() {
     assert!(ics.contains("DTSTART;VALUE=DATE:20200630\r\nDTEND;VALUE=DATE:20200701\r\n"), "{ics}");
     assert!(ics.contains(&format!("UID:nicemailer-ai-{id}-2@nicemailer")), "{ics}");
     // A link back to the mail read: the latest received of the conversation.
-    let mail = row_target(dir.path(), id);
-    assert!(ics.contains(&format!("\r\nURL:nicemailer://m/{mail}\r\n")), "{ics}");
-    assert!(ics.contains(&format!("DESCRIPTION:nicemailer://m/{mail}\r\n")), "{ics}");
+    let link = link_of_target(dir.path(), id);
+    assert!(ics.contains(&format!("\r\nURL:{link}\r\n")), "{ics}");
+    assert!(ics.contains(&format!("DESCRIPTION:{link}\r\n")), "{ics}");
     assert_eq!(row(dir.path(), id).1.as_deref(), Some("accepted"));
     // The proposal stays: the first saved as well, floating, an hour long.
     let a = c.call("ai_apply", json!({"run_id": id, "choice": 0})).unwrap();
@@ -655,8 +667,8 @@ fn the_senders_card_is_given_as_a_vcard_with_the_from_address_first() {
     assert!(v.contains("\r\nN:Martin;Alice;;;\r\nFN:Alice Martin\r\nORG:Agence A\r\n"), "{v}");
     assert!(v.contains("\r\nEMAIL;TYPE=INTERNET,PREF:alice@a.example\r\n"), "{v}");
     assert!(v.contains(&format!("\r\nUID:nicemailer-ai-{id}@nicemailer\r\n")), "{v}");
-    let mail = row_target(dir.path(), id);
-    assert!(v.contains(&format!("\r\nNOTE:nicemailer://m/{mail}\r\n")), "{v}");
+    let link = link_of_target(dir.path(), id);
+    assert!(v.contains(&format!("\r\nNOTE:{link}\r\n")), "{v}");
     assert_eq!(row(dir.path(), id).1.as_deref(), Some("accepted"));
     // One card: the run ends with it.
     assert_eq!(c.call("ai_apply", json!({"run_id": id})).unwrap_err()["code"], 1001, "not found");

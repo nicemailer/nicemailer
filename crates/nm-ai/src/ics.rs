@@ -150,7 +150,7 @@ const DEFAULT_MINUTES: u32 = 60;
 ///   same uid (`nicemailer-ai-<run>-<n>@nicemailer`).
 /// - `stamp` is when the file is made, in Unix seconds (`DTSTAMP`, UTC).
 /// - `mail` is the link of the mail the event comes from
-///   (`nicemailer://m/<id>`): the event's `URL`, which Calendar shows as a
+///   (`nicemailer://m/<key>`): the event's `URL`, which Calendar shows as a
 ///   link, and the last line of its description, for the calendars that
 ///   do not show `URL` (Google Calendar).
 pub fn calendar(event: &Event, uid: &str, stamp: i64, mail: Option<&str>) -> String {

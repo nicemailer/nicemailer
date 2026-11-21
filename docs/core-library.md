@@ -128,7 +128,7 @@ The text part is read first (20,000 characters at most, after collapsing whitesp
 
 ## Locating a message
 
-`locate_message {message_id}` answers where a message is, `{message_id, thread_id, folder_id, account_id}` (`thread_id` null for a message not linked to a thread yet), or the error `1001` when it is not in the database. The app uses it to open a deep link `nicemailer://m/<id>` (`docs/deep-links.md`).
+`locate_message {message_id}` or `locate_message {link_key}` answers where a message is, `{message_id, thread_id, folder_id, account_id}` (`thread_id` null for a message not linked to a thread yet), or the error `1001` when it is not in the database; a `link_key` that is not 12 hexadecimal characters, or both fields, or neither, is refused (`-32602`). The link key of a message (`nm_store::link_key`, column `message.link_key`) is the first 48 bits of the SHA-256 of its Message-ID, or of its raw file without one; each `MessageView` carries its link, `link`. The app uses them to open and copy a deep link `nicemailer://m/<key>` (`docs/deep-links.md`).
 
 ## Unsubscribing from a list
 
