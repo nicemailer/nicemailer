@@ -86,7 +86,7 @@ Sur un autre compte utilisateur, ou mieux sur un autre Mac, à partir du DMG té
 - [ ] Quitter l'app : le noyau continue ; la relancer : reconnexion sans délai.
 - [ ] Redémarrage de la session : le noyau repart ; mots de passe lus sans invite du Keychain.
 - [ ] Remplacement de l'app par une build plus récente (simulation d'une mise à jour manuelle) : le noyau est relancé avec le nouveau binaire, la base est migrée si besoin, les mots de passe restent lisibles.
-- [ ] Lien `nicemailer://m/<id>` ; éditeur de texte ; accès aux Contacts.
+- [ ] Lien `nicemailer://m/<clé>` ; éditeur de texte ; accès aux Contacts.
 - [ ] CLI du bundle : `NiceMailer.app/Contents/Helpers/nicemailer --version`.
 - [ ] App mise à la corbeille : comportement de l'agent noté dans la doc (`architecture.md`, section 11).
 
