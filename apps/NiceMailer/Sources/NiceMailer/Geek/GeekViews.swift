@@ -1497,10 +1497,13 @@ private struct TextReader: NSViewRepresentable {
         let out = NSMutableAttributedString()
         var regions: [(Region, NSRange)] = []
         let paragraph = NSMutableParagraphStyle()
-        paragraph.lineSpacing = 3
+        // The body in the reading font of the theme, with its line spacing
+        // (`fonts.reading`, `reading_line_spacing`); the lines around it
+        // (headers, folded mails) in the interface font.
+        paragraph.lineSpacing = Fonts.mailLineSpacing
         let muted = NSColor(Palette.muted)
-        let body: [NSAttributedString.Key: Any] = [.font: Fonts.scaled(14), .foregroundColor: NSColor(Palette.text), .paragraphStyle: paragraph]
-        let dim: [NSAttributedString.Key: Any] = [.font: Fonts.scaled(14), .foregroundColor: muted, .paragraphStyle: paragraph]
+        let body: [NSAttributedString.Key: Any] = [.font: Fonts.mailBody(14), .foregroundColor: NSColor(Palette.text), .paragraphStyle: paragraph]
+        let dim: [NSAttributedString.Key: Any] = [.font: Fonts.mailBody(14), .foregroundColor: muted, .paragraphStyle: paragraph]
         let small: [NSAttributedString.Key: Any] = [.font: Fonts.scaled(12), .foregroundColor: muted]
         func add(_ s: String, _ attrs: [NSAttributedString.Key: Any], link: String? = nil, region: Region? = nil) {
             var a = attrs

@@ -49,7 +49,9 @@ struct ThemeView: Decodable, Equatable {
         let interface: String
         let reading: String
         let readingScale: Double
-        let readingLineHeight: Double
+        /// Points added between two lines of the body, whatever the text
+        /// size.
+        let readingLineSpacing: Double
         let titleScale: Double
     }
 

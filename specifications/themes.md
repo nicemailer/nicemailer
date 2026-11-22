@@ -94,7 +94,7 @@ Chaque clé a son type, ses bornes ou ses choix, et sa valeur dans les trois th�
 | `interface` | police | `"iA Writer Mono V"` | `"system"` | `"system"` | Toute l'interface : liste, barres, menus, sélecteurs |
 | `reading` | police | `"iA Writer Mono V"` | `"system"` | `"system"` | Corps des mails en texte, et police par défaut du HTML assaini qui n'en donne pas |
 | `reading_scale` | 0,75 à 1,5 | 1,0 | 1,15 | 1,08 | Taille du corps des mails par rapport à `ui.text_size` |
-| `reading_line_height` | 1,0 à 2,0 | 1,55 | 1,6 | 1,5 | Interligne du corps des mails |
+| `reading_line_spacing` | 0 à 16 | 3 | 6 | 4 | Points ajoutés entre deux lignes du corps des mails, quelle que soit la taille du texte (geek : les 3 points de son lecteur) |
 | `title_scale` | 0,75 à 2,0 | 1,0 | 1,7 | 1,3 | Taille du sujet en tête du lecteur |
 
 Le texte de la barre de statut garde sa taille propre (`ui.status_bar_text_size`).
@@ -134,7 +134,7 @@ Longueurs en points pour un texte de 12 pt (section 5.3).
 | `list` | Liste des mails | = `background` | `#FFFFFF` / `#18191B` | `system.text_background` |
 | `bar` | Barre de statut ou barre d'outils | `#EDEDEA` / `#24262E` | `#FFFFFF` / `#18191B` | `system.window_background` |
 | `text` | Texte | `#24262B` / `#C3C6C1` | `#1C1E1B` / `#E6E7E3` | `system.label` |
-| `muted` | Texte secondaire (dates, compteurs, en-têtes) | `#8A8D94` / `#6E7380` | `#676C65` / `#92978F` | `system.secondary_label` |
+| `muted` | Texte secondaire (dates, compteurs, en-têtes) | `#6B6E75` / `#868B97` (assombri en novembre 2026 : 3,3:1 et 3,6:1 avant, sous WCAG AA) | `#676C65` / `#92978F` | `system.secondary_label` |
 | `accent` | Ce qui n'est pas du texte (un cadre) | `#8AA581` | `#8AA581` | `system.accent` |
 | `accent_text` | Touches des menus, tags, curseur | `#56704E` / `#8AA581` | `#4E6A46` / `#9DBB93` | `system.accent` |
 | `selection` | Ligne choisie | `#D3E0CE` / `#33432F` | `#EEF2EC` / `#272D26` | `system.selected_content_background` |

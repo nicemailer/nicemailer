@@ -66,13 +66,11 @@ fn clean_and_regular_are_readable() {
 }
 
 #[test]
-fn geek_keeps_its_palette_and_its_known_contrast() {
-    // geek draws what it drew before the theme files: its secondary text
-    // (dates, counts) is below AA on its background. The warnings are the
-    // known ones, no more: a change of the palette shows here.
+fn geek_is_readable_too() {
+    // Its secondary text (dates, counts) was below AA on its background
+    // (3.3:1 light, 3.6:1 dark); darkened in November 2026, it reaches it.
     let w = contrast_warnings("geek", builtin("geek").unwrap());
-    let keys: BTreeSet<&str> = w.iter().map(|p| p.key.as_deref().unwrap()).collect();
-    assert_eq!(keys, BTreeSet::from(["colors.muted"]), "{w:?}");
+    assert!(w.is_empty(), "{w:?}");
 }
 
 #[test]

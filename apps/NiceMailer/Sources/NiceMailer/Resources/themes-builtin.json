@@ -30,7 +30,7 @@
       "interface": "system",
       "reading": "system",
       "reading_scale": 1.15,
-      "reading_line_height": 1.6,
+      "reading_line_spacing": 6,
       "title_scale": 1.7
     },
     "layout": {
@@ -159,7 +159,7 @@
       "interface": "iA Writer Mono V",
       "reading": "iA Writer Mono V",
       "reading_scale": 1.0,
-      "reading_line_height": 1.55,
+      "reading_line_spacing": 3,
       "title_scale": 1.0
     },
     "layout": {
@@ -218,8 +218,8 @@
         "dark": "#E08AC0"
       },
       "muted": {
-        "light": "#8A8D94",
-        "dark": "#6E7380"
+        "light": "#6B6E75",
+        "dark": "#868B97"
       },
       "popup": {
         "light": "#FFFFFF",
@@ -255,32 +255,7 @@
       }
     },
     "error": null,
-    "warnings": [
-      {
-        "file": "themes/geek.toml",
-        "line": null,
-        "key": "colors.muted",
-        "message": "contrast 3.1:1 on colors.background in the light appearance, below 4.5:1 (WCAG AA)"
-      },
-      {
-        "file": "themes/geek.toml",
-        "line": null,
-        "key": "colors.muted",
-        "message": "contrast 3.5:1 on colors.background in the dark appearance, below 4.5:1 (WCAG AA)"
-      },
-      {
-        "file": "themes/geek.toml",
-        "line": null,
-        "key": "colors.muted",
-        "message": "contrast 3.1:1 on colors.list in the light appearance, below 4.5:1 (WCAG AA)"
-      },
-      {
-        "file": "themes/geek.toml",
-        "line": null,
-        "key": "colors.muted",
-        "message": "contrast 3.5:1 on colors.list in the dark appearance, below 4.5:1 (WCAG AA)"
-      }
-    ]
+    "warnings": []
   },
   "regular": {
     "name": "regular",
@@ -312,7 +287,7 @@
       "interface": "system",
       "reading": "system",
       "reading_scale": 1.08,
-      "reading_line_height": 1.5,
+      "reading_line_spacing": 4,
       "title_scale": 1.3
     },
     "layout": {

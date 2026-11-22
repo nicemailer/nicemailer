@@ -23,11 +23,12 @@ struct ThemeTests {
     }
 
     /// geek draws what it drew before the themes became files: the colors
-    /// of its file are those the palette had in its code.
+    /// of its file are those the palette had in its code, but the
+    /// secondary text, darkened in November 2026 to reach WCAG AA.
     @Test func geekKeepsThePaletteOfBefore() {
         let c = ThemeStore.builtins["geek"]!.colors
         let pairs: [(ThemeColor, String, String)] = [
-            (c.background, "#fafaf8", "#1b1d23"), (c.text, "#24262b", "#c3c6c1"), (c.muted, "#8a8d94", "#6e7380"),
+            (c.background, "#fafaf8", "#1b1d23"), (c.text, "#24262b", "#c3c6c1"), (c.muted, "#6b6e75", "#868b97"),
             (c.accent, "#8aa581", "#8aa581"), (c.accentText, "#56704e", "#8aa581"), (c.selection, "#d3e0ce", "#33432f"),
             (c.marked, "#f3e3ee", "#3a2e45"), (c.markedBar, "#c2408f", "#e08ac0"), (c.bar, "#ededea", "#24262e"),
             (c.popup, "#ffffff", "#262833"), (c.separator, "#ddddd8", "#30333c"), (c.unread, "#b07d16", "#e6c07b"),

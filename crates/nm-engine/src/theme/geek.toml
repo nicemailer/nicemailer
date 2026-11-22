@@ -16,7 +16,7 @@ default_columns = 2
 interface = "iA Writer Mono V"
 reading = "iA Writer Mono V"
 reading_scale = 1.0
-reading_line_height = 1.55
+reading_line_spacing = 3
 title_scale = 1.0
 
 [layout]
@@ -43,7 +43,7 @@ sidebar = { light = "#FAFAF8", dark = "#1B1D23" }
 list = { light = "#FAFAF8", dark = "#1B1D23" }
 bar = { light = "#EDEDEA", dark = "#24262E" }
 text = { light = "#24262B", dark = "#C3C6C1" }
-muted = { light = "#8A8D94", dark = "#6E7380" }
+muted = { light = "#6B6E75", dark = "#868B97" }
 accent = "#8AA581"
 accent_text = { light = "#56704E", dark = "#8AA581" }
 selection = { light = "#D3E0CE", dark = "#33432F" }

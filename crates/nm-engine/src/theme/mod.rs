@@ -540,7 +540,7 @@ pub fn view(resolved: &Resolved, dir: &Path, error: Option<&Problem>, warnings: 
             interface: text(v, "fonts.interface"),
             reading: text(v, "fonts.reading"),
             reading_scale: float(v, "fonts.reading_scale"),
-            reading_line_height: float(v, "fonts.reading_line_height"),
+            reading_line_spacing: int(v, "fonts.reading_line_spacing") as u32,
             title_scale: float(v, "fonts.title_scale"),
         },
         layout: nm_api::ThemeLayout {

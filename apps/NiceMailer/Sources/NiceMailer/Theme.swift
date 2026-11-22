@@ -389,6 +389,19 @@ extension Fonts {
             || NSFontManager.shared.availableFontFamilies.contains(name)
     }
 
+    /// The body of a mail in the reader: the reading font of the theme
+    /// (`fonts.reading`), at a size written for the reference text size,
+    /// times the theme's `reading_scale`, scaled to the current text size.
+    @MainActor
+    static func mailBody(_ size: CGFloat, weight: NSFont.Weight = .regular) -> NSFont {
+        let fonts = ThemeStore.active.fonts
+        return named(fonts.reading, size: size * CGFloat(fonts.readingScale) * TextSize.shared.scale, weight: weight)
+    }
+
+    /// Points added between two lines of the body of a mail
+    /// (`fonts.reading_line_spacing`), whatever the text size.
+    static var mailLineSpacing: CGFloat { CGFloat(ThemeStore.active.fonts.readingLineSpacing) }
+
     /// The family name of the bundled font, as a theme writes it.
     static let readingFamily = "iA Writer Mono V"
 }

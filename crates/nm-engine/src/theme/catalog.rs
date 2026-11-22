@@ -109,7 +109,8 @@ pub const KEYS: &[Key] = &[
     k("fonts", "interface", Kind::Font, "the whole interface: list, bars, menus, pickers"),
     k("fonts", "reading", Kind::Font, "the body of the mails, and the default font of their HTML"),
     k("fonts", "reading_scale", Kind::Float(0.75, 1.5), "size of the body of the mails, times ui.text_size"),
-    k("fonts", "reading_line_height", Kind::Float(1.0, 2.0), "line height of the body of the mails"),
+    k("fonts", "reading_line_spacing", Kind::Int(0, 16),
+      "points added between two lines of the body of the mails, whatever the text size"),
     k("fonts", "title_scale", Kind::Float(0.75, 2.0), "size of the subject at the top of the reader, times ui.text_size"),
     // [layout]: lengths in points for a 12 pt text (section 5.3).
     k("layout", "row_height", Kind::Int(14, 48), "height of a row of the list"),

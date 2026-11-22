@@ -2989,7 +2989,8 @@ pub struct ThemeFonts {
     pub interface: String,
     pub reading: String,
     pub reading_scale: f64,
-    pub reading_line_height: f64,
+    /// Points added between two lines of the body, whatever the text size.
+    pub reading_line_spacing: u32,
     pub title_scale: f64,
 }
 

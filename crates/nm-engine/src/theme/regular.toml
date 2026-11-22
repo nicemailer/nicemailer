@@ -16,7 +16,7 @@ default_columns = 3
 interface = "system"
 reading = "system"
 reading_scale = 1.08
-reading_line_height = 1.5
+reading_line_spacing = 4
 title_scale = 1.3
 
 [layout]
