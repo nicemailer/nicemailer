@@ -11,5 +11,17 @@ expect prefs_themes = geek,clean,*regular
 expect theme = regular
 click prefs:themes-folder
 expect opened_file = themes
+# Back to geek through clean: the menus drop from their blocks of the
+# status bar, not from where the blocks of the previous theme were.
+click prefs:theme-clean
+expect theme = clean
+click prefs:theme-geek
+expect theme = geek
 preferences close
-expect theme = regular
+expect theme = geek
+key ;
+expect menu_under_block = true
+key esc
+key v
+expect menu_under_block = true
+key esc

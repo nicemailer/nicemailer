@@ -1021,6 +1021,13 @@ private final class Runner {
                 }.joined(separator: " | ").replacingOccurrences(of: " | ||", with: " ||")
             }(),
             "menu_x": "\(Int(UIScript.frames["menu-0"]?.minX ?? -1))",
+            // The open menu drops from its block: the place it was given
+            // is the block's (`menuAnchor`), not a block of a theme gone.
+            "menu_under_block": {
+                guard case .menu(let p) = c.overlay, let x = c.menuBlockX[p],
+                      let f = UIScript.frames["status-\(p == .goto ? "folder" : p.uiID)"] else { return "" }
+                return abs(x - f.minX) < 1 ? "true" : "false (menu at \(Int(x)), block at \(Int(f.minX)))"
+            }(),
             "menu_y": "\(Int(UIScript.frames["menu-0"]?.minY ?? -1))",
             // Height of the selected row, as laid out.
             "row_height": "\(Int((UIScript.frames["thread-\(m.selectedThreadId ?? -1)"]?.height ?? 0).rounded()))",

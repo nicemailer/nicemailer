@@ -754,19 +754,28 @@ extension View {
     /// `chrome`: the command of the window the block belongs to (the status
     /// bar or the toolbar): a block of the other one, still laid out while
     /// the window is rebuilt in a new theme, does not move the menu.
+    ///
+    /// The theme the block was drawn in is kept too (`ThemeStore.revision`):
+    /// when the theme changes, the blocks of the previous one, clean's for
+    /// geek's, still report a place as they go away, often 0, which sent the
+    /// menu to the left edge of the window.
+    @MainActor
     fileprivate func menuAnchor(_ prefix: InterfaceController.Prefix, _ controller: InterfaceController,
                                 chrome: String = "status_bar") -> some View {
-        background(GeometryReader { geo in
+        let revision = ThemeStore.shared.revision
+        return background(GeometryReader { geo in
             Color.clear
-                .onAppear { place(prefix, controller, chrome, geo.frame(in: .global).minX) }
-                .onChange(of: geo.frame(in: .global).minX) { _, x in place(prefix, controller, chrome, x) }
+                .onAppear { place(prefix, controller, chrome, revision, geo.frame(in: .global)) }
+                .onChange(of: geo.frame(in: .global)) { _, f in place(prefix, controller, chrome, revision, f) }
         })
     }
 
     @MainActor
-    private func place(_ prefix: InterfaceController.Prefix, _ controller: InterfaceController, _ chrome: String, _ x: CGFloat) {
-        guard ThemeStore.shared.current.window.chrome == chrome else { return }
-        controller.menuBlockX[prefix] = x
+    private func place(_ prefix: InterfaceController.Prefix, _ controller: InterfaceController, _ chrome: String,
+                       _ revision: Int, _ frame: CGRect) {
+        guard ThemeStore.shared.current.window.chrome == chrome, revision == ThemeStore.shared.revision,
+              frame.width > 0 else { return }
+        controller.menuBlockX[prefix] = frame.minX
     }
 }
 
