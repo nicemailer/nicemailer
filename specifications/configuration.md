@@ -225,6 +225,7 @@ Les paramètres sont définis dans les spécifications qui les utilisent. Ce tab
 | `ui.text_size` | Taille du texte de la fenêtre, sauf la barre de statut, en points (9 à 32) | 16 | `ui.md` |
 | `ui.status_bar_text_size` | Taille du texte de la barre de statut, en points (9 à 32) | 18 | `ui.md` |
 | `audit.retention_days` | Durée de conservation du journal | 365 | `tracabilite.md` |
+| `oauth.microsoft_client_id` | Identifiant de l'application Microsoft, à la place de celui compilé dans le noyau ; vide : celui du noyau | vide | `oauth2.md` |
 | `ai.enabled` | Autoriser l'envoi de mails au fournisseur d'IA, pour tous les comptes | faux | `ia.md` |
 | `ai.provider` | Fournisseur : `claude-code` (abonnement, binaire local) ou `anthropic-api` (clé dans le Keychain) | `claude-code` | `ia.md` |
 | `ai.model` | Modèle par défaut, qu'un prompt peut remplacer | `claude-sonnet-5-5` | `ia.md` |

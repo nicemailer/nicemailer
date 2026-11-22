@@ -275,7 +275,7 @@ Réalisé (novembre 2026) :
 | Authentification de l'expéditeur | `Authentication-Results` avec `authserv-id` `mx.google.com` : conforme | `authserv-id` souvent absent (`authentification-expediteur.md`, section 9) : règle propre au fournisseur nécessaire |
 | Limites | Débit et volume quotidien de téléchargement par compte | Limitation de débit agressive |
 
-Conclusion : le client IMAP est écrit pour accueillir un mécanisme SASL de plus (XOAUTH2, OAUTHBEARER) sans changement de structure. OAuth2 lui-même n'est pas « facile » : le flux d'autorisation (écoute sur `127.0.0.1`, renouvellement des jetons, Keychain) prendrait environ une phase, et la diffusion pour Gmail se heurte à la vérification de Google. Il est donc reporté après la V1. Gmail par mot de passe d'application est probablement utilisable dès la V1, à vérifier sur un compte de test.
+Conclusion : le client IMAP est écrit pour accueillir un mécanisme SASL de plus (XOAUTH2, OAUTHBEARER) sans changement de structure. OAuth2 lui-même n'est pas « facile » : le flux d'autorisation (écoute sur `127.0.0.1`, renouvellement des jetons, Keychain) prendrait environ une phase, et la diffusion pour Gmail se heurte à la vérification de Google. Il est donc reporté après la V1. Gmail par mot de passe d'application est probablement utilisable dès la V1, à vérifier sur un compte de test. La connexion OAuth2 à Microsoft est spécifiée dans `oauth2.md`.
 
 ## 7. Questions ouvertes
 
