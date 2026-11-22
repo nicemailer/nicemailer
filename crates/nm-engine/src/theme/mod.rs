@@ -555,6 +555,7 @@ pub fn view(resolved: &Resolved, dir: &Path, error: Option<&Problem>, warnings: 
             menu_row_height: int(v, "layout.menu_row_height") as u32,
             popup_radius: int(v, "layout.popup_radius") as u32,
             popup_shadow: boolean(v, "layout.popup_shadow"),
+            popup_padding: int(v, "layout.popup_padding") as u32,
             menu_keys: text(v, "layout.menu_keys"),
             message_cards: boolean(v, "layout.message_cards"),
             avatars: boolean(v, "layout.avatars"),

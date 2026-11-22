@@ -60,7 +60,7 @@ A theme holds data only: no code, no image, no font, no address to load. A theme
 | --- | --- |
 | `[window]` | `chrome` (`status_bar` or `toolbar`), `status_bar_position` (`top`, `bottom`, `hidden`), `title_bar` (`shown`, `hidden`, `merged`: the red, yellow and green buttons in the bar), `key_hints`, `block_labels` (the blocks of actions say their name), `status_bar_height`, `block_style` (`plain`, or `pill`: each block in a pill, the account and the folder in bold, the block open highlighted), `bar_line` (a line between the bar and the mails), `blocks`, `default_columns` (1 to 3) |
 | `[fonts]` | `interface`, `reading`, `reading_scale`, `reading_line_spacing` (points between two lines of the body, whatever the text size), `title_scale` |
-| `[layout]` | `row_height`, `row_radius`, `row_inset`, `zebra`, `menu_row_height` (0: the height of the text), `popup_radius`, `popup_shadow`, `menu_keys` (`left`, `right`), `message_cards`, `avatars`, `reader_max_width` (0: the whole width), `scrollers` (`none`, `thin`, `standard`), `separators` (`lines`, `space`) |
+| `[layout]` | `row_height`, `row_radius`, `row_inset`, `zebra`, `menu_row_height` (0: the height of the text), `popup_radius`, `popup_shadow`, `popup_padding` (the margin inside menus, pickers and panels), `menu_keys` (`left`, `right`), `message_cards`, `avatars`, `reader_max_width` (0: the whole width), `scrollers` (`none`, `thin`, `standard`), `separators` (`lines`, `space`) |
 | `[motion]` | `sidebar_ms`, `popup_ms` (0 when System Settings reduce motion) |
 | `[colors]` | `background`, `sidebar`, `list`, `bar`, `text`, `muted`, `accent`, `accent_text`, `selection`, `selection_text`, `marked`, `marked_bar`, `separator`, `popup`, `unread`, `flag`, `error`, `virtual_folder` |
 

@@ -2274,7 +2274,11 @@ struct KeyMenu: View {
         let measure = TextMeasure.interface(12 * TextSize.shared.scale)
         let keyWidth = (entries.map { measure.width($0.key) }.max() ?? measure.char) + 4
         VStack(alignment: .leading, spacing: 2) {
-            Text(title).foregroundStyle(Palette.accentText).padding(.bottom, 2)
+            // The title and the rows keep the theme's margin from the edges
+            // of the panel (`layout.popup_padding`), the highlighted row
+            // around them.
+            Text(title).foregroundStyle(Palette.accentText).padding(.bottom, 2 + Look.popupExtra / 2)
+                .padding(.horizontal, Look.popupExtra)
             ForEach(Array(entries.enumerated()), id: \.offset) { i, e in
                 HStack(spacing: 10) {
                     // The key first, as in Helix, or last, as in a macOS
@@ -2303,7 +2307,8 @@ struct KeyMenu: View {
                 // The theme's height of a row (`layout.menu_row_height`);
                 // that of its text in geek.
                 .frame(height: Look.menuRowHeight.map(scaled))
-                .rowFill(i == highlighted ? Palette.cursor : nil)
+                .padding(.horizontal, Look.popupExtra)
+                .rowFill(i == highlighted ? Palette.cursor : nil, inset: Look.popupExtra / 3)
                 .contentShape(Rectangle())
                 .onTapGesture { onSelect?(i) }
                 .uiTarget("menu-\(i)")
@@ -2316,6 +2321,7 @@ struct KeyMenu: View {
         // (which make the whole row clickable) would stretch it otherwise.
         .fixedSize(horizontal: true, vertical: false)
         .padding(10)
+        .padding(.vertical, Look.popupExtra / 2)
         .popupChrome()
     }
 }
@@ -2328,7 +2334,7 @@ private struct HelpPanel: View {
     let groups: [HelpGroup]
 
     /// Inner margin of the panel, and margin around it in the window.
-    private var padding: CGFloat { scaled(14) }
+    private var padding: CGFloat { scaled(14) + Look.popupExtra }
     private var margin: CGFloat { scaled(12) }
 
     var body: some View {
@@ -2469,7 +2475,7 @@ struct PickerPopup: View {
                 Spacer()
                 Text("\(entries.count)").foregroundStyle(Palette.muted)
             }
-            .padding(.horizontal, 8)
+            .padding(.horizontal, 8 + Look.popupExtra)
             .frame(height: scaled(Self.headerHeight))
             .uiTarget("picker-header")
             Palette.separator.frame(height: 1)
@@ -2511,9 +2517,9 @@ struct PickerPopup: View {
                                     }
                                 }
                             }
-                            .padding(.horizontal, 8)
+                            .padding(.horizontal, 8 + Look.popupExtra)
                             .frame(height: scaled(Self.rowHeight))
-                            .rowFill(i == current ? Palette.cursor : nil)
+                            .rowFill(i == current ? Palette.cursor : nil, inset: Look.popupExtra / 2)
                             .contentShape(Rectangle())
                             .onTapGesture { controller.clickPicker(kind, i) }
                             .uiTarget("picker-\(i)")

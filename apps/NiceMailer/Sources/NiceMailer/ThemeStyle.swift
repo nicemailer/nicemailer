@@ -73,6 +73,8 @@ struct ThemeView: Decodable, Equatable {
         let menuRowHeight: Double
         let popupRadius: Double
         let popupShadow: Bool
+        /// Margin inside menus, pickers and panels.
+        let popupPadding: Double
         let menuKeys: String
         let messageCards: Bool
         let avatars: Bool

@@ -31,6 +31,7 @@ zebra = false
 menu_row_height = 0
 popup_radius = 0
 popup_shadow = false
+popup_padding = 10
 menu_keys = "left"
 message_cards = false
 avatars = false

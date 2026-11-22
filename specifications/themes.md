@@ -116,6 +116,7 @@ Longueurs en points pour un texte de 12 pt (section 5.3).
 | `menu_row_height` | 0, ou 14 à 40 | 0 | 26 | 22 | Hauteur d'une ligne des menus et sélecteurs ; 0 : la hauteur de son texte (geek) |
 | `popup_radius` | 0 à 24 | 0 | 14 | 9 | Arrondi des menus, sélecteurs, questions et panneaux |
 | `popup_shadow` | booléen | `false` | `true` | `true` | Ombre portée sous ces panneaux |
+| `popup_padding` | 4 à 32 | 10 | 18 | 12 | Marge intérieure des menus, sélecteurs et panneaux, autour de leur titre et de leurs lignes |
 | `menu_keys` | `left`, `right` | `left` | `right` | `right` | Place de la touche sur une ligne de menu |
 | `message_cards` | booléen | `false` | `false` | `true` | Chaque message de la conversation dans un cadre arrondi |
 | `avatars` | booléen | `false` | `false` | `true` | Initiales de l'expéditeur devant chaque message (rien n'est chargé) |

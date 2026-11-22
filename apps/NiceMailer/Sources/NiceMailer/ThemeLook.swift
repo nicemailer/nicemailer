@@ -41,6 +41,11 @@ enum Look {
     /// size of the bar: 20 pt in geek for a 12 pt text.
     static var statusBarHeight: CGFloat { barScaled(CGFloat(theme.window.statusBarHeight)) }
 
+    /// What the theme adds to the margins of geek inside menus, pickers and
+    /// panels (`layout.popup_padding`, 10 in geek): 0 in geek, 8 in clean,
+    /// whose rounded corners would otherwise touch the title.
+    static var popupExtra: CGFloat { max(0, CGFloat(theme.layout.popupPadding) - 10) }
+
     /// Height of the bar at the top of the window when the title bar is
     /// merged into it: the toolbar (at least 38 pt) or the status bar (at
     /// least 28 pt, the height of a title bar). The window's buttons are
@@ -134,10 +139,10 @@ extension View {
     /// (`layout.row_inset`, `row_radius`), and every other row tinted when
     /// the theme alternates them (`layout.zebra`, `index`).
     @MainActor
-    func rowFill(_ fill: Color?, index: Int? = nil) -> some View {
+    func rowFill(_ fill: Color?, index: Int? = nil, inset: CGFloat? = nil) -> some View {
         let layout = Look.theme.layout
         let radius = scaled(CGFloat(layout.rowRadius))
-        let inset = scaled(CGFloat(layout.rowInset))
+        let inset = inset ?? scaled(CGFloat(layout.rowInset))
         let zebra = layout.zebra && (index ?? 0) % 2 == 1
         return background(
             ZStack {

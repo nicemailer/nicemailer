@@ -3013,6 +3013,8 @@ pub struct ThemeLayout {
     pub menu_row_height: u32,
     pub popup_radius: u32,
     pub popup_shadow: bool,
+    /// Margin inside menus, pickers and panels, in points.
+    pub popup_padding: u32,
     /// `left` or `right`.
     pub menu_keys: String,
     pub message_cards: bool,

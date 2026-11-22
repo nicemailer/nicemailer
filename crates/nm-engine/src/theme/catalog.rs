@@ -127,6 +127,8 @@ pub const KEYS: &[Key] = &[
       "height of a row of the menus and pickers; 0: the height of its text"),
     k("layout", "popup_radius", Kind::Int(0, 24), "corner radius of menus, pickers, questions and panels"),
     k("layout", "popup_shadow", Kind::Bool, "a shadow under them"),
+    k("layout", "popup_padding", Kind::Int(4, 32),
+      "margin inside menus, pickers and panels, around their title and rows"),
     k("layout", "menu_keys", Kind::Choice(&["left", "right"]), "side of the key on a menu row"),
     k("layout", "message_cards", Kind::Bool, "each message of the conversation in a rounded frame"),
     k("layout", "avatars", Kind::Bool, "the initials of the sender before each message (nothing is downloaded)"),

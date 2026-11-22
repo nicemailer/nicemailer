@@ -19,6 +19,11 @@ key @
 expect overlay ~ picker
 snap clean-account-picker
 key esc
+# The menu ; with the margins of clean around its title and rows.
+key ;
+expect overlay ~ menu
+snap clean-goto-menu
+key esc
 key ?
 snap clean-help
 key esc
