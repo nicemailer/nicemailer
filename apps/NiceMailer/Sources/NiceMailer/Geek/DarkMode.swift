@@ -66,10 +66,10 @@ enum DarkMode {
     /// The theme given to Dark Reader: the theme's dark colours, the mail's
     /// contrast as is.
     static var theme: String {
-        let hex = { (rgb: UInt32) in String(format: "#%06x", rgb) }
-        return """
+        """
         {immediateModify: true, brightness: 100, contrast: 100, sepia: 0, \
-        darkSchemeBackgroundColor: '\(hex(Palette.darkBackground))', darkSchemeTextColor: '\(hex(Palette.darkText))'}
+        darkSchemeBackgroundColor: '\(Palette.hex(\.background, dark: true))', \
+        darkSchemeTextColor: '\(Palette.hex(\.text, dark: true))'}
         """
     }
 

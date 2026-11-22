@@ -2,7 +2,7 @@
 
 The look of the app comes from a theme: its colors, fonts, proportions and animations, and a few variants of the window (a status bar or a toolbar, the blocks it shows…). Three themes are built in, **geek**, **clean** and **regular**; each one is a file you can modify, and you can write your own. A theme only changes the presentation: the keys, the menus and every feature are the same in all of them. The specification is `specifications/themes.md`.
 
-State (November 2026): the core reads, checks and serves the themes; the app does not apply them yet and always draws geek.
+State (November 2026): the core reads, checks and serves the themes. The app applies their colors and their `title_bar` (`merged` is drawn as `shown` for now); the rest of a theme (fonts, layout, toolbar, animations) comes next, so clean and regular are for now the geek window in their colors.
 
 ## Choosing a theme
 
@@ -98,5 +98,5 @@ nicemailer theme new sepia --extends clean # creates themes/sepia.toml
 
 - **The core** (`crates/nm-engine/src/theme/`): `catalog.rs` lists every key, its type, its bounds and its role; the built-in themes are `geek.toml`, `clean.toml` and `regular.toml`, embedded with `include_str!`, each giving every key a value (a test checks it). `mod.rs` reads a file (`parse`, with `toml_edit` for the line of each problem), resolves the inheritance (`resolve`), checks the contrast, builds the view (`view`), writes the commented files (`template`, `new_theme_file`), and follows the folder (`ThemeSet`, which keeps the last valid version of each file). `config_write::set_theme` writes `ui.theme`, keeping the rest of `config.toml`.
 - **The daemon** reads the folder at start, watches it (`watch::watch_dir`), follows `ui.theme` after each change of `config.toml`, and answers `theme_get`, `theme_list` and `config_set_theme` ([contract.md](contract.md)). It emits `ThemeChanged` when the theme in effect changes, and `ConfigError` with `file` `themes/<name>.toml` for a refused file.
-- **The app** will embed the three built-in themes resolved, `nicemailer theme show --builtins --json`, as its fallback until the core answers and for `FakeCore`.
+- **The app** (`ThemeStyle.swift`) embeds the three built-in themes resolved (`Resources/themes-builtin.json`, from `nicemailer theme show --builtins --json`; a Rust test checks it is up to date), its theme until the core answers. `ThemeStore.shared` holds the theme in effect, read with `theme_get` at the start of a session and at each `ThemeChanged`. The colors of `Palette` are dynamic colors that read the theme's when AppKit draws, so the views kept their names; a new theme rebuilds the window (`ThemeStore.revision`, as a new text size does). Tests: `ThemeTests.swift`, `themes.uiscript`, `themes-refused.uiscript`.
 - **Tests**: `crates/nm-engine/src/theme/tests.rs` (reading, inheritance, contrast, view, templates, the folder), `crates/nm-engine/tests/watch.rs` (the folder watched), `crates/nm-daemon/tests/theme_rpc.rs` (end to end), `config_write` (writing `ui.theme`).

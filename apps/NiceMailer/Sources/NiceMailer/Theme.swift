@@ -180,82 +180,56 @@ enum Fonts {
     }()
 }
 
-/// Colors of the geek theme, inspired by Helix's default themes: a dark
-/// and a light variant, chosen by macOS appearance.
+/// Colors of the theme in effect (`ThemeStore`, `themes.md`, section 6.5),
+/// by the names the views have always used.
+///
+/// Each one is a dynamic color whose provider reads the theme's colors when
+/// AppKit draws: the same `Color` value for the life of the app (views and
+/// tests can compare them), its value following the theme and the
+/// appearance. A new theme rebuilds the window (`ThemeStore.revision`), so
+/// that nothing keeps a color SwiftUI resolved before.
 ///
 /// Swift note: `NSColor(name:dynamicProvider:)` creates a color that AppKit
 /// re-evaluates when the appearance changes, so views redraw themselves in
 /// the right variant without any code of ours.
 enum Palette {
-    /// A colour of the theme, dark and light (`#rrggbb`).
-    struct Pair {
-        let dark: UInt32
-        let light: UInt32
-        func hex(dark isDark: Bool) -> String { String(format: "#%06x", isDark ? dark : light) }
-    }
-
-    private static func dynamic(_ p: Pair) -> Color { dynamic(dark: p.dark, light: p.light) }
-
-    private static func dynamic(dark: UInt32, light: UInt32) -> Color {
+    private static func dynamic(_ key: KeyPath<ThemeColors, ThemeColor>) -> Color {
         Color(nsColor: NSColor(name: nil) { appearance in
-            let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-            return NSColor(rgb: isDark ? dark : light)
+            ThemeStore.colors[keyPath: key].resolved(for: appearance)
         })
     }
 
-    /// The dark background and text, also given to Dark Reader so that a
-    /// mail it darkens takes the theme's own colours (`DarkMode`).
-    static let darkBackground: UInt32 = 0x1B1D23
-    /// A soft white, a little dimmed and warmed towards the green of the
-    /// accent: the bright #D5D8DE glared on the dark background. Still
-    /// 9.8:1 on it.
-    static let darkText: UInt32 = 0xC3C6C1
+    /// `#rrggbb` of a color of the theme for one appearance: for the pages
+    /// of the editor and of Dark Reader, which take CSS values (a dynamic
+    /// color converted out of its view does not reliably follow an
+    /// appearance asked for).
+    static func hex(_ key: KeyPath<ThemeColors, ThemeColor>, dark: Bool) -> String {
+        ThemeStore.colors[keyPath: key].hex(dark: dark)
+    }
 
-    static let backgroundPair = Pair(dark: darkBackground, light: 0xFAFAF8)
-    static let background = dynamic(backgroundPair)
-    static let textPair = Pair(dark: darkText, light: 0x24262B)
-    static let text = dynamic(textPair)
-    static let mutedPair = Pair(dark: 0x6E7380, light: 0x8A8D94)
-    static let muted = dynamic(mutedPair)
-    /// Accent: the green of the app's icon, rgb(138 165 129)
-    /// (`design/icon/README.md`), for what is not text (a frame).
-    static let accent = dynamic(dark: 0x8AA581, light: 0x8AA581)
+    static let background = dynamic(\.background)
+    static let text = dynamic(\.text)
+    /// Secondary text: dates, counts, headers.
+    static let muted = dynamic(\.muted)
+    /// Accent, for what is not text (a frame).
+    static let accent = dynamic(\.accent)
     /// The accent for text and small marks (keys of the menus, tags, the
-    /// mode, the caret): the icon's green in the dark theme (6.2:1 on its
-    /// background), a darker green of the same hue in the light one, where
-    /// the icon's would read at 2.6:1 only; this one reads at 5.3:1.
-    static let accentTextPair = Pair(dark: 0x8AA581, light: 0x56704E)
-    static let accentText = dynamic(accentTextPair)
-    /// Row under the cursor: a green of the accent's hue, a little more
-    /// apart from the background than a plain tint (text on it 11:1 light,
-    /// 7.4:1 dark).
-    static let cursorPair = Pair(dark: 0x33432F, light: 0xD3E0CE)
-    static let cursor = dynamic(cursorPair)
+    /// mode, the caret).
+    static let accentText = dynamic(\.accentText)
+    /// Row under the cursor (`colors.selection`).
+    static let cursor = dynamic(\.selection)
     /// Rows marked for a grouped action.
-    static let marked = dynamic(dark: 0x3A2E45, light: 0xF3E3EE)
-    static let markedBar = dynamic(dark: 0xE08AC0, light: 0xC2408F)
-    static let statusBarPair = Pair(dark: 0x24262E, light: 0xEDEDEA)
-    static let statusBar = dynamic(statusBarPair)
-    static let popup = dynamic(dark: 0x262833, light: 0xFFFFFF)
-    static let separatorPair = Pair(dark: 0x30333C, light: 0xDDDDD8)
-    static let separator = dynamic(separatorPair)
-    static let unread = dynamic(dark: 0xE6C07B, light: 0xB07D16)
-    static let error = dynamic(dark: 0xE06C75, light: 0xC0392B)
+    static let marked = dynamic(\.marked)
+    static let markedBar = dynamic(\.markedBar)
+    /// The status bar (`colors.bar`).
+    static let statusBar = dynamic(\.bar)
+    static let popup = dynamic(\.popup)
+    static let separator = dynamic(\.separator)
+    static let unread = dynamic(\.unread)
+    static let error = dynamic(\.error)
     /// A flagged mail: orange, as in Apple Mail, and apart from the unread
     /// colour, so that the flag stands out at the end of its row.
-    static let flag = dynamic(dark: 0xF0883E, light: 0xD9661C)
-}
-
-extension NSColor {
-    /// A color from `0xRRGGBB`.
-    convenience init(rgb: UInt32) {
-        self.init(
-            srgbRed: CGFloat((rgb >> 16) & 0xFF) / 255,
-            green: CGFloat((rgb >> 8) & 0xFF) / 255,
-            blue: CGFloat(rgb & 0xFF) / 255,
-            alpha: 1
-        )
-    }
+    static let flag = dynamic(\.flag)
 }
 
 /// The text sizes of the geek theme (`docs/geek-ui.md`, "Text size").

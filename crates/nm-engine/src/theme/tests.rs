@@ -549,3 +549,17 @@ fn a_missing_directory_has_the_builtin_themes() {
     assert_eq!(set.applied().name, "clean");
     assert_eq!(set.list().themes.len(), 3);
 }
+
+/// `apps/NiceMailer/Sources/NiceMailer/Resources/themes-builtin.json` must
+/// be [`builtins_json`]: the app reads it until the core answers and in its
+/// tests (`themes.md`, section 7). Regenerate it with
+/// `nicemailer theme show --builtins --json > apps/NiceMailer/Sources/NiceMailer/Resources/themes-builtin.json`.
+#[test]
+fn the_json_of_the_app_is_up_to_date() {
+    let app = include_str!("../../../../apps/NiceMailer/Sources/NiceMailer/Resources/themes-builtin.json");
+    assert!(
+        app == builtins_json(),
+        "themes-builtin.json is stale: run `nicemailer theme show --builtins --json > \
+         apps/NiceMailer/Sources/NiceMailer/Resources/themes-builtin.json`"
+    );
+}

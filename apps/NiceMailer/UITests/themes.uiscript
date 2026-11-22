@@ -1,0 +1,17 @@
+# Themes (docs/themes.md): a theme of the user, sepia, which extends clean
+# (fixtures/themes.themes/sepia.toml), chosen by ui.theme of config.toml
+# (fixtures/themes.config.toml). The core resolves it; the app draws its
+# colors, in light and in dark. Clean's own layout comes later: the window
+# is the geek one, in the theme's colors.
+expect theme = sepia
+expect theme_chain = sepia,clean
+expect theme_problem =
+# merged (clean's title bar): drawn as shown for now.
+expect title_bar_hidden = false
+appearance light
+snap sepia-light
+appearance dark
+snap sepia-dark
+# The keys are those of every theme.
+key j
+expect selected = 1

@@ -1,0 +1,9 @@
+# A theme of the user for themes.uiscript: clean, on a warm paper.
+version = 1
+extends = "clean"
+
+[colors]
+background = { light = "#F6F0E4", dark = "#221E18" }
+list = { light = "#F6F0E4", dark = "#221E18" }
+bar = { light = "#EADFC8", dark = "#2E2820" }
+text = { light = "#3B3025", dark = "#E8DFD0" }

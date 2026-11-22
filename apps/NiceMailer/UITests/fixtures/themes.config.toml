@@ -1,0 +1,6 @@
+# Settings of themes.uiscript: a theme of the user, which extends clean
+# (fixtures/themes.themes/sepia.toml). Text sizes of the layout (12 pt).
+[ui]
+text_size = 12
+status_bar_text_size = 12
+theme = "sepia"

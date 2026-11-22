@@ -97719,6 +97719,118 @@
           }
         }
       }
+    },
+    "Theme file refused, last valid version kept: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fichier de thème refusé, dernière version valide conservée : %@"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Theme-Datei abgelehnt, letzte gültige Version beibehalten: %@"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Archivo de tema rechazado, se mantiene la última versión válida: %@"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "File del tema rifiutato, mantenuta l'ultima versione valida: %@"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arquivo de tema recusado, última versão válida mantida: %@"
+          }
+        },
+        "pt-PT": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ficheiro de tema recusado, última versão válida mantida: %@"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Themabestand geweigerd, laatste geldige versie behouden: %@"
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Temafilen avvisades, senaste giltiga version behålls: %@"
+          }
+        },
+        "da": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Temafil afvist, seneste gyldige version bevaret: %@"
+          }
+        },
+        "nb": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Temafil avvist, siste gyldige versjon beholdt: %@"
+          }
+        },
+        "fi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Teematiedosto hylätty, viimeisin kelvollinen versio säilytetty: %@"
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Plik motywu odrzucony, zachowano ostatnią poprawną wersję: %@"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Файл темы отклонён, сохранена последняя корректная версия: %@"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Файл теми відхилено, збережено останню правильну версію: %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "テーマファイルが拒否されました。最後の有効なバージョンを使用します：%@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "主题文件被拒绝，保留最后一个有效版本：%@"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "主題檔案被拒絕，保留最後一個有效版本：%@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "테마 파일이 거부됨, 마지막 유효 버전 유지: %@"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

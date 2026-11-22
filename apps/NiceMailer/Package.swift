@@ -40,6 +40,9 @@ let package = Package(
                 // The default keys, written by the core (`nicemailer keymap
                 // show --defaults --json`; `Keymap.defaults`).
                 .copy("Resources/keymap-defaults.json"),
+                // The built-in themes resolved, written by the core
+                // (`nicemailer theme show --builtins --json`, `docs/themes.md`).
+                .copy("Resources/themes-builtin.json"),
                 .process("Resources/Localizable.xcstrings"),
             ],
             // Swift 5 language mode: Swift 6's strict concurrency checking

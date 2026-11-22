@@ -737,6 +737,10 @@ private final class Runner {
                 ? Help.groups(c.keymap, severalAccounts: c.hasSeveralAccounts).flatMap(\.entries).map { "\($0.key) \($0.label)" }.joined(separator: " | ") : "",
             // Why keymap.toml is refused, empty when it is applied.
             "keymap_problem": m.keymapProblem?.text ?? "",
+            "theme": m.theme.current.name,
+            "theme_chain": m.theme.current.chain.joined(separator: ","),
+            "theme_problem": m.themeProblem?.text ?? "",
+            "title_bar_hidden": m.titleBarHidden ? "true" : "false",
             // What the status bar says of the synchronization in progress,
             // empty when there is none (`AppModel+Sync.swift`).
             "sync_line": m.syncLine ?? "",

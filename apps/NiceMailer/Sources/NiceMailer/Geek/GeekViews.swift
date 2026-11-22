@@ -65,10 +65,11 @@ private struct GeekWindow: View {
     let controller: GeekController
 
     var body: some View {
-        // Rebuilt from scratch when a text size changes (`.id`): every
-        // size and width of the theme derives from them, and rebuilding is
-        // more reliable than counting on lazy rows to notice the change.
-        let textSize = "\(TextSize.shared.size)-\(TextSize.shared.statusBarSize)"
+        // Rebuilt from scratch when a text size or the theme changes
+        // (`.id`): every size and width derives from the sizes, every color
+        // from the theme, and rebuilding is more reliable than counting on
+        // lazy rows to notice the change.
+        let textSize = "\(TextSize.shared.size)-\(TextSize.shared.statusBarSize)-\(model.theme.revision)"
         VStack(spacing: 0) {
             if controller.statusPosition == .top { GeekStatusBar(controller: controller) }
             ZStack(alignment: .bottomTrailing) {
@@ -396,6 +397,12 @@ struct GeekStatusBar: View {
                 // `keymap.toml` refused: the previous keys stay, and this
                 // stays until the file is fixed (`raccourcis.md`, 3).
                 Text(L("keymap.toml refused, previous keys kept: %@", problem.text))
+                    .foregroundStyle(Palette.error).lineLimit(1).truncationMode(.middle)
+            } else if let problem = model.themeProblem {
+                // A file of the theme refused: its last valid version
+                // stays, and this stays until the file is fixed
+                // (`themes.md`, section 3).
+                Text(L("Theme file refused, last valid version kept: %@", problem.text))
                     .foregroundStyle(Palette.error).lineLimit(1).truncationMode(.middle)
             } else if let starting = model.startupPhase.message {
                 Text(starting).foregroundStyle(Palette.muted).lineLimit(1)

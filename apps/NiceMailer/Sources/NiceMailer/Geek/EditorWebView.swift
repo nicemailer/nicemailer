@@ -380,10 +380,10 @@ final class EditorBridge: NSObject, MailTextEditor, WKScriptMessageHandler, WKNa
         let dark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         return [
             "dark": dark, "font": "\"NM Mono\", ui-monospace, monospace", "size": Double(14 * TextSize.shared.scale),
-            "text": Palette.textPair.hex(dark: dark), "background": Palette.backgroundPair.hex(dark: dark),
-            "muted": Palette.mutedPair.hex(dark: dark), "accent": Palette.accentTextPair.hex(dark: dark),
-            "selection": Palette.cursorPair.hex(dark: dark), "border": Palette.separatorPair.hex(dark: dark),
-            "panel": Palette.statusBarPair.hex(dark: dark),
+            "text": Palette.hex(\.text, dark: dark), "background": Palette.hex(\.background, dark: dark),
+            "muted": Palette.hex(\.muted, dark: dark), "accent": Palette.hex(\.accentText, dark: dark),
+            "selection": Palette.hex(\.selection, dark: dark), "border": Palette.hex(\.separator, dark: dark),
+            "panel": Palette.hex(\.bar, dark: dark),
         ]
     }
 
