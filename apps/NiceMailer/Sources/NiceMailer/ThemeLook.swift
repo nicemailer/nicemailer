@@ -46,6 +46,17 @@ enum Look {
     /// whose rounded corners would otherwise touch the title.
     static var popupExtra: CGFloat { max(0, CGFloat(theme.layout.popupPadding) - 10) }
 
+    /// The panels are rounded (`layout.popup_radius`): clean and regular.
+    /// Their menus then title their rows as a macOS menu does a section, a
+    /// small grey heading over a line, and leave room inside the
+    /// highlighted row (`KeyMenu`).
+    static var roundedPanels: Bool { theme.layout.popupRadius > 0 }
+
+    /// Room between the edge of the highlighted row of a menu and its text
+    /// (the label on the left, the key on the right): none in geek, whose
+    /// highlight is the whole row.
+    static var menuRowTextInset: CGFloat { roundedPanels ? scaled(10) : 0 }
+
     /// Height of the bar at the top of the window when the title bar is
     /// merged into it: the toolbar (at least 38 pt) or the status bar (at
     /// least 28 pt, the height of a title bar). The window's buttons are

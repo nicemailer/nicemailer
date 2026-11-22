@@ -2274,11 +2274,24 @@ struct KeyMenu: View {
         let measure = TextMeasure.interface(12 * TextSize.shared.scale)
         let keyWidth = (entries.map { measure.width($0.key) }.max() ?? measure.char) + 4
         VStack(alignment: .leading, spacing: 2) {
-            // The title and the rows keep the theme's margin from the edges
-            // of the panel (`layout.popup_padding`), the highlighted row
-            // around them.
-            Text(title).foregroundStyle(Palette.accentText).padding(.bottom, 2 + Look.popupExtra / 2)
-                .padding(.horizontal, Look.popupExtra)
+            // The title: in geek, a line in the accent; in a theme of
+            // rounded panels, the heading of a section of a macOS menu,
+            // small, grey, in capitals, over a line that sets it apart
+            // from the rows (`Look.roundedPanels`).
+            if Look.roundedPanels {
+                Text(title.uppercased(with: uiLocale))
+                    .font(.interface(10, weight: .semibold))
+                    .tracking(0.6)
+                    .foregroundStyle(Palette.muted)
+                    .padding(.horizontal, Look.menuRowTextInset)
+                    .padding(.top, 2)
+                Palette.separator.frame(height: 1)
+                    .padding(.horizontal, Look.menuRowTextInset)
+                    .padding(.top, 4)
+                    .padding(.bottom, 4)
+            } else {
+                Text(title).foregroundStyle(Palette.accentText).padding(.bottom, 2)
+            }
             ForEach(Array(entries.enumerated()), id: \.offset) { i, e in
                 HStack(spacing: 10) {
                     // The key first, as in Helix, or last, as in a macOS
@@ -2307,8 +2320,11 @@ struct KeyMenu: View {
                 // The theme's height of a row (`layout.menu_row_height`);
                 // that of its text in geek.
                 .frame(height: Look.menuRowHeight.map(scaled))
-                .padding(.horizontal, Look.popupExtra)
-                .rowFill(i == highlighted ? Palette.cursor : nil, inset: Look.popupExtra / 3)
+                // The text inside the highlighted row, with room before
+                // the label and after the key; the highlight across the
+                // panel (`Look.menuRowTextInset`).
+                .padding(.horizontal, Look.menuRowTextInset)
+                .rowFill(i == highlighted ? Palette.cursor : nil, inset: 0)
                 .contentShape(Rectangle())
                 .onTapGesture { onSelect?(i) }
                 .uiTarget("menu-\(i)")
@@ -2320,8 +2336,10 @@ struct KeyMenu: View {
         // As wide as its longest row, not as the window: the rows' spacers
         // (which make the whole row clickable) would stretch it otherwise.
         .fixedSize(horizontal: true, vertical: false)
-        .padding(10)
-        .padding(.vertical, Look.popupExtra / 2)
+        // The highlight of a row runs close to the edges of a rounded
+        // panel, as in a macOS menu; its text keeps its room inside.
+        .padding(.vertical, 10 + Look.popupExtra / 2)
+        .padding(.horizontal, Look.roundedPanels ? 6 : 10)
         .popupChrome()
     }
 }

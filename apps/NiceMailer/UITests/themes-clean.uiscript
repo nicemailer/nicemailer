@@ -22,7 +22,14 @@ key esc
 # The menu ; with the margins of clean around its title and rows.
 key ;
 expect overlay ~ menu
+# A row highlighted with the arrows: room around its text.
+key down
+expect menu_index = 0
 snap clean-goto-menu
+key esc
+key v
+expect overlay ~ menu
+snap clean-view-menu
 key esc
 key ?
 snap clean-help
