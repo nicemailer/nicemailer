@@ -950,6 +950,12 @@ final class AppModel {
         let changed = view != theme.current
         theme.apply(view)
         themeProblem = view.error
+        // The window is rebuilt in the new theme: the targets of a scenario
+        // are recorded again where they now are (`UIScript.locate` waits
+        // for them), not clicked where the previous theme drew them.
+        if changed, UIScript.isActive {
+            UIScript.frames = UIScript.frames.filter { $0.key.hasPrefix("prefs-") }
+        }
         // A font the theme names that the Mac does not have: the system
         // font stands in, and the status bar says so once, when the theme
         // arrives (`themes.md`, section 7).

@@ -71,13 +71,15 @@ private struct GeekWindow: View {
         // lazy rows to notice the change.
         let textSize = "\(TextSize.shared.size)-\(TextSize.shared.statusBarSize)-\(model.theme.revision)"
         VStack(spacing: 0) {
-            if controller.statusPosition == .top { GeekStatusBar(controller: controller) }
+            // A toolbar is always at the top (`window.chrome`); the status
+            // bar where `v` put it.
+            if Look.toolbar || controller.statusPosition == .top { GeekStatusBar(controller: controller) }
             ZStack(alignment: .bottomTrailing) {
                 content
                 clickCatcher
                 overlay
             }
-            if controller.statusPosition == .bottom { GeekStatusBar(controller: controller) }
+            if !Look.toolbar, controller.statusPosition == .bottom { GeekStatusBar(controller: controller) }
         }
         .background(Palette.background)
         .foregroundStyle(Palette.text)
@@ -89,6 +91,8 @@ private struct GeekWindow: View {
             if !Look.animates { t.animation = nil; t.disablesAnimations = true }
         }
         .animation(Look.sidebarAnimation, value: controller.columns)
+        // The layout of a theme arrived from the core (`window.default_columns`).
+        .onChange(of: model.theme.revision, initial: true) { _, _ in controller.applyThemeLayout() }
         .animation(Look.popupAnimation, value: controller.overlay)
         .id(textSize)
     }
@@ -276,6 +280,50 @@ struct GeekStatusBar: View {
     let controller: GeekController
 
     var body: some View {
+        // regular: a macOS toolbar, whose buttons are the same blocks
+        // (`window.chrome = "toolbar"`, `GeekToolbar`); geek and clean:
+        // the status bar.
+        if Look.toolbar {
+            GeekToolbar(controller: controller, messages: messageLine)
+        } else {
+            statusBar
+        }
+    }
+
+    /// What the app says now, on the right of the status bar or under the
+    /// title of the toolbar: an error, the result of an action, a file
+    /// refused, the start, the AI at work. One line, the most urgent.
+    @ViewBuilder var messageLine: some View {
+        if let error = model.lastError {
+            Text(error).foregroundStyle(Palette.error).lineLimit(1)
+        } else if let flash = model.flash {
+            Text(flash).foregroundStyle(Palette.muted).lineLimit(1).truncationMode(.middle)
+        } else if case .failed(let message) = model.status {
+            Text(message).foregroundStyle(Palette.error).lineLimit(1)
+        } else if case .maintenance(_, let short) = model.status {
+            Text(short).foregroundStyle(Palette.muted).lineLimit(1)
+        } else if let problem = model.keymapProblem {
+            // `keymap.toml` refused: the previous keys stay, and this
+            // stays until the file is fixed (`raccourcis.md`, 3).
+            Text(L("keymap.toml refused, previous keys kept: %@", problem.text))
+                .foregroundStyle(Palette.error).lineLimit(1).truncationMode(.middle)
+        } else if let problem = model.themeProblem {
+            // A file of the theme refused: its last valid version
+            // stays, and this stays until the file is fixed
+            // (`themes.md`, section 3).
+            Text(L("Theme file refused, last valid version kept: %@", problem.text))
+                .foregroundStyle(Palette.error).lineLimit(1).truncationMode(.middle)
+        } else if let starting = model.startupPhase.message {
+            Text(starting).foregroundStyle(Palette.muted).lineLimit(1)
+        } else if let sort = model.aiSort {
+            Text(AI.sortLine(sort)).foregroundStyle(Palette.accentText).lineLimit(1)
+        } else if controller.screen == .mail, model.composer == nil, let s = model.selectedSuggestion {
+            // Why the AI suggests a target for the mail under the cursor.
+            Text(AI.suggestionLine(s, keymap: model.keymap, names: model.folderNames)).foregroundStyle(Palette.accentText).lineLimit(1).truncationMode(.tail)
+        }
+    }
+
+    private var statusBar: some View {
         HStack(spacing: 10) {
             if controller.showsAppIcon, let icon = AppIcon.statusImage {
                 // The normal mode: the app's icon, as tall as the text.
@@ -299,13 +347,13 @@ struct GeekStatusBar: View {
                 if controller.hasSeveralAccounts {
                     StatusBlock(icon: "at", text: model.scopeName, key: controller.keyLabel(.pickerAccounts))
                         .onTapGesture { controller.openPickerFromStatusBar(.accounts) }
-                        .uiTarget("status-account")
+                        .uiTarget("status-account", chrome: "status_bar")
                 }
                 StatusBlock(icon: GeekController.Prefix.goto.icon, text: model.currentFolderName,
                             key: controller.menuKeyLabel(.goto))
                     .menuAnchor(.goto, controller)
                     .onTapGesture { controller.openMenuFromStatusBar(.goto) }
-                    .uiTarget("status-folder")
+                    .uiTarget("status-folder", chrome: "status_bar")
             } else {
                 // A tag, group or contact list ("tag: Clients"), or a screen.
                 Text(controller.locationLabel)
@@ -318,7 +366,7 @@ struct GeekStatusBar: View {
                 // removed by a click.
                 StatusBlock(icon: "magnifyingglass", text: "", key: controller.keyLabel(.pickerAttributes), label: L("Attributes"))
                     .onTapGesture { controller.openPickerFromStatusBar(.attributes) }
-                    .uiTarget("status-attributes")
+                    .uiTarget("status-attributes", chrome: "status_bar")
                 ForEach(model.attributes.chips) { chip in
                     Text(chip.label + " ×")
                         .lineLimit(1)
@@ -343,7 +391,7 @@ struct GeekStatusBar: View {
                     StatusBlock(icon: p.icon, text: "", key: controller.menuKeyLabel(p), label: p.title)
                         .menuAnchor(p, controller)
                         .onTapGesture { controller.openMenuFromStatusBar(p) }
-                        .uiTarget("status-\(p.uiID)")
+                        .uiTarget("status-\(p.uiID)", chrome: "status_bar")
                         .padding(.leading, p == .save ? 0 : barScaled(28))
                 }
                 // The AI, with the actions on the current mail: its palette
@@ -355,7 +403,7 @@ struct GeekStatusBar: View {
                     .onTapGesture { controller.openAIFromStatusBar() }
                     .help(L("AI assistance"))
                     .accessibilityLabel(L("AI assistance"))
-                    .uiTarget("status-ai")
+                    .uiTarget("status-ai", chrome: "status_bar")
                     .padding(.leading, controller.directTargets.isEmpty ? 0 : barScaled(28))
             }
             if let query = controller.contactsFilterChip {
@@ -395,33 +443,7 @@ struct GeekStatusBar: View {
                 .foregroundStyle(Palette.accentText)
             }
             Spacer(minLength: 8)
-            if let error = model.lastError {
-                Text(error).foregroundStyle(Palette.error).lineLimit(1)
-            } else if let flash = model.flash {
-                Text(flash).foregroundStyle(Palette.muted).lineLimit(1).truncationMode(.middle)
-            } else if case .failed(let message) = model.status {
-                Text(message).foregroundStyle(Palette.error).lineLimit(1)
-            } else if case .maintenance(_, let short) = model.status {
-                Text(short).foregroundStyle(Palette.muted).lineLimit(1)
-            } else if let problem = model.keymapProblem {
-                // `keymap.toml` refused: the previous keys stay, and this
-                // stays until the file is fixed (`raccourcis.md`, 3).
-                Text(L("keymap.toml refused, previous keys kept: %@", problem.text))
-                    .foregroundStyle(Palette.error).lineLimit(1).truncationMode(.middle)
-            } else if let problem = model.themeProblem {
-                // A file of the theme refused: its last valid version
-                // stays, and this stays until the file is fixed
-                // (`themes.md`, section 3).
-                Text(L("Theme file refused, last valid version kept: %@", problem.text))
-                    .foregroundStyle(Palette.error).lineLimit(1).truncationMode(.middle)
-            } else if let starting = model.startupPhase.message {
-                Text(starting).foregroundStyle(Palette.muted).lineLimit(1)
-            } else if let sort = model.aiSort {
-                Text(AI.sortLine(sort)).foregroundStyle(Palette.accentText).lineLimit(1)
-            } else if controller.screen == .mail, model.composer == nil, let s = model.selectedSuggestion {
-                // Why the AI suggests a target for the mail under the cursor.
-                Text(AI.suggestionLine(s, keymap: model.keymap, names: model.folderNames)).foregroundStyle(Palette.accentText).lineLimit(1).truncationMode(.tail)
-            }
+            messageLine
             if let sync = model.syncLine {
                 // A large account being imported (`AppModel+Sync.swift`):
                 // where it is, so that the app does not look frozen. Apart
@@ -435,7 +457,7 @@ struct GeekStatusBar: View {
                 .foregroundStyle(Palette.muted)
                 .lineLimit(1)
                 .fixedSize(horizontal: true, vertical: false)
-                .uiTarget("status-sync")
+                .uiTarget("status-sync", chrome: "status_bar")
             }
             if !model.marked.isEmpty {
                 Text(L("%lld marked", model.marked.count)).foregroundStyle(Palette.markedBar)
@@ -448,7 +470,7 @@ struct GeekStatusBar: View {
             StatusBlock(icon: "questionmark.circle", text: "", key: controller.keyLabel(.helpShow))
                 .onTapGesture { controller.toggleHelpFromStatusBar() }
                 .help(L("Keys"))
-                .uiTarget("status-help")
+                .uiTarget("status-help", chrome: "status_bar")
         }
         .font(.geekBar(11))
         .padding(.horizontal, 6)
@@ -497,17 +519,151 @@ extension GeekStatusBar {
     }
 }
 
+/// The command of the window in regular (`window.chrome = "toolbar"`,
+/// `themes.md`, section 6.1): a macOS toolbar. Its buttons are the blocks
+/// of the status bar, and open the same menus and pickers, dropped under
+/// them; the folder is the title, with what the app says (`messageLine`)
+/// and the synchronization under it, as Mail does.
+private struct GeekToolbar<Messages: View>: View {
+    @Environment(AppModel.self) private var model
+    let controller: GeekController
+    let messages: Messages
+
+    var body: some View {
+        let listsMail = controller.screen == .mail && (model.listFilter != nil || !model.listedFolderIds.isEmpty)
+        HStack(spacing: 8) {
+            // The title: the folder, or the list or screen shown; under
+            // it, the message of the moment, else the synchronization.
+            VStack(alignment: .leading, spacing: 1) {
+                if listsMail, model.listFilter == nil {
+                    HStack(spacing: 4) {
+                        Text(model.currentFolderName).font(.geekBar(15, weight: .bold))
+                        Image(systemName: "chevron.down").font(.system(size: barScaled(8), weight: .semibold))
+                            .foregroundStyle(Palette.muted)
+                    }
+                    .contentShape(Rectangle())
+                    .menuAnchor(.goto, controller, chrome: "toolbar")
+                    .onTapGesture { controller.openMenuFromStatusBar(.goto) }
+                    .uiTarget("status-folder", chrome: "toolbar")
+                } else {
+                    Text(controller.locationLabel).font(.geekBar(15, weight: .bold)).lineLimit(1)
+                }
+                HStack(spacing: 6) {
+                    messages
+                    if let sync = model.syncLine {
+                        Text(sync).foregroundStyle(Palette.muted).lineLimit(1).uiTarget("status-sync", chrome: "toolbar")
+                    }
+                    if !model.marked.isEmpty {
+                        Text(L("%lld marked", model.marked.count)).foregroundStyle(Palette.markedBar)
+                    }
+                }
+                .font(.geekBar(10))
+            }
+            .padding(.trailing, barScaled(12))
+            Spacer(minLength: 8)
+            if listsMail {
+                if model.listFilter == nil, controller.hasSeveralAccounts, Look.shows("account") {
+                    ToolbarItem(action: { controller.openPickerFromStatusBar(.accounts) }) {
+                        StatusBlock(icon: "at", text: model.scopeName, key: controller.keyLabel(.pickerAccounts))
+                    }
+                        .uiTarget("status-account", chrome: "toolbar")
+                }
+                if Look.shows("attributes") {
+                    ToolbarItem(action: { controller.openPickerFromStatusBar(.attributes) }) {
+                        StatusBlock(icon: "line.3.horizontal.decrease", text: "", key: controller.keyLabel(.pickerAttributes),
+                                    label: L("Attributes"))
+                    }
+                        .uiTarget("status-attributes", chrome: "toolbar")
+                }
+                ForEach(model.attributes.chips) { chip in
+                    Text(chip.label + " ×")
+                        .lineLimit(1)
+                        .foregroundStyle(Palette.accentText)
+                        .toolbarCapsule()
+                        .onTapGesture { model.attributes.remove(chip.id) }
+                        .uiTarget("chip-\(chip.id)")
+                }
+            }
+            if controller.screen == .mail {
+                let prefixes: [GeekController.Prefix] = controller.directTargets.isEmpty ? [.view, .move, .save] : [.view]
+                ForEach(prefixes.filter { Look.shows($0.name) }, id: \.self) { p in
+                    ToolbarItem(action: { controller.openMenuFromStatusBar(p) }) {
+                        StatusBlock(icon: p.icon, text: "", key: controller.menuKeyLabel(p), label: p.title)
+                            .menuAnchor(p, controller, chrome: "toolbar")
+                    }
+                        .uiTarget("status-\(p.uiID)", chrome: "toolbar")
+                }
+                if Look.shows("ai") {
+                    ToolbarItem(action: { controller.openAIFromStatusBar() }) {
+                        StatusBlock(icon: "sparkles", text: "", key: controller.aiKeyLabel(composing: model.composer != nil), label: L("AI"))
+                    }
+                        .help(L("AI assistance"))
+                        .uiTarget("status-ai", chrome: "toolbar")
+                }
+            }
+            if Look.shows("help") {
+                ToolbarItem(action: { controller.toggleHelpFromStatusBar() }) {
+                    StatusBlock(icon: "questionmark.circle", text: "", key: controller.keyLabel(.helpShow))
+                }
+                    .help(L("Keys"))
+                    .uiTarget("status-help", chrome: "toolbar")
+            }
+        }
+        .font(.geekBar(12))
+        .padding(.horizontal, 12)
+        .padding(.leading, model.titleBarMode == .merged ? Look.mergedButtonsWidth : 0)
+        .frame(height: max(Look.statusBarHeight, 38))
+        // Its empty parts move the window, as a title bar does.
+        .background(ZStack { Palette.statusBar; WindowDragArea() })
+        .overlay(alignment: .bottom) { Palette.separator.frame(height: 1) }
+    }
+}
+
+/// A button of the toolbar: a real button (keyboard focus, accessibility,
+/// and a click AppKit delivers like any other), drawn as its block.
+private struct ToolbarItem<Label: View>: View {
+    let action: () -> Void
+    @ViewBuilder let label: () -> Label
+
+    var body: some View {
+        Button(action: action, label: label).buttonStyle(.plain)
+    }
+}
+
+extension View {
+    /// A button of the toolbar: a capsule around its icon and its name.
+    @MainActor
+    fileprivate func toolbarCapsule() -> some View {
+        padding(.horizontal, barScaled(9))
+            .frame(height: barScaled(24))
+            .background(Capsule().fill(Palette.popup))
+            .overlay(Capsule().stroke(Palette.separator, lineWidth: 1))
+            .contentShape(Capsule())
+    }
+}
+
 /// One element of the status bar: an SF Symbol, a name, and a reminder of
 /// the key that opens it (`ui.md`, status bar).
 extension View {
     /// Records the left edge of a status bar block, where the menu of
     /// `prefix` drops down from.
-    fileprivate func menuAnchor(_ prefix: GeekController.Prefix, _ controller: GeekController) -> some View {
+    ///
+    /// `chrome`: the command of the window the block belongs to (the status
+    /// bar or the toolbar): a block of the other one, still laid out while
+    /// the window is rebuilt in a new theme, does not move the menu.
+    fileprivate func menuAnchor(_ prefix: GeekController.Prefix, _ controller: GeekController,
+                                chrome: String = "status_bar") -> some View {
         background(GeometryReader { geo in
             Color.clear
-                .onAppear { controller.menuBlockX[prefix] = geo.frame(in: .global).minX }
-                .onChange(of: geo.frame(in: .global).minX) { _, x in controller.menuBlockX[prefix] = x }
+                .onAppear { place(prefix, controller, chrome, geo.frame(in: .global).minX) }
+                .onChange(of: geo.frame(in: .global).minX) { _, x in place(prefix, controller, chrome, x) }
         })
+    }
+
+    @MainActor
+    private func place(_ prefix: GeekController.Prefix, _ controller: GeekController, _ chrome: String, _ x: CGFloat) {
+        guard ThemeStore.shared.current.window.chrome == chrome else { return }
+        controller.menuBlockX[prefix] = x
     }
 }
 
@@ -541,6 +697,16 @@ private struct StatusBlock: View {
             }
         }
         .contentShape(Rectangle())
+        // A button of the toolbar in regular (`window.chrome`).
+        .modifier(ToolbarButton(active: Look.toolbar))
+    }
+}
+
+/// The capsule of a toolbar button, or nothing.
+private struct ToolbarButton: ViewModifier {
+    let active: Bool
+    func body(content: Content) -> some View {
+        if active { content.toolbarCapsule() } else { content }
     }
 }
 

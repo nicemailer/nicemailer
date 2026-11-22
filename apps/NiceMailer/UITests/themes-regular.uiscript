@@ -1,0 +1,26 @@
+# The theme regular (docs/themes.md; fixtures/themes-regular.config.toml):
+# a macOS toolbar whose buttons are the blocks of the status bar and open
+# the same menus, the folder as its title, three columns, alternate rows,
+# the colors of the system. Its snapshots are the ones to look at.
+expect theme = regular
+expect title_bar = merged
+expect columns = 3
+appearance light
+snap regular-list
+# The keys work as in every theme.
+key j
+expect selected = 1
+# A button of the toolbar opens its menu, under it.
+click status:m
+expect overlay ~ menu
+snap regular-move-menu
+key esc
+click status:folder
+expect overlay ~ menu
+key esc
+key @
+expect overlay ~ picker
+snap regular-account-picker
+key esc
+appearance dark
+snap regular-dark

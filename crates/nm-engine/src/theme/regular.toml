@@ -9,7 +9,7 @@ chrome = "toolbar"
 status_bar_position = "top"
 title_bar = "merged"
 block_labels = true
-status_bar_height = 30
+status_bar_height = 44
 key_hints = false
 blocks = ["account", "folder", "attributes", "|", "view", "|", "move", "save", "ai", "->", "help"]
 default_columns = 3
@@ -42,7 +42,7 @@ popup_ms = 0
 
 [colors]
 background = "system.text_background"
-sidebar = "system.under_page_background"
+sidebar = "system.window_background"
 list = "system.text_background"
 bar = "system.window_background"
 text = "system.label"

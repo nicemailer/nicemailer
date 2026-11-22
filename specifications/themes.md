@@ -133,7 +133,7 @@ Longueurs en points pour un texte de 12 pt (section 5.3).
 | Clé | Rôle | geek (clair / sombre) | clean | regular |
 | --- | --- | --- | --- | --- |
 | `background` | Fond de la fenêtre et du lecteur | `#FAFAF8` / `#1B1D23` | `#FFFFFF` / `#1B1D1F` | `system.text_background` |
-| `sidebar` | Colonne des dossiers | = `background` | `#F6F6F3` / `#1E2022` | `system.under_page_background` |
+| `sidebar` | Colonne des dossiers | = `background` | `#F6F6F3` / `#1E2022` | `system.window_background` |
 | `list` | Liste des mails | = `background` | `#FFFFFF` / `#18191B` | `system.text_background` |
 | `bar` | Barre de statut ou barre d'outils | `#EDEDEA` / `#24262E` | `#FFFFFF` / `#18191B` | `system.window_background` |
 | `text` | Texte | `#24262B` / `#C3C6C1` | `#1C1E1B` / `#E6E7E3` | `system.label` |

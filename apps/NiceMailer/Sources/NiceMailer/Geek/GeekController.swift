@@ -252,7 +252,8 @@ final class GeekController {
     /// 2 = list and mail, 3 = folders, list and mail.
     var columns: Int {
         didSet {
-            defaults.set(columns, forKey: "geek.columns")
+            // A layout the theme gives is not remembered as the user's.
+            if !applyingTheme { defaults.set(columns, forKey: "geek.columns") }
             // The full-window reader only exists in one column: another
             // layout shows the mail beside the list anyway.
             if columns != 1 { reading = false }
@@ -271,7 +272,7 @@ final class GeekController {
     var readerVisible: Bool { columns != 1 || reading }
     var statusPosition: StatusPosition {
         didSet {
-            defaults.set(statusPosition.rawValue, forKey: "geek.status")
+            if !applyingTheme { defaults.set(statusPosition.rawValue, forKey: "geek.status") }
             model.statusBarAtTop = statusPosition == .top
         }
     }
@@ -280,6 +281,23 @@ final class GeekController {
     var listFraction: Double {
         didSet { defaults.set(listFraction, forKey: "geek.listFraction") }
     }
+    /// Set while the layout of a theme is applied (`applyThemeLayout`): its
+    /// values are not remembered as the user's choice.
+    @ObservationIgnored private var applyingTheme = false
+
+    /// The layout of the theme now in effect (`window.default_columns`,
+    /// `status_bar_position`), for what the user has not chosen: the theme
+    /// arrives from the core after the window opened.
+    func applyThemeLayout() {
+        let w = model.theme.current.window
+        applyingTheme = true
+        defer { applyingTheme = false }
+        if defaults.object(forKey: "geek.columns") == nil, columns != w.defaultColumns { columns = w.defaultColumns }
+        if defaults.string(forKey: "geek.status") == nil, let p = StatusPosition(rawValue: w.statusBarPosition), statusPosition != p {
+            statusPosition = p
+        }
+    }
+
     /// Where the layout choices are remembered (`AppDefaults.store`, or a
     /// throwaway domain in tests).
     @ObservationIgnored private let defaults: UserDefaults

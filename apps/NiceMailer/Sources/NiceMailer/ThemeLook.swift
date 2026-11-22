@@ -18,6 +18,10 @@ enum Look {
     /// text size: 20 pt in geek for a 12 pt text.
     static var rowHeight: CGFloat { scaled(CGFloat(theme.layout.rowHeight)) }
 
+    /// The command of the window is a toolbar (`window.chrome`), not the
+    /// status bar.
+    static var toolbar: Bool { theme.window.chrome == "toolbar" }
+
     /// The blocks of the status bar remind their key (`window.key_hints`).
     static var keyHints: Bool { theme.window.keyHints }
 

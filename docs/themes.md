@@ -2,7 +2,9 @@
 
 The look of the app comes from a theme: its colors, fonts, proportions and animations, and a few variants of the window (a status bar or a toolbar, the blocks it shows…). Three themes are built in, **geek**, **clean** and **regular**; each one is a file you can modify, and you can write your own. A theme only changes the presentation: the keys, the menus and every feature are the same in all of them. The specification is `specifications/themes.md`.
 
-State (November 2026): the core reads, checks and serves the themes, and the app applies them, except two things still to come: the toolbar of regular (`chrome = "toolbar"` is drawn as the status bar for now), and the order of `blocks` (a block left out is hidden, the others keep their place).
+State (November 2026): the core reads, checks and serves the themes, and the app applies them, except the order of `blocks`: a block left out is hidden, the others keep their place.
+
+With `chrome = "toolbar"` (regular), the status bar becomes a macOS toolbar, always at the top: the folder is its title (a click opens the menu `;`), with the message of the moment or the synchronization under it, as in Mail; the other blocks are buttons, which open the same menus and pickers under them. The keys are those of every theme.
 
 ## Choosing a theme
 

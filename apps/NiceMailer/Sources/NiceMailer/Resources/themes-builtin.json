@@ -275,7 +275,7 @@
       "title_bar": "merged",
       "key_hints": false,
       "block_labels": true,
-      "status_bar_height": 30,
+      "status_bar_height": 44,
       "blocks": [
         "account",
         "folder",
@@ -364,7 +364,7 @@
         "system": "separator"
       },
       "sidebar": {
-        "system": "under_page_background"
+        "system": "window_background"
       },
       "text": {
         "system": "label"

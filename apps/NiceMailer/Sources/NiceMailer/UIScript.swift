@@ -224,7 +224,17 @@ enum UIScript {
 
     /// Records the frame of a clickable row (see `View.uiTarget`). The
     /// rows of the Preferences (`prefs-…`) are in their own window.
-    static func record(_ id: String, _ globalFrame: CGRect) {
+    ///
+    /// `revision`: the theme the view was drawn in. A view of the previous
+    /// theme, still laid out while the window is rebuilt in the new one,
+    /// would record a place where nothing is any more: it is ignored.
+    ///
+    /// `chrome`: the command of the window the view belongs to (the status
+    /// bar or the toolbar, `window.chrome`); a view of the other one, on
+    /// its way out, is ignored too.
+    static func record(_ id: String, _ globalFrame: CGRect, revision: Int? = nil, chrome: String? = nil) {
+        if let revision, revision != ThemeStore.shared.revision { return }
+        if let chrome, chrome != ThemeStore.shared.current.window.chrome { return }
         let w = id.hasPrefix("prefs-") ? preferencesWindow : window
         guard let content = w?.contentView else { return }
         // SwiftUI's global space has its origin at the top-left of the
@@ -238,12 +248,13 @@ enum UIScript {
 extension View {
     /// Makes the view clickable by the UI script under `id`. Does nothing
     /// outside UI script mode, so normal use pays no cost.
-    @ViewBuilder func uiTarget(_ id: String) -> some View {
+    @ViewBuilder func uiTarget(_ id: String, chrome: String? = nil) -> some View {
         if UIScript.isActive {
+            let revision = ThemeStore.shared.revision
             background(GeometryReader { geo in
                 Color.clear
-                    .onAppear { UIScript.record(id, geo.frame(in: .global)) }
-                    .onChange(of: geo.frame(in: .global)) { _, f in UIScript.record(id, f) }
+                    .onAppear { UIScript.record(id, geo.frame(in: .global), revision: revision, chrome: chrome) }
+                    .onChange(of: geo.frame(in: .global)) { _, f in UIScript.record(id, f, revision: revision, chrome: chrome) }
                     // A section of the Preferences that goes away takes
                     // its targets with it: a frame left behind would be
                     // found under the field now at its place (`prefs_focus`).
