@@ -41,6 +41,14 @@ enum Look {
     /// size of the bar: 20 pt in geek for a 12 pt text.
     static var statusBarHeight: CGFloat { barScaled(CGFloat(theme.window.statusBarHeight)) }
 
+    /// Height of the bar at the top of the window when the title bar is
+    /// merged into it: the toolbar (at least 38 pt) or the status bar (at
+    /// least 28 pt, the height of a title bar). The window's buttons are
+    /// centered in it (`WindowChrome.centerButtons`).
+    static var mergedBarHeight: CGFloat {
+        toolbar ? max(statusBarHeight, 38) : max(statusBarHeight, 28)
+    }
+
     /// Height of a row of the menus and pickers (`layout.menu_row_height`),
     /// for a 12 pt text; nil: the height of its text (geek).
     static var menuRowHeight: CGFloat? {

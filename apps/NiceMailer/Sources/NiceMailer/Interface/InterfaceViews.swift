@@ -360,7 +360,7 @@ struct StatusBarView: View {
         // that they sit in its middle.
         .padding(.leading, model.titleBarMode == .merged ? Look.mergedButtonsWidth : 0)
         // Its height (`window.status_bar_height`: 20 pt in geek).
-        .frame(height: model.titleBarMode == .merged ? max(Look.statusBarHeight, 28) : Look.statusBarHeight)
+        .frame(height: model.titleBarMode == .merged ? Look.mergedBarHeight : Look.statusBarHeight)
         // Its empty parts move the window, as a title bar does: the title
         // bar is hidden by default (`WindowChrome`).
         .background(ZStack { Palette.statusBar; WindowDragArea() })
@@ -651,7 +651,7 @@ private struct ToolbarView<Messages: View>: View {
         .font(.interfaceBar(12))
         .padding(.horizontal, 12)
         .padding(.leading, model.titleBarMode == .merged ? Look.mergedButtonsWidth : 0)
-        .frame(height: max(Look.statusBarHeight, 38))
+        .frame(height: Look.mergedBarHeight)
         // Its empty parts move the window, as a title bar does.
         .background(ZStack { Palette.statusBar; WindowDragArea() })
         .overlay(alignment: .bottom) { Palette.separator.frame(height: 1) }

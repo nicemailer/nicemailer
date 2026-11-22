@@ -93,3 +93,38 @@ struct WindowChromeTests {
         #expect(model.autoConfirmCalls)
     }
 }
+
+/// The window's buttons in a bar of the theme (`window.title_bar =
+/// "merged"`): centered in its height, aligned with its icons and names.
+@MainActor
+struct MergedTitleBarTests {
+    /// A titled window, never shown: AppKit lays its title bar out anyway.
+    func window() -> NSWindow {
+        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 500),
+                         styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+        w.isReleasedWhenClosed = false
+        return w
+    }
+
+    @Test func theButtonsAreInTheMiddleOfTheBar() throws {
+        let w = window()
+        WindowChrome.apply(.merged, to: w)
+        #expect(w.standardWindowButton(.closeButton)?.isHidden == false)
+        #expect(w.titleVisibility == .hidden && w.titlebarAppearsTransparent)
+        for height: CGFloat in [40, 44, 30] {
+            WindowChrome.centerButtons(in: w, barHeight: height)
+            #expect(WindowChrome.buttonsCentered(in: w, barHeight: height), "bar of \(height)")
+            let frameView = try #require(w.contentView?.superview)
+            for kind in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
+                let b = try #require(w.standardWindowButton(kind))
+                let center = b.convert(NSPoint(x: b.bounds.midX, y: b.bounds.midY), to: frameView)
+                #expect(abs(center.y - (frameView.bounds.height - height / 2)) <= 1, "\(kind) in a bar of \(height)")
+            }
+        }
+        // Hidden: no buttons; shown: a title bar again.
+        WindowChrome.apply(.hidden, to: w)
+        #expect(w.standardWindowButton(.closeButton)?.isHidden == true)
+        WindowChrome.apply(.shown, to: w)
+        #expect(w.titleVisibility == .visible && !w.titlebarAppearsTransparent)
+    }
+}

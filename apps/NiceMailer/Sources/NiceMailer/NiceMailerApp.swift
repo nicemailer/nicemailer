@@ -33,7 +33,7 @@ struct NiceMailerApp: App {
             // the content goes up to the top edge: SwiftUI otherwise keeps
             // the height of the bar as a safe area, an empty white strip.
             .ignoresSafeArea(.container, edges: model.titleBarMode == .shown ? [] : .top)
-            .background(WindowChrome(mode: model.titleBarMode,
+            .background(WindowChrome(mode: model.titleBarMode, barHeight: Look.mergedBarHeight,
                                      title: model.mailboxName == "NiceMailer" ? "NiceMailer" : "NiceMailer — \(model.mailboxName)"))
             .frame(minWidth: 700, minHeight: 420)
             // A deep link `nicemailer://m/<id>` (`DeepLink`), clicked in a

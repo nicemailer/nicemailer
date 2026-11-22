@@ -26,6 +26,9 @@ struct WindowChrome: NSViewRepresentable {
     }
 
     let mode: Mode
+    /// Merged: the height of the bar the buttons sit in, at the top of the
+    /// window; they are centered in it, aligned with its icons and names.
+    var barHeight: CGFloat = 28
     /// The window's title (the Window menu, Mission Control), with the
     /// mailbox in use when it is not the default one. Set on the window
     /// itself: SwiftUI's `.navigationTitle` would add a toolbar, whose
@@ -37,12 +40,14 @@ struct WindowChrome: NSViewRepresentable {
 
     func updateNSView(_ view: ChromeView, context: Context) {
         view.mode = mode
+        view.barHeight = barHeight
         view.title = title
         view.apply()
     }
 
     final class ChromeView: NSView {
         var mode = Mode.shown
+        var barHeight: CGFloat = 28
         var title = "NiceMailer"
         private var observers: [NSObjectProtocol] = []
 
@@ -80,6 +85,12 @@ struct WindowChrome: NSViewRepresentable {
             if !WindowChrome.matches(mode, window) {
                 WindowChrome.apply(mode, to: window)
             }
+            // AppKit puts the buttons back where it wants them when it lays
+            // the title bar out again (a resize, full screen, the window
+            // becoming key): they are moved again, only when they moved.
+            if mode == .merged, !WindowChrome.buttonsCentered(in: window, barHeight: barHeight) {
+                WindowChrome.centerButtons(in: window, barHeight: barHeight)
+            }
         }
     }
 
@@ -109,6 +120,37 @@ struct WindowChrome: NSViewRepresentable {
             window.standardWindowButton(kind)?.isHidden = mode == .hidden
         }
         titlebarContainer(of: window)?.isHidden = mode == .hidden
+    }
+
+    /// Merged: the red, yellow and green buttons in the middle of the bar
+    /// of `barHeight` points at the top of the window, as its icons and
+    /// names are, rather than in the middle of the 28 points of a title
+    /// bar. The title bar's container is made as tall as the bar first, so
+    /// that the buttons are inside it (and take their clicks).
+    static func centerButtons(in window: NSWindow, barHeight: CGFloat) {
+        guard let frameView = window.contentView?.superview, let container = titlebarContainer(of: window) else { return }
+        let top = frameView.bounds.height
+        var c = container.frame
+        if c.height < barHeight {
+            c.origin.y = top - barHeight
+            c.size.height = barHeight
+            container.frame = c
+        }
+        for kind in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
+            guard let b = window.standardWindowButton(kind), let parent = b.superview else { continue }
+            let middle = parent.convert(NSPoint(x: 0, y: top - barHeight / 2), from: frameView)
+            var f = b.frame
+            f.origin.y = (middle.y - f.height / 2).rounded()
+            if b.frame != f { b.frame = f }
+        }
+    }
+
+    /// Whether the buttons are in the middle of the bar, within a point.
+    static func buttonsCentered(in window: NSWindow, barHeight: CGFloat) -> Bool {
+        guard let frameView = window.contentView?.superview, let b = window.standardWindowButton(.closeButton) else { return true }
+        let middle = frameView.bounds.height - barHeight / 2
+        let center = b.convert(NSPoint(x: b.bounds.midX, y: b.bounds.midY), to: frameView)
+        return abs(center.y - middle) <= 1
     }
 
     /// The same, as a switch: hidden or shown.
