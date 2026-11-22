@@ -27,4 +27,26 @@ struct KeyRoutingTests {
         #expect(!KeyRouting.isForMainWindow(eventWindow: main, mainWindow: nil))
         #expect(!KeyRouting.isForMainWindow(eventWindow: nil, mainWindow: nil))
     }
+
+    /// SwiftUI makes a new reader of the window (a modifier of the window
+    /// changed: a new theme's title bar) and removes the old one after the
+    /// new one joined: the window recorded stays, else no key would reach
+    /// the app any more.
+    @Test func anOldReaderLeavingKeepsTheWindow() {
+        let main = window()
+        let reference = MainWindowReference()
+        let old = MainWindowReader.ReaderView()
+        old.reference = reference
+        main.contentView?.addSubview(old)
+        #expect(reference.window === main)
+        let new = MainWindowReader.ReaderView()
+        new.reference = reference
+        main.contentView?.addSubview(new)
+        old.removeFromSuperview()
+        #expect(reference.window === main)
+        // The last one leaving too: the window stays recorded (the app
+        // quits with its last window anyway).
+        new.removeFromSuperview()
+        #expect(reference.window === main)
+    }
 }

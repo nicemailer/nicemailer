@@ -60,9 +60,15 @@ struct MainWindowReader: NSViewRepresentable {
     final class ReaderView: NSView {
         var reference: MainWindowReference?
 
+        /// Only a window joined is recorded, never a window left: SwiftUI
+        /// may make a new reader (a modifier of the window changed, such as
+        /// the title bar a new theme asks for) and remove the old one after
+        /// the new one joined. The old one, told it left (`window` nil),
+        /// would otherwise clear the window just recorded, and the keys
+        /// would no longer reach the app until it is relaunched.
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
-            reference?.window = window
+            if let window { reference?.window = window }
         }
     }
 }
