@@ -345,6 +345,12 @@ fn the_defaults_file_is_valid_and_complete() {
     // appears in a comment. The accounts are not in this file.
     let doc: toml_edit::DocumentMut = text.parse().unwrap();
     for (key, value) in flatten(&Config::default()) {
+        // Replaced by the theme (`themes.md`, section 9): still read, no
+        // longer offered.
+        if key == "ui.title_bar" {
+            assert!(!text.contains("title_bar"), "{text}");
+            continue;
+        }
         if value == "null" {
             assert!(text.contains(&format!("# {}", key.rsplit('.').next().unwrap())), "{key} commented");
             continue;
@@ -414,9 +420,8 @@ fn the_created_config_lists_every_setting_commented_out() {
     // else is its default.
     let c = &parsed.config;
     assert!(c.unsubscribe.in_banned && c.ui.auto_confirm_calls && c.ai.enabled);
-    assert_eq!(c.ui.title_bar, config::TitleBar::Hidden);
     let defaults = Config::default();
-    let ui = config::UiSettings { title_bar: defaults.ui.title_bar, auto_confirm_calls: false, ..c.ui.clone() };
+    let ui = config::UiSettings { auto_confirm_calls: false, ..c.ui.clone() };
     let ai = config::AiSettings { enabled: false, ..c.ai.clone() };
     // ... and the folders their proposed French names.
     for (id, name) in config::FOLDER_NAMES_PROPOSED {
@@ -441,17 +446,19 @@ fn the_created_config_lists_every_setting_commented_out() {
 fn uncommenting_an_opt_in_switch_chooses_its_unusual_value() {
     let text = config_template();
     assert!(text.contains("\n# in_banned = true\n"), "{text}");
-    assert!(text.contains("\n# title_bar = \"hidden\"\n"), "{text}");
+    // `ui.title_bar` is no longer offered: the theme says it.
+    assert!(!text.contains("title_bar"), "{text}");
     assert!(text.contains("\n# auto_confirm_calls = true\n"), "{text}");
     assert!(text.contains("\n# enabled = true\n"), "{text}");
     let commented = settings(&text).unwrap().config;
     assert!(!commented.unsubscribe.in_banned, "commented: the default");
-    assert_eq!(commented.ui.title_bar, config::TitleBar::Shown);
+    assert_eq!(commented.ui.title_bar, None);
+    assert_eq!(commented.ui.theme, "geek");
     assert!(!commented.ui.auto_confirm_calls && !commented.ai.enabled);
     let on = text.replace("\n# in_banned = true\n", "\nin_banned = true\n");
     assert!(settings(&on).unwrap().config.unsubscribe.in_banned);
-    let hidden = text.replace("\n# title_bar = \"hidden\"\n", "\ntitle_bar = \"hidden\"\n");
-    assert_eq!(settings(&hidden).unwrap().config.ui.title_bar, config::TitleBar::Hidden);
+    let clean = text.replace("\n# theme = \"geek\"\n", "\ntheme = \"clean\"\n");
+    assert_eq!(settings(&clean).unwrap().config.ui.theme, "clean");
     // Every switch names a real key of the defaults.
     let defaults = defaults_file();
     for (switch, _) in OPT_IN_SWITCHES {
@@ -491,10 +498,10 @@ fn accounts_in_config_toml_are_refused() {
 fn every_problem_names_its_file() {
     // The same line, 2, in either file: only the file tells them apart.
     let p = refused("[sync]\npoll_interval_secs = 1\n");
-    assert_eq!((p.file, p.line), ("config.toml", Some(2)));
+    assert_eq!((p.file.as_str(), p.line), ("config.toml", Some(2)));
     assert!(p.to_string().starts_with("config.toml, line 2: sync.poll_interval_secs: "), "{p}");
     let p = refused_accounts("[accounts.a]\nemail = 3\n");
-    assert_eq!((p.file, p.line), ("accounts.toml", Some(2)));
+    assert_eq!((p.file.as_str(), p.line), ("accounts.toml", Some(2)));
     assert!(p.to_string().starts_with("accounts.toml, line 2: "), "{p}");
     // A valid config.toml does not save an invalid accounts.toml: both are
     // refused (`configuration.md`, section 4).
@@ -503,7 +510,7 @@ fn every_problem_names_its_file() {
     assert_eq!(p.file, "config.toml");
     // Warnings too.
     let parsed = parse("turbo = 1\n", "[sync]\npoll_interval_secs = 60\n").unwrap();
-    let w: Vec<_> = parsed.warnings.iter().map(|w| (w.file, w.key.clone().unwrap())).collect();
+    let w: Vec<_> = parsed.warnings.iter().map(|w| (w.file.as_str(), w.key.clone().unwrap())).collect();
     assert_eq!(w, vec![("config.toml", "turbo".into()), ("accounts.toml", "sync".into())]);
     assert_eq!(parsed.config.sync.poll_interval_secs, 300, "[sync] in accounts.toml has no effect");
 }
@@ -540,11 +547,30 @@ fn compose_and_save_sent() {
 }
 
 #[test]
-fn the_title_bar_is_shown_unless_asked() {
-    assert_eq!(settings("").unwrap().config.ui.title_bar, config::TitleBar::Shown);
-    assert_eq!(settings("[ui]\ntitle_bar = \"hidden\"\n").unwrap().config.ui.title_bar, config::TitleBar::Hidden);
+fn the_title_bar_is_the_themes_unless_written() {
+    // `themes.md`, section 9: replaced by `window.title_bar` of the theme,
+    // `ui.title_bar` still wins while it is written, with a warning.
+    assert_eq!(settings("").unwrap().config.ui.title_bar, None);
+    let parsed = settings("[ui]\ntitle_bar = \"hidden\"\n").unwrap();
+    assert_eq!(parsed.config.ui.title_bar, Some(config::TitleBar::Hidden));
+    let w: Vec<_> = parsed.warnings.iter().map(|w| (w.key.clone().unwrap(), w.line)).collect();
+    assert_eq!(w, vec![("ui.title_bar".to_string(), Some(2))]);
+    assert!(parsed.warnings[0].message.contains("window.title_bar"), "{}", parsed.warnings[0]);
     let p = refused("[ui]\ntitle_bar = \"maybe\"\n");
     assert_eq!(p.key.as_deref(), Some("ui.title_bar"));
+}
+
+#[test]
+fn the_theme_is_a_name_of_file() {
+    assert_eq!(settings("").unwrap().config.ui.theme, "geek");
+    assert_eq!(settings("[ui]\ntheme = \"sepia-2\"\n").unwrap().config.ui.theme, "sepia-2");
+    // A name that names no theme is not an error of config.toml: the
+    // theme says it (a warning of `theme_get`), the accounts stay on.
+    assert_eq!(settings("[ui]\ntheme = \"nowhere\"\n").unwrap().config.ui.theme, "nowhere");
+    let p = refused("[ui]\ntheme = \"My Theme\"\n");
+    assert_eq!((p.key.as_deref(), p.line), (Some("ui.theme"), Some(2)));
+    let p = refused("[ui]\ntheme = \"../clean\"\n");
+    assert_eq!(p.key.as_deref(), Some("ui.theme"));
 }
 
 /// The app confirms its calls only when asked: the setting needs the

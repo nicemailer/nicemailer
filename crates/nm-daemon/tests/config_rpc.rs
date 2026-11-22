@@ -42,8 +42,10 @@ fn missing_files_are_created_at_start_and_change_nothing() {
     assert!(status["path"].as_str().unwrap().ends_with("/config.toml"));
     assert!(status["accounts_path"].as_str().unwrap().ends_with("/accounts.toml"));
     // Every setting listed, commented out: the defaults apply. The
-    // window's title bar: shown by default.
-    assert_eq!(status["ui"]["title_bar"], "shown");
+    // window's title bar: the theme's (`themes.md`, section 9), and the
+    // theme geek.
+    assert!(status["ui"]["title_bar"].is_null());
+    assert_eq!(status["ui"]["theme"], "geek");
     // The app does not confirm calls for the user unless asked.
     assert_eq!(status["ui"]["auto_confirm_calls"], false);
     // The text sizes of the app and of its status bar: 16 and 18 pt.
@@ -78,7 +80,10 @@ fn the_title_bar_setting_reaches_the_app_and_follows_the_file() {
     std::fs::write(dir.path().join("config.toml"), "[ui]\ntitle_bar = \"hidden\"\n").unwrap();
     let _core = start(dir.path());
     let mut c = Client::connect(dir.path());
-    assert_eq!(c.call("config_status", json!({})).unwrap()["ui"]["title_bar"], "hidden");
+    let status = c.call("config_status", json!({})).unwrap();
+    assert_eq!(status["ui"]["title_bar"], "hidden");
+    // Still applied while written, with a warning: the theme says it now.
+    assert_eq!(status["warnings"][0]["key"], "ui.title_bar");
     c.call("subscribe", json!({})).unwrap();
     std::thread::sleep(Duration::from_millis(500));
     save(&mut c, dir.path(), "config.toml", "[ui]\ntitle_bar = \"shown\"\n");

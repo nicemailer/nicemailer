@@ -179,6 +179,39 @@ pub fn clear_read_only(text: &str, key: &str) -> Result<String, String> {
 }
 
 /// The new text, refused if the core would refuse it.
+/// `config.toml` with `ui.theme` set to `name`, the rest of the file kept
+/// as it is, comments and order included (`themes.md`, section 8). The
+/// only change the core makes to that file: the Preferences choose a theme
+/// with it. A `[ui]` table is added when the file has none.
+///
+/// The file must be valid before and after: a file the core refuses is not
+/// touched, so that the user's own edit in progress is not mixed with this
+/// one. That the theme exists is the caller's to check.
+pub fn set_theme(text: &str, name: &str) -> Result<String, String> {
+    const FILE: &str = config::CONFIG_FILE;
+    if !crate::theme::catalog::valid_name(name) {
+        return Err(format!("{name:?} cannot name a theme"));
+    }
+    if let Err(p) = config::parse(text, "") {
+        return Err(format!("{FILE} is refused, fix it first: {p}"));
+    }
+    let mut doc = text.parse::<DocumentMut>().map_err(|e| format!("{FILE} cannot be read: {e}"))?;
+    if !doc.contains_key("ui") {
+        doc.insert("ui", Item::Table(Table::new()));
+    }
+    let ui = doc["ui"].as_table_like_mut().ok_or_else(|| format!("{FILE}: ui is not a table"))?;
+    // The comment after the old value (`theme = "geek"   # for now`) is
+    // the user's: the new value takes its decoration.
+    let mut new = toml_edit::Value::from(name);
+    if let Some(old) = ui.get("theme").and_then(Item::as_value) {
+        *new.decor_mut() = old.decor().clone();
+    }
+    ui.insert("theme", Item::Value(new));
+    let out = doc.to_string();
+    config::parse(&out, "").map_err(|p| format!("the change would make {FILE} invalid: {p}"))?;
+    Ok(out)
+}
+
 fn finish(doc: DocumentMut) -> Result<String, String> {
     let text = doc.to_string();
     config::parse_accounts(&text).map_err(|p| format!("the file would be invalid: {p}"))?;
@@ -253,6 +286,18 @@ pub fn create_missing(config_path: &Path) -> Result<Vec<PathBuf>, String> {
         (accounts_path, config::accounts_template()),
         (keymap_path, crate::keymap::template()),
     ] {
+        if create_if_missing(&path, &template)? {
+            created.push(path);
+        }
+    }
+    // The directory of the themes and the files of the three built-in
+    // ones, every key commented out (`themes.md`, section 3): they change
+    // nothing, and show what can be changed. A file deleted later stays
+    // deleted until the next start, and the built-in theme stays.
+    let themes = crate::theme::dir(config_path);
+    for name in crate::theme::catalog::BUILTINS {
+        let path = themes.join(format!("{name}.toml"));
+        let template = crate::theme::template(name).expect("a built-in theme has a template");
         if create_if_missing(&path, &template)? {
             created.push(path);
         }
@@ -404,21 +449,65 @@ port = 993\nsecurity = \"tls\"\n";
     }
 
     #[test]
+    fn setting_the_theme_keeps_the_rest_of_the_file() {
+        // The file the core creates: every key commented out.
+        let template = config::config_template();
+        let out = set_theme(&template, "clean").unwrap();
+        assert_eq!(config::parse(&out, "").unwrap().config.ui.theme, "clean");
+        // Only one line more: the comments are all kept.
+        assert_eq!(out.lines().count(), template.lines().count() + 1, "{out}");
+        assert!(out.contains("[ui]\ntheme = \"clean\"\n"), "{out}");
+        // Again: the value is replaced, not written twice.
+        let again = set_theme(&out, "regular").unwrap();
+        assert_eq!(again.lines().count(), out.lines().count());
+        assert_eq!(config::parse(&again, "").unwrap().config.ui.theme, "regular");
+
+        // A hand-written file: its comments, order and other keys stay.
+        let mine = "# mine\n[ui]\ntext_size = 14 # my eyes\ntheme = \"geek\"   # for now\n\n[sync]\npoll_interval_secs = 120\n";
+        let out = set_theme(mine, "clean").unwrap();
+        assert_eq!(out, mine.replace("theme = \"geek\"", "theme = \"clean\""));
+
+        // No [ui] table: one is added.
+        let out = set_theme("[sync]\npoll_interval_secs = 120\n", "clean").unwrap();
+        assert_eq!(config::parse(&out, "").unwrap().config.ui.theme, "clean");
+        assert_eq!(config::parse(&out, "").unwrap().config.sync.poll_interval_secs, 120);
+        assert_eq!(set_theme("", "clean").unwrap(), "[ui]\ntheme = \"clean\"\n");
+    }
+
+    #[test]
+    fn a_refused_file_or_name_is_not_written() {
+        assert!(set_theme("[sync]\npoll_interval_secs = 1\n", "clean").unwrap_err().contains("fix it first"));
+        assert!(set_theme("", "../evil").unwrap_err().contains("cannot name a theme"));
+        assert!(set_theme("ui = 3\n", "clean").is_err());
+    }
+
+    #[test]
     fn missing_files_are_created_from_the_templates() {
         let dir = tempfile::tempdir().unwrap();
         // A directory that does not exist yet, like ~/.config/nicemailer
         // on a new Mac.
         let path = dir.path().join("nicemailer/config.toml");
         let created = create_missing(&path).unwrap();
+        let themes = dir.path().join("nicemailer/themes");
         assert_eq!(
             created,
-            vec![path.clone(), dir.path().join("nicemailer/accounts.toml"), dir.path().join("nicemailer/keymap.toml")]
+            vec![
+                path.clone(),
+                dir.path().join("nicemailer/accounts.toml"),
+                dir.path().join("nicemailer/keymap.toml"),
+                themes.join("geek.toml"),
+                themes.join("clean.toml"),
+                themes.join("regular.toml"),
+            ]
         );
         assert_eq!(std::fs::read_to_string(&path).unwrap(), config::config_template());
         assert_eq!(std::fs::read_to_string(&created[1]).unwrap(), config::accounts_template());
         assert_eq!(std::fs::read_to_string(&created[2]).unwrap(), crate::keymap::template());
-        // No temporary file is left.
-        assert_eq!(std::fs::read_dir(path.parent().unwrap()).unwrap().count(), 3);
+        assert_eq!(std::fs::read_to_string(&created[4]).unwrap(), crate::theme::template("clean").unwrap());
+        // No temporary file is left: three files and the directory of the
+        // themes, which holds the three themes.
+        assert_eq!(std::fs::read_dir(path.parent().unwrap()).unwrap().count(), 4);
+        assert_eq!(std::fs::read_dir(&themes).unwrap().count(), 3);
         // The created files give the defaults and no account.
         let parsed = config::parse(&config::config_template(), &config::accounts_template()).unwrap();
         assert_eq!(parsed.config, config::Config::default());
@@ -446,7 +535,12 @@ port = 993\nsecurity = \"tls\"\n";
         std::fs::write(&path, "").unwrap();
         std::fs::write(dir.path().join("accounts.toml"), "not toml [").unwrap();
         std::fs::write(dir.path().join("keymap.toml"), "").unwrap();
+        std::fs::create_dir(dir.path().join("themes")).unwrap();
+        for name in ["geek", "clean", "regular"] {
+            std::fs::write(dir.path().join(format!("themes/{name}.toml")), "").unwrap();
+        }
         assert!(create_missing(&path).unwrap().is_empty());
+        assert_eq!(std::fs::read_to_string(dir.path().join("themes/clean.toml")).unwrap(), "");
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "");
         assert_eq!(std::fs::read_to_string(dir.path().join("accounts.toml")).unwrap(), "not toml [");
         // Only the missing one of the two is created.
@@ -461,7 +555,9 @@ port = 993\nsecurity = \"tls\"\n";
         let path = dir.path().join("config.toml");
         // A dotfiles repository not cloned yet: the link points nowhere.
         std::os::unix::fs::symlink(dir.path().join("dotfiles/config.toml"), &path).unwrap();
-        assert_eq!(create_missing(&path).unwrap(), vec![dir.path().join("accounts.toml"), dir.path().join("keymap.toml")]);
+        let created = create_missing(&path).unwrap();
+        assert_eq!(created[..2], [dir.path().join("accounts.toml"), dir.path().join("keymap.toml")]);
+        assert_eq!(created.len(), 5, "and the three themes: {created:?}");
         assert!(std::fs::symlink_metadata(&path).unwrap().file_type().is_symlink());
         assert!(!dir.path().join("dotfiles").exists());
     }

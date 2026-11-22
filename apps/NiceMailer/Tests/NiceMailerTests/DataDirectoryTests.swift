@@ -79,4 +79,17 @@ struct WindowChromeTests {
         await model.attach(core)
         #expect(model.titleBarHidden)
     }
+
+    /// A `config.toml` without `ui.title_bar` (the theme says it now,
+    /// `themes.md`): the settings still decode, and the bar is shown.
+    @Test func noTitleBarSettingLeavesTheBarShown() async {
+        let core = FakeCore { method, params in
+            method == "config_status" ? ["ui": ["title_bar": NSNull(), "theme": "clean", "auto_confirm_calls": true]] : Fixture.answer(method, params)
+        }
+        let model = AppModel()
+        await model.attach(core)
+        #expect(!model.titleBarHidden)
+        // The rest of `[ui]` was read: the decoding did not fail.
+        #expect(model.autoConfirmCalls)
+    }
 }

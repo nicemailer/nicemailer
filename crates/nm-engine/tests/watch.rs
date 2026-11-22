@@ -1,11 +1,12 @@
 //! Watching `config.toml` and `accounts.toml` (FSEvents): an edit, a file
-//! created later, the target of a symbolic link.
+//! created later, the target of a symbolic link; and the directory of the
+//! themes, whose files come and go.
 
 use std::path::Path;
 use std::sync::mpsc;
 use std::time::Duration;
 
-use nm_engine::watch::{Watcher, watch};
+use nm_engine::watch::{Watcher, watch, watch_dir};
 
 /// Starts a watch on `path` that reports each call on a channel.
 fn watched(path: &Path) -> (Watcher, mpsc::Receiver<()>) {
@@ -107,4 +108,50 @@ fn both_files_are_watched() {
     while rx.try_recv().is_ok() {}
     std::fs::write(&config, "version = 1\n# edited\n").unwrap();
     assert!(changed(&rx), "config.toml edited");
+}
+
+/// Starts a watch on the directory `dir`.
+fn watched_dir(dir: &Path) -> (Watcher, mpsc::Receiver<()>) {
+    let (tx, rx) = mpsc::channel();
+    let w = watch_dir(dir, move || {
+        let _ = tx.send(());
+    })
+    .unwrap();
+    std::thread::sleep(Duration::from_millis(300));
+    (w, rx)
+}
+
+/// Waits for the group of events of the last change to end, and drops it.
+fn settle(rx: &mpsc::Receiver<()>) {
+    std::thread::sleep(Duration::from_millis(400));
+    while rx.try_recv().is_ok() {}
+}
+
+#[test]
+fn every_file_of_a_watched_directory_is_seen() {
+    let dir = tempfile::tempdir().unwrap();
+    let themes = dir.path().join("themes");
+    let (_w, rx) = watched_dir(&themes);
+    assert!(themes.is_dir(), "the directory is created");
+    // A theme added, edited, then deleted: each is seen.
+    std::fs::write(themes.join("sepia.toml"), "version = 1\n").unwrap();
+    assert!(changed(&rx), "added");
+    settle(&rx);
+    std::fs::write(themes.join("sepia.toml"), "version = 1\nextends = \"clean\"\n").unwrap();
+    assert!(changed(&rx), "edited");
+    settle(&rx);
+    std::fs::remove_file(themes.join("sepia.toml")).unwrap();
+    assert!(changed(&rx), "deleted");
+}
+
+#[test]
+fn a_directory_that_is_a_link_is_followed() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = dir.path().join("dotfiles/themes");
+    std::fs::create_dir_all(&repo).unwrap();
+    let link = dir.path().join("themes");
+    std::os::unix::fs::symlink(&repo, &link).unwrap();
+    let (_w, rx) = watched_dir(&link);
+    std::fs::write(repo.join("sepia.toml"), "version = 1\n").unwrap();
+    assert!(changed(&rx));
 }

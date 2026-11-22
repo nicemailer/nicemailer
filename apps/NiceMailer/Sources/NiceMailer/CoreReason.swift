@@ -85,6 +85,8 @@ enum CoreReason {
         case "account_set_up": L("The account %@ is organized already", v("account"))
         case "account_read_only": L("This account is only looked at: NiceMailer changes nothing in it")
         case "account_read_only_send": L("This account is only looked at: it cannot send")
+        case "theme_unknown": L("No theme %@: neither built in nor a file of the folder themes", v("theme"))
+        case "config_not_written": L("config.toml was not changed: %@", v("detail"))
         case "password_empty": L("Give the password")
         case "smtp_password_empty": L("Give the SMTP password")
         case "smtp_password_without_server": L("An SMTP password needs an SMTP server")

@@ -307,8 +307,13 @@ struct UnsubscribeConfig: Decodable {
 }
 
 struct UIConfig: Decodable {
-    /// `hidden` or `shown`.
-    let titleBar: String
+    /// `ui.title_bar`, `hidden` or `shown`, only when `config.toml` writes
+    /// it: the theme now says it (`themes.md`, section 9), and this still
+    /// wins while it is written. Swift note: a `String?` decodes a JSON
+    /// `null` or an absent key as `nil`.
+    let titleBar: String?
+    /// `ui.theme`: the name of the theme chosen; absent from an older core.
+    var theme: String? = nil
     /// `ui.auto_confirm_calls`; absent from an older core (nil: off).
     let autoConfirmCalls: Bool?
     /// `ui.text_size` and `ui.status_bar_text_size`, in points; absent

@@ -129,6 +129,12 @@ enum Command {
         #[command(subcommand)]
         action: KeymapAction,
     },
+    /// The themes of the app, the folder themes next to config.toml
+    /// (docs/themes.md).
+    Theme {
+        #[command(subcommand)]
+        action: ThemeAction,
+    },
     /// A mailbox folder (a data directory): what its database is, and
     /// upgrading it to this version. Works on the folder directly, without
     /// the core.
@@ -640,8 +646,8 @@ enum ConfigAction {
         accounts: bool,
     },
     /// Print the paths of the files: config.toml ($NICEMAILER_CONFIG, or
-    /// ~/.config/nicemailer/config.toml), then accounts.toml and
-    /// keymap.toml, next to it.
+    /// ~/.config/nicemailer/config.toml), then accounts.toml, keymap.toml
+    /// and the folder of the themes, next to it.
     Path,
 }
 
@@ -670,6 +676,52 @@ enum KeymapAction {
         /// (Resources/keymap-defaults.json).
         #[arg(long)]
         json: bool,
+    },
+}
+
+/// `nicemailer theme …`: works on the files directly, without the core.
+#[derive(Subcommand)]
+enum ThemeAction {
+    /// List the themes: the built-in ones, then the files of the folder
+    /// themes, with what each extends and why a file is refused. The theme
+    /// chosen in config.toml is marked with *.
+    List,
+    /// Check a theme without applying it: the error that refuses it (with
+    /// its line) and the warnings, contrast included. Exits with status 1
+    /// if the core would refuse it.
+    Check {
+        /// A theme of the folder themes, by name, or the path of a .toml
+        /// file; by default the theme chosen in config.toml.
+        theme: Option<String>,
+    },
+    /// Print a theme resolved: every key with its value, inheritance
+    /// applied.
+    Show {
+        /// The theme; by default the one chosen in config.toml.
+        theme: Option<String>,
+        /// As JSON, as the app receives it (theme_get).
+        #[arg(long)]
+        json: bool,
+        /// The three built-in themes as JSON, as the app embeds them
+        /// (Resources/themes-builtin.json).
+        #[arg(long, conflicts_with = "theme", requires = "json")]
+        builtins: bool,
+    },
+    /// Print the complete file of a built-in theme: every key commented
+    /// out at its value, with what it does.
+    Defaults {
+        /// geek, clean or regular.
+        theme: String,
+    },
+    /// Create the file of a new theme in the folder themes: it extends
+    /// another one, and lists every key commented out at that theme's
+    /// value.
+    New {
+        /// Its name: lowercase letters, digits and hyphens.
+        name: String,
+        /// The theme it extends.
+        #[arg(long, default_value = "geek")]
+        extends: String,
     },
 }
 
@@ -843,6 +895,7 @@ fn run() -> anyhow::Result<()> {
         Command::Core { action } => core_agent::run(&data_dir, action),
         Command::Config { action } => run_config(action),
         Command::Keymap { action } => run_keymap(action),
+        Command::Theme { action } => run_theme(action),
         Command::Ai { action } => ai::run(&data_dir, action),
         Command::Mailbox { action } => run_mailbox(&data_dir, action),
         Command::Account { action: AccountAction::Password { key, smtp } } => {
@@ -1304,6 +1357,7 @@ fn run_config(action: ConfigAction) -> anyhow::Result<()> {
             println!("{}", path.display());
             println!("{}", config::accounts_path(&path).display());
             println!("{}", nm_engine::keymap::path(&path).display());
+            println!("{}", nm_engine::theme::dir(&path).display());
         }
         ConfigAction::Defaults { accounts: false } => print!("{}", config::defaults_file()),
         ConfigAction::Defaults { accounts: true } => print!("{}", config::accounts_template()),
@@ -1406,6 +1460,119 @@ fn run_keymap(action: KeymapAction) -> anyhow::Result<()> {
                     print(format!("menu.{}", m.name), &m.entries);
                 }
             }
+        }
+    }
+    Ok(())
+}
+
+/// `nicemailer theme list | check | show | defaults | new`.
+fn run_theme(action: ThemeAction) -> anyhow::Result<()> {
+    use nm_engine::{config, theme};
+    let config_path = config::default_path();
+    let dir = theme::dir(&config_path);
+    // The theme chosen: `ui.theme` of config.toml, geek when the file is
+    // missing or refused (`config check` says why).
+    let selected = config::read_both(&config_path)
+        .ok()
+        .and_then(|(s, a)| config::parse(s.as_deref().unwrap_or(""), a.as_deref().unwrap_or("")).ok())
+        .map(|p| p.config.ui.theme)
+        .unwrap_or_else(|| theme::catalog::DEFAULT_THEME.to_string());
+    let mut set = theme::ThemeSet::new(dir.clone(), &selected);
+    set.reload(true);
+    match action {
+        ThemeAction::List => {
+            for t in set.list().themes {
+                let mark = if t.name == selected { "*" } else { " " };
+                let what = match (t.origin.as_str(), &t.parent) {
+                    ("builtin", _) => "built in".to_string(),
+                    ("builtin_modified", _) => format!("built in, modified by {}", theme::file_label(&t.name)),
+                    (_, Some(parent)) => format!("extends {parent}"),
+                    (_, None) => "refused".to_string(),
+                };
+                println!("{mark} {:16} {what}", t.name);
+                if let Some(e) = t.error {
+                    println!("  {:16} refused: {}, line {}: {}", "", e.file, e.line.map_or("-".into(), |l| l.to_string()), e.message);
+                }
+            }
+        }
+        ThemeAction::Check { theme: arg } => {
+            // A path (`./sepia.toml`) or a name (`sepia`).
+            let arg = arg.unwrap_or_else(|| selected.clone());
+            let (name, path) = if arg.ends_with(".toml") || arg.contains('/') {
+                let path = PathBuf::from(&arg);
+                let name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string();
+                (name, path)
+            } else {
+                (arg.clone(), dir.join(format!("{arg}.toml")))
+            };
+            if !theme::catalog::valid_name(&name) {
+                println!("{}: refused: a theme file is named by lowercase letters, digits and hyphens", path.display());
+                std::process::exit(1);
+            }
+            let text = match std::fs::read_to_string(&path) {
+                Ok(t) => t,
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound && theme::is_builtin(&name) => {
+                    println!("{}: no file; the built-in theme {name}", path.display());
+                    String::new()
+                }
+                Err(e) => bail!("{}: {e}", path.display()),
+            };
+            match set.check(&name, &text) {
+                Ok((resolved, warnings)) => {
+                    for w in &warnings {
+                        println!("{}: warning: {w}", path.display());
+                    }
+                    println!("{}: valid, {}", path.display(), resolved.chain.join(" -> "));
+                }
+                Err(p) => {
+                    println!("{}: refused: {p}", path.display());
+                    std::process::exit(1);
+                }
+            }
+        }
+        ThemeAction::Show { builtins: true, .. } => print!("{}", theme::builtins_json()),
+        ThemeAction::Show { theme: name, json, .. } => {
+            let name = name.unwrap_or_else(|| selected.clone());
+            let resolved = set.resolve(&name).map_err(|p| anyhow::anyhow!("{p}"))?;
+            let warnings = theme::contrast_warnings(&name, &resolved.values);
+            let view = theme::view(&resolved, &dir, None, &warnings);
+            if json {
+                println!("{}", serde_json::to_string_pretty(&view)?);
+            } else {
+                // As the file is written: one table after the other.
+                println!("# {}", resolved.chain.join(" -> "));
+                let value = serde_json::to_value(&view)?;
+                for table in theme::catalog::TABLES {
+                    println!("\n[{table}]");
+                    for key in theme::catalog::KEYS.iter().filter(|k| k.table == *table) {
+                        println!("{} = {}", key.name, value[*table][key.name]);
+                    }
+                }
+                for w in warnings {
+                    eprintln!("warning: {w}");
+                }
+            }
+        }
+        ThemeAction::Defaults { theme: name } => match theme::template(&name) {
+            Some(text) => print!("{text}"),
+            None => bail!("{name} is not a built-in theme; they are {}", theme::catalog::BUILTINS.join(", ")),
+        },
+        ThemeAction::New { name, extends } => {
+            if !theme::catalog::valid_name(&name) {
+                bail!("{name:?}: a theme is named by lowercase letters, digits and hyphens");
+            }
+            if theme::is_builtin(&name) {
+                bail!("{name} is a built-in theme: edit {} instead", dir.join(format!("{name}.toml")).display());
+            }
+            let path = dir.join(format!("{name}.toml"));
+            if path.exists() {
+                bail!("{} exists already", path.display());
+            }
+            let parent = set.resolve(&extends).map_err(|p| anyhow::anyhow!("--extends {extends}: {p}"))?;
+            std::fs::create_dir_all(&dir)?;
+            std::fs::write(&path, theme::new_theme_file(&name, &extends, &parent.values))?;
+            println!("{}", path.display());
+            println!("Choose it with theme = \"{name}\" in the [ui] table of {}", config_path.display());
         }
     }
     Ok(())
