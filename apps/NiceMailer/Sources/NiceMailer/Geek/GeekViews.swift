@@ -752,19 +752,30 @@ private struct GeekThreadRows: View {
     }
 }
 
-/// Fixed column widths of the list rows, computed from the list width in
-/// whole characters of the (monospaced) font.
+/// Fixed column widths of the list rows, computed from the list width.
+///
+/// In a font of fixed pitch (geek), in whole characters: every column of
+/// every row lines up. In a proportional font (clean, regular), the date
+/// and the count are measured on the texts they can hold, so that they are
+/// as narrow as they can be without cutting one (`TextMeasure`,
+/// `themes.md`, section 7).
 @MainActor
 struct RowLayout: Equatable {
     /// Font size of the rows, written for the default text size.
     static let fontSize: CGFloat = 12
+    /// Width of "0": the unit of the gaps and of the columns counted in
+    /// characters.
     let char: CGFloat
-    /// Date: 8 characters ("14/09/21", "16 sept.").
+    /// Date: 8 characters ("14/09/21", "16 sept."), or, in a proportional
+    /// font, the widest date the list can show.
     let date: CGFloat
     /// Sender: about a quarter of the list, between 8 and 24 characters.
     let sender: CGFloat
-    /// Message count: 3 characters, right-aligned.
+    /// Message count: 3 digits, right-aligned.
     let count: CGFloat
+    /// The unread dot: one character, or the width of "●" in a
+    /// proportional font, where it is wider than a digit.
+    let dot: CGFloat
 
     /// Width of the list, to know what room the subject has.
     let width: CGFloat
@@ -781,7 +792,7 @@ struct RowLayout: Equatable {
     /// dot, date, sender, paperclip, folder, count, flag), the 8 gaps
     /// between the 9 columns and the trailing padding.
     func subjectWidth(folderWidth: CGFloat) -> CGFloat {
-        width - 2 - char - date - sender - icon - folderWidth - count - icon - 8 * char - 6
+        width - 2 - dot - date - sender - icon - folderWidth - count - icon - 8 * char - 6
     }
 
     /// The account fits after the folder ("Inbox · perso") only if the
@@ -795,14 +806,33 @@ struct RowLayout: Equatable {
     /// bar names in full.
     var narrowSuggestion: Bool { subjectWidth(folderWidth: 12 * char) < 40 * char }
 
-    /// `scale`: the text size factor (`TextSize.scale`).
-    init(width: CGFloat, scale: CGFloat? = nil) {
+    /// `scale`: the text size factor (`TextSize.scale`); `measure`: the
+    /// font of the rows, by default the interface font of the theme.
+    init(width: CGFloat, scale: CGFloat? = nil, measure: TextMeasure? = nil) {
+        let m = measure ?? TextMeasure.interface(Self.fontSize * (scale ?? TextSize.shared.scale))
         self.width = width
-        char = Fonts.charWidth(Self.fontSize * (scale ?? TextSize.shared.scale))
-        date = 8 * char
+        char = m.char
+        if m.fixedPitch {
+            date = 8 * char
+        } else {
+            date = RowLayout.dateWidth(m)
+        }
         let chars = (width / char * 0.26).rounded(.down)
         sender = min(24, max(8, chars)) * char
-        count = 3 * char
+        count = m.width("999")
+        dot = m.fixedPitch ? char : m.width(RowLayout.unreadDot)
+    }
+
+    /// The mark of an unread conversation.
+    static let unreadDot = "●"
+
+    /// The widest date of the list (`Format.geekListDate`): a time today,
+    /// a day and month this year, a short date before, on the sample dates
+    /// that give the longest texts (`Format.samples`), in the app's locale.
+    static func dateWidth(_ m: TextMeasure, dates f: Format.Dates = Format.dates) -> CGFloat {
+        let samples = Format.samples(calendar: f.geekDayMonth.calendar, timeZone: f.geekDayMonth.timeZone)
+        let texts = samples.flatMap { [f.geekTime.string(from: $0), f.geekDayMonth.string(from: $0), f.geekShort.string(from: $0)] }
+        return texts.map { m.width($0) }.max() ?? 8 * m.char
     }
 }
 
@@ -884,7 +914,7 @@ private struct GeekThreadRow: View {
     var body: some View {
         HStack(spacing: layout.char) {
             (marked ? Palette.markedBar : Color.clear).frame(width: 2)
-            Text(thread.unreadCount > 0 ? "●" : " ").foregroundStyle(Palette.unread).frame(width: layout.char)
+            Text(thread.unreadCount > 0 ? RowLayout.unreadDot : " ").foregroundStyle(Palette.unread).frame(width: layout.dot)
             Text(Format.geekListDate(thread.dateLastReceived)).foregroundStyle(Palette.muted)
                 .frame(width: layout.date, alignment: .leading)
             // The person the conversation is with, not the user who
@@ -1399,7 +1429,9 @@ private struct TextReader: NSViewRepresentable {
     private func refresh(_ scroll: NSScrollView, _ coordinator: Coordinator) {
         guard let text = scroll.documentView as? NSTextView else { return }
         // Attachment tiles per row, from the reader's width (3 to 5).
-        let charWidth = Double(Fonts.charWidth(12 * TextSize.shared.scale))
+        // A typical character of the interface font: the name of a file is
+        // not known in advance (the width of one, in a font of fixed pitch).
+        let charWidth = Double(TextMeasure.interface(12 * TextSize.shared.scale).average)
         let width = Double(scroll.contentSize.width) - 24
         let columns = AttachmentDisplay.columns(width: width, charWidth: charWidth)
         // Characters of a name in a tile: its share of the width, minus the
@@ -1901,8 +1933,10 @@ struct KeyMenu: View {
     let onSelect: ((Int) -> Void)?
 
     var body: some View {
-        // Width of the key column: the longest key, in monospace characters.
-        let keyWidth = CGFloat(entries.map(\.key.count).max() ?? 1) * Fonts.charWidth(12 * TextSize.shared.scale) + 4
+        // Width of the key column: the longest key, measured in the
+        // interface font (in characters, in a font of fixed pitch).
+        let measure = TextMeasure.interface(12 * TextSize.shared.scale)
+        let keyWidth = (entries.map { measure.width($0.key) }.max() ?? measure.char) + 4
         VStack(alignment: .leading, spacing: 2) {
             Text(title).foregroundStyle(Palette.accentText).padding(.bottom, 2)
             ForEach(Array(entries.enumerated()), id: \.offset) { i, e in
@@ -1953,10 +1987,10 @@ private struct HelpPanel: View {
     private var margin: CGFloat { scaled(12) }
 
     var body: some View {
-        let charWidth = Fonts.charWidth(12 * TextSize.shared.scale)
+        let measure = TextMeasure.interface(12 * TextSize.shared.scale)
         GeometryReader { geometry in
             let count = Help.columnCount(groups, available: geometry.size.width - 2 * margin,
-                                         charWidth: charWidth, padding: padding)
+                                         measure: measure, padding: padding)
             let columns = Help.columns(groups, count: count)
             VStack(alignment: .leading, spacing: scaled(10)) {
                 Text(L("Keys")).foregroundStyle(Palette.accentText)
@@ -1965,8 +1999,8 @@ private struct HelpPanel: View {
                 // always fit; in a very short window they scroll instead of
                 // being cut.
                 ViewThatFits(in: .vertical) {
-                    columnsView(columns, charWidth: charWidth)
-                    ScrollView { columnsView(columns, charWidth: charWidth) }
+                    columnsView(columns, measure: measure)
+                    ScrollView { columnsView(columns, measure: measure) }
                 }
             }
             .fixedSize(horizontal: true, vertical: false)
@@ -1982,12 +2016,13 @@ private struct HelpPanel: View {
         }
     }
 
-    private func columnsView(_ columns: [[HelpGroup]], charWidth: CGFloat) -> some View {
-        HStack(alignment: .top, spacing: CGFloat(Help.columnGap) * charWidth) {
+    private func columnsView(_ columns: [[HelpGroup]], measure: TextMeasure) -> some View {
+        let charWidth = measure.char
+        return HStack(alignment: .top, spacing: CGFloat(Help.columnGap) * charWidth) {
             ForEach(Array(columns.enumerated()), id: \.offset) { _, column in
                 // One key width for the whole column: the labels of its
                 // groups line up, as in a single table.
-                let keyWidth = CGFloat(Help.keyWidth(column)) * charWidth + 4
+                let keyWidth = Help.keyWidth(column, measure) + 4
                 VStack(alignment: .leading, spacing: 2) {
                     ForEach(Array(column.enumerated()), id: \.offset) { g, group in
                         Text(group.title)

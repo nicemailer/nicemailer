@@ -158,11 +158,10 @@ enum Fonts {
         return NSFont(name: name, size: size) ?? .monospacedSystemFont(ofSize: size, weight: weight)
     }
 
-    /// Width of one character of the geek font at `size`. The font is
-    /// monospaced, so a column of `n` characters is `n * charWidth` wide:
-    /// list columns are sized this way, and stay aligned row after row.
+    /// Width of "0" in the interface font of the theme at `size`: the unit
+    /// of the gaps of the layout (`TextMeasure.char`).
     static func charWidth(_ size: CGFloat) -> CGFloat {
-        ("0" as NSString).size(withAttributes: [.font: reading(size)]).width
+        ("0" as NSString).size(withAttributes: [.font: interface(size)]).width
     }
 
     /// `@font-face` rules embedding the bundled fonts as data URLs, for the
@@ -338,11 +337,108 @@ func scaled(_ value: CGFloat) -> CGFloat { value * TextSize.shared.scale }
 func barScaled(_ value: CGFloat) -> CGFloat { value * TextSize.shared.statusBarScale }
 
 extension Fonts {
-    /// The geek font at a size written for the default text size, scaled
-    /// to the current one.
+    /// The interface font of the theme (`fonts.interface`) at a size
+    /// written for the reference text size, scaled to the current one.
     @MainActor
     static func scaled(_ size: CGFloat, weight: NSFont.Weight = .regular) -> NSFont {
-        reading(size * TextSize.shared.scale, weight: weight)
+        interface(size * TextSize.shared.scale, weight: weight)
+    }
+
+    /// The interface font of the theme in effect (`fonts.interface`,
+    /// `docs/themes.md`) at `size` points: iA Writer Mono V in geek, SF
+    /// Pro in clean and regular.
+    static func interface(_ size: CGFloat, weight: NSFont.Weight = .regular) -> NSFont {
+        named(ThemeStore.active.fonts.interface, size: size, weight: weight)
+    }
+
+    /// The font a theme names (`themes.md`, section 5.2): a font of the
+    /// system, the bundled iA Writer Mono V, or a family installed on the
+    /// Mac. A family that is not installed gives the system font
+    /// (`isAvailable` says so, for the message of the app).
+    static func named(_ name: String, size: CGFloat, weight: NSFont.Weight = .regular) -> NSFont {
+        switch name {
+        case "system": return .systemFont(ofSize: size, weight: weight)
+        case "system-mono": return .monospacedSystemFont(ofSize: size, weight: weight)
+        case "system-serif", "system-rounded":
+            // Swift note: a font descriptor describes a font without
+            // loading it; `withDesign` asks for the serif (New York) or
+            // rounded variant of the system font.
+            let base = NSFont.systemFont(ofSize: size, weight: weight)
+            let design: NSFontDescriptor.SystemDesign = name == "system-serif" ? .serif : .rounded
+            guard let d = base.fontDescriptor.withDesign(design) else { return base }
+            return NSFont(descriptor: d, size: size) ?? base
+        case readingFamily: return reading(size, weight: weight)
+        default:
+            // NSFontManager's weights go from 0 to 15: 5 is regular, 8
+            // semibold, 9 bold.
+            let w: Int
+            switch weight {
+            case .bold, .heavy, .black: w = 9
+            case .semibold: w = 8
+            default: w = 5
+            }
+            return NSFontManager.shared.font(withFamily: name, traits: [], weight: w, size: size)
+                ?? .systemFont(ofSize: size, weight: weight)
+        }
+    }
+
+    /// Whether the font a theme names is there: a font of the system, the
+    /// bundled one, or a family installed on the Mac.
+    static func isAvailable(_ name: String) -> Bool {
+        name.hasPrefix("system") || name == readingFamily
+            || NSFontManager.shared.availableFontFamilies.contains(name)
+    }
+
+    /// The family name of the bundled font, as a theme writes it.
+    static let readingFamily = "iA Writer Mono V"
+}
+
+/// Measures text in a font, to size the columns of the list and the key
+/// column of the menus and the help (`themes.md`, section 7).
+///
+/// With a font of fixed pitch (geek), a text of `n` characters is `n`
+/// times the width of one: columns counted in characters line up row after
+/// row, as they always did. With a proportional font (SF Pro), each text is
+/// measured as it will be drawn.
+struct TextMeasure {
+    /// Width of "0": the unit of the gaps, and of a text in a font of
+    /// fixed pitch. Digits have one width in SF Pro too (tabular).
+    let char: CGFloat
+    /// Whether every character has the width of `char`.
+    let fixedPitch: Bool
+    /// Width of a typical character of running text: the unit for a text
+    /// not known in advance (the name of an attachment).
+    let average: CGFloat
+    private let measure: (String, Bool) -> CGFloat
+
+    /// The width of `s`, regular or bold, rounded up to a whole point.
+    func width(_ s: String, bold: Bool = false) -> CGFloat {
+        fixedPitch ? CGFloat(s.count) * char : measure(s, bold)
+    }
+
+    /// Characters of a fixed width `char`: the tests, and geek.
+    static func fixed(char: CGFloat) -> TextMeasure {
+        TextMeasure(char: char, fixedPitch: true, average: char) { s, _ in CGFloat(s.count) * char }
+    }
+
+    /// Text in `font` (and its bold variant).
+    static func font(_ font: NSFont, bold: NSFont) -> TextMeasure {
+        func w(_ s: String, _ f: NSFont) -> CGFloat {
+            (s as NSString).size(withAttributes: [.font: f]).width.rounded(.up)
+        }
+        let char = ("0" as NSString).size(withAttributes: [.font: font]).width
+        let sample = "Thanks again for the workshop, see you next week"
+        let average = (sample as NSString).size(withAttributes: [.font: font]).width / CGFloat(sample.count)
+        // In a font of fixed pitch every character is `char` wide: the same
+        // value, not a division that could round differently.
+        return TextMeasure(char: char, fixedPitch: font.isFixedPitch, average: font.isFixedPitch ? char : average) { s, isBold in
+            w(s, isBold ? bold : font)
+        }
+    }
+
+    /// The interface font of the theme at `size` points.
+    static func interface(_ size: CGFloat) -> TextMeasure {
+        font(Fonts.interface(size), bold: Fonts.interface(size, weight: .bold))
     }
 }
 
@@ -357,7 +453,7 @@ extension Font {
     /// The geek font of the status bar, scaled to its own text size.
     @MainActor
     static func geekBar(_ size: CGFloat = 12, weight: Font.Weight = .regular) -> Font {
-        Font(Fonts.reading(size * TextSize.shared.statusBarScale, weight: nsWeight(weight)))
+        Font(Fonts.interface(size * TextSize.shared.statusBarScale, weight: nsWeight(weight)))
     }
 
     /// The AppKit weight of a SwiftUI one, among those the font has.

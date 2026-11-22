@@ -231,10 +231,36 @@ enum Help {
     /// two columns, then one; one column is used even when it does not fit
     /// (the text is then cut, rather than the panel lost).
     static func columnCount(_ groups: [HelpGroup], available: CGFloat, charWidth: CGFloat, padding: CGFloat) -> Int {
+        columnCount(groups, available: available, measure: .fixed(char: charWidth), padding: padding)
+    }
+
+    /// The same, with the texts measured in a font (`TextMeasure`): a
+    /// proportional font gives each key and label its own width, the group
+    /// titles in bold. The gaps stay counted in characters.
+    static func columnCount(_ groups: [HelpGroup], available: CGFloat, measure: TextMeasure, padding: CGFloat) -> Int {
         for count in stride(from: maxColumns, to: 1, by: -1) {
-            let chars = width(columns(groups, count: count))
-            if CGFloat(chars) * charWidth + 2 * padding <= available { return count }
+            if width(columns(groups, count: count), measure) + 2 * padding <= available { return count }
         }
         return 1
+    }
+
+    /// Width of the key column of `column`, in points.
+    static func keyWidth(_ column: [HelpGroup], _ m: TextMeasure) -> CGFloat {
+        if m.fixedPitch { return CGFloat(keyWidth(column)) * m.char }
+        return column.flatMap(\.entries).map { m.width($0.key) }.max() ?? 0
+    }
+
+    /// Width of a column, in points: as `width(_:)` in characters.
+    static func width(_ column: [HelpGroup], _ m: TextMeasure) -> CGFloat {
+        if m.fixedPitch { return CGFloat(width(column)) * m.char }
+        let labels = column.flatMap(\.entries).map { m.width($0.label) }.max() ?? 0
+        let titles = column.map { m.width($0.title, bold: true) }.max() ?? 0
+        return max(titles, keyWidth(column, m) + CGFloat(keyGap) * m.char + labels)
+    }
+
+    /// Width of the whole layout, in points.
+    static func width(_ columns: [[HelpGroup]], _ m: TextMeasure) -> CGFloat {
+        if m.fixedPitch { return CGFloat(width(columns)) * m.char }
+        return columns.map { width($0, m) }.reduce(0, +) + CGFloat(columnGap) * m.char * CGFloat(max(0, columns.count - 1))
     }
 }

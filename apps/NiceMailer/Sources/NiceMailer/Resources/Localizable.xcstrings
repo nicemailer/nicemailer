@@ -97831,6 +97831,118 @@
           }
         }
       }
+    },
+    "Font “%@” not installed: using the system font": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Police « %@ » non installée : police du système utilisée"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Schrift „%@“ nicht installiert: Systemschrift wird verwendet"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La fuente «%@» no está instalada: se usa la fuente del sistema"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Font «%@» non installato: viene usato il font di sistema"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fonte “%@” não instalada: usando a fonte do sistema"
+          }
+        },
+        "pt-PT": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tipo de letra “%@” não instalado: é usado o tipo de letra do sistema"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lettertype ‘%@’ niet geïnstalleerd: systeemlettertype wordt gebruikt"
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Typsnittet ”%@” är inte installerat: systemets typsnitt används"
+          }
+        },
+        "da": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Skrifttypen “%@” er ikke installeret: systemets skrifttype bruges"
+          }
+        },
+        "nb": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Skriften «%@» er ikke installert: systemskriften brukes"
+          }
+        },
+        "fi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fonttia ”%@” ei ole asennettu: käytetään järjestelmän fonttia"
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Czcionka „%@” nie jest zainstalowana: użyto czcionki systemowej"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Шрифт «%@» не установлен: используется системный шрифт"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Шрифт «%@» не встановлено: використовується системний шрифт"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フォント「%@」はインストールされていません：システムフォントを使用します"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未安装字体“%@”：使用系统字体"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未安裝字體「%@」：使用系統字體"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "‘%@’ 서체가 설치되지 않음: 시스템 서체 사용"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

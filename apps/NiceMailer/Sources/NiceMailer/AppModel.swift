@@ -935,8 +935,15 @@ final class AppModel {
     /// without the method leaves the theme the app has.
     func loadTheme() async {
         guard let client, let view: ThemeView = try? await client.call("theme_get", [:]) else { return }
+        let changed = view != theme.current
         theme.apply(view)
         themeProblem = view.error
+        // A font the theme names that the Mac does not have: the system
+        // font stands in, and the status bar says so once, when the theme
+        // arrives (`themes.md`, section 7).
+        if changed, let missing = [view.fonts.interface, view.fonts.reading].first(where: { !Fonts.isAvailable($0) }) {
+            flash = L("Font “%@” not installed: using the system font", missing)
+        }
     }
 
     func loadKeymap() async {

@@ -219,26 +219,30 @@ final class ThemeStore {
     init(_ theme: ThemeView = ThemeStore.builtins["geek"]!, drivesPalette: Bool = false) {
         current = theme
         self.drivesPalette = drivesPalette
-        if drivesPalette { ThemeStore.colors = theme.colors }
+        if drivesPalette { ThemeStore.active = theme }
     }
 
     /// Applies a theme received from the core; nothing when it is the same.
     func apply(_ theme: ThemeView) {
         guard theme != current else { return }
         current = theme
-        if drivesPalette { ThemeStore.colors = theme.colors }
+        if drivesPalette { ThemeStore.active = theme }
         revision += 1
     }
 
-    /// The colors in effect, for the dynamic colors of `Palette`.
+    /// The theme of the app's store, for what is drawn outside SwiftUI's
+    /// observation: the dynamic colors of `Palette`, which AppKit asks for
+    /// from any thread, and the fonts (`Fonts.interface`).
     ///
     /// Swift note: `nonisolated(unsafe)` lets code outside the main actor
     /// read the property; the lock makes that safe.
-    nonisolated static var colors: ThemeColors {
+    nonisolated static var active: ThemeView {
         get { lock.withLock { stored } }
         set { lock.withLock { stored = newValue } }
     }
-    private nonisolated(unsafe) static var stored: ThemeColors = builtins["geek"]!.colors
+    /// The colors of `active`.
+    nonisolated static var colors: ThemeColors { active.colors }
+    private nonisolated(unsafe) static var stored: ThemeView = builtins["geek"]!
     private nonisolated static let lock = NSLock()
 
     /// The three built-in themes resolved, embedded in the app

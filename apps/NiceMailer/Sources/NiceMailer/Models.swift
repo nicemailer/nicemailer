@@ -799,7 +799,7 @@ enum Format {
     /// The 28th of every month of a year of the formatter's own calendar
     /// (an Islamic month name is not met on the 28th of every Gregorian
     /// month), at 09:05 and 23:13, in `timeZone`.
-    private static func samples(calendar base: Calendar, timeZone: TimeZone) -> [Date] {
+    static func samples(calendar base: Calendar, timeZone: TimeZone) -> [Date] {
         var calendar = base
         calendar.timeZone = timeZone
         let year = calendar.component(.year, from: Date(timeIntervalSince1970: 1_700_000_000))
