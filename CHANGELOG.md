@@ -19,6 +19,10 @@ How to write it:
 - **Accounts:** For a Gmail, iCloud or Fastmail address, the Preferences say under the password that it must be an app password, with a link to the step-by-step guide; if the server refuses the password, the error says so first.
 - **Accounts:** Give an account a new password from its page in the Preferences (Settings…, Accounts), after changing the password of the mailbox or creating a new app password. Until now it took the `nicemailer account password` command.
 
+### Changed
+
+- **Status bar:** The icon of NiceMailer and the mode at its left end (NOR, PCK, ASK…) are gone: the bar starts with the account and the folder.
+
 ### Fixed
 
 - **Geek:** Dates, counts and the other secondary texts are a little darker in light and lighter in dark, to be read without effort (contrast WCAG AA).

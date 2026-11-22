@@ -58,13 +58,13 @@ A theme holds data only: no code, no image, no font, no address to load. A theme
 
 | Table | Keys |
 | --- | --- |
-| `[window]` | `chrome` (`status_bar` or `toolbar`), `status_bar_position` (`top`, `bottom`, `hidden`), `title_bar` (`shown`, `hidden`, `merged`: the red, yellow and green buttons in the bar), `key_hints`, `block_labels` (the blocks of actions say their name), `status_bar_height`, `blocks`, `default_columns` (1 to 3) |
+| `[window]` | `chrome` (`status_bar` or `toolbar`), `status_bar_position` (`top`, `bottom`, `hidden`), `title_bar` (`shown`, `hidden`, `merged`: the red, yellow and green buttons in the bar), `key_hints`, `block_labels` (the blocks of actions say their name), `status_bar_height`, `block_style` (`plain`, or `pill`: each block in a pill, the account and the folder in bold, the block open highlighted), `bar_line` (a line between the bar and the mails), `blocks`, `default_columns` (1 to 3) |
 | `[fonts]` | `interface`, `reading`, `reading_scale`, `reading_line_spacing` (points between two lines of the body, whatever the text size), `title_scale` |
 | `[layout]` | `row_height`, `row_radius`, `row_inset`, `zebra`, `menu_row_height` (0: the height of the text), `popup_radius`, `popup_shadow`, `menu_keys` (`left`, `right`), `message_cards`, `avatars`, `reader_max_width` (0: the whole width), `scrollers` (`none`, `thin`, `standard`), `separators` (`lines`, `space`) |
 | `[motion]` | `sidebar_ms`, `popup_ms` (0 when System Settings reduce motion) |
 | `[colors]` | `background`, `sidebar`, `list`, `bar`, `text`, `muted`, `accent`, `accent_text`, `selection`, `selection_text`, `marked`, `marked_bar`, `separator`, `popup`, `unread`, `flag`, `error`, `virtual_folder` |
 
-`blocks` lists the blocks of the status bar or the toolbar, in the order they are drawn: `mode`, `account`, `folder`, `attributes`, `view`, `move`, `save`, `ai`, `help`, with `"|"` for a wide gap and `"->"` to send what follows to the right. A block left out is hidden; its key still works. A gap is drawn only between two blocks shown (`m` and `s` are not in Quarantine, the menus of the mail are not on the contacts screen…), and without `"->"` the messages go to the right end. In the toolbar, the folder is always its title, on the left, and the mode is not shown. The messages of the app, the progress of the synchronization and its questions are always shown.
+`blocks` lists the blocks of the status bar or the toolbar, in the order they are drawn: `account`, `folder`, `attributes`, `view`, `move`, `save`, `ai`, `help`, with `"|"` for a wide gap and `"->"` to send what follows to the right. A block left out is hidden; its key still works. A gap is drawn only between two blocks shown (`m` and `s` are not in Quarantine, the menus of the mail are not on the contacts screen…), and without `"->"` the messages go to the right end. In the toolbar, the folder is always its title, on the left. The messages of the app, the progress of the synchronization and its questions are always shown.
 
 ## Errors and warnings
 

@@ -334,7 +334,7 @@ struct StatusBarView: View {
     /// `m` and `s` in Quarantine (its targets are at the right end).
     private func draws(_ name: String) -> Bool {
         switch name {
-        case "mode", "folder", "help": true
+        case "folder", "help": true
         case "account": listsMail && model.listFilter == nil && controller.hasSeveralAccounts
         case "attributes": listsMail
         case "view", "ai": controller.screen == .mail
@@ -347,13 +347,14 @@ struct StatusBarView: View {
         // The blocks in the order of the theme (`window.blocks`), the gaps
         // only between two blocks shown (`StatusLayout`).
         let items = StatusLayout.items(Look.theme.window.blocks, draws: draws)
-        return HStack(spacing: 10) {
+        // Pills carry their own room: closer together (`window.block_style`).
+        return HStack(spacing: Self.spacing) {
             ForEach(Array(items.enumerated()), id: \.offset) { _, item in
                 statusItem(item)
             }
         }
-        .font(.interfaceBar(11))
-        .padding(.horizontal, 6)
+        .font(.interfaceBar(Look.pillBlocks ? 12 : 11))
+        .padding(.horizontal, Look.pillBlocks ? barScaled(10) : 6)
         // The window's buttons over its left end (`window.title_bar =
         // "merged"`): room for them, and the height of a title bar, so
         // that they sit in its middle.
@@ -363,7 +364,15 @@ struct StatusBarView: View {
         // Its empty parts move the window, as a title bar does: the title
         // bar is hidden by default (`WindowChrome`).
         .background(ZStack { Palette.statusBar; WindowDragArea() })
+        // A line between the bar and the mails (`window.bar_line`), on the
+        // side of the mails.
+        .overlay(alignment: controller.statusPosition == .bottom ? .top : .bottom) {
+            if Look.barLine { Palette.separator.frame(height: 1) }
+        }
     }
+
+    /// The space between two elements of the bar.
+    private static var spacing: CGFloat { Look.pillBlocks ? 2 : 10 }
 
     /// One element of the status bar.
     @ViewBuilder
@@ -372,7 +381,7 @@ struct StatusBarView: View {
         case StatusLayout.gap:
             // A wide gap between two groups: with the spacing of the bar on
             // each side, 28 points apart at a 12 pt text.
-            Color.clear.frame(width: max(0, barScaled(28) - 10), height: 1)
+            Color.clear.frame(width: max(0, barScaled(28) - Self.spacing), height: 1)
         case StatusLayout.spring:
             // The chips of the screens, the room left, then what the app
             // says, on the right.
@@ -380,30 +389,17 @@ struct StatusBarView: View {
             Spacer(minLength: 8)
             messageLine
             rightEnd
-        case "mode":
-            if controller.showsAppIcon, let icon = AppIcon.statusImage {
-                // The normal mode: the app's icon, as tall as the text.
-                Image(nsImage: icon)
-                    .resizable()
-                    .interpolation(.high)
-                    .frame(width: barScaled(15), height: barScaled(15))
-                    .accessibilityLabel(L("NiceMailer, normal mode"))
-            } else {
-                Text(" \(controller.modeLabel) ")
-                    .font(.interfaceBar(11, weight: .bold))
-                    .foregroundStyle(Palette.background)
-                    .background(Palette.accentText)
-            }
         case "account":
             // The account ("all" for the unified view), with its icon and
             // the key that opens its picker; a click opens it too.
-            StatusBlock(icon: "at", text: model.scopeName, key: controller.keyLabel(.pickerAccounts))
+            StatusBlock(icon: "at", text: model.scopeName, key: controller.keyLabel(.pickerAccounts),
+                        strong: true, active: controller.overlay == .picker(.accounts))
                 .onTapGesture { controller.openPickerFromStatusBar(.accounts) }
                 .uiTarget("status-account", chrome: "status_bar")
         case "folder":
             if listsMail, model.listFilter == nil {
                 StatusBlock(icon: InterfaceController.Prefix.goto.icon, text: model.currentFolderName,
-                            key: controller.menuKeyLabel(.goto))
+                            key: controller.menuKeyLabel(.goto), strong: true, active: controller.overlay == .menu(.goto))
                     .menuAnchor(.goto, controller)
                     .onTapGesture { controller.openMenuFromStatusBar(.goto) }
                     .uiTarget("status-folder", chrome: "status_bar")
@@ -417,7 +413,8 @@ struct StatusBarView: View {
             // contact list ("unread mails of the group"): the magnifier
             // opens the selector (`F`); each active attribute is a chip,
             // removed by a click.
-            StatusBlock(icon: "magnifyingglass", text: "", key: controller.keyLabel(.pickerAttributes), label: L("Attributes"))
+            StatusBlock(icon: "magnifyingglass", text: "", key: controller.keyLabel(.pickerAttributes), label: L("Attributes"),
+                        active: controller.overlay == .picker(.attributes))
                 .onTapGesture { controller.openPickerFromStatusBar(.attributes) }
                 .uiTarget("status-attributes", chrome: "status_bar")
             ForEach(model.attributes.chips) { chip in
@@ -434,7 +431,8 @@ struct StatusBarView: View {
             // A menu of a prefix, an icon and the key; the menu drops down
             // from the block.
             let p = InterfaceController.Prefix(name: item)
-            StatusBlock(icon: p.icon, text: "", key: controller.menuKeyLabel(p), label: p.title)
+            StatusBlock(icon: p.icon, text: "", key: controller.menuKeyLabel(p), label: p.title,
+                        active: controller.overlay == .menu(p))
                 .menuAnchor(p, controller)
                 .onTapGesture { controller.openMenuFromStatusBar(p) }
                 .uiTarget("status-\(p.uiID)", chrome: "status_bar")
@@ -442,7 +440,8 @@ struct StatusBarView: View {
             // The AI, with the actions on the current mail: its palette
             // works on the mail (or the reply) as `m` and `s` do.
             StatusBlock(icon: "sparkles", text: "",
-                        key: controller.aiKeyLabel(composing: model.composer != nil), label: L("AI"))
+                        key: controller.aiKeyLabel(composing: model.composer != nil), label: L("AI"),
+                        active: controller.overlay == .picker(.ai))
                 .onTapGesture { controller.openAIFromStatusBar() }
                 .help(L("AI assistance"))
                 .accessibilityLabel(L("AI assistance"))
@@ -450,7 +449,8 @@ struct StatusBarView: View {
         case "help":
             // At the right end on every screen, a reminder that `?` exists,
             // for whoever has not learned it yet; a click opens it too.
-            StatusBlock(icon: "questionmark.circle", text: "", key: controller.keyLabel(.helpShow))
+            StatusBlock(icon: "questionmark.circle", text: "", key: controller.keyLabel(.helpShow),
+                        active: controller.overlay == .help)
                 .onTapGesture { controller.toggleHelpFromStatusBar() }
                 .help(L("Keys"))
                 .uiTarget("status-help", chrome: "status_bar")
@@ -641,9 +641,9 @@ private struct ToolbarView<Messages: View>: View {
             .padding(.trailing, barScaled(12))
             Spacer(minLength: 8)
             // The buttons, in the order of the theme (`window.blocks`); the
-            // folder is the title, the mode is not shown, the room left is
+            // folder is the title, the room left is
             // before the buttons already.
-            let items = StatusLayout.items(Look.theme.window.blocks.filter { $0 != "folder" && $0 != "mode" }) { draws($0, listsMail) }
+            let items = StatusLayout.items(Look.theme.window.blocks.filter { $0 != "folder" }) { draws($0, listsMail) }
             ForEach(Array(items.enumerated()), id: \.offset) { _, item in
                 button(item, listsMail: listsMail)
             }
@@ -778,16 +778,28 @@ private struct StatusBlock: View {
     /// The name of a block of action, said beside its icon when the theme
     /// asks for it (`window.block_labels`).
     var label: String? = nil
+    /// Where the list is (the account, the folder): in bold in a theme of
+    /// pills (`window.block_style`), the actions in grey.
+    var strong = false
+    /// Its menu or picker is open: highlighted in a theme of pills.
+    var active = false
 
     var body: some View {
-        HStack(spacing: barScaled(4)) {
+        let pill = Look.pillBlocks && !Look.toolbar
+        HStack(spacing: barScaled(pill ? 5 : 4)) {
             if let icon {
                 Image(systemName: icon)
-                    .font(.system(size: barScaled(10), weight: .semibold))
-                    .foregroundStyle(Palette.muted)
+                    .font(.system(size: barScaled(pill ? 11 : 10), weight: pill ? .medium : .semibold))
+                    .foregroundStyle(pill && strong ? Palette.text : Palette.muted)
             }
-            if !text.isEmpty { Text(text).lineLimit(1) }
-            if text.isEmpty, Look.blockLabels, let label { Text(label).lineLimit(1) }
+            if !text.isEmpty {
+                Text(text).lineLimit(1)
+                    .fontWeight(pill && strong ? .semibold : nil)
+                    .foregroundStyle(pill && !strong ? Palette.muted : Palette.text)
+            }
+            if text.isEmpty, Look.blockLabels, let label {
+                Text(label).lineLimit(1).foregroundStyle(pill ? (active ? Palette.text : Palette.muted) : Palette.text)
+            }
             // The reminder of the key, unless the theme leaves it out
             // (`window.key_hints`): the key works either way.
             if Look.keyHints {
@@ -799,6 +811,11 @@ private struct StatusBlock: View {
                     .overlay(Rectangle().stroke(Palette.separator, lineWidth: 1))
             }
         }
+        // A pill (clean): room around the block, highlighted while its
+        // menu is open, as a tab of a web page.
+        .padding(.horizontal, pill ? barScaled(9) : 0)
+        .padding(.vertical, pill ? barScaled(4) : 0)
+        .background(Capsule().fill(pill && active ? Palette.cursor : Color.clear))
         .contentShape(Rectangle())
         // A button of the toolbar in regular (`window.chrome`).
         .modifier(ToolbarButton(active: Look.toolbar))

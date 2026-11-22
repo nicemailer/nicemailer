@@ -1334,16 +1334,16 @@ struct InterfaceControllerTests {
         #expect(!controller.reading && selectedIndex == 1)
     }
 
-    @Test func theStatusBarShowsTheAppIconInTheNormalModeOnly() {
-        #expect(controller.modeLabel == "NOR" && controller.showsAppIcon)
-        // The image is in the app's resources.
-        #expect(AppIcon.statusImage != nil)
+    /// The mode is no longer drawn (November 2026: a legacy of Helix the
+    /// status bar does without), but the scenarios read it.
+    @Test func theModeFollowsThePrefixAndThePicker() {
+        #expect(controller.modeLabel == "NOR")
         press("v")
-        #expect(controller.modeLabel == "v" && !controller.showsAppIcon)
+        #expect(controller.modeLabel == "v")
         press("esc")
-        #expect(controller.showsAppIcon)
+        #expect(controller.modeLabel == "NOR")
         press("/")
-        #expect(controller.modeLabel == "PCK" && !controller.showsAppIcon)
+        #expect(controller.modeLabel == "PCK")
     }
 
     @Test func controlCommandFTogglesFullScreenEverywhere() {

@@ -10,8 +10,10 @@ status_bar_position = "top"
 title_bar = "shown"
 block_labels = false
 status_bar_height = 20
+block_style = "plain"
+bar_line = false
 key_hints = true
-blocks = ["mode", "account", "folder", "attributes", "|", "view", "|", "move", "save", "ai", "->", "help"]
+blocks = ["account", "folder", "attributes", "|", "view", "|", "move", "save", "ai", "->", "help"]
 default_columns = 2
 
 [fonts]

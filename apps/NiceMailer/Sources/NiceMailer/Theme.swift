@@ -35,15 +35,6 @@ enum AppResources {
     }()
 }
 
-/// The app's icon drawn small, for the status bar (`Resources/Icon`, made
-/// by `scripts/make-icon.sh` from the icon's small-size drawing). Loaded
-/// once; nil if the file is missing, the bar then writes the mode.
-enum AppIcon {
-    static let statusImage: NSImage? = AppResources.bundle
-        .url(forResource: "StatusIcon", withExtension: "png", subdirectory: "Icon")
-        .flatMap(NSImage.init(contentsOf:))
-}
-
 /// Localized string from the app's String Catalog.
 ///
 /// Swift note: in a Swift Package, resources live in their own bundle

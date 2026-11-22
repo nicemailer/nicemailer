@@ -25,6 +25,14 @@ enum Look {
     /// The blocks of the status bar remind their key (`window.key_hints`).
     static var keyHints: Bool { theme.window.keyHints }
 
+    /// Each block of the status bar in a pill, the account and the folder
+    /// in bold, the block whose menu is open highlighted
+    /// (`window.block_style = "pill"`, clean).
+    static var pillBlocks: Bool { theme.window.blockStyle == "pill" }
+
+    /// A line between the status bar and the mails (`window.bar_line`).
+    static var barLine: Bool { theme.window.barLine }
+
     /// The blocks of actions say their name beside their icon
     /// (`window.block_labels`).
     static var blockLabels: Bool { theme.window.blockLabels }

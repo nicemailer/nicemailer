@@ -35,8 +35,6 @@ let package = Package(
                 // The editor of a mail's text (`apps/editor`, built by
                 // `make editor`, never committed; `EditorWebView.swift`).
                 .copy("Resources/Editor"),
-                // The app's icon for the status bar (`scripts/make-icon.sh`).
-                .copy("Resources/Icon"),
                 // The default keys, written by the core (`nicemailer keymap
                 // show --defaults --json`; `Keymap.defaults`).
                 .copy("Resources/keymap-defaults.json"),

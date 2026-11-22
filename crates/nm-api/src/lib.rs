@@ -2981,6 +2981,10 @@ pub struct ThemeWindow {
     pub block_labels: bool,
     /// Height of the status bar, in points for a 12 pt text of the bar.
     pub status_bar_height: u32,
+    /// `plain` or `pill`.
+    pub block_style: String,
+    /// A line between the status bar and the mails.
+    pub bar_line: bool,
     /// The blocks shown, in order, with the separators `|` and `->`.
     pub blocks: Vec<String>,
     pub default_columns: u8,

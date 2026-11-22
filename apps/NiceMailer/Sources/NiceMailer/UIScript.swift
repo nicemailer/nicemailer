@@ -783,7 +783,6 @@ private final class Runner {
             // The keys of the folders in the folder column (`;` menu), as
             // `i Inbox, t Todo…`.
             "folder_keys": c.scopeFolders.map { "\(c.gotoKeyLabel($0)) \($0.name)" }.joined(separator: ", "),
-            "mode_icon": "\(c.showsAppIcon && AppIcon.statusImage != nil)",
             "location": c.locationLabel,
             "flash": m.flash ?? "",
             "error": m.lastError ?? "",

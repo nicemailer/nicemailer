@@ -90,7 +90,7 @@ fn the_values_of_the_specification() {
     assert_eq!(color(regular, "colors.unread"), Color::System("accent".into()));
     assert_eq!(regular["layout.avatars"], Value::Bool(true));
     match &regular["window.blocks"] {
-        Value::Blocks(b) => assert!(!b.contains(&"mode".to_string())),
+        Value::Blocks(b) => assert_eq!(b.first().map(String::as_str), Some("account")),
         other => panic!("{other:?}"),
     }
 }

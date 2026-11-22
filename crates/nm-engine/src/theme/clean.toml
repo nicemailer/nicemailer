@@ -7,9 +7,11 @@ chrome = "status_bar"
 status_bar_position = "top"
 title_bar = "merged"
 block_labels = true
-status_bar_height = 30
+status_bar_height = 40
+block_style = "pill"
+bar_line = true
 key_hints = false
-blocks = ["mode", "account", "folder", "attributes", "|", "view", "|", "move", "save", "ai", "->", "help"]
+blocks = ["account", "folder", "attributes", "|", "view", "|", "move", "save", "ai", "->", "help"]
 default_columns = 2
 
 [fonts]

@@ -43,6 +43,10 @@ struct ThemeView: Decodable, Equatable {
         let blockLabels: Bool
         /// Height of the status bar, in points for a 12 pt text of the bar.
         let statusBarHeight: Double
+        /// `plain` or `pill`.
+        let blockStyle: String
+        /// A line between the status bar and the mails.
+        let barLine: Bool
         /// The blocks shown, in order, with the separators `|` and `->`.
         let blocks: [String]
         let defaultColumns: Int

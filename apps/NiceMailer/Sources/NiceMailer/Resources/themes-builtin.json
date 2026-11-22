@@ -11,9 +11,10 @@
       "title_bar": "merged",
       "key_hints": false,
       "block_labels": true,
-      "status_bar_height": 30,
+      "status_bar_height": 40,
+      "block_style": "pill",
+      "bar_line": true,
       "blocks": [
-        "mode",
         "account",
         "folder",
         "attributes",
@@ -144,8 +145,9 @@
       "key_hints": true,
       "block_labels": false,
       "status_bar_height": 20,
+      "block_style": "plain",
+      "bar_line": false,
       "blocks": [
-        "mode",
         "account",
         "folder",
         "attributes",
@@ -276,6 +278,8 @@
       "key_hints": false,
       "block_labels": true,
       "status_bar_height": 44,
+      "block_style": "pill",
+      "bar_line": true,
       "blocks": [
         "account",
         "folder",

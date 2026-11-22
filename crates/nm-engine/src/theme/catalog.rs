@@ -52,7 +52,7 @@ impl Key {
 pub const TABLES: &[&str] = &["window", "fonts", "layout", "motion", "colors"];
 
 /// Blocks of the status bar or the toolbar (section 6.1).
-pub const BLOCKS: &[&str] = &["mode", "account", "folder", "attributes", "view", "move", "save", "ai", "help"];
+pub const BLOCKS: &[&str] = &["account", "folder", "attributes", "view", "move", "save", "ai", "help"];
 /// A wide gap between two groups of blocks.
 pub const BLOCK_GAP: &str = "|";
 /// All the room left: what follows goes to the right edge.
@@ -105,6 +105,9 @@ pub const KEYS: &[Key] = &[
     k("window", "block_labels", Kind::Bool,
       "the blocks of actions say their name (Display, Move, Save, AI…) beside their icon"),
     k("window", "status_bar_height", Kind::Int(14, 48), "height of the status bar, for a 12 pt text of the bar"),
+    k("window", "block_style", Kind::Choice(&["plain", "pill"]),
+      "plain: icon, name and key side by side; pill: each block in a pill, the account and the folder in bold, the block open highlighted"),
+    k("window", "bar_line", Kind::Bool, "a line between the status bar and the mails"),
     k("window", "blocks", Kind::Blocks,
       "blocks shown, in order; \"|\" is a wide gap, \"->\" sends what follows to the right; a block left out is hidden, its key still works"),
     k("window", "default_columns", Kind::Int(1, 3), "columns of a first window: 1, 2 or 3"),
