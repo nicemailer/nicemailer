@@ -161,13 +161,23 @@ final class AppModel {
     /// `ui.title_bar` of `config.toml`, only while the file writes it: it
     /// still wins over the theme's (`themes.md`, section 9).
     var configTitleBar: String?
-    /// The title bar of the window is hidden (`WindowChrome`): as
-    /// `ui.title_bar` says while it is written, else as the theme says
-    /// (`window.title_bar`). `merged`, the buttons in the status bar, is
-    /// drawn as `shown` until the status bar can hold them.
-    var titleBarHidden: Bool {
-        (configTitleBar ?? theme.current.window.titleBar) == "hidden"
+    /// The title bar of the window (`WindowChrome`): as `ui.title_bar`
+    /// says while it is written, else as the theme says
+    /// (`window.title_bar`). `merged`, the buttons in the status bar, only
+    /// while the status bar is at the top: elsewhere there is nothing to
+    /// hold them, and the title bar is shown.
+    var titleBarMode: WindowChrome.Mode {
+        switch configTitleBar ?? theme.current.window.titleBar {
+        case "hidden": .hidden
+        case "merged": statusBarAtTop ? .merged : .shown
+        default: .shown
+        }
     }
+    /// The title bar is hidden: the content goes up to the top edge.
+    var titleBarHidden: Bool { titleBarMode == .hidden }
+    /// The status bar is at the top of the window (`GeekController`,
+    /// `statusPosition`): where `merged` puts the window's buttons.
+    var statusBarAtTop = true
     /// The keys of the geek theme: the defaults until the core answers, then
     /// those of `keymap.toml` (`keymap_get`, `docs/keymap.md`).
     var keymap: Keymap = .defaults
@@ -234,6 +244,8 @@ final class AppModel {
     @ObservationIgnored var accountsCoreOverride: (any CoreCalling)?
     /// The core the Preferences talk to.
     var accountsCore: (any CoreCalling)? { accountsCoreOverride ?? core }
+    /// The tab the Preferences show.
+    var preferencesTab: PreferencesTab = .accounts
     /// Goes up each time the core announces that an account changed
     /// (`AccountChanged`, `AccountError`, `ConfigChanged`): the account list
     /// of the Preferences reads it again.

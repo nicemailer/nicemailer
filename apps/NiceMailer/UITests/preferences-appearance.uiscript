@@ -1,0 +1,15 @@
+# The Appearance tab of the Preferences (docs/themes.md, "Choosing a
+# theme"): the themes the core lists, the one chosen marked; a click
+# chooses another, written in config.toml and applied at once; the button
+# opens the folder of the themes (recorded, nothing is opened).
+preferences appearance
+expect prefs_themes = *geek,clean,regular
+snap appearance
+click prefs:theme-regular
+expect prefs_theme_error =
+expect prefs_themes = geek,clean,*regular
+expect theme = regular
+click prefs:themes-folder
+expect opened_file = themes
+preferences close
+expect theme = regular

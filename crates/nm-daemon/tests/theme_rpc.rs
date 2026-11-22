@@ -42,8 +42,9 @@ fn the_builtin_themes_are_created_and_geek_is_sent() {
     let l = c.call("theme_list", json!({})).unwrap();
     assert_eq!(l["selected"], "geek");
     let names: Vec<_> = l["themes"].as_array().unwrap().iter().map(|t| (t["name"].clone(), t["origin"].clone())).collect();
-    // The files created change nothing: the themes are still the built-in ones.
-    assert_eq!(names, vec![(json!("geek"), json!("builtin_modified")), (json!("clean"), json!("builtin_modified")), (json!("regular"), json!("builtin_modified"))]);
+    // The files created change nothing: the themes are still the built-in
+    // ones, not "modified".
+    assert_eq!(names, vec![(json!("geek"), json!("builtin")), (json!("clean"), json!("builtin")), (json!("regular"), json!("builtin"))]);
 }
 
 #[test]

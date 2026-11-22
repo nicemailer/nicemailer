@@ -402,6 +402,23 @@ extension Fonts {
     /// (`fonts.reading_line_spacing`), whatever the text size.
     static var mailLineSpacing: CGFloat { CGFloat(ThemeStore.active.fonts.readingLineSpacing) }
 
+    /// A font of the theme as a CSS `font-family` list, for the web views
+    /// (the HTML reader, the editor): the bundled font is "NM Mono", given
+    /// to them as data (`cssFontFaces`); the fonts of the system have names
+    /// of their own in WebKit.
+    static func css(_ name: String) -> String {
+        switch name {
+        case readingFamily: return "\"NM Mono\", ui-monospace, monospace"
+        case "system": return "-apple-system, system-ui, sans-serif"
+        case "system-mono": return "ui-monospace, monospace"
+        case "system-serif": return "ui-serif, serif"
+        case "system-rounded": return "ui-rounded, -apple-system, sans-serif"
+        default:
+            let quoted = name.replacingOccurrences(of: "\\", with: "").replacingOccurrences(of: "\"", with: "")
+            return "\"\(quoted)\", -apple-system, sans-serif"
+        }
+    }
+
     /// The family name of the bundled font, as a theme writes it.
     static let readingFamily = "iA Writer Mono V"
 }

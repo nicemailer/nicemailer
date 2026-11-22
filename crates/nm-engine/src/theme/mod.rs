@@ -780,9 +780,12 @@ impl ThemeSet {
         let mut themes = Vec::new();
         for name in BUILTINS {
             let file = self.files.get(*name);
+            // Modified only when its file changes something: the file the
+            // core creates, every key commented out, leaves it as it is.
+            let modified = file.is_some_and(|f| f.error.is_some() || f.layer.as_ref().is_some_and(|l| !l.values.is_empty()));
             themes.push(nm_api::ThemeEntry {
                 name: name.to_string(),
-                origin: if file.is_some() { "builtin_modified" } else { "builtin" }.into(),
+                origin: if modified { "builtin_modified" } else { "builtin" }.into(),
                 parent: None,
                 error: file.and_then(|f| f.error.as_ref().or(f.chain_error.as_ref())).map(crate::problem_view),
             });

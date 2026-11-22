@@ -82,9 +82,14 @@ private struct GeekWindow: View {
         .background(Palette.background)
         .foregroundStyle(Palette.text)
         .font(.geek())
-        // `ui.md`: no millisecond lost. Turning animations off for the
-        // whole tree also removes SwiftUI's default fades.
-        .transaction { $0.animation = nil; $0.disablesAnimations = true }
+        // `ui.md`: no millisecond lost in geek. Turning animations off for
+        // the whole tree also removes SwiftUI's default fades. A theme
+        // that animates (`[motion]`) keeps its own, given where they apply.
+        .transaction { t in
+            if !Look.animates { t.animation = nil; t.disablesAnimations = true }
+        }
+        .animation(Look.sidebarAnimation, value: controller.columns)
+        .animation(Look.popupAnimation, value: controller.overlay)
         .id(textSize)
     }
 
@@ -160,8 +165,7 @@ private struct GeekWindow: View {
                 let top = max(0, (geo.size.height - PickerPopup.height(.ai, scale: scale)) / 2)
                 AIPanel(run: run, maxTextHeight: geo.size.height - top - 120 * scale)
                     .frame(width: PickerPopup.width(.ai, available: geo.size.width, scale: scale))
-                    .background(Palette.popup)
-                    .overlay(Rectangle().stroke(Palette.separator, lineWidth: 1))
+                    .popupChrome()
                     .uiTarget("ai-panel-box")
                     .padding(.top, top)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -442,7 +446,11 @@ struct GeekStatusBar: View {
         }
         .font(.geekBar(11))
         .padding(.horizontal, 6)
-        .frame(height: barScaled(20))
+        // The window's buttons over its left end (`window.title_bar =
+        // "merged"`): room for them, and the height of a title bar, so
+        // that they sit in its middle.
+        .padding(.leading, model.titleBarMode == .merged ? Look.mergedButtonsWidth : 0)
+        .frame(height: model.titleBarMode == .merged ? max(barScaled(20), 28) : barScaled(20))
         // Its empty parts move the window, as a title bar does: the title
         // bar is hidden by default (`WindowChrome`).
         .background(ZStack { Palette.statusBar; WindowDragArea() })
@@ -510,12 +518,16 @@ private struct StatusBlock: View {
                     .foregroundStyle(Palette.muted)
             }
             if !text.isEmpty { Text(text).lineLimit(1) }
-            Text(key)
-                .font(.geekBar(9))
-                .foregroundStyle(Palette.muted)
-                .padding(.horizontal, barScaled(3))
-                // Square corners: the geek theme has no rounded shapes (`ui.md`).
-                .overlay(Rectangle().stroke(Palette.separator, lineWidth: 1))
+            // The reminder of the key, unless the theme leaves it out
+            // (`window.key_hints`): the key works either way.
+            if Look.keyHints {
+                Text(key)
+                    .font(.geekBar(9))
+                    .foregroundStyle(Palette.muted)
+                    .padding(.horizontal, barScaled(3))
+                    // Square corners: the geek theme has no rounded shapes (`ui.md`).
+                    .overlay(Rectangle().stroke(Palette.separator, lineWidth: 1))
+            }
         }
         .contentShape(Rectangle())
     }
@@ -555,11 +567,11 @@ private struct MailColumns: View {
     private func columns(folderWidth: CGFloat, rest: CGFloat, listWidth: CGFloat) -> some View {
         if controller.columns == 3 {
             GeekFolderColumn(controller: controller).frame(width: folderWidth)
-            Palette.separator.frame(width: 1)
+            Look.separator.frame(width: 1)
         }
         GeekThreadColumn(controller: controller).frame(width: listWidth).clipped()
         if controller.columns > 1 {
-            Palette.separator.frame(width: 1)
+            Look.separator.frame(width: 1)
                 // A wider invisible zone makes the line easy to grab.
                 .overlay(Color.clear.frame(width: 7).contentShape(Rectangle()).onHover { inside in
                     if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
@@ -600,8 +612,8 @@ private struct GeekFolderColumn: View {
                         if f.unread > 0 { Text("\(f.unread)").foregroundStyle(Palette.unread) }
                     }
                     .padding(.horizontal, 8)
-                    .frame(height: scaled(20))
-                    .background(controller.isCurrent(f) ? Palette.cursor : Color.clear)
+                    .frame(height: Look.rowHeight)
+                    .rowFill(controller.isCurrent(f) ? Palette.cursor : nil)
                     // The whole row is clickable, not only its text.
                     .contentShape(Rectangle())
                     .onTapGesture { controller.open(f) }
@@ -616,7 +628,7 @@ private struct GeekFolderColumn: View {
                 GeekColumnGroups(controller: controller)
             }
         }
-        .scrollIndicators(.never)
+        .scrollIndicators(Look.scrollIndicators)
     }
 }
 
@@ -657,9 +669,9 @@ private struct GeekColumnGroups: View {
                     Spacer(minLength: 0)
                 }
                 .padding(.horizontal, 8)
-                .frame(height: scaled(20))
+                .frame(height: Look.rowHeight)
                 // The same grey row as the current folder above.
-                .background(controller.isHighlighted(g) ? Palette.cursor : Color.clear)
+                .rowFill(controller.isHighlighted(g) ? Palette.cursor : nil)
                 .contentShape(Rectangle())
                 .onClick { controller.clickGroup(g, $0) }
                 .uiTarget("group-\(g.name)")
@@ -710,9 +722,12 @@ private struct GeekThreadRows: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(model.threads) { t in
+                        // Swift note: `enumerated()` pairs each thread with
+                        // its place, for the alternate rows of a theme
+                        // (`layout.zebra`); the id stays the thread's.
+                        ForEach(Array(model.threads.enumerated()), id: \.element.id) { index, t in
                             GeekThreadRow(
-                                thread: t, cursor: t.id == cursor, marked: marked.contains(t.id), layout: layout,
+                                thread: t, cursor: t.id == cursor, marked: marked.contains(t.id), layout: layout, index: index,
                                 folder: folderLabels.map { $0[t.folderId] ?? .init(folder: "", account: nil) },
                                 showsKind: showsKind, suggestion: model.aiSuggestions[t.id], names: model.folderNames)
                                 .contentShape(Rectangle())
@@ -724,11 +739,11 @@ private struct GeekThreadRows: View {
                         }
                     }
                 }
-                .scrollIndicators(.never)
+                .scrollIndicators(Look.scrollIndicators)
                 // How many rows fit, for ctrl-d / ctrl-u (half a page). Read
                 // again when the window or the text size changes.
                 .onChange(of: geo.size.height, initial: true) { _, h in
-                    controller.listVisibleRows = GeekController.visibleRows(height: h, rowHeight: scaled(20))
+                    controller.listVisibleRows = GeekController.visibleRows(height: h, rowHeight: Look.rowHeight)
                 }
                 // Keep the cursor visible, without animation: `scrollTo`
                 // with no anchor scrolls only as much as needed.
@@ -901,6 +916,8 @@ private struct GeekThreadRow: View {
     let cursor: Bool
     let marked: Bool
     let layout: RowLayout
+    /// Its place in the list, for the alternate rows (`layout.zebra`).
+    var index = 0
     /// Folder of the row, shown in "Everything" only (`nil` elsewhere).
     var folder: AppModel.FolderLabel? = nil
     /// The icon person / robot before the name (Quarantine only,
@@ -1006,8 +1023,8 @@ private struct GeekThreadRow: View {
         .font(.geek(RowLayout.fontSize, weight: .regular))
         .lineLimit(1)
         .padding(.trailing, 6)
-        .frame(height: scaled(20))
-        .background(cursor ? Palette.cursor : marked ? Palette.marked : Color.clear)
+        .frame(height: Look.rowHeight)
+        .rowFill(cursor ? Palette.cursor : marked ? Palette.marked : nil, index: index)
     }
 }
 
@@ -1071,7 +1088,8 @@ struct ReaderTitleBar<Controls: View>: View {
     // by `GeekController.handle`. On two lines, a subject longer than the
     // whole reader is cut at the end; the tooltip shows it whole.
     private var subjectText: some View {
-        Text(subject).font(.geek(13, weight: .bold)).lineLimit(1)
+        // Its size follows the theme (`fonts.title_scale`: 1 in geek).
+        Text(subject).font(.geek(13 * Look.titleScale, weight: .bold)).lineLimit(1)
             .textSelection(.enabled)
             .help(subject)
     }
@@ -1127,7 +1145,7 @@ private struct GeekReaderColumn: View {
                 ReaderTitleBar(subject: thread.subject, tags: thread.labels.tags, groups: thread.labels.groups) {
                     titleControls(state)
                 }
-                Palette.separator.frame(height: 1)
+                Look.separator.frame(height: 1)
                 if model.bodyFormat != "text" {
                     let page = threadHTML(thread, state)
                     HTMLReader(html: page.html, allowedImages: page.images, inlineImages: page.inline,
@@ -1255,8 +1273,9 @@ private struct GeekReaderColumn: View {
         /* The theme font is the page's default; a font the sender named
            wins in its own text. Each HTML message is in its own frame, with
            its own styles (`MailFrame`). */
-        body, summary { font-family: "NM Mono", ui-monospace, monospace; }
-        body { margin: 16px; font-size: \(Int(scaled(14)))px; }
+        body { font-family: \(Fonts.css(ThemeStore.active.fonts.reading)); }
+        summary { font-family: \(Fonts.css(ThemeStore.active.fonts.interface)); }
+        body { margin: 16px; font-size: \(Int(scaled(14) * CGFloat(ThemeStore.active.fonts.readingScale)))px; }
         summary { font-size: \(Int(scaled(12)))px; color: #888; cursor: pointer; list-style: none; margin: 4px 0; }
         summary::-webkit-details-marker { display: none; }
         details[open] summary { margin-bottom: 12px; }
@@ -1271,7 +1290,7 @@ private struct GeekReaderColumn: View {
         details.single summary a { pointer-events: auto; cursor: pointer; }
         .q { color: #888; border-left: 2px solid #8886; padding-left: 8px; }
         .m { color: #888; font-size: \(Int(scaled(12)))px; }
-        pre { font: \(Int(scaled(14)))px "NM Mono", ui-monospace, monospace; white-space: pre-wrap; margin: 0 0 8px; }
+        pre { font: \(Int(scaled(14) * CGFloat(ThemeStore.active.fonts.readingScale)))px \(Fonts.css(ThemeStore.active.fonts.reading)); white-space: pre-wrap; margin: 0 0 8px; }
         hr { border: 0; border-top: 1px solid #8884; margin: 16px 0; }
         /* Attachment tiles: 3 to 5 per row, as in the text reader. */
         .att { display: grid; gap: 6px; margin: 12px 0;
@@ -1395,7 +1414,8 @@ private struct TextReader: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NSScrollView {
         let scroll = NSTextView.scrollableTextView()
-        scroll.hasVerticalScroller = false
+        // The theme's scroll bars (`layout.scrollers`): none in geek.
+        Look.applyScrollers(to: scroll)
         scroll.hasHorizontalScroller = false
         scroll.drawsBackground = false
         if let text = scroll.documentView as? NSTextView {
@@ -1432,7 +1452,11 @@ private struct TextReader: NSViewRepresentable {
         // A typical character of the interface font: the name of a file is
         // not known in advance (the width of one, in a font of fixed pitch).
         let charWidth = Double(TextMeasure.interface(12 * TextSize.shared.scale).average)
-        let width = Double(scroll.contentSize.width) - 24
+        // The text keeps a margin of 12 pt, or, when the theme bounds its
+        // width (`layout.reader_max_width`), is centered in that width.
+        let side = Look.readerMaxWidth.map { max(12, (scroll.contentSize.width - $0) / 2) } ?? 12
+        if text.textContainerInset.width != side { text.textContainerInset = NSSize(width: side, height: 12) }
+        let width = Double(scroll.contentSize.width - 2 * side)
         let columns = AttachmentDisplay.columns(width: width, charWidth: charWidth)
         // Characters of a name in a tile: its share of the width, minus the
         // icon and the padding.
@@ -1944,7 +1968,11 @@ struct KeyMenu: View {
             Text(title).foregroundStyle(Palette.accentText).padding(.bottom, 2)
             ForEach(Array(entries.enumerated()), id: \.offset) { i, e in
                 HStack(spacing: 10) {
-                    Text(e.key).foregroundStyle(Palette.accentText).frame(width: keyWidth, alignment: .leading)
+                    // The key first, as in Helix, or last, as in a macOS
+                    // menu (`layout.menu_keys`).
+                    if !Look.menuKeysRight {
+                        Text(e.key).foregroundStyle(Palette.accentText).frame(width: keyWidth, alignment: .leading)
+                    }
                     if e.virtual {
                         VirtualFolderLabel(name: e.label)
                     } else {
@@ -1956,11 +1984,14 @@ struct KeyMenu: View {
                     if let detail = e.detail {
                         Text(detail).foregroundStyle(e.detailMuted ? Palette.muted : Palette.unread)
                     }
+                    if Look.menuKeysRight {
+                        Text(e.key).foregroundStyle(Palette.muted).frame(width: keyWidth, alignment: .trailing)
+                    }
                 }
                 // Every row takes the menu's width (that of its widest
                 // row), so the details line up on the right edge.
                 .frame(maxWidth: .infinity)
-                .background(i == highlighted ? Palette.cursor : Color.clear)
+                .rowFill(i == highlighted ? Palette.cursor : nil)
                 .contentShape(Rectangle())
                 .onTapGesture { onSelect?(i) }
                 .uiTarget("menu-\(i)")
@@ -1973,8 +2004,7 @@ struct KeyMenu: View {
         // (which make the whole row clickable) would stretch it otherwise.
         .fixedSize(horizontal: true, vertical: false)
         .padding(10)
-        .background(Palette.popup)
-        .overlay(Rectangle().stroke(Palette.separator, lineWidth: 1))
+        .popupChrome()
     }
 }
 
@@ -2008,8 +2038,7 @@ private struct HelpPanel: View {
             }
             .fixedSize(horizontal: true, vertical: false)
             .padding(padding)
-            .background(Palette.popup)
-            .overlay(Rectangle().stroke(Palette.separator, lineWidth: 1))
+            .popupChrome()
             .padding(margin)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .onAppear { if UIScript.isActive { UIScript.helpColumns = columns.map { $0.map(\.title) } } }
@@ -2171,7 +2200,7 @@ struct PickerPopup: View {
                             }
                             .padding(.horizontal, 8)
                             .frame(height: scaled(Self.rowHeight))
-                            .background(i == current ? Palette.cursor : Color.clear)
+                            .rowFill(i == current ? Palette.cursor : nil)
                             .contentShape(Rectangle())
                             .onTapGesture { controller.clickPicker(kind, i) }
                             .uiTarget("picker-\(i)")
@@ -2179,7 +2208,7 @@ struct PickerPopup: View {
                         }
                     }
                 }
-                .scrollIndicators(.never)
+                .scrollIndicators(Look.scrollIndicators)
                 .onChange(of: controller.pickerIndex) { _, i in proxy.scrollTo(i) }
             }
             .overlay {
@@ -2197,8 +2226,7 @@ struct PickerPopup: View {
         }
         .onChange(of: panelHeight) { _, _ in if UIScript.isActive { UIScript.pickerVisibleRows = visibleRows } }
         .onChange(of: width) { _, w in if UIScript.isActive { UIScript.pickerWidth = w } }
-        .background(Palette.popup)
-        .overlay(Rectangle().stroke(Palette.separator, lineWidth: 1))
+        .popupChrome()
     }
 
     private var panelHeight: CGFloat { Self.height(kind, scale: TextSize.shared.scale, available: available) }
@@ -2278,9 +2306,9 @@ private struct ScreenList<Row: View>: View {
                         ForEach(0..<count, id: \.self) { i in
                             row(i)
                                 .padding(.horizontal, 10)
-                                .frame(height: scaled(20))
+                                .frame(height: Look.rowHeight)
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                                .background(i == index ? Palette.cursor : Color.clear)
+                                .rowFill(i == index ? Palette.cursor : nil, index: i)
                                 .contentShape(Rectangle())
                                 .onTapGesture { onClick(i) }
                                 .uiTarget("screen-\(i)")
@@ -2289,7 +2317,7 @@ private struct ScreenList<Row: View>: View {
                         }
                     }
                 }
-                .scrollIndicators(.never)
+                .scrollIndicators(Look.scrollIndicators)
                 .onChange(of: index) { _, i in proxy.scrollTo(i) }
                 .onGeometryChange(for: CGFloat.self, of: { $0.size.height }, action: onHeight)
             }

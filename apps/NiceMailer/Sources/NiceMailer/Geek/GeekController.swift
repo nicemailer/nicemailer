@@ -270,7 +270,10 @@ final class GeekController {
     /// its reading rules (`AppModel.readerVisible`).
     var readerVisible: Bool { columns != 1 || reading }
     var statusPosition: StatusPosition {
-        didSet { defaults.set(statusPosition.rawValue, forKey: "geek.status") }
+        didSet {
+            defaults.set(statusPosition.rawValue, forKey: "geek.status")
+            model.statusBarAtTop = statusPosition == .top
+        }
     }
     /// Width of the mail list, as a fraction of the window ("un petit
     /// tiers", resizable by dragging the separator).
@@ -588,10 +591,16 @@ final class GeekController {
         self.model = model
         self.defaults = defaults
         if let textSize { model.textSize = textSize }
-        columns = defaults.object(forKey: "geek.columns") as? Int ?? 2
+        // The layout chosen last, else the theme's (`window.default_columns`,
+        // `status_bar_position`).
+        let window = model.theme.current.window
+        columns = defaults.object(forKey: "geek.columns") as? Int ?? window.defaultColumns
         // At the top by default, under the title bar; with the title bar
         // hidden (`ui.title_bar`), it takes its place, and moves the window.
-        statusPosition = StatusPosition(rawValue: defaults.string(forKey: "geek.status") ?? "") ?? .top
+        let position = StatusPosition(rawValue: defaults.string(forKey: "geek.status") ?? "")
+            ?? StatusPosition(rawValue: window.statusBarPosition) ?? .top
+        statusPosition = position
+        model.statusBarAtTop = position == .top
         listFraction = defaults.object(forKey: "geek.listFraction") as? Double ?? 0.32
         // Swift note: `didSet` does not run for assignments made in `init`,
         // so the model is told here about the remembered layout.

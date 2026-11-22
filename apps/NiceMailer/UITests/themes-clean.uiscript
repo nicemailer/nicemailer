@@ -1,0 +1,32 @@
+# The theme clean (docs/themes.md; fixtures/themes-clean.config.toml): SF
+# Pro, rows of 30 pt with a rounded selection, no reminder of the keys in
+# the status bar (the keys still work), rounded menus and pickers with a
+# shadow, the keys of a menu on the right, the reader centered, the folder
+# column sliding in. Its snapshots are the ones to look at.
+expect theme = clean
+expect title_bar = merged
+expect row_height = 30
+appearance light
+snap clean-list
+# The keys work as in every theme.
+key j
+expect selected = 1
+key m
+expect overlay ~ menu
+snap clean-move-menu
+key esc
+key @
+expect overlay ~ picker
+snap clean-account-picker
+key esc
+key ?
+snap clean-help
+key esc
+# Three columns: the folder column slides in.
+key v
+key 3
+expect columns = 3
+wait 300
+snap clean-three-columns
+appearance dark
+snap clean-dark

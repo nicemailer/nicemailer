@@ -145,3 +145,71 @@ struct ThemeTests {
         #expect(Palette.hex(\.background, dark: false) == before)
     }
 }
+
+/// The Appearance tab of the Preferences (`themes.md`, section 9): the
+/// themes listed by the core, the choice written by it.
+@MainActor
+struct ThemeChooserTests {
+    static func list(selected: String) -> [String: Any] {
+        [
+            "path": "/tmp/nm/themes", "selected": selected,
+            "themes": [
+                ["name": "geek", "origin": "builtin", "parent": NSNull(), "error": NSNull()],
+                ["name": "clean", "origin": "builtin_modified", "parent": NSNull(), "error": NSNull()],
+                ["name": "regular", "origin": "builtin", "parent": NSNull(), "error": NSNull()],
+                ["name": "sepia", "origin": "user", "parent": "clean", "error": NSNull()],
+                ["name": "broken", "origin": "user", "parent": NSNull(),
+                 "error": ["file": "themes/broken.toml", "line": 2, "key": "layout.zebra", "message": "expected true or false"]],
+            ],
+        ]
+    }
+
+    @Test func theThemesAreListedAndOneIsChosen() async {
+        final class Calls { var set: [String] = [] }
+        let calls = Calls()
+        let core = FakeCore { method, params in
+            switch method {
+            case "theme_list": return ThemeChooserTests.list(selected: "geek")
+            case "config_set_theme":
+                calls.set.append(params["name"] as? String ?? "")
+                return ThemeTests.themeJSON("clean")
+            default: return Fixture.answer(method, params)
+            }
+        }
+        let chooser = ThemeChooser(client: core)
+        await chooser.load()
+        #expect(chooser.themes.map(\.name) == ["geek", "clean", "regular", "sepia", "broken"])
+        #expect(chooser.selected == "geek")
+        #expect(chooser.themes[1].detail == L("Built in, modified by its file"))
+        #expect(chooser.themes[3].detail == L("Extends %@", "clean"))
+
+        // The theme the core answers is applied at once.
+        let store = ThemeStore()
+        await chooser.choose("clean") { store.apply($0) }
+        #expect(calls.set == ["clean"])
+        #expect(chooser.selected == "clean")
+        #expect(store.current.name == "clean")
+
+        // The one chosen already, or a refused one: nothing asked.
+        await chooser.choose("clean") { store.apply($0) }
+        await chooser.choose("broken") { store.apply($0) }
+        #expect(calls.set == ["clean"])
+    }
+
+    @Test func aRefusalIsSaid() async {
+        let core = FakeCore { method, params in
+            switch method {
+            case "theme_list": return ThemeChooserTests.list(selected: "geek")
+            case "config_set_theme":
+                return CoreClient.RPCError(code: -32602, message: "config.toml was not changed: refused",
+                                           data: ["reason": "config_not_written", "detail": "refused"])
+            default: return Fixture.answer(method, params)
+            }
+        }
+        let chooser = ThemeChooser(client: core)
+        await chooser.load()
+        await chooser.choose("regular") { _ in }
+        #expect(chooser.selected == "geek")
+        #expect(chooser.error == L("config.toml was not changed: %@", "refused"))
+    }
+}

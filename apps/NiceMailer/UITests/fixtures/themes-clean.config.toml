@@ -1,0 +1,6 @@
+# Settings of themes-clean.uiscript: the built-in theme clean. Text sizes
+# of the layout (12 pt).
+[ui]
+text_size = 12
+status_bar_text_size = 12
+theme = "clean"

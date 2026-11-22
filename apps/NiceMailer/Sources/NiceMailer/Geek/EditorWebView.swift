@@ -379,7 +379,8 @@ final class EditorBridge: NSObject, MailTextEditor, WKScriptMessageHandler, WKNa
     static func theme(_ appearance: NSAppearance) -> [String: Any] {
         let dark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         return [
-            "dark": dark, "font": "\"NM Mono\", ui-monospace, monospace", "size": Double(14 * TextSize.shared.scale),
+            "dark": dark, "font": Fonts.css(ThemeStore.active.fonts.reading),
+            "size": Double(14 * TextSize.shared.scale * CGFloat(ThemeStore.active.fonts.readingScale)),
             "text": Palette.hex(\.text, dark: dark), "background": Palette.hex(\.background, dark: dark),
             "muted": Palette.hex(\.muted, dark: dark), "accent": Palette.hex(\.accentText, dark: dark),
             "selection": Palette.hex(\.selection, dark: dark), "border": Palette.hex(\.separator, dark: dark),

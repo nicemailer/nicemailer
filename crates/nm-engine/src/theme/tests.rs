@@ -561,3 +561,19 @@ fn the_json_of_the_app_is_up_to_date() {
          apps/NiceMailer/Sources/NiceMailer/Resources/themes-builtin.json`"
     );
 }
+
+#[test]
+fn the_file_created_leaves_a_builtin_theme_unmodified() {
+    // The core creates every built-in file with its keys commented out:
+    // the theme is listed as built in, not modified, until a line is
+    // uncommented.
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("themes");
+    write(&dir, "clean", &template("clean").unwrap());
+    let mut set = ThemeSet::new(dir.clone(), "clean");
+    set.reload(true);
+    assert_eq!(set.list().themes[1].origin, "builtin");
+    write(&dir, "clean", &template("clean").unwrap().replace("# zebra = false", "zebra = true"));
+    set.reload(false);
+    assert_eq!(set.list().themes[1].origin, "builtin_modified");
+}

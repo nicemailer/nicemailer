@@ -14,7 +14,18 @@ import SwiftUI
 /// Swift note: an `NSViewRepresentable` puts an AppKit view in a SwiftUI
 /// hierarchy; this one draws nothing, it only reaches the window it is in.
 struct WindowChrome: NSViewRepresentable {
-    let hidden: Bool
+    /// What the title bar is (`window.title_bar` of the theme).
+    enum Mode: String {
+        /// A title bar, with the title and the buttons.
+        case shown
+        /// No title bar at all: the content goes up to the top edge.
+        case hidden
+        /// No title bar, but the red, yellow and green buttons, over the
+        /// left end of the status bar, which leaves them room.
+        case merged
+    }
+
+    let mode: Mode
     /// The window's title (the Window menu, Mission Control), with the
     /// mailbox in use when it is not the default one. Set on the window
     /// itself: SwiftUI's `.navigationTitle` would add a toolbar, whose
@@ -25,13 +36,13 @@ struct WindowChrome: NSViewRepresentable {
     func makeNSView(context: Context) -> ChromeView { ChromeView() }
 
     func updateNSView(_ view: ChromeView, context: Context) {
-        view.titleBarHidden = hidden
+        view.mode = mode
         view.title = title
         view.apply()
     }
 
     final class ChromeView: NSView {
-        var titleBarHidden = false
+        var mode = Mode.shown
         var title = "NiceMailer"
         private var observers: [NSObjectProtocol] = []
 
@@ -66,8 +77,8 @@ struct WindowChrome: NSViewRepresentable {
         func apply() {
             guard let window, !UIScript.isActive else { return }
             if window.title != title { window.title = title }
-            if !WindowChrome.matches(hidden: titleBarHidden, window) {
-                WindowChrome.apply(hidden: titleBarHidden, to: window)
+            if !WindowChrome.matches(mode, window) {
+                WindowChrome.apply(mode, to: window)
             }
         }
     }
@@ -81,30 +92,46 @@ struct WindowChrome: NSViewRepresentable {
     /// the title bar's own container view is hidden, as Ghostty does: it
     /// then draws nothing, not even a transparent band, and takes no click,
     /// so the status bar under it gets them all.
-    static func apply(hidden: Bool, to window: NSWindow) {
+    ///
+    /// Merged, the title bar is transparent and without its title, as when
+    /// hidden, but its container and its buttons stay: they are drawn over
+    /// the left end of the status bar, which keeps them room.
+    static func apply(_ mode: Mode, to window: NSWindow) {
+        let bare = mode != .shown
         window.styleMask.insert(.fullSizeContentView)
         // Full screen (⌃⌘F) whether the title bar is shown or not.
         window.collectionBehavior.insert(.fullScreenPrimary)
         // No toolbar: its background would be drawn over the content.
-        if hidden { window.toolbar = nil }
-        window.titlebarAppearsTransparent = hidden
-        window.titleVisibility = hidden ? .hidden : .visible
+        if bare { window.toolbar = nil }
+        window.titlebarAppearsTransparent = bare
+        window.titleVisibility = bare ? .hidden : .visible
         for kind in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
-            window.standardWindowButton(kind)?.isHidden = hidden
+            window.standardWindowButton(kind)?.isHidden = mode == .hidden
         }
-        titlebarContainer(of: window)?.isHidden = hidden
+        titlebarContainer(of: window)?.isHidden = mode == .hidden
+    }
+
+    /// The same, as a switch: hidden or shown.
+    static func apply(hidden: Bool, to window: NSWindow) {
+        apply(hidden ? .hidden : .shown, to: window)
     }
 
     /// Whether the window already shows (or hides) its title bar as asked:
     /// then nothing is done.
-    static func matches(hidden: Bool, _ window: NSWindow) -> Bool {
-        window.styleMask.contains(.fullSizeContentView)
+    static func matches(_ mode: Mode, _ window: NSWindow) -> Bool {
+        let bare = mode != .shown, hidden = mode == .hidden
+        return window.styleMask.contains(.fullSizeContentView)
             && window.collectionBehavior.contains(.fullScreenPrimary)
-            && window.titlebarAppearsTransparent == hidden
-            && (window.titleVisibility == .hidden) == hidden
+            && window.titlebarAppearsTransparent == bare
+            && (window.titleVisibility == .hidden) == bare
             && (window.standardWindowButton(.closeButton)?.isHidden ?? hidden) == hidden
             && (titlebarContainer(of: window)?.isHidden ?? hidden) == hidden
-            && (!hidden || window.toolbar == nil)
+            && (!bare || window.toolbar == nil)
+    }
+
+    /// The same, as a switch: hidden or shown.
+    static func matches(hidden: Bool, _ window: NSWindow) -> Bool {
+        matches(hidden ? .hidden : .shown, window)
     }
 
     /// The view that holds the title bar (AppKit's private
