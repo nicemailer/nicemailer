@@ -1,22 +1,45 @@
-Il y a trois versions ou thèmes pour l'application Swift NiceMailer : classic, design et geek.
+Il y a trois thèmes pour l'application Swift NiceMailer : regular, clean et geek. Renommés en novembre 2026 : regular s'appelait classic, clean s'appelait design.
 
-Le thème classique s'approche des canons historiques du design d'une application macOS et est destiné à faciliter la transition depuis une application telle que Apple Mail. 
+Le thème regular s'approche des canons historiques d'une application macOS et est destiné à faciliter la transition depuis une application telle qu'Apple Mail.
 
-Le thème design cherche à offrir une interface sobre et élégante privilégiant la lisibilité.  Elle est conçue pour les utilisateurs privilégiant l'esthétique. 
+Le thème clean est plus proche d'un site web : une interface sobre et élégante qui privilégie la lisibilité. Il est conçu pour les utilisateurs attachés à l'esthétique.
 
 Le thème geek est une interface minimaliste conçue comme un IDE de programmation.
 
 
 Quelques exemples de différences :
 
-- la couleur de fond et les arrondis délimitant les zones de l’interface peuvent être marqués dans la version classique, sobres dans la version design et inexistante dans la version geek.
-- les ascenseurs sont standard dans la version classique, plus sobres dans la version design et inexistante dans la version geek
-- La version classique à une barre d’outils en haut de l’interface avec des icônes de boutons alors que dans la version geek, c'est une barre de statut plus compacte, qui peut être en bas, en haut ou masquée. Dans cette version geek, chaque élément présent dans la barre de statut peut être ouvert avec un raccourci clavier d'une seule touche et affiche alors un menu contextuel dans le même style que Helix-editor.
-- Dans la version classique, l'animation pour révéler la barre de gauche avec les différents dossiers est clairement visible. Elle est très rapide et subtile sur la version design et absolument inexistante sur la version geek où aucune milliseconde n'est perdue. 
+- la couleur de fond et les arrondis délimitant les zones de l'interface sont marqués dans regular, sobres dans clean et inexistants dans geek ;
+- les ascenseurs sont standard dans regular, fins dans clean et absents dans geek ;
+- regular a une barre d'outils en haut de la fenêtre, avec des boutons à icônes ; geek et clean ont une barre de statut plus compacte, qui peut être en bas, en haut ou masquée ;
+- l'animation qui révèle la colonne des dossiers est clairement visible dans regular, très rapide et subtile dans clean, absente dans geek où aucune milliseconde n'est perdue.
 
-Le choix du thème sera plus tard une option de configuration. 
+### Un thème est une présentation
 
-État (18 novembre 2026) : le thème geek est implémenté et l'application s'ouvre toujours sur lui, le menu thème ayant été retiré ; classic correspond à la première interface, qui n'est plus accessible ; design n'existe pas encore.
+Décidé en novembre 2026. Les trois thèmes ont exactement les mêmes fonctions : un thème change la présentation, comme un thème de VS Code ou une feuille de style d'un site web. Le but est que chaque fonction ne soit écrite et testée qu'une fois.
+
+- **Mêmes touches partout.** Le clavier du thème geek (touches d'une seule lettre, menus des préfixes `m` `;` `s` `v`, sélecteurs à la manière de Helix, `keymap.toml`) vaut dans les trois thèmes. Les touches citées dans ce document valent donc pour tous, sauf mention contraire. Regular et clean ajoutent seulement des façons de cliquer sur ce que le clavier ouvre déjà.
+- **Même squelette.** Les mêmes colonnes (1, 2 ou 3, `v`), les mêmes écrans, les mêmes menus, sélecteurs, questions et panneaux, avec leur contenu. Seul leur habillage change.
+- **Ce qu'un thème choisit** : les couleurs (en clair et en sombre), les polices, les arrondis, les espacements, les séparateurs, les ascenseurs, la durée des animations, et si les blocs de la commande de la fenêtre rappellent leur touche.
+- **Deux différences de structure, pas plus** :
+  - la commande de la fenêtre : la barre de statut dans geek et clean (dans clean, plus aérée et sans le rappel des touches, qui marchent quand même) ; dans regular, une barre d'outils macOS en haut, dont chaque bouton est un bloc de la barre de statut (compte, dossier, attributs, affichage, déplacer, enregistrer, IA, aide) et ouvre le même menu, déroulé sous le bouton ;
+  - la colonne des dossiers : apparition immédiate (geek), animation subtile (clean), animation visible (regular).
+- **Polices.** Geek : chasse fixe (voir « Thème geek : choix retenus »). Regular et clean : proportionnelles, SF Pro pour l'interface ; le corps des mails aussi en SF Pro (choisi sur maquette, novembre 2026 : la serif éditoriale essayée pour clean n'a pas été retenue). Les colonnes de la liste (date, expéditeur, nombre de messages) sont donc mesurées sur le texte réel, plus comptées en caractères.
+- **Couleurs.** Geek : la palette inspirée de Helix. Clean : une palette à lui, avec le vert de l'icône pour accent. Regular : les couleurs du système (fonds, texte, séparateurs) et la couleur d'accent choisie dans Réglages Système ; le point des non lus est bleu, comme dans Mail (jaune dans geek et clean). Toutes ont une variante claire et sombre, selon l'apparence de macOS, et chaque texte reste lisible sur son fond (contraste WCAG AA, 4,5:1, vérifié par les tests).
+- **Mails HTML et rédaction.** Le lecteur HTML et l'éditeur des réponses prennent les polices et les couleurs du thème ; Dark Reader reçoit le fond et le texte du thème sombre en cours.
+- **La barre de titre.** Chaque thème choisit de la montrer, de la masquer ou d'en mettre les boutons rouge, jaune, vert dans sa barre (`themes.md`, `window.title_bar`) : ce réglage remplace `ui.title_bar`.
+
+**Un thème est un fichier.** Chaque thème, livré ou créé par l'utilisateur, est décrit par un fichier `themes/<nom>.toml` du dossier de configuration ; l'utilisateur peut modifier un thème livré ou créer le sien. Format, catalogue des réglages, héritage et contrat : `themes.md`.
+
+**Choix du thème.** `ui.theme` dans `config.toml` : le nom d'un thème, `"geek"` par défaut. Un onglet **Apparence** des Préférences l'écrit. Le thème vaut pour toute l'app et toutes ses fenêtres (voir « Fenêtres ») ; il change aussitôt, sans relancer, comme la taille du texte.
+
+**Ouverture.** Dans les trois thèmes, avec plusieurs comptes, l'app s'ouvre sur la vue unifiée « all ».
+
+**Tests.** Les scénarios d'interface existants jouent le thème geek : ils vérifient un comportement commun aux trois. Chaque thème a en plus ses propres scénarios (disposition, commande de la fenêtre, menu déroulé depuis son bloc ou son bouton, liste, lecteur, en clair et en sombre, avec leurs captures), et un scénario passe d'un thème à l'autre sans relancer. Les tests unitaires vérifient les valeurs de chaque thème (dont le contraste de chaque couple texte et fond) et la mesure des colonnes de la liste dans chaque police.
+
+**Une réserve.** Avec les mêmes touches partout, quelqu'un qui vient de Mail et choisit regular a des touches d'une lettre actives : `d` ou `m` tapé hors d'un champ fait une action (que `z` défait). À revoir avec les premiers retours : un réglage pourrait les désactiver dans regular.
+
+État (22 novembre 2026) : seul le thème geek est implémenté, et l'application s'ouvre toujours sur lui. La première interface (l'ancien classic, `Views.swift`) n'est plus accessible et sera retirée ; regular et clean seront construits sur le squelette du thème geek, dans cet ordre : socle des thèmes, clean, puis regular.
 
 Les touches citées dans ce document sont celles par défaut ; l'utilisateur peut les redéfinir dans `keymap.toml` (`raccourcis.md`).
 
@@ -31,7 +54,7 @@ Ajouté en novembre 2026. Le menu de l'app « Réglages… » (⌘,) ouvre les P
 
 ### Thème geek : choix retenus
 
-- Police monospace pour l'interface (SF Mono) ; corps des mails en **iA Writer Mono V**, livrée avec l'app (licence SIL OFL).
+- Police à chasse fixe **iA Writer Mono V**, livrée avec l'app (licence SIL OFL), pour l'interface comme pour le corps des mails.
 - Palette inspirée de Helix, en variante claire et sombre selon l'apparence de macOS.
 - HTML de l'expéditeur : sa mise en page et son CSS sont gardés, assainis par le noyau (aucune adresse distante chargeable, rien qui dépende du survol ou de la taille de l'écran), chaque message dans un cadre isolé : son style ne touche ni les autres messages ni l'interface. Un mail qui prévoit son mode sombre s'affiche avec ses couleurs, sombres dans le thème sombre. Les autres, faits pour une page blanche, sont adaptés au thème sombre par Dark Reader (licence MIT) : fond du thème, texte clair, teintes des boutons et des titres gardées ; il tourne isolé de la page, sans aucun accès au réseau, et s'efface dans le thème clair. Les polices web ne sont pas chargées. Les images intégrées au mail (`cid:`) s'affichent en html comme en images : elles ne demandent rien au réseau.
 - Corps des mails en texte par défaut. Un sélecteur `text | html | images` en haut du mail, et `vh`, basculent en HTML assaini ; `images` (ou `vi`) charge aussi les images distantes (voir « Images distantes »). Le choix est mémorisé **par adresse d'expéditeur** (`address.body_format`, `address.remote_images`, `schema.sql`).
@@ -85,8 +108,8 @@ Sont communs à toute l'app :
 **Tests.** Tests unitaires : deux fenêtres sur un même faux noyau (`FakeCore`), sélections et dossiers indépendants, un événement remis aux deux, `z` propre à chacune. Scénario d'interface : une deuxième fenêtre ouverte, chacune sur un dossier, une action dans la première visible dans la seconde, les touches de l'une sans effet sur l'autre, un brouillon refusé dans la seconde fenêtre.
 
 Questions ouvertes :
-- ⌘N pour une nouvelle fenêtre, ou pour un nouveau mail comme Mail (la touche `c` existe déjà dans le thème geek, pas dans le thème classique) ?
-- Le thème classique doit-il avoir le multi-fenêtre dès la première version, ou le thème geek d'abord ?
+- ⌘N pour une nouvelle fenêtre, ou pour un nouveau mail comme Mail (la touche `c`, commune aux trois thèmes, fait déjà le nouveau mail) ?
+- Le multi-fenêtre vient-il avant ou après les thèmes regular et clean ? Le contexte étant dans le modèle, il vaut pour les trois sans travail propre à chacun.
 - Faut-il, à terme, un panneau divisé dans une même fenêtre (deux listes côte à côte) ? Il reposerait sur le même contexte par liste.
 
 ### Liste
@@ -281,7 +304,7 @@ hjkl : naviguer dans les mails
 j et k : mail suivant et précédent
 ctrl-d et ctrl-u : une demi-page plus bas ou plus haut dans la liste des mails, comme dans Zed ; le curseur avance de la moitié des lignes visibles et s'arrête au premier ou au dernier mail
 h et l : change de "colonne"
-	Si on est focus sur la liste des mails, h déclenche l'écran pour passer à un autre dossier. Dans l'interface classique, c'est la barre à gauche. Dans l'interface geek, ce rôle est tenu par `;` : `h` n'y fait rien. 
+	Si on est focus sur la liste des mails, h déclenche l'écran pour passer à un autre dossier. Ce rôle est tenu par `;` dans les trois thèmes (regular et clean ont aussi la colonne des dossiers, `v3`) : `h` n'y fait rien. 
 	Et depuis la liste des mails, l déclenche l'écran de "link".
 
 Avec une majuscule (JK), ou maj + flèche bas / haut, on passe au mail suivant et précédent en conservant le mail actuel sélectionné. On peut en effet faire des sélections multiples pour déplacer ou taguer plusieurs mails en même temps.  
