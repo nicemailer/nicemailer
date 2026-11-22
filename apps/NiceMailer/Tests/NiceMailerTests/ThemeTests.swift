@@ -213,3 +213,35 @@ struct ThemeChooserTests {
         #expect(chooser.error == L("config.toml was not changed: %@", "refused"))
     }
 }
+
+/// The order of the blocks of the status bar and the toolbar
+/// (`window.blocks`, `themes.md`, section 6.1).
+struct StatusLayoutTests {
+    let geek = ["mode", "account", "folder", "attributes", "|", "view", "|", "move", "save", "ai", "->", "help"]
+
+    @Test func everythingShownIsTheThemesOrder() {
+        #expect(StatusLayout.items(geek) { _ in true } == geek)
+    }
+
+    @Test func aGapStaysOnlyBetweenTwoBlocksShown() {
+        // In Quarantine, m and s go: the gap after `v` now leads to the AI.
+        #expect(StatusLayout.items(geek) { !["move", "save"].contains($0) }
+                == ["mode", "account", "folder", "attributes", "|", "view", "|", "ai", "->", "help"])
+        // A screen (contacts): no attributes nor menus of the mail, no gap.
+        #expect(StatusLayout.items(geek) { ["mode", "folder", "help"].contains($0) }
+                == ["mode", "folder", "->", "help"])
+        // Gaps at the start, doubled, or before the spring: dropped.
+        #expect(StatusLayout.items(["|", "view", "|", "|", "move", "|", "->", "|", "help"]) { _ in true }
+                == ["view", "|", "move", "->", "help"])
+    }
+
+    @Test func theMessagesAlwaysHaveTheirPlace() {
+        // Without a spring, one at the end: what the app says always shows.
+        #expect(StatusLayout.items(["help", "move"]) { _ in true } == ["help", "move", "->"])
+        #expect(StatusLayout.items([]) { _ in true } == ["->"])
+        // Two springs: the first.
+        #expect(StatusLayout.items(["view", "->", "move", "->", "help"]) { _ in true } == ["view", "->", "move", "help"])
+        // A theme's own order.
+        #expect(StatusLayout.items(["help", "->", "ai", "folder"]) { _ in true } == ["help", "->", "ai", "folder"])
+    }
+}

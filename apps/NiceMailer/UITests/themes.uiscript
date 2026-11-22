@@ -6,6 +6,12 @@
 expect theme = sepia
 expect theme_chain = sepia,clean
 expect theme_problem =
+# The blocks in the order of the theme; those left out are hidden, their
+# keys still work.
+expect status_order = help,account,folder,m,s
+key v
+expect overlay ~ menu
+key esc
 # merged (clean's title bar): drawn as shown for now.
 expect title_bar_hidden = false
 appearance light

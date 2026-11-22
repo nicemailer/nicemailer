@@ -768,6 +768,13 @@ private final class Runner {
             "theme": m.theme.current.name,
             "theme_chain": m.theme.current.chain.joined(separator: ","),
             "theme_problem": m.themeProblem?.text ?? "",
+            // The blocks of the status bar or the toolbar, from left to
+            // right (`window.blocks`), by their names: `account,folder,m`.
+            "status_order": UIScript.frames
+                .filter { $0.key.hasPrefix("status-") && !$0.key.hasPrefix("status-target") && $0.key != "status-sync" }
+                .sorted { $0.value.minX < $1.value.minX }
+                .map { String($0.key.dropFirst("status-".count)) }
+                .joined(separator: ","),
             "title_bar_hidden": m.titleBarHidden ? "true" : "false",
             "title_bar": m.titleBarMode.rawValue,
             // What the status bar says of the synchronization in progress,

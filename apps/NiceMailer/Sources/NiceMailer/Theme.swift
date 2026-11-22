@@ -221,6 +221,8 @@ enum Palette {
     static let accentText = dynamic(\.accentText)
     /// Row under the cursor (`colors.selection`).
     static let cursor = dynamic(\.selection)
+    /// Text on that row (`colors.selection_text`).
+    static let selectionText = dynamic(\.selectionText)
     /// Rows marked for a grouped action.
     static let marked = dynamic(\.marked)
     static let markedBar = dynamic(\.markedBar)

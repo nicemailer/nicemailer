@@ -323,8 +323,64 @@ struct GeekStatusBar: View {
         }
     }
 
+    /// Whether the list shows mail (a folder, or a tag, group or contact
+    /// list), where the attributes and the menus of the mail apply.
+    private var listsMail: Bool {
+        controller.screen == .mail && (model.listFilter != nil || !model.listedFolderIds.isEmpty)
+    }
+
+    /// Whether the block `name` has something to show now: no account
+    /// block with a single account, no attributes off a list of mail, no
+    /// `m` and `s` in Quarantine (its targets are at the right end).
+    private func draws(_ name: String) -> Bool {
+        switch name {
+        case "mode", "folder", "help": true
+        case "account": listsMail && model.listFilter == nil && controller.hasSeveralAccounts
+        case "attributes": listsMail
+        case "view", "ai": controller.screen == .mail
+        case "move", "save": controller.screen == .mail && controller.directTargets.isEmpty
+        default: false
+        }
+    }
+
     private var statusBar: some View {
-        HStack(spacing: 10) {
+        // The blocks in the order of the theme (`window.blocks`), the gaps
+        // only between two blocks shown (`StatusLayout`).
+        let items = StatusLayout.items(Look.theme.window.blocks, draws: draws)
+        return HStack(spacing: 10) {
+            ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+                statusItem(item)
+            }
+        }
+        .font(.geekBar(11))
+        .padding(.horizontal, 6)
+        // The window's buttons over its left end (`window.title_bar =
+        // "merged"`): room for them, and the height of a title bar, so
+        // that they sit in its middle.
+        .padding(.leading, model.titleBarMode == .merged ? Look.mergedButtonsWidth : 0)
+        // Its height (`window.status_bar_height`: 20 pt in geek).
+        .frame(height: model.titleBarMode == .merged ? max(Look.statusBarHeight, 28) : Look.statusBarHeight)
+        // Its empty parts move the window, as a title bar does: the title
+        // bar is hidden by default (`WindowChrome`).
+        .background(ZStack { Palette.statusBar; WindowDragArea() })
+    }
+
+    /// One element of the status bar.
+    @ViewBuilder
+    private func statusItem(_ item: String) -> some View {
+        switch item {
+        case StatusLayout.gap:
+            // A wide gap between two groups: with the spacing of the bar on
+            // each side, 28 points apart at a 12 pt text.
+            Color.clear.frame(width: max(0, barScaled(28) - 10), height: 1)
+        case StatusLayout.spring:
+            // The chips of the screens, the room left, then what the app
+            // says, on the right.
+            screenChips
+            Spacer(minLength: 8)
+            messageLine
+            rightEnd
+        case "mode":
             if controller.showsAppIcon, let icon = AppIcon.statusImage {
                 // The normal mode: the app's icon, as tall as the text.
                 Image(nsImage: icon)
@@ -338,17 +394,14 @@ struct GeekStatusBar: View {
                     .foregroundStyle(Palette.background)
                     .background(Palette.accentText)
             }
-            let listsMail = controller.screen == .mail && (model.listFilter != nil || !model.listedFolderIds.isEmpty)
+        case "account":
+            // The account ("all" for the unified view), with its icon and
+            // the key that opens its picker; a click opens it too.
+            StatusBlock(icon: "at", text: model.scopeName, key: controller.keyLabel(.pickerAccounts))
+                .onTapGesture { controller.openPickerFromStatusBar(.accounts) }
+                .uiTarget("status-account", chrome: "status_bar")
+        case "folder":
             if listsMail, model.listFilter == nil {
-                // Account ("all" for the unified view) and folder, each with
-                // its icon and the key that opens its picker; a click opens
-                // it too. No account block with a single account: there is
-                // no other to go to.
-                if controller.hasSeveralAccounts {
-                    StatusBlock(icon: "at", text: model.scopeName, key: controller.keyLabel(.pickerAccounts))
-                        .onTapGesture { controller.openPickerFromStatusBar(.accounts) }
-                        .uiTarget("status-account", chrome: "status_bar")
-                }
                 StatusBlock(icon: GeekController.Prefix.goto.icon, text: model.currentFolderName,
                             key: controller.menuKeyLabel(.goto))
                     .menuAnchor(.goto, controller)
@@ -359,130 +412,156 @@ struct GeekStatusBar: View {
                 Text(controller.locationLabel)
                     .lineLimit(1)
             }
-            if listsMail {
-                // Attributes narrowing the list, also in a tag, group or
-                // contact list ("unread mails of the group"): the magnifier
-                // opens the selector (`F`); each active attribute is a chip,
-                // removed by a click.
-                StatusBlock(icon: "magnifyingglass", text: "", key: controller.keyLabel(.pickerAttributes), label: L("Attributes"))
-                    .onTapGesture { controller.openPickerFromStatusBar(.attributes) }
-                    .uiTarget("status-attributes", chrome: "status_bar")
-                ForEach(model.attributes.chips) { chip in
-                    Text(chip.label + " ×")
-                        .lineLimit(1)
-                        .foregroundStyle(Palette.accentText)
-                        .padding(.horizontal, barScaled(4))
-                        .overlay(Rectangle().stroke(Palette.accent.opacity(0.5), lineWidth: 1))
-                        .contentShape(Rectangle())
-                        .onTapGesture { model.attributes.remove(chip.id) }
-                        .uiTarget("chip-\(chip.id)")
-                }
-            }
-            if controller.screen == .mail {
-                // The other prefix menus, an icon and the key; the menu drops
-                // down from the block. Three groups, set apart by a wide gap:
-                // what the list shows (@ ; F, above), the display preference
-                // (v), and actions on the current mail (m s).
-                // In Quarantine, the `m` and `s` blocks go: a mail there can
-                // only be moved (or flagged), and its targets are shown at
-                // the right end of the bar instead (`quarantineTargets`).
-                let prefixes: [GeekController.Prefix] = controller.directTargets.isEmpty ? [.view, .move, .save] : [.view]
-                ForEach(prefixes, id: \.self) { p in
-                    StatusBlock(icon: p.icon, text: "", key: controller.menuKeyLabel(p), label: p.title)
-                        .menuAnchor(p, controller)
-                        .onTapGesture { controller.openMenuFromStatusBar(p) }
-                        .uiTarget("status-\(p.uiID)", chrome: "status_bar")
-                        .padding(.leading, p == .save ? 0 : barScaled(28))
-                }
-                // The AI, with the actions on the current mail: its palette
-                // works on the mail (or the reply) as `m` and `s` do. In
-                // Quarantine, where `m` and `s` go, it stays (sorting the
-                // folder is its first prompt) and stands alone after `v`.
-                StatusBlock(icon: "sparkles", text: "",
-                            key: controller.aiKeyLabel(composing: model.composer != nil), label: L("AI"))
-                    .onTapGesture { controller.openAIFromStatusBar() }
-                    .help(L("AI assistance"))
-                    .accessibilityLabel(L("AI assistance"))
-                    .uiTarget("status-ai", chrome: "status_bar")
-                    .padding(.leading, controller.directTargets.isEmpty ? 0 : barScaled(28))
-            }
-            if let query = controller.contactsFilterChip {
-                // The contacts filter, kept after Return: a chip like the
-                // attributes of the mail list, removed by a click.
-                Text("/" + query + " ×")
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .foregroundStyle(Palette.accentText)
-                    .padding(.horizontal, barScaled(4))
-                    .overlay(Rectangle().stroke(Palette.accent.opacity(0.5), lineWidth: 1))
-                    .contentShape(Rectangle())
-                    .onTapGesture { controller.clearContactsFilter() }
-                    .help(L("Contacts filtered on “%@”: click to show them all", query))
-                    .accessibilityLabel(L("Contacts filtered on “%@”: click to show them all", query))
-                    .uiTarget("chip-contacts")
-            }
-            if let who = controller.historySourceChip {
-                // Whose actions the History screen shows: a chip like the
-                // contacts filter, removed by a click.
-                Text(verbatim: who + " ×")
+        case "attributes":
+            // Attributes narrowing the list, also in a tag, group or
+            // contact list ("unread mails of the group"): the magnifier
+            // opens the selector (`F`); each active attribute is a chip,
+            // removed by a click.
+            StatusBlock(icon: "magnifyingglass", text: "", key: controller.keyLabel(.pickerAttributes), label: L("Attributes"))
+                .onTapGesture { controller.openPickerFromStatusBar(.attributes) }
+                .uiTarget("status-attributes", chrome: "status_bar")
+            ForEach(model.attributes.chips) { chip in
+                Text(chip.label + " ×")
                     .lineLimit(1)
                     .foregroundStyle(Palette.accentText)
                     .padding(.horizontal, barScaled(4))
                     .overlay(Rectangle().stroke(Palette.accent.opacity(0.5), lineWidth: 1))
                     .contentShape(Rectangle())
-                    .onTapGesture { controller.filterHistory(.everyone) }
-                    .help(L("History filtered on %@: click to show every action", who))
-                    .accessibilityLabel(L("History filtered on %@: click to show every action", who))
-                    .uiTarget("chip-history")
+                    .onTapGesture { model.attributes.remove(chip.id) }
+                    .uiTarget("chip-\(chip.id)")
             }
-            if case .contactFilter = controller.overlay {
-                HStack(spacing: 0) {
-                    Text("/")
-                    CaretText(line: controller.contactsLine)
-                }
-                .foregroundStyle(Palette.accentText)
-            }
-            Spacer(minLength: 8)
-            messageLine
-            if let sync = model.syncLine {
-                // A large account being imported (`AppModel+Sync.swift`):
-                // where it is, so that the app does not look frozen. Apart
-                // from the messages, which come and go with the keys: it
-                // stays while the import lasts, and is never cut.
-                HStack(spacing: barScaled(4)) {
-                    Image(systemName: "arrow.down.circle")
-                        .accessibilityHidden(true)
-                    Text(sync)
-                }
-                .foregroundStyle(Palette.muted)
-                .lineLimit(1)
-                .fixedSize(horizontal: true, vertical: false)
-                .uiTarget("status-sync", chrome: "status_bar")
-            }
-            if !model.marked.isEmpty {
-                Text(L("%lld marked", model.marked.count)).foregroundStyle(Palette.markedBar)
-            }
-            if model.sort == "modified" { Text(L("by modification")).foregroundStyle(Palette.muted) }
-            quarantineTargets
-            // The list of keys, last at the right end and on every screen:
-            // a reminder that `?` exists, for whoever has not learned it
-            // yet; a click opens it too.
+        case "view", "move", "save":
+            // A menu of a prefix, an icon and the key; the menu drops down
+            // from the block.
+            let p = GeekController.Prefix(name: item)
+            StatusBlock(icon: p.icon, text: "", key: controller.menuKeyLabel(p), label: p.title)
+                .menuAnchor(p, controller)
+                .onTapGesture { controller.openMenuFromStatusBar(p) }
+                .uiTarget("status-\(p.uiID)", chrome: "status_bar")
+        case "ai":
+            // The AI, with the actions on the current mail: its palette
+            // works on the mail (or the reply) as `m` and `s` do.
+            StatusBlock(icon: "sparkles", text: "",
+                        key: controller.aiKeyLabel(composing: model.composer != nil), label: L("AI"))
+                .onTapGesture { controller.openAIFromStatusBar() }
+                .help(L("AI assistance"))
+                .accessibilityLabel(L("AI assistance"))
+                .uiTarget("status-ai", chrome: "status_bar")
+        case "help":
+            // At the right end on every screen, a reminder that `?` exists,
+            // for whoever has not learned it yet; a click opens it too.
             StatusBlock(icon: "questionmark.circle", text: "", key: controller.keyLabel(.helpShow))
                 .onTapGesture { controller.toggleHelpFromStatusBar() }
                 .help(L("Keys"))
                 .uiTarget("status-help", chrome: "status_bar")
+        default:
+            EmptyView()
         }
-        .font(.geekBar(11))
-        .padding(.horizontal, 6)
-        // The window's buttons over its left end (`window.title_bar =
-        // "merged"`): room for them, and the height of a title bar, so
-        // that they sit in its middle.
-        .padding(.leading, model.titleBarMode == .merged ? Look.mergedButtonsWidth : 0)
-        // Its height (`window.status_bar_height`: 20 pt in geek).
-        .frame(height: model.titleBarMode == .merged ? max(Look.statusBarHeight, 28) : Look.statusBarHeight)
-        // Its empty parts move the window, as a title bar does: the title
-        // bar is hidden by default (`WindowChrome`).
-        .background(ZStack { Palette.statusBar; WindowDragArea() })
+    }
+
+    /// The filters of the contacts and history screens, and the contacts
+    /// filter being typed: before the room left, after the blocks.
+    @ViewBuilder
+    private var screenChips: some View {
+        if let query = controller.contactsFilterChip {
+            // The contacts filter, kept while browsing: a chip, removed by
+            // a click (`ui.md`, "Écran contacts").
+            Text("/" + query + " ×")
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .foregroundStyle(Palette.accentText)
+                .padding(.horizontal, barScaled(4))
+                .overlay(Rectangle().stroke(Palette.accent.opacity(0.5), lineWidth: 1))
+                .contentShape(Rectangle())
+                .onTapGesture { controller.clearContactsFilter() }
+                .help(L("Contacts filtered on “%@”: click to show them all", query))
+                .accessibilityLabel(L("Contacts filtered on “%@”: click to show them all", query))
+                .uiTarget("chip-contacts")
+        }
+        if let who = controller.historySourceChip {
+            // The History screen filtered on who did it: a chip, removed
+            // by a click (`ui.md`, "Écran historique").
+            Text(verbatim: who + " ×")
+                .lineLimit(1)
+                .foregroundStyle(Palette.accentText)
+                .padding(.horizontal, barScaled(4))
+                .overlay(Rectangle().stroke(Palette.accent.opacity(0.5), lineWidth: 1))
+                .contentShape(Rectangle())
+                .onTapGesture { controller.filterHistory(.everyone) }
+                .help(L("History filtered on %@: click to show every action", who))
+                .accessibilityLabel(L("History filtered on %@: click to show every action", who))
+                .uiTarget("chip-history")
+        }
+        if case .contactFilter = controller.overlay {
+            HStack(spacing: 0) {
+                Text("/")
+                CaretText(line: controller.contactsLine)
+            }
+            .foregroundStyle(Palette.accentText)
+        }
+    }
+
+    /// The right end, after the message: the synchronization in progress,
+    /// the marks, the sort, the move targets of Quarantine. They are not
+    /// blocks: a theme cannot hide them (`themes.md`, section 6.1).
+    @ViewBuilder
+    private var rightEnd: some View {
+        if let sync = model.syncLine {
+            // The first synchronization of an account, never cut: the app
+            // must not look frozen (`ui.md`, "Avancement").
+            HStack(spacing: barScaled(4)) {
+                Image(systemName: "arrow.down.circle")
+                    .accessibilityHidden(true)
+                Text(sync)
+            }
+            .foregroundStyle(Palette.muted)
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
+            .uiTarget("status-sync")
+        }
+        if !model.marked.isEmpty {
+            Text(L("%lld marked", model.marked.count)).foregroundStyle(Palette.markedBar)
+        }
+        if model.sort == "modified" { Text(L("by modification")).foregroundStyle(Palette.muted) }
+        quarantineTargets
+    }
+}
+
+/// The order of the blocks of the status bar (`window.blocks`,
+/// `themes.md`, section 6.1), as a pure function, tested alone.
+enum StatusLayout {
+    /// A wide gap between two groups of blocks.
+    static let gap = "|"
+    /// The room left: what follows goes to the right end, after the
+    /// messages of the app.
+    static let spring = "->"
+
+    /// The elements to draw: the blocks of `blocks` that `draws` says have
+    /// something to show, in that order; a gap only between two blocks
+    /// drawn, never next to the spring; the spring once, at the end when
+    /// the theme leaves it out (the messages of the app always show).
+    static func items(_ blocks: [String], draws: (String) -> Bool) -> [String] {
+        var out: [String] = []
+        var pendingGap = false
+        var hasSpring = false
+        for b in blocks {
+            switch b {
+            case gap:
+                pendingGap = true
+            case spring:
+                guard !hasSpring else { continue }
+                hasSpring = true
+                pendingGap = false
+                out.append(b)
+            default:
+                guard draws(b) else { continue }
+                if pendingGap, let last = out.last, last != spring { out.append(gap) }
+                pendingGap = false
+                out.append(b)
+            }
+        }
+        if !hasSpring { out.append(spring) }
+        return out
     }
 }
 
@@ -561,52 +640,12 @@ private struct GeekToolbar<Messages: View>: View {
             }
             .padding(.trailing, barScaled(12))
             Spacer(minLength: 8)
-            if listsMail {
-                if model.listFilter == nil, controller.hasSeveralAccounts, Look.shows("account") {
-                    ToolbarItem(action: { controller.openPickerFromStatusBar(.accounts) }) {
-                        StatusBlock(icon: "at", text: model.scopeName, key: controller.keyLabel(.pickerAccounts))
-                    }
-                        .uiTarget("status-account", chrome: "toolbar")
-                }
-                if Look.shows("attributes") {
-                    ToolbarItem(action: { controller.openPickerFromStatusBar(.attributes) }) {
-                        StatusBlock(icon: "line.3.horizontal.decrease", text: "", key: controller.keyLabel(.pickerAttributes),
-                                    label: L("Attributes"))
-                    }
-                        .uiTarget("status-attributes", chrome: "toolbar")
-                }
-                ForEach(model.attributes.chips) { chip in
-                    Text(chip.label + " ×")
-                        .lineLimit(1)
-                        .foregroundStyle(Palette.accentText)
-                        .toolbarCapsule()
-                        .onTapGesture { model.attributes.remove(chip.id) }
-                        .uiTarget("chip-\(chip.id)")
-                }
-            }
-            if controller.screen == .mail {
-                let prefixes: [GeekController.Prefix] = controller.directTargets.isEmpty ? [.view, .move, .save] : [.view]
-                ForEach(prefixes.filter { Look.shows($0.name) }, id: \.self) { p in
-                    ToolbarItem(action: { controller.openMenuFromStatusBar(p) }) {
-                        StatusBlock(icon: p.icon, text: "", key: controller.menuKeyLabel(p), label: p.title)
-                            .menuAnchor(p, controller, chrome: "toolbar")
-                    }
-                        .uiTarget("status-\(p.uiID)", chrome: "toolbar")
-                }
-                if Look.shows("ai") {
-                    ToolbarItem(action: { controller.openAIFromStatusBar() }) {
-                        StatusBlock(icon: "sparkles", text: "", key: controller.aiKeyLabel(composing: model.composer != nil), label: L("AI"))
-                    }
-                        .help(L("AI assistance"))
-                        .uiTarget("status-ai", chrome: "toolbar")
-                }
-            }
-            if Look.shows("help") {
-                ToolbarItem(action: { controller.toggleHelpFromStatusBar() }) {
-                    StatusBlock(icon: "questionmark.circle", text: "", key: controller.keyLabel(.helpShow))
-                }
-                    .help(L("Keys"))
-                    .uiTarget("status-help", chrome: "toolbar")
+            // The buttons, in the order of the theme (`window.blocks`); the
+            // folder is the title, the mode is not shown, the room left is
+            // before the buttons already.
+            let items = StatusLayout.items(Look.theme.window.blocks.filter { $0 != "folder" && $0 != "mode" }) { draws($0, listsMail) }
+            ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+                button(item, listsMail: listsMail)
             }
         }
         .font(.geekBar(12))
@@ -621,6 +660,70 @@ private struct GeekToolbar<Messages: View>: View {
 
 /// A button of the toolbar: a real button (keyboard focus, accessibility,
 /// and a click AppKit delivers like any other), drawn as its block.
+extension GeekToolbar {
+    /// Whether the block `name` has something to show now (as in the
+    /// status bar, `GeekStatusBar.draws`).
+    func draws(_ name: String, _ listsMail: Bool) -> Bool {
+        switch name {
+        case "help": true
+        case "account": listsMail && model.listFilter == nil && controller.hasSeveralAccounts
+        case "attributes": listsMail
+        case "view", "ai": controller.screen == .mail
+        case "move", "save": controller.screen == .mail && controller.directTargets.isEmpty
+        default: false
+        }
+    }
+
+    /// One element of the toolbar: a button, or a gap between two groups.
+    @ViewBuilder
+    func button(_ item: String, listsMail: Bool) -> some View {
+        switch item {
+        case StatusLayout.gap:
+            Color.clear.frame(width: barScaled(6), height: 1)
+        case "account":
+            ToolbarItem(action: { controller.openPickerFromStatusBar(.accounts) }) {
+                StatusBlock(icon: "at", text: model.scopeName, key: controller.keyLabel(.pickerAccounts))
+            }
+            .uiTarget("status-account", chrome: "toolbar")
+        case "attributes":
+            ToolbarItem(action: { controller.openPickerFromStatusBar(.attributes) }) {
+                StatusBlock(icon: "line.3.horizontal.decrease", text: "", key: controller.keyLabel(.pickerAttributes),
+                            label: L("Attributes"))
+            }
+            .uiTarget("status-attributes", chrome: "toolbar")
+            ForEach(model.attributes.chips) { chip in
+                Text(chip.label + " ×")
+                    .lineLimit(1)
+                    .foregroundStyle(Palette.accentText)
+                    .toolbarCapsule()
+                    .onTapGesture { model.attributes.remove(chip.id) }
+                    .uiTarget("chip-\(chip.id)")
+            }
+        case "view", "move", "save":
+            let p = GeekController.Prefix(name: item)
+            ToolbarItem(action: { controller.openMenuFromStatusBar(p) }) {
+                StatusBlock(icon: p.icon, text: "", key: controller.menuKeyLabel(p), label: p.title)
+                    .menuAnchor(p, controller, chrome: "toolbar")
+            }
+            .uiTarget("status-\(p.uiID)", chrome: "toolbar")
+        case "ai":
+            ToolbarItem(action: { controller.openAIFromStatusBar() }) {
+                StatusBlock(icon: "sparkles", text: "", key: controller.aiKeyLabel(composing: model.composer != nil), label: L("AI"))
+            }
+            .help(L("AI assistance"))
+            .uiTarget("status-ai", chrome: "toolbar")
+        case "help":
+            ToolbarItem(action: { controller.toggleHelpFromStatusBar() }) {
+                StatusBlock(icon: "questionmark.circle", text: "", key: controller.keyLabel(.helpShow))
+            }
+            .help(L("Keys"))
+            .uiTarget("status-help", chrome: "toolbar")
+        default:
+            EmptyView()
+        }
+    }
+}
+
 private struct ToolbarItem<Label: View>: View {
     let action: () -> Void
     @ViewBuilder let label: () -> Label
@@ -790,9 +893,10 @@ private struct GeekFolderColumn: View {
                             Text(f.name)
                         }
                         Spacer()
-                        if f.unread > 0 { Text("\(f.unread)").foregroundStyle(Palette.unread) }
+                        let onSelection = controller.isCurrent(f) && Look.strongSelection
+                        if f.unread > 0 { Text("\(f.unread)").foregroundStyle(onSelection ? Palette.selectionText : Palette.unread) }
                         if Look.menuKeysRight {
-                            Text(controller.gotoKeyLabel(f)).foregroundStyle(Palette.muted)
+                            Text(controller.gotoKeyLabel(f)).foregroundStyle(onSelection ? Palette.selectionText : Palette.muted)
                         }
                     }
                     .padding(.horizontal, 8)

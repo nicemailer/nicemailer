@@ -47,6 +47,12 @@ enum Look {
     /// (`window.title_bar = "merged"`), at its left end: the room they take.
     static var mergedButtonsWidth: CGFloat { 72 }
 
+    /// Whether the selected row has a text color of its own
+    /// (`colors.selection_text` other than `colors.text`): white on the
+    /// accent in regular. Then what is colored on the row (a count, a key)
+    /// takes it too, or it would vanish on the accent.
+    static var strongSelection: Bool { theme.colors.selectionText != theme.colors.text }
+
     /// The key of a menu row on the right, as in a macOS menu
     /// (`layout.menu_keys`), rather than first, as in Helix.
     static var menuKeysRight: Bool { theme.layout.menuKeys == "right" }

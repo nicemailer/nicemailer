@@ -2,7 +2,7 @@
 
 The look of the app comes from a theme: its colors, fonts, proportions and animations, and a few variants of the window (a status bar or a toolbar, the blocks it shows…). Three themes are built in, **geek**, **clean** and **regular**; each one is a file you can modify, and you can write your own. A theme only changes the presentation: the keys, the menus and every feature are the same in all of them. The specification is `specifications/themes.md`.
 
-State (November 2026): the core reads, checks and serves the themes, and the app applies them, except the order of `blocks`: a block left out is hidden, the others keep their place.
+State (November 2026): the core reads, checks and serves the themes, and the app applies every key of them.
 
 With `chrome = "toolbar"` (regular), the status bar becomes a macOS toolbar, always at the top: the folder is its title (a click opens the menu `;`), with the message of the moment or the synchronization under it, as in Mail; the other blocks are buttons, which open the same menus and pickers under them. The keys are those of every theme.
 
@@ -64,7 +64,7 @@ A theme holds data only: no code, no image, no font, no address to load. A theme
 | `[motion]` | `sidebar_ms`, `popup_ms` (0 when System Settings reduce motion) |
 | `[colors]` | `background`, `sidebar`, `list`, `bar`, `text`, `muted`, `accent`, `accent_text`, `selection`, `selection_text`, `marked`, `marked_bar`, `separator`, `popup`, `unread`, `flag`, `error`, `virtual_folder` |
 
-`blocks` lists the blocks of the status bar or the toolbar, in order: `mode`, `account`, `folder`, `attributes`, `view`, `move`, `save`, `ai`, `help`, with `"|"` for a wide gap and `"->"` to send what follows to the right. A block left out is hidden; its key still works. The messages of the app, the progress of the synchronization and its questions are always shown.
+`blocks` lists the blocks of the status bar or the toolbar, in the order they are drawn: `mode`, `account`, `folder`, `attributes`, `view`, `move`, `save`, `ai`, `help`, with `"|"` for a wide gap and `"->"` to send what follows to the right. A block left out is hidden; its key still works. A gap is drawn only between two blocks shown (`m` and `s` are not in Quarantine, the menus of the mail are not on the contacts screen…), and without `"->"` the messages go to the right end. In the toolbar, the folder is always its title, on the left, and the mode is not shown. The messages of the app, the progress of the synchronization and its questions are always shown.
 
 ## Errors and warnings
 
