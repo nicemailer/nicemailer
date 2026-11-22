@@ -162,6 +162,40 @@ expect activation_done ~ pierre@look.test is organized
 expect setup_calls ~ activate_account account=look
 expect activation_plan = false
 
+# A provider that asks for an app password: said under the password as
+# soon as the address is typed, with the guide of the website, and again
+# when its server refuses the password of the website.
+click prefs:plus
+expect prefs_selection = add
+click prefs:email
+type pierre@gmail.com
+expect setup_app_password = gmail
+# (Its anchor, after a hash, is checked by AppPasswordTests.)
+expect setup_app_password_guide ~ https://nicemailer.org/docs/app-passwords/
+click prefs:password
+type wrong
+click prefs:add
+expect setup_error ~ refused the password
+expect setup_error ~ Gmail asks for an app password
+expect prefs_focus = prefs-password
+snap preferences-app-password
+
+# A new password for an account already set (after a new app password,
+# say): saved by the core, the field emptied. `set_password` is answered
+# by the scripted core: nothing reaches the Keychain.
+click prefs:account-look
+expect prefs_selection = look
+expect password_account = look
+expect password_app =
+click prefs:new-password
+type new-secret
+expect password_set = true
+key ret
+expect password_saved ~ Password saved
+expect password_set = false
+expect setup_calls ~ set_password account=look password=set
+snap preferences-new-password
+
 # Closed: the keys go back to the main window.
 preferences close
 key j

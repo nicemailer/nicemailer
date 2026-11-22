@@ -12,6 +12,11 @@ How to write it:
 
 ## Unreleased
 
+### Added
+
+- **Accounts:** For a Gmail, iCloud or Fastmail address, the Preferences say under the password that it must be an app password, with a link to the step-by-step guide; if the server refuses the password, the error says so first.
+- **Accounts:** Give an account a new password from its page in the Preferences (Settings…, Accounts), after changing the password of the mailbox or creating a new app password. Until now it took the `nicemailer account password` command.
+
 ### Fixed
 
 - **Accounts:** A password saved by one NiceMailer build is now readable by the others. Until now, after installing a release over a development build, or the reverse, the accounts stopped syncing with "the Keychain refused the password of this account". Passwords saved before this version must be saved once more.

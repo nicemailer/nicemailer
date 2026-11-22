@@ -96599,6 +96599,902 @@
           }
         }
       }
+    },
+    "%@ asks for an app password, not the password of its website.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ demande un mot de passe d’application, pas le mot de passe de son site."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ verlangt ein App-Passwort, nicht das Passwort seiner Website."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ pide una contraseña de aplicación, no la contraseña de su sitio web."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ richiede una password per le app, non la password del suo sito."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ pede uma senha de app, não a senha do site."
+          }
+        },
+        "pt-PT": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ pede uma palavra-passe de app, não a palavra-passe do site."
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ vraagt om een app-wachtwoord, niet het wachtwoord van de website."
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ kräver ett applösenord, inte lösenordet till webbplatsen."
+          }
+        },
+        "da": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ kræver en app-adgangskode, ikke adgangskoden til hjemmesiden."
+          }
+        },
+        "nb": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ krever et app-passord, ikke passordet til nettstedet."
+          }
+        },
+        "fi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ vaatii sovellussalasanan, ei verkkosivuston salasanaa."
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ wymaga hasła do aplikacji, a nie hasła do swojej strony."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ требует пароль приложения, а не пароль от своего сайта."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ вимагає пароль застосунку, а не пароль від свого сайту."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ では、Web サイトのパスワードではなく、アプリパスワードが必要です。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 需要应用专用密码，而不是其网站的密码。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 需要 App 專用密碼，而不是其網站的密碼。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@에서는 웹사이트 비밀번호가 아니라 앱 비밀번호가 필요합니다."
+          }
+        }
+      }
+    },
+    "%@ asks for an app password: see the link under the password.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ demande un mot de passe d’application : voir le lien sous le mot de passe."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ verlangt ein App-Passwort: siehe den Link unter dem Passwort."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ pide una contraseña de aplicación: consulta el enlace bajo la contraseña."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ richiede una password per le app: vedi il link sotto la password."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ pede uma senha de app: veja o link abaixo da senha."
+          }
+        },
+        "pt-PT": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ pede uma palavra-passe de app: veja a ligação por baixo da palavra-passe."
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ vraagt om een app-wachtwoord: zie de link onder het wachtwoord."
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ kräver ett applösenord: se länken under lösenordet."
+          }
+        },
+        "da": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ kræver en app-adgangskode: se linket under adgangskoden."
+          }
+        },
+        "nb": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ krever et app-passord: se lenken under passordet."
+          }
+        },
+        "fi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ vaatii sovellussalasanan: katso linkki salasanan alla."
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ wymaga hasła do aplikacji: zobacz link pod hasłem."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ требует пароль приложения: см. ссылку под паролем."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ вимагає пароль застосунку: див. посилання під паролем."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ ではアプリパスワードが必要です。パスワードの下のリンクを参照してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 需要应用专用密码：请参阅密码下方的链接。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 需要 App 專用密碼：請參閱密碼下方的連結。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@에서는 앱 비밀번호가 필요합니다. 비밀번호 아래의 링크를 참고하세요."
+          }
+        }
+      }
+    },
+    "How to create one": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Comment en créer un"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "So erstellen Sie eines"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cómo crear una"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Come crearne una"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Como criar uma"
+          }
+        },
+        "pt-PT": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Como criar uma"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zo maakt u er een"
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Så skapar du ett"
+          }
+        },
+        "da": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sådan opretter du en"
+          }
+        },
+        "nb": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Slik lager du et"
+          }
+        },
+        "fi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Näin luot sellaisen"
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Jak je utworzyć"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Как его создать"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Як його створити"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "作成方法"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "如何创建"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "如何建立"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "만드는 방법"
+          }
+        }
+      }
+    },
+    "Enter the new password.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saisissez le nouveau mot de passe."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Geben Sie das neue Passwort ein."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Introduce la nueva contraseña."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Inserisci la nuova password."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Digite a nova senha."
+          }
+        },
+        "pt-PT": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Introduza a nova palavra-passe."
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voer het nieuwe wachtwoord in."
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ange det nya lösenordet."
+          }
+        },
+        "da": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Indtast den nye adgangskode."
+          }
+        },
+        "nb": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Skriv inn det nye passordet."
+          }
+        },
+        "fi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kirjoita uusi salasana."
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wpisz nowe hasło."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Введите новый пароль."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Введіть новий пароль."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しいパスワードを入力してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请输入新密码。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "請輸入新密碼。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "새 비밀번호를 입력하세요."
+          }
+        }
+      }
+    },
+    "Saving the password…": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enregistrement du mot de passe…"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Passwort wird gesichert …"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Guardando la contraseña…"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Salvataggio della password…"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Salvando a senha…"
+          }
+        },
+        "pt-PT": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A guardar a palavra-passe…"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wachtwoord bewaren…"
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sparar lösenordet…"
+          }
+        },
+        "da": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gemmer adgangskoden …"
+          }
+        },
+        "nb": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lagrer passordet …"
+          }
+        },
+        "fi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tallennetaan salasanaa…"
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zapisywanie hasła…"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сохранение пароля…"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Збереження пароля…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスワードを保存中…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在保存密码…"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在儲存密碼…"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "비밀번호 저장 중…"
+          }
+        }
+      }
+    },
+    "Password saved: NiceMailer connects with it now.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mot de passe enregistré : NiceMailer se connecte avec dès maintenant."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Passwort gesichert: NiceMailer verbindet sich jetzt damit."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Contraseña guardada: NiceMailer se conecta con ella ahora."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Password salvata: NiceMailer si connette ora con questa."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Senha salva: o NiceMailer se conecta com ela agora."
+          }
+        },
+        "pt-PT": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Palavra-passe guardada: o NiceMailer liga-se com ela agora."
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wachtwoord bewaard: NiceMailer maakt er nu verbinding mee."
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lösenordet sparat: NiceMailer ansluter med det nu."
+          }
+        },
+        "da": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Adgangskoden er gemt: NiceMailer forbinder med den nu."
+          }
+        },
+        "nb": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Passordet er lagret: NiceMailer kobler til med det nå."
+          }
+        },
+        "fi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Salasana tallennettu: NiceMailer yhdistää sillä nyt."
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hasło zapisane: NiceMailer łączy się teraz przy jego użyciu."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Пароль сохранён: NiceMailer подключается с ним прямо сейчас."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Пароль збережено: NiceMailer підключається з ним просто зараз."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスワードを保存しました。NiceMailer はこのパスワードで接続します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "密码已保存：NiceMailer 现在用它连接。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "密碼已儲存：NiceMailer 現在用它連線。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "비밀번호를 저장했습니다. NiceMailer가 이제 이 비밀번호로 연결합니다."
+          }
+        }
+      }
+    },
+    "New password": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nouveau mot de passe"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Neues Passwort"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nueva contraseña"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nuova password"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nova senha"
+          }
+        },
+        "pt-PT": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nova palavra-passe"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nieuw wachtwoord"
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nytt lösenord"
+          }
+        },
+        "da": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ny adgangskode"
+          }
+        },
+        "nb": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nytt passord"
+          }
+        },
+        "fi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Uusi salasana"
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nowe hasło"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Новый пароль"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Новий пароль"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しいパスワード"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新密码"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新密碼"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "새 비밀번호"
+          }
+        }
+      }
+    },
+    "Kept in the macOS Keychain. Give the new one here after changing the password of the mailbox, or after creating a new app password.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gardé dans le trousseau de macOS. Saisissez ici le nouveau après avoir changé le mot de passe de la boîte, ou créé un nouveau mot de passe d’application."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Im macOS-Schlüsselbund gesichert. Geben Sie hier das neue ein, nachdem Sie das Passwort des Postfachs geändert oder ein neues App-Passwort erstellt haben."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se guarda en el llavero de macOS. Introduce aquí la nueva después de cambiar la contraseña del buzón o de crear una nueva contraseña de aplicación."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conservata nel portachiavi di macOS. Inserisci qui la nuova dopo aver cambiato la password della casella o creato una nuova password per le app."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Guardada nas Chaves do macOS. Digite aqui a nova depois de mudar a senha da caixa de correio ou de criar uma nova senha de app."
+          }
+        },
+        "pt-PT": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Guardada no Porta-chaves do macOS. Introduza aqui a nova depois de alterar a palavra-passe da caixa de correio ou de criar uma nova palavra-passe de app."
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bewaard in de macOS-sleutelhanger. Voer hier het nieuwe in nadat u het wachtwoord van de mailbox hebt gewijzigd of een nieuw app-wachtwoord hebt gemaakt."
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sparas i nyckelringen i macOS. Ange det nya här när du har ändrat lösenordet till brevlådan eller skapat ett nytt applösenord."
+          }
+        },
+        "da": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gemmes i nøgleringen i macOS. Indtast den nye her, når du har ændret adgangskoden til postkassen eller oprettet en ny app-adgangskode."
+          }
+        },
+        "nb": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lagres i nøkkelringen i macOS. Skriv inn det nye her når du har endret passordet til postkassen eller laget et nytt app-passord."
+          }
+        },
+        "fi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Säilytetään macOS:n avainnipussa. Kirjoita uusi tähän, kun olet vaihtanut postilaatikon salasanan tai luonut uuden sovellussalasanan."
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Przechowywane w pęku kluczy macOS. Wpisz tu nowe po zmianie hasła do skrzynki lub po utworzeniu nowego hasła do aplikacji."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Хранится в связке ключей macOS. Введите здесь новый пароль после смены пароля почтового ящика или создания нового пароля приложения."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Зберігається у в’язці ключів macOS. Введіть тут новий пароль після зміни пароля поштової скриньки або створення нового пароля застосунку."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS のキーチェーンに保管されます。メールボックスのパスワードを変更したとき、または新しいアプリパスワードを作成したときは、ここで新しいパスワードを入力してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存在 macOS 钥匙串中。更改邮箱密码或创建新的应用专用密码后，请在此输入新密码。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "儲存在 macOS 鑰匙圈中。變更信箱密碼或建立新的 App 專用密碼後，請在此輸入新密碼。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS 키체인에 보관됩니다. 메일함 비밀번호를 바꾸거나 새 앱 비밀번호를 만든 뒤에는 여기에 새 비밀번호를 입력하세요."
+          }
+        }
+      }
     }
   },
   "version": "1.0"

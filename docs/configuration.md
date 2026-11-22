@@ -126,7 +126,7 @@ nicemailer account password perso                 # asked without echo
 printf %s "$PW" | nicemailer account password perso   # from a script
 ```
 
-The CLI sends the password to the core (`set_password {account, password}`, over the socket only the user can open), which saves it; the app will do the same. The core alone reads and writes the Keychain. Only the app and the CLI may call `set_password`: an agent (`mcp`) or the web server gets `FORBIDDEN` (1007), so that none can bind a password of its choosing to a server of its choosing. Each save is in `audit_log` (`account` / `set_password`, with the host and the user name, never the password).
+The CLI sends the password to the core (`set_password {account, password}`, over the socket only the user can open), which saves it; the app does the same from the page of the account in the Preferences ([accounts.md](accounts.md), "A new password"). The core alone reads and writes the Keychain. Only the app and the CLI may call `set_password`: an agent (`mcp`) or the web server gets `FORBIDDEN` (1007), so that none can bind a password of its choosing to a server of its choosing. Each save is in `audit_log` (`account` / `set_password`, with the host and the user name, never the password).
 
 The password never leaves the core otherwise: `SecretString` prints `SecretString(***)`, and `SetPasswordParams` prints `***` too.
 

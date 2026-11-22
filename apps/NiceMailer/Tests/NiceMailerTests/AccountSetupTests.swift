@@ -239,7 +239,8 @@ struct AccountSetupTests {
         fill()
         await setup.submit()
         #expect(setup.errorField == .password)
-        #expect(setup.error?.contains("imap.toto.fr") == true)
+        // The server's words alone: Toto asks for no app password.
+        #expect(setup.error == L("%@ refused the password: %@", "imap.toto.fr", "bad"))
         #expect(setup.imapServer == nil)
 
         script.test = Self.testReport()

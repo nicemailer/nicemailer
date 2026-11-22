@@ -163,7 +163,11 @@ struct AccountsPane: View {
         switch list.selection {
         case .account(let id):
             if let a = list.items.first(where: { $0.id == id }) {
-                AccountDetail(account: a, activation: activation?.key == a.key ? activation : nil, organize: { organize(a) })
+                AccountDetail(account: a, activation: activation?.key == a.key ? activation : nil, organize: { organize(a) },
+                              client: client, reload: { [weak list] in await list?.load() })
+                    // A new view for each account: its password field
+                    // starts empty, never with what was typed for another.
+                    .id(a.id)
             } else {
                 AddAccountForm(setup: setup)
             }
@@ -212,14 +216,31 @@ private struct AccountRow: View {
     }
 }
 
-/// An account of the list, selected: what the core says of it. Changing it
-/// (key, servers, removal) is still done with the CLI (`docs/accounts.md`).
-/// An account only looked at can be organized from here.
+/// An account of the list, selected: what the core says of it, and a field
+/// to give it a new password. Changing the rest (key, servers, removal) is
+/// still done with the CLI (`docs/accounts.md`). An account only looked at
+/// can be organized from here.
 private struct AccountDetail: View {
     let account: AccountInfo
     /// The organizing asked for, if any.
     let activation: AccountActivation?
     let organize: () -> Void
+    /// A new password for the account, made once for this view.
+    @State private var passwordEdit: AccountPassword
+
+    init(account: AccountInfo, activation: AccountActivation?, organize: @escaping () -> Void,
+         client: any CoreCalling, reload: @escaping () async -> Void) {
+        self.account = account
+        self.activation = activation
+        self.organize = organize
+        let edit = AccountPassword(client: client, key: account.key, email: account.email ?? account.key)
+        edit.onSaved = reload
+        _passwordEdit = State(initialValue: edit)
+    }
+
+    /// An archive has no server, and an account no longer in accounts.toml
+    /// has nothing to connect to: no password to give.
+    private var takesPassword: Bool { account.kind == "imap" && account.enabled }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -232,6 +253,9 @@ private struct AccountDetail: View {
                     if let e = account.shownError {
                         Text(e).foregroundStyle(.red).textSelection(.enabled)
                     }
+                }
+                if takesPassword {
+                    PasswordSection(edit: passwordEdit)
                 }
                 if let act = activation, act.plan != nil {
                     ActivationSections(activation: act)
@@ -253,6 +277,7 @@ private struct AccountDetail: View {
                 footer
             }
         }
+        .onAppear { if takesPassword { UIScript.preferencesPasswordShown(passwordEdit) } }
     }
 
     private var footer: some View {
@@ -286,6 +311,61 @@ private struct AccountDetail: View {
             }
         }
         .padding(12)
+    }
+}
+
+/// A new password for the account selected (`AccountPassword`).
+private struct PasswordSection: View {
+    @Bindable var edit: AccountPassword
+
+    var body: some View {
+        Section {
+            HStack {
+                SecureField(L("New password"), text: $edit.password)
+                    .onSubmit { Task { await edit.save() } }
+                    .uiTarget("prefs-new-password")
+                Button(L("Save")) { Task { await edit.save() } }
+                    .disabled(edit.password.isEmpty || edit.busy != nil)
+                    .uiTarget("prefs-save-password")
+            }
+            if let busy = edit.busy {
+                Text(busy).font(.callout).foregroundStyle(.secondary)
+            } else if let e = edit.error {
+                Text(e).font(.callout).foregroundStyle(.red).textSelection(.enabled)
+            } else if let saved = edit.saved {
+                Text(saved).font(.callout).foregroundStyle(.green)
+            }
+            if let p = edit.appPassword { AppPasswordHint(provider: p) }
+        } header: {
+            Text(L("Password"))
+        } footer: {
+            // A footer of a grouped form aligns a text of several lines on
+            // the trailing edge: brought back to the leading one.
+            Text(L("Kept in the macOS Keychain. Give the new one here after changing the password of the mailbox, or after creating a new app password."))
+                .font(.caption).foregroundStyle(.secondary)
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+/// Under a password field: the provider asks for an app password, with a
+/// link to the guide of the website (`AppPasswordProvider`).
+struct AppPasswordHint: View {
+    let provider: AppPasswordProvider
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(provider.hint)
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
+            // SwiftUI note: `Link` opens its URL in the default browser.
+            Link(L("How to create one"), destination: provider.guide())
+                .uiTarget("prefs-app-password-guide")
+        }
+        .font(.callout)
+        .uiTarget("prefs-app-password")
     }
 }
 
@@ -338,8 +418,14 @@ struct AddAccountForm: View {
                     } header: {
                         Text(L("Add an account"))
                     } footer: {
-                        Text(L("NiceMailer finds the servers from the address. It asks for more only if it needs to."))
-                            .font(.caption).foregroundStyle(.secondary)
+                        VStack(alignment: .leading, spacing: 8) {
+                            // Before the password is tried: the likely
+                            // cause of a refusal, said in advance.
+                            if let p = setup.appPassword { AppPasswordHint(provider: p) }
+                            Text(L("NiceMailer finds the servers from the address. It asks for more only if it needs to."))
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     if setup.imapServer != nil { imapSection.id(AccountSetup.Section.imap) }
                     if setup.smtpPassword != nil { smtpPasswordSection.id(AccountSetup.Section.smtpPassword) }

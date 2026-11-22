@@ -58,6 +58,10 @@ struct ServerCandidate: Decodable, Equatable {
 
 /// A provider of the core's database (`ProviderMatch`).
 struct ProviderMatch: Decodable, Equatable {
+    /// Its id in the providers' database (`googlemail.com`, `infomaniak`):
+    /// how the app recognizes the providers that ask for an app password
+    /// (`AppPasswordProvider`). Optional: older answers may lack it.
+    var id: String? = nil
     let name: String
     /// OAuth2 only: NiceMailer cannot log in there yet.
     let imapUnsupported: Bool
@@ -400,6 +404,13 @@ final class AccountSetup {
     /// archive and the account is organized now.
     var importShown: Bool { plan.map { !$0.lookOnly } == true && test?.offerArchive == true }
 
+    /// The provider of the address, when it asks for an app password: said
+    /// under the password field as soon as the address is typed, and again
+    /// once the servers are found for a domain hosted there (`discovery`).
+    var appPassword: AppPasswordProvider? {
+        AppPasswordProvider.of(email: email.trimmingCharacters(in: .whitespacesAndNewlines), provider: discovery?.provider)
+    }
+
     /// The step running, said under the button; `nil` when idle.
     private(set) var busy: String?
     private(set) var error: String?
@@ -530,8 +541,16 @@ final class AccountSetup {
             do {
                 test = try await client.call("test_account", ["email": email, "imap": imap.json, "password": password]) as AccountTestReport
             } catch let e as CoreClient.RPCError where e.reason == "imap_auth_refused" {
-                // The server's own words, cited (`CoreReason`).
-                return stop(.password, L("%@ refused the password: %@", imap.host, e.data["server_text"] ?? ""))
+                // The server's own words, cited (`CoreReason`). A provider
+                // that asks for an app password: the likely cause said
+                // first, since the hint under the field may have been
+                // missed and the server's words can be long (the footer
+                // shows three lines).
+                let refused = L("%@ refused the password: %@", imap.host, e.data["server_text"] ?? "")
+                if let p = AppPasswordProvider.of(email: email, provider: d.provider) {
+                    return stop(.password, L("%@ asks for an app password: see the link under the password.", p.name) + " " + refused)
+                }
+                return stop(.password, refused)
             } catch let e as CoreClient.RPCError where e.reason == "imap_unreachable" {
                 showIMAP(imapServer ?? ServerFields(imap), L("NiceMailer could not connect to %@: %@. Check the IMAP server.", imap.host, e.data["server_text"] ?? ""))
                 return
@@ -836,6 +855,66 @@ final class AccountActivation {
                 ? L("%@ is organized: %lld old mails are being archived on the server.", email, archived)
                 : L("%@ is organized: new mail is screened from now on.", email)
             await onDone?()
+        } catch {
+            self.error = AccountSetup.message(error)
+        }
+    }
+}
+
+// MARK: - A new password for an account
+
+/// A new password for an account already set (`set_password`,
+/// `docs/accounts.md`, "A new password"): after the user changed the
+/// password of the mailbox, or created a new app password (changing the
+/// password of a Google account revokes its app passwords). Until now only
+/// the CLI could do it (`nicemailer account password`).
+///
+/// The core saves it in the Keychain without trying it: the account's
+/// worker, stopped by the refused password, connects with it at once, and a
+/// refusal comes back as the account's error, shown above the field.
+@Observable
+@MainActor
+final class AccountPassword {
+    let key: String
+    let email: String
+    /// The password typed; emptied once saved.
+    var password = "" {
+        didSet { if password != oldValue { saved = nil; error = nil } }
+    }
+    private(set) var busy: String?
+    private(set) var error: String?
+    /// Said once saved, until the field is edited again.
+    private(set) var saved: String?
+
+    private let client: any CoreCalling
+    /// Called once saved: the list reloads, with the account's new state.
+    var onSaved: (() async -> Void)?
+
+    init(client: any CoreCalling, key: String, email: String) {
+        self.client = client
+        self.key = key
+        self.email = email
+    }
+
+    /// The provider of the account, when it asks for an app password.
+    var appPassword: AppPasswordProvider? { AppPasswordProvider.of(email: email, provider: nil) }
+
+    func save() async {
+        guard busy == nil else { return }
+        guard !password.isEmpty else {
+            error = L("Enter the new password.")
+            return
+        }
+        error = nil
+        saved = nil
+        busy = L("Saving the password…")
+        defer { busy = nil }
+        do {
+            let _: IgnoredResult = try await client.call("set_password", ["account": key, "password": password])
+            // Emptied first: the field's `didSet` forgets what was said.
+            password = ""
+            saved = L("Password saved: NiceMailer connects with it now.")
+            await onSaved?()
         } catch {
             self.error = AccountSetup.message(error)
         }

@@ -180,6 +180,15 @@ enum UIScript {
         preferencesActivation = a
     }
 
+    /// The new password of the account selected, while its page is shown.
+    static private(set) weak var preferencesPassword: AccountPassword?
+
+    /// Called by the page of an account that takes a password.
+    static func preferencesPasswordShown(_ p: AccountPassword) {
+        guard isActive else { return }
+        preferencesPassword = p
+    }
+
     /// Opens the Preferences as the app menu's "Settings…" would, on the
     /// script's model, with the creation methods answered by
     /// `UIScriptSetupCore`: no mail server, no DNS, nothing written.
@@ -1122,6 +1131,7 @@ private final class Runner {
         guard let list = UIScript.preferencesList, let s = UIScript.preferencesSetup else { return [:] }
         let names: [AccountSetup.Section: String] = [.imap: "imap", .smtpPassword: "smtp-password", .smtp: "smtp", .server: "server", .importScreen: "import"]
         let act = UIScript.preferencesActivation
+        let pw = UIScript.preferencesPassword
         // A plan as one line: `role=folder` for each role, `+` before a
         // folder to create.
         func roles(_ p: ServerPlan?) -> String {
@@ -1167,6 +1177,13 @@ private final class Runner {
             "activation_roles": roles(act?.plan),
             "activation_error": act?.error ?? "",
             "activation_done": act?.done ?? "",
+            "setup_app_password": s.appPassword?.rawValue ?? "",
+            "setup_app_password_guide": s.appPassword?.guide().absoluteString ?? "",
+            "password_account": pw?.key ?? "",
+            "password_set": "\(pw?.password.isEmpty == false)",
+            "password_app": pw?.appPassword?.rawValue ?? "",
+            "password_error": pw?.error ?? "",
+            "password_saved": pw?.saved ?? "",
         ]
     }
 }

@@ -16,8 +16,10 @@ import Foundation
 /// | `…@other.test` | the SMTP server of another organization: its password is asked, any one works |
 /// | `…@nosmtp.test` | no SMTP server answers: the SMTP server is asked, or "without sending" |
 /// | `…@look.test` | servers found by the domain, the SMTP server takes the IMAP password; a small Inbox: nothing asked but "On the server" |
+/// | `…@gmail.com` | as `look.test`, its provider Google's (`googlemail.com`): the app-password hint |
 ///
-/// The password `wrong` is refused by every IMAP server. An account
+/// The password `wrong` is refused by every IMAP server. `set_password` is
+/// answered here too, recorded and never saved. An account
 /// "added" is listed after the real ones (ids from 9001), and left out of
 /// `set_account_order` before it reaches the core. Added `read_only`, it
 /// is organized by `prepare_activation` and `activate_account`, answered
@@ -45,6 +47,8 @@ final class UIScriptSetupCore: CoreCalling, @unchecked Sendable {
         case "add_account": answer = add(params)
         case "prepare_activation": answer = try prepare(params)
         case "activate_account": answer = try activate(params)
+        // Never the real core's: it would write the scenario's Keychain.
+        case "set_password": answer = ["changed": 0]
         case "list_accounts":
             let r: AccountInfoListJSON = try await real.call(method, params)
             // Swift note: `withLock` holds the lock for the closure only,
@@ -102,9 +106,9 @@ final class UIScriptSetupCore: CoreCalling, @unchecked Sendable {
             "domain_account": NSNull(), "domain": d, "by_domain": NSNull(), "mx": [String](), "mx_looked_up": false,
             "mx_error": NSNull(), "by_mx": NSNull(), "imap": NSNull(), "smtp": [Any](),
         ]
-        let provider: [String: Any] = ["id": d, "name": "Provider of \(d)", "source": "local", "matched": d, "mx_host": NSNull(), "imap_unsupported": false]
+        let provider: [String: Any] = ["id": d == "gmail.com" ? "googlemail.com" : d, "name": "Provider of \(d)", "source": "local", "matched": d, "mx_host": NSNull(), "imap_unsupported": false]
         switch d {
-        case "known.test", "other.test", "nosmtp.test", "look.test":
+        case "known.test", "other.test", "nosmtp.test", "look.test", "gmail.com":
             r["by_domain"] = provider
             r["imap"] = ["server": server("imap.\(d)", 993), "origin": "provider"]
             let smtpHost = d == "other.test" ? "smtp.elsewhere.example" : "smtp.\(d)"
