@@ -1,0 +1,18 @@
+# The form GitHub shows for "New issue › Idea". It asks for the need before
+# the solution: the need is what helps decide.
+name: Idea
+description: Something NiceMailer could do.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: need
+    attributes:
+      label: What you are trying to do
+      description: The situation, and why NiceMailer gets in the way today.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What you have in mind
+      description: How it could work, if you have an idea. Another app that does it well is welcome too.

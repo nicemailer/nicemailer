@@ -1,0 +1,10 @@
+# The links GitHub shows next to the forms of "New issue". A question is not
+# a bug: it goes to the Discussions, where others can answer and find it.
+blank_issues_enabled: true
+contact_links:
+  - name: Question or feedback
+    url: https://github.com/nicemailer/nicemailer/discussions
+    about: How do I…? What do you think of…? Ask in the Discussions.
+  - name: Documentation
+    url: https://nicemailer.org/docs/
+    about: Installing, adding an account, app passwords, the keys.

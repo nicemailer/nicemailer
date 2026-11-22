@@ -109,11 +109,11 @@ make test     # Rust, Swift and editor tests
 - [docs/](docs/README.md): every feature, for users and developers, in English.
 - [specifications/](specifications/): the design specifications, in French.
 
-Bugs and ideas go to the [issues](https://github.com/nicemailer/nicemailer/issues).
+Bugs and ideas go to the [issues](https://github.com/nicemailer/nicemailer/issues), questions and feedback to the [Discussions](https://github.com/nicemailer/nicemailer/discussions). To help, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
-NiceMailer is free software under the [GNU Affero General Public License, version 3](LICENSE). Copyright (C) 2026 the NiceMailer author.
+NiceMailer is free software under the [GNU Affero General Public License, version 3](LICENSE). Copyright (C) 2026 Achille Berès.
 
 Bundled third-party code keeps its own licence:
 

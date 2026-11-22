@@ -1,0 +1,67 @@
+# The form GitHub shows for "New issue › Bug report". The fields ask for
+# what a bug report needs and a user would not think of giving: the
+# version, the provider, and the state of the synchronization.
+name: Bug report
+description: Something does not work as it should.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time. Before you start:
+        - **Gmail, iCloud or Fastmail refuses your password?** These providers ask for an app password: see [the guide](https://nicemailer.org/docs/app-passwords/).
+        - Please remove email addresses and anything private from what you paste.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what you saw instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open …
+        2. Press …
+        3. See …
+  - type: input
+    id: version
+    attributes:
+      label: NiceMailer version
+      description: In NiceMailer › About NiceMailer.
+      placeholder: "0.2.1"
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+      placeholder: "15.1"
+    validations:
+      required: true
+  - type: dropdown
+    id: provider
+    attributes:
+      label: Mail provider
+      multiple: true
+      options:
+        - Gmail / Google Workspace
+        - iCloud
+        - Fastmail
+        - Other IMAP server
+        - Not related to an account
+  - type: textarea
+    id: sync
+    attributes:
+      label: Synchronization status
+      description: |
+        For a problem with an account, the output of this command in Terminal:
+        `/Applications/NiceMailer.app/Contents/Helpers/nicemailer sync status`
+      render: text
+  - type: textarea
+    id: more
+    attributes:
+      label: Anything else
+      description: Screenshots, the lines of `~/Library/Application Support/NiceMailer/core.log` around the problem…
