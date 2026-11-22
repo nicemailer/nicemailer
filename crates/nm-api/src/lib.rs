@@ -2977,6 +2977,10 @@ pub struct ThemeWindow {
     /// `shown`, `hidden` or `merged`.
     pub title_bar: String,
     pub key_hints: bool,
+    /// The blocks of actions say their name beside their icon.
+    pub block_labels: bool,
+    /// Height of the status bar, in points for a 12 pt text of the bar.
+    pub status_bar_height: u32,
     /// The blocks shown, in order, with the separators `|` and `->`.
     pub blocks: Vec<String>,
     pub default_columns: u8,
@@ -3001,6 +3005,8 @@ pub struct ThemeLayout {
     pub row_radius: u32,
     pub row_inset: u32,
     pub zebra: bool,
+    /// Height of a row of the menus and pickers; 0: the height of its text.
+    pub menu_row_height: u32,
     pub popup_radius: u32,
     pub popup_shadow: bool,
     /// `left` or `right`.

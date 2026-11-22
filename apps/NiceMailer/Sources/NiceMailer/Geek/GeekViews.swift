@@ -224,8 +224,14 @@ private struct GeekWindow: View {
         }
     }
 
-    private func menuTitle(_ p: GeekController.Prefix) -> String {
-        switch p {
+    private func menuTitle(_ p: GeekController.Prefix) -> String { p.title }
+}
+
+extension GeekController.Prefix {
+    /// The title of its menu, and the name of its block in the status bar
+    /// when the theme names the blocks (`window.block_labels`).
+    var title: String {
+        switch self {
         case .move: L("Move")
         case .goto: L("Go to")
         case .save: L("Save")
@@ -310,7 +316,7 @@ struct GeekStatusBar: View {
                 // contact list ("unread mails of the group"): the magnifier
                 // opens the selector (`F`); each active attribute is a chip,
                 // removed by a click.
-                StatusBlock(icon: "magnifyingglass", text: "", key: controller.keyLabel(.pickerAttributes))
+                StatusBlock(icon: "magnifyingglass", text: "", key: controller.keyLabel(.pickerAttributes), label: L("Attributes"))
                     .onTapGesture { controller.openPickerFromStatusBar(.attributes) }
                     .uiTarget("status-attributes")
                 ForEach(model.attributes.chips) { chip in
@@ -334,7 +340,7 @@ struct GeekStatusBar: View {
                 // the right end of the bar instead (`quarantineTargets`).
                 let prefixes: [GeekController.Prefix] = controller.directTargets.isEmpty ? [.view, .move, .save] : [.view]
                 ForEach(prefixes, id: \.self) { p in
-                    StatusBlock(icon: p.icon, text: "", key: controller.menuKeyLabel(p))
+                    StatusBlock(icon: p.icon, text: "", key: controller.menuKeyLabel(p), label: p.title)
                         .menuAnchor(p, controller)
                         .onTapGesture { controller.openMenuFromStatusBar(p) }
                         .uiTarget("status-\(p.uiID)")
@@ -345,7 +351,7 @@ struct GeekStatusBar: View {
                 // Quarantine, where `m` and `s` go, it stays (sorting the
                 // folder is its first prompt) and stands alone after `v`.
                 StatusBlock(icon: "sparkles", text: "",
-                            key: controller.aiKeyLabel(composing: model.composer != nil))
+                            key: controller.aiKeyLabel(composing: model.composer != nil), label: L("AI"))
                     .onTapGesture { controller.openAIFromStatusBar() }
                     .help(L("AI assistance"))
                     .accessibilityLabel(L("AI assistance"))
@@ -450,7 +456,8 @@ struct GeekStatusBar: View {
         // "merged"`): room for them, and the height of a title bar, so
         // that they sit in its middle.
         .padding(.leading, model.titleBarMode == .merged ? Look.mergedButtonsWidth : 0)
-        .frame(height: model.titleBarMode == .merged ? max(barScaled(20), 28) : barScaled(20))
+        // Its height (`window.status_bar_height`: 20 pt in geek).
+        .frame(height: model.titleBarMode == .merged ? max(Look.statusBarHeight, 28) : Look.statusBarHeight)
         // Its empty parts move the window, as a title bar does: the title
         // bar is hidden by default (`WindowChrome`).
         .background(ZStack { Palette.statusBar; WindowDragArea() })
@@ -509,6 +516,9 @@ private struct StatusBlock: View {
     let icon: String?
     let text: String
     let key: String
+    /// The name of a block of action, said beside its icon when the theme
+    /// asks for it (`window.block_labels`).
+    var label: String? = nil
 
     var body: some View {
         HStack(spacing: barScaled(4)) {
@@ -518,6 +528,7 @@ private struct StatusBlock: View {
                     .foregroundStyle(Palette.muted)
             }
             if !text.isEmpty { Text(text).lineLimit(1) }
+            if text.isEmpty, Look.blockLabels, let label { Text(label).lineLimit(1) }
             // The reminder of the key, unless the theme leaves it out
             // (`window.key_hints`): the key works either way.
             if Look.keyHints {
@@ -601,8 +612,12 @@ private struct GeekFolderColumn: View {
                 let folders = controller.scopeFolders
                 ForEach(Array(folders.enumerated()), id: \.element.id) { i, f in
                     HStack(spacing: 6) {
-                        // The key of the folder in the menu `;` (`goto.<role>`).
-                        Text(controller.gotoKeyLabel(f)).foregroundStyle(Palette.muted)
+                        // The key of the folder in the menu `;` (`goto.<role>`):
+                        // first, or after the count when the theme puts the
+                        // keys on the right (`layout.menu_keys`).
+                        if !Look.menuKeysRight {
+                            Text(controller.gotoKeyLabel(f)).foregroundStyle(Palette.muted)
+                        }
                         if f.virtual != nil {
                             VirtualFolderLabel(name: f.name)
                         } else {
@@ -610,6 +625,9 @@ private struct GeekFolderColumn: View {
                         }
                         Spacer()
                         if f.unread > 0 { Text("\(f.unread)").foregroundStyle(Palette.unread) }
+                        if Look.menuKeysRight {
+                            Text(controller.gotoKeyLabel(f)).foregroundStyle(Palette.muted)
+                        }
                     }
                     .padding(.horizontal, 8)
                     .frame(height: Look.rowHeight)
@@ -629,6 +647,9 @@ private struct GeekFolderColumn: View {
             }
         }
         .scrollIndicators(Look.scrollIndicators)
+        // Its own background (`colors.sidebar`): the background of the
+        // window in geek.
+        .background(Palette.sidebar)
     }
 }
 
@@ -700,7 +721,8 @@ private struct GeekThreadColumn: View {
     let controller: GeekController
 
     var body: some View {
-        GeekThreadRows(controller: controller)
+        // Its own background (`colors.list`): the window's in geek.
+        GeekThreadRows(controller: controller).background(Palette.list)
     }
 }
 
@@ -1991,6 +2013,9 @@ struct KeyMenu: View {
                 // Every row takes the menu's width (that of its widest
                 // row), so the details line up on the right edge.
                 .frame(maxWidth: .infinity)
+                // The theme's height of a row (`layout.menu_row_height`);
+                // that of its text in geek.
+                .frame(height: Look.menuRowHeight.map(scaled))
                 .rowFill(i == highlighted ? Palette.cursor : nil)
                 .contentShape(Rectangle())
                 .onTapGesture { onSelect?(i) }
@@ -2128,7 +2153,8 @@ struct PickerPopup: View {
 
     /// Height of the input line and of a row, at the default text size.
     static let headerHeight: CGFloat = 24
-    static let rowHeight: CGFloat = 20
+    /// 20, or the theme's (`layout.menu_row_height`).
+    static var rowHeight: CGFloat { Look.menuRowHeight ?? 20 }
     /// The line between two groups of rows (`Entry.gapBefore`: the pairs
     /// of the attribute selector), with its space above and below.
     static let gapHeight: CGFloat = 7

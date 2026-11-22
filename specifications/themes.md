@@ -82,6 +82,8 @@ Chaque clé a son type, ses bornes ou ses choix, et sa valeur dans les trois th�
 | `status_bar_position` | `top`, `bottom`, `hidden` | `top` | `top` | — | Position par défaut de la barre de statut ; `v` la change ensuite pour la fenêtre (`ui.md`, « Préférences d'affichage ») |
 | `title_bar` | `shown`, `hidden`, `merged` | `shown` | `merged` | `merged` | `hidden` : ni barre de titre ni boutons (le contenu monte jusqu'en haut, comme `ui.title_bar = "hidden"` aujourd'hui). `merged` : pas de barre de titre, les boutons rouge, jaune, vert sont dans la barre de statut ou la barre d'outils ; barre de statut en bas ou masquée : `merged` vaut `shown` |
 | `key_hints` | booléen | `true` | `false` | `false` | Les blocs rappellent leur touche (`@`, `;`…) ; les touches marchent dans tous les cas |
+| `block_labels` | booléen | `false` | `true` | `true` | Les blocs d'action disent leur nom (Affichage, Déplacer, Enregistrer, IA…) à côté de leur icône |
+| `status_bar_height` | 14 à 48 | 20 | 30 | 30 | Hauteur de la barre de statut, en points pour un texte de barre de 12 pt |
 | `blocks` | liste | voir dessous | | | Blocs montrés, dans l'ordre |
 | `default_columns` | 1, 2, 3 | 2 | 2 | 3 | Nombre de colonnes d'une première fenêtre |
 
@@ -109,6 +111,7 @@ Longueurs en points pour un texte de 12 pt (section 5.3).
 | `row_radius` | 0 à 16 | 0 | 8 | 6 | Arrondi de la ligne choisie |
 | `row_inset` | 0 à 16 | 0 | 8 | 8 | Retrait de la ligne choisie par rapport aux bords de la liste |
 | `zebra` | booléen | `false` | `false` | `true` | Lignes alternées |
+| `menu_row_height` | 0, ou 14 à 40 | 0 | 26 | 22 | Hauteur d'une ligne des menus et sélecteurs ; 0 : la hauteur de son texte (geek) |
 | `popup_radius` | 0 à 24 | 0 | 14 | 9 | Arrondi des menus, sélecteurs, questions et panneaux |
 | `popup_shadow` | booléen | `false` | `true` | `true` | Ombre portée sous ces panneaux |
 | `menu_keys` | `left`, `right` | `left` | `right` | `right` | Place de la touche sur une ligne de menu |

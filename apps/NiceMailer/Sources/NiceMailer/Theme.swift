@@ -207,6 +207,10 @@ enum Palette {
     }
 
     static let background = dynamic(\.background)
+    /// The folder column (`colors.sidebar`).
+    static let sidebar = dynamic(\.sidebar)
+    /// The list of the mails (`colors.list`).
+    static let list = dynamic(\.list)
     static let text = dynamic(\.text)
     /// Secondary text: dates, counts, headers.
     static let muted = dynamic(\.muted)

@@ -21,6 +21,20 @@ enum Look {
     /// The blocks of the status bar remind their key (`window.key_hints`).
     static var keyHints: Bool { theme.window.keyHints }
 
+    /// The blocks of actions say their name beside their icon
+    /// (`window.block_labels`).
+    static var blockLabels: Bool { theme.window.blockLabels }
+
+    /// Height of the status bar (`window.status_bar_height`), at the text
+    /// size of the bar: 20 pt in geek for a 12 pt text.
+    static var statusBarHeight: CGFloat { barScaled(CGFloat(theme.window.statusBarHeight)) }
+
+    /// Height of a row of the menus and pickers (`layout.menu_row_height`),
+    /// for a 12 pt text; nil: the height of its text (geek).
+    static var menuRowHeight: CGFloat? {
+        theme.layout.menuRowHeight > 0 ? CGFloat(theme.layout.menuRowHeight) : nil
+    }
+
     /// Whether the status bar shows `block` (`window.blocks`). A block left
     /// out is hidden; its key still works (`themes.md`, section 2).
     static func shows(_ block: String) -> Bool { theme.window.blocks.contains(block) }

@@ -39,6 +39,10 @@ struct ThemeView: Decodable, Equatable {
         /// `shown`, `hidden` or `merged`.
         let titleBar: String
         let keyHints: Bool
+        /// The blocks of actions say their name beside their icon.
+        let blockLabels: Bool
+        /// Height of the status bar, in points for a 12 pt text of the bar.
+        let statusBarHeight: Double
         /// The blocks shown, in order, with the separators `|` and `->`.
         let blocks: [String]
         let defaultColumns: Int
@@ -61,6 +65,8 @@ struct ThemeView: Decodable, Equatable {
         let rowRadius: Double
         let rowInset: Double
         let zebra: Bool
+        /// 0: the height of the text of the row.
+        let menuRowHeight: Double
         let popupRadius: Double
         let popupShadow: Bool
         let menuKeys: String
