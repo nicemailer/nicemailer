@@ -364,19 +364,19 @@ struct ComposeRulesTests {
     }
 }
 
-/// The reply through the keys of the geek theme (`GeekController`), against
+/// The reply through the keys of the geek theme (`InterfaceController`), against
 /// a fake core: `r`, the text typed, the saves, ⌘↩, Escape, ⌘⌫, `z`.
 @MainActor
 struct ComposeControllerTests {
     let core = FakeCore(handler: Fixture.answer)
     let model = AppModel()
-    let controller: GeekController
+    let controller: InterfaceController
     let editor: FakeEditor
 
     init() async {
         let defaults = TestDefaults.make()
         editor = FakeEditor(model: model)
-        controller = GeekController(model: model, defaults: defaults, textSize: TextSize())
+        controller = InterfaceController(model: model, defaults: defaults, textSize: TextSize())
         let c = controller
         editor.onLeave = { c.leaveText() }
         controller.pasteboard = NSPasteboard(name: NSPasteboard.Name("NiceMailerTests-\(UUID().uuidString)"))
@@ -1279,8 +1279,8 @@ struct ComposeControllerTests {
     /// Quarantine refuses the reply to the sender and the forward like the
     /// reply to all (`r`, `R`, `F` by default), not a new mail (`c`).
     @Test func quarantineRefusesTheRepliesAndTheForward() {
-        #expect(GeekController.quarantineRefused.isSuperset(of: [.composeReplyAll, .composeReplySender, .composeForward]))
-        #expect(!GeekController.quarantineRefused.contains(.composeNew))
+        #expect(InterfaceController.quarantineRefused.isSuperset(of: [.composeReplyAll, .composeReplySender, .composeForward]))
+        #expect(!InterfaceController.quarantineRefused.contains(.composeNew))
     }
 
     @Test func oneColumnShowsTheReplyInTheWholeWindow() async {
@@ -1300,13 +1300,13 @@ struct ComposeControllerTests {
 struct EditorFlowTests {
     let core = FakeCore(handler: Fixture.answer)
     let model = AppModel()
-    let controller: GeekController
+    let controller: InterfaceController
     let editor: FakeEditor
 
     init() async {
         let defaults = TestDefaults.make()
         editor = FakeEditor(model: model)
-        controller = GeekController(model: model, defaults: defaults, textSize: TextSize())
+        controller = InterfaceController(model: model, defaults: defaults, textSize: TextSize())
         let c = controller
         editor.onLeave = { c.leaveText() }
         controller.pasteboard = NSPasteboard(name: NSPasteboard.Name("NiceMailerTests-\(UUID().uuidString)"))

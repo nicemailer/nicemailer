@@ -8,7 +8,7 @@ import WebKit
 // Writing a mail follows the Mac: the text is edited by a standard text
 // component (here WebKit's, with Tiptap's model over it), with the Mac's
 // keys, spelling, dictation and Writing Tools. The app injects only its few
-// commands (`GeekController.handleComposeKey`): every other key goes to the
+// commands (`InterfaceController.handleComposeKey`): every other key goes to the
 // web view. The recipients and the subject stay the app's own fields.
 //
 // One web view lives for the whole life of the app: created and loaded once

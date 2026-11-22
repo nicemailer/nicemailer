@@ -8,9 +8,9 @@ import WebKit
 
 /// Root of the geek theme. Installs the keyboard monitor and lays out the
 /// columns, the status bar and the overlays.
-struct GeekRootView: View {
+struct RootView: View {
     @Environment(AppModel.self) private var model
-    @State private var controller: GeekController?
+    @State private var controller: InterfaceController?
     /// The AppKit event monitor, removed when the view goes away.
     @State private var monitor: Any?
     /// The window of this view: the monitor takes only its keys.
@@ -19,14 +19,14 @@ struct GeekRootView: View {
     var body: some View {
         Group {
             if let controller {
-                GeekWindow(controller: controller)
+                WindowContent(controller: controller)
             } else {
                 Palette.background
             }
         }
         .background(MainWindowReader(reference: mainWindow))
         .onAppear {
-            let c = GeekController(model: model)
+            let c = InterfaceController(model: model)
             controller = c
             // The editor of the replies' text (`EditorWebView.swift`), made
             // by the model once the first list is shown (`ensureEditor`).
@@ -60,9 +60,9 @@ struct GeekRootView: View {
 }
 
 /// The window content, once the controller exists.
-private struct GeekWindow: View {
+private struct WindowContent: View {
     @Environment(AppModel.self) private var model
-    let controller: GeekController
+    let controller: InterfaceController
 
     var body: some View {
         // Rebuilt from scratch when a text size or the theme changes
@@ -73,17 +73,17 @@ private struct GeekWindow: View {
         VStack(spacing: 0) {
             // A toolbar is always at the top (`window.chrome`); the status
             // bar where `v` put it.
-            if Look.toolbar || controller.statusPosition == .top { GeekStatusBar(controller: controller) }
+            if Look.toolbar || controller.statusPosition == .top { StatusBarView(controller: controller) }
             ZStack(alignment: .bottomTrailing) {
                 content
                 clickCatcher
                 overlay
             }
-            if !Look.toolbar, controller.statusPosition == .bottom { GeekStatusBar(controller: controller) }
+            if !Look.toolbar, controller.statusPosition == .bottom { StatusBarView(controller: controller) }
         }
         .background(Palette.background)
         .foregroundStyle(Palette.text)
-        .font(.geek())
+        .font(.interface())
         // `ui.md`: no millisecond lost in geek. Turning animations off for
         // the whole tree also removes SwiftUI's default fades. A theme
         // that animates (`[motion]`) keeps its own, given where they apply.
@@ -101,10 +101,10 @@ private struct GeekWindow: View {
         if case .maintenance(let text, _) = model.status {
             // NiceMailer updated, or the mailbox upgraded: say so, the app
             // waits.
-            UpgradingView(message: text).font(.geek(12))
+            UpgradingView(message: text).font(.interface(12))
         } else if case .failed(let message) = model.status, !UIScript.isActive {
             // No core: what to do, and the button that allows it.
-            ConnectionErrorView(message: message).font(.geek(12))
+            ConnectionErrorView(message: message).font(.interface(12))
         } else {
             screenContent
         }
@@ -183,7 +183,7 @@ private struct GeekWindow: View {
     /// headers of the reply being written, ⌥⌘F replaces the line "From"
     /// and ⇧⌘↩ the line "After sending: …" (`reponse.md`, sections 4 ter
     /// and 8), so the corner leaves them alone.
-    private func drawnInPlace(_ choice: GeekController.Choice) -> Bool {
+    private func drawnInPlace(_ choice: InterfaceController.Choice) -> Bool {
         (choice == .sendFrom || choice == .sendThen) && model.composer != nil
     }
 
@@ -228,10 +228,10 @@ private struct GeekWindow: View {
         }
     }
 
-    private func menuTitle(_ p: GeekController.Prefix) -> String { p.title }
+    private func menuTitle(_ p: InterfaceController.Prefix) -> String { p.title }
 }
 
-extension GeekController.Prefix {
+extension InterfaceController.Prefix {
     /// The title of its menu, and the name of its block in the status bar
     /// when the theme names the blocks (`window.block_labels`).
     var title: String {
@@ -275,16 +275,16 @@ extension View {
 /// Compact status bar (`ui.md`). Each element opens with one key and a
 /// click: the account with `@`, the folder with `;`, the menus `v` `m` `s`,
 /// and, at the right end, the list of keys with `?`.
-struct GeekStatusBar: View {
+struct StatusBarView: View {
     @Environment(AppModel.self) private var model
-    let controller: GeekController
+    let controller: InterfaceController
 
     var body: some View {
         // regular: a macOS toolbar, whose buttons are the same blocks
-        // (`window.chrome = "toolbar"`, `GeekToolbar`); geek and clean:
+        // (`window.chrome = "toolbar"`, `ToolbarView`); geek and clean:
         // the status bar.
         if Look.toolbar {
-            GeekToolbar(controller: controller, messages: messageLine)
+            ToolbarView(controller: controller, messages: messageLine)
         } else {
             statusBar
         }
@@ -352,7 +352,7 @@ struct GeekStatusBar: View {
                 statusItem(item)
             }
         }
-        .font(.geekBar(11))
+        .font(.interfaceBar(11))
         .padding(.horizontal, 6)
         // The window's buttons over its left end (`window.title_bar =
         // "merged"`): room for them, and the height of a title bar, so
@@ -390,7 +390,7 @@ struct GeekStatusBar: View {
                     .accessibilityLabel(L("NiceMailer, normal mode"))
             } else {
                 Text(" \(controller.modeLabel) ")
-                    .font(.geekBar(11, weight: .bold))
+                    .font(.interfaceBar(11, weight: .bold))
                     .foregroundStyle(Palette.background)
                     .background(Palette.accentText)
             }
@@ -402,7 +402,7 @@ struct GeekStatusBar: View {
                 .uiTarget("status-account", chrome: "status_bar")
         case "folder":
             if listsMail, model.listFilter == nil {
-                StatusBlock(icon: GeekController.Prefix.goto.icon, text: model.currentFolderName,
+                StatusBlock(icon: InterfaceController.Prefix.goto.icon, text: model.currentFolderName,
                             key: controller.menuKeyLabel(.goto))
                     .menuAnchor(.goto, controller)
                     .onTapGesture { controller.openMenuFromStatusBar(.goto) }
@@ -433,7 +433,7 @@ struct GeekStatusBar: View {
         case "view", "move", "save":
             // A menu of a prefix, an icon and the key; the menu drops down
             // from the block.
-            let p = GeekController.Prefix(name: item)
+            let p = InterfaceController.Prefix(name: item)
             StatusBlock(icon: p.icon, text: "", key: controller.menuKeyLabel(p), label: p.title)
                 .menuAnchor(p, controller)
                 .onTapGesture { controller.openMenuFromStatusBar(p) }
@@ -565,7 +565,7 @@ enum StatusLayout {
     }
 }
 
-extension GeekStatusBar {
+extension StatusBarView {
     /// In Quarantine, the move targets with their key (`directTargets`),
     /// aligned at the right end of the bar, just before `?`: the move
     /// arrow once, then "Inbox i  Newsletter n …". On the right they stay
@@ -578,7 +578,7 @@ extension GeekStatusBar {
         let targets = controller.directTargets
         if !targets.isEmpty {
             HStack(spacing: barScaled(8)) {
-                Image(systemName: GeekController.Prefix.move.icon)
+                Image(systemName: InterfaceController.Prefix.move.icon)
                     .font(.system(size: barScaled(10), weight: .semibold))
                     .foregroundStyle(Palette.muted)
                     .accessibilityLabel(L("Move"))
@@ -603,9 +603,9 @@ extension GeekStatusBar {
 /// of the status bar, and open the same menus and pickers, dropped under
 /// them; the folder is the title, with what the app says (`messageLine`)
 /// and the synchronization under it, as Mail does.
-private struct GeekToolbar<Messages: View>: View {
+private struct ToolbarView<Messages: View>: View {
     @Environment(AppModel.self) private var model
-    let controller: GeekController
+    let controller: InterfaceController
     let messages: Messages
 
     var body: some View {
@@ -616,7 +616,7 @@ private struct GeekToolbar<Messages: View>: View {
             VStack(alignment: .leading, spacing: 1) {
                 if listsMail, model.listFilter == nil {
                     HStack(spacing: 4) {
-                        Text(model.currentFolderName).font(.geekBar(15, weight: .bold))
+                        Text(model.currentFolderName).font(.interfaceBar(15, weight: .bold))
                         Image(systemName: "chevron.down").font(.system(size: barScaled(8), weight: .semibold))
                             .foregroundStyle(Palette.muted)
                     }
@@ -625,7 +625,7 @@ private struct GeekToolbar<Messages: View>: View {
                     .onTapGesture { controller.openMenuFromStatusBar(.goto) }
                     .uiTarget("status-folder", chrome: "toolbar")
                 } else {
-                    Text(controller.locationLabel).font(.geekBar(15, weight: .bold)).lineLimit(1)
+                    Text(controller.locationLabel).font(.interfaceBar(15, weight: .bold)).lineLimit(1)
                 }
                 HStack(spacing: 6) {
                     messages
@@ -636,7 +636,7 @@ private struct GeekToolbar<Messages: View>: View {
                         Text(L("%lld marked", model.marked.count)).foregroundStyle(Palette.markedBar)
                     }
                 }
-                .font(.geekBar(10))
+                .font(.interfaceBar(10))
             }
             .padding(.trailing, barScaled(12))
             Spacer(minLength: 8)
@@ -648,7 +648,7 @@ private struct GeekToolbar<Messages: View>: View {
                 button(item, listsMail: listsMail)
             }
         }
-        .font(.geekBar(12))
+        .font(.interfaceBar(12))
         .padding(.horizontal, 12)
         .padding(.leading, model.titleBarMode == .merged ? Look.mergedButtonsWidth : 0)
         .frame(height: max(Look.statusBarHeight, 38))
@@ -660,9 +660,9 @@ private struct GeekToolbar<Messages: View>: View {
 
 /// A button of the toolbar: a real button (keyboard focus, accessibility,
 /// and a click AppKit delivers like any other), drawn as its block.
-extension GeekToolbar {
+extension ToolbarView {
     /// Whether the block `name` has something to show now (as in the
-    /// status bar, `GeekStatusBar.draws`).
+    /// status bar, `StatusBarView.draws`).
     func draws(_ name: String, _ listsMail: Bool) -> Bool {
         switch name {
         case "help": true
@@ -700,7 +700,7 @@ extension GeekToolbar {
                     .uiTarget("chip-\(chip.id)")
             }
         case "view", "move", "save":
-            let p = GeekController.Prefix(name: item)
+            let p = InterfaceController.Prefix(name: item)
             ToolbarItem(action: { controller.openMenuFromStatusBar(p) }) {
                 StatusBlock(icon: p.icon, text: "", key: controller.menuKeyLabel(p), label: p.title)
                     .menuAnchor(p, controller, chrome: "toolbar")
@@ -754,7 +754,7 @@ extension View {
     /// `chrome`: the command of the window the block belongs to (the status
     /// bar or the toolbar): a block of the other one, still laid out while
     /// the window is rebuilt in a new theme, does not move the menu.
-    fileprivate func menuAnchor(_ prefix: GeekController.Prefix, _ controller: GeekController,
+    fileprivate func menuAnchor(_ prefix: InterfaceController.Prefix, _ controller: InterfaceController,
                                 chrome: String = "status_bar") -> some View {
         background(GeometryReader { geo in
             Color.clear
@@ -764,7 +764,7 @@ extension View {
     }
 
     @MainActor
-    private func place(_ prefix: GeekController.Prefix, _ controller: GeekController, _ chrome: String, _ x: CGFloat) {
+    private func place(_ prefix: InterfaceController.Prefix, _ controller: InterfaceController, _ chrome: String, _ x: CGFloat) {
         guard ThemeStore.shared.current.window.chrome == chrome else { return }
         controller.menuBlockX[prefix] = x
     }
@@ -792,7 +792,7 @@ private struct StatusBlock: View {
             // (`window.key_hints`): the key works either way.
             if Look.keyHints {
                 Text(key)
-                    .font(.geekBar(9))
+                    .font(.interfaceBar(9))
                     .foregroundStyle(Palette.muted)
                     .padding(.horizontal, barScaled(3))
                     // Square corners: the geek theme has no rounded shapes (`ui.md`).
@@ -819,7 +819,7 @@ private struct ToolbarButton: ViewModifier {
 /// the separator before the mail can be dragged.
 private struct MailColumns: View {
     @Environment(AppModel.self) private var model
-    let controller: GeekController
+    let controller: InterfaceController
 
     var body: some View {
         GeometryReader { geo in
@@ -833,7 +833,7 @@ private struct MailColumns: View {
                     // the hidden list, so the next mail is one key away.
                     // When the list empties (last mail archived), the list
                     // comes back rather than an empty reader.
-                    GeekReaderColumn(controller: controller)
+                    ReaderColumn(controller: controller)
                 } else {
                     columns(folderWidth: folderWidth, rest: rest, listWidth: listWidth)
                 }
@@ -846,10 +846,10 @@ private struct MailColumns: View {
     @ViewBuilder
     private func columns(folderWidth: CGFloat, rest: CGFloat, listWidth: CGFloat) -> some View {
         if controller.columns == 3 {
-            GeekFolderColumn(controller: controller).frame(width: folderWidth)
+            FolderColumn(controller: controller).frame(width: folderWidth)
             Look.separator.frame(width: 1)
         }
-        GeekThreadColumn(controller: controller).frame(width: listWidth).clipped()
+        ThreadColumn(controller: controller).frame(width: listWidth).clipped()
         if controller.columns > 1 {
             Look.separator.frame(width: 1)
                 // A wider invisible zone makes the line easy to grab.
@@ -859,16 +859,16 @@ private struct MailColumns: View {
                 .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .named("columns")).onChanged { g in
                     controller.listFraction = Double(max(0.15, min(0.7, (g.location.x - folderWidth) / max(rest, 1))))
                 })
-            GeekReaderColumn(controller: controller)
+            ReaderColumn(controller: controller)
         }
     }
 }
 
 /// Third column: the folders of the current view, under a single title:
 /// "all" (the unified view) or the account's name (`ui.md`).
-private struct GeekFolderColumn: View {
+private struct FolderColumn: View {
     @Environment(AppModel.self) private var model
-    let controller: GeekController
+    let controller: InterfaceController
 
     var body: some View {
         ScrollView {
@@ -913,7 +913,7 @@ private struct GeekFolderColumn: View {
                     // The same blocks as the ; menu.
                     .padding(.top, i > 0 && folders[i - 1].group != f.group ? scaled(10) : 0)
                 }
-                GeekColumnGroups(controller: controller)
+                ColumnGroups(controller: controller)
             }
         }
         .scrollIndicators(Look.scrollIndicators)
@@ -930,9 +930,9 @@ private struct GeekFolderColumn: View {
 /// With more groups than room, the most relevant ones are shown
 /// (`GroupRanking`) and a last row "N more…" opens the Group… panel, which
 /// lists them all. No groups: no block at all, not even its title.
-private struct GeekColumnGroups: View {
+private struct ColumnGroups: View {
     @Environment(AppModel.self) private var model
-    let controller: GeekController
+    let controller: InterfaceController
 
     var body: some View {
         let (rows, hidden) = controller.columnGroups
@@ -987,18 +987,18 @@ private struct GeekColumnGroups: View {
 
 /// The mail list. (`/` used to show its own results view; it now filters
 /// this same list, `ui.md`.)
-private struct GeekThreadColumn: View {
-    let controller: GeekController
+private struct ThreadColumn: View {
+    let controller: InterfaceController
 
     var body: some View {
         // Its own background (`colors.list`): the window's in geek.
-        GeekThreadRows(controller: controller).background(Palette.list)
+        ThreadRows(controller: controller).background(Palette.list)
     }
 }
 
-private struct GeekThreadRows: View {
+private struct ThreadRows: View {
     @Environment(AppModel.self) private var model
-    let controller: GeekController
+    let controller: InterfaceController
 
     var body: some View {
         let cursor = model.selectedThreadId
@@ -1018,7 +1018,7 @@ private struct GeekThreadRows: View {
                         // its place, for the alternate rows of a theme
                         // (`layout.zebra`); the id stays the thread's.
                         ForEach(Array(model.threads.enumerated()), id: \.element.id) { index, t in
-                            GeekThreadRow(
+                            ThreadRow(
                                 thread: t, cursor: t.id == cursor, marked: marked.contains(t.id), layout: layout, index: index,
                                 folder: folderLabels.map { $0[t.folderId] ?? .init(folder: "", account: nil) },
                                 showsKind: showsKind, suggestion: model.aiSuggestions[t.id], names: model.folderNames)
@@ -1035,7 +1035,7 @@ private struct GeekThreadRows: View {
                 // How many rows fit, for ctrl-d / ctrl-u (half a page). Read
                 // again when the window or the text size changes.
                 .onChange(of: geo.size.height, initial: true) { _, h in
-                    controller.listVisibleRows = GeekController.visibleRows(height: h, rowHeight: Look.rowHeight)
+                    controller.listVisibleRows = InterfaceController.visibleRows(height: h, rowHeight: Look.rowHeight)
                 }
                 // Keep the cursor visible, without animation: `scrollTo`
                 // with no anchor scrolls only as much as needed.
@@ -1144,7 +1144,7 @@ struct RowLayout: Equatable {
 }
 
 /// The sender column of a list row (`ui.md`, "Liste").
-enum GeekSender {
+enum SenderColumn {
     /// The arrow shown before the correspondent when the user wrote the
     /// latest mail. A symbol, the same in every language.
     static let mark = "→"
@@ -1203,7 +1203,7 @@ enum GeekSender {
 /// The paperclip says the conversation has attachments, without a number,
 /// and sits before the subject: next to the message count at the end of
 /// the row, "📎 3" would read as three attachments (`ui.md`, "Liste").
-private struct GeekThreadRow: View {
+private struct ThreadRow: View {
     let thread: ThreadSummary
     let cursor: Bool
     let marked: Bool
@@ -1238,7 +1238,7 @@ private struct GeekThreadRow: View {
             HStack(spacing: layout.char / 2) {
                 if showsKind {
                     Group {
-                        if let symbol = GeekSender.kindSymbol(thread) {
+                        if let symbol = SenderColumn.kindSymbol(thread) {
                             Image(systemName: symbol)
                                 .font(.system(size: scaled(10), weight: .medium))
                                 // The person in the accent colour: among
@@ -1253,14 +1253,14 @@ private struct GeekThreadRow: View {
                     // Read once, with the name (`spoken`), not as an image.
                     .accessibilityHidden(true)
                 }
-                Text(GeekSender.text(thread))
+                Text(SenderColumn.text(thread))
                     .fontWeight(thread.unreadCount > 0 ? .bold : .regular)
                     .lineLimit(1)
                 Spacer(minLength: 0)
             }
             .frame(width: layout.sender, alignment: .leading)
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel(GeekSender.spoken(thread, showsKind: showsKind))
+            .accessibilityLabel(SenderColumn.spoken(thread, showsKind: showsKind))
             Group {
                 if thread.hasAttachments {
                     Image(systemName: "paperclip")
@@ -1312,7 +1312,7 @@ private struct GeekThreadRow: View {
             }
             .frame(width: layout.icon)
         }
-        .font(.geek(RowLayout.fontSize, weight: .regular))
+        .font(.interface(RowLayout.fontSize, weight: .regular))
         .lineLimit(1)
         .padding(.trailing, 6)
         .frame(height: Look.rowHeight)
@@ -1377,11 +1377,11 @@ struct ReaderTitleBar<Controls: View>: View {
     // subject is often what one copies to search for it or quote it.
     // Swift note: `.textSelection(.enabled)` lets the user drag over a
     // SwiftUI `Text` and copy it with ⌘C; ⌘ shortcuts are left to AppKit
-    // by `GeekController.handle`. On two lines, a subject longer than the
+    // by `InterfaceController.handle`. On two lines, a subject longer than the
     // whole reader is cut at the end; the tooltip shows it whole.
     private var subjectText: some View {
         // Its size follows the theme (`fonts.title_scale`: 1 in geek).
-        Text(subject).font(.geek(13 * Look.titleScale, weight: .bold)).lineLimit(1)
+        Text(subject).font(.interface(13 * Look.titleScale, weight: .bold)).lineLimit(1)
             .textSelection(.enabled)
             .help(subject)
     }
@@ -1399,7 +1399,7 @@ struct ReaderTitleBar<Controls: View>: View {
                 ForEach(tags, id: \.self) { Text("#\($0)") }
                 ForEach(groups, id: \.self) { Text("@\($0)") }
             }
-            .font(.geek(12))
+            .font(.interface(12))
             .foregroundStyle(Palette.accentText)
             .lineLimit(1)
             .fixedSize()
@@ -1416,9 +1416,9 @@ struct ReaderTitleBar<Controls: View>: View {
 
 /// The open thread, as text (iA Writer Mono V) or as sanitized HTML,
 /// following the choice remembered for the sender.
-private struct GeekReaderColumn: View {
+private struct ReaderColumn: View {
     @Environment(AppModel.self) private var model
-    let controller: GeekController
+    let controller: InterfaceController
 
     var body: some View {
         if model.composer != nil {
@@ -1702,7 +1702,7 @@ private struct GeekReaderColumn: View {
 private struct TextReader: NSViewRepresentable {
     let blocks: [ThreadDisplay.Block]
     let threadId: Int
-    let controller: GeekController
+    let controller: InterfaceController
 
     func makeNSView(context: Context) -> NSScrollView {
         let scroll = NSTextView.scrollableTextView()
@@ -1779,7 +1779,7 @@ private struct TextReader: NSViewRepresentable {
     final class Coordinator: NSObject, NSTextViewDelegate {
         var key = ""
         var threadId = -1
-        weak var controller: GeekController?
+        weak var controller: InterfaceController?
         /// Rebuilds the text for the current width (set by `updateNSView`).
         var rebuild: (() -> Void)?
         private var observer: NSObjectProtocol?
@@ -2038,7 +2038,7 @@ private struct HTMLReader: NSViewRepresentable {
     /// Whether the page runs Dark Reader (`DarkMode`).
     let darkMode: Bool
     /// Keeps the web view, to scroll it from the keyboard (Space, ctrl-f…).
-    let controller: GeekController
+    let controller: InterfaceController
 
     func makeNSView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
@@ -2092,7 +2092,7 @@ private struct HTMLReader: NSViewRepresentable {
 
     final class Coordinator: NSObject, WKNavigationDelegate {
         var html = ""
-        weak var controller: GeekController?
+        weak var controller: InterfaceController?
         /// The handler of `nm-remote:` sources; kept by the coordinator,
         /// which lives as long as the web view.
         let images = MainActor.assumeIsolated { RemoteImageLoader() }
@@ -2213,12 +2213,12 @@ struct VirtualFolderLabel: View {
     }
 }
 
-/// The panel of a choice (`GeekController.activeChoice`): its title and
+/// The panel of a choice (`InterfaceController.activeChoice`): its title and
 /// one row per answer, each with its key. Drawn in the bottom-right
 /// corner, or by the screen itself where the choice belongs.
 struct ChoicePanel: View {
-    let controller: GeekController
-    let choice: GeekController.Choice
+    let controller: InterfaceController
+    let choice: InterfaceController.Choice
 
     var body: some View {
         KeyMenu(title: controller.choiceTitle(choice),
@@ -2375,8 +2375,8 @@ private struct HelpPanel: View {
 
 /// Helix-style picker: the typed text on top, the filtered rows below.
 struct PickerPopup: View {
-    let controller: GeekController
-    let kind: GeekController.PickerKind
+    let controller: InterfaceController
+    let kind: InterfaceController.PickerKind
     /// Width of the panel (`width(_:available:scale:)`).
     let width: CGFloat
     /// The height of the window's content: a panel never goes past it.
@@ -2392,7 +2392,7 @@ struct PickerPopup: View {
     /// - any other picker 520 points;
     ///
     /// never wider than the window.
-    static func width(_ kind: GeekController.PickerKind, available: CGFloat, scale: CGFloat) -> CGFloat {
+    static func width(_ kind: InterfaceController.PickerKind, available: CGFloat, scale: CGFloat) -> CGFloat {
         let wanted: CGFloat
         switch kind {
         case .links: wanted = max(min(available - 2 * 40 * scale, 1100 * scale), 520 * scale)
@@ -2411,11 +2411,11 @@ struct PickerPopup: View {
     /// The attribute selector (`f`) is as tall as all its rows: its rows
     /// are few and fixed, and one that had to be scrolled to was missed
     /// (Mail date… and "clear" were below the edge until November 2026).
-    static func height(_ kind: GeekController.PickerKind, scale: CGFloat) -> CGFloat {
+    static func height(_ kind: InterfaceController.PickerKind, scale: CGFloat) -> CGFloat {
         switch kind {
         case .attributes:
-            (headerHeight + 1 + CGFloat(GeekController.attributeRowCount) * rowHeight
-                + CGFloat(GeekController.attributeGapCount) * gapHeight + 4) * scale
+            (headerHeight + 1 + CGFloat(InterfaceController.attributeRowCount) * rowHeight
+                + CGFloat(InterfaceController.attributeGapCount) * gapHeight + 4) * scale
         case .attributeValue, .search, .links: 440 * scale
         default: 320 * scale
         }
@@ -2431,7 +2431,7 @@ struct PickerPopup: View {
 
     /// `height`, kept inside a window `available` points tall, with a
     /// margin above and below: in a short window, the rows scroll.
-    static func height(_ kind: GeekController.PickerKind, scale: CGFloat, available: CGFloat) -> CGFloat {
+    static func height(_ kind: InterfaceController.PickerKind, scale: CGFloat, available: CGFloat) -> CGFloat {
         min(height(kind, scale: scale), max(available - 2 * 16 * scale, 120 * scale))
     }
 
@@ -2589,7 +2589,7 @@ private struct ScreenList<Row: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text(title).font(.geek(13, weight: .bold))
+                Text(title).font(.interface(13, weight: .bold))
                 Text(hint).foregroundStyle(Palette.muted)
                 Spacer()
             }
@@ -2622,7 +2622,7 @@ private struct ScreenList<Row: View>: View {
 }
 
 private struct ContactsScreen: View {
-    let controller: GeekController
+    let controller: InterfaceController
 
     var body: some View {
         ScreenList(
@@ -2660,7 +2660,7 @@ private struct ContactsScreen: View {
 }
 
 private struct HistoryScreen: View {
-    let controller: GeekController
+    let controller: InterfaceController
 
     var body: some View {
         // Read once: the rows are worked out from the groups and their lines.
@@ -2715,7 +2715,7 @@ private struct HistoryRow: View {
 
 /// Tags or groups: a name and a count per row.
 private struct NamesScreen: View {
-    let controller: GeekController
+    let controller: InterfaceController
     let title: String
     let rows: [(String, String)]
 

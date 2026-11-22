@@ -511,7 +511,7 @@ Chaque étape livre sa documentation dans `docs/` (`docs/ai.md`).
 - **Historique** : purge du contenu après le délai, métadonnées gardées ; `billed` selon le fournisseur ; décisions `accepted`, `rejected`, `partial`.
 - **Portée `selection`** : sans marque, la conversation sous le curseur hors Quarantine, tout le dossier en Quarantine, au-delà des lignes chargées ; `ai.max_folder_items` respecté.
 - **Suggestions** : affichées tant que la conversation est dans le dossier, retirées quand elle le quitte ; `accepted`, `other`, `dismissed` selon le déplacement.
-- **App** : tests unitaires (`GeekController` contre `FakeCore`) et scénarios `.uiscript` pour `a` et ⌃I (⌃I dans l'éditeur n'écrit rien), le menu et les variantes, l'acceptation et le refus des différences, ⌘Z après acceptation, l'annulation par Échap, la Quarantine et `↩`.
+- **App** : tests unitaires (`InterfaceController` contre `FakeCore`) et scénarios `.uiscript` pour `a` et ⌃I (⌃I dans l'éditeur n'écrit rien), le menu et les variantes, l'acceptation et le refus des différences, ⌘Z après acceptation, l'annulation par Échap, la Quarantine et `↩`.
 
 ## 16. Questions ouvertes
 

@@ -70,7 +70,7 @@ expect folder = Inbox
 expect status_targets = 
 expect selected_sender_kind = 
 key m
-expect overlay = menu(NiceMailer.GeekController.Prefix.move)
+expect overlay = menu(NiceMailer.InterfaceController.Prefix.move)
 key esc
 # Before each sender's name, an icon tells a person from a robot. The
 # seed's first mail comes from a stranger never written to: a robot.

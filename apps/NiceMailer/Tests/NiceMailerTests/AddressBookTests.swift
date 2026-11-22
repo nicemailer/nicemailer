@@ -19,13 +19,13 @@ struct AddressBookTests {
         "bob@example.org": [ContactCard(id: "B1", name: "Bob Durand", phones: [.init(label: nil, number: "06 98 76 54 32")])],
         "carol@example.org": [ContactCard(id: "C1", name: "Carol", phones: [.init(label: "mobile", number: "06 11 11 11 11")])],
     ])
-    let controller: GeekController
+    let controller: InterfaceController
 
     init() async {
         model.openFile = { _ in }
         model.addressBook = book
         let defaults = TestDefaults.make()
-        controller = GeekController(model: model, defaults: defaults, textSize: TextSize())
+        controller = InterfaceController(model: model, defaults: defaults, textSize: TextSize())
         controller.pasteboard = NSPasteboard(name: NSPasteboard.Name("NiceMailerTests-\(UUID().uuidString)"))
         await model.attach(core)
         _ = await eventually { model.openThread != nil }

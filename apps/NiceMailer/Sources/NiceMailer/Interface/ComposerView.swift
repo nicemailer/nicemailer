@@ -7,12 +7,12 @@ import UniformTypeIdentifiers
 /// once it is sent, then the text.
 ///
 /// The headers are the app's own fields: their keys are read and applied
-/// by `GeekController.handleComposeKey`, and this view only draws them.
+/// by `InterfaceController.handleComposeKey`, and this view only draws them.
 /// The text is the editor (`EditorWebView.swift`, `edition.md`): a
 /// standard text component, which takes every key the app does not.
 struct ComposerView: View {
     @Environment(AppModel.self) private var model
-    let controller: GeekController
+    let controller: InterfaceController
 
     var body: some View {
         if let c = model.composer {
@@ -87,7 +87,7 @@ struct ComposerView: View {
                         Text(after).foregroundStyle(Palette.accentText).lineLimit(1)
                     }
                 }
-                .font(.geek(12))
+                .font(.interface(12))
                 .padding(.horizontal, 12)
                 .padding(.vertical, scaled(6))
                 Palette.separator.frame(height: 1)
@@ -178,7 +178,7 @@ struct ComposerView: View {
         }
     }
 
-    /// The button that shows or hides the Bcc line (`GeekController.toggleBcc`):
+    /// The button that shows or hides the Bcc line (`InterfaceController.toggleBcc`):
     /// highlighted while the line is shown, dimmed while it holds addresses
     /// and so cannot be hidden.
     private func bccToggle(_ c: Composer) -> some View {
@@ -256,7 +256,7 @@ struct FlowLayout: Layout {
 struct EditorHost: NSViewRepresentable {
     /// The text has the keys (`Composer.focus`).
     var focused: Bool
-    let controller: GeekController
+    let controller: InterfaceController
 
     /// Holds the web view; once in a window, gives the text the keys if it
     /// has the focus: before, neither AppKit nor the page can take them.
@@ -376,7 +376,7 @@ struct AIPanel: View {
             .frame(maxHeight: maxTextHeight)
             .fixedSize(horizontal: false, vertical: true)
         }
-        .font(.geek(12))
+        .font(.interface(12))
         .padding(.horizontal, 12)
         .padding(.vertical, scaled(6))
         .background(Palette.popup)

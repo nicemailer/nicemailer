@@ -217,7 +217,7 @@ final class ThemeStore {
     private(set) var current: ThemeView
 
     /// Changes at each new theme: the window is rebuilt with it
-    /// (`GeekWindow`, `.id`), as for a new text size. A color already
+    /// (`WindowContent`, `.id`), as for a new text size. A color already
     /// resolved by SwiftUI would otherwise keep its old value.
     private(set) var revision = 0
 

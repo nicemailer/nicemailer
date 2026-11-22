@@ -4,21 +4,21 @@ import PDFKit
 import Testing
 @testable import NiceMailer
 
-/// Keyboard and mouse handling of the geek theme (`GeekController`),
+/// Keyboard and mouse handling of the geek theme (`InterfaceController`),
 /// against a fake core (`FakeCore`). Each test builds a fresh model,
 /// controller and preferences domain.
 @MainActor
-struct GeekControllerTests {
+struct InterfaceControllerTests {
     let core = FakeCore(handler: Fixture.answer)
     let model = AppModel()
     let defaults: UserDefaults
     let textSize: TextSize
-    let controller: GeekController
+    let controller: InterfaceController
 
     init() async {
         defaults = TestDefaults.make()
         textSize = TextSize()
-        controller = GeekController(model: model, defaults: defaults, textSize: textSize)
+        controller = InterfaceController(model: model, defaults: defaults, textSize: textSize)
         // A pasteboard of its own: a test that copies (a link to a mail)
         // never overwrites what the user copied.
         controller.pasteboard = NSPasteboard(name: NSPasteboard.Name("NiceMailerTests-\(UUID().uuidString)"))
@@ -107,20 +107,20 @@ struct GeekControllerTests {
 
     @Test func theHTMLReaderScrollsByAFractionOfThePage() {
         // Space: a page down, and the new position comes back to the app.
-        #expect(GeekController.htmlScrollScript(pages: 1)
+        #expect(InterfaceController.htmlScrollScript(pages: 1)
             == "window.scrollBy(0, Math.round(window.innerHeight * 1.0)); window.scrollY")
-        #expect(GeekController.htmlScrollScript(pages: -0.5).contains("innerHeight * -0.5"))
+        #expect(InterfaceController.htmlScrollScript(pages: -0.5).contains("innerHeight * -0.5"))
     }
 
     @Test func halfAPageIsHalfTheVisibleRowsAndNeverZero() {
-        #expect(GeekController.halfPage(40) == 20)
-        #expect(GeekController.halfPage(7) == 3)
-        #expect(GeekController.halfPage(1) == 1)
-        #expect(GeekController.halfPage(0) == 1)
-        #expect(GeekController.visibleRows(height: 900, rowHeight: 20) == 45)
-        #expect(GeekController.visibleRows(height: 39, rowHeight: 20) == 1)
-        #expect(GeekController.visibleRows(height: 0, rowHeight: 20) == 1)
-        #expect(GeekController.visibleRows(height: 100, rowHeight: 0) == 1)
+        #expect(InterfaceController.halfPage(40) == 20)
+        #expect(InterfaceController.halfPage(7) == 3)
+        #expect(InterfaceController.halfPage(1) == 1)
+        #expect(InterfaceController.halfPage(0) == 1)
+        #expect(InterfaceController.visibleRows(height: 900, rowHeight: 20) == 45)
+        #expect(InterfaceController.visibleRows(height: 39, rowHeight: 20) == 1)
+        #expect(InterfaceController.visibleRows(height: 0, rowHeight: 20) == 1)
+        #expect(InterfaceController.visibleRows(height: 100, rowHeight: 0) == 1)
     }
 
     @Test func shiftArrowsMarkAndMoveLikeJK() {
@@ -421,9 +421,9 @@ struct GeekControllerTests {
         let roles: [String?] = ["junk", "sent", nil, "archive", "banned", "inbox", "drafts", "paperwork",
                                 "deleted", "quarantine", "newsletter", "waiting", "todo"]
         let folders = roles.enumerated().map { i, r in
-            GeekController.ScopeFolder(folderId: i, role: r, name: r ?? "Projets", letter: "", unread: 0)
+            InterfaceController.ScopeFolder(folderId: i, role: r, name: r ?? "Projets", letter: "", unread: 0)
         }
-        let sorted = GeekController.ordered(folders)
+        let sorted = InterfaceController.ordered(folders)
         #expect(sorted.map(\.name) == [
             "inbox", "todo", "waiting",
             "archive", "newsletter", "paperwork", "quarantine",
@@ -434,7 +434,7 @@ struct GeekControllerTests {
         // Blocks: 0 to deal with, 2 filed, 3 the user's, 4 sent, 6 thrown away.
         #expect(sorted.map(\.group) == [0, 0, 0, 2, 2, 2, 2, 3, 4, 4, 6, 6, 6])
         // With the virtual folders, each ends its block, whatever the order.
-        let all = GeekController.ordered(AppModel.Virtual.allCases.reversed().map { GeekController.virtualFolder($0) } + folders)
+        let all = InterfaceController.ordered(AppModel.Virtual.allCases.reversed().map { InterfaceController.virtualFolder($0) } + folders)
         #expect(all.map(\.name) == [
             "inbox", "todo", "waiting", "Work",
             "archive", "newsletter", "paperwork", "quarantine",
@@ -445,7 +445,7 @@ struct GeekControllerTests {
     }
 
     @Test func theMoveSaveAndDisplayBlocksOpenTheirMenus() {
-        for p in [GeekController.Prefix.move, .save, .view] {
+        for p in [InterfaceController.Prefix.move, .save, .view] {
             controller.openMenuFromStatusBar(p)
             #expect(controller.overlay == .menu(p))
             #expect(!p.icon.isEmpty)
@@ -634,7 +634,7 @@ struct GeekControllerTests {
         press(";"); press("T")
         _ = await eventually { controller.tags.count == 3 }
         press("r")
-        let kind = GeekController.PickerKind.rename(.tag, name: "Urgent", id: nil)
+        let kind = InterfaceController.PickerKind.rename(.tag, name: "Urgent", id: nil)
         #expect(controller.overlay == .picker(kind))
         // The panel opens on the current name: nothing to do yet.
         #expect(controller.pickerQuery == "Urgent")
@@ -669,7 +669,7 @@ struct GeekControllerTests {
         press(";"); press("T")
         _ = await eventually { controller.tags.count == 3 }
         press("d")
-        let choice = GeekController.Choice.deleteLabel(.tag, name: "Urgent", id: nil, count: 6)
+        let choice = InterfaceController.Choice.deleteLabel(.tag, name: "Urgent", id: nil, count: 6)
         #expect(controller.activeChoice == choice)
         #expect(controller.choiceTitle(choice) == L("Delete the tag %@ (taken off its %lld mails)?", "Urgent", 6))
         // Escape keeps it.
@@ -690,7 +690,7 @@ struct GeekControllerTests {
         #expect(await eventually { controller.groups.count == 2 })
         model.attributes.toggleGroup(ThreadFilter.GroupRef(id: 1, name: "VIP"))
         press("r")
-        let kind = GeekController.PickerKind.rename(.group, name: "VIP", id: 1)
+        let kind = InterfaceController.PickerKind.rename(.group, name: "VIP", id: 1)
         #expect(controller.overlay == .picker(kind))
         type("FAMILLE")
         #expect(controller.pickerEntries(kind).map(\.label) == [L("%@ already exists", "FAMILLE")])
@@ -705,7 +705,7 @@ struct GeekControllerTests {
         #expect(await eventually { model.flash == L("Group renamed: %@ → %@", "VIP", "Proches") })
 
         press("d")
-        let choice = GeekController.Choice.deleteLabel(.group, name: "VIP", id: 1, count: 2)
+        let choice = InterfaceController.Choice.deleteLabel(.group, name: "VIP", id: 1, count: 2)
         #expect(controller.activeChoice == choice)
         #expect(controller.choiceTitle(choice) == L("Delete the group %@ and its %lld members? Their mails stay", "VIP", 2))
         press("y")
@@ -989,21 +989,21 @@ struct GeekControllerTests {
     }
 
     @Test func stepDownTurnsAroundFromTheLastRowOnly() {
-        #expect(GeekController.stepDown(4, count: 5) == 0)
-        #expect(GeekController.stepDown(1, count: 5) == 2)
-        #expect(GeekController.stepDown(0, count: 1) == 0)
-        #expect(GeekController.stepDown(0, count: 0) == 0)
+        #expect(InterfaceController.stepDown(4, count: 5) == 0)
+        #expect(InterfaceController.stepDown(1, count: 5) == 2)
+        #expect(InterfaceController.stepDown(0, count: 1) == 0)
+        #expect(InterfaceController.stepDown(0, count: 0) == 0)
         // An index left past the end (the list shrank) starts again on top.
-        #expect(GeekController.stepDown(9, count: 5) == 0)
+        #expect(InterfaceController.stepDown(9, count: 5) == 0)
     }
 
     @Test func stepUpWrapsFromTheFirstRowOnly() {
-        #expect(GeekController.stepUp(0, count: 5) == 4)
-        #expect(GeekController.stepUp(3, count: 5) == 2)
-        #expect(GeekController.stepUp(0, count: 1) == 0)
-        #expect(GeekController.stepUp(0, count: 0) == 0)
+        #expect(InterfaceController.stepUp(0, count: 5) == 4)
+        #expect(InterfaceController.stepUp(3, count: 5) == 2)
+        #expect(InterfaceController.stepUp(0, count: 1) == 0)
+        #expect(InterfaceController.stepUp(0, count: 0) == 0)
         // An index left past the end (the list shrank) comes back inside.
-        #expect(GeekController.stepUp(9, count: 5) == 4)
+        #expect(InterfaceController.stepUp(9, count: 5) == 4)
     }
 
     // MARK: Attachments
@@ -1318,7 +1318,7 @@ struct GeekControllerTests {
         press("v"); press("s")
         #expect(controller.statusPosition == .hidden)
         // A new controller reads the remembered choices.
-        let again = GeekController(model: model, defaults: defaults)
+        let again = InterfaceController(model: model, defaults: defaults)
         #expect(again.columns == 3 && again.statusPosition == .hidden)
     }
 
@@ -1981,7 +1981,7 @@ struct GeekControllerTests {
         }
         let model = AppModel()
         let sizes = TextSize()
-        let controller = GeekController(model: model, defaults: defaults, textSize: sizes)
+        let controller = InterfaceController(model: model, defaults: defaults, textSize: sizes)
         await model.attach(sized)
         #expect(await eventually { sizes.size == 18 && sizes.statusBarSize == 12 })
         controller.perform(.textBigger)
@@ -2201,7 +2201,7 @@ struct GeekControllerTests {
         model.attributes.toggleTag("Urgent")
         press("f")
         let rows = controller.pickerEntries(.attributes).count
-        #expect(rows == GeekController.attributeRowCount)
+        #expect(rows == InterfaceController.attributeRowCount)
         let height = PickerPopup.height(.attributes, scale: 1)
         #expect(height >= PickerPopup.headerHeight + 1 + CGFloat(rows) * PickerPopup.rowHeight)
         // Larger text, taller panel; a short window caps it.

@@ -224,7 +224,7 @@ In a reply, **⌃I**, and elsewhere **`a`**, open the **AI palette**, as does a 
 
 ### What the palette works on
 
-The palette offers the prompts of its **target**, not of the window's layout (`GeekController.aiScreen`, `Screen` in `nm-ai`):
+The palette offers the prompts of its **target**, not of the window's layout (`InterfaceController.aiScreen`, `Screen` in `nm-ai`):
 
 | Target | Screen | Prompts |
 |---|---|---|
@@ -244,7 +244,7 @@ In a reply, **select a passage, then ⌃I**: the palette is the passage's. **Oth
 
 In **Quarantine**, the palette starts with **Sort the Quarantine**, so `a` then Return sorts the whole folder (the prompt's `unmarked = "folder"`), or the conversations marked. Nothing takes the keys meanwhile: the status bar says "20 of 47 sorted", and Escape stops it (what is sorted stays). As each batch ends, its rows show their target after an arrow ("→ Newsletter", cut to "→ Newsl…" in a narrow list such as two columns, where the subject needs the room: `AI.suggestionTag`), and the status bar gives the reason of the one under the cursor. **Return** on a row with a suggestion moves it there, as the target's key would; any move decides the suggestion (`accepted` or `other`). Elsewhere, with several conversations marked, **Suggest a folder** files them (`unmarked = "cursor"`: it is offered only for a selection).
 
-The result of a prompt **takes the place of the palette** it was chosen in, for a reply as for a mail: the same width, its top at the palette's top, growing downward as the answer streams in, so that the eyes stay where they already are (`GeekController.aiPlacement` says where the AI shows: `palette`, `panel`, `none`). The panel of a mail: a translation, a summary with its action items, a verdict (its risk in a colour, "Raised by NiceMailer" when the core raised it), or the quick replies, numbered, the first highlighted: Return (or a number) starts the reply to the mail with that text above the quotation, apart from what a reply already started holds by an empty line.
+The result of a prompt **takes the place of the palette** it was chosen in, for a reply as for a mail: the same width, its top at the palette's top, growing downward as the answer streams in, so that the eyes stay where they already are (`InterfaceController.aiPlacement` says where the AI shows: `palette`, `panel`, `none`). The panel of a mail: a translation, a summary with its action items, a verdict (its risk in a colour, "Raised by NiceMailer" when the core raised it), or the quick replies, numbered, the first highlighted: Return (or a number) starts the reply to the mail with that text above the quotation, apart from what a reply already started holds by an empty line.
 
 A prompt chosen, the text is saved first (the core reads the draft as saved, at its revision), the last keys typed included: the editor reports what is typed only after a pause, so the app asks it for its text first (`flush`, as sending does); an editor that does not answer runs nothing ("The text could not be read"). Meanwhile the **AI panel** opens in the palette's place, over the reply, its text still visible around it:
 

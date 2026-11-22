@@ -19,7 +19,7 @@ key esc
 expect mode_icon = true
 # The account picker: @, or a click on the account. "all" comes first.
 key @
-expect overlay = picker(NiceMailer.GeekController.PickerKind.accounts)
+expect overlay = picker(NiceMailer.InterfaceController.PickerKind.accounts)
 expect picker_count = 3
 snap account-picker
 # The picker turns around: up from the first row (where it opens) selects
@@ -33,7 +33,7 @@ key down
 expect picker_index = 1
 key esc
 click status:account
-expect overlay = picker(NiceMailer.GeekController.PickerKind.accounts)
+expect overlay = picker(NiceMailer.InterfaceController.PickerKind.accounts)
 type fixture
 key ret
 expect account = fixture
@@ -51,7 +51,7 @@ expect status_position = bottom
 # down on the left, from the folder block: just above the bar at the
 # bottom (window height 900, origin at the bottom).
 click status:folder
-expect overlay = menu(NiceMailer.GeekController.Prefix.goto)
+expect overlay = menu(NiceMailer.InterfaceController.Prefix.goto)
 expect menu_x < 400
 expect menu_y < 500
 snap folder-menu-bottom
@@ -88,16 +88,16 @@ key esc
 # The m, s and v menus have their block (icon and key) and drop down from
 # it, like the folder menu.
 click status:v
-expect overlay = menu(NiceMailer.GeekController.Prefix.view)
+expect overlay = menu(NiceMailer.InterfaceController.Prefix.view)
 expect menu_x > 100
 expect menu_y > 500
 snap view-menu-top
 key esc
 click status:m
-expect overlay = menu(NiceMailer.GeekController.Prefix.move)
+expect overlay = menu(NiceMailer.InterfaceController.Prefix.move)
 key esc
 click status:s
-expect overlay = menu(NiceMailer.GeekController.Prefix.save)
+expect overlay = menu(NiceMailer.InterfaceController.Prefix.save)
 key esc
 # The ? block at the right end opens the list of keys; a second click
 # closes it, as does any key.

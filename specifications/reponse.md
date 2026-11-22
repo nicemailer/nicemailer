@@ -302,7 +302,7 @@ Ces commandes sont réservées à l'app, à la TUI et au CLI : un agent (MCP) ou
 - **`nm-store`** : cycle de vie du brouillon (création, réutilisation, révision, abandon et restauration, `sending` non modifiable), réponse depuis un autre compte (file, Sent et rangement chacun dans son compte), expéditeur changé, fin d'envoi en une transaction (ligne Sent, rangement, décisions, suppression du brouillon), rejouée sans doublon.
 - **`nm-engine`**, contre le Dovecot de `dev/` avec un service de soumission SMTP : envoi réel, copie dans Sent avec `APPENDUID`, rattachement par la synchronisation sans doublon, échec temporaire puis reprise, `5xx` définitif, destinataire refusé, délai d'annulation et `cancel_send`, plantage pendant le délai.
 - **`nm-daemon`** : les commandes par le socket, erreurs et événements.
-- **App** : tests unitaires (`GeekController` contre `FakeCore` : `r`, Échap, `⌘↩`, `⌘⎋`, `z` pendant le délai et après) et scénario `.uiscript` (répondre, taper, envoyer, voir la conversation rangée).
+- **App** : tests unitaires (`InterfaceController` contre `FakeCore` : `r`, Échap, `⌘↩`, `⌘⎋`, `z` pendant le délai et après) et scénario `.uiscript` (répondre, taper, envoyer, voir la conversation rangée).
 
 ## 14. Questions ouvertes
 

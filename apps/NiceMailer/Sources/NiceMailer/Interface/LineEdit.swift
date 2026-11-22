@@ -4,7 +4,7 @@ import Foundation
 /// selection: the text typed in a picker (`F`, `/`, `@`, `t`, `g`, `l`), in
 /// the contacts filter, or in a field of the reply (subject, recipients).
 ///
-/// The geek theme reads every key itself (`GeekController.handle`) instead
+/// The geek theme reads every key itself (`InterfaceController.handle`) instead
 /// of giving the focus to a `TextField`, so that no key is ever eaten by a
 /// field. The price is that the editing a text field gives for free has to
 /// be done here: moving the cursor with the arrows, deleting on either side

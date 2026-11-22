@@ -73,7 +73,7 @@ enum Look {
     static var popupAnimation: Animation? { animation(theme.motion.popupMs) }
 
     /// Whether the theme animates anything: geek animates nothing, and
-    /// removes even SwiftUI's default fades (`GeekWindow`).
+    /// removes even SwiftUI's default fades (`WindowContent`).
     static var animates: Bool { sidebarAnimation != nil || popupAnimation != nil }
 
     private static func animation(_ ms: Int) -> Animation? {

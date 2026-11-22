@@ -16,7 +16,7 @@ struct ReaderTitleBarTests {
             HStack { Image(systemName: "eye.slash"); Text("2") }
             Text(" text  html  images ")
         }
-        .font(.geek())
+        .font(.interface())
     }
 
     /// Height the title line takes in a reader `width` points wide.

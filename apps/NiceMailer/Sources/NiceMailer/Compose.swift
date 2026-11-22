@@ -341,7 +341,7 @@ struct Composer: Equatable {
     /// as ⌫ brings back the last (`takeBackLast`). Any address of the
     /// three lines can so be removed or corrected, not only the last one.
     /// What was being typed in the line is committed first by the caller
-    /// (`GeekController.clickRecipient`), so nothing typed is lost.
+    /// (`InterfaceController.clickRecipient`), so nothing typed is lost.
     @discardableResult
     mutating func takeBack(_ index: Int, of field: ComposeField) -> Bool {
         guard headers[field].indices.contains(index) else { return false }

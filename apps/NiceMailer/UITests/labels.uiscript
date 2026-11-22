@@ -78,7 +78,7 @@ expect picker_hidden_rows = 0
 snap attributes
 type Tag
 key ret
-expect overlay = picker(NiceMailer.GeekController.PickerKind.attributeValue(NiceMailer.AttributeField.tag))
+expect overlay = picker(NiceMailer.InterfaceController.PickerKind.attributeValue(NiceMailer.AttributeField.tag))
 expect picker_rows ~ Urgent
 snap tag-panel
 type urg

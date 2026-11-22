@@ -21,7 +21,7 @@ struct FolderNamesTests {
 
     /// A model attached to a fake core whose `config_status` gives `names`
     /// (none: an older core, without `folder_names`), with its controller.
-    func attached(_ names: @escaping () -> [String: String]?) async -> (AppModel, GeekController, FakeCore) {
+    func attached(_ names: @escaping () -> [String: String]?) async -> (AppModel, InterfaceController, FakeCore) {
         let core = FakeCore { method, params in
             guard method == "config_status" else { return Fixture.answer(method, params) }
             var status: [String: Any] = ["ui": ["title_bar": "shown"]]
@@ -29,7 +29,7 @@ struct FolderNamesTests {
             return status
         }
         let model = AppModel()
-        let controller = GeekController(model: model, defaults: defaults, textSize: TextSize())
+        let controller = InterfaceController(model: model, defaults: defaults, textSize: TextSize())
         await model.attach(core)
         _ = await eventually { model.threads.count == 8 }
         return (model, controller, core)
@@ -63,7 +63,7 @@ struct FolderNamesTests {
         #expect(FolderNames.english.name(of: AppModel.Virtual.allMail) == "All Mail")
         #expect(AppModel.Virtual.allMail.name == "All Mail")
         #expect(AppModel.Virtual.allCases.map(\.id) == ["work", "all_mail", "everything"])
-        #expect(GeekController.virtualFolder(.everything, names: names).name == "Tout")
+        #expect(InterfaceController.virtualFolder(.everything, names: names).name == "Tout")
     }
 
     @Test func aFolderWithoutRoleIsNamedByItsPath() throws {

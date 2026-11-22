@@ -88,7 +88,7 @@ Ce document spécifie le composant qui édite le texte d'un mail, ses deux modes
 
 ## 7. Touches dans la zone de texte
 
-L'app reçoit chaque touche avant l'éditeur (moniteur de touches de `GeekController`). Elle ne garde que la liste fermée ci-dessous ; toutes les autres vont à l'éditeur, qui suit le comportement du Mac.
+L'app reçoit chaque touche avant l'éditeur (moniteur de touches de `InterfaceController`). Elle ne garde que la liste fermée ci-dessous ; toutes les autres vont à l'éditeur, qui suit le comportement du Mac.
 
 | Touche | Effet | Changement |
 | --- | --- | --- |
@@ -188,7 +188,7 @@ Avec des pièces jointes, `multipart/mixed` dont la première partie est la pré
 
 - **Éditeur** (`apps/editor`, Vitest, `make editor-test`, inclus dans `make test`) : schéma et valeurs hors liste ; chaque raccourci de frappe et clavier ; listes (`↩` sur un élément vide, `⇥`, `⇧⇥`, et `leave` hors liste) ; collages réels conservés en fichiers de test ; idempotence (charger un HTML produit par l'éditeur redonne le même HTML) ; conversion du texte seul vers le document (lignes `>`) ; chaque message du protocole.
 - **Noyau** : liste fermée (balises, attributs, schémas de lien, valeurs de style hors liste, `script`, `style`, `on…`) ; styles dans les balises ; `html_to_text` pour chaque élément ; détection de la mise en forme réelle ; les trois cas MIME, avec et sans pièces jointes, avec et sans Cci ; textes non ASCII et emojis.
-- **App, tests unitaires** : le routage des touches (`GeekController` contre `FakeCore`) : les commandes de la section 7 sont prises, toutes les autres laissées à l'éditeur, `⎋` laissé quand une boîte est ouverte ; le pont avec une vraie `EditorWebView` hors écran : `load`, `changed`, `flush` avant l'envoi et son délai, `replaceSelection` en une étape d'annulation, aucun `load` sur un rafraîchissement.
+- **App, tests unitaires** : le routage des touches (`InterfaceController` contre `FakeCore`) : les commandes de la section 7 sont prises, toutes les autres laissées à l'éditeur, `⎋` laissé quand une boîte est ouverte ; le pont avec une vraie `EditorWebView` hors écran : `load`, `changed`, `flush` avant l'envoi et son délai, `replaceSelection` en une étape d'annulation, aucun `load` sur un rafraîchissement.
 - **App, scénarios d'interface** : la fenêtre du mode scénario se dit fenêtre clé (`ScriptWindow`) sans que l'app soit activée, WebKit ne donnant les touches à sa page que dans la fenêtre clé. `⌘V` lit le presse-papiers du Mac, qu'un scénario ne doit jamais toucher : les collages sont vérifiés par les tests de l'éditeur. Écrire un texte accentué, mettre en forme par `⌘B` et un raccourci de frappe, coller un HTML de test par `⌘V` puis `⌥⇧⌘V`, basculer par `⇧⌘T`, envoyer juste après une frappe (le texte entier part), `⌘⎋` et `⌃I`. Instantanés en thème clair et sombre. `Runner.state()` expose le mode, la barre, et le contenu de l'éditeur (par `flush`). Les scénarios d'écriture existants (`writing`, `textinput`, `compose`, `recipients`, `ai`, `drafts`) sont repris.
 - **Documentation** : `docs/sending.md` (modes, mise en forme, collage, MIME), `docs/geek-ui.md` (touches du contexte « edition »), un nouveau `docs/editor.md` (composant, protocole, construction), aide de l'app (`Help.swift`), `README.md` (Node pour construire).
 

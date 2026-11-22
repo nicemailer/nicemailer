@@ -19,7 +19,7 @@ import os
 @MainActor
 @Observable
 final class AppModel {
-    /// Connection state, shown by `ContentView`.
+    /// Connection state, shown by the window (`WindowContent`).
     enum Status: Equatable {
         case connecting
         case connected(coreVersion: String)
@@ -175,7 +175,7 @@ final class AppModel {
     }
     /// The title bar is hidden: the content goes up to the top edge.
     var titleBarHidden: Bool { titleBarMode == .hidden }
-    /// The status bar is at the top of the window (`GeekController`,
+    /// The status bar is at the top of the window (`InterfaceController`,
     /// `statusPosition`): where `merged` puts the window's buttons.
     var statusBarAtTop = true
     /// The keys of the geek theme: the defaults until the core answers, then
@@ -982,7 +982,7 @@ final class AppModel {
                 configTitleBar = ui.titleBar
                 autoConfirmCalls = ui.autoConfirmCalls ?? false
                 // Applied at once: the window is rebuilt at the new sizes
-                // (`GeekWindow`, `.id`).
+                // (`WindowContent`, `.id`).
                 textSize.configure(size: ui.textSize, statusBar: ui.statusBarTextSize)
             }
             // An older core without `[unsubscribe]` keeps it closed, as
@@ -1632,7 +1632,7 @@ final class AppModel {
     }
 
     /// Loads the next page when the last row appears on screen (called by
-    /// each row's `.task` in `ThreadList` and `GeekThreadList`): the list
+    /// each row's `.task` in `ThreadRows`): the list
     /// scrolled with the mouse or the trackpad.
     func loadMoreIfNeeded(after thread: ThreadSummary) async {
         guard thread.id == threads.last?.id else { return }
@@ -1806,7 +1806,7 @@ final class AppModel {
     /// Whether the list shows, before each sender's name, an icon telling a
     /// person from a robot (`ui.md`, "Quarantine"): while a Quarantine
     /// folder itself is listed (of an account, or of "all"), as for its
-    /// direct targets (`GeekController.directTargets`). There the user
+    /// direct targets (`InterfaceController.directTargets`). There the user
     /// judges unknown senders, and a person among the robots is the mail
     /// most likely to deserve the Inbox. Elsewhere the attribute selector's
     /// human / robot filter does that job, and the column keeps its room
@@ -1822,7 +1822,7 @@ final class AppModel {
     /// mail, and the unread dot keeps saying which mails still wait for that
     /// judgement. Only the automatic marking is concerned (the one-second
     /// rule, Return in one column, leaving the mail): the geek theme also
-    /// refuses `u` / `U` while Quarantine is listed (`GeekController`), but
+    /// refuses `u` / `U` while Quarantine is listed (`InterfaceController`), but
     /// the core itself accepts `set_thread_seen`, so a client that asks
     /// explicitly (the CLI) still can.
     func isInQuarantine(_ id: Int) -> Bool {

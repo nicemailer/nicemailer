@@ -226,7 +226,7 @@ struct KeymapTests {
 struct KeymapControllerTests {
     let core: FakeCore
     let model = AppModel()
-    let controller: GeekController
+    let controller: InterfaceController
 
     init() async {
         core = FakeCore { method, params in
@@ -260,7 +260,7 @@ struct KeymapControllerTests {
             }
         }
         let defaults = TestDefaults.make()
-        controller = GeekController(model: model, defaults: defaults, textSize: TextSize())
+        controller = InterfaceController(model: model, defaults: defaults, textSize: TextSize())
         controller.pasteboard = NSPasteboard(name: NSPasteboard.Name("NiceMailerTests-\(UUID().uuidString)"))
         await model.attach(core)
         _ = await eventually { model.threads.count == 8 && model.openThread != nil }

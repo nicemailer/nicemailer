@@ -80,7 +80,7 @@ struct HistoryScreenTests {
 
     /// A controller on a core whose log holds a mail moved, a batch and a
     /// sender decided.
-    private func screen(pages: [[[String: Any]]]? = nil) async -> (GeekController, AppModel, FakeCore) {
+    private func screen(pages: [[[String: Any]]]? = nil) async -> (InterfaceController, AppModel, FakeCore) {
         let row = { (id: Int, count: Int, entity: String, kind: String, title: String) -> [String: Any] in
             ["first_id": id - count + 1, "last_id": id, "count": count, "date": 1_700_000_000, "source": "app",
              "entity": entity, "entity_id": id, "kind": kind, "value": "archive", "title": title]
@@ -107,7 +107,7 @@ struct HistoryScreenTests {
         }
         let model = AppModel()
         let defaults = TestDefaults.make()
-        let controller = GeekController(model: model, defaults: defaults, textSize: TextSize())
+        let controller = InterfaceController(model: model, defaults: defaults, textSize: TextSize())
         model.addressBook = FixtureAddressBook(cards: [:])
         await model.attach(core)
         controller.open(.history)
@@ -115,7 +115,7 @@ struct HistoryScreenTests {
         return (controller, model, core)
     }
 
-    private func press(_ controller: GeekController, _ chars: String, code: UInt16 = 0, mods: NSEvent.ModifierFlags = []) {
+    private func press(_ controller: InterfaceController, _ chars: String, code: UInt16 = 0, mods: NSEvent.ModifierFlags = []) {
         let event = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: mods, timestamp: 0, windowNumber: 0,
                                      context: nil, characters: chars, charactersIgnoringModifiers: chars,
                                      isARepeat: false, keyCode: code)!

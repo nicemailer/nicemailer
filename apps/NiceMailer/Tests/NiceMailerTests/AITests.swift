@@ -195,14 +195,14 @@ struct AIRulesTests {
     }
 
     @Test func theScreenOfThePaletteFollowsItsTarget() {
-        let screen = GeekController.aiScreen
+        let screen = InterfaceController.aiScreen
         #expect(screen(true, 0) == "compose")
         #expect(screen(true, 5) == "compose", "the reply written, whatever is marked")
         #expect(screen(false, 0) == "mail", "the mail shown or under the cursor")
         #expect(screen(false, 1) == "mail", "one mail marked is one mail")
         #expect(screen(false, 2) == "selection")
         // The conversation of a prompt of one mail.
-        let thread = GeekController.aiThread
+        let thread = InterfaceController.aiThread
         #expect(thread([7], 3, 4) == 7, "the one marked alone first")
         #expect(thread([], 3, 4) == 3, "then the one shown")
         #expect(thread([], nil, 4) == 4, "then the row under the cursor")
@@ -272,7 +272,7 @@ struct AIRulesTests {
     @MainActor
     @Test func theAIBlockOfTheStatusBarRemindsOfItsKey() {
         let defaults = TestDefaults.make()
-        let controller = GeekController(model: AppModel(), defaults: defaults, textSize: TextSize())
+        let controller = InterfaceController(model: AppModel(), defaults: defaults, textSize: TextSize())
         #expect(controller.aiKeyLabel(composing: false) == "a")
         #expect(controller.aiKeyLabel(composing: true) == "⌃I")
     }
@@ -343,7 +343,7 @@ struct AIRulesTests {
     }
 }
 
-/// The AI menu and panel through the keys (`GeekController`), against a
+/// The AI menu and panel through the keys (`InterfaceController`), against a
 /// fake core: ⌘I in a reply, `a` in the list, a run from start to answer.
 /// What the fake core answers to the AI methods, set by each test. The
 /// fake core calls its handler on any thread: the state is behind a lock.
@@ -494,14 +494,14 @@ final class AIFakeState: @unchecked Sendable {
     }
 }
 
-/// The AI menu and panel through the keys (`GeekController`), against a
+/// The AI menu and panel through the keys (`InterfaceController`), against a
 /// fake core: ⌘I in a reply, `a` in the list, a run from start to answer.
 @MainActor
 final class AIControllerTests {
     let ai = AIFakeState()
     let core: FakeCore
     let model = AppModel()
-    let controller: GeekController
+    let controller: InterfaceController
     let editor: FakeEditor
 
     init() async {
@@ -509,7 +509,7 @@ final class AIControllerTests {
         core = FakeCore { method, params in state.answer(method, params) }
         let defaults = TestDefaults.make()
         editor = FakeEditor(model: model)
-        controller = GeekController(model: model, defaults: defaults, textSize: TextSize())
+        controller = InterfaceController(model: model, defaults: defaults, textSize: TextSize())
         controller.pasteboard = NSPasteboard(name: NSPasteboard.Name("NiceMailerTests-\(UUID().uuidString)"))
         model.openFile = { _ in }
         model.addressBook = FixtureAddressBook(cards: [:])

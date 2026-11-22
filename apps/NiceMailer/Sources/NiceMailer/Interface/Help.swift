@@ -6,7 +6,7 @@ import Foundation
 //
 // Everything here is pure (no view, no controller state), so the content
 // and the layout are unit-tested without a window (`HelpTests`). The view
-// (`HelpPanel`, `GeekViews.swift`) only draws what these functions decide.
+// (`HelpPanel`, `InterfaceViews.swift`) only draws what these functions decide.
 
 /// One key of the help.
 struct HelpEntry: Equatable {

@@ -18,7 +18,7 @@ import Observation
 /// in the comments are the defaults.
 @MainActor
 @Observable
-final class GeekController {
+final class InterfaceController {
     // MARK: - Types
 
     /// A menu opened by a key, a *prefix* as in Helix: the four of the app
@@ -1408,7 +1408,7 @@ final class GeekController {
             case .work: 0
             case .allMail: 4
             case .everything: 6
-            case nil: GeekController.folderGroup(role)
+            case nil: InterfaceController.folderGroup(role)
             }
         }
         var id: String { virtual.map { $0.rawValue } ?? folderId.map { "f\($0)" } ?? "r\(role ?? "")" }
@@ -3411,7 +3411,7 @@ final class GeekController {
 
 // MARK: - Mouse
 
-extension GeekController {
+extension InterfaceController {
     /// Clicks on rows. A click acts at once; a second click on the same row
     /// within the system's double-click interval also "opens" it. Detecting
     /// the double-click by hand avoids SwiftUI's `onTapGesture(count: 2)`,

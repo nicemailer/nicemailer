@@ -261,7 +261,7 @@ final class TextSize {
     /// (`TEXT_SIZE_RANGE`): ⌘+ and ⌘− stop there too.
     static let range: ClosedRange<Double> = 9...32
     /// The size the lengths of the layout are written for (`scaled`,
-    /// `Font.geek`): they were all measured at 12 pt, so this stays 12
+    /// `Font.interface`): they were all measured at 12 pt, so this stays 12
     /// whatever the default size is.
     static let referenceSize: Double = 12
 
@@ -279,7 +279,7 @@ final class TextSize {
 
     /// Factor applied to the sizes written for `referenceSize`.
     var scale: CGFloat { CGFloat(size / Self.referenceSize) }
-    /// The same, for the status bar (`barScaled`, `Font.geekBar`).
+    /// The same, for the status bar (`barScaled`, `Font.interfaceBar`).
     var statusBarScale: CGFloat { CGFloat(statusBarSize / Self.referenceSize) }
 
     private static func clamped(_ v: Double) -> Double {
@@ -482,13 +482,13 @@ extension Font {
     /// Font of the whole geek theme: iA Writer Mono V (`ui.md`), at a size
     /// written for the default text size and scaled to the current one.
     @MainActor
-    static func geek(_ size: CGFloat = 12, weight: Font.Weight = .regular) -> Font {
+    static func interface(_ size: CGFloat = 12, weight: Font.Weight = .regular) -> Font {
         Font(Fonts.scaled(size, weight: nsWeight(weight)))
     }
 
     /// The geek font of the status bar, scaled to its own text size.
     @MainActor
-    static func geekBar(_ size: CGFloat = 12, weight: Font.Weight = .regular) -> Font {
+    static func interfaceBar(_ size: CGFloat = 12, weight: Font.Weight = .regular) -> Font {
         Font(Fonts.interface(size * TextSize.shared.statusBarScale, weight: nsWeight(weight)))
     }
 

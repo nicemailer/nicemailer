@@ -314,7 +314,7 @@ extension AppModel {
         case .hint:
             flash = AI.hint(run.phase, keymap: keymap)
         case .move(let i):
-            // `GeekController.handleAIKey` applies it itself, at once.
+            // `InterfaceController.handleAIKey` applies it itself, at once.
             aiRun?.choice = i
         case .cancel:
             aiRun = nil
@@ -324,7 +324,7 @@ extension AppModel {
                 let _: CommandResult? = try? await client.call("ai_cancel", ["run_id": run.runId])
             }
         case .copy:
-            // `GeekController.handleAIKey` copies it itself: the pasteboard
+            // `InterfaceController.handleAIKey` copies it itself: the pasteboard
             // is the controller's (a private one in tests).
             break
         case .refuse, .close:

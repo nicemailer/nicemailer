@@ -14,7 +14,7 @@ expect flash ~ moved to Archive
 key m
 expect flash = No command m
 key M
-expect overlay = menu(NiceMailer.GeekController.Prefix.move)
+expect overlay = menu(NiceMailer.InterfaceController.Prefix.move)
 expect mode = M
 # f, given to move.todo, replaces its default t in the menu.
 expect menu_rows ~ f Todo

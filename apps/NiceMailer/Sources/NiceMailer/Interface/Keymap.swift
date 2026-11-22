@@ -225,7 +225,7 @@ enum KeyAction: String, CaseIterable {
     }
 
     /// The screen of `goto.contacts`, `goto.tags`, `goto.groups`, `goto.history`.
-    var gotoScreen: GeekController.Screen? {
+    var gotoScreen: InterfaceController.Screen? {
         switch self {
         case .gotoContacts: .contacts
         case .gotoTags: .tags
@@ -258,7 +258,7 @@ enum KeyAction: String, CaseIterable {
 
     /// Refused in Quarantine, whatever its key (`raccourcis.md`, section
     /// 6.1, `quarantine`): the actions that change a mail other than by
-    /// moving it or flagging it (`GeekController.quarantineRefused`).
+    /// moving it or flagging it (`InterfaceController.quarantineRefused`).
     var refusedInQuarantine: Bool {
         switch self {
         case .mailToggleSeen, .mailMarkSeen, .pickerTag, .pickerGroup, .composeReplyAll, .composeReplySender,
@@ -281,7 +281,7 @@ enum KeyAction: String, CaseIterable {
 
     /// What the row of a menu says for the action, also used by the help.
     /// A folder is named in English here; the menus name it as the file
-    /// does (`GeekController.label(of:)`). Only the actions that may be a row of a menu (those of the mail
+    /// does (`InterfaceController.label(of:)`). Only the actions that may be a row of a menu (those of the mail
     /// screen and of every screen) need a label; the others, which move in
     /// a panel, return their name.
     var label: String {

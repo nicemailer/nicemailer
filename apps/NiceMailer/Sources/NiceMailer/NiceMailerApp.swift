@@ -25,7 +25,7 @@ struct NiceMailerApp: App {
                     // Always the geek theme (`ui.md`): a theme saved by the
                     // former Theme menu is ignored, otherwise someone left on
                     // Classic would have no way back.
-                    GeekRootView()
+                    RootView()
                 }
             }
             .environment(model)

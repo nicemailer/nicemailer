@@ -4,7 +4,7 @@ import SwiftUI
 /// Which window a key belongs to (`ui.md`, "Clavier et menus": the keys go
 /// to the key window only).
 ///
-/// The key monitor of the app (`GeekRootView`) sees the keys of *every*
+/// The key monitor of the app (`RootView`) sees the keys of *every*
 /// window of the process: the Preferences, the open and save panels, the
 /// windows of the updater. Only those of the main window are commands; in
 /// any other window a letter is text for the field being edited.
@@ -21,7 +21,7 @@ enum KeyRouting {
     }
 }
 
-extension GeekController {
+extension InterfaceController {
     /// What the key monitor does with a key: nil when the controller took
     /// it, the event when AppKit must go on with it (the field of another
     /// window, the menus).
@@ -31,7 +31,7 @@ extension GeekController {
     }
 }
 
-/// The window `GeekRootView` is shown in, for the key monitor.
+/// The window `RootView` is shown in, for the key monitor.
 ///
 /// Swift note: `weak` does not keep the window alive, and becomes nil by
 /// itself once the window is gone. A class, so that the monitor's closure and

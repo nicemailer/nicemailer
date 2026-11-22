@@ -107,7 +107,7 @@ struct MailboxChangeTests {
     let core = FakeCore(handler: Fixture.answer)
     let model = AppModel()
     let tool = FakeMailboxTool()
-    let controller: GeekController
+    let controller: InterfaceController
     /// The folders the app switched to.
     let switched = Switched()
 
@@ -121,7 +121,7 @@ struct MailboxChangeTests {
 
     init() async throws {
         let defaults = TestDefaults.make()
-        controller = GeekController(model: model, defaults: defaults, textSize: TextSize())
+        controller = InterfaceController(model: model, defaults: defaults, textSize: TextSize())
         model.openFile = { _ in }
         model.addressBook = FixtureAddressBook(cards: [:])
         tool.reports = [

@@ -48,7 +48,7 @@ A value outside the lists (a paste, a draft written elsewhere) is dropped, its t
 
 ## Keys in the text
 
-The app sees each key before the editor (`GeekController.handleComposeKey`, then `handleBodyKey`) and keeps only these; every other key is the editor's, that is the Mac's.
+The app sees each key before the editor (`InterfaceController.handleComposeKey`, then `handleBodyKey`) and keeps only these; every other key is the editor's, that is the Mac's.
 
 | Key | Effect |
 | --- | --- |
@@ -88,7 +88,7 @@ In text only, a change of the AI the core applied goes to the editor as one rang
 
 ## In the app
 
-- **One web view**, `EditorBridge.shared` (`Geek/EditorWebView.swift`), created and loaded once the first list is shown (`AppModel.ensureEditor`: WebKit starting during the launch slowed the first list) and kept hidden, so that `r` opens the editor without waiting for WebKit; a reply opened before is the one that creates it. Keys typed for the text while its page still loads are kept by the app and typed into it once it is ready (`EditorBridge.keepKeyUntilReady`): none is lost. Each opening sends `load`. If WebKit's process for the page stops, the page is loaded again; the draft is at its last save.
+- **One web view**, `EditorBridge.shared` (`Interface/EditorWebView.swift`), created and loaded once the first list is shown (`AppModel.ensureEditor`: WebKit starting during the launch slowed the first list) and kept hidden, so that `r` opens the editor without waiting for WebKit; a reply opened before is the one that creates it. Keys typed for the text while its page still loads are kept by the app and typed into it once it is ready (`EditorBridge.keepKeyUntilReady`): none is lost. Each opening sends `load`. If WebKit's process for the page stops, the page is loaded again; the draft is at its last save.
 - **Isolated**: the page is served from the app's resources under its own scheme `nm-editor:` (`Resources/Editor`, built by `make editor`), with a Content Security Policy (`default-src 'none'`), the reader's block list of remote loads, no navigation (a click on a link opens nothing), no persistent storage. The app's font is given as data URLs.
 - **Saving**: the editor reports the content after each pause of typing (`changed`, 0.5 s), and the app saves it then (`update_draft` with `body_format`). ⌘↩, Escape and ⌘⎋ first ask for the content as it is (`flush`, answered at once): the very last key typed is never lost. Without an answer within a second, the mail is not sent ("Not sent: the text could not be read · try again").
 - **Files dropped on the text** are attached (`EditorWebView.performDragOperation`), never put in it.

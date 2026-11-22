@@ -9,7 +9,7 @@ import Testing
 struct AccountPickerTests {
     let core: FakeCore
     let model = AppModel()
-    let controller: GeekController
+    let controller: InterfaceController
 
     init() async { await self.init(unified: false) }
 
@@ -29,7 +29,7 @@ struct AccountPickerTests {
             method == "list_folders" ? ["items": folders, "as_of": Fixture.position] : Fixture.answer(method, params)
         }
         let defaults = TestDefaults.make()
-        controller = GeekController(model: model, defaults: defaults, textSize: TextSize())
+        controller = InterfaceController(model: model, defaults: defaults, textSize: TextSize())
         model.startUnified = unified
         await model.attach(core)
         _ = await eventually { model.threads.count == 8 }
@@ -260,11 +260,11 @@ struct UnifiedStartTests {
 struct SingleAccountTests {
     let core = FakeCore(handler: Fixture.answer)
     let model = AppModel()
-    let controller: GeekController
+    let controller: InterfaceController
 
     init() async {
         let defaults = TestDefaults.make()
-        controller = GeekController(model: model, defaults: defaults, textSize: TextSize())
+        controller = InterfaceController(model: model, defaults: defaults, textSize: TextSize())
         await model.attach(core)
         _ = await eventually { model.threads.count == 8 }
     }
@@ -295,7 +295,7 @@ struct SingleAccountTests {
 
     /// Before the folders are read, no account is known: nothing to offer.
     @Test func noFolderYetMeansNoChoice() {
-        let empty = GeekController(model: AppModel(), defaults: TestDefaults.make(),
+        let empty = InterfaceController(model: AppModel(), defaults: TestDefaults.make(),
                                    textSize: TextSize())
         #expect(!empty.hasSeveralAccounts)
     }

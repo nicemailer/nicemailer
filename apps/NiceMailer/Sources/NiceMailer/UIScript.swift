@@ -101,7 +101,7 @@ enum UIScript {
         for w in NSApp.windows { w.close() }
         let model = AppModel()
         model.startUnified = true
-        let host = NSHostingView(rootView: GeekRootView().environment(model))
+        let host = NSHostingView(rootView: RootView().environment(model))
         // Borderless: the content fills the window (no title bar to offset
         // coordinates), and macOS lets it sit entirely off screen.
         let w = ScriptWindow(contentRect: NSRect(x: -30_000, y: -30_000, width: 1400, height: 900),
@@ -116,7 +116,7 @@ enum UIScript {
     }
 
     /// Starts the script once the geek window exists.
-    static func start(model: AppModel, controller: GeekController) {
+    static func start(model: AppModel, controller: InterfaceController) {
         guard let path, !started else { return }
         started = true
         // Opening a file would launch an app on the user's screen: only
@@ -290,11 +290,11 @@ extension View {
 @MainActor
 private final class Runner {
     let model: AppModel
-    let controller: GeekController
+    let controller: InterfaceController
     var failures = 0
     var log: [String] = []
 
-    init(model: AppModel, controller: GeekController) {
+    init(model: AppModel, controller: InterfaceController) {
         self.model = model
         self.controller = controller
     }
@@ -792,7 +792,7 @@ private final class Runner {
             "selected_subject": sel?.subject ?? "",
             // The sender column of the selected row, as drawn: "→ Alice"
             // when the user wrote the latest mail (`ui.md`, "Liste").
-            "selected_sender": sel.map(GeekSender.plain) ?? "",
+            "selected_sender": sel.map(SenderColumn.plain) ?? "",
             // The date column of the selected row, as drawn, in the
             // interface's locale (`docs/localization.md`).
             "selected_date": sel.map { Format.geekListDate($0.dateLastReceived) } ?? "",
@@ -885,7 +885,7 @@ private final class Runner {
             "column_groups": c.columnGroups.rows.map(\.name).joined(separator: ", "),
             "column_groups_hidden": "\(c.columnGroups.hidden)",
             // The groups of the column drawn with the grey row of the
-            // current folder (`GeekController.isHighlighted`).
+            // current folder (`InterfaceController.isHighlighted`).
             "column_groups_highlighted": c.columnGroups.rows.filter(c.isHighlighted).map(\.name).joined(separator: ", "),
             "columns": "\(c.columns)",
             "reading": "\(c.reading)",
@@ -1081,7 +1081,7 @@ private final class Runner {
             // A sorting under way (`a` `s`): "done/total", empty otherwise;
             // the suggestions of the rows shown, and the one of the row
             // under the cursor ("target: reason").
-            // Where the AI shows (`GeekController.aiPlacement`): `center`,
+            // Where the AI shows (`InterfaceController.aiPlacement`): `center`,
             // `headers`, `none`.
             "ai_placement": c.aiPlacement,
             "ai_sort": m.aiSort.map { "\($0.done)/\($0.total)" } ?? "",
