@@ -2477,6 +2477,8 @@ struct PickerPopup: View {
     static var headerHeight: CGFloat { Look.roundedPanels ? 42 : 24 }
     /// Text size of the input line: bigger in a theme of rounded panels.
     static var headerTextSize: CGFloat { Look.roundedPanels ? 15 : 12 }
+    /// Text size of the rows under it: bigger too, a step under the line.
+    static var rowTextSize: CGFloat { Look.roundedPanels ? 14 : 12 }
     /// 20, or the theme's (`layout.menu_row_height`).
     static var rowHeight: CGFloat { Look.menuRowHeight ?? 20 }
     /// The line between two groups of rows (`Entry.gapBefore`: the pairs
@@ -2549,6 +2551,7 @@ struct PickerPopup: View {
                                     }
                                 }
                             }
+                            .font(.interface(Self.rowTextSize))
                             .padding(.horizontal, 8 + Look.popupExtra)
                             .frame(height: scaled(Self.rowHeight))
                             .rowFill(i == current ? Palette.cursor : nil, inset: Look.popupExtra / 2)
