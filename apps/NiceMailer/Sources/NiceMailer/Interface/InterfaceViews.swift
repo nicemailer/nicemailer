@@ -2471,8 +2471,12 @@ struct PickerPopup: View {
         }
     }
 
-    /// Height of the input line and of a row, at the default text size.
-    static let headerHeight: CGFloat = 24
+    /// Height of the input line, at the default text size: 24 in geek, a
+    /// roomier field in a theme of rounded panels (`Look.roundedPanels`),
+    /// as the search field of a web page.
+    static var headerHeight: CGFloat { Look.roundedPanels ? 42 : 24 }
+    /// Text size of the input line: bigger in a theme of rounded panels.
+    static var headerTextSize: CGFloat { Look.roundedPanels ? 15 : 12 }
     /// 20, or the theme's (`layout.menu_row_height`).
     static var rowHeight: CGFloat { Look.menuRowHeight ?? 20 }
     /// The line between two groups of rows (`Entry.gapBefore`: the pairs
@@ -2502,7 +2506,8 @@ struct PickerPopup: View {
                 Spacer()
                 Text("\(entries.count)").foregroundStyle(Palette.muted)
             }
-            .padding(.horizontal, 8 + Look.popupExtra)
+            .font(.interface(Self.headerTextSize))
+            .padding(.horizontal, 8 + Look.popupExtra + (Look.roundedPanels ? 4 : 0))
             .frame(height: scaled(Self.headerHeight))
             .uiTarget("picker-header")
             Palette.separator.frame(height: 1)
