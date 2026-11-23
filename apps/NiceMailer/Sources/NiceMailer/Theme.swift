@@ -329,9 +329,10 @@ enum TextSizeChange {
 func scaled(_ value: CGFloat) -> CGFloat { value * TextSize.shared.scale }
 
 /// The same for the status bar, which has a text size of its own
-/// (`ui.status_bar_text_size`).
+/// (`ui.status_bar_text_size`), times the size the theme gives the bar
+/// (`window.bar_size`, `Look.barScale`).
 @MainActor
-func barScaled(_ value: CGFloat) -> CGFloat { value * TextSize.shared.statusBarScale }
+func barScaled(_ value: CGFloat) -> CGFloat { value * TextSize.shared.statusBarScale * Look.barScale }
 
 extension Fonts {
     /// The interface font of the theme (`fonts.interface`) at a size
@@ -477,10 +478,11 @@ extension Font {
         Font(Fonts.scaled(size, weight: nsWeight(weight)))
     }
 
-    /// The geek font of the status bar, scaled to its own text size.
+    /// The font of the status bar, scaled to its own text size and to the
+    /// size the theme gives the bar (`barScaled`).
     @MainActor
     static func interfaceBar(_ size: CGFloat = 12, weight: Font.Weight = .regular) -> Font {
-        Font(Fonts.interface(size * TextSize.shared.statusBarScale, weight: nsWeight(weight)))
+        Font(Fonts.interface(barScaled(size), weight: nsWeight(weight)))
     }
 
     /// The AppKit weight of a SwiftUI one, among those the font has.

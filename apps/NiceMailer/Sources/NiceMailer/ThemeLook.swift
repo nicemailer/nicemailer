@@ -37,6 +37,23 @@ enum Look {
     /// (`window.block_labels`).
     static var blockLabels: Bool { theme.window.blockLabels }
 
+    /// Factor of the icons, texts and room of the status bar or toolbar
+    /// (`window.bar_size`), on top of its text size.
+    static var barScale: CGFloat { barScale(theme) }
+
+    /// The factor of `window.bar_size` in `theme`: small, medium or large,
+    /// as the sizes of a Mac toolbar. A proportion, not a size: the text
+    /// size stays the user's (`ui.status_bar_text_size`, ⌘+ ⌘−), as every
+    /// size in a theme (`themes.md`, section 5.3). medium, the three
+    /// built-in themes, is what the bar always drew.
+    static func barScale(_ theme: ThemeView) -> CGFloat {
+        switch theme.window.barSize {
+        case "small": 0.85
+        case "large": 1.2
+        default: 1
+        }
+    }
+
     /// Height of the status bar (`window.status_bar_height`), at the text
     /// size of the bar: 20 pt in geek for a 12 pt text.
     static var statusBarHeight: CGFloat { barScaled(CGFloat(theme.window.statusBarHeight)) }

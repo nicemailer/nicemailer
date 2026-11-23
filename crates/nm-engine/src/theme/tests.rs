@@ -138,6 +138,10 @@ fn numbers_choices_and_switches_are_checked() {
     refused("mine", "[layout]\nrow_height = 100\n", Some(2), "must be from 14 to 48");
     refused("mine", "[layout]\nrow_height = 20.5\n", Some(2), "expected an integer");
     refused("mine", "[layout]\nreader_max_width = 100\n", Some(2), "must be 0, or from 320 to 1200");
+    // The size of the bar: three sizes, as in a Mac app.
+    let l = ok("mine", "[window]\nbar_size = \"large\"\n");
+    assert_eq!(l.values["window.bar_size"], Value::Text("large".into()));
+    refused("mine", "[window]\nbar_size = \"huge\"\n", Some(2), "must be one of: small, medium, large");
     // The room around the subject of the reader: 0 (geek) to 32.
     let l = ok("mine", "[layout]\nreader_title_padding = 32\n");
     assert_eq!(l.values["layout.reader_title_padding"], Value::Int(32));

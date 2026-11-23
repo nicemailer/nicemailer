@@ -6,6 +6,9 @@
 expect theme = clean
 expect title_bar = merged
 expect row_height = 30
+# bar_size = "medium": the blocks of the bar at the text size of the bar
+# (themes.uiscript has the same, large).
+expect status_help_height = 22
 appearance light
 # The subject of the open mail with room around it: clean draws no line
 # under it, so its margins keep it off the bar and the window's edge

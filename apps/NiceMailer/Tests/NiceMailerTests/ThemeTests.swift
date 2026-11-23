@@ -245,3 +245,32 @@ struct StatusLayoutTests {
         #expect(StatusLayout.items(["help", "->", "ai", "folder"]) { _ in true } == ["help", "->", "ai", "folder"])
     }
 }
+
+/// The size of the bar (`window.bar_size`): a proportion of the text size
+/// of the bar, as the three sizes of a Mac toolbar.
+@MainActor
+struct BarSizeTests {
+    /// clean, with `window.bar_size` set to `size`.
+    private func theme(_ size: String) -> ThemeView {
+        var json = ThemeTests.themeJSON("clean")
+        var window = json["window"] as! [String: Any]
+        window["bar_size"] = size
+        json["window"] = window
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        return try! decoder.decode(ThemeView.self, from: JSONSerialization.data(withJSONObject: json))
+    }
+
+    @Test func theThreeSizesScaleTheBar() {
+        #expect(Look.barScale(theme("small")) == 0.85)
+        #expect(Look.barScale(theme("medium")) == 1)
+        #expect(Look.barScale(theme("large")) == 1.2)
+    }
+
+    @Test func theBuiltInThemesKeepTheBarTheyDrew() {
+        for name in ["geek", "clean", "regular"] {
+            #expect(ThemeStore.builtins[name]!.window.barSize == "medium", "\(name)")
+            #expect(Look.barScale(ThemeStore.builtins[name]!) == 1, "\(name)")
+        }
+    }
+}

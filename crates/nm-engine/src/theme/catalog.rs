@@ -105,6 +105,8 @@ pub const KEYS: &[Key] = &[
     k("window", "block_labels", Kind::Bool,
       "the blocks of actions say their name (Display, Move, Save, AI…) beside their icon"),
     k("window", "status_bar_height", Kind::Int(14, 48), "height of the status bar, for a 12 pt text of the bar"),
+    k("window", "bar_size", Kind::Choice(&["small", "medium", "large"]),
+      "size of the icons and texts of the status bar or toolbar, as in a Mac app: small, medium or large; the bar's height follows"),
     k("window", "block_style", Kind::Choice(&["plain", "pill"]),
       "plain: icon, name and key side by side; pill: each block in a pill, the account and the folder in bold, the block open highlighted"),
     k("window", "bar_line", Kind::Bool, "a line between the status bar and the mails"),

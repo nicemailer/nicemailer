@@ -6,6 +6,8 @@ extends = "clean"
 # The help first, the menus of the mail after the room left; no
 # attributes, no display, no AI (their keys still work).
 blocks = ["help", "account", "folder", "->", "move", "save"]
+# Bigger icons and texts in the bar than clean's (medium).
+bar_size = "large"
 
 [colors]
 background = { light = "#F6F0E4", dark = "#221E18" }

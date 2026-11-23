@@ -9,6 +9,9 @@ expect theme_problem =
 # The blocks in the order of the theme; those left out are hidden, their
 # keys still work.
 expect status_order = help,account,folder,m,s
+# bar_size = "large": the blocks of the bar 1.2 times as big as clean's
+# (themes-clean.uiscript), at the same text size of the bar.
+expect status_help_height > 23
 key v
 expect overlay ~ menu
 key esc

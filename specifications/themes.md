@@ -84,6 +84,7 @@ Chaque clé a son type, ses bornes ou ses choix, et sa valeur dans les trois th�
 | `key_hints` | booléen | `true` | `false` | `false` | Les blocs rappellent leur touche (`@`, `;`…) ; les touches marchent dans tous les cas |
 | `block_labels` | booléen | `false` | `true` | `true` | Les blocs d'action disent leur nom (Affichage, Déplacer, Enregistrer, IA…) à côté de leur icône |
 | `status_bar_height` | 14 à 48 | 20 | 40 | 44 | Hauteur de la barre de statut (ou de la barre d'outils), en points pour un texte de barre de 12 pt |
+| `bar_size` | `small`, `medium`, `large` | `medium` | `medium` | `medium` | Taille des icônes et des textes de la barre de statut ou de la barre d'outils, comme dans une app Mac : petite (× 0,85), moyenne (× 1), grande (× 1,2) ; la hauteur de la barre et l'espace dans ses blocs suivent. C'est une proportion, pas une taille : elle s'applique à `ui.status_bar_text_size` et à ⌘+ ⌘− (section 5.3) |
 | `block_style` | `plain`, `pill` | `plain` | `pill` | `pill` | `pill` : chaque bloc dans une pilule, le compte et le dossier en gras, les actions en gris, le bloc dont le menu est ouvert surligné, comme un onglet de site |
 | `bar_line` | booléen | `false` | `true` | `true` | Un filet entre la barre et les mails |
 | `blocks` | liste | voir dessous | | | Blocs montrés, dans l'ordre |

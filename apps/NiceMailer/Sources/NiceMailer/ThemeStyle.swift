@@ -43,6 +43,8 @@ struct ThemeView: Decodable, Equatable {
         let blockLabels: Bool
         /// Height of the status bar, in points for a 12 pt text of the bar.
         let statusBarHeight: Double
+        /// `small`, `medium` or `large`: the icons and texts of the bar.
+        let barSize: String
         /// `plain` or `pill`.
         let blockStyle: String
         /// A line between the status bar and the mails.

@@ -2981,6 +2981,8 @@ pub struct ThemeWindow {
     pub block_labels: bool,
     /// Height of the status bar, in points for a 12 pt text of the bar.
     pub status_bar_height: u32,
+    /// `small`, `medium` or `large`: the icons and texts of the bar.
+    pub bar_size: String,
     /// `plain` or `pill`.
     pub block_style: String,
     /// A line between the status bar and the mails.

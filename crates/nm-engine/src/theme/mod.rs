@@ -535,6 +535,7 @@ pub fn view(resolved: &Resolved, dir: &Path, error: Option<&Problem>, warnings: 
             key_hints: boolean(v, "window.key_hints"),
             block_labels: boolean(v, "window.block_labels"),
             status_bar_height: int(v, "window.status_bar_height") as u32,
+            bar_size: text(v, "window.bar_size"),
             block_style: text(v, "window.block_style"),
             bar_line: boolean(v, "window.bar_line"),
             blocks,
