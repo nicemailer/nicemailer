@@ -14,16 +14,40 @@ struct ComposerView: View {
     @Environment(AppModel.self) private var model
     let controller: InterfaceController
 
+    /// The buttons of the commands of the reply, with their keys and words
+    /// or, when `compact`, their icons alone.
+    private func commandButtons(compact: Bool) -> some View {
+        HStack(spacing: scaled(compact ? 4 : 6)) {
+            ForEach(ComposeCommand.allCases, id: \.self) { command in
+                ComposeCommandButton(command: command, key: command.key(model.keymap), compact: compact) {
+                    controller.runComposeCommand(command)
+                }
+            }
+        }
+        .lineLimit(1)
+        .fixedSize()
+        .onAppear { if UIScript.isActive { UIScript.composeCommandsCompact = compact } }
+    }
+
     var body: some View {
         if let c = model.composer {
             VStack(alignment: .leading, spacing: 0) {
-                ReaderTitleBar(subject: c.headers.subject) {
-                    // The keys of `[compose]` in effect (`keymap.toml`).
-                    let k = { (a: KeyAction) in model.keymap.mention(a, in: Keymap.composeChain) }
-                    Text(L("%@ send · %@ send then… · %@ from · %@ format · Esc keep · %@ abandon",
-                           k(.composeSend), k(.composeFileAndSend), k(.composeFrom), k(.composeTogglePlain),
-                           k(.composeAbandon)))
-                        .foregroundStyle(Palette.muted).lineLimit(1)
+                // The subject, then the commands on their own line: seven
+                // buttons do not share a line with a subject being typed.
+                ReaderTitleBar(subject: c.headers.subject, alwaysTwoLines: true,
+                               placeholder: L("(no subject)")) {
+                    // The commands of the reply, each a button with its key
+                    // (`keymap.toml`): a click does what the key does
+                    // (`InterfaceController.runComposeCommand`).
+                    //
+                    // Too narrow for the words (a narrow reader, a wide
+                    // font, a theme with room around the title): an icon
+                    // per command, which says what it does; its tooltip
+                    // gives the sentence and the key.
+                    ViewThatFits(in: .horizontal) {
+                        commandButtons(compact: false)
+                        commandButtons(compact: true)
+                    }
                 }
                 Palette.separator.frame(height: 1)
                 VStack(alignment: .leading, spacing: scaled(2)) {
@@ -189,23 +213,23 @@ struct ComposerView: View {
         }
     }
 
-    /// The button that shows or hides the Bcc line (`InterfaceController.toggleBcc`):
-    /// highlighted while the line is shown, dimmed while it holds addresses
-    /// and so cannot be hidden.
+    /// The button that shows or hides the Bcc line (`InterfaceController.toggleBcc`),
+    /// framed as the commands of the reply (`FramedButton`): filled while
+    /// the line is shown, dimmed while it holds addresses and so cannot be
+    /// hidden; its tooltip says which.
     private func bccToggle(_ c: Composer) -> some View {
-        Text(L("Bcc"))
-            .lineLimit(1)
-            .fixedSize()
+        // The key only while it does what a click does: ⌥⌘B shows the
+        // line, it never hides it.
+        let key = model.keymap.mention(.composeBcc, in: Keymap.composeChain)
+        let help = Compose.bccHelp(shown: c.showsBcc, canHide: c.canHideBcc)
+        return FramedButton(help: c.showsBcc ? help : "\(help) (\(key))", accessibility: help, selected: c.showsBcc,
+                            action: { controller.toggleBcc() }) {
             // Shown, on the selection color: white on the accent.
-            .foregroundStyle(c.showsBcc ? Look.ink(Palette.accentText, selected: true) : Palette.muted)
-            .padding(.horizontal, scaled(4))
-            .background(RoundedRectangle(cornerRadius: 3).fill(c.showsBcc ? Palette.cursor : Color.clear))
-            .overlay(RoundedRectangle(cornerRadius: 3).stroke(Palette.separator))
-            .opacity(c.showsBcc && !c.canHideBcc ? 0.5 : 1)
-            .contentShape(Rectangle())
-            .onTapGesture { controller.toggleBcc() }
-            .accessibilityAddTraits(c.showsBcc ? [.isButton, .isSelected] : .isButton)
-            .uiTarget("compose-bcc-toggle")
+            Text(L("Bcc"))
+                .foregroundStyle(c.showsBcc ? Look.ink(Palette.accentText, selected: true) : Palette.muted)
+        }
+        .opacity(c.showsBcc && !c.canHideBcc ? 0.5 : 1)
+        .uiTarget("compose-bcc-toggle")
     }
 }
 

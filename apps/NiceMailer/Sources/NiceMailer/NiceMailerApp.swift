@@ -141,6 +141,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Fonts.register()
+        // Tooltips after 300 ms rather than AppKit's second and a half.
+        Tooltips.register()
         // No window tabs either, in UI script mode too (`windows.uiscript`
         // checks it): their "+" would open a second window.
         SingleWindow.disableTabs()

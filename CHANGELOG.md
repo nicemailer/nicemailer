@@ -18,13 +18,14 @@ How to write it:
 - **Themes:** Choose a theme from the keyboard: `v` `t` (Display, theme…) lists the themes, and Return applies the one chosen.
 - **Themes:** clean and regular show mail in HTML, geek in text, for every sender whose display you have not chosen; `vh` still chooses for a sender, in every theme (`reader.body_format` of a theme).
 - **Window:** The red, yellow and green buttons can sit in the status bar, without a title bar: `title_bar = "merged"` in the `[window]` table of a theme (clean does it).
+- **Writing:** The commands of a reply (send, send then…, attach, from, format, keep, abandon) are buttons on their own line under the subject: click one to do what its key does; its tooltip explains it.
 - **Accounts:** For a Gmail, iCloud or Fastmail address, the Preferences say under the password that it must be an app password, with a link to the step-by-step guide; if the server refuses the password, the error says so first.
 - **Accounts:** Give an account a new password from its page in the Preferences (Settings…, Accounts), after changing the password of the mailbox or creating a new app password. Until now it took the `nicemailer account password` command.
 
 ### Changed
 
+- **Window:** Tooltips show after 300 ms instead of about a second and a half.
 - **Writing:** `⇧⌘T` now also sets the mode of the next mails: after switching a reply to formatted text, the next ones open formatted, until `⇧⌘T` switches back.
-
 - **Status bar:** The icon of NiceMailer and the mode at its left end (NOR, PCK, ASK…) are gone: the bar starts with the account and the folder.
 
 ### Fixed

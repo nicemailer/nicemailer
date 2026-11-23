@@ -1426,9 +1426,41 @@ struct ReaderTitleBar<Controls: View>: View {
     /// a reply is written.
     var tags: [String] = []
     var groups: [String] = []
+    /// The subject on its line and the controls always on the next one,
+    /// whatever the room (the reply: its commands are many, and a subject
+    /// being typed should not make them jump from one line to two).
+    var alwaysTwoLines = false
+    /// Shown, muted, in place of an empty subject on two lines.
+    var placeholder: String? = nil
     @ViewBuilder let controls: () -> Controls
 
     var body: some View {
+        Group {
+            if alwaysTwoLines {
+                twoLines
+            } else if subject.isEmpty && tags.isEmpty && groups.isEmpty {
+                // Nothing to show before the controls (a new mail, its
+                // subject not typed yet): the controls alone, on one line.
+                // Two lines would open on an empty one.
+                HStack(spacing: scaled(8)) {
+                    Spacer(minLength: 0)
+                    controls()
+                }
+                .frame(minHeight: scaled(26))
+                .onAppear { Self.report(lines: 1) }
+            } else {
+                subjectAndControls
+            }
+        }
+        // 12 pt on the sides in geek; room on every side in clean, whose
+        // title has no line to set it apart (`layout.reader_title_padding`,
+        // `Look.readerTitleInsets`).
+        .padding(Look.readerTitleInsets)
+        .uiTarget("reader-title")
+    }
+
+    /// The subject and the controls, on one line or on two.
+    private var subjectAndControls: some View {
         ViewThatFits(in: .horizontal) {
             HStack(spacing: scaled(8)) {
                 subjectText
@@ -1440,33 +1472,33 @@ struct ReaderTitleBar<Controls: View>: View {
             // (`fonts.title_scale`), rather than clip it.
             .frame(minHeight: scaled(26))
             .onAppear { Self.report(lines: 1) }
-            // The gap between the two lines grows with the room around the
-            // title (`Look.readerTitleLineGap`): none in geek, 6 pt in clean.
-            VStack(alignment: .leading, spacing: Look.readerTitleLineGap) {
-                // At least 24 pt: a subject bigger than geek's (clean's is
-                // 1.7 times as big) takes its own height, or it would run
-                // into the line of the controls.
-                subjectText
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .frame(minHeight: scaled(24))
-                // On two lines, the labels open the line of the controls:
-                // the subject keeps the whole width.
-                HStack(spacing: scaled(8)) {
-                    labels
-                    Spacer(minLength: 0)
-                    controls()
-                }
-                .frame(height: scaled(22))
-                .uiTarget("reader-title-controls")
-                .padding(.bottom, scaled(2))
-            }
-            .onAppear { Self.report(lines: 2) }
+            twoLines
         }
-        // 12 pt on the sides in geek; room on every side in clean, whose
-        // title has no line to set it apart (`layout.reader_title_padding`,
-        // `Look.readerTitleInsets`).
-        .padding(Look.readerTitleInsets)
-        .uiTarget("reader-title")
+    }
+
+    /// The subject alone, then the controls aligned on the right.
+    private var twoLines: some View {
+        // The gap between the two lines grows with the room around the
+        // title (`Look.readerTitleLineGap`): none in geek, 6 pt in clean.
+        VStack(alignment: .leading, spacing: Look.readerTitleLineGap) {
+            // At least 24 pt: a subject bigger than geek's (clean's is
+            // 1.7 times as big) takes its own height, or it would run
+            // into the line of the controls.
+            subjectText
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(minHeight: scaled(24))
+            // On two lines, the labels open the line of the controls:
+            // the subject keeps the whole width.
+            HStack(spacing: scaled(8)) {
+                labels
+                Spacer(minLength: 0)
+                controls()
+            }
+            .frame(height: scaled(22))
+            .uiTarget("reader-title-controls")
+            .padding(.bottom, scaled(2))
+        }
+        .onAppear { Self.report(lines: 2) }
     }
 
     // Selectable like the body (the text reader is an NSTextView): the
@@ -1477,7 +1509,9 @@ struct ReaderTitleBar<Controls: View>: View {
     // whole reader is cut at the end; the tooltip shows it whole.
     private var subjectText: some View {
         // Its size follows the theme (`fonts.title_scale`: 1 in geek).
-        Text(subject).font(.interface(13 * Look.titleScale, weight: .bold)).lineLimit(1)
+        let shown = subject.isEmpty ? (placeholder ?? "") : subject
+        return Text(shown).font(.interface(13 * Look.titleScale, weight: .bold)).lineLimit(1)
+            .foregroundStyle(subject.isEmpty ? Palette.muted : Palette.text)
             .textSelection(.enabled)
             .help(subject)
             .uiTarget("reader-subject")

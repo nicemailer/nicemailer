@@ -2342,38 +2342,25 @@ final class InterfaceController {
         case .composeAbandon?:
             // ⌘⎋ by default: ⌘⌫ is the Mac's "delete to the start of the
             // line", in the editor; ⌥⎋ is its "Speak selection".
-            Task { await model.discardComposer() }
+            runComposeCommand(.abandon)
             return true
         case .composeTogglePlain?:
             // ⇧⌘T: text only ↔ formatted, as "Make Plain Text" in Mail.
-            Task { await model.toggleComposeFormat() }
+            runComposeCommand(.format)
             return true
         case .composeFileAndSend?:
-            // Choose where the conversation goes, then send. Only when
-            // there is something to file: a conversation outside the Inbox,
-            // Todo and Waiting stays where it is whatever the choice, and a
-            // forward files nothing. A new mail files itself (`Compose
-            // .offersFiling`, `reponse.md`, section 8).
-            let send = keyLabel(.composeSend, in: chain)
-            if !Compose.offersFiling(c.draft) {
-                model.flash = c.draft.kind == "forward"
-                    ? L("A forward files nothing: %@ to send", send)
-                    : L("This conversation stays where it is: nothing to choose · %@ to send", send)
-            } else {
-                choiceIndex = nil
-                overlay = .choice(.sendThen)
-            }
+            runComposeCommand(.sendThen)
             return true
         case .composeSend?:
-            Task { await model.sendComposer() }
+            runComposeCommand(.send)
             return true
         case .composeAttach?:
             // ⇧⌘A: attach files (as in Mail).
-            Task { await model.chooseAttachments() }
+            runComposeCommand(.attach)
             return true
         case .composeFrom?:
             // ⌥⌘F: the address, and the account, the mail is sent from.
-            chooseSender()
+            runComposeCommand(.from)
             return true
         case .composeBcc?:
             // ⌥⌘B: the Bcc line, shown and focused (as in Mail).
@@ -2410,7 +2397,7 @@ final class InterfaceController {
                 model.composer?.suggestionIndex = nil
                 return true
             }
-            model.leaveComposer()
+            runComposeCommand(.keep)
             return true
         }
         switch c.focus {
@@ -2428,6 +2415,44 @@ final class InterfaceController {
             // key, kept until it can take it, never lost.
             if model.editor?.keepKeyUntilReady(event) == true { return true }
             return false
+        }
+    }
+
+    /// A command of the reply, from its key or from a click on its button
+    /// on the title line (`ComposerView`, `reponse.md`, section 6): both
+    /// do exactly the same, so that the mouse and the keyboard never
+    /// drift apart.
+    func runComposeCommand(_ command: ComposeCommand) {
+        guard let c = model.composer, model.aiRun == nil else { return }
+        switch command {
+        case .send:
+            Task { await model.sendComposer() }
+        case .sendThen:
+            // Choose where the conversation goes, then send. Only when
+            // there is something to file: a conversation outside the Inbox,
+            // Todo and Waiting stays where it is whatever the choice, and a
+            // forward files nothing. A new mail files itself (`Compose
+            // .offersFiling`, `reponse.md`, section 8).
+            let send = keyLabel(.composeSend, in: Keymap.composeChain)
+            if !Compose.offersFiling(c.draft) {
+                model.flash = c.draft.kind == "forward"
+                    ? L("A forward files nothing: %@ to send", send)
+                    : L("This conversation stays where it is: nothing to choose · %@ to send", send)
+            } else {
+                choiceIndex = nil
+                overlay = .choice(.sendThen)
+            }
+        case .attach:
+            Task { await model.chooseAttachments() }
+        case .from:
+            chooseSender()
+        case .format:
+            Task { await model.toggleComposeFormat() }
+        case .keep:
+            // Back to the mail; the reply stays in Drafts.
+            model.leaveComposer()
+        case .abandon:
+            Task { await model.discardComposer() }
         }
     }
 

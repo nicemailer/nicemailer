@@ -1,0 +1,40 @@
+# The commands of a reply in a theme where they are too wide for the
+# reader (fixtures/compose-commands-mono.themes: a font of fixed pitch,
+# reader_title_padding = 28), two columns. The commands are on their own
+# line under the subject; a new mail, its subject empty, says "(no
+# subject)" there rather than leave the line empty; in a narrow window
+# each button shows an icon of what it does, its key in the tooltip.
+expect theme = mono
+appearance light
+key c
+expect composing = true
+expect compose_subject =
+expect title_lines = 2
+expect compose_commands_compact = false
+snap mono-new-mail
+key cmd-esc
+expect composing = false
+resize 760x800
+key c
+expect composing = true
+expect title_lines = 2
+expect compose_commands_compact = true
+snap mono-new-mail-narrow
+# A click on a compact button does what its key does.
+click compose-command:format
+expect compose_format = html
+key cmd-esc
+expect composing = false
+# A reply: its subject, then the commands on one line or on two, measured.
+key r
+expect composing = true
+expect compose_subject ~ Re:
+snap mono-reply
+key cmd-esc
+expect composing = false
+# A wide window: room for the words again.
+resize 1400x900
+key c
+expect composing = true
+expect compose_commands_compact = false
+key cmd-esc

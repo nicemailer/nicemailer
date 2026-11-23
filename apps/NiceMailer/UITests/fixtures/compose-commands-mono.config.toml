@@ -1,0 +1,6 @@
+# Settings of compose-commands-mono.uiscript: the theme mono of the
+# fixtures (clean in a font of fixed pitch, much room around the title).
+[ui]
+text_size = 12
+status_bar_text_size = 12
+theme = "mono"

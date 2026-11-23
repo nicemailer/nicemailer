@@ -72,6 +72,9 @@ enum UIScript {
     static var statusBeforeMaintenance: AppModel.Status?
     /// Lines of the reader's title line, 1 or 2 (`ReaderTitleBar`).
     static var titleLines = 0
+    /// The commands of the reply show their keys alone, the line being too
+    /// narrow for their words (`compose_commands_compact`).
+    static var composeCommandsCompact = false
     /// Whether the rows of the list have room for the account after the
     /// folder in "Everything" (`RowLayout.showsAccount`), at the width the
     /// list was last given.
@@ -915,6 +918,9 @@ private final class Runner {
             // The reader's title line: subject and controls on 1 line, or
             // the subject above them on 2 (`ReaderTitleBar`).
             "title_lines": "\(UIScript.titleLines)",
+            // AppKit's delay before a tooltip, in ms (`Tooltips`).
+            "tooltip_delay": "\(UserDefaults.standard.integer(forKey: Tooltips.delayKey))",
+            "compose_commands_compact": model.composer == nil ? "" : "\(UIScript.composeCommandsCompact)",
             // Room between the edge of the reader's title line and its
             // subject, in points, as laid out: `left,top`
             // (`Look.readerTitleInsets`). AppKit's y goes up: the top of a
