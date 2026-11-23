@@ -320,3 +320,70 @@ struct MenuBadgeTests {
         #expect(Look.sidebarTextInset(ThemeStore.builtins["regular"]!) == scaled(18))
     }
 }
+
+/// The picker of the themes (`v` `t`): the themes of `theme_list`, the
+/// one in effect marked, Return writes the one chosen (`config_set_theme`)
+/// and applies it at once.
+@MainActor
+struct ThemePickerTests {
+    let model = AppModel()
+    let controller: InterfaceController
+    let core: FakeCore
+
+    init() async {
+        core = FakeCore { method, params in
+            switch method {
+            case "theme_list":
+                return ["path": "/tmp/themes", "selected": "geek", "themes": [
+                    ["name": "geek", "origin": "builtin"],
+                    ["name": "clean", "origin": "builtin"],
+                    ["name": "regular", "origin": "builtin"],
+                    ["name": "broken", "origin": "user", "parent": "clean",
+                     "error": ["file": "themes/broken.toml", "line": 2, "key": "layout.row_height",
+                               "message": "must be from 14 to 48"]],
+                ]] as [String: Any]
+            case "config_set_theme":
+                return ThemeTests.themeJSON(params["name"] as? String ?? "geek")
+            default:
+                return Fixture.answer(method, params)
+            }
+        }
+        model.theme = ThemeStore()
+        controller = InterfaceController(model: model, defaults: TestDefaults.make(), textSize: TextSize())
+        await model.attach(core)
+    }
+
+    @Test func theLastRowOfTheDisplayMenuIsTheTheme() {
+        let row = controller.menuEntries(.view).last
+        #expect(row?.label == L("theme…"))
+        #expect(row?.key == "t")
+    }
+
+    @Test func returnAppliesTheThemeChosen() async {
+        controller.menuEntries(.view).last?.action()
+        #expect(controller.overlay == .picker(.themes))
+        #expect(await eventually { controller.pickerEntries(.themes).count == 4 })
+        let rows = controller.pickerEntries(.themes)
+        // The theme in effect marked, the others with what they are.
+        #expect(rows.map(\.key) == ["•", " ", " ", " "])
+        #expect(rows[1].detail == L("Built in"))
+        // The cursor on it.
+        #expect(await eventually { controller.pickerIndex == 0 })
+        // Return on clean: written by the core, applied at once.
+        controller.clickPicker(.themes, 1)
+        #expect(controller.overlay == .none)
+        #expect(await eventually { model.theme.current.name == "clean" })
+        #expect(core.calls("config_set_theme").first?["name"] as? String == "clean")
+    }
+
+    @Test func aRefusedThemeSaysWhyInsteadOfBeingChosen() async {
+        controller.menuEntries(.view).last?.action()
+        #expect(await eventually { controller.pickerEntries(.themes).count == 4 })
+        let broken = controller.pickerEntries(.themes)[3]
+        #expect(broken.detail?.contains("themes/broken.toml") == true)
+        controller.clickPicker(.themes, 3)
+        #expect(model.flash?.contains("broken") == true)
+        #expect(core.calls("config_set_theme").isEmpty)
+        #expect(model.theme.current.name == "geek")
+    }
+}

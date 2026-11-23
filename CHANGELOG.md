@@ -15,6 +15,7 @@ How to write it:
 ### Added
 
 - **Themes:** Choose the look of the app in the Preferences (Settings…, Appearance): geek (the default), clean, sober and airy, in SF Pro, regular, a Mac window with a toolbar, as in Mail, or a theme of your own. Each is a file of `~/.config/nicemailer/themes/` you can modify, and `nicemailer theme new` starts one of yours (docs/themes.md).
+- **Themes:** Choose a theme from the keyboard: `v` `t` (Display, theme…) lists the themes, and Return applies the one chosen.
 - **Window:** The red, yellow and green buttons can sit in the status bar, without a title bar: `title_bar = "merged"` in the `[window]` table of a theme (clean does it).
 - **Accounts:** For a Gmail, iCloud or Fastmail address, the Preferences say under the password that it must be an app password, with a link to the step-by-step guide; if the server refuses the password, the error says so first.
 - **Accounts:** Give an account a new password from its page in the Preferences (Settings…, Accounts), after changing the password of the mailbox or creating a new app password. Until now it took the `nicemailer account password` command.

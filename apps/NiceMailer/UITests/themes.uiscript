@@ -24,3 +24,22 @@ snap sepia-dark
 # The keys are those of every theme.
 key j
 expect selected = 1
+# v t: the picker of the themes, the one in effect marked; Return on
+# another writes ui.theme in config.toml and applies it at once.
+appearance light
+key v
+expect menu_rows ~ t theme…
+key t
+expect overlay ~ themes
+expect picker_rows ~ sepia
+expect picker_rows ~ regular
+# The cursor on the theme in effect, sepia, the fourth row.
+expect picker_index = 3
+snap themes-picker
+type regular
+expect picker_first = regular
+key ret
+expect overlay = none
+expect theme = regular
+expect theme_chain = regular
+snap themes-picker-regular

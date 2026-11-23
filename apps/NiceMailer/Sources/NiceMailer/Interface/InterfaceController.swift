@@ -108,6 +108,9 @@ final class InterfaceController {
         /// group `name` (`id`: the group's), typed over the current one
         /// (`ui.md`, "Écrans Tags et Groupes").
         case rename(LabelKind, name: String, id: Int?)
+        /// `v` `t`: the themes, Return applies the one chosen, as the
+        /// Appearance tab of the Preferences does (`themes.md`, section 9).
+        case themes
     }
 
     /// What currently receives the keys, besides the normal mode.
@@ -332,6 +335,8 @@ final class InterfaceController {
     /// one, overtaken by `u`, is dropped.
     private var historyRequest = 0
     var tags: [TagView] = []
+    /// The themes of the picker `v` `t`, read when it opens (`theme_list`).
+    var themeChooser: ThemeChooser?
     /// The contact groups, kept by the model: the folder column, the Group…
     /// panel, the `g` picker and the groups screen show the same list.
     var groups: [GroupView] { model.groups }
@@ -978,6 +983,7 @@ final class InterfaceController {
         case .viewToggleHtml: model.toggleBodyFormat()
         case .viewToggleRemoteImages: model.toggleRemoteImages()
         case .viewCycleStatusBar: cycleStatusBar()
+        case .viewChooseTheme: openPicker(.themes)
         // The screens
         case .screenDown:
             screenIndex = min(screenCount - 1, screenIndex + 1)
@@ -1553,6 +1559,23 @@ final class InterfaceController {
             // asks whether the app may read Contacts. The rows appear
             // when the cards are read (the panel follows the model).
             Task { await model.loadSenderCards(asking: true) }
+        case .themes:
+            // The list comes from the core (`theme_list`); the rows appear
+            // when it answers (the panel follows the chooser).
+            if let core = model.core {
+                let chooser = ThemeChooser(client: core)
+                themeChooser = chooser
+                Task {
+                    await chooser.load()
+                    // The cursor on the theme in effect, as a macOS list
+                    // opens on the current choice, unless something was
+                    // typed meanwhile.
+                    if overlay == .picker(.themes), pickerQuery.isEmpty,
+                       let i = chooser.themes.firstIndex(where: { $0.name == chooser.selected }) {
+                        pickerIndex = i
+                    }
+                }
+            }
         case .accounts, .attributes, .ai, .rename:
             break
         case .attributeValue, .search:
@@ -1864,6 +1887,8 @@ final class InterfaceController {
             all = aiEntries()
         case .rename(let kind, let old, let id):
             return renameEntries(kind, old: old, id: id)
+        case .themes:
+            all = themeEntries
         }
         // Best matches first, so that Return takes the row the user meant
         // (`PickerMatch`); the "+ typed text" row always stays. Once
@@ -1872,6 +1897,34 @@ final class InterfaceController {
         let ranked = PickerMatch.filter(all, query: pickerQuery, label: \.label,
                                         keywords: \.keywords, pinned: { $0.key == "+" })
         return pickerQuery.isEmpty ? ranked : ranked.map { var e = $0; e.gapBefore = false; return e }
+    }
+
+    /// The rows of the picker of the themes (`v` `t`): the one in effect
+    /// marked `•`, each with what it is (built in, modified, extending
+    /// another); a theme whose file is refused says why instead, and
+    /// Return on it says so rather than choose it.
+    private var themeEntries: [Entry] {
+        guard let chooser = themeChooser else { return [] }
+        return chooser.themes.map { t in
+            Entry(key: t.name == chooser.selected ? "•" : " ", label: t.name,
+                  detail: t.error?.text ?? t.detail, detailStyle: t.error == nil ? .info : .count) { [weak self] in
+                self?.chooseTheme(t)
+            }
+        }
+    }
+
+    /// Return on a row of the picker of the themes: written in
+    /// `config.toml` by the core (`config_set_theme`), and applied at once.
+    private func chooseTheme(_ t: ThemeChooser.Entry) {
+        guard let chooser = themeChooser else { return }
+        if let e = t.error {
+            model.flash = L("Theme %@ refused: %@", t.name, e.text)
+            return
+        }
+        Task {
+            await chooser.choose(t.name) { [model] in model.theme.apply($0) }
+            if let error = chooser.error { model.flash = error }
+        }
     }
 
     /// Rows of the attribute selector with "clear" (`attributeEntries`):

@@ -213,3 +213,4 @@ m = "view.sort_modified"                      # sort by modification date
 h = "view.toggle_html"                        # text / HTML
 i = "view.toggle_remote_images"               # remote images
 s = "view.cycle_status_bar"                   # status bar: bottom, top, hidden
+t = "view.choose_theme"                       # theme…

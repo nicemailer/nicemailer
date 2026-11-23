@@ -2768,6 +2768,7 @@ struct PickerPopup: View {
         case .ai: L("AI")
         case .rename(.tag, _, _): L("Rename the tag")
         case .rename(.group, _, _): L("Rename the group")
+        case .themes: L("Theme")
         }
     }
 
@@ -2778,6 +2779,7 @@ struct PickerPopup: View {
         case .accounts: L("No account")
         case .attributes: L("No attribute")
         case .ai: L("No AI prompt matches")
+        case .themes: L("No theme")
         case .rename: controller.pickerQuery.trimmingCharacters(in: .whitespaces).isEmpty ? L("Type a name") : ""
         // The value panels: the input line shows the hint while nothing is
         // typed; text that gives no row (a date that is none) shows it

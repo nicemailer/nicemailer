@@ -243,7 +243,7 @@ Menus fournis :
 
   Le menu garde ses blocs (`ui.md`). Un dossier absent de la vue n'apparaît pas. La colonne des dossiers affiche la touche de `goto.<rôle>`.
 - **`menu.save`** : `c` `save.clipboard`, `e` `save.eml`, `t` `save.text`, `T` `save.text_open`, `m` `save.markdown`, `M` `save.markdown_open`, `a` `save.attachments`, `g` `save.attachments_no_graphics`, `p` `save.pdf`, `P` `save.pdf_open`, `i` `save.pdf_evidence`, `I` `save.pdf_evidence_open`. Une action et sa variante `_open` forment une ligne : la variante est le `menu.choose_alt` de la ligne, et sa touche s'affiche à droite (« T : et ouvrir »).
-- **`menu.view`** : `1` `view.one_column`, `2` `view.two_columns`, `3` `view.three_columns`, `c` `view.sort_received`, `m` `view.sort_modified`, `h` `view.toggle_html`, `i` `view.toggle_remote_images`, `s` `view.cycle_status_bar`.
+- **`menu.view`** : `1` `view.one_column`, `2` `view.two_columns`, `3` `view.three_columns`, `c` `view.sort_received`, `m` `view.sort_modified`, `h` `view.toggle_html`, `i` `view.toggle_remote_images`, `s` `view.cycle_status_bar`, `t` `view.choose_theme` (le sélecteur des thèmes, `themes.md`, section 9).
 
 Les actions `move.*` et `goto.*` peuvent aussi être liées directement, hors menu : `I = "goto.inbox"` dans `[mail]`.
 
