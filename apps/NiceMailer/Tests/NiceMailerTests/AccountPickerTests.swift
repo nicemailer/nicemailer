@@ -96,6 +96,9 @@ struct AccountPickerTests {
         controller.overlay = .none
         controller.openPickerFromStatusBar(.accounts)
         #expect(controller.overlay == .picker(.accounts))
+        // A second click on @ closes the picker it opened.
+        controller.openPickerFromStatusBar(.accounts)
+        #expect(controller.overlay == .none)
     }
 
     // MARK: Unified view "all"

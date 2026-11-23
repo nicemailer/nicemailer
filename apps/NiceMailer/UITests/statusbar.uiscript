@@ -108,3 +108,31 @@ expect overlay = none
 click status:help
 key j
 expect overlay = none
+# Every block closes what it opened, as ? does: a second click on @, on
+# the folder or on m closes its picker or menu.
+click status:account
+expect overlay = picker(NiceMailer.InterfaceController.PickerKind.accounts)
+click status:account
+expect overlay = none
+click status:folder
+expect overlay = menu(NiceMailer.InterfaceController.Prefix.goto)
+click status:folder
+expect overlay = none
+click status:m
+expect overlay = menu(NiceMailer.InterfaceController.Prefix.move)
+click status:m
+expect overlay = none
+# A click on an empty part of the bar closes the open picker, menu or
+# help, as a click on the mail does.
+click status:account
+expect overlay = picker(NiceMailer.InterfaceController.PickerKind.accounts)
+click status:empty
+expect overlay = none
+click status:v
+expect overlay = menu(NiceMailer.InterfaceController.Prefix.view)
+click status:empty
+expect overlay = none
+click status:help
+expect overlay = help
+click status:empty
+expect overlay = none

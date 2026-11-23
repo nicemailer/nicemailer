@@ -771,7 +771,9 @@ private final class Runner {
             // The blocks of the status bar or the toolbar, from left to
             // right (`window.blocks`), by their names: `account,folder,m`.
             "status_order": UIScript.frames
-                .filter { $0.key.hasPrefix("status-") && !$0.key.hasPrefix("status-target") && $0.key != "status-sync" }
+                // `status-empty` is an empty part of the bar, not a block.
+                .filter { $0.key.hasPrefix("status-") && !$0.key.hasPrefix("status-target")
+                    && $0.key != "status-sync" && $0.key != "status-empty" }
                 .sorted { $0.value.minX < $1.value.minX }
                 .map { String($0.key.dropFirst("status-".count)) }
                 .joined(separator: ","),

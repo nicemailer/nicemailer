@@ -363,7 +363,7 @@ struct StatusBarView: View {
         .frame(height: model.titleBarMode == .merged ? Look.mergedBarHeight : Look.statusBarHeight)
         // Its empty parts move the window, as a title bar does: the title
         // bar is hidden by default (`WindowChrome`).
-        .background(ZStack { Palette.statusBar; WindowDragArea() })
+        .background(ZStack { Palette.statusBar; WindowDragArea(onClick: controller.clickBarBackground) })
         // A line between the bar and the mails (`window.bar_line`), on the
         // side of the mails.
         .overlay(alignment: controller.statusPosition == .bottom ? .top : .bottom) {
@@ -386,7 +386,9 @@ struct StatusBarView: View {
             // The chips of the screens, the room left, then what the app
             // says, on the right.
             screenChips
-            Spacer(minLength: 8)
+            // Empty: a click there reaches the drag area under the bar
+            // (`clickBarBackground`). Its place, for the UI scripts.
+            Spacer(minLength: 8).uiTarget("status-empty", chrome: "status_bar")
             messageLine
             rightEnd
         case "account":
@@ -639,7 +641,9 @@ private struct ToolbarView<Messages: View>: View {
                 .font(.interfaceBar(10))
             }
             .padding(.trailing, barScaled(12))
-            Spacer(minLength: 8)
+            // Empty: a click there reaches the drag area under the toolbar
+            // (`clickBarBackground`). Its place, for the UI scripts.
+            Spacer(minLength: 8).uiTarget("status-empty", chrome: "toolbar")
             // The buttons, in the order of the theme (`window.blocks`); the
             // folder is the title, the room left is
             // before the buttons already.
@@ -653,7 +657,7 @@ private struct ToolbarView<Messages: View>: View {
         .padding(.leading, model.titleBarMode == .merged ? Look.mergedButtonsWidth : 0)
         .frame(height: Look.mergedBarHeight)
         // Its empty parts move the window, as a title bar does.
-        .background(ZStack { Palette.statusBar; WindowDragArea() })
+        .background(ZStack { Palette.statusBar; WindowDragArea(onClick: controller.clickBarBackground) })
         .overlay(alignment: .bottom) { Palette.separator.frame(height: 1) }
     }
 }

@@ -1576,16 +1576,15 @@ final class InterfaceController {
         }
     }
 
-    /// Opens a prefix menu from a click on its block in the status bar:
-    /// the folder (`;`: folders of the view, "Everything", screens), or the
-    /// `m`, `s`, `v` icons.
     /// A click on the AI block of the status bar: the AI palette, as `a`
-    /// (or ⌘I in a reply) opens it, for the same target (`openAI`). While a
-    /// result is shown, its panel keeps the keys and the click does
+    /// (or ⌘I in a reply) opens it, for the same target (`openAI`); a
+    /// second click closes it, as for every block (`openPickerFromStatusBar`).
+    /// While a result is shown, its panel keeps the keys and the click does
     /// nothing: a new palette over it would hide what is being read.
     func openAIFromStatusBar() {
         guard model.aiRun == nil, activeChoice == nil else { return }
         model.flash = nil
+        if overlay == .picker(.ai) { overlay = .none; return }
         overlay = .none
         openAI()
     }
@@ -1623,9 +1622,15 @@ final class InterfaceController {
         return label.isEmpty ? prefix.name : label
     }
 
+    /// Opens a prefix menu from a click on its block in the status bar:
+    /// the folder (`;`: folders of the view, "Everything", screens), or the
+    /// `m`, `s`, `v` icons. A click on the block of the menu already open
+    /// closes it: the status bar is not under the click catcher
+    /// (`clickOutsideOverlay`), so its blocks close what they opened, as a
+    /// menu of the macOS menu bar does.
     func openMenuFromStatusBar(_ prefix: Prefix) {
         model.flash = nil
-        overlay = .menu(prefix)
+        overlay = overlay == .menu(prefix) ? .none : .menu(prefix)
     }
 
     /// A click on a row of the open prefix menu: same as its key; with
@@ -1644,7 +1649,6 @@ final class InterfaceController {
         }
     }
 
-    /// Opens a picker from a click in the status bar (`@`, `F`).
     /// A click on the `?` block at the right end of the status bar: opens
     /// the list of keys, or closes it when it is open (the status bar is
     /// not under the click catcher, so the same block closes what it
@@ -1656,8 +1660,12 @@ final class InterfaceController {
         overlay = overlay == .help ? .none : .help
     }
 
+    /// Opens a picker from a click in the status bar (`@`, `F`); a click
+    /// on the block of the picker already open closes it, as for the menus
+    /// (`openMenuFromStatusBar`).
     func openPickerFromStatusBar(_ kind: PickerKind) {
         model.flash = nil
+        if overlay == .picker(kind) { overlay = .none; return }
         if screen != .mail { screen = .mail }
         openPicker(kind)
     }
@@ -3462,6 +3470,15 @@ extension InterfaceController {
         case .none, .contactFilter, .choice:
             break
         }
+    }
+
+    /// A click on an empty part of the status bar or of the toolbar (the
+    /// part that moves the window, `WindowDragArea`): closes the open menu,
+    /// picker or help, as a click on the mail does. The bar is not under
+    /// the click catcher, so that its blocks open their own panel at once;
+    /// its empty parts must then close it themselves.
+    func clickBarBackground() {
+        clickOutsideOverlay()
     }
 
     /// Whether a click outside the panel should close it (`clickOutsideOverlay`).

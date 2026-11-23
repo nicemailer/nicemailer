@@ -192,14 +192,30 @@ struct WindowChrome: NSViewRepresentable {
 /// double-clicked, as a title bar does: the empty parts of the status bar,
 /// when the title bar is hidden. The blocks of the status bar keep their
 /// clicks: they are drawn over it.
+///
+/// `onClick`: run at each mouse down, before the window moves: a click on
+/// the bar closes the open menu or picker (`clickBarBackground`).
+///
+/// Swift note: `NSViewRepresentable` wraps an AppKit view for SwiftUI;
+/// `updateNSView` runs at each redraw and hands it the latest closure, so
+/// the view never calls one that captured an older state.
 struct WindowDragArea: NSViewRepresentable {
+    var onClick: (() -> Void)? = nil
+
     func makeNSView(context: Context) -> DragView { DragView() }
-    func updateNSView(_ view: DragView, context: Context) {}
+    func updateNSView(_ view: DragView, context: Context) { view.onClick = onClick }
 
     final class DragView: NSView {
+        var onClick: (() -> Void)?
+
         override var mouseDownCanMoveWindow: Bool { true }
 
         override func mouseDown(with event: NSEvent) {
+            onClick?()
+            // In UI script mode the window is off screen and the events are
+            // made up: nothing to move (`performDrag` would wait for a real
+            // mouse).
+            if UIScript.isActive { return }
             if event.clickCount == 2 {
                 window?.performZoom(nil)
             } else {

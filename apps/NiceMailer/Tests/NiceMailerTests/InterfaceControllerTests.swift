@@ -306,6 +306,45 @@ struct InterfaceControllerTests {
         #expect(controller.overlay == .help)
     }
 
+    /// Every block of the status bar closes what it opened, as `?` does:
+    /// the bar is not under the click catcher.
+    @Test func aSecondClickOnABlockClosesItsMenuOrPicker() {
+        // The attributes (F): this mailbox has a single account, so @ opens
+        // nothing here (`AccountPickerTests` has several).
+        controller.openPickerFromStatusBar(.attributes)
+        #expect(controller.overlay == .picker(.attributes))
+        controller.openPickerFromStatusBar(.attributes)
+        #expect(controller.overlay == .none)
+        controller.openMenuFromStatusBar(.move)
+        #expect(controller.overlay == .menu(.move))
+        controller.openMenuFromStatusBar(.move)
+        #expect(controller.overlay == .none)
+        // Another block opens its own panel in place of the open one.
+        controller.openMenuFromStatusBar(.move)
+        controller.openMenuFromStatusBar(.goto)
+        #expect(controller.overlay == .menu(.goto))
+        controller.openPickerFromStatusBar(.attributes)
+        #expect(controller.overlay == .picker(.attributes))
+    }
+
+    /// An empty part of the bar (the part that moves the window) closes
+    /// the open menu, picker or help, as a click on the mail does.
+    @Test func aClickOnTheEmptyBarClosesThePanel() {
+        controller.openPickerFromStatusBar(.attributes)
+        #expect(controller.overlay == .picker(.attributes))
+        controller.clickBarBackground()
+        #expect(controller.overlay == .none)
+        controller.openMenuFromStatusBar(.view)
+        controller.clickBarBackground()
+        #expect(controller.overlay == .none)
+        controller.toggleHelpFromStatusBar()
+        controller.clickBarBackground()
+        #expect(controller.overlay == .none)
+        // Nothing open: nothing happens.
+        controller.clickBarBackground()
+        #expect(controller.overlay == .none)
+    }
+
     @Test func helpOpensAndAnyKeyClosesIt() {
         press("?")
         #expect(controller.overlay == .help)
@@ -450,7 +489,9 @@ struct InterfaceControllerTests {
             #expect(controller.overlay == .menu(p))
             #expect(!p.icon.isEmpty)
         }
-        // A click on a row of the display menu: two columns.
+        // A click on a row of the display menu: two columns (the loop
+        // left it open: a second click on its block would close it).
+        controller.overlay = .none
         controller.openMenuFromStatusBar(.view)
         let two = controller.menuEntries(.view).firstIndex { $0.key == "2" }!
         controller.chooseMenuEntry(two)

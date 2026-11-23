@@ -17,6 +17,16 @@ click status:m
 expect overlay ~ menu
 snap regular-move-menu
 key esc
+# A second click on the button closes its menu; so does a click on an
+# empty part of the toolbar.
+click status:m
+expect overlay ~ menu
+click status:m
+expect overlay = none
+click status:m
+expect overlay ~ menu
+click status:empty
+expect overlay = none
 click status:folder
 expect overlay ~ menu
 key esc
