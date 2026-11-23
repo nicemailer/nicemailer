@@ -570,6 +570,7 @@ pub fn view(resolved: &Resolved, dir: &Path, error: Option<&Problem>, warnings: 
             popup_ms: int(v, "motion.popup_ms") as u32,
         },
         colors,
+        reader: nm_api::ThemeReader { body_format: text(v, "reader.body_format") },
         error: error.map(crate::problem_view),
         warnings: warnings.iter().map(crate::problem_view).collect(),
     }

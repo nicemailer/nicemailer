@@ -142,6 +142,10 @@ pub mod method {
     /// Writes `ui.theme` in `config.toml`, the rest of the file kept as it
     /// is (`ConfigSetThemeParams`).
     pub const CONFIG_SET_THEME: &str = "config_set_theme";
+    /// Writes `compose.format` in `config.toml`, the rest of the file kept
+    /// as it is: the mode ⇧⌘T converted a draft to becomes the mode of the
+    /// next mails (`ConfigSetComposeFormatParams`, `edition.md`, section 3).
+    pub const CONFIG_SET_COMPOSE_FORMAT: &str = "config_set_compose_format";
     /// Changes the display order of the accounts (account picker, sidebar).
     pub const SET_ACCOUNT_ORDER: &str = "set_account_order";
     /// Saves the IMAP password of an account in the Keychain, for the
@@ -476,6 +480,8 @@ pub mod reason {
         /// `config_set_theme` could not write `config.toml`: the file is
         /// refused as it is, or cannot be written.
         CONFIG_NOT_WRITTEN = "config_not_written": "config.toml was not changed: {detail}";
+        /// `config_set_compose_format` with a mode the editor does not have.
+        COMPOSE_FORMAT_UNKNOWN = "compose_format_unknown": "no mode {format}: text or html";
         /// An empty password given.
         PASSWORD_EMPTY = "password_empty": "empty password";
         /// An empty SMTP password given.
@@ -1755,8 +1761,9 @@ pub struct MessageView {
     /// are removed (`tracking_pixels`).
     pub has_remote_content: bool,
     /// Display preferred for the sender's mails: `"text"`, `"html"`,
-    /// `"images"` (HTML with remote images), or `None` for the client's
-    /// default (`set_body_format`).
+    /// `"images"` (HTML with remote images), or `None`: the default of the
+    /// theme, `reader.body_format` (`themes.md`, section 6.6). Set by
+    /// `set_body_format`, always to an explicit value.
     pub from_body_format: Option<String>,
     /// The text body cut into segments, for a simplified display: what the
     /// message brings is visible, the history it repeats is `hidden`
@@ -2959,6 +2966,7 @@ pub struct ThemeView {
     /// Every color of the catalog, by its name (`background`,
     /// `accent_text`…).
     pub colors: BTreeMap<String, ThemeColor>,
+    pub reader: ThemeReader,
     /// Why a file of the chain is refused: the theme is then made of its
     /// last valid version (`themes.md`, section 3).
     pub error: Option<ConfigProblem>,
@@ -3032,6 +3040,15 @@ pub struct ThemeLayout {
     pub separators: String,
 }
 
+/// `[reader]` of a theme (section 6.6).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ThemeReader {
+    /// `text` or `html`: how a received mail is shown when nothing is
+    /// remembered for its sender (`address.body_format` NULL). A choice
+    /// remembered for the sender wins.
+    pub body_format: String,
+}
+
 /// `[motion]` of a theme (section 6.4), in milliseconds.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ThemeMotion {
@@ -3082,6 +3099,13 @@ pub struct ThemeEntry {
 pub struct ConfigSetThemeParams {
     /// The name of a theme `theme_list` gives.
     pub name: String,
+}
+
+/// Parameters of `config_set_compose_format`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConfigSetComposeFormatParams {
+    /// `text` or `html`.
+    pub format: String,
 }
 
 /// One key and its action, in `KeymapView`.

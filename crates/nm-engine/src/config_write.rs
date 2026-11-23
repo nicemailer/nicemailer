@@ -1,6 +1,7 @@
 //! Writing the settings files (`configuration.md`, sections 3 and 5):
-//! creating them when they are missing, and adding, renaming and removing
-//! an account in `accounts.toml` for a command.
+//! creating them when they are missing, adding, renaming and removing an
+//! account in `accounts.toml` for a command, and setting one key of
+//! `config.toml` (`ui.theme`, `compose.format`) for the app.
 //!
 //! The files belong to the user, who may keep them in Git, with comments.
 //! So:
@@ -178,40 +179,57 @@ pub fn clear_read_only(text: &str, key: &str) -> Result<String, String> {
     finish(doc)
 }
 
-/// The new text, refused if the core would refuse it.
 /// `config.toml` with `ui.theme` set to `name`, the rest of the file kept
-/// as it is, comments and order included (`themes.md`, section 8). The
-/// only change the core makes to that file: the Preferences choose a theme
-/// with it. A `[ui]` table is added when the file has none.
-///
-/// The file must be valid before and after: a file the core refuses is not
-/// touched, so that the user's own edit in progress is not mixed with this
-/// one. That the theme exists is the caller's to check.
+/// as it is, comments and order included (`themes.md`, section 8): the
+/// Preferences and `v` `t` choose a theme with it. That the theme exists
+/// is the caller's to check.
 pub fn set_theme(text: &str, name: &str) -> Result<String, String> {
-    const FILE: &str = config::CONFIG_FILE;
     if !crate::theme::catalog::valid_name(name) {
         return Err(format!("{name:?} cannot name a theme"));
     }
+    set_config_value(text, "ui", "theme", name)
+}
+
+/// `config.toml` with `compose.format` set to `format` (`text` or `html`),
+/// the rest of the file kept as it is: ⇧⌘T makes the mode it converts a
+/// draft to the mode of the next mails (`edition.md`, section 3).
+pub fn set_compose_format(text: &str, format: &str) -> Result<String, String> {
+    if !matches!(format, "text" | "html") {
+        return Err(format!("{format:?} is not a mode of the editor: text or html"));
+    }
+    set_config_value(text, "compose", "format", format)
+}
+
+/// `config.toml` with `[table] key = value`. These are the only changes
+/// the core makes to that file, each at a client's request and limited to
+/// its key. A table is added when the file has none.
+///
+/// The file must be valid before and after: a file the core refuses is not
+/// touched, so that the user's own edit in progress is not mixed with this
+/// one.
+fn set_config_value(text: &str, table: &str, key: &str, new_value: &str) -> Result<String, String> {
+    const FILE: &str = config::CONFIG_FILE;
     if let Err(p) = config::parse(text, "") {
         return Err(format!("{FILE} is refused, fix it first: {p}"));
     }
     let mut doc = text.parse::<DocumentMut>().map_err(|e| format!("{FILE} cannot be read: {e}"))?;
-    if !doc.contains_key("ui") {
-        doc.insert("ui", Item::Table(Table::new()));
+    if !doc.contains_key(table) {
+        doc.insert(table, Item::Table(Table::new()));
     }
-    let ui = doc["ui"].as_table_like_mut().ok_or_else(|| format!("{FILE}: ui is not a table"))?;
+    let t = doc[table].as_table_like_mut().ok_or_else(|| format!("{FILE}: {table} is not a table"))?;
     // The comment after the old value (`theme = "geek"   # for now`) is
     // the user's: the new value takes its decoration.
-    let mut new = toml_edit::Value::from(name);
-    if let Some(old) = ui.get("theme").and_then(Item::as_value) {
+    let mut new = toml_edit::Value::from(new_value);
+    if let Some(old) = t.get(key).and_then(Item::as_value) {
         *new.decor_mut() = old.decor().clone();
     }
-    ui.insert("theme", Item::Value(new));
+    t.insert(key, Item::Value(new));
     let out = doc.to_string();
     config::parse(&out, "").map_err(|p| format!("the change would make {FILE} invalid: {p}"))?;
     Ok(out)
 }
 
+/// The new text, refused if the core would refuse it.
 fn finish(doc: DocumentMut) -> Result<String, String> {
     let text = doc.to_string();
     config::parse_accounts(&text).map_err(|p| format!("the file would be invalid: {p}"))?;
@@ -472,6 +490,38 @@ port = 993\nsecurity = \"tls\"\n";
         assert_eq!(config::parse(&out, "").unwrap().config.ui.theme, "clean");
         assert_eq!(config::parse(&out, "").unwrap().config.sync.poll_interval_secs, 120);
         assert_eq!(set_theme("", "clean").unwrap(), "[ui]\ntheme = \"clean\"\n");
+    }
+
+    #[test]
+    fn setting_the_compose_format_keeps_the_rest_of_the_file() {
+        // The file the core creates: every key commented out. The value
+        // goes under `[compose]`, the comments are all kept.
+        let template = config::config_template();
+        let out = set_compose_format(&template, "html").unwrap();
+        assert_eq!(config::parse(&out, "").unwrap().config.compose.format, "html");
+        assert_eq!(out.lines().count(), template.lines().count() + 1, "{out}");
+        assert!(out.contains("[compose]\nformat = \"html\"\n"), "{out}");
+        // Again: the value is replaced, not written twice.
+        let back = set_compose_format(&out, "text").unwrap();
+        assert_eq!(back.lines().count(), out.lines().count());
+        assert_eq!(config::parse(&back, "").unwrap().config.compose.format, "text");
+
+        // A hand-written file: its comments and other keys stay.
+        let mine = "[compose]\nundo_send_seconds = 5\nformat = \"text\" # mine\n\n[ui]\ntheme = \"clean\"\n";
+        let out = set_compose_format(mine, "html").unwrap();
+        assert_eq!(out, mine.replace("format = \"text\"", "format = \"html\""));
+
+        // No [compose] table: one is added, the rest kept.
+        let out = set_compose_format("[ui]\ntheme = \"clean\"\n", "html").unwrap();
+        let c = config::parse(&out, "").unwrap().config;
+        assert_eq!((c.compose.format, c.ui.theme.as_str()), ("html", "clean"));
+    }
+
+    #[test]
+    fn a_refused_compose_format_is_not_written() {
+        assert!(set_compose_format("", "rtf").unwrap_err().contains("text or html"));
+        assert!(set_compose_format("[sync]\npoll_interval_secs = 1\n", "html").unwrap_err().contains("fix it first"));
+        assert!(set_compose_format("compose = 3\n", "html").is_err());
     }
 
     #[test]

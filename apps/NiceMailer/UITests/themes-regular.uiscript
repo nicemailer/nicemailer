@@ -44,7 +44,7 @@ key ret
 key ;
 key a
 expect unsubscribe ~ header
-click format:html
+# regular reads HTML, as clean does (reader.body_format).
 expect body_format = html
 snap regular-title-controls
 click format:text

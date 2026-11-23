@@ -186,7 +186,7 @@ The app, the TUI and the CLI. An agent (MCP) or the web server get `FORBIDDEN`: 
 | Key | Default | |
 | --- | --- | --- |
 | `compose.undo_send_seconds` | 5 | 0 to 30; 0 sends at once |
-| `compose.format` | `text` | `html`: a new mail, a reply and a forward start formatted |
+| `compose.format` | `text` | `html`: a new mail, a reply and a forward start formatted; `⇧⌘T` writes the mode it converts a draft to ([editor.md](editor.md)) |
 | `accounts.<key>.save_sent` | `auto` | `always`, `never` |
 | `accounts.<key>.smtp` | none | without it the account cannot send; its mails are answered from another account |
 

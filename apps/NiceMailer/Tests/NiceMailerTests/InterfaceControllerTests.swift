@@ -1491,6 +1491,55 @@ struct InterfaceControllerTests {
         #expect(core.calls("set_body_format")[0]["addr"] as? String == "sender3@example.org")
     }
 
+    /// Without a choice remembered for the sender, the display is the
+    /// theme's (`reader.body_format`, `themes.md`, section 6.6): text in
+    /// geek, HTML in clean and regular, and it follows a new theme at once.
+    /// A remembered choice wins in every theme; a mail without HTML stays
+    /// text.
+    @Test func withoutAChoiceTheDisplayIsTheThemes() async {
+        model.theme = ThemeStore()
+        remoteImages()
+        await openThree()
+        #expect(model.bodyFormat == "text", "geek reads text")
+        model.theme.apply(ThemeStore.builtins["clean"]!)
+        #expect(model.bodyFormat == "html", "clean reads HTML")
+        model.theme.apply(ThemeStore.builtins["regular"]!)
+        #expect(model.bodyFormat == "html", "regular reads HTML")
+
+        // A choice remembered for the sender wins over the theme.
+        remoteImages(remembered: "text")
+        await model.reloadOpenThread()
+        #expect(model.bodyFormat == "text")
+        model.theme.apply(ThemeStore.builtins["geek"]!)
+        remoteImages(remembered: "html")
+        await model.reloadOpenThread()
+        #expect(model.bodyFormat == "html", "remembered as HTML, it stays HTML in geek")
+    }
+
+    /// A mail without HTML is text, whatever the theme says.
+    @Test func aMailWithoutHtmlIsTextInEveryTheme() async {
+        model.theme = ThemeStore(ThemeStore.builtins["clean"]!)
+        press("j")
+        #expect(await eventually { model.openThread?.id == 2 })
+        #expect(model.bodyFormat == "text")
+    }
+
+    /// `vh` under a theme that reads HTML writes an explicit "text", and
+    /// back an explicit "html", the theme's value: the sender keeps it in
+    /// every theme (`themes.md`, section 6.6).
+    @Test func vhAlwaysRemembersAnExplicitValue() async {
+        model.theme = ThemeStore(ThemeStore.builtins["clean"]!)
+        remoteImages()
+        await openThree()
+        #expect(model.bodyFormat == "html")
+        press("v"); press("h")
+        #expect(await eventually { model.bodyFormat == "text" })
+        #expect(core.calls("set_body_format").last?["format"] as? String == "text")
+        press("v"); press("h")
+        #expect(await eventually { model.bodyFormat == "html" })
+        #expect(core.calls("set_body_format").last?["format"] as? String == "html")
+    }
+
     /// Thread 3 with a remote image and two tracking pixels, from a sender
     /// whose mail is `auth`, in `role`; `from_body_format` follows
     /// `set_body_format`, as with the core.

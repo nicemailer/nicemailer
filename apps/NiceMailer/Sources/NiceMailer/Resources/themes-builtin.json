@@ -132,6 +132,9 @@
         "dark": "#9DBB93"
       }
     },
+    "reader": {
+      "body_format": "html"
+    },
     "error": null,
     "warnings": []
   },
@@ -268,6 +271,9 @@
         "dark": "#8AA581"
       }
     },
+    "reader": {
+      "body_format": "text"
+    },
     "error": null,
     "warnings": []
   },
@@ -388,6 +394,9 @@
       "virtual_folder": {
         "system": "accent"
       }
+    },
+    "reader": {
+      "body_format": "html"
     },
     "error": null,
     "warnings": []

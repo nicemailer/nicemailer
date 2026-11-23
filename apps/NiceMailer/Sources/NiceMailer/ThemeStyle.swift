@@ -24,6 +24,7 @@ struct ThemeView: Decodable, Equatable {
     let layout: Layout
     let motion: Motion
     let colors: ThemeColors
+    let reader: Reader
     /// Why a file of the chain is refused: the theme is then made of its
     /// last valid version.
     let error: KeymapProblem?
@@ -86,6 +87,13 @@ struct ThemeView: Decodable, Equatable {
         let readerTitlePadding: Double
         let scrollers: String
         let separators: String
+    }
+
+    /// `[reader]` (section 6.6).
+    struct Reader: Decodable, Equatable {
+        /// `text` or `html`: how a received mail is shown when nothing is
+        /// remembered for its sender (`AppModel.bodyFormat`).
+        let bodyFormat: String
     }
 
     /// `[motion]` (section 6.4), in milliseconds.

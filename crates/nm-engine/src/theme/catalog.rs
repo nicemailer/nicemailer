@@ -33,7 +33,7 @@ pub enum Kind {
 /// One key of a theme.
 #[derive(Debug, Clone, Copy)]
 pub struct Key {
-    /// Its table: `window`, `fonts`, `layout`, `motion`, `colors`.
+    /// Its table: `window`, `fonts`, `layout`, `motion`, `colors`, `reader`.
     pub table: &'static str,
     pub name: &'static str,
     pub kind: Kind,
@@ -49,7 +49,7 @@ impl Key {
 }
 
 /// The tables of a theme, in the order of the files.
-pub const TABLES: &[&str] = &["window", "fonts", "layout", "motion", "colors"];
+pub const TABLES: &[&str] = &["window", "fonts", "layout", "motion", "colors", "reader"];
 
 /// Blocks of the status bar or the toolbar (section 6.1).
 pub const BLOCKS: &[&str] = &["account", "folder", "attributes", "view", "move", "save", "ai", "help"];
@@ -162,6 +162,11 @@ pub const KEYS: &[Key] = &[
     k("colors", "flag", Kind::Color, "flag"),
     k("colors", "error", Kind::Color, "errors"),
     k("colors", "virtual_folder", Kind::Color, "virtual folders: Work, All Mail, Everything"),
+    // [reader] (section 6.6): how a received mail is shown. Only the
+    // reading: what is sent stays `compose.format` of `config.toml`, so
+    // that a theme never changes the MIME the recipients get.
+    k("reader", "body_format", Kind::Choice(&["text", "html"]),
+      "mails shown as text or HTML when nothing is remembered for their sender; vh remembers a choice for a sender, which wins"),
 ];
 
 /// The key `name` of `table`.

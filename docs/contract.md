@@ -108,6 +108,7 @@ A dedicated command prints readable output, asks for confirmation when needed an
 | `theme_get` | The theme in effect, resolved: `ui.theme` of `config.toml`, its file of `themes/` and those it extends laid over a built-in theme; every key with its value (colors as light/dark pairs or colors of the system), the chain of inheritance, the error of a refused file (its last valid version then applies), and warnings, contrast included. `ThemeChanged` says when to read it again (`themes.md`). | — (`nicemailer theme show` and `check` read the files themselves, without the core.) |
 | `theme_list` | The themes that can be chosen: the built-in ones (marked when a file modifies them), then the files of `themes/`, each with its parent and the error that makes it unusable. | — (`nicemailer theme list` reads the folder itself.) |
 | `config_set_theme` | Writes `ui.theme` in `config.toml`, the rest of the file kept as it is, comments included, then applies it; answers the theme now in effect. Refuses a name no theme has (`theme_unknown`) and a `config.toml` refused as it is (`config_not_written`). The Preferences use it. | — |
+| `config_set_compose_format` | Writes `compose.format` (`text` or `html`) in `config.toml`, the rest of the file kept as it is, comments included, then applies it; answers `compose_formats`. ⇧⌘T calls it after converting a draft, so that the next mails start in that mode (`editor.md`). Refuses another mode (`compose_format_unknown`) and a `config.toml` refused as it is (`config_not_written`). | — |
 | `discover_account` | Finds the servers of an address before the account exists: provider, IMAP server, SMTP servers to try. | Step 1 of `nicemailer account add`. |
 | `test_account` | Tries the IMAP server of an account not created yet: capabilities, folders with proposed roles, the folder each role will get and whether it exists (`roles`), counts for the import. A failure says in `data.reason` whether the password (`imap_auth_refused`) or the server (`imap_unreachable`) is at fault. | Step 2 of `account add`. |
 | `count_archive` | Exact count of the mails the initial archiving would move. | Step 3 of `account add` (`--archive-read-before`, `--archive-unread-before`, `--no-archive`). |
@@ -236,6 +237,7 @@ The app, the core, the CLI and the MCP server are shipped and updated together, 
 | `account_read_only_send` | — | this account is read-only (read_only = true in accounts.toml): it cannot send |
 | `theme_unknown` | `theme` | no theme {theme}: neither built in nor a file of the folder themes |
 | `config_not_written` | `detail` | config.toml was not changed: {detail} |
+| `compose_format_unknown` | `format` | no mode {format}: text or html |
 | `password_empty` | — | empty password |
 | `smtp_password_empty` | — | empty SMTP password |
 | `smtp_password_without_server` | — | an SMTP password without an SMTP server |

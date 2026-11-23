@@ -1373,6 +1373,56 @@ struct EditorFlowTests {
         #expect(await eventually { model.composer?.format == .text })
     }
 
+    /// ⇧⌘T makes the mode it converts to the mode of the next mails: the
+    /// core writes `compose.format` (`edition.md`, section 3), and the next
+    /// reply opens formatted.
+    @Test func shiftCommandTWritesTheDefaultMode() async throws {
+        #expect(model.composeFormats.defaultFormat == "text")
+        controller.handle(Self.key("T", [.command, .shift]))
+        #expect(await eventually { core.calls("config_set_compose_format").count == 1 })
+        #expect(core.calls("config_set_compose_format")[0]["format"] as? String == "html")
+        #expect(await eventually { model.composeFormats.defaultFormat == "html" })
+        // Back to text only: written too.
+        controller.handle(Self.key("T", [.command, .shift]))
+        #expect(await eventually { core.calls("config_set_compose_format").count == 2 })
+        #expect(core.calls("config_set_compose_format")[1]["format"] as? String == "text")
+        #expect(await eventually { model.composeFormats.defaultFormat == "text" })
+    }
+
+    /// The warning of lost formatting writes nothing; nor does a switch to
+    /// the mode that is already the default.
+    @Test func onlyAConversionWritesTheDefault() async {
+        core.handler = { method, params in
+            method == "html_to_text" ? ["text": "Bold", "formatted": true] : Fixture.answer(method, params)
+        }
+        controller.handle(Self.key("T", [.command, .shift]))
+        #expect(await eventually { core.calls("config_set_compose_format").count == 1 })
+        controller.handle(Self.key("T", [.command, .shift]))
+        #expect(await eventually { model.flash == L("The formatting will be lost · %@ again to convert", "⇧⌘T") })
+        #expect(core.calls("config_set_compose_format").count == 1, "the warning writes nothing")
+        // The default is already html: a draft switched to html again
+        // writes nothing.
+        await model.rememberComposeFormat(.html)
+        #expect(core.calls("config_set_compose_format").count == 1)
+    }
+
+    /// `config.toml` refused as it is: the draft changes mode anyway, and
+    /// the status bar says the default was not written.
+    @Test func aDefaultNotWrittenIsSaid() async {
+        core.handler = { method, params in
+            if method == "config_set_compose_format" {
+                return CoreClient.RPCError(code: -32602, message: "config.toml was not changed: refused",
+                                           data: ["reason": "config_not_written", "detail": "refused"])
+            }
+            return Fixture.answer(method, params)
+        }
+        controller.handle(Self.key("T", [.command, .shift]))
+        #expect(await eventually { model.composer?.format == .html })
+        let said = L("The next mails keep their mode: %@", L("config.toml was not changed: %@", "refused"))
+        #expect(await eventually { model.flash == said })
+        #expect(model.composeFormats.defaultFormat == "text")
+    }
+
     /// Formatting would be lost: the first ⇧⌘T says so, the second converts.
     @Test func losingTheFormattingIsConfirmed() async {
         core.handler = { method, params in

@@ -147,3 +147,38 @@ fn config_set_theme_writes_the_file_and_applies_it() {
     assert_eq!(e["data"]["reason"], "config_not_written");
     assert_eq!(std::fs::read_to_string(dir.path().join("config.toml")).unwrap(), "[sync]\npoll_interval_secs = 1\n");
 }
+
+#[test]
+fn config_set_compose_format_writes_the_file_and_applies_it() {
+    // edition.md, section 3: ⇧⌘T makes the mode it converts a draft to the
+    // mode of the next mails.
+    let dir = tempfile::tempdir().unwrap();
+    let mine = "# my settings\n[compose]\nundo_send_seconds = 5   # time to think\n";
+    std::fs::write(dir.path().join("config.toml"), mine).unwrap();
+    let _core = start(dir.path());
+    let mut c = Client::connect(dir.path());
+    assert_eq!(c.call("compose_formats", json!({})).unwrap()["default_format"], "text");
+
+    let f = c.call("config_set_compose_format", json!({"format": "html"})).unwrap();
+    assert_eq!(f["default_format"], "html", "the new default is returned");
+    assert!(f["fonts"].as_array().is_some_and(|a| !a.is_empty()), "with the lists of the formatted mode");
+    let text = std::fs::read_to_string(dir.path().join("config.toml")).unwrap();
+    assert_eq!(text, format!("{mine}format = \"html\"\n"), "the rest of the file is kept");
+    assert_eq!(c.call("compose_formats", json!({})).unwrap()["default_format"], "html");
+
+    // Back to text: the same line, replaced.
+    c.call("config_set_compose_format", json!({"format": "text"})).unwrap();
+    let text = std::fs::read_to_string(dir.path().join("config.toml")).unwrap();
+    assert_eq!(text, format!("{mine}format = \"text\"\n"));
+
+    // A mode the editor does not have: refused, nothing written.
+    let e = c.call("config_set_compose_format", json!({"format": "rtf"})).unwrap_err();
+    assert_eq!(e["data"]["reason"], "compose_format_unknown");
+    assert_eq!(std::fs::read_to_string(dir.path().join("config.toml")).unwrap(), text);
+
+    // A config.toml refused as it is: not touched.
+    std::fs::write(dir.path().join("config.toml"), "[sync]\npoll_interval_secs = 1\n").unwrap();
+    let e = c.call("config_set_compose_format", json!({"format": "html"})).unwrap_err();
+    assert_eq!(e["data"]["reason"], "config_not_written");
+    assert_eq!(std::fs::read_to_string(dir.path().join("config.toml")).unwrap(), "[sync]\npoll_interval_secs = 1\n");
+}

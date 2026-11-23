@@ -1332,6 +1332,34 @@ async fn config_set_theme(core: &Arc<Core>, p: nm_api::ConfigSetThemeParams) -> 
     Ok(core.themes.lock().unwrap().view())
 }
 
+/// `config_set_compose_format`: writes `compose.format` in `config.toml`
+/// (`edition.md`, section 3), then applies the file at once, like
+/// `config_set_theme`. Returns `compose_formats`, which now gives the new
+/// mode as the one a new draft starts in.
+async fn config_set_compose_format(
+    core: &Arc<Core>,
+    p: nm_api::ConfigSetComposeFormatParams,
+) -> Result<nm_api::ComposeFormatsResult, RpcError> {
+    if !matches!(p.format.as_str(), "text" | "html") {
+        return Err(RpcError::new(
+            error_code::INVALID_PARAMS,
+            nm_api::reason::COMPOSE_FORMAT_UNKNOWN.with("format", p.format.as_str()),
+        ));
+    }
+    let path = core.engine.lock().unwrap().path().to_path_buf();
+    let core2 = core.clone();
+    let format = p.format.clone();
+    tokio::task::spawn_blocking(move || -> Result<(), String> {
+        nm_engine::config_write::update(&path, |text| nm_engine::config_write::set_compose_format(text, &format))?;
+        reload_config(&core2);
+        Ok(())
+    })
+    .await
+    .map_err(RpcError::internal)?
+    .map_err(|e| RpcError::new(error_code::INVALID_PARAMS, nm_api::reason::CONFIG_NOT_WRITTEN.with("detail", e)))?;
+    Ok(drafts::compose_formats(core))
+}
+
 /// Reads the directory of the themes again after a change seen by its
 /// watch, and emits `ThemeChanged` or `ConfigError`. Like the keymap, it
 /// needs neither the store nor the engine.
@@ -2035,6 +2063,10 @@ async fn call(core: &Arc<Core>, source: Source, req: Request) -> Result<Value, R
         method::CONFIG_SET_THEME => {
             let p: nm_api::ConfigSetThemeParams = params(req.params)?;
             to_value(config_set_theme(core, p).await?)
+        }
+        method::CONFIG_SET_COMPOSE_FORMAT => {
+            let p: nm_api::ConfigSetComposeFormatParams = params(req.params)?;
+            to_value(config_set_compose_format(core, p).await?)
         }
         method::CONFIG_STATUS => {
             let as_of = as_of();

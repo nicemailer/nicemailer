@@ -64,3 +64,6 @@ unread = { light = "#B07D16", dark = "#E6C07B" }
 flag = { light = "#D9661C", dark = "#F0883E" }
 error = { light = "#C0392B", dark = "#E06C75" }
 virtual_folder = { light = "#56704E", dark = "#8AA581" }
+
+[reader]
+body_format = "text"

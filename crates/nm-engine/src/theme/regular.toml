@@ -64,3 +64,6 @@ unread = "system.accent"
 flag = "system.orange"
 error = "system.red"
 virtual_folder = "system.accent"
+
+[reader]
+body_format = "html"

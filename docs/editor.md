@@ -22,6 +22,8 @@ The recipients and the subject stay the app's own fields (`LineEdit`, [sending.m
 
 `⇧⌘T` switches, as "Make Plain Text" in Mail. To formatted: each line becomes a paragraph, and the lines starting with `>` become a quotation (`>>` one inside it), so the quoted mail of a reply becomes a quotation block. To text only: the core makes the text of the HTML (`html_to_text`, the same text as the text part of the mail sent); when the draft has formatting that would be lost, a first `⇧⌘T` says so ("The formatting will be lost · ⇧⌘T again to convert") and a second one within five seconds converts.
 
+A conversion by `⇧⌘T` also makes its mode the mode of the next mails: the app asks the core to write it in `compose.format` of `config.toml` (`config_set_compose_format`), the rest of the file kept as it is, comments included. Whoever formats one mail almost always wants the next one formatted too. Only a conversion made writes: the first `⇧⌘T` that warns of lost formatting changes nothing, nor does a switch to the mode that is already the default. When `config.toml` is refused as it is, the draft changes mode anyway and the status bar says "The next mails keep their mode", with the reason.
+
 `compose.format = "html"` in `config.toml` makes a new mail, a reply and a forward start formatted. The core still proposes the draft as text (`prepare_draft`); the editor shows it converted, and it stays a text draft until something changes, so that a proposal left as it was is written nowhere.
 
 ## The formatted mode

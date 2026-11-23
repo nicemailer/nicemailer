@@ -307,15 +307,17 @@ extension AppModel {
 
     /// Display of the open thread: "text", "html" or "images" (`ui.md`,
     /// "Images distantes"). The choice remembered for the sender of its
-    /// latest received message, text by default in the geek theme. A
-    /// remembered "images" only applies when that mail's images load by
+    /// latest received message; without one, the theme's
+    /// (`reader.body_format`, `themes.md`, section 6.6: text in geek, HTML
+    /// in clean and regular). A mail without HTML is text in every theme.
+    /// A remembered "images" only applies when that mail's images load by
     /// themselves (`RemoteImages.automatic`: authenticated, in a folder
     /// that allows them); otherwise the thread is shown as HTML, without
     /// its images, unless the user asked for them (`remoteImagesOnce`).
     var bodyFormat: String {
         guard let m = latestReceived, m.bodyHtml != nil else { return "text" }
         if let once = remoteImagesOnce, once == openThread?.id, imagesOffered { return "images" }
-        let format = m.fromBodyFormat ?? "text"
+        let format = m.fromBodyFormat ?? theme.current.reader.bodyFormat
         return format == "images" && !RemoteImages.automatic(m) ? "html" : format
     }
 

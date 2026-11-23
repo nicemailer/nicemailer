@@ -87,6 +87,12 @@ key ret
 key ;
 key a
 expect unsubscribe ~ header
+# clean reads HTML (reader.body_format, themes.md, section 6.6): a sender
+# with no choice remembered opens in HTML. A click remembers an explicit
+# choice, text, then html again.
+expect body_format = html
+click format:text
+expect body_format = text
 click format:html
 expect body_format = html
 appearance light

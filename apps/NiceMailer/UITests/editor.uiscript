@@ -82,7 +82,9 @@ expect folder = Sent
 expect selected_subject ~ facture de mars
 expect reader_text ~ Fin
 expect reader_text ~ Très bien, à jeudi.
-# ⌘⎋ abandons a draft; ⌘⌫ in the text is the editor's.
+# ⌘⎋ abandons a draft; ⌘⌫ in the text is the editor's. The last ⇧⌘T
+# made formatted text the mode of the next mails (compose.format written
+# in config.toml, edition.md, section 3): this reply opens formatted.
 key ;
 key i
 expect folder = Inbox
@@ -91,7 +93,11 @@ expect reader_subject !~ La facture de mars
 key r
 expect composing = true
 expect editor_focused = true
+expect compose_default_format = html
+# A proposal shown formatted stays a text draft until something is typed
+# (docs/editor.md): the first key makes it a formatted one.
 type Brouillon
+expect compose_format = html
 key cmd-del
 expect composing = true
 key cmd-esc

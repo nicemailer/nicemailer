@@ -35,6 +35,7 @@ enum CoreReason {
         "agent_cannot_unsubscribe",
         "agent_cannot_set_password",
         "agent_not_allowed",
+        "compose_format_unknown",
         "draft_by_user",
         "reply_started_by_user",
     ]

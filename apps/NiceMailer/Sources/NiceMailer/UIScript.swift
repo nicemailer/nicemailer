@@ -1213,6 +1213,9 @@ private final class Runner {
                 return (t.substring(to: r.start) + "|" + t.substring(from: r.start)).replacingOccurrences(of: "\n", with: "\\n")
             } ?? "",
             "compose_format": m.composer?.format.rawValue ?? "",
+            // The mode the next mail starts in (`compose.format`), which a
+            // conversion by ⇧⌘T writes.
+            "compose_default_format": m.composeFormats.defaultFormat,
             "editor_ready": "\((m.editor as? EditorBridge)?.isReady ?? false)",
             "editor_focused": "\(m.editorState.focused)",
             "editor_modal": "\(m.editorState.modal)",

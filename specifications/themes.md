@@ -8,10 +8,11 @@ Ce document spécifie comment un thème de l'app Swift est entièrement décrit 
 
 ## 2. Principes
 
-- **Un thème est une feuille de style.** Il règle la présentation : couleurs, polices, proportions, arrondis, animations, et choisit parmi des variantes que l'app sait dessiner (barre de statut ou barre d'outils, blocs montrés, avatars…). Il ne décrit pas une disposition libre : chaque variante est du code de l'app, écrit et testé. Le catalogue (section 6) s'enrichit avec l'app ; un fichier ne peut rien demander qui n'y figure pas.
+- **Un thème est une feuille de style.** Il règle la présentation : couleurs, polices, proportions, arrondis, animations, et choisit parmi des variantes que l'app sait dessiner (barre de statut ou barre d'outils, blocs montrés, avatars…), dont l'affichage des mails reçus, en texte ou en HTML (section 6.6). Il ne décrit pas une disposition libre : chaque variante est du code de l'app, écrit et testé. Le catalogue (section 6) s'enrichit avec l'app ; un fichier ne peut rien demander qui n'y figure pas.
 - **Un thème ne retire aucune fonction.** Il peut masquer un bloc de la barre ou de la barre d'outils, jamais une fonction : la touche du bloc masqué marche toujours, son menu s'ouvre comme d'habitude. Désactiver une fonction reste un réglage de `config.toml` (`ai.enabled`, par exemple).
 - **Un thème ne contient que des données.** Pas de code, pas d'expression, pas d'image ni de police à charger, rien qui désigne une adresse distante ou un fichier. Un thème reçu de quelqu'un peut donc être posé dans le dossier sans risque. Embarquer une police ou une image dans un thème pourra venir plus tard ; ce n'est pas prévu dans cette version.
 - **La taille du texte n'appartient pas au thème.** Elle dépend des yeux de la personne : elle reste dans `config.toml` (`ui.text_size`, `ui.status_bar_text_size`) et ⌘+ ⌘− ⌘0 la changent comme aujourd'hui. Le thème ne donne que des proportions (section 5.3).
+- **Un thème ne change pas ce qui part.** Il règle la lecture, jamais la rédaction : le format d'un nouveau mail reste `compose.format` dans `config.toml` (`edition.md`, section 3). Changer de thème pour son apparence ne doit pas changer le MIME envoyé aux destinataires, et un thème reçu de quelqu'un ne doit rien décider de ce qu'on envoie.
 - **Mêmes touches pour tous les thèmes.** Le clavier ne dépend pas du thème (`raccourcis.md`) ; un thème choisit seulement si les blocs rappellent leur touche.
 - **Le noyau lit les fichiers.** Comme `config.toml` et `keymap.toml`, c'est le noyau qui lit, valide, résout l'héritage et surveille les fichiers ; l'app reçoit le thème résolu par le contrat (section 8). L'app ne fait que deux choses que le noyau ne peut pas faire : traduire une couleur du système et vérifier qu'une police est installée sur le Mac (section 7).
 - **Pour l'utilisateur avancé, par des fichiers.** Les Préférences choisissent un thème parmi ceux du dossier (section 9) ; elles ne les modifient pas. On modifie un thème en éditant son fichier, que le noyau crée commenté.
@@ -160,6 +161,17 @@ Longueurs en points pour un texte de 12 pt (section 5.3).
 
 **Contraste.** Pour chaque apparence, le noyau calcule le contraste de `text`, `muted` et `accent_text` sur `background` et `list`, et de `selection_text` sur `selection`. Sous 4,5:1 (WCAG AA), c'est un **avertissement**, pas un refus : un thème peu lisible reste le choix de son auteur. Les thèmes livrés n'en ont aucun (test). Une couleur du système n'est pas vérifiée : macOS en répond.
 
+### 6.6 `[reader]`
+
+| Clé | Choix | geek | clean | regular | Rôle |
+| --- | --- | --- | --- | --- | --- |
+| `body_format` | `text`, `html` | `text` | `html` | `html` | Affichage des mails reçus quand rien n'est mémorisé pour leur expéditeur |
+
+- **Le choix mémorisé pour l'expéditeur l'emporte** (`address.body_format`, `ui.md`, « Lecture ») : le thème ne vaut que pour une adresse sans choix (NULL). `vh` et le sélecteur `text | html | images` écrivent toujours une valeur explicite, même égale à celle du thème : un expéditeur passé en `html` sous clean le reste sous geek.
+- **Un mail sans partie HTML** s'affiche en texte, quel que soit le thème.
+- **`images` n'est pas un choix du thème** : charger les images distantes est une décision de confiance envers un expéditeur, pas une présentation (`ui.md`, « Images distantes »). Un thème en `html` ne charge rien sur le réseau.
+- Ajouté en novembre 2026. Avant, le texte était le défaut de tous les thèmes ; clean et regular, en police proportionnelle, lisent mieux le HTML d'un mail que son texte coupé à 72 colonnes.
+
 ## 7. Ce que fait l'app
 
 - Elle demande le thème choisi au noyau (`theme_get`) et le redemande à chaque `ThemeChanged` ; la fenêtre est redessinée aussitôt, sans relancer et sans perdre la sélection, la lecture ou la réponse en cours.
@@ -172,7 +184,7 @@ Longueurs en points pour un texte de 12 pt (section 5.3).
 
 - **`theme_get`** renvoie le thème résolu de `ui.theme` : son nom, sa chaîne d'héritage (`["mon-theme", "clean"]`), toutes les clés du catalogue avec leur valeur (couleurs en paires `light` / `dark` ou en noms du système), et ses avertissements. Un `ui.theme` qui ne désigne aucun thème donne `geek` avec un avertissement ; `config.toml` n'est pas refusé pour autant.
 - **`theme_list`** renvoie les thèmes disponibles : nom, origine (`builtin`, `builtin_modified` quand un fichier modifie un thème livré, `user`), parent, et l'erreur qui fait refuser son fichier le cas échéant. Les Préférences s'en servent.
-- **`config_set_theme {name}`** écrit `ui.theme` dans `config.toml`, en gardant le reste du fichier tel quel (commentaires et ordre compris). C'est la première écriture de `config.toml` par le noyau en dehors de sa création ; elle se limite à cette clé.
+- **`config_set_theme {name}`** écrit `ui.theme` dans `config.toml`, en gardant le reste du fichier tel quel (commentaires et ordre compris). C'est, avec `config_set_compose_format` (`edition.md`, section 3), l'une des deux seules écritures de `config.toml` par le noyau en dehors de sa création ; chacune se limite à sa clé.
 - **Événement `ThemeChanged`**, émis quand le thème appliqué change : un autre `ui.theme`, ou un fichier de sa chaîne d'héritage modifié et valide. Un fichier refusé émet `ConfigError`.
 - **CLI** :
   - `nicemailer theme list` : les thèmes, leur origine et leur parent ;
@@ -226,5 +238,6 @@ theme = "sepia"
 - **Fichiers** : créés commentés au démarrage ; ils donnent exactement les thèmes livrés ; décommenter n'importe quelle ligne donne un fichier valide ; rechargés à chaud ; un thème refusé laisse `config.toml`, `keymap.toml` et les autres thèmes appliqués.
 - **Cohérence** : chaque clé du catalogue Rust a son traitement dans l'app et inversement ; les fichiers embarqués reprennent la section 6 ; le JSON embarqué par l'app est à jour ; les thèmes livrés n'ont aucun avertissement de contraste.
 - **`config_set_theme`** : il change `ui.theme` et rien d'autre dans le fichier, commentaires compris ; un nom inconnu est refusé.
+- **`reader.body_format`** : un expéditeur sans choix s'affiche selon le thème (texte en geek, HTML en clean et regular) ; un choix mémorisé l'emporte dans tous les thèmes ; un mail sans HTML reste en texte ; changer de thème change l'affichage de la conversation ouverte sans la recharger.
 - **App, tests unitaires** : traduction des couleurs du système ; police absente remplacée et signalée ; mesures de la liste dans une police à chasse fixe (identiques aux largeurs d'aujourd'hui) et proportionnelle ; durées à 0 quand les animations sont réduites ; changement de thème à chaud sur `FakeCore` sans perte de la sélection.
 - **App, scénarios UI** : les scénarios existants jouent geek, sans changement ; geek doit rester identique au pixel près après le passage aux fichiers (comparaison des captures avant et après). Un scénario par thème livré (disposition, commande de la fenêtre, menu déroulé depuis son bloc ou son bouton, liste, lecteur, en clair et en sombre). Un scénario par variante du catalogue (6.1, 6.3), sur un thème de test qui l'active. Un scénario qui change de thème sans relancer, un autre avec un thème refusé (erreur affichée, thème précédent gardé). Les fixtures des scénarios gagnent un dossier `fixtures/<scénario>.themes/`, copié dans `themes/` de leur noyau.

@@ -89,6 +89,10 @@ fn the_values_of_the_specification() {
     assert_eq!(regular["window.bar_type"], Value::Text("toolbar".into()));
     assert_eq!(color(regular, "colors.unread"), Color::System("accent".into()));
     assert_eq!(regular["layout.avatars"], Value::Bool(true));
+    // [reader] (section 6.6): text in geek, HTML in clean and regular.
+    assert_eq!(geek["reader.body_format"], Value::Text("text".into()));
+    assert_eq!(clean["reader.body_format"], Value::Text("html".into()));
+    assert_eq!(regular["reader.body_format"], Value::Text("html".into()));
     match &regular["window.blocks"] {
         Value::Blocks(b) => assert_eq!(b.first().map(String::as_str), Some("account")),
         other => panic!("{other:?}"),
@@ -281,6 +285,18 @@ fn a_pale_text_gives_a_warning_per_appearance() {
     assert!(w.iter().all(|p| p.key.as_deref() == Some("colors.text")), "{w:?}");
     assert!(w.iter().all(|p| p.message.contains("light appearance")), "{w:?}");
     assert_eq!(w.len(), 2, "on background and on list: {w:?}");
+}
+
+#[test]
+fn the_reader_shows_text_or_html_only() {
+    // A theme sets the reading, never what is sent; and loading the
+    // remote images is a trust in a sender, not a presentation.
+    let l = ok("mine", "[reader]\nbody_format = \"text\"\n");
+    assert_eq!(l.values["reader.body_format"], Value::Text("text".into()));
+    refused("mine", "[reader]\nbody_format = \"images\"\n", Some(2), "text, html");
+    // `compose.format` is not a key of a theme.
+    let l = ok("mine", "[reader]\ncompose_format = \"html\"\n");
+    assert!(l.values.is_empty() && l.warnings.len() == 1, "{l:?}");
 }
 
 // --- The view --------------------------------------------------------------
