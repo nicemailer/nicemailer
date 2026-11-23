@@ -78,12 +78,12 @@ Chaque clé a son type, ses bornes ou ses choix, et sa valeur dans les trois th�
 
 | Clé | Choix | geek | clean | regular | Rôle |
 | --- | --- | --- | --- | --- | --- |
-| `chrome` | `status_bar`, `toolbar` | `status_bar` | `status_bar` | `toolbar` | Commande de la fenêtre : barre de statut compacte, ou barre d'outils macOS dont chaque bouton est un bloc |
+| `bar_type` | `status_bar`, `toolbar` | `status_bar` | `status_bar` | `toolbar` | Commande de la fenêtre : barre de statut compacte, ou barre d'outils macOS dont chaque bouton est un bloc |
 | `status_bar_position` | `top`, `bottom`, `hidden` | `top` | `top` | — | Position par défaut de la barre de statut ; `v` la change ensuite pour la fenêtre (`ui.md`, « Préférences d'affichage ») |
 | `title_bar` | `shown`, `hidden`, `merged` | `shown` | `merged` | `merged` | `hidden` : ni barre de titre ni boutons (le contenu monte jusqu'en haut, comme `ui.title_bar = "hidden"` aujourd'hui). `merged` : pas de barre de titre, les boutons rouge, jaune, vert sont dans la barre de statut ou la barre d'outils ; barre de statut en bas ou masquée : `merged` vaut `shown` |
 | `key_hints` | booléen | `true` | `false` | `false` | Les blocs rappellent leur touche (`@`, `;`…) ; les touches marchent dans tous les cas |
 | `block_labels` | booléen | `false` | `true` | `true` | Les blocs d'action disent leur nom (Affichage, Déplacer, Enregistrer, IA…) à côté de leur icône |
-| `status_bar_height` | 14 à 48 | 20 | 40 | 44 | Hauteur de la barre de statut (ou de la barre d'outils), en points pour un texte de barre de 12 pt |
+| `bar_height` | 14 à 48 | 20 | 40 | 44 | Hauteur de la barre de statut (ou de la barre d'outils), en points pour un texte de barre de 12 pt |
 | `bar_size` | `small`, `medium`, `large` | `medium` | `medium` | `medium` | Taille des icônes et des textes de la barre de statut ou de la barre d'outils, comme dans une app Mac : petite (× 0,85), moyenne (× 1), grande (× 1,2) ; la hauteur de la barre et l'espace dans ses blocs suivent. C'est une proportion, pas une taille : elle s'applique à `ui.status_bar_text_size` et à ⌘+ ⌘− (section 5.3) |
 | `block_style` | `plain`, `pill` | `plain` | `pill` | `pill` | `pill` : chaque bloc dans une pilule, le compte et le dossier en gras, les actions en gris, le bloc dont le menu est ouvert surligné, comme un onglet de site |
 | `bar_line` | booléen | `false` | `true` | `true` | Un filet entre la barre et les mails |

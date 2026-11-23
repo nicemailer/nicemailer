@@ -4,7 +4,7 @@ The look of the app comes from a theme: its colors, fonts, proportions and anima
 
 State (November 2026): the core reads, checks and serves the themes, and the app applies every key of them.
 
-With `chrome = "toolbar"` (regular), the status bar becomes a macOS toolbar, always at the top: the folder is its title (a click opens the menu `;`), with the message of the moment or the synchronization under it, as in Mail; the other blocks are buttons, which open the same menus and pickers under them. The keys are those of every theme.
+With `bar_type = "toolbar"` (regular), the status bar becomes a macOS toolbar, always at the top: the folder is its title (a click opens the menu `;`), with the message of the moment or the synchronization under it, as in Mail; the other blocks are buttons, which open the same menus and pickers under them. The keys are those of every theme.
 
 ## Choosing a theme
 
@@ -58,7 +58,7 @@ A theme holds data only: no code, no image, no font, no address to load. A theme
 
 | Table | Keys |
 | --- | --- |
-| `[window]` | `chrome` (`status_bar` or `toolbar`), `status_bar_position` (`top`, `bottom`, `hidden`), `title_bar` (`shown`, `hidden`, `merged`: the red, yellow and green buttons in the bar), `key_hints`, `block_labels` (the blocks of actions say their name), `status_bar_height`, `bar_size` (`small`, `medium`, `large`: the icons and texts of the bar, × 0.85, × 1 or × 1.2 of `ui.status_bar_text_size`; its height follows), `block_style` (`plain`, or `pill`: each block in a pill, the account and the folder in bold, the block open highlighted), `bar_line` (a line between the bar and the mails), `blocks`, `default_columns` (1 to 3) |
+| `[window]` | `bar_type` (`status_bar` or `toolbar`), `status_bar_position` (`top`, `bottom`, `hidden`), `title_bar` (`shown`, `hidden`, `merged`: the red, yellow and green buttons in the bar), `key_hints`, `block_labels` (the blocks of actions say their name), `bar_height` (of the status bar or the toolbar), `bar_size` (`small`, `medium`, `large`: the icons and texts of the bar, × 0.85, × 1 or × 1.2 of `ui.status_bar_text_size`; its height follows), `block_style` (`plain`, or `pill`: each block in a pill, the account and the folder in bold, the block open highlighted), `bar_line` (a line between the bar and the mails), `blocks`, `default_columns` (1 to 3) |
 | `[fonts]` | `interface`, `reading`, `reading_scale`, `reading_line_spacing` (points between two lines of the body, whatever the text size), `title_scale` |
 | `[layout]` | `row_height`, `row_radius` (also rounds the buttons of the reader's title line, text | html | images and unsubscribe, in proportion to their height), `row_inset`, `zebra`, `menu_row_height` (0: the height of the text), `popup_radius`, `popup_shadow`, `popup_padding` (the margin inside menus, pickers and panels), `menu_keys` (`left`, `right`), `message_cards`, `avatars`, `reader_max_width` (0: the whole width), `reader_title_padding` (room above and below the subject of the reader, also added to the 12 pt on its sides; half of it sets apart the two lines of a title too long for one; 0 in geek and regular, whose line under the title sets it apart), `scrollers` (`none`, `thin`, `standard`), `separators` (`lines`, `space`) |
 | `[motion]` | `sidebar_ms`, `popup_ms` (0 when System Settings reduce motion) |

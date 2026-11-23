@@ -95,7 +95,7 @@ const fn k(table: &'static str, name: &'static str, kind: Kind, role: &'static s
 /// Every key, in the order of the files.
 pub const KEYS: &[Key] = &[
     // [window]: the window and its command (section 6.1).
-    k("window", "chrome", Kind::Choice(&["status_bar", "toolbar"]),
+    k("window", "bar_type", Kind::Choice(&["status_bar", "toolbar"]),
       "command of the window: a compact status bar, or a macOS toolbar whose buttons are the blocks"),
     k("window", "status_bar_position", Kind::Choice(&["top", "bottom", "hidden"]),
       "where the status bar starts; `v` moves it for the window"),
@@ -104,7 +104,7 @@ pub const KEYS: &[Key] = &[
     k("window", "key_hints", Kind::Bool, "the blocks remind their key; the keys work either way"),
     k("window", "block_labels", Kind::Bool,
       "the blocks of actions say their name (Display, Move, Save, AI…) beside their icon"),
-    k("window", "status_bar_height", Kind::Int(14, 48), "height of the status bar, for a 12 pt text of the bar"),
+    k("window", "bar_height", Kind::Int(14, 48), "height of the status bar or toolbar, for a 12 pt text of the bar"),
     k("window", "bar_size", Kind::Choice(&["small", "medium", "large"]),
       "size of the icons and texts of the status bar or toolbar, as in a Mac app: small, medium or large; the bar's height follows"),
     k("window", "block_style", Kind::Choice(&["plain", "pill"]),

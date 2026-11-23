@@ -86,7 +86,7 @@ fn the_values_of_the_specification() {
     assert_eq!(clean["window.key_hints"], Value::Bool(false));
     assert_eq!(clean["fonts.interface"], Value::Text("system".into()));
     let regular = builtin("regular").unwrap();
-    assert_eq!(regular["window.chrome"], Value::Text("toolbar".into()));
+    assert_eq!(regular["window.bar_type"], Value::Text("toolbar".into()));
     assert_eq!(color(regular, "colors.unread"), Color::System("accent".into()));
     assert_eq!(regular["layout.avatars"], Value::Bool(true));
     match &regular["window.blocks"] {
@@ -147,7 +147,7 @@ fn numbers_choices_and_switches_are_checked() {
     assert_eq!(l.values["layout.reader_title_padding"], Value::Int(32));
     refused("mine", "[layout]\nreader_title_padding = 40\n", Some(2), "must be from 0 to 32");
     refused("mine", "[layout]\nzebra = \"yes\"\n", Some(2), "expected true or false");
-    refused("mine", "[window]\nchrome = \"ribbon\"\n", Some(2), "must be one of: status_bar, toolbar");
+    refused("mine", "[window]\nbar_type = \"ribbon\"\n", Some(2), "must be one of: status_bar, toolbar");
     refused("mine", "[window]\ndefault_columns = 4\n", Some(2), "must be from 1 to 3");
 }
 
@@ -423,7 +423,7 @@ fn changing_the_theme_chosen() {
     assert!(set.set_selected("geek").is_empty());
     assert!(changed(&set.set_selected("regular")));
     assert_eq!(set.applied().name, "regular");
-    assert_eq!(set.view().window.chrome, "toolbar");
+    assert_eq!(set.view().window.bar_type, "toolbar");
 }
 
 #[test]

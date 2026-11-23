@@ -5,11 +5,11 @@
 version = 1
 
 [window]
-chrome = "toolbar"
+bar_type = "toolbar"
 status_bar_position = "top"
 title_bar = "merged"
 block_labels = true
-status_bar_height = 44
+bar_height = 44
 bar_size = "medium"
 block_style = "pill"
 bar_line = true

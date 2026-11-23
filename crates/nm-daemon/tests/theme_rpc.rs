@@ -61,7 +61,7 @@ fn the_theme_of_config_toml_is_followed() {
     save(&mut c, dir.path(), "config.toml", "[ui]\ntheme = \"regular\"\n");
     c.event("ThemeChanged", 15);
     let t = c.call("theme_get", json!({})).unwrap();
-    assert_eq!(t["window"]["chrome"], "toolbar");
+    assert_eq!(t["window"]["bar_type"], "toolbar");
     assert_eq!(t["colors"]["unread"], json!({"system": "accent"}));
 
     // A name that names no theme: geek, with a warning; config.toml is

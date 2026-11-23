@@ -18,9 +18,9 @@ enum Look {
     /// text size: 20 pt in geek for a 12 pt text.
     static var rowHeight: CGFloat { scaled(CGFloat(theme.layout.rowHeight)) }
 
-    /// The command of the window is a toolbar (`window.chrome`), not the
+    /// The command of the window is a toolbar (`window.bar_type`), not the
     /// status bar.
-    static var toolbar: Bool { theme.window.chrome == "toolbar" }
+    static var toolbar: Bool { theme.window.barType == "toolbar" }
 
     /// The blocks of the status bar remind their key (`window.key_hints`).
     static var keyHints: Bool { theme.window.keyHints }
@@ -54,9 +54,9 @@ enum Look {
         }
     }
 
-    /// Height of the status bar (`window.status_bar_height`), at the text
+    /// Height of the status bar (`window.bar_height`), at the text
     /// size of the bar: 20 pt in geek for a 12 pt text.
-    static var statusBarHeight: CGFloat { barScaled(CGFloat(theme.window.statusBarHeight)) }
+    static var barHeight: CGFloat { barScaled(CGFloat(theme.window.barHeight)) }
 
     /// What the theme adds to the margins of geek inside menus, pickers and
     /// panels (`layout.popup_padding`, 10 in geek): 0 in geek, 8 in clean,
@@ -93,7 +93,7 @@ enum Look {
     /// least 28 pt, the height of a title bar). The window's buttons are
     /// centered in it (`WindowChrome.centerButtons`).
     static var mergedBarHeight: CGFloat {
-        toolbar ? max(statusBarHeight, 38) : max(statusBarHeight, 28)
+        toolbar ? max(barHeight, 38) : max(barHeight, 28)
     }
 
     /// Height of a row of the menus and pickers (`layout.menu_row_height`),

@@ -2971,7 +2971,7 @@ pub struct ThemeView {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ThemeWindow {
     /// `status_bar` or `toolbar`.
-    pub chrome: String,
+    pub bar_type: String,
     /// `top`, `bottom` or `hidden`.
     pub status_bar_position: String,
     /// `shown`, `hidden` or `merged`.
@@ -2979,8 +2979,8 @@ pub struct ThemeWindow {
     pub key_hints: bool,
     /// The blocks of actions say their name beside their icon.
     pub block_labels: bool,
-    /// Height of the status bar, in points for a 12 pt text of the bar.
-    pub status_bar_height: u32,
+    /// Height of the status bar or toolbar, in points for a 12 pt text of the bar.
+    pub bar_height: u32,
     /// `small`, `medium` or `large`: the icons and texts of the bar.
     pub bar_size: String,
     /// `plain` or `pill`.

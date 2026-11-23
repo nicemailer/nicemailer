@@ -17,7 +17,7 @@ struct ThemeTests {
 
     @Test func theThreeBuiltInThemesAreEmbedded() {
         #expect(Set(ThemeStore.builtins.keys) == ["geek", "clean", "regular"])
-        #expect(ThemeStore.builtins["regular"]?.window.chrome == "toolbar")
+        #expect(ThemeStore.builtins["regular"]?.window.barType == "toolbar")
         #expect(ThemeStore.builtins["clean"]?.motion.sidebarMs == 120)
         #expect(ThemeStore.builtins["geek"]?.layout.rowHeight == 20)
     }

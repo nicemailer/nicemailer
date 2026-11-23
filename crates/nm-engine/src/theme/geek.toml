@@ -5,11 +5,11 @@
 version = 1
 
 [window]
-chrome = "status_bar"
+bar_type = "status_bar"
 status_bar_position = "top"
 title_bar = "shown"
 block_labels = false
-status_bar_height = 20
+bar_height = 20
 bar_size = "medium"
 block_style = "plain"
 bar_line = false

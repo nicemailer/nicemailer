@@ -71,7 +71,7 @@ private struct WindowContent: View {
         // lazy rows to notice the change.
         let textSize = "\(TextSize.shared.size)-\(TextSize.shared.statusBarSize)-\(model.theme.revision)"
         VStack(spacing: 0) {
-            // A toolbar is always at the top (`window.chrome`); the status
+            // A toolbar is always at the top (`window.bar_type`); the status
             // bar where `v` put it.
             if Look.toolbar || controller.statusPosition == .top { StatusBarView(controller: controller) }
             ZStack(alignment: .bottomTrailing) {
@@ -281,7 +281,7 @@ struct StatusBarView: View {
 
     var body: some View {
         // regular: a macOS toolbar, whose buttons are the same blocks
-        // (`window.chrome = "toolbar"`, `ToolbarView`); geek and clean:
+        // (`window.bar_type = "toolbar"`, `ToolbarView`); geek and clean:
         // the status bar.
         if Look.toolbar {
             ToolbarView(controller: controller, messages: messageLine)
@@ -359,8 +359,8 @@ struct StatusBarView: View {
         // "merged"`): room for them, and the height of a title bar, so
         // that they sit in its middle.
         .padding(.leading, model.titleBarMode == .merged ? Look.mergedButtonsWidth : 0)
-        // Its height (`window.status_bar_height`: 20 pt in geek).
-        .frame(height: model.titleBarMode == .merged ? Look.mergedBarHeight : Look.statusBarHeight)
+        // Its height (`window.bar_height`: 20 pt in geek).
+        .frame(height: model.titleBarMode == .merged ? Look.mergedBarHeight : Look.barHeight)
         // Its empty parts move the window, as a title bar does: the title
         // bar is hidden by default (`WindowChrome`).
         .background(ZStack { Palette.statusBar; WindowDragArea(onClick: controller.clickBarBackground) })
@@ -388,7 +388,7 @@ struct StatusBarView: View {
             screenChips
             // Empty: a click there reaches the drag area under the bar
             // (`clickBarBackground`). Its place, for the UI scripts.
-            Spacer(minLength: 8).uiTarget("status-empty", chrome: "status_bar")
+            Spacer(minLength: 8).uiTarget("status-empty", barType: "status_bar")
             messageLine
             rightEnd
         case "account":
@@ -397,14 +397,14 @@ struct StatusBarView: View {
             StatusBlock(icon: "at", text: model.scopeName, key: controller.keyLabel(.pickerAccounts),
                         strong: true, active: controller.overlay == .picker(.accounts))
                 .onTapGesture { controller.openPickerFromStatusBar(.accounts) }
-                .uiTarget("status-account", chrome: "status_bar")
+                .uiTarget("status-account", barType: "status_bar")
         case "folder":
             if listsMail, model.listFilter == nil {
                 StatusBlock(icon: InterfaceController.Prefix.goto.icon, text: model.currentFolderName,
                             key: controller.menuKeyLabel(.goto), strong: true, active: controller.overlay == .menu(.goto))
                     .menuAnchor(.goto, controller)
                     .onTapGesture { controller.openMenuFromStatusBar(.goto) }
-                    .uiTarget("status-folder", chrome: "status_bar")
+                    .uiTarget("status-folder", barType: "status_bar")
             } else {
                 // A tag, group or contact list ("tag: Clients"), or a screen.
                 Text(controller.locationLabel)
@@ -418,7 +418,7 @@ struct StatusBarView: View {
             StatusBlock(icon: "magnifyingglass", text: "", key: controller.keyLabel(.pickerAttributes), label: L("Attributes"),
                         active: controller.overlay == .picker(.attributes))
                 .onTapGesture { controller.openPickerFromStatusBar(.attributes) }
-                .uiTarget("status-attributes", chrome: "status_bar")
+                .uiTarget("status-attributes", barType: "status_bar")
             ForEach(model.attributes.chips) { chip in
                 Text(chip.label + " ×")
                     .lineLimit(1)
@@ -437,7 +437,7 @@ struct StatusBarView: View {
                         active: controller.overlay == .menu(p))
                 .menuAnchor(p, controller)
                 .onTapGesture { controller.openMenuFromStatusBar(p) }
-                .uiTarget("status-\(p.uiID)", chrome: "status_bar")
+                .uiTarget("status-\(p.uiID)", barType: "status_bar")
         case "ai":
             // The AI, with the actions on the current mail: its palette
             // works on the mail (or the reply) as `m` and `s` do.
@@ -447,7 +447,7 @@ struct StatusBarView: View {
                 .onTapGesture { controller.openAIFromStatusBar() }
                 .help(L("AI assistance"))
                 .accessibilityLabel(L("AI assistance"))
-                .uiTarget("status-ai", chrome: "status_bar")
+                .uiTarget("status-ai", barType: "status_bar")
         case "help":
             // At the right end on every screen, a reminder that `?` exists,
             // for whoever has not learned it yet; a click opens it too.
@@ -455,7 +455,7 @@ struct StatusBarView: View {
                         active: controller.overlay == .help)
                 .onTapGesture { controller.toggleHelpFromStatusBar() }
                 .help(L("Keys"))
-                .uiTarget("status-help", chrome: "status_bar")
+                .uiTarget("status-help", barType: "status_bar")
         default:
             EmptyView()
         }
@@ -600,7 +600,7 @@ extension StatusBarView {
     }
 }
 
-/// The command of the window in regular (`window.chrome = "toolbar"`,
+/// The command of the window in regular (`window.bar_type = "toolbar"`,
 /// `themes.md`, section 6.1): a macOS toolbar. Its buttons are the blocks
 /// of the status bar, and open the same menus and pickers, dropped under
 /// them; the folder is the title, with what the app says (`messageLine`)
@@ -623,16 +623,16 @@ private struct ToolbarView<Messages: View>: View {
                             .foregroundStyle(Palette.muted)
                     }
                     .contentShape(Rectangle())
-                    .menuAnchor(.goto, controller, chrome: "toolbar")
+                    .menuAnchor(.goto, controller, barType: "toolbar")
                     .onTapGesture { controller.openMenuFromStatusBar(.goto) }
-                    .uiTarget("status-folder", chrome: "toolbar")
+                    .uiTarget("status-folder", barType: "toolbar")
                 } else {
                     Text(controller.locationLabel).font(.interfaceBar(15, weight: .bold)).lineLimit(1)
                 }
                 HStack(spacing: 6) {
                     messages
                     if let sync = model.syncLine {
-                        Text(sync).foregroundStyle(Palette.muted).lineLimit(1).uiTarget("status-sync", chrome: "toolbar")
+                        Text(sync).foregroundStyle(Palette.muted).lineLimit(1).uiTarget("status-sync", barType: "toolbar")
                     }
                     if !model.marked.isEmpty {
                         Text(L("%lld marked", model.marked.count)).foregroundStyle(Palette.markedBar)
@@ -643,7 +643,7 @@ private struct ToolbarView<Messages: View>: View {
             .padding(.trailing, barScaled(12))
             // Empty: a click there reaches the drag area under the toolbar
             // (`clickBarBackground`). Its place, for the UI scripts.
-            Spacer(minLength: 8).uiTarget("status-empty", chrome: "toolbar")
+            Spacer(minLength: 8).uiTarget("status-empty", barType: "toolbar")
             // The buttons, in the order of the theme (`window.blocks`); the
             // folder is the title, the room left is
             // before the buttons already.
@@ -688,13 +688,13 @@ extension ToolbarView {
             ToolbarItem(action: { controller.openPickerFromStatusBar(.accounts) }) {
                 StatusBlock(icon: "at", text: model.scopeName, key: controller.keyLabel(.pickerAccounts))
             }
-            .uiTarget("status-account", chrome: "toolbar")
+            .uiTarget("status-account", barType: "toolbar")
         case "attributes":
             ToolbarItem(action: { controller.openPickerFromStatusBar(.attributes) }) {
                 StatusBlock(icon: "line.3.horizontal.decrease", text: "", key: controller.keyLabel(.pickerAttributes),
                             label: L("Attributes"))
             }
-            .uiTarget("status-attributes", chrome: "toolbar")
+            .uiTarget("status-attributes", barType: "toolbar")
             ForEach(model.attributes.chips) { chip in
                 Text(chip.label + " ×")
                     .lineLimit(1)
@@ -707,21 +707,21 @@ extension ToolbarView {
             let p = InterfaceController.Prefix(name: item)
             ToolbarItem(action: { controller.openMenuFromStatusBar(p) }) {
                 StatusBlock(icon: p.icon, text: "", key: controller.menuKeyLabel(p), label: p.title)
-                    .menuAnchor(p, controller, chrome: "toolbar")
+                    .menuAnchor(p, controller, barType: "toolbar")
             }
-            .uiTarget("status-\(p.uiID)", chrome: "toolbar")
+            .uiTarget("status-\(p.uiID)", barType: "toolbar")
         case "ai":
             ToolbarItem(action: { controller.openAIFromStatusBar() }) {
                 StatusBlock(icon: "sparkles", text: "", key: controller.aiKeyLabel(composing: model.composer != nil), label: L("AI"))
             }
             .help(L("AI assistance"))
-            .uiTarget("status-ai", chrome: "toolbar")
+            .uiTarget("status-ai", barType: "toolbar")
         case "help":
             ToolbarItem(action: { controller.toggleHelpFromStatusBar() }) {
                 StatusBlock(icon: "questionmark.circle", text: "", key: controller.keyLabel(.helpShow))
             }
             .help(L("Keys"))
-            .uiTarget("status-help", chrome: "toolbar")
+            .uiTarget("status-help", barType: "toolbar")
         default:
             EmptyView()
         }
@@ -755,7 +755,7 @@ extension View {
     /// Records the left edge of a status bar block, where the menu of
     /// `prefix` drops down from.
     ///
-    /// `chrome`: the command of the window the block belongs to (the status
+    /// `barType`: the command of the window the block belongs to (the status
     /// bar or the toolbar): a block of the other one, still laid out while
     /// the window is rebuilt in a new theme, does not move the menu.
     ///
@@ -765,19 +765,19 @@ extension View {
     /// menu to the left edge of the window.
     @MainActor
     fileprivate func menuAnchor(_ prefix: InterfaceController.Prefix, _ controller: InterfaceController,
-                                chrome: String = "status_bar") -> some View {
+                                barType: String = "status_bar") -> some View {
         let revision = ThemeStore.shared.revision
         return background(GeometryReader { geo in
             Color.clear
-                .onAppear { place(prefix, controller, chrome, revision, geo.frame(in: .global)) }
-                .onChange(of: geo.frame(in: .global)) { _, f in place(prefix, controller, chrome, revision, f) }
+                .onAppear { place(prefix, controller, barType, revision, geo.frame(in: .global)) }
+                .onChange(of: geo.frame(in: .global)) { _, f in place(prefix, controller, barType, revision, f) }
         })
     }
 
     @MainActor
-    private func place(_ prefix: InterfaceController.Prefix, _ controller: InterfaceController, _ chrome: String,
+    private func place(_ prefix: InterfaceController.Prefix, _ controller: InterfaceController, _ barType: String,
                        _ revision: Int, _ frame: CGRect) {
-        guard ThemeStore.shared.current.window.chrome == chrome, revision == ThemeStore.shared.revision,
+        guard ThemeStore.shared.current.window.barType == barType, revision == ThemeStore.shared.revision,
               frame.width > 0 else { return }
         controller.menuBlockX[prefix] = frame.minX
     }
@@ -830,7 +830,7 @@ private struct StatusBlock: View {
         .padding(.vertical, pill ? barScaled(4) : 0)
         .background(Capsule().fill(pill && active ? Palette.cursor : Color.clear))
         .contentShape(Rectangle())
-        // A button of the toolbar in regular (`window.chrome`).
+        // A button of the toolbar in regular (`window.bar_type`).
         .modifier(ToolbarButton(active: Look.toolbar))
     }
 }

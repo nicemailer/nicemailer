@@ -33,7 +33,7 @@ struct ThemeView: Decodable, Equatable {
     /// `[window]` (`themes.md`, section 6.1).
     struct Window: Decodable, Equatable {
         /// `status_bar` or `toolbar`.
-        let chrome: String
+        let barType: String
         /// `top`, `bottom` or `hidden`.
         let statusBarPosition: String
         /// `shown`, `hidden` or `merged`.
@@ -41,8 +41,8 @@ struct ThemeView: Decodable, Equatable {
         let keyHints: Bool
         /// The blocks of actions say their name beside their icon.
         let blockLabels: Bool
-        /// Height of the status bar, in points for a 12 pt text of the bar.
-        let statusBarHeight: Double
+        /// Height of the status bar or toolbar, in points for a 12 pt text of the bar.
+        let barHeight: Double
         /// `small`, `medium` or `large`: the icons and texts of the bar.
         let barSize: String
         /// `plain` or `pill`.
