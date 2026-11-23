@@ -1048,6 +1048,32 @@ private final class Runner {
                 return abs(x - f.minX) < 1 ? "true" : "false (menu at \(Int(x)), block at \(Int(f.minX)))"
             }(),
             "menu_y": "\(Int(UIScript.frames["menu-0"]?.minY ?? -1))",
+            // The gap between the unread count of the first row of the
+            // open menu and its key on the right, as laid out, in points;
+            // empty when that row has no count drawn as a badge
+            // (`KeyMenu.detailAsBadge`).
+            // The row Inbox of the folder column, as laid out, in points:
+            // `left,right,gap`: from the column's left edge to the name,
+            // from the key to the right edge, from the count to the key
+            // (`Look.sidebarTextInset`); right and gap empty with the key
+            // first (geek), the whole field empty without three columns.
+            "folder_inbox_layout": {
+                guard c.columns == 3, let column = UIScript.frames["folder-column"],
+                      let name = UIScript.frames["folder-name-Inbox"] else { return "" }
+                let left = "\(Int((name.minX - column.minX).rounded()))"
+                guard Look.menuKeysRight, let key = UIScript.frames["folder-key-Inbox"] else { return left + ",," }
+                let right = "\(Int((column.maxX - key.maxX).rounded()))"
+                let gap = UIScript.frames["folder-badge-Inbox"].map { "\(Int((key.minX - $0.maxX).rounded()))" } ?? ""
+                return "\(left),\(right),\(gap)"
+            }(),
+            "menu_badge_gap": {
+                // The frames of a menu closed stay recorded: only a first
+                // row that has a count now is measured.
+                guard case .menu(let p) = c.overlay, c.menuEntries(p).first?.detail != nil,
+                      let badge = UIScript.frames["menu-detail-0"],
+                      let key = UIScript.frames["menu-key-0"] else { return "" }
+                return "\(Int((key.minX - badge.maxX).rounded()))"
+            }(),
             // Height of the selected row, as laid out.
             "row_height": "\(Int((UIScript.frames["thread-\(m.selectedThreadId ?? -1)"]?.height ?? 0).rounded()))",
             "html_text": UIScript.html["text"] ?? "",

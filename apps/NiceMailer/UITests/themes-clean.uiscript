@@ -52,6 +52,9 @@ key esc
 # The menu ; with the margins of clean around its title and rows.
 key ;
 expect overlay ~ menu
+# The unread count of Inbox in a pill, set apart from its key on the
+# right (10 pt of the row and 8 more).
+expect menu_badge_gap = 18
 # A row highlighted with the arrows: room around its text.
 key down
 expect menu_index = 0
@@ -68,6 +71,10 @@ key esc
 key v
 key 3
 expect columns = 3
+# The folder column: its text inside the rounded highlight (8 pt of inset
+# and 10 inside, on both sides), the unread count of Inbox in a pill, set
+# apart from its key (6 pt of the row and 8 more).
+expect folder_inbox_layout = 18,18,14
 wait 300
 snap clean-three-columns
 appearance dark

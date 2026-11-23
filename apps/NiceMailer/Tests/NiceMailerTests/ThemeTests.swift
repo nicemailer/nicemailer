@@ -274,3 +274,49 @@ struct BarSizeTests {
         }
     }
 }
+
+/// The unread count of a menu row beside a key on the right
+/// (`KeyMenu.detailAsBadge`), and the colors of the highlighted row.
+@MainActor
+struct MenuBadgeTests {
+    @Test func aCountBesideAKeyOnTheRightIsABadge() {
+        #expect(KeyMenu.detailAsBadge(keysRight: true, muted: false))
+        // An information ("T: and open") stays plain text.
+        #expect(!KeyMenu.detailAsBadge(keysRight: true, muted: true))
+        // geek: the key first, the count alone at the right end.
+        #expect(!KeyMenu.detailAsBadge(keysRight: false, muted: false))
+    }
+
+    /// The highlighted row of a menu takes the selection's text color in
+    /// a theme whose selection has one (regular), and only that row.
+    @Test func onlyTheHighlightedRowOfAStrongSelectionTurnsWhite() {
+        #expect(KeyMenu.onAccent(0, highlighted: 0, strongSelection: true))
+        #expect(!KeyMenu.onAccent(1, highlighted: 0, strongSelection: true))
+        #expect(!KeyMenu.onAccent(0, highlighted: nil, strongSelection: true))
+        // geek and clean: a pale highlight, the texts keep their colors.
+        #expect(!KeyMenu.onAccent(0, highlighted: 0, strongSelection: false))
+        #expect(!Look.strongSelection(ThemeStore.builtins["clean"]!))
+        #expect(Look.strongSelection(ThemeStore.builtins["regular"]!))
+    }
+
+    /// On a selection of the accent (regular), a text or an icon takes the
+    /// selection's text color, whatever its own; a secondary one a little
+    /// fainter. Elsewhere, or not selected, it keeps its color.
+    @Test func aTextOnTheAccentTurnsToTheSelectionsColor() {
+        let white = Palette.selectionText
+        #expect(Look.ink(Palette.text, selected: true, faint: false, strong: true) == white)
+        #expect(Look.ink(Palette.unread, selected: true, faint: false, strong: true) == white)
+        #expect(Look.ink(Palette.muted, selected: true, faint: true, strong: true) == white.opacity(0.8))
+        #expect(Look.ink(Palette.muted, selected: false, faint: true, strong: true) == Palette.muted)
+        // geek, clean: a pale highlight, the colors stay.
+        #expect(Look.ink(Palette.unread, selected: true, faint: false, strong: false) == Palette.unread)
+    }
+
+    /// The text of the folder column inside its rounded highlight: the
+    /// inset of the highlight and 10 pt more; 8 in geek, as before.
+    @Test func theFolderColumnKeepsItsTextInsideTheHighlight() {
+        #expect(Look.sidebarTextInset(ThemeStore.builtins["geek"]!) == 8)
+        #expect(Look.sidebarTextInset(ThemeStore.builtins["clean"]!) == scaled(18))
+        #expect(Look.sidebarTextInset(ThemeStore.builtins["regular"]!) == scaled(18))
+    }
+}

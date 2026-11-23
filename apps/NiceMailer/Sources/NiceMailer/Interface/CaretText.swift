@@ -24,7 +24,8 @@ struct CaretText: View {
             // A whole-text selection (a recipient taken back with ⌫, the
             // current words of Subject…, ⌘A): highlighted, with no caret,
             // since typing or ⌫ replaces all of it at once.
-            Text(line.text).background(Palette.cursor)
+            // White on the accent (regular, `Look.ink`).
+            Text(line.text).foregroundStyle(Look.ink(Palette.text, selected: true)).background(Palette.cursor)
         } else if let range = line.selection {
             // A part selected (⇧⌥← a word): that part highlighted, in the
             // same single `Text` so the letters do not move; no caret, as
@@ -38,12 +39,16 @@ struct CaretText: View {
     /// The text with the characters of `range` on the selection colour.
     /// Swift note: an `AttributedString` carries styles on ranges of its
     /// characters; its indexes are walked to, like those of a `String`.
+    @MainActor
     static func highlighted(_ text: String, _ range: Range<Int>) -> AttributedString {
         var out = AttributedString(text)
         let chars = out.characters
         let start = chars.index(chars.startIndex, offsetBy: range.lowerBound)
         let end = chars.index(chars.startIndex, offsetBy: range.upperBound)
         out[start..<end].backgroundColor = Palette.cursor
+        // On the accent (regular), the selected characters in white, the
+        // others keep the color of the line.
+        if Look.strongSelection { out[start..<end].foregroundColor = Palette.selectionText }
         return out
     }
 

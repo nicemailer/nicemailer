@@ -82,6 +82,8 @@ expect status_position = top
 key ;
 expect menu_x < 400
 expect menu_y > 500
+# In geek the key comes first: the count is alone on the right, no pill.
+expect menu_badge_gap =
 snap folder-menu-top
 key esc
 # The m, s and v menus have their block (icon and key) and drop down from

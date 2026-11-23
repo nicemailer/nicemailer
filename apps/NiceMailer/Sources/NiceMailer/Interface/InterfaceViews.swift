@@ -905,31 +905,54 @@ private struct FolderColumn: View {
             VStack(alignment: .leading, spacing: 0) {
                 Text(model.scopeName)
                     .foregroundStyle(Palette.muted)
-                    .padding(.top, scaled(4)).padding(.bottom, scaled(2)).padding(.horizontal, 8)
+                    .padding(.top, scaled(4)).padding(.bottom, scaled(2)).padding(.horizontal, Look.sidebarTextInset)
                     .contentShape(Rectangle())
                     .onTapGesture { controller.openPickerFromStatusBar(.accounts) }
                 let folders = controller.scopeFolders
                 ForEach(Array(folders.enumerated()), id: \.element.id) { i, f in
+                    // The current folder on a fill of the accent (regular):
+                    // its name, count and key take the text color of the
+                    // selection, white, or they would be lost in the blue.
+                    let onSelection = controller.isCurrent(f) && Look.strongSelection
+                    let id = f.role.map { Role.name($0) } ?? f.virtual?.id ?? f.name
                     HStack(spacing: 6) {
                         // The key of the folder in the menu `;` (`goto.<role>`):
                         // first, or after the count when the theme puts the
                         // keys on the right (`layout.menu_keys`).
                         if !Look.menuKeysRight {
-                            Text(controller.gotoKeyLabel(f)).foregroundStyle(Palette.muted)
-                        }
-                        if f.virtual != nil {
-                            VirtualFolderLabel(name: f.name)
-                        } else {
-                            Text(f.name)
-                        }
-                        Spacer()
-                        let onSelection = controller.isCurrent(f) && Look.strongSelection
-                        if f.unread > 0 { Text("\(f.unread)").foregroundStyle(onSelection ? Palette.selectionText : Palette.unread) }
-                        if Look.menuKeysRight {
                             Text(controller.gotoKeyLabel(f)).foregroundStyle(onSelection ? Palette.selectionText : Palette.muted)
                         }
+                        Group {
+                            if f.virtual != nil {
+                                VirtualFolderLabel(name: f.name, color: onSelection ? Palette.selectionText : Palette.accentText)
+                            } else {
+                                Text(f.name).foregroundStyle(onSelection ? Palette.selectionText : Palette.text)
+                            }
+                        }
+                        .lineLimit(1)
+                        .uiTarget("folder-name-\(id)")
+                        Spacer(minLength: scaled(8))
+                        if f.unread > 0 {
+                            // As in the menu `;`: a pill beside a key on
+                            // the right, a bare number when the key is first.
+                            if KeyMenu.detailAsBadge(keysRight: Look.menuKeysRight, muted: false) {
+                                UnreadBadge(count: "\(f.unread)", onAccent: onSelection)
+                                    .uiTarget("folder-badge-\(id)")
+                            } else {
+                                Text("\(f.unread)").foregroundStyle(onSelection ? Palette.selectionText : Palette.unread)
+                            }
+                        }
+                        if Look.menuKeysRight {
+                            Text(controller.gotoKeyLabel(f))
+                                .foregroundStyle(onSelection ? Palette.selectionText.opacity(0.8) : Palette.muted)
+                                .uiTarget("folder-key-\(id)")
+                                // More room after a count, as in the menu `;`.
+                                .padding(.leading, f.unread > 0 ? scaled(KeyMenu.keyGapAfterBadge) : 0)
+                        }
                     }
-                    .padding(.horizontal, 8)
+                    // The text inside the highlight, away from its rounded
+                    // edges (`Look.sidebarTextInset`).
+                    .padding(.horizontal, Look.sidebarTextInset)
                     .frame(height: Look.rowHeight)
                     .rowFill(controller.isCurrent(f) ? Palette.cursor : nil)
                     // The whole row is clickable, not only its text.
@@ -939,7 +962,7 @@ private struct FolderColumn: View {
                     // scenario does not depend on the names of a file; a
                     // virtual folder by its id (`folder-all_mail`), as a
                     // target of a scenario has no space.
-                    .uiTarget("folder-\(f.role.map { Role.name($0) } ?? f.virtual?.id ?? f.name)")
+                    .uiTarget("folder-\(id)")
                     // The same blocks as the ; menu.
                     .padding(.top, i > 0 && folders[i - 1].group != f.group ? scaled(10) : 0)
                 }
@@ -950,6 +973,7 @@ private struct FolderColumn: View {
         // Its own background (`colors.sidebar`): the background of the
         // window in geek.
         .background(Palette.sidebar)
+        .uiTarget("folder-column")
     }
 }
 
@@ -969,27 +993,29 @@ private struct ColumnGroups: View {
         if !rows.isEmpty {
             Text(L("Groups"))
                 .foregroundStyle(Palette.muted)
-                .padding(.top, scaled(14)).padding(.bottom, scaled(2)).padding(.horizontal, 8)
+                .padding(.top, scaled(14)).padding(.bottom, scaled(2)).padding(.horizontal, Look.sidebarTextInset)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
                 .onTapGesture { controller.openGroupPanel() }
                 .uiTarget("groups-title")
             ForEach(rows) { g in
                 let choice = model.attributes.groupChoice(g.id)
+                // Highlighted on a fill of the accent (regular): white.
+                let on = controller.isHighlighted(g)
                 HStack(spacing: 6) {
                     // Where a folder has its letter: "•" when the group
                     // filters the list, "−" when it is excluded, as in the
                     // Group… panel.
                     Text(choice == true ? "•" : choice == false ? "−" : "@")
-                        .foregroundStyle(choice == nil ? Palette.muted : Palette.accentText)
+                        .foregroundStyle(Look.ink(choice == nil ? Palette.muted : Palette.accentText, selected: on))
                     Text(g.name)
                         .lineLimit(1)
                         .truncationMode(.tail)
-                        .foregroundStyle(choice == nil ? Palette.text : Palette.accentText)
+                        .foregroundStyle(Look.ink(choice == nil ? Palette.text : Palette.accentText, selected: on))
                         .strikethrough(choice == false)
                     Spacer(minLength: 0)
                 }
-                .padding(.horizontal, 8)
+                .padding(.horizontal, Look.sidebarTextInset)
                 .frame(height: Look.rowHeight)
                 // The same grey row as the current folder above.
                 .rowFill(controller.isHighlighted(g) ? Palette.cursor : nil)
@@ -1005,7 +1031,7 @@ private struct ColumnGroups: View {
             if hidden > 0 {
                 Text(L("%lld more…", hidden))
                     .foregroundStyle(Palette.muted)
-                    .padding(.horizontal, 8)
+                    .padding(.horizontal, Look.sidebarTextInset)
                     .frame(maxWidth: .infinity, minHeight: scaled(20), alignment: .leading)
                     .contentShape(Rectangle())
                     .onTapGesture { controller.openGroupPanel() }
@@ -1251,10 +1277,13 @@ private struct ThreadRow: View {
     var names: FolderNames = .english
 
     var body: some View {
+        // The row under the cursor on a fill of the accent (regular): every
+        // text and icon in the selection's text color (`Look.ink`).
+        let on = cursor
         HStack(spacing: layout.char) {
             (marked ? Palette.markedBar : Color.clear).frame(width: 2)
-            Text(thread.unreadCount > 0 ? RowLayout.unreadDot : " ").foregroundStyle(Palette.unread).frame(width: layout.dot)
-            Text(Format.geekListDate(thread.dateLastReceived)).foregroundStyle(Palette.muted)
+            Text(thread.unreadCount > 0 ? RowLayout.unreadDot : " ").foregroundStyle(Look.ink(Palette.unread, selected: on)).frame(width: layout.dot)
+            Text(Format.geekListDate(thread.dateLastReceived)).foregroundStyle(Look.ink(Palette.muted, selected: on, faint: true))
                 .frame(width: layout.date, alignment: .leading)
             // The person the conversation is with, not the user who
             // answered last; "→" says the user spoke last and the
@@ -1274,7 +1303,7 @@ private struct ThreadRow: View {
                                 // The person in the accent colour: among
                                 // the robots of Quarantine, the mail that
                                 // most likely deserves the Inbox stands out.
-                                .foregroundStyle(thread.correspondentKind == "person" ? Palette.accentText : Palette.muted)
+                                .foregroundStyle(Look.ink(thread.correspondentKind == "person" ? Palette.accentText : Palette.muted, selected: on))
                         } else {
                             Color.clear
                         }
@@ -1285,6 +1314,7 @@ private struct ThreadRow: View {
                 }
                 Text(SenderColumn.text(thread))
                     .fontWeight(thread.unreadCount > 0 ? .bold : .regular)
+                    .foregroundStyle(Look.ink(Palette.text, selected: on))
                     .lineLimit(1)
                 Spacer(minLength: 0)
             }
@@ -1295,7 +1325,7 @@ private struct ThreadRow: View {
                 if thread.hasAttachments {
                     Image(systemName: "paperclip")
                         .font(.system(size: scaled(11), weight: .medium))
-                        .foregroundStyle(Palette.muted)
+                        .foregroundStyle(Look.ink(Palette.muted, selected: on, faint: true))
                         .accessibilityLabel(L("with attachments"))
                 } else {
                     Color.clear
@@ -1306,7 +1336,8 @@ private struct ThreadRow: View {
             // cut first.
             HStack(spacing: layout.char) {
                 Text(thread.subject.isEmpty ? L("(no subject)") : thread.subject).layoutPriority(1)
-                ForEach(thread.tags, id: \.self) { Text("#\($0)").foregroundStyle(Palette.accentText) }
+                    .foregroundStyle(Look.ink(Palette.text, selected: on))
+                ForEach(thread.tags, id: \.self) { Text("#\($0)").foregroundStyle(Look.ink(Palette.accentText, selected: on)) }
                 Spacer(minLength: 0)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -1315,18 +1346,18 @@ private struct ThreadRow: View {
             // reader always shows it.
             if let folder {
                 let withAccount = folder.account != nil && layout.showsAccount
-                Text(withAccount ? folder.text : folder.folder).foregroundStyle(Palette.muted)
+                Text(withAccount ? folder.text : folder.folder).foregroundStyle(Look.ink(Palette.muted, selected: on, faint: true))
                     .frame(width: layout.folder(withAccount: withAccount), alignment: .leading)
             }
             // The AI's suggestion, before the count: the target's name in
             // the accent colour, after an arrow, as the move it proposes.
             if let s = suggestion {
                 Text(AI.suggestionTag(names.name(s.target), narrow: layout.narrowSuggestion))
-                    .foregroundStyle(Palette.accentText)
+                    .foregroundStyle(Look.ink(Palette.accentText, selected: on))
                     .fixedSize()
                     .accessibilityLabel(L("AI suggests %@", names.name(s.target)))
             }
-            Text(thread.messageCount > 1 ? "\(thread.messageCount)" : "").foregroundStyle(Palette.muted)
+            Text(thread.messageCount > 1 ? "\(thread.messageCount)" : "").foregroundStyle(Look.ink(Palette.muted, selected: on, faint: true))
                 .frame(width: layout.count, alignment: .trailing)
             // The flag: an icon in its own colour, apart from the unread
             // dot's, at the end of the row.
@@ -1334,7 +1365,7 @@ private struct ThreadRow: View {
                 if thread.isFlagged {
                     Image(systemName: "flag.fill")
                         .font(.system(size: scaled(11), weight: .semibold))
-                        .foregroundStyle(Palette.flag)
+                        .foregroundStyle(Look.ink(Palette.flag, selected: on))
                         .accessibilityLabel(L("flagged"))
                 } else {
                     Color.clear
@@ -1564,8 +1595,12 @@ private struct ReaderColumn: View {
     private func formatSegment(_ format: String, _ label: Text) -> some View {
         // The highlight is rounded as the rows of the list, for its size
         // (`Look.titleControlRadius`): square in geek.
-        label
-            .background(model.bodyFormat == format ? Palette.cursor : Color.clear,
+        // On a fill of the accent (regular), the word of the current
+        // display in the selection's text color, white (`Look.ink`).
+        let current = model.bodyFormat == format
+        return label
+            .foregroundStyle(Look.ink(Palette.muted, selected: current))
+            .background(current ? Palette.cursor : Color.clear,
                         in: RoundedRectangle(cornerRadius: Look.titleControlRadius, style: .continuous))
             .contentShape(Rectangle())
             .onTapGesture { model.setBodyFormat(format) }
@@ -2250,15 +2285,40 @@ private struct HTMLReader: NSViewRepresentable {
 /// folders, not as one more folder. Neither an italic (the monospace font
 /// of the geek theme has none) nor a block of its own: each ends the block
 /// of the folders it gathers.
+/// The unread count of a folder as a small pill tinted with the unread
+/// color, as the counts of Mail's sidebar: in the menu `;` and the folder
+/// column when the keys are on the right (`KeyMenu.detailAsBadge`), where a
+/// bare number would be read with the key beside it ("18 i").
+struct UnreadBadge: View {
+    let count: String
+    /// On a row highlighted in the accent (regular): the pill takes the
+    /// text color of the selection, or it would vanish in the blue.
+    var onAccent = false
+
+    var body: some View {
+        let ink = onAccent ? Palette.selectionText : Palette.unread
+        Text(count)
+            .font(.interface(11, weight: .semibold))
+            .monospacedDigit()
+            .foregroundStyle(ink)
+            .padding(.horizontal, scaled(6))
+            .padding(.vertical, scaled(1))
+            .background(Capsule().fill(ink.opacity(0.18)))
+    }
+}
+
 struct VirtualFolderLabel: View {
     let name: String
+    /// Its color: the accent, or the text color of the selection on a row
+    /// highlighted in the accent (`KeyMenu.onAccent`).
+    var color: Color = Palette.accentText
 
     var body: some View {
         HStack(spacing: 4) {
             Image(systemName: "square.stack").imageScale(.small)
             Text(name)
         }
-        .foregroundStyle(Palette.accentText)
+        .foregroundStyle(color)
     }
 }
 
@@ -2300,6 +2360,25 @@ struct KeyMenu: View {
     /// (the help).
     let onSelect: ((Int) -> Void)?
 
+    /// Whether a row's detail is drawn as a badge: a count (not an
+    /// information, `detailMuted`) next to a key on the right
+    /// (`layout.menu_keys = "right"`: clean, regular). With the key first
+    /// (geek), the count is alone at the right end and reads as it is.
+    static func detailAsBadge(keysRight: Bool, muted: Bool) -> Bool { keysRight && !muted }
+
+    /// Whether row `index` is drawn on a fill of the accent: highlighted
+    /// with the arrows, in a theme whose selection has a text color of its
+    /// own (`Look.strongSelection`: white on the accent in regular). Its
+    /// texts then take that color; elsewhere (geek, clean) the highlight
+    /// is pale and they keep theirs.
+    static func onAccent(_ index: Int, highlighted: Int?, strongSelection: Bool) -> Bool {
+        strongSelection && index == highlighted
+    }
+
+    /// Room added before the key of a row that has a detail, beyond the
+    /// spacing of the row (10 pt), at a 12 pt text.
+    static let keyGapAfterBadge: CGFloat = 8
+
     var body: some View {
         // Width of the key column: the longest key, measured in the
         // interface font (in characters, in a font of fixed pitch).
@@ -2325,14 +2404,22 @@ struct KeyMenu: View {
                 Text(title).foregroundStyle(Palette.accentText).padding(.bottom, 2)
             }
             ForEach(Array(entries.enumerated()), id: \.offset) { i, e in
+                // The row highlighted in a fill of the accent (regular): its
+                // label, key and count take the text color of the selection,
+                // white, or they would be lost in the blue.
+                let accent = Self.onAccent(i, highlighted: highlighted, strongSelection: Look.strongSelection)
                 HStack(spacing: 10) {
                     // The key first, as in Helix, or last, as in a macOS
                     // menu (`layout.menu_keys`).
                     if !Look.menuKeysRight {
-                        Text(e.key).foregroundStyle(Palette.accentText).frame(width: keyWidth, alignment: .leading)
+                        Text(e.key).foregroundStyle(accent ? Palette.selectionText : Palette.accentText)
+                            .frame(width: keyWidth, alignment: .leading)
                     }
                     if e.virtual {
-                        VirtualFolderLabel(name: e.label)
+                        VirtualFolderLabel(name: e.label, color: accent ? Palette.selectionText : Palette.accentText)
+                    } else if accent {
+                        // A row not available yet stays fainter than the others.
+                        Text(e.label).foregroundStyle(Palette.selectionText.opacity(e.muted ? 0.7 : 1))
                     } else {
                         Text(e.label).foregroundStyle(e.muted ? Palette.muted : Palette.text)
                     }
@@ -2340,10 +2427,29 @@ struct KeyMenu: View {
                     // of two characters after the longest label.
                     Spacer(minLength: scaled(16))
                     if let detail = e.detail {
-                        Text(detail).foregroundStyle(e.detailMuted ? Palette.muted : Palette.unread)
+                        if Self.detailAsBadge(keysRight: Look.menuKeysRight, muted: e.detailMuted) {
+                            // Beside a key on the right, a bare count read
+                            // with it ("18 i"): a small pill tinted with the
+                            // unread color, as the counts of Mail's sidebar,
+                            // tells it apart from the key at a glance.
+                            UnreadBadge(count: detail, onAccent: accent)
+                                .uiTarget("menu-detail-\(i)")
+                        } else if accent {
+                            Text(detail).foregroundStyle(Palette.selectionText.opacity(e.detailMuted ? 0.8 : 1))
+                        } else {
+                            Text(detail).foregroundStyle(e.detailMuted ? Palette.muted : Palette.unread)
+                        }
                     }
                     if Look.menuKeysRight {
-                        Text(e.key).foregroundStyle(Palette.muted).frame(width: keyWidth, alignment: .trailing)
+                        // More room before the key than between the other
+                        // parts of the row: the count and the key are two
+                        // things, not one.
+                        // Grey as a shortcut of a macOS menu; on the accent,
+                        // the selection's text color, a little fainter.
+                        Text(e.key).foregroundStyle(accent ? Palette.selectionText.opacity(0.8) : Palette.muted)
+                            .frame(width: keyWidth, alignment: .trailing)
+                            .uiTarget("menu-key-\(i)")
+                            .padding(.leading, e.detail == nil ? 0 : scaled(Self.keyGapAfterBadge))
                     }
                 }
                 // Every row takes the menu's width (that of its widest
@@ -2547,10 +2653,15 @@ struct PickerPopup: View {
                                     .padding(.horizontal, 8)
                                     .padding(.vertical, scaled((Self.gapHeight - 1) / 2))
                             }
+                            // The row of the cursor on a fill of the accent
+                            // (regular): its texts white (`Look.ink`).
+                            let on = i == current
                             HStack(spacing: 8) {
-                                Text(e.key).foregroundStyle(Palette.muted).frame(width: scaled(22), alignment: .leading)
+                                Text(e.key).foregroundStyle(Look.ink(Palette.muted, selected: on, faint: true))
+                                    .frame(width: scaled(22), alignment: .leading)
                                 if let icon = e.icon {
-                                    Image(systemName: icon).foregroundStyle(Palette.muted).frame(width: scaled(16))
+                                    Image(systemName: icon).foregroundStyle(Look.ink(Palette.muted, selected: on, faint: true))
+                                        .frame(width: scaled(16))
                                 }
                                 if halves {
                                     // Links: what the mail calls the link on the
@@ -2559,18 +2670,22 @@ struct PickerPopup: View {
                                     // pushes the address out of sight. Two frames
                                     // equally flexible get the same width.
                                     Text(e.label).lineLimit(1).truncationMode(.middle)
+                                        .foregroundStyle(Look.ink(Palette.text, selected: on))
                                         .frame(maxWidth: .infinity, alignment: .leading)
                                     Text(e.detail ?? "").lineLimit(1).truncationMode(.middle)
-                                        .foregroundStyle(Palette.muted)
+                                        .foregroundStyle(Look.ink(Palette.muted, selected: on, faint: true))
                                         .frame(maxWidth: .infinity, alignment: .leading)
                                 } else {
                                     Text(e.label).lineLimit(1).truncationMode(.middle)
+                                        .foregroundStyle(Look.ink(Palette.text, selected: on))
                                     Spacer()
                                     // At the right end of the row: an unread count
                                     // stands out, an information stays muted.
                                     if let detail = e.detail {
                                         Text(detail).lineLimit(1)
-                                            .foregroundStyle(e.detailStyle == .count ? Palette.unread : Palette.muted)
+                                            .foregroundStyle(e.detailStyle == .count
+                                                ? Look.ink(Palette.unread, selected: on)
+                                                : Look.ink(Palette.muted, selected: on, faint: true))
                                     }
                                 }
                             }
@@ -2718,22 +2833,30 @@ private struct ContactsScreen: View {
             onHeight: { controller.screenHeightChanged($0) }
         ) { i in
             let c = controller.contacts[i]
+            // The row of the cursor on a fill of the accent (regular): its
+            // texts white (`Look.ink`).
+            let on = i == controller.screenIndex
             HStack(spacing: 8) {
-                Text(c.addr).frame(width: scaled(300), alignment: .leading)
-                Text(c.name ?? "").foregroundStyle(Palette.muted).frame(width: scaled(200), alignment: .leading)
+                Text(c.addr).foregroundStyle(Look.ink(Palette.text, selected: on)).frame(width: scaled(300), alignment: .leading)
+                Text(c.name ?? "").foregroundStyle(Look.ink(Palette.muted, selected: on, faint: true))
+                    .frame(width: scaled(200), alignment: .leading)
                 // The address's decision, or the domain's (marked "@"),
                 // which applies when the address has none.
                 if let own = c.screeningTarget {
-                    Text(controller.model.folderNames.name(own)).frame(width: scaled(110), alignment: .leading)
+                    Text(controller.model.folderNames.name(own)).foregroundStyle(Look.ink(Palette.text, selected: on))
+                        .frame(width: scaled(110), alignment: .leading)
                 } else {
-                    Text(c.domainTarget.map { "@" + controller.model.folderNames.name($0) } ?? "").foregroundStyle(Palette.muted)
+                    Text(c.domainTarget.map { "@" + controller.model.folderNames.name($0) } ?? "")
+                        .foregroundStyle(Look.ink(Palette.muted, selected: on, faint: true))
                         .frame(width: scaled(110), alignment: .leading)
                 }
                 // Human or robot; a choice of the user is marked "*".
-                Text(c.originLabel).foregroundStyle(c.forced ? Palette.text : Palette.muted)
+                Text(c.originLabel).foregroundStyle(c.forced ? Look.ink(Palette.text, selected: on)
+                                                             : Look.ink(Palette.muted, selected: on, faint: true))
                     .frame(width: scaled(80), alignment: .leading)
-                Text("\(c.messageCount)").foregroundStyle(Palette.muted).frame(width: scaled(60), alignment: .trailing)
-                Text(c.groups.map { "@" + $0 }.joined(separator: " ")).foregroundStyle(Palette.accentText)
+                Text("\(c.messageCount)").foregroundStyle(Look.ink(Palette.muted, selected: on, faint: true))
+                    .frame(width: scaled(60), alignment: .trailing)
+                Text(c.groups.map { "@" + $0 }.joined(separator: " ")).foregroundStyle(Look.ink(Palette.accentText, selected: on))
             }
             .lineLimit(1)
         }
@@ -2758,7 +2881,7 @@ private struct HistoryScreen: View {
             onRowAppear: { controller.screenRowAppeared($0) },
             onHeight: { controller.screenHeightChanged($0) }
         ) { i in
-            HistoryRow(row: rows[i], names: controller.model.folderNames)
+            HistoryRow(row: rows[i], names: controller.model.folderNames, selected: i == controller.screenIndex)
         }
     }
 }
@@ -2769,26 +2892,32 @@ private struct HistoryRow: View {
     let row: HistoryDisplay.Row
     /// The names of the folders a move went to (`FolderNames`).
     let names: FolderNames
+    /// The row of the cursor: on a fill of the accent (regular), its texts
+    /// white (`Look.ink`).
+    var selected = false
 
     var body: some View {
         let g = row.group
         let action = HistoryDisplay.action(g, names: names)
+        let text = Look.ink(Palette.text, selected: selected)
+        let muted = Look.ink(Palette.muted, selected: selected, faint: true)
         HStack(spacing: 8) {
-            Text(Format.historyDate(g.date)).foregroundStyle(Palette.muted).frame(width: scaled(112), alignment: .leading)
-            Text(HistoryDisplay.who(g.source)).foregroundStyle(Palette.accentText).frame(width: scaled(84), alignment: .leading)
+            Text(Format.historyDate(g.date)).foregroundStyle(muted).frame(width: scaled(112), alignment: .leading)
+            Text(HistoryDisplay.who(g.source)).foregroundStyle(Look.ink(Palette.accentText, selected: selected))
+                .frame(width: scaled(84), alignment: .leading)
             HStack(spacing: scaled(5)) {
                 if g.count > 1 {
-                    Text(verbatim: row.isUnfolded ? "▾" : "▸").foregroundStyle(Palette.muted)
+                    Text(verbatim: row.isUnfolded ? "▾" : "▸").foregroundStyle(muted)
                 }
-                Text(HistoryDisplay.title(g)).truncationMode(.tail)
+                Text(HistoryDisplay.title(g)).foregroundStyle(text).truncationMode(.tail)
                 if g.count > 1 {
-                    Text(verbatim: "+\(g.count - 1)").foregroundStyle(Palette.muted).fixedSize()
+                    Text(verbatim: "+\(g.count - 1)").foregroundStyle(muted).fixedSize()
                 }
             }
             .padding(.leading, row.isDetail ? scaled(16) : 0)
             .frame(maxWidth: .infinity, alignment: .leading)
-            Text(action.verb).frame(width: scaled(104), alignment: .leading)
-            Text(action.detail).foregroundStyle(Palette.muted).frame(width: scaled(190), alignment: .leading)
+            Text(action.verb).foregroundStyle(text).frame(width: scaled(104), alignment: .leading)
+            Text(action.detail).foregroundStyle(muted).frame(width: scaled(190), alignment: .leading)
         }
         .lineLimit(1)
     }
@@ -2808,9 +2937,11 @@ private struct NamesScreen: View {
             onClick: { controller.clickScreenRow($0) },
             onHeight: { controller.screenHeightChanged($0) }
         ) { i in
+            // The row of the cursor on a fill of the accent: white.
+            let on = i == controller.screenIndex
             HStack(spacing: 8) {
-                Text(rows[i].0).frame(width: scaled(260), alignment: .leading)
-                Text(rows[i].1).foregroundStyle(Palette.muted)
+                Text(rows[i].0).foregroundStyle(Look.ink(Palette.text, selected: on)).frame(width: scaled(260), alignment: .leading)
+                Text(rows[i].1).foregroundStyle(Look.ink(Palette.muted, selected: on, faint: true))
             }
         }
     }

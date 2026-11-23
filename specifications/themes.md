@@ -118,7 +118,7 @@ Longueurs en points pour un texte de 12 pt (section 5.3).
 | `popup_radius` | 0 à 24 | 0 | 14 | 9 | Arrondi des menus, sélecteurs, questions et panneaux |
 | `popup_shadow` | booléen | `false` | `true` | `true` | Ombre portée sous ces panneaux |
 | `popup_padding` | 4 à 32 | 10 | 18 | 12 | Marge intérieure des menus, sélecteurs et panneaux, autour de leur titre et de leurs lignes |
-| `menu_keys` | `left`, `right` | `left` | `right` | `right` | Place de la touche sur une ligne de menu |
+| `menu_keys` | `left`, `right` | `left` | `right` | `right` | Place de la touche sur une ligne de menu ; à droite, le nombre de mails non lus d'un dossier est dans une petite pastille teintée de la couleur des non lus, écartée de la touche, pour ne pas se lire avec elle |
 | `message_cards` | booléen | `false` | `false` | `true` | Chaque message de la conversation dans un cadre arrondi |
 | `avatars` | booléen | `false` | `false` | `true` | Initiales de l'expéditeur devant chaque message (rien n'est chargé) |
 | `reader_max_width` | 0, ou 320 à 1200 | 0 | 560 | 0 | Largeur maximale du texte du lecteur, centré ; 0 : toute la largeur |

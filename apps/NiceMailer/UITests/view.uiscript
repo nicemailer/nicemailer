@@ -53,6 +53,9 @@ expect fullscreen_toggles = 1
 key v
 key 3
 expect columns = 3
+# geek: the key first, 8 pt from the column's edge, then the name, as
+# always (8 + the key + 6).
+expect folder_inbox_layout = 22,,
 snap three-columns
 # The folder column of the unified view: one block, titled "all".
 expect account = all

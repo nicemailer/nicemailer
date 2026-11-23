@@ -69,6 +69,20 @@ enum Look {
     /// highlighted row (`KeyMenu`).
     static var roundedPanels: Bool { theme.layout.popupRadius > 0 }
 
+    /// Room between the edge of the folder column and the text of its rows
+    /// (folders, groups, titles) in the current theme.
+    static var sidebarTextInset: CGFloat { sidebarTextInset(theme) }
+
+    /// The same, in `theme`: 8 pt in geek, whose highlight is the whole
+    /// row. With a rounded highlight inset from the edges (clean, regular:
+    /// `layout.row_inset`, `row_radius`), the inset of the highlight plus
+    /// 10 pt inside it, as in the menu `;` (`menuRowTextInset`): the text
+    /// no longer touches the rounded edge.
+    static func sidebarTextInset(_ theme: ThemeView) -> CGFloat {
+        guard theme.layout.rowRadius > 0 else { return 8 }
+        return scaled(CGFloat(theme.layout.rowInset)) + scaled(10)
+    }
+
     /// Room between the edge of the highlighted row of a menu and its text
     /// (the label on the left, the key on the right): none in geek, whose
     /// highlight is the whole row.
@@ -100,7 +114,26 @@ enum Look {
     /// (`colors.selection_text` other than `colors.text`): white on the
     /// accent in regular. Then what is colored on the row (a count, a key)
     /// takes it too, or it would vanish on the accent.
-    static var strongSelection: Bool { theme.colors.selectionText != theme.colors.text }
+    static var strongSelection: Bool { strongSelection(theme) }
+
+    /// The same, for `theme`.
+    static func strongSelection(_ theme: ThemeView) -> Bool { theme.colors.selectionText != theme.colors.text }
+
+    /// The color of a text or an icon drawn on a selection (`selected`):
+    /// on a fill of the accent (`strongSelection`, regular), the text color
+    /// of the selection, white, whatever its own color (`normal`): black,
+    /// grey, the accent or the unread color would be lost in the blue; a
+    /// secondary text (`faint`: a date, a count, a key) a little fainter,
+    /// as in a macOS list. Elsewhere, or not selected, its own color.
+    static func ink(_ normal: Color, selected: Bool, faint: Bool = false) -> Color {
+        ink(normal, selected: selected, faint: faint, strong: strongSelection)
+    }
+
+    /// The same, for a theme whose selection is `strong` or not.
+    static func ink(_ normal: Color, selected: Bool, faint: Bool, strong: Bool) -> Color {
+        guard selected && strong else { return normal }
+        return faint ? Palette.selectionText.opacity(0.8) : Palette.selectionText
+    }
 
     /// The key of a menu row on the right, as in a macOS menu
     /// (`layout.menu_keys`), rather than first, as in Helix.

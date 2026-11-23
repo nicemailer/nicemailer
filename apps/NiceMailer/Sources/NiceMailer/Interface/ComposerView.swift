@@ -65,10 +65,17 @@ struct ComposerView: View {
                             FlowLayout(spacing: scaled(4)) {
                                 ForEach(Array(c.attachments.enumerated()), id: \.element.id) { i, a in
                                     let selected = c.focus == .attachments && i == c.attachmentIndex
+                                    // Every file on the selection color: on the
+                                    // accent (regular) its name is white
+                                    // (`Look.ink`), and the file selected takes
+                                    // the full accent rather than a paler one,
+                                    // which white would not read on.
                                     Label(Compose.attachmentLabel(a), systemImage: "paperclip")
                                         .lineLimit(1)
+                                        .foregroundStyle(Look.ink(Palette.text, selected: true))
                                         .padding(.horizontal, scaled(4))
-                                        .background(RoundedRectangle(cornerRadius: 3).fill(selected ? Palette.accent.opacity(0.45) : Palette.cursor))
+                                        .background(RoundedRectangle(cornerRadius: 3).fill(
+                                            selected ? (Look.strongSelection ? Palette.accent : Palette.accent.opacity(0.45)) : Palette.cursor))
                                         .contentShape(Rectangle())
                                         .onTapGesture { controller.clickAttachment(i) }
                                         .uiTarget("compose-file-\(i)")
@@ -137,8 +144,11 @@ struct ComposerView: View {
             headerLine(label, focused: focused) {
                 FlowLayout(spacing: scaled(4)) {
                     ForEach(Array(c.headers[field].enumerated()), id: \.offset) { i, a in
+                        // Each address on the selection color: white on
+                        // the accent (`Look.ink`).
                         Text(Compose.label(a))
                             .lineLimit(1)
+                            .foregroundStyle(Look.ink(Palette.text, selected: true))
                             .padding(.horizontal, scaled(4))
                             .background(RoundedRectangle(cornerRadius: 3).fill(Palette.cursor))
                             .contentShape(Rectangle())
@@ -162,6 +172,7 @@ struct ComposerView: View {
                 ForEach(Array(c.suggestions.enumerated()), id: \.offset) { i, a in
                     Text(Compose.label(a))
                         .lineLimit(1)
+                        .foregroundStyle(Look.ink(Palette.text, selected: i == c.suggestionIndex))
                         .padding(.horizontal, scaled(4))
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(i == c.suggestionIndex ? Palette.cursor : Color.clear)
@@ -185,7 +196,8 @@ struct ComposerView: View {
         Text(L("Bcc"))
             .lineLimit(1)
             .fixedSize()
-            .foregroundStyle(c.showsBcc ? Palette.accentText : Palette.muted)
+            // Shown, on the selection color: white on the accent.
+            .foregroundStyle(c.showsBcc ? Look.ink(Palette.accentText, selected: true) : Palette.muted)
             .padding(.horizontal, scaled(4))
             .background(RoundedRectangle(cornerRadius: 3).fill(c.showsBcc ? Palette.cursor : Color.clear))
             .overlay(RoundedRectangle(cornerRadius: 3).stroke(Palette.separator))
@@ -311,15 +323,16 @@ struct AIEventCard: View {
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: scaled(10)) {
-            Text("\(index + 1)").foregroundStyle(Palette.accentText)
+            // Highlighted on the accent (regular): its texts white (`Look.ink`).
+            Text("\(index + 1)").foregroundStyle(Look.ink(Palette.accentText, selected: selected))
             VStack(alignment: .leading, spacing: scaled(3)) {
-                Text(AI.eventWhen(event)).foregroundStyle(Palette.accentText)
-                Text(event.title).foregroundStyle(Palette.text)
+                Text(AI.eventWhen(event)).foregroundStyle(Look.ink(Palette.accentText, selected: selected))
+                Text(event.title).foregroundStyle(Look.ink(Palette.text, selected: selected))
                 if !event.location.isEmpty {
-                    Text(event.location).foregroundStyle(Palette.muted)
+                    Text(event.location).foregroundStyle(Look.ink(Palette.muted, selected: selected, faint: true))
                 }
                 if !event.details.isEmpty {
-                    Text(event.details).foregroundStyle(Palette.muted)
+                    Text(event.details).foregroundStyle(Look.ink(Palette.muted, selected: selected, faint: true))
                 }
             }
             Spacer(minLength: 0)
@@ -341,7 +354,8 @@ struct AIContactCard: View {
         let lines = AI.contactLines(contact)
         VStack(alignment: .leading, spacing: scaled(3)) {
             ForEach(Array(lines.enumerated()), id: \.offset) { i, line in
-                Text(line).foregroundStyle(i == 0 ? Palette.accentText : Palette.text)
+                // Always on the selection color: white on the accent.
+                Text(line).foregroundStyle(Look.ink(i == 0 ? Palette.accentText : Palette.text, selected: true))
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -403,8 +417,9 @@ struct AIPanel: View {
             VStack(alignment: .leading, spacing: scaled(2)) {
                 ForEach(Array(items.enumerated()), id: \.offset) { i, subject in
                     HStack(alignment: .firstTextBaseline, spacing: scaled(10)) {
-                        Text("\(i + 1)").foregroundStyle(Palette.accentText)
-                        Text(subject).foregroundStyle(Palette.text)
+                        // Highlighted on the accent: white (`Look.ink`).
+                        Text("\(i + 1)").foregroundStyle(Look.ink(Palette.accentText, selected: i == run.choice))
+                        Text(subject).foregroundStyle(Look.ink(Palette.text, selected: i == run.choice))
                         Spacer(minLength: 0)
                     }
                     // The text Return takes, highlighted as the row of a
