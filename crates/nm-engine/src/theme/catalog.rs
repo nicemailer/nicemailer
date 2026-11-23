@@ -120,7 +120,7 @@ pub const KEYS: &[Key] = &[
     k("fonts", "title_scale", Kind::Float(0.75, 2.0), "size of the subject at the top of the reader, times ui.text_size"),
     // [layout]: lengths in points for a 12 pt text (section 5.3).
     k("layout", "row_height", Kind::Int(14, 48), "height of a row of the list"),
-    k("layout", "row_radius", Kind::Int(0, 16), "corner radius of the selected row"),
+    k("layout", "row_radius", Kind::Int(0, 16), "corner radius of the selected row; the buttons of the reader's title line are rounded in proportion"),
     k("layout", "row_inset", Kind::Int(0, 16), "margin of the selected row from the edges of the list"),
     k("layout", "zebra", Kind::Bool, "alternate row backgrounds"),
     k("layout", "menu_row_height", Kind::IntOrZero(14, 40),
@@ -134,6 +134,8 @@ pub const KEYS: &[Key] = &[
     k("layout", "avatars", Kind::Bool, "the initials of the sender before each message (nothing is downloaded)"),
     k("layout", "reader_max_width", Kind::IntOrZero(320, 1200),
       "widest text of the reader, centered; 0: the whole width"),
+    k("layout", "reader_title_padding", Kind::Int(0, 32),
+      "room above and below the subject of the reader, also added to the 12 pt on its sides; half of it between the two lines of a long title"),
     k("layout", "scrollers", Kind::Choice(&["none", "thin", "standard"]), "scroll bars"),
     k("layout", "separators", Kind::Choice(&["lines", "space"]), "areas set apart by lines, or mostly by white space"),
     // [motion]: milliseconds, 0 when System Settings reduce motion (6.4).

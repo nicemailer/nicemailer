@@ -1378,12 +1378,19 @@ struct ReaderTitleBar<Controls: View>: View {
                 Spacer(minLength: scaled(16))
                 controls()
             }
-            .frame(height: scaled(26))
+            // At least 26 pt; more when the theme's subject is taller
+            // (`fonts.title_scale`), rather than clip it.
+            .frame(minHeight: scaled(26))
             .onAppear { Self.report(lines: 1) }
-            VStack(alignment: .leading, spacing: 0) {
+            // The gap between the two lines grows with the room around the
+            // title (`Look.readerTitleLineGap`): none in geek, 6 pt in clean.
+            VStack(alignment: .leading, spacing: Look.readerTitleLineGap) {
+                // At least 24 pt: a subject bigger than geek's (clean's is
+                // 1.7 times as big) takes its own height, or it would run
+                // into the line of the controls.
                 subjectText
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .frame(height: scaled(24))
+                    .frame(minHeight: scaled(24))
                 // On two lines, the labels open the line of the controls:
                 // the subject keeps the whole width.
                 HStack(spacing: scaled(8)) {
@@ -1392,11 +1399,16 @@ struct ReaderTitleBar<Controls: View>: View {
                     controls()
                 }
                 .frame(height: scaled(22))
+                .uiTarget("reader-title-controls")
                 .padding(.bottom, scaled(2))
             }
             .onAppear { Self.report(lines: 2) }
         }
-        .padding(.horizontal, 12)
+        // 12 pt on the sides in geek; room on every side in clean, whose
+        // title has no line to set it apart (`layout.reader_title_padding`,
+        // `Look.readerTitleInsets`).
+        .padding(Look.readerTitleInsets)
+        .uiTarget("reader-title")
     }
 
     // Selectable like the body (the text reader is an NSTextView): the
@@ -1410,6 +1422,7 @@ struct ReaderTitleBar<Controls: View>: View {
         Text(subject).font(.interface(13 * Look.titleScale, weight: .bold)).lineLimit(1)
             .textSelection(.enabled)
             .help(subject)
+            .uiTarget("reader-subject")
     }
 
     /// `#tag` as in the list rows, `@group` as in the folder column: the
@@ -1497,7 +1510,10 @@ private struct ReaderColumn: View {
                 }
                 .foregroundStyle(offer.source == "body" ? Palette.muted : Palette.accentText)
                 .padding(.horizontal, scaled(4))
-                .overlay(Rectangle().stroke(Palette.separator, lineWidth: 1))
+                // Rounded as the rows of the list, for its size
+                // (`Look.titleControlRadius`): square in geek.
+                .overlay(RoundedRectangle(cornerRadius: Look.titleControlRadius, style: .continuous)
+                    .stroke(Palette.separator, lineWidth: 1))
                 .contentShape(Rectangle())
                 .help(label.help)
                 .onTapGesture { model.unsubscribe() }
@@ -1542,8 +1558,11 @@ private struct ReaderColumn: View {
     /// One word of the text | html | images switch: highlighted when it is
     /// the current display, clicked to choose it.
     private func formatSegment(_ format: String, _ label: Text) -> some View {
+        // The highlight is rounded as the rows of the list, for its size
+        // (`Look.titleControlRadius`): square in geek.
         label
-            .background(model.bodyFormat == format ? Palette.cursor : Color.clear)
+            .background(model.bodyFormat == format ? Palette.cursor : Color.clear,
+                        in: RoundedRectangle(cornerRadius: Look.titleControlRadius, style: .continuous))
             .contentShape(Rectangle())
             .onTapGesture { model.setBodyFormat(format) }
             .uiTarget("format-\(format)")

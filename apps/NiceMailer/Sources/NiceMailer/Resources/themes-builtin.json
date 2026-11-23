@@ -49,6 +49,7 @@
       "message_cards": false,
       "avatars": false,
       "reader_max_width": 560,
+      "reader_title_padding": 12,
       "scrollers": "thin",
       "separators": "space"
     },
@@ -183,6 +184,7 @@
       "message_cards": false,
       "avatars": false,
       "reader_max_width": 0,
+      "reader_title_padding": 0,
       "scrollers": "none",
       "separators": "lines"
     },
@@ -317,6 +319,7 @@
       "message_cards": true,
       "avatars": true,
       "reader_max_width": 0,
+      "reader_title_padding": 0,
       "scrollers": "standard",
       "separators": "lines"
     },

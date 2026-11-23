@@ -138,6 +138,10 @@ fn numbers_choices_and_switches_are_checked() {
     refused("mine", "[layout]\nrow_height = 100\n", Some(2), "must be from 14 to 48");
     refused("mine", "[layout]\nrow_height = 20.5\n", Some(2), "expected an integer");
     refused("mine", "[layout]\nreader_max_width = 100\n", Some(2), "must be 0, or from 320 to 1200");
+    // The room around the subject of the reader: 0 (geek) to 32.
+    let l = ok("mine", "[layout]\nreader_title_padding = 32\n");
+    assert_eq!(l.values["layout.reader_title_padding"], Value::Int(32));
+    refused("mine", "[layout]\nreader_title_padding = 40\n", Some(2), "must be from 0 to 32");
     refused("mine", "[layout]\nzebra = \"yes\"\n", Some(2), "expected true or false");
     refused("mine", "[window]\nchrome = \"ribbon\"\n", Some(2), "must be one of: status_bar, toolbar");
     refused("mine", "[window]\ndefault_columns = 4\n", Some(2), "must be from 1 to 3");

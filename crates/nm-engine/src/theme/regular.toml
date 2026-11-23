@@ -36,6 +36,7 @@ menu_keys = "right"
 message_cards = true
 avatars = true
 reader_max_width = 0
+reader_title_padding = 0
 scrollers = "standard"
 separators = "lines"
 

@@ -142,6 +142,53 @@ enum Look {
 
     /// Size of the subject at the top of the reader (`fonts.title_scale`).
     static var titleScale: CGFloat { CGFloat(theme.fonts.titleScale) }
+
+    /// Room around the subject at the top of the reader (`ReaderTitleBar`)
+    /// in the current theme.
+    static var readerTitleInsets: EdgeInsets { readerTitleInsets(theme) }
+
+    /// Room around the subject at the top of the reader in `theme`
+    /// (`layout.reader_title_padding`, at the current text size): that
+    /// much above and below it, and as much again beyond the 12 pt of geek
+    /// on its sides. 0 in geek and regular, whose line under the title
+    /// already sets it apart: 12 pt on the sides alone, as always. 12 in
+    /// clean, which draws no line: without room, its big subject
+    /// (`fonts.title_scale`) touches the status bar above and the edge of
+    /// the window on the left.
+    ///
+    /// Swift note: `EdgeInsets` holds the four margins of a view; passed to
+    /// `.padding(_:)`, each side gets its own.
+    static var readerTitleLineGap: CGFloat { readerTitleLineGap(theme) }
+
+    /// Corner radius of the small buttons of the reader's title line (the
+    /// text | html | images switch, unsubscribe) in the current theme.
+    static var titleControlRadius: CGFloat { titleControlRadius(theme) }
+
+    /// Corner radius of the small buttons of the reader's title line in
+    /// `theme`: the rounding of the rows of the list (`layout.row_radius`)
+    /// in proportion to their height (`layout.row_height`), brought to the
+    /// height of a button, about 16 pt for a 12 pt text. The buttons are
+    /// then as rounded as the rows, for their size: square in geek, 4 pt in
+    /// clean (8 on rows of 30), 4 pt in regular (6 on rows of 24).
+    static func titleControlRadius(_ theme: ThemeView) -> CGFloat {
+        let row = theme.layout.rowHeight
+        guard row > 0 else { return 0 }
+        return scaled(16 * CGFloat(theme.layout.rowRadius) / CGFloat(row))
+    }
+
+    /// Gap between the subject and the line of the controls when the title
+    /// takes two lines (`ReaderTitleBar`): half of
+    /// `layout.reader_title_padding`, so that the two lines stay closer to
+    /// each other than to the edges around them, and grow apart with them.
+    /// 0 in geek, 6 pt in clean, 16 pt at the largest padding (32).
+    static func readerTitleLineGap(_ theme: ThemeView) -> CGFloat {
+        scaled(CGFloat(theme.layout.readerTitlePadding)) / 2
+    }
+
+    static func readerTitleInsets(_ theme: ThemeView) -> EdgeInsets {
+        let pad = scaled(CGFloat(theme.layout.readerTitlePadding))
+        return EdgeInsets(top: pad, leading: 12 + pad, bottom: pad, trailing: 12 + pad)
+    }
 }
 
 extension View {

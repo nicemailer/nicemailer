@@ -6,6 +6,8 @@ expect theme = regular
 expect title_bar = merged
 expect columns = 3
 appearance light
+# A line under the subject: room on its sides alone.
+expect title_inset ~ 12,
 snap regular-list
 # The keys work as in every theme.
 key j

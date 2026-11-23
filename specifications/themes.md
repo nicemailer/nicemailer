@@ -110,7 +110,7 @@ Longueurs en points pour un texte de 12 pt (section 5.3).
 | Clé | Type | geek | clean | regular | Rôle |
 | --- | --- | --- | --- | --- | --- |
 | `row_height` | 14 à 48 | 20 | 30 | 24 | Hauteur d'une ligne de la liste |
-| `row_radius` | 0 à 16 | 0 | 8 | 6 | Arrondi de la ligne choisie |
+| `row_radius` | 0 à 16 | 0 | 8 | 6 | Arrondi de la ligne choisie ; les boutons de la ligne du sujet du lecteur (`text` / `html` / `images`, désabonnement) sont arrondis dans la même proportion, ramenée à leur hauteur |
 | `row_inset` | 0 à 16 | 0 | 8 | 8 | Retrait de la ligne choisie par rapport aux bords de la liste |
 | `zebra` | booléen | `false` | `false` | `true` | Lignes alternées |
 | `menu_row_height` | 0, ou 14 à 40 | 0 | 26 | 22 | Hauteur d'une ligne des menus et sélecteurs ; 0 : la hauteur de son texte (geek) |
@@ -121,6 +121,7 @@ Longueurs en points pour un texte de 12 pt (section 5.3).
 | `message_cards` | booléen | `false` | `false` | `true` | Chaque message de la conversation dans un cadre arrondi |
 | `avatars` | booléen | `false` | `false` | `true` | Initiales de l'expéditeur devant chaque message (rien n'est chargé) |
 | `reader_max_width` | 0, ou 320 à 1200 | 0 | 560 | 0 | Largeur maximale du texte du lecteur, centré ; 0 : toute la largeur |
+| `reader_title_padding` | 0 à 32 | 0 | 12 | 0 | Marge au-dessus et au-dessous du sujet du lecteur, ajoutée aussi aux 12 pt de ses côtés ; sa moitié sépare les deux lignes du titre quand il en prend deux ; 0 : aucune (la ligne sous le titre le sépare déjà) |
 | `scrollers` | `none`, `thin`, `standard` | `none` | `thin` | `standard` | Ascenseurs |
 | `separators` | `lines`, `space` | `lines` | `space` | `lines` | Zones séparées par des traits, ou surtout par du blanc |
 

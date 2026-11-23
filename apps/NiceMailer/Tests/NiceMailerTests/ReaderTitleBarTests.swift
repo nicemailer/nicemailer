@@ -47,3 +47,46 @@ struct ReaderTitleBarTests {
         #expect(long! > short!)
     }
 }
+
+/// The room around the subject of the reader follows the theme
+/// (`layout.reader_title_padding`, `Look.readerTitleInsets`).
+@MainActor
+struct ReaderTitleInsetsTests {
+    @Test func cleanGivesTheSubjectRoomOnEverySide() {
+        // clean draws no line under the title: 12 above and below, 12 more
+        // than geek on the sides, at the reference text size.
+        let theme = ThemeStore.builtins["clean"]!
+        #expect(theme.layout.readerTitlePadding == 12)
+        let pad = scaled(12)
+        #expect(Look.readerTitleInsets(theme) == EdgeInsets(top: pad, leading: 12 + pad, bottom: pad, trailing: 12 + pad))
+    }
+
+    @Test func theTwoLinesOfTheTitleGrowApartWithThePadding() {
+        // Half the padding: none in geek, 6 in clean, 16 at the largest.
+        #expect(Look.readerTitleLineGap(ThemeStore.builtins["geek"]!) == 0)
+        #expect(Look.readerTitleLineGap(ThemeStore.builtins["clean"]!) == scaled(6))
+        var json = ThemeTests.themeJSON("clean")
+        var layout = json["layout"] as! [String: Any]
+        layout["reader_title_padding"] = 32
+        json["layout"] = layout
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let wide = try! decoder.decode(ThemeView.self, from: JSONSerialization.data(withJSONObject: json))
+        #expect(Look.readerTitleLineGap(wide) == scaled(16))
+    }
+
+    @Test func theButtonsOfTheTitleAreRoundedAsTheRowsForTheirSize() {
+        // row_radius over row_height, brought to a 16 pt button.
+        #expect(Look.titleControlRadius(ThemeStore.builtins["geek"]!) == 0)
+        #expect(abs(Look.titleControlRadius(ThemeStore.builtins["clean"]!) - scaled(16.0 * 8 / 30)) < 0.001)
+        #expect(abs(Look.titleControlRadius(ThemeStore.builtins["regular"]!) - scaled(4)) < 0.001)
+    }
+
+    @Test func aThemeWithLinesKeepsItsSideMarginsAlone() {
+        // geek and regular: a line under the title already sets it apart.
+        for name in ["geek", "regular"] {
+            let insets = Look.readerTitleInsets(ThemeStore.builtins[name]!)
+            #expect(insets == EdgeInsets(top: 0, leading: 12, bottom: 0, trailing: 12), "\(name)")
+        }
+    }
+}

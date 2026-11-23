@@ -3021,6 +3021,9 @@ pub struct ThemeLayout {
     pub avatars: bool,
     /// 0: the whole width.
     pub reader_max_width: u32,
+    /// Room above and below the subject of the reader, in points, also
+    /// added to the 12 pt on its sides; 0: none (geek).
+    pub reader_title_padding: u32,
     /// `none`, `thin` or `standard`.
     pub scrollers: String,
     /// `lines` or `space`.

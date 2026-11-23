@@ -909,6 +909,23 @@ private final class Runner {
             // The reader's title line: subject and controls on 1 line, or
             // the subject above them on 2 (`ReaderTitleBar`).
             "title_lines": "\(UIScript.titleLines)",
+            // Room between the edge of the reader's title line and its
+            // subject, in points, as laid out: `left,top`
+            // (`Look.readerTitleInsets`). AppKit's y goes up: the top of a
+            // frame is its maxY.
+            "title_inset": {
+                guard let bar = UIScript.frames["reader-title"],
+                      let subject = UIScript.frames["reader-subject"] else { return "" }
+                return "\(Int((subject.minX - bar.minX).rounded())),\(Int((bar.maxY - subject.maxY).rounded()))"
+            }(),
+            // On two lines, the gap between the bottom of the subject and
+            // the top of the line of the controls, in points, as laid out
+            // (`Look.readerTitleLineGap`); empty on one line.
+            "title_line_gap": {
+                guard UIScript.titleLines == 2, let subject = UIScript.frames["reader-subject"],
+                      let line = UIScript.frames["reader-title-controls"] else { return "" }
+                return "\(Int((subject.minY - line.maxY).rounded()))"
+            }(),
             // Where the fonts and translations were found (`AppResources`):
             // `Contents/Resources` of NiceMailer.app, or the build folder.
             "resources_bundle": AppResources.bundle.bundlePath,

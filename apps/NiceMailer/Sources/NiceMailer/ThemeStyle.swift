@@ -79,6 +79,9 @@ struct ThemeView: Decodable, Equatable {
         let messageCards: Bool
         let avatars: Bool
         let readerMaxWidth: Double
+        /// Room above and below the subject of the reader, also added to
+        /// the 12 pt on its sides.
+        let readerTitlePadding: Double
         let scrollers: String
         let separators: String
     }

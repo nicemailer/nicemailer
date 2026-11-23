@@ -7,7 +7,29 @@ expect theme = clean
 expect title_bar = merged
 expect row_height = 30
 appearance light
+# The subject of the open mail with room around it: clean draws no line
+# under it, so its margins keep it off the bar and the window's edge
+# (layout.reader_title_padding = 12).
+expect title_inset = 24,12
 snap clean-list
+# A tag after the subject, a narrow window and a bigger text: the tag and
+# the controls go under the subject, the two lines apart by half the padding (6 pt for a 12 pt text, more
+# after three ⌘+), the big subject not cut.
+key t
+type Urgent
+key ret
+expect header_tags = Urgent
+resize 760x800
+key cmd-=
+key cmd-=
+key cmd-=
+expect title_lines = 2
+expect title_line_gap > 5
+snap clean-title-two-lines
+key cmd-0
+resize 1400x900
+expect title_lines = 1
+expect title_line_gap =
 # The keys work as in every theme.
 key j
 expect selected = 1
@@ -47,3 +69,17 @@ wait 300
 snap clean-three-columns
 appearance dark
 snap clean-dark
+# A newsletter in HTML: the unsubscribe button and the text | html
+# switch rounded as the rows of the list, for their size.
+key @
+type fixture
+key ret
+key ;
+key a
+expect unsubscribe ~ header
+click format:html
+expect body_format = html
+appearance light
+snap clean-title-controls
+appearance dark
+snap clean-title-controls-dark
