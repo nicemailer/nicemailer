@@ -1,0 +1,31 @@
+# The pointer over a row of a menu highlights it, as the arrows do
+# (ui.md, "Barre de statut"): one sees which row a click chooses, and
+# Return or an arrow starts from it, as in a macOS menu. The same in the
+# panel of a choice.
+expect folder = Inbox
+key ;
+expect overlay ~ menu
+expect menu_index =
+hover menu:2
+expect menu_index = 2
+snap menu-hover
+hover menu:4
+expect menu_index = 4
+# An arrow starts from the row under the pointer.
+key down
+expect menu_index = 5
+key esc
+expect overlay = none
+# Return chooses the row under the pointer.
+key ;
+hover menu:1
+expect menu_index = 1
+key ret
+expect folder = Todo
+# Leaving a row clears its highlight, as in a macOS menu.
+key ;
+hover menu:3
+expect menu_index = 3
+hover reader:title
+expect menu_index =
+key esc

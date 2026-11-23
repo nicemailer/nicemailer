@@ -455,6 +455,12 @@ private final class Runner {
         case "clipboard":
             controller.pasteboard.clearContents()
             controller.pasteboard.setString(arg.replacingOccurrences(of: "\\n", with: "\n"), forType: .string)
+        case "hover":
+            guard let point = await locate(arg) else {
+                fail(lineNumber, line, "target not found")
+                return
+            }
+            hover(at: point)
         case "click", "dblclick":
             let words = arg.split(separator: " ").map(String.init)
             var mods: NSEvent.ModifierFlags = []
@@ -642,6 +648,47 @@ private final class Runner {
             if type == .leftMouseDown { target.mouseDown(with: e) } else { target.mouseUp(with: e) }
         }
     }
+
+    /// Moves the pointer over `point`, never the real pointer, which stays
+    /// the user's. SwiftUI's `onHover` follows tracking areas, which the
+    /// window server feeds from the real pointer only: each tracking area
+    /// of the window's views is told, as the window server would, whether
+    /// the point is now inside it (entered) or no longer (exited), then
+    /// sees the move.
+    func hover(at point: CGPoint) {
+        guard let w = window, let content = w.contentView else { return }
+        func views(_ v: NSView) -> [NSView] { [v] + v.subviews.flatMap(views) }
+        for view in views(content) {
+            let local = view.convert(point, from: nil)
+            for area in view.trackingAreas {
+                let rect = area.options.contains(.inVisibleRect) ? view.visibleRect : area.rect
+                let inside = rect.contains(local)
+                let was = hoverInside.contains(ObjectIdentifier(area))
+                guard let owner = area.owner as? NSResponder else { continue }
+                func event(_ type: NSEvent.EventType) -> NSEvent? {
+                    NSEvent.enterExitEvent(with: type, location: point, modifierFlags: [],
+                                           timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: w.windowNumber,
+                                           context: nil, eventNumber: 0,
+                                           trackingNumber: unsafeBitCast(area, to: Int.self), userData: nil)
+                }
+                if inside && !was, let e = event(.mouseEntered) {
+                    hoverInside.insert(ObjectIdentifier(area))
+                    owner.mouseEntered(with: e)
+                } else if !inside && was, let e = event(.mouseExited) {
+                    hoverInside.remove(ObjectIdentifier(area))
+                    owner.mouseExited(with: e)
+                }
+                if inside, area.options.contains(.mouseMoved),
+                   let e = NSEvent.mouseEvent(with: .mouseMoved, location: point, modifierFlags: [],
+                                              timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: w.windowNumber,
+                                              context: nil, eventNumber: 0, clickCount: 0, pressure: 0) {
+                    owner.mouseMoved(with: e)
+                }
+            }
+        }
+    }
+    /// The tracking areas the scripted pointer is inside (`hover`).
+    private var hoverInside: Set<ObjectIdentifier> = []
 
     /// Frame of a target already located (`locate`), by the same id.
     func frame(_ target: String) -> CGRect? {

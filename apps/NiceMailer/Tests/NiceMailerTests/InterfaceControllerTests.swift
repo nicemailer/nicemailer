@@ -1482,6 +1482,29 @@ struct InterfaceControllerTests {
         #expect(await eventually { core.calls("list_threads").last?["sort"] as? String == "modified" })
     }
 
+    /// The pointer over a row of a menu highlights it, as the arrows do;
+    /// Return and the arrows start from it; leaving the row clears it,
+    /// unless the pointer already entered the next one.
+    @Test func thePointerOverAMenuRowHighlightsIt() {
+        press(";")
+        #expect(controller.menuIndex == nil)
+        controller.hoverMenu(2, inside: true)
+        #expect(controller.menuIndex == 2)
+        // Down from row 2 to row 3: entered first, then left.
+        controller.hoverMenu(3, inside: true)
+        controller.hoverMenu(2, inside: false)
+        #expect(controller.menuIndex == 3)
+        press("down")
+        #expect(controller.menuIndex == 4)
+        controller.hoverMenu(4, inside: false)
+        #expect(controller.menuIndex == nil)
+        // The rows of a choice, the same way.
+        controller.hoverChoice(1, inside: true)
+        #expect(controller.choiceIndex == 1)
+        controller.hoverChoice(1, inside: false)
+        #expect(controller.choiceIndex == nil)
+    }
+
     @Test func textHtmlIsRememberedForTheSender() async {
         press("j"); press("j")
         #expect(await eventually { model.openThread?.id == 3 })

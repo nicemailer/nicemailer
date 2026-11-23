@@ -197,7 +197,8 @@ private struct WindowContent: View {
                                          detailMuted: $0.detailStyle == .info, virtual: $0.virtual)
                                },
                                highlighted: controller.menuIndex,
-                               onSelect: { controller.chooseMenuEntry($0) })
+                               onSelect: { controller.chooseMenuEntry($0) },
+                               onHover: { controller.hoverMenu($0, inside: $1) })
             if controller.statusPosition != .hidden, let x = controller.menuBlockX[prefix] {
                 // Each menu drops down from its block of the status bar:
                 // under it when the bar is at the top, above it when the
@@ -2438,7 +2439,8 @@ struct ChoicePanel: View {
         KeyMenu(title: controller.choiceTitle(choice),
                 entries: controller.choiceEntries(choice).map { .init(key: $0.key, label: $0.label, gapBefore: $0.gapBefore, detail: $0.detail) },
                 highlighted: controller.choiceIndex,
-                onSelect: { controller.chooseChoiceEntry($0) })
+                onSelect: { controller.chooseChoiceEntry($0) },
+                onHover: { controller.hoverChoice($0, inside: $1) })
     }
 }
 
@@ -2464,6 +2466,10 @@ struct KeyMenu: View {
     /// Called with the row clicked; `nil` for a menu that only informs
     /// (the help).
     let onSelect: ((Int) -> Void)?
+    /// Called when the pointer enters (`true`) or leaves (`false`) a row:
+    /// the menu highlights the row under it, as the arrows do. `nil` for a
+    /// menu that only informs.
+    var onHover: ((Int, Bool) -> Void)? = nil
 
     /// Whether a row's detail is drawn as a badge: a count (not an
     /// information, `detailMuted`) next to a key on the right
@@ -2569,6 +2575,9 @@ struct KeyMenu: View {
                 .padding(.horizontal, Look.menuRowTextInset)
                 .rowFill(i == highlighted ? Palette.cursor : nil, inset: 0)
                 .contentShape(Rectangle())
+                // The row under the pointer highlighted, as with the
+                // arrows: one sees which row a click will choose.
+                .onHover { inside in onHover?(i, inside) }
                 .onTapGesture { onSelect?(i) }
                 .uiTarget("menu-\(i)")
                 // A blank line between blocks (folders to deal with, filed,

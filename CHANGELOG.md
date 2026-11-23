@@ -25,6 +25,7 @@ How to write it:
 
 ### Changed
 
+- **Menus:** The row of a menu under the pointer is highlighted, as with the arrows, and Return chooses it.
 - **Window:** Tooltips show after 300 ms instead of about a second and a half.
 - **Writing:** `⇧⌘T` now also sets the mode of the next mails: after switching a reply to formatted text, the next ones open formatted, until `⇧⌘T` switches back.
 - **Status bar:** The icon of NiceMailer and the mode at its left end (NOR, PCK, ASK…) are gone: the bar starts with the account and the folder.

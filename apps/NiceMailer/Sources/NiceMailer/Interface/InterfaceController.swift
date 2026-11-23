@@ -223,6 +223,20 @@ final class InterfaceController {
     var menuIndex: Int?
     /// The same for the open choice.
     var choiceIndex: Int?
+
+    /// The pointer entered (`inside`) or left row `index` of the open menu:
+    /// the row under it is highlighted, as with the arrows, and Return or
+    /// an arrow then starts from it, as in a macOS menu. Leaving a row
+    /// clears the highlight only if it is still that row's: moving down
+    /// from one row to the next, the next one may have been entered first.
+    func hoverMenu(_ index: Int, inside: Bool) {
+        if inside { menuIndex = index } else if menuIndex == index { menuIndex = nil }
+    }
+
+    /// The same for the rows of the open choice.
+    func hoverChoice(_ index: Int, inside: Bool) {
+        if inside { choiceIndex = index } else if choiceIndex == index { choiceIndex = nil }
+    }
     /// Text typed in the open picker, with its cursor (`LineEdit`), and
     /// the highlighted row.
     var pickerLine = LineEdit()
