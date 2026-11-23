@@ -560,6 +560,7 @@ pub fn view(resolved: &Resolved, dir: &Path, error: Option<&Problem>, warnings: 
             menu_keys: text(v, "layout.menu_keys"),
             message_cards: boolean(v, "layout.message_cards"),
             avatars: boolean(v, "layout.avatars"),
+            attachments: text(v, "layout.attachments"),
             reader_max_width: int(v, "layout.reader_max_width") as u32,
             reader_title_padding: int(v, "layout.reader_title_padding") as u32,
             scrollers: text(v, "layout.scrollers"),

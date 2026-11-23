@@ -122,6 +122,7 @@ Longueurs en points pour un texte de 12 pt (section 5.3).
 | `menu_keys` | `left`, `right` | `left` | `right` | `right` | Place de la touche sur une ligne de menu ; à droite, le nombre de mails non lus d'un dossier est dans une petite pastille teintée de la couleur des non lus, écartée de la touche, pour ne pas se lire avec elle |
 | `message_cards` | booléen | `false` | `false` | `true` | Chaque message de la conversation dans un cadre arrondi |
 | `avatars` | booléen | `false` | `false` | `true` | Initiales de l'expéditeur devant chaque message (rien n'est chargé) |
+| `attachments` | `tiles`, `rows` | `tiles` | `rows` | `rows` | Pièces jointes d'un message : `tiles`, des pavés de 3 à 5 par ligne, une icône symbolique dans les couleurs du thème, le nom coupé au milieu et la taille ; `rows`, une ligne par fichier, l'icône de macOS pour son type (celle du Finder), le nom complet, jamais coupé (il passe à la ligne s'il le faut), puis la taille. Même rôle dans les deux : un clic enregistre, ⌘-clic enregistre et ouvre (ajouté en novembre 2026) |
 | `reader_max_width` | 0, ou 320 à 1200 | 0 | 560 | 0 | Largeur maximale du texte du lecteur, centré ; 0 : toute la largeur |
 | `reader_title_padding` | 0 à 32 | 0 | 12 | 0 | Marge au-dessus et au-dessous du sujet du lecteur, ajoutée aussi aux 12 pt de ses côtés ; sa moitié sépare les deux lignes du titre quand il en prend deux ; 0 : aucune (la ligne sous le titre le sépare déjà) |
 | `scrollers` | `none`, `thin`, `standard` | `none` | `thin` | `standard` | Ascenseurs |

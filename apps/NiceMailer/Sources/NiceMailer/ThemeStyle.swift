@@ -81,6 +81,8 @@ struct ThemeView: Decodable, Equatable {
         let menuKeys: String
         let messageCards: Bool
         let avatars: Bool
+        /// `tiles` (geek) or `rows` (a row per file, the icon of macOS).
+        let attachments: String
         let readerMaxWidth: Double
         /// Room above and below the subject of the reader, also added to
         /// the 12 pt on its sides.

@@ -44,8 +44,10 @@ key ret
 key ;
 key a
 expect unsubscribe ~ header
-# regular reads HTML, as clean does (reader.body_format).
+# regular reads HTML, as clean does (reader.body_format), and shows the
+# files a row each with the icon of macOS (layout.attachments).
 expect body_format = html
+expect attachment_layout = rows
 snap regular-title-controls
 click format:text
 expect body_format = text

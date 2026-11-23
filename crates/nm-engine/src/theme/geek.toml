@@ -36,6 +36,7 @@ popup_padding = 10
 menu_keys = "left"
 message_cards = false
 avatars = false
+attachments = "tiles"
 reader_max_width = 0
 reader_title_padding = 0
 scrollers = "none"

@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 import WebKit
 
 // Views of the geek theme (`ui.md`): an IDE-like window without rounded
@@ -1732,6 +1733,15 @@ private struct ReaderColumn: View {
                  font-size: \(Int(scaled(12)))px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
         .att a img { width: \(Int(scaled(13)))px; height: \(Int(scaled(13)))px; vertical-align: -2px; margin-right: 6px; }
         .att a span { display: block; color: #888; font-size: \(Int(scaled(11)))px; }
+        /* A row each (layout.attachments = rows, clean and regular): the
+           icon of macOS, the whole name, which wraps rather than is cut,
+           then the size. */
+        .att.rows { display: block; }
+        .att.rows a { display: flex; align-items: flex-start; gap: \(Int(scaled(6)))px; border: 0; padding: \(Int(scaled(3)))px 0;
+                      white-space: normal; overflow: visible; font-size: \(Int(scaled(12)))px; }
+        .att.rows a img { width: \(Int(scaled(16)))px; height: \(Int(scaled(16)))px; margin: 0; flex: none; vertical-align: 0; }
+        .att.rows a b { font-weight: normal; overflow-wrap: anywhere; }
+        .att.rows a span { display: inline; margin-left: 6px; white-space: nowrap; }
         summary img { width: \(Int(scaled(11)))px; height: \(Int(scaled(11)))px; vertical-align: -1px; }
         /* The address book's icon keeps its own proportions. */
         summary a.book img { width: auto; }
@@ -1799,12 +1809,21 @@ private struct ReaderColumn: View {
             if !m.attachments.isEmpty {
                 // The tiles link to nm://attachment/<id>, caught by the
                 // web view's navigation delegate (`HTMLReader`).
-                html += "<div class=\"att\">"
+                // Tiles in geek, a row each with the icon of macOS in clean
+                // and regular (`layout.attachments`).
+                let rows = Look.attachmentRows
+                html += rows ? "<div class=\"att rows\">" : "<div class=\"att\">"
                 for a in m.attachments {
-                    let icon = Self.symbolDataURI(AttachmentDisplay.symbol(mimeType: a.mimeType, filename: a.filename))
                     let name = esc(AttachmentDisplay.name(a))
-                    html += "<a href=\"nm://attachment/\(a.id)\" title=\"\(name)\"><img src=\"\(icon)\">\(name)"
-                        + "<span>\(esc(AttachmentDisplay.size(a.size)))</span></a>"
+                    let size = esc(AttachmentDisplay.size(a.size))
+                    if rows {
+                        let icon = Self.fileIconDataURI(AttachmentDisplay.contentType(mimeType: a.mimeType, filename: a.filename))
+                        html += "<a href=\"nm://attachment/\(a.id)\"><img src=\"\(icon)\"><b>\(name)<span>\(size)</span></b></a>"
+                    } else {
+                        let icon = Self.symbolDataURI(AttachmentDisplay.symbol(mimeType: a.mimeType, filename: a.filename))
+                        html += "<a href=\"nm://attachment/\(a.id)\" title=\"\(name)\"><img src=\"\(icon)\">\(name)"
+                            + "<span>\(size)</span></a>"
+                    }
                 }
                 html += "</div>"
             }
@@ -1813,6 +1832,27 @@ private struct ReaderColumn: View {
         return (html + "</body></html>", images, inline, darkMode)
     }
 
+
+    /// The icon of macOS for a type of file as a PNG `data:` URL for the
+    /// HTML reader, drawn at 32 px for a sharp 16 pt on a Retina screen.
+    /// Rendered once per type.
+    private static var fileIconURIs: [String: String] = [:]
+    private static func fileIconDataURI(_ type: UTType) -> String {
+        if let uri = fileIconURIs[type.identifier] { return uri }
+        let icon = AttachmentDisplay.fileIcon(type)
+        let rect = NSRect(x: 0, y: 0, width: 32, height: 32)
+        guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 32, pixelsHigh: 32, bitsPerSample: 8,
+                                         samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                                         colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0) else { return "" }
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        icon.draw(in: rect)
+        NSGraphicsContext.restoreGraphicsState()
+        guard let png = rep.representation(using: .png, properties: [:]) else { return "" }
+        let uri = "data:image/png;base64," + png.base64EncodedString()
+        fileIconURIs[type.identifier] = uri
+        return uri
+    }
 
     /// An SF Symbol as a PNG `data:` URL for the HTML reader (a web page
     /// cannot draw SF Symbols), gray like the page's muted text. Rendered
@@ -1896,7 +1936,7 @@ private struct TextReader: NSViewRepresentable {
         let nameChars = max(8, Int(width / Double(columns) / charWidth) - 6)
         // Rebuild only when the content changes, so a redraw does not reset
         // the scroll position; a new thread starts at the top.
-        let key = "\(blocks.hashValue)-\(TextSize.shared.size)-\(columns)-\(nameChars)"
+        let key = "\(blocks.hashValue)-\(TextSize.shared.size)-\(columns)-\(nameChars)-\(Look.attachmentRows)"
         if coordinator.key == key { return }
         let sameThread = coordinator.threadId == threadId
         coordinator.key = key
@@ -2029,7 +2069,10 @@ private struct TextReader: NSViewRepresentable {
             case .note(_, let text):
                 add(text + "\n\n", small)
             case .attachments(_, let files):
-                out.append(Self.tiles(files, columns: columns, nameChars: nameChars))
+                // Tiles in geek, a row each in clean and regular
+                // (`layout.attachments`).
+                out.append(Look.attachmentRows ? AttachmentDisplay.rowsText(files)
+                           : Self.tiles(files, columns: columns, nameChars: nameChars))
                 add("\n", small)
             }
         }
@@ -2153,9 +2196,14 @@ private struct TextReader: NSViewRepresentable {
                 return
             }
             if url.host == "attachment" {
-                // The first line of the tile (icon and name).
-                let line = (storage.string as NSString).lineRange(for: NSRange(location: range.location, length: 0))
-                UIScript.frames["attachment-\(files)"] = text.convert(rect(NSIntersectionRange(line, range)), to: nil)
+                // The first line of the tile, or the row (icon and name),
+                // without its line break: the glyph of a line break spans
+                // to the edge of the text, and the middle of the frame
+                // would fall past the name, where nothing is a link.
+                let string = storage.string as NSString
+                var line = NSIntersectionRange(string.lineRange(for: NSRange(location: range.location, length: 0)), range)
+                while line.length > 0, string.character(at: NSMaxRange(line) - 1) == 10 { line.length -= 1 }
+                UIScript.frames["attachment-\(files)"] = text.convert(rect(line), to: nil)
                 files += 1
                 return
             }

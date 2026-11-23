@@ -3029,6 +3029,9 @@ pub struct ThemeLayout {
     pub menu_keys: String,
     pub message_cards: bool,
     pub avatars: bool,
+    /// `tiles` (a grid of tiles with a symbol, geek) or `rows` (a row per
+    /// file with the icon of macOS and the whole name).
+    pub attachments: String,
     /// 0: the whole width.
     pub reader_max_width: u32,
     /// Room above and below the subject of the reader, in points, also

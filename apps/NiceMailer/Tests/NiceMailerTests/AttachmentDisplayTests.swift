@@ -1,5 +1,6 @@
-import Foundation
+import AppKit
 import Testing
+import UniformTypeIdentifiers
 @testable import NiceMailer
 
 /// Presentation of attachments (`AttachmentDisplay`) and their place in the
@@ -8,6 +9,44 @@ import Testing
 struct AttachmentDisplayTests {
     func file(_ name: String?, _ mime: String, size: Int = 1000, id: Int = 1) -> AttachmentView {
         AttachmentView(id: id, filename: name, mimeType: mime, size: size)
+    }
+
+    /// The type for the icon of macOS (`layout.attachments = "rows"`): the
+    /// extension first, as the Finder does, then the MIME type, else data.
+    @Test func theTypeOfAFileComesFromItsExtensionThenItsMimeType() {
+        let t = AttachmentDisplay.contentType
+        #expect(t("application/octet-stream", "budget.xlsx").conforms(to: .spreadsheet))
+        #expect(t("application/pdf", "devis.pdf") == .pdf)
+        #expect(t("image/png", nil) == .png)
+        #expect(t("application/pdf", "sans-extension") == .pdf)
+        #expect(t("application/x-nothing-known", "fichier") == .data)
+        #expect(t("application/x-nothing-known", "fichier.zzzqqq") == .data)
+    }
+
+    /// A row per file: the icon, the whole name, never cut, then the size;
+    /// the whole row a link to the file.
+    @Test func rowsShowTheWholeNameWithTheIconOfMacOS() throws {
+        let long = "Rapport annuel de l'association des riverains du quartier nord 2025 version finale.pdf"
+        let text = AttachmentDisplay.rowsText([file(long, "application/pdf", size: 245_000, id: 7),
+                                               file("photo.png", "image/png", id: 8)])
+        let lines = text.string.split(separator: "\n")
+        #expect(lines.count == 2)
+        #expect(text.string.contains(long), "the name is never cut")
+        #expect(text.string.contains(AttachmentDisplay.size(245_000)))
+        // An icon (an attachment of the text) at the start of each row.
+        var icons = 0
+        text.enumerateAttribute(.attachment, in: NSRange(location: 0, length: text.length)) { v, _, _ in
+            if (v as? NSTextAttachment)?.image != nil { icons += 1 }
+        }
+        #expect(icons == 2)
+        // Each row, icon included, is the link to its file.
+        let first = text.attribute(.link, at: 0, effectiveRange: nil) as? URL
+        #expect(first?.absoluteString == "nm://attachment/7")
+        let second = (text.string as NSString).range(of: "photo.png").location
+        #expect((text.attribute(.link, at: second, effectiveRange: nil) as? URL)?.absoluteString == "nm://attachment/8")
+        // A long name wraps under the name, not under the icon.
+        let style = try #require(text.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle)
+        #expect(style.headIndent > 0 && style.lineBreakMode == .byWordWrapping)
     }
 
     @Test func iconsFollowTheTypeThenTheExtension() {

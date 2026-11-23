@@ -1,7 +1,10 @@
-import Foundation
+import AppKit
+import UniformTypeIdentifiers
 
-/// How the geek theme presents attachments (`ui.md`, "Pièces jointes"):
-/// tiles at the foot of each unfolded message, and rows of the `l` picker.
+/// How attachments are presented (`ui.md`, "Pièces jointes"): at the foot
+/// of each unfolded message, tiles with a symbol in geek, a row each with
+/// the icon of macOS in clean and regular (`layout.attachments`,
+/// `themes.md`, section 6.3); and rows of the `l` picker.
 /// Pure functions of the attachment and of the reader's width, so they are
 /// tested without any view (`Tests/NiceMailerTests/AttachmentDisplayTests.swift`).
 enum AttachmentDisplay {
@@ -39,6 +42,69 @@ enum AttachmentDisplay {
         if mime.hasPrefix("video/") { return "film" }
         if mime.hasPrefix("text/") { return "doc.plaintext" }
         return "doc"
+    }
+
+    /// The type of a file, for the icon macOS gives it: from the extension
+    /// of its name first (the Finder's own rule, and senders often send
+    /// Office files as `application/octet-stream`), then from its MIME
+    /// type, else plain data.
+    static func contentType(mimeType: String, filename: String?) -> UTType {
+        let ext = filename.map { ($0 as NSString).pathExtension } ?? ""
+        if !ext.isEmpty, let t = UTType(filenameExtension: ext), !t.isDynamic { return t }
+        if let t = UTType(mimeType: mimeType.lowercased()), !t.isDynamic { return t }
+        return .data
+    }
+
+    /// The icon of macOS for the type of a file, as the Finder shows it.
+    /// One per type, kept: the list of a long conversation asks for the
+    /// same few icons again and again.
+    ///
+    /// Swift note: `@MainActor` keeps the cache on the main thread, where
+    /// the views ask for it; `NSWorkspace` is used there too.
+    @MainActor static func fileIcon(_ type: UTType) -> NSImage {
+        if let icon = fileIcons[type.identifier] { return icon }
+        let icon = NSWorkspace.shared.icon(for: type)
+        fileIcons[type.identifier] = icon
+        return icon
+    }
+    @MainActor private static var fileIcons: [String: NSImage] = [:]
+
+    /// The attachments of a message as a row each (`layout.attachments =
+    /// "rows"`, clean and regular): the icon macOS gives the file's type,
+    /// as the Finder shows it, its whole name, never cut (a long one goes
+    /// on to the next line, under the name, not under the icon), then its
+    /// size, muted. The whole row is a link to `nm://attachment/<id>`, as
+    /// a tile is: a click saves the file, ⌘-click saves and opens it.
+    @MainActor static func rowsText(_ files: [AttachmentView]) -> NSAttributedString {
+        let out = NSMutableAttributedString()
+        let side = scaled(16)
+        let gap = scaled(6)
+        let font = Fonts.scaled(12)
+        for a in files {
+            let start = out.length
+            let attachment = NSTextAttachment()
+            let icon = fileIcon(contentType(mimeType: a.mimeType, filename: a.filename))
+            attachment.image = icon
+            // The icon centered on the text of its line.
+            attachment.bounds = CGRect(x: 0, y: (font.capHeight - side) / 2, width: side, height: side)
+            out.append(NSAttributedString(attachment: attachment))
+            // A tab after the icon, and the lines of a long name start
+            // there too: the names make a column, as in the Finder.
+            out.append(NSAttributedString(string: "\t" + name(a), attributes: [
+                .font: font, .foregroundColor: NSColor(Palette.text),
+            ]))
+            out.append(NSAttributedString(string: "  " + size(a.size) + "\n", attributes: [
+                .font: Fonts.scaled(11), .foregroundColor: NSColor(Palette.muted),
+            ]))
+            let style = NSMutableParagraphStyle()
+            style.tabStops = [NSTextTab(textAlignment: .left, location: side + gap)]
+            style.headIndent = side + gap
+            style.lineBreakMode = .byWordWrapping
+            style.paragraphSpacing = scaled(4)
+            let range = NSRange(location: start, length: out.length - start)
+            out.addAttributes([.paragraphStyle: style, .link: URL(string: "nm://attachment/\(a.id)")!], range: range)
+        }
+        return out
     }
 
     /// Whether a file is a graphic, left out by `sg` ("attachments but

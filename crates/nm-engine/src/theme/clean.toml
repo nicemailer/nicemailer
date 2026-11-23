@@ -34,6 +34,7 @@ popup_padding = 18
 menu_keys = "right"
 message_cards = false
 avatars = false
+attachments = "rows"
 reader_max_width = 560
 reader_title_padding = 12
 scrollers = "thin"

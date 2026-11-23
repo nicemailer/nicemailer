@@ -17,6 +17,7 @@ How to write it:
 - **Themes:** Choose the look of the app in the Preferences (Settings…, Appearance): geek (the default), clean, sober and airy, in SF Pro, regular, a Mac window with a toolbar, as in Mail, or a theme of your own. Each is a file of `~/.config/nicemailer/themes/` you can modify, and `nicemailer theme new` starts one of yours (docs/themes.md).
 - **Themes:** Choose a theme from the keyboard: `v` `t` (Display, theme…) lists the themes, and Return applies the one chosen.
 - **Themes:** clean and regular show mail in HTML, geek in text, for every sender whose display you have not chosen; `vh` still chooses for a sender, in every theme (`reader.body_format` of a theme).
+- **Themes:** In clean and regular, the attachments of a mail are listed one per line, with the icon macOS gives their type and their whole name; geek keeps its tiles (`attachments` in the `[layout]` table of a theme).
 - **Window:** The red, yellow and green buttons can sit in the status bar, without a title bar: `title_bar = "merged"` in the `[window]` table of a theme (clean does it).
 - **Writing:** The commands of a reply (send, send then…, attach, from, format, keep, abandon) are buttons on their own line under the subject: click one to do what its key does; its tooltip explains it.
 - **Accounts:** For a Gmail, iCloud or Fastmail address, the Preferences say under the password that it must be an app password, with a link to the step-by-step guide; if the server refuses the password, the error says so first.

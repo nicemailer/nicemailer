@@ -107,6 +107,7 @@ expect reader_text !~ NovembreLes
 # Its three attachments are tiles at its foot (the logo shown by its HTML
 # is not one). A click saves the file to the export directory; ⌘-click
 # saves it and opens the saved copy (recorded only, in UI script mode).
+expect attachment_layout = tiles
 expect reader_attachments = 3
 expect reader_text ~ devis.pdf
 expect reader_text ~ budget.xlsx

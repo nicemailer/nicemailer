@@ -89,6 +89,10 @@ fn the_values_of_the_specification() {
     assert_eq!(regular["window.bar_type"], Value::Text("toolbar".into()));
     assert_eq!(color(regular, "colors.unread"), Color::System("accent".into()));
     assert_eq!(regular["layout.avatars"], Value::Bool(true));
+    // Attachments: tiles in geek, a row each in clean and regular.
+    assert_eq!(geek["layout.attachments"], Value::Text("tiles".into()));
+    assert_eq!(clean["layout.attachments"], Value::Text("rows".into()));
+    assert_eq!(regular["layout.attachments"], Value::Text("rows".into()));
     // [reader] (section 6.6): text in geek, HTML in clean and regular.
     assert_eq!(geek["reader.body_format"], Value::Text("text".into()));
     assert_eq!(clean["reader.body_format"], Value::Text("html".into()));

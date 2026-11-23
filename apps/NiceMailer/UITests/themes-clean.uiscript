@@ -91,8 +91,19 @@ expect unsubscribe ~ header
 # with no choice remembered opens in HTML. A click remembers an explicit
 # choice, text, then html again.
 expect body_format = html
+# Its three files a row each, with the icon of macOS for their type and
+# their whole name (layout.attachments = "rows"), in HTML as in text.
+expect attachment_layout = rows
+snap clean-attachments-html
 click format:text
 expect body_format = text
+expect reader_attachments = 3
+expect reader_text ~ devis.pdf
+expect reader_text ~ budget.xlsx
+snap clean-attachments-text
+# A click on a row saves its file, as a tile does.
+click attachment:2
+expect export_files = 1
 click format:html
 expect body_format = html
 appearance light

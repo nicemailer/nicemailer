@@ -920,6 +920,8 @@ private final class Runner {
             "title_lines": "\(UIScript.titleLines)",
             // AppKit's delay before a tooltip, in ms (`Tooltips`).
             "tooltip_delay": "\(UserDefaults.standard.integer(forKey: Tooltips.delayKey))",
+            // How the attachments of a message show (`layout.attachments`).
+            "attachment_layout": Look.attachmentRows ? "rows" : "tiles",
             "compose_commands_compact": model.composer == nil ? "" : "\(UIScript.composeCommandsCompact)",
             // Room between the edge of the reader's title line and its
             // subject, in points, as laid out: `left,top`

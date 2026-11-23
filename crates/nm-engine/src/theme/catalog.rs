@@ -134,6 +134,8 @@ pub const KEYS: &[Key] = &[
     k("layout", "menu_keys", Kind::Choice(&["left", "right"]), "side of the key on a menu row"),
     k("layout", "message_cards", Kind::Bool, "each message of the conversation in a rounded frame"),
     k("layout", "avatars", Kind::Bool, "the initials of the sender before each message (nothing is downloaded)"),
+    k("layout", "attachments", Kind::Choice(&["tiles", "rows"]),
+      "attachments of a message: tiles with a symbol, or a row each with the icon of macOS and the whole name"),
     k("layout", "reader_max_width", Kind::IntOrZero(320, 1200),
       "widest text of the reader, centered; 0: the whole width"),
     k("layout", "reader_title_padding", Kind::Int(0, 32),

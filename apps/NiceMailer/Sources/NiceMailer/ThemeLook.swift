@@ -18,6 +18,11 @@ enum Look {
     /// text size: 20 pt in geek for a 12 pt text.
     static var rowHeight: CGFloat { scaled(CGFloat(theme.layout.rowHeight)) }
 
+    /// The attachments of a message as a row each, with the icon macOS gives
+    /// their type and their whole name (`layout.attachments = "rows"`,
+    /// clean and regular), rather than geek's tiles.
+    static var attachmentRows: Bool { theme.layout.attachments == "rows" }
+
     /// The command of the window is a toolbar (`window.bar_type`), not the
     /// status bar.
     static var toolbar: Bool { theme.window.barType == "toolbar" }
