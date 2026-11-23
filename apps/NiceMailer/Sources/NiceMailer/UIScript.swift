@@ -72,6 +72,10 @@ enum UIScript {
     static var statusBeforeMaintenance: AppModel.Status?
     /// Lines of the reader's title line, 1 or 2 (`ReaderTitleBar`).
     static var titleLines = 0
+    /// Whether the rows of the list have room for the account after the
+    /// folder in "Everything" (`RowLayout.showsAccount`), at the width the
+    /// list was last given.
+    static var rowFolderWithAccount = false
     /// Titles of the help's groups, column by column (`HelpPanel`).
     static var helpColumns: [[String]] = []
     /// Width of the open picker panel, in points (`PickerPopup.width`).
@@ -1048,6 +1052,15 @@ private final class Runner {
                 return abs(x - f.minX) < 1 ? "true" : "false (menu at \(Int(x)), block at \(Int(f.minX)))"
             }(),
             "menu_y": "\(Int(UIScript.frames["menu-0"]?.minY ?? -1))",
+            // Whether every row of the open menu is inside the window: a
+            // menu dropping from a block near the right edge must not be
+            // cut there. Empty when no menu is open.
+            "menu_fits": {
+                guard case .menu(let p) = c.overlay, let width = window?.contentView?.bounds.width else { return "" }
+                let rows = (0..<c.menuEntries(p).count).compactMap { UIScript.frames["menu-\($0)"] }
+                guard !rows.isEmpty else { return "" }
+                return rows.allSatisfy { $0.minX >= 0 && $0.maxX <= width + 0.5 } ? "true" : "false"
+            }(),
             // The gap between the unread count of the first row of the
             // open menu and its key on the right, as laid out, in points;
             // empty when that row has no count drawn as a badge
@@ -1076,6 +1089,12 @@ private final class Runner {
             }(),
             // Height of the selected row, as laid out.
             "row_height": "\(Int((UIScript.frames["thread-\(m.selectedThreadId ?? -1)"]?.height ?? 0).rounded()))",
+            // Width of the selected row, as laid out: the width the list
+            // is given, which a panel opened over it must not change.
+            "row_width": "\(Int((UIScript.frames["thread-\(m.selectedThreadId ?? -1)"]?.width ?? 0).rounded()))",
+            // The folder column of the selected row in "Everything", as
+            // drawn: the folder, and its account when the row has room.
+            "row_folder_with_account": "\(UIScript.rowFolderWithAccount)",
             "html_text": UIScript.html["text"] ?? "",
             "html_font_loaded": UIScript.html["font"] ?? "",
             "html_font_family": UIScript.html["family"] ?? "",

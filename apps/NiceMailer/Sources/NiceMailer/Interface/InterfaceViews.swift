@@ -201,11 +201,29 @@ private struct WindowContent: View {
                 // Each menu drops down from its block of the status bar:
                 // under it when the bar is at the top, above it when the
                 // bar is at the bottom (`ui.md`).
-                menu
-                    .padding(.leading, max(0, x - 6))
-                    .padding(.vertical, 2)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity,
-                           alignment: controller.statusPosition == .bottom ? .bottomLeading : .topLeading)
+                //
+                // A block near the right end (Save in the toolbar of
+                // regular) would push the menu out of the window: its right
+                // part cut, and the layer of the overlay widened past the
+                // window, which moved the blocks, which moved the menu again
+                // (a layout loop, and the columns of the list shifted). The
+                // room before the menu is a spacer that gets at most `x - 6`
+                // and never more than what the menu and a margin leave: the
+                // menu is pushed back to the left just enough to stay whole.
+                //
+                // Swift note: `layoutPriority(1)` makes the HStack serve the
+                // spacer first, once the menu (fixed size) has its width;
+                // the last spacer takes what is left.
+                HStack(spacing: 0) {
+                    Spacer(minLength: 0).frame(maxWidth: max(0, x - 6)).layoutPriority(1)
+                    menu
+                    // At least a margin before the window's edge, as a menu
+                    // of macOS keeps.
+                    Spacer(minLength: 8)
+                }
+                .padding(.vertical, 2)
+                .frame(maxWidth: .infinity, maxHeight: .infinity,
+                       alignment: controller.statusPosition == .bottom ? .bottom : .top)
             } else {
                 // No block to drop from (status bar hidden, or another
                 // screen): bottom-right corner, as in Helix.
@@ -1092,6 +1110,11 @@ private struct ThreadRows: View {
                 // again when the window or the text size changes.
                 .onChange(of: geo.size.height, initial: true) { _, h in
                     controller.listVisibleRows = InterfaceController.visibleRows(height: h, rowHeight: Look.rowHeight)
+                }
+                // For the UI scripts: whether the rows have room for the
+                // account (`row_folder_with_account`).
+                .onChange(of: geo.size.width, initial: true) { _, w in
+                    if UIScript.isActive { UIScript.rowFolderWithAccount = RowLayout(width: w).showsAccount }
                 }
                 // Keep the cursor visible, without animation: `scrollTo`
                 // with no anchor scrolls only as much as needed.

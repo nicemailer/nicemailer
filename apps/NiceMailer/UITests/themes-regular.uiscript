@@ -55,6 +55,24 @@ key ret
 key ;
 key i
 expect folder = Inbox
+# Save, near the right end of the toolbar, in "Everything": its menu is
+# pushed back to the left to stay whole in the window, and the list keeps
+# its width and its columns (the folder alone, no account).
+key ;
+key e
+expect folder ~ Everything
+expect row_width = 372
+expect row_folder_with_account = false
+click status:s
+expect overlay ~ menu
+expect menu_fits = true
+expect row_width = 372
+expect row_folder_with_account = false
+snap regular-save-menu
+key esc
+key ;
+key i
+expect folder = Inbox
 # A second click on the button closes its menu; so does a click on an
 # empty part of the toolbar.
 click status:m
