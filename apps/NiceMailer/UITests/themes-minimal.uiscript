@@ -11,10 +11,10 @@ expect list_layout = stacked
 expect status_help_height < 22
 expect status_help_height > 10
 appearance light
-# The subject of the open mail further from the bar than in clean
-# (layout.reader_title_padding = 26), lined up with the text, whose
+# The subject of the open mail as far from the bar as in clean
+# (layout.reader_title_padding = 12), lined up with the text, whose
 # column is wider (layout.reader_max_width = 760).
-expect title_inset ~ ,26
+expect title_inset ~ ,12
 expect reader_alignment = 0,0
 snap minimal-list
 # The keys work as in every theme; menus and the folder column show at

@@ -115,7 +115,6 @@ fn minimal_is_clean_but_for_its_own_keys() {
         ("fonts.interface", Value::Text("iA Writer Mono V".into())),
         ("fonts.reading", Value::Text("iA Writer Mono V".into())),
         ("layout.reader_max_width", Value::Int(760)),
-        ("layout.reader_title_padding", Value::Int(26)),
         ("motion.sidebar_ms", Value::Int(0)),
         ("motion.popup_ms", Value::Int(0)),
         ("reader.body_format", Value::Text("text".into())),

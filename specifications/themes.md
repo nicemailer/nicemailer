@@ -189,7 +189,6 @@ Ajouté en novembre 2026, à partir du thème personnel de l'auteur, qui étenda
 | `fonts.interface` | `system` | `iA Writer Mono V` | La police de geek, livrée avec l'app |
 | `fonts.reading` | `system` | `iA Writer Mono V` | Idem pour les mails |
 | `layout.reader_max_width` | 560 | 760 | Une colonne de texte plus large, pour une police à chasse fixe |
-| `layout.reader_title_padding` | 12 | 26 | Le sujet plus éloigné de la barre |
 | `motion.sidebar_ms` | 120 | 0 | Aucune animation : la colonne des dossiers apparaît aussitôt |
 | `motion.popup_ms` | 80 | 0 | Les menus aussi |
 | `reader.body_format` | `html` | `text` | Les mails en texte tant que rien n'est choisi pour l'expéditeur, comme dans geek |

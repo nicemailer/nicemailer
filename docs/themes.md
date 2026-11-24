@@ -4,7 +4,7 @@ The look of the app comes from a theme: its colors, fonts, proportions and anima
 
 State (November 2026): the core reads, checks and serves the themes, and the app applies every key of them.
 
-**minimal** (November 2026) is clean without anything that moves or waits, in the font of geek: iA Writer Mono V for the interface and the mails, a smaller status bar (`bar_size = "small"`, 30 pt high) that reminds the key of each block, the subject of the mail 26 pt from the bar and a column of text up to 760 pt wide, no animation of the folder column or the menus, and mails shown as text until you choose HTML for a sender. Everything else (colors, the list on three lines, rounded rows and menus, the buttons in the bar) is clean's.
+**minimal** (November 2026) is clean without anything that moves or waits, in the font of geek: iA Writer Mono V for the interface and the mails, a smaller status bar (`bar_size = "small"`, 30 pt high) that reminds the key of each block, a column of text up to 760 pt wide, no animation of the folder column or the menus, and mails shown as text until you choose HTML for a sender. Everything else (colors, the list on three lines, rounded rows and menus, the buttons in the bar) is clean's.
 
 With `bar_type = "toolbar"` (regular), the status bar becomes a macOS toolbar, always at the top: the folder is its title (a click opens the menu `;`), with the message of the moment or the synchronization under it, as in Mail; the other blocks are buttons, which open the same menus and pickers under them. The keys are those of every theme.
 

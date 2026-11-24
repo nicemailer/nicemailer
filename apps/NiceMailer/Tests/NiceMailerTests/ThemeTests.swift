@@ -36,13 +36,13 @@ struct ThemeTests {
         #expect(minimal.fonts.interface == "iA Writer Mono V")
         #expect(minimal.fonts.reading == "iA Writer Mono V")
         #expect(minimal.layout.readerMaxWidth == 760)
-        #expect(minimal.layout.readerTitlePadding == 26)
         #expect(minimal.motion.sidebarMs == 0 && minimal.motion.popupMs == 0)
         #expect(minimal.reader.bodyFormat == "text")
         // The rest is clean's: its colors, its list, its rows.
         #expect(minimal.colors == clean.colors)
         #expect(minimal.window.listLayout == clean.window.listLayout)
         #expect(minimal.layout.rowHeight == clean.layout.rowHeight)
+        #expect(minimal.layout.readerTitlePadding == clean.layout.readerTitlePadding)
     }
 
     /// geek draws what it drew before the themes became files: the colors
