@@ -20,6 +20,15 @@ struct ListLayoutTests {
         #expect(ListLayout(rawValue: "cards") == nil)
     }
 
+    @Test func theSenderIsAlwaysBoldOnThreeLines() {
+        // Three lines: bold, read or not; the dot says unread.
+        #expect(ListLayout.senderIsBold(.stacked, unread: false))
+        #expect(ListLayout.senderIsBold(.stacked, unread: true))
+        // Columns: bold only while unread.
+        #expect(ListLayout.senderIsBold(.columns, unread: true))
+        #expect(!ListLayout.senderIsBold(.columns, unread: false))
+    }
+
     @Test func theSnippetHoldsOnOneLine() {
         // Line breaks and runs of spaces become one space.
         #expect(ListLayout.snippetLine("Bonjour Alex,\n\nEst-ce que   tu as\tpu") == "Bonjour Alex, Est-ce que tu as pu")

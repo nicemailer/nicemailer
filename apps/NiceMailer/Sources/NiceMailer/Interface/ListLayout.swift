@@ -89,6 +89,14 @@ enum ListLayout: String, CaseIterable {
         }
     }
 
+    /// Whether the name of the sender is bold: always on three lines, as
+    /// in Apple Mail, where it heads each mail and sets the rows apart (the
+    /// dot alone says unread); in columns, only while unread, where bold
+    /// is what says it along the row.
+    static func senderIsBold(_ layout: ListLayout, unread: Bool) -> Bool {
+        layout == .stacked || unread
+    }
+
     /// The third line of a stacked row: the beginning of the latest
     /// message (`ThreadSummary.snippet`), on one line. The core keeps the
     /// line breaks and runs of spaces of the text; on a single line they
@@ -103,9 +111,9 @@ enum ListLayout: String, CaseIterable {
 
 /// A conversation of the list on three lines (`ListLayout.stacked`):
 ///
-/// 1. the unread dot, the person (bold while unread, "→" when the user
-///    wrote last, the icon person / robot in Quarantine), then on the
-///    right the paperclip, the flag and the date;
+/// 1. the unread dot, the person (always bold, "→" when the user wrote
+///    last, the icon person / robot in Quarantine), then on the right the
+///    paperclip, the flag and the date;
 /// 2. the subject and its tags, then on the right the folder (in
 ///    "Everything"), the AI's suggestion and the number of messages;
 /// 3. the beginning of the latest message, muted.
@@ -152,8 +160,11 @@ struct StackedThreadRow: View {
                             .foregroundStyle(Look.ink(thread.correspondentKind == "person" ? Palette.accentText : Palette.muted, selected: on))
                             .accessibilityHidden(true)
                     }
+                    // Always bold, as in Apple Mail: on three lines the name
+                    // heads the row and sets the rows apart; the dot alone
+                    // says unread (`ui.md`, "Deux présentations").
                     Text(SenderColumn.text(thread))
-                        .fontWeight(thread.unreadCount > 0 ? .bold : .regular)
+                        .fontWeight(ListLayout.senderIsBold(.stacked, unread: thread.unreadCount > 0) ? .bold : .regular)
                         .foregroundStyle(Look.ink(Palette.text, selected: on))
                         .accessibilityLabel(SenderColumn.spoken(thread, showsKind: showsKind))
                     Spacer(minLength: gap)

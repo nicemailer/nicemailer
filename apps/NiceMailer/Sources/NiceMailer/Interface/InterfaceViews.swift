@@ -1367,7 +1367,7 @@ private struct ThreadRow: View {
                     .accessibilityHidden(true)
                 }
                 Text(SenderColumn.text(thread))
-                    .fontWeight(thread.unreadCount > 0 ? .bold : .regular)
+                    .fontWeight(ListLayout.senderIsBold(.columns, unread: thread.unreadCount > 0) ? .bold : .regular)
                     .foregroundStyle(Look.ink(Palette.text, selected: on))
                     .lineLimit(1)
                 Spacer(minLength: 0)
