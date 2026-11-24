@@ -36,7 +36,7 @@ NiceMailer est inscrit une fois, par son auteur, dans Microsoft Entra ID. Cette 
 | --- | --- | --- |
 | Type de compte | Comptes dans n'importe quel annuaire d'organisation et comptes Microsoft personnels | Un seul identifiant pour Microsoft 365 et Outlook.com |
 | Plateforme | Application mobile et de bureau | Client public, sans secret |
-| URI de redirection | `http://localhost` | Pour le loopback, Microsoft accepte n'importe quel port à l'exécution : le noyau peut prendre un port libre. À vérifier à l'inscription : la documentation de Microsoft recommande `127.0.0.1` plutôt que `localhost`, et selon le portail, l'un ou l'autre peut ne pas être accepté |
+| URI de redirection | `http://127.0.0.1`, et `http://localhost` en second | Pour le loopback, Microsoft accepte n'importe quel port à l'exécution : le noyau peut prendre un port libre. Décision tranchée à l'inscription : `127.0.0.1`, que la documentation de Microsoft recommande plutôt que `localhost` ; `http://localhost` reste enregistré comme secours |
 | « Autoriser les flux clients publics » | Oui | Requis pour un client sans secret |
 | Permissions déléguées | `IMAP.AccessAsUser.All`, `SMTP.Send` (ressource Office 365 Exchange Online), `offline_access`, `openid`, `email`, `profile` | Les deux premières suffisent pour le mail ; `offline_access` donne le jeton de renouvellement ; les trois dernières, l'adresse du compte autorisé (section 5) |
 
@@ -44,7 +44,7 @@ Les deux permissions mail sont, en principe, accordables par l'utilisateur lui-m
 
 ### Identifiant de l'application
 
-L'identifiant de l'application (« client ID ») n'est pas un secret : il est compilé dans le noyau, comme constante de `nm-engine`.
+L'identifiant de l'application (« client ID ») n'est pas un secret : il est compilé dans le noyau, comme constante de `nm-engine`. Tant que l'application n'est pas inscrite dans Entra ID, la constante est un GUID nul fictif : aucun identifiant n'est alors disponible, les serveurs OAuth2-only ne sont pas utilisables (section 7) et `oauth_begin` échoue ; les builds de développement passent par le réglage ci-dessous.
 
 Le réglage `oauth.microsoft_client_id` de `config.toml` le remplace. Il sert à l'auteur pour ses builds de développement, et à l'utilisateur dont l'organisation exige une application qu'elle a inscrite elle-même. Le noyau vérifie sa forme (un GUID non nul) à la lecture du fichier ; une valeur invalide fait refuser le fichier, comme toute valeur hors limites (`configuration.md`, section 4).
 
@@ -58,10 +58,10 @@ Le flux est le « authorization code flow » d'OAuth2 (RFC 6749), avec PKCE et u
 2. Le noyau :
    - ouvre une écoute sur `127.0.0.1` et `[::1]`, sur un port libre choisi par le système, le même pour les deux ; `localhost` peut se résoudre vers l'une ou l'autre adresse selon le navigateur ;
    - tire un `code_verifier` (32 octets aléatoires, base64url), un `state` et un `nonce` (16 octets aléatoires chacun) ;
-   - construit l'URL d'autorisation : `https://login.microsoftonline.com/common/oauth2/v2.0/authorize`, avec `response_type=code`, `client_id`, `redirect_uri=http://localhost:<port>`, les scopes de la section 4, `state`, `nonce`, `code_challenge` (SHA-256 du verifier) et `code_challenge_method=S256`, `login_hint` (l'adresse) et `prompt=select_account` ;
+   - construit l'URL d'autorisation : `https://login.microsoftonline.com/common/oauth2/v2.0/authorize`, avec `response_type=code`, `client_id`, `redirect_uri=http://127.0.0.1:<port>`, les scopes de la section 4, `state`, `nonce`, `code_challenge` (SHA-256 du verifier) et `code_challenge_method=S256`, `login_hint` (l'adresse) et `prompt=select_account` ;
    - renvoie l'URL et un identifiant de flux.
 3. Le client ouvre l'URL dans le **navigateur par défaut**. Le navigateur de l'utilisateur garde ses sessions, ses clés d'accès et son gestionnaire de mots de passe ; une vue web intégrée n'aurait rien de cela, et apprendrait à l'utilisateur à taper son mot de passe Microsoft dans une fenêtre qui n'est pas celle de Microsoft.
-4. L'utilisateur se connecte et accepte. Microsoft redirige le navigateur vers `http://localhost:<port>/?code=…&state=…`, ou `?error=…&error_description=…` s'il a refusé.
+4. L'utilisateur se connecte et accepte. Microsoft redirige le navigateur vers `http://127.0.0.1:<port>/?code=…&state=…`, ou `?error=…&error_description=…` s'il a refusé.
 5. Le noyau reçoit cette requête et ferme l'écoute. Il ne traite qu'**une seule** requête `GET /` ; toute autre requête (autre chemin, autre méthode, favicon) reçoit `404` et ne termine pas le flux. Si `state` diffère de celui tiré, le flux échoue (`oauth_state_mismatch`) : la requête ne vient pas de cette autorisation. Le navigateur reçoit une page courte, sans ressource externe, qui dit que l'autorisation a réussi ou échoué et que l'onglet peut être fermé. Le noyau l'écrit en anglais ou en français, selon l'en-tête `Accept-Language`, en anglais par défaut.
 6. Le noyau échange le code contre les jetons sur `https://login.microsoftonline.com/common/oauth2/v2.0/token` (`grant_type=authorization_code`, `code`, `redirect_uri`, `client_id`, `code_verifier`). Il reçoit un jeton d'accès (valable environ une heure), un jeton de renouvellement et un `id_token`.
 7. Le noyau lit l'`id_token`. Il vérifie le `nonce`, puis compare l'adresse du compte autorisé (`email`, sinon `preferred_username`) à l'adresse du compte, sans tenir compte de la casse. Si elles diffèrent, le flux échoue (`oauth_wrong_account`), avec les deux adresses : l'utilisateur a choisi un autre compte dans le sélecteur. Il garde aussi l'identifiant du tenant (`tid`) et celui de l'utilisateur (`oid`, sinon `sub`).
@@ -164,7 +164,7 @@ Pour un compte existant, `oauth_begin {account}` remplace `set_password` : à la
 
 ### Raisons
 
-Les raisons nouvelles (`oauth_*`, `smtp_auth_disabled`, `imap_disabled_for_mailbox`) suivent la règle du contrat : un code, des valeurs et une phrase anglaise, que les clients écrivent dans la langue de l'utilisateur. `oauth2_unsupported` disparaît pour Microsoft ; elle reste pour un serveur `auth = "oauth2"` hors de la table.
+Les raisons nouvelles (`oauth_*`, `smtp_auth_disabled`, `imap_disabled_for_mailbox`) suivent la règle du contrat : un code, des valeurs et une phrase anglaise, que les clients écrivent dans la langue de l'utilisateur. `oauth2_unsupported` disparaît du contrat : un compte `auth = "oauth2"` dont le serveur est hors de la table de la section 7 a la raison `oauth2_unknown_server` (une situation, une raison). `oauth2_unsupported_provider` reste, pour `oauth_begin` sur une adresse dont le fournisseur n'accepte pas OAuth2.
 
 ### CLI
 
@@ -219,7 +219,7 @@ Les tests ne touchent jamais Microsoft. Les adresses des points de terminaison (
 ## 13. Questions ouvertes
 
 - **Vérification de l'éditeur.** Sans elle, de nombreuses organisations bloqueront le consentement (section 10). Elle demande un compte Microsoft Partner (MCPP) et un domaine vérifié. À décider avant une diffusion publique ; d'ici là, NiceMailer est utilisable sur les comptes personnels et dans les organisations qui autorisent le consentement.
-- **`localhost` ou `127.0.0.1`** dans l'URI de redirection : à trancher à l'inscription (section 4).
+- ~~**`localhost` ou `127.0.0.1`** dans l'URI de redirection~~ : tranché — `http://127.0.0.1`, avec `http://localhost` enregistré en secours (section 4).
 - **Graph comme repli** quand un tenant coupe IMAP ou SMTP AUTH : envoi par `sendMail`, puis lecture. Le second moteur de synchronisation que cela implique n'est justifié que si le cas se révèle fréquent.
 - **Boîtes partagées** : XOAUTH2 accepte un `user` différent du compte connecté, si celui-ci a les droits sur la boîte. Cela demande de séparer, dans `accounts.toml`, le compte qui s'autorise de la boîte lue.
 - **Flux « device code »**, pour un noyau sans navigateur à portée.
