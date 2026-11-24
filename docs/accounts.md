@@ -68,7 +68,7 @@ In this order:
 
 1. **The domain of the address** (`gmail.com`, `ik.me`): if a provider lists it, its servers are used.
 2. Otherwise, **the MX servers of the domain** (DNS, the system's resolvers, 3 s per resolver): for each MX by preference, its name then each parent down to its organizational domain is looked up among the providers' domains, and the `mx` domains of our files. `anthropic.com`, whose MX is `aspmx.l.google.com`, is found under `google.com`, which Thunderbird's Google entry lists for this purpose; a domain whose MX is `mta-gw.infomaniak.ch` is found under `infomaniak.ch`, in our Infomaniak file. A failed lookup is reported, not hidden.
-3. **IMAP**: the server given with `--host`, else the provider's first server that takes a password. A provider that only takes OAuth2 (Outlook.com) is reported as not supported yet.
+3. **IMAP**: the server given with `--host`, else the provider's first server NiceMailer can log in to: with a password, or with OAuth2 when the server is in the core's compiled table and an application id is in effect (below). A provider that only takes OAuth2 (Outlook.com, Microsoft 365) without an application id is reported as not usable yet.
 4. **SMTP servers to try**, in order:
    - the provider's, when its IMAP server is the one used (with `--host` naming another server, they may not be the right ones: not tried);
    - for a server given with `--host` (or a provider without SMTP server), guesses: the host with `imap` replaced by `smtp` in its first label holding it (`imap.example.fr` gives `smtp.example.fr`), then the host itself; each on port 465 (TLS) then 587 (STARTTLS). Port 25 is not tried: it is for servers relaying between them.
@@ -110,6 +110,26 @@ The worker sends the `initial_archive` action before anything else, and the Inbo
 - **Journal**: one `initial_archive` row on the account, with the criteria and the number of mails moved; not one per mail.
 
 The mails already in the mailbox are synchronized without screening (below the boundary); the addresses met then are marked `imported_from = 'imap_initial'`. After the import, every new mail is screened ([screening.md](screening.md)): a sender of the history without decision goes to Quarantine with their next mail.
+
+## OAuth2 sign-in (Microsoft 365 and Outlook.com)
+
+Microsoft cuts the password authentication of its IMAP and SMTP servers: OAuth2 is the only way in. `discover_account` recognizes those accounts — an address of `outlook.com`, `hotmail.com`, `live.com`, `msn.com` and their national variants, or a custom domain whose MX is under `mail.protection.outlook.com` (Microsoft 365) — and answers `auth: "oauth2"`, `oauth_provider: "microsoft"`, with the servers of the core's compiled table (`outlook.office365.com`, `smtp.office365.com`, `smtp-mail.outlook.com`). The full flow is in `specifications/oauth2.md`.
+
+**From the CLI**, no password is asked when the discovery says `oauth2`: the command calls `oauth_begin`, prints the authorization URL, opens it with `open`, and waits for the `OAuthFinished` event, printing « Waiting for sign-in in your browser… ». With `--no-browser` (SSH: the redirection arrives on the loopback of the Mac that runs the core, open the URL in a browser of that Mac), the URL is printed without being opened. Ctrl-C sends `oauth_cancel`. The finished flow's id then goes as `oauth: {flow}` in `test_account`, `count_archive`, `test_smtp` and `add_account`, in place of the password, and `add_account` saves its tokens in the Keychain.
+
+**To sign an existing account in again** (`oauth_reauth_needed`, after a password change or a revocation, say):
+
+```sh
+nicemailer account login <key> [--no-browser]
+```
+
+The same browser flow for the account; on a password account the core points to `nicemailer account password`.
+
+**From the app**, the password field of the add-account form is replaced by a « Sign in with Microsoft » button, with the sentence that the sign-in happens in the browser and NiceMailer never sees the password (one typed meanwhile is not sent). The button opens the URL, shows « En attente de la connexion dans le navigateur… » with Cancel and Reopen the page, and at `OAuthFinished` the adding resumes where it stopped. An account in `oauth_reauth_needed` shows a « Se reconnecter » button on its page, running the same flow.
+
+**The application id** comes from `oauth.microsoft_client_id` in `config.toml` when it is set, else from the one compiled in the core (a zero GUID until the app is registered in Entra ID; then `oauth_begin` refuses cleanly and OAuth2-only servers are not usable). The value must be a non-zero GUID: an invalid one refuses the file like any out-of-range value ([configuration.md](configuration.md), "The settings").
+
+**In the Keychain**, the refresh token is stored in place of the IMAP password, in the same `imap:<key>` item (its data is a JSON record with the binding, provider, client id, tenant, user id and address), bound to the server and user name of the file as a password is. The access token never touches the disk: it lives in the core's memory and is renewed before it expires. Removing the account deletes the item; Microsoft offers a public client no way to revoke a refresh token, so the authorization stays visible and revocable on the « Applications » page of the Microsoft account (or « Mes applications » for a work account), and the confirmation of `nicemailer account remove` says so.
 
 ## Looking first
 
@@ -195,7 +215,7 @@ The account commands write `accounts.toml`, never `config.toml` ([configuration.
 - reads it again right before the change, so that an edit made by hand meanwhile is kept;
 - refuses a result the core would refuse (`config::parse_accounts`);
 - writes it atomically: a temporary file next to it, then `rename`;
-- writes no default value: `username` only when it is not the address.
+- writes no default value: `username` only when it is not the address. An OAuth2 account (added from the app or the CLI after a browser sign-in) is written with `auth = "oauth2"` and the servers of the provider's table; declared by hand, such an account waits for its first sign-in (`nicemailer account login <key>`), like a password account without a password ([configuration.md](configuration.md), "Passwords").
 
 ## `nicemailer account roles`
 
@@ -219,7 +239,7 @@ Renames the key and keeps everything: the account row (same id, so mail, history
 nicemailer account remove perso        # asks to type the key again; --yes not to
 ```
 
-Stops the account's worker and waits for it, removes its tables from the file, deletes its data (folders, mails, threads, actions; the raw files stay until the garbage collector of phase 8) with a `remove` row in `audit_log`, which outlives it, and deletes its Keychain item. The mail on the server is not touched.
+Stops the account's worker and waits for it, removes its tables from the file, deletes its data (folders, mails, threads, actions; the raw files stay until the garbage collector of phase 8) with a `remove` row in `audit_log`, which outlives it, and deletes its Keychain item. The mail on the server is not touched. For an OAuth2 account, the confirmation also says that the authorization stays revocable on the « Applications » page of the Microsoft account (a public client cannot revoke a refresh token itself).
 
 ## Accounts declared by hand
 

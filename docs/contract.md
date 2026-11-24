@@ -185,7 +185,7 @@ These commands work on files directly and do not go through the core:
 
 ## Coverage
 
-Of the 75 methods, 32 are used by a dedicated CLI command. The reading of mail, the actions on threads and the drafts have no dedicated command yet, only `nicemailer call`. The CLI is meant to be the test bench of the contract (`specifications/architecture.md`, step 4), so these are the gaps to fill first.
+Of the 85 methods, 36 are used by a dedicated CLI command. The reading of mail, the actions on threads and the drafts have no dedicated command yet, only `nicemailer call`. The CLI is meant to be the test bench of the contract (`specifications/architecture.md`, step 4), so these are the gaps to fill first.
 
 ## Errors
 

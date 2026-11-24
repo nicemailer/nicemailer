@@ -53,7 +53,7 @@ version = 1
 [accounts.perso]
 email = "me@example.com"          # required
 display_name = "My Name"
-auth = "password"                 # or "oauth2": accepted, not supported yet
+auth = "password"                 # or "oauth2": sign-in in the browser (accounts.md, "OAuth2 sign-in")
 
 [accounts.perso.imap]             # required
 host = "imap.example.com"         # required
@@ -150,6 +150,10 @@ It is checked twice:
 
 - **at each reading of the file** (`secrets::check`), from the attributes of the item only. The Keychain gives attributes to anyone, without any dialog, even when it is locked, so the core checks them with its locks held, and an account without a password or pointing at another server shows its error at once;
 - **at each login** (`secrets::imap_password`, from phase 2), on the item read with its password: the file may have changed since the last check.
+
+### OAuth2: the refresh token in place of the password
+
+An account with `auth = "oauth2"` (Microsoft 365, Outlook.com; [accounts.md](accounts.md), "OAuth2 sign-in") has no password: the same `imap:<key>` Keychain item holds a JSON record instead — the binding (host, user name), the provider, the application id, the tenant and user ids, the address, and the **refresh token**. The binding rule is the same: if the file now names another server or user, the core refuses to authenticate and the account asks for a new sign-in. The access token never touches the disk: it stays in the core's memory, renewed five minutes before it expires, one renewal at a time per account, and the new refresh token is written to the Keychain before the new access token is used.
 
 ### No dialog, ever
 
@@ -294,6 +298,7 @@ They are all in `config.toml`; `nicemailer config defaults` prints them all. Ran
 | `mcp.message_chars` | 8000 | 1000 to 100000 | yes: characters of one message when an AI agent reads a conversation ([mcp.md](mcp.md)); read by `nicemailer-mcp` at each call |
 | `mcp.response_chars` | 40000 | 4000 to 200000 | yes: characters of the text of one answer to an AI agent ([mcp.md](mcp.md)) |
 | `unsubscribe.in_banned` | false | | yes, at once: the mails of Banned offer their unsubscribe button, and the core accepts it (`geek-ui.md`, "Unsubscribing"); Junk and Quarantine never do. Unsubscribing from a spammer confirms the address: for those who know the sender is a real list |
+| `oauth.microsoft_client_id` | the compiled id (a zero GUID until the app is registered in Entra ID) | a GUID, non-zero | yes: `oauth_begin` and the token renewals use it; an invalid value refuses the file ([accounts.md](accounts.md), "OAuth2 sign-in") |
 | `folder_names.<role>` | the English name | 1 to 24 characters, unique | yes: the app applies it at once; the name shown for the folder of that role, or for a virtual folder (`work`, `all_mail`, `everything`; see "Folder names") |
 
 ### Folder names
