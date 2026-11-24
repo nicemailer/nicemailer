@@ -1295,7 +1295,7 @@ struct AIAttachmentTests {
             "to": [], "cc": [], "date_sent": NSNull(), "date_received": 0, "body_text": "x", "is_seen": true,
             "is_flagged": false, "is_answered": false, "has_attachments": !files.isEmpty, "auth_result": "unknown",
             "body_html": NSNull(), "has_remote_content": false, "from_body_format": NSNull(), "segments": [],
-            "only_quotes": false, "expanded": true, "show_recipients": false,
+            "only_quotes": false, "no_text": false, "expanded": true, "show_recipients": false,
             "attachments": files.map { ["id": $0.id, "filename": $0.filename as Any, "mime_type": $0.mimeType, "size": $0.size,
                                         "readable": $0.readable as Any] },
             "unsubscribe": NSNull(), "tracking_pixels": 0, "links": [], "verification_code": NSNull(),

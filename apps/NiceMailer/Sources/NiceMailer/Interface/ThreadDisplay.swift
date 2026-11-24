@@ -143,13 +143,14 @@ enum ThreadDisplay {
                                book: book[m.id]))
             if m.onlyQuotes && !state.showAll {
                 out.append(.note(messageId: m.id, text: L("only quotes earlier messages")))
-            } else if Self.hasNoText(m) && !state.showAll {
+            } else if m.noText && !state.showAll {
                 // Nothing written, nothing quoted (an empty body, a
                 // signature alone, files without a word): said so, rather
-                // than "only quotes", which it does not.
+                // than "only quotes", which it does not. The core decides
+                // (`no_text`, `clean.rs`), as it does for `only_quotes`.
                 out.append(.note(messageId: m.id, text: L("no text")))
             }
-            if m.segments.isEmpty, !Self.hasNoText(m) {
+            if m.segments.isEmpty, !m.noText {
                 // Body not downloaded (an empty one has its note above).
                 let text = m.bodyText ?? L("(body not downloaded)")
                 out.append(.segment(messageId: m.id, index: 0, kind: "text", text: text, depth: 0))
@@ -200,23 +201,10 @@ enum ThreadDisplay {
     /// nothing new.
     static func snippet(_ m: MessageView) -> String {
         if m.onlyQuotes { return L("only quotes earlier messages") }
-        if hasNoText(m) { return L("no text") }
+        if m.noText { return L("no text") }
         let text = m.segments.first { !$0.hidden && ($0.kind == "text" || $0.kind == "forward") }?.text ?? m.bodyText ?? ""
         let flat = text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
         return String(flat.prefix(120))
-    }
-
-    /// The body was downloaded and the sender wrote nothing in it: no text
-    /// or forwarded mail shows (an empty body, blank lines, a signature
-    /// alone, files without a word), and it quotes nothing (that is
-    /// `onlyQuotes`). A body not downloaded yet is not one: nothing is
-    /// known of it.
-    static func hasNoText(_ m: MessageView) -> Bool {
-        guard let body = m.bodyText, !m.onlyQuotes else { return false }
-        if m.segments.isEmpty { return body.allSatisfy(\.isWhitespace) }
-        return !m.segments.contains {
-            !$0.hidden && ($0.kind == "text" || $0.kind == "forward") && !$0.text.allSatisfy(\.isWhitespace)
-        }
     }
 
     /// The domain of an address: what follows its last `@`, in lowercase;

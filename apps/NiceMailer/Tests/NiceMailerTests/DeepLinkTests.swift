@@ -12,7 +12,7 @@ struct DeepLinkTests {
             "to": [], "cc": [], "date_sent": NSNull(), "date_received": 0, "body_text": "x", "is_seen": true,
             "is_flagged": false, "is_answered": false, "has_attachments": false, "auth_result": "pass",
             "body_html": NSNull(), "has_remote_content": false, "from_body_format": NSNull(), "segments": [],
-            "only_quotes": false, "expanded": true, "show_recipients": false, "attachments": [], "tracking_pixels": 0, "links": [],
+            "only_quotes": false, "no_text": false, "expanded": true, "show_recipients": false, "attachments": [], "tracking_pixels": 0, "links": [],
             "link": link ?? NSNull(),
         ]
         let decoder = JSONDecoder()

@@ -92,6 +92,36 @@ fn each_message_shows_what_it_brings() {
     // The last message only quotes the previous one.
     assert!(t[2].only_quotes);
     assert_eq!(kinds(&t[2]), vec![("quote_tail", true)]);
+    // Each message writes or quotes something: none is without text.
+    assert!(t.iter().all(|m| !m.no_text));
+}
+
+#[test]
+fn a_message_without_text_is_flagged_no_text() {
+    // A question, then an answer with a signature alone: nothing written,
+    // nothing quoted (`docs/thread-display.md`).
+    let mbox = "From a Mon Nov  2 10:00:00 2026
+From: Alice <alice@x.org>
+To: me@x.org
+Subject: Plans
+Message-ID: <1@x>
+
+Tu as recu les plans du rez-de-chaussee ?
+
+From b Mon Nov  2 11:00:00 2026
+From: Bob <bob@x.org>
+To: alice@x.org
+Subject: Re: Plans
+Message-ID: <2@x>
+In-Reply-To: <1@x>
+
+--\x20
+Bob Martin
+";
+    let t = thread_of(mbox);
+    assert_eq!(t.len(), 2);
+    assert!(!t[0].no_text);
+    assert!(t[1].no_text && !t[1].only_quotes);
 }
 
 #[test]

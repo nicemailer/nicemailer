@@ -1950,8 +1950,8 @@ private struct ReaderColumn: View {
                 html += MailFrame.wrap(RemoteImages.body(body, loading: loading), base: frameStyle, sheet: sheet)
             } else {
                 // Nothing written, nothing quoted: said so, as in the text
-                // reader (`ThreadDisplay.hasNoText`).
-                if ThreadDisplay.hasNoText(m) && !state.showAll {
+                // reader (`MessageView.noText`, decided by the core).
+                if m.noText && !state.showAll {
                     html += "<div class=\"m\">\(esc(L("no text")))</div>"
                 }
                 for (j, seg) in m.segments.enumerated() {

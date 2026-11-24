@@ -497,6 +497,10 @@ pub struct CleanMessage {
     pub segments: Vec<CleanSegment>,
     /// No visible new content: the message only quotes earlier ones.
     pub only_quotes: bool,
+    /// Nothing written and nothing quoted: an empty body, blank lines, a
+    /// signature alone, files without a word. Never true with
+    /// `only_quotes`: the two say different things about the message.
+    pub no_text: bool,
 }
 
 /// Minimum normalized length for a text to count as a copy of an earlier
@@ -538,7 +542,8 @@ pub fn clean_thread(messages: &[(Option<&str>, &str)]) -> Vec<CleanMessage> {
         // the message holds is a quote or a copy of earlier ones. A message
         // with nothing written and nothing quoted (an empty body, a
         // signature alone, files without a word) quotes nothing: the app
-        // says it has no text instead (`docs/thread-display.md`).
+        // says it has no text instead, from `no_text`
+        // (`docs/thread-display.md`).
         let writes = clean.iter().any(|c| {
             !c.hidden && matches!(c.segment.kind, SegmentKind::Text | SegmentKind::Forward) && !c.segment.text.trim().is_empty()
         });
@@ -546,6 +551,7 @@ pub fn clean_thread(messages: &[(Option<&str>, &str)]) -> Vec<CleanMessage> {
             .iter()
             .any(|c| matches!(c.segment.kind, SegmentKind::QuoteTail | SegmentKind::Copy | SegmentKind::Quote));
         let only_quotes = !writes && quotes;
+        let no_text = !writes && !quotes;
         // What later messages may copy or quote: the content of this one.
         // `earlier` keeps only what the sender wrote (text, forward): a
         // message that starts with an interleaved quote must still be
@@ -563,7 +569,7 @@ pub fn clean_thread(messages: &[(Option<&str>, &str)]) -> Vec<CleanMessage> {
             }
         }
         earlier.push(written);
-        out.push(CleanMessage { segments: clean, only_quotes });
+        out.push(CleanMessage { segments: clean, only_quotes, no_text });
     }
     out
 }
@@ -843,11 +849,16 @@ mod tests {
         for body in ["", "\n\n  \n", "-- \nBob Martin\n06 12 34 56 78"] {
             let c = clean_thread(&[(Some("a@x"), first), (Some("b@x"), body)]);
             assert!(!c[1].only_quotes, "{body:?}");
+            assert!(c[1].no_text, "{body:?}");
         }
+        // The first message wrote something.
+        let c = clean_thread(&[(Some("a@x"), first), (Some("b@x"), "")]);
+        assert!(!c[0].no_text);
         // Only the quote of the earlier message: it only quotes.
         let quote = "Le 3 nov. 2026, Alice a écrit :\n> Tu es dispo jeudi pour la réunion de chantier ?\n> Alice";
         let c = clean_thread(&[(Some("a@x"), first), (Some("b@x"), quote)]);
         assert!(c[1].only_quotes);
+        assert!(!c[1].no_text);
     }
 
     #[test]
