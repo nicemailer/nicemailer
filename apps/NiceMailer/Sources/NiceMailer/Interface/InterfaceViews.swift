@@ -1439,6 +1439,34 @@ private struct ThreadRow: View {
 
 // MARK: - Reader
 
+/// The layer over the draft shown in Drafts (`ReaderColumn`): a click
+/// reopens the draft to be edited. The pointer is the text cursor, as over
+/// a field one can type in, and the tooltip names the click and the key.
+///
+/// Swift note: `NSCursor.push()` / `pop()` keep a stack of cursors;
+/// `onHover` pushes the text cursor when the pointer enters and pops it
+/// when it leaves, so the cursor of the rest of the window comes back.
+private struct DraftClickLayer: View {
+    /// Return, as the keymap names it.
+    let key: String
+    let edit: () -> Void
+
+    var body: some View {
+        Color.clear
+            .contentShape(Rectangle())
+            .onHover { inside in
+                if inside { NSCursor.iBeam.push() } else { NSCursor.pop() }
+            }
+            .help(L("Click to edit the draft (%@)", key))
+            .accessibilityElement()
+            .accessibilityLabel(L("Edit the draft"))
+            .accessibilityAddTraits(.isButton)
+            .onTapGesture(perform: edit)
+            .uiTarget("reader-draft")
+    }
+}
+
+
 /// The title line of the reader: the subject, then the controls of the
 /// mail (unsubscribe, blocked pixels, text | html | images, folder).
 ///
@@ -1626,12 +1654,25 @@ private struct ReaderColumn: View {
                     titleControls(state)
                 }
                 Look.separator.frame(height: 1)
-                if model.bodyFormat != "text" {
-                    let page = threadHTML(thread, state)
-                    HTMLReader(html: page.html, allowedImages: page.images, inlineImages: page.inline,
-                               darkMode: page.darkMode, zoom: TextSize.shared.scale, controller: controller)
-                } else {
-                    TextReader(blocks: blocks, threadId: thread.id, controller: controller)
+                Group {
+                    if model.bodyFormat != "text" {
+                        let page = threadHTML(thread, state)
+                        HTMLReader(html: page.html, allowedImages: page.images, inlineImages: page.inline,
+                                   darkMode: page.darkMode, zoom: TextSize.shared.scale, controller: controller)
+                    } else {
+                        TextReader(blocks: blocks, threadId: thread.id, controller: controller)
+                    }
+                }
+                // In Drafts, a click on the draft reopens it to be edited,
+                // as Return does (`InterfaceController.readerEditsDraft`).
+                // The text view and the web view keep their clicks for
+                // selecting: a transparent layer over them takes the click
+                // instead, with the text cursor and a tooltip that say the
+                // draft can be edited.
+                .overlay {
+                    if controller.readerEditsDraft {
+                        DraftClickLayer(key: controller.keyLabel(.mailOpen)) { controller.clickDraftReader() }
+                    }
                 }
             }
         } else {
