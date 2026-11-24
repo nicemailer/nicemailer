@@ -27,7 +27,7 @@ Shared rules, kept here: only the **final** quote is trimmed (interleaved quotes
 | `forward` | A forwarded message ("Forwarded message", "Message transféré", "Début du message réexpédié") | shown, never treated as history |
 | `copy` | Text (40 characters or more, compared ignoring case, punctuation, wrapping and quote markers) found in an earlier message | hidden: "··· copy of an earlier message" |
 
-A message whose visible content is empty is flagged `only_quotes`: folded, it shows "only quotes earlier messages" instead of a snippet.
+A message that shows nothing written and holds a quote or a copy of earlier messages is flagged `only_quotes`: folded, it shows "only quotes earlier messages" instead of a snippet, and unfolded the same note. A message with nothing written and nothing quoted (an empty body, blank lines, a signature alone, files without a word) is not one: the app says "no text" instead, folded and unfolded, in the text reader and in the HTML page (`ThreadDisplay.hasNoText`). Before (November 2026), any message without visible text was said to quote, even an empty one. A body not downloaded yet is neither: "(body not downloaded)". Tests: `clean.rs` (`a_message_without_text_quotes_nothing`), `NoTextTests`, `no-text.uiscript`.
 
 ## Folding and headers
 

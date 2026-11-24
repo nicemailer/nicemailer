@@ -1,0 +1,16 @@
+From x Sat Nov 21 09:00:00 2026
+From: Bureau <bureau@example.org>
+To: me@example.com
+Subject: Sans un mot
+Message-ID: <empty1@example.org>
+Content-Type: text/plain; charset=utf-8
+
+
+From x Fri Nov 20 09:00:00 2026
+From: Bureau <bureau@example.org>
+To: me@example.com
+Subject: Avec un mot
+Message-ID: <word1@example.org>
+Content-Type: text/plain; charset=utf-8
+
+Merci.

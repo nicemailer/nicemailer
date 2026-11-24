@@ -39,6 +39,7 @@ How to write it:
 
 ### Fixed
 
+- **Reading:** A mail without text (an empty body, a signature alone) says "no text" instead of "only quotes earlier messages".
 - **Status bar:** A menu opened from a block near the right edge of the window stays whole, a little to the left of its block, instead of being cut and shifting the columns of the list.
 - **Status bar:** A menu or picker opened by a click (the account `@`, the folder, Move…) now closes with a second click on its block, or a click on an empty part of the bar or the toolbar, as it already did with a click on the mail.
 - **Geek:** Dates, counts and the other secondary texts are a little darker in light and lighter in dark, to be read without effort (contrast WCAG AA).

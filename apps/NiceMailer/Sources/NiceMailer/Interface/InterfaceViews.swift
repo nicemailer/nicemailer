@@ -1888,6 +1888,11 @@ private struct ReaderColumn: View {
                 inline.formUnion(InlineImages.ids(in: body))
                 html += MailFrame.wrap(RemoteImages.body(body, loading: loading), base: frameStyle, sheet: sheet)
             } else {
+                // Nothing written, nothing quoted: said so, as in the text
+                // reader (`ThreadDisplay.hasNoText`).
+                if ThreadDisplay.hasNoText(m) && !state.showAll {
+                    html += "<div class=\"m\">\(esc(L("no text")))</div>"
+                }
                 for (j, seg) in m.segments.enumerated() {
                     if !seg.hidden || state.showAll || state.revealed.contains("\(m.id):\(j)") {
                         let cls = seg.kind == "text" || seg.kind == "forward" ? "" : " class=\"q\""
