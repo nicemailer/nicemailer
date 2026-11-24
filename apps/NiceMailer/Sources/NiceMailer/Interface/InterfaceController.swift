@@ -2380,8 +2380,6 @@ final class InterfaceController {
 
     // MARK: - Reply
 
-    /// `r`: the reply to all to the mail under the reader's cursor. One
-    /// column shows it in the whole window, as the mail.
     /// In Drafts, the mail shown is a draft: a click on it reopens it to
     /// be edited, as Return does (`dossiers.md`, "Sent et Drafts"). The
     /// reader then catches the clicks on its text (`ReaderColumn`).
@@ -2393,6 +2391,8 @@ final class InterfaceController {
         startReply()
     }
 
+    /// `r`: the reply to all to the mail under the reader's cursor. One
+    /// column shows it in the whole window, as the mail.
     func startReply(kind: DraftKind = .replyAll) {
         guard model.openThread != nil else {
             model.flash = kind == .forward ? L("No mail to forward") : L("No mail to answer")

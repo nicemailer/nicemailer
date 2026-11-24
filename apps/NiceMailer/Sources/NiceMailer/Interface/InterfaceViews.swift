@@ -1446,16 +1446,36 @@ private struct ThreadRow: View {
 /// Swift note: `NSCursor.push()` / `pop()` keep a stack of cursors;
 /// `onHover` pushes the text cursor when the pointer enters and pops it
 /// when it leaves, so the cursor of the rest of the window comes back.
+/// The click itself removes the layer (the draft is reopened, the reader
+/// becomes the reply) while the pointer is still over it, and SwiftUI does
+/// not promise an `onHover(false)` then: `pushed` remembers the push so
+/// that `onDisappear` pops it, and never pops a cursor it did not push.
+/// (`.pointerStyle` would do all this, from macOS 15; the app runs on 14.)
 private struct DraftClickLayer: View {
     /// Return, as the keymap names it.
     let key: String
     let edit: () -> Void
+    /// Swift note: `@State` is storage SwiftUI keeps for this view while it
+    /// stays on screen, unlike a plain property, rebuilt with the view.
+    @State private var pushed = false
 
     var body: some View {
         Color.clear
             .contentShape(Rectangle())
             .onHover { inside in
-                if inside { NSCursor.iBeam.push() } else { NSCursor.pop() }
+                if inside, !pushed {
+                    NSCursor.iBeam.push()
+                    pushed = true
+                } else if !inside, pushed {
+                    NSCursor.pop()
+                    pushed = false
+                }
+            }
+            .onDisappear {
+                if pushed {
+                    NSCursor.pop()
+                    pushed = false
+                }
             }
             .help(L("Click to edit the draft (%@)", key))
             .accessibilityElement()
