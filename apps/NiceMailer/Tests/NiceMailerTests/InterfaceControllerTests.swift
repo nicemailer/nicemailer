@@ -2543,10 +2543,13 @@ struct InterfaceControllerTests {
     @Test func theDatePanelBuildsAnIntervalAndReadsDurations() {
         press("f"); type(L("Conversation date…")); press("ret")
         type("2026-10-01"); press("ret")
-        // An upper bound kept with the lower one: two chips.
+        // An upper bound kept with the lower one: two chips. Far ahead, so
+        // that the duration below ("3s", from today) never passes it: an
+        // upper bound in the past would make that row "nothing in between"
+        // once the day of the test is late enough.
         press("f"); type(L("Conversation date…")); press("ret")
-        type("2026-11-01"); press("down"); press("ret")
-        #expect(model.attributes.chips.map(\.label) == [L("after %@", "2026-10-01"), L("before %@", "2026-11-01")])
+        type("2099-01-01"); press("down"); press("ret")
+        #expect(model.attributes.chips.map(\.label) == [L("after %@", "2026-10-01"), L("before %@", "2099-01-01")])
         // An upper bound before the lower one: the row says so.
         press("f"); type(L("Conversation date…")); press("ret")
         type("2026-09-01")
@@ -2562,7 +2565,7 @@ struct InterfaceControllerTests {
         #expect(d[0].detail?.count == 10)
         press("ret")
         #expect(model.attributes.afterLabel == L("newer than %@", L("%lld weeks", 3)))
-        #expect(model.attributes.beforeLabel == L("before %@", "2026-11-01"))
+        #expect(model.attributes.beforeLabel == L("before %@", "2099-01-01"))
     }
 
     /// Two date criteria (`ui.md`, "Deux critères de date"): Conversation

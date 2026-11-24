@@ -24,6 +24,9 @@ type merci je vien jeudi
 # A word selected: the palette of a passage, its other wordings first;
 # ⌃I ↩ ↩ puts the first one in its place, ⌘Z gives the word back.
 key shift-alt-left
+# The editor reports its selection after a moment: ⌃I sent before would
+# open the palette of the whole text (seen in a full run of the suite).
+expect compose_selection = jeudi
 key ctrl-i
 expect picker_first = Other wordings
 expect picker_rows ~ Improve writing

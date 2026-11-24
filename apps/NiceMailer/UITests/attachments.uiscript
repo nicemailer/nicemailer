@@ -4,6 +4,9 @@
 # pasted with ⌘V, a click on a file; kept in the draft (Escape, then `r`),
 # then sent.
 expect folder = Inbox
+# The mail under the cursor open in the reader before `r`: sent sooner,
+# under load, `r` finds no mail to answer.
+expect reader_is_selected = true
 key r
 expect composing = true
 files devis.pdf, notes été.txt
