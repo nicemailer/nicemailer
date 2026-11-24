@@ -1,8 +1,7 @@
 import SwiftUI
 
 /// The Preferences window (the app menu's "Settings…", ⌘,): the accounts
-/// (`docs/accounts.md`, "In the app"), then the appearance, the theme of
-/// the app (`docs/themes.md`). Other settings will join them as tabs.
+/// (`docs/accounts.md`, "In the app"). Other settings will join them here.
 ///
 /// Its controls are the Mac's standard ones in either theme: a window of
 /// settings is not a place for the geek theme's keys.
@@ -13,33 +12,17 @@ struct PreferencesView: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        @Bindable var model = model
-        TabView(selection: $model.preferencesTab) {
-            Group {
-                if let core = model.accountsCore {
-                    // A new connection (the core restarted) makes a new
-                    // pane: the old one would keep calling a closed socket.
-                    AccountsPane(client: core)
-                        .id(ObjectIdentifier(core))
-                } else {
-                    Text(L("Connecting to the core…"))
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
+        Group {
+            if let core = model.accountsCore {
+                // A new connection (the core restarted) makes a new
+                // pane: the old one would keep calling a closed socket.
+                AccountsPane(client: core)
+                    .id(ObjectIdentifier(core))
+            } else {
+                Text(L("Connecting to the core…"))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .tabItem { Label(L("Accounts"), systemImage: "at") }
-            .tag(PreferencesTab.accounts)
-            Group {
-                if let core = model.accountsCore {
-                    AppearancePane(client: core).id(ObjectIdentifier(core))
-                } else {
-                    Text(L("Connecting to the core…"))
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
-            }
-            .tabItem { Label(L("Appearance"), systemImage: "paintpalette") }
-            .tag(PreferencesTab.appearance)
         }
         .frame(width: 720, height: 540)
     }

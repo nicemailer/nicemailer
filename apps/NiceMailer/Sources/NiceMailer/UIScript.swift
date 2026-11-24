@@ -178,15 +178,6 @@ enum UIScript {
         preferencesSetup = setup
     }
 
-    /// The chooser of the Appearance tab, once it appeared.
-    static private(set) weak var preferencesThemes: ThemeChooser?
-
-    /// Called by `AppearancePane` when it has loaded the themes.
-    static func appearanceOpened(_ chooser: ThemeChooser) {
-        guard isActive else { return }
-        preferencesThemes = chooser
-    }
-
     /// The organizing of an account only looked at, once asked for.
     static private(set) weak var preferencesActivation: AccountActivation?
 
@@ -481,15 +472,7 @@ private final class Runner {
             // `preferences` opens them, `preferences close` closes them.
             if arg == "close" {
                 UIScript.closePreferences()
-            } else if arg == "appearance" {
-                // The Appearance tab (`docs/themes.md`).
-                model.preferencesTab = .appearance
-                UIScript.openPreferences()
-                if !(await waitUntil(seconds: 5, { UIScript.preferencesThemes?.loaded == true })) {
-                    fail(lineNumber, line, "the Preferences did not load their themes")
-                }
             } else {
-                model.preferencesTab = .accounts
                 UIScript.openPreferences()
                 if !(await waitUntil(seconds: 5, { UIScript.preferencesList?.loaded == true })) {
                     fail(lineNumber, line, "the Preferences did not load their accounts")
@@ -1412,16 +1395,7 @@ private final class Runner {
 
     /// The Preferences' fields (`UITests/README.md`): empty while closed.
     func preferencesState() -> [String: String] {
-        // The Appearance tab: the themes, `*` before the one chosen, `!`
-        // after one refused.
-        var appearance: [String: String] = [:]
-        if let themes = UIScript.preferencesThemes {
-            appearance["prefs_themes"] = themes.themes
-                .map { ($0.name == themes.selected ? "*" : "") + $0.name + ($0.error == nil ? "" : "!") }
-                .joined(separator: ",")
-            appearance["prefs_theme_error"] = themes.error ?? ""
-        }
-        guard let list = UIScript.preferencesList, let s = UIScript.preferencesSetup else { return appearance }
+        guard let list = UIScript.preferencesList, let s = UIScript.preferencesSetup else { return [:] }
         let names: [AccountSetup.Section: String] = [.imap: "imap", .smtpPassword: "smtp-password", .smtp: "smtp", .server: "server", .importScreen: "import"]
         let act = UIScript.preferencesActivation
         let pw = UIScript.preferencesPassword
@@ -1481,7 +1455,7 @@ private final class Runner {
             "password_error": pw?.error ?? "",
             "password_saved": pw?.saved ?? "",
         ]
-        return accounts.merging(appearance) { a, _ in a }
+        return accounts
     }
 }
 

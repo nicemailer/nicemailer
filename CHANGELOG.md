@@ -49,6 +49,10 @@ How to write it:
 - **Geek:** Dates, counts and the other secondary texts are a little darker in light and lighter in dark, to be read without effort (contrast WCAG AA).
 - **Accounts:** A password saved by one NiceMailer build is now readable by the others. Until now, after installing a release over a development build, or the reverse, the accounts stopped syncing with "the Keychain refused the password of this account". Passwords saved before this version must be saved once more.
 
+### Removed
+
+- **Themes:** The Preferences (Settings…, ⌘,) no longer have an Appearance tab: choose the theme with `v` `t` (Show, theme…) in the main window, or with `ui.theme` in `config.toml`.
+
 ## 0.2.1 — 2026-11-21
 
 ### Added

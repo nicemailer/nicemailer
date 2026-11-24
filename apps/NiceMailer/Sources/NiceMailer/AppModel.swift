@@ -244,8 +244,6 @@ final class AppModel {
     @ObservationIgnored var accountsCoreOverride: (any CoreCalling)?
     /// The core the Preferences talk to.
     var accountsCore: (any CoreCalling)? { accountsCoreOverride ?? core }
-    /// The tab the Preferences show.
-    var preferencesTab: PreferencesTab = .accounts
     /// Goes up each time the core announces that an account changed
     /// (`AccountChanged`, `AccountError`, `ConfigChanged`): the account list
     /// of the Preferences reads it again.
