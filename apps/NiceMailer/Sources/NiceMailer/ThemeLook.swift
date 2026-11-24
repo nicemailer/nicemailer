@@ -204,12 +204,16 @@ enum Look {
 
     /// Room around the subject at the top of the reader in `theme`
     /// (`layout.reader_title_padding`, at the current text size): that
-    /// much above and below it, and as much again beyond the 12 pt of geek
-    /// on its sides. 0 in geek and regular, whose line under the title
-    /// already sets it apart: 12 pt on the sides alone, as always. 12 in
-    /// clean, which draws no line: without room, its big subject
-    /// (`fonts.title_scale`) touches the status bar above and the edge of
-    /// the window on the left.
+    /// much above and below it. 0 in geek and regular, whose line under the
+    /// title already sets it apart. 12 in clean, which draws no line:
+    /// without room, its big subject (`fonts.title_scale`) touches the
+    /// status bar above.
+    ///
+    /// On the sides, only the margin of the reader's column
+    /// (`readerSideMargin`), whatever the padding: the subject starts where
+    /// the text of the mail starts, and the controls end where it ends, in
+    /// every theme (`themes.md`, `reader_title_padding`). A padding added
+    /// on the sides too would push the title inside the column of the text.
     ///
     /// Swift note: `EdgeInsets` holds the four margins of a view; passed to
     /// `.padding(_:)`, each side gets its own.
@@ -242,7 +246,43 @@ enum Look {
 
     static func readerTitleInsets(_ theme: ThemeView) -> EdgeInsets {
         let pad = scaled(CGFloat(theme.layout.readerTitlePadding))
-        return EdgeInsets(top: pad, leading: 12 + pad, bottom: pad, trailing: 12 + pad)
+        return EdgeInsets(top: pad, leading: readerSideMargin, bottom: pad, trailing: readerSideMargin)
+    }
+
+    /// Smallest margin between the edges of the reader and its column (the
+    /// title, the text, the HTML page), in points; not scaled with the
+    /// text, as the window's own edges are not.
+    static let readerSideMargin: CGFloat = 12
+
+    /// Margin on each side of the reader's column in a reader `width`
+    /// points wide, whose column is at most `maxWidth` (`readerMaxWidth`,
+    /// nil: no bound): `readerSideMargin`, or more to center a bounded
+    /// column in a wider reader. The one rule of the title, the text
+    /// reader and the HTML page (`readerColumnCSS`), so that they line up.
+    static func readerColumnSide(width: CGFloat, maxWidth: CGFloat?) -> CGFloat {
+        guard let maxWidth else { return readerSideMargin }
+        return max(readerSideMargin, (width - maxWidth) / 2)
+    }
+
+    /// The CSS of the HTML reader's `body` that gives it the column of
+    /// `readerColumnSide`: `readerSideMargin` of padding on the sides, and,
+    /// with a bound, a body at most that wide plus its padding, centered by
+    /// its automatic side margins. `vertical`: its room above and below.
+    ///
+    /// The page gives its column the same width as the text reader's: a
+    /// mail laid out wider (a newsletter of 600 px in clean's 560) scrolls
+    /// sideways in its frame (`MailFrame`, `overflow-x: auto`) rather than
+    /// widen the column.
+    static func readerColumnCSS(maxWidth: CGFloat?, vertical: Int) -> String {
+        let side = Int(readerSideMargin)
+        guard let maxWidth else {
+            return "body { margin: \(vertical)px 0; padding: 0 \(side)px; }"
+        }
+        // A fractional width, as the text reader's (the bound is scaled
+        // with the text size): rounded, the two would differ by a pixel.
+        let width = String(format: "%.2f", Double(maxWidth) + Double(2 * side))
+        return "body { box-sizing: border-box; max-width: \(width)px; "
+            + "margin: \(vertical)px auto; padding: 0 \(side)px; }"
     }
 }
 

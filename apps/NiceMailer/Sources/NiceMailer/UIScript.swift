@@ -252,6 +252,44 @@ enum UIScript {
     }
 }
 
+extension UIScript {
+    /// The reader's title line, as laid out: from its left edge to the
+    /// subject, and from the controls to its right edge, in points.
+    /// The title line takes the reader's whole width (`ReaderTitleBar`).
+    @MainActor
+    static func readerTitleColumn() -> (left: CGFloat, right: CGFloat)? {
+        guard let bar = frames["reader-title"], let subject = frames["reader-subject"],
+              let controls = frames["reader-title-controls"] else { return nil }
+        return (subject.minX - bar.minX, bar.maxX - controls.maxX)
+    }
+
+    /// The column of the mail's text, as laid out, from the edges of the
+    /// reader's title line (the reader's width): the text view's inset in
+    /// text, the page's body in HTML (measured by WebKit, `column` of
+    /// `UIScript.html`).
+    @MainActor
+    static func readerColumn(_ controller: InterfaceController) -> (left: CGFloat, right: CGFloat)? {
+        guard let bar = frames["reader-title"] else { return nil }
+        if controller.model.bodyFormat == "text" {
+            guard let scroll = controller.readerScroll, scroll.window != nil,
+                  let text = scroll.documentView as? NSTextView else { return nil }
+            // Window coordinates, as the frames of the UI targets (same x).
+            let frame = scroll.convert(scroll.bounds, to: nil)
+            let inset = text.textContainerInset.width + (text.textContainer?.lineFragmentPadding ?? 0)
+            let left = frame.minX + inset
+            let right = frame.minX + scroll.contentSize.width - inset
+            return (left - bar.minX, bar.maxX - right)
+        }
+        guard let web = controller.readerWeb, web.window != nil, let column = html["column"] else { return nil }
+        let parts = column.split(separator: ",").compactMap { Double($0) }
+        guard parts.count == 2 else { return nil }
+        let frame = web.convert(web.bounds, to: nil)
+        let left = frame.minX + parts[0]
+        let right = frame.maxX - parts[1]
+        return (left - bar.minX, bar.maxX - right)
+    }
+}
+
 extension View {
     /// Makes the view clickable by the UI script under `id`. Does nothing
     /// outside UI script mode, so normal use pays no cost.
@@ -978,6 +1016,21 @@ private final class Runner {
                 guard let bar = UIScript.frames["reader-title"],
                       let subject = UIScript.frames["reader-subject"] else { return "" }
                 return "\(Int((subject.minX - bar.minX).rounded())),\(Int((bar.maxY - subject.maxY).rounded()))"
+            }(),
+            // The column of the reader, as laid out, in points from the
+            // reader's edges: `left,right`. `reader_title_column`: from the
+            // left edge to the subject, and from the controls to the right
+            // edge; `reader_column`: the same for the text of the mail, in
+            // the text reader or the HTML page; `reader_alignment`: the
+            // title's minus the text's, `0,0` when they line up
+            // (`Look.readerColumnSide`).
+            "reader_title_column": UIScript.readerTitleColumn().map { "\(Int($0.left.rounded())),\(Int($0.right.rounded()))" } ?? "",
+            "reader_column": UIScript.readerColumn(controller).map { "\(Int($0.left.rounded())),\(Int($0.right.rounded()))" } ?? "",
+            "reader_alignment": {
+                guard let t = UIScript.readerTitleColumn(), let b = UIScript.readerColumn(controller) else { return "" }
+                // Rounded once, on the difference: SwiftUI and AppKit place
+                // the two at a few tenths of a point from each other.
+                return "\(Int((t.left - b.left).rounded())),\(Int((t.right - b.right).rounded()))"
             }(),
             // On two lines, the gap between the bottom of the subject and
             // the top of the line of the controls, in points, as laid out

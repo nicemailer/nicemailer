@@ -10,10 +10,13 @@ expect row_height = 30
 # (themes.uiscript has the same, large).
 expect status_help_height = 22
 appearance light
-# The subject of the open mail with room around it: clean draws no line
-# under it, so its margins keep it off the bar and the window's edge
-# (layout.reader_title_padding = 12).
-expect title_inset = 24,12
+# The subject of the open mail with room above and below it: clean draws
+# no line under it, so its padding keeps it off the bar
+# (layout.reader_title_padding = 12). On the sides, the column of the text
+# (layout.reader_max_width = 560): the subject starts where the text
+# starts, the controls end where it ends.
+expect title_inset ~ ,12
+expect reader_alignment = 0,0
 snap clean-list
 # A tag after the subject, a narrow window and a bigger text: the tag and
 # the controls go under the subject, the two lines apart by half the padding (6 pt for a 12 pt text, more
@@ -94,6 +97,8 @@ expect body_format = html
 # Its three files a row each, with the icon of macOS for their type and
 # their whole name (layout.attachments = "rows"), in HTML as in text.
 expect attachment_layout = rows
+# The page in the same column as the title, as the text reader.
+expect reader_alignment = 0,0
 snap clean-attachments-html
 click format:text
 expect body_format = text

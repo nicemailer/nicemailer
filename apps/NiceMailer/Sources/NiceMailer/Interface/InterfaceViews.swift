@@ -1434,6 +1434,15 @@ struct ReaderTitleBar<Controls: View>: View {
     var alwaysTwoLines = false
     /// Shown, muted, in place of an empty subject on two lines.
     var placeholder: String? = nil
+    /// The widest column of the reader (`Look.readerMaxWidth`), nil: the
+    /// whole width. The title is centered in the same column as the text
+    /// under it: the subject starts where the text starts, the controls
+    /// end where it ends.
+    var maxWidth: CGFloat? = nil
+    /// Room the reader's scroll bar takes on the right of the text
+    /// (`InterfaceController.readerScrollerWidth`): the title is centered
+    /// in what is left, as the text is.
+    var scrollerWidth: CGFloat = 0
     @ViewBuilder let controls: () -> Controls
 
     var body: some View {
@@ -1454,10 +1463,21 @@ struct ReaderTitleBar<Controls: View>: View {
                 subjectAndControls
             }
         }
-        // 12 pt on the sides in geek; room on every side in clean, whose
-        // title has no line to set it apart (`layout.reader_title_padding`,
-        // `Look.readerTitleInsets`).
+        // Room above and below in clean, whose title has no line to set it
+        // apart (`layout.reader_title_padding`, `Look.readerTitleInsets`);
+        // on the sides, the margin of the reader's column alone.
         .padding(Look.readerTitleInsets)
+        // The column of the text (`Look.readerColumnSide`): at most
+        // `maxWidth` plus its margins, centered in the reader. Swift note:
+        // the first `.frame(maxWidth:)` caps the width, the second gives
+        // the reader's whole width back, where the capped view is
+        // centered; together, a margin of
+        // `max(12, (width - maxWidth) / 2)`, the text reader's.
+        .frame(maxWidth: maxWidth.map { $0 + 2 * Look.readerSideMargin } ?? .infinity)
+        .frame(maxWidth: .infinity)
+        // A classic scroll bar narrows the text's side of the reader: the
+        // title leaves the same room, outside its column.
+        .padding(.trailing, scrollerWidth)
         .uiTarget("reader-title")
     }
 
@@ -1468,7 +1488,10 @@ struct ReaderTitleBar<Controls: View>: View {
                 subjectText
                 labels
                 Spacer(minLength: scaled(16))
-                controls()
+                // In a stack of their own, so that the UI scripts find
+                // their right edge (`reader_alignment`).
+                HStack(spacing: scaled(8)) { controls() }
+                    .uiTarget("reader-title-controls")
             }
             // At least 26 pt; more when the theme's subject is taller
             // (`fonts.title_scale`), rather than clip it.
@@ -1567,7 +1590,8 @@ private struct ReaderColumn: View {
                 // The subject, then the controls of the mail; on two lines
                 // when the subject would not fit whole beside them
                 // (`ReaderTitleBar`).
-                ReaderTitleBar(subject: thread.subject, tags: thread.labels.tags, groups: thread.labels.groups) {
+                ReaderTitleBar(subject: thread.subject, tags: thread.labels.tags, groups: thread.labels.groups,
+                               maxWidth: Look.readerMaxWidth, scrollerWidth: controller.readerScrollerWidth) {
                     titleControls(state)
                 }
                 Look.separator.frame(height: 1)
@@ -1710,7 +1734,11 @@ private struct ReaderColumn: View {
            its own styles (`MailFrame`). */
         body { font-family: \(Fonts.css(ThemeStore.active.fonts.reading)); }
         summary { font-family: \(Fonts.css(ThemeStore.active.fonts.interface)); }
-        body { margin: 16px; font-size: \(Int(scaled(14) * CGFloat(ThemeStore.active.fonts.readingScale)))px; }
+        /* The column of the reader, as in the text reader and under the
+           title: 12 px on the sides, at most `layout.reader_max_width`,
+           centered (`Look.readerColumnCSS`). */
+        \(Look.readerColumnCSS(maxWidth: Look.readerMaxWidth, vertical: 16))
+        body { font-size: \(Int(scaled(14) * CGFloat(ThemeStore.active.fonts.readingScale)))px; }
         summary { font-size: \(Int(scaled(12)))px; color: #888; cursor: pointer; list-style: none; margin: 4px 0; }
         summary::-webkit-details-marker { display: none; }
         details[open] summary { margin-bottom: 12px; }
@@ -1895,7 +1923,11 @@ private struct TextReader: NSViewRepresentable {
         if let text = scroll.documentView as? NSTextView {
             text.isEditable = false
             text.drawsBackground = false
-            text.textContainerInset = NSSize(width: 12, height: 12)
+            text.textContainerInset = NSSize(width: Look.readerSideMargin, height: 12)
+            // No extra room inside the container (AppKit's default is 5 pt
+            // on each side): the text starts at the inset, where the
+            // subject of the title starts (`Look.readerColumnSide`).
+            text.textContainer?.lineFragmentPadding = 0
             text.delegate = context.coordinator
             // Links keep the colors given below: no blue, no underline.
             text.linkTextAttributes = [.cursor: NSCursor.pointingHand]
@@ -1927,8 +1959,17 @@ private struct TextReader: NSViewRepresentable {
         // not known in advance (the width of one, in a font of fixed pitch).
         let charWidth = Double(TextMeasure.interface(12 * TextSize.shared.scale).average)
         // The text keeps a margin of 12 pt, or, when the theme bounds its
-        // width (`layout.reader_max_width`), is centered in that width.
-        let side = Look.readerMaxWidth.map { max(12, (scroll.contentSize.width - $0) / 2) } ?? 12
+        // width (`layout.reader_max_width`), is centered in that width: the
+        // rule of the title above it and of the HTML page.
+        let side = Look.readerColumnSide(width: scroll.contentSize.width, maxWidth: Look.readerMaxWidth)
+        // The room a classic scroll bar takes (the content is narrower than
+        // the view), for the title line above (`ReaderTitleBar`). Set
+        // after this update: SwiftUI forbids changing observed state while
+        // it updates a view.
+        let scroller = max(0, scroll.frame.width - scroll.contentSize.width)
+        if controller.readerScrollerWidth != scroller {
+            DispatchQueue.main.async { [controller] in controller.readerScrollerWidth = scroller }
+        }
         if text.textContainerInset.width != side { text.textContainerInset = NSSize(width: side, height: 12) }
         let width = Double(scroll.contentSize.width - 2 * side)
         let columns = AttachmentDisplay.columns(width: width, charWidth: charWidth)
@@ -2305,6 +2346,14 @@ private struct HTMLReader: NSViewRepresentable {
                     controller?.scrollToMessage(message)
                 }
             }
+            // The room a classic scroll bar takes from the page, for the
+            // title line above (`InterfaceController.readerScrollerWidth`).
+            webView.evaluateJavaScript("window.innerWidth - document.documentElement.clientWidth") { [weak self] result, _ in
+                let width = CGFloat((result as? Double) ?? 0)
+                MainActor.assumeIsolated {
+                    if let c = self?.controller, c.readerScrollerWidth != width { c.readerScrollerWidth = width }
+                }
+            }
             guard UIScript.isActive else { return }
             // The messages are in shadow roots (`MailFrame`): each query
             // looks in the page and in every frame.
@@ -2323,6 +2372,15 @@ private struct HTMLReader: NSViewRepresentable {
                 tableWidth: (t => t ? t.offsetWidth : '')(first('table[width]')),
                 csp: !!document.querySelector('meta[http-equiv="Content-Security-Policy"]'),
                 frames: frames.length,
+                // The column of the page: from the left edge of the view to
+                // the text, and from the text to the right edge, scroll bar
+                // left out (reader_alignment).
+                column: (() => {
+                    const b = document.body, r = b.getBoundingClientRect(), cs = getComputedStyle(b);
+                    const left = r.left + parseFloat(cs.paddingLeft);
+                    const right = document.documentElement.clientWidth - (r.right - parseFloat(cs.paddingRight));
+                    return left + "," + right;
+                })(),
                 paper: document.querySelectorAll('.nm-msg.paper').length,
                 styledWidth: (e => e ? e.offsetWidth : '')(first('.probe-width')),
                 styledBackground: (e => e ? getComputedStyle(e).backgroundColor : '')(first('.probe-background')),

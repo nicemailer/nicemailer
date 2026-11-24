@@ -137,9 +137,9 @@ pub const KEYS: &[Key] = &[
     k("layout", "attachments", Kind::Choice(&["tiles", "rows"]),
       "attachments of a message: tiles with a symbol, or a row each with the icon of macOS and the whole name"),
     k("layout", "reader_max_width", Kind::IntOrZero(320, 1200),
-      "widest text of the reader, centered; 0: the whole width"),
+      "widest column of the reader, centered, in text and in HTML; the title lines up with it; 0: the whole width"),
     k("layout", "reader_title_padding", Kind::Int(0, 32),
-      "room above and below the subject of the reader, also added to the 12 pt on its sides; half of it between the two lines of a long title"),
+      "room above and below the subject of the reader, never on its sides (it stays lined up with the text); half of it between the two lines of a long title"),
     k("layout", "scrollers", Kind::Choice(&["none", "thin", "standard"]), "scroll bars"),
     k("layout", "separators", Kind::Choice(&["lines", "space"]), "areas set apart by lines, or mostly by white space"),
     // [motion]: milliseconds, 0 when System Settings reduce motion (6.4).

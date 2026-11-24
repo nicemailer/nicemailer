@@ -123,8 +123,8 @@ Longueurs en points pour un texte de 12 pt (section 5.3).
 | `message_cards` | booléen | `false` | `false` | `true` | Chaque message de la conversation dans un cadre arrondi |
 | `avatars` | booléen | `false` | `false` | `true` | Initiales de l'expéditeur devant chaque message (rien n'est chargé) |
 | `attachments` | `tiles`, `rows` | `tiles` | `rows` | `rows` | Pièces jointes d'un message : `tiles`, des pavés de 3 à 5 par ligne, une icône symbolique dans les couleurs du thème, le nom coupé au milieu et la taille ; `rows`, une ligne par fichier, l'icône de macOS pour son type (celle du Finder), le nom complet, jamais coupé (il passe à la ligne s'il le faut), puis la taille. Même rôle dans les deux : un clic enregistre, ⌘-clic enregistre et ouvre (ajouté en novembre 2026) |
-| `reader_max_width` | 0, ou 320 à 1200 | 0 | 560 | 0 | Largeur maximale du texte du lecteur, centré ; 0 : toute la largeur |
-| `reader_title_padding` | 0 à 32 | 0 | 12 | 0 | Marge au-dessus et au-dessous du sujet du lecteur, ajoutée aussi aux 12 pt de ses côtés ; sa moitié sépare les deux lignes du titre quand il en prend deux ; 0 : aucune (la ligne sous le titre le sépare déjà) |
+| `reader_max_width` | 0, ou 320 à 1200 | 0 | 560 | 0 | Largeur maximale de la colonne du lecteur, centrée, en texte comme en HTML ; le titre (sujet et contrôles) est dans la même colonne : le sujet commence où commence le texte, les contrôles finissent où il finit. Un mail HTML plus large que la colonne défile horizontalement dans son cadre ; 0 : toute la largeur, moins 12 pt de chaque côté |
+| `reader_title_padding` | 0 à 32 | 0 | 12 | 0 | Marge au-dessus et au-dessous du sujet du lecteur, jamais sur ses côtés : le titre reste aligné sur la colonne du texte (`reader_max_width`) ; sa moitié sépare les deux lignes du titre quand il en prend deux ; 0 : aucune (la ligne sous le titre le sépare déjà) |
 | `scrollers` | `none`, `thin`, `standard` | `none` | `thin` | `standard` | Ascenseurs |
 | `separators` | `lines`, `space` | `lines` | `space` | `lines` | Zones séparées par des traits, ou surtout par du blanc |
 

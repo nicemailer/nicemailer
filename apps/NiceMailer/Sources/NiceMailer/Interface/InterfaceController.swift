@@ -365,6 +365,13 @@ final class InterfaceController {
 
     /// The reading pane's scroll view, to scroll it from the keyboard.
     weak var readerScroll: NSScrollView?
+    /// Width the reader's vertical scroll bar takes from its text, in
+    /// points: 0 with overlay scroll bars (a trackpad), about 11 to 15 with
+    /// the classic ones (a mouse, or "Always" in the System Settings) once
+    /// the mail is longer than the reader. Reported by the text reader and
+    /// the HTML page; the title line leaves the same room on its right,
+    /// so that it stays in the column of the text (`ReaderTitleBar`).
+    var readerScrollerWidth: CGFloat = 0
     /// The HTML reader (`vh`), scrolled the same way. It draws in another
     /// process: its scroll position is not an AppKit scroll view but the
     /// page's own, moved with a line of JavaScript.

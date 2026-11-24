@@ -1,0 +1,9 @@
+# A theme like clean with much room above and below the title and a narrow
+# column (reader-column.uiscript): the subject must start where the text
+# starts, and the controls end where it ends, whatever the padding.
+version = 1
+extends = "clean"
+
+[layout]
+reader_title_padding = 28
+reader_max_width = 560
