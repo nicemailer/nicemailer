@@ -20,8 +20,8 @@ Ce document spécifie comment un thème de l'app Swift est entièrement décrit 
 ## 3. Emplacement, création, lecture
 
 - Les thèmes sont dans **`themes/`, dans le dossier de `config.toml`** (`~/.config/nicemailer/themes/`, ou à côté du fichier désigné par `NICEMAILER_CONFIG`). Un thème est un fichier `<nom>.toml` ; son nom est celui du fichier, en minuscules, chiffres et tirets (`mon-theme`). Un fichier dont le nom ne suit pas cette règle est ignoré avec un avertissement.
-- **Thèmes livrés.** `geek`, `clean` et `regular` sont embarqués dans le noyau : ils existent même sans fichier.
-- **Création au démarrage.** Le dossier et les trois fichiers `geek.toml`, `clean.toml`, `regular.toml` sont créés s'ils manquent, selon les règles de `configuration.md`, section 3 : les en-têtes de tables ne sont pas commentés, chaque clé est écrite commentée avec sa valeur et son rôle (`# unread = "system.accent"   # point des mails non lus`). Il suffit d'enlever le `# `. Un fichier existant n'est jamais modifié. Le fichier créé ne change donc rien : il montre ce qu'on peut changer, et une valeur que l'utilisateur a décommentée reste la sienne quand une version suivante change la valeur livrée.
+- **Thèmes livrés.** `geek`, `clean`, `regular` et `minimal` (ajouté en novembre 2026, section 6.7) sont embarqués dans le noyau : ils existent même sans fichier.
+- **Création au démarrage.** Le dossier et les quatre fichiers `geek.toml`, `clean.toml`, `regular.toml`, `minimal.toml` sont créés s'ils manquent, selon les règles de `configuration.md`, section 3 : les en-têtes de tables ne sont pas commentés, chaque clé est écrite commentée avec sa valeur et son rôle (`# unread = "system.accent"   # point des mails non lus`). Il suffit d'enlever le `# `. Un fichier existant n'est jamais modifié. Le fichier créé ne change donc rien : il montre ce qu'on peut changer, et une valeur que l'utilisateur a décommentée reste la sienne quand une version suivante change la valeur livrée.
 - **Lecture** : au démarrage, puis à chaque changement du dossier (FSEvents), sans redémarrage. Les événements d'un enregistrement sont groupés comme pour `config.toml`.
 - **Indépendant des autres fichiers.** Un thème invalide ne fait refuser ni `config.toml`, ni `accounts.toml`, ni `keymap.toml`, ni les autres thèmes. Une faute de couleur ne doit pas désactiver les comptes.
 - **Fichier invalide : refusé en entier.** Le noyau garde la version précédente de ce thème. Au démarrage, sans version précédente : un thème livré modifié par le fichier reste le thème livré ; un thème de l'utilisateur, dont on ne sait plus ce qu'il étend, laisse la place à geek, avec un avertissement et émet `ConfigError {file: "themes/clean.toml", line, key, message}`. L'app l'affiche en rouge dans la barre de statut (ou le sous-titre de la barre d'outils), avec la ligne, jusqu'à ce que le fichier soit corrigé. Sont invalides :
@@ -73,7 +73,7 @@ La taille du texte vient de `config.toml`. Le thème donne :
 
 ## 6. Catalogue
 
-Chaque clé a son type, ses bornes ou ses choix, et sa valeur dans les trois thèmes livrés. Les valeurs ci-dessous sont celles des maquettes validées en novembre 2026 ; les fichiers embarqués font foi, et un test vérifie qu'ils reprennent cette section.
+Chaque clé a son type, ses bornes ou ses choix, et sa valeur dans les thèmes livrés geek, clean et regular ; minimal reprend celles de clean, sauf les clés de la section 6.7. Les valeurs ci-dessous sont celles des maquettes validées en novembre 2026 ; les fichiers embarqués font foi, et un test vérifie qu'ils reprennent cette section.
 
 ### 6.1 `[window]` : la fenêtre et sa commande
 
@@ -177,12 +177,31 @@ Longueurs en points pour un texte de 12 pt (section 5.3).
 - **`images` n'est pas un choix du thème** : charger les images distantes est une décision de confiance envers un expéditeur, pas une présentation (`ui.md`, « Images distantes »). Un thème en `html` ne charge rien sur le réseau.
 - Ajouté en novembre 2026. Avant, le texte était le défaut de tous les thèmes ; clean et regular, en police proportionnelle, lisent mieux le HTML d'un mail que son texte coupé à 72 colonnes.
 
+### 6.7 Thème minimal
+
+Ajouté en novembre 2026, à partir du thème personnel de l'auteur, qui étendait clean. minimal est clean sans rien qui bouge ni qui attende, dans la police de geek. Il donne toutes les valeurs de clean, sauf celles-ci :
+
+| Clé | clean | minimal | Pourquoi |
+| --- | --- | --- | --- |
+| `window.bar_size` | `medium` | `small` | Une barre de statut plus discrète |
+| `window.bar_height` | 40 | 30 | Sa hauteur suit |
+| `window.key_hints` | `false` | `true` | Les blocs rappellent leur touche, comme dans geek |
+| `fonts.interface` | `system` | `iA Writer Mono V` | La police de geek, livrée avec l'app |
+| `fonts.reading` | `system` | `iA Writer Mono V` | Idem pour les mails |
+| `layout.reader_max_width` | 560 | 760 | Une colonne de texte plus large, pour une police à chasse fixe |
+| `layout.reader_title_padding` | 12 | 26 | Le sujet plus éloigné de la barre |
+| `motion.sidebar_ms` | 120 | 0 | Aucune animation : la colonne des dossiers apparaît aussitôt |
+| `motion.popup_ms` | 80 | 0 | Les menus aussi |
+| `reader.body_format` | `html` | `text` | Les mails en texte tant que rien n'est choisi pour l'expéditeur, comme dans geek |
+
+Le reste est celui de clean : les couleurs, la liste sur trois lignes, les lignes et les menus arrondis, les boutons rouge, jaune et vert dans la barre (`title_bar = "merged"`). Un test du noyau vérifie que minimal ne diffère de clean que par ces clés.
+
 ## 7. Ce que fait l'app
 
 - Elle demande le thème choisi au noyau (`theme_get`) et le redemande à chaque `ThemeChanged` ; la fenêtre est redessinée aussitôt, sans relancer et sans perdre la sélection, la lecture ou la réponse en cours.
 - Elle traduit les couleurs du système (`system.accent` → `NSColor.controlAccentColor`…), qui suivent ensuite seules l'apparence et les Réglages Système.
 - Elle vérifie que chaque police est installée ou livrée. Une police absente est remplacée (section 5.2) et la barre de statut le dit une fois : « Font "Iosevka" not installed: using the system font ».
-- Elle embarque les trois thèmes livrés résolus (un JSON produit par le noyau), qui servent de repli tant que le noyau n'a pas répondu et à `FakeCore` dans les tests. Un test du noyau vérifie que ce JSON est à jour.
+- Elle embarque les quatre thèmes livrés résolus (un JSON produit par le noyau), qui servent de repli tant que le noyau n'a pas répondu et à `FakeCore` dans les tests. Un test du noyau vérifie que ce JSON est à jour.
 - Les mesures de la liste (largeur de la date, de l'expéditeur, du nombre de messages) sont faites sur le texte réel dans la police du thème, et non plus en nombre de caractères : n'importe quelle police peut arriver.
 
 ## 8. Contrat et CLI
@@ -241,8 +260,8 @@ theme = "sepia"
 - **Lecture** : chaque forme de couleur, de police et de proportion ; chaque cas de refus de la section 3 avec sa ligne et sa clé ; clé inconnue en avertissement ; fichier trop grand.
 - **Héritage** : un fichier qui modifie un thème livré ; un thème qui étend un thème du dossier qui étend un thème livré ; `extends` absent ; parent inconnu, cycle, plus de 8 niveaux ; parent refusé (sa dernière version valide sert) ; `blocks` remplacé en entier.
 - **Fichiers** : créés commentés au démarrage ; ils donnent exactement les thèmes livrés ; décommenter n'importe quelle ligne donne un fichier valide ; rechargés à chaud ; un thème refusé laisse `config.toml`, `keymap.toml` et les autres thèmes appliqués.
-- **Cohérence** : chaque clé du catalogue Rust a son traitement dans l'app et inversement ; les fichiers embarqués reprennent la section 6 ; le JSON embarqué par l'app est à jour ; les thèmes livrés n'ont aucun avertissement de contraste.
+- **Cohérence** : chaque clé du catalogue Rust a son traitement dans l'app et inversement ; les fichiers embarqués reprennent la section 6 ; le JSON embarqué par l'app est à jour ; les thèmes livrés n'ont aucun avertissement de contraste. minimal ne diffère de clean que par les clés de la section 6.7.
 - **`config_set_theme`** : il change `ui.theme` et rien d'autre dans le fichier, commentaires compris ; un nom inconnu est refusé.
-- **`reader.body_format`** : un expéditeur sans choix s'affiche selon le thème (texte en geek, HTML en clean et regular) ; un choix mémorisé l'emporte dans tous les thèmes ; un mail sans HTML reste en texte ; changer de thème change l'affichage de la conversation ouverte sans la recharger.
+- **`reader.body_format`** : un expéditeur sans choix s'affiche selon le thème (texte en geek et minimal, HTML en clean et regular) ; un choix mémorisé l'emporte dans tous les thèmes ; un mail sans HTML reste en texte ; changer de thème change l'affichage de la conversation ouverte sans la recharger.
 - **App, tests unitaires** : traduction des couleurs du système ; police absente remplacée et signalée ; mesures de la liste dans une police à chasse fixe (identiques aux largeurs d'aujourd'hui) et proportionnelle ; durées à 0 quand les animations sont réduites ; changement de thème à chaud sur `FakeCore` sans perte de la sélection.
 - **App, scénarios UI** : les scénarios existants jouent geek, sans changement ; geek doit rester identique au pixel près après le passage aux fichiers (comparaison des captures avant et après). Un scénario par thème livré (disposition, commande de la fenêtre, menu déroulé depuis son bloc ou son bouton, liste, lecteur, en clair et en sombre). Un scénario par variante du catalogue (6.1, 6.3), sur un thème de test qui l'active. Un scénario qui change de thème sans relancer, un autre avec un thème refusé (erreur affichée, thème précédent gardé). Les fixtures des scénarios gagnent un dossier `fixtures/<scénario>.themes/`, copié dans `themes/` de leur noyau.

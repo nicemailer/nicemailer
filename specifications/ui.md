@@ -1,4 +1,4 @@
-Il y a trois thèmes pour l'application Swift NiceMailer : regular, clean et geek. Renommés en novembre 2026 : regular s'appelait classic, clean s'appelait design.
+Il y a quatre thèmes pour l'application Swift NiceMailer : regular, clean, geek et minimal. Renommés en novembre 2026 : regular s'appelait classic, clean s'appelait design. minimal, ajouté en novembre 2026, est clean dans la police de geek, sans animation et avec le rappel des touches (`themes.md`, section 6.7).
 
 Le thème regular s'approche des canons historiques d'une application macOS et est destiné à faciliter la transition depuis une application telle qu'Apple Mail.
 

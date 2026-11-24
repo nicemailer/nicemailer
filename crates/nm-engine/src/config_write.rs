@@ -308,7 +308,7 @@ pub fn create_missing(config_path: &Path) -> Result<Vec<PathBuf>, String> {
             created.push(path);
         }
     }
-    // The directory of the themes and the files of the three built-in
+    // The directory of the themes and the files of the four built-in
     // ones, every key commented out (`themes.md`, section 3): they change
     // nothing, and show what can be changed. A file deleted later stays
     // deleted until the next start, and the built-in theme stays.
@@ -548,6 +548,7 @@ port = 993\nsecurity = \"tls\"\n";
                 themes.join("geek.toml"),
                 themes.join("clean.toml"),
                 themes.join("regular.toml"),
+                themes.join("minimal.toml"),
             ]
         );
         assert_eq!(std::fs::read_to_string(&path).unwrap(), config::config_template());
@@ -555,9 +556,9 @@ port = 993\nsecurity = \"tls\"\n";
         assert_eq!(std::fs::read_to_string(&created[2]).unwrap(), crate::keymap::template());
         assert_eq!(std::fs::read_to_string(&created[4]).unwrap(), crate::theme::template("clean").unwrap());
         // No temporary file is left: three files and the directory of the
-        // themes, which holds the three themes.
+        // themes, which holds the four themes.
         assert_eq!(std::fs::read_dir(path.parent().unwrap()).unwrap().count(), 4);
-        assert_eq!(std::fs::read_dir(&themes).unwrap().count(), 3);
+        assert_eq!(std::fs::read_dir(&themes).unwrap().count(), 4);
         // The created files give the defaults and no account.
         let parsed = config::parse(&config::config_template(), &config::accounts_template()).unwrap();
         assert_eq!(parsed.config, config::Config::default());
@@ -586,7 +587,7 @@ port = 993\nsecurity = \"tls\"\n";
         std::fs::write(dir.path().join("accounts.toml"), "not toml [").unwrap();
         std::fs::write(dir.path().join("keymap.toml"), "").unwrap();
         std::fs::create_dir(dir.path().join("themes")).unwrap();
-        for name in ["geek", "clean", "regular"] {
+        for name in ["geek", "clean", "regular", "minimal"] {
             std::fs::write(dir.path().join(format!("themes/{name}.toml")), "").unwrap();
         }
         assert!(create_missing(&path).unwrap().is_empty());
@@ -607,7 +608,7 @@ port = 993\nsecurity = \"tls\"\n";
         std::os::unix::fs::symlink(dir.path().join("dotfiles/config.toml"), &path).unwrap();
         let created = create_missing(&path).unwrap();
         assert_eq!(created[..2], [dir.path().join("accounts.toml"), dir.path().join("keymap.toml")]);
-        assert_eq!(created.len(), 5, "and the three themes: {created:?}");
+        assert_eq!(created.len(), 6, "and the four themes: {created:?}");
         assert!(std::fs::symlink_metadata(&path).unwrap().file_type().is_symlink());
         assert!(!dir.path().join("dotfiles").exists());
     }

@@ -15,6 +15,7 @@ How to write it:
 ### Added
 
 - **Themes:** Choose the look of the app in the Preferences (Settings…, Appearance): geek (the default), clean, sober and airy, in SF Pro, regular, a Mac window with a toolbar, as in Mail, or a theme of your own. Each is a file of `~/.config/nicemailer/themes/` you can modify, and `nicemailer theme new` starts one of yours (docs/themes.md).
+- **Themes:** A fourth built-in theme, minimal: clean in iA Writer Mono V, with a smaller status bar that reminds the keys, a wider column of text, no animation, and mails shown as text. Choose it in the Preferences (Appearance) or with `v` `t`.
 - **Themes:** Choose a theme from the keyboard: `v` `t` (Show, theme…) lists the themes, and Return applies the one chosen.
 - **Themes:** clean and regular show mail in HTML, geek in text, for every sender whose display you have not chosen; `vh` still chooses for a sender, in every theme (`reader.body_format` of a theme).
 - **Themes:** In clean and regular, the attachments of a mail are listed one per line, with the icon macOS gives their type and their whole name; geek keeps its tiles (`attachments` in the `[layout]` table of a theme).

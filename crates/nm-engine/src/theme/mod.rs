@@ -4,10 +4,10 @@
 //! A theme sets the presentation of the app (colors, fonts, proportions,
 //! animations) and chooses among the variants the app can draw (status
 //! bar or toolbar, blocks shown…); the keys it can set are those of
-//! [`catalog::KEYS`]. Three themes are built in, embedded in the binary
-//! (`geek.toml`, `clean.toml`, `regular.toml` next to this source); a file
-//! of the same name modifies one of them, any other file is a theme of the
-//! user that extends another one:
+//! [`catalog::KEYS`]. Four themes are built in, embedded in the binary
+//! (`geek.toml`, `clean.toml`, `regular.toml`, `minimal.toml` next to this
+//! source); a file of the same name modifies one of them, any other file
+//! is a theme of the user that extends another one:
 //!
 //! ```toml
 //! version = 1
@@ -69,6 +69,7 @@ const BUILTIN_TEXTS: &[(&str, &str)] = &[
     ("geek", include_str!("geek.toml")),
     ("clean", include_str!("clean.toml")),
     ("regular", include_str!("regular.toml")),
+    ("minimal", include_str!("minimal.toml")),
 ];
 
 /// Path of the directory of the themes: next to `config_path`, whatever its
@@ -581,7 +582,7 @@ pub fn view(resolved: &Resolved, dir: &Path, error: Option<&Problem>, warnings: 
     }
 }
 
-/// The three built-in themes resolved, as the app embeds them (a JSON
+/// The four built-in themes resolved, as the app embeds them (a JSON
 /// object by name): its fallback until the core answers, and the themes of
 /// `FakeCore` in the tests (`themes.md`, section 7).
 pub fn builtins_json() -> String {
