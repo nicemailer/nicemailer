@@ -12,6 +12,14 @@ expect folder_inbox_layout = 18,18,14
 appearance light
 # A line under the subject: room on its sides alone.
 expect title_inset ~ 12,
+# A flag on the selected row: inside its fill of the accent, not over its
+# right edge (layout.row_inset = 8).
+key *
+expect selected_flagged = true
+expect selected_flag_inside > 3
+snap regular-list-flagged
+key *
+expect selected_flagged = false
 snap regular-list
 # The keys work as in every theme.
 key j

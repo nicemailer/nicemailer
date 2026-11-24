@@ -1175,12 +1175,22 @@ struct RowLayout: Equatable {
     /// Paperclip and flag: one icon each, a character and a half.
     var icon: CGFloat { (char * 1.5).rounded(.up) }
 
+    /// Room after the last column (the flag), in points: 6, plus the inset
+    /// of the row's fill (`layout.row_inset`, `rowFill`), so that the flag
+    /// of the selected row stays inside its rounded fill (8 pt in clean and
+    /// regular, none in geek) instead of running over its right edge.
+    static var trailingPadding: CGFloat { trailingPadding(Look.theme) }
+
+    static func trailingPadding(_ theme: ThemeView) -> CGFloat {
+        6 + scaled(CGFloat(theme.layout.rowInset))
+    }
+
     /// Width left to the subject (and tags) in a row with a folder column
     /// of `folderWidth`: the list minus the fixed columns (mark bar, unread
     /// dot, date, sender, paperclip, folder, count, flag), the 8 gaps
     /// between the 9 columns and the trailing padding.
     func subjectWidth(folderWidth: CGFloat) -> CGFloat {
-        width - 2 - dot - date - sender - icon - folderWidth - count - icon - 8 * char - 6
+        width - 2 - dot - date - sender - icon - folderWidth - count - icon - 8 * char - Self.trailingPadding
     }
 
     /// The account fits after the folder ("Inbox · perso") only if the
@@ -1392,6 +1402,7 @@ private struct ThreadRow: View {
                         .font(.system(size: scaled(11), weight: .semibold))
                         .foregroundStyle(Look.ink(Palette.flag, selected: on))
                         .accessibilityLabel(L("flagged"))
+                        .uiTarget("flag-\(thread.id)")
                 } else {
                     Color.clear
                 }
@@ -1400,7 +1411,8 @@ private struct ThreadRow: View {
         }
         .font(.interface(RowLayout.fontSize, weight: .regular))
         .lineLimit(1)
-        .padding(.trailing, 6)
+        // Inside the fill of the selected row (`RowLayout.trailingPadding`).
+        .padding(.trailing, RowLayout.trailingPadding)
         .frame(height: Look.rowHeight)
         .rowFill(cursor ? Palette.cursor : marked ? Palette.marked : nil, index: index)
     }

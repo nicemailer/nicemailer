@@ -1199,6 +1199,18 @@ private final class Runner {
             "row_height": "\(Int((UIScript.frames["thread-\(m.selectedThreadId ?? -1)"]?.height ?? 0).rounded()))",
             // Width of the selected row, as laid out: the width the list
             // is given, which a panel opened over it must not change.
+            // Room between the flag of the selected row and the right
+            // edge of its fill (`layout.row_inset`), in points, as laid
+            // out; negative when the flag runs over it; empty when the
+            // row has no flag.
+            "selected_flag_inside": {
+                let id = m.selectedThreadId ?? -1
+                // A flag removed leaves its last frame behind.
+                guard m.threads.first(where: { $0.id == id })?.isFlagged == true,
+                      let row = UIScript.frames["thread-\(id)"], let flag = UIScript.frames["flag-\(id)"] else { return "" }
+                let fillRight = row.maxX - scaled(CGFloat(Look.theme.layout.rowInset))
+                return "\(Int((fillRight - flag.maxX).rounded()))"
+            }(),
             "row_width": "\(Int((UIScript.frames["thread-\(m.selectedThreadId ?? -1)"]?.width ?? 0).rounded()))",
             // The folder column of the selected row in "Everything", as
             // drawn: the folder, and its account when the row has room.

@@ -111,3 +111,28 @@ struct TextMeasureTests {
         #expect(model.flash == nil, "the same theme again: said once")
     }
 }
+
+/// The last column of a row (the flag) stays inside the rounded fill of
+/// the selected row (`RowLayout.trailingPadding`, `layout.row_inset`).
+@MainActor
+struct RowTrailingPaddingTests {
+    @Test func theFlagStaysInsideTheFillOfEveryTheme() {
+        for name in ["geek", "clean", "regular"] {
+            let theme = ThemeStore.builtins[name]!
+            let inset = scaled(CGFloat(theme.layout.rowInset))
+            // 6 pt between the flag's column and the fill's right edge.
+            #expect(RowLayout.trailingPadding(theme) == inset + 6, "\(name)")
+        }
+        // clean and regular inset their fill by 8: 14 after the flag.
+        #expect(RowLayout.trailingPadding(ThemeStore.builtins["clean"]!) == 6 + scaled(8))
+        #expect(RowLayout.trailingPadding(ThemeStore.builtins["geek"]!) == 6)
+    }
+
+    @Test func theSubjectGivesUpTheRoomAfterTheFlag() {
+        // The subject's width is what the other columns and the trailing
+        // padding of the current theme leave.
+        let l = RowLayout(width: 900, scale: 1, measure: .fixed(char: 7))
+        let columns = 2 + l.dot + l.date + l.sender + l.icon + l.count + l.icon + 8 * l.char
+        #expect(abs(l.subjectWidth(folderWidth: 0) - (900 - columns - RowLayout.trailingPadding)) < 0.001)
+    }
+}
