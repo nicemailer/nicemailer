@@ -21,6 +21,23 @@ struct KeyRoutingTests {
         #expect(!KeyRouting.isForMainWindow(eventWindow: preferences, mainWindow: main))
     }
 
+    /// SwiftUI replaces the reader view of the main window: the new one
+    /// joins the window, then the old one leaves it. The main window must
+    /// stay known, or every key of the app is ignored.
+    @Test func theMainWindowStaysKnownWhenItsReaderViewIsReplaced() {
+        let main = window()
+        let reference = MainWindowReference()
+        let old = MainWindowReader.ReaderView()
+        old.reference = reference
+        main.contentView?.addSubview(old)
+        #expect(reference.window === main)
+        let new = MainWindowReader.ReaderView()
+        new.reference = reference
+        main.contentView?.addSubview(new)
+        old.removeFromSuperview()
+        #expect(reference.window === main, "the old view leaving does not forget the window")
+    }
+
     @Test func aKeyOfNoKnownWindowIsLeftToAppKit() {
         let main = window()
         #expect(!KeyRouting.isForMainWindow(eventWindow: nil, mainWindow: main))

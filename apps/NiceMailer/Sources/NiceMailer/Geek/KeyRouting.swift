@@ -60,9 +60,15 @@ struct MainWindowReader: NSViewRepresentable {
     final class ReaderView: NSView {
         var reference: MainWindowReference?
 
+        /// Records the window this view joins, and never clears it when the
+        /// view leaves: SwiftUI may replace this view by a new one in the
+        /// same window, the old one leaving *after* the new one joined, and
+        /// clearing then would leave the monitor without a main window,
+        /// every key ignored. The reference is `weak`: it becomes nil by
+        /// itself once the window is gone.
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
-            reference?.window = window
+            if let window { reference?.window = window }
         }
     }
 }
