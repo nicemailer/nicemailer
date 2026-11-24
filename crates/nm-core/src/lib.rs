@@ -11,6 +11,7 @@
 
 pub mod compose;
 pub mod formats;
+pub mod secret;
 pub mod segments;
 
 use serde::{Deserialize, Serialize};

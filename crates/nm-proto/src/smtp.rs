@@ -30,6 +30,7 @@
 use std::time::Duration;
 
 use nm_core::compose::{base64, valid_addr};
+use nm_core::secret::SecretString;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use crate::imap::transport::{self, Conn};
@@ -271,6 +272,35 @@ impl Client {
         } else {
             return Err(SmtpError::Auth(format!("no login method NiceMailer knows (the server offers {})", self.ext.auth.join(" "))));
         };
+        if r.code != 235 {
+            return Err(auth_error(r));
+        }
+        Ok(())
+    }
+
+    /// Logs in with `AUTH XOAUTH2` (Microsoft), after TLS only
+    /// (`specifications/oauth2.md`, section 7). The `token` is a bearer
+    /// token: it goes into the base64 of the `AUTH` line (through
+    /// [`Client::command_secret`], so an error never shows it), never into
+    /// a log. A `334` answer is the error challenge: the client answers
+    /// with an empty line and reads the final `535`.
+    pub async fn login_oauth2(&mut self, username: &str, token: &SecretString) -> Result<()> {
+        if self.ext.auth.is_empty() {
+            return Ok(());
+        }
+        if !self.secure {
+            return Err(SmtpError::Tls("refusing to send an OAuth2 token over a connection without TLS".into()));
+        }
+        if !self.ext.auth.iter().any(|m| m == "XOAUTH2") {
+            return Err(SmtpError::Auth(format!("no login method NiceMailer knows (the server offers {})", self.ext.auth.join(" "))));
+        }
+        let raw = format!("user={username}\x01auth=Bearer {}\x01\x01", token.expose());
+        let mut r = self.command_secret(&format!("AUTH XOAUTH2 {}", base64(raw.as_bytes()))).await?;
+        if r.code == 334 {
+            // The challenge describes the failure (base64 JSON): an empty
+            // line ends it, the final refusal follows.
+            r = self.command_secret("").await?;
+        }
         if r.code != 235 {
             return Err(auth_error(r));
         }
@@ -563,6 +593,49 @@ mod tests {
         let (c, _srv) = pair(EHLO, vec![("AUTH", "454 4.7.0 try later")]).await;
         let e = c.unwrap().login("me", "secret").await.unwrap_err();
         assert!(!e.is_permanent(), "{e:?}");
+    }
+
+    const EHLO_XOAUTH2: &str = "250-test\r\n250-SIZE 1000\r\n250-AUTH XOAUTH2\r\n250 8BITMIME";
+
+    #[tokio::test]
+    async fn xoauth2_login_sends_the_bearer_response() {
+        let (c, srv) = pair(EHLO_XOAUTH2, vec![("AUTH XOAUTH2", "235 ok")]).await;
+        let mut c = c.unwrap();
+        c.login_oauth2("me@outlook.com", &SecretString::new("tok")).await.unwrap();
+        c.quit().await;
+        let seen = srv.await.unwrap();
+        let want = format!("AUTH XOAUTH2 {}\r\n", base64("user=me@outlook.com\x01auth=Bearer tok\x01\x01".as_bytes()));
+        assert!(seen.contains(&want), "{seen:?}");
+    }
+
+    #[tokio::test]
+    async fn xoauth2_error_challenge_is_answered_with_an_empty_line_then_the_refusal() {
+        // A 334 carries the failure as base64 JSON: the client answers with
+        // an empty line, then reads the final 535.
+        let (c, srv) = pair(EHLO_XOAUTH2, vec![("AUTH XOAUTH2", "334 eyJzdGF0dXMiOiJpbnZhbGlkX2dyYW50In0="), ("\r", "535 5.7.139 Authentication unsuccessful")]).await;
+        let mut c = c.unwrap();
+        let e = c.login_oauth2("me", &SecretString::new("tok")).await.unwrap_err();
+        assert!(matches!(e, SmtpError::Auth(_)) && e.is_permanent(), "{e:?}");
+        assert!(!e.to_string().contains("tok"), "the token is never in an error: {e}");
+        c.quit().await;
+        let seen = srv.await.unwrap();
+        assert!(seen.contains(&"\r\n".to_string()), "the empty line was sent: {seen:?}");
+    }
+
+    #[tokio::test]
+    async fn xoauth2_needs_the_mechanism_and_tls() {
+        // The server offers only PLAIN: no XOAUTH2, no login.
+        let (c, _srv) = pair(EHLO, vec![]).await;
+        let e = c.unwrap().login_oauth2("me", &SecretString::new("tok")).await.unwrap_err();
+        assert!(matches!(e, SmtpError::Auth(_)), "{e:?}");
+        // Without TLS, the token never leaves.
+        let (a, b) = tokio::io::duplex(1 << 16);
+        let srv = tokio::spawn(server(b, EHLO_XOAUTH2, vec![]));
+        let mut c = Client::over(a, Timeouts::default(), false).await.unwrap();
+        let e = c.login_oauth2("me", &SecretString::new("tok")).await.unwrap_err();
+        assert!(matches!(e, SmtpError::Tls(_)), "{e:?}");
+        drop(c);
+        let _ = srv.await;
     }
 
     #[tokio::test]

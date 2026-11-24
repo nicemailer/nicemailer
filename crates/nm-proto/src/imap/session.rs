@@ -356,11 +356,19 @@ impl Session {
     /// received. A `NO` or a `BAD` is an `Ok` here: [`Session::check`]
     /// turns them into errors, after the untagged responses were sorted.
     async fn run(&mut self, cmd: Command) -> Result<Reply> {
-        let r = self.run_inner(cmd).await;
+        let r = self.run_inner(cmd, false).await;
         r.map_err(|e| self.fail(e))
     }
 
-    async fn run_inner(&mut self, cmd: Command) -> Result<Reply> {
+    /// The same, for a SASL login: a trailing `+` is the error challenge of
+    /// `XOAUTH2` (base64 JSON), answered with an empty line, then the final
+    /// `NO` is read (`specifications/oauth2.md`, section 7).
+    async fn run_sasl(&mut self, cmd: Command) -> Result<Reply> {
+        let r = self.run_inner(cmd, true).await;
+        r.map_err(|e| self.fail(e))
+    }
+
+    async fn run_inner(&mut self, cmd: Command, sasl: bool) -> Result<Reply> {
         if self.conn.is_none() {
             return Err(ImapError::Closed);
         }
@@ -398,9 +406,16 @@ impl Session {
         }
         line.extend_from_slice(b"\r\n");
         self.write(&line).await?;
+        let mut sasl = sasl;
         loop {
             match self.next_for(&tag, &mut untagged).await? {
                 Step::Done(done) => return Ok(Reply { untagged, done }),
+                Step::Continue if sasl => {
+                    // XOAUTH2 error challenge: an empty line ends it, the
+                    // final NO follows.
+                    sasl = false;
+                    self.write(b"\r\n").await?;
+                }
                 Step::Continue => return Err(ImapError::Protocol(format!("unexpected '+' during {}", cmd.name))),
                 Step::More => {}
             }
@@ -621,6 +636,43 @@ impl Session {
             Command::new("LOGIN").astring(username.as_bytes()).astring(password.as_bytes())
         };
         let reply = self.run(cmd).await?;
+        self.finish_login(reply).await
+    }
+
+    /// Logs in with SASL `XOAUTH2`, the mechanism Microsoft documents for
+    /// IMAP and SMTP (`specifications/oauth2.md`, section 7). The `token`
+    /// is a bearer token: it is sent only over TLS (never on a clear-text
+    /// connection), and never written into an error or a log. The
+    /// capabilities are read again after the login, as in
+    /// [`Session::login`].
+    pub async fn login_oauth2(&mut self, username: &str, token: &nm_core::secret::SecretString) -> Result<()> {
+        match self.state {
+            State::NotAuthenticated => {}
+            // PREAUTH: already logged in by the server.
+            _ => return Ok(()),
+        }
+        if !self.caps.has("AUTH=XOAUTH2") {
+            return Err(ImapError::Unsupported("the XOAUTH2 mechanism (the server does not announce AUTH=XOAUTH2)"));
+        }
+        if !self.is_tls() && !matches!(self.conn, Some(Conn::Other(_))) {
+            return Err(ImapError::Tls("refusing to send an OAuth2 token over a connection without TLS".into()));
+        }
+        let b64 = encode::xoauth2(username, token.expose());
+        let cmd = if self.caps.has("SASL-IR") {
+            // RFC 4959: the initial response travels in the command.
+            Command::new("AUTHENTICATE").raw("XOAUTH2").raw(&b64)
+        } else {
+            Command::new("AUTHENTICATE").raw("XOAUTH2").wait().raw_tight(&b64)
+        };
+        let reply = self.run_sasl(cmd).await?;
+        self.finish_login(reply).await
+    }
+
+    /// The end of a login, whatever the mechanism: a refusal is an
+    /// [`ImapError::AuthFailed`], then the capabilities of the
+    /// authenticated state are read, which are the ones that count
+    /// (`plan-imap.md`, section 1).
+    async fn finish_login(&mut self, reply: Reply) -> Result<()> {
         if self.malformed.is_none() && reply.done.kind != Kind::Ok {
             self.absorb(reply.untagged);
             // RFC 5530: these codes say the login is refused for another

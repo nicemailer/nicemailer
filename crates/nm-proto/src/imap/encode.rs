@@ -146,6 +146,23 @@ fn is_quoted_char(b: u8) -> bool {
     (0x01..=0x7f).contains(&b) && b != b'\r' && b != b'\n'
 }
 
+/// The initial response of SASL `XOAUTH2` (the mechanism Microsoft
+/// documents for IMAP, POP and SMTP), base64-encoded:
+/// `user={user}\x01auth=Bearer {token}\x01\x01`
+/// (`specifications/oauth2.md`, section 7). The token is a bearer token:
+/// whoever holds it reads the mailbox, so it travels only inside the
+/// base64 of a TLS connection, and never into an error or a log.
+pub(crate) fn xoauth2(user: &str, token: &str) -> String {
+    let mut raw = Vec::with_capacity(user.len() + token.len() + 22);
+    raw.extend_from_slice(b"user=");
+    raw.extend_from_slice(user.as_bytes());
+    raw.push(1);
+    raw.extend_from_slice(b"auth=Bearer ");
+    raw.extend_from_slice(token.as_bytes());
+    raw.extend_from_slice(&[1, 1]);
+    base64(&raw)
+}
+
 /// Standard base64 (RFC 4648), with padding: the response of
 /// `AUTHENTICATE PLAIN`.
 pub(crate) fn base64(bytes: &[u8]) -> String {
@@ -171,6 +188,12 @@ mod tests {
 
     fn text(c: &Command) -> String {
         String::from_utf8(c.flatten()).unwrap()
+    }
+
+    #[test]
+    fn xoauth2_is_the_documented_initial_response() {
+        // `user=alice\x01auth=Bearer tok\x01\x01`, base64 (RFC 4648).
+        assert_eq!(xoauth2("alice", "tok"), "dXNlcj1hbGljZQFhdXRoPUJlYXJlciB0b2sBAQ==");
     }
 
     #[test]

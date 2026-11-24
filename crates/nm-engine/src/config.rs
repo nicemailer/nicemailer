@@ -47,7 +47,6 @@ use std::path::{Path, PathBuf};
 
 use nm_core::FolderRole;
 use serde::Serialize;
-use sha2::{Digest, Sha256};
 use toml_edit::{Item, TableLike};
 
 /// Version of the file format read by this code: the `version` key, the
@@ -576,43 +575,11 @@ pub struct Identity {
     pub name: Option<String>,
 }
 
-/// A secret (a password) that never shows in logs or debug output.
-///
-/// Rust note: this is a *newtype*, a struct with a single field. It costs
-/// nothing at run time, but it is a different type from `String`, so the
-/// compiler refuses to print it by mistake: its `Debug` implementation
-/// below prints a placeholder, and it has no `Display` at all. Reading the
-/// secret takes an explicit call to [`SecretString::expose`].
-#[derive(Clone, PartialEq, Eq)]
-pub struct SecretString(String);
-
-impl SecretString {
-    pub fn new(s: impl Into<String>) -> SecretString {
-        SecretString(s.into())
-    }
-
-    /// The secret itself, for the authentication only.
-    pub fn expose(&self) -> &str {
-        &self.0
-    }
-}
-
-impl fmt::Debug for SecretString {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("SecretString(***)")
-    }
-}
-
-/// Serialized as a short fingerprint, never as the secret: enough to see
-/// that the password changed ([`changed_keys`]), useless to an attacker
-/// (a SHA-256 truncated to 64 bits of a password still has to be guessed).
-impl Serialize for SecretString {
-    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        let digest = Sha256::digest(self.0.as_bytes());
-        let hex: String = digest[..8].iter().map(|b| format!("{b:02x}")).collect();
-        s.serialize_str(&format!("sha256:{hex}"))
-    }
-}
+/// A secret (a password, an OAuth2 token) that never shows in logs or debug
+/// output. Defined in `nm-core` so that `nm-proto`'s SASL modules take it
+/// too (`specifications/oauth2.md`, section 7); re-exported here because
+/// the engine's secrets (`secrets.rs`, `keychain.rs`) use it.
+pub use nm_core::secret::SecretString;
 
 // ---------------------------------------------------------------------------
 // Problems

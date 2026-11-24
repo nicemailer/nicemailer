@@ -9,6 +9,7 @@
 
 use std::time::Duration;
 
+use nm_core::secret::SecretString;
 use nm_proto::imap::*;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 
@@ -104,6 +105,74 @@ async fn authenticate_without_sasl_ir_waits_for_the_go_ahead() {
     let mut s = Session::over(c, timeouts()).await.unwrap();
     s.login("alice", "secret").await.unwrap();
     assert!(s.capabilities().has("IDLE"), "capabilities read again after login");
+    drop(s);
+    task.await.unwrap();
+}
+
+/// base64 of `user=alice\x01auth=Bearer tok\x01\x01`, the XOAUTH2 initial
+/// response of `login_oauth2("alice", "tok")`.
+const XOAUTH2_B64: &str = "dXNlcj1hbGljZQFhdXRoPUJlYXJlciB0b2sBAQ==";
+
+#[tokio::test]
+async fn xoauth2_with_sasl_ir_sends_the_initial_response_in_the_command() {
+    let (c, task) = server(&format!(
+        "S: * OK [CAPABILITY IMAP4rev1 AUTH=XOAUTH2 SASL-IR UIDPLUS] hi
+         C: N1 AUTHENTICATE XOAUTH2 {XOAUTH2_B64}
+         S: N1 OK [CAPABILITY IMAP4rev1 UIDPLUS IDLE] done"
+    ));
+    let mut s = Session::over(c, timeouts()).await.unwrap();
+    s.login_oauth2("alice", &SecretString::new("tok")).await.unwrap();
+    assert!(s.capabilities().has("IDLE"));
+    assert!(!s.capabilities().has("AUTH=XOAUTH2"), "capabilities read again after login");
+    drop(s);
+    task.await.unwrap();
+}
+
+#[tokio::test]
+async fn xoauth2_without_sasl_ir_waits_for_the_go_ahead() {
+    let (c, task) = server(
+        "S: * OK [CAPABILITY IMAP4rev1 AUTH=XOAUTH2 UIDPLUS] hi
+         C: N1 AUTHENTICATE XOAUTH2
+         S: +
+         C: dXNlcj1hbGljZQFhdXRoPUJlYXJlciB0b2sBAQ==
+         S: N1 OK logged in
+         C: N2 CAPABILITY
+         S: * CAPABILITY IMAP4rev1 UIDPLUS IDLE
+         S: N2 OK done",
+    );
+    let mut s = Session::over(c, timeouts()).await.unwrap();
+    s.login_oauth2("alice", &SecretString::new("tok")).await.unwrap();
+    assert!(s.capabilities().has("IDLE"), "capabilities read again after login");
+    drop(s);
+    task.await.unwrap();
+}
+
+#[tokio::test]
+async fn xoauth2_error_challenge_is_answered_with_an_empty_line_then_the_no() {
+    // The server sends a second `+` whose payload is the failure as base64
+    // JSON: the client answers with an empty line and reads the final NO.
+    let (c, task) = server(
+        "S: * OK [CAPABILITY IMAP4rev1 AUTH=XOAUTH2 SASL-IR] hi
+         C: N1 AUTHENTICATE XOAUTH2 dXNlcj1hbGljZQFhdXRoPUJlYXJlciB0b2sBAQ==
+         S: + eyJzdGF0dXMiOiJpbnZhbGlkX2dyYW50In0=
+         C:
+         S: N1 NO [AUTHENTICATIONFAILED] Authentication failed",
+    );
+    let mut s = Session::over(c, timeouts()).await.unwrap();
+    let e = s.login_oauth2("alice", &SecretString::new("tok")).await.unwrap_err();
+    assert!(matches!(e, ImapError::AuthFailed(_)), "{e:?}");
+    assert!(!e.to_string().contains("tok"), "the token is never in an error: {e}");
+    assert!(!e.to_string().contains("dXNlcj1hbGljZQ"), "nor its base64: {e}");
+    drop(s);
+    task.await.unwrap();
+}
+
+#[tokio::test]
+async fn xoauth2_needs_the_capability() {
+    let (c, task) = server("S: * OK [CAPABILITY IMAP4rev1 AUTH=PLAIN] hi");
+    let mut s = Session::over(c, timeouts()).await.unwrap();
+    let e = s.login_oauth2("alice", &SecretString::new("tok")).await.unwrap_err();
+    assert!(matches!(e, ImapError::Unsupported(_)), "{e:?}");
     drop(s);
     task.await.unwrap();
 }
