@@ -133,6 +133,7 @@ fn the_menus_of_the_spec() {
             ('c', "proofread".into()),
             ('i', "improve".into()),
             ('r', "rewrite".into()),
+            ('l', "translate-reply".into()),
             ('t', "translate-draft".into()),
             ('w', "write-from-notes".into()),
             ('o', "subject-ideas".into()),
@@ -213,7 +214,19 @@ fn builtin_defaults_follow_the_spec() {
     // Writing follows the text's language, the rest the app's (section 7).
     assert_eq!(p("proofread").lang, Lang::Content);
     assert_eq!(p("summarize-thread").lang, Lang::App);
-    assert_eq!(p("translate-message").lang, Lang::Variant);
+    // Translation (section 7): a mail read, into the app's language, with
+    // no language to choose; a reply, into the language of the mail
+    // received, on a reply only; a mail written, into a language chosen
+    // among those of the app.
+    assert_eq!(p("translate-message").lang, Lang::App);
+    assert!(p("translate-message").variants.is_empty());
+    assert_eq!(p("translate-reply").lang, Lang::Replied);
+    assert!(p("translate-reply").replies_only());
+    assert!(p("translate-reply").inputs.contains(&Input::DraftReplied));
+    assert!(!p("translate-draft").replies_only());
+    assert_eq!(p("translate-draft").lang, Lang::Variant);
+    let languages: Vec<char> = p("translate-draft").variants.iter().map(|v| v.key).collect();
+    assert_eq!(languages.len(), 19, "the languages of the app: {languages:?}");
     assert_eq!(p("proofread").inputs, [Input::DraftOwnText]);
     assert_eq!(p("proofread").output, Output::Replace);
     assert_eq!(
@@ -525,6 +538,7 @@ fn a_passage_selected_has_its_own_palette() {
             "proofread",
             "improve",
             "rewrite",
+            "translate-reply",
             "translate-draft"
         ]
     );
@@ -535,6 +549,7 @@ fn a_passage_selected_has_its_own_palette() {
             "proofread",
             "improve",
             "rewrite",
+            "translate-reply",
             "translate-draft",
             "write-from-notes",
             "subject-ideas"
@@ -717,4 +732,26 @@ fn the_example_of_the_docs_loads() {
             .iter()
             .any(|q| q.id == p.id)
     );
+}
+
+#[test]
+fn lang_replied_needs_a_draft_that_reads_the_mail_replied_to() {
+    // On a mail read: no mail replied to.
+    let l = user(&[("r.toml", &minimal("mine", "x", "lang = \"replied\""))]);
+    assert_eq!(l.problems.len(), 1, "{:?}", l.problems);
+    assert!(l.problems[0].message.contains("draft.replied"), "{:?}", l.problems);
+    // A draft that does not read it.
+    let no_input = "version = 1\nid = \"mine\"\nscope = \"draft\"\nkey = \"x\"\nlabel = \"Test\"\n\
+                    input = [\"draft.own_text\"]\noutput = \"replace\"\nlang = \"replied\"\nsystem = \"Do it.\"\n";
+    let l = user(&[("r.toml", no_input)]);
+    assert_eq!(l.problems.len(), 1, "{:?}", l.problems);
+    // With it: loaded, offered on a reply only.
+    let ok = no_input.replace("[\"draft.own_text\"]", "[\"draft.own_text\", \"draft.replied\"]");
+    let l = user(&[("r.toml", &ok)]);
+    assert_eq!(l.problems, vec![]);
+    let p = l.catalog.get("mine").unwrap();
+    assert!(p.replies_only());
+    let system = p.system(None, "fr").unwrap();
+    assert!(system.contains("language of the mail replied to"), "{system}");
+    assert!(!system.contains("Answer in French"), "{system}");
 }

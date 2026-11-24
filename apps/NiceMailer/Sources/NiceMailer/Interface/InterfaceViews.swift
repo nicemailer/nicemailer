@@ -2914,7 +2914,8 @@ struct PickerPopup: View {
         case .links: L("Links")
         case .tag: L("Tag")
         case .group: L("Group")
-        case .ai: L("AI")
+        // The languages of "Translate…": the prompt's name.
+        case .ai: controller.aiVariantsOf?.label ?? L("AI")
         case .rename(.tag, _, _): L("Rename the tag")
         case .rename(.group, _, _): L("Rename the group")
         case .themes: L("Theme")

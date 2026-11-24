@@ -626,6 +626,10 @@ pub mod reason {
         AI_PROMPT_UNAVAILABLE = "ai_prompt_unavailable": "the prompt {prompt} is not available in this version of NiceMailer yet";
         /// The prompt is not offered in this folder.
         AI_PROMPT_NOT_HERE = "ai_prompt_not_here": "the prompt {prompt} is not offered in this folder";
+        /// A prompt of a reply (`lang = "replied"`: translate it into the
+        /// language of the mail received) on a draft that replies to no
+        /// mail, or to one whose text is not there.
+        AI_REPLY_NEEDED = "ai_reply_needed": "this prompt works on a reply: the draft replies to no mail whose text is here";
         /// A prompt on a selection, without a selection.
         AI_SELECTION_NEEDED = "ai_selection_needed": "select the text to work on first";
         /// A prompt on the whole text, with a selection.
@@ -3973,6 +3977,12 @@ pub struct AiListPromptsParams {
     /// The app's language, for the labels (`en`, `fr`).
     #[serde(default)]
     pub lang: Option<String>,
+    /// For the compose screen: whether the draft replies to a mail. `false`
+    /// leaves out the prompts of a reply (translate it into the language
+    /// of the mail received, `lang = "replied"`); absent, every prompt is
+    /// listed.
+    #[serde(default)]
+    pub reply: Option<bool>,
 }
 
 /// A prompt of an AI menu.

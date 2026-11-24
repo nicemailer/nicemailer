@@ -341,6 +341,9 @@ pub(crate) fn list_prompts(core: &Arc<Core>, p: AiListPromptsParams) -> Result<V
         .catalog
         .menu(screen, p.folder)
         .into_iter()
+        // A new mail or a forward has no mail replied to: no prompt that
+        // works on one (`ia.md`, section 7).
+        .filter(|q| p.reply != Some(false) || !q.replies_only())
         .map(|q| AiPromptView {
             id: q.id.clone(),
             key: q.key.to_string(),
@@ -556,6 +559,11 @@ async fn draft_inputs(
             return Err(ai_error(AiError::BadInput(reason::AI_SELECTION_UNWANTED.into())));
         }
         _ => {}
+    }
+    // A prompt of a reply on a new mail or a forward: refused before
+    // anything is sent, rather than translated into a language guessed.
+    if prompt.replies_only() && (draft.reply_to.is_none() || replied_mail(core, &draft).await?.is_none()) {
+        return Err(ai_error(AiError::BadInput(reason::AI_REPLY_NEEDED.into())));
     }
     // A formatted draft (`edition.md`): its whole text goes as HTML, the
     // user's blocks rewritten as blocks; a passage goes as text, measured

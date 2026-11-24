@@ -148,6 +148,7 @@ enum CoreReason {
         case "ai_io": L("Claude Code could not be run: %@", v("system_text"))
         case "ai_prompt_unavailable": L("This prompt is not available in this version yet")
         case "ai_prompt_not_here": L("This prompt is not offered in this folder")
+        case "ai_reply_needed": L("This prompt works on a reply to a mail whose text is here")
         case "ai_selection_needed": L("Select the text to work on first")
         case "ai_selection_unwanted": L("This prompt works on the whole text: select nothing")
         case "ai_selection_empty": L("The selection is empty")

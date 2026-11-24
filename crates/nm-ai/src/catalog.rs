@@ -52,6 +52,12 @@ pub const BUILTIN: &[(&str, &str)] = &[
     ("proofread.toml", include_str!("../prompts/proofread.toml")),
     ("improve.toml", include_str!("../prompts/improve.toml")),
     ("rewrite.toml", include_str!("../prompts/rewrite.toml")),
+    // A reply: translated into the language of the mail received, before
+    // the list of every language.
+    (
+        "translate-reply.toml",
+        include_str!("../prompts/translate-reply.toml"),
+    ),
     (
         "translate-draft.toml",
         include_str!("../prompts/translate-draft.toml"),
@@ -754,10 +760,20 @@ fn parse(file: &str, text: &str, source: Source, warnings: &mut Vec<Problem>) ->
                     "content" => Some(Lang::Content),
                     "app" => Some(Lang::App),
                     "variant" => Some(Lang::Variant),
+                    "replied" => Some(Lang::Replied),
                     _ => None,
                 },
-                "content, app or variant",
+                "content, app, variant or replied",
             )?;
+            // The language of the mail replied to: a draft that has one
+            // to read (`ia.md`, section 7).
+            if l == Lang::Replied && (scope != Scope::Draft || !inputs.contains(&Input::DraftReplied)) {
+                return Err(r.problem(
+                    Some(item),
+                    "lang",
+                    "lang = \"replied\" needs scope = \"draft\" and the input draft.replied",
+                ));
+            }
             if l == Lang::Variant && variants.is_empty() {
                 return Err(r.problem(
                     Some(item),

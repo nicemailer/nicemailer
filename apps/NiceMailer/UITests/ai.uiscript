@@ -56,12 +56,24 @@ expect compose_text ~ merci je vien jeudi|
 key ctrl-i
 expect ai_placement = palette
 expect picker_first = Proofread
-expect picker_rows ~ Proofread | Improve writing | Rewrite · More formal
-expect picker_rows ~ Translate · Into English
+expect picker_rows ~ Proofread | Improve writing | Rewrite… | Translate my reply into the language of the mail received | Translate…
+expect picker_rows !~ Into English
 expect picker_rows ~ Suggest subjects
 expect picker_rows ~ Write from my notes
 expect compose_text ~ merci je vien jeudi|
 snap ai-menu
+# Translate…: a second choice among the languages of the app; Escape
+# comes back to the prompts.
+type translate…
+key ret
+expect ai_placement = palette
+expect picker_first = Into English
+expect picker_count = 19
+expect picker_rows ~ Into Japanese
+snap ai-languages
+key esc
+expect ai_placement = palette
+expect picker_first = Proofread
 # Writing from the notes (`w`): the notes give way to a whole mail,
 # shown as differences; refused, the notes stay.
 type w
@@ -152,7 +164,10 @@ expect ai_placement = palette
 expect picker_first = Summarize
 expect picker_rows ~ Summarize | Quick replies
 expect picker_rows ~ Security check
-expect picker_rows ~ Translate · Into English
+# A mail read: one translation, into the language of the app, no list
+# of languages.
+expect picker_rows ~ Translate this mail into my language
+expect picker_rows !~ Into English
 snap ai-mail-menu
 key ret
 expect ai_state = proposal
@@ -291,3 +306,18 @@ expect thread_count > 2
 key ret
 expect flash ~ Newsletter
 expect selected_suggestion ~ newsletter: Fake reason
+# A new mail: nothing replied to, so no translation into the language of
+# a mail received; "Translate…" and its languages stay.
+key esc
+key c
+expect composing = true
+type Bonjour
+key ctrl-i
+expect ai_placement = palette
+expect picker_rows ~ Translate…
+expect picker_rows !~ Translate my reply
+snap ai-new-mail-menu
+key esc
+expect ai_placement = none
+key cmd-esc
+expect composing = false

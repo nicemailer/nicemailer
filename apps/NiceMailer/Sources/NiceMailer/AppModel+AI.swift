@@ -20,6 +20,12 @@ extension AppModel {
             }
             var params: [String: Any] = ["screen": screen, "lang": AI.language]
             if let folder { params["folder"] = folder }
+            // In a reply: whether it answers a mail. A new mail or a
+            // forward has no mail received to translate into the language
+            // of (`translate-reply`).
+            if screen.hasPrefix("compose"), let draft = composer?.draft {
+                params["reply"] = draft.replyTo != nil
+            }
             return try await client.call("ai_list_prompts", params)
         } catch {
             flash = AI.errorFlash(error)

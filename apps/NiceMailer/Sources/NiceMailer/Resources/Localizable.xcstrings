@@ -99399,6 +99399,118 @@
           }
         }
       }
+    },
+    "This prompt works on a reply to a mail whose text is here": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce prompt porte sur une réponse à un mail dont le texte est ici"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dieser Prompt gilt für eine Antwort auf eine Mail, deren Text hier vorliegt"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Este prompt trabaja sobre una respuesta a un correo cuyo texto está aquí"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Questo prompt lavora su una risposta a un'email il cui testo è qui"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Este prompt trabalha sobre uma resposta a um e-mail cujo texto está aqui"
+          }
+        },
+        "pt-PT": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Este prompt trabalha sobre uma resposta a um e-mail cujo texto está aqui"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Deze prompt werkt op een antwoord op een mail waarvan de tekst hier is"
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Den här prompten gäller ett svar på ett mejl vars text finns här"
+          }
+        },
+        "da": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Denne prompt virker på et svar på en mail, hvis tekst er her"
+          }
+        },
+        "nb": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Denne prompten virker på et svar på en e-post der teksten er her"
+          }
+        },
+        "fi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tämä kehote koskee vastausta viestiin, jonka teksti on täällä"
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ten prompt dotyczy odpowiedzi na wiadomość, której tekst jest tutaj"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Этот промпт работает с ответом на письмо, текст которого здесь"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Цей промпт працює з відповіддю на лист, текст якого тут"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このプロンプトは、本文がここにあるメールへの返信に使います"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此提示用于回复正文在此处的邮件"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此提示用於回覆內文在此處的郵件"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 프롬프트는 본문이 여기에 있는 메일에 대한 답장에 사용됩니다"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

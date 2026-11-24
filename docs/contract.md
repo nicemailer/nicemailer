@@ -157,7 +157,7 @@ A dedicated command prints readable output, asks for confirmation when needed an
 | Method | What it does | CLI |
 | --- | --- | --- |
 | `ai_status` | Whether the AI is on, the provider and model, whether a run can start, the problems of the prompt files. | `nicemailer ai status [--check]`: `--check` also asks the `claude` binary its version and subscription (`ai.md`). |
-| `ai_list_prompts` | The prompts of one screen's AI menu, in a folder. | `nicemailer ai prompts list [--screen compose] [--folder <role>] [--lang en]` |
+| `ai_list_prompts` | The prompts of one screen's AI menu, in a folder. For the compose screen, `reply: false` leaves out the prompts of a reply (translate it into the language of the mail received); the app passes it for a new mail or a forward. | `nicemailer ai prompts list [--screen compose] [--folder <role>] [--lang en] [--new-mail]` |
 | `ai_run` | Starts a run. Answers at once with its id. The text arrives through `AiDelta`, `AiDone` and `AiFailed` events. | `nicemailer ai run <prompt> --draft <id> [--variant <key>] [--lang en] [--apply] [--choice <n>]` streams the proposal as it comes. |
 | `ai_get_run` | The state and the proposal of a run. | Used by `ai run` once the run is done. |
 | `ai_apply` | Applies the proposal of a finished run to the draft. | `ai run … --apply` |
@@ -298,6 +298,7 @@ The app, the core, the CLI and the MCP server are shipped and updated together, 
 | `ai_io` | `system_text` | cannot run the claude binary: {system_text} |
 | `ai_prompt_unavailable` | `prompt` | the prompt {prompt} is not available in this version of NiceMailer yet |
 | `ai_prompt_not_here` | `prompt` | the prompt {prompt} is not offered in this folder |
+| `ai_reply_needed` | — | this prompt works on a reply: the draft replies to no mail whose text is here |
 | `ai_selection_needed` | — | select the text to work on first |
 | `ai_selection_unwanted` | — | this prompt works on the whole text: send no selection |
 | `ai_selection_empty` | — | the selection is empty |

@@ -1630,6 +1630,7 @@ final class InterfaceController {
         model.flash = nil
         if overlay == .picker(.ai) { overlay = .none; return }
         overlay = .none
+        aiVariantsOf = nil
         openAI()
     }
 
@@ -2304,6 +2305,13 @@ final class InterfaceController {
             break
         }
         if event.keyCode == KeyCode.escape {
+            // The languages of "Translate…": back to the list of prompts.
+            if kind == .ai, aiVariantsOf != nil {
+                aiVariantsOf = nil
+                pickerQuery = ""
+                pickerIndex = 0
+                return
+            }
             overlay = .none
             return
         }
@@ -3018,16 +3026,26 @@ final class InterfaceController {
         }
     }
 
-    /// The rows of the AI palette: a prompt per row, and a row per variant
-    /// of a prompt that has some ("Rewrite · Shorter"), so that typing finds
-    /// any of them at once, as in the command palette of an editor. The
-    /// prompts' order is the core's, the most used first: the first row,
-    /// highlighted, is the one Return runs (⌘I then Return proofreads). The
-    /// letters of a prompt (`c`, `rc` for a variant) are its search words:
-    /// typed, they bring it first. A prompt this version cannot run yet
-    /// says so on the right.
+    /// The rows of the AI palette: a prompt per row. A prompt with a
+    /// submenu (the languages of "Translate", the tones of "Rewrite") is one
+    /// row, "Translate…"; choosing it shows its variants in the palette's
+    /// place (`aiVariantsOf`), and Escape comes back. While something is
+    /// typed, its variants are rows too ("Translate · Into Japanese"), so
+    /// that typing still finds any of them at once, as in the command
+    /// palette of an editor. The prompts' order is the core's, the most
+    /// used first: the first row, highlighted, is the one Return runs (⌘I
+    /// then Return proofreads). The letters of a prompt (`c`, `rc` for a
+    /// variant) are its search words: typed, they bring it first. A prompt
+    /// this version cannot run yet says so on the right.
     func aiEntries() -> [Entry] {
-        aiPrompts.flatMap { p -> [Entry] in
+        // The second step: the variants of the prompt chosen.
+        if let p = aiVariantsOf {
+            return p.variants.map { v in
+                Entry(key: v.key, label: v.label, keywords: [v.key]) { [weak self] in self?.chooseAI(p, variant: v) }
+            }
+        }
+        let typing = !pickerQuery.isEmpty
+        return aiPrompts.flatMap { p -> [Entry] in
             let notYet = p.available ? nil : L("not yet")
             // A prompt of an attachment: a row per file the AI can read,
             // with its icon, found by typing its name.
@@ -3046,11 +3064,30 @@ final class InterfaceController {
                 return [Entry(key: p.key, label: p.label, disabled: !p.available, detail: notYet, detailStyle: .info,
                               keywords: [p.key]) { [weak self] in self?.chooseAI(p, variant: nil) }]
             }
-            return p.variants.map { v in
+            let submenu = Entry(key: p.key, label: p.label + "…", disabled: !p.available, detail: notYet,
+                                detailStyle: .info, keywords: [p.key]) { [weak self] in self?.showAIVariants(p) }
+            guard typing else { return [submenu] }
+            return [submenu] + p.variants.map { v in
                 Entry(key: p.key + v.key, label: AI.title(p, variant: v), disabled: !p.available, detail: notYet,
                       detailStyle: .info, keywords: [p.key + v.key]) { [weak self] in self?.chooseAI(p, variant: v) }
             }
         }
+    }
+
+    /// The prompt whose variants the AI palette shows, after its row was
+    /// chosen ("Translate…": the languages); `nil` for the list of prompts.
+    var aiVariantsOf: AIPromptView?
+
+    /// "Translate…" chosen: the palette shows its languages instead, the
+    /// first highlighted, the text typed cleared. The palette was closed by
+    /// the choice (`pickerChoose`, a click): it opens again.
+    private func showAIVariants(_ p: AIPromptView) {
+        guard p.available else {
+            model.flash = L("Not available yet: %@", p.label)
+            return
+        }
+        aiVariantsOf = p
+        openPicker(.ai)
     }
 
     /// The prompts of the AI palette open (`openAI`).
@@ -3129,6 +3166,7 @@ final class InterfaceController {
                 prompts += more
             }
             aiAttachments = files
+            aiVariantsOf = nil
             guard !prompts.isEmpty else {
                 model.flash = L("No AI prompt here")
                 return
