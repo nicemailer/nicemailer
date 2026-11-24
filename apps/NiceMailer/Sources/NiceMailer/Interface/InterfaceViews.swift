@@ -1637,35 +1637,28 @@ private struct ReaderColumn: View {
         }
     }
 
-    /// The controls of the title line, left to right: `T`, unsubscribe,
-    /// blocked pixels, the text | html | images switch, the folder.
+    /// The controls of the title line, left to right (`ui.md`, "Boutons de
+    /// l'en-tête"): first what the line says, then what can be done.
+    ///
+    /// - The information: the folder of the mail (in "Everything"), `T`,
+    ///   the blocked pixels, "unsubscribed on …".
+    /// - The buttons: unsubscribe, the flag, the text | html | images
+    ///   switch.
+    ///
+    /// The controls are aligned on the right: with the information first,
+    /// the buttons stay at the same place from one mail to the next,
+    /// whatever the length of a folder's name or the number of pixels, and
+    /// the switch always ends the line.
     @ViewBuilder
     private func titleControls(_ state: ThreadDisplay.State) -> some View {
+        // In "Everything", the folder of the mail (and its account in
+        // "all"): the list mixes every folder.
+        if let label = model.selectedThreadFolderLabel {
+            Text(label).foregroundStyle(Palette.muted).lineLimit(1)
+                .uiTarget("reader-folder")
+        }
         if state.showAll {
             Text("T").foregroundStyle(Palette.accentText)
-        }
-        // Unsubscribe, left of text | html (`ui.md`,
-        // "Désabonnement"); "unsubscribed on …" once done.
-        if let offer = model.unsubscribeOffer {
-            if let at = offer.senderUnsubscribedAt {
-                Text(UnsubscribeDisplay.done(at)).foregroundStyle(Palette.muted)
-            } else {
-                let label = UnsubscribeDisplay.label(offer, key: controller.keyLabel(.mailUnsubscribe))
-                HStack(spacing: scaled(4)) {
-                    Text(label.text)
-                    if let symbol = label.symbol { Image(systemName: symbol) }
-                }
-                .foregroundStyle(offer.source == "body" ? Palette.muted : Palette.accentText)
-                .padding(.horizontal, scaled(4))
-                // Rounded as the rows of the list, for its size
-                // (`Look.titleControlRadius`): square in geek.
-                .overlay(RoundedRectangle(cornerRadius: Look.titleControlRadius, style: .continuous)
-                    .stroke(Palette.separator, lineWidth: 1))
-                .contentShape(Rectangle())
-                .help(label.help)
-                .onTapGesture { model.unsubscribe() }
-                .uiTarget("reader-unsubscribe")
-            }
         }
         // Tracking pixels the core removed (`ui.md`, "Images distantes"):
         // shown in every display, they are never loaded. An eye struck out
@@ -1680,43 +1673,75 @@ private struct ReaderColumn: View {
             .help(L("Tracking pixels removed from this conversation: they are never loaded"))
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(L("pixels blocked: %lld", model.trackingPixels))
+            .uiTarget("reader-pixels")
         }
-        if model.latestReceived?.bodyHtml != nil {
-            // The text | html | images switch (`ui.md`); also
-            // `vh` and `vi`. Each word is clicked on its own;
-            // "images" only when the thread has remote images.
-            HStack(spacing: 0) {
-                formatSegment("text", Text(" text "))
-                formatSegment("html", Text(" html "))
-                if model.imagesOffered {
-                    formatSegment("images", Text(" " + L("images") + " "))
+        // Unsubscribe (`ui.md`, "Désabonnement"): once done, what it says
+        // ("unsubscribed on …") is information, with the rest of it; until
+        // then, a framed button as the commands of a reply (`FramedButton`):
+        // its key in the accent color, then its word.
+        if let offer = model.unsubscribeOffer, let at = offer.senderUnsubscribedAt {
+            Text(UnsubscribeDisplay.done(at)).foregroundStyle(Palette.muted)
+        }
+        if let offer = model.unsubscribeOffer, offer.senderUnsubscribedAt == nil {
+            let key = controller.keyLabel(.mailUnsubscribe)
+            let label = UnsubscribeDisplay.label(offer, key: key)
+            FramedButton(help: label.help, accessibility: label.text, action: { model.unsubscribe() }) {
+                HStack(spacing: scaled(3)) {
+                    Text(key).foregroundStyle(Palette.accentText)
+                    Text(label.text).foregroundStyle(Palette.muted)
+                    // A link found in the text, not the sender's header:
+                    // the browser opens.
+                    if let symbol = label.symbol { Image(systemName: symbol).foregroundStyle(Palette.muted) }
                 }
             }
-            .foregroundStyle(Palette.muted)
+            .uiTarget("reader-unsubscribe")
         }
-        // In "Everything", the folder of the mail (and its
-        // account in "all"), at the right end of the subject line
-        // (`ui.md`): the list mixes every folder.
-        if let label = model.selectedThreadFolderLabel {
-            Text(label).foregroundStyle(Palette.muted).lineLimit(1)
+        // The flag of the mail shown, on or off (`ui.md`, "Boutons de
+        // l'en-tête"): filled and orange while flagged; a click flags or
+        // unflags this mail alone, whatever rows are marked.
+        if let thread = model.threads.first(where: { $0.id == model.openThread?.id }) {
+            let key = controller.keyLabel(.mailToggleFlag)
+            let flagged = thread.isFlagged
+            FramedButton(help: flagged ? L("Remove the flag of this mail (%@)", key) : L("Flag this mail (%@)", key),
+                         accessibility: L("flag"),
+                         selected: flagged, action: { model.toggleFlag(of: thread.id) }) {
+                HStack(spacing: scaled(3)) {
+                    Text(key).foregroundStyle(Look.ink(Palette.accentText, selected: flagged))
+                    Image(systemName: flagged ? "flag.fill" : "flag")
+                        .foregroundStyle(Look.ink(flagged ? Palette.flag : Palette.muted, selected: flagged))
+                    // One word in both states, as a toggle of macOS: the
+                    // fill and the filled flag say it is on.
+                    Text(L("flag")).foregroundStyle(Look.ink(Palette.muted, selected: flagged))
+                }
+            }
+            .uiTarget("reader-flag")
+        }
+        if model.latestReceived?.bodyHtml != nil {
+            // The text | html | images switch (`ui.md`); also `vh` and
+            // `vi`. Each word is clicked on its own; "images" only when
+            // the thread has remote images. One frame, as a segmented
+            // control (`FramedSegments`), the height of the buttons.
+            FramedSegments(segments: formatSegments, current: model.bodyFormat) { model.setBodyFormat($0) }
         }
     }
 
-    /// One word of the text | html | images switch: highlighted when it is
-    /// the current display, clicked to choose it.
-    private func formatSegment(_ format: String, _ label: Text) -> some View {
-        // The highlight is rounded as the rows of the list, for its size
-        // (`Look.titleControlRadius`): square in geek.
-        // On a fill of the accent (regular), the word of the current
-        // display in the selection's text color, white (`Look.ink`).
-        let current = model.bodyFormat == format
-        return label
-            .foregroundStyle(Look.ink(Palette.muted, selected: current))
-            .background(current ? Palette.cursor : Color.clear,
-                        in: RoundedRectangle(cornerRadius: Look.titleControlRadius, style: .continuous))
-            .contentShape(Rectangle())
-            .onTapGesture { model.setBodyFormat(format) }
-            .uiTarget("format-\(format)")
+    /// The words of the text | html | images switch, with their tooltips;
+    /// "images" only when the thread has remote images.
+    ///
+    /// Swift note: a `@ViewBuilder` body only lists views; a value built
+    /// step by step (`append`) is computed in a plain property like this one.
+    private var formatSegments: [FramedSegments.Segment] {
+        let vh = controller.keyLabel(.viewToggleHtml)
+        var segments = [
+            FramedSegments.Segment(id: "text", label: "text", help: L("Show the mail as text (%@)", vh)),
+            FramedSegments.Segment(id: "html", label: "html", help: L("Show the mail as the sender laid it out (%@)", vh)),
+        ]
+        if model.imagesOffered {
+            segments.append(FramedSegments.Segment(
+                id: "images", label: L("images"),
+                help: L("Show the mail with its remote images (%@)", controller.keyLabel(.viewToggleRemoteImages))))
+        }
+        return segments
     }
 
     /// The thread as one HTML document. Each message is a `<details>`

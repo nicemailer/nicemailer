@@ -123,6 +123,29 @@ expect export_files = 1
 click format:html
 expect body_format = html
 appearance light
+# The flag of the mail shown, beside unsubscribe and text | html: off, a
+# click puts it on (filled, orange), another takes it off; the buttons of
+# the title line all have the same frame and height.
+expect selected_flagged = false
+# The information first (the blocked pixels), then the buttons, the
+# switch at the right end: the buttons do not move with the labels.
+expect title_controls_order = pixels,unsubscribe,flag,format
+click reader:flag
+expect selected_flagged = true
+snap clean-title-flagged
+click reader:flag
+expect selected_flagged = false
+expect title_button_heights = 19,19,19
 snap clean-title-controls
 appearance dark
 snap clean-title-controls-dark
+# The commands of a reply have the frame and the height of the buttons of
+# the reader.
+appearance light
+expect title_button_heights = 19,19,19
+key r
+expect composing = true
+expect title_button_heights = 19
+snap clean-reply-commands
+key cmd-esc
+expect composing = false

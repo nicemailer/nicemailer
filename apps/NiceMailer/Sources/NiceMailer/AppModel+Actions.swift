@@ -147,10 +147,25 @@ extension AppModel {
     /// Flag for the target threads, by the same rule as `u` (all flagged
     /// if one is not), shown at once and sent in one request.
     func toggleFlagTargets() {
-        guard let client = core else { return }
         let targets = targetThreads
         guard !targets.isEmpty else { return }
-        let flagged = targets.contains { !$0.isFlagged }
+        setFlagged(targets, targets.contains { !$0.isFlagged })
+    }
+
+    /// Flags the conversation `id` if it has no flag, removes its flag
+    /// otherwise: the flag button of the reader's title line, which acts on
+    /// the mail shown alone, whatever rows are marked (`ui.md`, "Boutons de
+    /// l'en-tête"). The same request as `*`.
+    func toggleFlag(of id: Int) {
+        guard let thread = threads.first(where: { $0.id == id }) else { return }
+        setFlagged([thread], !thread.isFlagged)
+    }
+
+    /// Sets the flag of `targets` to `flagged`: shown at once in the list,
+    /// sent in one request; on an error, the list is read again and shows
+    /// the core's state.
+    private func setFlagged(_ targets: [ThreadSummary], _ flagged: Bool) {
+        guard let client = core else { return }
         let ids = Set(targets.map(\.id))
         threads = threads.map { ids.contains($0.id) ? $0.with(unreadCount: $0.unreadCount, isFlagged: flagged) : $0 }
         Task {

@@ -1211,6 +1211,34 @@ private final class Runner {
                 let fillRight = row.maxX - scaled(CGFloat(Look.theme.layout.rowInset))
                 return "\(Int((fillRight - flag.maxX).rounded()))"
             }(),
+            // The controls of the reader's title line shown, from left to
+            // right as laid out, comma-separated: `folder` (in
+            // "Everything"), `pixels`, `unsubscribe`, `flag`, `format` (the
+            // text | html | images switch). The information comes first,
+            // then the buttons (`ui.md`, "Boutons de l'en-tête").
+            "title_controls_order": {
+                guard m.composer == nil else { return "" }
+                var shown: [(String, String)] = []
+                if m.selectedThreadFolderLabel != nil { shown.append(("folder", "reader-folder")) }
+                if m.trackingPixels > 0 { shown.append(("pixels", "reader-pixels")) }
+                if let o = m.unsubscribeOffer, o.senderUnsubscribedAt == nil { shown.append(("unsubscribe", "reader-unsubscribe")) }
+                if m.threads.contains(where: { $0.id == m.openThread?.id }) { shown.append(("flag", "reader-flag")) }
+                if m.latestReceived?.bodyHtml != nil { shown.append(("format", "format-text")) }
+                // A frame not laid out yet leaves its control out.
+                return shown.compactMap { name, id in UIScript.frames[id].map { (name, $0.minX) } }
+                    .sorted { $0.1 < $1.1 }.map(\.0).joined(separator: ",")
+            }(),
+            // Heights of the buttons of the title line, as laid out, in
+            // points, comma-separated (`FramedButton`, `FramedSegments`):
+            // in the reader unsubscribe, the flag and the text | html
+            // switch, those shown; in a reply its first command. One
+            // design for reading and writing: the same height.
+            "title_button_heights": {
+                let ids = m.composer == nil
+                    ? ["reader-unsubscribe", "reader-flag", "format-text"]
+                    : ["compose-command-send"]
+                return ids.compactMap { UIScript.frames[$0] }.map { "\(Int($0.height.rounded()))" }.joined(separator: ",")
+            }(),
             // How the list shows each mail (`ListLayout`, `v` `l`):
             // `columns` or `stacked`.
             "list_layout": controller.listLayout.rawValue,

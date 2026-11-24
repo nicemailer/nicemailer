@@ -75,6 +75,9 @@ expect list_layout = columns
 key ;
 key e
 expect folder ~ Everything
+# The folder of the mail opens the title line, before the buttons: they
+# stay where they are whatever the folder's name.
+expect title_controls_order ~ folder,flag
 expect row_width = 372
 expect row_folder_with_account = false
 click status:s

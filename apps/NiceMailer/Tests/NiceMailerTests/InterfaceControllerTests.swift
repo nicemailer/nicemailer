@@ -285,6 +285,36 @@ struct InterfaceControllerTests {
         #expect(Set(core.calls("set_thread_flagged")[0]["thread_ids"] as? [Int] ?? []) == ids)
     }
 
+    /// The flag button of the reader's title line (`ui.md`, "Boutons de
+    /// l'en-tête"): on, then off, for the mail shown alone, even with
+    /// other rows marked (which `*` would flag).
+    @Test func theFlagButtonOfTheReaderTogglesTheMailShownAlone() async {
+        let shown = model.selectedThreadId!
+        #expect(model.openThread?.id == shown)
+        // J marks the second row and moves on; back to the first.
+        press("j"); press("J")
+        for _ in 0..<5 where model.selectedThreadId != shown { press("k") }
+        #expect(model.selectedThreadId == shown)
+        let marked = model.marked
+        #expect(!marked.isEmpty && !marked.contains(shown))
+        model.toggleFlag(of: shown)
+        // Shown at once, on this mail only.
+        #expect(model.threads.first { $0.id == shown }?.isFlagged == true)
+        #expect(model.threads.filter { marked.contains($0.id) }.allSatisfy { !$0.isFlagged })
+        #expect(await eventually { core.calls("set_thread_flagged").count == 1 })
+        #expect(core.calls("set_thread_flagged")[0]["thread_ids"] as? [Int] == [shown])
+        #expect(core.calls("set_thread_flagged")[0]["flagged"] as? Bool == true)
+        // Off again.
+        model.toggleFlag(of: shown)
+        #expect(model.threads.first { $0.id == shown }?.isFlagged == false)
+        #expect(await eventually { core.calls("set_thread_flagged").count == 2 })
+        #expect(core.calls("set_thread_flagged")[1]["flagged"] as? Bool == false)
+        // A conversation no longer in the list: nothing is sent.
+        model.toggleFlag(of: -1)
+        try? await Task.sleep(for: .milliseconds(50))
+        #expect(core.calls("set_thread_flagged").count == 2)
+    }
+
     @Test func readAndFlagToggles() async {
         press("*")
         #expect(await eventually { core.calls("set_thread_flagged").first?["flagged"] as? Bool == true })
