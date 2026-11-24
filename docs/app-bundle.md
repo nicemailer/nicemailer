@@ -165,6 +165,10 @@ A release bumps `version` in `Cargo.toml` in a commit of its own, then is tagged
 
 It publishes nothing: it ends by printing the SHA-256 and the commands that tag and create the GitHub release with `--notes-file <dist/…/notes.md>`. `make release-check` skips step 0 and stops after step 2, to check the signature without Apple, between two releases too. Before publishing, the image is tried on another Mac or user account (`specifications/plan-release.md`, section 5).
 
+### Homebrew cask
+
+The same disk image is installable with Homebrew from the tap [`nicemailer/homebrew-tap`](https://github.com/nicemailer/homebrew-tap): `brew install --cask nicemailer/tap/nicemailer` (one command, no `brew tap` needed). The cask installs the app from the release DMG, links the CLI of `Contents/Helpers` into Homebrew's `bin`, and on `brew uninstall` quits the app and unregisters the `eu.nicemailer.core` agent (`uninstall launchctl:`); `--zap` also removes the preferences and the mailbox. Its `version` and `sha256` are refreshed by the tap's own workflow (`.github/workflows/update-cask.yml`) within an hour of each release; run that workflow by hand from the tap's Actions tab to refresh at once. The app itself keeps updating through Sparkle, not Homebrew.
+
 ## Release notes
 
 The notes of each release come from `CHANGELOG.md` at the root of the repository, written by hand for users (its header gives the rules):

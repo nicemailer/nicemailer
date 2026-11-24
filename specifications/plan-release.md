@@ -94,6 +94,6 @@ Sur un autre compte utilisateur, ou mieux sur un autre Mac, à partir du DMG té
 
 1. **CI GitHub Actions** (runner macOS, déclenchée par un tag `vX.Y.Z`) reprenant le script de la section 4. Secrets : certificat `.p12` en base64 et son mot de passe, clé API App Store Connect pour `notarytool`.
 2. ~~**Sparkle** et `prepare_update` / `cancel_update`~~ : réalisés, `appcast.xml` signé EdDSA en asset de release (`make release`, `docs/updates.md`). Pour la CI : clé privée Sparkle en secret.
-3. **Cask Homebrew** (`architecture.md`, section 10, « Canal complémentaire »).
+3. ~~**Cask Homebrew** (`architecture.md`, section 10, « Canal complémentaire »).~~ Réalisé : le tap [`nicemailer/homebrew-tap`](https://github.com/nicemailer/homebrew-tap) publie le cask (`brew install --cask nicemailer/tap/nicemailer`), mis à jour automatiquement à chaque release par son workflow (`docs/app-bundle.md`, « Homebrew cask »).
 4. **Vérification de la signature des clients** par le noyau (`architecture.md`, section 9), contre l'équipe Developer ID.
 5. Binaires universels, si Intel est retenu.

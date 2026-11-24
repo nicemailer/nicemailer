@@ -383,7 +383,7 @@ Secrets requis : certificat `.p12` en base64, clé API App Store Connect pour `n
 
 ### Canal complémentaire
 
-Un cask Homebrew (`brew install --cask nicemailer`) pointant vers la même release, pour les utilisateurs techniques.
+Un cask Homebrew pointant vers la même release, pour les utilisateurs techniques. Réalisé : le tap [`nicemailer/homebrew-tap`](https://github.com/nicemailer/homebrew-tap), `brew install --cask nicemailer/tap/nicemailer` (`docs/app-bundle.md`, « Homebrew cask »).
 
 ---
 

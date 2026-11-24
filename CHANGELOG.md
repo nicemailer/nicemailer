@@ -14,6 +14,7 @@ How to write it:
 
 ### Added
 
+- **Install:** Install NiceMailer with Homebrew, `brew install --cask nicemailer/tap/nicemailer`, from the new [`nicemailer/homebrew-tap`](https://github.com/nicemailer/homebrew-tap) tap; it also links the `nicemailer` CLI into Homebrew's `bin` and follows the GitHub releases.
 - **Accounts:** Sign in to a Microsoft 365 or Outlook.com account with OAuth2, in the browser: no password is asked, and NiceMailer never sees one. In the Preferences, the password field becomes a "Sign in with Microsoft" button; in the CLI, `nicemailer account add` opens the sign-in page itself (`--no-browser` to print it only), and `nicemailer account login <key>` signs an existing account in again. The refresh token is kept in the Keychain in place of a password, and renewed by the core. The Microsoft application id is embedded in the app at build time, so adding such an account works at the first launch, with nothing to configure.
 - **Themes:** Choose the look of the app in the Preferences (Settings…, Appearance): geek (the default), clean, sober and airy, in SF Pro, regular, a Mac window with a toolbar, as in Mail, or a theme of your own. Each is a file of `~/.config/nicemailer/themes/` you can modify, and `nicemailer theme new` starts one of yours (docs/themes.md).
 - **Themes:** A fourth built-in theme, minimal: clean in iA Writer Mono V, with a smaller status bar that reminds the keys, a wider column of text, no animation, and mails shown as text. Choose it in the Preferences (Appearance) or with `v` `t`.

@@ -59,6 +59,8 @@ The full tour is on **[nicemailer.org](https://nicemailer.org)**.
 
 [Download the latest release](https://github.com/nicemailer/nicemailer/releases/latest) (a signed and notarized disk image), and move NiceMailer to Applications. It needs macOS 14 or later on Apple Silicon, and updates itself.
 
+Or with Homebrew: `brew install --cask nicemailer/tap/nicemailer` (from the [nicemailer/homebrew-tap](https://github.com/nicemailer/homebrew-tap) tap).
+
 Coming from another client? See [Moving to NiceMailer](https://nicemailer.org/docs/moving-to-nicemailer/): an mbox export (HEY, Gmail, Thunderbird…) can be imported as an archive account ([docs/import-mbox.md](docs/import-mbox.md)).
 
 ## Under the hood
