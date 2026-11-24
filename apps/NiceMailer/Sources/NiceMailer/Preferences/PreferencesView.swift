@@ -244,8 +244,9 @@ private struct AccountDetail: View {
     }
 
     /// An archive has no server, and an account no longer in accounts.toml
-    /// has nothing to connect to: no password to give.
-    private var takesPassword: Bool { account.kind == "imap" && account.enabled }
+    /// has nothing to connect to: no password to give. An OAuth2 account has
+    /// none either: it signs in again in the browser.
+    private var takesPassword: Bool { account.signIn == .password }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -257,29 +258,12 @@ private struct AccountDetail: View {
                     LabeledContent(L("State"), value: AccountRow.state(account) ?? L("Active"))
                     if let e = account.shownError {
                         Text(e).foregroundStyle(.red).textSelection(.enabled)
-                        // An OAuth2 account to sign in again: the same
-                        // browser flow as when adding it.
-                        if account.why?.values["reason"] == "oauth_reauth_needed" {
-                            if let done = oauthEdit.done {
-                                Text(done).foregroundStyle(.green)
-                            } else if let busy = oauthEdit.busy {
-                                HStack(spacing: 10) {
-                                    Text(busy).foregroundStyle(.secondary)
-                                    Button(L("Cancel")) { Task { await oauthEdit.cancel() } }
-                                        .uiTarget("prefs-reconnect-cancel")
-                                }
-                            } else {
-                                Button(L("Sign in again")) { Task { await oauthEdit.signIn() } }
-                                    .uiTarget("prefs-reconnect")
-                            }
-                            if let err = oauthEdit.error {
-                                Text(err).foregroundStyle(.red).textSelection(.enabled)
-                            }
-                        }
                     }
                 }
-                if takesPassword {
-                    PasswordSection(edit: passwordEdit)
+                switch account.signIn {
+                case .password: PasswordSection(edit: passwordEdit)
+                case .microsoft: MicrosoftSignInSection(edit: oauthEdit)
+                case .none: EmptyView()
                 }
                 if let act = activation, act.plan != nil {
                     ActivationSections(activation: act)
@@ -335,6 +319,42 @@ private struct AccountDetail: View {
             }
         }
         .padding(12)
+    }
+}
+
+/// A new browser sign-in for an OAuth2 account (`AccountOAuth`), in place
+/// of the password section: always offered, since signing in again is what
+/// mends any of its errors (a refused refresh token, a Keychain item it
+/// cannot read).
+private struct MicrosoftSignInSection: View {
+    @Bindable var edit: AccountOAuth
+
+    var body: some View {
+        Section {
+            if let done = edit.done {
+                Text(done).foregroundStyle(.green)
+            } else if let busy = edit.busy {
+                HStack(spacing: 10) {
+                    Text(busy).foregroundStyle(.secondary)
+                    Button(L("Cancel")) { Task { await edit.cancel() } }
+                        .uiTarget("prefs-reconnect-cancel")
+                }
+            } else {
+                Button(L("Sign in again")) { Task { await edit.signIn() } }
+                    .uiTarget("prefs-reconnect")
+            }
+            if let err = edit.error {
+                Text(err).font(.callout).foregroundStyle(.red).textSelection(.enabled)
+            }
+        } header: {
+            Text(L("Microsoft sign-in"))
+        } footer: {
+            Text(L("NiceMailer keeps no password for this account: it signs in with Microsoft in your browser. Sign in again after changing the password of the Microsoft account, or when NiceMailer cannot connect."))
+                .font(.caption).foregroundStyle(.secondary)
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 }
 
@@ -487,6 +507,10 @@ struct AddAccountForm: View {
         }
         .onAppear { if focus == nil { focus = .email } }
         .onChange(of: setup.errorField) { _, f in if let f { focus = f } }
+        // Tab out of the address: the servers looked for at once, the
+        // password field replaced by the sign-in button for an OAuth2
+        // account (`AccountSetup.discoverEarly`).
+        .onChange(of: focus) { old, new in if old == .email && new != .email { setup.discoverEarly() } }
     }
 
     // MARK: Sections asked for
@@ -498,7 +522,10 @@ struct AddAccountForm: View {
         VStack(alignment: .leading, spacing: 8) {
             Text(L("The sign-in happens in your browser: NiceMailer never sees your password."))
                 .font(.callout).foregroundStyle(.secondary)
-            if setup.oauthFlow != nil {
+            if setup.oauthSignedIn {
+                Text(L("Signed in with Microsoft."))
+                    .font(.callout).foregroundStyle(.green)
+            } else if setup.oauthFlow != nil {
                 Text(L("Waiting for sign-in in your browser…"))
                     .font(.callout).foregroundStyle(.secondary)
                 HStack(spacing: 10) {

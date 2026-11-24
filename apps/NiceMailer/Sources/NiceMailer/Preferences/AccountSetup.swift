@@ -184,9 +184,28 @@ struct AccountInfo: Decodable, Identifiable, Equatable {
     var readOnly: Bool? = nil
 
     var isReadOnly: Bool { readOnly == true }
+    /// How the core signs in to it: `password` or `oauth2`; `nil` for an
+    /// archive, an account no longer in accounts.toml, or an older core.
+    var auth: String? = nil
 
     /// The account's error in the user's language (`CoreReason`).
     var shownError: String? { CoreReason.text(why: why?.values, message: error) }
+
+    /// What its page offers to sign in again (`AccountSignIn`).
+    var signIn: AccountSignIn { AccountSignIn.of(kind: kind, enabled: enabled, auth: auth) }
+}
+
+/// What an account's page offers to sign in again: a new password, the
+/// browser sign-in of an OAuth2 account (whatever its error: a refused
+/// Keychain item too is mended by signing in again), or nothing for an
+/// archive or an account no longer in accounts.toml.
+enum AccountSignIn: Equatable {
+    case password, microsoft, none
+
+    nonisolated static func of(kind: String, enabled: Bool, auth: String?) -> AccountSignIn {
+        guard kind == "imap", enabled else { return .none }
+        return auth == "oauth2" ? .microsoft : .password
+    }
 }
 
 struct AccountInfoList: Decodable {
@@ -437,6 +456,9 @@ final class AccountSetup {
     private(set) var added: String?
 
     private(set) var discovery: DiscoveryReport?
+    /// The discovery started as soon as the address field loses the focus
+    /// (`discoverEarly`), awaited by `submit` rather than run twice.
+    private var earlyDiscovery: Task<Void, Never>?
     /// The OAuth2 flow running, while the user is in the browser: the
     /// password field is replaced by the waiting message, with Cancel and
     /// Reopen. Once finished, its id goes in the calls below, in place of
@@ -444,6 +466,11 @@ final class AccountSetup {
     private(set) var oauthFlow: String?
     /// The authorization URL of the running flow, to reopen it.
     private(set) var oauthUrl: String?
+    /// The flow finished: the user is signed in, its tokens wait in the
+    /// core for the calls below. The form says so instead of the waiting
+    /// message: Cancel would throw the tokens away (`oauth_cancel`), and the
+    /// page cannot be used twice.
+    private(set) var oauthSignedIn = false
     private(set) var test: AccountTestReport?
     /// The SMTP server to write, once known.
     private var smtpChoice: ServerParams?
@@ -476,6 +503,7 @@ final class AccountSetup {
             discovery = nil
             oauthFlow = nil
             oauthUrl = nil
+            oauthSignedIn = false
             if !keepingIMAP {
                 imapServer = nil
                 imapReason = nil
@@ -539,6 +567,11 @@ final class AccountSetup {
         // 1. The servers of the address.
         if discovery == nil {
             busy = L("Looking for the servers of %@…", Self.domain(of: email))
+            // Started when the address field lost the focus: its answer,
+            // if it is still this address's.
+            await earlyDiscovery?.value
+        }
+        if discovery == nil {
             var p: [String: Any] = ["email": email]
             if let given = imapServer?.params { p["imap"] = given.json }
             do {
@@ -584,6 +617,15 @@ final class AccountSetup {
             if let f = oauthFlow { p["oauth"] = ["flow": f] }
             do {
                 test = try await client.call("test_account", p) as AccountTestReport
+            } catch let e as CoreClient.RPCError where e.reason == "imap_auth_refused" && oauth {
+                // The token of the sign-in refused: there is no password to
+                // correct. The flow is over (its token is the refused one):
+                // the sign-in button comes back instead of "Signed in", and
+                // the message says what to do (`oauth2.md`, section 10).
+                oauthFlow = nil
+                oauthUrl = nil
+                oauthSignedIn = false
+                return stop(nil, Self.oauthRefused(host: imap.host, serverText: e.data["server_text"] ?? ""))
             } catch let e as CoreClient.RPCError where e.reason == "imap_auth_refused" {
                 // The server's own words, cited (`CoreReason`). A provider
                 // that asks for an app password: the likely cause said
@@ -651,6 +693,39 @@ final class AccountSetup {
         }
     }
 
+    /// What the form says when the IMAP server refuses the token of a
+    /// finished sign-in.
+    nonisolated static func oauthRefused(host: String, serverText: String) -> String {
+        L("%@ refused the Microsoft sign-in: %@. Sign in again; if it is refused again, IMAP may be turned off for this mailbox.", host, serverText)
+    }
+
+    /// The address field lost the focus (Tab, a click elsewhere): the
+    /// servers are looked for at once, so that an OAuth2 account shows the
+    /// sign-in button in place of the password field before the user
+    /// types a password that could never work (`oauth2.md`, section 9).
+    /// Silent: an address that cannot be looked up says why at "Add",
+    /// when `submit` tries again.
+    func discoverEarly() {
+        guard discovery == nil, busy == nil else { return }
+        let email = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard Self.looksLikeAddress(email) else { return }
+        let fields = imapServer
+        if let f = fields, f.params == nil { return }
+        var p: [String: Any] = ["email": email]
+        if let given = fields?.params { p["imap"] = given.json }
+        earlyDiscovery?.cancel()
+        // Swift note: a `Task` created on the main actor runs on it too, so
+        // the properties are read and written here without any lock.
+        earlyDiscovery = Task { [client] in
+            let d = try? await client.call("discover_account", p) as DiscoveryReport
+            // The address or the server changed meanwhile, or `submit` got
+            // its own answer: this one is not theirs.
+            guard !Task.isCancelled, let d, discovery == nil,
+                  self.email.trimmingCharacters(in: .whitespacesAndNewlines) == email, imapServer == fields else { return }
+            discovery = d
+        }
+    }
+
     // MARK: OAuth2 sign-in
 
     /// `oauth_begin` for the address, then the wait for the flow's
@@ -678,6 +753,7 @@ final class AccountSetup {
                     // `busy` down before the resume: `submit` refuses to run
                     // while a step is marked busy.
                     busy = nil
+                    oauthSignedIn = true
                     await submit()
                     return
                 }
@@ -704,13 +780,16 @@ final class AccountSetup {
     /// `oauth_cancel`: the flow stops; its `OAuthFinished` comes back and
     /// ends the wait quietly (`oauth_cancelled`).
     func cancelSignIn() async {
-        if let f = oauthFlow {
+        // A finished flow holds the tokens the adding needs: nothing to
+        // cancel any more.
+        if let f = oauthFlow, !oauthSignedIn {
             do { let _: IgnoredResult = try await client.call("oauth_cancel", ["flow": f]) } catch { }
         }
     }
 
     /// Reopens the authorization page ("Reopen the page").
     func reopenSignIn() {
+        guard !oauthSignedIn else { return }
         if let u = oauthUrl.flatMap({ URL(string: $0) }) { NSWorkspace.shared.open(u) }
     }
 

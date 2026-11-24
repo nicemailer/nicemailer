@@ -99623,6 +99623,454 @@
           }
         }
       }
+    },
+    "Signed in with Microsoft.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connecté avec Microsoft."
+          }
+        },
+        "da": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Logget ind med Microsoft."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mit Microsoft angemeldet."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sesión iniciada con Microsoft."
+          }
+        },
+        "fi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kirjauduttu Microsoftilla."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Accesso eseguito con Microsoft."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Microsoft でサインインしました。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Microsoft로 로그인했습니다."
+          }
+        },
+        "nb": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Logget på med Microsoft."
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aangemeld met Microsoft."
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zalogowano przez Microsoft."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conectado com a Microsoft."
+          }
+        },
+        "pt-PT": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sessão iniciada com a Microsoft."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вход выполнен через Microsoft."
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Inloggad med Microsoft."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вхід виконано через Microsoft."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已使用 Microsoft 登录。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已使用 Microsoft 登入。"
+          }
+        }
+      }
+    },
+    "%@ refused the Microsoft sign-in: %@. Sign in again; if it is refused again, IMAP may be turned off for this mailbox.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ a refusé la connexion Microsoft : %@. Reconnectez-vous ; si c’est encore refusé, IMAP est peut-être désactivé pour cette boîte."
+          }
+        },
+        "da": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ afviste Microsoft-logget: %2$@. Log ind igen; hvis det afvises igen, er IMAP måske slået fra for denne postkasse."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ hat die Microsoft-Anmeldung abgelehnt: %2$@. Melden Sie sich erneut an; wird sie wieder abgelehnt, ist IMAP für dieses Postfach vielleicht deaktiviert."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ rechazó el inicio de sesión de Microsoft: %2$@. Inicie sesión de nuevo; si se rechaza otra vez, puede que IMAP esté desactivado para este buzón."
+          }
+        },
+        "fi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ hylkäsi Microsoft-kirjautumisen: %2$@. Kirjaudu uudelleen; jos se hylätään taas, IMAP voi olla poistettu käytöstä tästä postilaatikosta."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ ha rifiutato l’accesso Microsoft: %2$@. Accedi di nuovo; se viene rifiutato ancora, IMAP potrebbe essere disattivato per questa casella."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@がMicrosoftのサインインを拒否しました：%2$@。もう一度サインインしてください。再び拒否される場合は、このメールボックスでIMAPが無効になっている可能性があります。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@에서 Microsoft 로그인을 거부했습니다: %2$@. 다시 로그인하세요. 다시 거부되면 이 사서함에서 IMAP이 꺼져 있을 수 있습니다."
+          }
+        },
+        "nb": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ avviste Microsoft-påloggingen: %2$@. Logg på igjen; hvis den avvises igjen, kan IMAP være slått av for denne postkassen."
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ heeft de Microsoft-aanmelding geweigerd: %2$@. Meld je opnieuw aan; als die weer wordt geweigerd, staat IMAP misschien uit voor deze mailbox."
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ odrzucił logowanie Microsoft: %2$@. Zaloguj się ponownie; jeśli znów zostanie odrzucone, IMAP może być wyłączony dla tej skrzynki."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ recusou o login da Microsoft: %2$@. Entre de novo; se for recusado outra vez, o IMAP pode estar desativado para esta caixa de correio."
+          }
+        },
+        "pt-PT": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ recusou o início de sessão Microsoft: %2$@. Inicie sessão de novo; se for recusado outra vez, o IMAP pode estar desativado para esta caixa de correio."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ отклонил вход через Microsoft: %2$@. Войдите снова; если вход снова отклонён, возможно, для этого ящика отключён IMAP."
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ avvisade Microsoft-inloggningen: %2$@. Logga in igen; om den avvisas igen kan IMAP vara avstängt för den här brevlådan."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ відхилив вхід через Microsoft: %2$@. Увійдіть знову; якщо вхід знову відхилено, можливо, для цієї скриньки вимкнено IMAP."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ 拒绝了 Microsoft 登录：%2$@。请重新登录；如果再次被拒绝，此邮箱可能已关闭 IMAP。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ 拒絕了 Microsoft 登入：%2$@。請重新登入；如果再次被拒絕，此信箱可能已關閉 IMAP。"
+          }
+        }
+      }
+    },
+    "Microsoft sign-in": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connexion Microsoft"
+          }
+        },
+        "da": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Microsoft-login"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Microsoft-Anmeldung"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Inicio de sesión de Microsoft"
+          }
+        },
+        "fi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Microsoft-kirjautuminen"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Accesso Microsoft"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Microsoft サインイン"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Microsoft 로그인"
+          }
+        },
+        "nb": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Microsoft-pålogging"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Microsoft-aanmelding"
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Logowanie Microsoft"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Login da Microsoft"
+          }
+        },
+        "pt-PT": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Início de sessão Microsoft"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вход через Microsoft"
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Microsoft-inloggning"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вхід через Microsoft"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Microsoft 登录"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Microsoft 登入"
+          }
+        }
+      }
+    },
+    "NiceMailer keeps no password for this account: it signs in with Microsoft in your browser. Sign in again after changing the password of the Microsoft account, or when NiceMailer cannot connect.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "NiceMailer ne garde aucun mot de passe pour ce compte : il se connecte avec Microsoft dans votre navigateur. Reconnectez-vous après avoir changé le mot de passe du compte Microsoft, ou quand NiceMailer ne peut plus se connecter."
+          }
+        },
+        "da": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "NiceMailer gemmer ingen adgangskode til denne konto: den logger ind med Microsoft i din browser. Log ind igen, når du har ændret adgangskoden til Microsoft-kontoen, eller når NiceMailer ikke kan oprette forbindelse."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "NiceMailer speichert für dieses Konto kein Passwort: Es meldet sich in Ihrem Browser bei Microsoft an. Melden Sie sich erneut an, nachdem Sie das Passwort des Microsoft-Kontos geändert haben oder wenn NiceMailer keine Verbindung herstellen kann."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "NiceMailer no guarda ninguna contraseña para esta cuenta: inicia sesión con Microsoft en su navegador. Vuelva a iniciar sesión después de cambiar la contraseña de la cuenta de Microsoft o cuando NiceMailer no pueda conectarse."
+          }
+        },
+        "fi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "NiceMailer ei tallenna tälle tilille salasanaa: se kirjautuu Microsoftilla selaimessasi. Kirjaudu uudelleen, kun olet vaihtanut Microsoft-tilin salasanan tai kun NiceMailer ei saa yhteyttä."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "NiceMailer non conserva alcuna password per questo account: accede con Microsoft nel tuo browser. Accedi di nuovo dopo aver cambiato la password dell’account Microsoft, o quando NiceMailer non riesce a connettersi."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "NiceMailer はこのアカウントのパスワードを保存しません。ブラウザで Microsoft にサインインします。Microsoft アカウントのパスワードを変更したとき、または NiceMailer が接続できないときは、もう一度サインインしてください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "NiceMailer는 이 계정의 암호를 보관하지 않습니다. 브라우저에서 Microsoft로 로그인합니다. Microsoft 계정의 암호를 변경한 후나 NiceMailer가 연결할 수 없을 때 다시 로그인하세요."
+          }
+        },
+        "nb": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "NiceMailer lagrer ikke noe passord for denne kontoen: den logger på med Microsoft i nettleseren. Logg på igjen etter at du har endret passordet til Microsoft-kontoen, eller når NiceMailer ikke får koblet til."
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "NiceMailer bewaart geen wachtwoord voor dit account: het meldt zich aan bij Microsoft in je browser. Meld je opnieuw aan nadat je het wachtwoord van het Microsoft-account hebt gewijzigd, of wanneer NiceMailer geen verbinding kan maken."
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "NiceMailer nie przechowuje hasła do tego konta: loguje się przez Microsoft w przeglądarce. Zaloguj się ponownie po zmianie hasła konta Microsoft lub gdy NiceMailer nie może się połączyć."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O NiceMailer não guarda senha para esta conta: ele entra com a Microsoft no seu navegador. Entre de novo depois de mudar a senha da conta Microsoft, ou quando o NiceMailer não conseguir se conectar."
+          }
+        },
+        "pt-PT": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O NiceMailer não guarda palavra-passe para esta conta: inicia sessão com a Microsoft no seu navegador. Inicie sessão de novo depois de alterar a palavra-passe da conta Microsoft, ou quando o NiceMailer não conseguir ligar-se."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "NiceMailer не хранит пароль для этой учётной записи: вход выполняется через Microsoft в браузере. Войдите снова после смены пароля учётной записи Microsoft или когда NiceMailer не может подключиться."
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "NiceMailer sparar inget lösenord för det här kontot: det loggar in med Microsoft i webbläsaren. Logga in igen när du har bytt lösenord för Microsoft-kontot, eller när NiceMailer inte kan ansluta."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "NiceMailer не зберігає пароль для цього облікового запису: вхід виконується через Microsoft у браузері. Увійдіть знову після зміни пароля облікового запису Microsoft або коли NiceMailer не може під’єднатися."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "NiceMailer 不保存此帐户的密码：它在你的浏览器中通过 Microsoft 登录。更改 Microsoft 帐户的密码后，或 NiceMailer 无法连接时，请重新登录。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "NiceMailer 不會保存此帳號的密碼：它會在你的瀏覽器中透過 Microsoft 登入。變更 Microsoft 帳號的密碼後，或 NiceMailer 無法連線時，請重新登入。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

@@ -1173,6 +1173,7 @@ private final class Runner {
             "setup_added": s.added ?? "",
             "setup_oauth_flow": s.oauthFlow ?? "",
             "setup_oauth_url": s.oauthUrl ?? "",
+            "setup_oauth_signed_in": "\(s.oauthSignedIn)",
             "setup_calls": (UIScript.setupCore?.calls ?? []).joined(separator: " | "),
             "setup_look_only": "\(s.plan?.lookOnly == true)",
             "setup_created": s.plan?.created.joined(separator: ",") ?? "",

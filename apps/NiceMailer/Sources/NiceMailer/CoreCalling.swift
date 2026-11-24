@@ -18,6 +18,26 @@ struct CoreEvent: Sendable {
     let params: [String: JSONValue]
 }
 
+/// The waiters of `waitEvent`, shared by `CoreClient` and the fake core of
+/// the tests so that both hand the events out the same way.
+enum EventWaiters {
+    /// Removes from `waiters` those waiting for `method`, and returns them
+    /// to be resumed; the others keep waiting for their own event.
+    ///
+    /// Each waiter is resumed exactly once. Swift note: a
+    /// `CheckedContinuation` resumed twice is a fatal error (the app
+    /// stops), and one never resumed leaves its task suspended forever. A
+    /// waiter left in the list after being resumed, or dropped without
+    /// being resumed, is therefore a crash or a sign-in that never ends.
+    /// Generic over the continuation (`C`) so that it is tested on plain
+    /// values.
+    static func take<C>(_ waiters: inout [(method: String, continuation: C)], for method: String) -> [C] {
+        let taken = waiters.filter { $0.method == method }.map(\.continuation)
+        waiters.removeAll { $0.method == method }
+        return taken
+    }
+}
+
 protocol CoreCalling: AnyObject {
     /// Sends `method` with `params` and decodes the result as `R`.
     func call<R: Decodable>(_ method: String, _ params: [String: Any]) async throws -> R

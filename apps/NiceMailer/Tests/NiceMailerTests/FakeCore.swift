@@ -43,7 +43,7 @@ final class FakeCore: CoreCalling, @unchecked Sendable {
     }
 
     /// Waiters of one event each, as `CoreClient` keeps them.
-    private var eventWaiters: [(String, CheckedContinuation<CoreEvent?, Never>)] = []
+    private var eventWaiters: [(method: String, continuation: CheckedContinuation<CoreEvent?, Never>)] = []
 
     func waitEvent(_ method: String) async -> CoreEvent? {
         await withCheckedContinuation { cont in
@@ -57,11 +57,10 @@ final class FakeCore: CoreCalling, @unchecked Sendable {
     /// stream would (`CoreClient.notifyWaiters`).
     func pushEvent(_ method: String, _ params: [String: Any]) {
         lock.lock()
-        let waiting = eventWaiters
-        eventWaiters.removeAll { $0.0 != method }
+        let waiting = EventWaiters.take(&eventWaiters, for: method)
         lock.unlock()
         let ev = CoreEvent(method: method, params: params.compactMapValues(JSONValue.init))
-        for w in waiting where w.0 == method { w.1.resume(returning: ev) }
+        for c in waiting { c.resume(returning: ev) }
     }
 
     /// Requests made with `method`, in order.

@@ -211,8 +211,13 @@ expect prefs_selection = add
 click prefs:email
 type me@outlook.test
 expect setup_email = me@outlook.test
-click prefs:add
+# Tab out of the address: the servers are looked up at once, and the
+# password field becomes the sign-in button before anything is typed.
+key tab
 expect setup_calls ~ discover_account email=me@outlook.test
+expect prefs_focus != prefs-password
+snap preferences-oauth2-after-tab
+click prefs:add
 expect setup_sections =
 expect setup_oauth_flow =
 # No password field anymore: the sign-in button instead.
@@ -220,14 +225,24 @@ expect prefs_focus != prefs-password
 click prefs:signin-microsoft
 expect setup_calls ~ oauth_begin email=me@outlook.test
 expect setup_oauth_flow = uiscript-flow
+expect setup_oauth_signed_in = false
 snap preferences-oauth2-waiting
 event OAuthFinished {"flow": "uiscript-flow", "ok": true, "account": null, "email": "me@outlook.test", "why": null}
 expect setup_calls ~ test_account email=me@outlook.test imap=outlook.office365.com:993 oauth=uiscript-flow password=empty
 expect setup_calls ~ test_smtp candidates=smtp.office365.com email=me@outlook.test imap=outlook.office365.com:993 oauth=uiscript-flow password=empty
+# Signed in: said as such, without Cancel or Reopen.
+expect setup_oauth_signed_in = true
 expect setup_sections = server
 click prefs:add
 expect setup_calls ~ add_account correspondents=true email=me@outlook.test imap=outlook.office365.com:993 key=outlook oauth=uiscript-flow password=empty roles=11 smtp=smtp.office365.com:587 uidnext=20000
 expect setup_added ~ me@outlook.test added
 expect prefs_accounts = perso,fixture,outlook
 snap preferences-oauth2
+# Its page: "Sign in again" in place of a password field.
+click prefs:account-outlook
+expect prefs_selection = outlook
+expect prefs_focus != prefs-new-password
+click prefs:reconnect
+expect setup_calls ~ oauth_begin
+snap preferences-oauth2-account
 preferences close

@@ -228,6 +228,7 @@ final class UIScriptSetupCore: CoreCalling, @unchecked Sendable {
                 "id": id, "key": p["key"] ?? "?", "kind": "imap", "email": p["email"] ?? NSNull(),
                 "display_name": p["display_name"] ?? NSNull(), "enabled": true, "error": NSNull(), "position": 1000 + id,
                 "read_only": p["read_only"] as? Bool ?? false,
+                "auth": p["oauth"] != nil ? "oauth2" : "password",
             ])
             return id
         }
@@ -287,7 +288,8 @@ private struct AccountInfoListJSON: Decodable {
         init(from decoder: Decoder) throws {
             let a = try AccountInfo(from: decoder)
             json = ["id": a.id, "key": a.key, "kind": a.kind, "email": a.email ?? NSNull(), "display_name": a.displayName ?? NSNull(),
-                    "enabled": a.enabled, "error": a.error ?? NSNull(), "position": a.position, "read_only": a.isReadOnly]
+                    "enabled": a.enabled, "error": a.error ?? NSNull(), "position": a.position, "read_only": a.isReadOnly,
+                    "auth": a.auth ?? NSNull()]
         }
     }
 }

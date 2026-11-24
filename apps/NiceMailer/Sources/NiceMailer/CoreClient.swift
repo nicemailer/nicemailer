@@ -330,11 +330,11 @@ final class CoreClient: @unchecked Sendable {
     /// thread, a scripted event is handled directly (`UIScript` "event").
     func notifyWaiters(_ ev: Event) {
         lock.lock()
-        let waiting = eventWaiters
-        eventWaiters.removeAll { $0.method != ev.method }
+        let waiting = EventWaiters.take(&eventWaiters, for: ev.method)
         lock.unlock()
+        // Resumed outside the lock: the resumed code may wait again at once.
         let core = CoreEvent(method: ev.method, params: ev.params)
-        for w in waiting where w.method == ev.method { w.continuation.resume(returning: core) }
+        for c in waiting { c.resume(returning: core) }
     }
 }
 
