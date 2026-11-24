@@ -1211,6 +1211,13 @@ private final class Runner {
                 let fillRight = row.maxX - scaled(CGFloat(Look.theme.layout.rowInset))
                 return "\(Int((fillRight - flag.maxX).rounded()))"
             }(),
+            // How the list shows each mail (`ListLayout`, `v` `l`):
+            // `columns` or `stacked`.
+            "list_layout": controller.listLayout.rawValue,
+            // The third line of the selected row in stacked, as drawn
+            // (`ListLayout.snippetLine`); empty in columns.
+            "selected_snippet": controller.listLayout == .stacked
+                ? ListLayout.snippetLine(m.threads.first { $0.id == m.selectedThreadId }?.snippet) : "",
             "row_width": "\(Int((UIScript.frames["thread-\(m.selectedThreadId ?? -1)"]?.width ?? 0).rounded()))",
             // The folder column of the selected row in "Everything", as
             // drawn: the folder, and its account when the row has room.

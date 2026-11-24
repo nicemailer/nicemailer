@@ -5,7 +5,10 @@
 # column sliding in. Its snapshots are the ones to look at.
 expect theme = clean
 expect title_bar = merged
-expect row_height = 30
+# Three lines per mail (window.list_layout = "stacked"); in columns, rows
+# of 30 pt (list-layout.uiscript).
+expect list_layout = stacked
+expect row_height > 50
 # bar_size = "medium": the blocks of the bar at the text size of the bar
 # (themes.uiscript has the same, large).
 expect status_help_height = 22

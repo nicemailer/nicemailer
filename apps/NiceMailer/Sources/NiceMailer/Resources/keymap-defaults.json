@@ -94,6 +94,7 @@
     "view.toggle_html",
     "view.toggle_remote_images",
     "view.cycle_status_bar",
+    "view.toggle_list_layout",
     "view.choose_theme",
     "screen.down",
     "screen.up",
@@ -901,6 +902,10 @@
         {
           "action": "view.cycle_status_bar",
           "key": "s"
+        },
+        {
+          "action": "view.toggle_list_layout",
+          "key": "l"
         },
         {
           "action": "view.choose_theme",

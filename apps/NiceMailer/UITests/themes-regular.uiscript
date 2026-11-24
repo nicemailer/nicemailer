@@ -67,7 +67,11 @@ key i
 expect folder = Inbox
 # Save, near the right end of the toolbar, in "Everything": its menu is
 # pushed back to the left to stay whole in the window, and the list keeps
-# its width and its columns (the folder alone, no account).
+# its width and its columns (the folder alone, no account). regular opens
+# on three lines per mail (window.list_layout): v l gives the columns.
+key v
+key l
+expect list_layout = columns
 key ;
 key e
 expect folder ~ Everything
@@ -80,6 +84,9 @@ expect row_width = 372
 expect row_folder_with_account = false
 snap regular-save-menu
 key esc
+key v
+key l
+expect list_layout = stacked
 key ;
 key i
 expect folder = Inbox

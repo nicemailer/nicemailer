@@ -16,6 +16,7 @@ bar_line = false
 key_hints = true
 blocks = ["account", "folder", "attributes", "|", "view", "|", "move", "save", "ai", "->", "help"]
 default_columns = 2
+list_layout = "columns"
 
 [fonts]
 interface = "iA Writer Mono V"

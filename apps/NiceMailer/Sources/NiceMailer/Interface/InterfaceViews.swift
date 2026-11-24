@@ -1083,6 +1083,8 @@ private struct ThreadRows: View {
         let folderLabels = model.everythingFolderLabels
         // Read once per redraw, like the labels, not row by row.
         let showsKind = model.listShowsSenderKind
+        let stacked = controller.listLayout == .stacked
+        let rowHeight = ListLayout.rowHeight(controller.listLayout)
         // The column widths depend on the list width only, never on a row's
         // content: every row gets the same layout and the columns line up.
         GeometryReader { geo in
@@ -1094,10 +1096,21 @@ private struct ThreadRows: View {
                         // its place, for the alternate rows of a theme
                         // (`layout.zebra`); the id stays the thread's.
                         ForEach(Array(model.threads.enumerated()), id: \.element.id) { index, t in
-                            ThreadRow(
-                                thread: t, cursor: t.id == cursor, marked: marked.contains(t.id), layout: layout, index: index,
-                                folder: folderLabels.map { $0[t.folderId] ?? .init(folder: "", account: nil) },
-                                showsKind: showsKind, suggestion: model.aiSuggestions[t.id], names: model.folderNames)
+                            // One line in columns, or three (`ListLayout`, `v` `l`).
+                            Group {
+                                if stacked {
+                                    StackedThreadRow(
+                                        thread: t, cursor: t.id == cursor, marked: marked.contains(t.id), layout: layout,
+                                        index: index,
+                                        folder: folderLabels.map { $0[t.folderId] ?? .init(folder: "", account: nil) },
+                                        showsKind: showsKind, suggestion: model.aiSuggestions[t.id], names: model.folderNames)
+                                } else {
+                                    ThreadRow(
+                                        thread: t, cursor: t.id == cursor, marked: marked.contains(t.id), layout: layout, index: index,
+                                        folder: folderLabels.map { $0[t.folderId] ?? .init(folder: "", account: nil) },
+                                        showsKind: showsKind, suggestion: model.aiSuggestions[t.id], names: model.folderNames)
+                                }
+                            }
                                 .contentShape(Rectangle())
                                 // Click, ⌘-click, ⇧-click (`clickThread`).
                                 .onClick { controller.clickThread(t.id, $0) }
@@ -1111,7 +1124,11 @@ private struct ThreadRows: View {
                 // How many rows fit, for ctrl-d / ctrl-u (half a page). Read
                 // again when the window or the text size changes.
                 .onChange(of: geo.size.height, initial: true) { _, h in
-                    controller.listVisibleRows = InterfaceController.visibleRows(height: h, rowHeight: Look.rowHeight)
+                    controller.listVisibleRows = InterfaceController.visibleRows(height: h, rowHeight: rowHeight)
+                }
+                // Three lines per mail fit fewer rows (`v` `l`).
+                .onChange(of: rowHeight) { _, r in
+                    controller.listVisibleRows = InterfaceController.visibleRows(height: geo.size.height, rowHeight: r)
                 }
                 // For the UI scripts: whether the rows have room for the
                 // account (`row_folder_with_account`).

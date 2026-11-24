@@ -3002,6 +3002,10 @@ pub struct ThemeWindow {
     /// The blocks shown, in order, with the separators `|` and `->`.
     pub blocks: Vec<String>,
     pub default_columns: u8,
+    /// How the list shows each mail until the user chooses with `v` `l`:
+    /// `columns` (one line per mail) or `stacked` (three lines: sender and
+    /// date, subject, snippet).
+    pub list_layout: String,
 }
 
 /// `[fonts]` of a theme (section 6.2). A font is `system`, `system-mono`,

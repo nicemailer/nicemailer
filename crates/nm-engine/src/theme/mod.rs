@@ -540,6 +540,7 @@ pub fn view(resolved: &Resolved, dir: &Path, error: Option<&Problem>, warnings: 
             bar_line: boolean(v, "window.bar_line"),
             blocks,
             default_columns: int(v, "window.default_columns") as u8,
+            list_layout: text(v, "window.list_layout"),
         },
         fonts: nm_api::ThemeFonts {
             interface: text(v, "fonts.interface"),

@@ -1363,6 +1363,31 @@ struct InterfaceControllerTests {
         #expect(again.columns == 3 && again.statusPosition == .hidden)
     }
 
+    /// `v` `l` (`ui.md`, "Liste", "Deux présentations"): one line per
+    /// mail in columns, or three, back and forth; remembered, and said in
+    /// the status bar.
+    @Test func vlSwitchesTheListBetweenOneLineAndThreeLinesPerMail() {
+        #expect(controller.listLayout == .columns)
+        press("v"); press("l")
+        #expect(controller.listLayout == .stacked)
+        #expect(model.flash == L("List: three lines per mail"))
+        #expect(controller.overlay == .none)
+        // A new controller reads the remembered choice.
+        #expect(InterfaceController(model: model, defaults: defaults).listLayout == .stacked)
+        // The keys of the list work the same.
+        press("j")
+        #expect(selectedIndex == 1)
+        press("v"); press("l")
+        #expect(controller.listLayout == .columns)
+        #expect(model.flash == L("List: one line per mail"))
+        #expect(InterfaceController(model: model, defaults: defaults).listLayout == .columns)
+    }
+
+    @Test func anUnknownListLayoutFallsBackToColumns() {
+        defaults.set("cards", forKey: ListLayout.defaultsKey)
+        #expect(InterfaceController(model: model, defaults: defaults).listLayout == .columns)
+    }
+
     @Test func returnReadsTheMailInOneColumnAndEscapeGoesBackToTheList() {
         press("v"); press("1")
         #expect(controller.columns == 1 && !controller.reading)

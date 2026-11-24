@@ -113,6 +113,8 @@ pub const KEYS: &[Key] = &[
     k("window", "blocks", Kind::Blocks,
       "blocks shown, in order; \"|\" is a wide gap, \"->\" sends what follows to the right; a block left out is hidden, its key still works"),
     k("window", "default_columns", Kind::Int(1, 3), "columns of a first window: 1, 2 or 3"),
+    k("window", "list_layout", Kind::Choice(&["columns", "stacked"]),
+      "the list of mails until you choose with v l: columns, one line per mail; stacked, three lines (sender and date, subject, the beginning of the mail)"),
     // [fonts] (section 6.2).
     k("fonts", "interface", Kind::Font, "the whole interface: list, bars, menus, pickers"),
     k("fonts", "reading", Kind::Font, "the body of the mails, and the default font of their HTML"),

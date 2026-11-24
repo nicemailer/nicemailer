@@ -28,7 +28,8 @@
         "->",
         "help"
       ],
-      "default_columns": 2
+      "default_columns": 2,
+      "list_layout": "stacked"
     },
     "fonts": {
       "interface": "system",
@@ -168,7 +169,8 @@
         "->",
         "help"
       ],
-      "default_columns": 2
+      "default_columns": 2,
+      "list_layout": "columns"
     },
     "fonts": {
       "interface": "iA Writer Mono V",
@@ -308,7 +310,8 @@
         "->",
         "help"
       ],
-      "default_columns": 3
+      "default_columns": 3,
+      "list_layout": "stacked"
     },
     "fonts": {
       "interface": "system",

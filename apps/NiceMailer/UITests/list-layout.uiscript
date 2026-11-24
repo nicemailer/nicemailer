@@ -1,0 +1,52 @@
+# The two presentations of the list (ui.md, "Liste", "Deux présentations";
+# docs/geek-ui.md). clean opens on three lines per mail, as Apple Mail
+# (window.list_layout = "stacked": the sender and the date, the subject,
+# the beginning of the latest message); v l goes to one line per mail, in
+# columns, and back. Each presentation keeps its own width of the list: a
+# quarter of the window in stacked, a third in columns
+# (fixtures/list-layout.config.toml: the theme clean).
+expect theme = clean
+appearance light
+expect list_layout = stacked
+# Three lines of text: a row much taller than in columns.
+expect row_height > 50
+expect selected_snippet ~ Bonjour Alex
+# A quarter of the window (1,400 pt): a narrow list.
+expect row_width < 360
+expect row_width > 300
+snap list-layout-stacked
+# The keys of the list work the same: the next mail, its snippet.
+key j
+expect selected = 1
+expect selected_snippet !~ Bonjour Alex
+# The flag of the selected row, on the first line, inside its fill.
+key *
+expect selected_flagged = true
+expect selected_flag_inside > 3
+snap list-layout-stacked-flagged
+key *
+# The Display menu offers the other one, before the theme.
+key v
+expect overlay ~ menu
+expect menu_rows ~ l list: one line or three per mail
+snap list-layout-menu
+key l
+expect overlay = none
+expect list_layout = columns
+expect flash ~ one line
+# Rows of 30 pt (layout.row_height), a wider list: the width of columns.
+expect row_height = 30
+expect row_width > 400
+expect selected_snippet =
+expect selected = 1
+snap list-layout-columns
+# Back to three lines per mail: the narrow list again.
+key v
+key l
+expect list_layout = stacked
+expect flash ~ three lines
+expect row_width < 360
+expect selected = 1
+# A narrow window: what the presentation is for.
+resize 900x800
+snap list-layout-stacked-narrow

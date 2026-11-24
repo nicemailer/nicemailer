@@ -53,6 +53,9 @@ struct ThemeView: Decodable, Equatable {
         /// The blocks shown, in order, with the separators `|` and `->`.
         let blocks: [String]
         let defaultColumns: Int
+        /// The list until the user chooses with `v` `l`: `columns` or
+        /// `stacked` (`ListLayout`).
+        let listLayout: String
     }
 
     /// `[fonts]` (section 6.2).

@@ -157,6 +157,10 @@ fn numbers_choices_and_switches_are_checked() {
     refused("mine", "[layout]\nzebra = \"yes\"\n", Some(2), "expected true or false");
     refused("mine", "[window]\nbar_type = \"ribbon\"\n", Some(2), "must be one of: status_bar, toolbar");
     refused("mine", "[window]\ndefault_columns = 4\n", Some(2), "must be from 1 to 3");
+    // The list of mails on one line or three (v l).
+    let l = ok("mine", "[window]\nlist_layout = \"stacked\"\n");
+    assert_eq!(l.values["window.list_layout"], Value::Text("stacked".into()));
+    refused("mine", "[window]\nlist_layout = \"cards\"\n", Some(2), "must be one of: columns, stacked");
 }
 
 #[test]

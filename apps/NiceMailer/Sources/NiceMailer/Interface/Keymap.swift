@@ -147,6 +147,7 @@ enum KeyAction: String, CaseIterable {
     case viewToggleHtml = "view.toggle_html"
     case viewToggleRemoteImages = "view.toggle_remote_images"
     case viewCycleStatusBar = "view.cycle_status_bar"
+    case viewToggleListLayout = "view.toggle_list_layout"
     case viewChooseTheme = "view.choose_theme"
     case screenDown = "screen.down"
     case screenUp = "screen.up"
@@ -358,6 +359,7 @@ enum KeyAction: String, CaseIterable {
         case .viewToggleHtml: return L("text / HTML")
         case .viewToggleRemoteImages: return L("remote images")
         case .viewCycleStatusBar: return L("status bar: bottom, top, hidden")
+        case .viewToggleListLayout: return L("list: one line or three per mail")
         case .viewChooseTheme: return L("theme…")
         case .aiComposeMenu: return L("in a reply: AI menu (proofread, rewrite, translate, subjects)")
         case .composeTogglePlain: return L("in a reply: text only or formatted text")

@@ -16,6 +16,7 @@ bar_line = true
 key_hints = false
 blocks = ["account", "folder", "attributes", "|", "view", "|", "move", "save", "ai", "->", "help"]
 default_columns = 3
+list_layout = "stacked"
 
 [fonts]
 interface = "system"

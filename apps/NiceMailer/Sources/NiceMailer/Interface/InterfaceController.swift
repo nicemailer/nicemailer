@@ -293,17 +293,42 @@ final class InterfaceController {
             model.statusBarAtTop = statusPosition == .top
         }
     }
-    /// Width of the mail list, as a fraction of the window ("un petit
-    /// tiers", resizable by dragging the separator).
+    /// How the list shows each mail: one line in columns, or three lines
+    /// (`ListLayout`, `v` `l`). The theme's until the user chooses
+    /// (`window.list_layout`: columns in geek, stacked in clean and
+    /// regular), then remembered as the columns are, in every theme and
+    /// every folder.
+    var listLayout: ListLayout {
+        didSet {
+            // A presentation the theme gives is not remembered as the user's.
+            if !applyingTheme { defaults.set(listLayout.rawValue, forKey: ListLayout.defaultsKey) }
+        }
+    }
+    /// Width of the mail list of each presentation, as a fraction of the
+    /// window: three lines per mail are made for a narrower list than one
+    /// line in columns, so each keeps the width the user gave it
+    /// (`ListLayout.fractionKey`, `defaultFraction`).
+    private var listFractions: [ListLayout: Double] = [:]
+    /// Width of the mail list in the presentation shown, as a fraction of
+    /// the window ("un petit tiers" in columns, resizable by dragging the
+    /// separator).
+    ///
+    /// Swift note: a computed property with `get` and `set`; SwiftUI still
+    /// redraws when it changes, since it reads observed stored properties
+    /// (`listFractions`, `listLayout`).
     var listFraction: Double {
-        didSet { defaults.set(listFraction, forKey: "geek.listFraction") }
+        get { listFractions[listLayout] ?? listLayout.defaultFraction }
+        set {
+            listFractions[listLayout] = newValue
+            defaults.set(newValue, forKey: listLayout.fractionKey)
+        }
     }
     /// Set while the layout of a theme is applied (`applyThemeLayout`): its
     /// values are not remembered as the user's choice.
     @ObservationIgnored private var applyingTheme = false
 
     /// The layout of the theme now in effect (`window.default_columns`,
-    /// `status_bar_position`), for what the user has not chosen: the theme
+    /// `status_bar_position`, `list_layout`), for what the user has not chosen: the theme
     /// arrives from the core after the window opened.
     func applyThemeLayout() {
         let w = model.theme.current.window
@@ -312,6 +337,9 @@ final class InterfaceController {
         if defaults.object(forKey: "geek.columns") == nil, columns != w.defaultColumns { columns = w.defaultColumns }
         if defaults.string(forKey: "geek.status") == nil, let p = StatusPosition(rawValue: w.statusBarPosition), statusPosition != p {
             statusPosition = p
+        }
+        if defaults.string(forKey: ListLayout.defaultsKey) == nil, let l = ListLayout(rawValue: w.listLayout), listLayout != l {
+            listLayout = l
         }
     }
 
@@ -645,7 +673,19 @@ final class InterfaceController {
             ?? StatusPosition(rawValue: window.statusBarPosition) ?? .top
         statusPosition = position
         model.statusBarAtTop = position == .top
-        listFraction = defaults.object(forKey: "geek.listFraction") as? Double ?? 0.32
+        // The presentation chosen last, else the theme's; an unknown value
+        // (a later version's) falls back to columns.
+        listLayout = ListLayout(rawValue: defaults.string(forKey: ListLayout.defaultsKey) ?? "")
+            ?? ListLayout(rawValue: window.listLayout) ?? .columns
+        // The width of each presentation's list, where the user left it.
+        // Swift note: built aside, then stored once: `init` must give every
+        // stored property a value before a method or subscript of `self`
+        // may run.
+        var fractions: [ListLayout: Double] = [:]
+        for layout in ListLayout.allCases {
+            if let f = defaults.object(forKey: layout.fractionKey) as? Double { fractions[layout] = f }
+        }
+        listFractions = fractions
         // Swift note: `didSet` does not run for assignments made in `init`,
         // so the model is told here about the remembered layout.
         model.readerVisible = readerVisible
@@ -1005,6 +1045,9 @@ final class InterfaceController {
         case .viewToggleRemoteImages: model.toggleRemoteImages()
         case .viewCycleStatusBar: cycleStatusBar()
         case .viewChooseTheme: openPicker(.themes)
+        case .viewToggleListLayout:
+            listLayout = listLayout.toggled
+            model.flash = listLayout.flash
         // The screens
         case .screenDown:
             screenIndex = min(screenCount - 1, screenIndex + 1)
