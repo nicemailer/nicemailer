@@ -372,6 +372,49 @@ fn an_oauth2_account_on_a_known_server_needs_a_sign_in() {
     engine.reload(&mut s.store, true).unwrap();
     let views = engine.account_views(s.store.list_account_rows().unwrap());
     assert!(views[0].error.as_deref().unwrap().contains("signed in again"), "{:?}", views[0].error);
+    // The clients offer "Sign in again", not a password, from `auth`.
+    assert_eq!(views[0].auth.as_deref(), Some("oauth2"));
+}
+
+#[test]
+fn a_password_account_says_so_and_an_archive_has_no_sign_in() {
+    let mut s = Setup::new();
+    s.accounts(&account("perso", "imap.example.com"));
+    let mut engine = s.engine(stored("perso", "imap.example.com"));
+    engine.reload(&mut s.store, true).unwrap();
+    let views = engine.account_views(s.store.list_account_rows().unwrap());
+    assert_eq!(views[0].auth.as_deref(), Some("password"));
+    // Gone from the file: nothing to sign in to.
+    s.accounts("");
+    engine.reload(&mut s.store, true).unwrap();
+    let views = engine.account_views(s.store.list_account_rows().unwrap());
+    assert!(!views[0].enabled && views[0].auth.is_none(), "{views:?}");
+}
+
+/// A refresh token refused at run time: the Keychain item is there, so
+/// only the worker knows; what it reports is what `list_accounts` gives
+/// (the app offers "Sign in again" from it), until the accounts are
+/// checked again after a new sign-in (`oauth2.md`, section 6).
+#[test]
+fn a_worker_error_shows_in_the_account_until_it_is_checked_again() {
+    let mut s = Setup::new();
+    s.accounts(&account("perso", "imap.example.com"));
+    let mut engine = s.engine(stored("perso", "imap.example.com"));
+    engine.reload(&mut s.store, true).unwrap();
+    let id = engine.account_id("perso").unwrap();
+    let why = nm_api::reason::OAUTH_REAUTH_NEEDED.with("account", "perso");
+    assert!(engine.set_worker_error(id, Some(why.clone())));
+    // The same verdict again is no change.
+    assert!(!engine.set_worker_error(id, Some(why)));
+    let view = &engine.account_views(s.store.list_account_rows().unwrap())[0];
+    assert_eq!(view.why.as_ref().unwrap()["reason"], "oauth_reauth_needed", "{view:?}");
+    assert!(view.error.as_deref().unwrap().contains("account login perso"), "{view:?}");
+
+    // A new credential saved: the worker's verdict is about the old one.
+    assert_eq!(names(&engine.recheck_accounts()), vec!["AccountChanged"]);
+    assert!(engine.account_views(s.store.list_account_rows().unwrap())[0].why.is_none());
+    assert!(engine.recheck_accounts().is_empty());
+    assert!(!engine.set_worker_error(id, None));
 }
 
 #[test]

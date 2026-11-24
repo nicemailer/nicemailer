@@ -89,6 +89,13 @@ pub trait SyncHost: Send + Sync + 'static {
     /// A transient event (`SyncProgress`): not numbered, not replayed.
     fn transient(&self, event: Event);
     fn raw(&self) -> &RawStore;
+    /// Records why the worker of `account_id` stopped trying until a person
+    /// acts (`Some`: an OAuth2 refresh token refused, `oauth2.md`, section
+    /// 6), or that it connects again (`None`), so that `list_accounts`
+    /// gives it: the app offers "Sign in again" from that answer. The
+    /// worker announces the change itself (`AccountError`,
+    /// `AccountChanged`).
+    fn account_blocked(&self, account_id: i64, why: Option<nm_api::Why>);
 }
 
 /// `host.write` returning a value: `f` gives the value and the changes.

@@ -269,8 +269,12 @@ fn set(status: &Mutex<AccountSync>, state: &str, error: Option<String>) {
 enum NoSession {
     /// Try again after a delay.
     Retry(String),
-    /// Do not try again until kicked (password, file).
-    Blocked { state: &'static str, error: String },
+    /// Do not try again until kicked (password, file). `why`: the reason
+    /// to announce and to give in `list_accounts` when only a person can
+    /// unblock the account (an OAuth2 refresh token refused); `None` when
+    /// the engine already reports it, or for a refused login, which the
+    /// worker announces from `state`.
+    Blocked { state: &'static str, error: String, why: Option<nm_api::Why> },
     Stopped,
 }
 
@@ -344,12 +348,21 @@ async fn connect(w: &Shared, conn: Conn) -> Result<(Session, Option<Namespace>),
         AuthMethod::Password => match secrets::imap_password(w.secrets.as_ref(), &w.spec.key, cfg) {
             Ok(p) => (p, false),
             Err(r @ Refusal::Unavailable(_)) => return Err(NoSession::Retry(r.message(&w.spec.key, cfg))),
-            Err(r) => return Err(NoSession::Blocked { state: "stopped", error: r.message(&w.spec.key, cfg) }),
+            Err(r) => return Err(NoSession::Blocked { state: "stopped", error: r.message(&w.spec.key, cfg), why: None }),
         },
         AuthMethod::Oauth2 => match w.oauth.access_token(&w.spec.key, cfg, w.secrets.as_ref()).await {
             Ok(t) => (t, true),
             Err(e) if e.is_temporary() => return Err(NoSession::Retry(e.why().message())),
-            Err(e) => return Err(NoSession::Blocked { state: "stopped", error: e.why().message() }),
+            // A refresh token refused (`invalid_grant`, `interaction_required`)
+            // or another explicit refusal of the provider (admin consent,
+            // conditional access): retrying cannot help, and the Keychain
+            // item exists, so the engine's static check does not see it.
+            // Its reason goes to the clients, which offer "Sign in again"
+            // for `oauth_reauth_needed`.
+            Err(e) => {
+                let why = e.why();
+                return Err(NoSession::Blocked { state: "stopped", error: why.message(), why: Some(why) });
+            }
         },
     };
     // Counted before connecting: an attempt that fails is seen by the
@@ -374,7 +387,15 @@ async fn connect(w: &Shared, conn: Conn) -> Result<(Session, Option<Namespace>),
                         fresh = true;
                         s.login_oauth2(&cfg.imap.username, &t).await
                     }
-                    Err(_) => Err(e),
+                    // The renewal itself failed. Temporary (network, 5xx):
+                    // try again later, the account is not in error. Else
+                    // the refresh token is refused: a sign-in is needed,
+                    // said as such rather than as a refused login.
+                    Err(t) if t.is_temporary() => return Err(NoSession::Retry(t.why().message())),
+                    Err(t) => {
+                        let why = t.why();
+                        return Err(NoSession::Blocked { state: "stopped", error: why.message(), why: Some(why) });
+                    }
                 }
             } else {
                 Err(e)
@@ -416,7 +437,12 @@ fn refused(w: &Shared, conn: Conn, e: ImapError, disabled: bool) -> NoSession {
     let id = w.spec.account_id;
     // Read at the refusal, not at the start: a password saved meanwhile
     // has not worked yet (`login_password_changed`).
+    // Not for an OAuth2 account: a token refused after a renewal is
+    // revoked, or IMAP is disabled for the mailbox (`oauth2.md`, section
+    // 11), never a lock for too many logins, which a password that worked
+    // before suggests.
     let worked = matches!(e, ImapError::AuthFailed(_))
+        && w.spec.config.auth != AuthMethod::Oauth2
         && read(w.host.as_ref(), |st| st.account_login_pace(id)).is_ok_and(|row| row.ok_at.is_some());
     let signal = pace::classify(&e, worked);
     let learnt = signal.and_then(|signal| w.pace.lock().unwrap().blocked(clock::now(), signal).map(|l| (signal, l)));
@@ -424,7 +450,7 @@ fn refused(w: &Shared, conn: Conn, e: ImapError, disabled: bool) -> NoSession {
         return match e {
             // A wrong password: never tried again until a new one is saved,
             // or the server could lock the account.
-            ImapError::AuthFailed(_) if signal != Some(Signal::Locked) => NoSession::Blocked { state: if disabled { "auth_disabled" } else { "auth_failed" }, error: e.to_string() },
+            ImapError::AuthFailed(_) if signal != Some(Signal::Locked) => NoSession::Blocked { state: if disabled { "auth_disabled" } else { "auth_failed" }, error: e.to_string(), why: None },
             _ => NoSession::Retry(e.to_string()),
         };
     };
@@ -499,6 +525,13 @@ impl Announced {
         self.announce(w, nm_api::Why::from(nm_api::reason::IMAP_DISABLED_FOR_MAILBOX));
     }
 
+    /// Only a person can unblock the account (an OAuth2 refresh token
+    /// refused): announced, and recorded for `list_accounts`.
+    fn blocked(&mut self, w: &Shared, why: nm_api::Why) {
+        w.host.account_blocked(w.spec.account_id, Some(why.clone()));
+        self.announce(w, why);
+    }
+
     fn announce(&mut self, w: &Shared, why: nm_api::Why) {
         let error = why.message();
         if self.0.as_deref() != Some(error.as_str()) {
@@ -509,6 +542,7 @@ impl Announced {
 
     fn clear(&mut self, w: &Shared) {
         if self.0.take().is_some() {
+            w.host.account_blocked(w.spec.account_id, None);
             w.host.event(Event::AccountChanged { account_id: w.spec.account_id });
         }
     }
@@ -562,15 +596,17 @@ async fn work_loop(w: &Shared) {
         let (mut s, namespace) = match connect(w, Conn::Work).await {
             Ok(s) => s,
             Err(NoSession::Stopped) => return,
-            Err(NoSession::Blocked { state, error }) => {
+            Err(NoSession::Blocked { state, error, why }) => {
                 // A missing password, or one saved for another server, is
                 // already announced by the engine (`list_accounts`,
-                // `AccountError`): only a refused login is news.
-                match state {
-                    "auth_failed" => announced.refused(w, &error),
+                // `AccountError`): only a refused login, or a refused OAuth2
+                // refresh token (`why`), is news.
+                match (why, state) {
+                    (Some(why), _) => announced.blocked(w, why),
+                    (None, "auth_failed") => announced.refused(w, &error),
                     // A token just renewed was refused too: IMAP is disabled
                     // for this mailbox, not a wrong sign-in.
-                    "auth_disabled" => announced.disabled(w),
+                    (None, "auth_disabled") => announced.disabled(w),
                     _ => {}
                 }
                 set(&w.status, state, Some(error));

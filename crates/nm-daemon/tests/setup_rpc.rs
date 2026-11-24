@@ -675,3 +675,30 @@ fn a_server_that_does_not_answer_and_a_stray_smtp_password_are_refused() {
     // Nothing written.
     assert!(!std::fs::read_to_string(dir.path().join("accounts.toml")).unwrap_or_default().contains("[accounts.k]"));
 }
+
+/// The access token of a finished flow goes only to an IMAP server of the
+/// compiled provider table, in TLS (`oauth2.md`, section 7, "Serveurs
+/// autorisés"): any other server named by the client is refused before
+/// the core connects to it, or even looks the flow up.
+#[test]
+fn an_oauth2_token_is_never_sent_to_a_server_outside_the_table() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_core, mut c) = core(dir.path(), "");
+    let flow = json!({"flow": "no-such-flow"});
+    let elsewhere = json!({ "host": "evil.example", "port": 993, "security": "tls" });
+    let clear = json!({ "host": "outlook.office365.com", "port": 143, "security": "none" });
+    for imap in [&elsewhere, &clear] {
+        let host = imap["host"].as_str().unwrap();
+        let params = [
+            ("test_account", json!({"email": "me@outlook.com", "imap": imap, "password": "", "oauth": flow})),
+            ("count_archive", json!({"email": "me@outlook.com", "imap": imap, "password": "", "oauth": flow, "uidnext": 1})),
+            ("add_account", json!({"key": "k", "email": "me@outlook.com", "imap": imap, "password": "", "oauth": flow})),
+        ];
+        for (method, p) in params {
+            let e = c.call(method, p).unwrap_err();
+            assert_eq!(e["data"]["reason"], "oauth2_unknown_server", "{method} {host}: {e:#}");
+            assert_eq!(e["data"]["host"], host, "{method}: {e:#}");
+        }
+    }
+    assert!(!std::fs::read_to_string(dir.path().join("accounts.toml")).unwrap_or_default().contains("[accounts.k]"));
+}

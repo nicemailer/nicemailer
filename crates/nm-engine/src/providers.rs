@@ -388,19 +388,21 @@ pub fn plan(
         && let Some(p) = crate::oauth2::provider_for_imap(&used.server.host)
     {
         smtp.clear();
+        // Port 587 with STARTTLS only: it is the one Microsoft documents
+        // for client submission with XOAUTH2 (`oauth2.md`, section 7), and
+        // a try on 465 first could hang up to the connection timeout on
+        // each host before 587 is reached.
         for host in p.smtp {
-            for (port, security) in [(465, "tls"), (587, "starttls")] {
-                smtp.push(ServerCandidate {
-                    server: ImapParams {
-                        host: host.to_string(),
-                        port,
-                        security: security.into(),
-                        username: used.server.username.clone(),
-                        ca_file: used.server.ca_file.clone(),
-                    },
-                    origin: "provider".into(),
-                });
-            }
+            smtp.push(ServerCandidate {
+                server: ImapParams {
+                    host: host.to_string(),
+                    port: 587,
+                    security: "starttls".into(),
+                    username: used.server.username.clone(),
+                    ca_file: used.server.ca_file.clone(),
+                },
+                origin: "provider".into(),
+            });
         }
     }
     let mut seen = Vec::new();
@@ -810,17 +812,9 @@ mod tests {
         assert!(!m.imap_unsupported);
         assert_eq!((r.auth.as_str(), r.oauth_provider.as_deref()), ("oauth2", Some("microsoft")));
         assert_eq!(hosts(&[r.imap.unwrap()]), ["outlook.office365.com:993 tls provider"]);
-        // The SMTP servers are the compiled table's, on both submission
-        // ports, not the database's.
-        assert_eq!(
-            hosts(&r.smtp),
-            [
-                "smtp.office365.com:465 tls provider",
-                "smtp.office365.com:587 starttls provider",
-                "smtp-mail.outlook.com:465 tls provider",
-                "smtp-mail.outlook.com:587 starttls provider",
-            ]
-        );
+        // The SMTP servers are the compiled table's, not the database's,
+        // on the submission port Microsoft documents (587, STARTTLS) only.
+        assert_eq!(hosts(&r.smtp), ["smtp.office365.com:587 starttls provider", "smtp-mail.outlook.com:587 starttls provider"]);
     }
 
     #[test]
@@ -841,7 +835,8 @@ mod tests {
         assert_eq!(r.imap.unwrap().origin, "given");
         assert_eq!((r.auth.as_str(), r.oauth_provider.as_deref()), ("oauth2", Some("microsoft")));
         assert!(r.smtp.iter().all(|c| c.server.host.ends_with("office365.com") || c.server.host.ends_with("outlook.com")));
-        assert_eq!(r.smtp.len(), 4);
+        assert!(r.smtp.iter().all(|c| c.server.port == 587 && c.server.security == "starttls"));
+        assert_eq!(r.smtp.len(), 2);
     }
 
     #[test]
@@ -937,7 +932,7 @@ mod tests {
         assert_eq!(db.by_mx(&["contoso.mail.protection.outlook.com".to_string()]).unwrap().0.id, "office365.com");
         let r = plan(db, "me@outlook.com", &[], None, None, true).unwrap();
         assert_eq!((r.auth.as_str(), r.oauth_provider.as_deref()), ("oauth2", Some("microsoft")));
-        assert_eq!(hosts(&r.smtp).len(), 4, "the two table SMTP hosts on the two submission ports");
+        assert_eq!(hosts(&r.smtp).len(), 2, "the two table SMTP hosts, on port 587");
         let r = plan(db, "me@ik.me", &[], None, None, true).unwrap();
         assert_eq!(hosts(&r.smtp), ["mail.infomaniak.com:587 starttls provider"]);
     }

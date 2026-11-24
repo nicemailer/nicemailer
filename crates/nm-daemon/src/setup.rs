@@ -84,12 +84,31 @@ fn own(email: &str, identities: &[String]) -> Vec<String> {
     std::iter::once(email).chain(identities.iter().map(String::as_str)).map(|a| a.trim().to_lowercase()).collect()
 }
 
+/// With `oauth: {flow}`, the IMAP server the client names must be one the
+/// token may go to: a host of the compiled provider table, in TLS
+/// (`oauth2.md`, section 7, "Serveurs autorisés"). Checked before any
+/// connection: without it, a client could make the core send the flow's
+/// access token, valid one hour for the whole mailbox, to any server that
+/// announces `AUTH=XOAUTH2`.
+fn oauth_server_allowed(oauth: Option<&nm_api::OauthFlow>, imap: &nm_api::ImapParams) -> Result<(), RpcError> {
+    if oauth.is_none() {
+        return Ok(());
+    }
+    if nm_engine::oauth2::provider_for_imap(&imap.host).is_none()
+        || matches!(setup::spec_of(imap).map_err(invalid)?.security, nm_proto::imap::Security::None)
+    {
+        return Err(refused(reason::OAUTH2_UNKNOWN_SERVER.with("host", imap.host.as_str())));
+    }
+    Ok(())
+}
+
 /// `test_account`: the server tried, nothing written anywhere.
 pub async fn test_account(core: &Arc<Core>, p: TestAccountParams, source: Source) -> Result<TestAccountReport, RpcError> {
     human(source)?;
     let spec = setup::spec_of(&p.imap).map_err(invalid)?;
     let user = setup::username_of(&p.imap, &p.email);
     let import = core.engine.lock().unwrap().config().import.clone();
+    oauth_server_allowed(p.oauth.as_ref(), &p.imap)?;
     // `oauth: {flow}` replaces the password: the tokens stay in the core,
     // attached to the flow (`specifications/oauth2.md`, section 8).
     let tokens = match &p.oauth {
@@ -167,6 +186,7 @@ pub async fn count_archive(core: &Arc<Core>, p: CountArchiveParams, source: Sour
     for d in [&p.read_before, &p.unread_before].into_iter().flatten() {
         setup::parse_day(d).ok_or_else(|| refused(reason::DATE_INVALID.with("date", d.as_str())))?;
     }
+    oauth_server_allowed(p.oauth.as_ref(), &p.imap)?;
     // `oauth: {flow}` replaces the password, as in `test_account`.
     let tokens = match &p.oauth {
         Some(o) => Some(core.oauth.take_flow(&o.flow, &p.email).map_err(|w| RpcError::new(error_code::SERVER, w))?),
@@ -208,6 +228,7 @@ pub async fn add_account(core: &Arc<Core>, p: AddAccountParams, source: Source) 
     if p.oauth.is_some() && p.smtp_password.is_some() {
         return Err(refused(reason::INVALID_PARAMS.with("detail", "an OAuth2 account has no SMTP password: the same token is used")));
     }
+    oauth_server_allowed(p.oauth.as_ref(), &p.imap)?;
     // The flow must have succeeded, for this address.
     let tokens = match &p.oauth {
         Some(o) => Some(core.oauth.take_flow(&o.flow, &p.email).map_err(|w| RpcError::new(error_code::SERVER, w))?),

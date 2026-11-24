@@ -565,7 +565,8 @@ pub struct AccountConfig {
 #[serde(rename_all = "snake_case")]
 pub enum AuthMethod {
     Password,
-    /// Accepted in the file; not supported yet (`plan-imap.md`, section 6).
+    /// A browser sign-in, its refresh token in the Keychain
+    /// (`specifications/oauth2.md`).
     Oauth2,
 }
 

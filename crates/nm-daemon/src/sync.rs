@@ -45,6 +45,11 @@ impl SyncHost for CoreHost {
     fn raw(&self) -> &RawStore {
         &self.0.raw
     }
+
+    fn account_blocked(&self, account_id: i64, why: Option<nm_api::Why>) {
+        // The engine's lock only, not held while anything else is taken.
+        self.0.engine.lock().unwrap().set_worker_error(account_id, why);
+    }
 }
 
 /// Brings the workers in line with the accounts of the file applied, and

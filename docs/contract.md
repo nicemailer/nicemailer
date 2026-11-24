@@ -102,7 +102,7 @@ A dedicated command prints readable output, asks for confirmation when needed an
 
 | Method | What it does | CLI |
 | --- | --- | --- |
-| `list_accounts` | Every account (IMAP and archive) with its state, in display order, and whether it is only looked at (`read_only`). | `nicemailer accounts` |
+| `list_accounts` | Every account (IMAP and archive) with its state, in display order, whether it is only looked at (`read_only`), and how the core signs in to it (`auth`: `password` or `oauth2`; absent for an archive or an account no longer in `accounts.toml`). | `nicemailer accounts` |
 | `config_status` | The state of `config.toml` and `accounts.toml`: paths, the error that makes the core refuse them, warnings, and the settings the clients apply themselves (`ui`, `mcp`, `unsubscribe`, and `folder_names`, the names the app shows for the folders). | — (`nicemailer config check` checks the files itself, without the core.) |
 | `keymap_get` | The keys of the app: the defaults with `keymap.toml` applied, by context and by menu, each key in its canonical spelling; the error that makes the core refuse the file (the previous keys then stay), and warnings. `KeymapChanged` says when to read it again (`keymap.md`). | — (`nicemailer keymap check` and `show` read the file themselves, without the core.) |
 | `discover_account` | Finds the servers of an address before the account exists: provider, IMAP server, SMTP servers to try. | Step 1 of `nicemailer account add`. |
@@ -117,7 +117,7 @@ A dedicated command prints readable output, asks for confirmation when needed an
 | `remove_account` | Deletes an account, its data in NiceMailer and its password. The mail on the server is not touched. | `nicemailer account remove <key> [--yes]` |
 | `set_account_order` | Changes the display order of the accounts. | `nicemailer account order <key>…`: the keys named come first. |
 | `set_password` | Saves the IMAP (or SMTP) password of an account in the Keychain. | `nicemailer account password <key> [--smtp]`: asked without echo, or read from stdin. |
-| `oauth_begin` | Starts an OAuth2 sign-in: the core listens on the loopback and returns the authorization URL, which the client opens in the browser; the flow ends with the `OAuthFinished` event (`specifications/oauth2.md`, section 8). | Step of `nicemailer account add [key] --email <addr> [--no-browser]` when the discovery says `oauth2`, and `nicemailer account login <key> [--no-browser]` |
+| `oauth_begin` | Starts an OAuth2 sign-in: the core listens on the loopback and returns the authorization URL, which the client opens in the browser; the flow ends with the `OAuthFinished` event (`specifications/oauth2.md`, section 8). For an existing account, the event comes once the tokens are stored in the Keychain, with `ok: false` and the `keychain` reason if they could not be. | Step of `nicemailer account add [key] --email <addr> [--no-browser]` when the discovery says `oauth2`, and `nicemailer account login <key> [--no-browser]` |
 | `oauth_cancel` | Abandons an OAuth2 flow: closes the listener and forgets the flow. | Ctrl-C during the sign-in, in `nicemailer account add` and `account login` |
 | `probe_account` | Connects to the IMAP server of an existing account and reports what it offers, without changing anything. | `nicemailer imap probe <key> [--json]` (`imap.md`) |
 

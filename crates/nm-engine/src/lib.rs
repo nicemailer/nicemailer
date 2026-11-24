@@ -75,6 +75,14 @@ pub struct Engine {
     ids: BTreeMap<String, i64>,
     /// Why an account cannot connect, by account id.
     account_errors: BTreeMap<i64, nm_api::Why>,
+    /// Why a worker stopped trying an account, by account id, when only a
+    /// person can unblock it: an OAuth2 refresh token refused at run time
+    /// (`oauth2.md`, section 6). The static check above cannot see it (the
+    /// Keychain item is there), so the worker reports it through
+    /// [`Engine::set_worker_error`]. Forgotten at the next check of the
+    /// accounts (a new sign-in, a password saved, the file changed): the
+    /// new credential has not been refused yet.
+    worker_errors: BTreeMap<i64, nm_api::Why>,
 }
 
 impl Engine {
@@ -91,6 +99,7 @@ impl Engine {
             warnings: Vec::new(),
             ids: BTreeMap::new(),
             account_errors: BTreeMap::new(),
+            worker_errors: BTreeMap::new(),
         }
     }
 
@@ -248,6 +257,10 @@ impl Engine {
     /// (`secrets::check`): safe with the locks held.
     fn account_errors_for(&mut self, ids: &BTreeMap<String, i64>) -> (Vec<Event>, Vec<i64>) {
         let mut errors = BTreeMap::new();
+        // The workers' verdicts are about the old credential: dropped, and
+        // announced as gone (`AccountChanged`) unless the static check
+        // finds an error of its own.
+        let stale: Vec<i64> = ids.values().filter(|id| self.worker_errors.remove(id).is_some()).copied().collect();
         for (key, id) in ids {
             let account = &self.config.accounts[key];
             if let Err(refusal) = secrets::check(self.secrets.as_ref(), key, account) {
@@ -264,9 +277,28 @@ impl Engine {
             .keys()
             .filter(|id| !errors.contains_key(*id) && ids.values().any(|v| v == *id))
             .copied()
+            .chain(stale.into_iter().filter(|id| !errors.contains_key(id)))
+            .collect::<BTreeSet<i64>>()
+            .into_iter()
             .collect();
         self.account_errors = errors;
         (errored, cleared)
+    }
+
+    /// Records (`Some`) or forgets (`None`) why the worker of `account_id`
+    /// stopped trying until a person acts. Returns whether it changed, so
+    /// that the caller announces it only then.
+    pub fn set_worker_error(&mut self, account_id: i64, why: Option<nm_api::Why>) -> bool {
+        match why {
+            Some(w) => self.worker_errors.insert(account_id, w.clone()).as_ref() != Some(&w),
+            None => self.worker_errors.remove(&account_id).is_some(),
+        }
+    }
+
+    /// The error `list_accounts` gives for an account: the static check's
+    /// first (no credential, wrong binding), else the worker's.
+    fn account_error(&self, id: i64) -> Option<&nm_api::Why> {
+        self.account_errors.get(&id).or_else(|| self.worker_errors.get(&id))
     }
 
     /// The `list_accounts` view of the rows of the database: their address
@@ -282,10 +314,17 @@ impl Engine {
                     email: account.map(|a| a.email.clone()).or(row.address),
                     display_name: account.and_then(|a| a.display_name.clone()),
                     enabled: !row.disabled,
-                    error: self.account_errors.get(&row.id).map(|w| w.message()),
-                    why: self.account_errors.get(&row.id).map(|w| w.data()),
+                    error: self.account_error(row.id).map(|w| w.message()),
+                    why: self.account_error(row.id).map(|w| w.data()),
                     position: row.position,
                     read_only: account.is_some_and(|a| a.read_only),
+                    auth: account.map(|a| {
+                        match a.auth {
+                            config::AuthMethod::Password => "password",
+                            config::AuthMethod::Oauth2 => "oauth2",
+                        }
+                        .to_string()
+                    }),
                     key: row.config_key,
                     kind: row.kind,
                 }

@@ -41,7 +41,15 @@ pub const TOKEN_URL: &str = "https://login.microsoftonline.com/common/oauth2/v2.
 /// The delegated permissions of the app (`oauth2.md`, section 4): the two
 /// mail ones belong to the Office 365 Exchange Online resource, so one
 /// access token serves IMAP and SMTP.
-pub const SCOPES: &str = "IMAP.AccessAsUser.All SMTP.Send offline_access openid email profile";
+///
+/// They are named with their resource (`https://outlook.office.com/`), as
+/// Microsoft documents for IMAP and SMTP. A bare `IMAP.AccessAsUser.All`
+/// is taken by the v2 endpoint as a permission of Microsoft Graph, which
+/// has one of the same name: the sign-in then succeeds, but the access
+/// token is for Graph, and `outlook.office365.com` refuses it
+/// (`AUTHENTICATE failed`).
+pub const SCOPES: &str =
+    "https://outlook.office.com/IMAP.AccessAsUser.All https://outlook.office.com/SMTP.Send offline_access openid email profile";
 
 /// A flow expires after 10 minutes without redirection (`oauth2.md`,
 /// section 5). Successful flows whose tokens nobody used are forgotten
@@ -361,6 +369,12 @@ struct Inner {
     /// One renewal at a time per account: the connections of an account
     /// (folders, bodies, IDLE, SMTP) may need a token at the same instant.
     refresh_locks: BTreeMap<String, Arc<tokio::sync::Mutex<()>>>,
+    /// Rotated refresh tokens the Keychain refused to store (locked), by
+    /// account key. The provider may have invalidated the old one, which is
+    /// still in the Keychain: the next renewal presents this one instead,
+    /// and writes it again. Forgotten once written, or when the account is
+    /// signed in again.
+    unsaved_refresh: BTreeMap<String, SecretString>,
 }
 
 /// What `oauth_begin` started.
@@ -484,7 +498,11 @@ impl Oauth {
             let cancelled: Vec<String> = inner
                 .flows
                 .iter()
-                .filter(|(_, f)| f.email.eq_ignore_ascii_case(email) || f.account.as_deref() == account.as_deref())
+                // Two flows for new accounts both have no key: only the
+                // address tells them apart. A flow for one address must not
+                // cancel another one's, finished and holding its tokens
+                // until `add_account`.
+                .filter(|(_, f)| f.email.eq_ignore_ascii_case(email) || (account.is_some() && f.account.as_deref() == account.as_deref()))
                 .map(|(k, _)| k.clone())
                 .collect();
             for k in cancelled {
@@ -564,6 +582,9 @@ impl Oauth {
         secrets.set_oauth(key, &cred).map_err(|e| r::KEYCHAIN.with("system_text", e))?;
         let mut inner = self.inner.lock().unwrap();
         inner.tokens.insert(key.to_string(), tokens);
+        // The new sign-in's refresh token replaces any rotated one still
+        // waiting to be written.
+        inner.unsaved_refresh.remove(key);
         inner.flows.remove(flow);
         Ok(())
     }
@@ -614,17 +635,34 @@ impl Oauth {
         if self.client_id().as_deref() != Some(cred.client_id.as_str()) {
             return Err(TokenError::Reauth(r::OAUTH_REAUTH_NEEDED.with("account", key)));
         }
+        // A rotated refresh token the Keychain refused last time is newer
+        // than the one it holds: presented instead (the item read above
+        // still vouches for the binding to the server).
+        let mut cred = cred;
+        let pending = self.inner.lock().unwrap().unsaved_refresh.get(key).cloned();
+        if let Some(rt) = &pending {
+            cred.refresh_token = rt.clone();
+        }
         let resp = self.refresh(&cred, Some(key)).await?;
         let mut new_cred = cred.clone();
         if let Some(rt) = &resp.refresh_token {
-            // Rotation: the new refresh token is stored *before* the
-            // access token is used. If the write fails (locked Keychain),
-            // the access token is still used, the new refresh token is
-            // kept in memory and written again at the next renewal.
             new_cred.refresh_token = SecretString::new(rt.clone());
-            if let Err(e) = secrets.set_oauth(key, &new_cred) {
-                eprintln!("oauth2 {key}: the Keychain refused the new refresh token, kept in memory: {e}");
-                new_cred = cred.clone();
+        }
+        // Rotation: the new refresh token is stored *before* the access
+        // token is used. If the write fails (locked Keychain), the access
+        // token is still used, the new refresh token is kept in memory,
+        // presented at the next renewal and written again then.
+        if resp.refresh_token.is_some() || pending.is_some() {
+            let written = secrets.set_oauth(key, &new_cred);
+            let mut inner = self.inner.lock().unwrap();
+            match written {
+                Ok(()) => {
+                    inner.unsaved_refresh.remove(key);
+                }
+                Err(e) => {
+                    eprintln!("oauth2 {key}: the Keychain refused the new refresh token, kept in memory: {e}");
+                    inner.unsaved_refresh.insert(key.to_string(), new_cred.refresh_token.clone());
+                }
             }
         }
         let tokens = FlowTokens {
@@ -1011,6 +1049,7 @@ mod tests {
         let nonce = Arc::new(Mutex::new(String::new()));
         let (tx, rx) = tokio::sync::mpsc::channel(8);
         let email = id_token_email.to_string();
+        let used: Arc<Mutex<std::collections::BTreeSet<String>>> = Arc::default();
         tokio::spawn({
             let nonce = nonce.clone();
             async move {
@@ -1019,6 +1058,7 @@ mod tests {
                     tokio::spawn({
                         let tx = tx.clone();
                         let nonce = nonce.clone();
+                        let used = used.clone();
                         let email = email.clone();
                         async move {
                             let mut buf: Vec<u8> = Vec::new();
@@ -1056,7 +1096,15 @@ mod tests {
                             let (status, answer) = if body.contains("grant_type=authorization_code") {
                                 (200u16, format!(r#"{{"token_type":"Bearer","expires_in":3600,"access_token":"AT-from-code","refresh_token":"RT-1","id_token":"{id_token}"}}"#))
                             } else if body.contains("grant_type=refresh_token") {
-                                (200, format!(r#"{{"token_type":"Bearer","expires_in":3600,"access_token":"AT-refreshed","refresh_token":"RT-2"}}"#))
+                                // Rotation as Microsoft may do it: RT-n gives
+                                // RT-(n+1), and a refresh token already
+                                // presented once is invalid.
+                                let rt = body.split('&').find_map(|kv| kv.strip_prefix("refresh_token=")).unwrap_or("").to_string();
+                                let fresh = used.lock().unwrap().insert(rt.clone());
+                                match rt.strip_prefix("RT-").and_then(|n| n.parse::<u32>().ok()) {
+                                    Some(n) if fresh => (200, format!(r#"{{"token_type":"Bearer","expires_in":3600,"access_token":"AT-refreshed","refresh_token":"RT-{}"}}"#, n + 1)),
+                                    _ => (400, r#"{"error":"invalid_grant","error_description":"AADSTS70000: the refresh token was already used"}"#.to_string()),
+                                }
                             } else {
                                 (400, r#"{"error":"invalid_request","error_description":"no"}"#.to_string())
                             };
@@ -1142,7 +1190,10 @@ mod tests {
         let (b, state, port) = begin_flow(&h, "me@outlook.com").await;
         assert_eq!(b.provider, "microsoft");
         assert!(b.url.contains("code_challenge=") && b.url.contains("code_challenge_method=S256") && b.url.contains("prompt=select_account"));
-        assert!(b.url.contains("scope=IMAP.AccessAsUser.All"));
+        // The mail permissions of Exchange Online, named with their
+        // resource: bare, they would be Microsoft Graph's.
+        assert!(b.url.contains("scope=https%3A%2F%2Foutlook.office.com%2FIMAP.AccessAsUser.All"), "{}", b.url);
+        assert!(b.url.contains("https%3A%2F%2Foutlook.office.com%2FSMTP.Send"), "{}", b.url);
         // The browser is redirected, in French this time.
         let page = redirect(port, &format!("code=the-code&state={state}"), "fr-FR").await;
         assert!(page.starts_with("HTTP/1.1 200"), "{page}");
@@ -1243,6 +1294,92 @@ mod tests {
         let (ok, why) = reason_of(ev);
         assert!(!ok);
         assert_eq!(why.unwrap()["reason"], "oauth_cancelled");
+    }
+
+    /// Two new accounts signed in at once (the CLI and the app): neither
+    /// flow has an account key, and one must not cancel the other.
+    #[tokio::test]
+    async fn flows_for_two_new_addresses_do_not_cancel_each_other() {
+        let h = harness("a@outlook.com").await;
+        let (first, _s, _p) = begin_flow(&h, "a@outlook.com").await;
+        let (_second, _s, _p) = begin_flow(&h, "b@outlook.com").await;
+        assert!(h.events.lock().unwrap().is_empty(), "no flow was cancelled: {:?}", h.events.lock().unwrap());
+        assert!(h.oauth.inner.lock().unwrap().flows.contains_key(&first.flow));
+    }
+
+    /// Secrets whose OAuth2 item can be made unwritable, as a locked
+    /// Keychain is.
+    #[derive(Default)]
+    struct LockableSecrets {
+        inner: MemorySecrets,
+        locked: std::sync::atomic::AtomicBool,
+    }
+
+    impl Secrets for LockableSecrets {
+        fn imap_binding(&self, key: &str) -> Result<Option<Binding>, String> {
+            self.inner.imap_binding(key)
+        }
+        fn imap(&self, key: &str) -> Result<Option<crate::secrets::Credential>, String> {
+            self.inner.imap(key)
+        }
+        fn set_imap(&self, key: &str, c: &crate::secrets::Credential) -> Result<(), String> {
+            self.inner.set_imap(key, c)
+        }
+        fn remove_imap(&self, key: &str) -> Result<(), String> {
+            self.inner.remove_imap(key)
+        }
+        fn smtp(&self, key: &str) -> Result<Option<crate::secrets::Credential>, String> {
+            self.inner.smtp(key)
+        }
+        fn set_smtp(&self, key: &str, c: &crate::secrets::Credential) -> Result<(), String> {
+            self.inner.set_smtp(key, c)
+        }
+        fn remove_smtp(&self, key: &str) -> Result<(), String> {
+            self.inner.remove_smtp(key)
+        }
+        fn oauth(&self, key: &str) -> Result<Option<OauthCredential>, String> {
+            self.inner.oauth(key)
+        }
+        fn set_oauth(&self, key: &str, c: &OauthCredential) -> Result<(), String> {
+            if self.locked.load(std::sync::atomic::Ordering::SeqCst) {
+                return Err("the Keychain is locked".into());
+            }
+            self.inner.set_oauth(key, c)
+        }
+    }
+
+    /// A rotated refresh token the Keychain refuses is kept in memory and
+    /// presented at the next renewal, then written (`oauth2.md`, section
+    /// 6): the old one, still in the Keychain, may be invalid already.
+    #[tokio::test]
+    async fn a_rotated_refresh_token_the_keychain_refuses_is_not_lost() {
+        let mut h = harness("me@outlook.com").await;
+        let (b, state, port) = begin_flow(&h, "me@outlook.com").await;
+        redirect(port, &format!("code=the-code&state={state}"), "en").await;
+        finished(&h).await;
+        h.bodies.recv().await.unwrap();
+        let secrets = LockableSecrets::default();
+        h.oauth.store_flow("me", "me@outlook.com", "outlook.office365.com", "me@outlook.com", &secrets, &b.flow).unwrap();
+        let accounts = crate::config::parse_accounts(
+            "[accounts.me]\nemail = \"me@outlook.com\"\nauth = \"oauth2\"\n[accounts.me.imap]\nhost = \"outlook.office365.com\"\nusername = \"me@outlook.com\"\n",
+        )
+        .unwrap();
+        let cfg = &accounts["me"];
+
+        // Locked: RT-1 is rotated to RT-2, which cannot be written.
+        secrets.locked.store(true, std::sync::atomic::Ordering::SeqCst);
+        h.oauth.access_token_forced("me", cfg, &secrets).await.unwrap();
+        assert!(h.bodies.recv().await.unwrap().contains("refresh_token=RT-1"));
+        assert_eq!(secrets.oauth("me").unwrap().unwrap().refresh_token.expose(), "RT-1");
+
+        // Unlocked: the next renewal presents RT-2, not the used RT-1 the
+        // Keychain still holds, and writes its successor.
+        secrets.locked.store(false, std::sync::atomic::Ordering::SeqCst);
+        let t = h.oauth.access_token_forced("me", cfg, &secrets).await.unwrap();
+        assert_eq!(t.expose(), "AT-refreshed");
+        assert!(h.bodies.recv().await.unwrap().contains("refresh_token=RT-2"));
+        assert_eq!(secrets.oauth("me").unwrap().unwrap().refresh_token.expose(), "RT-3");
+        assert!(h.oauth.inner.lock().unwrap().unsaved_refresh.is_empty());
     }
 
     #[tokio::test]

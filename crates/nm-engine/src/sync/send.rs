@@ -77,15 +77,23 @@ pub(super) struct Sender<'a> {
 /// section 6).
 async fn login_oauth2(s: &mut nm_proto::imap::Session, sx: &Sender<'_>, username: &str) -> Result<(), ImapError> {
     let cfg = &sx.spec.config;
-    let t = sx.oauth.access_token(&sx.spec.key, cfg, sx.secrets).await.map_err(|e| ImapError::AuthFailed(e.why().message()))?;
+    let t = sx.oauth.access_token(&sx.spec.key, cfg, sx.secrets).await.map_err(imap_token_error)?;
     match s.login_oauth2(username, &t).await {
         Ok(()) => Ok(()),
         Err(e) if matches!(e, ImapError::AuthFailed(_)) => {
-            let t = sx.oauth.access_token_forced(&sx.spec.key, cfg, sx.secrets).await.map_err(|e| ImapError::AuthFailed(e.why().message()))?;
+            let t = sx.oauth.access_token_forced(&sx.spec.key, cfg, sx.secrets).await.map_err(imap_token_error)?;
             s.login_oauth2(username, &t).await
         }
         Err(e) => Err(e),
     }
+}
+
+/// A token that could not be had, as an IMAP error: a temporary failure
+/// of the token endpoint (network, `5xx`) is one of the connection, tried
+/// again later; only a refusal (sign in again, admin consent) is a refused
+/// login.
+fn imap_token_error(e: crate::oauth2::TokenError) -> ImapError {
+    if e.is_temporary() { ImapError::Io(e.why().message()) } else { ImapError::AuthFailed(e.why().message()) }
 }
 
 /// How a step ended.
@@ -179,6 +187,11 @@ async fn smtp(sx: &Sender<'_>, job: &SendJob) -> Step {
         Err(r @ Refusal::Unavailable(_)) => return retry(sx, job, &r.message(key, cfg)),
         Err(r) => return failed(sx, job, r.why(key, cfg)),
     };
+    // The forced renewal below refused for good (sign in again, admin
+    // consent): the message fails with that reason, not as a refusal of
+    // the SMTP server. A temporary failure of the renewal is a connection
+    // error (`SmtpError::Io`), and the message is tried again later.
+    let mut token_refused: Option<nm_api::Why> = None;
     let result = async {
         let mut c = Client::connect(&smtp_spec(smtp), Timeouts::default()).await?;
         if oauth2 {
@@ -187,7 +200,16 @@ async fn smtp(sx: &Sender<'_>, job: &SendJob) -> Step {
                 // A token refused though the core believed it valid:
                 // renew once, retry once.
                 Err(e) if matches!(e, SmtpError::Auth(_)) => {
-                    let t = sx.oauth.access_token_forced(key, cfg, sx.secrets).await.map_err(|e| SmtpError::Auth(e.why().message()))?;
+                    let t = match sx.oauth.access_token_forced(key, cfg, sx.secrets).await {
+                        Ok(t) => t,
+                        Err(t) if t.is_temporary() => return Err(SmtpError::Io(t.why().message())),
+                        Err(t) => {
+                            let why = t.why();
+                            let text = why.message();
+                            token_refused = Some(why);
+                            return Err(SmtpError::Auth(text));
+                        }
+                    };
                     c.login_oauth2(&smtp.username, &t).await?;
                 }
                 Err(e) => return Err(e),
@@ -207,6 +229,9 @@ async fn smtp(sx: &Sender<'_>, job: &SendJob) -> Step {
         Ok::<_, SmtpError>(sent)
     }
     .await;
+    if let (Err(_), Some(why)) = (&result, token_refused) {
+        return failed(sx, job, why);
+    }
     match result {
         Ok(sent) => {
             let refused: Vec<String> = sent.refused.iter().map(|r| format!("{} ({} {})", r.addr, r.code, r.text)).collect();
@@ -387,4 +412,22 @@ fn smtp_spec(smtp: &config::ServerConfig) -> ServerSpec {
 /// The account's own addresses, lowercase.
 pub(crate) fn own(cfg: &config::AccountConfig) -> Vec<String> {
     std::iter::once(cfg.email.to_lowercase()).chain(cfg.identities.iter().map(|i| i.email.to_lowercase())).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::oauth2::TokenError;
+
+    /// A token endpoint that does not answer must not fail the copy in Sent
+    /// for good: only a refusal of the refresh token is a refused login.
+    #[test]
+    fn only_a_refused_token_is_a_refused_login() {
+        assert!(matches!(imap_token_error(TokenError::Temporary("HTTP 503".into())), ImapError::Io(_)));
+        let reauth = TokenError::Reauth(nm_api::reason::OAUTH_REAUTH_NEEDED.with("account", "k"));
+        assert!(matches!(imap_token_error(reauth), ImapError::AuthFailed(t) if t.contains("signed in again")));
+        // And the connection error it becomes is not a permanent one for
+        // SMTP either.
+        assert!(!SmtpError::Io("HTTP 503".into()).is_permanent());
+    }
 }

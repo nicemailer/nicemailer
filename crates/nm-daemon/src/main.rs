@@ -366,31 +366,24 @@ async fn run(args: Args, data_dir: &Path) -> anyhow::Result<()> {
         oauth.set_sink(Arc::new(move |event| {
             // For an existing account, a finished flow stores its tokens
             // right away, clears the account's error and restarts its
-            // synchronization (`specifications/oauth2.md`, section 8).
-            if let nm_api::Event::OAuthFinished { ok: true, account: Some(key), flow, .. } = &event {
+            // synchronization (`specifications/oauth2.md`, section 8). The
+            // event goes out only once that is done: a client that reloads
+            // on it must find the account without its error, and must hear
+            // of a failure to store the tokens rather than a success.
+            if let nm_api::Event::OAuthFinished { ok: true, account: Some(key), flow, email, .. } = &event {
                 let core = core2.clone();
-                let (key, flow) = (key.clone(), flow.clone());
+                let (key, flow, email) = (key.clone(), flow.clone(), email.clone());
                 tokio::spawn(async move {
-                    let (cfg, secrets) = {
-                        let engine = core.engine.lock().unwrap();
-                        (engine.config().accounts.get(&key).cloned(), engine.secrets())
-                    };
-                    if let Some(cfg) = cfg {
-                        if let Err(w) = core.oauth.store_flow(&key, &cfg.email, &cfg.imap.host, &cfg.imap.username, secrets.as_ref(), &flow) {
+                    let event = match oauth_signed_in_again(&core, &key, &flow).await {
+                        Ok(()) => nm_api::Event::OAuthFinished { flow, ok: true, account: Some(key), email, why: None },
+                        Err(w) => {
                             eprintln!("oauth2 {key}: storing the tokens of {flow} failed: {}", w.message());
-                            return;
+                            nm_api::Event::OAuthFinished { flow, ok: false, account: Some(key), email, why: Some(w.data()) }
                         }
-                        let events = core.engine.lock().unwrap().recheck_accounts();
-                        let mut log = core.events.lock().unwrap();
-                        for e in events {
-                            log.push(e);
-                        }
-                        drop(log);
-                        if let Some(syncer) = core.syncer.get() {
-                            syncer.kick();
-                        }
-                    }
+                    };
+                    core.events.lock().unwrap().push(event);
                 });
+                return;
             }
             core2.events.lock().unwrap().push(event);
         }));
@@ -1157,6 +1150,53 @@ pub(crate) async fn with_reader<T: Send + 'static>(
     .map_err(|e| RpcError::internal(e))?;
     add_db_wait(waited);
     result.map_err(store_error)
+}
+
+/// An existing account signed in again (`specifications/oauth2.md`,
+/// section 8): its tokens stored in the Keychain, then, as after
+/// `set_password`, the pace of its logins started again (a refusal of the
+/// new token is not taken for a lock, and a pause learnt from the old one
+/// ends: `docs/sync.md`, "Pace of the connections"), its error checked
+/// again and its worker restarted.
+async fn oauth_signed_in_again(core: &Arc<Core>, key: &str, flow: &str) -> Result<(), nm_api::Why> {
+    let (cfg, secrets, account_id) = {
+        let engine = core.engine.lock().unwrap();
+        (engine.config().accounts.get(key).cloned(), engine.secrets(), engine.account_id(key))
+    };
+    let Some(cfg) = cfg else { return Err(reason::ACCOUNT_UNKNOWN.with("account", key)) };
+    // The Keychain may be slow, or ask the user: on a blocking thread, as
+    // `set_password` does, not on one of tokio's async workers.
+    let (oauth, key2, flow2) = (core.oauth.clone(), key.to_string(), flow.to_string());
+    tokio::task::spawn_blocking(move || oauth.store_flow(&key2, &cfg.email, &cfg.imap.host, &cfg.imap.username, secrets.as_ref(), &flow2))
+        .await
+        .map_err(|e| reason::INTERNAL.with("detail", e.to_string()))??;
+    let core2 = core.clone();
+    let done = with_store(core, move |s| {
+        if let Some(id) = account_id {
+            s.login_password_changed(id)?;
+        }
+        // Lock order: store, engine, events.
+        let events = core2.engine.lock().unwrap().recheck_accounts();
+        let mut log = core2.events.lock().unwrap();
+        for e in events {
+            log.push(e);
+        }
+        drop(log);
+        if let Some(syncer) = core2.syncer.get() {
+            if let Some(id) = account_id {
+                syncer.password_saved(id);
+            }
+            syncer.kick();
+        }
+        Ok(())
+    })
+    .await;
+    // The tokens are stored: the account works again whatever happens to
+    // the bookkeeping above, so its failure is only written to the journal.
+    if let Err(e) = done {
+        eprintln!("oauth2 {key}: the tokens are stored, but the pace of the logins was not reset: {}", e.message);
+    }
+    Ok(())
 }
 
 /// `oauth_begin`: starts an OAuth2 sign-in flow (`specifications/oauth2.md`,

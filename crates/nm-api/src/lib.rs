@@ -2837,6 +2837,12 @@ pub struct AccountView {
     /// server, until `activate_account`.
     #[serde(default)]
     pub read_only: bool,
+    /// How the core signs in to an IMAP account of the file: `password`, or
+    /// `oauth2` (a browser sign-in, `specifications/oauth2.md`). A client
+    /// offers a new password for the first and "Sign in again" for the
+    /// second. `None` for an archive, or an account no longer in the file.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auth: Option<String>,
 }
 
 /// Params of `set_password`. The password is never logged nor stored
