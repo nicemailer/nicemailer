@@ -3579,7 +3579,11 @@ pub struct ActivateAccountResult {
 pub struct CountArchiveParams {
     pub email: String,
     pub imap: ImapParams,
+    /// Ignored when `oauth` is given: the tokens of the flow are used.
     pub password: String,
+    /// The finished OAuth2 flow to use instead of `password`.
+    #[serde(default)]
+    pub oauth: Option<OauthFlow>,
     pub uidnext: u32,
     #[serde(default)]
     pub read_before: Option<String>,

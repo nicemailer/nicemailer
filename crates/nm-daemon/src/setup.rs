@@ -160,14 +160,23 @@ fn security_of(p: &nm_api::ImapParams) -> Result<nm_engine::config::Security, Rp
 }
 
 /// `count_archive`: the exact count of the import screen.
-pub async fn count_archive(p: CountArchiveParams, source: Source) -> Result<ArchiveCount, RpcError> {
+pub async fn count_archive(core: &Arc<Core>, p: CountArchiveParams, source: Source) -> Result<ArchiveCount, RpcError> {
     human(source)?;
     let spec = setup::spec_of(&p.imap).map_err(invalid)?;
     let user = setup::username_of(&p.imap, &p.email);
     for d in [&p.read_before, &p.unread_before].into_iter().flatten() {
         setup::parse_day(d).ok_or_else(|| refused(reason::DATE_INVALID.with("date", d.as_str())))?;
     }
-    let mut s = setup::open(&spec, &user, nm_engine::probe::Cred::Password(&p.password)).await.map_err(imap_failure)?;
+    // `oauth: {flow}` replaces the password, as in `test_account`.
+    let tokens = match &p.oauth {
+        Some(o) => Some(core.oauth.take_flow(&o.flow, &p.email).map_err(|w| RpcError::new(error_code::SERVER, w))?),
+        None => None,
+    };
+    let cred = match &tokens {
+        Some(t) => nm_engine::probe::Cred::Token(&t.access_token),
+        None => nm_engine::probe::Cred::Password(&p.password),
+    };
+    let mut s = setup::open(&spec, &user, cred).await.map_err(imap_failure)?;
     s.forbid_writes();
     let n = setup::count_archive(&mut s, p.uidnext, p.read_before.as_deref(), p.unread_before.as_deref()).await.map_err(imap_failure)?;
     s.logout().await;

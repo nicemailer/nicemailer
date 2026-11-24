@@ -335,6 +335,18 @@ enum AccountAction {
         #[arg(long)]
         smtp: bool,
     },
+    /// Sign in again to an OAuth2 account (`auth = "oauth2"` in
+    /// accounts.toml): starts the browser flow for the account and waits
+    /// for it. On a password account, use `account password` instead.
+    Login {
+        /// Account key, as in [accounts.<key>].
+        key: String,
+        /// Print the sign-in URL without opening the browser (SSH: the
+        /// redirection arrives on the loopback of the Mac that runs the
+        /// core, open the page in a browser of that Mac).
+        #[arg(long)]
+        no_browser: bool,
+    },
     /// Create an IMAP account: find its servers (unless --host is given),
     /// try them, show the folders and the roles proposed, then create the
     /// missing folders, archive the old mail of the Inbox on the server if
@@ -400,6 +412,10 @@ enum AccountAction {
         /// Do not ask for confirmation.
         #[arg(long)]
         yes: bool,
+        /// With an OAuth2 account (the discovery said `oauth2`): print the
+        /// sign-in URL without opening the browser.
+        #[arg(long)]
+        no_browser: bool,
     },
     /// Start organizing an account added with --read-only: create the
     /// folders of the workflow, archive the old mail of a large Inbox,
@@ -502,7 +518,13 @@ fn discovery_lines(d: &nm_api::DiscoveryReport) -> Vec<String> {
     if let Some(p) = d.by_domain.as_ref().or(d.by_mx.as_ref())
         && p.imap_unsupported
     {
-        out.push(format!("{} only accepts OAuth2 logins, which NiceMailer does not support yet.", p.name));
+        out.push(format!("{} only accepts OAuth2 sign-in; no application id is in effect (the app is not registered in Entra ID yet).", p.name));
+    }
+    if d.auth == "oauth2" {
+        out.push(format!(
+            "Sign-in: OAuth2 ({}), in the browser; no password will be asked.",
+            d.oauth_provider.as_deref().unwrap_or("?")
+        ));
     }
     match &d.imap {
         Some(c) => out.push(format!("IMAP: {}, {}.", server_label(&c.server), origin_words(c, d))),
@@ -860,6 +882,16 @@ fn run() -> anyhow::Result<()> {
             }
             Ok(())
         }
+        Command::Account { action: AccountAction::Login { key, no_browser } } => {
+            let mut client = Client::connect(&data_dir)?;
+            let accounts = client.call(method::LIST_ACCOUNTS, Value::Null)?["items"].as_array().cloned().unwrap_or_default();
+            if !accounts.iter().any(|a| a["key"].as_str() == Some(key.as_str())) {
+                bail!("no account {key} in accounts.toml");
+            }
+            oauth_sign_in(&mut client, &data_dir, json!({ "account": key }), no_browser)?;
+            println!("Signed in; the synchronization of {key} restarts.");
+            Ok(())
+        }
         Command::Account {
             action:
                 AccountAction::Add {
@@ -879,6 +911,7 @@ fn run() -> anyhow::Result<()> {
                     read_only,
                     no_smtp,
                     yes,
+                    no_browser,
                 },
         } => {
             let mut client = Client::connect(&data_dir)?;
@@ -911,7 +944,7 @@ fn run() -> anyhow::Result<()> {
             }
             let Some(imap_candidate) = d.imap.clone() else {
                 if let Some(p) = d.by_domain.as_ref().or(d.by_mx.as_ref()).filter(|p| p.imap_unsupported) {
-                    bail!("{} needs OAuth2, which NiceMailer does not support yet: the account cannot be added", p.name);
+                    bail!("{} needs OAuth2 sign-in, but no application id is in effect (the app is not registered in Entra ID yet): the account cannot be added", p.name);
                 }
                 bail!("no IMAP server found for {email}: give it with --host (and --port, --security if needed)");
             };
@@ -919,10 +952,28 @@ fn run() -> anyhow::Result<()> {
             let host = imap.host.clone();
             println!();
 
-            let password = read_password(&format!("IMAP password of {email}: "))?;
+            // OAuth2 (the discovery said so): no password is asked — the
+            // sign-in happens in the browser, and the finished flow's tokens
+            // take the password's place in every call below
+            // (`specifications/oauth2.md`, section 8).
+            let oauth = if d.auth == "oauth2" {
+                let flow = oauth_sign_in(&mut client, &data_dir, json!({ "email": email }), no_browser)?;
+                println!("Signed in as {email}; no password is needed.");
+                println!();
+                Some(flow)
+            } else {
+                None
+            };
+            let oauth_json = || match &oauth {
+                Some(f) => json!({ "flow": f }),
+                None => Value::Null,
+            };
+            let password = if oauth.is_some() { String::new() } else { read_password(&format!("IMAP password of {email}: "))? };
             eprintln!("Trying {host}…");
-            let r: nm_api::TestAccountReport =
-                serde_json::from_value(client.call(method::TEST_ACCOUNT, json!({ "email": email, "imap": imap, "password": password }))?)?;
+            let r: nm_api::TestAccountReport = serde_json::from_value(client.call(
+                method::TEST_ACCOUNT,
+                json!({ "email": email, "imap": imap, "password": password, "oauth": oauth_json() }),
+            )?)?;
             print_probe(&r.probe);
             println!();
             if !read_only {
@@ -944,7 +995,7 @@ fn run() -> anyhow::Result<()> {
             if read_before.is_some() || unread_before.is_some() {
                 let n: nm_api::ArchiveCount = serde_json::from_value(client.call(
                     method::COUNT_ARCHIVE,
-                    json!({ "email": email, "imap": imap, "password": password, "uidnext": r.inbox_uidnext,
+                    json!({ "email": email, "imap": imap, "password": password, "oauth": oauth_json(), "uidnext": r.inbox_uidnext,
                             "read_before": read_before, "unread_before": unread_before }),
                 )?)?;
                 println!(
@@ -986,7 +1037,7 @@ fn run() -> anyhow::Result<()> {
                 eprintln!("  …");
                 let t: nm_api::SmtpTestReport = serde_json::from_value(client.call(
                     method::TEST_SMTP,
-                    json!({ "email": email, "imap": imap, "password": password, "candidates": d.smtp }),
+                    json!({ "email": email, "imap": imap, "password": password, "oauth": oauth_json(), "candidates": d.smtp }),
                 )?)?;
                 for (i, a) in t.attempts.iter().enumerate() {
                     println!("  {}{}", smtp_attempt_line(a, &key), if t.chosen == Some(i) { " Kept." } else { "" });
@@ -1029,6 +1080,7 @@ fn run() -> anyhow::Result<()> {
             let res: nm_api::AddAccountResult = serde_json::from_value(client.call(
                 method::ADD_ACCOUNT,
                 json!({ "key": key, "email": email, "display_name": display_name, "imap": imap, "password": password,
+                        "oauth": oauth_json(),
                         "roles": roles, "uidnext": r.inbox_uidnext, "archive_read_before": read_before,
                         "archive_unread_before": unread_before, "correspondents": !no_correspondents, "read_only": read_only,
                         "smtp": smtp.as_ref().map(|s| &s.0) }),
@@ -1226,6 +1278,81 @@ fn run() -> anyhow::Result<()> {
             }
         }
     }
+}
+
+/// The English sentence of an event's `why` (`{"reason": …, …values}`):
+/// the reason by name, the values filled in its template.
+fn why_message(why: &Value) -> String {
+    let name = why["reason"].as_str().unwrap_or("");
+    let Some(r) = nm_api::reason::named(name) else { return why.to_string() };
+    let mut w = nm_api::Why::from(r);
+    for (k, v) in why.as_object().into_iter().flatten() {
+        if k != "reason" {
+            w = w.with(k, v.clone());
+        }
+    }
+    w.message()
+}
+
+static SIGINT_SEEN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+extern "C" fn on_sigint(_sig: libc::c_int) {
+    SIGINT_SEEN.store(true, std::sync::atomic::Ordering::SeqCst);
+}
+
+/// `oauth_begin` with `params` (`{email}` or `{account}`), then the wait for
+/// the flow's `OAuthFinished`: the URL is printed and opened in the default
+/// browser (unless `no_browser`), and Ctrl-C cancels the flow with
+/// `oauth_cancel` sent from another connection — the signal handler itself
+/// only sets a flag. Returns the flow id when the sign-in succeeded
+/// (`specifications/oauth2.md`, sections 5 and 8).
+fn oauth_sign_in(client: &mut Client, data_dir: &Path, params: Value, no_browser: bool) -> anyhow::Result<String> {
+    use std::sync::atomic::Ordering;
+    // Subscribe first, so no event of the flow can be missed.
+    client.call(method::SUBSCRIBE, json!({}))?;
+    let begin = client.call(method::OAUTH_BEGIN, params)?;
+    let flow = begin["flow"].as_str().unwrap_or_default().to_string();
+    let url = begin["url"].as_str().unwrap_or_default().to_string();
+    println!("Sign in on this page: {url}");
+    if no_browser {
+        println!("(--no-browser: open it yourself, in a browser of the Mac that runs the core)");
+    } else {
+        let _ = std::process::Command::new("open").arg(&url).status();
+    }
+    eprintln!("Waiting for sign-in in your browser…");
+    unsafe { libc::signal(libc::SIGINT, on_sigint as *const () as libc::sighandler_t) };
+    let watcher = std::thread::spawn({
+        let data_dir = data_dir.to_path_buf();
+        let flow = flow.clone();
+        move || {
+            while !SIGINT_SEEN.load(Ordering::SeqCst) {
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            if let Ok(mut c) = Client::connect(&data_dir) {
+                let _ = c.call(method::OAUTH_CANCEL, json!({ "flow": flow }));
+            }
+        }
+    });
+    let waited = loop {
+        let line = client.read_line()?;
+        let v: Value = serde_json::from_str(&line)?;
+        if let Some(e) = Client::closing(&v) {
+            break Err(e);
+        }
+        if v.get("id").is_some() {
+            continue; // a late answer, not an event
+        }
+        if v["method"] == "OAuthFinished" && v["params"]["flow"].as_str() == Some(flow.as_str()) {
+            let p = &v["params"];
+            if p["ok"].as_bool() == Some(true) {
+                break Ok(flow.clone());
+            }
+            break Err(anyhow::anyhow!("the sign-in failed: {}", why_message(&p["why"])));
+        }
+    };
+    unsafe { libc::signal(libc::SIGINT, libc::SIG_DFL) };
+    SIGINT_SEEN.store(false, Ordering::SeqCst);
+    let _ = watcher.join();
+    waited
 }
 
 /// Reads a password: from the terminal without echo, or a line of the

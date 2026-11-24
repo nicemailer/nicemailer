@@ -1175,6 +1175,14 @@ async fn oauth_begin(core: &Arc<Core>, p: nm_api::OauthBeginParams, source: Sour
             let Some(cfg) = engine.config().accounts.get(&key) else {
                 return Err(RpcError::new(error_code::NOT_FOUND, reason::ACCOUNT_UNKNOWN.with("account", key.as_str())));
             };
+            // `account login` reconnects an OAuth2 account; a password
+            // account is sent to `account password`.
+            if cfg.auth != nm_engine::config::AuthMethod::Oauth2 {
+                return Err(RpcError::new(
+                    error_code::INVALID_PARAMS,
+                    reason::INVALID_PARAMS.with("detail", format!("account {key} signs in with a password: nicemailer account password {key}")),
+                ));
+            }
             (cfg.email.clone(), Some(key))
         }
         _ => {
@@ -1936,7 +1944,7 @@ async fn call(core: &Arc<Core>, source: Source, req: Request) -> Result<Value, R
         }
         method::COUNT_ARCHIVE => {
             let p: nm_api::CountArchiveParams = params(req.params)?;
-            to_value(setup::count_archive(p, source).await?)
+            to_value(setup::count_archive(core, p, source).await?)
         }
         method::ADD_ACCOUNT => {
             let p: nm_api::AddAccountParams = params(req.params)?;
