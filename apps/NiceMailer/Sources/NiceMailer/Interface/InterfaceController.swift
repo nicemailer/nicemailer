@@ -1401,6 +1401,9 @@ final class InterfaceController {
             // variant's key on its right ("T: and open"), and ⌘-Return on
             // the row runs it (`ui.md`, menu `s`).
             let actions = Set(rows.map(\.action))
+            // The Display menu in blocks (`KeyAction.viewBlock`): a gap
+            // where the block changes.
+            var block: Int?
             return rows.compactMap { row -> Entry? in
                 guard let action = KeyAction(rawValue: row.action) else { return nil }
                 if action.isOpenVariant, let base = KeyAction(rawValue: String(row.action.dropLast(5))),
@@ -1408,6 +1411,10 @@ final class InterfaceController {
                     return nil
                 }
                 var e = entry(row, action)
+                if let b = action.viewBlock {
+                    e.gapBefore = block != nil && block != b
+                    block = b
+                }
                 if let variant = action.openVariant, let alt = rows.first(where: { $0.action == variant.rawValue }) {
                     e.detail = L("%@: and open", KeyChord.display(alt.key))
                     e.detailStyle = .info

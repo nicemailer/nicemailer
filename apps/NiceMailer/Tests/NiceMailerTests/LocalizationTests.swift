@@ -128,6 +128,27 @@ struct LocalizationTests {
 
     /// Every key of the catalog is used by a `L("…")` of the sources: a
     /// key left behind by a change of wording is removed with it.
+    /// The blocks of the status bar and their menus are named by verbs, as
+    /// Move and Save (`ui.md`, "Barre de statut"): Filter and Show, in
+    /// every language of the app (November 2026: "Attributes" and
+    /// "Display" before).
+    @Test func theBlocksOfTheBarAreVerbsInEveryLanguage() throws {
+        let catalog = try Self.catalog()
+        func fr(_ key: String) -> String? {
+            let l = catalog[key]?["localizations"] as? [String: Any]
+            return ((l?["fr"] as? [String: Any])?["stringUnit"] as? [String: Any])?["value"] as? String
+        }
+        #expect(fr("Filter") == "Filtrer")
+        #expect(fr("Show") == "Afficher")
+        #expect(fr("Move") == "Déplacer" && fr("Save") == "Enregistrer")
+        // Translated in each of the 18 languages, as every key.
+        for key in ["Filter", "Show", "show"] {
+            #expect((catalog[key]?["localizations"] as? [String: Any])?.count == 18, "\(key)")
+        }
+        // The old nouns are gone.
+        #expect(catalog["Display"] == nil && catalog["Attributes"] == nil)
+    }
+
     @Test func everyKeyOfTheCatalogIsUsed() throws {
         let pattern = try NSRegularExpression(pattern: #"\bL\((?:in: [^,]+, )?"((?:[^"\\]|\\.)*)""#)
         var used = Set<String>()

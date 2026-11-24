@@ -1381,6 +1381,24 @@ struct InterfaceControllerTests {
 
     // MARK: Display and saving
 
+    /// The Display menu in four blocks (`ui.md`, menu `v`): the mail
+    /// shown, the columns, the presentation, the sort; a gap before each
+    /// block but the first.
+    @Test func theDisplayMenuIsInFourBlocks() {
+        let rows = controller.menuEntries(.view)
+        #expect(rows.map(\.key) == ["h", "i", "1", "2", "3", "t", "l", "s", "c", "m"])
+        #expect(rows.filter(\.gapBefore).map(\.key) == ["1", "t", "c"])
+    }
+
+    @Test func theDisplayMenuKeepsItsBlocksInTheOrderOfKeymapToml() {
+        // Blocks follow the actions, not the places: two sorts moved first
+        // stay one block, set apart from the next.
+        #expect(KeyAction.viewSortReceived.viewBlock == KeyAction.viewSortModified.viewBlock)
+        #expect(KeyAction.viewToggleHtml.viewBlock != KeyAction.viewOneColumn.viewBlock)
+        #expect(KeyAction.viewChooseTheme.viewBlock == KeyAction.viewCycleStatusBar.viewBlock)
+        #expect(KeyAction.mailToggleFlag.viewBlock == nil)
+    }
+
     @Test func theDisplayMenuChangesAndRemembersTheLayout() {
         press("v"); press("3")
         #expect(controller.columns == 3)

@@ -15,11 +15,11 @@ How to write it:
 ### Added
 
 - **Themes:** Choose the look of the app in the Preferences (Settings…, Appearance): geek (the default), clean, sober and airy, in SF Pro, regular, a Mac window with a toolbar, as in Mail, or a theme of your own. Each is a file of `~/.config/nicemailer/themes/` you can modify, and `nicemailer theme new` starts one of yours (docs/themes.md).
-- **Themes:** Choose a theme from the keyboard: `v` `t` (Display, theme…) lists the themes, and Return applies the one chosen.
+- **Themes:** Choose a theme from the keyboard: `v` `t` (Show, theme…) lists the themes, and Return applies the one chosen.
 - **Themes:** clean and regular show mail in HTML, geek in text, for every sender whose display you have not chosen; `vh` still chooses for a sender, in every theme (`reader.body_format` of a theme).
 - **Themes:** In clean and regular, the attachments of a mail are listed one per line, with the icon macOS gives their type and their whole name; geek keeps its tiles (`attachments` in the `[layout]` table of a theme).
 - **Themes:** The column of the reader (`reader_max_width`) holds the mail in text and in HTML alike, and the subject and the controls above it line up with its text, whatever room `reader_title_padding` adds above and below the subject.
-- **List:** Show the list on three lines per mail, as Apple Mail (the sender and the date, the subject, the beginning of the mail), in a narrower list column: clean and regular open this way, geek on one line per mail; `v` `l` (Display) switches between the two, and the app remembers the choice and the width of the list of each (`list_layout` in the `[window]` table of a theme).
+- **List:** Show the list on three lines per mail, as Apple Mail (the sender and the date, the subject, the beginning of the mail), in a narrower list column: clean and regular open this way, geek on one line per mail; `v` `l` (Show) switches between the two, and the app remembers the choice and the width of the list of each (`list_layout` in the `[window]` table of a theme).
 - **Reading:** Mails in HTML follow the text size (⌘+ ⌘−) entirely, the sizes they write themselves included: a mail written in 12 pt Calibri by Outlook is no longer smaller than the text around it. No text of a mail is drawn smaller than 11 pt for a 12 pt text (`html_min_font_size` in the `[reader]` table of a theme, 0 to turn it off).
 - **Reading:** A flag button on the title line of the mail shown says whether it has a flag, and a click adds or removes it, for that mail alone.
 - **Window:** The red, yellow and green buttons can sit in the status bar, without a title bar: `title_bar = "merged"` in the `[window]` table of a theme (clean does it).
@@ -31,6 +31,7 @@ How to write it:
 
 - **Reading:** The buttons of the mail's title line (unsubscribe, text | html | images) look like the commands of a reply: framed, the same height, their key in the accent colour, filled under the pointer. What the line says (the folder in Everything, the blocked pixels) now comes before the buttons, which no longer move with the length of a folder's name.
 - **AI:** Translation follows what you are doing: a mail read is translated into your language at once; a reply you wrote in your language, into the language of the mail received; a new mail, into a language chosen among the 19 of the app, in a second list ("Translate…"). Prompts with choices (Rewrite…, Translate…) are one row of the palette; typing still finds each choice.
+- **Menus:** The Display menu (`v`) is now named Show, and the Attributes block and selector Filter: verbs, as Move and Save, in every language. Its rows are in four blocks set apart by a gap: the mail shown (text / HTML, remote images), the columns, the presentation (theme, list, status bar), the sort.
 - **Menus:** The row of a menu under the pointer is highlighted, as with the arrows, and Return chooses it.
 - **Window:** Tooltips show after 300 ms instead of about a second and a half.
 - **Writing:** `⇧⌘T` now also sets the mode of the next mails: after switching a reply to formatted text, the next ones open formatted, until `⇧⌘T` switches back.

@@ -872,6 +872,14 @@
       "builtin": true,
       "entries": [
         {
+          "action": "view.toggle_html",
+          "key": "h"
+        },
+        {
+          "action": "view.toggle_remote_images",
+          "key": "i"
+        },
+        {
           "action": "view.one_column",
           "key": "1"
         },
@@ -884,32 +892,24 @@
           "key": "3"
         },
         {
-          "action": "view.sort_received",
-          "key": "c"
-        },
-        {
-          "action": "view.sort_modified",
-          "key": "m"
-        },
-        {
-          "action": "view.toggle_html",
-          "key": "h"
-        },
-        {
-          "action": "view.toggle_remote_images",
-          "key": "i"
-        },
-        {
-          "action": "view.cycle_status_bar",
-          "key": "s"
+          "action": "view.choose_theme",
+          "key": "t"
         },
         {
           "action": "view.toggle_list_layout",
           "key": "l"
         },
         {
-          "action": "view.choose_theme",
-          "key": "t"
+          "action": "view.cycle_status_bar",
+          "key": "s"
+        },
+        {
+          "action": "view.sort_received",
+          "key": "c"
+        },
+        {
+          "action": "view.sort_modified",
+          "key": "m"
         }
       ],
       "name": "view"

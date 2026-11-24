@@ -258,6 +258,21 @@ enum KeyAction: String, CaseIterable {
     /// Whether it is the `_open` variant of another action.
     var isOpenVariant: Bool { rawValue.hasPrefix("save.") && rawValue.hasSuffix("_open") }
 
+    /// The block of an action of the Display menu (`ui.md`, menu `v`):
+    /// 0 the mail shown (text / HTML, remote images), 1 the columns, 2 the
+    /// presentation (the theme, the list, the status bar), 3 the sort.
+    /// The menu leaves a gap where the block changes, whatever order
+    /// `keymap.toml` gives the rows; `nil` for any other action.
+    var viewBlock: Int? {
+        switch self {
+        case .viewToggleHtml, .viewToggleRemoteImages: 0
+        case .viewOneColumn, .viewTwoColumns, .viewThreeColumns: 1
+        case .viewChooseTheme, .viewToggleListLayout, .viewCycleStatusBar: 2
+        case .viewSortReceived, .viewSortModified: 3
+        default: nil
+        }
+    }
+
     /// Refused in Quarantine, whatever its key (`raccourcis.md`, section
     /// 6.1, `quarantine`): the actions that change a mail other than by
     /// moving it or flagging it (`InterfaceController.quarantineRefused`).
@@ -338,7 +353,7 @@ enum KeyAction: String, CaseIterable {
         case .pickerSearch: return L("search everywhere, in All Mail")
         case .pickerAttributes: return L("filter by attributes")
         case .pickerAccounts: return L("go to an account")
-        case .menuView: return L("display")
+        case .menuView: return L("show")
         case .saveClipboard: return L("to clipboard")
         case .saveEml: return L("as .eml file")
         case .saveText: return L("as text file")

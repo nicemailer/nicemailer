@@ -259,7 +259,9 @@ extension InterfaceController.Prefix {
         case .move: L("Move")
         case .goto: L("Go to")
         case .save: L("Save")
-        case .view: L("Display")
+        // Verbs, as Move and Save: what the menu does (November 2026;
+        // "Display" before).
+        case .view: L("Show")
         // A menu of the user (`[menu.<name>]`): its name.
         case .user(let name): name
         }
@@ -435,7 +437,7 @@ struct StatusBarView: View {
             // contact list ("unread mails of the group"): the magnifier
             // opens the selector (`F`); each active attribute is a chip,
             // removed by a click.
-            StatusBlock(icon: "magnifyingglass", text: "", key: controller.keyLabel(.pickerAttributes), label: L("Attributes"),
+            StatusBlock(icon: "magnifyingglass", text: "", key: controller.keyLabel(.pickerAttributes), label: L("Filter"),
                         active: controller.overlay == .picker(.attributes))
                 .onTapGesture { controller.openPickerFromStatusBar(.attributes) }
                 .uiTarget("status-attributes", barType: "status_bar")
@@ -712,7 +714,7 @@ extension ToolbarView {
         case "attributes":
             ToolbarItem(action: { controller.openPickerFromStatusBar(.attributes) }) {
                 StatusBlock(icon: "line.3.horizontal.decrease", text: "", key: controller.keyLabel(.pickerAttributes),
-                            label: L("Attributes"))
+                            label: L("Filter"))
             }
             .uiTarget("status-attributes", barType: "toolbar")
             ForEach(model.attributes.chips) { chip in
@@ -2994,7 +2996,8 @@ struct PickerPopup: View {
     private var title: String {
         switch kind {
         case .accounts: L("Account")
-        case .attributes: L("Attributes")
+        // A verb, as the other blocks of the bar ("Attributes" before).
+        case .attributes: L("Filter")
         case .attributeValue(let field): field.title
         // The widest search: words anywhere, addresses included.
         case .search: L("Search everywhere")

@@ -1,4 +1,4 @@
-# Display menu (v), text / HTML, scrolling and saving.
+# Show menu (v), text / HTML, scrolling and saving.
 key v
 key 1
 expect columns = 1

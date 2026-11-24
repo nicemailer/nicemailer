@@ -121,7 +121,7 @@ enum Help {
                 line([.menuGoto], L("go to a folder or a screen"), suffix: "…"),
             ]),
             (L("Window"), [
-                line([.menuView], L("display"), suffix: "…"),
+                line([.menuView], L("show"), suffix: "…"),
                 line([.textBigger, .textSmaller, .textReset], L("text size: bigger, smaller, default")),
                 line([.windowFullScreen], L("full screen")),
                 line([.helpShow], L("this list of keys")),

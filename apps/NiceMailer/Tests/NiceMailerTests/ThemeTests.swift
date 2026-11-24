@@ -353,14 +353,14 @@ struct ThemePickerTests {
         await model.attach(core)
     }
 
-    @Test func theLastRowOfTheDisplayMenuIsTheTheme() {
-        let row = controller.menuEntries(.view).last
+    @Test func theDisplayMenuOffersTheTheme() {
+        let row = controller.menuEntries(.view).first { $0.key == "t" }
         #expect(row?.label == L("theme…"))
         #expect(row?.key == "t")
     }
 
     @Test func returnAppliesTheThemeChosen() async {
-        controller.menuEntries(.view).last?.action()
+        controller.menuEntries(.view).first { $0.key == "t" }?.action()
         #expect(controller.overlay == .picker(.themes))
         #expect(await eventually { controller.pickerEntries(.themes).count == 4 })
         let rows = controller.pickerEntries(.themes)
@@ -377,7 +377,7 @@ struct ThemePickerTests {
     }
 
     @Test func aRefusedThemeSaysWhyInsteadOfBeingChosen() async {
-        controller.menuEntries(.view).last?.action()
+        controller.menuEntries(.view).first { $0.key == "t" }?.action()
         #expect(await eventually { controller.pickerEntries(.themes).count == 4 })
         let broken = controller.pickerEntries(.themes)[3]
         #expect(broken.detail?.contains("themes/broken.toml") == true)

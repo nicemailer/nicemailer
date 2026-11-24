@@ -25,10 +25,13 @@ expect selected_flagged = true
 expect selected_flag_inside > 3
 snap list-layout-stacked-flagged
 key *
-# The Display menu offers the other one, before the theme.
+# The Show menu (v) offers the other one, in its block of the
+# presentation, after the theme; four blocks, set apart by a gap.
 key v
 expect overlay ~ menu
-expect menu_rows ~ l list: one line or three per mail
+expect menu_rows ~ h text / HTML | i remote images || 1 one column
+expect menu_rows ~ three columns || t theme… | l list: one line or three per mail | s status bar
+expect menu_rows ~ bottom, top, hidden || c sort by reception date | m sort by modification date
 snap list-layout-menu
 key l
 expect overlay = none

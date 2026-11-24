@@ -15,7 +15,7 @@ In `config.toml`:
 theme = "clean"
 ```
 
-`geek` is the default. The name is that of a built-in theme or of a file of `themes/`. The **Appearance** tab of the Preferences (Settings…, ⌘,) lists the themes and writes the one you click in `config.toml`, keeping the rest of the file; its button opens the folder of the themes. From the keyboard, `v` `t` (Display, theme…) opens a picker of the same themes, on the one in effect; Return writes the one chosen in the same way, and a theme whose file is refused says why instead of being chosen. A name that names no theme is not an error of `config.toml` (the accounts stay on): geek is applied, with a warning. The change applies at once, without restarting.
+`geek` is the default. The name is that of a built-in theme or of a file of `themes/`. The **Appearance** tab of the Preferences (Settings…, ⌘,) lists the themes and writes the one you click in `config.toml`, keeping the rest of the file; its button opens the folder of the themes. From the keyboard, `v` `t` (Show, theme…) opens a picker of the same themes, on the one in effect; Return writes the one chosen in the same way, and a theme whose file is refused says why instead of being chosen. A name that names no theme is not an error of `config.toml` (the accounts stay on): geek is applied, with a warning. The change applies at once, without restarting.
 
 `ui.title_bar` is replaced by `title_bar` in the `[window]` table of the theme: `shown`, `hidden`, or `merged`, the red, yellow and green buttons over the left end of the status bar, which leaves them room (with the status bar at the bottom or hidden, the title bar is shown). Written in `config.toml`, `ui.title_bar` is still applied, with a warning.
 
