@@ -14,7 +14,21 @@ import SwiftUI
 /// Swift note: an `NSViewRepresentable` puts an AppKit view in a SwiftUI
 /// hierarchy; this one draws nothing, it only reaches the window it is in.
 struct WindowChrome: NSViewRepresentable {
-    let hidden: Bool
+    /// What the title bar is (`window.title_bar` of the theme).
+    enum Mode: String {
+        /// A title bar, with the title and the buttons.
+        case shown
+        /// No title bar at all: the content goes up to the top edge.
+        case hidden
+        /// No title bar, but the red, yellow and green buttons, over the
+        /// left end of the status bar, which leaves them room.
+        case merged
+    }
+
+    let mode: Mode
+    /// Merged: the height of the bar the buttons sit in, at the top of the
+    /// window; they are centered in it, aligned with its icons and names.
+    var barHeight: CGFloat = 28
     /// The window's title (the Window menu, Mission Control), with the
     /// mailbox in use when it is not the default one. Set on the window
     /// itself: SwiftUI's `.navigationTitle` would add a toolbar, whose
@@ -25,13 +39,15 @@ struct WindowChrome: NSViewRepresentable {
     func makeNSView(context: Context) -> ChromeView { ChromeView() }
 
     func updateNSView(_ view: ChromeView, context: Context) {
-        view.titleBarHidden = hidden
+        view.mode = mode
+        view.barHeight = barHeight
         view.title = title
         view.apply()
     }
 
     final class ChromeView: NSView {
-        var titleBarHidden = false
+        var mode = Mode.shown
+        var barHeight: CGFloat = 28
         var title = "NiceMailer"
         private var observers: [NSObjectProtocol] = []
 
@@ -66,8 +82,14 @@ struct WindowChrome: NSViewRepresentable {
         func apply() {
             guard let window, !UIScript.isActive else { return }
             if window.title != title { window.title = title }
-            if !WindowChrome.matches(hidden: titleBarHidden, window) {
-                WindowChrome.apply(hidden: titleBarHidden, to: window)
+            if !WindowChrome.matches(mode, window) {
+                WindowChrome.apply(mode, to: window)
+            }
+            // AppKit puts the buttons back where it wants them when it lays
+            // the title bar out again (a resize, full screen, the window
+            // becoming key): they are moved again, only when they moved.
+            if mode == .merged, !WindowChrome.buttonsCentered(in: window, barHeight: barHeight) {
+                WindowChrome.centerButtons(in: window, barHeight: barHeight)
             }
         }
     }
@@ -81,30 +103,77 @@ struct WindowChrome: NSViewRepresentable {
     /// the title bar's own container view is hidden, as Ghostty does: it
     /// then draws nothing, not even a transparent band, and takes no click,
     /// so the status bar under it gets them all.
-    static func apply(hidden: Bool, to window: NSWindow) {
+    ///
+    /// Merged, the title bar is transparent and without its title, as when
+    /// hidden, but its container and its buttons stay: they are drawn over
+    /// the left end of the status bar, which keeps them room.
+    static func apply(_ mode: Mode, to window: NSWindow) {
+        let bare = mode != .shown
         window.styleMask.insert(.fullSizeContentView)
         // Full screen (⌃⌘F) whether the title bar is shown or not.
         window.collectionBehavior.insert(.fullScreenPrimary)
         // No toolbar: its background would be drawn over the content.
-        if hidden { window.toolbar = nil }
-        window.titlebarAppearsTransparent = hidden
-        window.titleVisibility = hidden ? .hidden : .visible
+        if bare { window.toolbar = nil }
+        window.titlebarAppearsTransparent = bare
+        window.titleVisibility = bare ? .hidden : .visible
         for kind in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
-            window.standardWindowButton(kind)?.isHidden = hidden
+            window.standardWindowButton(kind)?.isHidden = mode == .hidden
         }
-        titlebarContainer(of: window)?.isHidden = hidden
+        titlebarContainer(of: window)?.isHidden = mode == .hidden
+    }
+
+    /// Merged: the red, yellow and green buttons in the middle of the bar
+    /// of `barHeight` points at the top of the window, as its icons and
+    /// names are, rather than in the middle of the 28 points of a title
+    /// bar. The title bar's container is made as tall as the bar first, so
+    /// that the buttons are inside it (and take their clicks).
+    static func centerButtons(in window: NSWindow, barHeight: CGFloat) {
+        guard let frameView = window.contentView?.superview, let container = titlebarContainer(of: window) else { return }
+        let top = frameView.bounds.height
+        var c = container.frame
+        if c.height < barHeight {
+            c.origin.y = top - barHeight
+            c.size.height = barHeight
+            container.frame = c
+        }
+        for kind in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
+            guard let b = window.standardWindowButton(kind), let parent = b.superview else { continue }
+            let middle = parent.convert(NSPoint(x: 0, y: top - barHeight / 2), from: frameView)
+            var f = b.frame
+            f.origin.y = (middle.y - f.height / 2).rounded()
+            if b.frame != f { b.frame = f }
+        }
+    }
+
+    /// Whether the buttons are in the middle of the bar, within a point.
+    static func buttonsCentered(in window: NSWindow, barHeight: CGFloat) -> Bool {
+        guard let frameView = window.contentView?.superview, let b = window.standardWindowButton(.closeButton) else { return true }
+        let middle = frameView.bounds.height - barHeight / 2
+        let center = b.convert(NSPoint(x: b.bounds.midX, y: b.bounds.midY), to: frameView)
+        return abs(center.y - middle) <= 1
+    }
+
+    /// The same, as a switch: hidden or shown.
+    static func apply(hidden: Bool, to window: NSWindow) {
+        apply(hidden ? .hidden : .shown, to: window)
     }
 
     /// Whether the window already shows (or hides) its title bar as asked:
     /// then nothing is done.
-    static func matches(hidden: Bool, _ window: NSWindow) -> Bool {
-        window.styleMask.contains(.fullSizeContentView)
+    static func matches(_ mode: Mode, _ window: NSWindow) -> Bool {
+        let bare = mode != .shown, hidden = mode == .hidden
+        return window.styleMask.contains(.fullSizeContentView)
             && window.collectionBehavior.contains(.fullScreenPrimary)
-            && window.titlebarAppearsTransparent == hidden
-            && (window.titleVisibility == .hidden) == hidden
+            && window.titlebarAppearsTransparent == bare
+            && (window.titleVisibility == .hidden) == bare
             && (window.standardWindowButton(.closeButton)?.isHidden ?? hidden) == hidden
             && (titlebarContainer(of: window)?.isHidden ?? hidden) == hidden
-            && (!hidden || window.toolbar == nil)
+            && (!bare || window.toolbar == nil)
+    }
+
+    /// The same, as a switch: hidden or shown.
+    static func matches(hidden: Bool, _ window: NSWindow) -> Bool {
+        matches(hidden ? .hidden : .shown, window)
     }
 
     /// The view that holds the title bar (AppKit's private
@@ -123,14 +192,30 @@ struct WindowChrome: NSViewRepresentable {
 /// double-clicked, as a title bar does: the empty parts of the status bar,
 /// when the title bar is hidden. The blocks of the status bar keep their
 /// clicks: they are drawn over it.
+///
+/// `onClick`: run at each mouse down, before the window moves: a click on
+/// the bar closes the open menu or picker (`clickBarBackground`).
+///
+/// Swift note: `NSViewRepresentable` wraps an AppKit view for SwiftUI;
+/// `updateNSView` runs at each redraw and hands it the latest closure, so
+/// the view never calls one that captured an older state.
 struct WindowDragArea: NSViewRepresentable {
+    var onClick: (() -> Void)? = nil
+
     func makeNSView(context: Context) -> DragView { DragView() }
-    func updateNSView(_ view: DragView, context: Context) {}
+    func updateNSView(_ view: DragView, context: Context) { view.onClick = onClick }
 
     final class DragView: NSView {
+        var onClick: (() -> Void)?
+
         override var mouseDownCanMoveWindow: Bool { true }
 
         override func mouseDown(with event: NSEvent) {
+            onClick?()
+            // In UI script mode the window is off screen and the events are
+            // made up: nothing to move (`performDrag` would wait for a real
+            // mouse).
+            if UIScript.isActive { return }
             if event.clickCount == 2 {
                 window?.performZoom(nil)
             } else {

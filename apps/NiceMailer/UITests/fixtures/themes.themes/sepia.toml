@@ -1,0 +1,16 @@
+# A theme of the user for themes.uiscript: clean, on a warm paper.
+version = 1
+extends = "clean"
+
+[window]
+# The help first, the menus of the mail after the room left; no
+# attributes, no display, no AI (their keys still work).
+blocks = ["help", "account", "folder", "->", "move", "save"]
+# Bigger icons and texts in the bar than clean's (medium).
+bar_size = "large"
+
+[colors]
+background = { light = "#F6F0E4", dark = "#221E18" }
+list = { light = "#F6F0E4", dark = "#221E18" }
+bar = { light = "#EADFC8", dark = "#2E2820" }
+text = { light = "#3B3025", dark = "#E8DFD0" }

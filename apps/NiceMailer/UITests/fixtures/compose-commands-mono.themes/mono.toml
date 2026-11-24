@@ -1,0 +1,12 @@
+# A theme like clean in a font of fixed pitch, with much room around the
+# title: the commands of a reply are too wide for the reader of two
+# columns (compose-commands-mono.uiscript).
+version = 1
+extends = "clean"
+
+[fonts]
+interface = "iA Writer Mono V"
+reading = "iA Writer Mono V"
+
+[layout]
+reader_title_padding = 28

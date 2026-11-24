@@ -320,7 +320,7 @@ fn a_passage_selected_gets_other_wordings_and_the_one_chosen_replaces_it() {
     // needs the whole text.
     let menu = c.call("ai_list_prompts", json!({"screen": "compose-selection", "lang": "fr"})).unwrap();
     let ids: Vec<&str> = menu.as_array().unwrap().iter().map(|p| p["id"].as_str().unwrap()).collect();
-    assert_eq!(ids, ["alternatives", "proofread", "improve", "rewrite", "translate-draft"]);
+    assert_eq!(ids, ["alternatives", "proofread", "improve", "rewrite", "translate-reply", "translate-draft"]);
     assert!(menu.as_array().unwrap().iter().take(3).all(|p| p["available"] == true), "{menu}");
     // "viens": ASCII before it, so UTF-16 units are bytes.
     let selection = json!({"start": 3, "end": 8});
@@ -557,16 +557,75 @@ fn a_conversation_is_summarized_in_the_apps_language() {
 }
 
 #[test]
-fn a_mail_is_translated_with_the_variants_language() {
+fn a_mail_is_translated_into_the_apps_language() {
     let dir = tempfile::tempdir().unwrap();
     let (_core, mut c, visit, _) = mail_core(dir.path(), json!({"translate-message": "Perfect, remember your ID."}));
-    let (id, p) = run_mail(&mut c, "translate-message", visit, Some("e"));
+    // One prompt, no language to choose: a variant is refused.
+    assert!(c.call("ai_run", json!({"prompt": "translate-message", "thread_id": visit, "variant": "e", "lang": "en"})).is_err());
+    let (id, p) = run_mail(&mut c, "translate-message", visit, None);
     assert_eq!(p, json!({"kind": "text", "text": "Perfect, remember your ID."}));
     let input = sent(dir.path(), id);
-    // The latest mail received, not mine, and the variant's language only.
+    // The latest mail received, not mine, into the language of the app the
+    // run was asked from (`run_mail` asks in French).
     assert!(input.contains("<email>\nParfait, pense a la piece d'identite."), "{input}");
     assert!(!input.contains("je viendrai"), "{input}");
-    assert!(input.contains("Translate it into English.") && !input.contains("Answer in French"), "{input}");
+    assert!(input.contains("Answer in French."), "{input}");
+}
+
+#[test]
+fn a_reply_is_translated_into_the_language_of_the_mail_received() {
+    let dir = tempfile::tempdir().unwrap();
+    let answers = json!({"translate-reply": "<segment n=\"1\">Yes, I will come on Thursday.</segment>"});
+    let _core = core(dir.path(), Some(answers), "");
+    let mut c = Client::connect_as(dir.path(), "app");
+    let d = reply(dir.path(), &mut c, "Oui, je viens jeudi.\n");
+    // On a reply, the prompt is listed, before the list of the languages.
+    let menu = c.call("ai_list_prompts", json!({"screen": "compose", "lang": "fr", "reply": true})).unwrap();
+    let ids: Vec<&str> = menu.as_array().unwrap().iter().map(|p| p["id"].as_str().unwrap()).collect();
+    let at = |id: &str| ids.iter().position(|i| *i == id).unwrap();
+    assert!(at("translate-reply") < at("translate-draft"), "{ids:?}");
+    let entry = &menu.as_array().unwrap()[at("translate-reply")];
+    assert_eq!(entry["label"], "Traduire ma réponse dans la langue du mail reçu");
+    assert_eq!(entry["variants"], json!([]));
+    c.clear_events();
+    let id = run(&mut c, &d, "translate-reply").unwrap()["run_id"].as_i64().unwrap();
+    c.event("AiDone", 10);
+    let input = sent(dir.path(), id);
+    // The user's words as the segment, the mail received below them, and
+    // its language as the one to write in.
+    assert!(input.contains("<segment n=\"1\">Oui, je viens jeudi.</segment>"), "{input}");
+    assert!(input.contains("<replied>\nFrom: Alice <alice@a.example>\n"), "{input}");
+    assert!(input.contains("Write in the language of the mail replied to"), "{input}");
+    assert!(!input.contains("Answer in French"), "{input}");
+    let a = c.call("ai_apply", json!({"run_id": id, "revision": d["revision"]})).unwrap();
+    let body = a["draft"]["body"].as_str().unwrap();
+    assert!(body.starts_with("Yes, I will come on Thursday.") && body.contains("> Tu viens jeudi ?"), "{body}");
+}
+
+#[test]
+fn a_new_mail_has_no_prompt_of_a_reply() {
+    let dir = tempfile::tempdir().unwrap();
+    let _core = core(dir.path(), Some(json!({})), "");
+    let mut c = Client::connect_as(dir.path(), "app");
+    let _ = reply(dir.path(), &mut c, "");
+    let account: i64 = {
+        let db = nm_store::rusqlite::Connection::open_with_flags(dir.path().join("nicemailer.db"), nm_store::rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+        db.query_row("SELECT id FROM account LIMIT 1", [], |r| r.get(0)).unwrap()
+    };
+    // Not a reply: the prompt is left out, the list of languages stays.
+    let menu = c.call("ai_list_prompts", json!({"screen": "compose", "lang": "fr", "reply": false})).unwrap();
+    let ids: Vec<&str> = menu.as_array().unwrap().iter().map(|p| p["id"].as_str().unwrap()).collect();
+    assert!(!ids.contains(&"translate-reply") && ids.contains(&"translate-draft"), "{ids:?}");
+    let languages = menu.as_array().unwrap().iter().find(|p| p["id"] == "translate-draft").unwrap()["variants"].as_array().unwrap().len();
+    assert_eq!(languages, 19);
+    // Run anyway: refused before anything is sent.
+    let d = c.call("create_draft", json!({"kind": "new", "account": account})).unwrap()["draft"].clone();
+    let r = c.call("update_draft", json!({"id": d["id"], "revision": d["revision"], "body": "Bonjour"})).unwrap();
+    let d = json!({"id": d["id"], "revision": r["revision"]});
+    let before = runs(dir.path());
+    let e = run(&mut c, &d, "translate-reply").unwrap_err();
+    assert_eq!(e["data"]["reason"], "ai_reply_needed", "{e}");
+    assert_eq!(runs(dir.path()), before, "nothing recorded, nothing sent");
 }
 
 #[test]

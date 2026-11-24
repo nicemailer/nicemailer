@@ -1,8 +1,8 @@
 import SwiftUI
 
-/// The Preferences window (the app menu's "Settings…", ⌘,): one tab for
-/// now, the accounts (`docs/accounts.md`, "In the app"). Other settings
-/// will join it as tabs.
+/// The Preferences window (the app menu's "Settings…", ⌘,): the accounts
+/// (`docs/accounts.md`, "In the app"), then the appearance, the theme of
+/// the app (`docs/themes.md`). Other settings will join them as tabs.
 ///
 /// Its controls are the Mac's standard ones in either theme: a window of
 /// settings is not a place for the geek theme's keys.
@@ -13,7 +13,8 @@ struct PreferencesView: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        TabView {
+        @Bindable var model = model
+        TabView(selection: $model.preferencesTab) {
             Group {
                 if let core = model.accountsCore {
                     // A new connection (the core restarted) makes a new
@@ -27,6 +28,18 @@ struct PreferencesView: View {
                 }
             }
             .tabItem { Label(L("Accounts"), systemImage: "at") }
+            .tag(PreferencesTab.accounts)
+            Group {
+                if let core = model.accountsCore {
+                    AppearancePane(client: core).id(ObjectIdentifier(core))
+                } else {
+                    Text(L("Connecting to the core…"))
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            }
+            .tabItem { Label(L("Appearance"), systemImage: "paintpalette") }
+            .tag(PreferencesTab.appearance)
         }
         .frame(width: 720, height: 540)
     }

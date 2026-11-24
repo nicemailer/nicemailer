@@ -1,0 +1,6 @@
+# A file of the built-in theme clean, refused: its line 6 is out of range.
+version = 1
+
+[layout]
+zebra = true
+row_height = 3

@@ -114,7 +114,7 @@ key esc
 # The ; menu with the mouse: a click on the folder of the status bar, then
 # on a row (the first one is the Inbox).
 click status:folder
-expect overlay = menu(NiceMailer.GeekController.Prefix.goto)
+expect overlay = menu(NiceMailer.InterfaceController.Prefix.goto)
 click menu:0
 expect account = fixture
 expect folder = Inbox
@@ -123,7 +123,7 @@ expect folder = Inbox
 # one, with the chip and the folder column. Escape comes back to the folder /
 # was pressed from.
 key /
-expect overlay = picker(NiceMailer.GeekController.PickerKind.search)
+expect overlay = picker(NiceMailer.InterfaceController.PickerKind.search)
 type rapport
 expect picker_count = 1
 snap search-panel

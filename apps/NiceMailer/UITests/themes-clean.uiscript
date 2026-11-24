@@ -1,0 +1,151 @@
+# The theme clean (docs/themes.md; fixtures/themes-clean.config.toml): SF
+# Pro, rows of 30 pt with a rounded selection, no reminder of the keys in
+# the status bar (the keys still work), rounded menus and pickers with a
+# shadow, the keys of a menu on the right, the reader centered, the folder
+# column sliding in. Its snapshots are the ones to look at.
+expect theme = clean
+expect title_bar = merged
+# Three lines per mail (window.list_layout = "stacked"); in columns, rows
+# of 30 pt (list-layout.uiscript).
+expect list_layout = stacked
+expect row_height > 50
+# bar_size = "medium": the blocks of the bar at the text size of the bar
+# (themes.uiscript has the same, large).
+expect status_help_height = 22
+appearance light
+# The subject of the open mail with room above and below it: clean draws
+# no line under it, so its padding keeps it off the bar
+# (layout.reader_title_padding = 12). On the sides, the column of the text
+# (layout.reader_max_width = 560): the subject starts where the text
+# starts, the controls end where it ends.
+expect title_inset ~ ,12
+expect reader_alignment = 0,0
+# A flag on the selected row: inside its rounded fill, not over its right
+# edge (layout.row_inset = 8).
+key *
+expect selected_flagged = true
+expect selected_flag_inside > 3
+snap clean-list-flagged
+key *
+expect selected_flagged = false
+snap clean-list
+# A tag after the subject, a narrow window and a bigger text: the tag and
+# the controls go under the subject, the two lines apart by half the padding (6 pt for a 12 pt text, more
+# after three ⌘+), the big subject not cut.
+key t
+type Urgent
+key ret
+expect header_tags = Urgent
+resize 760x800
+key cmd-=
+key cmd-=
+key cmd-=
+expect title_lines = 2
+expect title_line_gap > 5
+snap clean-title-two-lines
+key cmd-0
+resize 1400x900
+expect title_lines = 1
+expect title_line_gap =
+# The keys work as in every theme.
+key j
+expect selected = 1
+key m
+expect overlay ~ menu
+snap clean-move-menu
+key esc
+key @
+expect overlay ~ picker
+snap clean-account-picker
+key esc
+# The attributes: a roomy input line, as a search field of a web page.
+key f
+expect overlay ~ picker
+snap clean-attributes
+key esc
+# The menu ; with the margins of clean around its title and rows.
+key ;
+expect overlay ~ menu
+# The unread count of Inbox in a pill, set apart from its key on the
+# right (10 pt of the row and 8 more).
+expect menu_badge_gap = 18
+# A row highlighted with the arrows: room around its text.
+key down
+expect menu_index = 0
+snap clean-goto-menu
+key esc
+key v
+expect overlay ~ menu
+snap clean-view-menu
+key esc
+key ?
+snap clean-help
+key esc
+# Three columns: the folder column slides in.
+key v
+key 3
+expect columns = 3
+# The folder column: its text inside the rounded highlight (8 pt of inset
+# and 10 inside, on both sides), the unread count of Inbox in a pill, set
+# apart from its key (6 pt of the row and 8 more).
+expect folder_inbox_layout = 18,18,14
+wait 300
+snap clean-three-columns
+appearance dark
+snap clean-dark
+# A newsletter in HTML: the unsubscribe button and the text | html
+# switch rounded as the rows of the list, for their size.
+key @
+type fixture
+key ret
+key ;
+key a
+expect unsubscribe ~ header
+# clean reads HTML (reader.body_format, themes.md, section 6.6): a sender
+# with no choice remembered opens in HTML. A click remembers an explicit
+# choice, text, then html again.
+expect body_format = html
+# Its three files a row each, with the icon of macOS for their type and
+# their whole name (layout.attachments = "rows"), in HTML as in text.
+expect attachment_layout = rows
+# The page in the same column as the title, as the text reader.
+expect reader_alignment = 0,0
+snap clean-attachments-html
+click format:text
+expect body_format = text
+expect reader_attachments = 3
+expect reader_text ~ devis.pdf
+expect reader_text ~ budget.xlsx
+snap clean-attachments-text
+# A click on a row saves its file, as a tile does.
+click attachment:2
+expect export_files = 1
+click format:html
+expect body_format = html
+appearance light
+# The flag of the mail shown, beside unsubscribe and text | html: off, a
+# click puts it on (filled, orange), another takes it off; the buttons of
+# the title line all have the same frame and height.
+expect selected_flagged = false
+# The information first (the blocked pixels), then the buttons, the
+# switch at the right end: the buttons do not move with the labels.
+expect title_controls_order = pixels,unsubscribe,flag,format
+click reader:flag
+expect selected_flagged = true
+snap clean-title-flagged
+click reader:flag
+expect selected_flagged = false
+expect title_button_heights = 19,19,19
+snap clean-title-controls
+appearance dark
+snap clean-title-controls-dark
+# The commands of a reply have the frame and the height of the buttons of
+# the reader.
+appearance light
+expect title_button_heights = 19,19,19
+key r
+expect composing = true
+expect title_button_heights = 19
+snap clean-reply-commands
+key cmd-esc
+expect composing = false

@@ -35,15 +35,6 @@ enum AppResources {
     }()
 }
 
-/// The app's icon drawn small, for the status bar (`Resources/Icon`, made
-/// by `scripts/make-icon.sh` from the icon's small-size drawing). Loaded
-/// once; nil if the file is missing, the bar then writes the mode.
-enum AppIcon {
-    static let statusImage: NSImage? = AppResources.bundle
-        .url(forResource: "StatusIcon", withExtension: "png", subdirectory: "Icon")
-        .flatMap(NSImage.init(contentsOf:))
-}
-
 /// Localized string from the app's String Catalog.
 ///
 /// Swift note: in a Swift Package, resources live in their own bundle
@@ -158,11 +149,10 @@ enum Fonts {
         return NSFont(name: name, size: size) ?? .monospacedSystemFont(ofSize: size, weight: weight)
     }
 
-    /// Width of one character of the geek font at `size`. The font is
-    /// monospaced, so a column of `n` characters is `n * charWidth` wide:
-    /// list columns are sized this way, and stay aligned row after row.
+    /// Width of "0" in the interface font of the theme at `size`: the unit
+    /// of the gaps of the layout (`TextMeasure.char`).
     static func charWidth(_ size: CGFloat) -> CGFloat {
-        ("0" as NSString).size(withAttributes: [.font: reading(size)]).width
+        ("0" as NSString).size(withAttributes: [.font: interface(size)]).width
     }
 
     /// `@font-face` rules embedding the bundled fonts as data URLs, for the
@@ -180,82 +170,62 @@ enum Fonts {
     }()
 }
 
-/// Colors of the geek theme, inspired by Helix's default themes: a dark
-/// and a light variant, chosen by macOS appearance.
+/// Colors of the theme in effect (`ThemeStore`, `themes.md`, section 6.5),
+/// by the names the views have always used.
+///
+/// Each one is a dynamic color whose provider reads the theme's colors when
+/// AppKit draws: the same `Color` value for the life of the app (views and
+/// tests can compare them), its value following the theme and the
+/// appearance. A new theme rebuilds the window (`ThemeStore.revision`), so
+/// that nothing keeps a color SwiftUI resolved before.
 ///
 /// Swift note: `NSColor(name:dynamicProvider:)` creates a color that AppKit
 /// re-evaluates when the appearance changes, so views redraw themselves in
 /// the right variant without any code of ours.
 enum Palette {
-    /// A colour of the theme, dark and light (`#rrggbb`).
-    struct Pair {
-        let dark: UInt32
-        let light: UInt32
-        func hex(dark isDark: Bool) -> String { String(format: "#%06x", isDark ? dark : light) }
-    }
-
-    private static func dynamic(_ p: Pair) -> Color { dynamic(dark: p.dark, light: p.light) }
-
-    private static func dynamic(dark: UInt32, light: UInt32) -> Color {
+    private static func dynamic(_ key: KeyPath<ThemeColors, ThemeColor>) -> Color {
         Color(nsColor: NSColor(name: nil) { appearance in
-            let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-            return NSColor(rgb: isDark ? dark : light)
+            ThemeStore.colors[keyPath: key].resolved(for: appearance)
         })
     }
 
-    /// The dark background and text, also given to Dark Reader so that a
-    /// mail it darkens takes the theme's own colours (`DarkMode`).
-    static let darkBackground: UInt32 = 0x1B1D23
-    /// A soft white, a little dimmed and warmed towards the green of the
-    /// accent: the bright #D5D8DE glared on the dark background. Still
-    /// 9.8:1 on it.
-    static let darkText: UInt32 = 0xC3C6C1
+    /// `#rrggbb` of a color of the theme for one appearance: for the pages
+    /// of the editor and of Dark Reader, which take CSS values (a dynamic
+    /// color converted out of its view does not reliably follow an
+    /// appearance asked for).
+    static func hex(_ key: KeyPath<ThemeColors, ThemeColor>, dark: Bool) -> String {
+        ThemeStore.colors[keyPath: key].hex(dark: dark)
+    }
 
-    static let backgroundPair = Pair(dark: darkBackground, light: 0xFAFAF8)
-    static let background = dynamic(backgroundPair)
-    static let textPair = Pair(dark: darkText, light: 0x24262B)
-    static let text = dynamic(textPair)
-    static let mutedPair = Pair(dark: 0x6E7380, light: 0x8A8D94)
-    static let muted = dynamic(mutedPair)
-    /// Accent: the green of the app's icon, rgb(138 165 129)
-    /// (`design/icon/README.md`), for what is not text (a frame).
-    static let accent = dynamic(dark: 0x8AA581, light: 0x8AA581)
+    static let background = dynamic(\.background)
+    /// The folder column (`colors.sidebar`).
+    static let sidebar = dynamic(\.sidebar)
+    /// The list of the mails (`colors.list`).
+    static let list = dynamic(\.list)
+    static let text = dynamic(\.text)
+    /// Secondary text: dates, counts, headers.
+    static let muted = dynamic(\.muted)
+    /// Accent, for what is not text (a frame).
+    static let accent = dynamic(\.accent)
     /// The accent for text and small marks (keys of the menus, tags, the
-    /// mode, the caret): the icon's green in the dark theme (6.2:1 on its
-    /// background), a darker green of the same hue in the light one, where
-    /// the icon's would read at 2.6:1 only; this one reads at 5.3:1.
-    static let accentTextPair = Pair(dark: 0x8AA581, light: 0x56704E)
-    static let accentText = dynamic(accentTextPair)
-    /// Row under the cursor: a green of the accent's hue, a little more
-    /// apart from the background than a plain tint (text on it 11:1 light,
-    /// 7.4:1 dark).
-    static let cursorPair = Pair(dark: 0x33432F, light: 0xD3E0CE)
-    static let cursor = dynamic(cursorPair)
+    /// mode, the caret).
+    static let accentText = dynamic(\.accentText)
+    /// Row under the cursor (`colors.selection`).
+    static let cursor = dynamic(\.selection)
+    /// Text on that row (`colors.selection_text`).
+    static let selectionText = dynamic(\.selectionText)
     /// Rows marked for a grouped action.
-    static let marked = dynamic(dark: 0x3A2E45, light: 0xF3E3EE)
-    static let markedBar = dynamic(dark: 0xE08AC0, light: 0xC2408F)
-    static let statusBarPair = Pair(dark: 0x24262E, light: 0xEDEDEA)
-    static let statusBar = dynamic(statusBarPair)
-    static let popup = dynamic(dark: 0x262833, light: 0xFFFFFF)
-    static let separatorPair = Pair(dark: 0x30333C, light: 0xDDDDD8)
-    static let separator = dynamic(separatorPair)
-    static let unread = dynamic(dark: 0xE6C07B, light: 0xB07D16)
-    static let error = dynamic(dark: 0xE06C75, light: 0xC0392B)
+    static let marked = dynamic(\.marked)
+    static let markedBar = dynamic(\.markedBar)
+    /// The status bar (`colors.bar`).
+    static let statusBar = dynamic(\.bar)
+    static let popup = dynamic(\.popup)
+    static let separator = dynamic(\.separator)
+    static let unread = dynamic(\.unread)
+    static let error = dynamic(\.error)
     /// A flagged mail: orange, as in Apple Mail, and apart from the unread
     /// colour, so that the flag stands out at the end of its row.
-    static let flag = dynamic(dark: 0xF0883E, light: 0xD9661C)
-}
-
-extension NSColor {
-    /// A color from `0xRRGGBB`.
-    convenience init(rgb: UInt32) {
-        self.init(
-            srgbRed: CGFloat((rgb >> 16) & 0xFF) / 255,
-            green: CGFloat((rgb >> 8) & 0xFF) / 255,
-            blue: CGFloat(rgb & 0xFF) / 255,
-            alpha: 1
-        )
-    }
+    static let flag = dynamic(\.flag)
 }
 
 /// The text sizes of the geek theme (`docs/geek-ui.md`, "Text size").
@@ -282,7 +252,7 @@ final class TextSize {
     /// (`TEXT_SIZE_RANGE`): ⌘+ and ⌘− stop there too.
     static let range: ClosedRange<Double> = 9...32
     /// The size the lengths of the layout are written for (`scaled`,
-    /// `Font.geek`): they were all measured at 12 pt, so this stays 12
+    /// `Font.interface`): they were all measured at 12 pt, so this stays 12
     /// whatever the default size is.
     static let referenceSize: Double = 12
 
@@ -300,7 +270,7 @@ final class TextSize {
 
     /// Factor applied to the sizes written for `referenceSize`.
     var scale: CGFloat { CGFloat(size / Self.referenceSize) }
-    /// The same, for the status bar (`barScaled`, `Font.geekBar`).
+    /// The same, for the status bar (`barScaled`, `Font.interfaceBar`).
     var statusBarScale: CGFloat { CGFloat(statusBarSize / Self.referenceSize) }
 
     private static func clamped(_ v: Double) -> Double {
@@ -359,16 +329,144 @@ enum TextSizeChange {
 func scaled(_ value: CGFloat) -> CGFloat { value * TextSize.shared.scale }
 
 /// The same for the status bar, which has a text size of its own
-/// (`ui.status_bar_text_size`).
+/// (`ui.status_bar_text_size`), times the size the theme gives the bar
+/// (`window.bar_size`, `Look.barScale`).
 @MainActor
-func barScaled(_ value: CGFloat) -> CGFloat { value * TextSize.shared.statusBarScale }
+func barScaled(_ value: CGFloat) -> CGFloat { value * TextSize.shared.statusBarScale * Look.barScale }
 
 extension Fonts {
-    /// The geek font at a size written for the default text size, scaled
-    /// to the current one.
+    /// The interface font of the theme (`fonts.interface`) at a size
+    /// written for the reference text size, scaled to the current one.
     @MainActor
     static func scaled(_ size: CGFloat, weight: NSFont.Weight = .regular) -> NSFont {
-        reading(size * TextSize.shared.scale, weight: weight)
+        interface(size * TextSize.shared.scale, weight: weight)
+    }
+
+    /// The interface font of the theme in effect (`fonts.interface`,
+    /// `docs/themes.md`) at `size` points: iA Writer Mono V in geek, SF
+    /// Pro in clean and regular.
+    static func interface(_ size: CGFloat, weight: NSFont.Weight = .regular) -> NSFont {
+        named(ThemeStore.active.fonts.interface, size: size, weight: weight)
+    }
+
+    /// The font a theme names (`themes.md`, section 5.2): a font of the
+    /// system, the bundled iA Writer Mono V, or a family installed on the
+    /// Mac. A family that is not installed gives the system font
+    /// (`isAvailable` says so, for the message of the app).
+    static func named(_ name: String, size: CGFloat, weight: NSFont.Weight = .regular) -> NSFont {
+        switch name {
+        case "system": return .systemFont(ofSize: size, weight: weight)
+        case "system-mono": return .monospacedSystemFont(ofSize: size, weight: weight)
+        case "system-serif", "system-rounded":
+            // Swift note: a font descriptor describes a font without
+            // loading it; `withDesign` asks for the serif (New York) or
+            // rounded variant of the system font.
+            let base = NSFont.systemFont(ofSize: size, weight: weight)
+            let design: NSFontDescriptor.SystemDesign = name == "system-serif" ? .serif : .rounded
+            guard let d = base.fontDescriptor.withDesign(design) else { return base }
+            return NSFont(descriptor: d, size: size) ?? base
+        case readingFamily: return reading(size, weight: weight)
+        default:
+            // NSFontManager's weights go from 0 to 15: 5 is regular, 8
+            // semibold, 9 bold.
+            let w: Int
+            switch weight {
+            case .bold, .heavy, .black: w = 9
+            case .semibold: w = 8
+            default: w = 5
+            }
+            return NSFontManager.shared.font(withFamily: name, traits: [], weight: w, size: size)
+                ?? .systemFont(ofSize: size, weight: weight)
+        }
+    }
+
+    /// Whether the font a theme names is there: a font of the system, the
+    /// bundled one, or a family installed on the Mac.
+    static func isAvailable(_ name: String) -> Bool {
+        name.hasPrefix("system") || name == readingFamily
+            || NSFontManager.shared.availableFontFamilies.contains(name)
+    }
+
+    /// The body of a mail in the reader: the reading font of the theme
+    /// (`fonts.reading`), at a size written for the reference text size,
+    /// times the theme's `reading_scale`, scaled to the current text size.
+    @MainActor
+    static func mailBody(_ size: CGFloat, weight: NSFont.Weight = .regular) -> NSFont {
+        let fonts = ThemeStore.active.fonts
+        return named(fonts.reading, size: size * CGFloat(fonts.readingScale) * TextSize.shared.scale, weight: weight)
+    }
+
+    /// Points added between two lines of the body of a mail
+    /// (`fonts.reading_line_spacing`), whatever the text size.
+    static var mailLineSpacing: CGFloat { CGFloat(ThemeStore.active.fonts.readingLineSpacing) }
+
+    /// A font of the theme as a CSS `font-family` list, for the web views
+    /// (the HTML reader, the editor): the bundled font is "NM Mono", given
+    /// to them as data (`cssFontFaces`); the fonts of the system have names
+    /// of their own in WebKit.
+    static func css(_ name: String) -> String {
+        switch name {
+        case readingFamily: return "\"NM Mono\", ui-monospace, monospace"
+        case "system": return "-apple-system, system-ui, sans-serif"
+        case "system-mono": return "ui-monospace, monospace"
+        case "system-serif": return "ui-serif, serif"
+        case "system-rounded": return "ui-rounded, -apple-system, sans-serif"
+        default:
+            let quoted = name.replacingOccurrences(of: "\\", with: "").replacingOccurrences(of: "\"", with: "")
+            return "\"\(quoted)\", -apple-system, sans-serif"
+        }
+    }
+
+    /// The family name of the bundled font, as a theme writes it.
+    static let readingFamily = "iA Writer Mono V"
+}
+
+/// Measures text in a font, to size the columns of the list and the key
+/// column of the menus and the help (`themes.md`, section 7).
+///
+/// With a font of fixed pitch (geek), a text of `n` characters is `n`
+/// times the width of one: columns counted in characters line up row after
+/// row, as they always did. With a proportional font (SF Pro), each text is
+/// measured as it will be drawn.
+struct TextMeasure {
+    /// Width of "0": the unit of the gaps, and of a text in a font of
+    /// fixed pitch. Digits have one width in SF Pro too (tabular).
+    let char: CGFloat
+    /// Whether every character has the width of `char`.
+    let fixedPitch: Bool
+    /// Width of a typical character of running text: the unit for a text
+    /// not known in advance (the name of an attachment).
+    let average: CGFloat
+    private let measure: (String, Bool) -> CGFloat
+
+    /// The width of `s`, regular or bold, rounded up to a whole point.
+    func width(_ s: String, bold: Bool = false) -> CGFloat {
+        fixedPitch ? CGFloat(s.count) * char : measure(s, bold)
+    }
+
+    /// Characters of a fixed width `char`: the tests, and geek.
+    static func fixed(char: CGFloat) -> TextMeasure {
+        TextMeasure(char: char, fixedPitch: true, average: char) { s, _ in CGFloat(s.count) * char }
+    }
+
+    /// Text in `font` (and its bold variant).
+    static func font(_ font: NSFont, bold: NSFont) -> TextMeasure {
+        func w(_ s: String, _ f: NSFont) -> CGFloat {
+            (s as NSString).size(withAttributes: [.font: f]).width.rounded(.up)
+        }
+        let char = ("0" as NSString).size(withAttributes: [.font: font]).width
+        let sample = "Thanks again for the workshop, see you next week"
+        let average = (sample as NSString).size(withAttributes: [.font: font]).width / CGFloat(sample.count)
+        // In a font of fixed pitch every character is `char` wide: the same
+        // value, not a division that could round differently.
+        return TextMeasure(char: char, fixedPitch: font.isFixedPitch, average: font.isFixedPitch ? char : average) { s, isBold in
+            w(s, isBold ? bold : font)
+        }
+    }
+
+    /// The interface font of the theme at `size` points.
+    static func interface(_ size: CGFloat) -> TextMeasure {
+        font(Fonts.interface(size), bold: Fonts.interface(size, weight: .bold))
     }
 }
 
@@ -376,14 +474,15 @@ extension Font {
     /// Font of the whole geek theme: iA Writer Mono V (`ui.md`), at a size
     /// written for the default text size and scaled to the current one.
     @MainActor
-    static func geek(_ size: CGFloat = 12, weight: Font.Weight = .regular) -> Font {
+    static func interface(_ size: CGFloat = 12, weight: Font.Weight = .regular) -> Font {
         Font(Fonts.scaled(size, weight: nsWeight(weight)))
     }
 
-    /// The geek font of the status bar, scaled to its own text size.
+    /// The font of the status bar, scaled to its own text size and to the
+    /// size the theme gives the bar (`barScaled`).
     @MainActor
-    static func geekBar(_ size: CGFloat = 12, weight: Font.Weight = .regular) -> Font {
-        Font(Fonts.reading(size * TextSize.shared.statusBarScale, weight: nsWeight(weight)))
+    static func interfaceBar(_ size: CGFloat = 12, weight: Font.Weight = .regular) -> Font {
+        Font(Fonts.interface(barScaled(size), weight: nsWeight(weight)))
     }
 
     /// The AppKit weight of a SwiftUI one, among those the font has.

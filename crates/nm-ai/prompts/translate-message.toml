@@ -1,40 +1,16 @@
-# Built-in prompt (specifications/ia.md, section 8).
+# Built-in prompt (specifications/ia.md, section 8). Reading a mail
+# received in a foreign language: one prompt, into the language of the
+# app, with no list of languages to choose from.
 version = 1
 id = "translate-message"
 scope = "message"
 key = "t"
-label = { en = "Translate", fr = "Traduire" }
+label = { en = "Translate this mail into my language", fr = "Traduire ce mail dans ma langue" }
 input = ["message.text"]
 output = "panel"
-lang = "variant"
+lang = "app"
 
 system = """
-Translate the email message. {{variant}} Keep the meaning, the tone, the paragraphs, lists, names,
-numbers, email addresses and links. Do not summarize, add or drop content, and do not answer the
-message.
+Translate the email message. Keep the meaning, the tone, the paragraphs, lists, names, numbers,
+email addresses and links. Do not summarize, add or drop content, and do not answer the message.
 """
-
-[[variants]]
-key = "e"
-label = { en = "Into English", fr = "En anglais" }
-instruction = "Translate it into English."
-
-[[variants]]
-key = "f"
-label = { en = "Into French", fr = "En français" }
-instruction = "Translate it into French."
-
-[[variants]]
-key = "s"
-label = { en = "Into Spanish", fr = "En espagnol" }
-instruction = "Translate it into Spanish."
-
-[[variants]]
-key = "d"
-label = { en = "Into German", fr = "En allemand" }
-instruction = "Translate it into German."
-
-[[variants]]
-key = "i"
-label = { en = "Into Italian", fr = "En italien" }
-instruction = "Translate it into Italian."

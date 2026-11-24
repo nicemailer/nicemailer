@@ -1,0 +1,7 @@
+# Settings of list-layout.uiscript: the built-in theme clean, where the
+# list on three lines (v l) is the most likely to be used. Text sizes of
+# the layout (12 pt).
+[ui]
+text_size = 12
+status_bar_text_size = 12
+theme = "clean"

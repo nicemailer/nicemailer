@@ -19,7 +19,7 @@ import os
 @MainActor
 @Observable
 final class AppModel {
-    /// Connection state, shown by `ContentView`.
+    /// Connection state, shown by the window (`WindowContent`).
     enum Status: Equatable {
         case connecting
         case connected(coreVersion: String)
@@ -158,9 +158,26 @@ final class AppModel {
     /// suspected of spoofing (`authentification-expediteur.md`, section 5).
     var suspectMove: SuspectMove?
 
-    /// `ui.title_bar` of `config.toml`: the title bar of the window is
-    /// shown (the default), or hidden (`WindowChrome`).
-    var titleBarHidden = false
+    /// `ui.title_bar` of `config.toml`, only while the file writes it: it
+    /// still wins over the theme's (`themes.md`, section 9).
+    var configTitleBar: String?
+    /// The title bar of the window (`WindowChrome`): as `ui.title_bar`
+    /// says while it is written, else as the theme says
+    /// (`window.title_bar`). `merged`, the buttons in the status bar, only
+    /// while the status bar is at the top: elsewhere there is nothing to
+    /// hold them, and the title bar is shown.
+    var titleBarMode: WindowChrome.Mode {
+        switch configTitleBar ?? theme.current.window.titleBar {
+        case "hidden": .hidden
+        case "merged": statusBarAtTop ? .merged : .shown
+        default: .shown
+        }
+    }
+    /// The title bar is hidden: the content goes up to the top edge.
+    var titleBarHidden: Bool { titleBarMode == .hidden }
+    /// The status bar is at the top of the window (`InterfaceController`,
+    /// `statusPosition`): where `merged` puts the window's buttons.
+    var statusBarAtTop = true
     /// The keys of the geek theme: the defaults until the core answers, then
     /// those of `keymap.toml` (`keymap_get`, `docs/keymap.md`).
     var keymap: Keymap = .defaults
@@ -181,6 +198,14 @@ final class AppModel {
     /// Why `keymap.toml` is refused, while it is: the previous keys stay,
     /// and the status bar says so until the file is fixed.
     var keymapProblem: KeymapProblem?
+
+    /// The theme in effect (`ThemeStore`, `docs/themes.md`): the shared one
+    /// in the app, one of its own in each unit test.
+    @ObservationIgnored var theme: ThemeStore = .shared
+    /// Why a file of the theme's chain is refused, while it is: the theme
+    /// is made of its last valid version, and the status bar says so until
+    /// the file is fixed.
+    var themeProblem: KeymapProblem?
 
     /// The text sizes of the window and of its status bar (`TextSize`):
     /// those of `config.toml`, moved by ⌘+ / ⌘−. The shared one in the app,
@@ -219,6 +244,8 @@ final class AppModel {
     @ObservationIgnored var accountsCoreOverride: (any CoreCalling)?
     /// The core the Preferences talk to.
     var accountsCore: (any CoreCalling)? { accountsCoreOverride ?? core }
+    /// The tab the Preferences show.
+    var preferencesTab: PreferencesTab = .accounts
     /// Goes up each time the core announces that an account changed
     /// (`AccountChanged`, `AccountError`, `ConfigChanged`): the account list
     /// of the Preferences reads it again.
@@ -916,6 +943,27 @@ final class AppModel {
 
     /// Reads the keys in effect from the core (`keymap_get`). An older core
     /// without the method leaves the defaults.
+    /// Reads the theme in effect from the core (`theme_get`). An older core
+    /// without the method leaves the theme the app has.
+    func loadTheme() async {
+        guard let client, let view: ThemeView = try? await client.call("theme_get", [:]) else { return }
+        let changed = view != theme.current
+        theme.apply(view)
+        themeProblem = view.error
+        // The window is rebuilt in the new theme: the targets of a scenario
+        // are recorded again where they now are (`UIScript.locate` waits
+        // for them), not clicked where the previous theme drew them.
+        if changed, UIScript.isActive {
+            UIScript.frames = UIScript.frames.filter { $0.key.hasPrefix("prefs-") }
+        }
+        // A font the theme names that the Mac does not have: the system
+        // font stands in, and the status bar says so once, when the theme
+        // arrives (`themes.md`, section 7).
+        if changed, let missing = [view.fonts.interface, view.fonts.reading].first(where: { !Fonts.isAvailable($0) }) {
+            flash = L("Font “%@” not installed: using the system font", missing)
+        }
+    }
+
     func loadKeymap() async {
         guard let client, let view: KeymapView = try? await client.call("keymap_get", [:]) else { return }
         let new = Keymap(contexts: view.contexts, menus: view.menus)
@@ -930,11 +978,11 @@ final class AppModel {
         guard let client else { return }
         if let status: ConfigStatusView = try? await client.call("config_status", [:]) {
             if let ui = status.ui {
-                // Only an explicit "hidden" hides it: shown is the default.
-                titleBarHidden = ui.titleBar == "hidden"
+                // Written, `ui.title_bar` wins over the theme's.
+                configTitleBar = ui.titleBar
                 autoConfirmCalls = ui.autoConfirmCalls ?? false
                 // Applied at once: the window is rebuilt at the new sizes
-                // (`GeekWindow`, `.id`).
+                // (`WindowContent`, `.id`).
                 textSize.configure(size: ui.textSize, statusBar: ui.statusBarTextSize)
             }
             // An older core without `[unsubscribe]` keeps it closed, as
@@ -1159,8 +1207,15 @@ final class AppModel {
         if e.method == "AiDone" || e.method == "AiFailed" || e.method == "AiSuggestions" { aiEvent(e) }
         if e.method == "ResyncRequired" || order.isGap {
             scheduleRefresh(full: true)
-            // Events were missed: the end of the run among them, maybe.
+            // Events were missed: the end of the run among them, maybe, and
+            // a change of the settings, the keys or the theme, which have
+            // no list to reload: they are read again.
             Task { await aiResync() }
+            Task {
+                await loadUISettings()
+                await loadKeymap()
+                await loadTheme()
+            }
             return
         }
         switch e.method {
@@ -1180,6 +1235,14 @@ final class AppModel {
             return
         case "KeymapChanged":
             Task { await loadKeymap() }
+            return
+        case "ThemeChanged":
+            Task { await loadTheme() }
+            return
+        case "ConfigError" where e.params["file"]?.string?.hasPrefix("themes/") == true:
+            // The theme stays the one in effect; `theme_get` says whether
+            // the refused file is in its chain.
+            Task { await loadTheme() }
             return
         case "ConfigError" where e.params["file"]?.string == "keymap.toml":
             // The keys stay those in effect: only the message changes.
@@ -1569,7 +1632,7 @@ final class AppModel {
     }
 
     /// Loads the next page when the last row appears on screen (called by
-    /// each row's `.task` in `ThreadList` and `GeekThreadList`): the list
+    /// each row's `.task` in `ThreadRows`): the list
     /// scrolled with the mouse or the trackpad.
     func loadMoreIfNeeded(after thread: ThreadSummary) async {
         guard thread.id == threads.last?.id else { return }
@@ -1743,7 +1806,7 @@ final class AppModel {
     /// Whether the list shows, before each sender's name, an icon telling a
     /// person from a robot (`ui.md`, "Quarantine"): while a Quarantine
     /// folder itself is listed (of an account, or of "all"), as for its
-    /// direct targets (`GeekController.directTargets`). There the user
+    /// direct targets (`InterfaceController.directTargets`). There the user
     /// judges unknown senders, and a person among the robots is the mail
     /// most likely to deserve the Inbox. Elsewhere the attribute selector's
     /// human / robot filter does that job, and the column keeps its room
@@ -1759,7 +1822,7 @@ final class AppModel {
     /// mail, and the unread dot keeps saying which mails still wait for that
     /// judgement. Only the automatic marking is concerned (the one-second
     /// rule, Return in one column, leaving the mail): the geek theme also
-    /// refuses `u` / `U` while Quarantine is listed (`GeekController`), but
+    /// refuses `u` / `U` while Quarantine is listed (`InterfaceController`), but
     /// the core itself accepts `set_thread_seen`, so a client that asks
     /// explicitly (the CLI) still can.
     func isInQuarantine(_ id: Int) -> Bool {
@@ -2052,9 +2115,11 @@ final class AppModel {
         // only to finish before this function returns).
         async let settings: Void = loadUISettings()
         async let keys: Void = loadKeymap()
+        async let themes: Void = loadTheme()
         await reloadAll()
         await settings
         await keys
+        await themes
         openPendingDeepLink()
     }
 

@@ -1,0 +1,139 @@
+# The theme regular (docs/themes.md; fixtures/themes-regular.config.toml):
+# a macOS toolbar whose buttons are the blocks of the status bar and open
+# the same menus, the folder as its title, three columns, alternate rows,
+# the colors of the system. Its snapshots are the ones to look at.
+expect theme = regular
+expect title_bar = merged
+expect columns = 3
+# The folder column: the text inside the rounded highlight, the unread
+# count of Inbox in a pill apart from its key; Inbox, the current folder,
+# white on the accent (snapshot regular-list).
+expect folder_inbox_layout = 18,18,14
+appearance light
+# A line under the subject: room on its sides alone.
+expect title_inset ~ 12,
+# A flag on the selected row: inside its fill of the accent, not over its
+# right edge (layout.row_inset = 8).
+key *
+expect selected_flagged = true
+expect selected_flag_inside > 3
+snap regular-list-flagged
+key *
+expect selected_flagged = false
+snap regular-list
+# The keys work as in every theme.
+key j
+expect selected = 1
+# A button of the toolbar opens its menu, under it.
+click status:m
+expect overlay ~ menu
+snap regular-move-menu
+key esc
+# The menu ; from the folder, its title: the unread counts in a pill, set
+# apart from the keys on the right.
+click status:folder
+expect overlay ~ menu
+expect menu_badge_gap = 18
+snap regular-goto-menu
+# Inbox highlighted with the arrows: its label, pill and key in the text
+# color of the selection (white), not lost in the accent.
+key down
+expect menu_index = 0
+snap regular-goto-menu-highlighted
+key esc
+# A newsletter in HTML: the current word of the text | html switch white
+# on the accent, the unsubscribe button readable (snapshots).
+key @
+expect overlay ~ picker
+# The row of the cursor of a picker: white on the accent.
+snap regular-account-picker
+type fixture
+key ret
+key ;
+key a
+expect unsubscribe ~ header
+# regular reads HTML, as clean does (reader.body_format), and shows the
+# files a row each with the icon of macOS (layout.attachments).
+expect body_format = html
+expect attachment_layout = rows
+snap regular-title-controls
+click format:text
+expect body_format = text
+key @
+type all
+key ret
+key ;
+key i
+expect folder = Inbox
+# Save, near the right end of the toolbar, in "Everything": its menu is
+# pushed back to the left to stay whole in the window, and the list keeps
+# its width and its columns (the folder alone, no account). regular opens
+# on three lines per mail (window.list_layout): v l gives the columns.
+key v
+key l
+expect list_layout = columns
+key ;
+key e
+expect folder ~ Everything
+# The folder of the mail opens the title line, before the buttons: they
+# stay where they are whatever the folder's name.
+expect title_controls_order ~ folder,flag
+expect row_width = 372
+expect row_folder_with_account = false
+click status:s
+expect overlay ~ menu
+expect menu_fits = true
+expect row_width = 372
+expect row_folder_with_account = false
+snap regular-save-menu
+key esc
+key v
+key l
+expect list_layout = stacked
+key ;
+key i
+expect folder = Inbox
+# A second click on the button closes its menu; so does a click on an
+# empty part of the toolbar.
+click status:m
+expect overlay ~ menu
+click status:m
+expect overlay = none
+click status:m
+expect overlay ~ menu
+click status:empty
+expect overlay = none
+click status:folder
+expect overlay ~ menu
+key esc
+key @
+expect overlay ~ picker
+snap regular-account-picker
+key esc
+appearance dark
+snap regular-dark
+# On the accent of regular, every text drawn on a selection is white: the
+# row of the cursor of the Contacts screen... (in light: black on the
+# accent is what would not read)
+appearance light
+key ;
+key c
+expect screen = contacts
+key j
+expect screen_index = 1
+snap regular-contacts
+key esc
+expect screen = mail
+# ...and, in a reply, the addresses, the suggestion highlighted and the
+# Bcc button shown.
+key r
+expect composing = true
+key shift-tab
+key shift-tab
+key shift-tab
+expect compose_focus = to
+type luc
+expect compose_suggestions ~ @
+key down
+snap regular-recipients
+key esc

@@ -1,0 +1,6 @@
+# Settings of themes-refused.uiscript: clean, whose file is refused
+# (fixtures/themes-refused.themes/clean.toml). Text sizes of the layout.
+[ui]
+text_size = 12
+status_bar_text_size = 12
+theme = "clean"

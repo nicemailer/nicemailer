@@ -32,13 +32,14 @@ pub enum AiAction {
     /// Run a prompt on a draft and show what it proposes, the text as it
     /// comes. Nothing changes in the draft without --apply.
     Run {
-        /// The prompt's id: proofread, rewrite, translate-draft, subject-ideas…
+        /// The prompt's id: proofread, rewrite, translate-reply, translate-draft, subject-ideas…
         prompt: String,
         /// The draft's id.
         #[arg(long)]
         draft: i64,
         /// The key of a variant, for a prompt that has some (rewrite: f, a,
-        /// c, l, s; translate-draft: e, f, s, d, i).
+        /// c, l, s; translate-draft: e English, f French, s Spanish, d German…,
+        /// `nicemailer ai prompts list` shows them all).
         #[arg(long)]
         variant: Option<String>,
         /// The language of the answers that follow the app's (en, fr).
@@ -70,6 +71,11 @@ pub enum PromptsAction {
         /// The language of the labels (en, fr).
         #[arg(long, default_value = "en")]
         lang: String,
+        /// The compose screen of a new mail or a forward: leaves out the
+        /// prompts of a reply (translate it into the language of the mail
+        /// received).
+        #[arg(long)]
+        new_mail: bool,
     },
     /// Write a copy of built-in prompts to your prompts folder, to start
     /// from: a file with the same id replaces the built-in prompt. An
@@ -105,9 +111,11 @@ pub fn run(data_dir: &Path, action: AiAction) -> anyhow::Result<()> {
             print!("{}", status_text(&s));
             Ok(())
         }
-        AiAction::Prompts { action: PromptsAction::List { screen, folder, lang } } => {
+        AiAction::Prompts { action: PromptsAction::List { screen, folder, lang, new_mail } } => {
             let mut c = Client::connect(data_dir)?;
-            let list = c.call(method::AI_LIST_PROMPTS, json!({ "screen": screen, "folder": folder, "lang": lang }))?;
+            // Without --new-mail, every prompt (`reply` absent).
+            let reply = if new_mail { Some(false) } else { None };
+            let list = c.call(method::AI_LIST_PROMPTS, json!({ "screen": screen, "folder": folder, "lang": lang, "reply": reply }))?;
             print!("{}", prompts_text(&list));
             Ok(())
         }

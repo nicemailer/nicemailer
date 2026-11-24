@@ -62,13 +62,39 @@ pub fn watch(paths: &[&Path], on_change: impl Fn() + Send + 'static) -> Result<W
         }
     }
 
+    // An event about the file, under any of its names.
+    start(dirs, move |path| path.file_name().is_some_and(|n| names.contains(n)), on_change)
+}
+
+/// Starts watching every file of the directory `dir` (the themes,
+/// `themes.md`, section 3): a file added, changed, renamed or deleted runs
+/// `on_change`, grouped as in [`watch`]. Creates the directory if it is
+/// missing. When `dir` is a symbolic link (a dotfiles repository), the
+/// directory it points to is watched too.
+pub fn watch_dir(dir: &Path, on_change: impl Fn() + Send + 'static) -> Result<Watcher, String> {
+    std::fs::create_dir_all(dir).map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
+    let mut dirs = BTreeSet::from([dir.to_path_buf()]);
+    if let Ok(target) = std::fs::canonicalize(dir) {
+        dirs.insert(target);
+    }
+    // The watch is not recursive: every event is about a file of the
+    // directory.
+    start(dirs, |_| true, on_change)
+}
+
+/// Watches `dirs`, not recursively; runs `on_change` after each group of
+/// events about a path for which `relevant` says yes.
+fn start(
+    dirs: BTreeSet<PathBuf>,
+    relevant: impl Fn(&Path) -> bool + Send + 'static,
+    on_change: impl Fn() + Send + 'static,
+) -> Result<Watcher, String> {
     // The watcher calls its handler on a thread of `notify`; the handler
     // only forwards to a channel, and a thread of ours does the grouping.
     let (tx, rx) = mpsc::channel::<()>();
     let handler = move |res: notify::Result<notify::Event>| {
         let relevant = match res {
-            // An event about the file, under any of its names.
-            Ok(event) => event.paths.is_empty() || event.paths.iter().any(|p| p.file_name().is_some_and(|n| names.contains(n))),
+            Ok(event) => event.paths.is_empty() || event.paths.iter().any(|p| relevant(p)),
             // An error of the watch (events lost by the system): read the
             // file again to be sure.
             Err(_) => true,

@@ -1,4 +1,4 @@
-# Display menu (v), text / HTML, scrolling and saving.
+# Show menu (v), text / HTML, scrolling and saving.
 key v
 key 1
 expect columns = 1
@@ -53,6 +53,9 @@ expect fullscreen_toggles = 1
 key v
 key 3
 expect columns = 3
+# geek: the key first, 8 pt from the column's edge, then the name, as
+# always (8 + the key + 6).
+expect folder_inbox_layout = 22,,
 snap three-columns
 # The folder column of the unified view: one block, titled "all".
 expect account = all
@@ -104,6 +107,7 @@ expect reader_text !~ NovembreLes
 # Its three attachments are tiles at its foot (the logo shown by its HTML
 # is not one). A click saves the file to the export directory; ⌘-click
 # saves it and opens the saved copy (recorded only, in UI script mode).
+expect attachment_layout = tiles
 expect reader_attachments = 3
 expect reader_text ~ devis.pdf
 expect reader_text ~ budget.xlsx

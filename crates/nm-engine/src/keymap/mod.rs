@@ -176,7 +176,7 @@ struct Layer {
 }
 
 fn problem(line: Option<u32>, key: Option<String>, message: impl Into<String>) -> Problem {
-    Problem { file: KEYMAP_FILE, line, key, message: message.into() }
+    Problem { file: KEYMAP_FILE.into(), line, key, message: message.into() }
 }
 
 /// Reads and checks one file, without the defaults.
@@ -608,7 +608,7 @@ impl KeymapFile {
             return Vec::new();
         }
         self.error = Some(problem.clone());
-        vec![nm_api::Event::ConfigError { file: problem.file.to_string(), line: problem.line, key: problem.key, message: problem.message }]
+        vec![nm_api::Event::ConfigError { file: problem.file, line: problem.line, key: problem.key, message: problem.message }]
     }
 }
 

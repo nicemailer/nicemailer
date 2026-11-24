@@ -65,6 +65,12 @@ for script in "${scripts[@]}"; do
     if [ -f "$APP/UITests/fixtures/$name.keymap.toml" ]; then
         cp "$APP/UITests/fixtures/$name.keymap.toml" "$dir/keymap.toml"
     fi
+    # ... and themes of its own (fixtures/<scenario>.themes/, docs/themes.md),
+    # beside the three the core creates in themes/ at its start.
+    if [ -d "$APP/UITests/fixtures/$name.themes" ]; then
+        mkdir -p "$dir/themes"
+        cp "$APP/UITests/fixtures/$name.themes/"*.toml "$dir/themes/"
+    fi
     # A scenario may answer the AI prompts from a table
     # (fixtures/<scenario>.ai.json, `NICEMAILER_FAKE_AI`, docs/ai.md): no
     # AI provider is ever called by the UI tests.

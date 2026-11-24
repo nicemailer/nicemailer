@@ -1,0 +1,8 @@
+# A theme file refused (docs/themes.md, "Errors and warnings"): clean.toml
+# of the folder themes says row_height = 3, out of range. The core keeps
+# the built-in clean, and the status bar says why until the file is fixed.
+expect theme = clean
+expect theme_problem ~ themes/clean.toml
+expect theme_problem ~ line 6
+expect theme_problem ~ layout.row_height
+snap refused

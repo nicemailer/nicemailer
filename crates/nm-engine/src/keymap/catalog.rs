@@ -263,6 +263,8 @@ pub const ACTIONS: &[Action] = &[
     a("view.toggle_html", Mail),
     a("view.toggle_remote_images", Mail),
     a("view.cycle_status_bar", Mail),
+    a("view.toggle_list_layout", Mail),
+    a("view.choose_theme", Mail),
     // screens
     a("screen.down", Screen),
     a("screen.up", Screen),

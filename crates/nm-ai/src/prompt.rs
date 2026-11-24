@@ -466,6 +466,10 @@ pub enum Lang {
     App,
     /// The chosen variant says it: translations.
     Variant,
+    /// The language of the mail the draft replies to (`draft.replied`):
+    /// translating a reply written in one's own language. Such a prompt
+    /// is offered on a reply only ([`Prompt::replies_only`]).
+    Replied,
 }
 
 /// What a prompt does when nothing is marked (`ia.md`, section 4,
@@ -553,6 +557,13 @@ impl Prompt {
         }
     }
 
+    /// Whether the prompt is offered on a reply only: it works on the
+    /// mail the draft replies to (`lang = "replied"`), which a new mail or
+    /// a forward does not have.
+    pub fn replies_only(&self) -> bool {
+        self.lang == Lang::Replied
+    }
+
     /// The variant with this key.
     pub fn variant(&self, key: char) -> Option<&Variant> {
         self.variants.iter().find(|v| v.key == key)
@@ -607,6 +618,12 @@ impl Prompt {
             ),
             Lang::App => s.push_str(&format!("\n\nAnswer in {}.", language_name(app_lang))),
             Lang::Variant => {}
+            // The prompt's text says it too; the rule keeps the model from
+            // answering in the language of the draft it was given.
+            Lang::Replied => s.push_str(
+                "\n\nWrite in the language of the mail replied to, in the <replied> section, whatever the language of \
+                 the draft.",
+            ),
         }
         s.push_str("\n\n");
         s.push_str(GUARD);

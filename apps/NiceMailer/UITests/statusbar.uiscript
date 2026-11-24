@@ -7,19 +7,18 @@ expect folder = Inbox
 # says "Loading the mail…".
 expect startup_phase = ready
 expect startup_ms > 0
-# The normal mode shows the app's icon at the left; the other modes are
-# written (a prefix waiting for its key: its letter).
+# The mode is not drawn (no icon, no NOR): the bar starts with the
+# account; the scenarios still read the mode.
 expect mode = NOR
-expect mode_icon = true
-snap mode-icon
+expect status_order ~ account,folder
+snap status-bar
 key v
 expect mode = v
-expect mode_icon = false
 key esc
-expect mode_icon = true
+expect mode = NOR
 # The account picker: @, or a click on the account. "all" comes first.
 key @
-expect overlay = picker(NiceMailer.GeekController.PickerKind.accounts)
+expect overlay = picker(NiceMailer.InterfaceController.PickerKind.accounts)
 expect picker_count = 3
 snap account-picker
 # The picker turns around: up from the first row (where it opens) selects
@@ -33,7 +32,7 @@ key down
 expect picker_index = 1
 key esc
 click status:account
-expect overlay = picker(NiceMailer.GeekController.PickerKind.accounts)
+expect overlay = picker(NiceMailer.InterfaceController.PickerKind.accounts)
 type fixture
 key ret
 expect account = fixture
@@ -51,7 +50,7 @@ expect status_position = bottom
 # down on the left, from the folder block: just above the bar at the
 # bottom (window height 900, origin at the bottom).
 click status:folder
-expect overlay = menu(NiceMailer.GeekController.Prefix.goto)
+expect overlay = menu(NiceMailer.InterfaceController.Prefix.goto)
 expect menu_x < 400
 expect menu_y < 500
 snap folder-menu-bottom
@@ -83,21 +82,23 @@ expect status_position = top
 key ;
 expect menu_x < 400
 expect menu_y > 500
+# In geek the key comes first: the count is alone on the right, no pill.
+expect menu_badge_gap =
 snap folder-menu-top
 key esc
 # The m, s and v menus have their block (icon and key) and drop down from
 # it, like the folder menu.
 click status:v
-expect overlay = menu(NiceMailer.GeekController.Prefix.view)
+expect overlay = menu(NiceMailer.InterfaceController.Prefix.view)
 expect menu_x > 100
 expect menu_y > 500
 snap view-menu-top
 key esc
 click status:m
-expect overlay = menu(NiceMailer.GeekController.Prefix.move)
+expect overlay = menu(NiceMailer.InterfaceController.Prefix.move)
 key esc
 click status:s
-expect overlay = menu(NiceMailer.GeekController.Prefix.save)
+expect overlay = menu(NiceMailer.InterfaceController.Prefix.save)
 key esc
 # The ? block at the right end opens the list of keys; a second click
 # closes it, as does any key.
@@ -108,4 +109,32 @@ click status:help
 expect overlay = none
 click status:help
 key j
+expect overlay = none
+# Every block closes what it opened, as ? does: a second click on @, on
+# the folder or on m closes its picker or menu.
+click status:account
+expect overlay = picker(NiceMailer.InterfaceController.PickerKind.accounts)
+click status:account
+expect overlay = none
+click status:folder
+expect overlay = menu(NiceMailer.InterfaceController.Prefix.goto)
+click status:folder
+expect overlay = none
+click status:m
+expect overlay = menu(NiceMailer.InterfaceController.Prefix.move)
+click status:m
+expect overlay = none
+# A click on an empty part of the bar closes the open picker, menu or
+# help, as a click on the mail does.
+click status:account
+expect overlay = picker(NiceMailer.InterfaceController.PickerKind.accounts)
+click status:empty
+expect overlay = none
+click status:v
+expect overlay = menu(NiceMailer.InterfaceController.Prefix.view)
+click status:empty
+expect overlay = none
+click status:help
+expect overlay = help
+click status:empty
 expect overlay = none

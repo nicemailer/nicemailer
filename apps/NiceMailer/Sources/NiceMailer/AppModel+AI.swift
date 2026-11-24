@@ -20,6 +20,12 @@ extension AppModel {
             }
             var params: [String: Any] = ["screen": screen, "lang": AI.language]
             if let folder { params["folder"] = folder }
+            // In a reply: whether it answers a mail. A new mail or a
+            // forward has no mail received to translate into the language
+            // of (`translate-reply`).
+            if screen.hasPrefix("compose"), let draft = composer?.draft {
+                params["reply"] = draft.replyTo != nil
+            }
             return try await client.call("ai_list_prompts", params)
         } catch {
             flash = AI.errorFlash(error)
@@ -314,7 +320,7 @@ extension AppModel {
         case .hint:
             flash = AI.hint(run.phase, keymap: keymap)
         case .move(let i):
-            // `GeekController.handleAIKey` applies it itself, at once.
+            // `InterfaceController.handleAIKey` applies it itself, at once.
             aiRun?.choice = i
         case .cancel:
             aiRun = nil
@@ -324,7 +330,7 @@ extension AppModel {
                 let _: CommandResult? = try? await client.call("ai_cancel", ["run_id": run.runId])
             }
         case .copy:
-            // `GeekController.handleAIKey` copies it itself: the pasteboard
+            // `InterfaceController.handleAIKey` copies it itself: the pasteboard
             // is the controller's (a private one in tests).
             break
         case .refuse, .close:

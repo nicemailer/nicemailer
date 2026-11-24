@@ -1,0 +1,45 @@
+# Themes (docs/themes.md): a theme of the user, sepia, which extends clean
+# (fixtures/themes.themes/sepia.toml), chosen by ui.theme of config.toml
+# (fixtures/themes.config.toml). The core resolves it; the app draws its
+# colors, in light and in dark. Clean's own layout comes later: the window
+# is the geek one, in the theme's colors.
+expect theme = sepia
+expect theme_chain = sepia,clean
+expect theme_problem =
+# The blocks in the order of the theme; those left out are hidden, their
+# keys still work.
+expect status_order = help,account,folder,m,s
+# bar_size = "large": the blocks of the bar 1.2 times as big as clean's
+# (themes-clean.uiscript), at the same text size of the bar.
+expect status_help_height > 23
+key v
+expect overlay ~ menu
+key esc
+# merged (clean's title bar): drawn as shown for now.
+expect title_bar_hidden = false
+appearance light
+snap sepia-light
+appearance dark
+snap sepia-dark
+# The keys are those of every theme.
+key j
+expect selected = 1
+# v t: the picker of the themes, the one in effect marked; Return on
+# another writes ui.theme in config.toml and applies it at once.
+appearance light
+key v
+expect menu_rows ~ t theme…
+key t
+expect overlay ~ themes
+expect picker_rows ~ sepia
+expect picker_rows ~ regular
+# The cursor on the theme in effect, sepia, the fourth row.
+expect picker_index = 3
+snap themes-picker
+type regular
+expect picker_first = regular
+key ret
+expect overlay = none
+expect theme = regular
+expect theme_chain = regular
+snap themes-picker-regular

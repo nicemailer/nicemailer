@@ -20,6 +20,7 @@ User and developer documentation, in English. It is written together with the co
 | [backup.md](backup.md) | The two database files (`nicemailer.db`, and `nicemailer_body.db` for the bodies and the search index), what to back up, `nicemailer mailbox backup`, rebuilding the body file |
 | [updates.md](updates.md) | Updates by Sparkle: the core in maintenance while the app is replaced or the database upgraded, `prepare_update`, the backup around a migration, what each client does, the keys and the appcast of a release |
 | [migrations.md](migrations.md) | Upgrading a database: schema migrations at opening, reinterpretation of stored mail after a parser change, and how to add either |
+| [themes.md](themes.md) | The themes of the app in `themes/`: choosing one, modifying a built-in one, writing your own, the keys, errors, `nicemailer theme list | check | show | defaults | new` |
 | [keymap.md](keymap.md) | The keys of the app redefined in `keymap.toml`: writing a key, contexts, actions, menus of your own, errors, `nicemailer keymap check | defaults | show` |
 | [configuration.md](configuration.md) | Settings in `config.toml` and accounts in `accounts.toml`: where they are, how they are created at the first start, what is checked, how changes apply while the core runs, passwords in development, the read pool |
 | [imap.md](imap.md) | The IMAP client of the core: connection, certificates, login, commands and their fallbacks, large messages, failures, IDLE, `nicemailer imap probe` |

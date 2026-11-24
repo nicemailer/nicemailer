@@ -35,6 +35,7 @@ enum CoreReason {
         "agent_cannot_unsubscribe",
         "agent_cannot_set_password",
         "agent_not_allowed",
+        "compose_format_unknown",
         "draft_by_user",
         "reply_started_by_user",
     ]
@@ -85,6 +86,8 @@ enum CoreReason {
         case "account_set_up": L("The account %@ is organized already", v("account"))
         case "account_read_only": L("This account is only looked at: NiceMailer changes nothing in it")
         case "account_read_only_send": L("This account is only looked at: it cannot send")
+        case "theme_unknown": L("No theme %@: neither built in nor a file of the folder themes", v("theme"))
+        case "config_not_written": L("config.toml was not changed: %@", v("detail"))
         case "password_empty": L("Give the password")
         case "smtp_password_empty": L("Give the SMTP password")
         case "smtp_password_without_server": L("An SMTP password needs an SMTP server")
@@ -157,6 +160,7 @@ enum CoreReason {
         case "ai_io": L("Claude Code could not be run: %@", v("system_text"))
         case "ai_prompt_unavailable": L("This prompt is not available in this version yet")
         case "ai_prompt_not_here": L("This prompt is not offered in this folder")
+        case "ai_reply_needed": L("This prompt works on a reply to a mail whose text is here")
         case "ai_selection_needed": L("Select the text to work on first")
         case "ai_selection_unwanted": L("This prompt works on the whole text: select nothing")
         case "ai_selection_empty": L("The selection is empty")

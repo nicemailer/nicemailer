@@ -211,9 +211,15 @@ impl Default for RawSettings {
 pub struct UiSettings {
     pub view_threshold_ms: u64,
     /// The title bar of the window (its title and the red, orange and
-    /// green buttons): shown by default, as most users expect; hidden, the
-    /// content goes up to the top edge.
-    pub title_bar: TitleBar,
+    /// green buttons), only when the file writes it: replaced by
+    /// `window.title_bar` of the theme (`themes.md`, section 9), it still
+    /// wins while it is written, with a warning. `None`: the theme's.
+    pub title_bar: Option<TitleBar>,
+    /// The theme of the app: the name of a built-in theme or of a file of
+    /// `themes/` (`themes.md`). Checked for its spelling here; a name that
+    /// names no theme is a warning of the theme, not an error of this
+    /// file, which would turn off the accounts.
+    pub theme: String,
     /// The app presses the green button of the confirmation macOS shows
     /// before it calls a number (`docs/geek-ui.md`, "Calling a number").
     /// Off by default: it needs the Accessibility permission, which lets
@@ -238,7 +244,8 @@ impl Default for UiSettings {
     fn default() -> Self {
         UiSettings {
             view_threshold_ms: 2_000,
-            title_bar: TitleBar::Shown,
+            title_bar: None,
+            theme: crate::theme::catalog::DEFAULT_THEME.to_string(),
             auto_confirm_calls: false,
             text_size: 16,
             status_bar_text_size: 18,
@@ -617,10 +624,12 @@ pub use nm_core::secret::SecretString;
 /// An error or a warning about the file, with where it is.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Problem {
-    /// The file concerned: [`CONFIG_FILE`] or [`ACCOUNTS_FILE`]. Needed
-    /// since there are two: a line number alone would not say where to
-    /// look.
-    pub file: &'static str,
+    /// The file concerned: [`CONFIG_FILE`], [`ACCOUNTS_FILE`],
+    /// `keymap.toml`, or a theme (`themes/clean.toml`). Needed since there
+    /// are several: a line number alone would not say where to look. Rust
+    /// note: a `String` rather than a `&'static str`, because the name of a
+    /// theme file is only known at run time.
+    pub file: String,
     /// Line of the file, from 1; `None` when the problem is not on a line
     /// (the file cannot be read).
     pub line: Option<u32>,
@@ -631,7 +640,7 @@ pub struct Problem {
 
 impl fmt::Display for Problem {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.file)?;
+        f.write_str(&self.file)?;
         if let Some(line) = self.line {
             write!(f, ", line {line}")?;
         }
@@ -682,9 +691,9 @@ pub fn read(path: &Path, file: &'static str) -> Result<Option<String>, Problem> 
     match std::fs::read(path) {
         Ok(bytes) => String::from_utf8(bytes)
             .map(Some)
-            .map_err(|_| Problem { file, line: None, key: None, message: "the file is not valid UTF-8".into() }),
+            .map_err(|_| Problem { file: file.into(), line: None, key: None, message: "the file is not valid UTF-8".into() }),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(e) => Err(Problem { file, line: None, key: None, message: format!("cannot read {}: {e}", path.display()) }),
+        Err(e) => Err(Problem { file: file.into(), line: None, key: None, message: format!("cannot read {}: {e}", path.display()) }),
     }
 }
 
@@ -720,7 +729,7 @@ pub fn parse_accounts(text: &str) -> Result<BTreeMap<String, AccountConfig>, Pro
 /// The TOML tree of a file, or its syntax error with the line.
 fn document<'a>(text: &'a str, file: &'static str) -> Result<toml_edit::Document<&'a str>, Problem> {
     toml_edit::Document::parse(text).map_err(|e| Problem {
-        file,
+        file: file.into(),
         line: e.span().map(|s| line_of(text, s.start)),
         key: None,
         // The parser's message may span several lines (it quotes the
@@ -785,12 +794,12 @@ impl<'t> Reader<'t> {
     }
 
     fn problem(&self, item: Option<&Item>, key: String, message: impl Into<String>) -> Problem {
-        Problem { file: self.file, line: self.line(item.and_then(|i| i.span())), key: Some(key), message: message.into() }
+        Problem { file: self.file.into(), line: self.line(item.and_then(|i| i.span())), key: Some(key), message: message.into() }
     }
 
     /// Error on a missing required key, placed on the table's header.
     fn missing(&self, s: &Section, key: &str) -> Problem {
-        Problem { file: self.file, line: s.line, key: Some(s.key(key)), message: "required key missing".into() }
+        Problem { file: self.file.into(), line: s.line, key: Some(s.key(key)), message: "required key missing".into() }
     }
 
     /// Ends a section: every key not read is reported as unknown.
@@ -799,7 +808,7 @@ impl<'t> Reader<'t> {
             if !s.read.contains(&key) && !item.is_none() {
                 let line = s.table.get_key_value(key).and_then(|(k, _)| k.span()).or_else(|| item.span());
                 self.warnings.push(Problem {
-                    file: self.file,
+                    file: self.file.into(),
                     line: self.line(line),
                     key: Some(s.key(key)),
                     message: "unknown key, ignored".into(),
@@ -858,6 +867,24 @@ impl<'t> Reader<'t> {
             return Err(self.problem(Some(item), s.key(key), "must not be empty (leave the key out instead)"));
         }
         Ok(Some(v.to_string()))
+    }
+
+    /// `ui.title_bar`, written: its value, and a warning that the theme
+    /// now says it (`themes.md`, section 9).
+    fn title_bar(&mut self, t: &mut Section) -> R<Option<TitleBar>> {
+        let item = t.table.get("title_bar");
+        let value = match self.choice(t, "title_bar", &["hidden", "shown"])? {
+            None => return Ok(None),
+            Some("hidden") => TitleBar::Hidden,
+            Some(_) => TitleBar::Shown,
+        };
+        let p = self.problem(
+            item,
+            t.key("title_bar"),
+            "replaced by window.title_bar of the theme (themes/<name>.toml); still applied while it is written here",
+        );
+        self.warnings.push(p);
+        Ok(Some(value))
     }
 
     /// A string among `choices`.
@@ -980,9 +1007,17 @@ impl<'t> Reader<'t> {
             Some(mut t) => {
                 let u = UiSettings {
                     view_threshold_ms: self.int(&mut t, "view_threshold_ms", d.ui.view_threshold_ms, 0..=60_000)?,
-                    title_bar: match self.choice(&mut t, "title_bar", &["hidden", "shown"])? {
-                        Some("hidden") => TitleBar::Hidden,
-                        _ => TitleBar::Shown,
+                    title_bar: self.title_bar(&mut t)?,
+                    theme: match self.string(&mut t, "theme")? {
+                        None => d.ui.theme.clone(),
+                        Some(name) if crate::theme::catalog::valid_name(&name) => name,
+                        Some(_) => {
+                            return Err(self.problem(
+                                t.table.get("theme"),
+                                t.key("theme"),
+                                "a theme is named by lowercase letters, digits and hyphens (the name of its file in themes/)",
+                            ));
+                        }
                     },
                     auto_confirm_calls: self.bool(&mut t, "auto_confirm_calls", d.ui.auto_confirm_calls)?,
                     text_size: self.int(&mut t, "text_size", d.ui.text_size, TEXT_SIZE_RANGE)?,
@@ -1110,7 +1145,7 @@ impl<'t> Reader<'t> {
         if let Some(item) = s.get("accounts") {
             let line = s.table.get_key_value("accounts").and_then(|(k, _)| k.span()).or_else(|| item.span());
             return Err(Problem {
-                file: self.file,
+                file: self.file.into(),
                 line: self.line(line),
                 key: Some("accounts".into()),
                 message: format!("the accounts are declared in {ACCOUNTS_FILE}, next to this file: move the [accounts.…] tables there"),
@@ -1323,7 +1358,7 @@ impl<'t> Reader<'t> {
                     Some(t) => v.push((t as &dyn TableLike, value.span())),
                     None => {
                         return Err(Problem {
-                            file: self.file,
+                            file: self.file.into(),
                             line: self.line(value.span()),
                             key: Some(path),
                             message: "expected tables { email = … }".into(),
@@ -1441,7 +1476,6 @@ pub fn defaults_file() -> String {
 /// so that removing the `# ` is all it takes. Each: the dotted key, and the
 /// value written, as TOML. The comment of the setting says its default.
 pub const OPT_IN_SWITCHES: &[(&str, &str)] = &[
-    ("ui.title_bar", "\"hidden\""),
     ("ui.auto_confirm_calls", "true"),
     ("ai.enabled", "true"),
     ("unsubscribe.in_banned", "true"),
@@ -1663,10 +1697,10 @@ verify_on_read = {verify_on_read}
 [ui]
 # Milliseconds a mail must stay on screen to count as viewed.
 view_threshold_ms = {view_threshold_ms}
-# The title bar of the window (title, red, orange and green buttons):
-# "shown" (the default), or "hidden", the content up to the top edge (move
-# the window by the status bar, quit with Cmd-Q). Applied at once.
-title_bar = "{title_bar}"
+# The theme of the app: "geek" (the default), "clean", "regular", or the
+# name of a file of the folder themes/ next to this file, which also holds
+# the three built-in themes, to modify (docs/themes.md). Applied at once.
+theme = "{theme}"
 # Confirm the calls of the app for you: when it calls a number (Return on a
 # number of the links, a tel: link), the app presses the green button of
 # the notification macOS shows first. Needs the Accessibility permission
@@ -1774,7 +1808,7 @@ in_banned = {unsubscribe_in_banned}
         gc_grace_secs = d.raw.gc_grace_secs,
         verify_on_read = d.raw.verify_on_read,
         view_threshold_ms = d.ui.view_threshold_ms,
-        title_bar = d.ui.title_bar.as_str(),
+        theme = d.ui.theme,
         auto_confirm_calls = d.ui.auto_confirm_calls,
         text_size = d.ui.text_size,
         status_bar_text_size = d.ui.status_bar_text_size,

@@ -1,0 +1,58 @@
+# The commands of a reply, on their own line under its subject
+# (reponse.md, section 6): each is a button with its key, framed so that
+# it reads as one, explained by its tooltip; a click does what the key
+# does. Send then… asks where the conversation goes, Attach attaches the
+# files the open panel gives, From opens "Send from", Format converts the
+# text, Keep goes back to the mail, Abandon drops the reply, Send queues
+# it.
+appearance light
+# Tooltips after 300 ms, not AppKit's second and a half (Tooltips.swift).
+expect tooltip_delay = 300
+expect folder = Inbox
+key r
+expect composing = true
+expect editor_ready = true
+type Merci
+expect compose_saved = true
+expect title_lines = 2
+snap compose-commands
+# Attach: the files of the open panel, as ⇧⌘A.
+files devis.pdf
+click compose-command:attach
+expect compose_attachments = devis.pdf
+# Send then…: the question of the filing, as ⇧⌘↩; Escape back.
+click compose-command:send-then
+expect choice ~ Send, then file the conversation in
+key esc
+expect choice =
+# From: "Send from", as ⌥⌘F; Escape back to the text.
+click compose-command:from
+expect choice = Send from
+key esc
+expect choice =
+# Format: formatted text, as ⇧⌘T.
+click compose-command:format
+expect compose_format = html
+expect flash ~ Formatted text
+click compose-command:format
+expect compose_format = text
+# Keep: back to the mail, the draft kept, as Escape.
+click compose-command:keep
+expect composing = false
+key r
+expect composing = true
+expect compose_text ~ Merci
+# Abandon: the reply dropped, as ⌘⎋.
+click compose-command:abandon
+expect composing = false
+expect flash ~ abandoned
+key r
+expect composing = true
+appearance dark
+snap compose-commands-dark
+appearance light
+# Send: queued, as ⌘↩.
+type Envoi
+click compose-command:send
+expect composing = false
+expect flash ~ Sending

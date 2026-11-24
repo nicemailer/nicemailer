@@ -35,6 +35,7 @@ pub mod providers;
 pub mod secrets;
 pub mod setup;
 pub mod sync;
+pub mod theme;
 pub mod watch;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -201,7 +202,7 @@ impl Engine {
         }
         self.error = Some(problem.clone());
         vec![Event::ConfigError {
-            file: problem.file.to_string(),
+            file: problem.file,
             line: problem.line,
             key: problem.key,
             message: problem.message,
@@ -214,7 +215,7 @@ impl Engine {
         let names: Vec<&str> = self.config.accounts.keys().map(String::as_str).collect();
         let sync = store.sync_config_accounts(&names)?;
         self.warnings.extend(sync.clashes.iter().map(|k| Problem {
-            file: config::ACCOUNTS_FILE,
+            file: config::ACCOUNTS_FILE.into(),
             line: None,
             key: Some(format!("accounts.{k}")),
             message: "this name is already used by an archive account: this account is ignored until one of \
@@ -335,5 +336,5 @@ impl Engine {
 
 /// A [`Problem`] in the shape of the contract.
 pub fn problem_view(p: &Problem) -> ConfigProblem {
-    ConfigProblem { file: p.file.to_string(), line: p.line, key: p.key.clone(), message: p.message.clone() }
+    ConfigProblem { file: p.file.clone(), line: p.line, key: p.key.clone(), message: p.message.clone() }
 }

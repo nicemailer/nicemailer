@@ -205,11 +205,15 @@ i = "save.pdf_evidence"                       # as PDF with technical informatio
 I = "save.pdf_evidence_open"                  # as PDF with technical information, then open it
 
 [menu.view]
+# In four blocks, a gap between them (`ui.md`, menu `v`): the mail shown,
+# the columns, the presentation, the sort.
+h = "view.toggle_html"                        # text / HTML
+i = "view.toggle_remote_images"               # remote images
 1 = "view.one_column"                         # one column
 2 = "view.two_columns"                        # two columns
 3 = "view.three_columns"                      # three columns
+t = "view.choose_theme"                       # theme…
+l = "view.toggle_list_layout"                 # list: one line or three per mail
+s = "view.cycle_status_bar"                   # status bar: bottom, top, hidden
 c = "view.sort_received"                      # sort by reception date
 m = "view.sort_modified"                      # sort by modification date
-h = "view.toggle_html"                        # text / HTML
-i = "view.toggle_remote_images"               # remote images
-s = "view.cycle_status_bar"                   # status bar: bottom, top, hidden

@@ -22,6 +22,8 @@ The recipients and the subject stay the app's own fields (`LineEdit`, [sending.m
 
 `⇧⌘T` switches, as "Make Plain Text" in Mail. To formatted: each line becomes a paragraph, and the lines starting with `>` become a quotation (`>>` one inside it), so the quoted mail of a reply becomes a quotation block. To text only: the core makes the text of the HTML (`html_to_text`, the same text as the text part of the mail sent); when the draft has formatting that would be lost, a first `⇧⌘T` says so ("The formatting will be lost · ⇧⌘T again to convert") and a second one within five seconds converts.
 
+A conversion by `⇧⌘T` also makes its mode the mode of the next mails: the app asks the core to write it in `compose.format` of `config.toml` (`config_set_compose_format`), the rest of the file kept as it is, comments included. Whoever formats one mail almost always wants the next one formatted too. Only a conversion made writes: the first `⇧⌘T` that warns of lost formatting changes nothing, nor does a switch to the mode that is already the default. When `config.toml` is refused as it is, the draft changes mode anyway and the status bar says "The next mails keep their mode", with the reason.
+
 `compose.format = "html"` in `config.toml` makes a new mail, a reply and a forward start formatted. The core still proposes the draft as text (`prepare_draft`); the editor shows it converted, and it stays a text draft until something changes, so that a proposal left as it was is written nowhere.
 
 ## The formatted mode
@@ -48,7 +50,7 @@ A value outside the lists (a paste, a draft written elsewhere) is dropped, its t
 
 ## Keys in the text
 
-The app sees each key before the editor (`GeekController.handleComposeKey`, then `handleBodyKey`) and keeps only these; every other key is the editor's, that is the Mac's.
+The app sees each key before the editor (`InterfaceController.handleComposeKey`, then `handleBodyKey`) and keeps only these; every other key is the editor's, that is the Mac's.
 
 | Key | Effect |
 | --- | --- |
@@ -88,7 +90,7 @@ In text only, a change of the AI the core applied goes to the editor as one rang
 
 ## In the app
 
-- **One web view**, `EditorBridge.shared` (`Geek/EditorWebView.swift`), created and loaded once the first list is shown (`AppModel.ensureEditor`: WebKit starting during the launch slowed the first list) and kept hidden, so that `r` opens the editor without waiting for WebKit; a reply opened before is the one that creates it. Keys typed for the text while its page still loads are kept by the app and typed into it once it is ready (`EditorBridge.keepKeyUntilReady`): none is lost. Each opening sends `load`. If WebKit's process for the page stops, the page is loaded again; the draft is at its last save.
+- **One web view**, `EditorBridge.shared` (`Interface/EditorWebView.swift`), created and loaded once the first list is shown (`AppModel.ensureEditor`: WebKit starting during the launch slowed the first list) and kept hidden, so that `r` opens the editor without waiting for WebKit; a reply opened before is the one that creates it. Keys typed for the text while its page still loads are kept by the app and typed into it once it is ready (`EditorBridge.keepKeyUntilReady`): none is lost. Each opening sends `load`. If WebKit's process for the page stops, the page is loaded again; the draft is at its last save.
 - **Isolated**: the page is served from the app's resources under its own scheme `nm-editor:` (`Resources/Editor`, built by `make editor`), with a Content Security Policy (`default-src 'none'`), the reader's block list of remote loads, no navigation (a click on a link opens nothing), no persistent storage. The app's font is given as data URLs.
 - **Saving**: the editor reports the content after each pause of typing (`changed`, 0.5 s), and the app saves it then (`update_draft` with `body_format`). ⌘↩, Escape and ⌘⎋ first ask for the content as it is (`flush`, answered at once): the very last key typed is never lost. Without an answer within a second, the mail is not sent ("Not sent: the text could not be read · try again").
 - **Files dropped on the text** are attached (`EditorWebView.performDragOperation`), never put in it.

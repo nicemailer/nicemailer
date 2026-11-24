@@ -1,0 +1,36 @@
+# The reader's column (docs/themes.md, layout.reader_max_width and
+# reader_title_padding): the title, the text reader and the HTML page share
+# it. The subject starts where the text of the mail starts, the controls
+# end where it ends; a padding of 28 adds room above and below the title,
+# never on its sides (fixtures/reader-column.themes: clean, a column of 560).
+expect theme = column
+appearance light
+# Wide: the column of 560 centered, in text.
+resize 1700x900
+expect body_format = text
+expect reader_alignment = 0,0
+snap column-text-wide
+# Narrow: the column fills the reader, 12 pt on each side, and on the
+# right the room of a classic scroll bar, if the Mac shows one (the title
+# leaves the same room: reader_alignment).
+resize 760x800
+expect reader_column ~ 12,
+expect reader_alignment = 0,0
+# The room around the title stays above and below it.
+expect title_inset = 12,28
+# In HTML (the newsletter of the fixture account), wide then narrow; the
+# page is measured when it loads, so each width loads it again.
+key @
+type fixture
+key ret
+key ;
+key a
+expect body_format = html
+expect reader_column ~ 12,
+expect reader_alignment = 0,0
+resize 1700x900
+click format:text
+click format:html
+expect body_format = html
+expect reader_alignment = 0,0
+snap column-html-wide

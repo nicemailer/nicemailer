@@ -15,12 +15,35 @@ How to write it:
 ### Added
 
 - **Accounts:** Sign in to a Microsoft 365 or Outlook.com account with OAuth2, in the browser: no password is asked, and NiceMailer never sees one. In the Preferences, the password field becomes a "Sign in with Microsoft" button; in the CLI, `nicemailer account add` opens the sign-in page itself (`--no-browser` to print it only), and `nicemailer account login <key>` signs an existing account in again. The refresh token is kept in the Keychain in place of a password, and renewed by the core. The Microsoft application id is embedded in the app at build time, so adding such an account works at the first launch, with nothing to configure.
+- **Themes:** Choose the look of the app in the Preferences (Settings…, Appearance): geek (the default), clean, sober and airy, in SF Pro, regular, a Mac window with a toolbar, as in Mail, or a theme of your own. Each is a file of `~/.config/nicemailer/themes/` you can modify, and `nicemailer theme new` starts one of yours (docs/themes.md).
+- **Themes:** Choose a theme from the keyboard: `v` `t` (Show, theme…) lists the themes, and Return applies the one chosen.
+- **Themes:** clean and regular show mail in HTML, geek in text, for every sender whose display you have not chosen; `vh` still chooses for a sender, in every theme (`reader.body_format` of a theme).
+- **Themes:** In clean and regular, the attachments of a mail are listed one per line, with the icon macOS gives their type and their whole name; geek keeps its tiles (`attachments` in the `[layout]` table of a theme).
+- **Themes:** The column of the reader (`reader_max_width`) holds the mail in text and in HTML alike, and the subject and the controls above it line up with its text, whatever room `reader_title_padding` adds above and below the subject.
+- **List:** Show the list on three lines per mail, as Apple Mail (the sender in bold and the date, the subject, the beginning of the mail), in a narrower list column: clean and regular open this way, geek on one line per mail; `v` `l` (Show) switches between the two, and the app remembers the choice and the width of the list of each (`list_layout` in the `[window]` table of a theme).
+- **Reading:** Mails in HTML follow the text size (⌘+ ⌘−) entirely, the sizes they write themselves included: a mail written in 12 pt Calibri by Outlook is no longer smaller than the text around it. No text of a mail is drawn smaller than 11 pt for a 12 pt text (`html_min_font_size` in the `[reader]` table of a theme, 0 to turn it off).
+- **Reading:** A flag button on the title line of the mail shown says whether it has a flag, and a click adds or removes it, for that mail alone.
+- **Window:** The red, yellow and green buttons can sit in the status bar, without a title bar: `title_bar = "merged"` in the `[window]` table of a theme (clean does it).
+- **Writing:** The commands of a reply (send, send then…, attach, from, format, keep, abandon) are buttons on their own line under the subject: click one to do what its key does; its tooltip explains it.
 - **Accounts:** For a Gmail, iCloud or Fastmail address, the Preferences say under the password that it must be an app password, with a link to the step-by-step guide; if the server refuses the password, the error says so first.
 - **Accounts:** Give an account a new password from its page in the Preferences (Settings…, Accounts), after changing the password of the mailbox or creating a new app password. Until now it took the `nicemailer account password` command.
+
+### Changed
+
+- **Reading:** The buttons of the mail's title line (unsubscribe, text | html | images) look like the commands of a reply: framed, the same height, their key in the accent colour, filled under the pointer. What the line says (the folder in Everything, the blocked pixels) now comes before the buttons, which no longer move with the length of a folder's name.
+- **AI:** Translation follows what you are doing: a mail read is translated into your language at once; a reply you wrote in your language, into the language of the mail received; a new mail, into a language chosen among the 19 of the app, in a second list ("Translate…"). Prompts with choices (Rewrite…, Translate…) are one row of the palette; typing still finds each choice.
+- **Menus:** The Display menu (`v`) is now named Show, and the Attributes block and selector Filter: verbs, as Move and Save, in every language. Its rows are in four blocks set apart by a gap: the mail shown (text / HTML, remote images), the columns, the presentation (theme, list, status bar), the sort.
+- **Menus:** The row of a menu under the pointer is highlighted, as with the arrows, and Return chooses it.
+- **Window:** Tooltips show after 300 ms instead of about a second and a half.
+- **Writing:** `⇧⌘T` now also sets the mode of the next mails: after switching a reply to formatted text, the next ones open formatted, until `⇧⌘T` switches back.
+- **Status bar:** The icon of NiceMailer and the mode at its left end (NOR, PCK, ASK…) are gone: the bar starts with the account and the folder.
 
 ### Fixed
 
 - **Keyboard:** The main window could ignore every shortcut (`j`, `k`, `c`…) from launch, while the ⌘ shortcuts still worked.
+- **Status bar:** A menu opened from a block near the right edge of the window stays whole, a little to the left of its block, instead of being cut and shifting the columns of the list.
+- **Status bar:** A menu or picker opened by a click (the account `@`, the folder, Move…) now closes with a second click on its block, or a click on an empty part of the bar or the toolbar, as it already did with a click on the mail.
+- **Geek:** Dates, counts and the other secondary texts are a little darker in light and lighter in dark, to be read without effort (contrast WCAG AA).
 - **Accounts:** A password saved by one NiceMailer build is now readable by the others. Until now, after installing a release over a development build, or the reverse, the accounts stopped syncing with "the Keychain refused the password of this account". Passwords saved before this version must be saved once more.
 
 ## 0.2.1 — 2026-11-21

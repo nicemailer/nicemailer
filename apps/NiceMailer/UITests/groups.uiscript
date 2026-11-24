@@ -10,7 +10,7 @@ expect column_groups =
 key f
 type Group
 key ret
-expect overlay = picker(NiceMailer.GeekController.PickerKind.attributeValue(NiceMailer.AttributeField.group))
+expect overlay = picker(NiceMailer.InterfaceController.PickerKind.attributeValue(NiceMailer.AttributeField.group))
 expect picker_first ~ No group yet
 key ret
 expect filters =
@@ -66,7 +66,7 @@ key ret
 expect picker_count = 3
 snap group-panel
 key ret
-expect overlay = picker(NiceMailer.GeekController.PickerKind.attributeValue(NiceMailer.AttributeField.group))
+expect overlay = picker(NiceMailer.InterfaceController.PickerKind.attributeValue(NiceMailer.AttributeField.group))
 expect filters ~ group:
 key down
 key ret
@@ -87,7 +87,7 @@ key esc
 expect filters =
 # The title of the block opens the same panel.
 click groups:title
-expect overlay = picker(NiceMailer.GeekController.PickerKind.attributeValue(NiceMailer.AttributeField.group))
+expect overlay = picker(NiceMailer.InterfaceController.PickerKind.attributeValue(NiceMailer.AttributeField.group))
 key esc
 # More groups than room (eight): the most relevant ones, and "N more…",
 # which opens the panel listing them all.
@@ -123,6 +123,6 @@ expect groups_count = 9
 expect column_groups_hidden = 1
 snap column-groups-more
 click groups:more
-expect overlay = picker(NiceMailer.GeekController.PickerKind.attributeValue(NiceMailer.AttributeField.group))
+expect overlay = picker(NiceMailer.InterfaceController.PickerKind.attributeValue(NiceMailer.AttributeField.group))
 expect picker_count = 10
 key esc

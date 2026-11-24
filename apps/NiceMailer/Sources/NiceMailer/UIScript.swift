@@ -72,6 +72,13 @@ enum UIScript {
     static var statusBeforeMaintenance: AppModel.Status?
     /// Lines of the reader's title line, 1 or 2 (`ReaderTitleBar`).
     static var titleLines = 0
+    /// The commands of the reply show their keys alone, the line being too
+    /// narrow for their words (`compose_commands_compact`).
+    static var composeCommandsCompact = false
+    /// Whether the rows of the list have room for the account after the
+    /// folder in "Everything" (`RowLayout.showsAccount`), at the width the
+    /// list was last given.
+    static var rowFolderWithAccount = false
     /// Titles of the help's groups, column by column (`HelpPanel`).
     static var helpColumns: [[String]] = []
     /// Width of the open picker panel, in points (`PickerPopup.width`).
@@ -101,7 +108,7 @@ enum UIScript {
         for w in NSApp.windows { w.close() }
         let model = AppModel()
         model.startUnified = true
-        let host = NSHostingView(rootView: GeekRootView().environment(model))
+        let host = NSHostingView(rootView: RootView().environment(model))
         // Borderless: the content fills the window (no title bar to offset
         // coordinates), and macOS lets it sit entirely off screen.
         let w = ScriptWindow(contentRect: NSRect(x: -30_000, y: -30_000, width: 1400, height: 900),
@@ -116,7 +123,7 @@ enum UIScript {
     }
 
     /// Starts the script once the geek window exists.
-    static func start(model: AppModel, controller: GeekController) {
+    static func start(model: AppModel, controller: InterfaceController) {
         guard let path, !started else { return }
         started = true
         // Opening a file would launch an app on the user's screen: only
@@ -171,6 +178,15 @@ enum UIScript {
         preferencesSetup = setup
     }
 
+    /// The chooser of the Appearance tab, once it appeared.
+    static private(set) weak var preferencesThemes: ThemeChooser?
+
+    /// Called by `AppearancePane` when it has loaded the themes.
+    static func appearanceOpened(_ chooser: ThemeChooser) {
+        guard isActive else { return }
+        preferencesThemes = chooser
+    }
+
     /// The organizing of an account only looked at, once asked for.
     static private(set) weak var preferencesActivation: AccountActivation?
 
@@ -215,7 +231,17 @@ enum UIScript {
 
     /// Records the frame of a clickable row (see `View.uiTarget`). The
     /// rows of the Preferences (`prefs-…`) are in their own window.
-    static func record(_ id: String, _ globalFrame: CGRect) {
+    ///
+    /// `revision`: the theme the view was drawn in. A view of the previous
+    /// theme, still laid out while the window is rebuilt in the new one,
+    /// would record a place where nothing is any more: it is ignored.
+    ///
+    /// `barType`: the command of the window the view belongs to (the status
+    /// bar or the toolbar, `window.bar_type`); a view of the other one, on
+    /// its way out, is ignored too.
+    static func record(_ id: String, _ globalFrame: CGRect, revision: Int? = nil, barType: String? = nil) {
+        if let revision, revision != ThemeStore.shared.revision { return }
+        if let barType, barType != ThemeStore.shared.current.window.barType { return }
         let w = id.hasPrefix("prefs-") ? preferencesWindow : window
         guard let content = w?.contentView else { return }
         // SwiftUI's global space has its origin at the top-left of the
@@ -226,15 +252,55 @@ enum UIScript {
     }
 }
 
+extension UIScript {
+    /// The reader's title line, as laid out: from its left edge to the
+    /// subject, and from the controls to its right edge, in points.
+    /// The title line takes the reader's whole width (`ReaderTitleBar`).
+    @MainActor
+    static func readerTitleColumn() -> (left: CGFloat, right: CGFloat)? {
+        guard let bar = frames["reader-title"], let subject = frames["reader-subject"],
+              let controls = frames["reader-title-controls"] else { return nil }
+        return (subject.minX - bar.minX, bar.maxX - controls.maxX)
+    }
+
+    /// The column of the mail's text, as laid out, from the edges of the
+    /// reader's title line (the reader's width): the text view's inset in
+    /// text, the page's body in HTML (measured by WebKit, `column` of
+    /// `UIScript.html`).
+    @MainActor
+    static func readerColumn(_ controller: InterfaceController) -> (left: CGFloat, right: CGFloat)? {
+        guard let bar = frames["reader-title"] else { return nil }
+        if controller.model.bodyFormat == "text" {
+            guard let scroll = controller.readerScroll, scroll.window != nil,
+                  let text = scroll.documentView as? NSTextView else { return nil }
+            // Window coordinates, as the frames of the UI targets (same x).
+            let frame = scroll.convert(scroll.bounds, to: nil)
+            let inset = text.textContainerInset.width + (text.textContainer?.lineFragmentPadding ?? 0)
+            let left = frame.minX + inset
+            let right = frame.minX + scroll.contentSize.width - inset
+            return (left - bar.minX, bar.maxX - right)
+        }
+        guard let web = controller.readerWeb, web.window != nil, let column = html["column"] else { return nil }
+        let parts = column.split(separator: ",").compactMap { Double($0) }
+        guard parts.count == 2 else { return nil }
+        let frame = web.convert(web.bounds, to: nil)
+        // CSS pixels, which the page's zoom makes points.
+        let left = frame.minX + parts[0] * web.pageZoom
+        let right = frame.maxX - parts[1] * web.pageZoom
+        return (left - bar.minX, bar.maxX - right)
+    }
+}
+
 extension View {
     /// Makes the view clickable by the UI script under `id`. Does nothing
     /// outside UI script mode, so normal use pays no cost.
-    @ViewBuilder func uiTarget(_ id: String) -> some View {
+    @ViewBuilder func uiTarget(_ id: String, barType: String? = nil) -> some View {
         if UIScript.isActive {
+            let revision = ThemeStore.shared.revision
             background(GeometryReader { geo in
                 Color.clear
-                    .onAppear { UIScript.record(id, geo.frame(in: .global)) }
-                    .onChange(of: geo.frame(in: .global)) { _, f in UIScript.record(id, f) }
+                    .onAppear { UIScript.record(id, geo.frame(in: .global), revision: revision, barType: barType) }
+                    .onChange(of: geo.frame(in: .global)) { _, f in UIScript.record(id, f, revision: revision, barType: barType) }
                     // A section of the Preferences that goes away takes
                     // its targets with it: a frame left behind would be
                     // found under the field now at its place (`prefs_focus`).
@@ -270,11 +336,11 @@ extension View {
 @MainActor
 private final class Runner {
     let model: AppModel
-    let controller: GeekController
+    let controller: InterfaceController
     var failures = 0
     var log: [String] = []
 
-    init(model: AppModel, controller: GeekController) {
+    init(model: AppModel, controller: InterfaceController) {
         self.model = model
         self.controller = controller
     }
@@ -415,7 +481,15 @@ private final class Runner {
             // `preferences` opens them, `preferences close` closes them.
             if arg == "close" {
                 UIScript.closePreferences()
+            } else if arg == "appearance" {
+                // The Appearance tab (`docs/themes.md`).
+                model.preferencesTab = .appearance
+                UIScript.openPreferences()
+                if !(await waitUntil(seconds: 5, { UIScript.preferencesThemes?.loaded == true })) {
+                    fail(lineNumber, line, "the Preferences did not load their themes")
+                }
             } else {
+                model.preferencesTab = .accounts
                 UIScript.openPreferences()
                 if !(await waitUntil(seconds: 5, { UIScript.preferencesList?.loaded == true })) {
                     fail(lineNumber, line, "the Preferences did not load their accounts")
@@ -424,6 +498,12 @@ private final class Runner {
         case "clipboard":
             controller.pasteboard.clearContents()
             controller.pasteboard.setString(arg.replacingOccurrences(of: "\\n", with: "\n"), forType: .string)
+        case "hover":
+            guard let point = await locate(arg) else {
+                fail(lineNumber, line, "target not found")
+                return
+            }
+            hover(at: point)
         case "click", "dblclick":
             let words = arg.split(separator: " ").map(String.init)
             var mods: NSEvent.ModifierFlags = []
@@ -612,6 +692,47 @@ private final class Runner {
         }
     }
 
+    /// Moves the pointer over `point`, never the real pointer, which stays
+    /// the user's. SwiftUI's `onHover` follows tracking areas, which the
+    /// window server feeds from the real pointer only: each tracking area
+    /// of the window's views is told, as the window server would, whether
+    /// the point is now inside it (entered) or no longer (exited), then
+    /// sees the move.
+    func hover(at point: CGPoint) {
+        guard let w = window, let content = w.contentView else { return }
+        func views(_ v: NSView) -> [NSView] { [v] + v.subviews.flatMap(views) }
+        for view in views(content) {
+            let local = view.convert(point, from: nil)
+            for area in view.trackingAreas {
+                let rect = area.options.contains(.inVisibleRect) ? view.visibleRect : area.rect
+                let inside = rect.contains(local)
+                let was = hoverInside.contains(ObjectIdentifier(area))
+                guard let owner = area.owner as? NSResponder else { continue }
+                func event(_ type: NSEvent.EventType) -> NSEvent? {
+                    NSEvent.enterExitEvent(with: type, location: point, modifierFlags: [],
+                                           timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: w.windowNumber,
+                                           context: nil, eventNumber: 0,
+                                           trackingNumber: unsafeBitCast(area, to: Int.self), userData: nil)
+                }
+                if inside && !was, let e = event(.mouseEntered) {
+                    hoverInside.insert(ObjectIdentifier(area))
+                    owner.mouseEntered(with: e)
+                } else if !inside && was, let e = event(.mouseExited) {
+                    hoverInside.remove(ObjectIdentifier(area))
+                    owner.mouseExited(with: e)
+                }
+                if inside, area.options.contains(.mouseMoved),
+                   let e = NSEvent.mouseEvent(with: .mouseMoved, location: point, modifierFlags: [],
+                                              timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: w.windowNumber,
+                                              context: nil, eventNumber: 0, clickCount: 0, pressure: 0) {
+                    owner.mouseMoved(with: e)
+                }
+            }
+        }
+    }
+    /// The tracking areas the scripted pointer is inside (`hover`).
+    private var hoverInside: Set<ObjectIdentifier> = []
+
     /// Frame of a target already located (`locate`), by the same id.
     func frame(_ target: String) -> CGRect? {
         let parts = target.split(separator: ":", maxSplits: 1).map(String.init)
@@ -741,13 +862,26 @@ private final class Runner {
                 ? Help.groups(c.keymap, severalAccounts: c.hasSeveralAccounts).flatMap(\.entries).map { "\($0.key) \($0.label)" }.joined(separator: " | ") : "",
             // Why keymap.toml is refused, empty when it is applied.
             "keymap_problem": m.keymapProblem?.text ?? "",
+            "theme": m.theme.current.name,
+            "theme_chain": m.theme.current.chain.joined(separator: ","),
+            "theme_problem": m.themeProblem?.text ?? "",
+            // The blocks of the status bar or the toolbar, from left to
+            // right (`window.blocks`), by their names: `account,folder,m`.
+            "status_order": UIScript.frames
+                // `status-empty` is an empty part of the bar, not a block.
+                .filter { $0.key.hasPrefix("status-") && !$0.key.hasPrefix("status-target")
+                    && $0.key != "status-sync" && $0.key != "status-empty" }
+                .sorted { $0.value.minX < $1.value.minX }
+                .map { String($0.key.dropFirst("status-".count)) }
+                .joined(separator: ","),
+            "title_bar_hidden": m.titleBarHidden ? "true" : "false",
+            "title_bar": m.titleBarMode.rawValue,
             // What the status bar says of the synchronization in progress,
             // empty when there is none (`AppModel+Sync.swift`).
             "sync_line": m.syncLine ?? "",
             // The keys of the folders in the folder column (`;` menu), as
             // `i Inbox, t Todo…`.
             "folder_keys": c.scopeFolders.map { "\(c.gotoKeyLabel($0)) \($0.name)" }.joined(separator: ", "),
-            "mode_icon": "\(c.showsAppIcon && AppIcon.statusImage != nil)",
             "location": c.locationLabel,
             "flash": m.flash ?? "",
             "error": m.lastError ?? "",
@@ -756,7 +890,7 @@ private final class Runner {
             "selected_subject": sel?.subject ?? "",
             // The sender column of the selected row, as drawn: "→ Alice"
             // when the user wrote the latest mail (`ui.md`, "Liste").
-            "selected_sender": sel.map(GeekSender.plain) ?? "",
+            "selected_sender": sel.map(SenderColumn.plain) ?? "",
             // The date column of the selected row, as drawn, in the
             // interface's locale (`docs/localization.md`).
             "selected_date": sel.map { Format.geekListDate($0.dateLastReceived) } ?? "",
@@ -849,7 +983,7 @@ private final class Runner {
             "column_groups": c.columnGroups.rows.map(\.name).joined(separator: ", "),
             "column_groups_hidden": "\(c.columnGroups.hidden)",
             // The groups of the column drawn with the grey row of the
-            // current folder (`GeekController.isHighlighted`).
+            // current folder (`InterfaceController.isHighlighted`).
             "column_groups_highlighted": c.columnGroups.rows.filter(c.isHighlighted).map(\.name).joined(separator: ", "),
             "columns": "\(c.columns)",
             "reading": "\(c.reading)",
@@ -874,6 +1008,43 @@ private final class Runner {
             // The reader's title line: subject and controls on 1 line, or
             // the subject above them on 2 (`ReaderTitleBar`).
             "title_lines": "\(UIScript.titleLines)",
+            // AppKit's delay before a tooltip, in ms (`Tooltips`).
+            "tooltip_delay": "\(UserDefaults.standard.integer(forKey: Tooltips.delayKey))",
+            // How the attachments of a message show (`layout.attachments`).
+            "attachment_layout": Look.attachmentRows ? "rows" : "tiles",
+            "compose_commands_compact": model.composer == nil ? "" : "\(UIScript.composeCommandsCompact)",
+            // Room between the edge of the reader's title line and its
+            // subject, in points, as laid out: `left,top`
+            // (`Look.readerTitleInsets`). AppKit's y goes up: the top of a
+            // frame is its maxY.
+            "title_inset": {
+                guard let bar = UIScript.frames["reader-title"],
+                      let subject = UIScript.frames["reader-subject"] else { return "" }
+                return "\(Int((subject.minX - bar.minX).rounded())),\(Int((bar.maxY - subject.maxY).rounded()))"
+            }(),
+            // The column of the reader, as laid out, in points from the
+            // reader's edges: `left,right`. `reader_title_column`: from the
+            // left edge to the subject, and from the controls to the right
+            // edge; `reader_column`: the same for the text of the mail, in
+            // the text reader or the HTML page; `reader_alignment`: the
+            // title's minus the text's, `0,0` when they line up
+            // (`Look.readerColumnSide`).
+            "reader_title_column": UIScript.readerTitleColumn().map { "\(Int($0.left.rounded())),\(Int($0.right.rounded()))" } ?? "",
+            "reader_column": UIScript.readerColumn(controller).map { "\(Int($0.left.rounded())),\(Int($0.right.rounded()))" } ?? "",
+            "reader_alignment": {
+                guard let t = UIScript.readerTitleColumn(), let b = UIScript.readerColumn(controller) else { return "" }
+                // Rounded once, on the difference: SwiftUI and AppKit place
+                // the two at a few tenths of a point from each other.
+                return "\(Int((t.left - b.left).rounded())),\(Int((t.right - b.right).rounded()))"
+            }(),
+            // On two lines, the gap between the bottom of the subject and
+            // the top of the line of the controls, in points, as laid out
+            // (`Look.readerTitleLineGap`); empty on one line.
+            "title_line_gap": {
+                guard UIScript.titleLines == 2, let subject = UIScript.frames["reader-subject"],
+                      let line = UIScript.frames["reader-title-controls"] else { return "" }
+                return "\(Int((subject.minY - line.maxY).rounded()))"
+            }(),
             // Where the fonts and translations were found (`AppResources`):
             // `Contents/Resources` of NiceMailer.app, or the build folder.
             "resources_bundle": AppResources.bundle.bundlePath,
@@ -986,9 +1157,104 @@ private final class Runner {
                 }.joined(separator: " | ").replacingOccurrences(of: " | ||", with: " ||")
             }(),
             "menu_x": "\(Int(UIScript.frames["menu-0"]?.minX ?? -1))",
+            // The open menu drops from its block: the place it was given
+            // is the block's (`menuAnchor`), not a block of a theme gone.
+            "menu_under_block": {
+                guard case .menu(let p) = c.overlay, let x = c.menuBlockX[p],
+                      let f = UIScript.frames["status-\(p == .goto ? "folder" : p.uiID)"] else { return "" }
+                return abs(x - f.minX) < 1 ? "true" : "false (menu at \(Int(x)), block at \(Int(f.minX)))"
+            }(),
             "menu_y": "\(Int(UIScript.frames["menu-0"]?.minY ?? -1))",
+            // Whether every row of the open menu is inside the window: a
+            // menu dropping from a block near the right edge must not be
+            // cut there. Empty when no menu is open.
+            "menu_fits": {
+                guard case .menu(let p) = c.overlay, let width = window?.contentView?.bounds.width else { return "" }
+                let rows = (0..<c.menuEntries(p).count).compactMap { UIScript.frames["menu-\($0)"] }
+                guard !rows.isEmpty else { return "" }
+                return rows.allSatisfy { $0.minX >= 0 && $0.maxX <= width + 0.5 } ? "true" : "false"
+            }(),
+            // The gap between the unread count of the first row of the
+            // open menu and its key on the right, as laid out, in points;
+            // empty when that row has no count drawn as a badge
+            // (`KeyMenu.detailAsBadge`).
+            // The row Inbox of the folder column, as laid out, in points:
+            // `left,right,gap`: from the column's left edge to the name,
+            // from the key to the right edge, from the count to the key
+            // (`Look.sidebarTextInset`); right and gap empty with the key
+            // first (geek), the whole field empty without three columns.
+            "folder_inbox_layout": {
+                guard c.columns == 3, let column = UIScript.frames["folder-column"],
+                      let name = UIScript.frames["folder-name-Inbox"] else { return "" }
+                let left = "\(Int((name.minX - column.minX).rounded()))"
+                guard Look.menuKeysRight, let key = UIScript.frames["folder-key-Inbox"] else { return left + ",," }
+                let right = "\(Int((column.maxX - key.maxX).rounded()))"
+                let gap = UIScript.frames["folder-badge-Inbox"].map { "\(Int((key.minX - $0.maxX).rounded()))" } ?? ""
+                return "\(left),\(right),\(gap)"
+            }(),
+            "menu_badge_gap": {
+                // The frames of a menu closed stay recorded: only a first
+                // row that has a count now is measured.
+                guard case .menu(let p) = c.overlay, c.menuEntries(p).first?.detail != nil,
+                      let badge = UIScript.frames["menu-detail-0"],
+                      let key = UIScript.frames["menu-key-0"] else { return "" }
+                return "\(Int((key.minX - badge.maxX).rounded()))"
+            }(),
             // Height of the selected row, as laid out.
             "row_height": "\(Int((UIScript.frames["thread-\(m.selectedThreadId ?? -1)"]?.height ?? 0).rounded()))",
+            // Width of the selected row, as laid out: the width the list
+            // is given, which a panel opened over it must not change.
+            // Room between the flag of the selected row and the right
+            // edge of its fill (`layout.row_inset`), in points, as laid
+            // out; negative when the flag runs over it; empty when the
+            // row has no flag.
+            "selected_flag_inside": {
+                let id = m.selectedThreadId ?? -1
+                // A flag removed leaves its last frame behind.
+                guard m.threads.first(where: { $0.id == id })?.isFlagged == true,
+                      let row = UIScript.frames["thread-\(id)"], let flag = UIScript.frames["flag-\(id)"] else { return "" }
+                let fillRight = row.maxX - scaled(CGFloat(Look.theme.layout.rowInset))
+                return "\(Int((fillRight - flag.maxX).rounded()))"
+            }(),
+            // The controls of the reader's title line shown, from left to
+            // right as laid out, comma-separated: `folder` (in
+            // "Everything"), `pixels`, `unsubscribe`, `flag`, `format` (the
+            // text | html | images switch). The information comes first,
+            // then the buttons (`ui.md`, "Boutons de l'en-tête").
+            "title_controls_order": {
+                guard m.composer == nil else { return "" }
+                var shown: [(String, String)] = []
+                if m.selectedThreadFolderLabel != nil { shown.append(("folder", "reader-folder")) }
+                if m.trackingPixels > 0 { shown.append(("pixels", "reader-pixels")) }
+                if let o = m.unsubscribeOffer, o.senderUnsubscribedAt == nil { shown.append(("unsubscribe", "reader-unsubscribe")) }
+                if m.threads.contains(where: { $0.id == m.openThread?.id }) { shown.append(("flag", "reader-flag")) }
+                if m.latestReceived?.bodyHtml != nil { shown.append(("format", "format-text")) }
+                // A frame not laid out yet leaves its control out.
+                return shown.compactMap { name, id in UIScript.frames[id].map { (name, $0.minX) } }
+                    .sorted { $0.1 < $1.1 }.map(\.0).joined(separator: ",")
+            }(),
+            // Heights of the buttons of the title line, as laid out, in
+            // points, comma-separated (`FramedButton`, `FramedSegments`):
+            // in the reader unsubscribe, the flag and the text | html
+            // switch, those shown; in a reply its first command. One
+            // design for reading and writing: the same height.
+            "title_button_heights": {
+                let ids = m.composer == nil
+                    ? ["reader-unsubscribe", "reader-flag", "format-text"]
+                    : ["compose-command-send"]
+                return ids.compactMap { UIScript.frames[$0] }.map { "\(Int($0.height.rounded()))" }.joined(separator: ",")
+            }(),
+            // How the list shows each mail (`ListLayout`, `v` `l`):
+            // `columns` or `stacked`.
+            "list_layout": controller.listLayout.rawValue,
+            // The third line of the selected row in stacked, as drawn
+            // (`ListLayout.snippetLine`); empty in columns.
+            "selected_snippet": controller.listLayout == .stacked
+                ? ListLayout.snippetLine(m.threads.first { $0.id == m.selectedThreadId }?.snippet) : "",
+            "row_width": "\(Int((UIScript.frames["thread-\(m.selectedThreadId ?? -1)"]?.width ?? 0).rounded()))",
+            // The folder column of the selected row in "Everything", as
+            // drawn: the folder, and its account when the row has room.
+            "row_folder_with_account": "\(UIScript.rowFolderWithAccount)",
             "html_text": UIScript.html["text"] ?? "",
             "html_font_loaded": UIScript.html["font"] ?? "",
             "html_font_family": UIScript.html["family"] ?? "",
@@ -1001,6 +1267,17 @@ private final class Runner {
             "dark_reader_fetches": UIScript.darkReaderFetches,
             "html_paper": UIScript.html["paper"] ?? "",
             "html_styled_width": UIScript.html["styledWidth"] ?? "",
+            // Text sizes of the HTML page, in CSS pixels before the zoom
+            // (`html_zoom` multiplies them on screen): the page's own, the
+            // first element of class `probe-pt` and of `probe-small`.
+            "html_body_font": UIScript.html["bodyFont"] ?? "",
+            "html_pt_font": UIScript.html["ptFont"] ?? "",
+            "html_small_font": UIScript.html["smallFont"] ?? "",
+            // The height of their line, as laid out (CSS pixels).
+            "html_pt_line": UIScript.html["ptLine"] ?? "",
+            "html_small_line": UIScript.html["smallLine"] ?? "",
+            // The zoom of the HTML page: the text size (1 at 12 pt).
+            "html_zoom": controller.readerWeb.map { String(format: "%.2f", Double($0.pageZoom)) } ?? "",
             "html_styled_background": UIScript.html["styledBackground"] ?? "",
             "html_offset": "\(c.htmlOffset)",
             // The folder workflow: steps `z` can undo, a suspect move
@@ -1045,7 +1322,7 @@ private final class Runner {
             // A sorting under way (`a` `s`): "done/total", empty otherwise;
             // the suggestions of the rows shown, and the one of the row
             // under the cursor ("target: reason").
-            // Where the AI shows (`GeekController.aiPlacement`): `center`,
+            // Where the AI shows (`InterfaceController.aiPlacement`): `center`,
             // `headers`, `none`.
             "ai_placement": c.aiPlacement,
             "ai_sort": m.aiSort.map { "\($0.done)/\($0.total)" } ?? "",
@@ -1107,6 +1384,9 @@ private final class Runner {
                 return (t.substring(to: r.start) + "|" + t.substring(from: r.start)).replacingOccurrences(of: "\n", with: "\\n")
             } ?? "",
             "compose_format": m.composer?.format.rawValue ?? "",
+            // The mode the next mail starts in (`compose.format`), which a
+            // conversion by ⇧⌘T writes.
+            "compose_default_format": m.composeFormats.defaultFormat,
             "editor_ready": "\((m.editor as? EditorBridge)?.isReady ?? false)",
             "editor_focused": "\(m.editorState.focused)",
             "editor_modal": "\(m.editorState.modal)",
@@ -1132,7 +1412,16 @@ private final class Runner {
 
     /// The Preferences' fields (`UITests/README.md`): empty while closed.
     func preferencesState() -> [String: String] {
-        guard let list = UIScript.preferencesList, let s = UIScript.preferencesSetup else { return [:] }
+        // The Appearance tab: the themes, `*` before the one chosen, `!`
+        // after one refused.
+        var appearance: [String: String] = [:]
+        if let themes = UIScript.preferencesThemes {
+            appearance["prefs_themes"] = themes.themes
+                .map { ($0.name == themes.selected ? "*" : "") + $0.name + ($0.error == nil ? "" : "!") }
+                .joined(separator: ",")
+            appearance["prefs_theme_error"] = themes.error ?? ""
+        }
+        guard let list = UIScript.preferencesList, let s = UIScript.preferencesSetup else { return appearance }
         let names: [AccountSetup.Section: String] = [.imap: "imap", .smtpPassword: "smtp-password", .smtp: "smtp", .server: "server", .importScreen: "import"]
         let act = UIScript.preferencesActivation
         let pw = UIScript.preferencesPassword
@@ -1154,7 +1443,7 @@ private final class Runner {
                   let field = r.delegate as? NSView else { return "" }
             return UIScript.frames.first { $0.key.hasPrefix("prefs-") && $0.value.contains(field.convert(field.bounds, to: nil).center) }?.key ?? "?"
         }()
-        return [
+        let accounts: [String: String] = [
             "prefs_accounts": list.items.map(\.key).joined(separator: ","),
             "prefs_selection": selection,
             "prefs_error": list.error ?? "",
@@ -1192,6 +1481,7 @@ private final class Runner {
             "password_error": pw?.error ?? "",
             "password_saved": pw?.saved ?? "",
         ]
+        return accounts.merging(appearance) { a, _ in a }
     }
 }
 

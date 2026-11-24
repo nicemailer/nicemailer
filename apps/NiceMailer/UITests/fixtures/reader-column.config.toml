@@ -1,0 +1,6 @@
+# Settings of reader-column.uiscript: the theme column of the fixtures
+# (clean with a padding of 28 around the title and a column of 560 pt).
+[ui]
+text_size = 12
+status_bar_text_size = 12
+theme = "column"

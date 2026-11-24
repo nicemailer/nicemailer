@@ -1,0 +1,19 @@
+# Built-in prompt (specifications/ia.md, section 8). Answering a mail
+# received in a foreign language: the reply is written in one's own
+# language, then translated into the language of that mail. Offered only
+# on a reply (lang = "replied").
+version = 1
+id = "translate-reply"
+scope = "draft"
+key = "l"
+label = { en = "Translate my reply into the language of the mail received", fr = "Traduire ma réponse dans la langue du mail reçu" }
+input = ["draft.own_text", "draft.replied"]
+output = "replace"
+on = "both"
+lang = "replied"
+
+system = """
+Translate the email draft, a reply, into the language of the mail it replies to, given in the
+<replied> section. Keep the meaning, the tone, the paragraphs, lists, names, numbers, email
+addresses and links. Do not add or drop content, and do not translate or answer the mail replied to.
+"""

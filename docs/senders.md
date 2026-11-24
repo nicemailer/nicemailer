@@ -12,7 +12,7 @@ Specification (French, the reference): `specifications/expediteurs.md`. It holds
 | Recording at insertion | `crates/nm-store/src/insert.rs` |
 | Filter | `crates/nm-store/src/queries.rs` (`filter_clause`, `human`) |
 | Catch-up thread | `crates/nm-daemon/src/main.rs` (`start_sender_backfill`) |
-| App | `Attributes.swift` (`ThreadFilter.human`), `GeekController.swift` (`o` on Contacts), `AppModel+Workflow.swift` (`setSenderKind`) |
+| App | `Attributes.swift` (`ThreadFilter.human`), `InterfaceController.swift` (`o` on Contacts), `AppModel+Workflow.swift` (`setSenderKind`) |
 
 ## Clues of a mail
 
@@ -96,4 +96,4 @@ The fake mailbox (`nicemailer seed`) has no headers to read: its mails get the c
 - `crates/nm-store/tests/senders.rs`: verdicts at insertion, a mail written to an address, a mixed address, a discussion list, automatic replies, the filter (and the user's reply in Sent), forcing and undo (every received mail follows a forced verdict, automatic ones included, and a mixed address forced to its computed verdict), contacts, and the catch-up, which must give exactly what the insertion gives.
 - `crates/nm-store/src/raw.rs`: `read_header`. `crates/nm-store/src/seed.rs`: the fake mailbox is classified. `crates/nm-daemon/tests/workflow_rpc.rs`: `set_sender_kind` through the socket.
 - `crates/nm-store/tests/correspondent.rs` and the unit tests of `queries.rs`: `correspondent_kind` of a list row, the kind of the mail that names the correspondent.
-- App: `AttributesTests`, `GeekControllerTests` (the selector), `WorkflowTests` (`o` on Contacts, which reloads the list), `QuarantineTests` and `SenderColumnTests` (the icon of Quarantine), and the scenarios `UITests/senders.uiscript` and `UITests/quarantine.uiscript`.
+- App: `AttributesTests`, `InterfaceControllerTests` (the selector), `WorkflowTests` (`o` on Contacts, which reloads the list), `QuarantineTests` and `SenderColumnTests` (the icon of Quarantine), and the scenarios `UITests/senders.uiscript` and `UITests/quarantine.uiscript`.

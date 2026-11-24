@@ -17,11 +17,13 @@ expect body_format = text
 expect reader_text ~ Novembre
 expect reader_text !~ Aperçu caché
 snap switch
-# The title line (subject, unsubscribe, blocked pixels, switch): one line
-# while the whole subject fits beside the controls, two in a narrow window.
-# A bigger text makes the line longer: the choice follows (⌘+, then ⌘0).
+# The title line (subject, unsubscribe, blocked pixels, flag, switch): one
+# line while the whole subject fits beside the controls, two in a narrow
+# window. A bigger text makes the line longer: the choice follows (⌘+,
+# then ⌘0). 900 pt: the controls in their frames, the flag among them, take
+# more room than the words alone did (760 until November 2026).
 expect title_lines = 1
-resize 760x800
+resize 900x800
 expect title_lines = 1
 key cmd-=
 key cmd-=

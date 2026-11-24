@@ -2,7 +2,7 @@
 expect folder = Inbox
 # The move menu opens, Escape closes it.
 key m
-expect overlay = menu(NiceMailer.GeekController.Prefix.move)
+expect overlay = menu(NiceMailer.InterfaceController.Prefix.move)
 expect mode = m
 snap move-menu
 key esc

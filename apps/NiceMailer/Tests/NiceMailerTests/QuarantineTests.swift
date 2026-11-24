@@ -22,7 +22,7 @@ struct QuarantineTests {
 
     let core: FakeCore
     let model = AppModel()
-    let controller: GeekController
+    let controller: InterfaceController
 
     init() async {
         core = FakeCore { method, params in
@@ -54,7 +54,7 @@ struct QuarantineTests {
             }
         }
         let defaults = TestDefaults.make()
-        controller = GeekController(model: model, defaults: defaults, textSize: TextSize())
+        controller = InterfaceController(model: model, defaults: defaults, textSize: TextSize())
         model.seenDelay = 0.05
         await model.attach(core)
         _ = await eventually { model.threads.count == 8 && model.openThread != nil }
@@ -113,13 +113,13 @@ struct QuarantineTests {
         #expect(model.listShowsSenderKind)
         let kinds = model.threads.map(\.correspondentKind)
         #expect(kinds == ["person", "robot", nil, "robot"])
-        #expect(model.threads.map(GeekSender.kindSymbol) == ["person.fill", "gearshape.fill", nil, "gearshape.fill"])
+        #expect(model.threads.map(SenderColumn.kindSymbol) == ["person.fill", "gearshape.fill", nil, "gearshape.fill"])
         // The name itself is unchanged: the icon is drawn beside it.
-        #expect(GeekSender.plain(model.threads[0]) == "Sender 51")
+        #expect(SenderColumn.plain(model.threads[0]) == "Sender 51")
         // VoiceOver hears it with the name; without verdict, the name alone.
-        #expect(GeekSender.spoken(model.threads[0], showsKind: true) == L("%@, written by a person", "Sender 51"))
-        #expect(GeekSender.spoken(model.threads[1], showsKind: true) == L("%@, written by a robot", "Sender 52"))
-        #expect(GeekSender.spoken(model.threads[2], showsKind: true) == "Sender 53")
+        #expect(SenderColumn.spoken(model.threads[0], showsKind: true) == L("%@, written by a person", "Sender 51"))
+        #expect(SenderColumn.spoken(model.threads[1], showsKind: true) == L("%@, written by a robot", "Sender 52"))
+        #expect(SenderColumn.spoken(model.threads[2], showsKind: true) == "Sender 53")
         // Back to the Inbox: no icon.
         press(";")
         press("i")

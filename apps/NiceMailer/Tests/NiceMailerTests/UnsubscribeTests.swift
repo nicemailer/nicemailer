@@ -10,14 +10,14 @@ import Testing
 struct UnsubscribeTests {
     let core = FakeCore(handler: Fixture.answer)
     let model = AppModel()
-    let controller: GeekController
+    let controller: InterfaceController
     /// What the app opened (the tests never launch the browser or Mail).
     final class Opened { var urls: [URL] = [] }
     let opened = Opened()
 
     init() async {
         let defaults = TestDefaults.make()
-        controller = GeekController(model: model, defaults: defaults, textSize: TextSize())
+        controller = InterfaceController(model: model, defaults: defaults, textSize: TextSize())
         let opened = opened
         model.openFile = { opened.urls.append($0) }
         await model.attach(core)

@@ -12,7 +12,7 @@ import Testing
 struct WorkflowTests {
     let core: FakeCore
     let model = AppModel()
-    let controller: GeekController
+    let controller: InterfaceController
 
     init() async {
         core = FakeCore { method, params in
@@ -38,7 +38,7 @@ struct WorkflowTests {
             }
         }
         let defaults = TestDefaults.make()
-        controller = GeekController(model: model, defaults: defaults, textSize: TextSize())
+        controller = InterfaceController(model: model, defaults: defaults, textSize: TextSize())
         model.openFile = { _ in }
         await model.attach(core)
         _ = await eventually { model.threads.count == 8 && model.openThread != nil }
@@ -81,9 +81,9 @@ struct WorkflowTests {
     }
 
     @Test func theDomainOfAnAddress() {
-        #expect(GeekController.domain(of: "a@News.Shop.fr") == "news.shop.fr")
-        #expect(GeekController.domain(of: "nobody") == nil)
-        #expect(GeekController.domain(of: "x@") == nil)
+        #expect(InterfaceController.domain(of: "a@News.Shop.fr") == "news.shop.fr")
+        #expect(InterfaceController.domain(of: "nobody") == nil)
+        #expect(InterfaceController.domain(of: "x@") == nil)
     }
 
     // MARK: Moves and undo

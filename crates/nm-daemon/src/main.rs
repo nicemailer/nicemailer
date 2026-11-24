@@ -174,6 +174,10 @@ struct Core {
     /// The keys of the app, `keymap.toml` (`raccourcis.md`). Apart from the
     /// engine: the file is read and refused on its own.
     keymap: Mutex<nm_engine::keymap::KeymapFile>,
+    /// The themes of the app, `themes/` (`themes.md`). Apart from the
+    /// engine too: a theme file is read and refused on its own, and only
+    /// matters to the app.
+    themes: Mutex<nm_engine::theme::ThemeSet>,
     events: Mutex<EventLog>,
     /// `events.client_queue`: lines a client may have waiting.
     client_queue: usize,
@@ -330,8 +334,14 @@ async fn run(args: Args, data_dir: &Path) -> anyhow::Result<()> {
     let mut keymap = nm_engine::keymap::KeymapFile::new(keymap_path.clone());
     let keymap_events = keymap.reload(true);
     log_keymap(&keymap);
+    // The themes: the one `ui.theme` names, resolved with the files of
+    // `themes/`; a file refused at start gives `ConfigError` too.
+    let themes_dir = nm_engine::theme::dir(&config_path);
+    let mut themes = nm_engine::theme::ThemeSet::new(themes_dir.clone(), &engine.config().ui.theme);
+    let theme_events = themes.reload(true);
+    log_themes(&themes);
     let mut events = EventLog::new(settings.replay_buffer as usize, settings.client_queue as usize);
-    for e in startup_events.into_iter().chain(keymap_events) {
+    for e in startup_events.into_iter().chain(keymap_events).chain(theme_events) {
         events.push(e);
     }
     // `Arc` so that every connection task can hold a pointer to the shared
@@ -347,6 +357,7 @@ async fn run(args: Args, data_dir: &Path) -> anyhow::Result<()> {
         engine: Mutex::new(engine),
         oauth: oauth.clone(),
         keymap: Mutex::new(keymap),
+        themes: Mutex::new(themes),
         events: Mutex::new(events),
         client_queue: settings.client_queue as usize,
         raw,
@@ -435,6 +446,18 @@ async fn run(args: Args, data_dir: &Path) -> anyhow::Result<()> {
             Ok(w) => Some(w),
             Err(e) => {
                 eprintln!("config : surveillance impossible ({e}) ; les fichiers seront relus au prochain démarrage");
+                None
+            }
+        }
+    };
+    // The directory of the themes, whose files come and go: a watch of its
+    // own, on the whole directory.
+    let _themes_watch = {
+        let core = core.clone();
+        match nm_engine::watch::watch_dir(&themes_dir, move || reload_themes(&core)) {
+            Ok(w) => Some(w),
+            Err(e) => {
+                eprintln!("thèmes : surveillance impossible ({e}) ; les thèmes seront relus au prochain démarrage");
                 None
             }
         }
@@ -827,6 +850,8 @@ fn runs_in_parallel(method: &str) -> bool {
             | method::SYNC_STATUS
             | method::CONFIG_STATUS
             | method::KEYMAP_GET
+            | method::THEME_GET
+            | method::THEME_LIST
     )
 }
 
@@ -1361,8 +1386,11 @@ fn reload_config(core: &Arc<Core>) {
                 log_config(&engine);
                 core.oauth.set_client_id(nm_engine::oauth2::client_id_of(&engine.config().oauth));
             }
+            // `ui.theme` may have changed: the theme in effect follows.
+            // Lock order: store, engine, themes, events.
+            let theme_events = core.themes.lock().unwrap().set_selected(&engine.config().ui.theme);
             let mut log = core.events.lock().unwrap();
-            for e in events {
+            for e in events.into_iter().chain(theme_events) {
                 log.push(e);
             }
             changed
@@ -1397,6 +1425,89 @@ fn reload_keymap(core: &Arc<Core>) {
     let mut log = core.events.lock().unwrap();
     for e in events {
         log.push(e);
+    }
+}
+
+/// `config_set_theme`: writes `ui.theme` in `config.toml` (`themes.md`,
+/// section 8), then applies the file at once, as `setup.rs` does for
+/// `accounts.toml` (the watch would too, a moment later; reading the same
+/// text twice does nothing). Returns the theme now in effect.
+async fn config_set_theme(core: &Arc<Core>, p: nm_api::ConfigSetThemeParams) -> Result<nm_api::ThemeView, RpcError> {
+    {
+        let themes = core.themes.lock().unwrap();
+        if !themes.exists(&p.name) {
+            return Err(RpcError::new(
+                error_code::NOT_FOUND,
+                nm_api::reason::THEME_UNKNOWN.with("theme", p.name.as_str()),
+            ));
+        }
+    }
+    let path = core.engine.lock().unwrap().path().to_path_buf();
+    let core2 = core.clone();
+    let name = p.name.clone();
+    tokio::task::spawn_blocking(move || -> Result<(), String> {
+        nm_engine::config_write::update(&path, |text| nm_engine::config_write::set_theme(text, &name))?;
+        reload_config(&core2);
+        Ok(())
+    })
+    .await
+    .map_err(RpcError::internal)?
+    .map_err(|e| RpcError::new(error_code::INVALID_PARAMS, nm_api::reason::CONFIG_NOT_WRITTEN.with("detail", e)))?;
+    Ok(core.themes.lock().unwrap().view())
+}
+
+/// `config_set_compose_format`: writes `compose.format` in `config.toml`
+/// (`edition.md`, section 3), then applies the file at once, like
+/// `config_set_theme`. Returns `compose_formats`, which now gives the new
+/// mode as the one a new draft starts in.
+async fn config_set_compose_format(
+    core: &Arc<Core>,
+    p: nm_api::ConfigSetComposeFormatParams,
+) -> Result<nm_api::ComposeFormatsResult, RpcError> {
+    if !matches!(p.format.as_str(), "text" | "html") {
+        return Err(RpcError::new(
+            error_code::INVALID_PARAMS,
+            nm_api::reason::COMPOSE_FORMAT_UNKNOWN.with("format", p.format.as_str()),
+        ));
+    }
+    let path = core.engine.lock().unwrap().path().to_path_buf();
+    let core2 = core.clone();
+    let format = p.format.clone();
+    tokio::task::spawn_blocking(move || -> Result<(), String> {
+        nm_engine::config_write::update(&path, |text| nm_engine::config_write::set_compose_format(text, &format))?;
+        reload_config(&core2);
+        Ok(())
+    })
+    .await
+    .map_err(RpcError::internal)?
+    .map_err(|e| RpcError::new(error_code::INVALID_PARAMS, nm_api::reason::CONFIG_NOT_WRITTEN.with("detail", e)))?;
+    Ok(drafts::compose_formats(core))
+}
+
+/// Reads the directory of the themes again after a change seen by its
+/// watch, and emits `ThemeChanged` or `ConfigError`. Like the keymap, it
+/// needs neither the store nor the engine.
+fn reload_themes(core: &Arc<Core>) {
+    let mut themes = core.themes.lock().unwrap();
+    let events = themes.reload(false);
+    if !events.is_empty() {
+        log_themes(&themes);
+    }
+    let mut log = core.events.lock().unwrap();
+    for e in events {
+        log.push(e);
+    }
+}
+
+/// Prints the theme in effect on the core's standard error.
+fn log_themes(themes: &nm_engine::theme::ThemeSet) {
+    let applied = themes.applied();
+    eprintln!("thème : {} ({})", applied.name, applied.chain.join(" → "));
+    if let Some(p) = themes.error() {
+        eprintln!("thème : refusé, dernière version valide conservée : {p}");
+    }
+    for w in themes.warnings() {
+        eprintln!("thème : avertissement : {w}");
     }
 }
 
@@ -2080,6 +2191,16 @@ async fn call(core: &Arc<Core>, source: Source, req: Request) -> Result<Value, R
                 warnings: keymap.warnings().iter().map(nm_engine::problem_view).collect(),
             })
         }
+        method::THEME_GET => to_value(core.themes.lock().unwrap().view()),
+        method::THEME_LIST => to_value(core.themes.lock().unwrap().list()),
+        method::CONFIG_SET_THEME => {
+            let p: nm_api::ConfigSetThemeParams = params(req.params)?;
+            to_value(config_set_theme(core, p).await?)
+        }
+        method::CONFIG_SET_COMPOSE_FORMAT => {
+            let p: nm_api::ConfigSetComposeFormatParams = params(req.params)?;
+            to_value(config_set_compose_format(core, p).await?)
+        }
         method::CONFIG_STATUS => {
             let as_of = as_of();
             let engine = core.engine.lock().unwrap();
@@ -2091,7 +2212,8 @@ async fn call(core: &Arc<Core>, source: Source, req: Request) -> Result<Value, R
                 error: engine.error().map(nm_engine::problem_view),
                 warnings: engine.warnings().iter().map(nm_engine::problem_view).collect(),
                 ui: nm_api::UiConfig {
-                    title_bar: engine.config().ui.title_bar.as_str().into(),
+                    title_bar: engine.config().ui.title_bar.map(|t| t.as_str().into()),
+                    theme: engine.config().ui.theme.clone(),
                     auto_confirm_calls: engine.config().ui.auto_confirm_calls,
                     text_size: Some(engine.config().ui.text_size),
                     status_bar_text_size: Some(engine.config().ui.status_bar_text_size),

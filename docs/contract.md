@@ -105,6 +105,10 @@ A dedicated command prints readable output, asks for confirmation when needed an
 | `list_accounts` | Every account (IMAP and archive) with its state, in display order, whether it is only looked at (`read_only`), and how the core signs in to it (`auth`: `password` or `oauth2`; absent for an archive or an account no longer in `accounts.toml`). | `nicemailer accounts` |
 | `config_status` | The state of `config.toml` and `accounts.toml`: paths, the error that makes the core refuse them, warnings, and the settings the clients apply themselves (`ui`, `mcp`, `unsubscribe`, and `folder_names`, the names the app shows for the folders). | — (`nicemailer config check` checks the files itself, without the core.) |
 | `keymap_get` | The keys of the app: the defaults with `keymap.toml` applied, by context and by menu, each key in its canonical spelling; the error that makes the core refuse the file (the previous keys then stay), and warnings. `KeymapChanged` says when to read it again (`keymap.md`). | — (`nicemailer keymap check` and `show` read the file themselves, without the core.) |
+| `theme_get` | The theme in effect, resolved: `ui.theme` of `config.toml`, its file of `themes/` and those it extends laid over a built-in theme; every key with its value (colors as light/dark pairs or colors of the system), the chain of inheritance, the error of a refused file (its last valid version then applies), and warnings, contrast included. `ThemeChanged` says when to read it again (`themes.md`). | — (`nicemailer theme show` and `check` read the files themselves, without the core.) |
+| `theme_list` | The themes that can be chosen: the built-in ones (marked when a file modifies them), then the files of `themes/`, each with its parent and the error that makes it unusable. | — (`nicemailer theme list` reads the folder itself.) |
+| `config_set_theme` | Writes `ui.theme` in `config.toml`, the rest of the file kept as it is, comments included, then applies it; answers the theme now in effect. Refuses a name no theme has (`theme_unknown`) and a `config.toml` refused as it is (`config_not_written`). The Preferences use it. | — |
+| `config_set_compose_format` | Writes `compose.format` (`text` or `html`) in `config.toml`, the rest of the file kept as it is, comments included, then applies it; answers `compose_formats`. ⇧⌘T calls it after converting a draft, so that the next mails start in that mode (`editor.md`). Refuses another mode (`compose_format_unknown`) and a `config.toml` refused as it is (`config_not_written`). | — |
 | `discover_account` | Finds the servers of an address before the account exists: provider, IMAP server, SMTP servers to try. | Step 1 of `nicemailer account add`. |
 | `test_account` | Tries the IMAP server of an account not created yet: capabilities, folders with proposed roles, the folder each role will get and whether it exists (`roles`), counts for the import. A failure says in `data.reason` whether the password (`imap_auth_refused`) or the server (`imap_unreachable`) is at fault. | Step 2 of `account add`. |
 | `count_archive` | Exact count of the mails the initial archiving would move. | Step 3 of `account add` (`--archive-read-before`, `--archive-unread-before`, `--no-archive`). |
@@ -155,7 +159,7 @@ A dedicated command prints readable output, asks for confirmation when needed an
 | Method | What it does | CLI |
 | --- | --- | --- |
 | `ai_status` | Whether the AI is on, the provider and model, whether a run can start, the problems of the prompt files. | `nicemailer ai status [--check]`: `--check` also asks the `claude` binary its version and subscription (`ai.md`). |
-| `ai_list_prompts` | The prompts of one screen's AI menu, in a folder. | `nicemailer ai prompts list [--screen compose] [--folder <role>] [--lang en]` |
+| `ai_list_prompts` | The prompts of one screen's AI menu, in a folder. For the compose screen, `reply: false` leaves out the prompts of a reply (translate it into the language of the mail received); the app passes it for a new mail or a forward. | `nicemailer ai prompts list [--screen compose] [--folder <role>] [--lang en] [--new-mail]` |
 | `ai_run` | Starts a run. Answers at once with its id. The text arrives through `AiDelta`, `AiDone` and `AiFailed` events. | `nicemailer ai run <prompt> --draft <id> [--variant <key>] [--lang en] [--apply] [--choice <n>]` streams the proposal as it comes. |
 | `ai_get_run` | The state and the proposal of a run. | Used by `ai run` once the run is done. |
 | `ai_apply` | Applies the proposal of a finished run to the draft. | `ai run … --apply` |
@@ -181,11 +185,12 @@ These commands work on files directly and do not go through the core:
 - `nicemailer mailbox check | upgrade | backup`: the database of the mailbox in use, or of the folder `--data-dir` names (`migrations.md`, `backup.md`).
 - `nicemailer config check | defaults | path`: the settings files (`configuration.md`).
 - `nicemailer keymap check | defaults | show`: the keys of the app, `keymap.toml` (`keymap.md`).
+- `nicemailer theme list | check | show | defaults | new`: the themes of the app, the folder `themes/` (`themes.md`).
 - `nicemailer ai prompts export | check`: the prompt files (`ai.md`).
 
 ## Coverage
 
-Of the 85 methods, 36 are used by a dedicated CLI command. The reading of mail, the actions on threads and the drafts have no dedicated command yet, only `nicemailer call`. The CLI is meant to be the test bench of the contract (`specifications/architecture.md`, step 4), so these are the gaps to fill first.
+Of the 88 methods, 36 are used by a dedicated CLI command. The reading of mail, the actions on threads and the drafts have no dedicated command yet, only `nicemailer call`. The CLI is meant to be the test bench of the contract (`specifications/architecture.md`, step 4), so these are the gaps to fill first.
 
 ## Errors
 
@@ -232,6 +237,9 @@ The app, the core, the CLI and the MCP server are shipped and updated together, 
 | `account_set_up` | `account` | the account {account} is not read-only: it is set up already |
 | `account_read_only` | — | this account is read-only (read_only = true in accounts.toml): nothing is changed |
 | `account_read_only_send` | — | this account is read-only (read_only = true in accounts.toml): it cannot send |
+| `theme_unknown` | `theme` | no theme {theme}: neither built in nor a file of the folder themes |
+| `config_not_written` | `detail` | config.toml was not changed: {detail} |
+| `compose_format_unknown` | `format` | no mode {format}: text or html |
 | `password_empty` | — | empty password |
 | `smtp_password_empty` | — | empty SMTP password |
 | `smtp_password_without_server` | — | an SMTP password without an SMTP server |
@@ -304,6 +312,7 @@ The app, the core, the CLI and the MCP server are shipped and updated together, 
 | `ai_io` | `system_text` | cannot run the claude binary: {system_text} |
 | `ai_prompt_unavailable` | `prompt` | the prompt {prompt} is not available in this version of NiceMailer yet |
 | `ai_prompt_not_here` | `prompt` | the prompt {prompt} is not offered in this folder |
+| `ai_reply_needed` | — | this prompt works on a reply: the draft replies to no mail whose text is here |
 | `ai_selection_needed` | — | select the text to work on first |
 | `ai_selection_unwanted` | — | this prompt works on the whole text: send no selection |
 | `ai_selection_empty` | — | the selection is empty |

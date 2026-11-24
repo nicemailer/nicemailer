@@ -37,7 +37,7 @@ struct ReadingTests {
     let box = Mailbox()
     let core: FakeCore
     let model = AppModel()
-    let controller: GeekController
+    let controller: InterfaceController
 
     init() async {
         let box = self.box
@@ -71,7 +71,7 @@ struct ReadingTests {
             }
         }
         let defaults = TestDefaults.make()
-        controller = GeekController(model: model, defaults: defaults, textSize: TextSize())
+        controller = InterfaceController(model: model, defaults: defaults, textSize: TextSize())
         model.seenDelay = 0.05
         await model.attach(core)
         _ = await eventually { model.threads.count == 6 && model.openThread != nil }

@@ -13,7 +13,7 @@ struct CaretTextTests {
     /// its `fittingSize` is the size the view asks for, which is what the
     /// picker header gives it.
     private func width(_ view: some View) -> CGFloat {
-        NSHostingView(rootView: view.font(.geek()).fixedSize()).fittingSize.width
+        NSHostingView(rootView: view.font(.interface()).fixedSize()).fittingSize.width
     }
 
     @Test(arguments: [0, 1, 2, 4])
@@ -27,7 +27,7 @@ struct CaretTextTests {
 
     @Test func anEmptyLineIsOnlyItsCaret() {
         // No letter, but a caret one line high, a few points wide at most.
-        let size = NSHostingView(rootView: CaretText(line: LineEdit()).font(.geek()).fixedSize()).fittingSize
+        let size = NSHostingView(rootView: CaretText(line: LineEdit()).font(.interface()).fixedSize()).fittingSize
         #expect(size.width < 1)
         #expect(size.height > 8)
     }

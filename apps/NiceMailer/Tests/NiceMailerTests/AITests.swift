@@ -195,14 +195,14 @@ struct AIRulesTests {
     }
 
     @Test func theScreenOfThePaletteFollowsItsTarget() {
-        let screen = GeekController.aiScreen
+        let screen = InterfaceController.aiScreen
         #expect(screen(true, 0) == "compose")
         #expect(screen(true, 5) == "compose", "the reply written, whatever is marked")
         #expect(screen(false, 0) == "mail", "the mail shown or under the cursor")
         #expect(screen(false, 1) == "mail", "one mail marked is one mail")
         #expect(screen(false, 2) == "selection")
         // The conversation of a prompt of one mail.
-        let thread = GeekController.aiThread
+        let thread = InterfaceController.aiThread
         #expect(thread([7], 3, 4) == 7, "the one marked alone first")
         #expect(thread([], 3, 4) == 3, "then the one shown")
         #expect(thread([], nil, 4) == 4, "then the row under the cursor")
@@ -272,7 +272,7 @@ struct AIRulesTests {
     @MainActor
     @Test func theAIBlockOfTheStatusBarRemindsOfItsKey() {
         let defaults = TestDefaults.make()
-        let controller = GeekController(model: AppModel(), defaults: defaults, textSize: TextSize())
+        let controller = InterfaceController(model: AppModel(), defaults: defaults, textSize: TextSize())
         #expect(controller.aiKeyLabel(composing: false) == "a")
         #expect(controller.aiKeyLabel(composing: true) == "⌃I")
     }
@@ -343,7 +343,7 @@ struct AIRulesTests {
     }
 }
 
-/// The AI menu and panel through the keys (`GeekController`), against a
+/// The AI menu and panel through the keys (`InterfaceController`), against a
 /// fake core: ⌘I in a reply, `a` in the list, a run from start to answer.
 /// What the fake core answers to the AI methods, set by each test. The
 /// fake core calls its handler on any thread: the state is behind a lock.
@@ -494,14 +494,14 @@ final class AIFakeState: @unchecked Sendable {
     }
 }
 
-/// The AI menu and panel through the keys (`GeekController`), against a
+/// The AI menu and panel through the keys (`InterfaceController`), against a
 /// fake core: ⌘I in a reply, `a` in the list, a run from start to answer.
 @MainActor
 final class AIControllerTests {
     let ai = AIFakeState()
     let core: FakeCore
     let model = AppModel()
-    let controller: GeekController
+    let controller: InterfaceController
     let editor: FakeEditor
 
     init() async {
@@ -509,7 +509,7 @@ final class AIControllerTests {
         core = FakeCore { method, params in state.answer(method, params) }
         let defaults = TestDefaults.make()
         editor = FakeEditor(model: model)
-        controller = GeekController(model: model, defaults: defaults, textSize: TextSize())
+        controller = InterfaceController(model: model, defaults: defaults, textSize: TextSize())
         controller.pasteboard = NSPasteboard(name: NSPasteboard.Name("NiceMailerTests-\(UUID().uuidString)"))
         model.openFile = { _ in }
         model.addressBook = FixtureAddressBook(cards: [:])
@@ -572,15 +572,29 @@ final class AIControllerTests {
         model.handle(CoreClient.Event(method: method, epoch: "e_test", seq: transient ? nil : seq, params: params))
     }
 
-    @Test func cmdIOpensThePaletteOfTheReplyWithItsVariantsAsRows() async throws {
+    @Test func cmdIOpensThePaletteOfTheReplyWithASubmenuForTheVariants() async throws {
         await reply()
         press("ctrl-i")
         _ = await eventually { self.paletteOpen }
         #expect(controller.aiPlacement == "palette")
-        // The most used first; a variant is a row of its own.
-        #expect(paletteRows == ["c Proofread", "rc Rewrite · Shorter", "rf Rewrite · More formal", "o Suggest subjects",
-                                "w Write from my notes"])
+        // The most used first; a prompt with variants is one row.
+        #expect(paletteRows == ["c Proofread", "r Rewrite…", "o Suggest subjects", "w Write from my notes"])
         #expect(core.calls("ai_list_prompts").last?["screen"] as? String == "compose")
+        // A reply: the core is told, for the prompts of a reply.
+        #expect(core.calls("ai_list_prompts").last?["reply"] as? Bool == true)
+        // Rewrite…: its variants in the palette's place, under its name;
+        // Escape comes back to the prompts, a second one closes.
+        choose("r")
+        #expect(paletteOpen)
+        #expect(paletteRows == ["c Shorter", "f More formal"])
+        press("esc")
+        #expect(paletteOpen)
+        #expect(paletteRows.first == "c Proofread")
+        press("esc")
+        #expect(!paletteOpen)
+        // Typing still finds a variant at once.
+        press("ctrl-i")
+        _ = await eventually { self.paletteOpen }
         // ⌘I was not typed; a letter typed filters, it is not the text's.
         #expect(model.composer?.body.hasPrefix("merci\n") == true)
         type("formal")
@@ -594,6 +608,14 @@ final class AIControllerTests {
         choose("w")
         #expect(model.flash == L("Not available yet: %@", "Write from my notes"))
         #expect(core.calls("ai_run").isEmpty)
+        // Chosen in the submenu: the variant runs.
+        press("ctrl-i")
+        _ = await eventually { self.paletteOpen }
+        choose("r")
+        choose("f")
+        _ = await eventually { self.core.calls("ai_run").count == 1 }
+        #expect(core.calls("ai_run").last?["variant"] as? String == "f")
+        #expect(core.calls("ai_run").last?["prompt"] as? String == "rewrite")
     }
 
     /// The editor had not reported the last keys yet (its pause) when ⌃I

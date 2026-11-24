@@ -2,7 +2,7 @@
 expect filters =
 expect thread_count > 10
 key f
-expect overlay = picker(NiceMailer.GeekController.PickerKind.attributes)
+expect overlay = picker(NiceMailer.InterfaceController.PickerKind.attributes)
 snap attribute-selector
 type unread
 key ret
@@ -52,7 +52,7 @@ expect filters = unread
 click status:attributes
 type From
 key ret
-expect overlay = picker(NiceMailer.GeekController.PickerKind.attributeValue(NiceMailer.AttributeField.from))
+expect overlay = picker(NiceMailer.InterfaceController.PickerKind.attributeValue(NiceMailer.AttributeField.from))
 type moreau
 snap from-panel
 key ret
@@ -100,7 +100,7 @@ expect filters ~ last 30 days, older than 1 week
 key f
 type mail date
 key ret
-expect overlay = picker(NiceMailer.GeekController.PickerKind.attributeValue(NiceMailer.AttributeField.mailDate))
+expect overlay = picker(NiceMailer.InterfaceController.PickerKind.attributeValue(NiceMailer.AttributeField.mailDate))
 expect picker_hint ~ 011026
 type last 7
 key ret

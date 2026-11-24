@@ -4,6 +4,9 @@
 # it is; `c` writes a new mail (left empty, it is dropped; written, sent
 # and found in Sent).
 expect folder = Inbox
+# The mail under the cursor open in the reader before `R`: sent sooner,
+# under load, `R` finds no mail to answer.
+expect reader_is_selected = true
 key R
 expect composing = true
 expect compose_to ~ @

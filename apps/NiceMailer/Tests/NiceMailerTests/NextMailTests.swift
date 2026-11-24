@@ -68,7 +68,7 @@ struct NextMailTests {
     let box = Mailbox()
     let core: FakeCore
     let model = AppModel()
-    let controller: GeekController
+    let controller: InterfaceController
 
     init() async {
         let box = self.box
@@ -103,7 +103,7 @@ struct NextMailTests {
             }
         }
         let defaults = TestDefaults.make()
-        controller = GeekController(model: model, defaults: defaults, textSize: TextSize())
+        controller = InterfaceController(model: model, defaults: defaults, textSize: TextSize())
         // Long enough that nothing is marked read behind the tests' back.
         model.seenDelay = 60
         await model.attach(core)

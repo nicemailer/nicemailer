@@ -341,7 +341,7 @@ struct Composer: Equatable {
     /// as ⌫ brings back the last (`takeBackLast`). Any address of the
     /// three lines can so be removed or corrected, not only the last one.
     /// What was being typed in the line is committed first by the caller
-    /// (`GeekController.clickRecipient`), so nothing typed is lost.
+    /// (`InterfaceController.clickRecipient`), so nothing typed is lost.
     @discardableResult
     mutating func takeBack(_ index: Int, of field: ComposeField) -> Bool {
         guard headers[field].indices.contains(index) else { return false }
@@ -627,6 +627,15 @@ enum Compose {
     /// is" when the user chose to leave a conversation where it is, or nil
     /// when nothing moves (a new mail left to Sent says nothing: that is
     /// what happens anyway).
+    /// The tooltip of the Bcc button of the Cc line: what a click does now.
+    /// Hidden, it shows the line; shown and empty, it hides it; shown with
+    /// addresses, it cannot hide it, so that a mail never leaves for a
+    /// recipient the screen no longer shows (`reponse.md`, section 6).
+    static func bccHelp(shown: Bool, canHide: Bool) -> String {
+        guard shown else { return L("Show the Bcc line: recipients the others do not see") }
+        return canHide ? L("Hide the Bcc line") : L("The Bcc line holds addresses: it stays shown")
+    }
+
     static func afterSendLine(_ d: DraftView, names: FolderNames = .english) -> String? {
         guard offersFiling(d) else { return nil }
         if d.afterSend == "stay" { return filesItself(d) ? nil : L("After sending: stays where it is") }

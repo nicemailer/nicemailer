@@ -1,5 +1,7 @@
-# Built-in prompt (specifications/ia.md, section 8). Add a language by
-# exporting this prompt and adding a [[variants]] table.
+# Built-in prompt (specifications/ia.md, section 8). Writing a mail in a
+# foreign language: "Translate", then a second choice among the languages
+# NiceMailer itself is translated into. Add a language by exporting this
+# prompt and adding a [[variants]] table.
 version = 1
 id = "translate-draft"
 scope = "draft"
@@ -39,3 +41,73 @@ instruction = "Translate it into German."
 key = "i"
 label = { en = "Into Italian", fr = "En italien" }
 instruction = "Translate it into Italian."
+
+[[variants]]
+key = "b"
+label = { en = "Into Portuguese (Brazil)", fr = "En portugais (Brésil)" }
+instruction = "Translate it into Brazilian Portuguese."
+
+[[variants]]
+key = "p"
+label = { en = "Into Portuguese (Portugal)", fr = "En portugais (Portugal)" }
+instruction = "Translate it into European Portuguese."
+
+[[variants]]
+key = "n"
+label = { en = "Into Dutch", fr = "En néerlandais" }
+instruction = "Translate it into Dutch."
+
+[[variants]]
+key = "w"
+label = { en = "Into Swedish", fr = "En suédois" }
+instruction = "Translate it into Swedish."
+
+[[variants]]
+key = "a"
+label = { en = "Into Danish", fr = "En danois" }
+instruction = "Translate it into Danish."
+
+[[variants]]
+key = "o"
+label = { en = "Into Norwegian", fr = "En norvégien" }
+instruction = "Translate it into Norwegian (Bokmål)."
+
+[[variants]]
+key = "u"
+label = { en = "Into Finnish", fr = "En finnois" }
+instruction = "Translate it into Finnish."
+
+[[variants]]
+key = "l"
+label = { en = "Into Polish", fr = "En polonais" }
+instruction = "Translate it into Polish."
+
+[[variants]]
+key = "r"
+label = { en = "Into Russian", fr = "En russe" }
+instruction = "Translate it into Russian."
+
+[[variants]]
+key = "k"
+label = { en = "Into Ukrainian", fr = "En ukrainien" }
+instruction = "Translate it into Ukrainian."
+
+[[variants]]
+key = "j"
+label = { en = "Into Japanese", fr = "En japonais" }
+instruction = "Translate it into Japanese."
+
+[[variants]]
+key = "c"
+label = { en = "Into Chinese (Simplified)", fr = "En chinois (simplifié)" }
+instruction = "Translate it into Simplified Chinese."
+
+[[variants]]
+key = "t"
+label = { en = "Into Chinese (Traditional)", fr = "En chinois (traditionnel)" }
+instruction = "Translate it into Traditional Chinese."
+
+[[variants]]
+key = "h"
+label = { en = "Into Korean", fr = "En coréen" }
+instruction = "Translate it into Korean."

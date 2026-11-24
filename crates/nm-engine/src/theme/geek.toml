@@ -1,0 +1,72 @@
+# The geek theme: a minimalist window built like a code editor
+# (specifications/ui.md, "Thème geek : choix retenus"). Every key of the
+# catalog has a value here; the app draws exactly what it drew before the
+# themes became files.
+version = 1
+
+[window]
+bar_type = "status_bar"
+status_bar_position = "top"
+title_bar = "shown"
+block_labels = false
+bar_height = 20
+bar_size = "medium"
+block_style = "plain"
+bar_line = false
+key_hints = true
+blocks = ["account", "folder", "attributes", "|", "view", "|", "move", "save", "ai", "->", "help"]
+default_columns = 2
+list_layout = "columns"
+
+[fonts]
+interface = "iA Writer Mono V"
+reading = "iA Writer Mono V"
+reading_scale = 1.0
+reading_line_spacing = 3
+title_scale = 1.0
+
+[layout]
+row_height = 20
+row_radius = 0
+row_inset = 0
+zebra = false
+menu_row_height = 0
+popup_radius = 0
+popup_shadow = false
+popup_padding = 10
+menu_keys = "left"
+message_cards = false
+avatars = false
+attachments = "tiles"
+reader_max_width = 0
+reader_title_padding = 0
+scrollers = "none"
+separators = "lines"
+
+[motion]
+sidebar_ms = 0
+popup_ms = 0
+
+[colors]
+background = { light = "#FAFAF8", dark = "#1B1D23" }
+sidebar = { light = "#FAFAF8", dark = "#1B1D23" }
+list = { light = "#FAFAF8", dark = "#1B1D23" }
+bar = { light = "#EDEDEA", dark = "#24262E" }
+text = { light = "#24262B", dark = "#C3C6C1" }
+muted = { light = "#6B6E75", dark = "#868B97" }
+accent = "#8AA581"
+accent_text = { light = "#56704E", dark = "#8AA581" }
+selection = { light = "#D3E0CE", dark = "#33432F" }
+selection_text = { light = "#24262B", dark = "#C3C6C1" }
+marked = { light = "#F3E3EE", dark = "#3A2E45" }
+marked_bar = { light = "#C2408F", dark = "#E08AC0" }
+separator = { light = "#DDDDD8", dark = "#30333C" }
+popup = { light = "#FFFFFF", dark = "#262833" }
+unread = { light = "#B07D16", dark = "#E6C07B" }
+flag = { light = "#D9661C", dark = "#F0883E" }
+error = { light = "#C0392B", dark = "#E06C75" }
+virtual_folder = { light = "#56704E", dark = "#8AA581" }
+
+[reader]
+body_format = "text"
+html_min_font_size = 11

@@ -175,6 +175,7 @@ extension AppModel {
             formatLossArmed = nil
             editor.setMode(.html, content: c.body)
             flash = L("Formatted text · %@ for text only", keymap.mention(.composeTogglePlain, in: Keymap.composeChain))
+            await rememberComposeFormat(.html)
         case .html:
             guard let client = core else { return }
             do {
@@ -188,9 +189,32 @@ extension AppModel {
                 guard composer?.opened == c.opened else { return }
                 editor.setMode(.text, content: r.text)
                 flash = L("Text only · %@ for formatted text", keymap.mention(.composeTogglePlain, in: Keymap.composeChain))
+                await rememberComposeFormat(.text)
             } catch {
                 flash = Self.composeErrorFlash(error)
             }
+        }
+    }
+
+    /// A conversion by ⇧⌘T makes `mode` the mode of the next mails: written
+    /// in `compose.format` of `config.toml` by the core
+    /// (`config_set_compose_format`, `edition.md`, section 3). Whoever
+    /// formats one mail almost always wants the next one formatted too, and
+    /// a setting to find in a file is not discovered.
+    ///
+    /// Only a conversion made calls it: the first ⇧⌘T that warns of lost
+    /// formatting changes nothing. Nothing is written when the mode is
+    /// already the default (a draft opened in the other mode and switched
+    /// back). The draft has changed mode either way: when the file cannot
+    /// be written (refused as it is), the status bar says so, and the
+    /// default stays what it was.
+    func rememberComposeFormat(_ mode: ComposeFormat) async {
+        guard let client = core, composeFormats.defaultFormat != mode.rawValue else { return }
+        do {
+            let formats: ComposeFormats = try await client.call("config_set_compose_format", ["format": mode.rawValue])
+            composeFormats = formats
+        } catch {
+            flash = L("The next mails keep their mode: %@", Self.composeErrorFlash(error))
         }
     }
 

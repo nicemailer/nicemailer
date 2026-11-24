@@ -1,0 +1,72 @@
+# The regular theme: a standard Mac window, for those who come from Apple
+# Mail (specifications/ui.md, "Un thème est une présentation"). Its
+# colors are those of macOS, which follow the appearance and the accent
+# color chosen in System Settings.
+version = 1
+
+[window]
+bar_type = "toolbar"
+status_bar_position = "top"
+title_bar = "merged"
+block_labels = true
+bar_height = 44
+bar_size = "medium"
+block_style = "pill"
+bar_line = true
+key_hints = false
+blocks = ["account", "folder", "attributes", "|", "view", "|", "move", "save", "ai", "->", "help"]
+default_columns = 3
+list_layout = "stacked"
+
+[fonts]
+interface = "system"
+reading = "system"
+reading_scale = 1.08
+reading_line_spacing = 4
+title_scale = 1.3
+
+[layout]
+row_height = 24
+row_radius = 6
+row_inset = 8
+zebra = true
+menu_row_height = 22
+popup_radius = 9
+popup_shadow = true
+popup_padding = 12
+menu_keys = "right"
+message_cards = true
+avatars = true
+attachments = "rows"
+reader_max_width = 0
+reader_title_padding = 0
+scrollers = "standard"
+separators = "lines"
+
+[motion]
+sidebar_ms = 260
+popup_ms = 0
+
+[colors]
+background = "system.text_background"
+sidebar = "system.window_background"
+list = "system.text_background"
+bar = "system.window_background"
+text = "system.label"
+muted = "system.secondary_label"
+accent = "system.accent"
+accent_text = "system.accent"
+selection = "system.selected_content_background"
+selection_text = "#FFFFFF"
+marked = { light = "#F3E3EE", dark = "#3A2E45" }
+marked_bar = { light = "#C2408F", dark = "#E08AC0" }
+separator = "system.separator"
+popup = "system.control_background"
+unread = "system.accent"
+flag = "system.orange"
+error = "system.red"
+virtual_folder = "system.accent"
+
+[reader]
+body_format = "html"
+html_min_font_size = 11

@@ -364,19 +364,19 @@ struct ComposeRulesTests {
     }
 }
 
-/// The reply through the keys of the geek theme (`GeekController`), against
+/// The reply through the keys of the geek theme (`InterfaceController`), against
 /// a fake core: `r`, the text typed, the saves, ⌘↩, Escape, ⌘⌫, `z`.
 @MainActor
 struct ComposeControllerTests {
     let core = FakeCore(handler: Fixture.answer)
     let model = AppModel()
-    let controller: GeekController
+    let controller: InterfaceController
     let editor: FakeEditor
 
     init() async {
         let defaults = TestDefaults.make()
         editor = FakeEditor(model: model)
-        controller = GeekController(model: model, defaults: defaults, textSize: TextSize())
+        controller = InterfaceController(model: model, defaults: defaults, textSize: TextSize())
         let c = controller
         editor.onLeave = { c.leaveText() }
         controller.pasteboard = NSPasteboard(name: NSPasteboard.Name("NiceMailerTests-\(UUID().uuidString)"))
@@ -1010,6 +1010,92 @@ struct ComposeControllerTests {
         #expect(model.selectedThreadId == model.threads[1].id)
     }
 
+    /// Each button of the title line of the reply runs what its key runs
+    /// (`InterfaceController.runComposeCommand`, `reponse.md`, section 6).
+    @Test func eachCommandOfTheTitleLineDoesWhatItsKeyDoes() async throws {
+        let (_, file) = try attachmentFixture()
+        model.chooseFiles = { [file] }
+        await reply()
+        type("Merci")
+        // Attach: the open panel, then the file attached, as ⇧⌘A.
+        controller.runComposeCommand(.attach)
+        #expect(await eventually { model.composer?.attachments.count == 1 })
+        // Send then…: the question of the filing, as ⇧⌘↩.
+        controller.runComposeCommand(.sendThen)
+        #expect(controller.activeChoice == .sendThen)
+        press("esc")
+        #expect(controller.activeChoice == nil)
+        // From: "Send from", as ⌥⌘F (one address here: the status bar
+        // says so).
+        controller.runComposeCommand(.from)
+        #expect(model.flash != nil || controller.activeChoice == .sendFrom)
+        // Format: the editor converts, as ⇧⌘T.
+        controller.runComposeCommand(.format)
+        #expect(await eventually { editor.modes.last?.mode == .html })
+        // Keep: back to the mail, the reply in Drafts, as Escape.
+        controller.runComposeCommand(.keep)
+        #expect(await eventually { model.composer == nil })
+        #expect(await eventually { core.calls("close_draft").count == 1 })
+    }
+
+    /// The button abandon drops the reply, as ⌘⎋.
+    @Test func theButtonAbandonDropsTheReply() async {
+        await reply()
+        type("Encore")
+        #expect(await eventually { core.calls("create_draft").count == 1 })
+        controller.runComposeCommand(.abandon)
+        #expect(await eventually { model.composer == nil })
+        #expect(await eventually { core.calls("discard_draft").count == 1 })
+    }
+
+    /// The button send queues the reply, as ⌘↩.
+    @Test func theButtonSendSendsTheReply() async {
+        await reply()
+        type("Envoi")
+        controller.runComposeCommand(.send)
+        #expect(await eventually { core.calls("send_draft").count == 1 })
+    }
+
+    /// Tooltips show after 300 ms, registered as a default: a value the
+    /// user wrote wins.
+    @Test func tooltipsShowSoonUnlessTheUserSaysOtherwise() throws {
+        let name = "NiceMailerTests-tooltips-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        Tooltips.register(in: defaults)
+        #expect(defaults.integer(forKey: Tooltips.delayKey) == 300)
+        defaults.set(1000, forKey: Tooltips.delayKey)
+        Tooltips.register(in: defaults)
+        #expect(defaults.integer(forKey: Tooltips.delayKey) == 1000)
+    }
+
+    /// The tooltip of the Bcc button says what a click does now.
+    @Test func theBccButtonSaysWhatAClickDoes() {
+        #expect(Compose.bccHelp(shown: false, canHide: true) == L("Show the Bcc line: recipients the others do not see"))
+        #expect(Compose.bccHelp(shown: true, canHide: true) == L("Hide the Bcc line"))
+        #expect(Compose.bccHelp(shown: true, canHide: false) == L("The Bcc line holds addresses: it stays shown"))
+    }
+
+    /// The buttons follow the keys of `keymap.toml`, in the order of the
+    /// line; keep is Escape, which no keymap changes.
+    @Test func theButtonsRemindTheKeysInEffect() {
+        let keymap = model.keymap
+        #expect(ComposeCommand.allCases.map(\.rawValue) == ["send", "send-then", "attach", "from", "format", "keep", "abandon"])
+        #expect(ComposeCommand.attach.key(keymap) == keymap.mention(.composeAttach, in: Keymap.composeChain))
+        #expect(ComposeCommand.send.key(keymap) == keymap.mention(.composeSend, in: Keymap.composeChain))
+        #expect(ComposeCommand.format.key(keymap) == "⇧⌘T")
+        // Escape written as the other keys write it: "esc", as in "⌘esc".
+        #expect(ComposeCommand.keep.key(keymap) == KeyChord.display("esc"))
+        #expect(ComposeCommand.abandon.key(keymap).hasSuffix(ComposeCommand.keep.key(keymap)))
+        #expect(ComposeCommand.keep.action == nil)
+        // Each has its own icon for a narrow line, a symbol of the system.
+        let icons = ComposeCommand.allCases.map(\.icon)
+        #expect(Set(icons).count == icons.count)
+        #expect(icons.allSatisfy { NSImage(systemSymbolName: $0, accessibilityDescription: nil) != nil })
+        // Every button explains itself in its tooltip.
+        #expect(ComposeCommand.allCases.allSatisfy { !$0.help.isEmpty && $0.help != $0.name })
+    }
+
     @Test func commandDeleteAbandonsAndZRestores() async {
         await reply()
         type("Mon texte")
@@ -1279,8 +1365,8 @@ struct ComposeControllerTests {
     /// Quarantine refuses the reply to the sender and the forward like the
     /// reply to all (`r`, `R`, `F` by default), not a new mail (`c`).
     @Test func quarantineRefusesTheRepliesAndTheForward() {
-        #expect(GeekController.quarantineRefused.isSuperset(of: [.composeReplyAll, .composeReplySender, .composeForward]))
-        #expect(!GeekController.quarantineRefused.contains(.composeNew))
+        #expect(InterfaceController.quarantineRefused.isSuperset(of: [.composeReplyAll, .composeReplySender, .composeForward]))
+        #expect(!InterfaceController.quarantineRefused.contains(.composeNew))
     }
 
     @Test func oneColumnShowsTheReplyInTheWholeWindow() async {
@@ -1300,13 +1386,13 @@ struct ComposeControllerTests {
 struct EditorFlowTests {
     let core = FakeCore(handler: Fixture.answer)
     let model = AppModel()
-    let controller: GeekController
+    let controller: InterfaceController
     let editor: FakeEditor
 
     init() async {
         let defaults = TestDefaults.make()
         editor = FakeEditor(model: model)
-        controller = GeekController(model: model, defaults: defaults, textSize: TextSize())
+        controller = InterfaceController(model: model, defaults: defaults, textSize: TextSize())
         let c = controller
         editor.onLeave = { c.leaveText() }
         controller.pasteboard = NSPasteboard(name: NSPasteboard.Name("NiceMailerTests-\(UUID().uuidString)"))
@@ -1371,6 +1457,56 @@ struct EditorFlowTests {
         #expect(core.calls("html_to_text").count == 1)
         #expect(editor.modes.last?.mode == .text)
         #expect(await eventually { model.composer?.format == .text })
+    }
+
+    /// ⇧⌘T makes the mode it converts to the mode of the next mails: the
+    /// core writes `compose.format` (`edition.md`, section 3), and the next
+    /// reply opens formatted.
+    @Test func shiftCommandTWritesTheDefaultMode() async throws {
+        #expect(model.composeFormats.defaultFormat == "text")
+        controller.handle(Self.key("T", [.command, .shift]))
+        #expect(await eventually { core.calls("config_set_compose_format").count == 1 })
+        #expect(core.calls("config_set_compose_format")[0]["format"] as? String == "html")
+        #expect(await eventually { model.composeFormats.defaultFormat == "html" })
+        // Back to text only: written too.
+        controller.handle(Self.key("T", [.command, .shift]))
+        #expect(await eventually { core.calls("config_set_compose_format").count == 2 })
+        #expect(core.calls("config_set_compose_format")[1]["format"] as? String == "text")
+        #expect(await eventually { model.composeFormats.defaultFormat == "text" })
+    }
+
+    /// The warning of lost formatting writes nothing; nor does a switch to
+    /// the mode that is already the default.
+    @Test func onlyAConversionWritesTheDefault() async {
+        core.handler = { method, params in
+            method == "html_to_text" ? ["text": "Bold", "formatted": true] : Fixture.answer(method, params)
+        }
+        controller.handle(Self.key("T", [.command, .shift]))
+        #expect(await eventually { core.calls("config_set_compose_format").count == 1 })
+        controller.handle(Self.key("T", [.command, .shift]))
+        #expect(await eventually { model.flash == L("The formatting will be lost · %@ again to convert", "⇧⌘T") })
+        #expect(core.calls("config_set_compose_format").count == 1, "the warning writes nothing")
+        // The default is already html: a draft switched to html again
+        // writes nothing.
+        await model.rememberComposeFormat(.html)
+        #expect(core.calls("config_set_compose_format").count == 1)
+    }
+
+    /// `config.toml` refused as it is: the draft changes mode anyway, and
+    /// the status bar says the default was not written.
+    @Test func aDefaultNotWrittenIsSaid() async {
+        core.handler = { method, params in
+            if method == "config_set_compose_format" {
+                return CoreClient.RPCError(code: -32602, message: "config.toml was not changed: refused",
+                                           data: ["reason": "config_not_written", "detail": "refused"])
+            }
+            return Fixture.answer(method, params)
+        }
+        controller.handle(Self.key("T", [.command, .shift]))
+        #expect(await eventually { model.composer?.format == .html })
+        let said = L("The next mails keep their mode: %@", L("config.toml was not changed: %@", "refused"))
+        #expect(await eventually { model.flash == said })
+        #expect(model.composeFormats.defaultFormat == "text")
     }
 
     /// Formatting would be lost: the first ⇧⌘T says so, the second converts.

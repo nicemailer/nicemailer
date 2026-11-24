@@ -222,6 +222,8 @@ enum Fixture {
                     "warning": NSNull()]
         case "remove_draft_attachment":
             return ["revision": (params["revision"] as? Int ?? 1) + 1]
+        case "config_set_compose_format":
+            return ["fonts": [], "sizes": [], "colors": [], "default_format": params["format"] ?? "text"]
         case "html_to_text":
             // A small stand-in for `mail_html::to_text`: a paragraph per
             // line, the tags dropped; formatted when it has a `<strong>`.

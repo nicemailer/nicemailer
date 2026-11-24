@@ -131,6 +131,21 @@ pub mod method {
     /// context and by menu, and why the file is refused (`KeymapView`,
     /// `raccourcis.md`).
     pub const KEYMAP_GET: &str = "keymap_get";
+    /// The theme in effect, resolved: `ui.theme` of `config.toml`, its
+    /// file of `themes/` and those it extends, every key with its value
+    /// (`ThemeView`, `themes.md`).
+    pub const THEME_GET: &str = "theme_get";
+    /// The themes that can be chosen: the built-in ones and the files of
+    /// `themes/`, with their origin, their parent and why a file is refused
+    /// (`ThemeListView`).
+    pub const THEME_LIST: &str = "theme_list";
+    /// Writes `ui.theme` in `config.toml`, the rest of the file kept as it
+    /// is (`ConfigSetThemeParams`).
+    pub const CONFIG_SET_THEME: &str = "config_set_theme";
+    /// Writes `compose.format` in `config.toml`, the rest of the file kept
+    /// as it is: the mode ⇧⌘T converted a draft to becomes the mode of the
+    /// next mails (`ConfigSetComposeFormatParams`, `edition.md`, section 3).
+    pub const CONFIG_SET_COMPOSE_FORMAT: &str = "config_set_compose_format";
     /// Changes the display order of the accounts (account picker, sidebar).
     pub const SET_ACCOUNT_ORDER: &str = "set_account_order";
     /// Saves the IMAP password of an account in the Keychain, for the
@@ -464,6 +479,16 @@ pub mod reason {
         ACCOUNT_READ_ONLY = "account_read_only": "this account is read-only (read_only = true in accounts.toml): nothing is changed";
         /// Sending from a read-only account.
         ACCOUNT_READ_ONLY_SEND = "account_read_only_send": "this account is read-only (read_only = true in accounts.toml): it cannot send";
+
+        // --- Themes ---
+
+        /// `config_set_theme` with a name no theme has (`themes.md`).
+        THEME_UNKNOWN = "theme_unknown": "no theme {theme}: neither built in nor a file of the folder themes";
+        /// `config_set_theme` could not write `config.toml`: the file is
+        /// refused as it is, or cannot be written.
+        CONFIG_NOT_WRITTEN = "config_not_written": "config.toml was not changed: {detail}";
+        /// `config_set_compose_format` with a mode the editor does not have.
+        COMPOSE_FORMAT_UNKNOWN = "compose_format_unknown": "no mode {format}: text or html";
         /// An empty password given.
         PASSWORD_EMPTY = "password_empty": "empty password";
         /// An empty SMTP password given.
@@ -639,6 +664,10 @@ pub mod reason {
         AI_PROMPT_UNAVAILABLE = "ai_prompt_unavailable": "the prompt {prompt} is not available in this version of NiceMailer yet";
         /// The prompt is not offered in this folder.
         AI_PROMPT_NOT_HERE = "ai_prompt_not_here": "the prompt {prompt} is not offered in this folder";
+        /// A prompt of a reply (`lang = "replied"`: translate it into the
+        /// language of the mail received) on a draft that replies to no
+        /// mail, or to one whose text is not there.
+        AI_REPLY_NEEDED = "ai_reply_needed": "this prompt works on a reply: the draft replies to no mail whose text is here";
         /// A prompt on a selection, without a selection.
         AI_SELECTION_NEEDED = "ai_selection_needed": "select the text to work on first";
         /// A prompt on the whole text, with a selection.
@@ -944,6 +973,11 @@ pub enum Event {
     /// file gives `ConfigError` with `file` `keymap.toml`, and the previous
     /// keys stay (`raccourcis.md`, section 3).
     KeymapChanged {},
+    /// The theme in effect changed: another `ui.theme`, a file of its
+    /// chain of inheritance changed, refused or valid again. Read it again
+    /// with `theme_get`. A refused theme file also gives `ConfigError` with
+    /// `file` `themes/<name>.toml` (`themes.md`, section 3).
+    ThemeChanged {},
     /// `config.toml` or `accounts.toml` is invalid and both were refused
     /// whole: the previous settings stay applied (`configuration.md`,
     /// section 4). `file` names the file at fault (`config.toml` or
@@ -1782,8 +1816,9 @@ pub struct MessageView {
     /// are removed (`tracking_pixels`).
     pub has_remote_content: bool,
     /// Display preferred for the sender's mails: `"text"`, `"html"`,
-    /// `"images"` (HTML with remote images), or `None` for the client's
-    /// default (`set_body_format`).
+    /// `"images"` (HTML with remote images), or `None`: the default of the
+    /// theme, `reader.body_format` (`themes.md`, section 6.6). Set by
+    /// `set_body_format`, always to an explicit value.
     pub from_body_format: Option<String>,
     /// The text body cut into segments, for a simplified display: what the
     /// message brings is visible, the history it repeats is `hidden`
@@ -2973,6 +3008,177 @@ pub struct KeymapView {
     pub warnings: Vec<ConfigProblem>,
 }
 
+/// Result of `theme_get`: the theme in effect, resolved (`themes.md`,
+/// section 8). Every key of the catalog has its value: the app never reads
+/// a file nor walks the inheritance itself.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ThemeView {
+    /// The theme applied: `ui.theme`, or `geek` when it names no theme.
+    pub name: String,
+    /// The chain of inheritance, from the theme to the built-in one it
+    /// rests on: `["sepia", "clean"]`.
+    pub chain: Vec<String>,
+    /// Path of the directory of the themes, next to `config.toml`.
+    pub path: String,
+    pub window: ThemeWindow,
+    pub fonts: ThemeFonts,
+    pub layout: ThemeLayout,
+    pub motion: ThemeMotion,
+    /// Every color of the catalog, by its name (`background`,
+    /// `accent_text`…).
+    pub colors: BTreeMap<String, ThemeColor>,
+    pub reader: ThemeReader,
+    /// Why a file of the chain is refused: the theme is then made of its
+    /// last valid version (`themes.md`, section 3).
+    pub error: Option<ConfigProblem>,
+    /// Unknown keys, a missing `extends`, a `ui.theme` naming no theme,
+    /// and the colors below the contrast of WCAG AA (section 6.5).
+    pub warnings: Vec<ConfigProblem>,
+}
+
+/// `[window]` of a theme (`themes.md`, section 6.1).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ThemeWindow {
+    /// `status_bar` or `toolbar`.
+    pub bar_type: String,
+    /// `top`, `bottom` or `hidden`.
+    pub status_bar_position: String,
+    /// `shown`, `hidden` or `merged`.
+    pub title_bar: String,
+    pub key_hints: bool,
+    /// The blocks of actions say their name beside their icon.
+    pub block_labels: bool,
+    /// Height of the status bar or toolbar, in points for a 12 pt text of the bar.
+    pub bar_height: u32,
+    /// `small`, `medium` or `large`: the icons and texts of the bar.
+    pub bar_size: String,
+    /// `plain` or `pill`.
+    pub block_style: String,
+    /// A line between the status bar and the mails.
+    pub bar_line: bool,
+    /// The blocks shown, in order, with the separators `|` and `->`.
+    pub blocks: Vec<String>,
+    pub default_columns: u8,
+    /// How the list shows each mail until the user chooses with `v` `l`:
+    /// `columns` (one line per mail) or `stacked` (three lines: sender and
+    /// date, subject, snippet).
+    pub list_layout: String,
+}
+
+/// `[fonts]` of a theme (section 6.2). A font is `system`, `system-mono`,
+/// `system-serif`, `system-rounded` or the name of a family.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ThemeFonts {
+    pub interface: String,
+    pub reading: String,
+    pub reading_scale: f64,
+    /// Points added between two lines of the body, whatever the text size.
+    pub reading_line_spacing: u32,
+    pub title_scale: f64,
+}
+
+/// `[layout]` of a theme (section 6.3): lengths in points for a 12 pt text.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ThemeLayout {
+    pub row_height: u32,
+    pub row_radius: u32,
+    pub row_inset: u32,
+    pub zebra: bool,
+    /// Height of a row of the menus and pickers; 0: the height of its text.
+    pub menu_row_height: u32,
+    pub popup_radius: u32,
+    pub popup_shadow: bool,
+    /// Margin inside menus, pickers and panels, in points.
+    pub popup_padding: u32,
+    /// `left` or `right`.
+    pub menu_keys: String,
+    pub message_cards: bool,
+    pub avatars: bool,
+    /// `tiles` (a grid of tiles with a symbol, geek) or `rows` (a row per
+    /// file with the icon of macOS and the whole name).
+    pub attachments: String,
+    /// 0: the whole width.
+    pub reader_max_width: u32,
+    /// Room above and below the subject of the reader, in points, also
+    /// added to the 12 pt on its sides; 0: none (geek).
+    pub reader_title_padding: u32,
+    /// `none`, `thin` or `standard`.
+    pub scrollers: String,
+    /// `lines` or `space`.
+    pub separators: String,
+}
+
+/// `[reader]` of a theme (section 6.6).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ThemeReader {
+    /// `text` or `html`: how a received mail is shown when nothing is
+    /// remembered for its sender (`address.body_format` NULL). A choice
+    /// remembered for the sender wins.
+    pub body_format: String,
+    /// The smallest text of a mail in HTML, in points for a 12 pt text,
+    /// grown with the text size as the whole page is; 0: no minimum.
+    pub html_min_font_size: u32,
+}
+
+/// `[motion]` of a theme (section 6.4), in milliseconds.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ThemeMotion {
+    pub sidebar_ms: u32,
+    pub popup_ms: u32,
+}
+
+/// A color of a theme (section 5.1): a pair `#RRGGBB` or `#RRGGBBAA`, in
+/// capitals, for the light and the dark appearance (the same twice when
+/// the file gives one), or a color of macOS the app translates.
+///
+/// Rust note: `untagged` lets serde tell the two forms apart by their
+/// fields, `{"light": …, "dark": …}` or `{"system": …}`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum ThemeColor {
+    Pair { light: String, dark: String },
+    System { system: String },
+}
+
+/// Result of `theme_list` (`themes.md`, section 8).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ThemeListView {
+    /// Path of the directory of the themes.
+    pub path: String,
+    /// The theme chosen in `config.toml` (`ui.theme`).
+    pub selected: String,
+    /// The built-in themes first, then the others by name.
+    pub themes: Vec<ThemeEntry>,
+}
+
+/// One theme of `ThemeListView`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ThemeEntry {
+    pub name: String,
+    /// `builtin`, `builtin_modified` (a file of the same name modifies it)
+    /// or `user`.
+    pub origin: String,
+    /// What it extends; `None` for a built-in theme.
+    pub parent: Option<String>,
+    /// Why its file, or one it extends, is refused; `None` when it can be
+    /// used.
+    pub error: Option<ConfigProblem>,
+}
+
+/// Parameters of `config_set_theme`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConfigSetThemeParams {
+    /// The name of a theme `theme_list` gives.
+    pub name: String,
+}
+
+/// Parameters of `config_set_compose_format`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConfigSetComposeFormatParams {
+    /// `text` or `html`.
+    pub format: String,
+}
+
 /// One key and its action, in `KeymapView`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct KeyBinding {
@@ -3058,8 +3264,14 @@ impl Default for McpConfig {
 /// `ConfigChanged`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UiConfig {
-    /// `shown` (the default) or `hidden`.
-    pub title_bar: String,
+    /// `ui.title_bar`, `shown` or `hidden`, only when the file writes it:
+    /// replaced by `window.title_bar` of the theme (`themes.md`, section 9),
+    /// it still wins while it is written. `None` (absent): the theme's.
+    #[serde(default)]
+    pub title_bar: Option<String>,
+    /// `ui.theme`: the name of the theme chosen (`geek` by default).
+    #[serde(default)]
+    pub theme: String,
     /// `ui.auto_confirm_calls`: the app confirms its calls itself
     /// (`docs/geek-ui.md`, "Calling a number"). `false` when absent, for a
     /// client reading an older core.
@@ -3891,6 +4103,12 @@ pub struct AiListPromptsParams {
     /// The app's language, for the labels (`en`, `fr`).
     #[serde(default)]
     pub lang: Option<String>,
+    /// For the compose screen: whether the draft replies to a mail. `false`
+    /// leaves out the prompts of a reply (translate it into the language
+    /// of the mail received, `lang = "replied"`); absent, every prompt is
+    /// listed.
+    #[serde(default)]
+    pub reply: Option<bool>,
 }
 
 /// A prompt of an AI menu.

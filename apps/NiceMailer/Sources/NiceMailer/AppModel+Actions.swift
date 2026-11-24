@@ -147,10 +147,25 @@ extension AppModel {
     /// Flag for the target threads, by the same rule as `u` (all flagged
     /// if one is not), shown at once and sent in one request.
     func toggleFlagTargets() {
-        guard let client = core else { return }
         let targets = targetThreads
         guard !targets.isEmpty else { return }
-        let flagged = targets.contains { !$0.isFlagged }
+        setFlagged(targets, targets.contains { !$0.isFlagged })
+    }
+
+    /// Flags the conversation `id` if it has no flag, removes its flag
+    /// otherwise: the flag button of the reader's title line, which acts on
+    /// the mail shown alone, whatever rows are marked (`ui.md`, "Boutons de
+    /// l'en-tête"). The same request as `*`.
+    func toggleFlag(of id: Int) {
+        guard let thread = threads.first(where: { $0.id == id }) else { return }
+        setFlagged([thread], !thread.isFlagged)
+    }
+
+    /// Sets the flag of `targets` to `flagged`: shown at once in the list,
+    /// sent in one request; on an error, the list is read again and shows
+    /// the core's state.
+    private func setFlagged(_ targets: [ThreadSummary], _ flagged: Bool) {
+        guard let client = core else { return }
         let ids = Set(targets.map(\.id))
         threads = threads.map { ids.contains($0.id) ? $0.with(unreadCount: $0.unreadCount, isFlagged: flagged) : $0 }
         Task {
@@ -307,15 +322,17 @@ extension AppModel {
 
     /// Display of the open thread: "text", "html" or "images" (`ui.md`,
     /// "Images distantes"). The choice remembered for the sender of its
-    /// latest received message, text by default in the geek theme. A
-    /// remembered "images" only applies when that mail's images load by
+    /// latest received message; without one, the theme's
+    /// (`reader.body_format`, `themes.md`, section 6.6: text in geek, HTML
+    /// in clean and regular). A mail without HTML is text in every theme.
+    /// A remembered "images" only applies when that mail's images load by
     /// themselves (`RemoteImages.automatic`: authenticated, in a folder
     /// that allows them); otherwise the thread is shown as HTML, without
     /// its images, unless the user asked for them (`remoteImagesOnce`).
     var bodyFormat: String {
         guard let m = latestReceived, m.bodyHtml != nil else { return "text" }
         if let once = remoteImagesOnce, once == openThread?.id, imagesOffered { return "images" }
-        let format = m.fromBodyFormat ?? "text"
+        let format = m.fromBodyFormat ?? theme.current.reader.bodyFormat
         return format == "images" && !RemoteImages.automatic(m) ? "html" : format
     }
 
@@ -1009,7 +1026,7 @@ enum Selection {
 // MARK: - Text size
 
 extension AppModel {
-    /// ⌘+, ⌘− or ⌘0, from the keys (`GeekController.perform`) or from the
+    /// ⌘+, ⌘− or ⌘0, from the keys (`InterfaceController.perform`) or from the
     /// View menu: one place for both, so that the status bar always says
     /// the size reached. The menu items used to change the size without a
     /// word, and the message of an earlier key stayed on screen, wrong.

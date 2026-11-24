@@ -29,7 +29,7 @@ struct MailFrameTests {
     }
 
     @Test func theStylesOfAMailStayInItsFrame() async throws {
-        let base = MailFrame.baseStyle(hiding: ".gmail_quote { display: none; }", scale: 1)
+        let base = MailFrame.baseStyle(hiding: ".gmail_quote { display: none; }")
         let page = """
         <html><head><style>p { letter-spacing: 3px; } .att { color: rgb(0, 0, 255); }</style></head><body>
         \(MailFrame.wrap("<style>p{color:rgb(255,0,0)} .att{color:rgb(255,0,0)} :host{margin-left:7px}</style><p id=\"a\">A</p><div class=\"gmail_quote\">old</div>", base: base))
