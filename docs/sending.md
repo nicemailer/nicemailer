@@ -12,7 +12,7 @@ How a reply is written in the app and sent by the core. The rules are those of `
 | `c` | anywhere in the list | a new mail from the account of the view; left empty, Escape drops it |
 | ⌘↩ | the reply | send, after the undo delay (5 s); the status bar says "Sending in 5 s · z to cancel" |
 | ⇧⌘↩ | the reply | "Send, then file the conversation in": `a` Archive, `w` Waiting, `t` Todo, `s` leave it where it is (trial); the key (or a click) sends, Escape goes back to the text. On a new mail, "Send, then file this mail in": the mail written is what is filed, and `s` leaves it in Sent |
-| Escape | the reply | back to the mail; the reply goes to Drafts (here and on the server), and `r` on the mail, or `r` / Return on the draft in Drafts, reopens it |
+| Escape | the reply | back to the mail; the reply goes to Drafts (here and on the server), and `r` on the mail, or in Drafts `r`, Return or a click on the draft shown in the reader, reopens it |
 | ⌘⎋ | the reply | abandon the reply; `z` gives it back with its text (⌘⌫ is the Mac's "delete to the start of the line", in the text) |
 | ⇧⌘T | the reply | text only ↔ formatted text ([editor.md](editor.md)) |
 | ⌃I | the reply | the AI menu ([ai.md](ai.md)); ⌘I is the italic |
@@ -53,6 +53,8 @@ The subject is a line of text; Return goes to the text. What changed is saved at
 **Limits.** Past 25 MB once encoded (base64 makes a file a third bigger), the status bar warns that many servers refuse such a mail; past 100 MB of files on a draft, the core refuses (the mail is built in memory).
 
 **The mail.** With files, `build_message` writes a `multipart/mixed` message: the text, then each file in base64 (lines of 76 characters), its name in quotes when it is plain ASCII, else in RFC 2231 (`filename*0*=utf-8''caf%C3%A9…`, in pieces so that no line is long) and as an RFC 2047 word in `name` for older readers. The boundary comes from the `Message-ID`: the same draft gives the same bytes. The `send` action keeps such a message in `outgoing.noindex` and names it in its payload (`mime_blob`, `copy_blob`), so that reading the payloads of `pending_action` stays light.
+
+**Editing a draft from Drafts.** In Drafts, the mail shown on the right is a draft: a click on it reopens it in the editor, as Return or `r` does (November 2026). The text view and the web view of the reader keep their clicks for selecting, so a transparent layer covers the draft there and takes the click instead (`DraftClickLayer`, `InterfaceController.readerEditsDraft`); the pointer is the text cursor over it and the tooltip says "Click to edit the draft". The text of a draft is selected in the editor, once reopened. Tests: `DraftReaderTests`, `drafts.uiscript`.
 
 **Drafts.** Adding or removing a file is a revision: the copy in Drafts carries the files, and is written again only when the draft changed since the last one. The previous copy leaves the raw store with its row of Drafts.
 

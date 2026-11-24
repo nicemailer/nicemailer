@@ -1,4 +1,5 @@
-# Deleting a draft (`dossiers.md`, "Sent et Drafts"): a draft is not moved,
+# Drafts (`dossiers.md`, "Sent et Drafts"): a click on the draft shown
+# edits it. Deleting a draft: a draft is not moved,
 # only deleted. In Drafts, `d` (archive) is refused and says so; Delete
 # puts the draft in Deleted, alone: the conversation it answers stays in
 # the Inbox. `z` brings it back. (The fake mail has 7 conversations in
@@ -8,6 +9,7 @@ expect selected_subject ~ La facture de mars
 key r
 expect composing = true
 type Brouillon à jeter
+expect compose_text ~ Brouillon à jeter
 key esc
 expect composing = false
 expect flash ~ Reply kept in Drafts
@@ -16,6 +18,15 @@ key r
 expect folder = Drafts
 expect thread_count = 8
 expect selected_subject ~ La facture de mars
+# A click on the draft shown reopens it to be edited, as Return does;
+# Escape keeps it in Drafts.
+click reader:draft
+expect composing = true
+expect compose_text ~ Brouillon à jeter
+key esc
+expect composing = false
+expect folder = Drafts
+expect thread_count = 8
 key d
 expect flash ~ A draft is not moved: Delete puts it in Deleted
 expect thread_count = 8

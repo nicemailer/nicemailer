@@ -24,6 +24,7 @@ How to write it:
 - **Reading:** Mails in HTML follow the text size (⌘+ ⌘−) entirely, the sizes they write themselves included: a mail written in 12 pt Calibri by Outlook is no longer smaller than the text around it. No text of a mail is drawn smaller than 11 pt for a 12 pt text (`html_min_font_size` in the `[reader]` table of a theme, 0 to turn it off).
 - **Reading:** A flag button on the title line of the mail shown says whether it has a flag, and a click adds or removes it, for that mail alone.
 - **Window:** The red, yellow and green buttons can sit in the status bar, without a title bar: `title_bar = "merged"` in the `[window]` table of a theme (clean does it).
+- **Writing:** In Drafts, a click on the draft shown reopens it to be edited, as Return does.
 - **Writing:** The commands of a reply (send, send then…, attach, from, format, keep, abandon) are buttons on their own line under the subject: click one to do what its key does; its tooltip explains it.
 - **Accounts:** For a Gmail, iCloud or Fastmail address, the Preferences say under the password that it must be an app password, with a link to the step-by-step guide; if the server refuses the password, the error says so first.
 - **Accounts:** Give an account a new password from its page in the Preferences (Settings…, Accounts), after changing the password of the mailbox or creating a new app password. Until now it took the `nicemailer account password` command.
@@ -41,6 +42,7 @@ How to write it:
 ### Fixed
 
 - **Keyboard:** The main window could ignore every shortcut (`j`, `k`, `c`…) from launch, while the ⌘ shortcuts still worked.
+- **Reading:** A mail without text (an empty body, a signature alone) says "no text" instead of "only quotes earlier messages".
 - **Status bar:** A menu opened from a block near the right edge of the window stays whole, a little to the left of its block, instead of being cut and shifting the columns of the list.
 - **Status bar:** A menu or picker opened by a click (the account `@`, the folder, Move…) now closes with a second click on its block, or a click on an empty part of the bar or the toolbar, as it already did with a click on the mail.
 - **Geek:** Dates, counts and the other secondary texts are a little darker in light and lighter in dark, to be read without effort (contrast WCAG AA).

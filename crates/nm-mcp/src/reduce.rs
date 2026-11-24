@@ -415,6 +415,7 @@ mod tests {
             from_body_format: None,
             segments,
             only_quotes: false,
+            no_text: false,
             expanded: true,
             show_recipients: false,
             attachments: vec![],

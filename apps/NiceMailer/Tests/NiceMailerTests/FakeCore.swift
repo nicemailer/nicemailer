@@ -153,7 +153,7 @@ enum Fixture {
             "auth_result": "unknown", "body_html": id == 3 ? "<p>Hello</p>" : NSNull(),
             "has_remote_content": false, "from_body_format": NSNull(),
             "segments": [["kind": "text", "text": "Hello, see https://example.org/\(id)", "depth": 0, "hidden": false, "in_thread": false]],
-            "only_quotes": false, "expanded": true, "show_recipients": false,
+            "only_quotes": false, "no_text": false, "expanded": true, "show_recipients": false,
             "attachments": id == 4 ? Fixture.attachments : id == 6 ? Fixture.otherAttachments : [],
             "unsubscribe": Fixture.unsubscribe[id] ?? NSNull(),
             "tracking_pixels": 0,

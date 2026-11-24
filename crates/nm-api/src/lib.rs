@@ -1826,6 +1826,14 @@ pub struct MessageView {
     pub segments: Vec<SegmentView>,
     /// The message brings nothing new: it only quotes earlier ones.
     pub only_quotes: bool,
+    /// The body is downloaded and holds nothing written and nothing
+    /// quoted (an empty body, blank lines, a signature alone): clients say
+    /// "no text" rather than "only quotes" (`docs/thread-display.md`).
+    /// False while the body is not downloaded: nothing is known of it.
+    /// Rust note: `#[serde(default)]` reads a missing field as `false`, so
+    /// a message written by an older core still parses.
+    #[serde(default)]
+    pub no_text: bool,
     /// Shown unfolded by default: the latest message and the unread ones,
     /// as in Gmail; the others are folded on one line.
     pub expanded: bool,

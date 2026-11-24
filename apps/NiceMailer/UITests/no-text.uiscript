@@ -1,0 +1,17 @@
+# A mail without text (docs/thread-display.md): the reader says "no text",
+# not "only quotes earlier messages", which it does not
+# (fixtures/no-text.mbox: an empty body, then a mail with a word).
+key @
+type fixture
+key ret
+key ;
+key a
+expect selected_subject = Sans un mot
+expect reader_text ~ no text
+expect reader_text !~ only quotes
+snap no-text
+# A mail with text: no note.
+key j
+expect selected_subject = Avec un mot
+expect reader_text ~ Merci.
+expect reader_text !~ no text

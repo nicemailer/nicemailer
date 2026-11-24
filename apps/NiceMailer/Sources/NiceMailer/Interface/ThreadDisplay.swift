@@ -143,9 +143,15 @@ enum ThreadDisplay {
                                book: book[m.id]))
             if m.onlyQuotes && !state.showAll {
                 out.append(.note(messageId: m.id, text: L("only quotes earlier messages")))
+            } else if m.noText && !state.showAll {
+                // Nothing written, nothing quoted (an empty body, a
+                // signature alone, files without a word): said so, rather
+                // than "only quotes", which it does not. The core decides
+                // (`no_text`, `clean.rs`), as it does for `only_quotes`.
+                out.append(.note(messageId: m.id, text: L("no text")))
             }
-            if m.segments.isEmpty {
-                // Body not downloaded, or an empty message.
+            if m.segments.isEmpty, !m.noText {
+                // Body not downloaded (an empty one has its note above).
                 let text = m.bodyText ?? L("(body not downloaded)")
                 out.append(.segment(messageId: m.id, index: 0, kind: "text", text: text, depth: 0))
             }
@@ -195,6 +201,7 @@ enum ThreadDisplay {
     /// nothing new.
     static func snippet(_ m: MessageView) -> String {
         if m.onlyQuotes { return L("only quotes earlier messages") }
+        if m.noText { return L("no text") }
         let text = m.segments.first { !$0.hidden && ($0.kind == "text" || $0.kind == "forward") }?.text ?? m.bodyText ?? ""
         let flat = text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
         return String(flat.prefix(120))

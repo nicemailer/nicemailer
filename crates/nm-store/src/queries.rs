@@ -966,6 +966,7 @@ impl Store {
                     // Filled below, once the whole thread is known.
                     segments: vec![],
                     only_quotes: false,
+                    no_text: false,
                     expanded: false,
                     show_recipients: false,
                     attachments: vec![],
@@ -1357,6 +1358,7 @@ fn present_thread(messages: &mut [MessageView], own: &BTreeSet<String>) {
                 })
                 .collect();
             m.only_quotes = c.only_quotes;
+            m.no_text = c.no_text;
         }
         // Gmail's rule: the latest message and the unread ones are open; a
         // message that only quotes stays folded unless it is the latest.

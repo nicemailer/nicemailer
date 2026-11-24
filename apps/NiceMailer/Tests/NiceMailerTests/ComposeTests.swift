@@ -11,7 +11,7 @@ struct ComposeRulesTests {
             "from_addr": addr ?? NSNull(), "to": [], "cc": [], "date_sent": date, "date_received": date,
             "body_text": "x", "is_seen": true, "is_flagged": false, "is_answered": false, "has_attachments": false,
             "auth_result": "pass", "body_html": NSNull(), "has_remote_content": false, "from_body_format": NSNull(),
-            "segments": [], "only_quotes": false, "expanded": true, "show_recipients": false,
+            "segments": [], "only_quotes": false, "no_text": false, "expanded": true, "show_recipients": false,
             "attachments": [], "unsubscribe": NSNull(), "tracking_pixels": 0, "links": [],
         ]
         return try CoreClient.decoder.decode(MessageView.self, from: JSONSerialization.data(withJSONObject: json))

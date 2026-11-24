@@ -167,6 +167,13 @@ struct MessageView: Decodable, Identifiable, Hashable {
     let segments: [SegmentView]
     /// Brings nothing new: only quotes earlier messages.
     let onlyQuotes: Bool
+    /// Nothing written and nothing quoted (an empty body, a signature
+    /// alone): the reader says "no text" (`docs/thread-display.md`). False
+    /// while the body is not downloaded.
+    /// Swift note: a `var` with a default value is still decoded from the
+    /// JSON, and the memberwise initializer may leave it out, so the tests
+    /// that build a `MessageView` by hand need not name it.
+    var noText: Bool = false
     /// Unfolded by default (latest message, unread ones).
     let expanded: Bool
     /// Recipients worth showing (they changed since the previous message).
