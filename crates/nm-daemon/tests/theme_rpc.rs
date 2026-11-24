@@ -27,7 +27,7 @@ fn the_builtin_themes_are_created_and_geek_is_sent() {
     let dir = tempfile::tempdir().unwrap();
     let _core = start(dir.path());
     let mut c = Client::connect(dir.path());
-    for name in ["geek", "clean", "regular"] {
+    for name in ["geek", "clean", "regular", "minimal"] {
         let text = std::fs::read_to_string(dir.path().join(format!("themes/{name}.toml"))).unwrap();
         assert_eq!(text, nm_engine::theme::template(name).unwrap());
     }
@@ -44,7 +44,15 @@ fn the_builtin_themes_are_created_and_geek_is_sent() {
     let names: Vec<_> = l["themes"].as_array().unwrap().iter().map(|t| (t["name"].clone(), t["origin"].clone())).collect();
     // The files created change nothing: the themes are still the built-in
     // ones, not "modified".
-    assert_eq!(names, vec![(json!("geek"), json!("builtin")), (json!("clean"), json!("builtin")), (json!("regular"), json!("builtin"))]);
+    assert_eq!(
+        names,
+        vec![
+            (json!("geek"), json!("builtin")),
+            (json!("clean"), json!("builtin")),
+            (json!("regular"), json!("builtin")),
+            (json!("minimal"), json!("builtin")),
+        ]
+    );
 }
 
 #[test]

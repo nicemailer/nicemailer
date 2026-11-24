@@ -15,11 +15,34 @@ struct ThemeTests {
         return all[name] as! [String: Any]
     }
 
-    @Test func theThreeBuiltInThemesAreEmbedded() {
-        #expect(Set(ThemeStore.builtins.keys) == ["geek", "clean", "regular"])
+    @Test func theBuiltInThemesAreEmbedded() {
+        #expect(Set(ThemeStore.builtins.keys) == ["geek", "clean", "regular", "minimal"])
         #expect(ThemeStore.builtins["regular"]?.window.barType == "toolbar")
         #expect(ThemeStore.builtins["clean"]?.motion.sidebarMs == 120)
         #expect(ThemeStore.builtins["geek"]?.layout.rowHeight == 20)
+    }
+
+    /// minimal is clean in the font of geek, with a smaller bar that
+    /// reminds the keys, a wider text, no animation and mails as text
+    /// (`themes.md`, "Thème minimal").
+    @Test func minimalIsCleanWithItsOwnSettings() {
+        let minimal = ThemeStore.builtins["minimal"]!
+        let clean = ThemeStore.builtins["clean"]!
+        #expect(minimal.window.titleBar == "merged")
+        #expect(minimal.window.barSize == "small")
+        #expect(Look.barScale(minimal) == 0.85)
+        #expect(minimal.window.barHeight == 30)
+        #expect(minimal.window.keyHints)
+        #expect(minimal.fonts.interface == "iA Writer Mono V")
+        #expect(minimal.fonts.reading == "iA Writer Mono V")
+        #expect(minimal.layout.readerMaxWidth == 760)
+        #expect(minimal.motion.sidebarMs == 0 && minimal.motion.popupMs == 0)
+        #expect(minimal.reader.bodyFormat == "text")
+        // The rest is clean's: its colors, its list, its rows.
+        #expect(minimal.colors == clean.colors)
+        #expect(minimal.window.listLayout == clean.window.listLayout)
+        #expect(minimal.layout.rowHeight == clean.layout.rowHeight)
+        #expect(minimal.layout.readerTitlePadding == clean.layout.readerTitlePadding)
     }
 
     /// geek draws what it drew before the themes became files: the colors
@@ -157,6 +180,7 @@ struct ThemeChooserTests {
                 ["name": "geek", "origin": "builtin", "parent": NSNull(), "error": NSNull()],
                 ["name": "clean", "origin": "builtin_modified", "parent": NSNull(), "error": NSNull()],
                 ["name": "regular", "origin": "builtin", "parent": NSNull(), "error": NSNull()],
+                ["name": "minimal", "origin": "builtin", "parent": NSNull(), "error": NSNull()],
                 ["name": "sepia", "origin": "user", "parent": "clean", "error": NSNull()],
                 ["name": "broken", "origin": "user", "parent": NSNull(),
                  "error": ["file": "themes/broken.toml", "line": 2, "key": "layout.zebra", "message": "expected true or false"]],
@@ -178,10 +202,11 @@ struct ThemeChooserTests {
         }
         let chooser = ThemeChooser(client: core)
         await chooser.load()
-        #expect(chooser.themes.map(\.name) == ["geek", "clean", "regular", "sepia", "broken"])
+        #expect(chooser.themes.map(\.name) == ["geek", "clean", "regular", "minimal", "sepia", "broken"])
         #expect(chooser.selected == "geek")
         #expect(chooser.themes[1].detail == L("Built in, modified by its file"))
-        #expect(chooser.themes[3].detail == L("Extends %@", "clean"))
+        #expect(chooser.themes[3].detail == L("Built in"))
+        #expect(chooser.themes[4].detail == L("Extends %@", "clean"))
 
         // The theme the core answers is applied at once.
         let store = ThemeStore()
@@ -268,6 +293,7 @@ struct BarSizeTests {
     }
 
     @Test func theBuiltInThemesKeepTheBarTheyDrew() {
+        // minimal has its own, smaller bar (`minimalIsCleanWithItsOwnSettings`).
         for name in ["geek", "clean", "regular"] {
             #expect(ThemeStore.builtins[name]!.window.barSize == "medium", "\(name)")
             #expect(Look.barScale(ThemeStore.builtins[name]!) == 1, "\(name)")

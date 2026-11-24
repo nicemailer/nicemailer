@@ -283,6 +283,148 @@
     "error": null,
     "warnings": []
   },
+  "minimal": {
+    "name": "minimal",
+    "chain": [
+      "minimal"
+    ],
+    "path": "~/.config/nicemailer/themes",
+    "window": {
+      "bar_type": "status_bar",
+      "status_bar_position": "top",
+      "title_bar": "merged",
+      "key_hints": true,
+      "block_labels": true,
+      "bar_height": 30,
+      "bar_size": "small",
+      "block_style": "pill",
+      "bar_line": true,
+      "blocks": [
+        "account",
+        "folder",
+        "attributes",
+        "|",
+        "view",
+        "|",
+        "move",
+        "save",
+        "ai",
+        "->",
+        "help"
+      ],
+      "default_columns": 2,
+      "list_layout": "stacked"
+    },
+    "fonts": {
+      "interface": "iA Writer Mono V",
+      "reading": "iA Writer Mono V",
+      "reading_scale": 1.15,
+      "reading_line_spacing": 6,
+      "title_scale": 1.7
+    },
+    "layout": {
+      "row_height": 30,
+      "row_radius": 8,
+      "row_inset": 8,
+      "zebra": false,
+      "menu_row_height": 26,
+      "popup_radius": 14,
+      "popup_shadow": true,
+      "popup_padding": 18,
+      "menu_keys": "right",
+      "message_cards": false,
+      "avatars": false,
+      "attachments": "rows",
+      "reader_max_width": 760,
+      "reader_title_padding": 12,
+      "scrollers": "thin",
+      "separators": "space"
+    },
+    "motion": {
+      "sidebar_ms": 0,
+      "popup_ms": 0
+    },
+    "colors": {
+      "accent": {
+        "light": "#8AA581",
+        "dark": "#8AA581"
+      },
+      "accent_text": {
+        "light": "#4E6A46",
+        "dark": "#9DBB93"
+      },
+      "background": {
+        "light": "#FFFFFF",
+        "dark": "#1B1D1F"
+      },
+      "bar": {
+        "light": "#FFFFFF",
+        "dark": "#18191B"
+      },
+      "error": {
+        "light": "#C0392B",
+        "dark": "#E06C75"
+      },
+      "flag": {
+        "light": "#D9661C",
+        "dark": "#F0883E"
+      },
+      "list": {
+        "light": "#FFFFFF",
+        "dark": "#18191B"
+      },
+      "marked": {
+        "light": "#F3E3EE",
+        "dark": "#3A2E45"
+      },
+      "marked_bar": {
+        "light": "#C2408F",
+        "dark": "#E08AC0"
+      },
+      "muted": {
+        "light": "#676C65",
+        "dark": "#92978F"
+      },
+      "popup": {
+        "light": "#FFFFFF",
+        "dark": "#222427"
+      },
+      "selection": {
+        "light": "#EEF2EC",
+        "dark": "#272D26"
+      },
+      "selection_text": {
+        "light": "#1C1E1B",
+        "dark": "#E6E7E3"
+      },
+      "separator": {
+        "light": "#ECECE8",
+        "dark": "#2A2C2F"
+      },
+      "sidebar": {
+        "light": "#F6F6F3",
+        "dark": "#1E2022"
+      },
+      "text": {
+        "light": "#1C1E1B",
+        "dark": "#E6E7E3"
+      },
+      "unread": {
+        "light": "#B07D16",
+        "dark": "#E6C07B"
+      },
+      "virtual_folder": {
+        "light": "#4E6A46",
+        "dark": "#9DBB93"
+      }
+    },
+    "reader": {
+      "body_format": "text",
+      "html_min_font_size": 11
+    },
+    "error": null,
+    "warnings": []
+  },
   "regular": {
     "name": "regular",
     "chain": [

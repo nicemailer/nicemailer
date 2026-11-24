@@ -1697,9 +1697,10 @@ verify_on_read = {verify_on_read}
 [ui]
 # Milliseconds a mail must stay on screen to count as viewed.
 view_threshold_ms = {view_threshold_ms}
-# The theme of the app: "geek" (the default), "clean", "regular", or the
-# name of a file of the folder themes/ next to this file, which also holds
-# the three built-in themes, to modify (docs/themes.md). Applied at once.
+# The theme of the app: "geek" (the default), "clean", "regular",
+# "minimal", or the name of a file of the folder themes/ next to this file,
+# which also holds the four built-in themes, to modify (docs/themes.md).
+# Applied at once.
 theme = "{theme}"
 # Confirm the calls of the app for you: when it calls a number (Return on a
 # number of the links, a tel: link), the app presses the green button of

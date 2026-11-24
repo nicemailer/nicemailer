@@ -1,0 +1,53 @@
+# The theme minimal (docs/themes.md, "Minimal"; fixtures/
+# themes-minimal.config.toml): clean in iA Writer Mono V, with a smaller
+# status bar that reminds the keys, a wider column of text, no animation,
+# and mails shown as text. Its snapshots are the ones to look at.
+expect theme = minimal
+expect theme_chain = minimal
+expect title_bar = merged
+# The list of clean: three lines per mail.
+expect list_layout = stacked
+# bar_size = "small": the blocks of the bar smaller than in clean (22 pt).
+expect status_help_height < 22
+expect status_help_height > 10
+appearance light
+# The subject of the open mail as far from the bar as in clean
+# (layout.reader_title_padding = 12), lined up with the text, whose
+# column is wider (layout.reader_max_width = 760).
+expect title_inset ~ ,12
+expect reader_alignment = 0,0
+snap minimal-list
+# The keys work as in every theme; menus and the folder column show at
+# once (motion: 0 ms).
+key j
+expect selected = 1
+key m
+expect overlay ~ menu
+snap minimal-move-menu
+key esc
+key ;
+expect overlay ~ menu
+snap minimal-goto-menu
+key esc
+key v
+key 3
+expect columns = 3
+snap minimal-three-columns
+appearance dark
+snap minimal-dark
+# A newsletter in HTML opens as text (reader.body_format = "text"), as in
+# geek; text | html switches it, and the choice is remembered.
+key @
+type fixture
+key ret
+key ;
+key a
+expect selected_subject = La lettre de novembre
+expect body_format = text
+expect reader_text ~ devis.pdf
+expect attachment_layout = rows
+snap minimal-newsletter-text
+click format:html
+expect body_format = html
+click format:text
+expect body_format = text

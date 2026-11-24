@@ -724,7 +724,7 @@ enum ThemeAction {
         /// As JSON, as the app receives it (theme_get).
         #[arg(long)]
         json: bool,
-        /// The three built-in themes as JSON, as the app embeds them
+        /// The four built-in themes as JSON, as the app embeds them
         /// (Resources/themes-builtin.json).
         #[arg(long, conflicts_with = "theme", requires = "json")]
         builtins: bool,
@@ -732,7 +732,7 @@ enum ThemeAction {
     /// Print the complete file of a built-in theme: every key commented
     /// out at its value, with what it does.
     Defaults {
-        /// geek, clean or regular.
+        /// geek, clean, regular or minimal.
         theme: String,
     },
     /// Create the file of a new theme in the folder themes: it extends

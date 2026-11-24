@@ -3,14 +3,18 @@
 # chooses another, written in config.toml and applied at once; the button
 # opens the folder of the themes (recorded, nothing is opened).
 preferences appearance
-expect prefs_themes = *geek,clean,regular
+expect prefs_themes = *geek,clean,regular,minimal
 snap appearance
 click prefs:theme-regular
 expect prefs_theme_error =
-expect prefs_themes = geek,clean,*regular
+expect prefs_themes = geek,clean,*regular,minimal
 expect theme = regular
 click prefs:themes-folder
 expect opened_file = themes
+# minimal, built in as the others.
+click prefs:theme-minimal
+expect prefs_themes = geek,clean,regular,*minimal
+expect theme = minimal
 # Back to geek through clean: the menus drop from their blocks of the
 # status bar, not from where the blocks of the previous theme were.
 click prefs:theme-clean

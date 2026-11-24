@@ -280,7 +280,7 @@ final class ThemeStore {
     private nonisolated(unsafe) static var stored: ThemeView = builtins["geek"]!
     private nonisolated static let lock = NSLock()
 
-    /// The three built-in themes resolved, embedded in the app
+    /// The four built-in themes resolved, embedded in the app
     /// (`Resources/themes-builtin.json`, written by the core: `nicemailer
     /// theme show --builtins --json`). In effect until the core answers, and
     /// in the tests.

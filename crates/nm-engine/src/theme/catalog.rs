@@ -200,7 +200,7 @@ pub const MIN_CONTRAST: f64 = 4.5;
 
 /// The themes shipped with the app, embedded in the core. The first one is
 /// the default, and the parent of a theme that does not say its own.
-pub const BUILTINS: &[&str] = &["geek", "clean", "regular"];
+pub const BUILTINS: &[&str] = &["geek", "clean", "regular", "minimal"];
 
 /// The default theme.
 pub const DEFAULT_THEME: &str = "geek";

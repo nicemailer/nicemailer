@@ -33,8 +33,10 @@ key t
 expect overlay ~ themes
 expect picker_rows ~ sepia
 expect picker_rows ~ regular
-# The cursor on the theme in effect, sepia, the fourth row.
-expect picker_index = 3
+expect picker_rows ~ minimal
+# The cursor on the theme in effect, sepia, the fifth row (after the four
+# built-in themes).
+expect picker_index = 4
 snap themes-picker
 type regular
 expect picker_first = regular

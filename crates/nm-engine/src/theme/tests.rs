@@ -56,10 +56,10 @@ fn a_builtin_theme_resolves_alone() {
 }
 
 #[test]
-fn clean_and_regular_are_readable() {
+fn clean_regular_and_minimal_are_readable() {
     // `themes.md`, section 6.5: the shipped themes reach WCAG AA. regular
     // uses the colors of macOS for its texts, which are not checked.
-    for name in ["clean", "regular"] {
+    for name in ["clean", "regular", "minimal"] {
         let w = contrast_warnings(name, builtin(name).unwrap());
         assert!(w.is_empty(), "{name}: {w:?}");
     }
@@ -101,6 +101,38 @@ fn the_values_of_the_specification() {
         Value::Blocks(b) => assert_eq!(b.first().map(String::as_str), Some("account")),
         other => panic!("{other:?}"),
     }
+}
+
+#[test]
+fn minimal_is_clean_but_for_its_own_keys() {
+    // `themes.md`, "Thème minimal": every key of clean, except these.
+    let clean = builtin("clean").unwrap();
+    let minimal = builtin("minimal").unwrap();
+    let own: BTreeMap<&str, Value> = [
+        ("window.bar_size", Value::Text("small".into())),
+        ("window.bar_height", Value::Int(30)),
+        ("window.key_hints", Value::Bool(true)),
+        ("fonts.interface", Value::Text("iA Writer Mono V".into())),
+        ("fonts.reading", Value::Text("iA Writer Mono V".into())),
+        ("layout.reader_max_width", Value::Int(760)),
+        ("motion.sidebar_ms", Value::Int(0)),
+        ("motion.popup_ms", Value::Int(0)),
+        ("reader.body_format", Value::Text("text".into())),
+    ]
+    .into_iter()
+    .collect();
+    for key in KEYS {
+        let k = key.dotted();
+        match own.get(k.as_str()) {
+            Some(v) => {
+                assert_eq!(&minimal[&k], v, "{k}");
+                assert_ne!(minimal[&k], clean[&k], "{k} is the same as in clean: not one of minimal's own");
+            }
+            None => assert_eq!(minimal[&k], clean[&k], "{k}"),
+        }
+    }
+    // The red, yellow and green buttons in the bar, as in clean.
+    assert_eq!(minimal["window.title_bar"], Value::Text("merged".into()));
 }
 
 // --- Reading a file --------------------------------------------------------
@@ -336,7 +368,7 @@ fn the_view_carries_every_key_of_the_catalog() {
 fn the_builtins_json_reads_back() {
     let json = builtins_json();
     let themes: BTreeMap<String, nm_api::ThemeView> = serde_json::from_str(&json).unwrap();
-    assert_eq!(themes.keys().cloned().collect::<Vec<_>>(), vec!["clean", "geek", "regular"]);
+    assert_eq!(themes.keys().cloned().collect::<Vec<_>>(), vec!["clean", "geek", "minimal", "regular"]);
     assert_eq!(themes["clean"].motion.sidebar_ms, 120);
 }
 
@@ -558,6 +590,7 @@ fn the_list_gives_the_builtin_themes_first() {
             ("geek", "builtin", None),
             ("clean", "builtin", None),
             ("regular", "builtin", None),
+            ("minimal", "builtin", None),
             ("amber", "user", Some("geek")),
             ("zen", "user", Some("clean")),
         ]
@@ -583,7 +616,7 @@ fn a_missing_directory_has_the_builtin_themes() {
     let mut set = ThemeSet::new(tmp.path().join("nothing-here"), "clean");
     assert!(set.reload(true).is_empty());
     assert_eq!(set.applied().name, "clean");
-    assert_eq!(set.list().themes.len(), 3);
+    assert_eq!(set.list().themes.len(), BUILTINS.len());
 }
 
 /// `apps/NiceMailer/Sources/NiceMailer/Resources/themes-builtin.json` must
