@@ -90,7 +90,17 @@ pub async fn test_account(core: &Arc<Core>, p: TestAccountParams, source: Source
     let spec = setup::spec_of(&p.imap).map_err(invalid)?;
     let user = setup::username_of(&p.imap, &p.email);
     let import = core.engine.lock().unwrap().config().import.clone();
-    setup::test_account(&spec, &user, &p.password, &own(&p.email, &p.identities), &import, now()).await.map_err(imap_failure)
+    // `oauth: {flow}` replaces the password: the tokens stay in the core,
+    // attached to the flow (`specifications/oauth2.md`, section 8).
+    let tokens = match &p.oauth {
+        Some(o) => Some(core.oauth.take_flow(&o.flow, &p.email).map_err(|w| RpcError::new(error_code::SERVER, w))?),
+        None => None,
+    };
+    let cred = match &tokens {
+        Some(t) => nm_engine::probe::Cred::Token(&t.access_token),
+        None => nm_engine::probe::Cred::Password(&p.password),
+    };
+    setup::test_account(&spec, &user, cred, &own(&p.email, &p.identities), &import, now()).await.map_err(imap_failure)
 }
 
 /// `discover_account`: the servers of an address, from the database of
@@ -125,7 +135,7 @@ pub async fn discover_account(core: &Arc<Core>, p: DiscoverAccountParams, source
 /// `test_smtp`: the candidates tried in order, the first that works
 /// chosen. The IMAP password goes only to a server of the IMAP server's
 /// organization (`nm_engine::discover::test_smtp`).
-pub async fn test_smtp(p: TestSmtpParams, source: Source) -> Result<SmtpTestReport, RpcError> {
+pub async fn test_smtp(core: &Arc<Core>, p: TestSmtpParams, source: Source) -> Result<SmtpTestReport, RpcError> {
     human(source)?;
     for c in &p.candidates {
         setup::spec_of(&c.server).map_err(invalid)?;
@@ -133,7 +143,11 @@ pub async fn test_smtp(p: TestSmtpParams, source: Source) -> Result<SmtpTestRepo
     if p.smtp_password.as_deref() == Some("") {
         return Err(refused(reason::SMTP_PASSWORD_EMPTY));
     }
-    Ok(nm_engine::discover::test_smtp(&p.email, &p.imap, &p.password, p.smtp_password.as_deref(), &p.candidates).await)
+    let token = match &p.oauth {
+        Some(o) => Some(core.oauth.take_flow(&o.flow, &p.email).map_err(|w| RpcError::new(error_code::SERVER, w))?.access_token),
+        None => None,
+    };
+    Ok(nm_engine::discover::test_smtp(&p.email, &p.imap, &p.password, p.smtp_password.as_deref(), token.as_ref(), &p.candidates).await)
 }
 
 /// The `security` of `accounts.toml` from the client's word, checked.
@@ -153,7 +167,7 @@ pub async fn count_archive(p: CountArchiveParams, source: Source) -> Result<Arch
     for d in [&p.read_before, &p.unread_before].into_iter().flatten() {
         setup::parse_day(d).ok_or_else(|| refused(reason::DATE_INVALID.with("date", d.as_str())))?;
     }
-    let mut s = setup::open(&spec, &user, &p.password).await.map_err(imap_failure)?;
+    let mut s = setup::open(&spec, &user, nm_engine::probe::Cred::Password(&p.password)).await.map_err(imap_failure)?;
     s.forbid_writes();
     let n = setup::count_archive(&mut s, p.uidnext, p.read_before.as_deref(), p.unread_before.as_deref()).await.map_err(imap_failure)?;
     s.logout().await;
@@ -177,9 +191,19 @@ fn roles_for(
 pub async fn add_account(core: &Arc<Core>, p: AddAccountParams, source: Source) -> Result<AddAccountResult, RpcError> {
     human(source)?;
     config_write::check_key(&p.key).map_err(invalid)?;
-    if p.password.is_empty() {
+    // With `oauth: {flow}`, no password is asked: the flow's tokens are
+    // stored in the Keychain instead (`specifications/oauth2.md`, section 8).
+    if p.oauth.is_none() && p.password.is_empty() {
         return Err(refused(reason::PASSWORD_EMPTY));
     }
+    if p.oauth.is_some() && p.smtp_password.is_some() {
+        return Err(refused(reason::INVALID_PARAMS.with("detail", "an OAuth2 account has no SMTP password: the same token is used")));
+    }
+    // The flow must have succeeded, for this address.
+    let tokens = match &p.oauth {
+        Some(o) => Some(core.oauth.take_flow(&o.flow, &p.email).map_err(|w| RpcError::new(error_code::SERVER, w))?),
+        None => None,
+    };
     let (config_path, secrets, import) = {
         let engine = core.engine.lock().unwrap();
         if engine.config().accounts.contains_key(&p.key) {
@@ -219,7 +243,11 @@ pub async fn add_account(core: &Arc<Core>, p: AddAccountParams, source: Source) 
     };
 
     // 1 and 2: the server.
-    let mut s = setup::open(&spec, &user, &p.password).await.map_err(imap_failure)?;
+    let cred = match &tokens {
+        Some(t) => nm_engine::probe::Cred::Token(&t.access_token),
+        None => nm_engine::probe::Cred::Password(&p.password),
+    };
+    let mut s = setup::open(&spec, &user, cred).await.map_err(imap_failure)?;
     if p.read_only {
         s.forbid_writes();
     }
@@ -281,19 +309,28 @@ pub async fn add_account(core: &Arc<Core>, p: AddAccountParams, source: Source) 
     })
     .await?;
 
-    // 4: the password, for this server.
-    let credential = Credential {
-        binding: Binding { host: p.imap.host.clone(), username: user.clone() },
-        secret: nm_engine::config::SecretString::new(p.password.clone()),
-    };
+    // 4: the secret, for this server: the password, or the OAuth2 entry
+    // (the flow's refresh token) of the flow, stored in the same Keychain
+    // item, bound to this server and user name. Saved before the file, so
+    // that the worker the file starts finds it.
     let key = p.key.clone();
     let secrets2 = secrets.clone();
-    // The SMTP password saved apart, bound to the SMTP server, as
-    // `set_password` with `smtp` does: the sender takes it before the IMAP
-    // one (`docs/sending.md`, "Password"). Saved before the file, so that
-    // the worker the file starts finds it.
-    tokio::task::spawn_blocking(move || {
-        secrets2.set_imap(&key, &credential)?;
+    let oauth2 = core.oauth.clone();
+    let (flow, email2, host2, user2, password2) =
+        (p.oauth.as_ref().map(|o| o.flow.clone()), p.email.clone(), p.imap.host.clone(), user.clone(), p.password.clone());
+    tokio::task::spawn_blocking(move || -> Result<(), String> {
+        match &flow {
+            Some(flow) => {
+                oauth2.store_flow(&key, &email2, &host2, &user2, secrets2.as_ref(), flow).map_err(|w| w.message())?;
+            }
+            None => {
+                let credential = Credential {
+                    binding: Binding { host: host2, username: user2 },
+                    secret: nm_engine::config::SecretString::new(password2),
+                };
+                secrets2.set_imap(&key, &credential)?;
+            }
+        }
         match &smtp_password {
             Some(c) => secrets2.set_smtp(&key, c),
             None => Ok(()),
@@ -314,6 +351,7 @@ pub async fn add_account(core: &Arc<Core>, p: AddAccountParams, source: Source) 
         username: user,
         ca_file: p.imap.ca_file.clone(),
         read_only: p.read_only,
+        auth: p.oauth.as_ref().map(|_| "oauth2".to_string()),
         smtp,
     };
     write_file(core, move |t| config_write::add_account(t, &new), &config_path).await?;
@@ -362,7 +400,7 @@ pub async fn set_folder_roles(core: &Arc<Core>, p: SetFolderRolesParams, source:
         .map_err(|e| RpcError::internal(e))?
         .map_err(|r| RpcError::new(error_code::ACCOUNT_NOT_READY, r.why(&p.account, &account)))?;
     let spec = nm_engine::probe::imap_spec(&account);
-    let mut s = setup::open(&spec, &account.imap.username, password.expose()).await.map_err(server)?;
+    let mut s = setup::open(&spec, &account.imap.username, nm_engine::probe::Cred::Password(password.expose())).await.map_err(server)?;
     let entries = s.list().await.map_err(server)?;
     let existing: BTreeSet<String> = entries.iter().map(|e| e.name.name.clone()).collect();
     let paths: Vec<String> = p.roles.values().cloned().collect();
@@ -428,7 +466,7 @@ pub async fn prepare_activation(core: &Arc<Core>, p: PrepareActivationParams, so
     human(source)?;
     let (account, _, password) = read_only_account(core, &p.account).await?;
     let spec = nm_engine::probe::imap_spec(&account);
-    setup::test_account(&spec, &account.imap.username, password.expose(), &own_of(&account), &account.import, now())
+    setup::test_account(&spec, &account.imap.username, nm_engine::probe::Cred::Password(password.expose()), &own_of(&account), &account.import, now())
         .await
         .map_err(imap_failure)
 }
@@ -461,7 +499,7 @@ pub async fn activate_account(core: &Arc<Core>, p: ActivateAccountParams, source
 
     // 1: the server.
     let spec = nm_engine::probe::imap_spec(&account);
-    let mut s = setup::open(&spec, &account.imap.username, password.expose()).await.map_err(imap_failure)?;
+    let mut s = setup::open(&spec, &account.imap.username, nm_engine::probe::Cred::Password(password.expose())).await.map_err(imap_failure)?;
     let namespace = s.namespace().await.ok().and_then(|n| n.personal.into_iter().next());
     let entries = s.list().await.map_err(server)?;
     let roles = roles_for(&p.roles, &entries, namespace.as_ref());

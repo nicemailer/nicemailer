@@ -37,6 +37,9 @@ pub struct NewAccount {
     pub ca_file: Option<String>,
     /// `read_only = true`: nothing is ever changed on the server.
     pub read_only: bool,
+    /// `auth = "oauth2"` (`specifications/oauth2.md`): the account signs in
+    /// with OAuth2 instead of a password. None: `password` (not written).
+    pub auth: Option<String>,
     /// `[accounts.<key>.smtp]`; none: the account cannot send.
     pub smtp: Option<NewServer>,
 }
@@ -92,6 +95,9 @@ pub fn add_account(text: &str, a: &NewAccount) -> Result<String, String> {
     }
     if a.read_only {
         t["read_only"] = value(true);
+    }
+    if let Some(auth) = &a.auth {
+        t["auth"] = value(auth.as_str());
     }
     let imap = NewServer {
         host: a.host.clone(),
@@ -308,6 +314,7 @@ port = 993\nsecurity = \"tls\"\n";
             username: "bob".into(),
             ca_file: None,
             read_only: false,
+            auth: None,
             smtp: None,
         }
     }

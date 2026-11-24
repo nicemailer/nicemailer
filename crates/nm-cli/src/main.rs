@@ -1829,6 +1829,8 @@ mod tests {
             by_mx: Some(google(Some("aspmx.l.google.com"))),
             imap: Some(candidate("imap.gmail.com", 993, "tls", "provider")),
             smtp: vec![candidate("smtp.gmail.com", 465, "tls", "provider")],
+            auth: "password".into(),
+            oauth_provider: None,
         }
     }
 

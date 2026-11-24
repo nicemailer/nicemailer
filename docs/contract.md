@@ -117,6 +117,8 @@ A dedicated command prints readable output, asks for confirmation when needed an
 | `remove_account` | Deletes an account, its data in NiceMailer and its password. The mail on the server is not touched. | `nicemailer account remove <key> [--yes]` |
 | `set_account_order` | Changes the display order of the accounts. | `nicemailer account order <key>…`: the keys named come first. |
 | `set_password` | Saves the IMAP (or SMTP) password of an account in the Keychain. | `nicemailer account password <key> [--smtp]`: asked without echo, or read from stdin. |
+| `oauth_begin` | Starts an OAuth2 sign-in: the core listens on the loopback and returns the authorization URL, which the client opens in the browser; the flow ends with the `OAuthFinished` event (`specifications/oauth2.md`, section 8). | — (for now) |
+| `oauth_cancel` | Abandons an OAuth2 flow: closes the listener and forgets the flow. | — (for now) |
 | `probe_account` | Connects to the IMAP server of an existing account and reports what it offers, without changing anything. | `nicemailer imap probe <key> [--json]` (`imap.md`) |
 
 ## Synchronization and raw store
@@ -239,7 +241,19 @@ The app, the core, the CLI and the MCP server are shipped and updated together, 
 | `server_folder_missing` | `folder` | the server has no folder {folder}: ask to create it |
 | `keychain` | `system_text` | the Keychain refused: {system_text} |
 | `password_missing` | `account` | no password saved for this account: nicemailer account password {account} |
-| `oauth2_unsupported` | — | auth = "oauth2" is not supported yet |
+| `oauth2_unknown_server` | `host` | the IMAP server {host} is not a known OAuth2 server: no token will be sent to it |
+| `oauth2_unsupported_provider` | `email` | the provider of {email} does not accept OAuth2 sign-in |
+| `oauth_denied` | — | the authorization was refused |
+| `oauth_timeout` | — | the authorization took more than 10 minutes |
+| `oauth_cancelled` | — | the authorization was cancelled |
+| `oauth_state_mismatch` | — | the authorization response did not match the request |
+| `oauth_wrong_account` | `authorized`, `email` | the account authorized is {authorized}, not {email} |
+| `oauth_reauth_needed` | `account` | the account must be signed in again: nicemailer account login {account} |
+| `oauth_admin_consent_needed` | `system_text` | the organization must approve NiceMailer before it can sign in ({system_text}) |
+| `oauth_blocked_by_policy` | `system_text` | the organization's conditional access blocked the sign-in ({system_text}) |
+| `oauth_client_rejected` | `system_text` | the provider rejected the application id ({system_text}) |
+| `smtp_auth_disabled` | — | SMTP AUTH is disabled for this mailbox: the account can read but not send |
+| `imap_disabled_for_mailbox` | — | IMAP is disabled for this mailbox |
 | `password_server_changed` | `saved_user`, `saved_host`, `user`, `host`, `account` | the password was saved for {saved_user} on {saved_host}, the file now says {user} on {host}: save the password again to confirm the new server (nicemailer account password {account}) |
 | `smtp_password_server_changed` | `saved_user`, `saved_host`, `user`, `host`, `account` | the SMTP password was saved for {saved_user} on {saved_host}, the file now says {user} on {host}: save it again to confirm the new server (nicemailer account password {account} --smtp) |
 | `smtp_password_needed` | `smtp_host`, `host`, `account` | the SMTP server {smtp_host} is not of the same provider as the IMAP server {host}: NiceMailer does not send it the IMAP password. Save its own: nicemailer account password {account} --smtp |

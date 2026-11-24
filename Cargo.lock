@@ -1521,6 +1521,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "toml_edit",
+ "ureq",
 ]
 
 [[package]]

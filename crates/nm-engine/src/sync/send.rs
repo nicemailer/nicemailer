@@ -67,7 +67,25 @@ pub(super) struct Sender<'a> {
     pub spec: &'a AccountSpec,
     pub host: &'a dyn SyncHost,
     pub secrets: &'a dyn Secrets,
+    /// The OAuth2 state: access tokens and renewals (`oauth2.rs`).
+    pub oauth: &'a crate::oauth2::Oauth,
     pub control: &'a Control,
+}
+
+/// Logs in with XOAUTH2, renewing the token once and retrying once if the
+/// server refuses one the core believed valid (`specifications/oauth2.md`,
+/// section 6).
+async fn login_oauth2(s: &mut nm_proto::imap::Session, sx: &Sender<'_>, username: &str) -> Result<(), ImapError> {
+    let cfg = &sx.spec.config;
+    let t = sx.oauth.access_token(&sx.spec.key, cfg, sx.secrets).await.map_err(|e| ImapError::AuthFailed(e.why().message()))?;
+    match s.login_oauth2(username, &t).await {
+        Ok(()) => Ok(()),
+        Err(e) if matches!(e, ImapError::AuthFailed(_)) => {
+            let t = sx.oauth.access_token_forced(&sx.spec.key, cfg, sx.secrets).await.map_err(|e| ImapError::AuthFailed(e.why().message()))?;
+            s.login_oauth2(username, &t).await
+        }
+        Err(e) => Err(e),
+    }
 }
 
 /// How a step ended.
@@ -142,14 +160,41 @@ async fn smtp(sx: &Sender<'_>, job: &SendJob) -> Step {
     let Some(smtp) = cfg.smtp.as_ref() else {
         return failed(sx, job, Refusal::NoSmtp.why(key, cfg));
     };
-    let password = match secrets::smtp_password(sx.secrets, key, cfg, nm_store::auth::organizational_domain) {
+    let oauth2 = cfg.auth == crate::config::AuthMethod::Oauth2;
+    // A token is sent only to a server of the account's provider, in the
+    // compiled table (`specifications/oauth2.md`, section 7).
+    if oauth2 && !crate::oauth2::smtp_host_allowed(&cfg.imap.host, &smtp.host) {
+        return failed(sx, job, nm_api::reason::OAUTH2_UNKNOWN_SERVER.with("host", smtp.host.as_str()));
+    }
+    let password = match if oauth2 {
+        match sx.oauth.access_token(key, cfg, sx.secrets).await {
+            Ok(t) => Ok(t),
+            Err(e) if e.is_temporary() => return retry(sx, job, &e.why().message()),
+            Err(e) => return failed(sx, job, e.why()),
+        }
+    } else {
+        secrets::smtp_password(sx.secrets, key, cfg, nm_store::auth::organizational_domain)
+    } {
         Ok(p) => p,
         Err(r @ Refusal::Unavailable(_)) => return retry(sx, job, &r.message(key, cfg)),
         Err(r) => return failed(sx, job, r.why(key, cfg)),
     };
     let result = async {
         let mut c = Client::connect(&smtp_spec(smtp), Timeouts::default()).await?;
-        c.login(&smtp.username, password.expose()).await?;
+        if oauth2 {
+            match c.login_oauth2(&smtp.username, &password).await {
+                Ok(()) => {}
+                // A token refused though the core believed it valid:
+                // renew once, retry once.
+                Err(e) if matches!(e, SmtpError::Auth(_)) => {
+                    let t = sx.oauth.access_token_forced(key, cfg, sx.secrets).await.map_err(|e| SmtpError::Auth(e.why().message()))?;
+                    c.login_oauth2(&smtp.username, &t).await?;
+                }
+                Err(e) => return Err(e),
+            }
+        } else {
+            c.login(&smtp.username, password.expose()).await?;
+        }
         let action = job.action_id;
         let sent = c
             .send(&job.from, &job.rcpt, &job.mime, || {
@@ -169,6 +214,13 @@ async fn smtp(sx: &Sender<'_>, job: &SendJob) -> Step {
                 eprintln!("send {key}: refused by the server: {}", refused.join(", "));
             }
             accepted(sx, job, &refused)
+        }
+        // SMTP AUTH disabled for the tenant or the mailbox
+        // (`535 5.7.139 … SmtpClientAuthentication is disabled …`): the
+        // account stays usable for reading, without sending
+        // (`specifications/oauth2.md`, section 11).
+        Err(SmtpError::Auth(t)) if t.to_lowercase().contains("smtpclientauthentication is disabled") => {
+            failed(sx, job, nm_api::Why::from(nm_api::reason::SMTP_AUTH_DISABLED))
         }
         Err(e) if e.is_permanent() => failed(sx, job, nm_api::reason::SMTP_REFUSED.with("server_text", e.to_string())),
         Err(e) => retry(sx, job, &e.to_string()),
@@ -309,9 +361,13 @@ async fn search(s: &mut Session, mailbox: &MailboxName, message_id: &str) -> Res
 /// An IMAP session of the account, logged in.
 async fn imap_session(sx: &Sender<'_>) -> Result<Session, ImapError> {
     let cfg = &sx.spec.config;
-    let password = secrets::imap_password(sx.secrets, &sx.spec.key, cfg).map_err(|r| ImapError::AuthFailed(r.message(&sx.spec.key, cfg)))?;
     let mut s = Session::connect(&imap_spec(cfg), Timeouts::default()).await?;
-    s.login(&cfg.imap.username, password.expose()).await?;
+    if cfg.auth == crate::config::AuthMethod::Oauth2 {
+        login_oauth2(&mut s, sx, &cfg.imap.username).await?;
+    } else {
+        let password = secrets::imap_password(sx.secrets, &sx.spec.key, cfg).map_err(|r| ImapError::AuthFailed(r.message(&sx.spec.key, cfg)))?;
+        s.login(&cfg.imap.username, password.expose()).await?;
+    }
     Ok(s)
 }
 

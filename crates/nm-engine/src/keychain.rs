@@ -57,7 +57,7 @@ use security_framework::item::{ItemAddOptions, ItemAddValue, ItemClass, ItemSear
 use security_framework::os::macos::keychain::SecKeychain;
 
 use crate::config::SecretString;
-use crate::secrets::{Binding, Credential, Secrets};
+use crate::secrets::{Binding, Credential, OauthCredential, Secrets, StoredOauth};
 
 const SERVICE: &str = "NiceMailer";
 
@@ -192,17 +192,41 @@ impl Keychain {
     }
 
     fn set(&self, proto: Proto, key: &str, credential: &Credential) -> Result<(), String> {
-        // Replace: delete the old item, then add the new one. Deleting
-        // needs the item's permission, which the core has for the items it
-        // created; an item saved by another build is refused, and the
-        // message says what to do.
+        let comment = serde_json::json!({ "host": credential.binding.host, "username": credential.binding.username }).to_string();
+        let data = CFData::from_buffer(credential.secret.expose().as_bytes());
+        self.add_item(proto, key, comment, data)
+    }
+
+    /// The OAuth2 entry, stored as JSON in the `imap:<key>` item's data, in
+    /// place of a password (`specifications/oauth2.md`, section 6). The
+    /// binding stays in the item's comment, as for a password, so the
+    /// same rule applies: another host or user name in the file refuses
+    /// the login until the user signs in again.
+    fn get_oauth(&self, key: &str) -> Result<Option<OauthCredential>, String> {
+        let Some(attrs) = self.find(Proto::Imap, key, true)? else { return Ok(None) };
+        let binding = binding_of(&attrs)?;
+        let data = attrs.get("v_Data").ok_or("Keychain item without data: sign in again")?;
+        let stored: StoredOauth =
+            serde_json::from_str(data).map_err(|_| "the Keychain item of this account is a password, not an OAuth2 entry: sign in again".to_string())?;
+        Ok(Some(OauthCredential::from_stored(binding, stored)))
+    }
+
+    fn set_oauth(&self, key: &str, credential: &OauthCredential) -> Result<(), String> {
+        let comment = serde_json::json!({ "host": credential.binding.host, "username": credential.binding.username }).to_string();
+        let data = CFData::from_buffer(serde_json::to_string(&credential.to_stored()).map_err(|e| e.to_string())?.as_bytes());
+        self.add_item(Proto::Imap, key, comment, data)
+    }
+
+    /// Deletes the old item (when there is one) and adds the new one.
+    /// Deleting needs the item's permission, which the core has for the
+    /// items it created; an item saved by another build is refused, and
+    /// the message says what to do.
+    fn add_item(&self, proto: Proto, key: &str, comment: String, data: CFData) -> Result<(), String> {
         match self.search(proto, key).delete() {
             Ok(()) => {}
             Err(e) if e.code() == NOT_FOUND => {}
             Err(e) => return Err(describe(e)),
         }
-        let comment = serde_json::json!({ "host": credential.binding.host, "username": credential.binding.username }).to_string();
-        let data = CFData::from_buffer(credential.secret.expose().as_bytes());
         let mut add = ItemAddOptions::new(ItemAddValue::Data { class: ItemClass::generic_password(), data });
         add.set_service(SERVICE)
             .set_account_name(Self::account(proto, key))
@@ -247,5 +271,13 @@ impl Secrets for Keychain {
 
     fn remove_smtp(&self, key: &str) -> Result<(), String> {
         self.remove(Proto::Smtp, key)
+    }
+
+    fn oauth(&self, key: &str) -> Result<Option<OauthCredential>, String> {
+        self.get_oauth(key)
+    }
+
+    fn set_oauth(&self, key: &str, credential: &OauthCredential) -> Result<(), String> {
+        self.set_oauth(key, credential)
     }
 }

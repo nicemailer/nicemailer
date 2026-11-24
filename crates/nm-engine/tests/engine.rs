@@ -351,13 +351,27 @@ fn the_login_checks_the_binding_again() {
 }
 
 #[test]
-fn oauth2_is_reported_as_unsupported() {
+fn an_oauth2_account_on_an_unknown_server_is_in_error_without_any_token() {
+    // `imap.gmail.com` is not in the compiled OAuth2 table: no token is
+    // ever requested or sent to it (`specifications/oauth2.md`, section 7).
     let mut s = Setup::new();
     s.accounts("[accounts.g]\nemail = \"g@example.com\"\nauth = \"oauth2\"\n[accounts.g.imap]\nhost = \"imap.gmail.com\"\n");
     let mut engine = s.engine(stored("perso", "h"));
     engine.reload(&mut s.store, true).unwrap();
     let views = engine.account_views(s.store.list_account_rows().unwrap());
-    assert!(views[0].error.as_deref().unwrap().contains("oauth2"));
+    assert!(views[0].error.as_deref().unwrap().contains("not a known OAuth2 server"), "{:?}", views[0].error);
+}
+
+#[test]
+fn an_oauth2_account_on_a_known_server_needs_a_sign_in() {
+    let mut s = Setup::new();
+    s.accounts(
+        "[accounts.o]\nemail = \"o@outlook.com\"\nauth = \"oauth2\"\n[accounts.o.imap]\nhost = \"outlook.office365.com\"\n",
+    );
+    let mut engine = s.engine(stored("perso", "h"));
+    engine.reload(&mut s.store, true).unwrap();
+    let views = engine.account_views(s.store.list_account_rows().unwrap());
+    assert!(views[0].error.as_deref().unwrap().contains("signed in again"), "{:?}", views[0].error);
 }
 
 #[test]

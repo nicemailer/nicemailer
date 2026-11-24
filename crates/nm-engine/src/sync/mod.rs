@@ -215,12 +215,14 @@ struct Worker {
 pub struct Syncer {
     host: Arc<dyn SyncHost>,
     secrets: Arc<dyn Secrets>,
+    /// The OAuth2 state: access tokens in memory, renewals (`oauth2.rs`).
+    oauth: Arc<crate::oauth2::Oauth>,
     workers: Mutex<BTreeMap<String, Worker>>,
 }
 
 impl Syncer {
-    pub fn new(host: Arc<dyn SyncHost>, secrets: Arc<dyn Secrets>) -> Syncer {
-        Syncer { host, secrets, workers: Mutex::new(BTreeMap::new()) }
+    pub fn new(host: Arc<dyn SyncHost>, secrets: Arc<dyn Secrets>, oauth: Arc<crate::oauth2::Oauth>) -> Syncer {
+        Syncer { host, secrets, oauth, workers: Mutex::new(BTreeMap::new()) }
     }
 
     /// Brings the workers in line with the accounts of the file: starts
@@ -246,7 +248,7 @@ impl Syncer {
                 continue;
             }
             let wait = previous.remove(&spec.key).unwrap_or_default();
-            let w = account::start(spec.clone(), self.host.clone(), self.secrets.clone(), wait);
+            let w = account::start(spec.clone(), self.host.clone(), self.secrets.clone(), self.oauth.clone(), wait);
             workers.insert(spec.key.clone(), w);
         }
     }

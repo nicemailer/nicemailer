@@ -136,6 +136,13 @@ pub mod method {
     /// Saves the IMAP password of an account in the Keychain, for the
     /// server the file names now (`configuration.md`, section 6).
     pub const SET_PASSWORD: &str = "set_password";
+    /// Starts an OAuth2 sign-in flow: the core listens on the loopback and
+    /// returns the authorization URL, which the client opens in the
+    /// browser; the flow ends with the `OAuthFinished` event
+    /// (`specifications/oauth2.md`, section 8).
+    pub const OAUTH_BEGIN: &str = "oauth_begin";
+    /// Abandons an OAuth2 flow: closes the listener and forgets the flow.
+    pub const OAUTH_CANCEL: &str = "oauth_cancel";
     /// Where a message is (its thread and folder), from its id or its link
     /// key: opens a deep link `nicemailer://m/<key>` (`docs/deep-links.md`).
     pub const LOCATE_MESSAGE: &str = "locate_message";
@@ -478,8 +485,39 @@ pub mod reason {
         KEYCHAIN = "keychain": "the Keychain refused: {system_text}";
         /// No password saved for the account.
         PASSWORD_MISSING = "password_missing": "no password saved for this account: nicemailer account password {account}";
-        /// `auth = "oauth2"`.
-        OAUTH2_UNSUPPORTED = "oauth2_unsupported": "auth = \"oauth2\" is not supported yet";
+        /// `auth = "oauth2"`, but the IMAP server is not a known OAuth2
+        /// server: no token is ever requested or sent to it
+        /// (`specifications/oauth2.md`, section 7).
+        OAUTH2_UNKNOWN_SERVER = "oauth2_unknown_server": "the IMAP server {host} is not a known OAuth2 server: no token will be sent to it";
+        /// `oauth_begin` on an address whose provider does not accept OAuth2.
+        OAUTH2_UNSUPPORTED_PROVIDER = "oauth2_unsupported_provider": "the provider of {email} does not accept OAuth2 sign-in";
+        /// The user refused the authorization at the provider.
+        OAUTH_DENIED = "oauth_denied": "the authorization was refused";
+        /// The flow expired: 10 minutes without redirection.
+        OAUTH_TIMEOUT = "oauth_timeout": "the authorization took more than 10 minutes";
+        /// The client cancelled the flow (`oauth_cancel`).
+        OAUTH_CANCELLED = "oauth_cancelled": "the authorization was cancelled";
+        /// The redirection's `state` did not match the flow's.
+        OAUTH_STATE_MISMATCH = "oauth_state_mismatch": "the authorization response did not match the request";
+        /// The account authorized is not the one asked for.
+        OAUTH_WRONG_ACCOUNT = "oauth_wrong_account": "the account authorized is {authorized}, not {email}";
+        /// The refresh token was refused: the account must be signed in
+        /// again (`nicemailer account login`).
+        OAUTH_REAUTH_NEEDED = "oauth_reauth_needed": "the account must be signed in again: nicemailer account login {account}";
+        /// The organization must approve the app first (administrator
+        /// consent, `AADSTS65001`/`AADSTS90094`).
+        OAUTH_ADMIN_CONSENT_NEEDED = "oauth_admin_consent_needed": "the organization must approve NiceMailer before it can sign in ({system_text})";
+        /// The organization's conditional access blocked the sign-in
+        /// (`AADSTS53003`).
+        OAUTH_BLOCKED_BY_POLICY = "oauth_blocked_by_policy": "the organization's conditional access blocked the sign-in ({system_text})";
+        /// The provider rejected the application id (`invalid_client`,
+        /// `unauthorized_client`).
+        OAUTH_CLIENT_REJECTED = "oauth_client_rejected": "the provider rejected the application id ({system_text})";
+        /// SMTP AUTH is disabled for the mailbox: the account can read but
+        /// not send (`SmtpClientAuthenticationDisabled`).
+        SMTP_AUTH_DISABLED = "smtp_auth_disabled": "SMTP AUTH is disabled for this mailbox: the account can read but not send";
+        /// IMAP is disabled for the mailbox, or it has no Exchange licence.
+        IMAP_DISABLED_FOR_MAILBOX = "imap_disabled_for_mailbox": "IMAP is disabled for this mailbox";
         /// The password was saved for another server than the file's.
         PASSWORD_SERVER_CHANGED = "password_server_changed": "the password was saved for {saved_user} on {saved_host}, the file now says {user} on {host}: save the password again to confirm the new server (nicemailer account password {account})";
         /// The SMTP password was saved for another server than the file's.
@@ -883,6 +921,19 @@ pub enum Event {
     /// available in `list_accounts` until it is resolved, which is
     /// announced by `AccountChanged`.
     AccountError { account_id: i64, error: String, why: Value },
+    /// An OAuth2 sign-in flow ended: `ok` when the tokens were obtained.
+    /// `why` says why when it failed (`specifications/oauth2.md`,
+    /// section 8). The client does not poll while the user is in the
+    /// browser.
+    OAuthFinished {
+        flow: String,
+        ok: bool,
+        #[serde(default)]
+        account: Option<String>,
+        email: String,
+        #[serde(default)]
+        why: Option<Value>,
+    },
     /// `config.toml` and `accounts.toml` were applied with these changed
     /// keys (dotted, sorted; those of the accounts start with `accounts.`).
     /// Empty `keys` after a `ConfigError`: the files are valid again,
@@ -3394,12 +3445,49 @@ fn default_security() -> String {
     "tls".into()
 }
 
+/// A finished OAuth2 flow, given to `test_account`, `test_smtp` and
+/// `add_account` in place of a password (`specifications/oauth2.md`,
+/// section 8): the tokens stay in the core, attached to the flow.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OauthFlow {
+    pub flow: String,
+}
+
+/// Params of `oauth_begin`: the address of the account to create, or the
+/// key of an existing account to sign in again. Exactly one of the two.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OauthBeginParams {
+    #[serde(default)]
+    pub email: Option<String>,
+    #[serde(default)]
+    pub account: Option<String>,
+}
+
+/// What `oauth_begin` started: the flow's id, the authorization URL to
+/// open in the default browser, and the provider (`microsoft`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OauthBeginResult {
+    pub flow: String,
+    pub url: String,
+    pub provider: String,
+}
+
+/// Params of `oauth_cancel`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OauthCancelParams {
+    pub flow: String,
+}
+
 /// Params of `test_account`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TestAccountParams {
     pub email: String,
     pub imap: ImapParams,
+    /// Ignored when `oauth` is given: the tokens of the flow are used.
     pub password: String,
+    /// The finished OAuth2 flow to use instead of `password`.
+    #[serde(default)]
+    pub oauth: Option<OauthFlow>,
     /// Other addresses of the account (identities), excluded from the
     /// correspondents.
     #[serde(default)]
@@ -3514,7 +3602,12 @@ pub struct AddAccountParams {
     #[serde(default)]
     pub display_name: Option<String>,
     pub imap: ImapParams,
+    /// Ignored when `oauth` is given: the tokens of the flow are saved in
+    /// the Keychain by `add_account`.
     pub password: String,
+    /// The finished OAuth2 flow to use instead of `password`.
+    #[serde(default)]
+    pub oauth: Option<OauthFlow>,
     /// The folder of each workflow role: a folder of the server, or a new
     /// one to create. Roles left out get the proposal (special-use, then
     /// names); a proposed role without folder gets one created under its
@@ -3610,6 +3703,18 @@ pub struct DiscoveryReport {
     pub imap: Option<ServerCandidate>,
     /// The SMTP servers to try, in order (`test_smtp`).
     pub smtp: Vec<ServerCandidate>,
+    /// How the account authenticates: `password` (default) or `oauth2`
+    /// (`specifications/oauth2.md`).
+    #[serde(default = "default_auth_password")]
+    pub auth: String,
+    /// The OAuth2 provider of the account, when `auth` is `oauth2`
+    /// (`microsoft`).
+    #[serde(default)]
+    pub oauth_provider: Option<String>,
+}
+
+fn default_auth_password() -> String {
+    "password".to_string()
 }
 
 /// A provider of the database (`data/providers/`), and why it matched.
@@ -3649,7 +3754,11 @@ pub struct TestSmtpParams {
     /// The IMAP server of the account: its password is tried only on an
     /// SMTP server of the same host or organization.
     pub imap: ImapParams,
+    /// Ignored when `oauth` is given: the flow's access token is used.
     pub password: String,
+    /// The finished OAuth2 flow to use instead of `password`.
+    #[serde(default)]
+    pub oauth: Option<OauthFlow>,
     /// The password of the SMTP server itself, when the user gave one (the
     /// server refused the IMAP password, or belongs to another
     /// organization): tried on every candidate, whatever its organization.

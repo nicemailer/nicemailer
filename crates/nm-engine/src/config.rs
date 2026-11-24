@@ -84,6 +84,7 @@ pub struct Config {
     pub ai: AiSettings,
     pub mcp: McpSettings,
     pub unsubscribe: UnsubscribeSettings,
+    pub oauth: OauthSettings,
     pub folder_names: FolderNames,
     /// IMAP accounts, by key (`[accounts.<key>]` of `accounts.toml`).
     ///
@@ -108,6 +109,7 @@ impl Default for Config {
             ai: AiSettings::default(),
             mcp: McpSettings::default(),
             unsubscribe: UnsubscribeSettings::default(),
+            oauth: OauthSettings::default(),
             folder_names: FolderNames::default(),
             accounts: BTreeMap::new(),
         }
@@ -324,6 +326,32 @@ impl Default for McpSettings {
 pub struct UnsubscribeSettings {
     /// Offer and accept the unsubscribe of the mails in Banned.
     pub in_banned: bool,
+}
+
+/// `[oauth]` (`specifications/oauth2.md`, section 11): OAuth2 sign-in
+/// (Microsoft 365 and Outlook.com). By default the application id
+/// compiled in the core is used.
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct OauthSettings {
+    /// Replaces the compiled application id (`oauth2.md`, section 4): for
+    /// a development build, or for an organization that requires an app it
+    /// registered itself. A non-zero GUID; another value refuses the file
+    /// (`configuration.md`, section 4). Changing it asks every Microsoft
+    /// account to sign in again: the tokens are bound to the id that got
+    /// them.
+    pub microsoft_client_id: Option<String>,
+}
+
+/// Whether `s` is a non-zero GUID: 8-4-4-4-12 hexadecimal digits, hyphens
+/// included, not all zeros (`specifications/oauth2.md`, section 4).
+pub fn is_client_id(s: &str) -> bool {
+    let bytes = s.as_bytes();
+    if bytes.len() != 36 {
+        return false;
+    }
+    let hyphens_ok = [8, 13, 18, 23].iter().all(|&i| bytes[i] == b'-');
+    let digits_ok = bytes.iter().enumerate().all(|(i, &b)| [8, 13, 18, 23].contains(&i) || b.is_ascii_hexdigit());
+    hyphens_ok && digits_ok && bytes.iter().any(|&b| b != b'-' && b != b'0')
 }
 
 /// `[folder_names]` (`configuration.md`, "Noms des dossiers"): the name
@@ -1045,6 +1073,27 @@ impl<'t> Reader<'t> {
             }
         };
 
+        let oauth = match self.table(&mut s, "oauth")? {
+            None => d.oauth,
+            Some(mut t) => {
+                let item = t.table.get("microsoft_client_id");
+                let client_id = match self.string(&mut t, "microsoft_client_id")? {
+                    None => d.oauth.microsoft_client_id,
+                    Some(id) if !is_client_id(&id) => {
+                        return Err(self.problem(
+                            item,
+                            t.key("microsoft_client_id"),
+                            "must be a non-zero GUID (8-4-4-4-12 hexadecimal digits)",
+                        ));
+                    }
+                    Some(id) => Some(id),
+                };
+                let o = OauthSettings { microsoft_client_id: client_id };
+                self.finish(t);
+                o
+            }
+        };
+
         let folder_names = match self.table(&mut s, "folder_names")? {
             None => d.folder_names,
             Some(mut t) => {
@@ -1067,7 +1116,7 @@ impl<'t> Reader<'t> {
             });
         }
         self.finish(s);
-        Ok(Config { version, core, sync, config_sync, events, import, raw, ui, audit, compose, ai, mcp, unsubscribe, folder_names, accounts: BTreeMap::new() })
+        Ok(Config { version, core, sync, config_sync, events, import, raw, ui, audit, compose, ai, mcp, unsubscribe, oauth, folder_names, accounts: BTreeMap::new() })
     }
 
     /// `[folder_names]`: one optional name per role, starting from the
@@ -1696,6 +1745,15 @@ response_chars = {mcp_response_chars}
 # your address is read. true cleans Banned of the lists you once signed
 # up to. Junk and Quarantine never offer it. Applied at once.
 in_banned = {unsubscribe_in_banned}
+
+[oauth]
+# OAuth2 sign-in to Microsoft 365 and Outlook.com accounts
+# (specifications/oauth2.md). Empty by default: the application id
+# compiled in NiceMailer is used. Set this only for a development build,
+# or for an organization that requires an app it registered itself. It
+# must be a non-zero GUID, and changing it asks every Microsoft account
+# to sign in again.
+# microsoft_client_id = "11111111-2222-3333-4444-555555555555"
 "#,
         version = d.version,
         background_sorting = d.core.background_sorting,

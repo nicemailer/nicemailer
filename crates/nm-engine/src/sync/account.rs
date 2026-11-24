@@ -87,6 +87,7 @@ use super::pace::{self, IdleHold, Learnt, LoginPace, Signal};
 use super::pass::{self, Ctx, Mode, PassError};
 use super::spool;
 use super::{AccountSpec, Control, SyncHost, Worker, read, unix_now, write};
+use crate::config::AuthMethod;
 use crate::probe::imap_spec;
 use crate::secrets::{self, Refusal, Secrets};
 
@@ -120,6 +121,8 @@ struct Shared {
     spec: AccountSpec,
     host: Arc<dyn SyncHost>,
     secrets: Arc<dyn Secrets>,
+    /// The OAuth2 state: access tokens and renewals (`oauth2.rs`).
+    oauth: Arc<crate::oauth2::Oauth>,
     control: Arc<Control>,
     status: Arc<Mutex<AccountSync>>,
     /// The work thread has waited for the previous worker of the account:
@@ -143,7 +146,13 @@ struct Shared {
 
 /// Starts the worker of `spec`, once the threads of `wait` (the previous
 /// worker of the same account) have ended.
-pub(super) fn start(spec: AccountSpec, host: Arc<dyn SyncHost>, secrets: Arc<dyn Secrets>, wait: Vec<JoinHandle<()>>) -> Worker {
+pub(super) fn start(
+    spec: AccountSpec,
+    host: Arc<dyn SyncHost>,
+    secrets: Arc<dyn Secrets>,
+    oauth: Arc<crate::oauth2::Oauth>,
+    wait: Vec<JoinHandle<()>>,
+) -> Worker {
     let control = Arc::new(Control::default());
     // What the server taught before: a pause it imposed still runs after a
     // restart of the core, and its limit is not learnt again at the cost
@@ -162,6 +171,7 @@ pub(super) fn start(spec: AccountSpec, host: Arc<dyn SyncHost>, secrets: Arc<dyn
         spec: spec.clone(),
         host,
         secrets,
+        oauth,
         control: control.clone(),
         status: status.clone(),
         ready: Arc::new((std::sync::Mutex::new(false), std::sync::Condvar::new())),
@@ -209,6 +219,7 @@ pub(super) fn start(spec: AccountSpec, host: Arc<dyn SyncHost>, secrets: Arc<dyn
                         spec: &sender.spec,
                         host: sender.host.as_ref(),
                         secrets: sender.secrets.as_ref(),
+                        oauth: sender.oauth.as_ref(),
                         control: &sender.control,
                     };
                     runtime().block_on(super::send::run(sx));
@@ -327,22 +338,55 @@ async fn connect(w: &Shared, conn: Conn) -> Result<(Session, Option<Namespace>),
             return Err(NoSession::Stopped);
         }
     }
-    let password = match secrets::imap_password(w.secrets.as_ref(), &w.spec.key, cfg) {
-        Ok(p) => p,
-        Err(r @ Refusal::Unavailable(_)) => return Err(NoSession::Retry(r.message(&w.spec.key, cfg))),
-        Err(r) => return Err(NoSession::Blocked { state: "stopped", error: r.message(&w.spec.key, cfg) }),
+    // The credential of the login: the password, or an OAuth2 access token
+    // renewed on demand (`specifications/oauth2.md`, section 6).
+    let (password, oauth2) = match cfg.auth {
+        AuthMethod::Password => match secrets::imap_password(w.secrets.as_ref(), &w.spec.key, cfg) {
+            Ok(p) => (p, false),
+            Err(r @ Refusal::Unavailable(_)) => return Err(NoSession::Retry(r.message(&w.spec.key, cfg))),
+            Err(r) => return Err(NoSession::Blocked { state: "stopped", error: r.message(&w.spec.key, cfg) }),
+        },
+        AuthMethod::Oauth2 => match w.oauth.access_token(&w.spec.key, cfg, w.secrets.as_ref()).await {
+            Ok(t) => (t, true),
+            Err(e) if e.is_temporary() => return Err(NoSession::Retry(e.why().message())),
+            Err(e) => return Err(NoSession::Blocked { state: "stopped", error: e.why().message() }),
+        },
     };
     // Counted before connecting: an attempt that fails is seen by the
     // server all the same.
     w.pace.lock().unwrap().record(clock::now());
-    let mut s = Session::connect(&imap_spec(cfg), Timeouts::default()).await.map_err(|e| refused(w, conn, e))?;
+    let mut s = Session::connect(&imap_spec(cfg), Timeouts::default()).await.map_err(|e| refused(w, conn, e, false))?;
     // A read-only account: the session itself refuses any writing command,
     // whatever the rest of NiceMailer asks.
     if cfg.read_only {
         s.forbid_writes();
     }
-    if let Err(e) = s.login(&cfg.imap.username, password.expose()).await {
-        return Err(refused(w, conn, e));
+    let login = if oauth2 { s.login_oauth2(&cfg.imap.username, &password).await } else { s.login(&cfg.imap.username, password.expose()).await };
+    let mut fresh = false;
+    let login = match login {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            // A token the server refuses though the core believed it valid
+            // (revoked, conditional access): renew once, retry once.
+            if oauth2 && matches!(e, ImapError::AuthFailed(_)) {
+                match w.oauth.access_token_forced(&w.spec.key, cfg, w.secrets.as_ref()).await {
+                    Ok(t) => {
+                        fresh = true;
+                        s.login_oauth2(&cfg.imap.username, &t).await
+                    }
+                    Err(_) => Err(e),
+                }
+            } else {
+                Err(e)
+            }
+        }
+    };
+    if let Err(e) = login {
+        // IMAP disabled for the mailbox is concluded only after the refusal
+        // of a token that was just renewed (`specifications/oauth2.md`,
+        // section 11): Exchange does not distinguish it from a refused token.
+        let disabled = fresh && matches!(e, ImapError::AuthFailed(_));
+        return Err(refused(w, conn, e, disabled));
     }
     w.pace.lock().unwrap().logged_in();
     // This password works: refused later, it is more likely a lock than a
@@ -368,7 +412,7 @@ async fn connect(w: &Shared, conn: Conn) -> Result<(Session, Option<Namespace>),
 
 /// A connection or a login that failed: what the worker does next, and
 /// what the server taught, if it showed a block (`pace.rs`).
-fn refused(w: &Shared, conn: Conn, e: ImapError) -> NoSession {
+fn refused(w: &Shared, conn: Conn, e: ImapError, disabled: bool) -> NoSession {
     let id = w.spec.account_id;
     // Read at the refusal, not at the start: a password saved meanwhile
     // has not worked yet (`login_password_changed`).
@@ -380,7 +424,7 @@ fn refused(w: &Shared, conn: Conn, e: ImapError) -> NoSession {
         return match e {
             // A wrong password: never tried again until a new one is saved,
             // or the server could lock the account.
-            ImapError::AuthFailed(_) if signal != Some(Signal::Locked) => NoSession::Blocked { state: "auth_failed", error: e.to_string() },
+            ImapError::AuthFailed(_) if signal != Some(Signal::Locked) => NoSession::Blocked { state: if disabled { "auth_disabled" } else { "auth_failed" }, error: e.to_string() },
             _ => NoSession::Retry(e.to_string()),
         };
     };
@@ -447,6 +491,12 @@ impl Announced {
     /// The server refused the login.
     fn refused(&mut self, w: &Shared, error: &str) {
         self.announce(w, nm_api::reason::IMAP_AUTH_REFUSED.with("server_text", error));
+    }
+
+    /// The server refused a token that was just renewed: IMAP is disabled
+    /// for this mailbox (`specifications/oauth2.md`, section 11).
+    fn disabled(&mut self, w: &Shared) {
+        self.announce(w, nm_api::Why::from(nm_api::reason::IMAP_DISABLED_FOR_MAILBOX));
     }
 
     fn announce(&mut self, w: &Shared, why: nm_api::Why) {
@@ -516,8 +566,12 @@ async fn work_loop(w: &Shared) {
                 // A missing password, or one saved for another server, is
                 // already announced by the engine (`list_accounts`,
                 // `AccountError`): only a refused login is news.
-                if state == "auth_failed" {
-                    announced.refused(w, &error);
+                match state {
+                    "auth_failed" => announced.refused(w, &error),
+                    // A token just renewed was refused too: IMAP is disabled
+                    // for this mailbox, not a wrong sign-in.
+                    "auth_disabled" => announced.disabled(w),
+                    _ => {}
                 }
                 set(&w.status, state, Some(error));
                 blocked(&w.control).await;

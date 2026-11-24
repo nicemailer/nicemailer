@@ -168,6 +168,9 @@ struct Core {
     test_write_delay: Option<Duration>,
     /// Settings applied and state of the accounts (`nm-engine`).
     engine: Mutex<Engine>,
+    /// The OAuth2 state: sign-in flows, access tokens in memory, renewals
+    /// (`nm-engine::oauth2`, `specifications/oauth2.md`).
+    oauth: Arc<nm_engine::oauth2::Oauth>,
     /// The keys of the app, `keymap.toml` (`raccourcis.md`). Apart from the
     /// engine: the file is read and refused on its own.
     keymap: Mutex<nm_engine::keymap::KeymapFile>,
@@ -308,6 +311,8 @@ async fn run(args: Args, data_dir: &Path) -> anyhow::Result<()> {
     let accounts_path = nm_engine::config::accounts_path(&config_path);
     let mut engine = Engine::new(config_path.clone(), secrets);
     let startup_events = engine.reload(&mut store, true)?;
+    let oauth = Arc::new(nm_engine::oauth2::Oauth::new());
+    oauth.set_client_id(nm_engine::oauth2::client_id_of(&engine.config().oauth));
     log_config(&engine);
     clock.mark("settings");
     let settings = engine.config().events.clone();
@@ -340,6 +345,7 @@ async fn run(args: Args, data_dir: &Path) -> anyhow::Result<()> {
             .and_then(|v| v.parse().ok())
             .map(Duration::from_millis),
         engine: Mutex::new(engine),
+        oauth: oauth.clone(),
         keymap: Mutex::new(keymap),
         events: Mutex::new(events),
         client_queue: settings.client_queue as usize,
@@ -352,13 +358,50 @@ async fn run(args: Args, data_dir: &Path) -> anyhow::Result<()> {
         maintenance,
         update_generation: std::sync::atomic::AtomicU64::new(0),
     });
+    // The finished OAuth2 flows announce themselves to the subscribed
+    // clients; for an existing account, the tokens are stored right away
+    // and the account's error cleared (`specifications/oauth2.md`, section 8).
+    {
+        let core2 = core.clone();
+        oauth.set_sink(Arc::new(move |event| {
+            // For an existing account, a finished flow stores its tokens
+            // right away, clears the account's error and restarts its
+            // synchronization (`specifications/oauth2.md`, section 8).
+            if let nm_api::Event::OAuthFinished { ok: true, account: Some(key), flow, .. } = &event {
+                let core = core2.clone();
+                let (key, flow) = (key.clone(), flow.clone());
+                tokio::spawn(async move {
+                    let (cfg, secrets) = {
+                        let engine = core.engine.lock().unwrap();
+                        (engine.config().accounts.get(&key).cloned(), engine.secrets())
+                    };
+                    if let Some(cfg) = cfg {
+                        if let Err(w) = core.oauth.store_flow(&key, &cfg.email, &cfg.imap.host, &cfg.imap.username, secrets.as_ref(), &flow) {
+                            eprintln!("oauth2 {key}: storing the tokens of {flow} failed: {}", w.message());
+                            return;
+                        }
+                        let events = core.engine.lock().unwrap().recheck_accounts();
+                        let mut log = core.events.lock().unwrap();
+                        for e in events {
+                            log.push(e);
+                        }
+                        drop(log);
+                        if let Some(syncer) = core.syncer.get() {
+                            syncer.kick();
+                        }
+                    }
+                });
+            }
+            core2.events.lock().unwrap().push(event);
+        }));
+    }
     // The workers of the IMAP accounts of the file (`plan-imap.md`,
     // phase 4). They only start working once the socket is up: their
     // first writes wait for the store's lock like any command.
     {
         let secrets = core.engine.lock().unwrap().secrets();
         let host: Arc<dyn nm_engine::sync::SyncHost> = Arc::new(sync::CoreHost(core.clone()));
-        let _ = core.syncer.set(nm_engine::sync::Syncer::new(host, secrets));
+        let _ = core.syncer.set(nm_engine::sync::Syncer::new(host, secrets, core.oauth.clone()));
         let mut store = core.lock_store("startup");
         // Actions that were being sent when the core stopped: sent again
         // (each can be replayed, `nm-store`, `spool.rs`).
@@ -1116,6 +1159,35 @@ pub(crate) async fn with_reader<T: Send + 'static>(
     result.map_err(store_error)
 }
 
+/// `oauth_begin`: starts an OAuth2 sign-in flow (`specifications/oauth2.md`,
+/// section 8): the core listens on the loopback and returns the
+/// authorization URL, which the client opens in the default browser. The
+/// flow ends with the `OAuthFinished` event. Entered in the app or the CLI
+/// only, like a password: an agent must not trigger a browser sign-in.
+async fn oauth_begin(core: &Arc<Core>, p: nm_api::OauthBeginParams, source: Source) -> Result<nm_api::OauthBeginResult, RpcError> {
+    if !matches!(source, Source::App | Source::Cli | Source::Tui) {
+        return Err(RpcError::new(error_code::FORBIDDEN, reason::RESERVED_TO_PEOPLE));
+    }
+    let (email, account) = match (p.email, p.account) {
+        (Some(email), None) => (email, None),
+        (None, Some(key)) => {
+            let engine = core.engine.lock().unwrap();
+            let Some(cfg) = engine.config().accounts.get(&key) else {
+                return Err(RpcError::new(error_code::NOT_FOUND, reason::ACCOUNT_UNKNOWN.with("account", key.as_str())));
+            };
+            (cfg.email.clone(), Some(key))
+        }
+        _ => {
+            return Err(RpcError::new(
+                error_code::INVALID_PARAMS,
+                reason::INVALID_PARAMS.with("detail", "oauth_begin takes exactly one of email, account"),
+            ))
+        }
+    };
+    let begin = core.oauth.begin(&email, account).await.map_err(|w| RpcError::new(error_code::SERVER, w))?;
+    Ok(nm_api::OauthBeginResult { flow: begin.flow, url: begin.url, provider: begin.provider.to_string() })
+}
+
 /// `set_password`: saves the IMAP password of an account in the Keychain,
 /// bound to the server the file names now. Saving it again after the file
 /// changed server is how the user confirms the new server.
@@ -1216,7 +1288,7 @@ async fn probe_account(core: &Arc<Core>, p: ProbeAccountParams) -> Result<ProbeR
             RpcError::new(code, refusal.why(&p.account, &account))
         })?;
     let spec = nm_engine::probe::imap_spec(&account);
-    nm_engine::probe::probe(&spec, &account.imap.username, password.expose(), nm_proto::imap::Timeouts::default())
+    nm_engine::probe::probe(&spec, &account.imap.username, nm_engine::probe::Cred::Password(password.expose()), nm_proto::imap::Timeouts::default())
         .await
         .map_err(|e| RpcError::new(error_code::SERVER, reason::IMAP_FAILED.with("server_text", e.to_string())))
 }
@@ -1231,11 +1303,15 @@ fn reload_config(core: &Arc<Core>) {
     // order of the writes.
     let mut store = core.lock_store("config");
     let mut engine = core.engine.lock().unwrap();
+    // A changed `oauth.microsoft_client_id` applies at once: the tokens are
+    // bound to the id that got them, so the accounts will sign in again.
+    core.oauth.set_client_id(nm_engine::oauth2::client_id_of(&engine.config().oauth));
     let changed = match engine.reload(&mut store, false) {
         Ok(events) => {
             let changed = !events.is_empty();
             if changed {
                 log_config(&engine);
+                core.oauth.set_client_id(nm_engine::oauth2::client_id_of(&engine.config().oauth));
             }
             let mut log = core.events.lock().unwrap();
             for e in events {
@@ -1837,6 +1913,15 @@ async fn call(core: &Arc<Core>, source: Source, req: Request) -> Result<Value, R
             let p: SetPasswordParams = params(req.params)?;
             to_value(set_password(core, p, source).await?)
         }
+        method::OAUTH_BEGIN => {
+            let p: nm_api::OauthBeginParams = params(req.params)?;
+            to_value(oauth_begin(core, p, source).await?)
+        }
+        method::OAUTH_CANCEL => {
+            let p: nm_api::OauthCancelParams = params(req.params)?;
+            core.oauth.cancel(&p.flow);
+            to_value(CommandResult { changed: 0 })
+        }
         method::TEST_ACCOUNT => {
             let p: nm_api::TestAccountParams = params(req.params)?;
             to_value(setup::test_account(core, p, source).await?)
@@ -1847,7 +1932,7 @@ async fn call(core: &Arc<Core>, source: Source, req: Request) -> Result<Value, R
         }
         method::TEST_SMTP => {
             let p: nm_api::TestSmtpParams = params(req.params)?;
-            to_value(setup::test_smtp(p, source).await?)
+            to_value(setup::test_smtp(core, p, source).await?)
         }
         method::COUNT_ARCHIVE => {
             let p: nm_api::CountArchiveParams = params(req.params)?;

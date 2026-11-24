@@ -30,6 +30,8 @@
 use std::collections::BTreeMap;
 use std::sync::Mutex;
 
+use serde::{Deserialize, Serialize};
+
 use crate::config::{AccountConfig, AuthMethod, SecretString};
 
 /// The server a secret was entered for.
@@ -60,6 +62,60 @@ pub struct Credential {
     pub secret: SecretString,
 }
 
+/// The OAuth2 entry of an account, stored in the Keychain in place of the
+/// IMAP password, under the same derived name (`imap:<key>`): the refresh
+/// token, the provider and the application id that got it, the tenant and
+/// user ids, and the authorized address (`specifications/oauth2.md`,
+/// section 6). The access token is never stored: it lives in memory only
+/// (`crate::oauth2`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OauthCredential {
+    pub binding: Binding,
+    pub refresh_token: SecretString,
+    pub provider: String,
+    pub client_id: String,
+    pub tenant: Option<String>,
+    pub user_id: Option<String>,
+    pub email: String,
+}
+
+/// The JSON form stored in the item's data. The binding stays in the
+/// item's comment, as for a password.
+#[derive(Serialize, Deserialize)]
+pub struct StoredOauth {
+    pub provider: String,
+    pub client_id: String,
+    pub refresh_token: String,
+    pub tenant: Option<String>,
+    pub user_id: Option<String>,
+    pub email: String,
+}
+
+impl OauthCredential {
+    pub fn to_stored(&self) -> StoredOauth {
+        StoredOauth {
+            provider: self.provider.clone(),
+            client_id: self.client_id.clone(),
+            refresh_token: self.refresh_token.expose().to_string(),
+            tenant: self.tenant.clone(),
+            user_id: self.user_id.clone(),
+            email: self.email.clone(),
+        }
+    }
+
+    pub fn from_stored(binding: Binding, s: StoredOauth) -> OauthCredential {
+        OauthCredential {
+            binding,
+            refresh_token: SecretString::new(s.refresh_token),
+            provider: s.provider,
+            client_id: s.client_id,
+            tenant: s.tenant,
+            user_id: s.user_id,
+            email: s.email,
+        }
+    }
+}
+
 /// Where the secrets of the accounts are kept.
 ///
 /// Rust note: a *trait* is an interface: a set of methods a type promises
@@ -84,6 +140,13 @@ pub trait Secrets: Send + Sync {
     fn smtp(&self, key: &str) -> Result<Option<Credential>, String>;
     fn set_smtp(&self, key: &str, credential: &Credential) -> Result<(), String>;
     fn remove_smtp(&self, key: &str) -> Result<(), String>;
+    /// The OAuth2 entry of account `key`, stored in the `imap:<key>` item
+    /// in place of the password (`specifications/oauth2.md`, section 6).
+    /// Same rule as [`Secrets::imap`]: only to log in, never with a lock held.
+    fn oauth(&self, key: &str) -> Result<Option<OauthCredential>, String>;
+    /// Stores (or replaces) the OAuth2 entry of account `key`. Removed by
+    /// [`Secrets::remove_imap`]: it is the same item.
+    fn set_oauth(&self, key: &str, credential: &OauthCredential) -> Result<(), String>;
 }
 
 /// Why the core will not authenticate an account.
@@ -91,8 +154,11 @@ pub trait Secrets: Send + Sync {
 pub enum Refusal {
     /// No secret stored for this account.
     Missing,
-    /// `auth = "oauth2"`, not supported yet.
-    OauthUnsupported,
+    /// `auth = "oauth2"`, but the IMAP server is not a known OAuth2 server:
+    /// no token is ever requested or sent to it (`oauth2.md`, section 7).
+    OauthUnknownServer { host: String },
+    /// `auth = "oauth2"`, but no OAuth2 entry is stored: sign in again.
+    OauthMissing,
     /// The file names another server than the one the secret was entered
     /// for: the user must confirm it.
     ServerChanged { stored: Binding },
@@ -122,7 +188,8 @@ impl Refusal {
         let smtp = account.smtp.as_ref();
         match self {
             Refusal::Missing => r::PASSWORD_MISSING.with("account", key),
-            Refusal::OauthUnsupported => r::OAUTH2_UNSUPPORTED.into(),
+            Refusal::OauthUnknownServer { host } => r::OAUTH2_UNKNOWN_SERVER.with("host", host.as_str()),
+            Refusal::OauthMissing => r::OAUTH_REAUTH_NEEDED.with("account", key),
             Refusal::ServerChanged { stored } => r::PASSWORD_SERVER_CHANGED
                 .with("account", key)
                 .with("saved_user", stored.username.as_str())
@@ -150,7 +217,14 @@ impl Refusal {
 /// reading of the file to show the state of the accounts.
 pub fn check(secrets: &dyn Secrets, key: &str, account: &AccountConfig) -> Result<(), Refusal> {
     if account.auth == AuthMethod::Oauth2 {
-        return Err(Refusal::OauthUnsupported);
+        if crate::oauth2::provider_for_imap(&account.imap.host).is_none() {
+            return Err(Refusal::OauthUnknownServer { host: account.imap.host.clone() });
+        }
+        let stored = secrets.imap_binding(key).map_err(Refusal::Unavailable)?.ok_or(Refusal::OauthMissing)?;
+        if !stored.matches(account) {
+            return Err(Refusal::ServerChanged { stored });
+        }
+        return Ok(());
     }
     let stored = secrets.imap_binding(key).map_err(Refusal::Unavailable)?.ok_or(Refusal::Missing)?;
     if !stored.matches(account) {
@@ -165,7 +239,9 @@ pub fn check(secrets: &dyn Secrets, key: &str, account: &AccountConfig) -> Resul
 /// file may have changed in between.
 pub fn imap_password(secrets: &dyn Secrets, key: &str, account: &AccountConfig) -> Result<SecretString, Refusal> {
     if account.auth == AuthMethod::Oauth2 {
-        return Err(Refusal::OauthUnsupported);
+        // The token path is used instead (`crate::oauth2`); this guard
+        // keeps the JSON entry from ever being sent as a password.
+        return Err(Refusal::OauthMissing);
     }
     let credential = secrets.imap(key).map_err(Refusal::Unavailable)?.ok_or(Refusal::Missing)?;
     if !credential.binding.matches(account) {
@@ -192,7 +268,7 @@ pub fn smtp_password(
     organizational_domain: fn(&str) -> String,
 ) -> Result<SecretString, Refusal> {
     if account.auth == AuthMethod::Oauth2 {
-        return Err(Refusal::OauthUnsupported);
+        return Err(Refusal::OauthMissing);
     }
     let smtp = account.smtp.as_ref().ok_or(Refusal::NoSmtp)?;
     if let Some(c) = secrets.smtp(key).map_err(Refusal::Unavailable)? {
@@ -214,10 +290,26 @@ pub fn smtp_binding(account: &AccountConfig) -> Option<Binding> {
     account.smtp.as_ref().map(|s| Binding { host: s.host.clone(), username: s.username.clone() })
 }
 
+/// The OAuth2 entry of an account, if the core may renew with it. The
+/// server is checked against the compiled table first: a token is never
+/// requested for, or sent to, a host outside it (`oauth2.md`, section 7).
+/// The binding is checked again on the item read: the file may have
+/// changed in between.
+pub fn oauth_credential(secrets: &dyn Secrets, key: &str, account: &AccountConfig) -> Result<Option<OauthCredential>, Refusal> {
+    if crate::oauth2::provider_for_imap(&account.imap.host).is_none() {
+        return Err(Refusal::OauthUnknownServer { host: account.imap.host.clone() });
+    }
+    let Some(c) = secrets.oauth(key).map_err(Refusal::Unavailable)? else { return Ok(None) };
+    if !c.binding.matches(account) {
+        return Err(Refusal::ServerChanged { stored: c.binding });
+    }
+    Ok(Some(c))
+}
+
 /// Secrets in memory, for tests: the same behavior as the Keychain, without
 /// touching it.
 #[derive(Default)]
-pub struct MemorySecrets(Mutex<BTreeMap<String, Credential>>, Mutex<BTreeMap<String, Credential>>);
+pub struct MemorySecrets(Mutex<BTreeMap<String, Credential>>, Mutex<BTreeMap<String, Credential>>, Mutex<BTreeMap<String, OauthCredential>>);
 
 impl Secrets for MemorySecrets {
     fn imap_binding(&self, key: &str) -> Result<Option<Binding>, String> {
@@ -249,6 +341,15 @@ impl Secrets for MemorySecrets {
 
     fn remove_smtp(&self, key: &str) -> Result<(), String> {
         self.1.lock().unwrap().remove(key);
+        Ok(())
+    }
+
+    fn oauth(&self, key: &str) -> Result<Option<OauthCredential>, String> {
+        Ok(self.2.lock().unwrap().get(key).cloned())
+    }
+
+    fn set_oauth(&self, key: &str, credential: &OauthCredential) -> Result<(), String> {
+        self.2.lock().unwrap().insert(key.to_string(), credential.clone());
         Ok(())
     }
 }

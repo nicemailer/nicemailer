@@ -19,6 +19,10 @@ serde_json.workspace = true
 sha2.workspace = true
 toml_edit.workspace = true
 notify.workspace = true
+# HTTP client of the OAuth2 token endpoint (blocking, called off the
+# async runtime through `spawn_blocking`); `https_only` is false only in
+# tests (`oauth2.rs`).
+ureq.workspace = true
 security-framework.workspace = true
 core-foundation.workspace = true
 

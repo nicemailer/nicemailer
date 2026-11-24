@@ -29,6 +29,7 @@ pub mod discover;
 pub mod folders;
 pub mod keychain;
 pub mod keymap;
+pub mod oauth2;
 pub mod probe;
 pub mod providers;
 pub mod secrets;

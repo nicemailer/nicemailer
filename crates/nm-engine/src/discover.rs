@@ -6,6 +6,7 @@
 use std::time::Duration;
 
 use nm_api::{DiscoveryReport, ImapParams, ServerCandidate, SmtpAttempt, SmtpTestReport};
+use nm_core::secret::SecretString;
 use nm_proto::imap::Timeouts;
 use nm_proto::smtp;
 
@@ -56,12 +57,16 @@ pub async fn test_smtp(
     imap: &ImapParams,
     password: &str,
     smtp_password: Option<&str>,
+    // An OAuth2 access token, from a finished flow: used instead of the
+    // password, and sent only to a server of the provider's table
+    // (`specifications/oauth2.md`, section 7).
+    token: Option<&SecretString>,
     candidates: &[ServerCandidate],
 ) -> SmtpTestReport {
     let mut attempts = Vec::new();
     let mut chosen = None;
     for c in candidates {
-        let (outcome, detail) = attempt(email, imap, password, smtp_password, &c.server).await;
+        let (outcome, detail) = attempt(email, imap, password, smtp_password, token, &c.server).await;
         let works = outcome == "logged_in" || outcome == "reachable";
         attempts.push(SmtpAttempt { candidate: c.clone(), outcome: outcome.into(), detail });
         if works {
@@ -78,6 +83,7 @@ async fn attempt(
     imap: &ImapParams,
     password: &str,
     smtp_password: Option<&str>,
+    token: Option<&SecretString>,
     server: &ImapParams,
 ) -> (&'static str, Option<String>) {
     let spec = match setup::spec_of(server) {
@@ -92,6 +98,27 @@ async fn attempt(
     if auth.is_empty() {
         client.quit().await;
         return ("no_login", None);
+    }
+    let user = setup::username_of(server, email);
+    // OAuth2: the token goes only to a server of the account's provider, in
+    // the compiled table, that offers XOAUTH2 (`oauth2.md`, section 7).
+    if let Some(t) = token {
+        if !auth.iter().any(|m| m == "XOAUTH2") {
+            let offered = auth.join(" ");
+            client.quit().await;
+            return ("failed", Some(format!("the server does not offer XOAUTH2 (it offers {offered})")));
+        }
+        if !crate::oauth2::smtp_host_allowed(&imap.host, &server.host) {
+            client.quit().await;
+            return ("failed", Some("the OAuth2 token is not sent to this server: it is not in the provider's table".into()));
+        }
+        let r = client.login_oauth2(&user, t).await;
+        client.quit().await;
+        return match r {
+            Ok(()) => ("logged_in", None),
+            Err(e @ smtp::SmtpError::Auth(_)) => ("auth_refused", Some(e.to_string())),
+            Err(e) => ("failed", Some(e.to_string())),
+        };
     }
     // A server that offers only methods NiceMailer does not speak (OAuth2
     // alone): no password would ever pass, so asking the user for one
@@ -109,7 +136,6 @@ async fn attempt(
             return ("reachable", None);
         }
     };
-    let user = setup::username_of(server, email);
     let r = client.login(&user, password).await;
     client.quit().await;
     match r {
@@ -203,7 +229,7 @@ mod tests {
     #[tokio::test]
     async fn the_imap_password_is_tried_on_a_server_of_the_same_organization() {
         let (port, seen) = server("PLAIN LOGIN", "imap-pw").await;
-        let r = test_smtp("me@example.com", &at("127.0.0.1", 993), "imap-pw", None, &[candidate(port)]).await;
+        let r = test_smtp("me@example.com", &at("127.0.0.1", 993), "imap-pw", None, None, &[candidate(port)]).await;
         assert_eq!((outcomes(&r), r.chosen, r.refused), (vec!["logged_in"], Some(0), None));
         assert_eq!(seen.lock().unwrap().len(), 1);
     }
@@ -215,13 +241,13 @@ mod tests {
     async fn a_refused_password_is_reported_and_the_next_server_tried() {
         let (refusing, _) = server("PLAIN", "smtp-pw").await;
         let (relay, _) = server("", "").await;
-        let r = test_smtp("me@example.com", &at("127.0.0.1", 993), "imap-pw", None, &[candidate(refusing), candidate(relay)]).await;
+        let r = test_smtp("me@example.com", &at("127.0.0.1", 993), "imap-pw", None, None, &[candidate(refusing), candidate(relay)]).await;
         assert_eq!((outcomes(&r), r.chosen, r.refused), (vec!["auth_refused", "no_login"], None, Some(0)));
         assert!(r.attempts[0].detail.as_deref().unwrap().contains("535"), "{r:?}");
 
         // A later server that takes the password wins: nothing refused.
         let (taking, _) = server("PLAIN", "imap-pw").await;
-        let r = test_smtp("me@example.com", &at("127.0.0.1", 993), "imap-pw", None, &[candidate(refusing), candidate(taking)]).await;
+        let r = test_smtp("me@example.com", &at("127.0.0.1", 993), "imap-pw", None, None, &[candidate(refusing), candidate(taking)]).await;
         assert_eq!((outcomes(&r), r.chosen, r.refused), (vec!["auth_refused", "logged_in"], Some(1), None));
     }
 
@@ -232,15 +258,15 @@ mod tests {
         let other = at("imap.other.example", 993);
         // Without it, the IMAP password never leaves for another
         // organization.
-        let r = test_smtp("me@example.com", &other, "imap-pw", None, &[candidate(port)]).await;
+        let r = test_smtp("me@example.com", &other, "imap-pw", None, None, &[candidate(port)]).await;
         assert_eq!((outcomes(&r), r.chosen), (vec!["reachable"], Some(0)));
         assert!(seen.lock().unwrap().is_empty());
         // With it: tried, accepted.
-        let r = test_smtp("me@example.com", &other, "imap-pw", Some("smtp-pw"), &[candidate(port)]).await;
+        let r = test_smtp("me@example.com", &other, "imap-pw", Some("smtp-pw"), None, &[candidate(port)]).await;
         assert_eq!((outcomes(&r), r.chosen), (vec!["logged_in"], Some(0)));
         assert_eq!(*seen.lock().unwrap(), [plain("me@example.com", "smtp-pw")]);
         // A wrong one: refused again.
-        let r = test_smtp("me@example.com", &other, "imap-pw", Some("nope"), &[candidate(port)]).await;
+        let r = test_smtp("me@example.com", &other, "imap-pw", Some("nope"), None, &[candidate(port)]).await;
         assert_eq!((outcomes(&r), r.chosen, r.refused), (vec!["auth_refused"], None, Some(0)));
     }
 
@@ -249,7 +275,7 @@ mod tests {
     #[tokio::test]
     async fn a_server_without_a_known_login_method_fails() {
         let (port, seen) = server("XOAUTH2", "").await;
-        let r = test_smtp("me@example.com", &at("127.0.0.1", 993), "imap-pw", None, &[candidate(port)]).await;
+        let r = test_smtp("me@example.com", &at("127.0.0.1", 993), "imap-pw", None, None, &[candidate(port)]).await;
         assert_eq!((outcomes(&r), r.chosen, r.refused), (vec!["failed"], None, None));
         assert!(r.attempts[0].detail.as_deref().unwrap().contains("XOAUTH2"), "{r:?}");
         assert!(seen.lock().unwrap().is_empty());
@@ -261,7 +287,7 @@ mod tests {
             let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
             l.local_addr().unwrap().port()
         };
-        let r = test_smtp("me@example.com", &at("127.0.0.1", 993), "imap-pw", None, &[candidate(port)]).await;
+        let r = test_smtp("me@example.com", &at("127.0.0.1", 993), "imap-pw", None, None, &[candidate(port)]).await;
         assert_eq!((outcomes(&r), r.chosen, r.refused), (vec!["failed"], None, None));
     }
 }

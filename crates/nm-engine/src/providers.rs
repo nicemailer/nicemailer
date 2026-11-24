@@ -383,6 +383,18 @@ pub fn plan(
         new
     });
 
+    // The authentication the account will use: `oauth2` when the IMAP
+    // server to use is in the compiled OAuth2 table (the hosts of the
+    // table take no password — `specifications/oauth2.md`, section 7);
+    // `password` otherwise.
+    let (auth, oauth_provider) = match &imap {
+        Some(c) => match crate::oauth2::provider_for_imap(&c.server.host) {
+            Some(p) => ("oauth2".to_string(), Some(p.name.to_string())),
+            None => ("password".to_string(), None),
+        },
+        None => ("password".to_string(), None),
+    };
+
     Ok(DiscoveryReport {
         key: key.key,
         key_source: key.source.into(),
@@ -396,6 +408,8 @@ pub fn plan(
         by_mx,
         imap,
         smtp,
+        auth,
+        oauth_provider,
     })
 }
 

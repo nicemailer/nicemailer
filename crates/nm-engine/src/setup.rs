@@ -15,7 +15,7 @@ use nm_proto::imap::{FetchItems, ImapError, MailboxName, SearchKey, Security, Se
 use nm_store::ingest::parse_headers;
 
 use crate::config::ImportSettings;
-use crate::probe::probe;
+use crate::probe::{self, probe};
 
 /// Headers of Sent fetched per command.
 const SENT_BATCH: usize = 500;
@@ -37,9 +37,9 @@ pub fn username_of(p: &ImapParams, email: &str) -> String {
 }
 
 /// A logged-in session.
-pub async fn open(spec: &ServerSpec, username: &str, password: &str) -> Result<Session, ImapError> {
+pub async fn open(spec: &ServerSpec, username: &str, cred: probe::Cred<'_>) -> Result<Session, ImapError> {
     let mut s = Session::connect(spec, Timeouts::default()).await?;
-    s.login(username, password).await?;
+    cred.login(&mut s, username).await?;
     Ok(s)
 }
 
@@ -48,13 +48,13 @@ pub async fn open(spec: &ServerSpec, username: &str, password: &str) -> Result<S
 pub async fn test_account(
     spec: &ServerSpec,
     username: &str,
-    password: &str,
+    cred: probe::Cred<'_>,
     own: &[String],
     import: &ImportSettings,
     today: i64,
 ) -> Result<TestAccountReport, ImapError> {
-    let report = probe(spec, username, password, Timeouts::default()).await?;
-    let mut s = open(spec, username, password).await?;
+    let report = probe(spec, username, cred, Timeouts::default()).await?;
+    let mut s = open(spec, username, cred).await?;
     // Only reading here: a test of a production mailbox writes nothing.
     s.forbid_writes();
     let st = s.status(&MailboxName::inbox()).await?;

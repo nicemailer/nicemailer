@@ -10,10 +10,28 @@
 use std::time::Instant;
 
 use nm_api::{ProbeFolder, ProbeNamespace, ProbeReport};
+use nm_core::secret::SecretString;
 use nm_proto::imap::{ImapError, ListEntry, MailboxStatus, Security, ServerSpec, Session, Timeouts};
 
 use crate::config::{self, AccountConfig};
 use crate::folders::propose_roles;
+
+/// How a test connection logs in: with the password, or with an OAuth2
+/// access token (XOAUTH2, `specifications/oauth2.md`).
+#[derive(Clone, Copy)]
+pub enum Cred<'a> {
+    Password(&'a str),
+    Token(&'a SecretString),
+}
+
+impl Cred<'_> {
+    pub(crate) async fn login(self, s: &mut Session, username: &str) -> Result<(), ImapError> {
+        match self {
+            Cred::Password(p) => s.login(username, p).await,
+            Cred::Token(t) => s.login_oauth2(username, t).await,
+        }
+    }
+}
 
 /// Above this many folders, the counters of each are not asked one by one
 /// (without LIST-STATUS, one STATUS per folder): the probe stays quick.
@@ -33,16 +51,17 @@ pub fn imap_spec(account: &AccountConfig) -> ServerSpec {
     }
 }
 
-/// Runs the probe. `password` was read from the Keychain by the caller,
-/// after the binding to the server was checked (`secrets::imap_password`).
-pub async fn probe(spec: &ServerSpec, username: &str, password: &str, timeouts: Timeouts) -> Result<ProbeReport, ImapError> {
+/// Runs the probe. The credential was read from the Keychain by the
+/// caller, after the binding to the server was checked
+/// (`secrets::imap_password`), or taken from a finished OAuth2 flow.
+pub async fn probe(spec: &ServerSpec, username: &str, cred: Cred<'_>, timeouts: Timeouts) -> Result<ProbeReport, ImapError> {
     let started = Instant::now();
     let mut s = Session::connect(spec, timeouts).await?;
     let connect_ms = started.elapsed().as_millis() as u64;
     let before: Vec<String> = s.capabilities().names().map(str::to_string).collect();
 
     let started = Instant::now();
-    s.login(username, password).await?;
+    cred.login(&mut s, username).await?;
     let login_ms = started.elapsed().as_millis() as u64;
     // Failures of the optional steps do not fail the probe.
     let _ = s.id().await;

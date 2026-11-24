@@ -426,6 +426,9 @@ fn the_created_config_lists_every_setting_commented_out() {
         Config {
             raw: defaults.raw.clone(),
             unsubscribe: defaults.unsubscribe.clone(),
+            // The example GUID of the template is valid but not the
+            // default: the default is to leave the key out.
+            oauth: defaults.oauth.clone(),
             folder_names: defaults.folder_names.clone(),
             ui,
             ai,
