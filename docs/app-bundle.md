@@ -155,7 +155,9 @@ A release bumps `version` in `Cargo.toml` in a commit of its own, then is tagged
 `make release` (`scripts/make-release.sh`) writes `dist/<version>-<time>/NiceMailer-<version>.dmg` and `notes.md`, a new directory each time:
 
 0. Before building, it refuses a version whose tag `v<version>` already exists (the version of `Cargo.toml` was not raised) and a changelog that does not give its notes ("Release notes" below).
-1. `scripts/make-bundle.sh --release`: refuses uncommitted changes and `NICEMAILER_FAKE_NETWORK`; signs with the Developer ID; runs `check-signature.sh --release`; installs nothing and leaves the running app and its core alone.
+1. `scripts/make-bundle.sh --release`: refuses uncommitted changes, `NICEMAILER_FAKE_NETWORK` and a missing `NICEMAILER_MICROSOFT_CLIENT_ID`; signs with the Developer ID; runs `check-signature.sh --release`; installs nothing and leaves the running app and its core alone.
+
+`NICEMAILER_MICROSOFT_CLIENT_ID` is the Entra application id ("client ID") of NiceMailer, from the "Overview" page of its registration in the Entra admin center. The build embeds it in the core (`crates/nm-engine/build.rs` checks its form and fails the build on a malformed value), so the distributed app signs Microsoft 365 and Outlook.com accounts in at the first install, with no configuration by the user. The id is public — a public client sends it in every authorization URL — and no client secret is compiled in: the flow is protected by PKCE and the loopback redirect, not by a shared secret (`specifications/oauth2.md`, section 4; `docs/accounts.md`, "OAuth2 sign-in"). Keep the variable in the environment of the release machine (a CI secret for the release workflow), not in the repository.
 2. A disk image with the app and a link to `/Applications`, signed.
 3. Notarization (`notarytool submit --wait`, a few minutes); on a refusal, Apple's log, which names each problem, is printed.
 4. The ticket stapled to the image (`stapler`), so that the first launch is accepted offline.

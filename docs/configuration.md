@@ -298,7 +298,7 @@ They are all in `config.toml`; `nicemailer config defaults` prints them all. Ran
 | `mcp.message_chars` | 8000 | 1000 to 100000 | yes: characters of one message when an AI agent reads a conversation ([mcp.md](mcp.md)); read by `nicemailer-mcp` at each call |
 | `mcp.response_chars` | 40000 | 4000 to 200000 | yes: characters of the text of one answer to an AI agent ([mcp.md](mcp.md)) |
 | `unsubscribe.in_banned` | false | | yes, at once: the mails of Banned offer their unsubscribe button, and the core accepts it (`geek-ui.md`, "Unsubscribing"); Junk and Quarantine never do. Unsubscribing from a spammer confirms the address: for those who know the sender is a real list |
-| `oauth.microsoft_client_id` | the compiled id (a zero GUID until the app is registered in Entra ID) | a GUID, non-zero | yes: `oauth_begin` and the token renewals use it; an invalid value refuses the file ([accounts.md](accounts.md), "OAuth2 sign-in") |
+| `oauth.microsoft_client_id` | the id compiled at build time (`NICEMAILER_MICROSOFT_CLIENT_ID`; a zero GUID in a development build without it) | a GUID, non-zero | yes: `oauth_begin` and the token renewals use it; an invalid value refuses the file ([accounts.md](accounts.md), "OAuth2 sign-in") |
 | `folder_names.<role>` | the English name | 1 to 24 characters, unique | yes: the app applies it at once; the name shown for the folder of that role, or for a virtual folder (`work`, `all_mail`, `everything`; see "Folder names") |
 
 ### Folder names

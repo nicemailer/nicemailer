@@ -26,11 +26,15 @@ use tokio::net::{TcpListener, TcpStream};
 use crate::config::{AccountConfig, AuthMethod};
 use crate::secrets::{Binding, OauthCredential, Secrets};
 
-/// The application id compiled in the core (`oauth2.md`, section 4). A
-/// zero GUID until the app is registered in Entra ID: then no id is
-/// available, OAuth2-only servers are not usable, and `oauth_begin`
-/// fails cleanly.
-pub const COMPILED_CLIENT_ID: &str = "00000000-0000-0000-0000-000000000000";
+/// The application id compiled in the core (`oauth2.md`, section 4):
+/// `NICEMAILER_MICROSOFT_CLIENT_ID` at build time, checked by `build.rs`
+/// (a malformed value fails the build), exposed as `NICEMAILER_COMPILED_CLIENT_ID`.
+/// A development build without the variable embeds the zero GUID: then no
+/// id is available, OAuth2-only servers are not usable, and `oauth_begin`
+/// fails cleanly. The id is not a secret — a public client sends it in
+/// every authorization URL — so compiling it in is safe; no client secret
+/// is compiled in, the flow relies on PKCE and the loopback redirect.
+pub const COMPILED_CLIENT_ID: &str = env!("NICEMAILER_COMPILED_CLIENT_ID");
 
 pub const AUTHORIZE_URL: &str = "https://login.microsoftonline.com/common/oauth2/v2.0/authorize";
 pub const TOKEN_URL: &str = "https://login.microsoftonline.com/common/oauth2/v2.0/token";
@@ -1251,10 +1255,23 @@ mod tests {
 
     #[tokio::test]
     async fn no_usable_client_id_is_a_clean_refusal() {
-        // The compiled id is the zero GUID until the app is registered:
-        // no id is usable, and `oauth_begin` says so without listening.
+        // No id in effect (a development build without
+        // NICEMAILER_MICROSOFT_CLIENT_ID, no config override): `oauth_begin`
+        // says so without listening.
         let oauth = Arc::new(Oauth::new());
+        oauth.set_client_id(None);
         let err = oauth.begin("me@outlook.com", None).await.map(|_| ()).unwrap_err();
         assert_eq!(err.reason.name, "oauth_client_rejected");
+    }
+
+    #[test]
+    fn compiled_client_id_is_a_zero_or_valid_guid() {
+        // Whatever the build embedded: the zero GUID (development without
+        // NICEMAILER_MICROSOFT_CLIENT_ID) or a non-zero GUID, a form checked
+        // by build.rs when the variable is set.
+        assert!(
+            COMPILED_CLIENT_ID == "00000000-0000-0000-0000-000000000000" || crate::config::is_client_id(COMPILED_CLIENT_ID),
+            "the compiled client id is neither the zero GUID nor a valid one: {COMPILED_CLIENT_ID:?}"
+        );
     }
 }

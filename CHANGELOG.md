@@ -14,7 +14,7 @@ How to write it:
 
 ### Added
 
-- **Accounts:** Sign in to a Microsoft 365 or Outlook.com account with OAuth2, in the browser: no password is asked, and NiceMailer never sees one. In the Preferences, the password field becomes a "Sign in with Microsoft" button; in the CLI, `nicemailer account add` opens the sign-in page itself (`--no-browser` to print it only), and `nicemailer account login <key>` signs an existing account in again. The refresh token is kept in the Keychain in place of a password, and renewed by the core.
+- **Accounts:** Sign in to a Microsoft 365 or Outlook.com account with OAuth2, in the browser: no password is asked, and NiceMailer never sees one. In the Preferences, the password field becomes a "Sign in with Microsoft" button; in the CLI, `nicemailer account add` opens the sign-in page itself (`--no-browser` to print it only), and `nicemailer account login <key>` signs an existing account in again. The refresh token is kept in the Keychain in place of a password, and renewed by the core. The Microsoft application id is embedded in the app at build time, so adding such an account works at the first launch, with nothing to configure.
 - **Accounts:** For a Gmail, iCloud or Fastmail address, the Preferences say under the password that it must be an app password, with a link to the step-by-step guide; if the server refuses the password, the error says so first.
 - **Accounts:** Give an account a new password from its page in the Preferences (Settings…, Accounts), after changing the password of the mailbox or creating a new app password. Until now it took the `nicemailer account password` command.
 

@@ -23,6 +23,12 @@
 # Mailbox…" in the app would.
 # NICEMAILER_FAKE_NETWORK, if set, is given to the core of the agent:
 # sending is pretended (docs/sending.md).
+# NICEMAILER_MICROSOFT_CLIENT_ID, required by --release: the Entra
+# application id ("client ID") of NiceMailer, embedded in the core at
+# compile time (crates/nm-engine/build.rs checks its form), so the
+# distributed app signs Microsoft accounts in with no configuration at
+# the first install (docs/accounts.md, "OAuth2 sign-in"). The id is
+# public, not a secret: no client secret is compiled in.
 # Updates (docs/updates.md): Sparkle.framework is carried in
 # Contents/Frameworks, and Info.plist names the feed (SPARKLE_FEED_URL, by
 # default the appcast.xml of the latest GitHub release) and the public key
@@ -50,6 +56,12 @@ if [ "$RELEASE" = 1 ]; then
   # pretend to send (docs/sending.md, "Pretending to send").
   if [ -n "${NICEMAILER_FAKE_NETWORK:-}" ]; then
     echo "NICEMAILER_FAKE_NETWORK is set: unset it before a release." >&2; exit 1
+  fi
+  # A release embeds the Entra application id in the core at compile time:
+  # without it the distributed app could not sign any Microsoft account in,
+  # and the first install would need a manual configuration.
+  if [ -z "${NICEMAILER_MICROSOFT_CLIENT_ID:-}" ]; then
+    echo "NICEMAILER_MICROSOFT_CLIENT_ID is not set: a release embeds the Entra application id of NiceMailer in the core at compile time. Set it before make release (docs/app-bundle.md, \"Releases\")." >&2; exit 1
   fi
 fi
 
