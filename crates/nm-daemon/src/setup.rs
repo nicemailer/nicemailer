@@ -129,7 +129,7 @@ pub async fn discover_account(core: &Arc<Core>, p: DiscoverAccountParams, source
     if nm_engine::providers::split_address(&p.email).is_err() {
         return Err(refused(reason::ADDRESS_INVALID.with("address", p.email.as_str())));
     }
-    nm_engine::discover::discover(&p.email, &existing, p.imap.as_ref()).await.map_err(invalid)
+    nm_engine::discover::discover(&p.email, &existing, p.imap.as_ref(), core.oauth.client_id().is_some()).await.map_err(invalid)
 }
 
 /// `test_smtp`: the candidates tried in order, the first that works

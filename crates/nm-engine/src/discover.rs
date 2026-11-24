@@ -15,8 +15,10 @@ use crate::setup;
 
 /// The report of `discover_account`: the database, and the MX of the
 /// domain when the domain itself is not listed. `existing`: the accounts
-/// the core has, for the key proposed.
-pub async fn discover(email: &str, existing: &[Existing], given: Option<&ImapParams>) -> Result<DiscoveryReport, String> {
+/// the core has, for the key proposed. `client_id_available`: whether an
+/// OAuth2 application id is in effect, for the OAuth2-only servers
+/// (`specifications/oauth2.md`, section 7).
+pub async fn discover(email: &str, existing: &[Existing], given: Option<&ImapParams>, client_id_available: bool) -> Result<DiscoveryReport, String> {
     let db = Providers::get()?;
     let (_, domain) = providers::split_address(email)?;
     let mx = if providers::needs_mx(db, email) {
@@ -24,7 +26,7 @@ pub async fn discover(email: &str, existing: &[Existing], given: Option<&ImapPar
     } else {
         None
     };
-    providers::plan(db, email, existing, given, mx)
+    providers::plan(db, email, existing, given, mx, client_id_available)
 }
 
 /// Time limits of an attempt: shorter than a sending's, since several

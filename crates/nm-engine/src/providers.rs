@@ -62,10 +62,15 @@ pub struct Server {
 }
 
 impl Server {
-    /// Whether NiceMailer can log in: with a password. A server that only
-    /// takes OAuth2 (Outlook.com) cannot be used yet.
-    pub fn usable(&self) -> bool {
-        self.auth.is_empty() || self.auth.iter().any(|a| a == PASSWORD)
+    /// Whether NiceMailer can log in to this server: with a password, or —
+    /// for a server that only takes OAuth2 (Outlook.com, Microsoft 365) —
+    /// when its host is in the compiled OAuth2 table and an application id
+    /// is available (`specifications/oauth2.md`, section 7).
+    pub fn usable(&self, email: &str, client_id_available: bool) -> bool {
+        if self.auth.is_empty() || self.auth.iter().any(|a| a == PASSWORD) {
+            return true;
+        }
+        client_id_available && self.auth.iter().any(|a| a.eq_ignore_ascii_case("oauth2")) && crate::oauth2::provider_for_imap(&fill(&self.host, email)).is_some()
     }
 
     /// The server for `email`: placeholders replaced, the user name left
@@ -100,8 +105,8 @@ pub struct Provider {
 
 impl Provider {
     /// Its first IMAP server NiceMailer can log in to.
-    pub fn imap(&self) -> Option<&Server> {
-        self.imap.iter().find(|s| s.usable())
+    pub fn imap(&self, email: &str, client_id_available: bool) -> Option<&Server> {
+        self.imap.iter().find(|s| s.usable(email, client_id_available))
     }
 }
 
@@ -337,10 +342,11 @@ pub fn plan(
     existing: &[Existing],
     given: Option<&ImapParams>,
     mx: Option<Result<Vec<String>, String>>,
+    client_id_available: bool,
 ) -> Result<DiscoveryReport, String> {
     let (_, domain) = split_address(email)?;
     let key = choose_key(email, existing)?;
-    let by_domain = providers.by_domain(&domain).map(|p| matched(p, &domain, None));
+    let by_domain = providers.by_domain(&domain).map(|p| matched(p, &domain, None, email, client_id_available));
     let (mx_hosts, mx_error, mx_looked_up) = match mx {
         Some(Ok(v)) => (v, None, true),
         Some(Err(e)) => (Vec::new(), Some(e), true),
@@ -349,11 +355,11 @@ pub fn plan(
     let by_mx = if by_domain.is_some() {
         None
     } else {
-        providers.by_mx(&mx_hosts).map(|(p, found, host)| matched(p, &found, Some(host)))
+        providers.by_mx(&mx_hosts).map(|(p, found, host)| matched(p, &found, Some(host), email, client_id_available))
     };
     let provider = by_domain.as_ref().or(by_mx.as_ref()).and_then(|m| providers.list.iter().find(|p| p.id == m.id));
 
-    let provider_imap = provider.and_then(Provider::imap).map(|s| s.params(email));
+    let provider_imap = provider.and_then(|p| p.imap(email, client_id_available)).map(|s| s.params(email));
     let imap = match (given, &provider_imap) {
         (Some(g), _) => Some(ServerCandidate { server: g.clone(), origin: "given".into() }),
         (None, Some(p)) => Some(ServerCandidate { server: p.clone(), origin: "provider".into() }),
@@ -365,7 +371,7 @@ pub fn plan(
         // The provider's SMTP servers belong with its IMAP server: tried
         // only when that one is used.
         if provider_imap.as_ref().is_some_and(|pi| pi.host.eq_ignore_ascii_case(&used.server.host)) {
-            for s in p.smtp.iter().filter(|s| s.usable()) {
+            for s in p.smtp.iter().filter(|s| s.usable(email, client_id_available)) {
                 smtp.push(ServerCandidate { server: s.params(email), origin: "provider".into() });
             }
         }
@@ -374,6 +380,28 @@ pub fn plan(
         && (used.origin == "given" || smtp.is_empty())
     {
         smtp.extend(smtp_guesses(&used.server));
+    }
+    // The IMAP server to use is in the compiled OAuth2 table: the SMTP
+    // servers to try are the table's, not the database's
+    // (`specifications/oauth2.md`, section 7).
+    if let Some(used) = &imap
+        && let Some(p) = crate::oauth2::provider_for_imap(&used.server.host)
+    {
+        smtp.clear();
+        for host in p.smtp {
+            for (port, security) in [(465, "tls"), (587, "starttls")] {
+                smtp.push(ServerCandidate {
+                    server: ImapParams {
+                        host: host.to_string(),
+                        port,
+                        security: security.into(),
+                        username: used.server.username.clone(),
+                        ca_file: used.server.ca_file.clone(),
+                    },
+                    origin: "provider".into(),
+                });
+            }
+        }
     }
     let mut seen = Vec::new();
     smtp.retain(|c| {
@@ -413,14 +441,14 @@ pub fn plan(
     })
 }
 
-fn matched(p: &Provider, found: &str, mx_host: Option<&str>) -> ProviderMatch {
+fn matched(p: &Provider, found: &str, mx_host: Option<&str>, email: &str, client_id_available: bool) -> ProviderMatch {
     ProviderMatch {
         id: p.id.clone(),
         name: p.name.clone(),
         source: p.origin.as_str().into(),
         matched: found.into(),
         mx_host: mx_host.map(Into::into),
-        imap_unsupported: p.imap().is_none(),
+        imap_unsupported: p.imap(email, client_id_available).is_none(),
     }
 }
 
@@ -624,7 +652,7 @@ mod tests {
             "outlook.com",
             Origin::Thunderbird,
             &["outlook.com", "shared.example"],
-            &[],
+            &["mail.protection.outlook.com"],
             vec![server("outlook.office365.com", 993, Security::Tls, &["oauth2"])],
             vec![],
         );
@@ -696,10 +724,10 @@ mod tests {
 
     #[test]
     fn the_report_carries_the_key_and_why() {
-        let r = plan(&db(), "pierre@gmail.com", &[existing("gmail", Some("jean@gmail.com"))], None, None).unwrap();
+        let r = plan(&db(), "pierre@gmail.com", &[existing("gmail", Some("jean@gmail.com"))], None, None, true).unwrap();
         assert_eq!((r.key.as_str(), r.key_source.as_str(), r.domain_key.as_str()), ("pierre_gmail_com", "address", "gmail"));
         assert_eq!(r.domain_account.as_deref(), Some("gmail"));
-        let r = plan(&db(), "pierre@gmail.com", &[], None, None).unwrap();
+        let r = plan(&db(), "pierre@gmail.com", &[], None, None, true).unwrap();
         assert_eq!((r.key.as_str(), r.key_source.as_str()), ("gmail", "domain"));
     }
 
@@ -716,7 +744,7 @@ mod tests {
         let db = db();
         assert!(!needs_mx(&db, "a@gmail.com"));
         assert!(needs_mx(&db, "a@my-company.fr"));
-        let r = plan(&db, "a@gmail.com", &[], None, None).unwrap();
+        let r = plan(&db, "a@gmail.com", &[], None, None, true).unwrap();
         let m = r.by_domain.unwrap();
         assert_eq!((m.id.as_str(), m.source.as_str(), m.matched.as_str()), ("googlemail.com", "thunderbird", "gmail.com"));
         assert!(!r.mx_looked_up && r.by_mx.is_none());
@@ -726,14 +754,14 @@ mod tests {
 
     #[test]
     fn our_providers_win_over_thunderbirds() {
-        let r = plan(&db(), "a@shared.example", &[], None, None).unwrap();
+        let r = plan(&db(), "a@shared.example", &[], None, None, true).unwrap();
         assert_eq!(r.by_domain.unwrap().id, "infomaniak");
     }
 
     #[test]
     fn a_domain_hosted_by_google_is_found_by_its_mx() {
         let mx = vec!["aspmx.l.google.com".to_string(), "alt1.aspmx.l.google.com".to_string()];
-        let r = plan(&db(), "pierre@my-company.fr", &[], None, Some(Ok(mx))).unwrap();
+        let r = plan(&db(), "pierre@my-company.fr", &[], None, Some(Ok(mx)), true).unwrap();
         let m = r.by_mx.unwrap();
         assert_eq!((m.matched.as_str(), m.mx_host.as_deref()), ("google.com", Some("aspmx.l.google.com")));
         assert_eq!(r.imap.unwrap().server.host, "imap.gmail.com");
@@ -742,7 +770,7 @@ mod tests {
 
     #[test]
     fn a_domain_hosted_by_infomaniak_is_found_by_the_mx_domain_of_our_file() {
-        let r = plan(&db(), "me@my-company.fr", &[], None, Some(Ok(vec!["mta-gw.infomaniak.ch".into()]))).unwrap();
+        let r = plan(&db(), "me@my-company.fr", &[], None, Some(Ok(vec!["mta-gw.infomaniak.ch".into()])), true).unwrap();
         assert_eq!(r.by_mx.unwrap().id, "infomaniak");
         assert_eq!(hosts(&r.smtp), ["mail.infomaniak.com:587 starttls provider"]);
     }
@@ -759,21 +787,66 @@ mod tests {
 
     #[test]
     fn nothing_found_says_so_with_the_dns_error() {
-        let r = plan(&db(), "me@nowhere.example", &[], None, Some(Err("timeout".into()))).unwrap();
+        let r = plan(&db(), "me@nowhere.example", &[], None, Some(Err("timeout".into())), true).unwrap();
         assert!(r.imap.is_none() && r.smtp.is_empty() && r.by_mx.is_none());
         assert_eq!(r.mx_error.as_deref(), Some("timeout"));
     }
 
     #[test]
-    fn an_oauth2_only_provider_cannot_be_used() {
-        let r = plan(&db(), "me@outlook.com", &[], None, None).unwrap();
+    fn an_oauth2_only_provider_needs_a_client_id() {
+        // Without an application id (the app is not registered yet), an
+        // OAuth2-only server is not usable (`specifications/oauth2.md`,
+        // section 4).
+        let r = plan(&db(), "me@outlook.com", &[], None, None, false).unwrap();
         assert!(r.by_domain.unwrap().imap_unsupported);
         assert!(r.imap.is_none());
+        assert_eq!(r.auth, "password");
+    }
+
+    #[test]
+    fn an_oauth2_only_provider_is_oauth2_with_the_table_servers() {
+        let r = plan(&db(), "me@outlook.com", &[], None, None, true).unwrap();
+        let m = r.by_domain.unwrap();
+        assert!(!m.imap_unsupported);
+        assert_eq!((r.auth.as_str(), r.oauth_provider.as_deref()), ("oauth2", Some("microsoft")));
+        assert_eq!(hosts(&[r.imap.unwrap()]), ["outlook.office365.com:993 tls provider"]);
+        // The SMTP servers are the compiled table's, on both submission
+        // ports, not the database's.
+        assert_eq!(
+            hosts(&r.smtp),
+            [
+                "smtp.office365.com:465 tls provider",
+                "smtp.office365.com:587 starttls provider",
+                "smtp-mail.outlook.com:465 tls provider",
+                "smtp-mail.outlook.com:587 starttls provider",
+            ]
+        );
+    }
+
+    #[test]
+    fn a_microsoft_365_domain_is_found_by_its_mx() {
+        // A custom domain whose MX is under `mail.protection.outlook.com`
+        // is hosted by Microsoft 365 (`specifications/oauth2.md`, section 7).
+        let mx = vec!["contoso.mail.protection.outlook.com".to_string()];
+        let r = plan(&db(), "me@contoso.com", &[], None, Some(Ok(mx)), true).unwrap();
+        let m = r.by_mx.unwrap();
+        assert_eq!(m.matched, "mail.protection.outlook.com");
+        assert_eq!(r.imap.unwrap().server.host, "outlook.office365.com");
+        assert_eq!((r.auth.as_str(), r.oauth_provider.as_deref()), ("oauth2", Some("microsoft")));
+    }
+
+    #[test]
+    fn a_given_oauth2_host_gets_the_table_smtp_servers() {
+        let r = plan(&db(), "me@nowhere.example", &[], Some(&given("outlook.office365.com")), Some(Ok(vec![])), true).unwrap();
+        assert_eq!(r.imap.unwrap().origin, "given");
+        assert_eq!((r.auth.as_str(), r.oauth_provider.as_deref()), ("oauth2", Some("microsoft")));
+        assert!(r.smtp.iter().all(|c| c.server.host.ends_with("office365.com") || c.server.host.ends_with("outlook.com")));
+        assert_eq!(r.smtp.len(), 4);
     }
 
     #[test]
     fn a_given_host_is_used_and_its_smtp_names_are_guessed() {
-        let r = plan(&db(), "me@nowhere.example", &[], Some(&given("imap.nowhere.example")), Some(Ok(vec![]))).unwrap();
+        let r = plan(&db(), "me@nowhere.example", &[], Some(&given("imap.nowhere.example")), Some(Ok(vec![])), true).unwrap();
         assert_eq!(r.imap.unwrap().origin, "given");
         assert_eq!(
             hosts(&r.smtp),
@@ -792,14 +865,14 @@ mod tests {
 
     #[test]
     fn a_given_host_that_is_the_providers_tries_its_smtp_first() {
-        let r = plan(&db(), "me@ik.me", &[], Some(&given("mail.infomaniak.com")), None).unwrap();
+        let r = plan(&db(), "me@ik.me", &[], Some(&given("mail.infomaniak.com")), None, true).unwrap();
         assert_eq!(
             hosts(&r.smtp),
             ["mail.infomaniak.com:587 starttls provider", "mail.infomaniak.com:465 tls same_host"],
             "the provider's server first, then the guesses, each once"
         );
         // Another host: the provider's SMTP is not tried.
-        let r = plan(&db(), "me@ik.me", &[], Some(&given("imap.elsewhere.example")), None).unwrap();
+        let r = plan(&db(), "me@ik.me", &[], Some(&given("imap.elsewhere.example")), None, true).unwrap();
         assert!(r.smtp.iter().all(|c| c.origin != "provider"));
     }
 
@@ -851,12 +924,21 @@ mod tests {
     fn the_built_in_database_reads_and_knows_gmail_and_infomaniak() {
         let db = Providers::get().unwrap();
         assert!(db.len() > 100);
-        assert_eq!(db.by_domain("gmail.com").unwrap().imap().unwrap().host, "imap.gmail.com");
+        assert_eq!(db.by_domain("gmail.com").unwrap().imap("a.com", true).unwrap().host, "imap.gmail.com");
         let ik = db.by_domain("ik.me").unwrap();
         assert_eq!((ik.id.as_str(), ik.origin), ("infomaniak", Origin::Local));
         assert_eq!(db.by_mx(&["mta-gw.infomaniak.ch".to_string()]).unwrap().0.id, "infomaniak");
         assert_eq!(db.by_mx(&["gmail-smtp-in.l.google.com".to_string()]).unwrap().0.id, "googlemail.com");
-        let r = plan(db, "me@ik.me", &[], None, None).unwrap();
+        // Microsoft, with the real data: by domain, and by the MX of a
+        // Microsoft 365 custom domain.
+        let outlook = db.by_domain("outlook.com").unwrap();
+        assert_eq!(outlook.imap("me@outlook.com", true).unwrap().host, "outlook.office365.com");
+        assert!(outlook.imap("me@outlook.com", false).is_none(), "without a client id, OAuth2-only is not usable");
+        assert_eq!(db.by_mx(&["contoso.mail.protection.outlook.com".to_string()]).unwrap().0.id, "office365.com");
+        let r = plan(db, "me@outlook.com", &[], None, None, true).unwrap();
+        assert_eq!((r.auth.as_str(), r.oauth_provider.as_deref()), ("oauth2", Some("microsoft")));
+        assert_eq!(hosts(&r.smtp).len(), 4, "the two table SMTP hosts on the two submission ports");
+        let r = plan(db, "me@ik.me", &[], None, None, true).unwrap();
         assert_eq!(hosts(&r.smtp), ["mail.infomaniak.com:587 starttls provider"]);
     }
 }
