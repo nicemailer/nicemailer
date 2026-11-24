@@ -140,14 +140,47 @@ struct ReaderColumnTests {
 
     @Test func theHTMLPageGetsTheSameColumn() {
         // No bound: 12 px on the sides, the whole width.
-        #expect(Look.readerColumnCSS(maxWidth: nil, vertical: 16) == "body { margin: 16px 0; padding: 0 12px; }")
+        #expect(Look.readerColumnCSS(maxWidth: nil, vertical: 16) == "body { margin: 16px 0; padding: 0 12.00px; }")
         // A bound: the body at most the column and its padding, centered.
         let css = Look.readerColumnCSS(maxWidth: 560, vertical: 16)
         #expect(css.contains("box-sizing: border-box"))
         #expect(css.contains("max-width: 584.00px"))
         #expect(css.contains("margin: 16px auto"))
-        #expect(css.contains("padding: 0 12px"))
+        #expect(css.contains("padding: 0 12.00px"))
         // A bound scaled with the text keeps its fraction.
         #expect(Look.readerColumnCSS(maxWidth: 560.5, vertical: 16).contains("max-width: 584.50px"))
+    }
+
+    @Test func theZoomedPageKeepsTheColumnOfTheTitle() {
+        // At 16 pt the page is zoomed by 4/3: its CSS lengths are the
+        // points divided by the zoom, so that once zoomed they are the
+        // title's (12 pt of margin, a column of 560 × 4/3 pt).
+        let zoom: CGFloat = 16.0 / 12
+        let css = Look.readerColumnCSS(maxWidth: 560 * zoom, vertical: 16, zoom: zoom)
+        #expect(css.contains("padding: 0 9.00px"))
+        #expect(css.contains("max-width: 578.00px"))
+        #expect(Look.readerColumnCSS(maxWidth: nil, vertical: 16, zoom: zoom) == "body { margin: 16px 0; padding: 0 9.00px; }")
+    }
+}
+
+/// The smallest text of a mail in HTML (`reader.html_min_font_size`,
+/// `Look.htmlMinFontSize`).
+@MainActor
+struct HTMLMinFontSizeTests {
+    @Test func theBuiltInThemesKeepMailTextAtLeastAt11() {
+        for name in ["geek", "clean", "regular"] {
+            #expect(Look.htmlMinFontSize(ThemeStore.builtins[name]!) == 11, "\(name)")
+        }
+    }
+
+    @Test func zeroTurnsTheMinimumOff() {
+        var json = ThemeTests.themeJSON("clean")
+        var reader = json["reader"] as! [String: Any]
+        reader["html_min_font_size"] = 0
+        json["reader"] = reader
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let theme = try! decoder.decode(ThemeView.self, from: JSONSerialization.data(withJSONObject: json))
+        #expect(Look.htmlMinFontSize(theme) == nil)
     }
 }

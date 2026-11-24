@@ -67,3 +67,4 @@ virtual_folder = { light = "#4E6A46", dark = "#9DBB93" }
 
 [reader]
 body_format = "html"
+html_min_font_size = 11

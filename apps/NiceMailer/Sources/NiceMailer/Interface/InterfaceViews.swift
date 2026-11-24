@@ -1627,7 +1627,7 @@ private struct ReaderColumn: View {
                 if model.bodyFormat != "text" {
                     let page = threadHTML(thread, state)
                     HTMLReader(html: page.html, allowedImages: page.images, inlineImages: page.inline,
-                               darkMode: page.darkMode, controller: controller)
+                               darkMode: page.darkMode, zoom: TextSize.shared.scale, controller: controller)
                 } else {
                     TextReader(blocks: blocks, threadId: thread.id, controller: controller)
                 }
@@ -1772,11 +1772,17 @@ private struct ReaderColumn: View {
         #nm-divRplyFwdMsg, #nm-divRplyFwdMsg ~ *, hr:has(+ #nm-divRplyFwdMsg), #nm-appendonsend ~ * { display: none; }
         """
         // The reader's styles inside each message's frame.
-        let frameStyle = MailFrame.baseStyle(hiding: hideQuotes, scale: TextSize.shared.scale)
+        let frameStyle = MailFrame.baseStyle(hiding: hideQuotes)
         // Mails made for a white page, in the dark theme: Dark Reader adapts
         // their colours (`DarkMode`), or, without it, a white sheet.
         let darkMode = DarkMode.available && DarkMode.needed(thread.messages.compactMap(\.bodyHtml))
         let sheet = !DarkMode.available
+        // Every length of the page is written for a 12 pt text: the web
+        // view's zoom grows the whole page with the text size (⌘+ ⌘−),
+        // the sizes a mail writes in `pt` or `px` as the rest
+        // (`HTMLReader`, `pageZoom`). Before (November 2026), the app
+        // grew its own sizes alone, and a mail's `12pt` stayed 16 px next
+        // to a text of 21.
         var html = """
         <html><head><meta charset="utf-8">
         <meta http-equiv="Content-Security-Policy" content="\(ContentPolicy.header)">
@@ -1791,9 +1797,9 @@ private struct ReaderColumn: View {
         /* The column of the reader, as in the text reader and under the
            title: 12 px on the sides, at most `layout.reader_max_width`,
            centered (`Look.readerColumnCSS`). */
-        \(Look.readerColumnCSS(maxWidth: Look.readerMaxWidth, vertical: 16))
-        body { font-size: \(Int(scaled(14) * CGFloat(ThemeStore.active.fonts.readingScale)))px; }
-        summary { font-size: \(Int(scaled(12)))px; color: #888; cursor: pointer; list-style: none; margin: 4px 0; }
+        \(Look.readerColumnCSS(maxWidth: Look.readerMaxWidth, vertical: 16, zoom: TextSize.shared.scale))
+        body { font-size: \(String(format: "%.2f", 14 * ThemeStore.active.fonts.readingScale))px; }
+        summary { font-size: 12px; color: #888; cursor: pointer; list-style: none; margin: 4px 0; }
         summary::-webkit-details-marker { display: none; }
         details[open] summary { margin-bottom: 12px; }
         summary a.addr { text-decoration: none; color: inherit; }
@@ -1806,26 +1812,26 @@ private struct ReaderColumn: View {
         details.single summary { pointer-events: none; cursor: default; }
         details.single summary a { pointer-events: auto; cursor: pointer; }
         .q { color: #888; border-left: 2px solid #8886; padding-left: 8px; }
-        .m { color: #888; font-size: \(Int(scaled(12)))px; }
-        pre { font: \(Int(scaled(14) * CGFloat(ThemeStore.active.fonts.readingScale)))px \(Fonts.css(ThemeStore.active.fonts.reading)); white-space: pre-wrap; margin: 0 0 8px; }
+        .m { color: #888; font-size: 12px; }
+        pre { font: \(String(format: "%.2f", 14 * ThemeStore.active.fonts.readingScale))px \(Fonts.css(ThemeStore.active.fonts.reading)); white-space: pre-wrap; margin: 0 0 8px; }
         hr { border: 0; border-top: 1px solid #8884; margin: 16px 0; }
         /* Attachment tiles: 3 to 5 per row, as in the text reader. */
         .att { display: grid; gap: 6px; margin: 12px 0;
                grid-template-columns: repeat(auto-fill, minmax(clamp(18%, 24ch, 31%), 1fr)); }
         .att a { display: block; border: 1px solid #8884; padding: 8px; text-decoration: none; color: inherit;
-                 font-size: \(Int(scaled(12)))px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-        .att a img { width: \(Int(scaled(13)))px; height: \(Int(scaled(13)))px; vertical-align: -2px; margin-right: 6px; }
-        .att a span { display: block; color: #888; font-size: \(Int(scaled(11)))px; }
+                 font-size: 12px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+        .att a img { width: 13px; height: 13px; vertical-align: -2px; margin-right: 6px; }
+        .att a span { display: block; color: #888; font-size: 11px; }
         /* A row each (layout.attachments = rows, clean and regular): the
            icon of macOS, the whole name, which wraps rather than is cut,
            then the size. */
         .att.rows { display: block; }
-        .att.rows a { display: flex; align-items: flex-start; gap: \(Int(scaled(6)))px; border: 0; padding: \(Int(scaled(3)))px 0;
-                      white-space: normal; overflow: visible; font-size: \(Int(scaled(12)))px; }
-        .att.rows a img { width: \(Int(scaled(16)))px; height: \(Int(scaled(16)))px; margin: 0; flex: none; vertical-align: 0; }
+        .att.rows a { display: flex; align-items: flex-start; gap: 6px; border: 0; padding: 3px 0;
+                      white-space: normal; overflow: visible; font-size: 12px; }
+        .att.rows a img { width: 16px; height: 16px; margin: 0; flex: none; vertical-align: 0; }
         .att.rows a b { font-weight: normal; overflow-wrap: anywhere; }
         .att.rows a span { display: inline; margin-left: 6px; white-space: nowrap; }
-        summary img { width: \(Int(scaled(11)))px; height: \(Int(scaled(11)))px; vertical-align: -1px; }
+        summary img { width: 11px; height: 11px; vertical-align: -1px; }
         /* The address book's icon keeps its own proportions. */
         summary a.book img { width: auto; }
         /* No scroll bar in the geek theme (ui.md). */
@@ -2322,11 +2328,23 @@ private struct HTMLReader: NSViewRepresentable {
     let inlineImages: Set<Int>
     /// Whether the page runs Dark Reader (`DarkMode`).
     let darkMode: Bool
+    /// The zoom of the page: the text size (`TextSize.scale`, 1 at 12 pt).
+    /// The page is written for a 12 pt text, and the zoom grows all of it,
+    /// the sizes the mail writes included; ⌘+ ⌘− change it without
+    /// loading the page again.
+    let zoom: CGFloat
     /// Keeps the web view, to scroll it from the keyboard (Space, ctrl-f…).
     let controller: InterfaceController
 
     func makeNSView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
+        // No text smaller than the theme's minimum
+        // (`reader.html_min_font_size`, `Look.htmlMinFontSize`). WebKit
+        // compares it with the size once zoomed: times the zoom, it grows
+        // with the text size as the rest of the page. A new theme or text
+        // size rebuilds the window, and this web view with it. WebKit
+        // keeps whole points (it would cut 14.7 to 14): rounded.
+        if let minimum = Look.htmlMinFontSize { config.preferences.minimumFontSize = (minimum * zoom).rounded() }
         // The HTML is already sanitized by the core (no script); turning
         // JavaScript off is a second barrier.
         config.defaultWebpagePreferences.allowsContentJavaScript = false
@@ -2336,6 +2354,7 @@ private struct HTMLReader: NSViewRepresentable {
         // Nothing in the page's own storage outlives the page.
         config.websiteDataStore = .nonPersistent()
         let view = WKWebView(frame: .zero, configuration: config)
+        view.pageZoom = zoom
         view.navigationDelegate = context.coordinator
         view.setValue(false, forKey: "drawsBackground")
         controller.readerWeb = view
@@ -2344,6 +2363,8 @@ private struct HTMLReader: NSViewRepresentable {
 
     func updateNSView(_ view: WKWebView, context: Context) {
         let c = context.coordinator
+        // ⌘+ ⌘−: the same page, zoomed.
+        if view.pageZoom != zoom { view.pageZoom = zoom }
         guard c.html != html || c.images.allowed != allowedImages || c.inline.allowed != inlineImages else { return }
         // Scripts of the app apply from the next load on: set before it.
         let scripts = view.configuration.userContentController
@@ -2402,8 +2423,10 @@ private struct HTMLReader: NSViewRepresentable {
             }
             // The room a classic scroll bar takes from the page, for the
             // title line above (`InterfaceController.readerScrollerWidth`).
+            // In CSS pixels, which the zoom makes points.
+            let zoom = webView.pageZoom
             webView.evaluateJavaScript("window.innerWidth - document.documentElement.clientWidth") { [weak self] result, _ in
-                let width = CGFloat((result as? Double) ?? 0)
+                let width = CGFloat((result as? Double) ?? 0) * zoom
                 MainActor.assumeIsolated {
                     if let c = self?.controller, c.readerScrollerWidth != width { c.readerScrollerWidth = width }
                 }
@@ -2437,6 +2460,16 @@ private struct HTMLReader: NSViewRepresentable {
                 })(),
                 paper: document.querySelectorAll('.nm-msg.paper').length,
                 styledWidth: (e => e ? e.offsetWidth : '')(first('.probe-width')),
+                // Sizes of text, in CSS pixels before the zoom: the page's
+                // own, a mail's 12pt, a mail's 8px under the theme's
+                // minimum (reader.html_min_font_size).
+                bodyFont: getComputedStyle(document.body).fontSize,
+                ptFont: (e => e ? getComputedStyle(e).fontSize : '')(first('.probe-pt')),
+                smallFont: (e => e ? getComputedStyle(e).fontSize : '')(first('.probe-small')),
+                // The height of one line of each, as laid out: what the
+                // minimum changes, whatever the style says.
+                ptLine: (e => e ? e.getBoundingClientRect().height : '')(first('.probe-pt')),
+                smallLine: (e => e ? e.getBoundingClientRect().height : '')(first('.probe-small')),
                 styledBackground: (e => e ? getComputedStyle(e).backgroundColor : '')(first('.probe-background')),
             });
             })()

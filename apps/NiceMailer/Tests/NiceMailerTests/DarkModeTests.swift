@@ -34,7 +34,7 @@ struct DarkModeTests {
         let page = """
         <html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="\(ContentPolicy.header)">
         <style>:root { color-scheme: light dark; }</style></head><body>
-        \(MailFrame.wrap(Self.mail, base: MailFrame.baseStyle(hiding: "", scale: 1)))
+        \(MailFrame.wrap(Self.mail, base: MailFrame.baseStyle(hiding: "")))
         </body></html>
         """
         let config = WKWebViewConfiguration()

@@ -52,10 +52,13 @@ enum MailFrame {
     ///
     /// - `hiding`: the rules that hide quoted history and signatures
     ///   (`threadHTML`), which must be inside the frame to reach them.
-    static func baseStyle(hiding: String, scale: Double) -> String {
+    ///
+    /// Lengths in CSS pixels for a 12 pt text: the web view's zoom grows
+    /// them with the text size (`HTMLReader`, `pageZoom`).
+    static func baseStyle(hiding: String) -> String {
         """
         :host { display: block; contain: layout paint; overflow-x: auto; overflow-y: hidden; }
-        :host(.paper) { color-scheme: light; background: #fff; color: #000; padding: \(Int(8 * scale))px; }
+        :host(.paper) { color-scheme: light; background: #fff; color: #000; padding: 8px; }
         /* The page has no doctype ("quirks" mode, as mail apps): a table
            would not inherit the size and font of the text around it. */
         table { font-family: inherit; font-size: inherit; }

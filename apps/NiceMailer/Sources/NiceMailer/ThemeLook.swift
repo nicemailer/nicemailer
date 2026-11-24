@@ -273,16 +273,34 @@ enum Look {
     /// mail laid out wider (a newsletter of 600 px in clean's 560) scrolls
     /// sideways in its frame (`MailFrame`, `overflow-x: auto`) rather than
     /// widen the column.
-    static func readerColumnCSS(maxWidth: CGFloat?, vertical: Int) -> String {
-        let side = Int(readerSideMargin)
+    ///
+    /// `zoom`: the web view's zoom (`HTMLReader`, the text size), by which
+    /// it multiplies every CSS pixel. The column is given in points, as
+    /// the title's: it is divided by the zoom, so that once zoomed it is
+    /// the title's again.
+    static func readerColumnCSS(maxWidth: CGFloat?, vertical: Int, zoom: CGFloat = 1) -> String {
+        // Fractional, as the text reader's: rounded, the two would differ
+        // by a pixel once zoomed.
+        func px(_ points: CGFloat) -> String { String(format: "%.2f", Double(points / zoom)) }
+        let side = px(readerSideMargin)
         guard let maxWidth else {
             return "body { margin: \(vertical)px 0; padding: 0 \(side)px; }"
         }
-        // A fractional width, as the text reader's (the bound is scaled
-        // with the text size): rounded, the two would differ by a pixel.
-        let width = String(format: "%.2f", Double(maxWidth) + Double(2 * side))
-        return "body { box-sizing: border-box; max-width: \(width)px; "
+        return "body { box-sizing: border-box; max-width: \(px(maxWidth + 2 * readerSideMargin))px; "
             + "margin: \(vertical)px auto; padding: 0 \(side)px; }"
+    }
+
+    /// The smallest text of a mail in HTML, in points for a 12 pt text
+    /// (`reader.html_min_font_size`), or nil for none. WebKit draws
+    /// smaller text at the minimum (`WKPreferences.minimumFontSize`),
+    /// whatever the mail wrote (`px`, `pt`, `em`, `<font size=1>`,
+    /// `<small>`). It compares the minimum with the size once zoomed, so
+    /// `HTMLReader` gives it times the zoom: 11 is 11 pt at 12 pt, 14.7 at
+    /// 16, as the rest of the page.
+    static var htmlMinFontSize: CGFloat? { htmlMinFontSize(theme) }
+
+    static func htmlMinFontSize(_ theme: ThemeView) -> CGFloat? {
+        theme.reader.htmlMinFontSize > 0 ? CGFloat(theme.reader.htmlMinFontSize) : nil
     }
 }
 

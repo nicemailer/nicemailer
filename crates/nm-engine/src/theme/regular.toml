@@ -69,3 +69,4 @@ virtual_folder = "system.accent"
 
 [reader]
 body_format = "html"
+html_min_font_size = 11

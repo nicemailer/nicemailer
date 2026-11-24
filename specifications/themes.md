@@ -168,6 +168,9 @@ Longueurs en points pour un texte de 12 pt (section 5.3).
 | Clé | Choix | geek | clean | regular | Rôle |
 | --- | --- | --- | --- | --- | --- |
 | `body_format` | `text`, `html` | `text` | `html` | `html` | Affichage des mails reçus quand rien n'est mémorisé pour leur expéditeur |
+| `html_min_font_size` | 0, ou 6 à 24 | 11 | 11 | 11 | Plus petit texte d'un mail en HTML, en points pour un texte de 12 pt : un texte plus petit (`px`, `pt`, `em`, `<font size=1>`, `<small>`) est dessiné à cette taille ; elle grandit avec la taille du texte (⌘+ ⌘−) comme toute la page ; 0 : aucun minimum. Ajouté en novembre 2026 |
+
+- **La page HTML suit la taille du texte** (ajouté en novembre 2026) : elle est écrite pour un texte de 12 pt, et WebKit la zoome du rapport entre la taille du texte et 12 (× 4/3 à 16 pt), les tailles que le mail écrit en `pt` ou en `px` comprises. Avant, l'app ne grandissait que ses propres tailles : le `12pt` d'un mail d'Outlook restait à 16 px à côté d'un texte de 21. Une mise en page à largeur fixe grandit aussi, et défile horizontalement dans son cadre si elle dépasse la colonne.
 
 - **Le choix mémorisé pour l'expéditeur l'emporte** (`address.body_format`, `ui.md`, « Lecture ») : le thème ne vaut que pour une adresse sans choix (NULL). `vh` et le sélecteur `text | html | images` écrivent toujours une valeur explicite, même égale à celle du thème : un expéditeur passé en `html` sous clean le reste sous geek.
 - **Un mail sans partie HTML** s'affiche en texte, quel que soit le thème.

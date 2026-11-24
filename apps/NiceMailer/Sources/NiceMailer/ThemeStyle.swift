@@ -99,6 +99,9 @@ struct ThemeView: Decodable, Equatable {
         /// `text` or `html`: how a received mail is shown when nothing is
         /// remembered for its sender (`AppModel.bodyFormat`).
         let bodyFormat: String
+        /// The smallest text of a mail in HTML, in points for a 12 pt
+        /// text; 0: no minimum (`Look.htmlMinFontSize`).
+        let htmlMinFontSize: Int
     }
 
     /// `[motion]` (section 6.4), in milliseconds.

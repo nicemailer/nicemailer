@@ -135,7 +135,8 @@
       }
     },
     "reader": {
-      "body_format": "html"
+      "body_format": "html",
+      "html_min_font_size": 11
     },
     "error": null,
     "warnings": []
@@ -276,7 +277,8 @@
       }
     },
     "reader": {
-      "body_format": "text"
+      "body_format": "text",
+      "html_min_font_size": 11
     },
     "error": null,
     "warnings": []
@@ -402,7 +404,8 @@
       }
     },
     "reader": {
-      "body_format": "html"
+      "body_format": "html",
+      "html_min_font_size": 11
     },
     "error": null,
     "warnings": []

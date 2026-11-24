@@ -157,6 +157,12 @@ fn numbers_choices_and_switches_are_checked() {
     refused("mine", "[layout]\nzebra = \"yes\"\n", Some(2), "expected true or false");
     refused("mine", "[window]\nbar_type = \"ribbon\"\n", Some(2), "must be one of: status_bar, toolbar");
     refused("mine", "[window]\ndefault_columns = 4\n", Some(2), "must be from 1 to 3");
+    // The smallest text of a mail in HTML: 0 (none), or 6 to 24.
+    let l = ok("mine", "[reader]\nhtml_min_font_size = 0\n");
+    assert_eq!(l.values["reader.html_min_font_size"], Value::Int(0));
+    let l = ok("mine", "[reader]\nhtml_min_font_size = 14\n");
+    assert_eq!(l.values["reader.html_min_font_size"], Value::Int(14));
+    refused("mine", "[reader]\nhtml_min_font_size = 4\n", Some(2), "must be 0, or from 6 to 24");
     // The list of mails on one line or three (v l).
     let l = ok("mine", "[window]\nlist_layout = \"stacked\"\n");
     assert_eq!(l.values["window.list_layout"], Value::Text("stacked".into()));

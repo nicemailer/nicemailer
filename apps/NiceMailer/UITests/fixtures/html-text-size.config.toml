@@ -1,0 +1,7 @@
+# Settings of html-text-size.uiscript: the theme clean (mail in HTML, a
+# minimum of 11 for its text) at the default text size, 16 pt, where the
+# page is zoomed by 16 / 12.
+[ui]
+text_size = 16
+status_bar_text_size = 12
+theme = "clean"

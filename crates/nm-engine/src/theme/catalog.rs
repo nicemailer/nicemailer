@@ -171,6 +171,10 @@ pub const KEYS: &[Key] = &[
     // that a theme never changes the MIME the recipients get.
     k("reader", "body_format", Kind::Choice(&["text", "html"]),
       "mails shown as text or HTML when nothing is remembered for their sender; vh remembers a choice for a sender, which wins"),
+    // The smallest text of a mail in HTML, for a 12 pt text: grown with
+    // the text size (⌘+ ⌘−) as the whole page is (section 6.6).
+    k("reader", "html_min_font_size", Kind::IntOrZero(6, 24),
+      "smallest text of a mail in HTML, in points for a 12 pt text, grown with the text size; smaller text is drawn at this size; 0: no minimum"),
 ];
 
 /// The key `name` of `table`.

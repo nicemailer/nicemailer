@@ -1,0 +1,28 @@
+# Text sizes of a mail in HTML (themes.md, reader.html_min_font_size;
+# docs/thread-display.md): the page is zoomed with the text size, so a
+# mail's 12pt (Outlook's Calibri) grows as the text around it; text under
+# the theme's minimum (8px here, 11 in clean) is drawn at the minimum
+# (fixtures/html-text-size.mbox and .config.toml: clean at 16 pt).
+expect theme = clean
+key @
+type fixture
+key ret
+key ;
+key a
+expect selected_subject = Compte rendu en Calibri
+expect body_format = html
+# 16 pt of text: the page zoomed by 16 / 12.
+expect html_zoom = 1.33
+# Before the zoom: the page's text 14 × 1.15 (fonts.reading_scale), the
+# mail's 12pt 16 px: about the same, and both grown by the zoom.
+expect html_body_font ~ 16
+expect html_pt_font = 16px
+# 8px, under the minimum of clean: drawn at 11, to a whole point once
+# zoomed (15 pt on screen, 11.25 px before the zoom).
+expect html_small_font = 11.25px
+snap html-text-size
+# ⌘+: the same page zoomed more, not loaded again.
+key cmd-=
+expect html_zoom = 1.42
+key cmd-0
+expect html_zoom = 1.33

@@ -284,8 +284,9 @@ extension UIScript {
         let parts = column.split(separator: ",").compactMap { Double($0) }
         guard parts.count == 2 else { return nil }
         let frame = web.convert(web.bounds, to: nil)
-        let left = frame.minX + parts[0]
-        let right = frame.maxX - parts[1]
+        // CSS pixels, which the page's zoom makes points.
+        let left = frame.minX + parts[0] * web.pageZoom
+        let right = frame.maxX - parts[1] * web.pageZoom
         return (left - bar.minX, bar.maxX - right)
     }
 }
@@ -1262,6 +1263,17 @@ private final class Runner {
             "dark_reader_fetches": UIScript.darkReaderFetches,
             "html_paper": UIScript.html["paper"] ?? "",
             "html_styled_width": UIScript.html["styledWidth"] ?? "",
+            // Text sizes of the HTML page, in CSS pixels before the zoom
+            // (`html_zoom` multiplies them on screen): the page's own, the
+            // first element of class `probe-pt` and of `probe-small`.
+            "html_body_font": UIScript.html["bodyFont"] ?? "",
+            "html_pt_font": UIScript.html["ptFont"] ?? "",
+            "html_small_font": UIScript.html["smallFont"] ?? "",
+            // The height of their line, as laid out (CSS pixels).
+            "html_pt_line": UIScript.html["ptLine"] ?? "",
+            "html_small_line": UIScript.html["smallLine"] ?? "",
+            // The zoom of the HTML page: the text size (1 at 12 pt).
+            "html_zoom": controller.readerWeb.map { String(format: "%.2f", Double($0.pageZoom)) } ?? "",
             "html_styled_background": UIScript.html["styledBackground"] ?? "",
             "html_offset": "\(c.htmlOffset)",
             // The folder workflow: steps `z` can undo, a suspect move

@@ -3058,6 +3058,9 @@ pub struct ThemeReader {
     /// remembered for its sender (`address.body_format` NULL). A choice
     /// remembered for the sender wins.
     pub body_format: String,
+    /// The smallest text of a mail in HTML, in points for a 12 pt text,
+    /// grown with the text size as the whole page is; 0: no minimum.
+    pub html_min_font_size: u32,
 }
 
 /// `[motion]` of a theme (section 6.4), in milliseconds.
